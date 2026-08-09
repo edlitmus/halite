@@ -20,7 +20,7 @@ not.
 | `test=True` | `halite apply -test` | done | every module implements dry-run |
 | `grains.items` | `halite grains [-json]` | done | id, os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
 | Highstate output | Salt-style block output + `-json` | done | |
-| `state.highstate` / top.sls | `halite apply` (no target) | done | grain and hostname glob targeting; single merged environment |
+| `state.highstate` / top.sls | `halite apply` (no target) | done | grain and id glob targeting; single merged environment |
 | Pillar | pillar tree with its own top file | done | targeted, deep-merged, include-capable; exposed as `{{ .Pillar.x }}` in states and templated sources. Encryption at rest: P2 |
 | Requisites: require, watch | require, watch | done | watch triggers service restart / cmd.wait |
 | Requisites: onchanges, prereq | onchanges, prereq | done | prereq uses an automatic dry run of its target |

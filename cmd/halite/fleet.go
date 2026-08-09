@@ -159,7 +159,7 @@ const runUsage = `usage: halite run <target> <kind> [args] [flags]
 targets:
   '*'                      every online agent
   'os_family:FreeBSD'      a grain, with a glob on its value
-  'web*'                   a glob on the host grain
+  'web*'                   a glob on the agent's id
 
 kinds:
   state.highstate          converge against the control plane's top.sls

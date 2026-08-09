@@ -163,8 +163,9 @@ base:
 
 Target patterns: `'*'` matches every host; `grain:valueglob` matches a
 grain with a glob on the value (`os_family:FreeBSD`, `osrelease:14.*`);
-anything else globs the `host` grain. All environments in the file are
-applied (masterless has no environment selection yet).
+anything else globs the `id` grain, which is the hostname masterless and
+the enrolled identity under a control plane. All environments in the file
+are applied (masterless has no environment selection yet).
 
 An SLS file can pull in others with `include:`; included states run
 before the including file's own states, each file loads at most once, and
