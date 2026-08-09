@@ -83,6 +83,7 @@ func usage() {
 fleet mode:
   halite master [-addr :4506] [-root DIR]  run the control plane
       [-returner file:PATH|webhook:URL]    durable result sinks (repeatable)
+      [-reactor FILE]                      rules turning events into jobs
   halite agent -master HOST                run the agent on a managed host
   halite run <target> <kind> [args]        dispatch work and collect results
   halite agents                            list the fleet

@@ -25,6 +25,9 @@ type jobState struct {
 	job       transport.Job
 	expecting []string
 	results   map[string]transport.JobResult
+	// reactor records that this job was the reactor's own work, so the
+	// events it produces can be marked and not fed back to the reactor.
+	reactor bool
 }
 
 // registry holds all mutable control plane state behind one mutex. The
@@ -137,7 +140,7 @@ func (r *registry) waiter(id string) <-chan struct{} {
 
 // dispatch queues a job for every online agent the target matches, and
 // returns the ids it was queued for.
-func (r *registry) dispatch(job transport.Job) []string {
+func (r *registry) dispatch(job transport.Job, byReactor bool) []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -160,6 +163,7 @@ func (r *registry) dispatch(job transport.Job) []string {
 		job:       job,
 		expecting: matched,
 		results:   map[string]transport.JobResult{},
+		reactor:   byReactor,
 	}
 	return matched
 }
@@ -182,16 +186,16 @@ func (r *registry) record(res transport.JobResult) error {
 	return fmt.Errorf("job %q was not dispatched to %q", res.JobID, res.AgentID)
 }
 
-// jobOf returns the job a result answers, for returners that want the
-// request alongside the response.
-func (r *registry) jobOf(id string) (transport.Job, bool) {
+// jobOf returns the job a result answers and whether the reactor caused
+// it, for returners and for marking the events it produces.
+func (r *registry) jobOf(id string) (job transport.Job, byReactor, ok bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	state, ok := r.jobs[id]
-	if !ok {
-		return transport.Job{}, false
+	state, found := r.jobs[id]
+	if !found {
+		return transport.Job{}, false, false
 	}
-	return state.job, true
+	return state.job, state.reactor, true
 }
 
 // jobInfo returns a job and its results so far.

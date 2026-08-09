@@ -64,6 +64,11 @@ var templateFuncs = template.FuncMap{
 	"upper":     strings.ToUpper,
 }
 
+// TemplateFuncs returns the helper functions available in every halite
+// template. Callers that render against something other than TemplateData
+// — the reactor, against an event — build their own template with these.
+func TemplateFuncs() template.FuncMap { return templateFuncs }
+
 // Render runs src through text/template. Grains and pillar data are
 // available as {{ .Grains.os_family }} and {{ .Pillar.nginx.port }}.
 // Standard template actions (if/range/with) stand in for Salt's Jinja layer.

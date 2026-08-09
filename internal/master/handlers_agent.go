@@ -133,8 +133,14 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, peer tran
 	if res.Error != "" {
 		returned["error"] = res.Error
 	}
+	job, byReactor, known := s.registry.jobOf(res.JobID)
+	if byReactor {
+		// A return from the reactor's own work must not feed it again: that
+		// is the loop, and it closes here rather than at the rate limit.
+		returned["reactor"] = true
+	}
 	s.bus.Emit(fmt.Sprintf(event.TagJobReturn, res.JobID, peer.ID), peer.ID, returned)
-	if job, ok := s.registry.jobOf(res.JobID); ok {
+	if known {
 		s.returners.Submit(returner.Record{Time: time.Now().UTC(), Job: job, Result: res})
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

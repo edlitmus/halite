@@ -22,13 +22,23 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request, peer tra
 		writeError(w, http.StatusBadRequest, "%v", err)
 		return
 	}
-	if req.Target == "" {
-		writeError(w, http.StatusBadRequest, "a target is required (use '*' for the whole fleet)")
-		return
-	}
-	if err := validKind(req); err != nil {
+	resp, err := s.Dispatch(req, peer.ID)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "%v", err)
 		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// Dispatch queues a job and announces it. Both the HTTP handler and the
+// reactor come through here, so reacted work is dispatched, targeted, and
+// logged exactly like an operator's.
+func (s *Server) Dispatch(req transport.DispatchRequest, by string) (transport.DispatchResponse, error) {
+	if req.Target == "" {
+		return transport.DispatchResponse{}, fmt.Errorf("a target is required (use '*' for the whole fleet)")
+	}
+	if err := validKind(req); err != nil {
+		return transport.DispatchResponse{}, err
 	}
 
 	job := transport.Job{
@@ -41,15 +51,23 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request, peer tra
 		Test:    req.Test,
 		Created: time.Now().UTC(),
 	}
-	matched := s.registry.dispatch(job)
+	byReactor := by == reactorSource
+	matched := s.registry.dispatch(job, byReactor)
 	sort.Strings(matched)
 	s.log.Printf("job %s: %s on %q dispatched to %d agent(s) by %q",
-		job.ID, job.Kind, job.Target, len(matched), peer.ID)
-	s.bus.Emit(fmt.Sprintf(event.TagJobDispatch, job.ID), peer.ID, map[string]any{
+		job.ID, job.Kind, job.Target, len(matched), by)
+
+	data := map[string]any{
 		"job_id": job.ID, "kind": job.Kind, "target": job.Target,
 		"test": job.Test, "agents": matched,
-	})
-	writeJSON(w, http.StatusOK, transport.DispatchResponse{JobID: job.ID, Agents: matched})
+	}
+	if byReactor {
+		// Marks the work as the reactor's own, so its events cannot feed the
+		// reactor again and start a loop.
+		data["reactor"] = true
+	}
+	s.bus.Emit(fmt.Sprintf(event.TagJobDispatch, job.ID), by, data)
+	return transport.DispatchResponse{JobID: job.ID, Agents: matched}, nil
 }
 
 // validKind rejects work an agent would not know how to run, so the error

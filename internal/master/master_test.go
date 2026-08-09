@@ -18,7 +18,8 @@ import (
 
 // fleet is a control plane wired up over real mTLS, plus the CA behind it.
 type fleet struct {
-	server *httptest.Server
+	ts     *httptest.Server
+	server *Server
 	store  *ca.Store
 	pki    string
 	states string
@@ -65,7 +66,7 @@ func newFleet(t *testing.T, cfg Config) *fleet {
 	ts.StartTLS()
 	t.Cleanup(ts.Close)
 
-	return &fleet{server: ts, store: store, pki: pki, states: states}
+	return &fleet{ts: ts, server: server, store: store, pki: pki, states: states}
 }
 
 func writeFile(t *testing.T, dir, name, content string) {
@@ -76,7 +77,7 @@ func writeFile(t *testing.T, dir, name, content string) {
 }
 
 // host is the address clients dial.
-func (f *fleet) host() string { return strings.TrimPrefix(f.server.URL, "https://") }
+func (f *fleet) host() string { return strings.TrimPrefix(f.ts.URL, "https://") }
 
 // anonymousClient has the CA as its trust root but no certificate of its own.
 func (f *fleet) anonymousClient(t *testing.T) *transport.Client {

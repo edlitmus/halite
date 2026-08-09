@@ -252,3 +252,56 @@ func client(t *testing.T, c *transport.Client, ctx context.Context) (io.ReadClos
 	t.Helper()
 	return c.Stream(ctx, transport.PathEvents)
 }
+
+func TestReactorCausedWorkIsMarkedInBothItsEvents(t *testing.T) {
+	// A rule matching job events is the classic runaway: the job it
+	// dispatches raises a dispatch event *and* a return event, and either
+	// one feeding back is enough to loop. Both must carry the mark.
+	f := newFleet(t, Config{})
+	admin := f.adminClient(t, "ed")
+	events, done := tail(t, admin, "")
+	defer done()
+
+	web := f.enrolledClient(t, "web1")
+	hello(t, web, map[string]any{"id": "web1"})
+
+	resp, err := f.server.Dispatch(
+		transport.DispatchRequest{Target: "*", Kind: transport.KindGrains}, reactorSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dispatch := waitForTag(t, events, "halite/job/"+resp.JobID+"/dispatch")
+	if marked, _ := dispatch.Data["reactor"].(bool); !marked {
+		t.Errorf("dispatch event is not marked as the reactor's: %v", dispatch.Data)
+	}
+
+	if err := web.Post(context.Background(), transport.PathResults,
+		transport.JobResult{JobID: resp.JobID, Ok: true}, nil); err != nil {
+		t.Fatal(err)
+	}
+	ret := waitForTag(t, events, "halite/job/"+resp.JobID+"/ret/web1")
+	if marked, _ := ret.Data["reactor"].(bool); !marked {
+		t.Errorf("return event is not marked as the reactor's: %v", ret.Data)
+	}
+}
+
+func TestOperatorWorkIsNotMarkedAsTheReactors(t *testing.T) {
+	f := newFleet(t, Config{})
+	admin := f.adminClient(t, "ed")
+	events, done := tail(t, admin, "")
+	defer done()
+
+	web := f.enrolledClient(t, "web1")
+	hello(t, web, map[string]any{"id": "web1"})
+
+	var resp transport.DispatchResponse
+	if err := admin.Post(context.Background(), transport.PathDispatch,
+		transport.DispatchRequest{Target: "*", Kind: transport.KindGrains}, &resp); err != nil {
+		t.Fatal(err)
+	}
+	dispatch := waitForTag(t, events, "halite/job/"+resp.JobID+"/dispatch")
+	if _, marked := dispatch.Data["reactor"]; marked {
+		t.Error("an operator's dispatch must not be marked as the reactor's work")
+	}
+}

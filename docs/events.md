@@ -125,3 +125,75 @@ reason, and a webhook endpoint sees whatever the diffs contain — use
 There is no database returner: a Postgres or MySQL sink means a driver, and
 drivers are dependencies (ADR-1). Point a webhook at something that owns
 the database instead, or ship the NDJSON file.
+
+## The reactor
+
+Reactor rules turn events into jobs. The control plane loads them from a
+file and evaluates them against every event on the bus:
+
+```sh
+halite master -root /usr/local/etc/halite/states -reactor /usr/local/etc/halite/reactor.sls
+```
+
+```yaml
+# reactor.sls — tag patterns to work
+'halite/agent/*/hello':
+  - run:
+      kind: state.highstate
+      target: '{{ .Source }}'
+
+'halite/beacon/*/service-down':
+  - run:
+      kind: call
+      target: '{{ .Source }}'
+      fn: service.running
+      args:
+        name: '{{ .Data.service }}'
+
+'halite/key/*/accepted':
+  - run:
+      kind: state.apply
+      target: '{{ .Data.id }}'
+      sls:
+        - baseline
+      test: "true"
+```
+
+Each rule is a tag pattern mapped to a list of `run:` actions. An action
+takes the same fields as `halite run`: `kind`, `target`, `sls`, `fn`,
+`args`, `test`. Every string is a Go template evaluated against the event:
+
+| In a rule | Is |
+|---|---|
+| `{{ .Source }}` | the agent that raised it, from its certificate |
+| `{{ .Tag }}` | the full tag |
+| `{{ .Data.x }}` | a field of the event's data |
+| `{{ .ID }}`, `{{ .Time }}` | the event's identity |
+
+A template referencing something the event does not carry is an **error**,
+not an empty string: the rule is logged and does not fire. Dispatching a
+job with a blank target would be worse than not reacting.
+
+### Loops
+
+Reacting to job events with a job is a loop: the dispatch and the return
+both raise events that match the same rule. Two things prevent a runaway:
+
+* **Work the reactor caused is marked.** Both the dispatch event and every
+  return event of a reacted job carry `reactor: true`, and the reactor
+  ignores those. A rule on `halite/job/**` therefore reacts to operators'
+  work and to its own results exactly once, then stops.
+* **Reactions are rate limited** to 60 per minute. If a rule still manages
+  to feed itself, the limit stops it and logs which rule is responsible,
+  rather than letting it consume the fleet.
+
+### Trusting event data
+
+`.Source` comes from the agent's client certificate and cannot be forged.
+Everything in `.Data` is whatever the agent put there.
+
+A rule like `target: '{{ .Source }}'` is safe: an agent can only ever cause
+work on itself. A rule like `target: '{{ .Data.host }}'` lets any agent
+that can raise that event choose who the job runs on — including `*`.
+Prefer `.Source` for targets, and treat `.Data` as untrusted input the same
+way you would a request body.

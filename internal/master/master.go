@@ -20,6 +20,7 @@ import (
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/event"
 	"github.com/edlitmus/halite/internal/pillar"
+	"github.com/edlitmus/halite/internal/reactor"
 	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -50,7 +51,14 @@ type Config struct {
 
 	// Returners are durable sinks for finished job results.
 	Returners []returner.Returner
+
+	// ReactorRules turn events into jobs.
+	ReactorRules []reactor.Rule
 }
+
+// reactorSource is the identity reacted work is dispatched under. It is
+// not a certificate: the reactor runs inside the control plane.
+const reactorSource = "reactor"
 
 func (c *Config) withDefaults() {
 	if c.Addr == "" {
@@ -137,6 +145,14 @@ func (s *Server) Run(ctx context.Context) error {
 	returnersDone := make(chan struct{})
 	defer close(returnersDone)
 	go s.returners.Run(returnersDone)
+
+	if len(s.cfg.ReactorRules) > 0 {
+		reactorCtx, stopReactor := context.WithCancel(ctx)
+		defer stopReactor()
+		engine := reactor.New(s.cfg.ReactorRules, s.Dispatch, s.log)
+		s.log.Printf("reactor: %d rule(s) loaded", engine.Rules())
+		go engine.Run(reactorCtx, s.bus)
+	}
 
 	done := make(chan error, 1)
 	go func() {

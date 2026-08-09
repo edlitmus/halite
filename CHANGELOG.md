@@ -21,6 +21,12 @@ P3 (events) in progress.
   job and the full result. Delivery is queued, so a slow sink delays only
   itself; a full queue drops and logs. The file sink is mode 0600 because
   results can contain diffs, and webhook URLs are redacted in logs.
+* Reactor: `halite master -reactor FILE` loads rules mapping tag patterns
+  to jobs, with the event's fields available as templates
+  (`{{ .Source }}`, `{{ .Data.x }}`). A template referencing absent data
+  fails the rule rather than dispatching a blank target. Reacted work is
+  marked in both its dispatch and its return events so the reactor cannot
+  feed itself, and reactions are rate limited to 60/min as a backstop.
 * See docs/events.md.
 
 ## 0.4.0 — 2026-08-09
