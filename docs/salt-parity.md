@@ -60,9 +60,11 @@ not.
 
 ## Execution modules (ad hoc)
 
-`halite call` reuses state functions today. A read-only exec module set
-(`status.*`, `disk.*`, `network.*`) lands with the transport in P2, since
-their value is mostly fleet-wide queries (`halite '*' disk.usage`).
+`halite call` reuses state functions, and a read-only execution module set
+sits beside them in its own registry: `disk.usage`, `status.uptime`,
+`status.loadavg`, `network.interfaces`. Their value is mostly fleet-wide
+(`halite run '*' call disk.usage`). More will follow as they earn their
+place; the registry makes adding one a single function.
 
 ## Ecosystem features
 

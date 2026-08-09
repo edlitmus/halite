@@ -205,9 +205,11 @@ func cmdCall(args []string) {
 		os.Exit(2)
 	}
 	name := args[0]
-	fn, ok := modules.Registry[name]
-	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown state function %q\n", name)
+	fn, isState := modules.Registry[name]
+	execFn, isExec := modules.ExecRegistry[name]
+	if !isState && !isExec {
+		fmt.Fprintf(os.Stderr, "unknown function %q (execution modules: %s)\n",
+			name, strings.Join(modules.ExecNames(), ", "))
 		os.Exit(2)
 	}
 	callArgs := map[string]any{}
@@ -231,6 +233,15 @@ func cmdCall(args []string) {
 		fatal("%v", err)
 	}
 	ctx := &modules.Ctx{Grains: g, Pillar: p}
+	if isExec {
+		data, err := execFn(ctx, callArgs)
+		if err != nil {
+			fatal("%v", err)
+		}
+		printTree(data, "")
+		return
+	}
+
 	var r modules.Result
 	if comment, gated := modules.CheckGates(callArgs); gated {
 		r = modules.Result{Ok: true, Comment: comment}

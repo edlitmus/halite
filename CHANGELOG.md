@@ -63,6 +63,13 @@ and the remaining P2 state modules.
 * mount.mounted / mount.unmounted: fstab handling per-OS, reading
   FreeBSD `mount -p`, Linux /proc/self/mounts, or macOS `mount`.
 
+### Execution modules
+
+* Read-only queries now live in their own registry, reachable from
+  `halite call` and `halite run '*' call ...`: `disk.usage`,
+  `status.uptime`, `status.loadavg`, `network.interfaces`. They take no
+  requisites and change nothing. disk.usage is not implemented on Windows.
+
 ### Internals
 
 * New packages: internal/ca, internal/transport, internal/archive,

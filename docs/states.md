@@ -340,3 +340,28 @@ defaults to false, since unmounting now usually does not mean "and never
 mount it again".
 
 Windows: both are unsupported.
+
+# Execution modules
+
+Execution modules answer questions instead of converging anything. They
+are read-only, take no requisites, and are not usable in an SLS file —
+they run ad hoc, locally or across the fleet:
+
+```sh
+halite call disk.usage
+halite run '*' call disk.usage
+halite run 'os_family:FreeBSD' call status.loadavg
+```
+
+| Module | Reports |
+|---|---|
+| `disk.usage` | space per mounted filesystem: total, used, free, capacity, device, fstype |
+| `status.uptime` | seconds up, boot time, and a human form |
+| `status.loadavg` | 1, 5, and 15 minute load averages |
+| `network.interfaces` | index, MTU, flags, MAC, and addresses per interface |
+
+`disk.usage` reads the mount table the same way `mount.mounted` does and
+skips filesystems it cannot stat, so a dead NFS mount does not fail the
+whole query. It is not implemented on Windows. `status.*` read `/proc` on
+Linux and `sysctl` on the BSDs and macOS; `network.interfaces` is pure
+stdlib and works everywhere.

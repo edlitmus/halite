@@ -48,6 +48,15 @@ func (a *Agent) execute(ctx context.Context, job transport.Job) transport.JobRes
 	return result
 }
 
+// stringArgs widens wire arguments to the map shape modules expect.
+func stringArgs(in map[string]string) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
 // runStates fetches the tree and this agent's pillar, then runs the same
 // loader and engine as `halite apply`.
 func (a *Agent) runStates(ctx context.Context, job transport.Job, result transport.JobResult) transport.JobResult {
@@ -101,9 +110,19 @@ func (a *Agent) runStates(ctx context.Context, job transport.Job, result transpo
 // runCall runs a single state function ad hoc, the fleet-wide equivalent of
 // `halite call`.
 func (a *Agent) runCall(ctx context.Context, job transport.Job, result transport.JobResult) transport.JobResult {
+	if execFn, ok := modules.ExecRegistry[job.Fn]; ok {
+		data, err := execFn(&modules.Ctx{Grains: a.grains}, stringArgs(job.Args))
+		if err != nil {
+			result.Error = err.Error()
+			return result
+		}
+		result.Ok = true
+		result.Data = data
+		return result
+	}
 	fn, ok := modules.Registry[job.Fn]
 	if !ok {
-		result.Error = fmt.Sprintf("unknown state function %q", job.Fn)
+		result.Error = fmt.Sprintf("unknown function %q", job.Fn)
 		return result
 	}
 	pillarData, err := a.fetchPillar(ctx)
@@ -112,10 +131,7 @@ func (a *Agent) runCall(ctx context.Context, job transport.Job, result transport
 		return result
 	}
 
-	args := make(map[string]any, len(job.Args))
-	for k, v := range job.Args {
-		args[k] = v
-	}
+	args := stringArgs(job.Args)
 	res := modules.Result{Ok: true}
 	if comment, gated := modules.CheckGates(args); gated {
 		res.Comment = comment
