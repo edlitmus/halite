@@ -8,7 +8,7 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.1.0 — masterless mode.** The equivalent of
+**Status: v0.2.0 — masterless mode.** The equivalent of
 `salt-call --local state.apply`. The master/minion transport layer is the
 next phase; see [docs/salt-parity.md](docs/salt-parity.md) for the full
 roadmap.

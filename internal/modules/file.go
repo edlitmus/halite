@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -15,12 +16,58 @@ func init() {
 	register("file.absent", fileAbsent)
 }
 
-// fileManaged ensures a file exists with the given contents/source and mode.
+// resolveOwner turns user/group names (or numeric IDs) into uid/gid.
+// Returns -1 for unspecified fields.
+func resolveOwner(userName, groupName string) (uid, gid int, err error) {
+	uid, gid = -1, -1
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if userName != "" {
+		if n, e := strconv.Atoi(userName); e == nil {
+			uid = n
+		} else {
+			u, e := user.Lookup(userName)
+			if e != nil {
+				return uid, gid, fmt.Errorf("user %q: %v", userName, e)
+			}
+			uid, _ = strconv.Atoi(u.Uid)
+		}
+	}
+	if groupName != "" {
+		if n, e := strconv.Atoi(groupName); e == nil {
+			gid = n
+		} else {
+			g, e := user.LookupGroup(groupName)
+			if e != nil {
+				return uid, gid, fmt.Errorf("group %q: %v", groupName, e)
+			}
+			gid, _ = strconv.Atoi(g.Gid)
+		}
+	}
+	return
+}
+
+func ownerDrift(path string, wantUID, wantGID int) bool {
+	if wantUID < 0 && wantGID < 0 {
+		return false
+	}
+	cuid, cgid, ok := statOwner(path)
+	if !ok {
+		return false
+	}
+	return (wantUID >= 0 && cuid != wantUID) || (wantGID >= 0 && cgid != wantGID)
+}
+
+// fileManaged ensures a file exists with the given contents/source, mode,
+// and ownership.
 //
-//	/usr/local/etc/motd:
+//	/usr/local/etc/app.conf:
 //	  file.managed:
-//	    - contents: hello
-//	    - mode: "0644"
+//	    - source: files/app.conf
+//	    - mode: "0640"
+//	    - user: www
+//	    - group: www
 //	    - makedirs: true
 func fileManaged(c *Ctx, id string, args map[string]any) Result {
 	name := Str(args, "name", id)
@@ -28,6 +75,15 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 	source := Str(args, "source", "")
 	mode := Str(args, "mode", "")
 	makedirs := Bool(args, "makedirs", false)
+	showDiff := Bool(args, "show_diff", true)
+
+	wantUID, wantGID, ownerErr := resolveOwner(Str(args, "user", ""), Str(args, "group", ""))
+	if ownerErr != nil && !c.Test {
+		return resFail("%v", ownerErr)
+	}
+	// In test mode a referenced user/group may not exist yet (it would be
+	// created by an earlier state); defer resolution instead of failing.
+	ownerPending := ownerErr != nil
 
 	var desired []byte
 	haveDesired := false
@@ -54,7 +110,6 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 	current, readErr := os.ReadFile(name)
 	exists := readErr == nil
 
-	changes := map[string]string{}
 	needContent := haveDesired && (!exists || !bytes.Equal(current, desired))
 	needCreate := !exists && !haveDesired
 
@@ -75,8 +130,17 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 		}
 	}
 
-	if !needContent && !needCreate && !needMode {
+	needOwner := ownerPending ||
+		(!exists && (wantUID >= 0 || wantGID >= 0)) ||
+		(exists && ownerDrift(name, wantUID, wantGID))
+
+	if !needContent && !needCreate && !needMode && !needOwner {
 		return resOK(fmt.Sprintf("file %s is in the correct state", name))
+	}
+
+	changes := map[string]string{}
+	if needContent && showDiff {
+		changes["diff"] = lineDiff(current, desired)
 	}
 
 	if c.Test {
@@ -85,6 +149,13 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 		}
 		if needMode {
 			changes["mode"] = "would be set to " + mode
+		}
+		if needOwner {
+			if ownerPending {
+				changes["owner"] = "would be set (owner not yet present)"
+			} else {
+				changes["owner"] = "would be updated"
+			}
 		}
 		return Result{Ok: true, Changed: true, Comment: fmt.Sprintf("file %s would be updated", name), Changes: changes}
 	}
@@ -117,28 +188,59 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 		}
 		changes["mode"] = mode
 	}
+	if needOwner {
+		if err := chown(name, wantUID, wantGID); err != nil {
+			return resFail("chown %s: %v", name, err)
+		}
+		changes["owner"] = fmt.Sprintf("uid=%d gid=%d", wantUID, wantGID)
+	}
 	return resChanged(fmt.Sprintf("file %s updated", name), changes)
 }
 
 func fileDirectory(c *Ctx, id string, args map[string]any) Result {
 	name := Str(args, "name", id)
 	mode := Str(args, "mode", "")
-	if st, err := os.Stat(name); err == nil && st.IsDir() {
+	wantUID, wantGID, ownerErr := resolveOwner(Str(args, "user", ""), Str(args, "group", ""))
+	if ownerErr != nil && !c.Test {
+		return resFail("%v", ownerErr)
+	}
+	ownerPending := ownerErr != nil
+
+	st, statErr := os.Stat(name)
+	exists := statErr == nil && st.IsDir()
+	needOwner := ownerPending || (exists && ownerDrift(name, wantUID, wantGID))
+
+	if exists && !needOwner {
 		return resOK(fmt.Sprintf("directory %s exists", name))
 	}
 	if c.Test {
-		return resWould(fmt.Sprintf("directory %s would be created", name))
+		if !exists {
+			return resWould(fmt.Sprintf("directory %s would be created", name))
+		}
+		return resWould(fmt.Sprintf("directory %s ownership would be updated", name))
 	}
-	perm := os.FileMode(0o755)
-	if mode != "" && runtime.GOOS != "windows" {
-		if n, err := strconv.ParseUint(mode, 8, 32); err == nil {
-			perm = os.FileMode(n)
+	changes := map[string]string{}
+	if !exists {
+		perm := os.FileMode(0o755)
+		if mode != "" && runtime.GOOS != "windows" {
+			if n, err := strconv.ParseUint(mode, 8, 32); err == nil {
+				perm = os.FileMode(n)
+			}
+		}
+		if err := os.MkdirAll(name, perm); err != nil {
+			return resFail("mkdir %s: %v", name, err)
+		}
+		changes["directory"] = "created"
+	}
+	if wantUID >= 0 || wantGID >= 0 {
+		if !exists || needOwner {
+			if err := chown(name, wantUID, wantGID); err != nil {
+				return resFail("chown %s: %v", name, err)
+			}
+			changes["owner"] = fmt.Sprintf("uid=%d gid=%d", wantUID, wantGID)
 		}
 	}
-	if err := os.MkdirAll(name, perm); err != nil {
-		return resFail("mkdir %s: %v", name, err)
-	}
-	return resChanged(fmt.Sprintf("directory %s created", name), map[string]string{"directory": "created"})
+	return resChanged(fmt.Sprintf("directory %s updated", name), changes)
 }
 
 func fileAbsent(c *Ctx, id string, args map[string]any) Result {

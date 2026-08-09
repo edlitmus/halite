@@ -208,10 +208,39 @@ func scalar(v string) any {
 }
 
 func unquote(s string) string {
-	if len(s) >= 2 {
-		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
-			return s[1 : len(s)-1]
+	if len(s) < 2 {
+		return s
+	}
+	if s[0] == '\'' && s[len(s)-1] == '\'' {
+		return s[1 : len(s)-1]
+	}
+	if s[0] == '"' && s[len(s)-1] == '"' {
+		// Double quotes get escape processing, per YAML semantics.
+		body := s[1 : len(s)-1]
+		var b strings.Builder
+		for i := 0; i < len(body); i++ {
+			if body[i] == '\\' && i+1 < len(body) {
+				i++
+				switch body[i] {
+				case 'n':
+					b.WriteByte('\n')
+				case 't':
+					b.WriteByte('\t')
+				case 'r':
+					b.WriteByte('\r')
+				case '\\':
+					b.WriteByte('\\')
+				case '"':
+					b.WriteByte('"')
+				default:
+					b.WriteByte('\\')
+					b.WriteByte(body[i])
+				}
+				continue
+			}
+			b.WriteByte(body[i])
 		}
+		return b.String()
 	}
 	return s
 }

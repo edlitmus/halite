@@ -3,6 +3,19 @@
 All state functions accept `name` (defaulting to the state ID) and honor
 `-test`. Boolean args accept `true/yes/1/on`.
 
+## Universal gates
+
+Every state (not just `cmd.*`) accepts three gate arguments, evaluated by
+the engine before the state runs:
+
+| Arg | Skips the state when... |
+|---|---|
+| `creates` | this path exists |
+| `unless` | this shell command exits 0 |
+| `onlyif` | this shell command exits non-zero |
+
+A gated skip reports `Result: True` with no changes.
+
 ## file
 
 ### file.managed
@@ -15,10 +28,15 @@ Ensure a file exists with the given content and mode.
 | `contents` | inline content; a trailing newline is added if missing |
 | `source` | path to a source file; relative paths resolve against the SLS file's directory |
 | `mode` | octal string, e.g. `"0644"` (ignored on Windows) |
+| `user` / `group` | owner by name or numeric ID (ignored on Windows) |
 | `makedirs` | create parent directories |
+| `show_diff` | include a line diff in Changes (default true) |
 
 If neither `contents` nor `source` is given, the file is created empty if
-absent (touch semantics). Ownership (`user`/`group`) lands in P1.
+absent (touch semantics). Double-quoted `contents` process `\n` and `\t`
+escapes; single quotes are literal. Content drift is reported as a -/+
+line diff (suppressed for binary or >128KB content, or with
+`show_diff: false`).
 
 ```yaml
 /usr/local/etc/app.conf:
@@ -30,7 +48,7 @@ absent (touch semantics). Ownership (`user`/`group`) lands in P1.
 
 ### file.directory
 
-Ensure a directory exists. Args: `name`, `mode`.
+Ensure a directory exists. Args: `name`, `mode`, `user`, `group`.
 
 ### file.absent
 
@@ -95,15 +113,12 @@ Ensure a service is stopped. Args: `name`.
 ### cmd.run
 
 Run a command through the platform shell (`/bin/sh -c`, `cmd /C`). Runs on
-every apply unless gated.
+every apply unless gated (see Universal gates above).
 
 | Arg | Description |
 |---|---|
 | `name` | the command (default: state ID) |
 | `cwd` | working directory |
-| `creates` | skip if this path exists |
-| `unless` | skip if this shell command exits 0 |
-| `onlyif` | skip unless this shell command exits 0 |
 | `env` | list of `KEY=value` strings |
 
 Non-zero exit fails the state; stdout/stderr/rc are reported in Changes.
@@ -126,4 +141,94 @@ reload_pf:
     - name: pfctl -f /etc/pf.conf
     - watch:
       - file: /etc/pf.conf
+```
+
+## user
+
+Backends: pw(8) on FreeBSD, useradd/usermod on Linux, sysadminctl on
+macOS (create/delete only), `net user` on Windows (existence only).
+
+### user.present
+
+| Arg | Description |
+|---|---|
+| `name` | username (default: state ID) |
+| `uid` | numeric uid |
+| `shell` | login shell |
+| `home` | home directory |
+| `gecos` | comment / full name |
+| `groups` | supplementary groups; membership is additive |
+| `createhome` | create the home directory (default true) |
+| `system` | system account (Linux `-r`) |
+
+On FreeBSD and Linux, uid/shell/home/gecos drift is detected from
+/etc/passwd and repaired with pw usermod / usermod. Group membership is
+merged (listed groups are added; unlisted memberships are kept).
+
+```yaml
+deploy:
+  user.present:
+    - uid: 1050
+    - shell: /bin/sh
+    - groups:
+      - wheel
+```
+
+### user.absent
+
+Args: `name`, `purge` (also remove the home directory).
+
+## group
+
+### group.present / group.absent
+
+Args: `name`, `gid` (present only). Backends: pw(8), groupadd/groupdel,
+dseditgroup, `net localgroup`.
+
+## cron
+
+Entries are identified by a `# halite: <identifier>` marker line, so the
+command or schedule can change without orphaning the entry. Not supported
+on Windows (scheduled tasks: planned).
+
+### cron.present
+
+| Arg | Description |
+|---|---|
+| `name` | the command (default: state ID) |
+| `minute` `hour` `daymonth` `month` `dayweek` | schedule fields (default `*`) |
+| `user` | crontab owner (default: invoking user) |
+| `identifier` | marker identity (default: state ID) |
+
+```yaml
+converge:
+  cron.present:
+    - name: /usr/local/bin/halite apply /usr/local/etc/halite/base.sls
+    - minute: "*/30"
+    - user: root
+```
+
+### cron.absent
+
+Removes the marker and its entry. Args: `name`/`identifier`, `user`.
+
+## sysctl
+
+### sysctl.present
+
+Sets a sysctl at runtime and persists it.
+
+| Arg | Description |
+|---|---|
+| `name` | sysctl key (default: state ID) |
+| `value` | desired value (required) |
+| `persist` | also write the config file (default true) |
+| `config` | persist target; defaults to /etc/sysctl.conf (FreeBSD) or /etc/sysctl.d/99-halite.conf (Linux) |
+
+macOS: runtime only. Windows: unsupported.
+
+```yaml
+kern.ipc.somaxconn:
+  sysctl.present:
+    - value: 1024
 ```

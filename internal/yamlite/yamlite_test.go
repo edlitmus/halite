@@ -83,3 +83,20 @@ func TestInlineComment(t *testing.T) {
 		t.Errorf("key = %q", got)
 	}
 }
+
+func TestDoubleQuoteEscapes(t *testing.T) {
+	v, err := Parse(`key: "line1\nline2\ttab"` + "\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, _ := v.(*Map).Get("key"); got != "line1\nline2\ttab" {
+		t.Errorf("key = %q", got)
+	}
+}
+
+func TestSingleQuoteLiteral(t *testing.T) {
+	v, _ := Parse(`key: 'no\nescapes'` + "\n")
+	if got, _ := v.(*Map).Get("key"); got != `no\nescapes` {
+		t.Errorf("key = %q", got)
+	}
+}

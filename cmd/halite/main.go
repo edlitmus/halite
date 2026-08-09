@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/modules"
@@ -20,7 +21,7 @@ import (
 	"github.com/edlitmus/halite/internal/yamlite"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -48,7 +49,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   halite grains [-json]              show system grains
-  halite apply [-test] <file.sls>    apply a state file
+  halite apply [-test] [-json] <file.sls>  apply a state file
   halite call <module.fn> [k=v ...]  run a single state function
   halite version`)
 }
@@ -100,7 +101,12 @@ func cmdCall(args []string) {
 		callArgs[k] = v
 	}
 	ctx := &modules.Ctx{Grains: grains.Collect()}
-	r := fn(ctx, name, callArgs)
+	var r modules.Result
+	if comment, gated := modules.CheckGates(callArgs); gated {
+		r = modules.Result{Ok: true, Comment: comment}
+	} else {
+		r = fn(ctx, name, callArgs)
+	}
 	printResult(name, name, r)
 	if !r.Ok {
 		os.Exit(1)
@@ -110,6 +116,7 @@ func cmdCall(args []string) {
 func cmdApply(args []string) {
 	fs := flag.NewFlagSet("apply", flag.ExitOnError)
 	test := fs.Bool("test", false, "dry run: report changes without applying")
+	asJSON := fs.Bool("json", false, "output results as JSON")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: halite apply [-test] <file.sls>")
@@ -150,6 +157,7 @@ func cmdApply(args []string) {
 		return modules.Result{}, false
 	}
 
+	var jsonResults []map[string]any
 	succeeded, failed, changed := 0, 0, 0
 	for _, st := range states {
 		// Skip if any requisite failed.
@@ -174,15 +182,23 @@ func cmdApply(args []string) {
 					break
 				}
 			}
-			fn, ok := modules.Registry[st.Name()]
-			if !ok {
+			if comment, gated := modules.CheckGates(callArgs); gated {
+				res = modules.Result{Ok: true, Comment: comment}
+			} else if fn, ok := modules.Registry[st.Name()]; !ok {
 				res = modules.Result{Ok: false, Comment: fmt.Sprintf("state function %q not found", st.Name())}
 			} else {
 				res = fn(ctx, st.ID, callArgs)
 			}
 		}
 		executed = append(executed, done{Module: st.Module, ID: st.ID, Res: res})
-		printResult(st.ID, st.Name(), res)
+		if !*asJSON {
+			printResult(st.ID, st.Name(), res)
+		} else {
+			jsonResults = append(jsonResults, map[string]any{
+				"id": st.ID, "function": st.Name(), "result": res.Ok,
+				"changed": res.Changed, "comment": res.Comment, "changes": res.Changes,
+			})
+		}
 		if res.Ok {
 			succeeded++
 			if res.Changed {
@@ -193,6 +209,21 @@ func cmdApply(args []string) {
 		}
 	}
 
+	if *asJSON {
+		out := map[string]any{
+			"results": jsonResults,
+			"summary": map[string]any{
+				"succeeded": succeeded, "failed": failed,
+				"changed": changed, "total": len(states), "test": *test,
+			},
+		}
+		b, _ := json.MarshalIndent(out, "", "  ")
+		fmt.Println(string(b))
+		if failed > 0 {
+			os.Exit(1)
+		}
+		return
+	}
 	fmt.Println("\nSummary")
 	fmt.Println("------------")
 	fmt.Printf("Succeeded: %d (changed=%d)\n", succeeded, changed)
@@ -227,7 +258,15 @@ func printResult(id, fn string, r modules.Result) {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Printf("   %s: %s\n", k, r.Changes[k])
+			v := r.Changes[k]
+			if strings.Contains(v, "\n") {
+				fmt.Printf("   %s: |\n", k)
+				for _, l := range strings.Split(v, "\n") {
+					fmt.Printf("     %s\n", l)
+				}
+				continue
+			}
+			fmt.Printf("   %s: %s\n", k, v)
 		}
 	}
 }

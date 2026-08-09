@@ -5,6 +5,7 @@ package modules
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -142,4 +143,52 @@ func shellRun(command, cwd string, env []string) (stdout, stderr string, rc int,
 func has(bin string) bool {
 	_, err := exec.LookPath(bin)
 	return err == nil
+}
+
+// runIn executes argv with stdin supplied.
+func runIn(stdin, name string, arg ...string) (stdout, stderr string, rc int, err error) {
+	cmd := exec.Command(name, arg...)
+	cmd.Stdin = strings.NewReader(stdin)
+	var out, errb strings.Builder
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	err = cmd.Run()
+	rc = -1
+	if cmd.ProcessState != nil {
+		rc = cmd.ProcessState.ExitCode()
+	}
+	if err != nil {
+		if _, isExit := err.(*exec.ExitError); isExit {
+			err = nil
+		}
+	}
+	return out.String(), errb.String(), rc, err
+}
+
+// CheckGates evaluates the universal state gates (creates, unless, onlyif)
+// and strips them from args. It returns a skip comment and true when the
+// state should be skipped as already satisfied.
+func CheckGates(args map[string]any) (string, bool) {
+	creates := Str(args, "creates", "")
+	unless := Str(args, "unless", "")
+	onlyif := Str(args, "onlyif", "")
+	delete(args, "creates")
+	delete(args, "unless")
+	delete(args, "onlyif")
+	if creates != "" {
+		if _, err := os.Stat(creates); err == nil {
+			return fmt.Sprintf("%s exists, state skipped", creates), true
+		}
+	}
+	if unless != "" {
+		if _, _, rc, _ := shellRun(unless, "", nil); rc == 0 {
+			return "unless condition met, state skipped", true
+		}
+	}
+	if onlyif != "" {
+		if _, _, rc, _ := shellRun(onlyif, "", nil); rc != 0 {
+			return "onlyif condition not met, state skipped", true
+		}
+	}
+	return "", false
 }

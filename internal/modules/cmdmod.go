@@ -2,7 +2,6 @@ package modules
 
 import (
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -11,36 +10,20 @@ func init() {
 	register("cmd.wait", cmdWait)
 }
 
-// cmdRun runs a shell command, gated by creates / unless / onlyif.
+// cmdRun runs a shell command. The universal gates (creates, unless,
+// onlyif) apply to all states and are evaluated by the engine before this
+// function is called.
 //
 //	rebuild_cache:
 //	  cmd.run:
 //	    - name: make cache
 //	    - cwd: /srv/app
-//	    - unless: test -f /srv/app/.cache
+//	    - creates: /srv/app/.cache
 func cmdRun(c *Ctx, id string, args map[string]any) Result {
 	command := Str(args, "name", id)
 	cwd := Str(args, "cwd", "")
-	creates := Str(args, "creates", "")
-	unless := Str(args, "unless", "")
-	onlyif := Str(args, "onlyif", "")
 	env := List(args, "env")
 
-	if creates != "" {
-		if _, err := os.Stat(creates); err == nil {
-			return resOK(fmt.Sprintf("%s exists, command not run", creates))
-		}
-	}
-	if unless != "" {
-		if _, _, rc, _ := shellRun(unless, cwd, env); rc == 0 {
-			return resOK("unless condition met, command not run")
-		}
-	}
-	if onlyif != "" {
-		if _, _, rc, _ := shellRun(onlyif, cwd, env); rc != 0 {
-			return resOK("onlyif condition not met, command not run")
-		}
-	}
 	if c.Test {
 		return resWould(fmt.Sprintf("command %q would be run", command))
 	}

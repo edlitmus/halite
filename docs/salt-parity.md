@@ -19,12 +19,13 @@ not.
 | `salt-call --local <mod>.<fn>` | `halite call module.fn k=v` | done | |
 | `test=True` | `halite apply -test` | done | every module implements dry-run |
 | `grains.items` | `halite grains [-json]` | done | os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
-| Highstate output | Salt-style block output | done | JSON output: P1 |
+| Highstate output | Salt-style block output + `-json` | done | |
 | `state.highstate` / top.sls | targeting SLS sets by grain | P1 | top file + environment dirs |
 | Pillar | encrypted per-host data | P2 | Go-native: age-encrypted files, exposed as `{{ .Pillar.x }}` |
 | Requisites: require, watch | require, watch | done | watch triggers service restart / cmd.wait |
-| Requisites: onchanges, prereq, unless/onlyif state args | | P1 | unless/onlyif exist on cmd.* today |
-| Jinja templating | Go `text/template` | done | grains in scope; custom funcs (P1: `default`, `contains`, sequence helpers) |
+| Requisites: onchanges, prereq | | P1 | |
+| unless/onlyif/creates as universal state args | universal gates | done | evaluated by the engine for every state |
+| Jinja templating | Go `text/template` | done | grains in scope; funcs: default, contains, split, join, lower, upper, hasPrefix, hasSuffix |
 | Includes (`include:`) | | P1 | |
 
 ## Master/minion architecture
@@ -44,13 +45,13 @@ not.
 
 | Salt | halite | Status |
 |---|---|---|
-| file.managed / directory / absent | done | user/group ownership: P1; templates in sources: P1; diff output: P1 |
+| file.managed / directory / absent | done | ownership + line diffs done; templated sources: P1 |
 | pkg.installed / removed | done | backends: pkg(8), apt, dnf, yum, zypper, pacman, apk, brew, choco, winget. versions/repos: P1 |
 | service.running / dead | done | rc.d (+sysrc enable), systemd, sysvinit, launchd (partial), Windows SCM |
 | cmd.run / cmd.wait | done | unless, onlyif, creates, cwd, env |
-| user.present / group.present | P1 | pw(8) on FreeBSD, useradd, dscl, net user |
-| cron.present | P1 | crontab(1); Windows scheduled tasks P3 |
-| sysctl.present | P1 | FreeBSD/Linux |
+| user.present/absent, group.present/absent | done | pw(8), useradd/usermod, sysadminctl (partial), net user (partial); drift repair for uid/shell/home/gecos/groups |
+| cron.present/absent | done | crontab(1) with identifier markers; Windows scheduled tasks P3 |
+| sysctl.present | done | runtime + persist (sysctl.conf / sysctl.d); FreeBSD, Linux, macOS-runtime |
 | archive.extracted | P2 | stdlib tar/zip, no shelling out |
 | git.latest | P2 | shells to git |
 | mount.mounted | P2 | fstab handling per-OS |
@@ -75,9 +76,10 @@ their value is mostly fleet-wide queries (`halite '*' disk.usage`).
 
 ## Phases
 
-* **P1 — masterless completeness** (top files, includes, more modules,
-  user/group/cron/sysctl, file diffs and ownership, JSON output, template
-  funcs). Target: replace salt-call --local for real hosts.
+* **P1 — masterless completeness**. Done in 0.2: user/group/cron/sysctl,
+  file ownership + diffs, universal gates, JSON output, template funcs.
+  Remaining: top files, includes, templated sources, onchanges/prereq.
+  Target: replace salt-call --local for real hosts.
 * **P2 — transport** (mTLS HTTP/2 master+agent, key issuance, targeting,
   `halite ssh`, REST API, pillar). Target: replace a small salt-master.
 * **P3 — events** (event bus, beacons, reactor, mine, orchestration,

@@ -39,11 +39,30 @@ type TemplateData struct {
 	Grains map[string]any
 }
 
+// templateFuncs are helpers available in SLS templates, covering the most
+// common Jinja filters: {{ .Grains.x | default "y" }}, contains, split,
+// join, lower, upper, hasPrefix, hasSuffix.
+var templateFuncs = template.FuncMap{
+	"default": func(def, v any) any {
+		if v == nil || v == "" {
+			return def
+		}
+		return v
+	},
+	"contains":  strings.Contains,
+	"hasPrefix": strings.HasPrefix,
+	"hasSuffix": strings.HasSuffix,
+	"split":     strings.Split,
+	"join":      strings.Join,
+	"lower":     strings.ToLower,
+	"upper":     strings.ToUpper,
+}
+
 // Render runs src through text/template. Grains are available as
 // {{ .Grains.os_family }} etc. Standard template actions (if/range/with)
 // stand in for Salt's Jinja layer.
 func Render(name, src string, data TemplateData) (string, error) {
-	t, err := template.New(name).Option("missingkey=zero").Parse(src)
+	t, err := template.New(name).Option("missingkey=zero").Funcs(templateFuncs).Parse(src)
 	if err != nil {
 		return "", fmt.Errorf("template: %w", err)
 	}
