@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+P3 (events) in progress.
+
+* Event bus: the control plane publishes tagged events for enrollment,
+  agent hellos, job dispatches, and returns; agents post their own events
+  upward, with the source taken from their certificate so nobody can speak
+  for another host. Tags are slash-delimited with `*` inside a segment and
+  `**` across segments.
+* `GET /v1/events` streams newline-delimited JSON, flushed per event and
+  held open, with `?tag=` filtering and `?history=N` replay. Operator
+  certificates only — an agent may raise events but not read the fleet's.
+* `halite events [-tag PATTERN] [-history N] [-json]` tails it.
+* A subscriber that stops reading loses events rather than blocking the
+  control plane; the loss is counted.
+* See docs/events.md.
+
 ## 0.4.0 — 2026-08-09
 
 P2 (transport): pillar, the fleet CA, an mTLS control plane with agents,

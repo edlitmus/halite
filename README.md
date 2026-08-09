@@ -99,6 +99,7 @@ halite agents
 halite run '*' state.highstate -test
 halite run 'os_family:FreeBSD' state.apply web.nginx
 halite run 'web*' call pkg.installed name=nginx
+halite events -tag 'halite/job/**'
 ```
 
 mTLS 1.3 throughout, agent identity from the client certificate, and no
@@ -152,6 +153,7 @@ grains are available as `{{ .Grains.os_family }}`. See
 * [docs/writing-states.md](docs/writing-states.md) — SLS format, templating, requisites
 * [docs/states.md](docs/states.md) — state module reference (file, pkg, service, cmd)
 * [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
+* [docs/events.md](docs/events.md) — the event bus, tags, streaming
 * [docs/agentless.md](docs/agentless.md) — `halite ssh`, rosters, bootstrapping
 * [docs/pki.md](docs/pki.md) — keys, certificates, and agent enrollment
 * [docs/pillar-security.md](docs/pillar-security.md) — protecting pillar data

@@ -36,7 +36,8 @@ not.
 | ZeroMQ transport, AES key exchange | mTLS over HTTP/2 (stdlib) | done | TLS 1.3 only, long-poll job delivery; no ZeroMQ, no custom crypto |
 | Minion key accept/reject | TLS client-cert issuance (`halite key`) | done | CSR flow replaces Salt's key dance; see docs/pki.md |
 | Targeting (`salt '<tgt>' ...`) | `halite run <target> <kind>` | done | one target language shared with top files |
-| Event bus / reactor | event stream + reactor rules | P3 | long-poll delivery covers jobs today |
+| Event bus | tagged event stream (`/v1/events`, `halite events`) | done | in-memory, glob tag matching; see docs/events.md |
+| Reactor | rules matching tags to jobs | P3 | |
 | Beacons | agent-side watchers emitting events | P3 | |
 | salt-ssh (agentless) | `halite ssh` pushing the static binary | done | copies one binary, ships the tree, collects JSON; pillar rendered operator-side. See docs/agentless.md |
 | Syndic | | out | flat fleets over mTLS scale far enough |

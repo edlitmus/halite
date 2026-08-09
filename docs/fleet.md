@@ -78,6 +78,9 @@ non-zero if any agent failed or if any targeted agent never answered.
 
 Set `HALITE_MASTER` to avoid repeating `-master` on every command.
 
+Watch what the fleet is doing with `halite events` — see
+[events.md](events.md).
+
 ## The `id` grain
 
 Under a control plane, an agent's `id` grain is the identity it enrolled

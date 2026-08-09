@@ -1,16 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -335,4 +338,77 @@ func printJobInfo(info transport.JobInfo) {
 // remote output in the local format.
 func moduleResult(ok, changed bool, comment string, changes map[string]string) modules.Result {
 	return modules.Result{Ok: ok, Changed: changed, Comment: comment, Changes: changes}
+}
+
+const eventsUsage = `usage: halite events [-tag PATTERN] [-history N] [flags]
+
+Tails the control plane's event bus. Tags are slash-delimited; '*' matches
+within one segment and '**' matches any number:
+
+  halite events
+  halite events -tag 'halite/job/**'
+  halite events -tag 'halite/agent/*/hello'
+  halite events -tag 'halite/beacon/**' -history 50 -json
+
+Runs until interrupted.`
+
+func cmdEvents(args []string) {
+	fs := flag.NewFlagSet("events", flag.ExitOnError)
+	masterAddr := fs.String("master", os.Getenv("HALITE_MASTER"), "control plane host[:port]")
+	pkiFlag := fs.String("pki", "", "PKI directory holding the operator certificate")
+	tag := fs.String("tag", "**", "tag pattern to subscribe to")
+	history := fs.Int("history", -1, "replay this many past events first (0 for everything kept)")
+	asJSON := fs.Bool("json", false, "print raw event JSON, one per line")
+	if rest := parseFlags(fs, args); len(rest) > 0 {
+		fmt.Fprintln(os.Stderr, eventsUsage)
+		os.Exit(2)
+	}
+
+	path := transport.PathEvents + "?tag=" + url.QueryEscape(*tag)
+	if *history >= 0 {
+		path += "&history=" + strconv.Itoa(*history)
+	}
+
+	// An event tail is open-ended, so it gets its own client rather than the
+	// request-shaped one with a timeout.
+	client := operatorClient(*masterAddr, resolvePKI(*pkiFlag))
+	client.HTTP.Timeout = 0
+
+	ctx, stop := signalContext()
+	defer stop()
+
+	body, err := client.Stream(ctx, path)
+	if err != nil {
+		fatal("%v", err)
+	}
+	defer body.Close()
+
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), transport.MaxBodyBytes)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue // keepalive
+		}
+		if *asJSON {
+			fmt.Println(line)
+			continue
+		}
+		var ev transport.Event
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			fmt.Println(line)
+			continue
+		}
+		printEvent(ev)
+	}
+	if err := scanner.Err(); err != nil && ctx.Err() == nil {
+		fatal("event stream: %v", err)
+	}
+}
+
+func printEvent(ev transport.Event) {
+	fmt.Printf("%s  %-44s %s\n", ev.Time.Local().Format("15:04:05"), ev.Tag, ev.Source)
+	if len(ev.Data) > 0 {
+		printTree(ev.Data, "    ")
+	}
 }

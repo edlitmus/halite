@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/ca"
+	"github.com/edlitmus/halite/internal/event"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -68,6 +69,7 @@ type Server struct {
 	cfg      Config
 	ca       *ca.Store
 	registry *registry
+	bus      *event.Bus
 	log      *log.Logger
 }
 
@@ -78,9 +80,14 @@ func New(cfg Config, logger *log.Logger) *Server {
 		cfg:      cfg,
 		ca:       &ca.Store{Dir: cfg.PKIDir},
 		registry: newRegistry(cfg.OnlineAfter, cfg.JobTTL),
+		bus:      event.NewBus(),
 		log:      logger,
 	}
 }
+
+// Bus exposes the event bus so returners and the reactor can subscribe
+// before the server starts listening.
+func (s *Server) Bus() *event.Bus { return s.bus }
 
 // Handler builds the routing table. Only enrollment is reachable without a
 // client certificate; everything else is wrapped in a role check.
@@ -94,6 +101,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle(transport.PathPillar, s.agentOnly(s.handlePillar))
 	mux.Handle(transport.PathStateTree, s.agentOnly(s.handleStateTree))
 
+	mux.Handle(transport.PathEvents, s.eventsHandler())
 	mux.Handle(transport.PathDispatch, s.adminOnly(s.handleDispatch))
 	mux.Handle(transport.PathAgents, s.adminOnly(s.handleAgents))
 	mux.Handle(transport.PathJobInfo, s.adminOnly(s.handleJobInfo))

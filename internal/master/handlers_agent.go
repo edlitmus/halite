@@ -1,11 +1,13 @@
 package master
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/edlitmus/halite/internal/archive"
 	"github.com/edlitmus/halite/internal/ca"
+	"github.com/edlitmus/halite/internal/event"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -39,6 +41,8 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		s.log.Printf("auto-accepted %q from %s", req.ID, r.RemoteAddr)
 		state = ca.StateAccepted
 	}
+	s.bus.Emit(fmt.Sprintf("halite/key/%s/%s", req.ID, state), event.SourceMaster,
+		map[string]any{"id": req.ID, "state": string(state)})
 
 	resp := transport.EnrollResponse{State: string(state)}
 	if state == ca.StateAccepted {
@@ -48,6 +52,8 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		resp.Cert = string(certPEM)
+		s.bus.Emit(fmt.Sprintf(event.TagAgentEnrolled, req.ID), event.SourceMaster,
+			map[string]any{"id": req.ID})
 	} else {
 		s.log.Printf("enrollment %s for %q from %s", state, req.ID, r.RemoteAddr)
 	}
@@ -68,6 +74,8 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request, peer transp
 	}
 	s.registry.touch(peer.ID, req.Grains, req.Version)
 	s.log.Printf("hello from %q (halite %s)", peer.ID, req.Version)
+	s.bus.Emit(fmt.Sprintf(event.TagAgentHello, peer.ID), peer.ID,
+		map[string]any{"id": peer.ID, "version": req.Version})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -117,6 +125,14 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, peer tran
 	}
 	s.log.Printf("job %s: %q returned ok=%v changed=%d failed=%d",
 		res.JobID, peer.ID, res.Ok, res.Changed, res.Failed)
+	returned := map[string]any{
+		"job_id": res.JobID, "result": res.Ok,
+		"succeeded": res.Succeeded, "failed": res.Failed, "changed": res.Changed,
+	}
+	if res.Error != "" {
+		returned["error"] = res.Error
+	}
+	s.bus.Emit(fmt.Sprintf(event.TagJobReturn, res.JobID, peer.ID), peer.ID, returned)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 

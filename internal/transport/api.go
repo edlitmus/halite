@@ -16,6 +16,7 @@ const (
 	PathPillar    = "/v1/pillar"
 	PathStateTree = "/v1/statetree"
 
+	PathEvents   = "/v1/events"
 	PathDispatch = "/v1/dispatch"
 	PathAgents   = "/v1/agents"
 	PathJobInfo  = "/v1/job/" // + job id
@@ -125,6 +126,16 @@ type JobInfo struct {
 	Job       Job         `json:"job"`
 	Expecting []string    `json:"expecting"`
 	Results   []JobResult `json:"results"`
+}
+
+// Event is one thing that happened, as it crosses the wire. It mirrors
+// internal/event.Event; agents post their own, operators stream them.
+type Event struct {
+	ID     string         `json:"id"`
+	Tag    string         `json:"tag"`
+	Time   time.Time      `json:"time"`
+	Source string         `json:"source"`
+	Data   map[string]any `json:"data,omitempty"`
 }
 
 // ErrorResponse is the body of every non-2xx reply.

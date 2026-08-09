@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/event"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -44,6 +45,10 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request, peer tra
 	sort.Strings(matched)
 	s.log.Printf("job %s: %s on %q dispatched to %d agent(s) by %q",
 		job.ID, job.Kind, job.Target, len(matched), peer.ID)
+	s.bus.Emit(fmt.Sprintf(event.TagJobDispatch, job.ID), peer.ID, map[string]any{
+		"job_id": job.ID, "kind": job.Kind, "target": job.Target,
+		"test": job.Test, "agents": matched,
+	})
 	writeJSON(w, http.StatusOK, transport.DispatchResponse{JobID: job.ID, Agents: matched})
 }
 

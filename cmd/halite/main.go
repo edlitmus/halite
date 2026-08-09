@@ -56,6 +56,8 @@ func main() {
 		cmdAgents(os.Args[2:])
 	case "ssh":
 		cmdSSH(os.Args[2:])
+	case "events":
+		cmdEvents(os.Args[2:])
 	case "version":
 		fmt.Println("halite " + version)
 	case "-h", "--help", "help":
@@ -83,6 +85,7 @@ fleet mode:
   halite agent -master HOST                run the agent on a managed host
   halite run <target> <kind> [args]        dispatch work and collect results
   halite agents                            list the fleet
+  halite events [-tag PATTERN]             tail the event bus
 
 agentless:
   halite ssh <hosts> <kind> [args]         push the binary over ssh and run`)

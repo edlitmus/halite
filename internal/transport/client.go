@@ -29,9 +29,12 @@ func NewJSONClient(host string, tlsCfg *tls.Config, timeout time.Duration) *Clie
 	return &Client{Host: host, HTTP: NewClient(tlsCfg, timeout)}
 }
 
-// URL builds an absolute URL for a control plane path.
+// URL builds an absolute URL for a control plane path, which may carry a
+// query string. Splitting it here keeps callers from having to escape the
+// path and build the query separately.
 func (c *Client) URL(path string) string {
-	return (&url.URL{Scheme: "https", Host: c.Host, Path: path}).String()
+	path, query, _ := strings.Cut(path, "?")
+	return (&url.URL{Scheme: "https", Host: c.Host, Path: path, RawQuery: query}).String()
 }
 
 // Get performs a GET and decodes the JSON response into out, which may be
