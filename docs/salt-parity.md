@@ -53,9 +53,9 @@ not.
 | user.present/absent, group.present/absent | done | pw(8), useradd/usermod, sysadminctl (partial), net user (partial); drift repair for uid/shell/home/gecos/groups |
 | cron.present/absent | done | crontab(1) with identifier markers; Windows scheduled tasks P3 |
 | sysctl.present | done | runtime + persist (sysctl.conf / sysctl.d); FreeBSD, Linux, macOS-runtime |
-| archive.extracted | P2 | tar half done in internal/archive (safe extraction); the state module and zip are pending |
-| git.latest | P2 | shells to git |
-| mount.mounted | P2 | fstab handling per-OS |
+| archive.extracted | done | tar, tar.gz, zip; local or http(s) source with a required sha256 for remote; traversal-safe extraction |
+| git.latest | done | shells to git; refuses dirty checkouts and foreign remotes unless forced |
+| mount.mounted / unmounted | done | fstab per-OS; FreeBSD `mount -p`, Linux /proc/self/mounts, macOS `mount` |
 | network.managed | out | too OS-entangled; use file + service |
 
 ## Execution modules (ad hoc)

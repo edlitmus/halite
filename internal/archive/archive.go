@@ -186,11 +186,7 @@ func safeJoin(root, name string) (string, error) {
 }
 
 func entryMode(header *tar.Header, def os.FileMode) os.FileMode {
-	mode := header.FileInfo().Mode().Perm()
-	if mode == 0 {
-		return def
-	}
-	return mode
+	return entryPerm(header.FileInfo().Mode(), def)
 }
 
 // writeEntry copies one file, refusing to exceed the remaining budget.

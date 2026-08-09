@@ -233,3 +233,110 @@ kern.ipc.somaxconn:
   sysctl.present:
     - value: 1024
 ```
+
+## archive
+
+### archive.extracted
+
+Unpacks a tar, tar.gz, or zip archive into a directory.
+
+| Arg | Description |
+|---|---|
+| `name` | destination directory (default: state ID) |
+| `source` | archive path, or an http(s) URL |
+| `source_hash` | `sha256=<hex>` (or a bare hex digest) |
+| `archive_format` | `tar`, `tar.gz`, or `zip`; inferred from the extension otherwise |
+| `if_missing` | skip entirely if this path exists |
+
+A relative `source` resolves against the SLS file, like `file.managed`'s.
+A remote `source` **must** carry a `source_hash`: downloading and
+unpacking whatever the network returns is not something a state should do
+quietly. The download is verified before anything is extracted, and a file
+that fails the check is deleted rather than unpacked.
+
+Extraction refuses entries that would land outside the destination and
+anything that is not a regular file or directory, so a hostile archive
+cannot write to `/etc` or drop a symlink.
+
+Idempotency: the state compares the archive's top-level entries against
+the destination and does nothing when they are all present. `if_missing`
+is cheaper and more precise when you have a sentinel path.
+
+```yaml
+/opt/app:
+  archive.extracted:
+    - source: https://example.com/app-1.2.tar.gz
+    - source_hash: sha256=4f3c9e...
+    - if_missing: /opt/app/bin/app
+```
+
+## git
+
+### git.latest
+
+Clones a repository, or brings an existing checkout to the tip of a
+branch, tag, or commit. Shells out to `git`.
+
+| Arg | Description |
+|---|---|
+| `name` | repository URL (default: state ID) |
+| `target` | checkout directory (required) |
+| `rev` | branch, tag, or commit; defaults to origin's HEAD branch |
+| `depth` | shallow clone depth |
+| `force` | discard local modifications (default false) |
+
+It refuses to act when the target is a non-empty directory that is not a
+repository, when it is a checkout of a different remote, or when it has
+uncommitted changes and `force` is not set — silently discarding someone's
+work in progress is not a change a configuration run should make on its
+own.
+
+```yaml
+/usr/local/src/app:
+  git.latest:
+    - name: https://github.com/example/app.git
+    - target: /usr/local/src/app
+    - rev: main
+    - depth: 1
+```
+
+## mount
+
+### mount.mounted
+
+Mounts a filesystem and records it in `/etc/fstab`.
+
+| Arg | Description |
+|---|---|
+| `name` | mount point (default: state ID) |
+| `device` | device or remote path (required) |
+| `fstype` | filesystem type (required) |
+| `opts` | mount options (default `rw`) |
+| `dump` / `pass` | fstab columns 5 and 6 (default `0`) |
+| `mkmnt` | create the mount point (default true) |
+| `persist` | write the fstab entry (default true) |
+
+Mount options are enforced in fstab only, never against a filesystem that
+is already mounted: the kernel reports options nobody asked for, so
+comparing them would remount on every run. Unmount and mount again to
+change a live filesystem's options.
+
+If the mount point already holds a *different* device, the state fails
+rather than unmounting it.
+
+```yaml
+/data:
+  mount.mounted:
+    - device: /dev/ada1p1
+    - fstype: ufs
+    - opts: rw,noatime
+    - pass: "2"
+```
+
+### mount.unmounted
+
+Unmounts a filesystem. `persist: true` also removes the fstab entry; it
+defaults to false, since unmounting now usually does not mean "and never
+mount it again".
+
+Windows: both are unsupported.
