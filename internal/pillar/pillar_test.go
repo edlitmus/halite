@@ -3,6 +3,8 @@ package pillar
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -127,5 +129,47 @@ func TestListsAreReplacedNotMerged(t *testing.T) {
 	}
 	if len(hosts) != 1 || hosts[0] != "three" {
 		t.Errorf("hosts = %v, want [three]", hosts)
+	}
+}
+
+func TestPermissionWarningFlagsAReadableTree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix permission bits only")
+	}
+	root := t.TempDir()
+
+	if err := os.Chmod(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if warning := PermissionWarning(root); warning != "" {
+		t.Errorf("an owner-only tree must not warn: %q", warning)
+	}
+
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	warning := PermissionWarning(root)
+	if warning == "" {
+		t.Fatal("a world-readable pillar tree must warn")
+	}
+	if !strings.Contains(warning, "0755") || !strings.Contains(warning, root) {
+		t.Errorf("warning should name the tree and its mode: %q", warning)
+	}
+
+	// Group-readable counts too: the point is "beyond the owner".
+	if err := os.Chmod(root, 0o740); err != nil {
+		t.Fatal(err)
+	}
+	if PermissionWarning(root) == "" {
+		t.Error("a group-readable pillar tree must warn")
+	}
+}
+
+func TestPermissionWarningIsSilentWithoutATree(t *testing.T) {
+	if PermissionWarning("") != "" {
+		t.Error("an unset root must not warn")
+	}
+	if PermissionWarning(filepath.Join(t.TempDir(), "absent")) != "" {
+		t.Error("a missing tree is not a leak and must not warn")
 	}
 }

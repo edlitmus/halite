@@ -21,7 +21,7 @@ not.
 | `grains.items` | `halite grains [-json]` | done | id, os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
 | Highstate output | Salt-style block output + `-json` | done | |
 | `state.highstate` / top.sls | `halite apply` (no target) | done | grain and id glob targeting; single merged environment |
-| Pillar | pillar tree with its own top file | done | targeted, deep-merged, include-capable; exposed as `{{ .Pillar.x }}` in states and templated sources. Encryption at rest: P2 |
+| Pillar | pillar tree with its own top file | done | targeted, deep-merged, include-capable; exposed as `{{ .Pillar.x }}` in states and templated sources |
 | Requisites: require, watch | require, watch | done | watch triggers service restart / cmd.wait |
 | Requisites: onchanges, prereq | onchanges, prereq | done | prereq uses an automatic dry run of its target |
 | unless/onlyif/creates as universal state args | universal gates | done | evaluated by the engine for every state |
@@ -76,6 +76,7 @@ place; the registry makes adding one a single function.
 | salt-api (REST) | done (mTLS) | the control plane's JSON API is the REST API; authentication is client certificates, not tokens. A token/browser front door is P3 if it is ever wanted |
 | Windows-specific (registry, DSC) | P4/out | registry: P4; DSC: out |
 | Salt extensions / Python modules | out | custom modules are Go, compiled in; external process modules (exec JSON protocol) considered for P4 |
+| GPG pillar renderer (encryption at rest) | out | confidentiality is the directory mode; use sops/age/git-crypt to decrypt into the tree. ADR-9, docs/pillar-security.md |
 
 ## Phases
 
@@ -86,12 +87,11 @@ place; the registry makes adding one a single function.
   service/cmd/user/cron/sysctl workloads.
 * **P2 — transport** (mTLS HTTP/2 master+agent, key issuance, targeting,
   `halite ssh`, REST API, pillar). Target: replace a small salt-master.
-  **Complete as of 0.4** except pillar encryption at rest: pillar, the CA,
-  the mTLS control plane and agent, fleet targeting, `halite ssh`, the
-  archive/git/mount state modules, and the read-only execution modules.
-  halite now replaces a small salt-master. Encryption at rest is deferred
-  deliberately — age is not stdlib, so ADR-1 makes it a design decision
-  rather than a dependency, and it is tracked as the one open P2 item.
+  **Complete as of 0.4**: pillar, the CA, the mTLS control plane and agent,
+  fleet targeting, `halite ssh`, the archive/git/mount state modules, and
+  the read-only execution modules. halite now replaces a small salt-master.
+  Pillar encryption at rest was dropped rather than built (ADR-9):
+  confidentiality is the directory mode plus an external tool.
 * **P3 — events** (event bus, beacons, reactor, mine, orchestration,
   returners).
 * **P4 — long tail** (multi-master, Windows registry, external process

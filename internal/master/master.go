@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/ca"
+	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -121,6 +122,11 @@ func (s *Server) Run(ctx context.Context) error {
 	go func() {
 		s.log.Printf("control plane listening on %s (states %s, pillar %s)",
 			s.cfg.Addr, s.cfg.StatesRoot, s.cfg.PillarRoot)
+		// The control plane holds the whole fleet's pillar, so a tree every
+		// local account can read matters more here than anywhere else.
+		if warning := pillar.PermissionWarning(s.cfg.PillarRoot); warning != "" {
+			s.log.Print(warning)
+		}
 		if s.cfg.AutoAccept {
 			s.log.Print("WARNING: -auto-accept is on; any host that can reach this port will be enrolled")
 		}

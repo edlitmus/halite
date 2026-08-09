@@ -75,8 +75,10 @@ and only the result is shipped. A managed host never receives another
 host's pillar data. Pillar targeting therefore uses the host's own grains,
 not its roster name — a roster entry is an ssh destination, nothing more.
 
+`pillar.json` is written under `umask 077` inside that `0700` directory.
 The working directory is removed even when the run fails, so a failed host
-is left exactly as it was found.
+is left exactly as it was found. See
+[pillar-security.md](pillar-security.md) for the rest of the picture.
 
 ## Compared with the other two modes
 

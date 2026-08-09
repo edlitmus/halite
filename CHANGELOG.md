@@ -82,6 +82,17 @@ and the remaining P2 state modules.
   host's data. `halite apply -pillar-json FILE` is the flag that makes that
   possible and is useful on its own.
 
+### Protecting pillar data
+
+* Pillar is deliberately not encrypted: its confidentiality is the pillar
+  tree's directory mode, plus an external tool (sops, age, git-crypt) that
+  decrypts into the tree before a run. Recorded as ADR-9 and documented in
+  docs/pillar-security.md, with the reasoning and what to do instead.
+* halite warns when it opens a pillar tree that group or others can read —
+  from `apply`, `pillar`, `ssh`, and at control plane startup.
+* `halite ssh` writes the remote pillar.json under `umask 077`, inside the
+  0700 working directory it already used.
+
 ### Internals
 
 * New packages: internal/ca, internal/transport, internal/archive,

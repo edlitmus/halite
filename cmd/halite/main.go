@@ -141,6 +141,15 @@ func resolvePillarRoot(flagValue, statesRoot string) string {
 	return filepath.Join(filepath.Dir(statesRoot), "pillar")
 }
 
+// warnPillarPermissions reports a pillar tree that is readable beyond its
+// owner. Pillar confidentiality rests on the directory mode, so this is the
+// one check that makes the documented posture verifiable.
+func warnPillarPermissions(root string) {
+	if warning := pillar.PermissionWarning(root); warning != "" {
+		fmt.Fprintln(os.Stderr, warning)
+	}
+}
+
 // loadPillar reads pillar data from a pre-rendered JSON file when one is
 // given, and from the pillar tree otherwise. `halite ssh` renders pillar on
 // the operator's machine and ships only the result, so a remote host never
@@ -168,6 +177,7 @@ func cmdPillar(args []string) {
 	_ = parseFlags(fs, args)
 
 	pillarRoot := resolvePillarRoot(*pillarRootFlag, resolveRoot(*rootFlag))
+	warnPillarPermissions(pillarRoot)
 	data, err := (&pillar.Loader{Root: pillarRoot, Grains: grains.Collect()}).Load()
 	if err != nil {
 		fatal("%v", err)
@@ -288,9 +298,13 @@ func cmdApply(args []string) {
 	targets := parseFlags(fs, args)
 
 	root := resolveRoot(*rootFlag)
+	pillarRoot := resolvePillarRoot(*pillarRootFlag, root)
+	if *pillarJSON == "" {
+		warnPillarPermissions(pillarRoot)
+	}
 
 	g := grains.Collect()
-	p, err := loadPillar(*pillarJSON, resolvePillarRoot(*pillarRootFlag, root), g)
+	p, err := loadPillar(*pillarJSON, pillarRoot, g)
 	if err != nil {
 		fatal("%v", err)
 	}

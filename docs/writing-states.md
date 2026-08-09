@@ -139,6 +139,11 @@ Rules that matter:
 
 Inspect what a host resolves to with `halite pillar` (or `-json`).
 
+Pillar is where credentials end up, and halite does not encrypt it — the
+pillar tree should be mode `0700`, and anything encrypted in version
+control gets decrypted into the tree at deploy time. See
+[pillar-security.md](pillar-security.md).
+
 ## The state tree, top files, and includes
 
 States can live in a tree (default `/usr/local/etc/halite/states` on

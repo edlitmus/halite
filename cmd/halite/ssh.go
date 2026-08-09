@@ -91,6 +91,10 @@ func cmdSSH(args []string) {
 	pillarRoot := resolvePillarRoot(*pillarRootFlag, root)
 	needsTree := strings.HasPrefix(remoteArgs[0], "state.") || remoteArgs[0] == "apply"
 
+	if needsTree {
+		warnPillarPermissions(pillarRoot)
+	}
+
 	ctx, stop := signalContext()
 	defer stop()
 
@@ -369,7 +373,11 @@ func (r *sshRunner) shipTree(ctx context.Context, dest, workDir, remoteBinary st
 	if err != nil {
 		return err
 	}
-	if err := sshFeed(ctx, r.options, dest, "cat > "+shellQuote(workDir+"/pillar.json"), bytes.NewReader(encoded)); err != nil {
+	// Pillar carries whatever secrets the tree holds. mktemp -d already made
+	// the working directory 0700, but the file itself is created under the
+	// login shell's umask, so tighten it for this one write.
+	writePillar := "umask 077 && cat > " + shellQuote(workDir+"/pillar.json")
+	if err := sshFeed(ctx, r.options, dest, writePillar, bytes.NewReader(encoded)); err != nil {
 		return fmt.Errorf("copy pillar: %v", err)
 	}
 

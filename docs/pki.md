@@ -87,3 +87,6 @@ identity entirely so that host can enroll again from scratch.
 Revocation is a CRL or short-lived certificates; today, `halite key remove`
 plus a re-issued CA is the blunt instrument. Proper revocation lands with
 the control plane.
+
+For the other half of the picture — protecting pillar data, which is not
+encrypted — see [pillar-security.md](pillar-security.md).

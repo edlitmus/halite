@@ -45,9 +45,9 @@ importing one, and templating is `text/template` instead of a Jinja port.
 Revisit only if a feature genuinely cannot be done in stdlib. Through P2
 none did: mTLS and HTTP/2 are stdlib, the CA is `crypto/x509`, archives are
 `archive/tar` and `archive/zip`, and `halite ssh` drives the system ssh
-rather than importing one (ADR-8). The open question is pillar encryption
-at rest, where age would be a dependency and composing `crypto/ecdh` with
-AES-GCM would be ours to get right.
+rather than importing one (ADR-8). Pillar encryption at rest was the one
+real test of this rule, and the answer was to drop the feature rather than
+the rule (ADR-9).
 
 ### ADR-2: YAML subset, not full YAML
 
@@ -133,6 +133,40 @@ rendered operator-side and shipped as JSON (`apply -pillar-json`), so a
 managed host never receives another host's data — the one place where
 agentless has to differ from an agent, which fetches its own.
 
+### ADR-9: Pillar confidentiality is permissions, not encryption
+
+**Accepted (0.4).** Salt encrypts pillar with GPG renderers; the obvious
+Go equivalent is age. Three options were considered:
+
+1. **Depend on age.** Clean and well-reviewed, but it breaks ADR-1, which
+   is the whole premise of the project. A configuration tool whose selling
+   point is "one static binary, no dependencies" should not acquire one for
+   a feature an external tool already does well.
+2. **Build a sealed-box format** from `crypto/ecdh`, `crypto/hkdf`, and
+   AES-GCM. About 150 lines of standard construction — and 150 lines of
+   cryptography nobody has reviewed, in a project that explicitly promises
+   "no custom crypto". The failure mode of getting it subtly wrong is
+   silent.
+3. **Do not encrypt.** Confidentiality comes from the directory mode, and
+   anyone wanting encryption at rest uses sops, age, git-crypt, or a
+   secrets manager to decrypt into the pillar tree before a run.
+
+Option 3, deliberately. The threat it drops is an attacker who can read the
+pillar tree but not act as its owner — a narrow case, given that the tree
+lives on the control plane or the operator's workstation, and that reading
+it usually means already holding root there. The threats that matter more
+are covered elsewhere: pillar crosses the network only as one host's
+rendered subset, over mTLS.
+
+Consequences, all documented in [pillar-security.md](pillar-security.md):
+the pillar tree must be mode `0700`; halite warns when it is not; anything
+encrypted in version control is decrypted into the tree at deploy time; and
+`show_diff: false` keeps confidential file contents out of results.
+
+Revisit if pillar ever has to live somewhere halite does not control — a
+shared filesystem, an object store, a git remote that agents pull from —
+because then the directory mode stops being the boundary.
+
 ## Error and failure model
 
 A state returns `{Ok, Changed, Comment, Changes}`. Requisite failure skips
@@ -165,3 +199,6 @@ read. With the control plane running (see [fleet.md](fleet.md)):
   masterless.
 * **Private keys never move.** An agent generates its own key; only the
   signing request travels. Every key file is written 0600.
+* **Pillar is not encrypted.** Its confidentiality is the directory mode,
+  and it crosses the network only as one host's rendered subset. See
+  [pillar-security.md](pillar-security.md) and ADR-9.

@@ -12,10 +12,36 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/edlitmus/halite/internal/sls"
 	"github.com/edlitmus/halite/internal/yamlite"
 )
+
+// PermissionWarning returns a non-empty message when the pillar tree is
+// readable beyond its owner. halite does not encrypt pillar data — its
+// confidentiality is the directory mode — so a tree every account on the
+// host can read is worth saying out loud. It is a warning, not an error:
+// running as a non-root user with a dedicated group is a legitimate setup.
+//
+// Callers report it; this package does not write to stderr. Windows modes
+// do not carry unix permission bits, so it is a no-op there.
+func PermissionWarning(root string) string {
+	if runtime.GOOS == "windows" || root == "" {
+		return ""
+	}
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return "" // a missing tree is not a leak; Load reports it if it matters
+	}
+	mode := info.Mode().Perm()
+	if mode&0o077 == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"warning: pillar tree %s is mode %04o; anyone on this host can read it (chmod 0700)",
+		root, mode)
+}
 
 // Loader reads a pillar tree for one host.
 type Loader struct {

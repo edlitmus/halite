@@ -17,8 +17,8 @@ runtime, onedir/relenv packaging, or the deprecation treadmill.
   targeted dispatch to agents.
 * **Agentless** — `halite ssh` pushes the binary, runs, and cleans up.
 
-Pillar encryption at rest is the one P2 item still open; events, beacons,
-and orchestration are P3. See [docs/salt-parity.md](docs/salt-parity.md).
+Events, beacons, reactor, and orchestration are P3. See
+[docs/salt-parity.md](docs/salt-parity.md).
 
 ## Why
 
@@ -154,6 +154,7 @@ grains are available as `{{ .Grains.os_family }}`. See
 * [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
 * [docs/agentless.md](docs/agentless.md) — `halite ssh`, rosters, bootstrapping
 * [docs/pki.md](docs/pki.md) — keys, certificates, and agent enrollment
+* [docs/pillar-security.md](docs/pillar-security.md) — protecting pillar data
 * [docs/architecture.md](docs/architecture.md) — design decisions and internals
 * [docs/salt-parity.md](docs/salt-parity.md) — Salt 3008 feature map and roadmap
 * [examples/](examples/) — working state files

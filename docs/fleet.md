@@ -115,6 +115,10 @@ is rarely what anyone wants.
   their next poll. Durable results are a returner concern (P3).
 * **It does not push.** Nothing connects to an agent, so agents work from
   behind NAT and need no inbound firewall rules.
+* **It does not encrypt pillar at rest.** The tree lives here and only
+  here; agents receive their own rendered subset over mTLS and never write
+  it to disk. Protect the tree with permissions — see
+  [pillar-security.md](pillar-security.md).
 * **It does not run minion-supplied code.** Traffic is JSON in both
   directions; nothing is deserialized into behavior.
 
