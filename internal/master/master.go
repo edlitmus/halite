@@ -20,6 +20,7 @@ import (
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/event"
 	"github.com/edlitmus/halite/internal/pillar"
+	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -46,6 +47,9 @@ type Config struct {
 	// JobTTL bounds how long queued work stays runnable. An agent that was
 	// down when a job was dispatched picks up nothing older than this.
 	JobTTL time.Duration
+
+	// Returners are durable sinks for finished job results.
+	Returners []returner.Returner
 }
 
 func (c *Config) withDefaults() {
@@ -66,22 +70,24 @@ func (c *Config) withDefaults() {
 
 // Server is the control plane.
 type Server struct {
-	cfg      Config
-	ca       *ca.Store
-	registry *registry
-	bus      *event.Bus
-	log      *log.Logger
+	cfg       Config
+	ca        *ca.Store
+	registry  *registry
+	bus       *event.Bus
+	returners *returner.Manager
+	log       *log.Logger
 }
 
 // New builds a control plane. It does not listen until Run is called.
 func New(cfg Config, logger *log.Logger) *Server {
 	cfg.withDefaults()
 	return &Server{
-		cfg:      cfg,
-		ca:       &ca.Store{Dir: cfg.PKIDir},
-		registry: newRegistry(cfg.OnlineAfter, cfg.JobTTL),
-		bus:      event.NewBus(),
-		log:      logger,
+		cfg:       cfg,
+		ca:        &ca.Store{Dir: cfg.PKIDir},
+		registry:  newRegistry(cfg.OnlineAfter, cfg.JobTTL),
+		bus:       event.NewBus(),
+		returners: returner.NewManager(cfg.Returners, logger),
+		log:       logger,
 	}
 }
 
@@ -126,6 +132,12 @@ func (s *Server) Run(ctx context.Context) error {
 		ErrorLog:    s.log,
 	}
 
+	// Returners drain in their own goroutine for the life of the server, so
+	// a slow sink never delays an agent's return.
+	returnersDone := make(chan struct{})
+	defer close(returnersDone)
+	go s.returners.Run(returnersDone)
+
 	done := make(chan error, 1)
 	go func() {
 		s.log.Printf("control plane listening on %s (states %s, pillar %s)",
@@ -134,6 +146,9 @@ func (s *Server) Run(ctx context.Context) error {
 		// local account can read matters more here than anywhere else.
 		if warning := pillar.PermissionWarning(s.cfg.PillarRoot); warning != "" {
 			s.log.Print(warning)
+		}
+		for _, r := range s.cfg.Returners {
+			s.log.Printf("returning results to %s", r.Name())
 		}
 		if s.cfg.AutoAccept {
 			s.log.Print("WARNING: -auto-accept is on; any host that can reach this port will be enrolled")

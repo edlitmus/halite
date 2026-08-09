@@ -182,6 +182,18 @@ func (r *registry) record(res transport.JobResult) error {
 	return fmt.Errorf("job %q was not dispatched to %q", res.JobID, res.AgentID)
 }
 
+// jobOf returns the job a result answers, for returners that want the
+// request alongside the response.
+func (r *registry) jobOf(id string) (transport.Job, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	state, ok := r.jobs[id]
+	if !ok {
+		return transport.Job{}, false
+	}
+	return state.job, true
+}
+
 // jobInfo returns a job and its results so far.
 func (r *registry) jobInfo(id string) (transport.JobInfo, bool) {
 	r.mu.Lock()

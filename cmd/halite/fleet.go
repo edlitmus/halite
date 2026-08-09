@@ -22,6 +22,7 @@ import (
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/master"
 	"github.com/edlitmus/halite/internal/modules"
+	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -49,7 +50,18 @@ func cmdMaster(args []string) {
 	pillarRootFlag := fs.String("pillar-root", "", "pillar tree root")
 	autoAccept := fs.Bool("auto-accept", false, "sign enrollment requests without an operator decision (labs only)")
 	pollTimeout := fs.Duration("poll-timeout", 30*time.Second, "how long an agent's job poll is held open")
+	var returnerSpecs stringList
+	fs.Var(&returnerSpecs, "returner", "durable result sink, kind:target (repeatable): file:PATH or webhook:URL")
 	_ = parseFlags(fs, args)
+
+	var returners []returner.Returner
+	for _, spec := range returnerSpecs {
+		r, err := returner.Parse(spec)
+		if err != nil {
+			fatal("%v", err)
+		}
+		returners = append(returners, r)
+	}
 
 	root := resolveRoot(*rootFlag)
 	cfg := master.Config{
@@ -59,6 +71,7 @@ func cmdMaster(args []string) {
 		PillarRoot:  resolvePillarRoot(*pillarRootFlag, root),
 		AutoAccept:  *autoAccept,
 		PollTimeout: *pollTimeout,
+		Returners:   returners,
 	}
 	if _, err := os.Stat(cfg.StatesRoot); err != nil {
 		fatal("state tree %s is not readable: %v", cfg.StatesRoot, err)

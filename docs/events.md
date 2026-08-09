@@ -81,3 +81,47 @@ fine; an agent reading the whole fleet's activity is not.
   plane's clock, which is the only clock involved — but an agent's event
   is timestamped when the control plane receives it, not when the agent
   raised it.
+
+## Returners
+
+The bus is in-memory and lossy on purpose. Returners are the durable half:
+every finished job result is written to whatever sinks the control plane
+was started with.
+
+```sh
+halite master -root /usr/local/etc/halite/states \
+  -returner file:/var/log/halite/results.ndjson \
+  -returner webhook:https://example.com/halite
+```
+
+`-returner` is repeatable and takes `kind:target`:
+
+| Kind | Target | Writes |
+|---|---|---|
+| `file` | a path | one JSON object per line, appended, mode 0600 |
+| `webhook` | an http(s) URL | one POST per result, `Content-Type: application/json` |
+
+Each record is the job and one agent's answer to it, including every state
+outcome:
+
+```json
+{"time":"2026-08-09T21:31:02Z",
+ "job":{"id":"20260809213101.882-4e58","kind":"state.highstate","target":"*"},
+ "result":{"job_id":"...","agent_id":"web1","result":true,"succeeded":3,"changed":1,
+           "states":[{"id":"nginx","function":"pkg.installed","result":true,"changed":false,
+                      "comment":"nginx is already installed"}]}}
+```
+
+Records go through a queue, so a slow webhook delays its own writes and
+nothing else. A full queue drops records and logs it, on the same principle
+as the bus: a sink must never stall the control plane or an agent's return.
+Queued records are flushed on a clean shutdown.
+
+**Results can contain file diffs.** The file returner is mode 0600 for that
+reason, and a webhook endpoint sees whatever the diffs contain — use
+`show_diff: false` on states that write confidential files. See
+[pillar-security.md](pillar-security.md).
+
+There is no database returner: a Postgres or MySQL sink means a driver, and
+drivers are dependencies (ADR-1). Point a webhook at something that owns
+the database instead, or ship the NDJSON file.

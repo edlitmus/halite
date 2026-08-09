@@ -15,6 +15,12 @@ P3 (events) in progress.
 * `halite events [-tag PATTERN] [-history N] [-json]` tails it.
 * A subscriber that stops reading loses events rather than blocking the
   control plane; the loss is counted.
+* Returners: `halite master -returner file:PATH` and
+  `-returner webhook:URL` (repeatable) write every finished job result
+  somewhere durable, since the bus deliberately is not. Records carry the
+  job and the full result. Delivery is queued, so a slow sink delays only
+  itself; a full queue drops and logs. The file sink is mode 0600 because
+  results can contain diffs, and webhook URLs are redacted in logs.
 * See docs/events.md.
 
 ## 0.4.0 — 2026-08-09

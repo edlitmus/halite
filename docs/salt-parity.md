@@ -73,7 +73,7 @@ place; the registry makes adding one a single function.
 |---|---|---|---|
 | Salt Mine | P3 | periodic grain/exec publishes to master |
 | Orchestration (state.orchestrate) | P3 | master-side ordered runs across minions |
-| Returners | P3 | pluggable result sinks (file, webhook, Postgres) |
+| Returners | done | file (NDJSON) and webhook sinks on the control plane; no database driver under ADR-1 — point a webhook at something that owns the DB |
 | salt-api (REST) | done (mTLS) | the control plane's JSON API is the REST API; authentication is client certificates, not tokens. A token/browser front door is P3 if it is ever wanted |
 | Windows-specific (registry, DSC) | P4/out | registry: P4; DSC: out |
 | Salt extensions / Python modules | out | custom modules are Go, compiled in; external process modules (exec JSON protocol) considered for P4 |

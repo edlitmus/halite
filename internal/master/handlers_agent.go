@@ -9,6 +9,7 @@ import (
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/event"
 	"github.com/edlitmus/halite/internal/pillar"
+	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -133,6 +134,9 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, peer tran
 		returned["error"] = res.Error
 	}
 	s.bus.Emit(fmt.Sprintf(event.TagJobReturn, res.JobID, peer.ID), peer.ID, returned)
+	if job, ok := s.registry.jobOf(res.JobID); ok {
+		s.returners.Submit(returner.Record{Time: time.Now().UTC(), Job: job, Result: res})
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
