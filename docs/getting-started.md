@@ -62,11 +62,15 @@ Re-apply and observe idempotency (`changed=0`).
 
 ```
 states/
+  top.sls
   webserver.sls
   base.sls
   files/
     nginx-freebsd.conf
     nginx-linux.conf
+pillar/
+  top.sls
+  common.sls
 ```
 
 `- source:` paths resolve relative to the SLS file, so `source:
@@ -74,6 +78,10 @@ files/nginx-freebsd.conf` works from anywhere. Add a `top.sls` at the
 tree root and `halite apply -root states/` (or set `HALITE_ROOT`) gives
 you a full highstate — see docs/writing-states.md for top-file targeting
 and `include:`.
+
+Host-specific values (ports, paths, credentials) go in the `pillar` tree
+beside the states, and reach templates as `{{ .Pillar.x }}`. `halite
+pillar` shows what the current host resolves to.
 
 ## Converging on a schedule
 

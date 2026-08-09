@@ -6,6 +6,7 @@
 //	    file path:  apply that SLS file
 //	    dotted name(s): apply <root>/<name>.sls (or <name>/init.sls)
 //	halite call module.fn k=v                run a single state function
+//	halite pillar [-json]                    show the pillar data for this host
 //	halite version
 package main
 
@@ -22,10 +23,11 @@ import (
 	"github.com/edlitmus/halite/internal/engine"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/modules"
+	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/sls"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -39,6 +41,8 @@ func main() {
 		cmdApply(os.Args[2:])
 	case "call":
 		cmdCall(os.Args[2:])
+	case "pillar":
+		cmdPillar(os.Args[2:])
 	case "version":
 		fmt.Println("halite " + version)
 	case "-h", "--help", "help":
@@ -57,6 +61,7 @@ func usage() {
       no target: highstate from <root>/top.sls
       target:    an SLS file path, or dotted sls name(s) under the root
   halite call <module.fn> [k=v ...]        run a single state function
+  halite pillar [-json] [-pillar-root DIR] show the pillar data for this host
   halite version`)
 }
 
@@ -70,6 +75,73 @@ func defaultRoot() string {
 		return `C:\ProgramData\halite\states`
 	default:
 		return "/etc/halite/states"
+	}
+}
+
+// resolveRoot returns the state tree root: flag, then $HALITE_ROOT, then the
+// platform default.
+func resolveRoot(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if env := os.Getenv("HALITE_ROOT"); env != "" {
+		return env
+	}
+	return defaultRoot()
+}
+
+// resolvePillarRoot returns the pillar tree root: flag, then
+// $HALITE_PILLAR_ROOT, then a "pillar" directory beside the state tree.
+func resolvePillarRoot(flagValue, statesRoot string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if env := os.Getenv("HALITE_PILLAR_ROOT"); env != "" {
+		return env
+	}
+	return filepath.Join(filepath.Dir(statesRoot), "pillar")
+}
+
+func cmdPillar(args []string) {
+	fs := flag.NewFlagSet("pillar", flag.ExitOnError)
+	asJSON := fs.Bool("json", false, "output as JSON")
+	rootFlag := fs.String("root", "", "state tree root (used to locate the pillar tree)")
+	pillarRootFlag := fs.String("pillar-root", "", "pillar tree root (default: $HALITE_PILLAR_ROOT or <root>/../pillar)")
+	_ = fs.Parse(args)
+
+	pillarRoot := resolvePillarRoot(*pillarRootFlag, resolveRoot(*rootFlag))
+	data, err := (&pillar.Loader{Root: pillarRoot, Grains: grains.Collect()}).Load()
+	if err != nil {
+		fatal("%v", err)
+	}
+	if *asJSON {
+		b, _ := json.MarshalIndent(data, "", "  ")
+		fmt.Println(string(b))
+		return
+	}
+	printTree(data, "")
+}
+
+// printTree renders nested pillar data as indented key: value lines.
+func printTree(data map[string]any, indent string) {
+	keys := make([]string, 0, len(data))
+	for k := range data {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		switch v := data[k].(type) {
+		case map[string]any:
+			fmt.Printf("%s%s:\n", indent, k)
+			printTree(v, indent+"  ")
+		case []any:
+			fmt.Printf("%s%s:\n", indent, k)
+			for _, item := range v {
+				fmt.Printf("%s  - %v\n", indent, item)
+			}
+		default:
+			fmt.Printf("%s%s: %v\n", indent, k, v)
+		}
 	}
 }
 
@@ -119,7 +191,12 @@ func cmdCall(args []string) {
 		}
 		callArgs[k] = v
 	}
-	ctx := &modules.Ctx{Grains: grains.Collect()}
+	g := grains.Collect()
+	p, err := (&pillar.Loader{Root: resolvePillarRoot("", resolveRoot("")), Grains: g}).Load()
+	if err != nil {
+		fatal("%v", err)
+	}
+	ctx := &modules.Ctx{Grains: g, Pillar: p}
 	var r modules.Result
 	if comment, gated := modules.CheckGates(callArgs); gated {
 		r = modules.Result{Ok: true, Comment: comment}
@@ -137,24 +214,23 @@ func cmdApply(args []string) {
 	test := fs.Bool("test", false, "dry run: report changes without applying")
 	asJSON := fs.Bool("json", false, "output results as JSON")
 	rootFlag := fs.String("root", "", "state tree root (default: $HALITE_ROOT or the platform default)")
+	pillarRootFlag := fs.String("pillar-root", "", "pillar tree root (default: $HALITE_PILLAR_ROOT or <root>/../pillar)")
 	_ = fs.Parse(args)
 
-	root := *rootFlag
-	if root == "" {
-		root = os.Getenv("HALITE_ROOT")
-	}
-	if root == "" {
-		root = defaultRoot()
-	}
+	root := resolveRoot(*rootFlag)
 
 	g := grains.Collect()
+	p, err := (&pillar.Loader{Root: resolvePillarRoot(*pillarRootFlag, root), Grains: g}).Load()
+	if err != nil {
+		fatal("%v", err)
+	}
+
 	var states []sls.State
-	var err error
 	targets := fs.Args()
 
 	switch {
 	case len(targets) == 0:
-		ld := &sls.Loader{Root: root, Grains: g}
+		ld := &sls.Loader{Root: root, Grains: g, Pillar: p}
 		states, err = ld.LoadTop()
 	case len(targets) == 1 && isFile(targets[0]):
 		fileRoot := root
@@ -163,7 +239,7 @@ func cmdApply(args []string) {
 			// root was given explicitly.
 			fileRoot = filepath.Dir(targets[0])
 		}
-		ld := &sls.Loader{Root: fileRoot, Grains: g}
+		ld := &sls.Loader{Root: fileRoot, Grains: g, Pillar: p}
 		states, err = ld.LoadPath(targets[0])
 	default:
 		for _, t := range targets {
@@ -171,14 +247,14 @@ func cmdApply(args []string) {
 				fatal("mixing file paths and sls names is not supported (got %q)", t)
 			}
 		}
-		ld := &sls.Loader{Root: root, Grains: g}
+		ld := &sls.Loader{Root: root, Grains: g, Pillar: p}
 		states, err = ld.LoadNames(targets)
 	}
 	if err != nil {
 		fatal("%v", err)
 	}
 
-	ctx := &modules.Ctx{Test: *test, Grains: g}
+	ctx := &modules.Ctx{Test: *test, Grains: g, Pillar: p}
 	results := engine.Run(ctx, states)
 
 	succeeded, failed, changed := 0, 0, 0

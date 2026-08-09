@@ -3,9 +3,11 @@
 ## Layout
 
 ```
-cmd/halite/          CLI entry point (grains, apply, call, version)
+cmd/halite/          CLI entry point (grains, apply, call, pillar, version)
 internal/yamlite/    zero-dep YAML-subset parser (ordered maps)
 internal/sls/        template rendering, state compilation, requisite sort
+internal/pillar/     targeted per-host data, deep-merged
+internal/engine/     plan executor (requisites, gates, watch propagation)
 internal/modules/    state modules + platform backends
 internal/grains/     host fact collection
 ```
@@ -13,16 +15,19 @@ internal/grains/     host fact collection
 ## Pipeline
 
 ```
-file.sls
-  → sls.Render      text/template, grains in scope
+pillar tree
+  → pillar.Load     match top.sls, render, deep-merge  ─┐
+                                                        │
+file.sls                                                ↓
+  → sls.Render      text/template, grains and pillar in scope
   → yamlite.Parse   ordered tree of maps/lists/scalars
   → sls.Compile     flatten args, extract require/watch, topo-sort
-  → executor        run states in order, gate on failed requisites,
-                    propagate watch triggers, print results
+  → engine.Run      run states in order, gate on failed requisites,
+                    propagate watch triggers, return results
 ```
 
-The executor lives in `cmd/halite` for now and moves to `internal/engine`
-when the agent daemon (P2) needs it too.
+Pillar loads first because state files template against it. The executor
+lives in `internal/engine` so the agent daemon can drive it directly.
 
 ## Design decisions
 

@@ -42,6 +42,7 @@ func (s State) Name() string { return s.Module + "." + s.Fn }
 // TemplateData is passed to the template engine when rendering SLS files.
 type TemplateData struct {
 	Grains map[string]any
+	Pillar map[string]any
 }
 
 // templateFuncs are helpers available in SLS templates, covering the most
@@ -63,9 +64,9 @@ var templateFuncs = template.FuncMap{
 	"upper":     strings.ToUpper,
 }
 
-// Render runs src through text/template. Grains are available as
-// {{ .Grains.os_family }} etc. Standard template actions (if/range/with)
-// stand in for Salt's Jinja layer.
+// Render runs src through text/template. Grains and pillar data are
+// available as {{ .Grains.os_family }} and {{ .Pillar.nginx.port }}.
+// Standard template actions (if/range/with) stand in for Salt's Jinja layer.
 func Render(name, src string, data TemplateData) (string, error) {
 	t, err := template.New(name).Option("missingkey=zero").Funcs(templateFuncs).Parse(src)
 	if err != nil {

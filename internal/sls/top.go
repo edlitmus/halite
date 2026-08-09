@@ -7,8 +7,9 @@ import (
 	"github.com/edlitmus/halite/internal/yamlite"
 )
 
-// matchTop evaluates a parsed top.sls against grains and returns the SLS
-// names to apply, in declaration order, deduplicated.
+// MatchTop evaluates a parsed top.sls against grains and returns the SLS
+// names to apply, in declaration order, deduplicated. The pillar tree uses
+// the same top file semantics.
 //
 // Top file shape (environments -> target patterns -> sls names):
 //
@@ -24,7 +25,7 @@ import (
 // grain (glob on the value, e.g. 'os_family:FreeBSD' or 'osrelease:14.*');
 // any other pattern globs against the host grain. All environments in the
 // file are applied (masterless has no environment selection yet).
-func matchTop(root any, grains map[string]any) ([]string, error) {
+func MatchTop(root any, grains map[string]any) ([]string, error) {
 	m, ok := root.(*yamlite.Map)
 	if !ok {
 		return nil, fmt.Errorf("top file must be a mapping of environments")

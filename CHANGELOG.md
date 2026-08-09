@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 — 2026-08-09
+
+First P2 (transport) increment: pillar.
+
+* Pillar tree: `<root>/../pillar/top.sls` targets hosts with the same
+  matcher as a state top file, and the matched pillar SLS files are
+  deep-merged (later files win on leaves, sibling keys survive, lists are
+  replaced whole). Pillar files render with grains in scope and support
+  `include:`. Root via `-pillar-root` or `HALITE_PILLAR_ROOT`; a missing
+  tree yields an empty pillar rather than an error.
+* Pillar data is available as `{{ .Pillar.x }}` in SLS files, in the state
+  and pillar top files, and in `file.managed` sources with
+  `template: true`.
+* New command: `halite pillar [-json]` (Salt: `pillar.items`).
+* `sls.ResolveName` and `sls.MatchTop` are exported so the pillar tree
+  reuses the state tree's name resolution and targeting verbatim.
+* Example pillar tree under examples/pillar/, wired into examples/tree.
+
 ## 0.3.0 — 2026-08-09
 
 P1 (masterless completeness) is done.

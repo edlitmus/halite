@@ -64,9 +64,80 @@ Jinja → template cheat sheet:
 | `{% if grains['os_family'] == 'FreeBSD' %}` | `{{ if eq .Grains.os_family "FreeBSD" }}` |
 | `{% else %}` / `{% endif %}` | `{{ else }}` / `{{ end }}` |
 | `{% for x in list %}` | `{{ range $x := ... }}` ... `{{ end }}` |
-| `{{ a | default('b') }}` | (P1 helper; today: `{{ if .X }}{{ .X }}{{ else }}b{{ end }}`) |
+| `{{ a | default('b') }}` | `{{ .X | default "b" }}` |
+| `{{ pillar['nginx']['port'] }}` | `{{ .Pillar.nginx.port }}` |
 
 Missing grains render as empty rather than erroring.
+
+## Pillar
+
+Pillar is per-host data kept out of the state files: ports, paths, user
+lists, anything that varies between hosts. It lives in its own tree with
+its own top file, and is exposed to every state template under `.Pillar`.
+
+```
+/usr/local/etc/halite/
+  states/
+    top.sls
+    web.sls
+  pillar/
+    top.sls
+    common.sls
+    web.sls
+```
+
+The pillar tree root defaults to a `pillar` directory beside the state
+tree; override it with `-pillar-root` or `HALITE_PILLAR_ROOT`. The pillar
+`top.sls` uses exactly the same targeting as a state top file:
+
+```yaml
+# pillar/top.sls
+base:
+  '*':
+    - common
+  'os_family:FreeBSD':
+    - bsd
+  'web*':
+    - web
+```
+
+Pillar SLS files are plain data — no state IDs, no module functions:
+
+```yaml
+# pillar/web.sls
+nginx:
+  port: "8080"
+  root: /var/www
+  workers: "4"
+```
+
+```yaml
+# states/web.sls
+nginx_conf:
+  file.managed:
+    - name: /usr/local/etc/nginx/nginx.conf
+    - source: files/nginx.conf.tmpl
+    - template: true
+```
+
+```
+# files/nginx.conf.tmpl
+worker_processes {{ .Pillar.nginx.workers }};
+server { listen {{ .Pillar.nginx.port }}; root {{ .Pillar.nginx.root }}; }
+```
+
+Rules that matter:
+
+* Matched files are deep-merged in top-file order — later files win on
+  conflicting leaves, sibling keys survive, and lists are replaced whole
+  rather than concatenated.
+* Pillar files may `include:` other pillar files. Includes merge first, so
+  the including file overrides what it includes.
+* Grains are in scope while rendering pillar files (`{{ .Grains.host }}`),
+  but pillar is not in scope for the pillar tree itself.
+* A missing pillar tree is not an error — `.Pillar` is simply empty.
+
+Inspect what a host resolves to with `halite pillar` (or `-json`).
 
 ## The state tree, top files, and includes
 

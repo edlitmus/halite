@@ -16,7 +16,12 @@ import (
 type Loader struct {
 	Root    string // state tree root; required for includes and dotted names
 	Grains  map[string]any
+	Pillar  map[string]any
 	visited map[string]bool
+}
+
+func (l *Loader) templateData() TemplateData {
+	return TemplateData{Grains: l.Grains, Pillar: l.Pillar}
 }
 
 func (l *Loader) init() {
@@ -25,20 +30,25 @@ func (l *Loader) init() {
 	}
 }
 
-// resolveName maps a dotted SLS name to a file: "web.nginx" becomes
-// <root>/web/nginx.sls or <root>/web/nginx/init.sls.
-func (l *Loader) resolveName(name string) (string, error) {
-	if l.Root == "" {
-		return "", fmt.Errorf("sls name %q requires a state root (-root)", name)
+// ResolveName maps a dotted SLS name to a file under root: "web.nginx"
+// becomes <root>/web/nginx.sls or <root>/web/nginx/init.sls. The pillar
+// tree uses the same layout.
+func ResolveName(root, name string) (string, error) {
+	if root == "" {
+		return "", fmt.Errorf("sls name %q requires a root", name)
 	}
 	parts := strings.Split(name, ".")
-	base := filepath.Join(append([]string{l.Root}, parts...)...)
+	base := filepath.Join(append([]string{root}, parts...)...)
 	for _, cand := range []string{base + ".sls", filepath.Join(base, "init.sls")} {
 		if st, err := os.Stat(cand); err == nil && !st.IsDir() {
 			return cand, nil
 		}
 	}
-	return "", fmt.Errorf("sls %q not found under %s", name, l.Root)
+	return "", fmt.Errorf("sls %q not found under %s", name, root)
+}
+
+func (l *Loader) resolveName(name string) (string, error) {
+	return ResolveName(l.Root, name)
 }
 
 // LoadPath loads a single SLS file (plus its includes) and returns the
@@ -79,7 +89,7 @@ func (l *Loader) LoadTop() ([]State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", topPath, err)
 	}
-	rendered, err := Render("top.sls", string(b), TemplateData{Grains: l.Grains})
+	rendered, err := Render("top.sls", string(b), l.templateData())
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", topPath, err)
 	}
@@ -87,7 +97,7 @@ func (l *Loader) LoadTop() ([]State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", topPath, err)
 	}
-	names, err := matchTop(tree, l.Grains)
+	names, err := MatchTop(tree, l.Grains)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", topPath, err)
 	}
@@ -113,7 +123,7 @@ func (l *Loader) loadFile(path string) ([]State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	rendered, err := Render(filepath.Base(path), string(b), TemplateData{Grains: l.Grains})
+	rendered, err := Render(filepath.Base(path), string(b), l.templateData())
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}

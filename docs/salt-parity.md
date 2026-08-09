@@ -21,7 +21,7 @@ not.
 | `grains.items` | `halite grains [-json]` | done | os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
 | Highstate output | Salt-style block output + `-json` | done | |
 | `state.highstate` / top.sls | `halite apply` (no target) | done | grain and hostname glob targeting; single merged environment |
-| Pillar | encrypted per-host data | P2 | Go-native: age-encrypted files, exposed as `{{ .Pillar.x }}` |
+| Pillar | pillar tree with its own top file | done | targeted, deep-merged, include-capable; exposed as `{{ .Pillar.x }}` in states and templated sources. Encryption at rest: P2 |
 | Requisites: require, watch | require, watch | done | watch triggers service restart / cmd.wait |
 | Requisites: onchanges, prereq | onchanges, prereq | done | prereq uses an automatic dry run of its target |
 | unless/onlyif/creates as universal state args | universal gates | done | evaluated by the engine for every state |
@@ -83,6 +83,8 @@ their value is mostly fleet-wide queries (`halite '*' disk.usage`).
   service/cmd/user/cron/sysctl workloads.
 * **P2 — transport** (mTLS HTTP/2 master+agent, key issuance, targeting,
   `halite ssh`, REST API, pillar). Target: replace a small salt-master.
+  **In progress**: pillar (0.4) is done; encryption at rest, the CA, and
+  the daemons are next.
 * **P3 — events** (event bus, beacons, reactor, mine, orchestration,
   returners).
 * **P4 — long tail** (multi-master, Windows registry, external process

@@ -88,7 +88,7 @@ func TestTopMatching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	names, err := matchTop(tree, testGrains())
+	names, err := MatchTop(tree, testGrains())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,5 +122,22 @@ early:
 	}
 	if states[0].ID != "early" || states[1].ID != "later" {
 		t.Errorf("prereq should order early before later: %s, %s", states[0].ID, states[1].ID)
+	}
+}
+
+func TestPillarIsAvailableToStateTemplates(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "web.sls", "conf:\n  file.managed:\n    - name: /etc/nginx.conf\n    - contents: \"listen {{ .Pillar.nginx.port }}\"\n")
+	ld := &Loader{
+		Root:   root,
+		Grains: testGrains(),
+		Pillar: map[string]any{"nginx": map[string]any{"port": "8080"}},
+	}
+	states, err := ld.LoadNames([]string{"web"})
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got := states[0].Args["contents"]; got != "listen 8080" {
+		t.Errorf("contents = %v, want \"listen 8080\"", got)
 	}
 }

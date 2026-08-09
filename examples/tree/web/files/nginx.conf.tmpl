@@ -1,10 +1,10 @@
-# managed by halite on {{ .Grains.host }}
-worker_processes {{ .Grains.num_cpus }};
+# managed by halite on {{ .Grains.host }} — contact {{ .Pillar.admin_email }}
+worker_processes {{ .Pillar.nginx.workers | default .Grains.num_cpus }};
 events { worker_connections 1024; }
 http {
     include mime.types;
     server {
-        listen 8080;
-        root /var/www;
+        listen {{ .Pillar.nginx.port }};
+        root {{ .Pillar.nginx.root }};
     }
 }

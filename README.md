@@ -8,11 +8,12 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.3.0 — masterless mode complete (phase P1).** Highstate with
-top.sls targeting, includes, the full requisite set (require, watch,
-onchanges, prereq), templated sources, and file/pkg/service/cmd/user/
-group/cron/sysctl modules. The master/agent transport layer (P2) is next;
-see [docs/salt-parity.md](docs/salt-parity.md) for the roadmap.
+**Status: v0.4.0 — masterless mode complete (P1), P2 in progress.**
+Highstate with top.sls targeting, pillar, includes, the full requisite set
+(require, watch, onchanges, prereq), templated sources, and file/pkg/
+service/cmd/user/group/cron/sysctl modules. The master/agent transport
+layer is the rest of P2; see [docs/salt-parity.md](docs/salt-parity.md)
+for the roadmap.
 
 ## Why
 
@@ -67,6 +68,10 @@ halite apply -test examples/webserver.sls
 # Run one state function ad hoc (Salt: salt-call --local pkg.install nginx)
 halite call pkg.installed name=nginx
 halite call file.managed name=/tmp/x contents=hello mode=0644
+
+# Show the pillar data this host resolves to (Salt: pillar.items)
+halite pillar
+halite pillar -pillar-root ./pillar -json
 ```
 
 ## A state file
