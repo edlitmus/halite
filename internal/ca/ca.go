@@ -29,14 +29,37 @@ func (s *Store) path(parts ...string) string {
 	return filepath.Join(append([]string{s.Dir}, parts...)...)
 }
 
-// Role decides the key usages of an issued certificate. Agents may only
-// authenticate as clients; the control plane may only serve.
+// Role decides the key usages and organizational unit of an issued
+// certificate. Agents may only authenticate as clients, the control plane
+// may only serve, and operators are agents' peers on the wire but are the
+// only role allowed to dispatch work.
 type Role int
 
 const (
 	RoleAgent Role = iota
 	RoleServer
+	RoleAdmin
 )
+
+// Organizational units stamped into issued certificates. The control plane
+// authorizes requests by role, so the role has to travel inside the
+// certificate rather than being claimed by the caller.
+const (
+	OUAgents  = "agents"
+	OUServers = "servers"
+	OUAdmins  = "admins"
+)
+
+func (r Role) ou() string {
+	switch r {
+	case RoleServer:
+		return OUServers
+	case RoleAdmin:
+		return OUAdmins
+	default:
+		return OUAgents
+	}
+}
 
 // Init creates the CA key and self-signed certificate. It is an error to
 // initialize a store that already has one — rotating a CA is a deliberate
@@ -128,10 +151,13 @@ func (s *Store) Sign(csrPEM []byte, commonName string, role Role, hosts []string
 	now := time.Now()
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: commonName},
-		NotBefore:    now.Add(-time.Hour),
-		NotAfter:     now.Add(validFor),
-		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		Subject: pkix.Name{
+			CommonName:         commonName,
+			OrganizationalUnit: []string{role.ou()},
+		},
+		NotBefore: now.Add(-time.Hour),
+		NotAfter:  now.Add(validFor),
+		KeyUsage:  x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}
 	switch role {
 	case RoleServer:
@@ -154,9 +180,12 @@ func (s *Store) Sign(csrPEM []byte, commonName string, role Role, hosts []string
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
 }
 
-// IssueServer generates a key pair and a server certificate for the control
-// plane in one step, writing master.key and master.crt.
-func (s *Store) IssueServer(commonName string, hosts []string, validFor time.Duration) error {
+// IssueLocal generates a key pair on the CA host and signs it in one step,
+// writing <dir>/<prefix>.key and <dir>/<prefix>.crt. It is for credentials
+// the CA operator holds anyway — the control plane's own certificate and
+// operator certificates. Agents never use this path: their keys are
+// generated on the agent and only the request travels.
+func (s *Store) IssueLocal(dir, prefix, commonName string, role Role, hosts []string, validFor time.Duration) error {
 	key, keyPEM, err := GenerateKey()
 	if err != nil {
 		return err
@@ -165,17 +194,22 @@ func (s *Store) IssueServer(commonName string, hosts []string, validFor time.Dur
 	if err != nil {
 		return err
 	}
-	certPEM, err := s.Sign(csrPEM, commonName, RoleServer, hosts, validFor)
+	certPEM, err := s.Sign(csrPEM, commonName, role, hosts, validFor)
 	if err != nil {
 		return err
 	}
-	if err := writeNew(s.path("master.key"), keyPEM, keyFileMode); err != nil {
-		return fmt.Errorf("write server key: %w", err)
+	if err := writeNew(filepath.Join(dir, prefix+".key"), keyPEM, keyFileMode); err != nil {
+		return fmt.Errorf("write %s key: %w", prefix, err)
 	}
-	if err := writeNew(s.path("master.crt"), certPEM, 0o644); err != nil {
-		return fmt.Errorf("write server certificate: %w", err)
+	if err := writeNew(filepath.Join(dir, prefix+".crt"), certPEM, 0o644); err != nil {
+		return fmt.Errorf("write %s certificate: %w", prefix, err)
 	}
 	return nil
+}
+
+// IssueServer writes the control plane's master.key and master.crt.
+func (s *Store) IssueServer(commonName string, hosts []string, validFor time.Duration) error {
+	return s.IssueLocal(s.Dir, "master", commonName, RoleServer, hosts, validFor)
 }
 
 func randomSerial() (*big.Int, error) {

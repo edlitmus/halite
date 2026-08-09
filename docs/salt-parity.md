@@ -18,7 +18,7 @@ not.
 | `salt-call --local state.apply` | `halite apply file.sls` | done | masterless is the v0 foundation |
 | `salt-call --local <mod>.<fn>` | `halite call module.fn k=v` | done | |
 | `test=True` | `halite apply -test` | done | every module implements dry-run |
-| `grains.items` | `halite grains [-json]` | done | os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
+| `grains.items` | `halite grains [-json]` | done | id, os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
 | Highstate output | Salt-style block output + `-json` | done | |
 | `state.highstate` / top.sls | `halite apply` (no target) | done | grain and hostname glob targeting; single merged environment |
 | Pillar | pillar tree with its own top file | done | targeted, deep-merged, include-capable; exposed as `{{ .Pillar.x }}` in states and templated sources. Encryption at rest: P2 |
@@ -32,10 +32,11 @@ not.
 
 | Salt 3008 | halite | Status | Notes |
 |---|---|---|---|
-| salt-master / salt-minion daemons | `halited` control plane + agent | P2 | single binary, mode by flag |
-| ZeroMQ transport, AES key exchange | mTLS over HTTP/2 (stdlib) | P2 | long-lived streams for the event bus; no ZeroMQ, no custom crypto |
+| salt-master / salt-minion daemons | `halite master` + `halite agent` | done | single binary, mode by subcommand |
+| ZeroMQ transport, AES key exchange | mTLS over HTTP/2 (stdlib) | done | TLS 1.3 only, long-poll job delivery; no ZeroMQ, no custom crypto |
 | Minion key accept/reject | TLS client-cert issuance (`halite key`) | done | CSR flow replaces Salt's key dance; see docs/pki.md |
-| Event bus / reactor | event stream + reactor rules | P3 | |
+| Targeting (`salt '<tgt>' ...`) | `halite run <target> <kind>` | done | one target language shared with top files |
+| Event bus / reactor | event stream + reactor rules | P3 | long-poll delivery covers jobs today |
 | Beacons | agent-side watchers emitting events | P3 | |
 | salt-ssh (agentless) | `halite ssh` pushing the static binary | P2 | trivially better than salt-ssh: copy one binary, exec, stream results |
 | Syndic | | out | flat fleets over mTLS scale far enough |
@@ -52,7 +53,7 @@ not.
 | user.present/absent, group.present/absent | done | pw(8), useradd/usermod, sysadminctl (partial), net user (partial); drift repair for uid/shell/home/gecos/groups |
 | cron.present/absent | done | crontab(1) with identifier markers; Windows scheduled tasks P3 |
 | sysctl.present | done | runtime + persist (sysctl.conf / sysctl.d); FreeBSD, Linux, macOS-runtime |
-| archive.extracted | P2 | stdlib tar/zip, no shelling out |
+| archive.extracted | P2 | tar half done in internal/archive (safe extraction); the state module and zip are pending |
 | git.latest | P2 | shells to git |
 | mount.mounted | P2 | fstab handling per-OS |
 | network.managed | out | too OS-entangled; use file + service |
@@ -83,8 +84,10 @@ their value is mostly fleet-wide queries (`halite '*' disk.usage`).
   service/cmd/user/cron/sysctl workloads.
 * **P2 — transport** (mTLS HTTP/2 master+agent, key issuance, targeting,
   `halite ssh`, REST API, pillar). Target: replace a small salt-master.
-  **In progress**: pillar and the CA (0.4) are done; the daemons,
-  `halite ssh`, the REST API, and pillar encryption at rest are next.
+  **In progress**: pillar, the CA, the control plane, the agent, and fleet
+  targeting (0.4) are done. Remaining: `halite ssh`, the REST API,
+  archive/git/mount state modules, read-only exec modules, and pillar
+  encryption at rest.
 * **P3 — events** (event bus, beacons, reactor, mine, orchestration,
   returners).
 * **P4 — long tail** (multi-master, Windows registry, external process

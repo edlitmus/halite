@@ -1,0 +1,133 @@
+// Package transport carries halite's control plane traffic: mTLS over
+// HTTP/2, JSON bodies, no custom framing and no custom crypto. Every
+// endpoint except enrollment requires a client certificate issued by the
+// fleet CA, and the caller's role comes from that certificate rather than
+// from anything it says about itself.
+package transport
+
+import "time"
+
+// API paths. Only PathEnroll is reachable without a client certificate.
+const (
+	PathEnroll    = "/v1/enroll"
+	PathHello     = "/v1/hello"
+	PathJobs      = "/v1/jobs"
+	PathResults   = "/v1/results"
+	PathPillar    = "/v1/pillar"
+	PathStateTree = "/v1/statetree"
+
+	PathDispatch = "/v1/dispatch"
+	PathAgents   = "/v1/agents"
+	PathJobInfo  = "/v1/job/" // + job id
+)
+
+// DefaultPort is the control plane's listening port.
+const DefaultPort = 4506
+
+// MaxBodyBytes caps request bodies. Enrollment is reachable before
+// authentication, so every body is bounded.
+const MaxBodyBytes = 8 << 20
+
+// EnrollRequest is an agent asking the CA to sign its certificate request.
+type EnrollRequest struct {
+	ID  string `json:"id"`
+	CSR string `json:"csr"` // PEM
+}
+
+// EnrollResponse reports where the request stands. Cert is set only once
+// an operator has accepted the request.
+type EnrollResponse struct {
+	State string `json:"state"` // pending, accepted, rejected
+	Cert  string `json:"cert,omitempty"`
+}
+
+// HelloRequest registers an agent and its facts with the control plane.
+// Targeting runs against these grains, so they are refreshed on every
+// reconnect.
+type HelloRequest struct {
+	Grains  map[string]any `json:"grains"`
+	Version string         `json:"version"`
+}
+
+// Agent is what the control plane knows about one enrolled host.
+type Agent struct {
+	ID       string         `json:"id"`
+	Grains   map[string]any `json:"grains,omitempty"`
+	Version  string         `json:"version,omitempty"`
+	LastSeen time.Time      `json:"last_seen"`
+	Online   bool           `json:"online"`
+}
+
+// Job kinds. Anything else is rejected by the agent.
+const (
+	KindHighstate = "state.highstate"
+	KindApply     = "state.apply"
+	KindCall      = "call"
+	KindGrains    = "grains"
+	KindPillar    = "pillar"
+)
+
+// Job is one unit of work dispatched to a set of agents.
+type Job struct {
+	ID      string            `json:"id"`
+	Kind    string            `json:"kind"`
+	Target  string            `json:"target"`
+	SLS     []string          `json:"sls,omitempty"`  // for state.apply
+	Fn      string            `json:"fn,omitempty"`   // for call
+	Args    map[string]string `json:"args,omitempty"` // for call
+	Test    bool              `json:"test,omitempty"`
+	Created time.Time         `json:"created"`
+}
+
+// StateOutcome mirrors one line of `halite apply` output.
+type StateOutcome struct {
+	ID       string            `json:"id"`
+	Function string            `json:"function"`
+	Ok       bool              `json:"result"`
+	Changed  bool              `json:"changed"`
+	Comment  string            `json:"comment"`
+	Changes  map[string]string `json:"changes,omitempty"`
+}
+
+// JobResult is one agent's answer to one job.
+type JobResult struct {
+	JobID     string         `json:"job_id"`
+	AgentID   string         `json:"agent_id"`
+	Ok        bool           `json:"result"`
+	Error     string         `json:"error,omitempty"`
+	States    []StateOutcome `json:"states,omitempty"`
+	Data      map[string]any `json:"data,omitempty"` // grains and pillar jobs
+	Succeeded int            `json:"succeeded"`
+	Failed    int            `json:"failed"`
+	Changed   int            `json:"changed"`
+	Finished  time.Time      `json:"finished"`
+	Duration  time.Duration  `json:"duration_ns"`
+}
+
+// DispatchRequest is an operator asking for work to be run.
+type DispatchRequest struct {
+	Target string            `json:"target"`
+	Kind   string            `json:"kind"`
+	SLS    []string          `json:"sls,omitempty"`
+	Fn     string            `json:"fn,omitempty"`
+	Args   map[string]string `json:"args,omitempty"`
+	Test   bool              `json:"test,omitempty"`
+}
+
+// DispatchResponse names the job and the agents it was queued for.
+type DispatchResponse struct {
+	JobID  string   `json:"job_id"`
+	Agents []string `json:"agents"`
+}
+
+// JobInfo is a job plus whatever results have come back so far.
+type JobInfo struct {
+	Job       Job         `json:"job"`
+	Expecting []string    `json:"expecting"`
+	Results   []JobResult `json:"results"`
+}
+
+// ErrorResponse is the body of every non-2xx reply.
+type ErrorResponse struct {
+	Error string `json:"error"`
+}

@@ -46,6 +46,14 @@ func main() {
 		cmdPillar(os.Args[2:])
 	case "key":
 		cmdKey(os.Args[2:])
+	case "master":
+		cmdMaster(os.Args[2:])
+	case "agent":
+		cmdAgent(os.Args[2:])
+	case "run":
+		cmdRun(os.Args[2:])
+	case "agents":
+		cmdAgents(os.Args[2:])
 	case "version":
 		fmt.Println("halite " + version)
 	case "-h", "--help", "help":
@@ -66,7 +74,13 @@ func usage() {
   halite call <module.fn> [k=v ...]        run a single state function
   halite pillar [-json] [-pillar-root DIR] show the pillar data for this host
   halite key <subcommand>                  manage the fleet CA ('halite key help')
-  halite version`)
+  halite version
+
+fleet mode:
+  halite master [-addr :4506] [-root DIR]  run the control plane
+  halite agent -master HOST                run the agent on a managed host
+  halite run <target> <kind> [args]        dispatch work and collect results
+  halite agents                            list the fleet`)
 }
 
 // defaultRoot is the state tree location when -root and HALITE_ROOT are

@@ -22,6 +22,10 @@ func Collect() map[string]any {
 	}
 	if h, err := os.Hostname(); err == nil {
 		g["host"] = h
+		// Salt's `id` grain. Masterless it is just the hostname; under a
+		// control plane the master replaces it with the enrolled identity,
+		// which is the name operators target by.
+		g["id"] = h
 	}
 	if u, err := user.Current(); err == nil {
 		g["username"] = u.Username

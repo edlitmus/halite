@@ -16,6 +16,8 @@ const keyUsage = `usage:
       create the CA (once per fleet)
   halite key server <hostname> [-san host,ip,...] [-days N]
       issue the control plane's server certificate
+  halite key admin <name> [-out DIR]
+      issue an operator certificate (the only role allowed to dispatch work)
   halite key gen <id> [-out DIR]
       agent side: generate a private key and a signing request
   halite key submit <id> <csr-file>
@@ -57,6 +59,8 @@ func cmdKey(args []string) {
 		keyInit(rest)
 	case "server":
 		keyServer(rest)
+	case "admin":
+		keyAdmin(rest)
 	case "gen":
 		keyGen(rest)
 	case "submit":
@@ -121,6 +125,32 @@ func keyServer(args []string) {
 	}
 	fmt.Printf("server certificate for %s written to %s\n", hostname, filepath.Join(store.Dir, "master.crt"))
 	fmt.Printf("valid for: %s\n", strings.Join(hosts, ", "))
+}
+
+func keyAdmin(args []string) {
+	fs := flag.NewFlagSet("key admin", flag.ExitOnError)
+	pki := pkiFlags(fs)
+	out := fs.String("out", "", "directory for admin.key and admin.crt (default: the PKI directory)")
+	days := fs.Int("days", 365, "validity in days")
+	rest := parseFlags(fs, args)
+
+	if len(rest) != 1 {
+		fatal("usage: halite key admin <name>")
+	}
+	name := rest[0]
+	if err := ca.ValidateID(name); err != nil {
+		fatal("%v", err)
+	}
+	store := &ca.Store{Dir: pki()}
+	dir := *out
+	if dir == "" {
+		dir = store.Dir
+	}
+	if err := store.IssueLocal(dir, "admin", name, ca.RoleAdmin, nil, time.Duration(*days)*24*time.Hour); err != nil {
+		fatal("%v", err)
+	}
+	fmt.Printf("operator certificate for %s written to %s\n", name, filepath.Join(dir, "admin.crt"))
+	fmt.Printf("copy admin.crt, admin.key, and ca.crt to the operator's PKI directory\n")
 }
 
 func keyGen(args []string) {

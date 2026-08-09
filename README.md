@@ -8,12 +8,14 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.4.0 — masterless mode complete (P1), P2 in progress.**
-Highstate with top.sls targeting, pillar, includes, the full requisite set
-(require, watch, onchanges, prereq), templated sources, and file/pkg/
-service/cmd/user/group/cron/sysctl modules. The master/agent transport
-layer is the rest of P2; see [docs/salt-parity.md](docs/salt-parity.md)
-for the roadmap.
+**Status: v0.4.0 — masterless complete (P1), fleet mode working (P2).**
+Masterless: highstate with top.sls targeting, pillar, includes, the full
+requisite set (require, watch, onchanges, prereq), templated sources, and
+file/pkg/service/cmd/user/group/cron/sysctl modules. Fleet: an mTLS
+HTTP/2 control plane, CSR-based agent enrollment, and targeted job
+dispatch. Still to come in P2: `halite ssh`, the REST API, and
+archive/git/mount modules — see
+[docs/salt-parity.md](docs/salt-parity.md).
 
 ## Why
 
@@ -74,6 +76,31 @@ halite pillar
 halite pillar -pillar-root ./pillar -json
 ```
 
+## Fleet mode
+
+```sh
+# On the control plane host
+halite key init -cn "acme fleet ca"
+halite key server master.example.com
+halite key admin ed
+halite master -root /usr/local/etc/halite/states
+
+# On a managed host (ca.crt copied in out of band)
+halite agent -master master.example.com -id web1
+
+# Back on the control plane: accept the agent's request
+halite key list && halite key accept web1
+
+# Drive the fleet (Salt: salt '<target>' state.apply)
+halite agents
+halite run '*' state.highstate -test
+halite run 'os_family:FreeBSD' state.apply web.nginx
+halite run 'web*' call pkg.installed name=nginx
+```
+
+mTLS 1.3 throughout, agent identity from the client certificate, and no
+inbound connections to managed hosts. See [docs/fleet.md](docs/fleet.md).
+
 ## A state file
 
 ```yaml
@@ -108,6 +135,7 @@ grains are available as `{{ .Grains.os_family }}`. See
 * [docs/getting-started.md](docs/getting-started.md) — install, first state, workflow
 * [docs/writing-states.md](docs/writing-states.md) — SLS format, templating, requisites
 * [docs/states.md](docs/states.md) — state module reference (file, pkg, service, cmd)
+* [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
 * [docs/pki.md](docs/pki.md) — keys, certificates, and agent enrollment
 * [docs/architecture.md](docs/architecture.md) — design decisions and internals
 * [docs/salt-parity.md](docs/salt-parity.md) — Salt 3008 feature map and roadmap

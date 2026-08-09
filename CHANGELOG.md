@@ -2,7 +2,31 @@
 
 ## 0.4.0 — 2026-08-09
 
-First P2 (transport) increments: pillar and the fleet CA.
+P2 (transport): pillar, the fleet CA, and a working control plane.
+
+* Fleet mode. `halite master` serves an mTLS HTTP/2 control plane;
+  `halite agent` enrolls, reports grains, waits for work on a long poll,
+  and executes it with the same loader and engine as `halite apply`;
+  `halite run <target> <kind>` dispatches and collects results;
+  `halite agents` lists the fleet. Targets use the top-file language
+  (`'*'`, `os_family:FreeBSD`, `web*`). Job kinds: state.highstate,
+  state.apply, call, grains, pillar. See docs/fleet.md.
+* Agents fetch the state tree as a tar.gz and their pillar as JSON, so a
+  fleet run and a masterless run share one rendering path (ADR-7).
+* TLS 1.3 only. Roles are stamped into certificates as an organizational
+  unit: agents may not dispatch work, only operators may. An agent's
+  identity comes from its client certificate, so a reported `id` grain
+  cannot be used to target-spoof, and results are refused from agents a
+  job was not dispatched to. `/v1/enroll` is the only unauthenticated
+  endpoint and can only file a request for an operator to accept.
+* Queued work expires (five minutes by default), so an agent that was
+  down does not replay stale intent when it returns.
+* New `id` grain, Salt's: the hostname masterless, the enrolled identity
+  under a control plane. A bare target glob matches it.
+* New internal/archive: tar.gz packing plus extraction that refuses
+  entries escaping the destination, non-regular entries, and archives over
+  a size or entry budget. `archive.extracted` will build on it.
+* `halite key admin <name>` issues operator certificates.
 
 * `halite key`: a stdlib-only CA replacing Salt's minion key dance with a
   CSR flow — `init`, `server`, `gen`, `submit`, `list`, `accept`, `reject`,

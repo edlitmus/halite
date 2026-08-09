@@ -3,13 +3,18 @@
 ## Layout
 
 ```
-cmd/halite/          CLI entry point (grains, apply, call, pillar, version)
+cmd/halite/          CLI entry point (local, key, and fleet commands)
 internal/yamlite/    zero-dep YAML-subset parser (ordered maps)
 internal/sls/        template rendering, state compilation, requisite sort
 internal/pillar/     targeted per-host data, deep-merged
 internal/engine/     plan executor (requisites, gates, watch propagation)
 internal/modules/    state modules + platform backends
 internal/grains/     host fact collection
+internal/ca/         the fleet CA: keys, CSRs, enrollment lifecycle
+internal/transport/  mTLS HTTP/2 wire types, TLS config, JSON client
+internal/archive/    tar.gz pack and safe unpack
+internal/master/     control plane: registry, dispatch, handlers
+internal/agent/      managed-host side: enroll, poll, execute, report
 ```
 
 ## Pipeline
@@ -67,15 +72,23 @@ add-on. Shipping a correct local engine first means the P2 master/agent is
 is useful on day one for image builds, jails, and cron-driven convergence
 without any infrastructure.
 
-### ADR-5: mTLS HTTP/2 transport (planned, P2)
+### ADR-5: mTLS HTTP/2 transport
 
-**Proposed.** Options considered: ZeroMQ-alike (cgo or fragile pure-Go
-bindings — rejected), NATS embedded (excellent but violates ADR-1 and adds
-an operational surface), gRPC (violates ADR-1), stdlib HTTP/2 with mTLS
-(chosen). Long-lived server-push streams carry the event bus; request
-/response carries job dispatch and returns. Client certs replace Salt's
-minion key exchange — `halite key` acts as a tiny CA. Everything is
-debuggable with curl and openssl s_client.
+**Accepted (0.4).** Options considered: ZeroMQ-alike (cgo or fragile
+pure-Go bindings — rejected), NATS embedded (excellent but violates ADR-1
+and adds an operational surface), gRPC (violates ADR-1), stdlib HTTP/2 with
+mTLS (chosen). Client certs replace Salt's minion key exchange — `halite
+key` is a tiny CA. Everything is debuggable with curl and openssl.
+
+TLS 1.3 only, with no configuration knob to lower it. The caller's role
+(agent or operator) is an organizational unit in its certificate, so
+authorization never depends on anything the caller asserts.
+
+Job delivery is a long poll rather than a server-push stream: the control
+plane holds a `GET /v1/jobs` open until there is work. Agents therefore
+need no inbound connectivity and work from behind NAT, and there is no
+custom framing to debug. A real event stream arrives with the event bus in
+P3, where it earns its complexity.
 
 ### ADR-6: Backends are table-driven per platform
 
@@ -84,6 +97,23 @@ a detector (GOOS first, then LookPath). FreeBSD is first-class: pkg(8),
 rc.d with `one*` verbs so states work before a service is enabled, and
 `sysrc` for enabling. Adding a platform is one backend struct, not a new
 module.
+
+### ADR-7: Agents fetch the tree, the master does not compile
+
+**Accepted (0.4).** The alternatives were a Salt-style per-file fileserver
+with hash-based caching, or compiling the plan on the master and shipping
+resolved states. Instead the control plane serves the whole tree as a
+tar.gz and the agent's pillar as JSON, and the agent runs the same loader
+and engine as `halite apply`.
+
+Consequences: one rendering path instead of two, so a fleet run and a
+masterless run cannot diverge; no cache-invalidation protocol; and the tar
+work is shared with `archive.extracted`. The cost is bandwidth on large
+trees — the whole tree ships on every state job. If that ever hurts,
+conditional fetch on a tree hash is a small addition that does not change
+the model. Extraction is treated as untrusted input regardless: entries
+that escape the destination, and anything that is not a regular file or
+directory, are refused.
 
 ## Error and failure model
 
@@ -95,7 +125,25 @@ dry-run must say "would ..." and change nothing.
 
 ## Security posture
 
-No network listener exists in v0.1 — attack surface is the binary and the
-files it is told to read. When the transport lands: mTLS everywhere,
-no unauthenticated ports, no pickle/msgpack deserialization of untrusted
-data (JSON only), and the master never executes minion-supplied code.
+Masterless, the attack surface is the binary and the files it is told to
+read. With the control plane running (see [fleet.md](fleet.md)):
+
+* **mTLS 1.3 on every connection**, with no downgrade path. Both ends
+  authenticate against the fleet CA and nothing else.
+* **One unauthenticated endpoint**, `/v1/enroll`, which can do exactly one
+  thing: file a signing request that an operator must then accept. All
+  bodies are size-capped, enrolled or not.
+* **Identity comes from the certificate.** An agent's id, and its role, are
+  read from its client certificate; the request body cannot influence
+  either. A reported `id` grain is overwritten with the enrolled identity,
+  so an agent cannot make itself the target of someone else's job, and
+  results are only accepted from agents a job was actually dispatched to.
+* **Agents cannot dispatch.** Only an operator certificate can queue work
+  or list the fleet.
+* **JSON only.** Nothing is deserialized into behavior — no pickle, no
+  msgpack, no code from the wire. The state tree arrives as an archive that
+  is refused if any entry escapes the destination or is not a regular file
+  or directory, and the agent renders it with the same templating it uses
+  masterless.
+* **Private keys never move.** An agent generates its own key; only the
+  signing request travels. Every key file is written 0600.

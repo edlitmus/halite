@@ -38,7 +38,7 @@ func MatchTop(root any, grains map[string]any) ([]string, error) {
 			return nil, fmt.Errorf("environment %q must be a mapping of targets", env)
 		}
 		for _, pat := range envBody.Keys {
-			if !topMatch(pat, grains) {
+			if !TargetMatch(pat, grains) {
 				continue
 			}
 			list, ok := envBody.Vals[pat].([]any)
@@ -60,7 +60,10 @@ func MatchTop(root any, grains map[string]any) ([]string, error) {
 	return names, nil
 }
 
-func topMatch(pat string, grains map[string]any) bool {
+// TargetMatch reports whether a target pattern selects a host with the
+// given grains. It is the one targeting language halite has: top files use
+// it to pick SLS names, and the control plane uses it to pick agents.
+func TargetMatch(pat string, grains map[string]any) bool {
 	if pat == "*" {
 		return true
 	}
@@ -72,7 +75,12 @@ func topMatch(pat string, grains map[string]any) bool {
 			return err == nil && ok
 		}
 	}
-	host, _ := grains["host"].(string)
-	ok, err := path.Match(pat, host)
+	// A bare pattern globs the host's identity: the `id` grain, which is the
+	// enrolled name under a control plane, falling back to the hostname.
+	name, _ := grains["id"].(string)
+	if name == "" {
+		name, _ = grains["host"].(string)
+	}
+	ok, err := path.Match(pat, name)
 	return err == nil && ok
 }
