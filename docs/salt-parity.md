@@ -38,7 +38,7 @@ not.
 | Targeting (`salt '<tgt>' ...`) | `halite run <target> <kind>` | done | one target language shared with top files |
 | Event bus / reactor | event stream + reactor rules | P3 | long-poll delivery covers jobs today |
 | Beacons | agent-side watchers emitting events | P3 | |
-| salt-ssh (agentless) | `halite ssh` pushing the static binary | P2 | trivially better than salt-ssh: copy one binary, exec, stream results |
+| salt-ssh (agentless) | `halite ssh` pushing the static binary | done | copies one binary, ships the tree, collects JSON; pillar rendered operator-side. See docs/agentless.md |
 | Syndic | | out | flat fleets over mTLS scale far enough |
 | Multi-master | DNS/LB failover | P4 | stateless masters make this simpler than Salt's |
 
@@ -73,7 +73,7 @@ place; the registry makes adding one a single function.
 | Salt Mine | P3 | periodic grain/exec publishes to master |
 | Orchestration (state.orchestrate) | P3 | master-side ordered runs across minions |
 | Returners | P3 | pluggable result sinks (file, webhook, Postgres) |
-| salt-api (REST) | P2 | comes nearly free with the HTTP/2 master |
+| salt-api (REST) | done (mTLS) | the control plane's JSON API is the REST API; authentication is client certificates, not tokens. A token/browser front door is P3 if it is ever wanted |
 | Windows-specific (registry, DSC) | P4/out | registry: P4; DSC: out |
 | Salt extensions / Python modules | out | custom modules are Go, compiled in; external process modules (exec JSON protocol) considered for P4 |
 
@@ -86,10 +86,12 @@ place; the registry makes adding one a single function.
   service/cmd/user/cron/sysctl workloads.
 * **P2 — transport** (mTLS HTTP/2 master+agent, key issuance, targeting,
   `halite ssh`, REST API, pillar). Target: replace a small salt-master.
-  **In progress**: pillar, the CA, the control plane, the agent, and fleet
-  targeting (0.4) are done. Remaining: `halite ssh`, the REST API,
-  archive/git/mount state modules, read-only exec modules, and pillar
-  encryption at rest.
+  **Complete as of 0.4** except pillar encryption at rest: pillar, the CA,
+  the mTLS control plane and agent, fleet targeting, `halite ssh`, the
+  archive/git/mount state modules, and the read-only execution modules.
+  halite now replaces a small salt-master. Encryption at rest is deferred
+  deliberately — age is not stdlib, so ADR-1 makes it a design decision
+  rather than a dependency, and it is tracked as the one open P2 item.
 * **P3 — events** (event bus, beacons, reactor, mine, orchestration,
   returners).
 * **P4 — long tail** (multi-master, Windows registry, external process

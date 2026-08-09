@@ -54,6 +54,8 @@ func main() {
 		cmdRun(os.Args[2:])
 	case "agents":
 		cmdAgents(os.Args[2:])
+	case "ssh":
+		cmdSSH(os.Args[2:])
 	case "version":
 		fmt.Println("halite " + version)
 	case "-h", "--help", "help":
@@ -80,7 +82,10 @@ fleet mode:
   halite master [-addr :4506] [-root DIR]  run the control plane
   halite agent -master HOST                run the agent on a managed host
   halite run <target> <kind> [args]        dispatch work and collect results
-  halite agents                            list the fleet`)
+  halite agents                            list the fleet
+
+agentless:
+  halite ssh <hosts> <kind> [args]         push the binary over ssh and run`)
 }
 
 // defaultRoot is the state tree location when -root and HALITE_ROOT are
@@ -134,6 +139,25 @@ func resolvePillarRoot(flagValue, statesRoot string) string {
 		return env
 	}
 	return filepath.Join(filepath.Dir(statesRoot), "pillar")
+}
+
+// loadPillar reads pillar data from a pre-rendered JSON file when one is
+// given, and from the pillar tree otherwise. `halite ssh` renders pillar on
+// the operator's machine and ships only the result, so a remote host never
+// sees the whole tree.
+func loadPillar(jsonPath, pillarRoot string, g map[string]any) (map[string]any, error) {
+	if jsonPath == "" {
+		return (&pillar.Loader{Root: pillarRoot, Grains: g}).Load()
+	}
+	b, err := os.ReadFile(jsonPath)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", jsonPath, err)
+	}
+	data := map[string]any{}
+	if err := json.Unmarshal(b, &data); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", jsonPath, err)
+	}
+	return data, nil
 }
 
 func cmdPillar(args []string) {
@@ -260,12 +284,13 @@ func cmdApply(args []string) {
 	asJSON := fs.Bool("json", false, "output results as JSON")
 	rootFlag := fs.String("root", "", "state tree root (default: $HALITE_ROOT or the platform default)")
 	pillarRootFlag := fs.String("pillar-root", "", "pillar tree root (default: $HALITE_PILLAR_ROOT or <root>/../pillar)")
+	pillarJSON := fs.String("pillar-json", "", "read pillar from a JSON file instead of a tree (used by 'halite ssh')")
 	targets := parseFlags(fs, args)
 
 	root := resolveRoot(*rootFlag)
 
 	g := grains.Collect()
-	p, err := (&pillar.Loader{Root: resolvePillarRoot(*pillarRootFlag, root), Grains: g}).Load()
+	p, err := loadPillar(*pillarJSON, resolvePillarRoot(*pillarRootFlag, root), g)
 	if err != nil {
 		fatal("%v", err)
 	}

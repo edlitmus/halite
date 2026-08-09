@@ -3,7 +3,7 @@
 ## Layout
 
 ```
-cmd/halite/          CLI entry point (local, key, and fleet commands)
+cmd/halite/          CLI: local, key, fleet, and ssh commands
 internal/yamlite/    zero-dep YAML-subset parser (ordered maps)
 internal/sls/        template rendering, state compilation, requisite sort
 internal/pillar/     targeted per-host data, deep-merged
@@ -42,8 +42,12 @@ lives in `internal/engine` so the agent daemon can drive it directly.
 Salt's operational pain is overwhelmingly dependency and packaging pain.
 Consequences: we wrote a YAML-subset parser (~250 lines) instead of
 importing one, and templating is `text/template` instead of a Jinja port.
-Revisit only if a P2 feature genuinely cannot be done in stdlib (none
-identified; mTLS + HTTP/2 are stdlib).
+Revisit only if a feature genuinely cannot be done in stdlib. Through P2
+none did: mTLS and HTTP/2 are stdlib, the CA is `crypto/x509`, archives are
+`archive/tar` and `archive/zip`, and `halite ssh` drives the system ssh
+rather than importing one (ADR-8). The open question is pillar encryption
+at rest, where age would be a dependency and composing `crypto/ecdh` with
+AES-GCM would be ours to get right.
 
 ### ADR-2: YAML subset, not full YAML
 
@@ -114,6 +118,20 @@ conditional fetch on a tree hash is a small addition that does not change
 the model. Extraction is treated as untrusted input regardless: entries
 that escape the destination, and anything that is not a regular file or
 directory, are refused.
+
+### ADR-8: `halite ssh` shells out to ssh(1)
+
+**Accepted (0.4).** A Go SSH client means `golang.org/x/crypto/ssh`, which
+ADR-1 rules out. Driving the system `ssh` and `scp` is not a compromise: it
+inherits ssh_config, agent forwarding, `ProxyJump`, certificates, and
+whatever else the operator already has working, and there is no second
+implementation of host-key handling to get wrong. `-o` passes options
+through for the rest.
+
+The remote side needs only `sh`, `tar`, and a writable `/tmp`. Pillar is
+rendered operator-side and shipped as JSON (`apply -pillar-json`), so a
+managed host never receives another host's data — the one place where
+agentless has to differ from an agent, which fetches its own.
 
 ## Error and failure model
 

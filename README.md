@@ -8,14 +8,17 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.4.0 — masterless complete (P1), fleet mode working (P2).**
-Masterless: highstate with top.sls targeting, pillar, includes, the full
-requisite set (require, watch, onchanges, prereq), templated sources, and
-file/pkg/service/cmd/user/group/cron/sysctl modules. Fleet: an mTLS
-HTTP/2 control plane, CSR-based agent enrollment, and targeted job
-dispatch. Still to come in P2: `halite ssh`, the REST API, and
-archive/git/mount modules — see
-[docs/salt-parity.md](docs/salt-parity.md).
+**Status: v0.4.0 — P1 and P2 complete.** Three ways to run:
+
+* **Masterless** — `halite apply` on the host. Highstate with top.sls
+  targeting, pillar, includes, the full requisite set, and the
+  file/pkg/service/cmd/user/group/cron/sysctl/archive/git/mount modules.
+* **Fleet** — an mTLS HTTP/2 control plane, CSR-based enrollment, and
+  targeted dispatch to agents.
+* **Agentless** — `halite ssh` pushes the binary, runs, and cleans up.
+
+Pillar encryption at rest is the one P2 item still open; events, beacons,
+and orchestration are P3. See [docs/salt-parity.md](docs/salt-parity.md).
 
 ## Why
 
@@ -101,6 +104,19 @@ halite run 'web*' call pkg.installed name=nginx
 mTLS 1.3 throughout, agent identity from the client certificate, and no
 inbound connections to managed hosts. See [docs/fleet.md](docs/fleet.md).
 
+## Agentless
+
+No agent, no control plane — copy one binary, run it, clean up:
+
+```sh
+halite ssh web1,web2 state.highstate -test
+halite ssh 'web*' state.apply web.nginx -roster hosts.txt
+halite ssh '*' call disk.usage -roster hosts.txt
+```
+
+Pillar is rendered on your machine and only that host's data is shipped.
+See [docs/agentless.md](docs/agentless.md).
+
 ## A state file
 
 ```yaml
@@ -136,6 +152,7 @@ grains are available as `{{ .Grains.os_family }}`. See
 * [docs/writing-states.md](docs/writing-states.md) — SLS format, templating, requisites
 * [docs/states.md](docs/states.md) — state module reference (file, pkg, service, cmd)
 * [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
+* [docs/agentless.md](docs/agentless.md) — `halite ssh`, rosters, bootstrapping
 * [docs/pki.md](docs/pki.md) — keys, certificates, and agent enrollment
 * [docs/architecture.md](docs/architecture.md) — design decisions and internals
 * [docs/salt-parity.md](docs/salt-parity.md) — Salt 3008 feature map and roadmap

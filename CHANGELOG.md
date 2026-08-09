@@ -70,6 +70,18 @@ and the remaining P2 state modules.
   `status.uptime`, `status.loadavg`, `network.interfaces`. They take no
   requisites and change nothing. disk.usage is not implemented on Windows.
 
+### Agentless
+
+* `halite ssh <hosts> <kind> [args]` manages hosts with no agent: it probes
+  the platform, pushes a matching static binary, ships the state tree, runs
+  it, collects JSON, and removes its working directory. Hosts come from a
+  comma list or a globbed `-roster`, run `-jobs` at a time. `-o` passes
+  options through to ssh and scp.
+* Pillar is rendered on the operator's machine from the host's reported
+  grains and shipped as JSON, so a managed host never receives another
+  host's data. `halite apply -pillar-json FILE` is the flag that makes that
+  possible and is useful on its own.
+
 ### Internals
 
 * New packages: internal/ca, internal/transport, internal/archive,

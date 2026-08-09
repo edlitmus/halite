@@ -330,3 +330,9 @@ func printJobInfo(info transport.JobInfo) {
 		fmt.Printf("no result from: %s\n", strings.Join(missing, ", "))
 	}
 }
+
+// moduleResult builds a Result from decoded wire fields, for printing
+// remote output in the local format.
+func moduleResult(ok, changed bool, comment string, changes map[string]string) modules.Result {
+	return modules.Result{Ok: ok, Changed: changed, Comment: comment, Changes: changes}
+}
