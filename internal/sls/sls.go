@@ -1,8 +1,9 @@
-// Package sls renders and compiles Salt-style SLS state files into an
-// ordered, requisite-resolved execution plan.
+// Package sls renders, loads, and compiles Salt-style SLS state files into
+// an ordered, requisite-resolved execution plan.
 //
 // Pipeline: raw file -> Render (text/template with grains) -> yamlite.Parse
-// -> Compile (flatten args, extract requisites, topological sort).
+// -> compileTree (flatten args, extract includes and requisites) ->
+// Loader (resolve includes, merge) -> sortStates (dedup check, topo sort).
 package sls
 
 import (
@@ -23,12 +24,16 @@ type Ref struct {
 
 // State is one compiled state declaration.
 type State struct {
-	ID      string
-	Module  string
-	Fn      string
-	Args    map[string]any
-	Require []Ref
-	Watch   []Ref
+	ID        string
+	Module    string
+	Fn        string
+	Args      map[string]any
+	Require   []Ref
+	Watch     []Ref
+	OnChanges []Ref
+	Prereq    []Ref
+	Dir       string // directory of the source SLS file (for relative sources)
+	Src       string // source SLS path (for error attribution)
 }
 
 // Name returns the "module.function" form.
@@ -73,58 +78,70 @@ func Render(name, src string, data TemplateData) (string, error) {
 	return buf.String(), nil
 }
 
-// Compile turns a parsed SLS tree into an ordered list of states with
-// requisites resolved. Declaration order is preserved except where
-// require/watch edges force reordering.
-func Compile(root any) ([]State, error) {
+// compileTree turns a parsed SLS tree into unsorted states plus the list of
+// included SLS names (from a top-level "include:" key).
+func compileTree(root any) (states []State, includes []string, err error) {
 	m, ok := root.(*yamlite.Map)
 	if !ok {
-		return nil, fmt.Errorf("top level of an SLS file must be a mapping of state IDs")
+		return nil, nil, fmt.Errorf("top level of an SLS file must be a mapping of state IDs")
 	}
-	var states []State
 	for _, id := range m.Keys {
+		if id == "include" {
+			list, ok := m.Vals[id].([]any)
+			if !ok {
+				return nil, nil, fmt.Errorf("include: must be a list of sls names")
+			}
+			for _, item := range list {
+				s, ok := item.(string)
+				if !ok {
+					return nil, nil, fmt.Errorf("include: entries must be sls names, got %v", item)
+				}
+				includes = append(includes, s)
+			}
+			continue
+		}
 		body, ok := m.Vals[id].(*yamlite.Map)
 		if !ok {
-			return nil, fmt.Errorf("state %q: body must be a mapping of module functions", id)
+			return nil, nil, fmt.Errorf("state %q: body must be a mapping of module functions", id)
 		}
 		for _, fn := range body.Keys {
 			parts := strings.SplitN(fn, ".", 2)
 			if len(parts) != 2 {
-				return nil, fmt.Errorf("state %q: %q is not of the form module.function", id, fn)
+				return nil, nil, fmt.Errorf("state %q: %q is not of the form module.function", id, fn)
 			}
-			args, req, watch, err := flatten(body.Vals[fn])
-			if err != nil {
-				return nil, fmt.Errorf("state %q (%s): %w", id, fn, err)
+			st := State{ID: id, Module: parts[0], Fn: parts[1]}
+			if err := flatten(body.Vals[fn], &st); err != nil {
+				return nil, nil, fmt.Errorf("state %q (%s): %w", id, fn, err)
 			}
-			states = append(states, State{
-				ID: id, Module: parts[0], Fn: parts[1],
-				Args: args, Require: req, Watch: watch,
-			})
+			states = append(states, st)
 		}
 	}
-	return sortStates(states)
+	return states, includes, nil
 }
 
-// flatten converts the Salt arg convention (a list of single-pair maps) into
-// a flat args map, pulling out require/watch requisites.
-func flatten(v any) (args map[string]any, req, watch []Ref, err error) {
-	args = map[string]any{}
+// flatten converts the Salt arg convention (a list of single-pair maps)
+// into a flat args map, pulling out requisites.
+func flatten(v any, st *State) error {
+	st.Args = map[string]any{}
 	add := func(k string, val any) error {
 		switch k {
-		case "require":
+		case "require", "watch", "onchanges", "prereq":
 			r, err := parseRefs(val)
 			if err != nil {
-				return fmt.Errorf("require: %w", err)
+				return fmt.Errorf("%s: %w", k, err)
 			}
-			req = append(req, r...)
-		case "watch":
-			r, err := parseRefs(val)
-			if err != nil {
-				return fmt.Errorf("watch: %w", err)
+			switch k {
+			case "require":
+				st.Require = append(st.Require, r...)
+			case "watch":
+				st.Watch = append(st.Watch, r...)
+			case "onchanges":
+				st.OnChanges = append(st.OnChanges, r...)
+			case "prereq":
+				st.Prereq = append(st.Prereq, r...)
 			}
-			watch = append(watch, r...)
 		default:
-			args[k] = val
+			st.Args[k] = val
 		}
 		return nil
 	}
@@ -136,26 +153,26 @@ func flatten(v any) (args map[string]any, req, watch []Ref, err error) {
 			case *yamlite.Map:
 				for _, k := range it.Keys {
 					if err := add(k, it.Vals[k]); err != nil {
-						return nil, nil, nil, err
+						return err
 					}
 				}
 			case string:
 				// bare flag, e.g. "- makedirs"
-				args[it] = "true"
+				st.Args[it] = "true"
 			default:
-				return nil, nil, nil, fmt.Errorf("unsupported argument entry %v", item)
+				return fmt.Errorf("unsupported argument entry %v", item)
 			}
 		}
 	case *yamlite.Map:
 		for _, k := range t.Keys {
 			if err := add(k, t.Vals[k]); err != nil {
-				return nil, nil, nil, err
+				return err
 			}
 		}
 	default:
-		return nil, nil, nil, fmt.Errorf("arguments must be a list of '- key: value' entries")
+		return fmt.Errorf("arguments must be a list of '- key: value' entries")
 	}
-	return args, req, watch, nil
+	return nil
 }
 
 func parseRefs(v any) ([]Ref, error) {
@@ -183,8 +200,19 @@ func parseRefs(v any) ([]Ref, error) {
 	return out, nil
 }
 
-// sortStates performs a stable topological sort over require+watch edges.
+// sortStates checks for duplicate declarations and performs a stable
+// topological sort. require, watch, and onchanges are "runs after" edges;
+// prereq reverses the edge: the declaring state runs before its target.
 func sortStates(in []State) ([]State, error) {
+	seen := map[string]string{}
+	for _, s := range in {
+		key := s.ID + "|" + s.Name()
+		if prev, ok := seen[key]; ok {
+			return nil, fmt.Errorf("duplicate state %q (%s) declared in %s and %s",
+				s.ID, s.Name(), orDot(prev), orDot(s.Src))
+		}
+		seen[key] = s.Src
+	}
 	find := func(r Ref) (int, bool) {
 		for i, s := range in {
 			if s.ID == r.ID && (r.Module == "" || r.Module == s.Module) {
@@ -195,13 +223,20 @@ func sortStates(in []State) ([]State, error) {
 	}
 	deps := make([][]int, len(in))
 	for i, s := range in {
-		refs := append(append([]Ref{}, s.Require...), s.Watch...)
-		for _, r := range refs {
+		after := append(append(append([]Ref{}, s.Require...), s.Watch...), s.OnChanges...)
+		for _, r := range after {
 			j, ok := find(r)
 			if !ok {
 				return nil, fmt.Errorf("state %q: requisite %s:%s not found", s.ID, r.Module, r.ID)
 			}
 			deps[i] = append(deps[i], j)
+		}
+		for _, r := range s.Prereq {
+			j, ok := find(r)
+			if !ok {
+				return nil, fmt.Errorf("state %q: prereq %s:%s not found", s.ID, r.Module, r.ID)
+			}
+			deps[j] = append(deps[j], i) // target runs after the prereq-declaring state
 		}
 	}
 	done := make([]bool, len(in))
@@ -230,4 +265,11 @@ func sortStates(in []State) ([]State, error) {
 		}
 	}
 	return out, nil
+}
+
+func orDot(s string) string {
+	if s == "" {
+		return "<input>"
+	}
+	return s
 }

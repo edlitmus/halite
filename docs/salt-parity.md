@@ -20,13 +20,13 @@ not.
 | `test=True` | `halite apply -test` | done | every module implements dry-run |
 | `grains.items` | `halite grains [-json]` | done | os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
 | Highstate output | Salt-style block output + `-json` | done | |
-| `state.highstate` / top.sls | targeting SLS sets by grain | P1 | top file + environment dirs |
+| `state.highstate` / top.sls | `halite apply` (no target) | done | grain and hostname glob targeting; single merged environment |
 | Pillar | encrypted per-host data | P2 | Go-native: age-encrypted files, exposed as `{{ .Pillar.x }}` |
 | Requisites: require, watch | require, watch | done | watch triggers service restart / cmd.wait |
-| Requisites: onchanges, prereq | | P1 | |
+| Requisites: onchanges, prereq | onchanges, prereq | done | prereq uses an automatic dry run of its target |
 | unless/onlyif/creates as universal state args | universal gates | done | evaluated by the engine for every state |
 | Jinja templating | Go `text/template` | done | grains in scope; funcs: default, contains, split, join, lower, upper, hasPrefix, hasSuffix |
-| Includes (`include:`) | | P1 | |
+| Includes (`include:`) | include: | done | dedup, cycle-safe, includes-first ordering |
 
 ## Master/minion architecture
 
@@ -45,7 +45,7 @@ not.
 
 | Salt | halite | Status |
 |---|---|---|
-| file.managed / directory / absent | done | ownership + line diffs done; templated sources: P1 |
+| file.managed / directory / absent | done | ownership, line diffs, and templated sources (`template: true`) |
 | pkg.installed / removed | done | backends: pkg(8), apt, dnf, yum, zypper, pacman, apk, brew, choco, winget. versions/repos: P1 |
 | service.running / dead | done | rc.d (+sysrc enable), systemd, sysvinit, launchd (partial), Windows SCM |
 | cmd.run / cmd.wait | done | unless, onlyif, creates, cwd, env |
@@ -76,10 +76,11 @@ their value is mostly fleet-wide queries (`halite '*' disk.usage`).
 
 ## Phases
 
-* **P1 — masterless completeness**. Done in 0.2: user/group/cron/sysctl,
-  file ownership + diffs, universal gates, JSON output, template funcs.
-  Remaining: top files, includes, templated sources, onchanges/prereq.
-  Target: replace salt-call --local for real hosts.
+* **P1 — masterless completeness**. **Complete as of 0.3**: top files and
+  highstate, includes, onchanges/prereq, templated sources, user/group/
+  cron/sysctl, file ownership + diffs, universal gates, JSON output,
+  template funcs. halite now replaces salt-call --local for file/pkg/
+  service/cmd/user/cron/sysctl workloads.
 * **P2 — transport** (mTLS HTTP/2 master+agent, key issuance, targeting,
   `halite ssh`, REST API, pillar). Target: replace a small salt-master.
 * **P3 — events** (event bus, beacons, reactor, mine, orchestration,

@@ -70,9 +70,10 @@ states/
 ```
 
 `- source:` paths resolve relative to the SLS file, so `source:
-files/nginx-freebsd.conf` works from anywhere. Top-file targeting across
-many SLS files is P1; today, apply files explicitly (a shell loop or a
-small wrapper SLS with `cmd.run` works in the interim).
+files/nginx-freebsd.conf` works from anywhere. Add a `top.sls` at the
+tree root and `halite apply -root states/` (or set `HALITE_ROOT`) gives
+you a full highstate — see docs/writing-states.md for top-file targeting
+and `include:`.
 
 ## Converging on a schedule
 
@@ -80,7 +81,7 @@ Masterless convergence with cron (FreeBSD):
 
 ```
 # /etc/cron.d/halite or crontab -e
-*/30 * * * * root /usr/local/bin/halite apply /usr/local/etc/halite/base.sls >> /var/log/halite.log 2>&1
+*/30 * * * * root /usr/local/bin/halite apply >> /var/log/halite.log 2>&1
 ```
 
 Non-zero exit on failure makes it easy to alert from periodic(8) or your

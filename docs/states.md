@@ -29,6 +29,7 @@ Ensure a file exists with the given content and mode.
 | `source` | path to a source file; relative paths resolve against the SLS file's directory |
 | `mode` | octal string, e.g. `"0644"` (ignored on Windows) |
 | `user` / `group` | owner by name or numeric ID (ignored on Windows) |
+| `template` | `true` renders the source through text/template with grains |
 | `makedirs` | create parent directories |
 | `show_diff` | include a line diff in Changes (default true) |
 

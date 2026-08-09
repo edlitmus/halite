@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 — 2026-08-09
+
+P1 (masterless completeness) is done.
+
+* Highstate: `halite apply` with no target reads `<root>/top.sls` and
+  applies SLS names matched by grain (`os_family:FreeBSD`), hostname glob
+  (`web*`), or `*`. Root via `-root`, `HALITE_ROOT`, or the platform
+  default (/usr/local/etc/halite/states on FreeBSD, /etc/halite/states on
+  Linux). Dotted SLS names (`halite apply web.nginx`) resolve to
+  `<root>/web/nginx.sls` or `.../nginx/init.sls`.
+* `include:` in SLS files — included states run first, files load at most
+  once, cycles are tolerated, duplicate state declarations across the
+  merged plan are a compile error with file attribution.
+* New requisites: `onchanges` (run only when a referenced state changed)
+  and `prereq` (run before the target, only if the target would change,
+  via automatic dry run).
+* file.managed: `template: true` renders `source:` files through
+  text/template with grains.
+* Executor moved to internal/engine (shared with the future agent daemon).
+  Relative sources now resolve against each state's own SLS directory,
+  which matters for multi-file plans.
+* Example state tree with top.sls under examples/tree/.
+
 ## 0.2.0 — 2026-08-09
 
 P1 progress (see docs/salt-parity.md for the remaining items).

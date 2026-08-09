@@ -68,6 +68,46 @@ Jinja → template cheat sheet:
 
 Missing grains render as empty rather than erroring.
 
+## The state tree, top files, and includes
+
+States can live in a tree (default `/usr/local/etc/halite/states` on
+FreeBSD, `/etc/halite/states` on Linux; override with `-root` or
+`HALITE_ROOT`). Dotted names map to files: `web.nginx` is
+`<root>/web/nginx.sls` or `<root>/web/nginx/init.sls`.
+
+`halite apply` with no target performs a highstate: it reads
+`<root>/top.sls`, matches targets against this host, and applies the
+matched SLS names.
+
+```yaml
+# top.sls
+base:
+  '*':
+    - common
+  'os_family:FreeBSD':
+    - freebsd.tuning
+  'web*':
+    - webserver
+```
+
+Target patterns: `'*'` matches every host; `grain:valueglob` matches a
+grain with a glob on the value (`os_family:FreeBSD`, `osrelease:14.*`);
+anything else globs the `host` grain. All environments in the file are
+applied (masterless has no environment selection yet).
+
+An SLS file can pull in others with `include:`; included states run
+before the including file's own states, each file loads at most once, and
+include cycles are tolerated:
+
+```yaml
+include:
+  - common
+  - web.tls
+```
+
+Applying a single file (`halite apply ./site.sls`) resolves includes
+relative to the file's directory unless `-root` is given.
+
 ## Requisites
 
 `require` gates execution order and success; `watch` is `require` plus
@@ -98,8 +138,34 @@ reported as failed with the blocking requisite named. If a watched state
 reports changes, `service.running` restarts the service and `cmd.wait`
 fires its command.
 
-Cycles and dangling references are compile-time errors before anything
-runs.
+Two more requisites round out the Salt set:
+
+`onchanges` runs a state only when a referenced state actually changed
+(unlike `watch`, which always runs the state and additionally reacts):
+
+```yaml
+reload_app:
+  cmd.run:
+    - name: service app reload
+    - onchanges:
+      - file: app_config
+```
+
+`prereq` runs a state *before* its target, and only if the target would
+make changes (determined by an automatic dry run) — the classic use is
+draining a load balancer before a config deploy:
+
+```yaml
+drain:
+  cmd.run:
+    - name: lb-drain web1
+    - prereq:
+      - file: deploy_config
+```
+
+Cycles, dangling references, and duplicate state declarations (same ID
+and function across all loaded files) are compile-time errors before
+anything runs.
 
 ## Dry runs
 

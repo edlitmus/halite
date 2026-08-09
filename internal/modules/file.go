@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+
+	"github.com/edlitmus/halite/internal/sls"
 )
 
 func init() {
@@ -102,6 +104,13 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 		b, err := os.ReadFile(src)
 		if err != nil {
 			return resFail("cannot read source %s: %v", src, err)
+		}
+		if tpl := Str(args, "template", ""); tpl == "true" || tpl == "go" {
+			rendered, err := sls.Render(filepath.Base(src), string(b), sls.TemplateData{Grains: c.Grains})
+			if err != nil {
+				return resFail("render source %s: %v", src, err)
+			}
+			b = []byte(rendered)
 		}
 		desired = b
 		haveDesired = true

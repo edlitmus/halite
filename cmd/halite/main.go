@@ -1,8 +1,11 @@
 // halite is a masterless, Salt-inspired configuration management tool.
 //
-//	halite grains [-json]        show system grains
-//	halite apply [-test] file    apply an SLS state file (like salt-call --local state.apply)
-//	halite call module.fn k=v    run a single state function (like salt-call --local)
+//	halite grains [-json]                    show system grains
+//	halite apply [-test] [-json] [-root DIR] [target ...]
+//	    no target:  highstate from <root>/top.sls
+//	    file path:  apply that SLS file
+//	    dotted name(s): apply <root>/<name>.sls (or <name>/init.sls)
+//	halite call module.fn k=v                run a single state function
 //	halite version
 package main
 
@@ -12,16 +15,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/engine"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/modules"
 	"github.com/edlitmus/halite/internal/sls"
-	"github.com/edlitmus/halite/internal/yamlite"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -48,10 +52,25 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
-  halite grains [-json]              show system grains
-  halite apply [-test] [-json] <file.sls>  apply a state file
-  halite call <module.fn> [k=v ...]  run a single state function
+  halite grains [-json]                    show system grains
+  halite apply [-test] [-json] [-root DIR] [target ...]
+      no target: highstate from <root>/top.sls
+      target:    an SLS file path, or dotted sls name(s) under the root
+  halite call <module.fn> [k=v ...]        run a single state function
   halite version`)
+}
+
+// defaultRoot is the state tree location when -root and HALITE_ROOT are
+// unset.
+func defaultRoot() string {
+	switch runtime.GOOS {
+	case "freebsd", "openbsd", "netbsd", "dragonfly":
+		return "/usr/local/etc/halite/states"
+	case "windows":
+		return `C:\ProgramData\halite\states`
+	default:
+		return "/etc/halite/states"
+	}
 }
 
 func cmdGrains(args []string) {
@@ -117,91 +136,65 @@ func cmdApply(args []string) {
 	fs := flag.NewFlagSet("apply", flag.ExitOnError)
 	test := fs.Bool("test", false, "dry run: report changes without applying")
 	asJSON := fs.Bool("json", false, "output results as JSON")
+	rootFlag := fs.String("root", "", "state tree root (default: $HALITE_ROOT or the platform default)")
 	_ = fs.Parse(args)
-	if fs.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: halite apply [-test] <file.sls>")
-		os.Exit(2)
+
+	root := *rootFlag
+	if root == "" {
+		root = os.Getenv("HALITE_ROOT")
 	}
-	path := fs.Arg(0)
-	src, err := os.ReadFile(path)
-	if err != nil {
-		fatal("read %s: %v", path, err)
+	if root == "" {
+		root = defaultRoot()
 	}
+
 	g := grains.Collect()
-	rendered, err := sls.Render(filepath.Base(path), string(src), sls.TemplateData{Grains: g})
-	if err != nil {
-		fatal("%s: %v", path, err)
-	}
-	tree, err := yamlite.Parse(rendered)
-	if err != nil {
-		fatal("%s: %v", path, err)
-	}
-	states, err := sls.Compile(tree)
-	if err != nil {
-		fatal("%s: %v", path, err)
-	}
+	var states []sls.State
+	var err error
+	targets := fs.Args()
 
-	ctx := &modules.Ctx{Test: *test, Grains: g, BaseDir: filepath.Dir(path)}
-
-	type done struct {
-		Module, ID string
-		Res        modules.Result
-	}
-	var executed []done
-	lookup := func(r sls.Ref) (modules.Result, bool) {
-		for _, d := range executed {
-			if d.ID == r.ID && (r.Module == "" || r.Module == d.Module) {
-				return d.Res, true
+	switch {
+	case len(targets) == 0:
+		ld := &sls.Loader{Root: root, Grains: g}
+		states, err = ld.LoadTop()
+	case len(targets) == 1 && isFile(targets[0]):
+		fileRoot := root
+		if *rootFlag == "" && os.Getenv("HALITE_ROOT") == "" {
+			// Single-file apply: includes resolve next to the file unless a
+			// root was given explicitly.
+			fileRoot = filepath.Dir(targets[0])
+		}
+		ld := &sls.Loader{Root: fileRoot, Grains: g}
+		states, err = ld.LoadPath(targets[0])
+	default:
+		for _, t := range targets {
+			if isFile(t) {
+				fatal("mixing file paths and sls names is not supported (got %q)", t)
 			}
 		}
-		return modules.Result{}, false
+		ld := &sls.Loader{Root: root, Grains: g}
+		states, err = ld.LoadNames(targets)
+	}
+	if err != nil {
+		fatal("%v", err)
 	}
 
-	var jsonResults []map[string]any
+	ctx := &modules.Ctx{Test: *test, Grains: g}
+	results := engine.Run(ctx, states)
+
 	succeeded, failed, changed := 0, 0, 0
-	for _, st := range states {
-		// Skip if any requisite failed.
-		blocked := ""
-		for _, r := range append(append([]sls.Ref{}, st.Require...), st.Watch...) {
-			if res, ok := lookup(r); ok && !res.Ok {
-				blocked = fmt.Sprintf("%s:%s", r.Module, r.ID)
-				break
-			}
-		}
-		var res modules.Result
-		if blocked != "" {
-			res = modules.Result{Ok: false, Comment: "one or more requisite failed: " + blocked}
-		} else {
-			callArgs := make(map[string]any, len(st.Args)+1)
-			for k, v := range st.Args {
-				callArgs[k] = v
-			}
-			for _, r := range st.Watch {
-				if res, ok := lookup(r); ok && res.Changed {
-					callArgs["__watch_changed"] = "true"
-					break
-				}
-			}
-			if comment, gated := modules.CheckGates(callArgs); gated {
-				res = modules.Result{Ok: true, Comment: comment}
-			} else if fn, ok := modules.Registry[st.Name()]; !ok {
-				res = modules.Result{Ok: false, Comment: fmt.Sprintf("state function %q not found", st.Name())}
-			} else {
-				res = fn(ctx, st.ID, callArgs)
-			}
-		}
-		executed = append(executed, done{Module: st.Module, ID: st.ID, Res: res})
+	var jsonResults []map[string]any
+	for _, r := range results {
 		if !*asJSON {
-			printResult(st.ID, st.Name(), res)
+			printResult(r.ID, r.Fn, r.Res)
 		} else {
 			jsonResults = append(jsonResults, map[string]any{
-				"id": st.ID, "function": st.Name(), "result": res.Ok,
-				"changed": res.Changed, "comment": res.Comment, "changes": res.Changes,
+				"id": r.ID, "function": r.Fn, "result": r.Res.Ok,
+				"changed": r.Res.Changed, "comment": r.Res.Comment, "changes": r.Res.Changes,
 			})
 		}
-		if res.Ok {
+		if r.Res.Ok {
 			succeeded++
-			if res.Changed {
+			if r.Res.Changed {
 				changed++
 			}
 		} else {
@@ -224,6 +217,7 @@ func cmdApply(args []string) {
 		}
 		return
 	}
+
 	fmt.Println("\nSummary")
 	fmt.Println("------------")
 	fmt.Printf("Succeeded: %d (changed=%d)\n", succeeded, changed)
@@ -236,6 +230,11 @@ func cmdApply(args []string) {
 	if failed > 0 {
 		os.Exit(1)
 	}
+}
+
+func isFile(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
 }
 
 func printResult(id, fn string, r modules.Result) {
