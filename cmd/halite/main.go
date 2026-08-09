@@ -7,6 +7,7 @@
 //	    dotted name(s): apply <root>/<name>.sls (or <name>/init.sls)
 //	halite call module.fn k=v                run a single state function
 //	halite pillar [-json]                    show the pillar data for this host
+//	halite key <subcommand>                  manage the fleet CA
 //	halite version
 package main
 
@@ -43,6 +44,8 @@ func main() {
 		cmdCall(os.Args[2:])
 	case "pillar":
 		cmdPillar(os.Args[2:])
+	case "key":
+		cmdKey(os.Args[2:])
 	case "version":
 		fmt.Println("halite " + version)
 	case "-h", "--help", "help":
@@ -62,6 +65,7 @@ func usage() {
       target:    an SLS file path, or dotted sls name(s) under the root
   halite call <module.fn> [k=v ...]        run a single state function
   halite pillar [-json] [-pillar-root DIR] show the pillar data for this host
+  halite key <subcommand>                  manage the fleet CA ('halite key help')
   halite version`)
 }
 
@@ -75,6 +79,22 @@ func defaultRoot() string {
 		return `C:\ProgramData\halite\states`
 	default:
 		return "/etc/halite/states"
+	}
+}
+
+// parseFlags parses args and returns the positional ones. Unlike a plain
+// FlagSet.Parse, flags may appear after or between positional arguments, so
+// both `halite apply -test web.nginx` and `halite apply web.nginx -test`
+// work.
+func parseFlags(fs *flag.FlagSet, args []string) []string {
+	var positional []string
+	for {
+		_ = fs.Parse(args) // the flag set is ExitOnError
+		if fs.NArg() == 0 {
+			return positional
+		}
+		positional = append(positional, fs.Arg(0))
+		args = fs.Args()[1:]
 	}
 }
 
@@ -107,7 +127,7 @@ func cmdPillar(args []string) {
 	asJSON := fs.Bool("json", false, "output as JSON")
 	rootFlag := fs.String("root", "", "state tree root (used to locate the pillar tree)")
 	pillarRootFlag := fs.String("pillar-root", "", "pillar tree root (default: $HALITE_PILLAR_ROOT or <root>/../pillar)")
-	_ = fs.Parse(args)
+	_ = parseFlags(fs, args)
 
 	pillarRoot := resolvePillarRoot(*pillarRootFlag, resolveRoot(*rootFlag))
 	data, err := (&pillar.Loader{Root: pillarRoot, Grains: grains.Collect()}).Load()
@@ -215,7 +235,7 @@ func cmdApply(args []string) {
 	asJSON := fs.Bool("json", false, "output results as JSON")
 	rootFlag := fs.String("root", "", "state tree root (default: $HALITE_ROOT or the platform default)")
 	pillarRootFlag := fs.String("pillar-root", "", "pillar tree root (default: $HALITE_PILLAR_ROOT or <root>/../pillar)")
-	_ = fs.Parse(args)
+	targets := parseFlags(fs, args)
 
 	root := resolveRoot(*rootFlag)
 
@@ -226,7 +246,6 @@ func cmdApply(args []string) {
 	}
 
 	var states []sls.State
-	targets := fs.Args()
 
 	switch {
 	case len(targets) == 0:

@@ -34,7 +34,7 @@ not.
 |---|---|---|---|
 | salt-master / salt-minion daemons | `halited` control plane + agent | P2 | single binary, mode by flag |
 | ZeroMQ transport, AES key exchange | mTLS over HTTP/2 (stdlib) | P2 | long-lived streams for the event bus; no ZeroMQ, no custom crypto |
-| Minion key accept/reject | TLS client-cert issuance (`halite key`) | P2 | CSR flow replaces Salt's key dance |
+| Minion key accept/reject | TLS client-cert issuance (`halite key`) | done | CSR flow replaces Salt's key dance; see docs/pki.md |
 | Event bus / reactor | event stream + reactor rules | P3 | |
 | Beacons | agent-side watchers emitting events | P3 | |
 | salt-ssh (agentless) | `halite ssh` pushing the static binary | P2 | trivially better than salt-ssh: copy one binary, exec, stream results |
@@ -83,8 +83,8 @@ their value is mostly fleet-wide queries (`halite '*' disk.usage`).
   service/cmd/user/cron/sysctl workloads.
 * **P2 — transport** (mTLS HTTP/2 master+agent, key issuance, targeting,
   `halite ssh`, REST API, pillar). Target: replace a small salt-master.
-  **In progress**: pillar (0.4) is done; encryption at rest, the CA, and
-  the daemons are next.
+  **In progress**: pillar and the CA (0.4) are done; the daemons,
+  `halite ssh`, the REST API, and pillar encryption at rest are next.
 * **P3 — events** (event bus, beacons, reactor, mine, orchestration,
   returners).
 * **P4 — long tail** (multi-master, Windows registry, external process

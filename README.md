@@ -108,6 +108,7 @@ grains are available as `{{ .Grains.os_family }}`. See
 * [docs/getting-started.md](docs/getting-started.md) — install, first state, workflow
 * [docs/writing-states.md](docs/writing-states.md) — SLS format, templating, requisites
 * [docs/states.md](docs/states.md) — state module reference (file, pkg, service, cmd)
+* [docs/pki.md](docs/pki.md) — keys, certificates, and agent enrollment
 * [docs/architecture.md](docs/architecture.md) — design decisions and internals
 * [docs/salt-parity.md](docs/salt-parity.md) — Salt 3008 feature map and roadmap
 * [examples/](examples/) — working state files

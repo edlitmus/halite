@@ -2,7 +2,18 @@
 
 ## 0.4.0 — 2026-08-09
 
-First P2 (transport) increment: pillar.
+First P2 (transport) increments: pillar and the fleet CA.
+
+* `halite key`: a stdlib-only CA replacing Salt's minion key dance with a
+  CSR flow — `init`, `server`, `gen`, `submit`, `list`, `accept`, `reject`,
+  `remove`, `show`. P-256 keys, private keys written 0600, agent
+  certificates scoped to client auth and server certificates to server
+  auth. The CA takes the identity from the operator's decision, not from
+  the request; a second key for a known identity is refused; CSR signatures
+  are verified; identities are constrained to safe filename characters.
+  PKI directory via `-pki` or `$HALITE_PKI`. See docs/pki.md.
+* Subcommand flags may now appear after positional arguments
+  (`halite apply web.nginx -test`).
 
 * Pillar tree: `<root>/../pillar/top.sls` targets hosts with the same
   matcher as a state top file, and the matched pillar SLS files are
