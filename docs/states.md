@@ -209,6 +209,39 @@ converge:
     - user: root
 ```
 
+### cron on Windows
+
+There is no crontab, so `cron.present` and `cron.absent` drive
+`schtasks` instead, creating tasks under a `\halite\` folder named for
+the state's `identifier`.
+
+Cron's five fields are more expressive than the task scheduler's schedule
+types, so only what maps cleanly is accepted:
+
+| Cron | Becomes |
+|---|---|
+| `minute: "*/30"` | `/SC MINUTE /MO 30` |
+| `minute: "30"`, `hour: "*/2"` | `/SC HOURLY /MO 2 /ST 00:30` |
+| `minute: "5"` | `/SC HOURLY /MO 1 /ST 00:05` |
+| `minute: "15"`, `hour: "3"` | `/SC DAILY /ST 03:15` |
+| `+ dayweek: "1"` (or `mon`) | `/SC WEEKLY /D MON` |
+| `+ daymonth: "14"` | `/SC MONTHLY /D 14` |
+
+Anything else — a `month`, lists like `0,30`, ranges like `0-30`, both
+`daymonth` and `dayweek` — is refused by name rather than approximated
+into a schedule that is nearly right.
+
+Two limitations to know:
+
+* **Only the command is compared** when deciding whether a task has
+  drifted. The scheduler does not report a schedule in a form worth
+  parsing back, so changing only the schedule needs a `cron.absent`
+  followed by a `cron.present`.
+* **This path has not been exercised on a real Windows host.** The
+  translation from cron fields to scheduler flags is unit tested and the
+  rest is three `schtasks` invocations, but treat the first run on Windows
+  as the real test.
+
 ### cron.absent
 
 Removes the marker and its entry. Args: `name`/`identifier`, `user`.

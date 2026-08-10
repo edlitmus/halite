@@ -66,7 +66,7 @@ func writeCrontab(user, content string) error {
 //	    - user: root
 func cronPresent(c *Ctx, id string, args map[string]any) Result {
 	if runtime.GOOS == "windows" {
-		return resFail("cron is not supported on Windows (scheduled tasks: planned)")
+		return cronPresentWindows(c, id, args)
 	}
 	if !has("crontab") {
 		return resFail("crontab binary not found")
@@ -114,7 +114,7 @@ func cronPresent(c *Ctx, id string, args map[string]any) Result {
 
 func cronAbsent(c *Ctx, id string, args map[string]any) Result {
 	if runtime.GOOS == "windows" {
-		return resFail("cron is not supported on Windows")
+		return cronAbsentWindows(c, id, args)
 	}
 	if !has("crontab") {
 		return resFail("crontab binary not found")

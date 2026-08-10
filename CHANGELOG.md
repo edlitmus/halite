@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-08-09
 
 P3 (events) complete.
 
@@ -57,7 +57,13 @@ P3 (events) complete.
   See docs/orchestration.md.
 * engine.RunWith lets a caller supply how state functions are resolved,
   which is what makes the above possible.
-* See docs/events.md.
+* cron on Windows: `cron.present` and `cron.absent` now drive `schtasks`
+  under a `\halite\` folder instead of failing. Cron fields that the
+  task scheduler cannot express — months, lists, ranges, both daymonth
+  and dayweek — are refused by name rather than approximated. The
+  translation is unit tested; the schtasks calls themselves have not been
+  run on a real Windows host.
+* See docs/events.md and docs/orchestration.md.
 
 ## 0.4.0 — 2026-08-09
 

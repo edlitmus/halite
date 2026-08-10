@@ -52,7 +52,7 @@ not.
 | service.running / dead | done | rc.d (+sysrc enable), systemd, sysvinit, launchd (partial), Windows SCM |
 | cmd.run / cmd.wait | done | unless, onlyif, creates, cwd, env |
 | user.present/absent, group.present/absent | done | pw(8), useradd/usermod, sysadminctl (partial), net user (partial); drift repair for uid/shell/home/gecos/groups |
-| cron.present/absent | done | crontab(1) with identifier markers; Windows scheduled tasks P3 |
+| cron.present/absent | done | crontab(1) with identifier markers; Windows via schtasks under \halite\ (translation unit tested, unverified on a real Windows host) |
 | sysctl.present | done | runtime + persist (sysctl.conf / sysctl.d); FreeBSD, Linux, macOS-runtime |
 | archive.extracted | done | tar, tar.gz, zip; local or http(s) source with a required sha256 for remote; traversal-safe extraction |
 | git.latest | done | shells to git; refuses dirty checkouts and foreign remotes unless forced |

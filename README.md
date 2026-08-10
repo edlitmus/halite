@@ -8,7 +8,7 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.4.0 — P1 and P2 complete.** Three ways to run:
+**Status: v0.5.0 — P1, P2, and P3 complete.** Three ways to run:
 
 * **Masterless** — `halite apply` on the host. Highstate with top.sls
   targeting, pillar, includes, the full requisite set, and the
@@ -17,8 +17,11 @@ runtime, onedir/relenv packaging, or the deprecation treadmill.
   targeted dispatch to agents.
 * **Agentless** — `halite ssh` pushes the binary, runs, and cleans up.
 
-P3 adds the event bus, reactor, returners, beacons, the mine, and
-orchestration. See [docs/salt-parity.md](docs/salt-parity.md).
+Plus the event layer: a tagged event bus with a live stream, a reactor
+turning events into jobs, agent-side beacons, durable returners, a mine
+of fleet-wide facts, and ordered orchestration. P4 (multi-master, Windows
+registry) is what remains — see
+[docs/salt-parity.md](docs/salt-parity.md).
 
 ## Why
 
@@ -99,7 +102,10 @@ halite agents
 halite run '*' state.highstate -test
 halite run 'os_family:FreeBSD' state.apply web.nginx
 halite run 'web*' call pkg.installed name=nginx
+
+# Watch what the fleet is doing, and run ordered work across it
 halite events -tag 'halite/job/**'
+halite orchestrate deploy
 ```
 
 mTLS 1.3 throughout, agent identity from the client certificate, and no
