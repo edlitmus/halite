@@ -50,7 +50,7 @@ type parser struct {
 func Parse(src string) (any, error) {
 	var ls []line
 	for i, raw := range strings.Split(src, "\n") {
-		t := stripComment(raw)
+		t := StripComment(raw)
 		t = strings.TrimRight(t, " \r")
 		content := strings.TrimLeft(t, " ")
 		if content == "" {
@@ -107,7 +107,7 @@ func (p *parser) parseList(ind int) (any, error) {
 			}
 			continue
 		}
-		if k, v, ok := splitKV(body); ok {
+		if k, v, ok := SplitKV(body); ok {
 			m := NewMap()
 			if v == "" {
 				p.pos++
@@ -188,7 +188,7 @@ func (p *parser) parseMap(ind int) (any, error) {
 			}
 			break
 		}
-		k, v, ok := splitKV(cur.text)
+		k, v, ok := SplitKV(cur.text)
 		if !ok {
 			return nil, fmt.Errorf("line %d: expected 'key:' or 'key: value', got %q", cur.num, cur.text)
 		}
@@ -246,10 +246,10 @@ func quoteOpens(s string, i int) bool {
 	return false
 }
 
-// splitKV splits "key: value" or "key:" at the first unquoted colon that is
+// SplitKV splits "key: value" or "key:" at the first unquoted colon that is
 // followed by a space or end-of-line. Colons inside values (URLs, times) are
 // left alone.
-func splitKV(s string) (key, val string, ok bool) {
+func SplitKV(s string) (key, val string, ok bool) {
 	var q byte
 	for i := 0; i < len(s); i++ {
 		c := s[i]
@@ -336,9 +336,9 @@ func unquote(s string) string {
 	return s
 }
 
-// stripComment removes a trailing "# ..." comment that is not inside quotes.
+// StripComment removes a trailing "# ..." comment that is not inside quotes.
 // A '#' only starts a comment at the beginning of the line or after a space.
-func stripComment(s string) string {
+func StripComment(s string) string {
 	var q byte
 	for i := 0; i < len(s); i++ {
 		c := s[i]

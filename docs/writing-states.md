@@ -38,6 +38,9 @@ Quote file modes (`mode: "0644"`) as you would in Salt.
 Multi-line file content: put it in a real file and use `- source:` —
 better practice than inline blobs anyway.
 
+To check an existing tree against all of this at once, run
+`halite parse` ([migration.md](migration.md)).
+
 ## Templating
 
 Files are rendered with Go `text/template` before parsing. Grains are

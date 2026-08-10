@@ -7,6 +7,8 @@
 //	    dotted name(s): apply <root>/<name>.sls (or <name>/init.sls)
 //	halite call [-test] module.fn k=v        run a single state function
 //	halite pillar [-json]                    show the pillar data for this host
+//	halite parse [-root DIR] [PATH]          report what halite can use in an
+//	                                         existing Salt state/pillar tree
 //	halite key <subcommand>                  manage the fleet CA
 //	halite version
 package main
@@ -45,6 +47,8 @@ func main() {
 		cmdCall(os.Args[2:])
 	case "pillar":
 		cmdPillar(os.Args[2:])
+	case "parse":
+		cmdParse(os.Args[2:])
 	case "key":
 		cmdKey(os.Args[2:])
 	case "master":
@@ -82,6 +86,8 @@ func usage() {
       target:    an SLS file path, or dotted sls name(s) under the root
   halite call [-test] <module.fn> [k=v ...] run a single state function
   halite pillar [-json] [-pillar-root DIR] show the pillar data for this host
+  halite parse [-root DIR] [PATH]          check an existing state/pillar tree
+      [-pillar-root DIR] [-json] [-errors] for what halite can use as written
   halite key <subcommand>                  manage the fleet CA ('halite key help')
   halite version
 

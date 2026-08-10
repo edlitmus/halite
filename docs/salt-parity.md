@@ -80,6 +80,23 @@ place; the registry makes adding one a single function.
 | External process modules | `_modules/` executables, JSON on stdin/stdout | done | ship with the state tree; see docs/external-modules.md |
 | GPG pillar renderer (encryption at rest) | out | confidentiality is the directory mode; use sops/age/git-crypt to decrypt into the tree. ADR-9, docs/pillar-security.md |
 
+## Checking an existing tree
+
+The tables above and the gaps below are the general answer; `halite parse`
+is the answer for one specific tree. It walks a state and pillar root,
+renders and compiles every SLS file the way `halite apply` does, and
+reports each construct halite does not take — with the translation it
+needs and the line it is on. It exits non-zero while anything in the tree
+is still unsupported.
+
+```sh
+halite parse                                  # Salt's own /srv/salt, /srv/pillar
+halite parse -root ./states -pillar-root ./pillar
+halite parse -errors -json
+```
+
+See [docs/migration.md](migration.md) for what every finding means.
+
 ## Known gaps
 
 The tables above map the workflows halite set out to reproduce, and read

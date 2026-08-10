@@ -122,12 +122,16 @@ masterless; move up when you have more hosts than patience.
 
 ## Migrating from Salt
 
-1. `halite grains` — check the facts you template on exist (most common
+1. `halite parse -root /srv/salt` — read the tree you have and get the
+   list of what needs translating, file by file and line by line. Every
+   finding names the change it needs ([migration.md](migration.md)).
+2. `halite grains` — check the facts you template on exist (most common
    ones do; see docs/salt-parity.md).
-2. Convert Jinja to text/template (cheat sheet in docs/writing-states.md).
-3. Replace unsupported modules with `cmd.run` + `unless` as a bridge.
-4. Run everything with `-test` before the first real apply.
-5. Modules with no equivalent can be written as
+3. Convert Jinja to text/template (cheat sheet in docs/writing-states.md).
+4. Replace unsupported modules with `cmd.run` + `unless` as a bridge.
+5. `halite parse -errors` until it is quiet, then run everything with
+   `-test` before the first real apply.
+6. Modules with no equivalent can be written as
    [external modules](external-modules.md) in any language, rather than
    left as `cmd.run`.
 

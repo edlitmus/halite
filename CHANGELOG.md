@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+New: `halite parse` reads an existing Salt state and pillar tree and
+reports what halite can use as written.
+
+* It defaults to Salt's own `/srv/salt` with a pillar tree beside it,
+  takes any other root with `-root`/`-pillar-root` or a single file as an
+  argument, and changes nothing: each SLS file goes through the same
+  render, parse, and compile the engine uses, and the report says where
+  that stops. Findings carry a severity — an error is something halite
+  will not run as written, a warning is something it loads and ignores, a
+  note is a supported construct with a caveat — and each one carries the
+  translation it needs. `-json` for scripting, `-errors` to see only
+  blockers, and a non-zero exit while any error remains, so it works as a
+  CI gate during a conversion.
+* What it reports: Jinja statements, comments, expressions and filters
+  against Go `text/template`; renderer shebangs including `#!py` and GPG
+  pillar; the YAML features the parser leaves out (block scalars,
+  anchors, aliases, merge keys, flow collections, multiple documents,
+  tags, tabs); Salt's undotted `pkg:`/`- installed` declaration; state
+  modules and requisites halite does not implement; arguments it would
+  ignore, with the ones that change the result (`pkg.installed: version`,
+  `file.managed: source_hash`) raised to errors; `salt://` and remote
+  sources; `template: jinja`; unresolvable includes and top-file SLS
+  names; compound targets; and Salt's Python extension directories.
+* A file that does not render is read again with its template constructs
+  stripped, so the report still holds its state inventory. Those findings
+  are marked approximate, because what a Jinja loop would have expanded
+  to is not knowable without Jinja.
+* Files are rendered with the grains of the host `parse` runs on and the
+  pillar halite itself can read, so a tree that already works comes back
+  clean — the example tree is a test of exactly that.
+* `yamlite.StripComment` and `yamlite.SplitKV` are exported so the
+  checker reads a line the same way the parser does.
+* See docs/migration.md for every finding code and its translation.
+
 Fixes from a full-repo review. Correctness:
 
 * Grain targeting (`key:pattern`) no longer matches hosts that do not
@@ -64,7 +98,9 @@ Hardening and operations:
 Docs: salt-parity.md gains a "Known gaps" section — the honest list of
 what a Salt 3008 operator will reach for and not find (custom grains,
 compound targeting, `_in` requisites, file.recurse, a scheduler, eauth,
-and more), with a priority-ordered sketch of a P5.
+and more), with a priority-ordered sketch of a P5. `halite parse` reports
+those same gaps against a specific tree; docs/migration.md is the
+translation table.
 
 ## 0.6.0 — 2026-08-09
 

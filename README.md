@@ -82,6 +82,11 @@ halite call file.managed name=/tmp/x contents=hello mode=0644
 # Show the pillar data this host resolves to (Salt: pillar.items)
 halite pillar
 halite pillar -pillar-root ./pillar -json
+
+# Check an existing Salt tree before running anything against it
+halite parse                                   # /srv/salt and /srv/pillar
+halite parse -root ./states -pillar-root ./pillar
+halite parse -errors -json
 ```
 
 ## Fleet mode
@@ -155,9 +160,23 @@ Same shape as Salt SLS. Templating is Go `text/template` instead of Jinja —
 grains are available as `{{ .Grains.os_family }}`. See
 [docs/writing-states.md](docs/writing-states.md).
 
+## Coming from Salt
+
+`halite parse` reads an existing state and pillar tree and reports, file by
+file and line by line, what halite runs as written, what needs translating,
+and what it does not support. It renders and compiles each file exactly as
+`halite apply` would and prints where the pipeline stops — Jinja that has
+to become `text/template`, block scalars and anchors the YAML subset does
+not take, `salt://` sources, `require_in`, state modules that are not
+implemented — with the translation for each. It exits non-zero when the
+tree still holds something halite will not run, so it also works as a CI
+gate while a conversion is in progress. See
+[docs/migration.md](docs/migration.md).
+
 ## Documentation
 
 * [docs/getting-started.md](docs/getting-started.md) — install, first state, workflow
+* [docs/migration.md](docs/migration.md) — `halite parse`, and translating a Salt tree
 * [docs/writing-states.md](docs/writing-states.md) — SLS format, templating, requisites
 * [docs/states.md](docs/states.md) — state module reference (file, pkg, service, cmd)
 * [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
@@ -174,7 +193,7 @@ grains are available as `{{ .Grains.os_family }}`. See
 ## Non-goals
 
 * Bug-for-bug Salt compatibility. SLS files port with small edits
-  (Jinja → text/template), not verbatim.
+  (Jinja → text/template), not verbatim — `halite parse` reports which.
 * Full YAML. The parser handles the subset SLS actually uses; anchors,
   flow collections, and multi-line scalars are out (see writing-states.md).
 * Python module ecosystem. Custom modules are Go, compiled in — or any
