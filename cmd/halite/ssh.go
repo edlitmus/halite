@@ -110,7 +110,10 @@ func cmdSSH(args []string) {
 	results := runner.runAll(ctx, hosts, remoteArgs, *jobs)
 
 	if *asJSON {
-		b, _ := json.MarshalIndent(results, "", "  ")
+		b, err := json.MarshalIndent(results, "", "  ")
+		if err != nil {
+			fatal("encode results: %v", err)
+		}
 		fmt.Println(string(b))
 	} else {
 		printSSHResults(results)
@@ -145,6 +148,9 @@ func resolveHosts(spec, rosterPath string) ([]string, error) {
 		if len(hosts) == 0 {
 			return nil, fmt.Errorf("no hosts given (and no -roster to glob)")
 		}
+		if err := rejectOptionDests(hosts); err != nil {
+			return nil, err
+		}
 		return hosts, nil
 	}
 
@@ -160,7 +166,22 @@ func resolveHosts(spec, rosterPath string) ([]string, error) {
 	if len(matched) == 0 {
 		return nil, fmt.Errorf("no roster entry matches %q", spec)
 	}
+	if err := rejectOptionDests(matched); err != nil {
+		return nil, err
+	}
 	return matched, nil
+}
+
+// rejectOptionDests refuses destinations that ssh and scp would parse as
+// options: a roster line like -oProxyCommand=... would otherwise run a
+// command on the operator's machine, not connect to a host.
+func rejectOptionDests(hosts []string) error {
+	for _, h := range hosts {
+		if strings.HasPrefix(h, "-") {
+			return fmt.Errorf("host %q begins with '-' and would be parsed as an ssh option", h)
+		}
+	}
+	return nil
 }
 
 func splitList(spec string) []string {
@@ -202,7 +223,13 @@ func remoteCommand(args []string, test bool) ([]string, error) {
 		if len(rest) == 0 || !strings.Contains(rest[0], ".") {
 			return nil, fmt.Errorf("call needs a module.function")
 		}
-		return append([]string{"call", "call"}, rest...), nil
+		out := append([]string{"call", "call"}, rest...)
+		if test {
+			// No -json here: `halite call` prints a human block, which
+			// runOne wraps as JSON text. Only the dry-run flag crosses over.
+			out = append(out, "-test")
+		}
+		return out, nil
 	case "grains":
 		return []string{"grains", "grains", "-json"}, nil
 	default:
@@ -240,12 +267,14 @@ func (l *stringList) Set(value string) error {
 }
 
 // sshArgv builds the ssh/scp argument list, putting BatchMode first so an
-// operator's -o can override it if they really mean to.
+// operator's -o can override it if they really mean to. The `--` ends option
+// parsing, so a destination or path can never be mistaken for an option.
 func sshArgv(options []string, tail ...string) []string {
 	argv := []string{"-o", "BatchMode=yes"}
 	for _, option := range options {
 		argv = append(argv, "-o", option)
 	}
+	argv = append(argv, "--")
 	return append(argv, tail...)
 }
 
@@ -342,12 +371,23 @@ func (r *sshRunner) runOne(ctx context.Context, dest string, remoteArgs []string
 		return result
 	}
 	result.Ok = true
-	result.Output = json.RawMessage(strings.TrimSpace(out))
-	if kind == "call" {
-		// `halite call` prints a human block, not JSON.
-		result.Output = json.RawMessage(asJSONText(strings.TrimSpace(out)))
-	}
+	result.Output = remoteOutput(kind, out)
 	return result
+}
+
+// remoteOutput stores what the host printed while keeping the fleet report
+// valid JSON: `halite call` prints a human block, and any host can leak stray
+// text (a motd, profile noise), so anything that is not JSON is wrapped as a
+// JSON string rather than poisoning the whole report.
+func remoteOutput(kind, out string) json.RawMessage {
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		return nil
+	}
+	if kind == "call" || !json.Valid([]byte(trimmed)) {
+		return json.RawMessage(asJSONText(trimmed))
+	}
+	return json.RawMessage(trimmed)
 }
 
 // shipTree renders this host's pillar locally and copies both it and the
@@ -485,6 +525,21 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// stripControl removes terminal control characters so a compromised remote
+// host cannot drive the operator's terminal with escape sequences. Tabs and
+// newlines survive; the callers manage line structure themselves.
+func stripControl(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' {
+			return r
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+}
+
 // asJSONText wraps non-JSON output so the -json form stays valid JSON.
 func asJSONText(s string) string {
 	b, err := json.Marshal(s)
@@ -502,7 +557,7 @@ func printSSHResults(results []sshHost) {
 	for _, r := range sorted {
 		fmt.Printf("%s:\n", r.Dest)
 		if r.Error != "" {
-			fmt.Printf("    error: %s\n", r.Error)
+			fmt.Printf("    error: %s\n", stripControl(r.Error))
 			failed++
 		}
 		if len(r.Output) > 0 {
@@ -544,9 +599,9 @@ func printRemoteOutput(raw json.RawMessage) {
 	var text string
 	if err := json.Unmarshal(raw, &text); err == nil {
 		for _, line := range strings.Split(strings.TrimRight(text, "\n"), "\n") {
-			fmt.Printf("    %s\n", line)
+			fmt.Printf("    %s\n", stripControl(line))
 		}
 		return
 	}
-	fmt.Printf("    %s\n", raw)
+	fmt.Printf("    %s\n", stripControl(string(raw)))
 }

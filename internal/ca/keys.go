@@ -119,6 +119,12 @@ func parseCertPEM(certPEM []byte) (*x509.Certificate, error) {
 	return x509.ParseCertificate(block.Bytes)
 }
 
+// ParseKey parses a PEM private key written by GenerateKey, so an agent
+// can rebuild its signing request from a key it already holds.
+func ParseKey(keyPEM []byte) (crypto.Signer, error) {
+	return parseKeyPEM(keyPEM)
+}
+
 func parseKeyPEM(keyPEM []byte) (crypto.Signer, error) {
 	block, _ := pem.Decode(keyPEM)
 	if block == nil {

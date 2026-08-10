@@ -45,6 +45,12 @@ func (f *File) Return(rec Record) error {
 	if _, err := f.file.Write(line); err != nil {
 		return fmt.Errorf("write %s: %w", f.path, err)
 	}
+	// This file is the durable record of what ran; a write sitting in the
+	// page cache when the host loses power is not durable. One record per
+	// sync is cheap at the rate results arrive.
+	if err := f.file.Sync(); err != nil {
+		return fmt.Errorf("sync %s: %w", f.path, err)
+	}
 	return nil
 }
 

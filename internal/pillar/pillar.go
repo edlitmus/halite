@@ -137,7 +137,9 @@ func (l *Loader) loadFile(path string) (map[string]any, error) {
 		if k == "include" {
 			continue
 		}
-		out[k] = plain(m.Vals[k])
+		// The file's own keys merge over its includes rather than replacing
+		// their subtrees: overriding one leaf keeps the included siblings.
+		Merge(out, map[string]any{k: plain(m.Vals[k])})
 	}
 	return out, nil
 }
@@ -157,12 +159,17 @@ func includeNames(m *yamlite.Map) []string {
 }
 
 // Merge deep-merges src into dst: nested mappings are merged key by key,
-// every other value (including lists) is replaced wholesale.
+// every other value (including lists) is replaced wholesale. Nested src
+// maps are copied, never aliased, so a later merge into dst cannot mutate
+// the caller's source data.
 func Merge(dst, src map[string]any) {
 	for k, v := range src {
-		sub, srcIsMap := v.(map[string]any)
-		existing, dstIsMap := dst[k].(map[string]any)
-		if srcIsMap && dstIsMap {
+		if sub, srcIsMap := v.(map[string]any); srcIsMap {
+			existing, dstIsMap := dst[k].(map[string]any)
+			if !dstIsMap {
+				existing = make(map[string]any, len(sub))
+				dst[k] = existing
+			}
 			Merge(existing, sub)
 			continue
 		}

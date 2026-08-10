@@ -250,6 +250,25 @@ func TestRateLimitStopsARunawayLoop(t *testing.T) {
 	}
 }
 
+// One looping rule must not starve the others: the budget is per rule.
+func TestRateLimitIsPerRule(t *testing.T) {
+	rules := []Rule{
+		{Tag: "halite/loop", Actions: []Action{{Kind: transport.KindGrains, Target: "*"}}},
+		{Tag: "halite/quiet", Actions: []Action{{Kind: transport.KindGrains, Target: "*"}}},
+	}
+	rec := newRecorder()
+	engine := New(rules, rec.dispatch, quietLogger())
+	engine.limit = 3
+
+	for i := 0; i < 20; i++ {
+		engine.react(event.Event{Tag: "halite/loop"})
+	}
+	engine.react(event.Event{Tag: "halite/quiet"})
+	if fired := len(rec.all()); fired != 4 {
+		t.Errorf("fired %d times, want 4 (3 from the loop, 1 from the quiet rule)", fired)
+	}
+}
+
 func TestRateLimitRecoversInTheNextWindow(t *testing.T) {
 	rules := []Rule{{
 		Tag:     "halite/test",

@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/edlitmus/halite/internal/archive"
 	"github.com/edlitmus/halite/internal/ca"
+	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -491,5 +493,95 @@ func TestShutdownIsGraceful(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Run did not return after its context was cancelled")
+	}
+}
+
+// slowSink takes its time over every delivery, to catch a shutdown that
+// exits without waiting for the returner drain.
+type slowSink struct {
+	mu        sync.Mutex
+	delivered int
+}
+
+func (s *slowSink) Name() string { return "slow" }
+func (s *slowSink) Return(returner.Record) error {
+	time.Sleep(200 * time.Millisecond)
+	s.mu.Lock()
+	s.delivered++
+	s.mu.Unlock()
+	return nil
+}
+func (s *slowSink) Close() error { return nil }
+
+func TestShutdownWaitsForTheReturnerDrain(t *testing.T) {
+	dir := t.TempDir()
+	store := &ca.Store{Dir: dir}
+	if err := store.Init("test ca", time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.IssueServer("127.0.0.1", []string{"127.0.0.1"}, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+	sink := &slowSink{}
+	server := New(Config{
+		Addr: "127.0.0.1:0", PKIDir: dir, StatesRoot: dir, PillarRoot: dir,
+		Returners: []returner.Returner{sink},
+	}, log.New(io.Discard, "", 0))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- server.Run(ctx) }()
+	time.Sleep(100 * time.Millisecond)
+
+	// A record accepted just before shutdown must be flushed before Run
+	// returns — after that, main exits and the record is gone.
+	server.returners.Submit(returner.Record{Time: time.Now().UTC()})
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("shutdown returned %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run did not return after its context was cancelled")
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if sink.delivered != 1 {
+		t.Error("Run returned before the returner drain finished; the record would be lost at exit")
+	}
+}
+
+func TestEnrollmentIsRefusedOverThePendingCap(t *testing.T) {
+	f := newFleet(t, Config{MaxPendingEnrollments: 1})
+
+	enroll := func(id string) (transport.EnrollResponse, error) {
+		key, _, err := ca.GenerateKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		csrPEM, err := ca.NewCSR(key, id, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var resp transport.EnrollResponse
+		err = f.anonymousClient(t).Post(context.Background(), transport.PathEnroll,
+			transport.EnrollRequest{ID: id, CSR: string(csrPEM)}, &resp)
+		return resp, err
+	}
+
+	if resp, err := enroll("web1"); err != nil || resp.State != string(ca.StatePending) {
+		t.Fatalf("first enrollment: state=%q err=%v", resp.State, err)
+	}
+
+	// The cap is full; the next identity must be told to come back rather
+	// than being allowed to grow pending/ without bound.
+	_, err := enroll("web2")
+	if err == nil {
+		t.Fatal("an enrollment over the pending cap must be refused")
+	}
+	if !strings.Contains(err.Error(), "503") {
+		t.Errorf("got %v, want 503 — a full queue is the server's condition, not the agent's mistake", err)
 	}
 }

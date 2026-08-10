@@ -8,8 +8,7 @@
 package event
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +26,8 @@ const (
 	TagBeacon        = "halite/beacon/%s/%s"
 )
 
-// Event is one thing that happened.
+// Event is one thing that happened. Data is shared by reference between
+// history and every subscriber: consumers must treat it as read-only.
 type Event struct {
 	ID     string         `json:"id"`
 	Tag    string         `json:"tag"`
@@ -56,6 +56,11 @@ type Bus struct {
 	history     []Event
 	maxHistory  int
 	buffer      int
+	lastStamp   string
+	seq         int
+	// droppedGone carries the drop counts of unsubscribed consumers, so
+	// Dropped does not shrink when a slow consumer disconnects.
+	droppedGone int
 }
 
 type subscription struct {
@@ -77,9 +82,6 @@ func NewBus() *Bus {
 // history. It never blocks: a full subscriber buffer means a dropped event,
 // not a stalled publisher.
 func (b *Bus) Publish(ev Event) {
-	if ev.ID == "" {
-		ev.ID = newID()
-	}
 	if ev.Time.IsZero() {
 		ev.Time = time.Now().UTC()
 	}
@@ -90,6 +92,11 @@ func (b *Bus) Publish(ev Event) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if ev.ID == "" {
+		// Under the same lock as the history append, so ID order and
+		// history order can never disagree.
+		ev.ID = b.nextID()
+	}
 	b.history = append(b.history, ev)
 	if len(b.history) > b.maxHistory {
 		b.history = b.history[len(b.history)-b.maxHistory:]
@@ -131,6 +138,7 @@ func (b *Bus) Subscribe(pattern string) (<-chan Event, func()) {
 		defer b.mu.Unlock()
 		if existing, ok := b.subscribers[handle]; ok {
 			delete(b.subscribers, handle)
+			b.droppedGone += existing.dropped
 			close(existing.ch)
 		}
 	}
@@ -163,7 +171,7 @@ func (b *Bus) History(pattern string, limit int) []Event {
 func (b *Bus) Dropped() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	total := 0
+	total := b.droppedGone
 	for _, sub := range b.subscribers {
 		total += sub.dropped
 	}
@@ -228,13 +236,19 @@ func globMatch(pattern, segment string) bool {
 	return strings.HasSuffix(segment, last) && len(segment) >= len(last)
 }
 
-// newID is time-ordered so events sort chronologically, with a random tail
-// so two in the same microsecond stay distinct.
-func newID() string {
+// nextID returns a strictly increasing ID: a UTC microsecond timestamp
+// plus a fixed-width sequence number for events sharing a microsecond, so
+// IDs sort chronologically as plain strings. The caller must hold b.mu.
+func (b *Bus) nextID() string {
 	stamp := time.Now().UTC().Format("20060102150405.000000")
-	var suffix [3]byte
-	if _, err := rand.Read(suffix[:]); err != nil {
-		return stamp
+	if stamp <= b.lastStamp {
+		// Same microsecond as the previous event, or a clock step
+		// backwards: keep the last stamp so IDs never regress.
+		stamp = b.lastStamp
+		b.seq++
+	} else {
+		b.lastStamp = stamp
+		b.seq = 0
 	}
-	return stamp + "-" + hex.EncodeToString(suffix[:])
+	return fmt.Sprintf("%s-%06x", stamp, b.seq)
 }

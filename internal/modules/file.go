@@ -18,6 +18,41 @@ func init() {
 	register("file.absent", fileAbsent)
 }
 
+// atomicWrite replaces path via a temp file in the same directory: the data
+// is written, the requested mode applied, and the file fsynced before the
+// rename, so a crash never leaves a truncated file and a tightened mode is
+// in force before the content is reachable.
+func atomicWrite(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	fail := func(e error) error {
+		tmp.Close()
+		os.Remove(name)
+		return e
+	}
+	if _, err := tmp.Write(data); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(name)
+		return err
+	}
+	if err := os.Rename(name, path); err != nil {
+		os.Remove(name)
+		return err
+	}
+	return nil
+}
+
 // resolveOwner turns user/group names (or numeric IDs) into uid/gid.
 // Returns -1 for unspecified fields.
 func resolveOwner(userName, groupName string) (uid, gid int, err error) {
@@ -180,11 +215,25 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 			desired = []byte{}
 		}
 		perm := os.FileMode(0o644)
-		if wantMode != 0 {
+		switch {
+		case wantMode != 0:
 			perm = wantMode
+		case exists:
+			// No mode requested: the atomic rename must not reset an
+			// existing file's permissions to the default.
+			if st, err := os.Stat(name); err == nil {
+				perm = st.Mode().Perm()
+			}
 		}
-		if err := os.WriteFile(name, desired, perm); err != nil {
+		if err := atomicWrite(name, desired, perm); err != nil {
 			return resFail("write %s: %v", name, err)
+		}
+		// The rename resets ownership to this process; put back an owner
+		// the caller pinned but that was not otherwise drifting.
+		if !needOwner && (wantUID >= 0 || wantGID >= 0) {
+			if err := chown(name, wantUID, wantGID); err != nil {
+				return resFail("chown %s: %v", name, err)
+			}
 		}
 		if !exists {
 			changes["content"] = fmt.Sprintf("created (%d bytes)", len(desired))
@@ -216,31 +265,56 @@ func fileDirectory(c *Ctx, id string, args map[string]any) Result {
 	}
 	ownerPending := ownerErr != nil
 
+	var wantMode os.FileMode
+	haveMode := false
+	if mode != "" && runtime.GOOS != "windows" {
+		n, err := strconv.ParseUint(mode, 8, 32)
+		if err != nil {
+			return resFail("invalid mode %q: %v", mode, err)
+		}
+		wantMode = os.FileMode(n)
+		haveMode = true
+	}
+
 	st, statErr := os.Stat(name)
 	exists := statErr == nil && st.IsDir()
+	needMode := haveMode && exists && st.Mode().Perm() != wantMode
 	needOwner := ownerPending || (exists && ownerDrift(name, wantUID, wantGID))
 
-	if exists && !needOwner {
+	if exists && !needMode && !needOwner {
 		return resOK(fmt.Sprintf("directory %s exists", name))
 	}
 	if c.Test {
 		if !exists {
 			return resWould(fmt.Sprintf("directory %s would be created", name))
 		}
+		if needMode {
+			return resWould(fmt.Sprintf("directory %s mode would be set to %s", name, mode))
+		}
 		return resWould(fmt.Sprintf("directory %s ownership would be updated", name))
 	}
 	changes := map[string]string{}
 	if !exists {
 		perm := os.FileMode(0o755)
-		if mode != "" && runtime.GOOS != "windows" {
-			if n, err := strconv.ParseUint(mode, 8, 32); err == nil {
-				perm = os.FileMode(n)
-			}
+		if haveMode {
+			perm = wantMode
 		}
 		if err := os.MkdirAll(name, perm); err != nil {
 			return resFail("mkdir %s: %v", name, err)
 		}
+		if haveMode {
+			// MkdirAll's mode is filtered by the umask; assert the real one.
+			if err := os.Chmod(name, wantMode); err != nil {
+				return resFail("chmod %s: %v", name, err)
+			}
+		}
 		changes["directory"] = "created"
+	}
+	if needMode {
+		if err := os.Chmod(name, wantMode); err != nil {
+			return resFail("chmod %s: %v", name, err)
+		}
+		changes["mode"] = mode
 	}
 	if wantUID >= 0 || wantGID >= 0 {
 		if !exists || needOwner {
@@ -255,7 +329,8 @@ func fileDirectory(c *Ctx, id string, args map[string]any) Result {
 
 func fileAbsent(c *Ctx, id string, args map[string]any) Result {
 	name := Str(args, "name", id)
-	if _, err := os.Stat(name); os.IsNotExist(err) {
+	// Lstat, not Stat: a dangling symlink is still an entry to remove.
+	if _, err := os.Lstat(name); os.IsNotExist(err) {
 		return resOK(fmt.Sprintf("%s is already absent", name))
 	}
 	if c.Test {

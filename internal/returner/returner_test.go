@@ -136,6 +136,28 @@ func TestFileReturnerReopensAppending(t *testing.T) {
 	}
 }
 
+func TestFileReturnerReportsASyncFailure(t *testing.T) {
+	r, err := NewFile(filepath.Join(t.TempDir(), "results.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Swap the log for a pipe: writes succeed, fsync cannot. If Return
+	// stops syncing, this passes silently and durability is gone.
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pr.Close()
+	go io.Copy(io.Discard, pr) // keep the write side from filling up
+	r.file.Close()
+	r.file = pw
+	defer r.Close()
+
+	if err := r.Return(sampleRecord("web1")); err == nil {
+		t.Error("a failed fsync must be reported: the record is not durable")
+	}
+}
+
 func TestFileReturnerAfterCloseIsAnError(t *testing.T) {
 	r, err := NewFile(filepath.Join(t.TempDir(), "results.ndjson"))
 	if err != nil {
@@ -189,14 +211,60 @@ func TestWebhookPostsJSON(t *testing.T) {
 }
 
 func TestWebhookReportsAFailingEndpoint(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		attempts int
+	)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempts++
+		mu.Unlock()
 		http.Error(w, "nope", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
 	r, _ := NewWebhook(server.URL)
+	r.retryWait = time.Millisecond
 	if err := r.Return(sampleRecord("web1")); err == nil {
 		t.Error("a 500 from the endpoint must be reported")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != webhookRetries+1 {
+		t.Errorf("made %d attempts, want the retry budget of %d used up", attempts, webhookRetries+1)
+	}
+}
+
+func TestWebhookRetriesATransientFailure(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		attempts int
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempts++
+		n := attempts
+		mu.Unlock()
+		if n < 3 {
+			http.Error(w, "not yet", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	r, err := NewWebhook(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.retryWait = time.Millisecond
+	if err := r.Return(sampleRecord("web1")); err != nil {
+		t.Fatalf("a failure within the retry budget must be ridden out: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if attempts != 3 {
+		t.Errorf("attempts = %d, want 3 — success on the last retry", attempts)
 	}
 }
 
@@ -270,6 +338,106 @@ func TestManagerDropsRatherThanBlocks(t *testing.T) {
 	}
 }
 
+func TestManagerCountsDropsPerReturner(t *testing.T) {
+	manager := NewManager([]Returner{blackhole{}, blackhole{}}, quietLogger())
+
+	// Each sink has its own queue, so each drops the same overflow.
+	for i := 0; i < queueDepth+50; i++ {
+		manager.Submit(sampleRecord("web1"))
+	}
+	if dropped := manager.Dropped(); dropped != 100 {
+		t.Errorf("dropped = %d, want 50 per sink", dropped)
+	}
+}
+
+func TestSlowSinkDelaysOnlyItsOwnWrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.ndjson")
+	file, err := NewFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := stuck{release: make(chan struct{})}
+	manager := NewManager([]Returner{blocked, file}, quietLogger())
+
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() { manager.Run(done); close(finished) }()
+
+	manager.Submit(sampleRecord("web1"))
+
+	// The stuck sink is holding its own goroutine hostage; the file sink
+	// must still get the record. One shared delivery loop fails here.
+	deadline := time.After(10 * time.Second)
+	for {
+		content, _ := os.ReadFile(path)
+		if strings.Count(string(content), "\n") == 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("the file sink never got the record while another sink was stuck")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	close(blocked.release)
+	close(done)
+	<-finished
+}
+
+func TestSubmitAfterShutdownDropsInsteadOfPanicking(t *testing.T) {
+	sink, err := NewFile(filepath.Join(t.TempDir(), "results.ndjson"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager([]Returner{sink}, quietLogger())
+	done := make(chan struct{})
+	close(done)
+	manager.Run(done)
+
+	manager.Submit(sampleRecord("web1")) // the queue is closed; this must not panic
+	if dropped := manager.Dropped(); dropped != 1 {
+		t.Errorf("dropped = %d, want the post-shutdown record counted", dropped)
+	}
+}
+
+func TestShutdownStrandsNoAcceptedRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "results.ndjson")
+	sink, err := NewFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager([]Returner{sink}, quietLogger())
+
+	done := make(chan struct{})
+	finished := make(chan struct{})
+	go func() { manager.Run(done); close(finished) }()
+
+	// Submissions race the shutdown on purpose: every record must end up
+	// either written or counted as dropped, never stranded in a channel.
+	const submitters, each = 4, 50
+	var wg sync.WaitGroup
+	for i := 0; i < submitters; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < each; j++ {
+				manager.Submit(sampleRecord("web1"))
+			}
+		}()
+	}
+	close(done)
+	wg.Wait()
+	<-finished
+
+	content, _ := os.ReadFile(path)
+	written := strings.Count(string(content), "\n")
+	if written+manager.Dropped() != submitters*each {
+		t.Errorf("written %d + dropped %d != submitted %d — a record was stranded",
+			written, manager.Dropped(), submitters*each)
+	}
+}
+
 func TestManagerWithNoReturnersIsInert(t *testing.T) {
 	manager := NewManager(nil, quietLogger())
 	if manager.Configured() {
@@ -287,3 +455,11 @@ type blackhole struct{}
 func (blackhole) Name() string        { return "blackhole" }
 func (blackhole) Return(Record) error { return nil }
 func (blackhole) Close() error        { return nil }
+
+// stuck blocks every delivery until released, like a blackholed webhook
+// sitting in its connect timeout.
+type stuck struct{ release chan struct{} }
+
+func (s stuck) Name() string        { return "stuck" }
+func (s stuck) Return(Record) error { <-s.release; return nil }
+func (s stuck) Close() error        { return nil }

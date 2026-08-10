@@ -38,6 +38,12 @@ type Config struct {
 	// means anyone who can reach the port becomes a fleet member.
 	AutoAccept bool
 
+	// MaxPendingEnrollments caps how many enrollment requests may wait for
+	// an operator at once. Enrollment is unauthenticated, so the cap is
+	// what stands between the open port and a full disk. Zero means the
+	// CA's default (ca.DefaultMaxPending).
+	MaxPendingEnrollments int
+
 	// PollTimeout is how long an agent's job poll is held open before it is
 	// answered with an empty list.
 	PollTimeout time.Duration
@@ -160,11 +166,20 @@ func (s *Server) Run(ctx context.Context) error {
 		ErrorLog:    s.log,
 	}
 
-	// Returners drain in their own goroutine for the life of the server, so
-	// a slow sink never delays an agent's return.
+	// Returners drain in their own goroutines for the life of the server, so
+	// a slow sink never delays an agent's return. stopReturners closes the
+	// intake and waits for the flush; it must run only after the HTTP server
+	// has stopped, so no handler is left submitting into a closed manager.
 	returnersDone := make(chan struct{})
-	defer close(returnersDone)
-	go s.returners.Run(returnersDone)
+	returnersFinished := make(chan struct{})
+	go func() {
+		s.returners.Run(returnersDone)
+		close(returnersFinished)
+	}()
+	stopReturners := func() {
+		close(returnersDone)
+		<-returnersFinished
+	}
 
 	if len(s.cfg.ReactorRules) > 0 {
 		reactorCtx, stopReactor := context.WithCancel(ctx)
@@ -198,11 +213,16 @@ func (s *Server) Run(ctx context.Context) error {
 
 	select {
 	case err := <-done:
+		stopReturners()
 		return err
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return srv.Shutdown(shutdownCtx)
+		err := srv.Shutdown(shutdownCtx)
+		// Every handler has returned, so nothing new can be submitted; flush
+		// what was accepted before letting the process exit.
+		stopReturners()
+		return err
 	}
 }
 

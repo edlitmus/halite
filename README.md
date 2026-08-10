@@ -20,7 +20,8 @@ runtime, onedir/relenv packaging, or the deprecation treadmill.
 Plus the event layer: a tagged event bus with a live stream, a reactor
 turning events into jobs, agent-side beacons, durable returners, a mine
 of fleet-wide facts, and ordered orchestration. What remains are the
-deliberate non-goals — see [docs/salt-parity.md](docs/salt-parity.md).
+deliberate non-goals and an honest list of known gaps against Salt
+3008 — see [docs/salt-parity.md](docs/salt-parity.md).
 
 ## Why
 
@@ -55,7 +56,7 @@ make race       # the same under the race detector
 make check      # vet, test, and race — what to run before calling it done
 ```
 
-Requires Go 1.22+. No other dependencies.
+Requires Go 1.25+ (the version go.mod declares). No other dependencies.
 
 ## Quickstart
 

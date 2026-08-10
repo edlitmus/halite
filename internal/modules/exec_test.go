@@ -1,6 +1,8 @@
 package modules
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"testing"
 	"time"
@@ -48,6 +50,23 @@ func TestExecModulesDoNotCollideWithStates(t *testing.T) {
 		if _, clash := Registry[name]; clash {
 			t.Errorf("%q is registered as both a state and an execution module", name)
 		}
+	}
+}
+
+func TestCheckGatesCreatesSeesADanglingSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	dir := t.TempDir()
+	link := filepath.Join(dir, "made-by-cmd")
+	if err := os.Symlink(filepath.Join(dir, "gone"), link); err != nil {
+		t.Fatal(err)
+	}
+	// A command that creates a symlink satisfied its gate even if the link
+	// target has since disappeared; the state must not run again.
+	comment, skip := CheckGates(map[string]any{"creates": link})
+	if !skip {
+		t.Errorf("dangling symlink did not satisfy creates: %q", comment)
 	}
 }
 

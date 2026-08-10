@@ -3,6 +3,7 @@ package modules
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -67,7 +68,7 @@ func mountMounted(c *Ctx, id string, args map[string]any) Result {
 		return resFail("%v", err)
 	}
 	current, mounted := active[point]
-	if mounted && current.Device != device && current.Device != "" {
+	if mounted && deviceConflicts(device, current.Device) {
 		return resFail("%s already has %s mounted; unmount it before mounting %s",
 			point, current.Device, device)
 	}
@@ -173,6 +174,51 @@ func mountUnmounted(c *Ctx, id string, args map[string]any) Result {
 		changes["fstab"] = "entry removed"
 	}
 	return resChanged(fmt.Sprintf("%s is not mounted", point), changes)
+}
+
+// isDeviceSpec reports whether device is an fstab UUID=/LABEL= spec rather
+// than a path.
+func isDeviceSpec(device string) bool {
+	return strings.HasPrefix(device, "UUID=") || strings.HasPrefix(device, "LABEL=")
+}
+
+// resolveDeviceSpec maps a UUID=/LABEL= spec to its /dev path. Only Linux
+// publishes the /dev/disk/by-* symlinks this needs; ok is false everywhere
+// else and for specs that do not resolve.
+func resolveDeviceSpec(device string) (string, bool) {
+	if runtime.GOOS != "linux" {
+		return "", false
+	}
+	var link string
+	switch {
+	case strings.HasPrefix(device, "UUID="):
+		link = "/dev/disk/by-uuid/" + strings.TrimPrefix(device, "UUID=")
+	case strings.HasPrefix(device, "LABEL="):
+		link = "/dev/disk/by-label/" + strings.TrimPrefix(device, "LABEL=")
+	default:
+		return "", false
+	}
+	resolved, err := filepath.EvalSymlinks(link)
+	if err != nil {
+		return "", false
+	}
+	return resolved, true
+}
+
+// deviceConflicts reports whether the device mounted at a point is provably
+// different from the configured one. The mount table reports resolved paths,
+// so a UUID=/LABEL= spec is resolved before comparing; a spec that cannot be
+// resolved is treated as converged rather than failing a point that is
+// already mounted.
+func deviceConflicts(configured, mounted string) bool {
+	if mounted == "" || configured == mounted {
+		return false
+	}
+	if isDeviceSpec(configured) {
+		resolved, ok := resolveDeviceSpec(configured)
+		return ok && resolved != mounted
+	}
+	return true
 }
 
 // activeMounts reports what is mounted right now, keyed by mount point.
@@ -331,7 +377,7 @@ func writeFstabLines(lines []string) error {
 	if body != "" {
 		body += "\n"
 	}
-	if err := os.WriteFile(fstabPath, []byte(body), 0o644); err != nil {
+	if err := atomicWrite(fstabPath, []byte(body), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", fstabPath, err)
 	}
 	return nil

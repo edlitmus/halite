@@ -19,6 +19,9 @@ type svcBackend struct {
 	stop    func(n string) error
 	restart func(n string) error
 	enable  func(n string) error
+	// enabled probes boot-time enablement; an error means the backend
+	// cannot know, not that the service is disabled.
+	enabled func(n string) (bool, error)
 }
 
 // ServiceRunning reports whether a service is up right now. Beacons use it
@@ -57,6 +60,14 @@ func detectSvcBackend() (*svcBackend, error) {
 			stop:    func(n string) error { return svcExec("service", n, "onestop") },
 			restart: func(n string) error { return svcExec("service", n, "onerestart") },
 			enable:  func(n string) error { return svcExec("sysrc", n+"_enable=YES") },
+			enabled: func(n string) (bool, error) {
+				out, _, rc, err := run("sysrc", "-n", n+"_enable")
+				if err != nil {
+					return false, err
+				}
+				// A non-zero exit means the rc.conf variable is unset.
+				return rc == 0 && strings.EqualFold(strings.TrimSpace(out), "YES"), nil
+			},
 		}, nil
 	case "darwin":
 		return &svcBackend{
@@ -74,6 +85,9 @@ func detectSvcBackend() (*svcBackend, error) {
 			enable: func(n string) error {
 				return fmt.Errorf("enable not yet implemented for launchd (load a plist instead)")
 			},
+			enabled: func(n string) (bool, error) {
+				return false, fmt.Errorf("launchd cannot report enablement")
+			},
 		}, nil
 	case "windows":
 		return &svcBackend{
@@ -89,6 +103,16 @@ func detectSvcBackend() (*svcBackend, error) {
 				return svcExec("sc", "start", n)
 			},
 			enable: func(n string) error { return svcExec("sc", "config", n, "start=", "auto") },
+			enabled: func(n string) (bool, error) {
+				out, errOut, rc, err := run("sc", "qc", n)
+				if err != nil {
+					return false, err
+				}
+				if rc != 0 {
+					return false, fmt.Errorf("sc qc %s exited %d: %s", n, rc, strings.TrimSpace(errOut))
+				}
+				return strings.Contains(out, "AUTO_START"), nil
+			},
 		}, nil
 	default:
 		if has("systemctl") {
@@ -102,6 +126,14 @@ func detectSvcBackend() (*svcBackend, error) {
 				stop:    func(n string) error { return svcExec("systemctl", "stop", n) },
 				restart: func(n string) error { return svcExec("systemctl", "restart", n) },
 				enable:  func(n string) error { return svcExec("systemctl", "enable", n) },
+				enabled: func(n string) (bool, error) {
+					// Disabled, static, and masked units all exit non-zero.
+					_, _, rc, err := run("systemctl", "is-enabled", "--quiet", n)
+					if err != nil {
+						return false, err
+					}
+					return rc == 0, nil
+				},
 			}, nil
 		}
 		if has("service") {
@@ -115,6 +147,9 @@ func detectSvcBackend() (*svcBackend, error) {
 				stop:    func(n string) error { return svcExec("service", n, "stop") },
 				restart: func(n string) error { return svcExec("service", n, "restart") },
 				enable:  func(n string) error { return fmt.Errorf("enable not supported on sysvinit backend") },
+				enabled: func(n string) (bool, error) {
+					return false, fmt.Errorf("sysvinit backend cannot report enablement")
+				},
 			}, nil
 		}
 		return nil, fmt.Errorf("no supported service manager found")
@@ -128,6 +163,12 @@ func serviceRunning(c *Ctx, id string, args map[string]any) Result {
 	if err != nil {
 		return resFail("%v", err)
 	}
+	return applyServiceRunning(be, c, id, args)
+}
+
+// applyServiceRunning is serviceRunning with the backend injected, so tests
+// can drive it without a real service manager.
+func applyServiceRunning(be *svcBackend, c *Ctx, id string, args map[string]any) Result {
 	name := Str(args, "name", id)
 	enable := Bool(args, "enable", false)
 	watchTriggered := Bool(args, "__watch_changed", false)
@@ -135,7 +176,18 @@ func serviceRunning(c *Ctx, id string, args map[string]any) Result {
 	running := be.running(name)
 	changes := map[string]string{}
 
-	if running && !watchTriggered && !enable {
+	// Only enable when the service is provably not enabled; a backend that
+	// cannot probe keeps the old always-enable behavior, but reports no
+	// change for a call that may have been redundant.
+	needEnable := false
+	enableKnown := false
+	if enable {
+		isEnabled, err := be.enabled(name)
+		enableKnown = err == nil
+		needEnable = !enableKnown || !isEnabled
+	}
+
+	if running && !watchTriggered && !needEnable {
 		return resOK(fmt.Sprintf("service %s is running", name))
 	}
 	if c.Test {
@@ -149,11 +201,13 @@ func serviceRunning(c *Ctx, id string, args map[string]any) Result {
 		}
 	}
 
-	if enable {
+	if needEnable {
 		if err := be.enable(name); err != nil {
 			return resFail("enable %s: %v", name, err)
 		}
-		changes["enabled"] = "true"
+		if enableKnown {
+			changes["enabled"] = "true"
+		}
 	}
 	switch {
 	case !running:

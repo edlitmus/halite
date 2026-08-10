@@ -45,9 +45,10 @@ type Rule struct {
 // through the same path an operator's dispatch does.
 type Dispatcher func(transport.DispatchRequest, string) (transport.DispatchResponse, error)
 
-// DefaultRateLimit is how many reactions may fire per minute before the
-// reactor starts refusing. Generous for real use, low enough that a loop
-// announces itself instead of melting the fleet.
+// DefaultRateLimit is how many reactions one rule may fire per minute
+// before its reactions are refused. Generous for real use, low enough that
+// a loop announces itself instead of melting the fleet. The budget is per
+// rule so a looping rule cannot starve the others.
 const DefaultRateLimit = 60
 
 // Reactor watches the bus and dispatches.
@@ -59,12 +60,13 @@ type Reactor struct {
 	limit  int
 	mu     sync.Mutex
 	window time.Time
-	fired  int
+	fired  map[string]int // reactions per rule tag in the current window
 }
 
 // New builds a reactor over the given rules.
 func New(rules []Rule, dispatch Dispatcher, logger *log.Logger) *Reactor {
-	return &Reactor{rules: rules, dispatch: dispatch, log: logger, limit: DefaultRateLimit}
+	return &Reactor{rules: rules, dispatch: dispatch, log: logger,
+		limit: DefaultRateLimit, fired: map[string]int{}}
 }
 
 // Rules reports how many rules are loaded, for startup logging.
@@ -110,9 +112,9 @@ func (r *Reactor) react(ev event.Event) {
 }
 
 func (r *Reactor) fire(rule Rule, action Action, ev event.Event) {
-	if !r.allow() {
-		r.log.Printf("reactor: rate limit of %d/min reached, dropping %q for %q "+
-			"(a rule is probably reacting to its own work)", r.limit, rule.Tag, ev.Tag)
+	if !r.allow(rule.Tag) {
+		r.log.Printf("reactor: rule %q hit its rate limit of %d/min, dropping reaction for %q "+
+			"(it is probably reacting to its own work)", rule.Tag, r.limit, ev.Tag)
 		return
 	}
 	req, err := render(action, ev)
@@ -129,19 +131,19 @@ func (r *Reactor) fire(rule Rule, action Action, ev event.Event) {
 		rule.Tag, ev.Tag, resp.JobID, len(resp.Agents))
 }
 
-// allow implements a simple per-minute budget.
-func (r *Reactor) allow() bool {
+// allow implements a simple per-minute budget, counted per rule.
+func (r *Reactor) allow(tag string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := time.Now()
 	if now.Sub(r.window) >= time.Minute {
 		r.window = now
-		r.fired = 0
+		r.fired = map[string]int{}
 	}
-	if r.fired >= r.limit {
+	if r.fired[tag] >= r.limit {
 		return false
 	}
-	r.fired++
+	r.fired[tag]++
 	return true
 }
 

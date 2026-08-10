@@ -115,7 +115,9 @@ func destinationHasEntries(dest string, names []string) (bool, int) {
 	}
 	missing := 0
 	for _, name := range names {
-		if _, err := os.Stat(filepath.Join(dest, name)); err != nil {
+		// Lstat, not Stat: an extracted symlink whose target is gone is
+		// still present and must not force a re-extract.
+		if _, err := os.Lstat(filepath.Join(dest, name)); err != nil {
 			missing++
 		}
 	}

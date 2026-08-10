@@ -70,8 +70,13 @@ func TargetMatch(pat string, grains map[string]any) bool {
 	for i := 0; i < len(pat); i++ {
 		if pat[i] == ':' {
 			key, valPat := pat[:i], pat[i+1:]
-			gv := fmt.Sprintf("%v", grains[key])
-			ok, err := path.Match(valPat, gv)
+			// A host without the grain matches nothing, not even `key:*`;
+			// otherwise every glob would select the whole fleet.
+			gv, present := grains[key]
+			if !present || gv == nil {
+				return false
+			}
+			ok, err := path.Match(valPat, fmt.Sprintf("%v", gv))
 			return err == nil && ok
 		}
 	}

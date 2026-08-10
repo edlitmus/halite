@@ -34,6 +34,15 @@ func gitLatest(c *Ctx, id string, args map[string]any) Result {
 	if target == "" {
 		return resFail("git.latest requires a target directory")
 	}
+	// These become git arguments; a value that looks like an option (say, a
+	// pillar-templated `--upload-pack=...` url) must not be parsed as one.
+	for _, arg := range []struct{ name, value string }{
+		{"name", url}, {"rev", rev}, {"depth", depth},
+	} {
+		if strings.HasPrefix(arg.value, "-") {
+			return resFail("git.latest %s %q must not begin with '-'", arg.name, arg.value)
+		}
+	}
 	if !has("git") {
 		return resFail("git is not installed")
 	}

@@ -58,6 +58,22 @@ func RunWith(ctx *modules.Ctx, states []sls.State, lookup Lookup) []StateResult 
 		}
 		return sls.State{}, false
 	}
+	// failedPrereqOf finds an already-run state that declared this one as
+	// its prereq target and failed. A failed prereq blocks its target: if
+	// draining the load balancer failed, the deploy must not proceed.
+	failedPrereqOf := func(st sls.State) (sls.State, bool) {
+		for i := 0; i <= executedThrough; i++ {
+			if results[i].Ok {
+				continue
+			}
+			for _, r := range states[i].Prereq {
+				if r.ID == st.ID && (r.Module == "" || r.Module == st.Module) {
+					return states[i], true
+				}
+			}
+		}
+		return sls.State{}, false
+	}
 
 	// dryRun evaluates whether a state would make changes, without making
 	// them (used by prereq).
@@ -75,9 +91,19 @@ func RunWith(ctx *modules.Ctx, states []sls.State, lookup Lookup) []StateResult 
 		return fn(testCtx, st.ID, args)
 	}
 
+	origBase := ctx.BaseDir
+	defer func() { ctx.BaseDir = origBase }()
+
 	out := make([]StateResult, 0, len(states))
 	for i, st := range states {
-		res := runOne(ctx, st, lookup, resultOf, findState, dryRun)
+		// Set per state rather than carrying the previous state's directory
+		// into one that has none.
+		if st.Dir != "" {
+			ctx.BaseDir = st.Dir
+		} else {
+			ctx.BaseDir = origBase
+		}
+		res := runOne(ctx, st, lookup, resultOf, findState, failedPrereqOf, dryRun)
 		results[i] = res
 		executedThrough = i
 		out = append(out, StateResult{ID: st.ID, Fn: st.Name(), Res: res})
@@ -91,6 +117,7 @@ func runOne(
 	lookup Lookup,
 	resultOf func(sls.Ref) (modules.Result, bool),
 	findState func(sls.Ref) (sls.State, bool),
+	failedPrereqOf func(sls.State) (sls.State, bool),
 	dryRun func(sls.State) modules.Result,
 ) modules.Result {
 	// Any failed requisite blocks execution.
@@ -100,6 +127,10 @@ func runOne(
 			return modules.Result{Ok: false,
 				Comment: fmt.Sprintf("one or more requisite failed: %s:%s", r.Module, r.ID)}
 		}
+	}
+	if s, blocked := failedPrereqOf(st); blocked {
+		return modules.Result{Ok: false,
+			Comment: fmt.Sprintf("one or more requisite failed: %s:%s", s.Module, s.ID)}
 	}
 
 	// onchanges: run only if at least one referenced state changed.
@@ -151,9 +182,6 @@ func runOne(
 	if !ok {
 		return modules.Result{Ok: false,
 			Comment: fmt.Sprintf("state function %q not found", st.Name())}
-	}
-	if st.Dir != "" {
-		ctx.BaseDir = st.Dir
 	}
 	return fn(ctx, st.ID, args)
 }

@@ -37,7 +37,9 @@ If neither `contents` nor `source` is given, the file is created empty if
 absent (touch semantics). Double-quoted `contents` process `\n` and `\t`
 escapes; single quotes are literal. Content drift is reported as a -/+
 line diff (suppressed for binary or >128KB content, or with
-`show_diff: false`).
+`show_diff: false`). Set `show_diff: false` on any file carrying a pillar
+secret — the diff travels into job results, returners, and logs (see
+[pillar-security.md](pillar-security.md)).
 
 ```yaml
 /usr/local/etc/app.conf:

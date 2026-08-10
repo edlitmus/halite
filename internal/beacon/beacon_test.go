@@ -361,3 +361,80 @@ func TestParseInterval(t *testing.T) {
 		}
 	}
 }
+
+// A transient check error must not flip the up/down edge: recovery after an
+// error, with the service never having stopped, is not a recovery.
+func TestServiceBeaconErrorDoesNotFakeARecovery(t *testing.T) {
+	up, fail := true, false
+	s := &Service{
+		Service: "nginx",
+		running: func(string) (bool, error) {
+			if fail {
+				return false, fmt.Errorf("systemctl timed out")
+			}
+			return up, nil
+		},
+	}
+	if got := s.Check(); len(got) != 0 {
+		t.Fatalf("running service must be silent: %v", got)
+	}
+	fail = true
+	if got := s.Check(); len(got) != 1 || got[0].Data["error"] == nil {
+		t.Fatalf("first check error must fire once: %v", got)
+	}
+	fail = false
+	if got := s.Check(); len(got) != 0 {
+		t.Errorf("a service that never stopped must not report a recovery: %v", got)
+	}
+}
+
+// A real threshold alert after a read error must still fire, with its data.
+func TestDiskBeaconAlertsAfterAnError(t *testing.T) {
+	fail := true
+	d := &Disk{
+		Mount: "/", Threshold: 90,
+		used: func(string) (int, error) {
+			if fail {
+				return 0, fmt.Errorf("statfs failed")
+			}
+			return 95, nil
+		},
+	}
+	if got := d.Check(); len(got) != 1 || got[0].Data["error"] == nil {
+		t.Fatalf("read error must fire once: %v", got)
+	}
+	fail = false
+	got := d.Check()
+	if len(got) != 1 || got[0].Data["over"] != true {
+		t.Fatalf("the threshold alert after an error must fire with data: %v", got)
+	}
+}
+
+// An unreadable file is not a removed file.
+func TestFileBeaconErrorIsNotARemoval(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "watched")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f := &File{Path: path}
+	_ = f.Check() // baseline
+
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(path, 0o644)
+	got := f.Check()
+	if len(got) == 1 && got[0].Data["change"] == "removed" {
+		t.Fatalf("a read error was reported as a removal: %v", got)
+	}
+	if len(got) != 1 || got[0].Data["error"] == nil {
+		t.Fatalf("a read error must fire once as an error: %v", got)
+	}
+
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.Check(); len(got) != 0 {
+		t.Errorf("unchanged content after a transient error fired: %v", got)
+	}
+}

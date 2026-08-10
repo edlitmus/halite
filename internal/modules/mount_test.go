@@ -47,6 +47,29 @@ devfs on /dev (devfs, local, nobrowse)
 	}
 }
 
+func TestDeviceConflictsResolvesSpecsInsteadOfFailing(t *testing.T) {
+	cases := []struct {
+		configured, mounted string
+		want                bool
+	}{
+		// A literal match, and an empty mount table entry, never conflict.
+		{"/dev/ada1p1", "/dev/ada1p1", false},
+		{"/dev/ada1p1", "", false},
+		// Two plain paths that differ are provably different devices.
+		{"/dev/ada1p1", "/dev/ada2p1", true},
+		// The mount table reports the resolved device for UUID=/LABEL=
+		// specs; a spec that cannot be resolved (wrong platform, or the
+		// by-uuid link is gone) must converge rather than fail forever.
+		{"UUID=0f7c30f0-3a41-4b6a-9c2b-000000000000", "/dev/sda1", false},
+		{"LABEL=data", "/dev/sda1", false},
+	}
+	for _, c := range cases {
+		if got := deviceConflicts(c.configured, c.mounted); got != c.want {
+			t.Errorf("deviceConflicts(%q, %q) = %v, want %v", c.configured, c.mounted, got, c.want)
+		}
+	}
+}
+
 func TestFstabLineIsTabSeparatedInFieldOrder(t *testing.T) {
 	entry := mountEntry{
 		Device: "/dev/ada1p1", Point: "/data", FSType: "ufs",

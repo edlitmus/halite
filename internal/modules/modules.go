@@ -178,7 +178,8 @@ func CheckGates(args map[string]any) (string, bool) {
 	delete(args, "unless")
 	delete(args, "onlyif")
 	if creates != "" {
-		if _, err := os.Stat(creates); err == nil {
+		// Lstat, not Stat: a dangling symlink still satisfies "creates".
+		if _, err := os.Lstat(creates); err == nil {
 			return fmt.Sprintf("%s exists, state skipped", creates), true
 		}
 	}

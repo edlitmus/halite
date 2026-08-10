@@ -8,10 +8,33 @@ tree before a run.
 This is a deliberate choice, not a gap waiting to be filled — see ADR-9 in
 [architecture.md](architecture.md). What follows is how to hold it safely.
 
+## Secrets go in pillar, never in states
+
+Pillar is targeted: a host receives only its own rendered data. The state
+tree is not — under a control plane, **every enrolled agent fetches the
+whole state tree**, including states written for other hosts. A credential
+embedded in a state file is therefore readable by any single agent in the
+fleet. Put the secret in pillar and template it into the state:
+
+```yaml
+# states/db.sls — safe: the value arrives per host, from pillar
+password: {{ .Pillar.db.password }}
+```
+
+Two more places a pillar secret can leak, and how to close them:
+
+* `file.managed` includes a line diff of content changes in its reported
+  Changes by default; a templated secret shows up in job results and logs.
+  Set `show_diff: false` on states that write secret-bearing files.
+* A state's `Comment` and `Changes` flow to the control plane, returners,
+  and `-json` output. Keep secrets out of `cmd.run` command lines too —
+  the command line is the comment when it fails.
+
 ## Lock down the pillar tree
 
 The pillar tree is the sensitive one. The state tree usually is not, but
-treat it the same way if your states embed credentials.
+treat it the same way if your states embed credentials — better, don't
+embed them (above).
 
 ```sh
 install -d -o root -g wheel -m 0700 /usr/local/etc/halite/pillar

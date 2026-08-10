@@ -126,8 +126,19 @@ func (a *Agent) runCall(ctx context.Context, job transport.Job, result transport
 	}
 	fn, ok := modules.Registry[job.Fn]
 	if !ok {
-		result.Error = fmt.Sprintf("unknown function %q", job.Fn)
-		return result
+		// External modules ship in the state tree's _modules directory —
+		// the same place `halite apply` resolves them from — so a fleet
+		// `call` reaches them exactly like a local one.
+		root, err := a.fetchStateTree(ctx)
+		if err != nil {
+			result.Error = fmt.Sprintf("fetch state tree: %v", err)
+			return result
+		}
+		fn, ok = extmod.Lookup(filepath.Join(root, extmod.DirName))(job.Fn)
+		if !ok {
+			result.Error = fmt.Sprintf("unknown function %q", job.Fn)
+			return result
+		}
 	}
 	pillarData, err := a.fetchPillar(ctx)
 	if err != nil {

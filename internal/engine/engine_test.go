@@ -73,6 +73,46 @@ func TestPrereq(t *testing.T) {
 	}
 }
 
+// A failed prereq blocks its target: if draining the LB failed, the deploy
+// must not proceed.
+func TestFailedPrereqBlocksTarget(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "f")
+	states := []sls.State{
+		{ID: "drain", Module: "cmd", Fn: "run",
+			Args:   map[string]any{"name": "false"},
+			Prereq: []sls.Ref{{Module: "file", ID: "deploy"}}},
+		{ID: "deploy", Module: "file", Fn: "managed",
+			Args: map[string]any{"name": target, "contents": "x"}},
+	}
+
+	r := run(t, states)
+	if r[0].Res.Ok {
+		t.Fatalf("drain should fail: %+v", r[0].Res)
+	}
+	if r[1].Res.Ok {
+		t.Fatalf("deploy should be blocked by the failed prereq: %+v", r[1].Res)
+	}
+	if _, err := os.Stat(target); err == nil {
+		t.Fatal("deploy ran despite its prereq failing")
+	}
+}
+
+// A state with an empty Dir must not inherit the previous state's Dir.
+func TestBaseDirDoesNotLeakBetweenStates(t *testing.T) {
+	dir := t.TempDir()
+	ctx := &modules.Ctx{Grains: map[string]any{"os": "test"}, BaseDir: "orig"}
+	states := []sls.State{
+		{ID: "a", Module: "cmd", Fn: "run", Dir: dir,
+			Args: map[string]any{"name": "true"}},
+		{ID: "b", Module: "cmd", Fn: "run",
+			Args: map[string]any{"name": "true"}},
+	}
+	_ = Run(ctx, states)
+	if ctx.BaseDir != "orig" {
+		t.Fatalf("ctx.BaseDir leaked: %q", ctx.BaseDir)
+	}
+}
+
 // The prereq dry run must not mutate the system.
 func TestPrereqDryRunHasNoSideEffects(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "f")

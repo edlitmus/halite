@@ -75,10 +75,26 @@ func (a *Agent) ensureKeyAndRequest() ([]byte, error) {
 		return nil, err
 	}
 	csrPath := a.cfg.agentKey() + ".csr"
-	if existing, err := os.ReadFile(csrPath); err == nil {
-		if _, err := os.Stat(a.cfg.agentKey()); err == nil {
-			return existing, nil
+	keyPEM, keyErr := os.ReadFile(a.cfg.agentKey())
+	if existing, err := os.ReadFile(csrPath); err == nil && keyErr == nil {
+		return existing, nil
+	}
+	if keyErr == nil {
+		// The key exists but its request sidecar is gone: rebuild the CSR
+		// from the key rather than silently rolling a new identity — a
+		// pending request on the control plane must keep matching the key
+		// this host actually holds.
+		if key, err := ca.ParseKey(keyPEM); err == nil {
+			csrPEM, err := ca.NewCSR(key, a.cfg.ID, nil)
+			if err != nil {
+				return nil, err
+			}
+			if err := os.WriteFile(csrPath, csrPEM, 0o644); err != nil {
+				return nil, fmt.Errorf("write request: %w", err)
+			}
+			return csrPEM, nil
 		}
+		// An unreadable key is the one case where regenerating is right.
 	}
 
 	key, keyPEM, err := ca.GenerateKey()

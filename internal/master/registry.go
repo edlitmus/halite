@@ -1,9 +1,8 @@
 package master
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -51,6 +50,21 @@ type registry struct {
 	// clean slate, not replay an operator's hours-old intent.
 	jobTTL time.Duration
 }
+
+// maxJobs and maxOrchestrations bound the finished-work records a
+// long-lived master keeps for `halite run`/`halite orchestrate` queries. A
+// reactor dispatching around the clock must not grow the control plane
+// without bound; the oldest records are evicted first.
+const (
+	maxJobs           = 4096
+	maxOrchestrations = 512
+)
+
+// mineTTL is how long after an agent's last contact its mine entries are
+// still served. Facts stay valid while the host keeps checking in, however
+// rarely it republishes; a host that has vanished must not keep feeding its
+// address into other hosts' templates forever.
+const mineTTL = time.Hour
 
 func newRegistry(onlineAfter, jobTTL time.Duration) *registry {
 	return &registry{
@@ -172,7 +186,25 @@ func (r *registry) dispatch(job transport.Job, byReactor bool) []string {
 		results:   map[string]transport.JobResult{},
 		reactor:   byReactor,
 	}
+	r.pruneJobsLocked()
 	return matched
+}
+
+// pruneJobsLocked evicts the oldest job records once the map exceeds
+// maxJobs. Job IDs sort chronologically, so the oldest are the smallest.
+// The caller must hold r.mu.
+func (r *registry) pruneJobsLocked() {
+	if len(r.jobs) <= maxJobs {
+		return
+	}
+	ids := make([]string, 0, len(r.jobs))
+	for id := range r.jobs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids[:len(ids)-maxJobs] {
+		delete(r.jobs, id)
+	}
 }
 
 // record stores one agent's result, refusing results for jobs it was never
@@ -247,9 +279,14 @@ func (r *registry) readMine(function, target string) transport.Mine {
 			continue
 		}
 		for agentID, entry := range byAgent {
+			// Serve facts only for hosts still checking in: a decommissioned
+			// agent's entries expire rather than persisting forever.
+			state, known := r.agents[agentID]
+			if !known || time.Since(state.info.LastSeen) > mineTTL {
+				continue
+			}
 			if target != "" && target != "*" {
-				state, known := r.agents[agentID]
-				if !known || !sls.TargetMatch(target, state.info.Grains) {
+				if !sls.TargetMatch(target, state.info.Grains) {
 					continue
 				}
 			}
@@ -268,6 +305,30 @@ func (r *registry) startOrchestration(id, name, by string) {
 	defer r.mu.Unlock()
 	r.orchestrations[id] = &transport.OrchInfo{
 		ID: id, Name: name, By: by, Started: time.Now().UTC(), Running: true,
+	}
+	r.pruneOrchestrationsLocked()
+}
+
+// pruneOrchestrationsLocked evicts the oldest finished runs once the map
+// exceeds maxOrchestrations. Runs still in flight are never evicted. The
+// caller must hold r.mu.
+func (r *registry) pruneOrchestrationsLocked() {
+	if len(r.orchestrations) <= maxOrchestrations {
+		return
+	}
+	var ids []string
+	for id, info := range r.orchestrations {
+		if !info.Running {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	excess := len(r.orchestrations) - maxOrchestrations
+	if excess > len(ids) {
+		excess = len(ids)
+	}
+	for _, id := range ids[:excess] {
+		delete(r.orchestrations, id)
 	}
 }
 
@@ -301,14 +362,25 @@ func (r *registry) orchestration(id string) (transport.OrchInfo, bool) {
 	return *info, true
 }
 
-// newJobID is time-ordered so that listing jobs sorts chronologically,
-// with a random tail so two dispatches in the same microsecond differ.
+var (
+	jobIDMu      sync.Mutex
+	lastJobStamp string
+	jobSeq       int
+)
+
+// newJobID is strictly increasing — a UTC microsecond timestamp plus a
+// fixed-width sequence number for dispatches sharing a microsecond — so
+// listing jobs sorts chronologically as plain strings.
 func newJobID() string {
-	var suffix [3]byte
-	if _, err := rand.Read(suffix[:]); err != nil {
-		// A job id only has to be unique, not unpredictable; the timestamp
-		// alone still is, in practice.
-		return time.Now().UTC().Format("20060102150405.000000")
+	jobIDMu.Lock()
+	defer jobIDMu.Unlock()
+	stamp := time.Now().UTC().Format("20060102150405.000000")
+	if stamp <= lastJobStamp {
+		stamp = lastJobStamp
+		jobSeq++
+	} else {
+		lastJobStamp = stamp
+		jobSeq = 0
 	}
-	return time.Now().UTC().Format("20060102150405.000000") + "-" + hex.EncodeToString(suffix[:])
+	return fmt.Sprintf("%s-%06x", stamp, jobSeq)
 }

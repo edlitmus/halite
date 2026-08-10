@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -156,6 +157,22 @@ func TestArchiveExtractedNeedsAKnownFormat(t *testing.T) {
 	}
 	if !strings.Contains(res.Comment, "archive_format") {
 		t.Errorf("comment should point at archive_format: %q", res.Comment)
+	}
+}
+
+func TestDestinationHasEntriesCountsDanglingSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks need privileges on Windows")
+	}
+	dest := t.TempDir()
+	// An extracted symlink whose target is gone is still an entry on disk;
+	// counting it missing would re-extract on every run.
+	if err := os.Symlink(filepath.Join(dest, "gone"), filepath.Join(dest, "app")); err != nil {
+		t.Fatal(err)
+	}
+	extracted, missing := destinationHasEntries(dest, []string{"app"})
+	if !extracted || missing != 0 {
+		t.Errorf("extracted=%v missing=%d, want true and 0", extracted, missing)
 	}
 }
 

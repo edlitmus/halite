@@ -1,5 +1,71 @@
 # Changelog
 
+## Unreleased
+
+Fixes from a full-repo review. Correctness:
+
+* Grain targeting (`key:pattern`) no longer matches hosts that do not
+  have the grain at all — `'role:*'` used to select the entire fleet,
+  including its pillar, because a missing grain stringified to `<nil>`
+  and matched the glob.
+* A failed `prereq` state now blocks its target, matching Salt: if
+  draining the load balancer fails, the deploy no longer proceeds.
+* `halite ssh <hosts> call ... -test` was silently mutating: the flag was
+  dropped for the `call` kind. It is now forwarded, and `halite call`
+  itself accepts `-test`.
+* A pillar file's own keys now deep-merge over its includes instead of
+  replacing their subtrees; overriding one leaf keeps included siblings.
+* Event and job IDs are strictly increasing (timestamp + sequence) —
+  they were timestamp + random tail, so same-microsecond events sorted
+  randomly and `halite events` history could disagree with ID order.
+* `mount.mounted` no longer fails forever on `UUID=`/`LABEL=` device
+  specs (the kernel reports the resolved device); `service.running` with
+  `enable: true` probes enablement instead of re-enabling and reporting a
+  change every run; `sysctl.present` compares multi-value sysctls with
+  normalized whitespace; `file.directory` enforces `mode` on existing
+  directories and survives umask on creation; `file.absent` removes
+  dangling symlinks.
+* yamlite: `''` now escapes a quote inside single-quoted scalars, an
+  apostrophe in a plain scalar no longer swallows a trailing comment,
+  and non-empty flow collections and duplicate keys are parse errors
+  instead of silent misparses.
+* `/etc/fstab`, sysctl conf files, and managed file content are written
+  via temp-file-and-rename, so a crash mid-write cannot truncate them.
+* Fleet `call` reaches external modules in `_modules/`, as local
+  `halite apply`/`call` already did.
+
+Hardening and operations:
+
+* The control plane bounds its job and orchestration records (oldest
+  evicted) instead of growing until OOM under a busy reactor, and the
+  mine stops serving facts for hosts that have not checked in for an
+  hour — a decommissioned backend no longer feeds its address into other
+  hosts' templates forever.
+* Enrollment refuses new identities over a pending-request cap (503,
+  default 512) so an unauthenticated client cannot fill the disk, and
+  bounds its body read so it cannot hold connections open. Agent-posted
+  event timestamps are server-stamped.
+* Each returner gets its own queue and goroutine — a black-holed webhook
+  no longer starves the file returner — the file returner fsyncs, the
+  webhook retries transient failures, and shutdown drains the queues
+  before the process exits.
+* `halite ssh` refuses roster entries that parse as ssh options
+  (`-oProxyCommand=...`), passes `--` before destinations, strips
+  terminal escape sequences from remote output, and keeps the `-json`
+  fleet report valid when one host emits garbage. `git.latest` refuses
+  option-shaped `name`/`rev`/`depth` values.
+* Reactor rate limiting is per rule, so one looping rule cannot starve
+  the others. Beacon check errors no longer flip the alert edge: a
+  transient `systemctl` failure is not a stop plus a phantom recovery.
+  External module output is capped at 8 MiB per stream.
+* An agent that lost its CSR sidecar rebuilds it from the key it holds
+  instead of silently rolling a new identity.
+
+Docs: salt-parity.md gains a "Known gaps" section — the honest list of
+what a Salt 3008 operator will reach for and not find (custom grains,
+compound targeting, `_in` requisites, file.recurse, a scheduler, eauth,
+and more), with a priority-ordered sketch of a P5.
+
 ## 0.6.0 — 2026-08-09
 
 P4 (long tail) complete, and with it the roadmap.

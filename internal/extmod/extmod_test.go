@@ -1,6 +1,7 @@
 package extmod
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -238,5 +239,22 @@ func TestNoDirectoryMeansNoExternalModules(t *testing.T) {
 	}
 	if _, ok := Lookup(filepath.Join(t.TempDir(), "absent"))("demo.thing"); ok {
 		t.Error("a missing directory resolved a module")
+	}
+}
+
+func TestBoundedBufferTruncatesFloods(t *testing.T) {
+	var b boundedBuffer
+	chunk := bytes.Repeat([]byte("x"), 1<<20)
+	for i := 0; i < 10; i++ {
+		n, err := b.Write(chunk)
+		if err != nil || n != len(chunk) {
+			t.Fatalf("write %d: n=%d err=%v", i, n, err)
+		}
+	}
+	if b.buf.Len() != maxOutput {
+		t.Fatalf("kept %d bytes, want %d", b.buf.Len(), maxOutput)
+	}
+	if !b.truncated {
+		t.Fatal("flood was not flagged as truncated")
 	}
 }

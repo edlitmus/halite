@@ -3,6 +3,7 @@ package ca
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -144,6 +145,42 @@ func TestResubmitIsIdempotentButKeySwapIsRefused(t *testing.T) {
 	}
 	if _, err := s.Submit("web1", csrFor(t, "web1")); err == nil {
 		t.Fatal("a second, different key for a known id must be refused")
+	}
+}
+
+func TestSubmitRefusesNewIdentitiesOverThePendingCap(t *testing.T) {
+	s := newStore(t)
+	firstCSR := csrFor(t, "web1")
+	if _, err := s.SubmitLimited("web1", firstCSR, 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SubmitLimited("web2", csrFor(t, "web2"), 2); err != nil {
+		t.Fatal(err)
+	}
+
+	// The cap is reached; a third identity must be turned away with the
+	// error the control plane matches on, and nothing stored for it.
+	_, err := s.SubmitLimited("web3", csrFor(t, "web3"), 2)
+	if !errors.Is(err, ErrPendingFull) {
+		t.Fatalf("over the cap got %v, want ErrPendingFull", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(s.Dir, "pending", "web3.csr")); statErr == nil {
+		t.Error("a refused request must not be stored")
+	}
+
+	// A retry from an already-pending agent is not a new identity and must
+	// keep getting its honest answer at the cap.
+	state, err := s.SubmitLimited("web1", firstCSR, 2)
+	if err != nil || state != StatePending {
+		t.Errorf("retry at the cap: state=%q err=%v", state, err)
+	}
+
+	// Deciding a request frees its slot.
+	if _, err := s.Accept("web1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SubmitLimited("web3", csrFor(t, "web3"), 2); err != nil {
+		t.Errorf("after accepting one, a new enrollment must fit: %v", err)
 	}
 }
 

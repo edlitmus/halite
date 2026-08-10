@@ -10,10 +10,19 @@ import (
 	"time"
 )
 
+// webhookRetries is how many times a failed POST is tried again before the
+// record is given up on. Endpoints blip; two more chances with a pause in
+// between rides out a restart without holding this returner's queue for
+// long, and no one else's at all.
+const webhookRetries = 2
+
 // Webhook POSTs each record as JSON to an HTTP endpoint.
 type Webhook struct {
 	url    string
 	client *http.Client
+	// retryWait is the pause before the first retry; it doubles for each
+	// one after. A field rather than a constant so tests need not sleep.
+	retryWait time.Duration
 }
 
 // NewWebhook validates the endpoint and builds a client for it.
@@ -32,17 +41,35 @@ func NewWebhook(endpoint string) (*Webhook, error) {
 		url: endpoint,
 		// Bounded, and short enough that one unresponsive endpoint cannot
 		// hold up the queue behind it for long.
-		client: &http.Client{Timeout: 30 * time.Second},
+		client:    &http.Client{Timeout: 30 * time.Second},
+		retryWait: time.Second,
 	}, nil
 }
 
 func (w *Webhook) Name() string { return "webhook:" + redactURL(w.url) }
 
+// Return posts the record, retrying a bounded number of times before
+// reporting the failure — the manager logs it as this returner's drop.
 func (w *Webhook) Return(rec Record) error {
 	body, err := encode(rec)
 	if err != nil {
 		return err
 	}
+	wait := w.retryWait
+	var lastErr error
+	for attempt := 0; attempt <= webhookRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(wait)
+			wait *= 2
+		}
+		if lastErr = w.post(body); lastErr == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("dropping record after %d attempts: %w", webhookRetries+1, lastErr)
+}
+
+func (w *Webhook) post(body []byte) error {
 	req, err := http.NewRequest(http.MethodPost, w.url, bytes.NewReader(body))
 	if err != nil {
 		return err

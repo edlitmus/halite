@@ -1,6 +1,7 @@
 package master
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -21,6 +22,11 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "use POST")
 		return
 	}
+	// The server has no ReadTimeout (long polls need to block), so this
+	// pre-auth route bounds its own body read: an unauthenticated client
+	// must not hold a connection open by dribbling bytes.
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Now().Add(30 * time.Second))
 	r.Body = http.MaxBytesReader(w, r.Body, transport.MaxBodyBytes)
 
 	var req transport.EnrollRequest
@@ -28,9 +34,15 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "%v", err)
 		return
 	}
-	state, err := s.ca.Submit(req.ID, []byte(req.CSR))
+	state, err := s.ca.SubmitLimited(req.ID, []byte(req.CSR), s.cfg.MaxPendingEnrollments)
 	if err != nil {
 		s.log.Printf("enrollment refused for %q from %s: %v", req.ID, r.RemoteAddr, err)
+		// A full pending queue is the server's condition, not the agent's
+		// mistake; 503 tells the agent to retry rather than give up.
+		if errors.Is(err, ca.ErrPendingFull) {
+			writeError(w, http.StatusServiceUnavailable, "%v", err)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "%v", err)
 		return
 	}

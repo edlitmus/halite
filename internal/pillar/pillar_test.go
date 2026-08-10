@@ -99,6 +99,42 @@ func TestIncludesLoadFirstAndCyclesTerminate(t *testing.T) {
 	}
 }
 
+// A file's own keys deep-merge over its includes: overriding one leaf must
+// not drop the included siblings.
+func TestOwnKeysDeepMergeOverIncludes(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "top.sls", "base:\n  '*':\n    - app\n")
+	write(t, root, "defaults.sls", "nginx:\n  port: \"80\"\n  workers: \"4\"\n")
+	write(t, root, "app.sls", "include:\n  - defaults\nnginx:\n  port: \"8080\"\n")
+
+	data, err := (&Loader{Root: root, Grains: testGrains()}).Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	nginx, ok := data["nginx"].(map[string]any)
+	if !ok {
+		t.Fatalf("nginx is %T, want map", data["nginx"])
+	}
+	if nginx["port"] != "8080" {
+		t.Errorf("port = %v, want 8080 (the including file wins)", nginx["port"])
+	}
+	if nginx["workers"] != "4" {
+		t.Errorf("workers = %v, want 4 (included sibling must survive)", nginx["workers"])
+	}
+}
+
+// Merge must copy nested source maps, not alias them: merging more data
+// into dst afterwards must not mutate the original source.
+func TestMergeDoesNotAliasSourceMaps(t *testing.T) {
+	shared := map[string]any{"a": map[string]any{"x": "1"}}
+	dst := map[string]any{}
+	Merge(dst, shared)
+	Merge(dst, map[string]any{"a": map[string]any{"y": "2"}})
+	if _, ok := shared["a"].(map[string]any)["y"]; ok {
+		t.Fatalf("source map was mutated by a later merge: %v", shared)
+	}
+}
+
 func TestGrainsAreAvailableInPillarTemplates(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "top.sls", "base:\n  '*':\n    - g\n")

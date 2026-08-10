@@ -2,6 +2,7 @@ package ca
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,17 @@ import (
 // AgentCertLifetime is how long an issued agent certificate is valid.
 // Re-enrollment is cheap, so this is deliberately shorter than the CA.
 const AgentCertLifetime = 365 * 24 * time.Hour
+
+// DefaultMaxPending bounds how many enrollment requests may wait in
+// pending/ at once. Enrollment is the one unauthenticated endpoint, so
+// without a bound anyone who can reach the port can fill the disk with
+// CSRs. A whole fleet enrolling at once fits comfortably.
+const DefaultMaxPending = 512
+
+// ErrPendingFull is returned by Submit when pending/ is at capacity and a
+// new identity asks to enroll. Callers match it with errors.Is to answer
+// "come back later" rather than "you did something wrong".
+var ErrPendingFull = errors.New("too many enrollments are pending")
 
 // State is where an identity sits in the enrollment lifecycle.
 type State string
@@ -31,11 +43,20 @@ type Entry struct {
 	Since       time.Time
 }
 
-// Submit records a CSR from an agent as pending. Re-submitting the same
-// request is a no-op so an agent can retry safely; submitting a *different*
-// key for an already-known identity is refused, because that is either a
+// Submit records a CSR from an agent as pending, refusing new identities
+// beyond DefaultMaxPending waiting requests. Re-submitting the same request
+// is a no-op so an agent can retry safely; submitting a *different* key for
+// an already-known identity is refused, because that is either a
 // misconfigured host or an impersonation attempt.
 func (s *Store) Submit(id string, csrPEM []byte) (State, error) {
+	return s.SubmitLimited(id, csrPEM, DefaultMaxPending)
+}
+
+// SubmitLimited is Submit with an explicit cap on how many requests may
+// wait in pending/; maxPending <= 0 means DefaultMaxPending. The cap only
+// refuses *new* identities: an agent whose request is already on file keeps
+// getting its honest answer, so a full queue cannot break retries.
+func (s *Store) SubmitLimited(id string, csrPEM []byte, maxPending int) (State, error) {
 	if err := ValidateID(id); err != nil {
 		return "", err
 	}
@@ -64,10 +85,33 @@ func (s *Store) Submit(id string, csrPEM []byte) (State, error) {
 		}
 		return known.state, nil
 	}
+	if maxPending <= 0 {
+		maxPending = DefaultMaxPending
+	}
+	if waiting := s.pendingCount(); waiting >= maxPending {
+		return "", fmt.Errorf("%w (%d waiting); accept or reject some first", ErrPendingFull, waiting)
+	}
 	if err := writeNew(s.path("pending", id+".csr"), csrPEM, 0o644); err != nil {
 		return "", fmt.Errorf("store request: %w", err)
 	}
 	return StatePending, nil
+}
+
+// pendingCount is how many requests are waiting for an operator decision.
+// An unreadable or absent directory counts as empty: refusing enrollments
+// because of a stat error would turn a glitch into an outage.
+func (s *Store) pendingCount() int {
+	entries, err := os.ReadDir(s.path("pending"))
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".csr") {
+			n++
+		}
+	}
+	return n
 }
 
 // Accept signs a pending request and moves it to accepted, returning the

@@ -44,7 +44,7 @@ func sysctlPresent(c *Ctx, id string, args map[string]any) Result {
 	}
 	current := strings.TrimSpace(out)
 
-	needRuntime := current != value
+	needRuntime := !sysctlValuesEqual(current, value)
 	needPersist := false
 	if persist && config != "" {
 		needPersist = !confHasSetting(config, name, value)
@@ -86,6 +86,13 @@ func sysctlPresent(c *Ctx, id string, args map[string]any) Result {
 	return resChanged(fmt.Sprintf("sysctl %s updated", name), changes)
 }
 
+// sysctlValuesEqual compares sysctl values ignoring whitespace layout:
+// `sysctl -n` prints multi-value keys tab-separated while SLS files
+// conventionally separate them with spaces.
+func sysctlValuesEqual(a, b string) bool {
+	return strings.Join(strings.Fields(a), " ") == strings.Join(strings.Fields(b), " ")
+}
+
 // confHasSetting reports whether config already contains name=value.
 func confHasSetting(config, name, value string) bool {
 	b, err := os.ReadFile(config)
@@ -94,7 +101,7 @@ func confHasSetting(config, name, value string) bool {
 	}
 	for _, l := range strings.Split(string(b), "\n") {
 		k, v, ok := splitConfLine(l)
-		if ok && k == name && v == value {
+		if ok && k == name && sysctlValuesEqual(v, value) {
 			return true
 		}
 	}
@@ -117,7 +124,7 @@ func confSetSetting(config, name, value string) error {
 	if !replaced {
 		lines = append(lines, name+"="+value)
 	}
-	return os.WriteFile(config, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
+	return atomicWrite(config, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
 func splitConfLine(l string) (k, v string, ok bool) {

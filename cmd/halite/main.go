@@ -5,7 +5,7 @@
 //	    no target:  highstate from <root>/top.sls
 //	    file path:  apply that SLS file
 //	    dotted name(s): apply <root>/<name>.sls (or <name>/init.sls)
-//	halite call module.fn k=v                run a single state function
+//	halite call [-test] module.fn k=v        run a single state function
 //	halite pillar [-json]                    show the pillar data for this host
 //	halite key <subcommand>                  manage the fleet CA
 //	halite version
@@ -80,7 +80,7 @@ func usage() {
   halite apply [-test] [-json] [-root DIR] [target ...]
       no target: highstate from <root>/top.sls
       target:    an SLS file path, or dotted sls name(s) under the root
-  halite call <module.fn> [k=v ...]        run a single state function
+  halite call [-test] <module.fn> [k=v ...] run a single state function
   halite pillar [-json] [-pillar-root DIR] show the pillar data for this host
   halite key <subcommand>                  manage the fleet CA ('halite key help')
   halite version
@@ -214,15 +214,15 @@ func printTree(data map[string]any, indent string) {
 	for _, k := range keys {
 		switch v := data[k].(type) {
 		case map[string]any:
-			fmt.Printf("%s%s:\n", indent, k)
+			fmt.Printf("%s%s:\n", indent, stripControl(k))
 			printTree(v, indent+"  ")
 		case []any:
-			fmt.Printf("%s%s:\n", indent, k)
+			fmt.Printf("%s%s:\n", indent, stripControl(k))
 			for _, item := range v {
-				fmt.Printf("%s  - %v\n", indent, item)
+				fmt.Printf("%s  - %s\n", indent, stripControl(fmt.Sprintf("%v", item)))
 			}
 		default:
-			fmt.Printf("%s%s: %v\n", indent, k, v)
+			fmt.Printf("%s%s: %s\n", indent, stripControl(k), stripControl(fmt.Sprintf("%v", v)))
 		}
 	}
 }
@@ -247,22 +247,18 @@ func cmdGrains(args []string) {
 	}
 }
 
-func cmdCall(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: halite call <module.fn> [key=value ...]")
-		os.Exit(2)
+// parseCallArgs splits a `halite call` command line into the function name,
+// the -test flag (which may appear anywhere, like every other subcommand),
+// and the key=value arguments.
+func parseCallArgs(args []string) (name string, test bool, callArgs map[string]any, err error) {
+	fs := flag.NewFlagSet("call", flag.ExitOnError)
+	testFlag := fs.Bool("test", false, "dry run: report changes without applying")
+	rest := parseFlags(fs, args)
+	if len(rest) < 1 {
+		return "", false, nil, fmt.Errorf("usage: halite call [-test] <module.fn> [key=value ...]")
 	}
-	name := args[0]
-	root := resolveRoot("")
-	fn, isState := extmod.Lookup(filepath.Join(root, extmod.DirName))(name)
-	execFn, isExec := modules.ExecRegistry[name]
-	if !isState && !isExec {
-		fmt.Fprintf(os.Stderr, "unknown function %q (execution modules: %s)\n",
-			name, strings.Join(modules.ExecNames(), ", "))
-		os.Exit(2)
-	}
-	callArgs := map[string]any{}
-	for _, kv := range args[1:] {
+	callArgs = map[string]any{}
+	for _, kv := range rest[1:] {
 		var k, v string
 		for i := 0; i < len(kv); i++ {
 			if kv[i] == '=' {
@@ -271,18 +267,35 @@ func cmdCall(args []string) {
 			}
 		}
 		if k == "" {
-			fmt.Fprintf(os.Stderr, "argument %q is not key=value\n", kv)
-			os.Exit(2)
+			return "", false, nil, fmt.Errorf("argument %q is not key=value", kv)
 		}
 		callArgs[k] = v
+	}
+	return rest[0], *testFlag, callArgs, nil
+}
+
+func cmdCall(args []string) {
+	name, test, callArgs, err := parseCallArgs(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	root := resolveRoot("")
+	fn, isState := extmod.Lookup(filepath.Join(root, extmod.DirName))(name)
+	execFn, isExec := modules.ExecRegistry[name]
+	if !isState && !isExec {
+		fmt.Fprintf(os.Stderr, "unknown function %q (execution modules: %s)\n",
+			name, strings.Join(modules.ExecNames(), ", "))
+		os.Exit(2)
 	}
 	g := grains.Collect()
 	p, err := (&pillar.Loader{Root: resolvePillarRoot("", root), Grains: g}).Load()
 	if err != nil {
 		fatal("%v", err)
 	}
-	ctx := &modules.Ctx{Grains: g, Pillar: p}
+	ctx := &modules.Ctx{Test: test, Grains: g, Pillar: p}
 	if isExec {
+		// Execution modules only read, so -test changes nothing here.
 		data, err := execFn(ctx, callArgs)
 		if err != nil {
 			fatal("%v", err)
@@ -418,11 +431,12 @@ func printResult(id, fn string, r modules.Result) {
 		}
 		return "False"
 	}
+	// Comments and changes can carry remote output; keep the terminal safe.
 	fmt.Println("----------")
-	fmt.Printf("      ID: %s\n", id)
-	fmt.Printf("Function: %s\n", fn)
+	fmt.Printf("      ID: %s\n", stripControl(id))
+	fmt.Printf("Function: %s\n", stripControl(fn))
 	fmt.Printf("  Result: %s\n", b(r.Ok))
-	fmt.Printf(" Comment: %s\n", r.Comment)
+	fmt.Printf(" Comment: %s\n", stripControl(r.Comment))
 	if len(r.Changes) > 0 {
 		fmt.Println(" Changes:")
 		keys := make([]string, 0, len(r.Changes))
@@ -431,15 +445,15 @@ func printResult(id, fn string, r modules.Result) {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			v := r.Changes[k]
+			v := stripControl(r.Changes[k])
 			if strings.Contains(v, "\n") {
-				fmt.Printf("   %s: |\n", k)
+				fmt.Printf("   %s: |\n", stripControl(k))
 				for _, l := range strings.Split(v, "\n") {
 					fmt.Printf("     %s\n", l)
 				}
 				continue
 			}
-			fmt.Printf("   %s: %s\n", k, v)
+			fmt.Printf("   %s: %s\n", stripControl(k), v)
 		}
 	}
 }

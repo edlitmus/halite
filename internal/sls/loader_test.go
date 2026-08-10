@@ -141,3 +141,20 @@ func TestPillarIsAvailableToStateTemplates(t *testing.T) {
 		t.Errorf("contents = %v, want \"listen 8080\"", got)
 	}
 }
+
+// A reused Loader must produce the same plan twice, not an empty second
+// plan because the include tracker remembered the first call.
+func TestLoaderIsReusable(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "web.sls", "run:\n  cmd.run:\n    - name: echo hi\n")
+	ld := &Loader{Root: root, Grains: testGrains()}
+	for i := 0; i < 2; i++ {
+		states, err := ld.LoadNames([]string{"web"})
+		if err != nil {
+			t.Fatalf("load %d: %v", i, err)
+		}
+		if len(states) != 1 {
+			t.Fatalf("load %d: got %d states, want 1", i, len(states))
+		}
+	}
+}

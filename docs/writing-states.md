@@ -25,10 +25,11 @@ States run in declaration order unless requisites reorder them.
 ## The YAML subset
 
 halite parses the subset of YAML that SLS files use. Supported: nested
-block mappings, block lists, scalars, single/double quotes, `#` comments
-(full-line and trailing), `[]` and `{}` empties. Not supported (parse
-error, never a silent misparse): tabs in indentation, anchors/aliases,
-flow collections, multi-line (`|` / `>`) scalars.
+block mappings, block lists, scalars, single/double quotes (with the `''`
+escape inside single quotes), `#` comments (full-line and trailing), `[]`
+and `{}` empties. Not supported (parse error, never a silent misparse):
+tabs in indentation, anchors/aliases, non-empty flow collections,
+multi-line (`|` / `>`) scalars, duplicate keys in one mapping.
 
 All scalars are strings. `enable: true` and `enable: "true"` are
 identical; modules interpret booleans (`true/yes/1/on`) and numbers.

@@ -136,3 +136,22 @@ func TestGitLatestRefusesANonRepositoryDirectory(t *testing.T) {
 		t.Fatal("a non-empty, non-repository target must be refused")
 	}
 }
+
+// Values that reach git as arguments must not be parsable as options.
+func TestGitLatestRejectsOptionLookingValues(t *testing.T) {
+	target := t.TempDir()
+	cases := []map[string]any{
+		{"name": "--upload-pack=/tmp/evil", "target": target},
+		{"name": "https://example.com/r.git", "target": target, "rev": "-q"},
+		{"name": "https://example.com/r.git", "target": target, "depth": "-1x"},
+	}
+	for _, args := range cases {
+		r := gitLatest(&Ctx{}, "repo", args)
+		if r.Ok {
+			t.Errorf("args %v: accepted, want refusal", args)
+		}
+		if !strings.Contains(r.Comment, "must not begin with '-'") {
+			t.Errorf("args %v: comment %q, want the option-injection refusal", args, r.Comment)
+		}
+	}
+}

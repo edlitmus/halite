@@ -212,6 +212,28 @@ func TestAgentsCanRaiseTheirOwnEvents(t *testing.T) {
 	}
 }
 
+func TestAgentEventTimeIsServerStamped(t *testing.T) {
+	f := newFleet(t, Config{})
+	admin := f.adminClient(t, "ed")
+	events, done := tail(t, admin, "")
+	defer done()
+
+	web := f.enrolledClient(t, "web1")
+	before := time.Now().Add(-time.Minute)
+	err := web.Post(context.Background(), transport.PathEvents, transport.Event{
+		Tag:  "halite/beacon/web1/clock",
+		Time: time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC), // a lie, and it must not be believed
+	}, nil)
+	if err != nil {
+		t.Fatalf("agent event: %v", err)
+	}
+
+	ev := waitForTag(t, events, "halite/beacon/web1/clock")
+	if ev.Time.Before(before) {
+		t.Errorf("event time %v was taken from the body; the server must stamp it", ev.Time)
+	}
+}
+
 func TestUntaggedAgentEventIsRejected(t *testing.T) {
 	f := newFleet(t, Config{})
 	web := f.enrolledClient(t, "web1")

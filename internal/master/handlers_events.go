@@ -47,9 +47,11 @@ func (s *Server) handleAgentEvent(w http.ResponseWriter, r *http.Request, peer t
 		writeError(w, http.StatusForbidden, "%v", err)
 		return
 	}
+	// Like Source, Time is the server's to say: the bus stamps it on
+	// publish. A time copied from the body would let an agent backdate or
+	// postdate its events in the history every operator reads.
 	s.bus.Publish(event.Event{
 		Tag:    ev.Tag,
-		Time:   ev.Time,
 		Source: peer.ID,
 		Data:   ev.Data,
 	})

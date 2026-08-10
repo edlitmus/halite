@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"bytes"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -80,4 +82,34 @@ func TestBeaconAndMinePublishingBeforeConnectionAreNoOps(t *testing.T) {
 	a := &Agent{cfg: Config{ID: "web1"}, log: quietLogger(), grains: map[string]any{}}
 	a.raiseBeacon("disk", map[string]any{"mount": "/"})
 	a.publishMine("grains", map[string]any{"id": "web1"})
+}
+
+// Losing the CSR sidecar must not roll the agent's key: a pending request
+// on the control plane has to keep matching the key this host holds.
+func TestLostRequestSidecarKeepsTheKey(t *testing.T) {
+	a := &Agent{cfg: Config{ID: "web1", PKIDir: t.TempDir()}, log: quietLogger(), grains: map[string]any{}}
+	if _, err := a.ensureKeyAndRequest(); err != nil {
+		t.Fatalf("first request: %v", err)
+	}
+	key1, err := os.ReadFile(a.cfg.agentKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(a.cfg.agentKey() + ".csr"); err != nil {
+		t.Fatal(err)
+	}
+	csr, err := a.ensureKeyAndRequest()
+	if err != nil {
+		t.Fatalf("second request: %v", err)
+	}
+	if len(csr) == 0 {
+		t.Fatal("no CSR returned")
+	}
+	key2, err := os.ReadFile(a.cfg.agentKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(key1, key2) {
+		t.Fatal("agent key was regenerated when only the CSR sidecar was missing")
+	}
 }

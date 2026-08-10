@@ -19,7 +19,9 @@ type Map struct {
 // NewMap returns an empty ordered map.
 func NewMap() *Map { return &Map{Vals: map[string]any{}} }
 
-// Set inserts or replaces a key, preserving first-insertion order.
+// Set inserts or replaces a key, preserving first-insertion order. The
+// parser rejects duplicate keys before ever replacing one; replacement
+// exists for programmatic construction.
 func (m *Map) Set(k string, v any) {
 	if _, ok := m.Vals[k]; !ok {
 		m.Keys = append(m.Keys, k)
@@ -119,7 +121,11 @@ func (p *parser) parseList(ind int) (any, error) {
 					m.Set(k, nil)
 				}
 			} else {
-				m.Set(k, scalar(v))
+				sv, err := scalar(v)
+				if err != nil {
+					return nil, fmt.Errorf("line %d: %v", cur.num, err)
+				}
+				m.Set(k, sv)
 				p.pos++
 			}
 			if err := p.continueItem(m, ind); err != nil {
@@ -128,7 +134,11 @@ func (p *parser) parseList(ind int) (any, error) {
 			out = append(out, m)
 			continue
 		}
-		out = append(out, scalar(body))
+		sv, err := scalar(body)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %v", cur.num, err)
+		}
+		out = append(out, sv)
 		p.pos++
 	}
 	return out, nil
@@ -160,6 +170,9 @@ func (p *parser) continueItem(m *Map, listIndent int) error {
 		return fmt.Errorf("line %d: unexpected content in list item", next.num)
 	}
 	for _, key := range child.Keys {
+		if _, dup := m.Vals[key]; dup {
+			return fmt.Errorf("line %d: duplicate key %q in list item", next.num, key)
+		}
 		m.Set(key, child.Vals[key])
 	}
 	return nil
@@ -179,8 +192,15 @@ func (p *parser) parseMap(ind int) (any, error) {
 		if !ok {
 			return nil, fmt.Errorf("line %d: expected 'key:' or 'key: value', got %q", cur.num, cur.text)
 		}
+		if _, dup := m.Vals[k]; dup {
+			return nil, fmt.Errorf("line %d: duplicate key %q", cur.num, k)
+		}
 		if v != "" {
-			m.Set(k, scalar(v))
+			sv, err := scalar(v)
+			if err != nil {
+				return nil, fmt.Errorf("line %d: %v", cur.num, err)
+			}
+			m.Set(k, sv)
 			p.pos++
 			continue
 		}
@@ -202,6 +222,30 @@ func isListItem(s string) bool {
 	return s == "-" || strings.HasPrefix(s, "- ")
 }
 
+// quoteOpens reports whether a quote character at position i in s begins a
+// quoted scalar. Per YAML, quotes are only special at the start of a scalar:
+// at the start of the line's content, after a "- " list marker, or after a
+// "key: " separator. A quote in the middle of a plain scalar is literal text.
+func quoteOpens(s string, i int) bool {
+	j := i
+	for j > 0 && s[j-1] == ' ' {
+		j--
+	}
+	if j == 0 {
+		return true
+	}
+	if j == i {
+		return false // glued to preceding text: mid-scalar, literal
+	}
+	switch s[j-1] {
+	case ':':
+		return true
+	case '-':
+		return j == 1 || s[j-2] == ' '
+	}
+	return false
+}
+
 // splitKV splits "key: value" or "key:" at the first unquoted colon that is
 // followed by a space or end-of-line. Colons inside values (URLs, times) are
 // left alone.
@@ -211,11 +255,15 @@ func splitKV(s string) (key, val string, ok bool) {
 		c := s[i]
 		if q != 0 {
 			if c == q {
+				if q == '\'' && i+1 < len(s) && s[i+1] == '\'' {
+					i++ // '' inside single quotes is an escaped quote
+					continue
+				}
 				q = 0
 			}
 			continue
 		}
-		if c == '\'' || c == '"' {
+		if (c == '\'' || c == '"') && quoteOpens(s, i) {
 			q = c
 			continue
 		}
@@ -231,14 +279,22 @@ func splitKV(s string) (key, val string, ok bool) {
 	return "", "", false
 }
 
-func scalar(v string) any {
+// scalar interprets a scalar value. The empty flow collections [] and {} are
+// the only flow syntax supported; any other unquoted value starting with '['
+// or '{' is an error rather than a silently misparsed string.
+func scalar(v string) (any, error) {
 	switch v {
+	case "":
+		return "", nil
 	case "[]":
-		return []any{}
+		return []any{}, nil
 	case "{}":
-		return NewMap()
+		return NewMap(), nil
 	}
-	return unquote(v)
+	if v[0] == '[' || v[0] == '{' {
+		return nil, fmt.Errorf("flow collection %q is not supported (only empty [] / {}); use block syntax, or quote the value to keep it as a string", v)
+	}
+	return unquote(v), nil
 }
 
 func unquote(s string) string {
@@ -246,7 +302,8 @@ func unquote(s string) string {
 		return s
 	}
 	if s[0] == '\'' && s[len(s)-1] == '\'' {
-		return s[1 : len(s)-1]
+		// The only escape in single quotes, per YAML: '' is a literal '.
+		return strings.ReplaceAll(s[1:len(s)-1], "''", "'")
 	}
 	if s[0] == '"' && s[len(s)-1] == '"' {
 		// Double quotes get escape processing, per YAML semantics.
@@ -287,11 +344,15 @@ func stripComment(s string) string {
 		c := s[i]
 		if q != 0 {
 			if c == q {
+				if q == '\'' && i+1 < len(s) && s[i+1] == '\'' {
+					i++ // '' inside single quotes is an escaped quote
+					continue
+				}
 				q = 0
 			}
 			continue
 		}
-		if c == '\'' || c == '"' {
+		if (c == '\'' || c == '"') && quoteOpens(s, i) {
 			q = c
 			continue
 		}

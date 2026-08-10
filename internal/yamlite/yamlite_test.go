@@ -1,6 +1,9 @@
 package yamlite
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 const slsSample = `
 # comment
@@ -159,6 +162,138 @@ func TestMultiKeyListItemWithNestedValue(t *testing.T) {
 	}
 	if match.Vals["tag"] != "halite/job" || match.Vals["source"] != "master" {
 		t.Errorf("nested map = %v", match.Vals)
+	}
+}
+
+func TestSingleQuoteDoubledEscape(t *testing.T) {
+	v, err := Parse("key: 'it''s here'\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, _ := v.(*Map).Get("key"); got != "it's here" {
+		t.Errorf("key = %q, want %q", got, "it's here")
+	}
+}
+
+func TestSingleQuoteDoubledEscapeInKey(t *testing.T) {
+	v, err := Parse("'who''s here': yes\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, _ := v.(*Map).Get("who's here"); got != "yes" {
+		t.Errorf("value = %q, want %q", got, "yes")
+	}
+}
+
+func TestSingleQuoteDoubledEscapeWithComment(t *testing.T) {
+	// The '' escape must not be read as close+open by the comment
+	// stripper, or the # inside the quotes would eat the value.
+	v, err := Parse("key: 'it''s # not a comment' # real comment\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, _ := v.(*Map).Get("key"); got != "it's # not a comment" {
+		t.Errorf("key = %q", got)
+	}
+}
+
+func TestApostropheInPlainScalar(t *testing.T) {
+	// A quote mid-plain-scalar is literal text, not the start of a quoted
+	// region, so the trailing comment must still be stripped.
+	v, err := Parse("motd: can't stop # a comment\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, _ := v.(*Map).Get("motd"); got != "can't stop" {
+		t.Errorf("motd = %q, want %q", got, "can't stop")
+	}
+}
+
+func TestApostropheInPlainKey(t *testing.T) {
+	v, err := Parse("who's here: yes\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, _ := v.(*Map).Get("who's here"); got != "yes" {
+		t.Errorf("value = %q, want %q", got, "yes")
+	}
+}
+
+func TestQuotedScalarsStillQuoted(t *testing.T) {
+	// Quotes at the start of a scalar (after "key: ", after "- ", or at
+	// the start of content) still open quoted regions.
+	v, err := Parse("key: 'a # not a comment'\nlist:\n  - 'x # kept'\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	m := v.(*Map)
+	if got, _ := m.Get("key"); got != "a # not a comment" {
+		t.Errorf("key = %q", got)
+	}
+	if got := m.Vals["list"].([]any)[0]; got != "x # kept" {
+		t.Errorf("list[0] = %q", got)
+	}
+}
+
+func TestFlowCollectionsRejected(t *testing.T) {
+	for _, src := range []string{
+		"pkgs: [nginx, curl]\n",
+		"conf: {a: 1}\n",
+		"pkgs:\n  - [a, b]\n",
+	} {
+		if _, err := Parse(src); err == nil {
+			t.Errorf("Parse(%q): expected flow-collection error, got nil", src)
+		} else if !strings.Contains(err.Error(), "flow collection") {
+			t.Errorf("Parse(%q): error %q does not mention flow collections", src, err)
+		}
+	}
+}
+
+func TestEmptyFlowCollectionsStillWork(t *testing.T) {
+	v, err := Parse("a: []\nb: {}\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	m := v.(*Map)
+	if l, ok := m.Vals["a"].([]any); !ok || len(l) != 0 {
+		t.Errorf("a = %#v, want empty list", m.Vals["a"])
+	}
+	if mm, ok := m.Vals["b"].(*Map); !ok || len(mm.Keys) != 0 {
+		t.Errorf("b = %#v, want empty map", m.Vals["b"])
+	}
+}
+
+func TestQuotedFlowSyntaxStaysLiteral(t *testing.T) {
+	v, err := Parse(`pkgs: "[nginx, curl]"` + "\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got, _ := v.(*Map).Get("pkgs"); got != "[nginx, curl]" {
+		t.Errorf("pkgs = %q", got)
+	}
+}
+
+func TestDuplicateKeysRejected(t *testing.T) {
+	for _, src := range []string{
+		"a: 1\na: 2\n",
+		"top:\n  a: 1\n  b: 2\n  a: 3\n",
+		"disk:\n  - mount: /var\n    mount: /\n",
+	} {
+		if _, err := Parse(src); err == nil {
+			t.Errorf("Parse(%q): expected duplicate-key error, got nil", src)
+		} else if !strings.Contains(err.Error(), "duplicate key") {
+			t.Errorf("Parse(%q): error %q does not mention duplicate key", src, err)
+		}
+	}
+}
+
+func TestSameKeyDifferentLevelsOK(t *testing.T) {
+	v, err := Parse("a:\n  a: 1\nb:\n  a: 2\n")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := v.(*Map).Vals["b"].(*Map).Vals["a"]; got != "2" {
+		t.Errorf("b.a = %q", got)
 	}
 }
 

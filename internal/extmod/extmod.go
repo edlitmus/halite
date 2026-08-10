@@ -33,16 +33,41 @@ const DirName = "_modules"
 // DefaultTimeout bounds one module call.
 const DefaultTimeout = 5 * time.Minute
 
+// maxOutput bounds what a module may write on each of stdout and stderr. A
+// result is a small JSON document; a runaway module must not OOM the agent
+// by flooding a pipe.
+const maxOutput = 8 << 20
+
+// boundedBuffer keeps the first maxOutput bytes and discards the rest,
+// never failing the writer: the module's exit is judged separately.
+type boundedBuffer struct {
+	buf       bytes.Buffer
+	truncated bool
+}
+
+func (b *boundedBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	if room := maxOutput - b.buf.Len(); room > 0 {
+		if len(p) > room {
+			p = p[:room]
+			b.truncated = true
+		}
+		b.buf.Write(p)
+	} else if n > 0 {
+		b.truncated = true
+	}
+	return n, nil
+}
+
 // Request is the JSON written to a module's stdin.
 type Request struct {
-	Function string            `json:"function"`
-	ID       string            `json:"id"`
-	Test     bool              `json:"test"`
-	Args     map[string]any    `json:"args"`
-	Grains   map[string]any    `json:"grains,omitempty"`
-	Pillar   map[string]any    `json:"pillar,omitempty"`
-	Mine     map[string]any    `json:"mine,omitempty"`
-	Env      map[string]string `json:"-"`
+	Function string         `json:"function"`
+	ID       string         `json:"id"`
+	Test     bool           `json:"test"`
+	Args     map[string]any `json:"args"`
+	Grains   map[string]any `json:"grains,omitempty"`
+	Pillar   map[string]any `json:"pillar,omitempty"`
+	Mine     map[string]any `json:"mine,omitempty"`
 }
 
 // Response is the JSON a module writes to stdout.
@@ -169,7 +194,7 @@ func (r *Resolver) run(program, function string, c *modules.Ctx, id string, args
 	// blocked forever. WaitDelay closes the pipes shortly after the kill so
 	// a timeout is a timeout.
 	cmd.WaitDelay = 5 * time.Second
-	var stdout, stderr bytes.Buffer
+	var stdout, stderr boundedBuffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -183,17 +208,21 @@ func (r *Resolver) run(program, function string, c *modules.Ctx, id string, args
 			return modules.Result{Comment: fmt.Sprintf("%s: %v", filepath.Base(program), runErr)}
 		}
 		// A non-zero exit is a failed state, and stderr is the reason.
-		message := strings.TrimSpace(stderr.String())
+		message := strings.TrimSpace(stderr.buf.String())
 		if message == "" {
-			message = strings.TrimSpace(stdout.String())
+			message = strings.TrimSpace(stdout.buf.String())
 		}
 		if message == "" {
 			message = "exited non-zero without a message"
 		}
 		return modules.Result{Comment: fmt.Sprintf("%s %s: %s", filepath.Base(program), function, message)}
 	}
+	if stdout.truncated {
+		return modules.Result{Comment: fmt.Sprintf("%s %s: wrote more than %d bytes of output; a result is a small JSON document",
+			filepath.Base(program), function, maxOutput)}
+	}
 
-	return decode(filepath.Base(program), function, stdout.Bytes(), stderr.String())
+	return decode(filepath.Base(program), function, stdout.buf.Bytes(), stderr.buf.String())
 }
 
 // decode turns a module's stdout into a Result.

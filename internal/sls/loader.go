@@ -25,10 +25,10 @@ func (l *Loader) templateData() TemplateData {
 	return TemplateData{Grains: l.Grains, Pillar: l.Pillar, Mine: l.Mine}
 }
 
+// init resets the include tracker: every Load call builds a fresh plan, so
+// a reused Loader must not silently skip files a previous call loaded.
 func (l *Loader) init() {
-	if l.visited == nil {
-		l.visited = map[string]bool{}
-	}
+	l.visited = map[string]bool{}
 }
 
 // ResolveName maps a dotted SLS name to a file under root: "web.nginx"
