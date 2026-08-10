@@ -29,6 +29,13 @@ P4 (long tail) complete, and with it the roadmap.
   the parsing and comparison are unit tested but the `reg.exe` calls have
   not been run on a real Windows host.
 
+### Tooling
+
+* `make race` runs the suite under the race detector, and `make check`
+  runs vet, tests, and race — what to run before calling a change done.
+  Kept separate from `make test` because the detector is slower and is
+  not available on every platform Go builds for.
+
 ### Documentation
 
 * getting-started now points at the other two ways to run — agentless and

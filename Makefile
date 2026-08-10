@@ -1,7 +1,7 @@
 BIN     := bin/halite
 TARGETS := freebsd/amd64 freebsd/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
-.PHONY: all build test vet cross clean
+.PHONY: all build test race vet check cross clean
 
 all: build
 
@@ -12,8 +12,18 @@ build:
 test:
 	go test ./...
 
+# The control plane, agent, event bus, reactor, beacons, mine, and
+# orchestration all run goroutines against shared state. Race-detector
+# runs are separate from `test` because they are slower and the detector
+# is not available on every platform Go builds for.
+race:
+	go test -race ./...
+
 vet:
 	go vet ./...
+
+# What to run before calling a change done.
+check: vet test race
 
 cross:
 	@mkdir -p dist

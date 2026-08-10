@@ -50,7 +50,9 @@ git clone git@github.com:edlitmus/halite.git
 cd halite
 make            # builds ./bin/halite for the host
 make cross      # builds dist/halite-<os>-<arch> for all targets
-make test
+make test       # go test ./...
+make race       # the same under the race detector
+make check      # vet, test, and race — what to run before calling it done
 ```
 
 Requires Go 1.22+. No other dependencies.
