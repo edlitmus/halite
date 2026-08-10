@@ -105,7 +105,8 @@ func cmdMaster(args []string) {
 
 func cmdAgent(args []string) {
 	fs := flag.NewFlagSet("agent", flag.ExitOnError)
-	masterAddr := fs.String("master", os.Getenv("HALITE_MASTER"), "control plane host[:port] (or $HALITE_MASTER)")
+	masterAddr := fs.String("master", os.Getenv("HALITE_MASTER"),
+		"control plane host[:port], or several comma-separated for failover (or $HALITE_MASTER)")
 	id := fs.String("id", "", "agent identity (default: the host grain)")
 	pkiFlag := fs.String("pki", "", "PKI directory holding ca.crt and this agent's key")
 	cacheFlag := fs.String("cache", "", "directory for the fetched state tree")
@@ -129,7 +130,7 @@ func cmdAgent(args []string) {
 	}
 	cfg := agent.Config{
 		ID:            *id,
-		Master:        *masterAddr,
+		Masters:       splitList(*masterAddr),
 		PKIDir:        resolvePKI(*pkiFlag),
 		CacheDir:      cache,
 		Version:       version,

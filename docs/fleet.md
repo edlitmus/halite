@@ -125,6 +125,37 @@ is rarely what anyone wants.
 * **It does not run minion-supplied code.** Traffic is JSON in both
   directions; nothing is deserialized into behavior.
 
+## More than one control plane
+
+An agent takes several addresses and uses one at a time:
+
+```sh
+halite agent -master master1.example.com,master2.example.com -id web1
+```
+
+It tries the list from the top on every reconnection, so it prefers the
+first that answers and returns to it once that one is back. Failing over
+needs no re-enrolment, provided the masters share a CA:
+
+```sh
+# on the second control plane, with ca.crt and ca.key copied from the first
+halite key server master2.example.com
+```
+
+Each master still keeps its own record of pending enrolment requests, so a
+host enrolling for the first time is accepted on whichever master it
+reached.
+
+**This is failover, not a cluster.** Masters share nothing: not the agent
+registry, not job results, not the mine, not events. An operator commands
+the master its agents are connected to, so if half the fleet has failed
+over, a dispatch on the primary reaches half the fleet.
+
+That makes one address in front of several masters — DNS or a load
+balancer — the topology to aim for, so "which master" is a deployment
+decision rather than a per-agent accident. Run the reactor on one master:
+two reactors watching two buses react twice. See ADR-11.
+
 ## Ports and files
 
 | | |

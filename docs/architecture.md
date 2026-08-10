@@ -194,6 +194,33 @@ The alternative, a bespoke orchestration executor, would have started
 simpler and drifted: two implementations of "did my dependency succeed"
 is one more than the semantics deserve.
 
+### ADR-11: Multi-master is agent failover, not a cluster
+
+**Accepted (0.5).** Agents take a list of control planes and use one at a
+time, trying the list from the top on every reconnection. Masters share a
+CA; an agent's certificate is valid at all of them, so failing over needs
+no re-enrolment.
+
+What was *not* built is a cluster. The control plane holds agents, jobs,
+the mine, and events in memory, and two masters do not share any of it.
+Making them would mean consensus, a shared store, or a message bus between
+masters — a database by another name, and a large step away from "one
+static binary, no dependencies".
+
+The consequence is the honest limitation: **an operator commands the
+master its agents happen to be connected to.** If half the fleet fails
+over to the standby, a dispatch on the primary reaches half the fleet.
+This is why the supported topology is one address in front of several
+masters (DNS or a load balancer), so that "which master" is a deployment
+decision rather than a per-agent accident, and why a reactor should run on
+one master rather than all of them — two reactors on two buses react
+twice.
+
+Salt's multi-master has minions connect to every master at once, which
+avoids the split at the cost of every master seeing every event and
+duplicate reactions. Failover was chosen instead because a fleet that is
+half-commanded is easier to reason about than one that is doubly-acted-on.
+
 ## Error and failure model
 
 A state returns `{Ok, Changed, Comment, Changes}`. Requisite failure skips

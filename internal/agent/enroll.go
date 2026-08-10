@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/ca"
@@ -26,7 +27,7 @@ func (a *Agent) ensureEnrolled(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	a.log.Printf("enrolling as %q with %s", a.cfg.ID, a.cfg.Master)
+	a.log.Printf("enrolling as %q with %s", a.cfg.ID, strings.Join(a.cfg.Masters, ", "))
 	a.log.Printf("key fingerprint: %s", fingerprint)
 	a.log.Printf("accept it on the control plane with: halite key accept %s", a.cfg.ID)
 
@@ -36,26 +37,30 @@ func (a *Agent) ensureEnrolled(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	client := transport.NewJSONClient(a.cfg.Master, tlsCfg, 30*time.Second)
 	request := transport.EnrollRequest{ID: a.cfg.ID, CSR: string(csrPEM)}
 
 	for {
-		var resp transport.EnrollResponse
-		err := client.Post(ctx, transport.PathEnroll, request, &resp)
-		switch {
-		case err != nil:
-			a.log.Printf("enrollment: %v", err)
-		case resp.State == string(ca.StateAccepted):
-			if err := os.WriteFile(a.cfg.agentCert(), []byte(resp.Cert), 0o644); err != nil {
-				return fmt.Errorf("write certificate: %w", err)
+		// Try each control plane: the request has to be accepted by whichever
+		// one is reachable, and they share a CA, so any of them will do.
+		for _, addr := range a.cfg.Masters {
+			client := transport.NewJSONClient(addr, tlsCfg, 30*time.Second)
+			var resp transport.EnrollResponse
+			err := client.Post(ctx, transport.PathEnroll, request, &resp)
+			switch {
+			case err != nil:
+				a.log.Printf("enrollment via %s: %v", addr, err)
+			case resp.State == string(ca.StateAccepted):
+				if err := os.WriteFile(a.cfg.agentCert(), []byte(resp.Cert), 0o644); err != nil {
+					return fmt.Errorf("write certificate: %w", err)
+				}
+				a.log.Printf("enrolled: certificate written to %s", a.cfg.agentCert())
+				return nil
+			case resp.State == string(ca.StateRejected):
+				return fmt.Errorf("enrollment rejected for %q; an operator must run 'halite key remove %s' before this host can retry",
+					a.cfg.ID, a.cfg.ID)
+			default:
+				a.log.Printf("waiting to be accepted as %q on %s", a.cfg.ID, addr)
 			}
-			a.log.Printf("enrolled: certificate written to %s", a.cfg.agentCert())
-			return nil
-		case resp.State == string(ca.StateRejected):
-			return fmt.Errorf("enrollment rejected for %q; an operator must run 'halite key remove %s' before this host can retry",
-				a.cfg.ID, a.cfg.ID)
-		default:
-			a.log.Printf("waiting to be accepted as %q", a.cfg.ID)
 		}
 		if !sleepCtx(ctx, a.cfg.RetryInterval) {
 			return ctx.Err()

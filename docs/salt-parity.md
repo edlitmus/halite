@@ -41,7 +41,7 @@ not.
 | Beacons | agent-side watchers emitting events | done | disk, service, file; edge triggered; tags constrained to the agent's own id. See docs/events.md |
 | salt-ssh (agentless) | `halite ssh` pushing the static binary | done | copies one binary, ships the tree, collects JSON; pillar rendered operator-side. See docs/agentless.md |
 | Syndic | | out | flat fleets over mTLS scale far enough |
-| Multi-master | DNS/LB failover | P4 | stateless masters make this simpler than Salt's |
+| Multi-master | agent failover across a list | done | masters share a CA and nothing else; failover, not a cluster (ADR-11) |
 
 ## State modules
 

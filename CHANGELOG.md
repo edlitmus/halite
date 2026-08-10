@@ -13,6 +13,15 @@ P4 (long tail) in progress.
   shadow `file.managed`. A module that exits 0 without writing a result
   fails rather than silently skipping the state. See
   docs/external-modules.md.
+* Multi-master: `halite agent -master a,b,c` uses one control plane at a
+  time and tries the list from the top on every reconnection, so it
+  prefers the first and returns to it once it is back. Masters sharing a
+  CA need no re-enrolment on failover. This is failover, not a cluster —
+  masters share no state, so an operator commands the master its agents
+  are connected to (ADR-11).
+* The agent's control plane connection is now behind a lock, since
+  beacons and the mine publish through it from their own goroutines while
+  a failover may be replacing it.
 
 ## 0.5.0 — 2026-08-09
 
