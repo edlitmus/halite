@@ -16,11 +16,13 @@ const (
 	PathPillar    = "/v1/pillar"
 	PathStateTree = "/v1/statetree"
 
-	PathEvents   = "/v1/events"
-	PathMine     = "/v1/mine"
-	PathDispatch = "/v1/dispatch"
-	PathAgents   = "/v1/agents"
-	PathJobInfo  = "/v1/job/" // + job id
+	PathEvents      = "/v1/events"
+	PathMine        = "/v1/mine"
+	PathDispatch    = "/v1/dispatch"
+	PathAgents      = "/v1/agents"
+	PathOrchestrate = "/v1/orchestrate"
+	PathOrchInfo    = "/v1/orch/" // + orchestration id
+	PathJobInfo     = "/v1/job/"  // + job id
 )
 
 // DefaultPort is the control plane's listening port.
@@ -154,6 +156,41 @@ type MineEntry struct {
 // Mine is what the control plane holds: function -> agent -> value. States
 // read it as {{ .Mine.<function>.<agent> }}.
 type Mine map[string]map[string]MineEntry
+
+// OrchestrateRequest starts an orchestration by name.
+type OrchestrateRequest struct {
+	Name string `json:"name"`
+	Test bool   `json:"test,omitempty"`
+}
+
+// OrchestrateResponse names the run that started.
+type OrchestrateResponse struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Steps int    `json:"steps"`
+}
+
+// OrchStep is one step's outcome, as the control plane reports it.
+type OrchStep struct {
+	ID      string      `json:"id"`
+	Ok      bool        `json:"result"`
+	Changed bool        `json:"changed"`
+	Comment string      `json:"comment"`
+	JobID   string      `json:"job_id,omitempty"`
+	Agents  []string    `json:"agents,omitempty"`
+	Results []JobResult `json:"results,omitempty"`
+}
+
+// OrchInfo is an orchestration and its outcome so far.
+type OrchInfo struct {
+	ID       string     `json:"id"`
+	Name     string     `json:"name"`
+	By       string     `json:"by"`
+	Started  time.Time  `json:"started"`
+	Finished time.Time  `json:"finished,omitempty"`
+	Running  bool       `json:"running"`
+	Steps    []OrchStep `json:"steps,omitempty"`
+}
 
 // ErrorResponse is the body of every non-2xx reply.
 type ErrorResponse struct {

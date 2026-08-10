@@ -17,8 +17,8 @@ runtime, onedir/relenv packaging, or the deprecation treadmill.
   targeted dispatch to agents.
 * **Agentless** — `halite ssh` pushes the binary, runs, and cleans up.
 
-Events, beacons, reactor, and orchestration are P3. See
-[docs/salt-parity.md](docs/salt-parity.md).
+P3 adds the event bus, reactor, returners, beacons, the mine, and
+orchestration. See [docs/salt-parity.md](docs/salt-parity.md).
 
 ## Why
 
@@ -153,7 +153,8 @@ grains are available as `{{ .Grains.os_family }}`. See
 * [docs/writing-states.md](docs/writing-states.md) — SLS format, templating, requisites
 * [docs/states.md](docs/states.md) — state module reference (file, pkg, service, cmd)
 * [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
-* [docs/events.md](docs/events.md) — the event bus, tags, streaming
+* [docs/events.md](docs/events.md) — the event bus, reactor, returners, beacons, mine
+* [docs/orchestration.md](docs/orchestration.md) — ordered fleet-wide runs
 * [docs/agentless.md](docs/agentless.md) — `halite ssh`, rosters, bootstrapping
 * [docs/pki.md](docs/pki.md) — keys, certificates, and agent enrollment
 * [docs/pillar-security.md](docs/pillar-security.md) — protecting pillar data

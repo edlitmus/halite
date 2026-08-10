@@ -11,6 +11,17 @@ import (
 	"github.com/edlitmus/halite/internal/sls"
 )
 
+// Lookup resolves a state function by name. Run uses the module registry;
+// the orchestrator supplies its own, so that requisite ordering, failure
+// gating, and the universal gates behave identically whether a step runs
+// locally or dispatches across the fleet.
+type Lookup func(name string) (modules.Func, bool)
+
+func registryLookup(name string) (modules.Func, bool) {
+	fn, ok := modules.Registry[name]
+	return fn, ok
+}
+
 // StateResult pairs a state with its outcome.
 type StateResult struct {
 	ID  string
@@ -18,13 +29,19 @@ type StateResult struct {
 	Res modules.Result
 }
 
-// Run executes states in order. ctx.BaseDir is overridden per state with
-// the directory of its source SLS file so relative sources resolve.
+// Run executes states in order against the module registry. ctx.BaseDir is
+// overridden per state with the directory of its source SLS file so
+// relative sources resolve.
 func Run(ctx *modules.Ctx, states []sls.State) []StateResult {
+	return RunWith(ctx, states, registryLookup)
+}
+
+// RunWith is Run with a caller-supplied function resolver.
+func RunWith(ctx *modules.Ctx, states []sls.State, lookup Lookup) []StateResult {
 	results := make([]modules.Result, len(states))
 	executedThrough := -1
 
-	lookup := func(r sls.Ref) (modules.Result, bool) {
+	resultOf := func(r sls.Ref) (modules.Result, bool) {
 		for i := 0; i <= executedThrough; i++ {
 			s := states[i]
 			if s.ID == r.ID && (r.Module == "" || r.Module == s.Module) {
@@ -51,7 +68,7 @@ func Run(ctx *modules.Ctx, states []sls.State) []StateResult {
 		if comment, gated := modules.CheckGates(args); gated {
 			return modules.Result{Ok: true, Comment: comment}
 		}
-		fn, ok := modules.Registry[st.Name()]
+		fn, ok := lookup(st.Name())
 		if !ok {
 			return modules.Result{Ok: false, Comment: "state function not found"}
 		}
@@ -60,7 +77,7 @@ func Run(ctx *modules.Ctx, states []sls.State) []StateResult {
 
 	out := make([]StateResult, 0, len(states))
 	for i, st := range states {
-		res := runOne(ctx, st, lookup, findState, dryRun)
+		res := runOne(ctx, st, lookup, resultOf, findState, dryRun)
 		results[i] = res
 		executedThrough = i
 		out = append(out, StateResult{ID: st.ID, Fn: st.Name(), Res: res})
@@ -71,14 +88,15 @@ func Run(ctx *modules.Ctx, states []sls.State) []StateResult {
 func runOne(
 	ctx *modules.Ctx,
 	st sls.State,
-	lookup func(sls.Ref) (modules.Result, bool),
+	lookup Lookup,
+	resultOf func(sls.Ref) (modules.Result, bool),
 	findState func(sls.Ref) (sls.State, bool),
 	dryRun func(sls.State) modules.Result,
 ) modules.Result {
 	// Any failed requisite blocks execution.
 	after := append(append(append([]sls.Ref{}, st.Require...), st.Watch...), st.OnChanges...)
 	for _, r := range after {
-		if res, ok := lookup(r); ok && !res.Ok {
+		if res, ok := resultOf(r); ok && !res.Ok {
 			return modules.Result{Ok: false,
 				Comment: fmt.Sprintf("one or more requisite failed: %s:%s", r.Module, r.ID)}
 		}
@@ -88,7 +106,7 @@ func runOne(
 	if len(st.OnChanges) > 0 {
 		triggered := false
 		for _, r := range st.OnChanges {
-			if res, ok := lookup(r); ok && res.Changed {
+			if res, ok := resultOf(r); ok && res.Changed {
 				triggered = true
 				break
 			}
@@ -121,7 +139,7 @@ func runOne(
 
 	args := copyArgs(st.Args)
 	for _, r := range st.Watch {
-		if res, ok := lookup(r); ok && res.Changed {
+		if res, ok := resultOf(r); ok && res.Changed {
 			args["__watch_changed"] = "true"
 			break
 		}
@@ -129,7 +147,7 @@ func runOne(
 	if comment, gated := modules.CheckGates(args); gated {
 		return modules.Result{Ok: true, Comment: comment}
 	}
-	fn, ok := modules.Registry[st.Name()]
+	fn, ok := lookup(st.Name())
 	if !ok {
 		return modules.Result{Ok: false,
 			Comment: fmt.Sprintf("state function %q not found", st.Name())}

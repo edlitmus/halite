@@ -19,6 +19,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/event"
+	"github.com/edlitmus/halite/internal/orch"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/reactor"
 	"github.com/edlitmus/halite/internal/returner"
@@ -54,6 +55,13 @@ type Config struct {
 
 	// ReactorRules turn events into jobs.
 	ReactorRules []reactor.Rule
+
+	// OrchRoot holds orchestration SLS files.
+	OrchRoot string
+	// OrchTimeout bounds a whole orchestration; OrchStepTimeout bounds one
+	// step's wait for its agents.
+	OrchTimeout     time.Duration
+	OrchStepTimeout time.Duration
 }
 
 // reactorSource is the identity reacted work is dispatched under. It is
@@ -73,6 +81,15 @@ func (c *Config) withDefaults() {
 	}
 	if c.JobTTL == 0 {
 		c.JobTTL = 5 * time.Minute
+	}
+	if c.OrchRoot == "" {
+		c.OrchRoot = defaultOrchRoot(c.StatesRoot)
+	}
+	if c.OrchTimeout == 0 {
+		c.OrchTimeout = DefaultOrchTimeout
+	}
+	if c.OrchStepTimeout == 0 {
+		c.OrchStepTimeout = orch.DefaultStepTimeout
 	}
 }
 
@@ -119,6 +136,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle(transport.PathMine, s.mineHandler())
 	mux.Handle(transport.PathDispatch, s.adminOnly(s.handleDispatch))
 	mux.Handle(transport.PathAgents, s.adminOnly(s.handleAgents))
+	mux.Handle(transport.PathOrchestrate, s.adminOnly(s.handleOrchestrate))
+	mux.Handle(transport.PathOrchInfo, s.adminOnly(s.handleOrchInfo))
 	mux.Handle(transport.PathJobInfo, s.adminOnly(s.handleJobInfo))
 	return mux
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/orch"
 	"github.com/edlitmus/halite/internal/sls"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -38,6 +39,8 @@ type registry struct {
 	jobs   map[string]*jobState
 	// mine is function -> agent -> latest value.
 	mine map[string]map[string]transport.MineEntry
+	// orchestrations are runs started on this control plane.
+	orchestrations map[string]*transport.OrchInfo
 
 	// onlineAfter is how recently an agent must have polled to count as
 	// online for targeting and listing.
@@ -51,11 +54,12 @@ type registry struct {
 
 func newRegistry(onlineAfter, jobTTL time.Duration) *registry {
 	return &registry{
-		agents:      map[string]*agentState{},
-		jobs:        map[string]*jobState{},
-		mine:        map[string]map[string]transport.MineEntry{},
-		onlineAfter: onlineAfter,
-		jobTTL:      jobTTL,
+		agents:         map[string]*agentState{},
+		jobs:           map[string]*jobState{},
+		mine:           map[string]map[string]transport.MineEntry{},
+		orchestrations: map[string]*transport.OrchInfo{},
+		onlineAfter:    onlineAfter,
+		jobTTL:         jobTTL,
 	}
 }
 
@@ -256,6 +260,45 @@ func (r *registry) readMine(function, target string) transport.Mine {
 		}
 	}
 	return out
+}
+
+// startOrchestration records a run as in flight.
+func (r *registry) startOrchestration(id, name, by string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.orchestrations[id] = &transport.OrchInfo{
+		ID: id, Name: name, By: by, Started: time.Now().UTC(), Running: true,
+	}
+}
+
+// finishOrchestration records the outcome of a completed run.
+func (r *registry) finishOrchestration(id string, steps []orch.StepOutcome) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	info, ok := r.orchestrations[id]
+	if !ok {
+		return
+	}
+	info.Running = false
+	info.Finished = time.Now().UTC()
+	info.Steps = make([]transport.OrchStep, 0, len(steps))
+	for _, step := range steps {
+		info.Steps = append(info.Steps, transport.OrchStep{
+			ID: step.ID, Ok: step.Ok, Changed: step.Changed, Comment: step.Comment,
+			JobID: step.JobID, Agents: step.Agents, Results: step.Results,
+		})
+	}
+}
+
+// orchestration returns a run by id.
+func (r *registry) orchestration(id string) (transport.OrchInfo, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	info, ok := r.orchestrations[id]
+	if !ok {
+		return transport.OrchInfo{}, false
+	}
+	return *info, true
 }
 
 // newJobID is time-ordered so that listing jobs sorts chronologically,

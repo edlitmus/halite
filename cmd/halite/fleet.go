@@ -24,6 +24,7 @@ import (
 	"github.com/edlitmus/halite/internal/master"
 	"github.com/edlitmus/halite/internal/mine"
 	"github.com/edlitmus/halite/internal/modules"
+	"github.com/edlitmus/halite/internal/orch"
 	"github.com/edlitmus/halite/internal/reactor"
 	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/transport"
@@ -53,6 +54,9 @@ func cmdMaster(args []string) {
 	pillarRootFlag := fs.String("pillar-root", "", "pillar tree root")
 	autoAccept := fs.Bool("auto-accept", false, "sign enrollment requests without an operator decision (labs only)")
 	pollTimeout := fs.Duration("poll-timeout", 30*time.Second, "how long an agent's job poll is held open")
+	orchRoot := fs.String("orch-root", "", "orchestration tree (default: <root>/../orch)")
+	orchTimeout := fs.Duration("orch-timeout", master.DefaultOrchTimeout, "bound on a whole orchestration")
+	orchStepTimeout := fs.Duration("orch-step-timeout", orch.DefaultStepTimeout, "bound on one step's wait for its agents")
 	reactorFile := fs.String("reactor", "", "reactor rules file (tag patterns to jobs)")
 	var returnerSpecs stringList
 	fs.Var(&returnerSpecs, "returner", "durable result sink, kind:target (repeatable): file:PATH or webhook:URL")
@@ -82,6 +86,10 @@ func cmdMaster(args []string) {
 		PollTimeout:  *pollTimeout,
 		Returners:    returners,
 		ReactorRules: rules,
+
+		OrchRoot:        *orchRoot,
+		OrchTimeout:     *orchTimeout,
+		OrchStepTimeout: *orchStepTimeout,
 	}
 	if _, err := os.Stat(cfg.StatesRoot); err != nil {
 		fatal("state tree %s is not readable: %v", cfg.StatesRoot, err)
@@ -510,4 +518,109 @@ func cmdMine(args []string) {
 			printTree(entry.Data, "    ")
 		}
 	}
+}
+
+const orchestrateUsage = `usage: halite orchestrate <name> [flags]
+
+Runs an ordered sequence of fleet-wide steps from
+<orch-root>/<name>.sls, waiting for each step's agents before the next.
+
+  halite orchestrate deploy
+  halite orchestrate deploy -test
+  halite orchestrate deploy -json
+
+Progress is followed on the event bus; -wait bounds how long to watch.`
+
+func cmdOrchestrate(args []string) {
+	fs := flag.NewFlagSet("orchestrate", flag.ExitOnError)
+	masterAddr := fs.String("master", os.Getenv("HALITE_MASTER"), "control plane host[:port]")
+	pkiFlag := fs.String("pki", "", "PKI directory holding the operator certificate")
+	test := fs.Bool("test", false, "dry run every step")
+	asJSON := fs.Bool("json", false, "output the outcome as JSON")
+	wait := fs.Duration("wait", 30*time.Minute, "how long to follow the run")
+	rest := parseFlags(fs, args)
+
+	if len(rest) != 1 {
+		fmt.Fprintln(os.Stderr, orchestrateUsage)
+		os.Exit(2)
+	}
+
+	client := operatorClient(*masterAddr, resolvePKI(*pkiFlag))
+	ctx, stop := signalContext()
+	defer stop()
+
+	var started transport.OrchestrateResponse
+	err := client.Post(ctx, transport.PathOrchestrate,
+		transport.OrchestrateRequest{Name: rest[0], Test: *test}, &started)
+	if err != nil {
+		fatal("%v", err)
+	}
+	if !*asJSON {
+		fmt.Printf("orchestration %s: %s, %d step(s)\n\n", started.ID, started.Name, started.Steps)
+	}
+
+	info := followOrchestration(ctx, client, started.ID, *wait, *asJSON)
+	if *asJSON {
+		b, _ := json.MarshalIndent(info, "", "  ")
+		fmt.Println(string(b))
+	} else {
+		printOrchestration(info)
+	}
+	for _, step := range info.Steps {
+		if !step.Ok {
+			os.Exit(1)
+		}
+	}
+	if info.Running {
+		os.Exit(1)
+	}
+}
+
+// followOrchestration polls until the run finishes or the deadline passes,
+// printing steps as the control plane reports them.
+func followOrchestration(
+	ctx context.Context, client *transport.Client, id string, wait time.Duration, quiet bool,
+) transport.OrchInfo {
+	deadline := time.Now().After
+	limit := time.Now().Add(wait)
+	var info transport.OrchInfo
+	for {
+		if err := client.Get(ctx, transport.PathOrchInfo+id, &info); err != nil {
+			fatal("%v", err)
+		}
+		if !info.Running || deadline(limit) || ctx.Err() != nil {
+			return info
+		}
+		select {
+		case <-time.After(time.Second):
+		case <-ctx.Done():
+			return info
+		}
+	}
+}
+
+func printOrchestration(info transport.OrchInfo) {
+	failed := 0
+	for _, step := range info.Steps {
+		status := "ok"
+		if !step.Ok {
+			status = "FAILED"
+			failed++
+		}
+		fmt.Printf("%-24s %-8s %s\n", step.ID, status, step.Comment)
+		for _, res := range step.Results {
+			if res.Error != "" {
+				fmt.Printf("    %s: %s\n", res.AgentID, res.Error)
+				continue
+			}
+			fmt.Printf("    %s: succeeded=%d changed=%d failed=%d\n",
+				res.AgentID, res.Succeeded, res.Changed, res.Failed)
+		}
+	}
+	if info.Running {
+		fmt.Println("\nstill running (stopped following)")
+		return
+	}
+	fmt.Printf("\n%d step(s), %d failed, in %s\n",
+		len(info.Steps), failed, info.Finished.Sub(info.Started).Round(time.Millisecond))
 }

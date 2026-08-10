@@ -72,7 +72,7 @@ place; the registry makes adding one a single function.
 | Salt 3008 | halite | Status | Notes |
 |---|---|---|---|
 | Salt Mine | done | periodic exec-module and grain publishes; read as `{{ .Mine }}` in states or with `halite mine`. See docs/events.md |
-| Orchestration (state.orchestrate) | P3 | master-side ordered runs across minions |
+| Orchestration (state.orchestrate) | done | `halite orchestrate <name>`; steps are SLS states, so requisites and gates are the engine's own. See docs/orchestration.md |
 | Returners | done | file (NDJSON) and webhook sinks on the control plane; no database driver under ADR-1 — point a webhook at something that owns the DB |
 | salt-api (REST) | done (mTLS) | the control plane's JSON API is the REST API; authentication is client certificates, not tokens. A token/browser front door is P3 if it is ever wanted |
 | Windows-specific (registry, DSC) | P4/out | registry: P4; DSC: out |
@@ -93,7 +93,7 @@ place; the registry makes adding one a single function.
   the read-only execution modules. halite now replaces a small salt-master.
   Pillar encryption at rest was dropped rather than built (ADR-9):
   confidentiality is the directory mode plus an external tool.
-* **P3 — events** (event bus, beacons, reactor, mine, orchestration,
-  returners).
+* **P3 — events**. **Complete**: event bus and streaming, returners,
+  reactor, beacons, mine, orchestration.
 * **P4 — long tail** (multi-master, Windows registry, external process
   modules).

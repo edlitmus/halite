@@ -15,6 +15,12 @@ internal/transport/  mTLS HTTP/2 wire types, TLS config, JSON client
 internal/archive/    tar.gz pack and safe unpack
 internal/master/     control plane: registry, dispatch, handlers
 internal/agent/      managed-host side: enroll, poll, execute, report
+internal/event/      the event bus: tags, subscriptions, history
+internal/reactor/    rules turning events into jobs
+internal/returner/   durable sinks for job results
+internal/beacon/     agent-side watchers raising events
+internal/mine/       fleet-wide published facts
+internal/orch/       ordered fleet-wide runs
 ```
 
 ## Pipeline
@@ -166,6 +172,27 @@ encrypted in version control is decrypted into the tree at deploy time; and
 Revisit if pillar ever has to live somewhere halite does not control — a
 shared filesystem, an object store, a git remote that agents pull from —
 because then the directory mode stops being the boundary.
+
+### ADR-10: Orchestration reuses the state engine
+
+**Accepted (0.5).** An orchestration is an ordered set of fleet-wide steps
+with dependencies between them — which is what a state file already is.
+Rather than write a second executor, `internal/orch` supplies the engine
+with its own function resolver: `halite.run` dispatches to agents and waits
+for them, and everything around it (topological sort, requisite failure
+gating, watch and onchanges propagation, the universal gates) is the code
+that runs a highstate.
+
+Consequences: `require` between steps behaves exactly like `require`
+between states, because it is the same code; a bug fixed in one is fixed
+in both; and an orchestration file is readable by anyone who can read an
+SLS file. The cost is that orchestration inherits the engine's model,
+including its lack of parallelism across steps — which is the right
+default here anyway, since sequencing is the whole point.
+
+The alternative, a bespoke orchestration executor, would have started
+simpler and drifted: two implementations of "did my dependency succeed"
+is one more than the semantics deserve.
 
 ## Error and failure model
 

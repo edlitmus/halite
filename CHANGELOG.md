@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-P3 (events) in progress.
+P3 (events) complete.
 
 * Event bus: the control plane publishes tagged events for enrollment,
   agent hellos, job dispatches, and returns; agents post their own events
@@ -47,6 +47,16 @@ P3 (events) in progress.
   Function names are validated at startup, so a typo fails loudly instead
   of never publishing. Entries are keyed by the certificate identity and
   carry the time they were published.
+* Orchestration: `halite orchestrate <name>` runs ordered fleet-wide
+  steps from `<orch-root>/<name>.sls`. Steps are `halite.run` states, so
+  requisite ordering, failure gating, and the universal gates are the
+  state engine's own code rather than a second implementation (ADR-10).
+  A step waits for every agent it matched; a step matching none fails
+  rather than silently succeeding. Runs happen on the control plane,
+  detached from the request, with progress on the event bus.
+  See docs/orchestration.md.
+* engine.RunWith lets a caller supply how state functions are resolved,
+  which is what makes the above possible.
 * See docs/events.md.
 
 ## 0.4.0 — 2026-08-09
