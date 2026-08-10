@@ -17,11 +17,12 @@ type Loader struct {
 	Root    string // state tree root; required for includes and dotted names
 	Grains  map[string]any
 	Pillar  map[string]any
+	Mine    map[string]any
 	visited map[string]bool
 }
 
 func (l *Loader) templateData() TemplateData {
-	return TemplateData{Grains: l.Grains, Pillar: l.Pillar}
+	return TemplateData{Grains: l.Grains, Pillar: l.Pillar, Mine: l.Mine}
 }
 
 func (l *Loader) init() {

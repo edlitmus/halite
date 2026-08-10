@@ -339,3 +339,134 @@ func TestAgentCannotRaiseAnotherHostsBeaconTag(t *testing.T) {
 		t.Errorf("web1 could not raise its own beacon: %v", err)
 	}
 }
+
+func TestMineStoresPerAgentAndIsReadableByAll(t *testing.T) {
+	f := newFleet(t, Config{})
+	web := f.enrolledClient(t, "web1")
+	db := f.enrolledClient(t, "db1")
+	hello(t, web, map[string]any{"id": "web1", "os_family": "FreeBSD"})
+	hello(t, db, map[string]any{"id": "db1", "os_family": "Debian"})
+
+	for client, addr := range map[*transport.Client]string{web: "10.0.0.1", db: "10.0.0.2"} {
+		err := client.Post(context.Background(), transport.PathMine, transport.MineReport{
+			Function: "network.interfaces",
+			Data:     map[string]any{"ix0": addr},
+		}, nil)
+		if err != nil {
+			t.Fatalf("publish: %v", err)
+		}
+	}
+
+	// An agent can read the fleet's mine — that is the point of it.
+	var byAgent transport.Mine
+	if err := web.Get(context.Background(), transport.PathMine, &byAgent); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	interfaces := byAgent["network.interfaces"]
+	if len(interfaces) != 2 {
+		t.Fatalf("got %d agents, want 2: %v", len(interfaces), interfaces)
+	}
+	if interfaces["web1"].Data["ix0"] != "10.0.0.1" {
+		t.Errorf("web1 = %v", interfaces["web1"].Data)
+	}
+	if interfaces["web1"].Updated.IsZero() {
+		t.Error("entries should carry the time they were published")
+	}
+}
+
+func TestMineIsStoredUnderTheCertificateIdentity(t *testing.T) {
+	f := newFleet(t, Config{})
+	web := f.enrolledClient(t, "web1")
+	hello(t, web, map[string]any{"id": "web1"})
+
+	// Nothing in the report names an agent, so there is no field to forge —
+	// this pins that the server keys on the peer, not on anything sent.
+	if err := web.Post(context.Background(), transport.PathMine, transport.MineReport{
+		Function: "grains", Data: map[string]any{"id": "db1"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var mine transport.Mine
+	if err := web.Get(context.Background(), transport.PathMine, &mine); err != nil {
+		t.Fatal(err)
+	}
+	if _, wrong := mine["grains"]["db1"]; wrong {
+		t.Error("data was stored under an identity from the body")
+	}
+	if _, right := mine["grains"]["web1"]; !right {
+		t.Errorf("data was not stored under the caller: %v", mine["grains"])
+	}
+}
+
+func TestMineNarrowsByFunctionAndTarget(t *testing.T) {
+	f := newFleet(t, Config{})
+	web := f.enrolledClient(t, "web1")
+	db := f.enrolledClient(t, "db1")
+	hello(t, web, map[string]any{"id": "web1", "os_family": "FreeBSD"})
+	hello(t, db, map[string]any{"id": "db1", "os_family": "Debian"})
+
+	for _, client := range []*transport.Client{web, db} {
+		for _, fn := range []string{"grains", "disk.usage"} {
+			if err := client.Post(context.Background(), transport.PathMine,
+				transport.MineReport{Function: fn, Data: map[string]any{"x": 1}}, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	admin := f.adminClient(t, "ed")
+
+	var oneFunction transport.Mine
+	if err := admin.Get(context.Background(), transport.PathMine+"?fn=grains", &oneFunction); err != nil {
+		t.Fatal(err)
+	}
+	if len(oneFunction) != 1 || len(oneFunction["grains"]) != 2 {
+		t.Errorf("fn filter = %v", oneFunction)
+	}
+
+	var oneAgent transport.Mine
+	if err := admin.Get(context.Background(),
+		transport.PathMine+"?target=os_family:FreeBSD", &oneAgent); err != nil {
+		t.Fatal(err)
+	}
+	for function, agents := range oneAgent {
+		if _, present := agents["db1"]; present {
+			t.Errorf("%s: db1 does not match the target: %v", function, agents)
+		}
+		if _, present := agents["web1"]; !present {
+			t.Errorf("%s: web1 should match: %v", function, agents)
+		}
+	}
+}
+
+func TestMineReportNeedsAFunction(t *testing.T) {
+	f := newFleet(t, Config{})
+	web := f.enrolledClient(t, "web1")
+
+	if err := web.Post(context.Background(), transport.PathMine,
+		transport.MineReport{Data: map[string]any{"x": 1}}, nil); err == nil {
+		t.Error("a report without a function must be refused")
+	}
+}
+
+func TestMineRepublishReplacesRatherThanAccumulates(t *testing.T) {
+	f := newFleet(t, Config{})
+	web := f.enrolledClient(t, "web1")
+	hello(t, web, map[string]any{"id": "web1"})
+
+	for _, addr := range []string{"10.0.0.1", "10.0.0.9"} {
+		if err := web.Post(context.Background(), transport.PathMine, transport.MineReport{
+			Function: "network.interfaces", Data: map[string]any{"ix0": addr},
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var mine transport.Mine
+	if err := web.Get(context.Background(), transport.PathMine, &mine); err != nil {
+		t.Fatal(err)
+	}
+	if got := mine["network.interfaces"]["web1"].Data["ix0"]; got != "10.0.0.9" {
+		t.Errorf("ix0 = %v, want the latest value", got)
+	}
+}

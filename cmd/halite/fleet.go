@@ -22,6 +22,7 @@ import (
 	"github.com/edlitmus/halite/internal/beacon"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/master"
+	"github.com/edlitmus/halite/internal/mine"
 	"github.com/edlitmus/halite/internal/modules"
 	"github.com/edlitmus/halite/internal/reactor"
 	"github.com/edlitmus/halite/internal/returner"
@@ -102,9 +103,14 @@ func cmdAgent(args []string) {
 	cacheFlag := fs.String("cache", "", "directory for the fetched state tree")
 	retry := fs.Duration("retry", 10*time.Second, "delay between reconnection and enrollment attempts")
 	beaconFile := fs.String("beacons", "", "beacon config file (watches that raise events)")
+	mineFile := fs.String("mine", "", "mine config file (facts published for the rest of the fleet)")
 	_ = parseFlags(fs, args)
 
 	beacons, err := beacon.Load(*beaconFile)
+	if err != nil {
+		fatal("%v", err)
+	}
+	mineJobs, err := mine.Load(*mineFile)
 	if err != nil {
 		fatal("%v", err)
 	}
@@ -121,6 +127,7 @@ func cmdAgent(args []string) {
 		Version:       version,
 		RetryInterval: *retry,
 		Beacons:       beacons,
+		MineJobs:      mineJobs,
 	}
 	if err := os.MkdirAll(cfg.CacheDir, 0o755); err != nil {
 		fatal("cache directory: %v", err)
@@ -439,5 +446,68 @@ func printEvent(ev transport.Event) {
 	fmt.Printf("%s  %-44s %s\n", ev.Time.Local().Format("15:04:05"), ev.Tag, ev.Source)
 	if len(ev.Data) > 0 {
 		printTree(ev.Data, "    ")
+	}
+}
+
+const mineUsage = `usage: halite mine [function] [-target PATTERN] [flags]
+
+Reads the facts agents publish for each other. With no function, returns
+everything the control plane holds.
+
+  halite mine
+  halite mine network.interfaces
+  halite mine disk.usage -target 'os_family:FreeBSD'
+  halite mine grains -json`
+
+func cmdMine(args []string) {
+	fs := flag.NewFlagSet("mine", flag.ExitOnError)
+	masterAddr := fs.String("master", os.Getenv("HALITE_MASTER"), "control plane host[:port]")
+	pkiFlag := fs.String("pki", "", "PKI directory holding the operator certificate")
+	target := fs.String("target", "", "only agents matching this target pattern")
+	asJSON := fs.Bool("json", false, "output as JSON")
+	rest := parseFlags(fs, args)
+
+	if len(rest) > 1 {
+		fmt.Fprintln(os.Stderr, mineUsage)
+		os.Exit(2)
+	}
+	path := transport.PathMine + "?"
+	if len(rest) == 1 {
+		path += "fn=" + url.QueryEscape(rest[0]) + "&"
+	}
+	path += "target=" + url.QueryEscape(*target)
+
+	client := operatorClient(*masterAddr, resolvePKI(*pkiFlag))
+	var data transport.Mine
+	if err := client.Get(context.Background(), path, &data); err != nil {
+		fatal("%v", err)
+	}
+
+	if *asJSON {
+		b, _ := json.MarshalIndent(data, "", "  ")
+		fmt.Println(string(b))
+		return
+	}
+	if len(data) == 0 {
+		fmt.Println("the mine is empty")
+		return
+	}
+	functions := make([]string, 0, len(data))
+	for function := range data {
+		functions = append(functions, function)
+	}
+	sort.Strings(functions)
+	for _, function := range functions {
+		fmt.Printf("%s:\n", function)
+		agents := make([]string, 0, len(data[function]))
+		for agentID := range data[function] {
+			agents = append(agents, agentID)
+		}
+		sort.Strings(agents)
+		for _, agentID := range agents {
+			entry := data[function][agentID]
+			fmt.Printf("  %s  (updated %s)\n", agentID, entry.Updated.Local().Format(time.RFC3339))
+			printTree(entry.Data, "    ")
+		}
 	}
 }

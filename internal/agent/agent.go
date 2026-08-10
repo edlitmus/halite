@@ -20,6 +20,7 @@ import (
 	"github.com/edlitmus/halite/internal/beacon"
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/event"
+	"github.com/edlitmus/halite/internal/mine"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -36,6 +37,9 @@ type Config struct {
 
 	// Beacons watch the host and raise events.
 	Beacons []beacon.Beacon
+
+	// MineJobs are facts this agent publishes for the rest of the fleet.
+	MineJobs []mine.Job
 }
 
 func (c *Config) withDefaults() {
@@ -93,6 +97,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	if len(a.cfg.Beacons) > 0 {
 		runner := beacon.NewRunner(a.cfg.Beacons, a.raiseBeacon, a.log)
 		a.log.Printf("watching with %d beacon(s)", runner.Count())
+		go runner.Run(ctx)
+	}
+
+	if len(a.cfg.MineJobs) > 0 {
+		runner := mine.NewRunner(a.cfg.MineJobs, a.grains, a.publishMine, a.log)
+		a.log.Printf("publishing %d function(s) to the mine", runner.Count())
 		go runner.Run(ctx)
 	}
 
@@ -164,6 +174,30 @@ func (a *Agent) raiseBeacon(name string, data map[string]any) {
 		return
 	}
 	a.log.Printf("beacon %s fired: %v", name, data)
+}
+
+// publishMine sends one function's output to the control plane. As with
+// beacons, a failure is logged and dropped: the next tick republishes.
+func (a *Agent) publishMine(function string, data map[string]any) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	report := transport.MineReport{Function: function, Data: data}
+	if err := a.client.Post(ctx, transport.PathMine, report, nil); err != nil {
+		a.log.Printf("mine %s: %v", function, err)
+	}
+}
+
+// fetchMine reads the fleet's published facts, for {{ .Mine }} in states.
+// A failure is not fatal: a state tree that does not use the mine should
+// not fail because the mine is empty or unreachable.
+func (a *Agent) fetchMine(ctx context.Context) map[string]any {
+	var raw transport.Mine
+	if err := a.client.Get(ctx, transport.PathMine, &raw); err != nil {
+		a.log.Printf("mine: %v", err)
+		return map[string]any{}
+	}
+	return mine.ForTemplates(raw)
 }
 
 // fetchPillar asks the control plane to render this agent's pillar.

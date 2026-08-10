@@ -71,7 +71,7 @@ place; the registry makes adding one a single function.
 
 | Salt 3008 | halite | Status | Notes |
 |---|---|---|---|
-| Salt Mine | P3 | periodic grain/exec publishes to master |
+| Salt Mine | done | periodic exec-module and grain publishes; read as `{{ .Mine }}` in states or with `halite mine`. See docs/events.md |
 | Orchestration (state.orchestrate) | P3 | master-side ordered runs across minions |
 | Returners | done | file (NDJSON) and webhook sinks on the control plane; no database driver under ADR-1 — point a webhook at something that owns the DB |
 | salt-api (REST) | done (mTLS) | the control plane's JSON API is the REST API; authentication is client certificates, not tokens. A token/browser front door is P3 if it is ever wanted |

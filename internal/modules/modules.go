@@ -16,6 +16,7 @@ type Ctx struct {
 	Test    bool           // dry-run: report what would change, change nothing
 	Grains  map[string]any // system facts
 	Pillar  map[string]any // per-host data, for templated sources
+	Mine    map[string]any // fleet-wide published facts, for templated sources
 	BaseDir string         // directory of the SLS file, for relative sources
 }
 

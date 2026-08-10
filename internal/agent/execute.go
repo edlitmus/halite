@@ -71,7 +71,8 @@ func (a *Agent) runStates(ctx context.Context, job transport.Job, result transpo
 		return result
 	}
 
-	loader := &sls.Loader{Root: root, Grains: a.grains, Pillar: pillarData}
+	mineData := a.fetchMine(ctx)
+	loader := &sls.Loader{Root: root, Grains: a.grains, Pillar: pillarData, Mine: mineData}
 	var states []sls.State
 	if job.Kind == transport.KindHighstate {
 		states, err = loader.LoadTop()
@@ -83,7 +84,7 @@ func (a *Agent) runStates(ctx context.Context, job transport.Job, result transpo
 		return result
 	}
 
-	ctxModules := &modules.Ctx{Test: job.Test, Grains: a.grains, Pillar: pillarData}
+	ctxModules := &modules.Ctx{Test: job.Test, Grains: a.grains, Pillar: pillarData, Mine: mineData}
 	for _, r := range engine.Run(ctxModules, states) {
 		result.States = append(result.States, transport.StateOutcome{
 			ID:       r.ID,

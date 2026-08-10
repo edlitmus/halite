@@ -36,6 +36,8 @@ type registry struct {
 	mu     sync.Mutex
 	agents map[string]*agentState
 	jobs   map[string]*jobState
+	// mine is function -> agent -> latest value.
+	mine map[string]map[string]transport.MineEntry
 
 	// onlineAfter is how recently an agent must have polled to count as
 	// online for targeting and listing.
@@ -51,6 +53,7 @@ func newRegistry(onlineAfter, jobTTL time.Duration) *registry {
 	return &registry{
 		agents:      map[string]*agentState{},
 		jobs:        map[string]*jobState{},
+		mine:        map[string]map[string]transport.MineEntry{},
 		onlineAfter: onlineAfter,
 		jobTTL:      jobTTL,
 	}
@@ -213,6 +216,46 @@ func (r *registry) jobInfo(id string) (transport.JobInfo, bool) {
 		}
 	}
 	return info, true
+}
+
+// storeMine records one agent's latest value for one function, replacing
+// whatever was there: the mine holds current facts, not a history.
+func (r *registry) storeMine(agentID, function string, data map[string]any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byAgent, ok := r.mine[function]
+	if !ok {
+		byAgent = map[string]transport.MineEntry{}
+		r.mine[function] = byAgent
+	}
+	byAgent[agentID] = transport.MineEntry{Data: data, Updated: time.Now().UTC()}
+}
+
+// readMine returns the mine, optionally narrowed to one function and to
+// agents matching a target pattern.
+func (r *registry) readMine(function, target string) transport.Mine {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	out := transport.Mine{}
+	for fn, byAgent := range r.mine {
+		if function != "" && fn != function {
+			continue
+		}
+		for agentID, entry := range byAgent {
+			if target != "" && target != "*" {
+				state, known := r.agents[agentID]
+				if !known || !sls.TargetMatch(target, state.info.Grains) {
+					continue
+				}
+			}
+			if out[fn] == nil {
+				out[fn] = map[string]transport.MineEntry{}
+			}
+			out[fn][agentID] = entry
+		}
+	}
+	return out
 }
 
 // newJobID is time-ordered so that listing jobs sorts chronologically,

@@ -17,6 +17,7 @@ const (
 	PathStateTree = "/v1/statetree"
 
 	PathEvents   = "/v1/events"
+	PathMine     = "/v1/mine"
 	PathDispatch = "/v1/dispatch"
 	PathAgents   = "/v1/agents"
 	PathJobInfo  = "/v1/job/" // + job id
@@ -137,6 +138,22 @@ type Event struct {
 	Source string         `json:"source"`
 	Data   map[string]any `json:"data,omitempty"`
 }
+
+// MineReport is an agent publishing one function's output.
+type MineReport struct {
+	Function string         `json:"function"`
+	Data     map[string]any `json:"data"`
+}
+
+// MineEntry is one agent's latest value for one function.
+type MineEntry struct {
+	Data    map[string]any `json:"data"`
+	Updated time.Time      `json:"updated"`
+}
+
+// Mine is what the control plane holds: function -> agent -> value. States
+// read it as {{ .Mine.<function>.<agent> }}.
+type Mine map[string]map[string]MineEntry
 
 // ErrorResponse is the body of every non-2xx reply.
 type ErrorResponse struct {

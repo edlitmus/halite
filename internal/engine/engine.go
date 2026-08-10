@@ -45,7 +45,8 @@ func Run(ctx *modules.Ctx, states []sls.State) []StateResult {
 	// dryRun evaluates whether a state would make changes, without making
 	// them (used by prereq).
 	dryRun := func(st sls.State) modules.Result {
-		testCtx := &modules.Ctx{Test: true, Grains: ctx.Grains, Pillar: ctx.Pillar, BaseDir: st.Dir}
+		testCtx := &modules.Ctx{Test: true, Grains: ctx.Grains, Pillar: ctx.Pillar,
+			Mine: ctx.Mine, BaseDir: st.Dir}
 		args := copyArgs(st.Args)
 		if comment, gated := modules.CheckGates(args); gated {
 			return modules.Result{Ok: true, Comment: comment}

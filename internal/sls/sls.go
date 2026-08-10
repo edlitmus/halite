@@ -43,6 +43,9 @@ func (s State) Name() string { return s.Module + "." + s.Fn }
 type TemplateData struct {
 	Grains map[string]any
 	Pillar map[string]any
+	// Mine is fleet-wide published facts, function -> agent -> data. It is
+	// empty masterless: there is no fleet to gather from.
+	Mine map[string]any
 }
 
 // templateFuncs are helpers available in SLS templates, covering the most

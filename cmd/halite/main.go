@@ -58,6 +58,8 @@ func main() {
 		cmdSSH(os.Args[2:])
 	case "events":
 		cmdEvents(os.Args[2:])
+	case "mine":
+		cmdMine(os.Args[2:])
 	case "version":
 		fmt.Println("halite " + version)
 	case "-h", "--help", "help":
@@ -85,10 +87,11 @@ fleet mode:
       [-returner file:PATH|webhook:URL]    durable result sinks (repeatable)
       [-reactor FILE]                      rules turning events into jobs
   halite agent -master HOST                run the agent on a managed host
-      [-beacons FILE]                      watches that raise events
+      [-beacons FILE] [-mine FILE]         watches, and facts to publish
   halite run <target> <kind> [args]        dispatch work and collect results
   halite agents                            list the fleet
   halite events [-tag PATTERN]             tail the event bus
+  halite mine [function] [-target PAT]     read the fleet's published facts
 
 agentless:
   halite ssh <hosts> <kind> [args]         push the binary over ssh and run`)

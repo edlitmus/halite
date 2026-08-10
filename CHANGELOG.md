@@ -41,6 +41,12 @@ P3 (events) in progress.
   by an indented `threshold: "90"`), which is ordinary YAML the parser was
   rejecting. Single-pair items, the SLS argument convention, are
   unaffected.
+* Mine: `halite agent -mine FILE` publishes execution-module output and
+  grains to the control plane on a schedule; states read the fleet's facts
+  as `{{ .Mine.<function>.<agent> }}` and operators with `halite mine`.
+  Function names are validated at startup, so a typo fails loudly instead
+  of never publishing. Entries are keyed by the certificate identity and
+  carry the time they were published.
 * See docs/events.md.
 
 ## 0.4.0 — 2026-08-09

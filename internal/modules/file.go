@@ -107,7 +107,7 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 		}
 		if tpl := Str(args, "template", ""); tpl == "true" || tpl == "go" {
 			rendered, err := sls.Render(filepath.Base(src), string(b),
-				sls.TemplateData{Grains: c.Grains, Pillar: c.Pillar})
+				sls.TemplateData{Grains: c.Grains, Pillar: c.Pillar, Mine: c.Mine})
 			if err != nil {
 				return resFail("render source %s: %v", src, err)
 			}

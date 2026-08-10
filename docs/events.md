@@ -265,3 +265,71 @@ reactor rules match on the **tag** — so without this, `web1` could raise
 `halite/beacon/db1/service` and fire a rule written for `db1`. The tag is
 as trustworthy as the source; the *data* inside it is still whatever the
 agent chose to send.
+
+## The mine
+
+The mine is how one host's states learn facts about other hosts. Agents
+publish on a schedule, the control plane keeps the latest value per agent
+per function, and states read the lot as `{{ .Mine }}`.
+
+```sh
+halite agent -master master.example.com -mine /usr/local/etc/halite/mine.sls
+```
+
+```yaml
+# mine.sls — what this host publishes
+grains:
+  interval: 5m
+network.interfaces:
+  interval: 60s
+disk.usage:
+```
+
+Publishable functions are the read-only execution modules (`disk.usage`,
+`status.uptime`, `status.loadavg`, `network.interfaces`) plus `grains`. A
+name that is neither is refused when the agent starts, so a typo is a
+startup error rather than a function that silently never publishes. The
+interval defaults to five minutes; each function publishes once at startup
+so a host that has just connected is usable straight away.
+
+### Using it in states
+
+```
+# files/backends.conf.tmpl
+upstream backends {
+{{- range $agent, $data := .Mine.grains }}
+{{- if hasPrefix $agent "web" }}
+    server {{ $agent }}.internal;
+{{- end }}
+{{- end }}
+}
+```
+
+`.Mine` is `function -> agent -> data`. Dots in a function name become
+underscores so the path resolves: `network.interfaces` is
+`{{ .Mine.network_interfaces }}`.
+
+Masterless and `halite ssh` runs get an empty `.Mine` — there is no fleet
+to gather from. A state tree that iterates over it produces nothing rather
+than failing.
+
+### Reading it by hand
+
+```sh
+halite mine
+halite mine network.interfaces
+halite mine grains -target 'os_family:FreeBSD'
+halite mine disk.usage -json
+```
+
+### What the mine is not
+
+* **Not durable.** It lives in the control plane's memory and is empty
+  after a restart until agents republish, which they do on their next
+  interval.
+* **Not private between agents.** Any enrolled host can read what every
+  other host publishes — that is what makes it useful, and it means the
+  mine is for facts, not for secrets. Pillar is the private channel.
+* **Not fresh.** An entry is as old as its interval, and it carries the
+  time it was published so consumers can judge. An agent that has gone
+  away leaves its last value behind until the control plane restarts.

@@ -116,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle(transport.PathStateTree, s.agentOnly(s.handleStateTree))
 
 	mux.Handle(transport.PathEvents, s.eventsHandler())
+	mux.Handle(transport.PathMine, s.mineHandler())
 	mux.Handle(transport.PathDispatch, s.adminOnly(s.handleDispatch))
 	mux.Handle(transport.PathAgents, s.adminOnly(s.handleAgents))
 	mux.Handle(transport.PathJobInfo, s.adminOnly(s.handleJobInfo))
