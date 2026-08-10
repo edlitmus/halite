@@ -8,7 +8,7 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.5.0 — P1, P2, and P3 complete.** Three ways to run:
+**Status: v0.6.0 — the roadmap is complete (P1–P4).** Three ways to run:
 
 * **Masterless** — `halite apply` on the host. Highstate with top.sls
   targeting, pillar, includes, the full requisite set, and the
@@ -19,9 +19,8 @@ runtime, onedir/relenv packaging, or the deprecation treadmill.
 
 Plus the event layer: a tagged event bus with a live stream, a reactor
 turning events into jobs, agent-side beacons, durable returners, a mine
-of fleet-wide facts, and ordered orchestration. P4 (multi-master, Windows
-registry) is what remains — see
-[docs/salt-parity.md](docs/salt-parity.md).
+of fleet-wide facts, and ordered orchestration. What remains are the
+deliberate non-goals — see [docs/salt-parity.md](docs/salt-parity.md).
 
 ## Why
 

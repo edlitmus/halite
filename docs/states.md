@@ -398,3 +398,50 @@ skips filesystems it cannot stat, so a dead NFS mount does not fail the
 whole query. It is not implemented on Windows. `status.*` read `/proc` on
 Linux and `sysctl` on the BSDs and macOS; `network.interfaces` is pure
 stdlib and works everywhere.
+
+## reg (Windows)
+
+### reg.present
+
+Ensures a registry value exists with the given data.
+
+| Arg | Description |
+|---|---|
+| `name` | the key, `HIVE\Subkey` (default: state ID) |
+| `vname` | the value name; omit for the key's default value |
+| `vdata` | the data to write |
+| `vtype` | `REG_SZ` (default), `REG_EXPAND_SZ`, `REG_MULTI_SZ`, `REG_DWORD`, `REG_QWORD`, `REG_BINARY` |
+
+Hives may be short or long (`HKLM` or `HKEY_LOCAL_MACHINE`), and forward
+slashes are accepted as separators.
+
+```yaml
+HKLM\SOFTWARE\Acme:
+  reg.present:
+    - vname: Timeout
+    - vdata: "30"
+    - vtype: REG_DWORD
+```
+
+Numbers are compared numerically, not as text: `reg query` prints a DWORD
+in hex, so `30` and `0x1e` are correctly the same value and the state does
+not report a change on every run. Strings are compared exactly, since case
+matters in a path; `REG_BINARY` is compared case-insensitively, since it
+is hex.
+
+### reg.absent
+
+Removes a value, or a whole key with `delete_key: true`. One of the two is
+required — removing a key removes everything beneath it, so it cannot
+happen by leaving `vname` out by accident.
+
+```yaml
+HKLM\SOFTWARE\Acme:
+  reg.absent:
+    - vname: Timeout
+```
+
+Both states fail on anything other than Windows rather than pretending to
+work. Like scheduled tasks, **this path has not been exercised on a real
+Windows host**: the key normalisation, `reg query` parsing, and value
+comparison are unit tested, and the rest is `reg.exe` invocations.

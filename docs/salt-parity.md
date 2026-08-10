@@ -75,7 +75,7 @@ place; the registry makes adding one a single function.
 | Orchestration (state.orchestrate) | done | `halite orchestrate <name>`; steps are SLS states, so requisites and gates are the engine's own. See docs/orchestration.md |
 | Returners | done | file (NDJSON) and webhook sinks on the control plane; no database driver under ADR-1 — point a webhook at something that owns the DB |
 | salt-api (REST) | done (mTLS) | the control plane's JSON API is the REST API; authentication is client certificates, not tokens. A token/browser front door is P3 if it is ever wanted |
-| Windows-specific (registry, DSC) | P4/out | registry: P4; DSC: out |
+| Windows-specific (registry, DSC) | registry done, DSC out | reg.present/absent via reg.exe (translation unit tested, unverified on a real Windows host); DSC remains a non-goal |
 | Salt extensions / Python modules | out | custom modules are Go, compiled in |
 | External process modules | `_modules/` executables, JSON on stdin/stdout | done | ship with the state tree; see docs/external-modules.md |
 | GPG pillar renderer (encryption at rest) | out | confidentiality is the directory mode; use sops/age/git-crypt to decrypt into the tree. ADR-9, docs/pillar-security.md |
@@ -96,5 +96,7 @@ place; the registry makes adding one a single function.
   confidentiality is the directory mode plus an external tool.
 * **P3 — events**. **Complete**: event bus and streaming, returners,
   reactor, beacons, mine, orchestration.
-* **P4 — long tail** (multi-master, Windows registry, external process
-  modules).
+* **P4 — long tail**. **Complete**: external process modules, multi-master
+  failover, Windows registry. The roadmap's four phases are done; what
+  remains are the deliberate non-goals above and whatever real use turns
+  up.

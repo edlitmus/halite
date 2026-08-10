@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-08-09
 
-P4 (long tail) in progress.
+P4 (long tail) complete, and with it the roadmap.
 
 * External modules: an executable in the state tree's `_modules/`
   directory provides `<name>.*` state functions. halite runs it with the
@@ -22,6 +22,12 @@ P4 (long tail) in progress.
 * The agent's control plane connection is now behind a lock, since
   beacons and the mine publish through it from their own goroutines while
   a failover may be replacing it.
+* Windows registry: `reg.present` and `reg.absent` drive `reg.exe`.
+  DWORDs and QWORDs are compared numerically, because `reg query` prints
+  them in hex and a text comparison would report a change on every run.
+  Removing a whole key needs `delete_key: true`. As with scheduled tasks,
+  the parsing and comparison are unit tested but the `reg.exe` calls have
+  not been run on a real Windows host.
 
 ## 0.5.0 — 2026-08-09
 
