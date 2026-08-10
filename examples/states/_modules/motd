@@ -1,0 +1,23 @@
+#!/bin/sh
+# halite external module: reads a JSON request on stdin, writes a result.
+request=$(cat)
+value=$(printf '%s' "$request" | sed -n 's/.*"text":"\([^"]*\)".*/\1/p')
+target=$(printf '%s' "$request" | sed -n 's/.*"path":"\([^"]*\)".*/\1/p')
+test_mode=false
+printf '%s' "$request" | grep -q '"test":true' && test_mode=true
+
+case "$1" in
+  set)
+    if [ -f "$target" ] && [ "$(cat "$target")" = "$value" ]; then
+      printf '{"result": true, "changed": false, "comment": "motd already set"}\n'
+      exit 0
+    fi
+    if [ "$test_mode" = "true" ]; then
+      printf '{"result": true, "changed": true, "comment": "motd would be set"}\n'
+      exit 0
+    fi
+    printf '%s' "$value" > "$target"
+    printf '{"result": true, "changed": true, "comment": "motd set", "changes": {"text": "%s"}}\n' "$value"
+    ;;
+  *) echo "unknown function $1" >&2; exit 2 ;;
+esac

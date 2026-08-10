@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+P4 (long tail) in progress.
+
+* External modules: an executable in the state tree's `_modules/`
+  directory provides `<name>.*` state functions. halite runs it with the
+  function as its argument, writes a JSON request on stdin, and reads a
+  JSON result from stdout. The directory ships to agents with the tree,
+  executable bit intact, so a module works masterless, under a control
+  plane, and over `halite ssh`. Built-ins always win, so a module cannot
+  shadow `file.managed`. A module that exits 0 without writing a result
+  fails rather than silently skipping the state. See
+  docs/external-modules.md.
+
 ## 0.5.0 — 2026-08-09
 
 P3 (events) complete.

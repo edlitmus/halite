@@ -161,6 +161,7 @@ grains are available as `{{ .Grains.os_family }}`. See
 * [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
 * [docs/events.md](docs/events.md) — the event bus, reactor, returners, beacons, mine
 * [docs/orchestration.md](docs/orchestration.md) — ordered fleet-wide runs
+* [docs/external-modules.md](docs/external-modules.md) — custom modules in any language
 * [docs/agentless.md](docs/agentless.md) — `halite ssh`, rosters, bootstrapping
 * [docs/pki.md](docs/pki.md) — keys, certificates, and agent enrollment
 * [docs/pillar-security.md](docs/pillar-security.md) — protecting pillar data
@@ -174,7 +175,8 @@ grains are available as `{{ .Grains.os_family }}`. See
   (Jinja → text/template), not verbatim.
 * Full YAML. The parser handles the subset SLS actually uses; anchors,
   flow collections, and multi-line scalars are out (see writing-states.md).
-* Python module ecosystem. Custom modules are Go, compiled in.
+* Python module ecosystem. Custom modules are Go, compiled in — or any
+  language, as an external module (docs/external-modules.md).
 
 ## License
 

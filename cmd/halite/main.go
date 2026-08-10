@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/engine"
+	"github.com/edlitmus/halite/internal/extmod"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/modules"
 	"github.com/edlitmus/halite/internal/pillar"
@@ -252,7 +253,8 @@ func cmdCall(args []string) {
 		os.Exit(2)
 	}
 	name := args[0]
-	fn, isState := modules.Registry[name]
+	root := resolveRoot("")
+	fn, isState := extmod.Lookup(filepath.Join(root, extmod.DirName))(name)
 	execFn, isExec := modules.ExecRegistry[name]
 	if !isState && !isExec {
 		fmt.Fprintf(os.Stderr, "unknown function %q (execution modules: %s)\n",
@@ -275,7 +277,7 @@ func cmdCall(args []string) {
 		callArgs[k] = v
 	}
 	g := grains.Collect()
-	p, err := (&pillar.Loader{Root: resolvePillarRoot("", resolveRoot("")), Grains: g}).Load()
+	p, err := (&pillar.Loader{Root: resolvePillarRoot("", root), Grains: g}).Load()
 	if err != nil {
 		fatal("%v", err)
 	}
@@ -351,7 +353,7 @@ func cmdApply(args []string) {
 	}
 
 	ctx := &modules.Ctx{Test: *test, Grains: g, Pillar: p}
-	results := engine.Run(ctx, states)
+	results := engine.RunWith(ctx, states, extmod.Lookup(filepath.Join(root, extmod.DirName)))
 
 	succeeded, failed, changed := 0, 0, 0
 	var jsonResults []map[string]any

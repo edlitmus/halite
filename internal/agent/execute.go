@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/edlitmus/halite/internal/engine"
+	"github.com/edlitmus/halite/internal/extmod"
 	"github.com/edlitmus/halite/internal/modules"
 	"github.com/edlitmus/halite/internal/sls"
 	"github.com/edlitmus/halite/internal/transport"
@@ -85,7 +87,8 @@ func (a *Agent) runStates(ctx context.Context, job transport.Job, result transpo
 	}
 
 	ctxModules := &modules.Ctx{Test: job.Test, Grains: a.grains, Pillar: pillarData, Mine: mineData}
-	for _, r := range engine.Run(ctxModules, states) {
+	lookup := extmod.Lookup(filepath.Join(root, extmod.DirName))
+	for _, r := range engine.RunWith(ctxModules, states, lookup) {
 		result.States = append(result.States, transport.StateOutcome{
 			ID:       r.ID,
 			Function: r.Fn,
