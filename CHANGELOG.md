@@ -29,6 +29,20 @@ P4 (long tail) complete, and with it the roadmap.
   the parsing and comparison are unit tested but the `reg.exe` calls have
   not been run on a real Windows host.
 
+### Documentation
+
+* getting-started now points at the other two ways to run — agentless and
+  fleet — instead of ending at masterless.
+* writing-states covers `{{ .Mine }}` and external modules.
+* Corrected claims that had gone stale as features landed: the event bus
+  and returners are no longer "P3" in fleet.md, Windows scheduled tasks
+  are no longer "planned" in states.md, and ADR-1/ADR-4/ADR-5 describe
+  what happened rather than what was expected.
+* **Corrected a promise that was never kept**: `pkg.installed` version
+  pinning and alternate repositories were listed as landing in P1 and
+  never implemented. Both states.md and the parity table now say so
+  plainly instead.
+
 ## 0.5.0 — 2026-08-09
 
 P3 (events) complete.

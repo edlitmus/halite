@@ -66,7 +66,7 @@ retrigger every `watch` that depends on it, every time.
 `halite apply -test` unsafe, which is the one thing dry run must never be.
 
 A worked example in `sh` is in
-[examples/states/\_modules/motd](../examples/states/_modules/motd).
+[examples/tree/\_modules/motd](../examples/tree/_modules/motd).
 
 ## Failure
 

@@ -66,6 +66,7 @@ Jinja → template cheat sheet:
 | `{% for x in list %}` | `{{ range $x := ... }}` ... `{{ end }}` |
 | `{{ a | default('b') }}` | `{{ .X | default "b" }}` |
 | `{{ pillar['nginx']['port'] }}` | `{{ .Pillar.nginx.port }}` |
+| `{{ salt['mine.get'](...) }}` | `{{ .Mine.network_interfaces }}` |
 
 Missing grains render as empty rather than erroring.
 
@@ -143,6 +144,26 @@ Pillar is where credentials end up, and halite does not encrypt it — the
 pillar tree should be mode `0700`, and anything encrypted in version
 control gets decrypted into the tree at deploy time. See
 [pillar-security.md](pillar-security.md).
+
+## The mine
+
+Under a control plane, `.Mine` holds facts other hosts published about
+themselves — `function -> agent -> data` — so one host's states can be
+built from another's reality:
+
+```
+upstream backends {
+{{- range $agent, $data := .Mine.grains }}
+{{- if hasPrefix $agent "web" }}
+    server {{ $agent }}.internal;
+{{- end }}
+{{- end }}
+}
+```
+
+It is empty masterless and under `halite ssh`, so a tree that iterates
+over it produces nothing rather than failing. See
+[events.md](events.md#the-mine).
 
 ## The state tree, top files, and includes
 
@@ -243,6 +264,20 @@ drain:
 Cycles, dangling references, and duplicate state declarations (same ID
 and function across all loaded files) are compile-time errors before
 anything runs.
+
+## Modules halite does not have
+
+An executable in the state tree's `_modules/` directory provides state
+functions of its own, in whatever language you like:
+
+```yaml
+banner:
+  motd.set:
+    - text: welcome to the fleet
+```
+
+It ships to agents with the tree and is called with JSON on stdin. See
+[external-modules.md](external-modules.md).
 
 ## Dry runs
 

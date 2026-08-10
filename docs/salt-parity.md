@@ -48,7 +48,7 @@ not.
 | Salt | halite | Status |
 |---|---|---|
 | file.managed / directory / absent | done | ownership, line diffs, and templated sources (`template: true`) |
-| pkg.installed / removed | done | backends: pkg(8), apt, dnf, yum, zypper, pacman, apk, brew, choco, winget. versions/repos: P1 |
+| pkg.installed / removed | done | backends: pkg(8), apt, dnf, yum, zypper, pacman, apk, brew, choco, winget. **Version pinning and alternate repos are not implemented** — each backend installs what it considers current |
 | service.running / dead | done | rc.d (+sysrc enable), systemd, sysvinit, launchd (partial), Windows SCM |
 | cmd.run / cmd.wait | done | unless, onlyif, creates, cwd, env |
 | user.present/absent, group.present/absent | done | pw(8), useradd/usermod, sysadminctl (partial), net user (partial); drift repair for uid/shell/home/gecos/groups |

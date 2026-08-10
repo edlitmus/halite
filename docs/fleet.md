@@ -104,7 +104,9 @@ agent                                     control plane
 
 Job polls are long-lived HTTP/2 requests: the control plane holds one open
 until work arrives or the poll window expires, and the agent immediately
-comes back. There is no separate event bus yet — that is P3.
+comes back. Job delivery stays a poll even though there is now an event
+stream, because agents need work pushed at them and operators need to
+watch — see [events.md](events.md).
 
 Queued work expires. An agent that was down when a job was dispatched
 picks up nothing older than the job TTL (five minutes by default), because
@@ -115,7 +117,8 @@ is rarely what anyone wants.
 
 * **It does not store history.** Agents and job results live in memory. A
   restart forgets which hosts were online and what ran; agents reconnect on
-  their next poll. Durable results are a returner concern (P3).
+  their next poll. Durable results are what
+  [returners](events.md#returners) are for.
 * **It does not push.** Nothing connects to an agent, so agents work from
   behind NAT and need no inbound firewall rules.
 * **It does not encrypt pillar at rest.** The tree lives here and only

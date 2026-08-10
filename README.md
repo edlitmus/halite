@@ -40,7 +40,7 @@ deliberate non-goals — see [docs/salt-parity.md](docs/salt-parity.md).
 | Linux (RHEL/Fedora) | dnf / yum | systemd | supported |
 | Linux (SUSE, Arch, Alpine) | zypper / pacman / apk | systemd | supported |
 | macOS | Homebrew | launchd (partial) | supported |
-| Windows | Chocolatey / winget | SCM (`sc`) | supported |
+| Windows | Chocolatey / winget | SCM (`sc`) | supported; scheduled tasks and registry unverified on real hardware |
 | OpenBSD | — | — | compiles; backends TBD |
 
 ## Build

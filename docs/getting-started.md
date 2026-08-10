@@ -101,6 +101,25 @@ Because halite is one static binary, baking it into a Bastille template or
 a Packer image is a `COPY` and a `RUN halite apply`. No bootstrap script,
 no pip, no salt-bootstrap.
 
+## Beyond one host
+
+Everything above is masterless: halite on the host, converging itself.
+That is the whole tool for image builds, jails, and cron. Two other ways
+to run it share the same states, the same pillar, and the same engine:
+
+* **Agentless** — [agentless.md](agentless.md). `halite ssh web1,web2
+  state.highstate` copies the binary over ssh, runs it, and cleans up.
+  Nothing is installed. This is also how you bootstrap agents onto hosts
+  that do not have them.
+* **Fleet** — [fleet.md](fleet.md). A control plane holds the trees and
+  dispatches to long-running agents over mTLS: `halite run 'web*'
+  state.apply web.nginx`. Adds [events](events.md) (a bus, a reactor,
+  beacons, returners, the mine) and [orchestration](orchestration.md) for
+  work that has to happen in an order across hosts.
+
+A state file does not know or care which one is driving it. Start
+masterless; move up when you have more hosts than patience.
+
 ## Migrating from Salt
 
 1. `halite grains` — check the facts you template on exist (most common
@@ -108,3 +127,11 @@ no pip, no salt-bootstrap.
 2. Convert Jinja to text/template (cheat sheet in docs/writing-states.md).
 3. Replace unsupported modules with `cmd.run` + `unless` as a bridge.
 4. Run everything with `-test` before the first real apply.
+5. Modules with no equivalent can be written as
+   [external modules](external-modules.md) in any language, rather than
+   left as `cmd.run`.
+
+`salt-call --local` maps to `halite apply`, `salt '<tgt>' state.apply` to
+`halite run '<tgt>' state.apply`, and `salt-ssh` to `halite ssh`. The
+full map, including what is deliberately absent, is in
+[salt-parity.md](salt-parity.md).

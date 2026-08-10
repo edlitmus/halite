@@ -21,24 +21,28 @@ internal/returner/   durable sinks for job results
 internal/beacon/     agent-side watchers raising events
 internal/mine/       fleet-wide published facts
 internal/orch/       ordered fleet-wide runs
+internal/extmod/     external modules: executables in the state tree
 ```
 
 ## Pipeline
 
 ```
-pillar tree
-  → pillar.Load     match top.sls, render, deep-merge  ─┐
-                                                        │
-file.sls                                                ↓
-  → sls.Render      text/template, grains and pillar in scope
+pillar tree ──→ pillar.Load    match top.sls, render, deep-merge  ─┐
+the mine ─────→ (fleet only)   function -> agent -> facts         ─┤
+                                                                   │
+file.sls                                                           ↓
+  → sls.Render      text/template: .Grains, .Pillar, .Mine in scope
   → yamlite.Parse   ordered tree of maps/lists/scalars
   → sls.Compile     flatten args, extract require/watch, topo-sort
-  → engine.Run      run states in order, gate on failed requisites,
+  → engine.RunWith  run states in order, gate on failed requisites,
                     propagate watch triggers, return results
 ```
 
-Pillar loads first because state files template against it. The executor
-lives in `internal/engine` so the agent daemon can drive it directly.
+Pillar and the mine load first because state files template against them.
+The executor lives in `internal/engine` and takes its function resolver
+from the caller, so the same code runs a local highstate (built-ins plus
+`_modules/` executables) and an orchestration (steps that dispatch across
+the fleet).
 
 ## Design decisions
 
@@ -48,12 +52,14 @@ lives in `internal/engine` so the agent daemon can drive it directly.
 Salt's operational pain is overwhelmingly dependency and packaging pain.
 Consequences: we wrote a YAML-subset parser (~250 lines) instead of
 importing one, and templating is `text/template` instead of a Jinja port.
-Revisit only if a feature genuinely cannot be done in stdlib. Through P2
-none did: mTLS and HTTP/2 are stdlib, the CA is `crypto/x509`, archives are
-`archive/tar` and `archive/zip`, and `halite ssh` drives the system ssh
-rather than importing one (ADR-8). Pillar encryption at rest was the one
-real test of this rule, and the answer was to drop the feature rather than
-the rule (ADR-9).
+Revisit only if a feature genuinely cannot be done in stdlib. Across the
+whole roadmap none did: mTLS and HTTP/2 are stdlib, the CA is
+`crypto/x509`, archives are `archive/tar` and `archive/zip`, and
+`halite ssh` drives the system ssh rather than importing one (ADR-8).
+Pillar encryption at rest was the one real test of the rule, and the
+answer was to drop the feature rather than the rule (ADR-9). Anything
+genuinely outside it is an external module — a program you ship with your
+states, in whatever language you like (docs/external-modules.md).
 
 ### ADR-2: YAML subset, not full YAML
 
@@ -77,10 +83,15 @@ substitution. `{{ grains['os_family'] }}` becomes
 ### ADR-4: Masterless first
 
 **Accepted.** `salt-call --local` is the semantic core; transport is an
-add-on. Shipping a correct local engine first means the P2 master/agent is
-"move the executor behind a stream", not a rewrite. It also means the tool
-is useful on day one for image builds, jails, and cron-driven convergence
-without any infrastructure.
+add-on. Shipping a correct local engine first should make the master and
+agent "move the executor behind a stream" rather than a rewrite. It also
+means the tool is useful on day one for image builds, jails, and
+cron-driven convergence without any infrastructure.
+
+That held. The agent, `halite ssh`, and orchestration all drive the same
+`internal/engine`, and a state file cannot tell which is running it —
+which is why a fleet run and a masterless run cannot disagree (ADR-7),
+and why orchestration got requisites for free (ADR-10).
 
 ### ADR-5: mTLS HTTP/2 transport
 
@@ -97,8 +108,10 @@ authorization never depends on anything the caller asserts.
 Job delivery is a long poll rather than a server-push stream: the control
 plane holds a `GET /v1/jobs` open until there is work. Agents therefore
 need no inbound connectivity and work from behind NAT, and there is no
-custom framing to debug. A real event stream arrives with the event bus in
-P3, where it earns its complexity.
+custom framing to debug. The event bus later added the long-lived stream
+this ADR anticipated, at `GET /v1/events` — jobs stayed a poll, because
+the two have different shapes: agents need work pushed at them, operators
+need to watch.
 
 ### ADR-6: Backends are table-driven per platform
 

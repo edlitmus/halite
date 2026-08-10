@@ -76,7 +76,10 @@ tools:
       - htop
 ```
 
-Version pinning and alternate repos land in P1.
+**Not implemented:** version pinning and alternate repositories. Every
+backend installs whatever its package manager considers current. Pin with
+the backend's own mechanism — a repository that only carries the version
+you want, or `cmd.run` with `unless` as a bridge.
 
 ### pkg.removed
 
@@ -189,8 +192,9 @@ dseditgroup, `net localgroup`.
 ## cron
 
 Entries are identified by a `# halite: <identifier>` marker line, so the
-command or schedule can change without orphaning the entry. Not supported
-on Windows (scheduled tasks: planned).
+command or schedule can change without orphaning the entry. On Windows
+there is no crontab, so these states drive scheduled tasks instead — see
+[cron on Windows](#cron-on-windows) below.
 
 ### cron.present
 
