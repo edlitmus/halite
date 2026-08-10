@@ -80,6 +80,108 @@ place; the registry makes adding one a single function.
 | External process modules | `_modules/` executables, JSON on stdin/stdout | done | ship with the state tree; see docs/external-modules.md |
 | GPG pillar renderer (encryption at rest) | out | confidentiality is the directory mode; use sops/age/git-crypt to decrypt into the tree. ADR-9, docs/pillar-security.md |
 
+## Known gaps
+
+The tables above map the workflows halite set out to reproduce, and read
+generously: halite covers Salt's *architecture* at close to full breadth,
+but Salt's *content* — the module library, the targeting language, the
+Jinja ecosystem, fifteen years of operational conveniences — is a small
+fraction covered. This section is the honest list of what a Salt 3008
+operator will reach for and not find. None of it is promised; items move
+out of here by earning a phase, the way P1–P4 did.
+
+### Targeting and grains
+
+* Salt's compound matchers (`G@os:Debian and not L@web1,web2`), pillar
+  (`I@`), regex (`E@`), list (`L@`), subnet (`S@`), and nodegroups have no
+  equivalent. halite's whole target language is an id glob and a single
+  `grain:glob` — no boolean combinations, no negation.
+* **There is no way to assign custom grains.** halite collects a fixed
+  dozen facts (os, arch, memory, host…). Salt has static grains files,
+  grains modules, and `grains.setval`; halite has nothing, so `role:web`
+  targeting — which this documentation's own examples use — has no way to
+  be fed. This is the sharpest single gap in the list.
+
+### State language
+
+Missing from the SLS dialect: the `_in` reverse requisites (`require_in`,
+`watch_in`, …), `onfail`, `listen`/`listen_in`, `order:`, `failhard`,
+`retry:`, `parallel: true`, `check_cmd`, and `- names:` expansion. There
+are no debugging equivalents of `state.show_sls`, `state.sls_id`, or
+`state.single`. Most existing Salt trees will not compile without at
+least `_in` and `names:`.
+
+### Rendering
+
+Go `text/template` with a handful of funcs stands in for Jinja with
+hundreds of filters, macros, imports (the `map.jinja` pattern), and
+`{{ salt['module.fn']() }}` cross-calls from templates. There is no
+renderer pipeline (`#!py`, `#!jinja|yaml`) — one fixed render path. With
+the YAML subset (no anchors, no multi-line scalars), porting a nontrivial
+Salt tree is a rewrite, not a transliteration.
+
+### Module breadth
+
+Salt 3008 ships roughly 470 state and 500 execution modules; halite has
+22 state functions and 4 execution modules. Raw counts flatter Salt —
+much of it is niche — but these are everyday Salt with no halite answer:
+`file.recurse`, `file.symlink`, `file.replace`/`blockreplace`/`line`,
+`ssh_auth.present` (authorized_keys — likely the most-used Salt state
+after file/pkg/service), `pkgrepo.managed`, pkg version pinning and
+holds, `timezone`/`locale`/`hostname`, `kmod`, `alternatives`, firewall
+states, `selinux`, `lvm`, `x509`, container states, Windows updates and
+ACLs. The `_modules/` escape hatch exists, but it is per-site effort, not
+a library.
+
+### Environments and fileservers
+
+One merged environment from one local directory. No `saltenv`/`pillarenv`
+(base/dev/prod), no gitfs or s3fs, no `ext_pillar` (vault, git_pillar,
+consul) — decrypt-into-the-tree (ADR-9) is the only external-secrets
+story.
+
+### Scheduling and job management
+
+* No minion-side scheduler: Salt's "highstate every 30 minutes, splayed"
+  has no equivalent — beacons and mine intervals are the only periodic
+  machinery, and neither runs states. A halite fleet does not converge on
+  its own; something external must poke the control plane.
+* The job cache is in-memory, bounded, and lost on master restart;
+  returners are the durable record and nothing queries them. No
+  `--batch-size`, splay, or subset execution for rolling changes.
+
+### Authorization
+
+An admin certificate is omnipotent. Salt has eauth (PAM/LDAP), tokens,
+`publisher_acl`, per-user function and target ACLs, and the wheel API.
+halite's roles are exactly two: agent and admin.
+
+### Events
+
+Three polling beacons (disk, service, file digest) against Salt's ~30
+beacon types — no inotify, process, load, memory, network, or login
+watchers. The reactor can dispatch the five job kinds and nothing else;
+Salt's reactor can invoke runners, wheel, and orchestrations. A halite
+event cannot trigger an orchestration.
+
+### Subsystems with no analogue
+
+salt-run and the runner library, salt-cloud, salt-proxy, salt-virt, peer
+publishing (minion-to-minion), mine ACLs (`allow_tgt`), the external job
+cache. Some of these are close cousins of the listed non-goals; they are
+recorded here so the boundary is explicit rather than implied.
+
+### If there is ever a P5
+
+In priority order, judged by what blocks a real Salt migration first:
+
+1. Static custom grains — without them, grain targeting is decorative.
+2. `file.recurse`, `ssh_auth.present`, pkg pinning + `pkgrepo` — the
+   minimum for real server fleets.
+3. Compound targeting: `and`/`not` over the two existing matchers.
+4. An agent-side scheduler, so the fleet converges without external cron.
+5. `_in` requisites and `names:` — most Salt trees need both to compile.
+
 ## Phases
 
 * **P1 — masterless completeness**. **Complete as of 0.3**: top files and
@@ -98,5 +200,5 @@ place; the registry makes adding one a single function.
   reactor, beacons, mine, orchestration.
 * **P4 — long tail**. **Complete**: external process modules, multi-master
   failover, Windows registry. The roadmap's four phases are done; what
-  remains are the deliberate non-goals above and whatever real use turns
-  up.
+  remains are the deliberate non-goals and the known gaps above, and
+  whatever real use turns up.
