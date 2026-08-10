@@ -100,3 +100,88 @@ func TestSingleQuoteLiteral(t *testing.T) {
 		t.Errorf("key = %q", got)
 	}
 }
+
+func TestMultiKeyListItems(t *testing.T) {
+	// Ordinary YAML: a list entry's content starts after the dash, and
+	// further keys at that column belong to the same mapping.
+	tree, err := Parse(`disk:
+  - mount: /var
+    threshold: "80"
+    interval: 30s
+  - mount: /
+`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	root := tree.(*Map)
+	list, ok := root.Vals["disk"].([]any)
+	if !ok {
+		t.Fatalf("disk is %T, want a list", root.Vals["disk"])
+	}
+	if len(list) != 2 {
+		t.Fatalf("got %d entries, want 2", len(list))
+	}
+
+	first := list[0].(*Map)
+	if len(first.Keys) != 3 {
+		t.Fatalf("first entry has keys %v, want three", first.Keys)
+	}
+	// Order is preserved within the item, as everywhere else.
+	if first.Keys[0] != "mount" || first.Keys[2] != "interval" {
+		t.Errorf("key order = %v", first.Keys)
+	}
+	if first.Vals["threshold"] != "80" || first.Vals["interval"] != "30s" {
+		t.Errorf("values = %v", first.Vals)
+	}
+	if second := list[1].(*Map); len(second.Keys) != 1 || second.Vals["mount"] != "/" {
+		t.Errorf("second entry = %v", second.Vals)
+	}
+}
+
+func TestMultiKeyListItemWithNestedValue(t *testing.T) {
+	tree, err := Parse(`rules:
+  - name: first
+    match:
+      tag: halite/job
+      source: master
+    action: run
+`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	entry := tree.(*Map).Vals["rules"].([]any)[0].(*Map)
+	if entry.Vals["name"] != "first" || entry.Vals["action"] != "run" {
+		t.Errorf("scalars around the nested map were lost: %v", entry.Vals)
+	}
+	match, ok := entry.Vals["match"].(*Map)
+	if !ok {
+		t.Fatalf("match is %T, want a map", entry.Vals["match"])
+	}
+	if match.Vals["tag"] != "halite/job" || match.Vals["source"] != "master" {
+		t.Errorf("nested map = %v", match.Vals)
+	}
+}
+
+func TestSinglePairListItemsStillParse(t *testing.T) {
+	// The SLS argument convention must be unaffected by multi-key support.
+	tree, err := Parse(`nginx_conf:
+  file.managed:
+    - name: /etc/nginx.conf
+    - mode: "0644"
+    - require:
+      - pkg: nginx
+`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	args := tree.(*Map).Vals["nginx_conf"].(*Map).Vals["file.managed"].([]any)
+	if len(args) != 3 {
+		t.Fatalf("got %d args, want 3 separate single-pair entries", len(args))
+	}
+	for i, want := range []string{"name", "mode", "require"} {
+		entry := args[i].(*Map)
+		if len(entry.Keys) != 1 || entry.Keys[0] != want {
+			t.Errorf("arg %d = %v, want the single key %q", i, entry.Keys, want)
+		}
+	}
+}

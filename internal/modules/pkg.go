@@ -84,7 +84,9 @@ func detectPkgBackend() (*pkgBackend, error) {
 					return append([]string{"winget", "install", "--exact", "--silent",
 						"--accept-package-agreements", "--accept-source-agreements", "--id"}, pkgs...)
 				},
-				func(pkgs []string) []string { return append([]string{"winget", "uninstall", "--exact", "--id"}, pkgs...) },
+				func(pkgs []string) []string {
+					return append([]string{"winget", "uninstall", "--exact", "--id"}, pkgs...)
+				},
 			), nil
 		}
 		return nil, fmt.Errorf("no package manager found (install Chocolatey or winget)")

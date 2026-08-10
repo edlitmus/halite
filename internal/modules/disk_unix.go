@@ -7,6 +7,21 @@ import (
 	"syscall"
 )
 
+// DiskUsedPercent reports how full the filesystem holding path is, as a
+// whole percentage. Beacons use it to watch for a filling disk.
+func DiskUsedPercent(path string) (int, error) {
+	usage, err := statfsUsage(path)
+	if err != nil {
+		return 0, err
+	}
+	total, _ := usage["total_bytes"].(uint64)
+	used, _ := usage["used_bytes"].(uint64)
+	if total == 0 {
+		return 0, fmt.Errorf("%s reports no capacity", path)
+	}
+	return int(used * 100 / total), nil
+}
+
 // statfsUsage reports space for the filesystem holding path. The Statfs_t
 // field widths differ between kernels, so every field is widened before
 // arithmetic.

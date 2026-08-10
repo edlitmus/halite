@@ -8,3 +8,8 @@ import "fmt"
 func statfsUsage(path string) (map[string]any, error) {
 	return nil, fmt.Errorf("disk usage is not implemented on Windows")
 }
+
+// DiskUsedPercent has no Windows implementation, for the same reason.
+func DiskUsedPercent(path string) (int, error) {
+	return 0, fmt.Errorf("disk usage is not implemented on Windows")
+}

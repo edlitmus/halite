@@ -27,6 +27,20 @@ P3 (events) in progress.
   fails the rule rather than dispatching a blank target. Reacted work is
   marked in both its dispatch and its return events so the reactor cannot
   feed itself, and reactions are rate limited to 60/min as a backstop.
+* Beacons: `halite agent -beacons FILE` runs agent-side watchers that
+  raise events — `disk` (usage threshold), `service` (stopped), and `file`
+  (created, changed, or removed, compared by digest). Beacons are edge
+  triggered: a condition that stays true fires once, not once per check,
+  so a reactor rule keyed on a full disk cannot dispatch a job a minute. A
+  beacon that panics is logged without taking the agent down.
+* The control plane now constrains the tags an agent may raise to
+  `halite/beacon/<its-own-id>/<name>`. Event sources were already taken
+  from the certificate, but reactor rules match on the tag, so a forged
+  tag could fire a rule written for another host.
+* yamlite: list items may now carry several keys (`- mount: /var` followed
+  by an indented `threshold: "90"`), which is ordinary YAML the parser was
+  rejecting. Single-pair items, the SLS argument convention, are
+  unaffected.
 * See docs/events.md.
 
 ## 0.4.0 — 2026-08-09

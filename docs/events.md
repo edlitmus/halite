@@ -197,3 +197,71 @@ work on itself. A rule like `target: '{{ .Data.host }}'` lets any agent
 that can raise that event choose who the job runs on — including `*`.
 Prefer `.Source` for targets, and treat `.Data` as untrusted input the same
 way you would a request body.
+
+## Beacons
+
+Beacons are agent-side watchers. They notice something on the host and
+raise an event, which the reactor can act on.
+
+```sh
+halite agent -master master.example.com -beacons /usr/local/etc/halite/beacons.sls
+```
+
+```yaml
+# beacons.sls
+disk:
+  - mount: /var
+    threshold: "90"
+    interval: 60s
+  - mount: /
+service:
+  - name: nginx
+    interval: 30s
+file:
+  - path: /usr/local/etc/nginx/nginx.conf
+    interval: 10s
+```
+
+Each kind maps to a list, so one kind can watch several things.
+
+| Beacon | Fires when | Data |
+|---|---|---|
+| `disk` | usage crosses `threshold` percent, and again when it drops back | `mount`, `used`, `threshold`, `over` |
+| `service` | a service stops running, and again when it returns | `service`, `running` |
+| `file` | a watched file is created, changed, or removed | `path`, `change`, `sha256` |
+
+`interval` defaults to 60s and must be at least a second. `disk` defaults
+to `/` at 90%. Beacons are checked once at startup, so a service that is
+already down when the agent connects is reported immediately.
+
+### Edge triggering
+
+**A beacon fires on change, not on condition.** A disk sitting at 95%
+raises one event when it crosses the threshold and one when it drops back
+under — not one per check. Without this, a reactor rule keyed on a full
+disk would dispatch a job every interval, forever.
+
+Two consequences worth knowing:
+
+* The `file` beacon's first check is a baseline. A file that already exists
+  when the agent starts is not a change. `disk` and `service` do report at
+  startup, because "already broken" is news in a way that "already exists"
+  is not.
+* `file` compares content digests, so rewriting a file with identical bytes
+  is correctly not a change, whatever the mtime says.
+
+A beacon that panics is logged and its watcher keeps ticking; a broken
+watcher does not take the agent down. A beacon event that cannot be
+delivered is dropped, and the condition is reported again the next time it
+changes.
+
+### Beacon tags are constrained
+
+An agent may raise exactly `halite/beacon/<its-own-id>/<name>`. Anything
+else is refused with a 403.
+
+The source of an event already comes from the client certificate, but
+reactor rules match on the **tag** — so without this, `web1` could raise
+`halite/beacon/db1/service` and fire a rule written for `db1`. The tag is
+as trustworthy as the source; the *data* inside it is still whatever the
+agent chose to send.

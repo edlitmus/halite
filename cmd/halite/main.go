@@ -85,6 +85,7 @@ fleet mode:
       [-returner file:PATH|webhook:URL]    durable result sinks (repeatable)
       [-reactor FILE]                      rules turning events into jobs
   halite agent -master HOST                run the agent on a managed host
+      [-beacons FILE]                      watches that raise events
   halite run <target> <kind> [args]        dispatch work and collect results
   halite agents                            list the fleet
   halite events [-tag PATTERN]             tail the event bus

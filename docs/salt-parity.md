@@ -38,7 +38,7 @@ not.
 | Targeting (`salt '<tgt>' ...`) | `halite run <target> <kind>` | done | one target language shared with top files |
 | Event bus | tagged event stream (`/v1/events`, `halite events`) | done | in-memory, glob tag matching; see docs/events.md |
 | Reactor | rules matching tags to jobs | done | templated actions, loop guard, rate limit; see docs/events.md |
-| Beacons | agent-side watchers emitting events | P3 | |
+| Beacons | agent-side watchers emitting events | done | disk, service, file; edge triggered; tags constrained to the agent's own id. See docs/events.md |
 | salt-ssh (agentless) | `halite ssh` pushing the static binary | done | copies one binary, ships the tree, collects JSON; pillar rendered operator-side. See docs/agentless.md |
 | Syndic | | out | flat fleets over mTLS scale far enough |
 | Multi-master | DNS/LB failover | P4 | stateless masters make this simpler than Salt's |

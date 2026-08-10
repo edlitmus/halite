@@ -305,3 +305,37 @@ func TestOperatorWorkIsNotMarkedAsTheReactors(t *testing.T) {
 		t.Error("an operator's dispatch must not be marked as the reactor's work")
 	}
 }
+
+func TestAgentCannotRaiseAnotherHostsBeaconTag(t *testing.T) {
+	// The source is stamped from the certificate, but reactor rules match
+	// on the tag — so a forged tag would fire a rule written for db1.
+	f := newFleet(t, Config{})
+	web := f.enrolledClient(t, "web1")
+
+	refused := []string{
+		"halite/beacon/db1/service",    // another agent's beacon
+		"halite/job/123/ret/web1",      // the control plane's namespace
+		"halite/agent/web1/hello",      // ditto
+		"halite/beacon/web1",           // too short
+		"halite/beacon/web1/svc/extra", // too long
+		"halite/beacon/web1/",          // no name
+		"anything/else",                // outside the scheme
+	}
+	for _, tag := range refused {
+		err := web.Post(context.Background(), transport.PathEvents,
+			transport.Event{Tag: tag, Data: map[string]any{"x": 1}}, nil)
+		if err == nil {
+			t.Errorf("%q was accepted from web1", tag)
+			continue
+		}
+		if !strings.Contains(err.Error(), "403") {
+			t.Errorf("%q: got %v, want 403", tag, err)
+		}
+	}
+
+	// Its own beacon tag still works.
+	if err := web.Post(context.Background(), transport.PathEvents,
+		transport.Event{Tag: "halite/beacon/web1/disk"}, nil); err != nil {
+		t.Errorf("web1 could not raise its own beacon: %v", err)
+	}
+}

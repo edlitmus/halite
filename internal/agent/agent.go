@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/archive"
+	"github.com/edlitmus/halite/internal/beacon"
 	"github.com/edlitmus/halite/internal/ca"
+	"github.com/edlitmus/halite/internal/event"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -31,6 +33,9 @@ type Config struct {
 
 	// RetryInterval paces reconnection and enrollment attempts.
 	RetryInterval time.Duration
+
+	// Beacons watch the host and raise events.
+	Beacons []beacon.Beacon
 }
 
 func (c *Config) withDefaults() {
@@ -82,6 +87,15 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	a.log.Printf("agent %q connected to %s", a.cfg.ID, a.client.Host)
 
+	// Beacons run for the life of the agent, independent of the poll loop:
+	// a host whose control plane is unreachable should still notice its
+	// disk filling, and report it when the connection comes back.
+	if len(a.cfg.Beacons) > 0 {
+		runner := beacon.NewRunner(a.cfg.Beacons, a.raiseBeacon, a.log)
+		a.log.Printf("watching with %d beacon(s)", runner.Count())
+		go runner.Run(ctx)
+	}
+
 	for ctx.Err() == nil {
 		if err := a.sayHello(ctx); err != nil {
 			a.log.Printf("hello: %v", err)
@@ -131,6 +145,25 @@ func (a *Agent) pollLoop(ctx context.Context) {
 func (a *Agent) sayHello(ctx context.Context) error {
 	body := transport.HelloRequest{Grains: a.grains, Version: a.cfg.Version}
 	return a.client.Post(ctx, transport.PathHello, body, nil)
+}
+
+// raiseBeacon posts a beacon event to the control plane. A failure is
+// logged and dropped: the next check will report the condition again if it
+// still holds, and blocking a watcher on a flaky connection helps nobody.
+func (a *Agent) raiseBeacon(name string, data map[string]any) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	ev := transport.Event{
+		Tag:  fmt.Sprintf(event.TagBeacon, a.cfg.ID, name),
+		Time: time.Now().UTC(),
+		Data: data,
+	}
+	if err := a.client.Post(ctx, transport.PathEvents, ev, nil); err != nil {
+		a.log.Printf("beacon %s: %v", name, err)
+		return
+	}
+	a.log.Printf("beacon %s fired: %v", name, data)
 }
 
 // fetchPillar asks the control plane to render this agent's pillar.

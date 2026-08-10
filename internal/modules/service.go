@@ -21,6 +21,16 @@ type svcBackend struct {
 	enable  func(n string) error
 }
 
+// ServiceRunning reports whether a service is up right now. Beacons use it
+// to watch services without going through a state.
+func ServiceRunning(name string) (bool, error) {
+	backend, err := detectSvcBackend()
+	if err != nil {
+		return false, err
+	}
+	return backend.running(name), nil
+}
+
 func svcExec(argv ...string) error {
 	_, errOut, rc, err := run(argv[0], argv[1:]...)
 	if err != nil {

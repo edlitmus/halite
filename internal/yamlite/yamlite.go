@@ -122,6 +122,9 @@ func (p *parser) parseList(ind int) (any, error) {
 				m.Set(k, scalar(v))
 				p.pos++
 			}
+			if err := p.continueItem(m, ind); err != nil {
+				return nil, err
+			}
 			out = append(out, m)
 			continue
 		}
@@ -129,6 +132,37 @@ func (p *parser) parseList(ind int) (any, error) {
 		p.pos++
 	}
 	return out, nil
+}
+
+// continueItem absorbs the rest of a multi-key list item. In YAML, a list
+// entry's content starts after the dash, and further keys sit at that same
+// column:
+//
+//   - mount: /var
+//     threshold: "90"
+//
+// Both keys belong to one mapping. Without this, the second line looks
+// like a stray indent.
+func (p *parser) continueItem(m *Map, listIndent int) error {
+	if p.pos >= len(p.lines) {
+		return nil
+	}
+	next := p.lines[p.pos]
+	if next.indent <= listIndent || isListItem(next.text) {
+		return nil
+	}
+	rest, err := p.parseMap(next.indent)
+	if err != nil {
+		return err
+	}
+	child, ok := rest.(*Map)
+	if !ok {
+		return fmt.Errorf("line %d: unexpected content in list item", next.num)
+	}
+	for _, key := range child.Keys {
+		m.Set(key, child.Vals[key])
+	}
+	return nil
 }
 
 func (p *parser) parseMap(ind int) (any, error) {

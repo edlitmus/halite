@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/agent"
+	"github.com/edlitmus/halite/internal/beacon"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/master"
 	"github.com/edlitmus/halite/internal/modules"
@@ -100,7 +101,13 @@ func cmdAgent(args []string) {
 	pkiFlag := fs.String("pki", "", "PKI directory holding ca.crt and this agent's key")
 	cacheFlag := fs.String("cache", "", "directory for the fetched state tree")
 	retry := fs.Duration("retry", 10*time.Second, "delay between reconnection and enrollment attempts")
+	beaconFile := fs.String("beacons", "", "beacon config file (watches that raise events)")
 	_ = parseFlags(fs, args)
+
+	beacons, err := beacon.Load(*beaconFile)
+	if err != nil {
+		fatal("%v", err)
+	}
 
 	cache := *cacheFlag
 	if cache == "" {
@@ -113,6 +120,7 @@ func cmdAgent(args []string) {
 		CacheDir:      cache,
 		Version:       version,
 		RetryInterval: *retry,
+		Beacons:       beacons,
 	}
 	if err := os.MkdirAll(cfg.CacheDir, 0o755); err != nil {
 		fatal("cache directory: %v", err)

@@ -2,8 +2,10 @@ package master
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/ca"
@@ -40,6 +42,11 @@ func (s *Server) handleAgentEvent(w http.ResponseWriter, r *http.Request, peer t
 		writeError(w, http.StatusBadRequest, "an event needs a tag")
 		return
 	}
+	if err := agentMayRaise(peer.ID, ev.Tag); err != nil {
+		s.log.Printf("refused event %q from %q: %v", ev.Tag, peer.ID, err)
+		writeError(w, http.StatusForbidden, "%v", err)
+		return
+	}
 	s.bus.Publish(event.Event{
 		Tag:    ev.Tag,
 		Time:   ev.Time,
@@ -47,6 +54,27 @@ func (s *Server) handleAgentEvent(w http.ResponseWriter, r *http.Request, peer t
 		Data:   ev.Data,
 	})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// agentMayRaise constrains the tags an agent can put on the bus. The
+// source of an event is already taken from the certificate, but reactor
+// rules match on the *tag* — so without this, web1 could raise
+// `halite/beacon/db1/service` and fire a rule written for db1.
+//
+// Agents may raise exactly `halite/beacon/<their-own-id>/<name>`. Anything
+// else under `halite/` belongs to the control plane.
+func agentMayRaise(id, tag string) error {
+	segments := strings.Split(tag, "/")
+	if len(segments) != 4 || segments[0] != "halite" || segments[1] != "beacon" {
+		return fmt.Errorf("agents may only raise halite/beacon/%s/<name> events", id)
+	}
+	if segments[2] != id {
+		return fmt.Errorf("cannot raise an event for %q", segments[2])
+	}
+	if segments[3] == "" {
+		return fmt.Errorf("beacon events need a name")
+	}
+	return nil
 }
 
 // handleEventStream writes newline-delimited JSON events until the client
