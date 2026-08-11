@@ -362,3 +362,24 @@ func StripComment(s string) string {
 	}
 	return s
 }
+
+// Plain converts a parsed tree into plain Go maps and slices, so that
+// text/template can walk it and encoding/json can marshal it. Ordering is
+// lost: callers that need declaration order walk the Map directly.
+func Plain(v any) any {
+	switch t := v.(type) {
+	case *Map:
+		m := make(map[string]any, len(t.Keys))
+		for _, k := range t.Keys {
+			m[k] = Plain(t.Vals[k])
+		}
+		return m
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = Plain(item)
+		}
+		return out
+	}
+	return v
+}

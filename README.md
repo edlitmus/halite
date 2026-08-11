@@ -65,6 +65,9 @@ Requires Go 1.25+ (the version go.mod declares). No other dependencies.
 halite grains
 halite grains -json
 
+# Set the site's own facts, the ones targeting selects on (Salt: grains.setval)
+halite grains set role=web datacenter=lax1
+
 # Apply a state file (Salt: salt-call --local state.apply)
 halite apply examples/webserver.sls
 

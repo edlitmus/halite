@@ -1,9 +1,15 @@
 // Package grains collects static facts about the host, mirroring the most
 // commonly used Salt grains: os, os_family, osrelease, kernel,
 // kernelrelease, arch (cpuarch), num_cpus, mem_total, host, username.
+//
+// A site's own facts — role, datacentre, tier — come from a static grains
+// file (see CustomPath), which is merged over the detected ones. Without
+// it, grain targeting could only select on what the host reports about
+// itself.
 package grains
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
@@ -12,8 +18,35 @@ import (
 	"strings"
 )
 
-// Collect gathers grains for the current host.
+// Collect gathers grains for the current host: the facts halite detects,
+// with the static custom grains file merged over them.
 func Collect() map[string]any {
+	return CollectFrom(CustomPath())
+}
+
+// CollectFrom is Collect against a named custom grains file. An empty path
+// or a missing file leaves only the detected facts; a file that cannot be
+// parsed is reported on stderr and otherwise ignored, because a broken
+// grains file must not stop a host from converging.
+func CollectFrom(path string) map[string]any {
+	g := detect()
+	if path == "" {
+		return g
+	}
+	custom, err := LoadCustom(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		return g
+	}
+	// Custom grains win: a site that sets os_family by hand means it.
+	for k, v := range custom {
+		g[k] = v
+	}
+	return g
+}
+
+// detect gathers the facts halite reads from the host itself.
+func detect() map[string]any {
 	g := map[string]any{
 		"kernel":   kernelName(),
 		"arch":     runtime.GOARCH,

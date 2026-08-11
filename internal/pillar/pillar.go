@@ -139,7 +139,7 @@ func (l *Loader) loadFile(path string) (map[string]any, error) {
 		}
 		// The file's own keys merge over its includes rather than replacing
 		// their subtrees: overriding one leaf keeps the included siblings.
-		Merge(out, map[string]any{k: plain(m.Vals[k])})
+		Merge(out, map[string]any{k: yamlite.Plain(m.Vals[k])})
 	}
 	return out, nil
 }
@@ -175,24 +175,4 @@ func Merge(dst, src map[string]any) {
 		}
 		dst[k] = v
 	}
-}
-
-// plain converts a yamlite tree into plain Go maps and slices so that
-// text/template can walk it with {{ .Pillar.a.b }}.
-func plain(v any) any {
-	switch t := v.(type) {
-	case *yamlite.Map:
-		m := make(map[string]any, len(t.Keys))
-		for _, k := range t.Keys {
-			m[k] = plain(t.Vals[k])
-		}
-		return m
-	case []any:
-		out := make([]any, len(t))
-		for i, item := range t {
-			out[i] = plain(item)
-		}
-		return out
-	}
-	return v
 }

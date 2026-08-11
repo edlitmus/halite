@@ -19,6 +19,7 @@ not.
 | `salt-call --local <mod>.<fn>` | `halite call module.fn k=v` | done | |
 | `test=True` | `halite apply -test` | done | every module implements dry-run |
 | `grains.items` | `halite grains [-json]` | done | id, os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
+| Static grains file, `grains.setval` | `/etc/halite/grains` (or `$HALITE_GRAINS`), `halite grains set/unset` | done | plain YAML, merged over the detected grains; no grains modules |
 | Highstate output | Salt-style block output + `-json` | done | |
 | `state.highstate` / top.sls | `halite apply` (no target) | done | grain and id glob targeting; single merged environment |
 | Pillar | pillar tree with its own top file | done | targeted, deep-merged, include-capable; exposed as `{{ .Pillar.x }}` in states and templated sources |
@@ -113,11 +114,10 @@ out of here by earning a phase, the way P1–P4 did.
   (`I@`), regex (`E@`), list (`L@`), subnet (`S@`), and nodegroups have no
   equivalent. halite's whole target language is an id glob and a single
   `grain:glob` — no boolean combinations, no negation.
-* **There is no way to assign custom grains.** halite collects a fixed
-  dozen facts (os, arch, memory, host…). Salt has static grains files,
-  grains modules, and `grains.setval`; halite has nothing, so `role:web`
-  targeting — which this documentation's own examples use — has no way to
-  be fed. This is the sharpest single gap in the list.
+* Custom grains are static only: a YAML file merged over the detected
+  facts (`halite grains set`, or `file.managed` on the file). Salt also
+  has grains modules — code that computes a grain at run time — and
+  targeted `grains.setval` across a fleet; halite has neither.
 
 ### State language
 
@@ -192,7 +192,8 @@ recorded here so the boundary is explicit rather than implied.
 
 In priority order, judged by what blocks a real Salt migration first:
 
-1. Static custom grains — without them, grain targeting is decorative.
+1. ~~Static custom grains~~ — **done**: a YAML file merged over the
+   detected facts, with `halite grains set/unset`.
 2. `file.recurse`, `ssh_auth.present`, pkg pinning + `pkgrepo` — the
    minimum for real server fleets.
 3. Compound targeting: `and`/`not` over the two existing matchers.

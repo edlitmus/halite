@@ -81,6 +81,8 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
   halite grains [-json]                    show system grains
+  halite grains set <key>=<value> ...      write static custom grains
+  halite grains unset <key> ...            remove static custom grains
   halite apply [-test] [-json] [-root DIR] [target ...]
       no target: highstate from <root>/top.sls
       target:    an SLS file path, or dotted sls name(s) under the root
@@ -234,10 +236,21 @@ func printTree(data map[string]any, indent string) {
 }
 
 func cmdGrains(args []string) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "set":
+			cmdGrainsSet(args[1:])
+			return
+		case "unset":
+			cmdGrainsUnset(args[1:])
+			return
+		}
+	}
 	fs := flag.NewFlagSet("grains", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "output as JSON")
+	grainsFile := fs.String("file", "", "static grains file (default: $HALITE_GRAINS or the platform default)")
 	_ = fs.Parse(args)
-	g := grains.Collect()
+	g := grains.CollectFrom(grainsPath(*grainsFile))
 	if *asJSON {
 		b, _ := json.MarshalIndent(g, "", "  ")
 		fmt.Println(string(b))
@@ -251,6 +264,71 @@ func cmdGrains(args []string) {
 	for _, k := range keys {
 		fmt.Printf("%s: %v\n", k, g[k])
 	}
+}
+
+// grainsPath resolves the static grains file: the flag, then the package
+// default ($HALITE_GRAINS or the platform path).
+func grainsPath(flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return grains.CustomPath()
+}
+
+// cmdGrainsSet writes static grains, the equivalent of Salt's
+// grains.setval. The file is plain YAML, so a fleet can also manage it with
+// file.managed and skip this entirely.
+func cmdGrainsSet(args []string) {
+	fs := flag.NewFlagSet("grains set", flag.ExitOnError)
+	grainsFile := fs.String("file", "", "static grains file (default: $HALITE_GRAINS or the platform default)")
+	pairs := parseFlags(fs, args)
+	if len(pairs) == 0 {
+		fatal("usage: halite grains set <key>=<value> [<key>=<value> ...]")
+	}
+	path := grainsPath(*grainsFile)
+	data, err := grains.LoadCustom(path)
+	if err != nil {
+		fatal("%v", err)
+	}
+	if data == nil {
+		data = map[string]any{}
+	}
+	for _, pair := range pairs {
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok || k == "" {
+			fatal("argument %q is not key=value", pair)
+		}
+		data[k] = v
+	}
+	if err := grains.SaveCustom(path, data); err != nil {
+		fatal("%v", err)
+	}
+	fmt.Printf("wrote %s\n", path)
+}
+
+// cmdGrainsUnset removes static grains by name.
+func cmdGrainsUnset(args []string) {
+	fs := flag.NewFlagSet("grains unset", flag.ExitOnError)
+	grainsFile := fs.String("file", "", "static grains file (default: $HALITE_GRAINS or the platform default)")
+	names := parseFlags(fs, args)
+	if len(names) == 0 {
+		fatal("usage: halite grains unset <key> [<key> ...]")
+	}
+	path := grainsPath(*grainsFile)
+	data, err := grains.LoadCustom(path)
+	if err != nil {
+		fatal("%v", err)
+	}
+	for _, name := range names {
+		if _, ok := data[name]; !ok {
+			fatal("%s is not a static grain in %s", name, path)
+		}
+		delete(data, name)
+	}
+	if err := grains.SaveCustom(path, data); err != nil {
+		fatal("%v", err)
+	}
+	fmt.Printf("wrote %s\n", path)
 }
 
 // parseCallArgs splits a `halite call` command line into the function name,

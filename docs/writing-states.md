@@ -194,8 +194,42 @@ base:
 Target patterns: `'*'` matches every host; `grain:valueglob` matches a
 grain with a glob on the value (`os_family:FreeBSD`, `osrelease:14.*`);
 anything else globs the `id` grain, which is the hostname masterless and
-the enrolled identity under a control plane. All environments in the file
-are applied (masterless has no environment selection yet).
+the enrolled identity under a control plane. A host with no such grain
+never matches — `'role:*'` selects the hosts that have a role, not the
+fleet. All environments in the file are applied (masterless has no
+environment selection yet).
+
+## Custom grains
+
+halite detects a fixed set of facts. Everything else a site targets on —
+role, datacentre, tier — comes from a static grains file, which is plain
+YAML merged over the detected grains:
+
+```yaml
+# /usr/local/etc/halite/grains  (Linux: /etc/halite/grains)
+role: web
+datacenter: lax1
+roles:
+  - web
+  - cache
+```
+
+```sh
+halite grains                      # detected facts plus the file
+halite grains set role=web         # write the file (Salt: grains.setval)
+halite grains unset role
+halite grains -file ./grains       # read one somewhere else
+```
+
+Override the path with `-file` or `$HALITE_GRAINS`. Custom grains win over
+detected ones, so a site that sets `os_family` by hand means it. A grains
+file that does not parse is reported on stderr and skipped rather than
+stopping the run — a typo in it must not stop a host converging.
+
+The file is ordinary YAML, so the fleet-wide way to set a grain is
+`file.managed` on the grains file itself. An agent sends its grains when
+it connects, so a grain that changes mid-run reaches the control plane on
+the agent's next reconnection.
 
 An SLS file can pull in others with `include:`; included states run
 before the including file's own states, each file loads at most once, and

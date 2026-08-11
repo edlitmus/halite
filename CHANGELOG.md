@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+New: static custom grains. halite detects a fixed set of facts, so until
+now `role:web` targeting — which the documentation's own examples use —
+had no way to be fed.
+
+* A static grains file (`/usr/local/etc/halite/grains` on FreeBSD,
+  `/etc/halite/grains` on Linux, `$HALITE_GRAINS` or `-file` to override)
+  is plain YAML, merged over the detected grains. Custom grains win: a
+  site that sets `os_family` by hand means it. A file that does not parse
+  is reported and skipped, because a typo in it must not stop a host from
+  converging.
+* `halite grains set role=web` and `halite grains unset role` write it —
+  Salt's `grains.setval`. The file is ordinary YAML, so the fleet-wide way
+  to set a grain is `file.managed` on the grains file.
+* `yamlite.Plain` converts a parsed tree to plain Go maps; pillar's private
+  copy of it is gone.
+
 New: `halite parse` reads an existing Salt state and pillar tree and
 reports what halite can use as written.
 
