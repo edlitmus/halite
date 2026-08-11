@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+New: the module set a real server fleet needs.
+
+* `file.recurse` copies a directory from the state tree onto the host,
+  with `file_mode`, `dir_mode`, ownership, `template: true`, and an
+  optional `clean` that removes what the source does not have. Content,
+  ownership, and modes are checked separately, so a byte-identical tree
+  still reports drift when its permissions moved. The changes report caps
+  at ten paths per category so a first run does not bury the output.
+* `ssh_auth.present` / `ssh_auth.absent` manage one `authorized_keys`
+  entry. The key body identifies it, so changing options, type, or comment
+  rewrites that line instead of adding a second copy of the same key. The
+  `.ssh` directory is created 0700 and the file 0600, owned by the user —
+  sshd ignores them otherwise.
+* `pkg.installed` takes `version` and `hold`. The version is compared
+  against the installed one, so a downgrade is a change like any other,
+  and `hold` drives the package manager's own lock (`pkg lock`,
+  `apt-mark hold`, `versionlock`, `zypper addlock`, `brew pin`,
+  `choco pin`). A pin the backend cannot express fails the state rather
+  than installing what is current — that would be the wrong package,
+  quietly.
+* `pkgrepo.managed` / `pkgrepo.absent` write a repository definition for
+  pkg(8), apt, dnf/yum, zypper, or apk, and refresh the metadata when the
+  file changes. halite does not fetch signing keys: `signed_by`/`gpgkey`
+  point at a key a `file.managed` put there first.
+* `halite parse` knows the new modules and arguments, so a Salt tree using
+  them no longer reports them as unsupported.
+
 New: static custom grains. halite detects a fixed set of facts, so until
 now `role:web` targeting — which the documentation's own examples use —
 had no way to be fed.

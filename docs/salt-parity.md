@@ -49,7 +49,10 @@ not.
 | Salt | halite | Status |
 |---|---|---|
 | file.managed / directory / absent | done | ownership, line diffs, and templated sources (`template: true`) |
-| pkg.installed / removed | done | backends: pkg(8), apt, dnf, yum, zypper, pacman, apk, brew, choco, winget. **Version pinning and alternate repos are not implemented** — each backend installs what it considers current |
+| file.recurse | done | whole-tree copy with modes, ownership, templating, and optional `clean` |
+| pkg.installed / removed | done | backends: pkg(8), apt, dnf, yum, zypper, pacman, apk, brew, choco, winget. `version` and `hold` where the backend can express them; a pin it cannot express fails rather than installing the current version |
+| pkgrepo.managed / absent | done | repository file per platform (pkg(8), apt, dnf/yum, zypper, apk) plus a metadata refresh; halite does not fetch signing keys |
+| ssh_auth.present / absent | done | one authorized_keys entry per state, identified by the key body |
 | service.running / dead | done | rc.d (+sysrc enable), systemd, sysvinit, launchd (partial), Windows SCM |
 | cmd.run / cmd.wait | done | unless, onlyif, creates, cwd, env |
 | user.present/absent, group.present/absent | done | pw(8), useradd/usermod, sysadminctl (partial), net user (partial); drift repair for uid/shell/home/gecos/groups |
@@ -140,15 +143,13 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-22 state functions and 4 execution modules. Raw counts flatter Salt —
+27 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
-`file.recurse`, `file.symlink`, `file.replace`/`blockreplace`/`line`,
-`ssh_auth.present` (authorized_keys — likely the most-used Salt state
-after file/pkg/service), `pkgrepo.managed`, pkg version pinning and
-holds, `timezone`/`locale`/`hostname`, `kmod`, `alternatives`, firewall
-states, `selinux`, `lvm`, `x509`, container states, Windows updates and
-ACLs. The `_modules/` escape hatch exists, but it is per-site effort, not
-a library.
+`file.symlink`, `file.replace`/`blockreplace`/`line`,
+`timezone`/`locale`/`hostname`, `kmod`, `alternatives`, firewall states,
+`selinux`, `lvm`, `x509`, container states, Windows updates and ACLs. The
+`_modules/` escape hatch exists, but it is per-site effort, not a
+library.
 
 ### Environments and fileservers
 
@@ -194,8 +195,8 @@ In priority order, judged by what blocks a real Salt migration first:
 
 1. ~~Static custom grains~~ — **done**: a YAML file merged over the
    detected facts, with `halite grains set/unset`.
-2. `file.recurse`, `ssh_auth.present`, pkg pinning + `pkgrepo` — the
-   minimum for real server fleets.
+2. ~~`file.recurse`, `ssh_auth.present`, pkg pinning + `pkgrepo`~~ —
+   **done**: the minimum module set for real server fleets.
 3. Compound targeting: `and`/`not` over the two existing matchers.
 4. An agent-side scheduler, so the fleet converges without external cron.
 5. `_in` requisites and `names:` — most Salt trees need both to compile.

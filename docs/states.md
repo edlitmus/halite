@@ -57,6 +57,39 @@ Ensure a directory exists. Args: `name`, `mode`, `user`, `group`.
 
 Ensure a path does not exist (recursive). Args: `name`.
 
+### file.recurse
+
+Copy a directory from the state tree onto the host.
+
+| Arg | Description |
+|---|---|
+| `name` | destination directory (default: state ID) |
+| `source` | source directory, relative to the SLS file |
+| `file_mode` | mode for copied files |
+| `dir_mode` | mode for directories (default `0755` on creation) |
+| `user`, `group` | ownership, applied to every managed path |
+| `template` | `true` renders each file with Go `text/template` |
+| `clean` | `true` removes paths under the destination the source does not have |
+
+```yaml
+/usr/local/etc/nginx/conf.d:
+  file.recurse:
+    - source: files/nginx/conf.d
+    - file_mode: "0644"
+    - dir_mode: "0755"
+    - user: www
+    - clean: true
+```
+
+Content, ownership, and modes are each checked, so a tree that is
+byte-identical still reports drift if its permissions moved. Without
+`clean`, files the source does not know about are left alone — a
+destination that also holds hand-written entries is a normal setup.
+
+The changes report is capped at ten paths per category, with a count for
+the rest: a first run over a large tree should not bury the rest of the
+output.
+
 ## pkg
 
 Backend is auto-detected: FreeBSD pkg(8); apt, dnf, yum, zypper, pacman,
@@ -68,6 +101,8 @@ apk on Linux; Homebrew on macOS; Chocolatey then winget on Windows.
 |---|---|
 | `name` | single package (default: state ID) |
 | `pkgs` | list of packages |
+| `version` | install this exact version (one package per state) |
+| `hold` | `true` pins the installed version against upgrades; `false` releases it |
 
 ```yaml
 tools:
@@ -76,16 +111,114 @@ tools:
       - tmux
       - git
       - htop
+
+nginx:
+  pkg.installed:
+    - version: 1.24.0-1~bookworm
+    - hold: true
 ```
 
-**Not implemented:** version pinning and alternate repositories. Every
-backend installs whatever its package manager considers current. Pin with
-the backend's own mechanism — a repository that only carries the version
-you want, or `cmd.run` with `unless` as a bridge.
+`version` compares against the installed version and installs the pinned
+spec when they differ, so a downgrade is a change like any other. `hold`
+is separate: it is the package manager's own lock, and a state that says
+nothing about `hold` never touches one.
+
+Backend support, because these are the package manager's features and not
+halite's:
+
+| Backend | `version` | `hold` |
+|---|---|---|
+| pkg(8) | `pkg-1.2.3` | `pkg lock` |
+| apt | `pkg=1.2.3` | `apt-mark hold` |
+| dnf / yum | `pkg-1.2.3` | `versionlock` (needs the plugin) |
+| zypper | `pkg=1.2.3` | `zypper addlock` |
+| apk | `pkg=1.2.3` | — |
+| brew | — | `brew pin` |
+| choco | — | `choco pin` |
+| pacman, winget | — | — |
+
+A `version` or `hold` the backend cannot express fails the state. Silently
+installing whatever is current would be the wrong package, quietly.
 
 ### pkg.removed
 
 Same args; ensures packages are absent.
+
+## pkgrepo
+
+### pkgrepo.managed
+
+Write a repository definition for the host's package manager, and refresh
+its metadata when the file changes.
+
+| Arg | Platform | Description |
+|---|---|---|
+| `name` | all | repository name; also the file name (default: state ID) |
+| `url` | all | repository URL (`baseurl` for the RPM families) |
+| `enabled` | all | `false` writes the definition disabled |
+| `refresh` | all | `false` skips the metadata refresh after a change |
+| `dist`, `comps`, `arch`, `signed_by`, `line`, `source` | apt | suite, components, architecture, keyring path; `line` is taken verbatim |
+| `humanname`, `baseurl`, `metalink`, `mirrorlist`, `gpgkey`, `gpgcheck`, `priority`, `module_hotfixes` | dnf, yum, zypper | written into the `.repo` file as given |
+| `mirror_type`, `signature_type`, `fingerprints`, `priority` | pkg(8) | written into the repo conf |
+
+```yaml
+nginx-upstream:
+  pkgrepo.managed:
+    - url: https://nginx.org/packages/debian
+    - dist: bookworm
+    - comps: nginx
+    - signed_by: /etc/apt/keyrings/nginx.gpg
+```
+
+Files land in `/usr/local/etc/pkg/repos/<name>.conf` (FreeBSD),
+`/etc/apt/sources.list.d/<name>.list`, `/etc/yum.repos.d/<name>.repo`,
+`/etc/zypp/repos.d/<name>.repo`, or `/etc/apk/repositories.d/<name>`.
+pacman, Homebrew, Chocolatey, and winget have no repository file to write,
+and the state says so rather than doing nothing.
+
+**halite does not fetch signing keys.** `signed_by` and `gpgkey` point at
+a key that a `file.managed` (with `require`) puts there first. A
+repository state that downloaded and trusted a key would be the wrong
+default.
+
+### pkgrepo.absent
+
+Removes the definition and refreshes. Args: `name`, `refresh`.
+
+## ssh_auth
+
+### ssh_auth.present
+
+Manage one entry in a user's `authorized_keys`.
+
+| Arg | Description |
+|---|---|
+| `name` | the key: a bare base64 body, or a whole authorized_keys line (default: state ID) |
+| `user` | the account whose file is managed (required) |
+| `enc` | key type when `name` is a bare body (default `ssh-rsa`) |
+| `comment` | trailing comment |
+| `options` | list of sshd options (`no-pty`, `command="…"`) |
+| `config` | override the file path (default `~user/.ssh/authorized_keys`) |
+
+```yaml
+ed@laptop:
+  ssh_auth.present:
+    - user: ed
+    - enc: ssh-ed25519
+    - name: AAAAC3NzaC1lZDI1NTE5AAAAIB6mFbT4tGvJv7nFqz0v0N0i0wKmrGV0i2Yh3nQeXamp
+    - options:
+      - no-agent-forwarding
+```
+
+The key body identifies the entry, so changing options, type, or comment
+rewrites that line instead of adding a second copy of the same key. The
+`.ssh` directory is created `0700` and the file `0600`, both owned by the
+user — sshd ignores them otherwise.
+
+### ssh_auth.absent
+
+Removes the entry whose key body matches. Other keys in the file are left
+untouched. Args: `name`, `user`, `config`.
 
 ## service
 

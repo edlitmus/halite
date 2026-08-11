@@ -162,7 +162,7 @@ func TestUnsupportedStateDeclarationsAreReported(t *testing.T) {
 		{"salt uri", "f:\n  file.managed:\n    - source: salt://web/nginx.conf\n", "salt-uri"},
 		{"remote source", "f:\n  file.managed:\n    - source: https://example.com/x\n", "remote-source"},
 		{"jinja template arg", "f:\n  file.managed:\n    - source: x.conf\n    - template: jinja\n", "template-renderer"},
-		{"pinned version", "p:\n  pkg.installed:\n    - version: 1.2.3\n", "ignored-argument"},
+		{"package files", "p:\n  pkg.installed:\n    - sources:\n      - /tmp/nginx.deb\n", "ignored-argument"},
 		{"unknown argument", "p:\n  pkg.installed:\n    - skip_verify: true\n", "ignored-argument"},
 		{"extend", "extend:\n  nginx:\n    pkg.installed: []\n", "extend"},
 	}
@@ -173,6 +173,18 @@ func TestUnsupportedStateDeclarationsAreReported(t *testing.T) {
 				t.Fatalf("want %q, got %v", tc.want, codes(tr))
 			}
 		})
+	}
+}
+
+func TestStatesHaliteImplementsAreNotReported(t *testing.T) {
+	tr := scanTree(t, map[string]string{"a.sls": "" +
+		"/etc/nginx/conf.d:\n  file.recurse:\n    - source: files/conf.d\n    - clean: true\n" +
+		"ed:\n  ssh_auth.present:\n    - user: ed\n    - enc: ssh-ed25519\n" +
+		"nginx-upstream:\n  pkgrepo.managed:\n    - url: https://nginx.org/packages/debian\n    - dist: bookworm\n" +
+		"nginx:\n  pkg.installed:\n    - version: 1.24.0\n    - hold: true\n",
+	}, KindState)
+	if got := fileCodes(tr.Files[0]); len(got) != 0 {
+		t.Fatalf("these states are implemented, got %v", got)
 	}
 }
 
