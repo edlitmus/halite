@@ -41,22 +41,31 @@ func RunWith(ctx *modules.Ctx, states []sls.State, lookup Lookup) []StateResult 
 	results := make([]modules.Result, len(states))
 	executedThrough := -1
 
+	// A reference can name several states — `names:` expands one
+	// declaration into one state per name — so the answer is the whole
+	// group's: it failed if any failed, and it changed if any changed.
 	resultOf := func(r sls.Ref) (modules.Result, bool) {
+		combined := modules.Result{Ok: true}
+		found := false
 		for i := 0; i <= executedThrough; i++ {
-			s := states[i]
-			if s.ID == r.ID && (r.Module == "" || r.Module == s.Module) {
-				return results[i], true
+			if !states[i].Matches(r) {
+				continue
 			}
+			found = true
+			combined.Ok = combined.Ok && results[i].Ok
+			combined.Changed = combined.Changed || results[i].Changed
+			combined.Comment = results[i].Comment
 		}
-		return modules.Result{}, false
+		return combined, found
 	}
-	findState := func(r sls.Ref) (sls.State, bool) {
+	findStates := func(r sls.Ref) []sls.State {
+		var out []sls.State
 		for _, s := range states {
-			if s.ID == r.ID && (r.Module == "" || r.Module == s.Module) {
-				return s, true
+			if s.Matches(r) {
+				out = append(out, s)
 			}
 		}
-		return sls.State{}, false
+		return out
 	}
 	// failedPrereqOf finds an already-run state that declared this one as
 	// its prereq target and failed. A failed prereq blocks its target: if
@@ -67,7 +76,7 @@ func RunWith(ctx *modules.Ctx, states []sls.State, lookup Lookup) []StateResult 
 				continue
 			}
 			for _, r := range states[i].Prereq {
-				if r.ID == st.ID && (r.Module == "" || r.Module == st.Module) {
+				if st.Matches(r) {
 					return states[i], true
 				}
 			}
@@ -103,7 +112,7 @@ func RunWith(ctx *modules.Ctx, states []sls.State, lookup Lookup) []StateResult 
 		} else {
 			ctx.BaseDir = origBase
 		}
-		res := runOne(ctx, st, lookup, resultOf, findState, failedPrereqOf, dryRun)
+		res := runOne(ctx, st, lookup, resultOf, findStates, failedPrereqOf, dryRun)
 		results[i] = res
 		executedThrough = i
 		out = append(out, StateResult{ID: st.ID, Fn: st.Name(), Res: res})
@@ -116,7 +125,7 @@ func runOne(
 	st sls.State,
 	lookup Lookup,
 	resultOf func(sls.Ref) (modules.Result, bool),
-	findState func(sls.Ref) (sls.State, bool),
+	findStates func(sls.Ref) []sls.State,
 	failedPrereqOf func(sls.State) (sls.State, bool),
 	dryRun func(sls.State) modules.Result,
 ) modules.Result {
@@ -153,12 +162,13 @@ func runOne(
 	if len(st.Prereq) > 0 {
 		would := false
 		for _, r := range st.Prereq {
-			target, ok := findState(r)
-			if !ok {
-				continue // sort already validated; defensive
+			for _, target := range findStates(r) {
+				if pr := dryRun(target); pr.Ok && pr.Changed {
+					would = true
+					break
+				}
 			}
-			if pr := dryRun(target); pr.Ok && pr.Changed {
-				would = true
+			if would {
 				break
 			}
 		}

@@ -25,6 +25,8 @@ not.
 | Pillar | pillar tree with its own top file | done | targeted, deep-merged, include-capable; exposed as `{{ .Pillar.x }}` in states and templated sources |
 | Requisites: require, watch | require, watch | done | watch triggers service restart / cmd.wait |
 | Requisites: onchanges, prereq | onchanges, prereq | done | prereq uses an automatic dry run of its target |
+| Requisites: require_in, watch_in, onchanges_in, prereq_in | the `_in` forms | done | resolved onto their targets before ordering; an `_in` naming nothing is a compile error |
+| `- names:` expansion | done | one state per name, with the declared id as the base so requisites reach every expansion |
 | unless/onlyif/creates as universal state args | universal gates | done | evaluated by the engine for every state |
 | Jinja templating | Go `text/template` | done | grains in scope; funcs: default, contains, split, join, lower, upper, hasPrefix, hasSuffix |
 | Includes (`include:`) | include: | done | dedup, cycle-safe, includes-first ordering |
@@ -125,12 +127,10 @@ out of here by earning a phase, the way P1–P4 did.
 
 ### State language
 
-Missing from the SLS dialect: the `_in` reverse requisites (`require_in`,
-`watch_in`, …), `onfail`, `listen`/`listen_in`, `order:`, `failhard`,
-`retry:`, `parallel: true`, `check_cmd`, and `- names:` expansion. There
-are no debugging equivalents of `state.show_sls`, `state.sls_id`, or
-`state.single`. Most existing Salt trees will not compile without at
-least `_in` and `names:`.
+Missing from the SLS dialect: `onfail`/`onfail_in`, `listen`/`listen_in`,
+`order:`, `failhard`, `retry:`, `parallel: true`, `check_cmd`, and the
+`_any` requisite variants. There are no debugging equivalents of
+`state.show_sls`, `state.sls_id`, or `state.single`.
 
 ### Rendering
 
@@ -202,7 +202,8 @@ In priority order, judged by what blocks a real Salt migration first:
    the `G@`/`L@`/`E@`/`P@` matchers.
 4. ~~An agent-side scheduler~~ — **done**: intervals with splay, reported
    on the event bus.
-5. `_in` requisites and `names:` — most Salt trees need both to compile.
+5. ~~`_in` requisites and `names:`~~ — **done**: most Salt trees needed
+   both to compile.
 
 ## Phases
 

@@ -153,7 +153,9 @@ func argFinding(id, fn string, arg argEntry, use Use) (Finding, bool) {
 			Message: fmt.Sprintf("state %q (%s): %s", id, fn, msg), Hint: hint}, true
 	}
 	switch arg.Key {
-	case "require", "watch", "onchanges", "prereq", "name", "unless", "onlyif", "creates":
+	case "require", "watch", "onchanges", "prereq",
+		"require_in", "watch_in", "onchanges_in", "prereq_in",
+		"names", "name", "unless", "onlyif", "creates":
 		return Finding{}, false
 	}
 	if note, ok := unsupportedRequisites[arg.Key]; ok {
@@ -260,10 +262,6 @@ type requisiteNote struct {
 // halite does not. They reach the module as ordinary arguments, where they
 // are ignored — so each one is a silent difference until it is reported.
 var unsupportedRequisites = map[string]requisiteNote{
-	"require_in":     {SevError, "invert it: declare 'require' on the state that must run later"},
-	"watch_in":       {SevError, "invert it: declare 'watch' on the state that reacts"},
-	"onchanges_in":   {SevError, "invert it: declare 'onchanges' on the state that reacts"},
-	"prereq_in":      {SevError, "invert it: declare 'prereq' on the state that runs first"},
 	"onfail":         {SevError, "not implemented; a failed state already blocks the states that require it"},
 	"onfail_in":      {SevError, "not implemented; a failed state already blocks the states that require it"},
 	"onfail_any":     {SevError, "not implemented"},
@@ -275,7 +273,6 @@ var unsupportedRequisites = map[string]requisiteNote{
 	"use_in":         {SevError, "arguments are not copied between states; write them out"},
 	"listen":         {SevError, "not implemented; 'watch' runs the reaction in requisite order"},
 	"listen_in":      {SevError, "not implemented; 'watch' runs the reaction in requisite order"},
-	"names":          {SevError, "multi-name expansion is not implemented; declare one state per name"},
 	"check_cmd":      {SevError, "not implemented; follow the state with a cmd.run"},
 	"retry":          {SevError, "retries are not implemented"},
 	"failhard":       {SevWarn, "halite blocks the dependents of a failed state and runs the rest"},

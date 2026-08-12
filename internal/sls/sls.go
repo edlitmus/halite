@@ -24,20 +24,41 @@ type Ref struct {
 
 // State is one compiled state declaration.
 type State struct {
-	ID        string
-	Module    string
-	Fn        string
-	Args      map[string]any
+	ID     string
+	Module string
+	Fn     string
+	Args   map[string]any
+	// BaseID is the declared ID of a state that `names:` expanded into
+	// several, so a requisite naming the declaration reaches every one.
+	BaseID    string
 	Require   []Ref
 	Watch     []Ref
 	OnChanges []Ref
 	Prereq    []Ref
-	Dir       string // directory of the source SLS file (for relative sources)
-	Src       string // source SLS path (for error attribution)
+	// The _in forms, resolved onto the states they name before sorting.
+	RequireIn   []Ref
+	WatchIn     []Ref
+	OnChangesIn []Ref
+	PrereqIn    []Ref
+	Dir         string // directory of the source SLS file (for relative sources)
+	Src         string // source SLS path (for error attribution)
 }
 
 // Name returns the "module.function" form.
 func (s State) Name() string { return s.Module + "." + s.Fn }
+
+// Matches reports whether a requisite reference names this state. A
+// reference with no module matches any state with the ID, and a reference
+// to a `names:` declaration matches every state it expanded into.
+func (s State) Matches(r Ref) bool {
+	if r.Module != "" && r.Module != s.Module {
+		return false
+	}
+	return r.ID == s.ID || (s.BaseID != "" && r.ID == s.BaseID)
+}
+
+// Ref returns the reference that names this state exactly.
+func (s State) Ref() Ref { return Ref{Module: s.Module, ID: s.ID} }
 
 // TemplateData is passed to the template engine when rendering SLS files.
 type TemplateData struct {
@@ -122,7 +143,11 @@ func compileTree(root any) (states []State, includes []string, err error) {
 			if err := flatten(body.Vals[fn], &st); err != nil {
 				return nil, nil, fmt.Errorf("state %q (%s): %w", id, fn, err)
 			}
-			states = append(states, st)
+			expanded, err := expandNames(st)
+			if err != nil {
+				return nil, nil, fmt.Errorf("state %q (%s): %w", id, fn, err)
+			}
+			states = append(states, expanded...)
 		}
 	}
 	return states, includes, nil
@@ -134,7 +159,8 @@ func flatten(v any, st *State) error {
 	st.Args = map[string]any{}
 	add := func(k string, val any) error {
 		switch k {
-		case "require", "watch", "onchanges", "prereq":
+		case "require", "watch", "onchanges", "prereq",
+			"require_in", "watch_in", "onchanges_in", "prereq_in":
 			r, err := parseRefs(val)
 			if err != nil {
 				return fmt.Errorf("%s: %w", k, err)
@@ -148,6 +174,14 @@ func flatten(v any, st *State) error {
 				st.OnChanges = append(st.OnChanges, r...)
 			case "prereq":
 				st.Prereq = append(st.Prereq, r...)
+			case "require_in":
+				st.RequireIn = append(st.RequireIn, r...)
+			case "watch_in":
+				st.WatchIn = append(st.WatchIn, r...)
+			case "onchanges_in":
+				st.OnChangesIn = append(st.OnChangesIn, r...)
+			case "prereq_in":
+				st.PrereqIn = append(st.PrereqIn, r...)
 			}
 		default:
 			st.Args[k] = val
@@ -209,10 +243,108 @@ func parseRefs(v any) ([]Ref, error) {
 	return out, nil
 }
 
-// sortStates checks for duplicate declarations and performs a stable
-// topological sort. require, watch, and onchanges are "runs after" edges;
-// prereq reverses the edge: the declaring state runs before its target.
+// expandNames turns a `names:` declaration into one state per name, each
+// carrying that name and the declared ID as its base. Salt's `names` is a
+// loop written in the state itself, and a tree that uses it will not
+// compile without one.
+func expandNames(st State) ([]State, error) {
+	raw, declared := st.Args["names"]
+	if !declared {
+		return []State{st}, nil
+	}
+	delete(st.Args, "names")
+	list, ok := raw.([]any)
+	if !ok || len(list) == 0 {
+		return nil, fmt.Errorf("names: must be a non-empty list")
+	}
+	out := make([]State, 0, len(list))
+	for _, item := range list {
+		name, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("names: entries must be strings, got %v", item)
+		}
+		expanded := st
+		expanded.BaseID = st.ID
+		expanded.ID = fmt.Sprintf("%s (%s)", st.ID, name)
+		expanded.Args = copyArgs(st.Args)
+		expanded.Args["name"] = name
+		out = append(out, expanded)
+	}
+	return out, nil
+}
+
+// copyArgs gives each expanded state its own arguments, so that setting a
+// name on one does not set it on all of them.
+func copyArgs(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+// applyInRequisites turns the _in forms into their plain counterparts on
+// the states they name: `require_in: [service: nginx]` is "nginx requires
+// me", which is the same edge written from the other end. It is also the
+// only way to attach a requisite to a state another SLS file declares,
+// which is why Salt trees lean on it.
+func applyInRequisites(states []State) error {
+	type addition struct {
+		target int
+		kind   string
+		ref    Ref
+	}
+	var additions []addition
+	for i, s := range states {
+		for _, decl := range []struct {
+			kind string
+			refs []Ref
+		}{
+			{"require", s.RequireIn},
+			{"watch", s.WatchIn},
+			{"onchanges", s.OnChangesIn},
+			{"prereq", s.PrereqIn},
+		} {
+			for _, r := range decl.refs {
+				matched := false
+				for j, target := range states {
+					if i == j || !target.Matches(r) {
+						continue
+					}
+					additions = append(additions, addition{target: j, kind: decl.kind, ref: s.Ref()})
+					matched = true
+				}
+				if !matched {
+					return fmt.Errorf("state %q: %s_in target %s:%s not found",
+						s.ID, decl.kind, r.Module, r.ID)
+				}
+			}
+		}
+	}
+	for _, a := range additions {
+		target := &states[a.target]
+		switch a.kind {
+		case "require":
+			target.Require = append(target.Require, a.ref)
+		case "watch":
+			target.Watch = append(target.Watch, a.ref)
+		case "onchanges":
+			target.OnChanges = append(target.OnChanges, a.ref)
+		case "prereq":
+			target.Prereq = append(target.Prereq, a.ref)
+		}
+	}
+	return nil
+}
+
+// sortStates resolves the _in requisites, checks for duplicate
+// declarations, and performs a stable topological sort. require, watch, and
+// onchanges are "runs after" edges; prereq reverses the edge: the declaring
+// state runs before its target.
 func sortStates(in []State) ([]State, error) {
+	if err := applyInRequisites(in); err != nil {
+		return nil, err
+	}
 	seen := map[string]string{}
 	for _, s := range in {
 		key := s.ID + "|" + s.Name()
@@ -222,30 +354,35 @@ func sortStates(in []State) ([]State, error) {
 		}
 		seen[key] = s.Src
 	}
-	find := func(r Ref) (int, bool) {
+	// A reference to a `names:` declaration names every state it expanded
+	// into, so an edge to it is an edge to all of them.
+	findAll := func(r Ref) []int {
+		var out []int
 		for i, s := range in {
-			if s.ID == r.ID && (r.Module == "" || r.Module == s.Module) {
-				return i, true
+			if s.Matches(r) {
+				out = append(out, i)
 			}
 		}
-		return 0, false
+		return out
 	}
 	deps := make([][]int, len(in))
 	for i, s := range in {
 		after := append(append(append([]Ref{}, s.Require...), s.Watch...), s.OnChanges...)
 		for _, r := range after {
-			j, ok := find(r)
-			if !ok {
+			targets := findAll(r)
+			if len(targets) == 0 {
 				return nil, fmt.Errorf("state %q: requisite %s:%s not found", s.ID, r.Module, r.ID)
 			}
-			deps[i] = append(deps[i], j)
+			deps[i] = append(deps[i], targets...)
 		}
 		for _, r := range s.Prereq {
-			j, ok := find(r)
-			if !ok {
+			targets := findAll(r)
+			if len(targets) == 0 {
 				return nil, fmt.Errorf("state %q: prereq %s:%s not found", s.ID, r.Module, r.ID)
 			}
-			deps[j] = append(deps[j], i) // target runs after the prereq-declaring state
+			for _, j := range targets {
+				deps[j] = append(deps[j], i) // target runs after the prereq-declaring state
+			}
 		}
 	}
 	done := make([]bool, len(in))

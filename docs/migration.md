@@ -109,7 +109,7 @@ features it leaves out are reported rather than mis-parsed.
 |---|---|---|
 | `short-declaration` | `pkg:` with `- installed` as the first argument | the dotted form, `pkg.installed:` — halite reads nothing else |
 | `unsupported-module` | the state function is not compiled into halite | see the hint on the finding; usually `cmd.run` with a `creates:`/`unless:` gate, or an executable in `_modules/` ([external modules](external-modules.md)) |
-| `unsupported-requisite` | `require_in`, `watch_in`, `onfail`, `listen`, `names`, `order`, `retry`, … | halite has `require`, `watch`, `onchanges`, and `prereq`. The `_in` forms invert: declare the requisite on the other state. `names` has no expansion — write one state per name |
+| `unsupported-requisite` | `onfail`, `listen`, `order`, `retry`, `use`, the `_any` variants, … | halite has `require`, `watch`, `onchanges`, `prereq`, their `_in` forms, and `names:` expansion. What is left has no equivalent — see the hint on the finding |
 | `ignored-argument` | the module does not read this argument | the hint says what halite does instead. A few — `file.managed: source_hash`, `file.managed: replace`, `cmd.run: runas` — are errors rather than warnings, because ignoring them changes the result rather than doing less |
 | `salt-uri` | `source: salt://web/nginx.conf` | drop the prefix: the whole tree ships, and sources resolve relative to the SLS file |
 | `remote-source` | `file.managed` with an `http(s)://` source | fetch it with `archive.extracted` (which requires a `source_hash` for remote sources) or `cmd.run` |

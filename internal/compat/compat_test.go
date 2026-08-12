@@ -157,8 +157,7 @@ func TestUnsupportedStateDeclarationsAreReported(t *testing.T) {
 	}{
 		{"short form", "nginx:\n  pkg:\n    - installed\n", "short-declaration"},
 		{"unknown module", "l:\n  file.symlink:\n    - target: /srv\n", "unsupported-module"},
-		{"inverted requisite", "p:\n  pkg.installed:\n    - require_in:\n      - service: s\n", "unsupported-requisite"},
-		{"multi name", "p:\n  pkg.installed:\n    - names:\n      - vim\n      - curl\n", "unsupported-requisite"},
+		{"unimplemented requisite", "p:\n  pkg.installed:\n    - onfail:\n      - service: s\n", "unsupported-requisite"},
 		{"salt uri", "f:\n  file.managed:\n    - source: salt://web/nginx.conf\n", "salt-uri"},
 		{"remote source", "f:\n  file.managed:\n    - source: https://example.com/x\n", "remote-source"},
 		{"jinja template arg", "f:\n  file.managed:\n    - source: x.conf\n    - template: jinja\n", "template-renderer"},
@@ -181,7 +180,9 @@ func TestStatesHaliteImplementsAreNotReported(t *testing.T) {
 		"/etc/nginx/conf.d:\n  file.recurse:\n    - source: files/conf.d\n    - clean: true\n" +
 		"ed:\n  ssh_auth.present:\n    - user: ed\n    - enc: ssh-ed25519\n" +
 		"nginx-upstream:\n  pkgrepo.managed:\n    - url: https://nginx.org/packages/debian\n    - dist: bookworm\n" +
-		"nginx:\n  pkg.installed:\n    - version: 1.24.0\n    - hold: true\n",
+		"nginx:\n  pkg.installed:\n    - version: 1.24.0\n    - hold: true\n" +
+		"tools:\n  pkg.installed:\n    - names:\n      - vim\n      - curl\n" +
+		"conf:\n  file.managed:\n    - name: /tmp/x\n    - contents: y\n    - require_in:\n      - pkg: nginx\n",
 	}, KindState)
 	if got := fileCodes(tr.Files[0]); len(got) != 0 {
 		t.Fatalf("these states are implemented, got %v", got)

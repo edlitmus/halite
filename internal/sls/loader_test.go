@@ -158,3 +158,133 @@ func TestLoaderIsReusable(t *testing.T) {
 		}
 	}
 }
+
+func TestNamesExpandsIntoOneStatePerName(t *testing.T) {
+	states, err := loadSource(t, `
+install_tools:
+  pkg.installed:
+    - names:
+      - vim
+      - curl
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(states) != 2 {
+		t.Fatalf("want one state per name, got %d", len(states))
+	}
+	for i, want := range []string{"vim", "curl"} {
+		if got := states[i].Args["name"]; got != want {
+			t.Fatalf("state %d: want name %q, got %q", i, want, got)
+		}
+		if states[i].BaseID != "install_tools" {
+			t.Fatalf("state %d should remember the declared id, got %q", i, states[i].BaseID)
+		}
+		if _, leftover := states[i].Args["names"]; leftover {
+			t.Fatal("names should not reach the module as an argument")
+		}
+	}
+}
+
+func TestRequisiteReachesEveryExpandedState(t *testing.T) {
+	states, err := loadSource(t, `
+install_tools:
+  pkg.installed:
+    - names:
+      - vim
+      - curl
+
+after:
+  cmd.run:
+    - name: /bin/true
+    - require:
+      - pkg: install_tools
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(states) != 3 || states[2].ID != "after" {
+		t.Fatalf("the requiring state must run last, got %v", ids(states))
+	}
+}
+
+func TestRequireInIsTheSameEdgeFromTheOtherEnd(t *testing.T) {
+	states, err := loadSource(t, `
+nginx_conf:
+  file.managed:
+    - name: /tmp/nginx.conf
+    - contents: x
+    - require_in:
+      - service: nginx
+
+nginx:
+  service.running:
+    - name: nginx
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(states); got[0] != "nginx_conf" || got[1] != "nginx" {
+		t.Fatalf("require_in should order the target after its source, got %v", got)
+	}
+	if len(states[1].Require) != 1 || states[1].Require[0].ID != "nginx_conf" {
+		t.Fatalf("the requisite should land on the named state, got %+v", states[1].Require)
+	}
+}
+
+func TestWatchInPropagatesChanges(t *testing.T) {
+	states, err := loadSource(t, `
+nginx_conf:
+  file.managed:
+    - name: /tmp/nginx.conf
+    - contents: x
+    - watch_in:
+      - service: nginx
+
+nginx:
+  service.running:
+    - name: nginx
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(states[1].Watch) != 1 || states[1].Watch[0].ID != "nginx_conf" {
+		t.Fatalf("watch_in should become a watch on the target, got %+v", states[1].Watch)
+	}
+}
+
+func TestInRequisiteMustNameSomething(t *testing.T) {
+	_, err := loadSource(t, `
+nginx_conf:
+  file.managed:
+    - name: /tmp/nginx.conf
+    - require_in:
+      - service: absent
+`)
+	if err == nil {
+		t.Fatal("a requisite pointing at nothing should fail the compile")
+	}
+}
+
+func TestNamesMustBeAList(t *testing.T) {
+	if _, err := loadSource(t, "p:\n  pkg.installed:\n    - names: vim\n"); err == nil {
+		t.Fatal("a scalar names: should be reported")
+	}
+}
+
+// loadSource compiles one SLS file written inline, which is where the
+// requisite and expansion rules are easiest to read.
+func loadSource(t *testing.T, body string) ([]State, error) {
+	t.Helper()
+	root := t.TempDir()
+	write(t, root, "t.sls", body)
+	return (&Loader{Root: root, Grains: testGrains()}).LoadNames([]string{"t"})
+}
+
+func ids(states []State) []string {
+	out := make([]string, len(states))
+	for i, s := range states {
+		out[i] = s.ID
+	}
+	return out
+}

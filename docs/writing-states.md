@@ -334,6 +334,47 @@ drain:
       - file: deploy_config
 ```
 
+### The `_in` forms
+
+Every requisite has an `_in` twin that writes the same edge from the other
+end: `require_in` is "that state requires me". It is the only way to
+attach a requisite to a state another SLS file declares, which is why Salt
+trees lean on it.
+
+```yaml
+# in web/tls.sls — nginx is declared in web/init.sls
+tls_cert:
+  file.managed:
+    - name: /usr/local/etc/ssl/site.pem
+    - source: files/site.pem
+    - watch_in:
+      - service: nginx
+```
+
+`require_in`, `watch_in`, `onchanges_in`, and `prereq_in` are resolved
+onto their targets before ordering, so the result is exactly what writing
+`watch: - file: tls_cert` on `nginx` would have produced. An `_in` naming
+a state that no loaded file declares is a compile-time error.
+
+### `names`
+
+`names` declares the same state once per name — a loop written in the
+state itself:
+
+```yaml
+install_tools:
+  pkg.installed:
+    - names:
+      - vim
+      - curl
+      - htop
+```
+
+Each expansion becomes its own state, with `name` set and an ID of
+`install_tools (vim)`, so the run output names which one did what. A
+requisite pointing at `install_tools` reaches every expansion: it runs
+after all of them, and `watch` fires if any of them changed.
+
 Cycles, dangling references, and duplicate state declarations (same ID
 and function across all loaded files) are compile-time errors before
 anything runs.

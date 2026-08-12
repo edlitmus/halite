@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+New: the `_in` requisites and `- names:` expansion — the two pieces of the
+SLS dialect most existing Salt trees will not compile without.
+
+* `require_in`, `watch_in`, `onchanges_in`, and `prereq_in` are resolved
+  onto the states they name before ordering, so the result is exactly what
+  writing the plain requisite on the other state would have produced. It
+  is the only way to attach a requisite to a state another SLS file
+  declares, which is why Salt trees lean on it. An `_in` naming a state no
+  loaded file declares is a compile error, not a silent no-op.
+* `names:` declares the same state once per name. Each expansion gets its
+  own arguments with `name` set, and an id of `install_tools (vim)` so the
+  output says which one did what. A requisite pointing at the declaration
+  reaches every expansion: it runs after all of them, and a `watch` fires
+  if any of them changed.
+* `halite parse` no longer reports either as unsupported.
+
 New: an agent-side scheduler. A halite fleet converged only when something
 poked the control plane, so a host that drifted at 02:00 stayed drifted
 until somebody noticed.
