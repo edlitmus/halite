@@ -191,13 +191,48 @@ base:
     - webserver
 ```
 
-Target patterns: `'*'` matches every host; `grain:valueglob` matches a
-grain with a glob on the value (`os_family:FreeBSD`, `osrelease:14.*`);
-anything else globs the `id` grain, which is the hostname masterless and
-the enrolled identity under a control plane. A host with no such grain
-never matches — `'role:*'` selects the hosts that have a role, not the
-fleet. All environments in the file are applied (masterless has no
-environment selection yet).
+All environments in the file are applied (masterless has no environment
+selection yet).
+
+## Targeting
+
+One target language serves top files, `halite run`, `halite ssh`, the
+mine, and the reactor:
+
+| Pattern | Selects |
+|---|---|
+| `*` | every host |
+| `web*` | glob on the host id |
+| `os_family:FreeBSD` | glob on a grain's value |
+| `G@os_family:FreeBSD` | the same, spelled Salt's way |
+| `L@web1,web2` | one of these ids |
+| `E@^web[0-9]+$` | regular expression on the id |
+| `P@osrelease:^14\.` | regular expression on a grain's value |
+
+The `id` grain is the hostname masterless and the enrolled identity under
+a control plane. A host without the named grain never matches, so
+`'role:*'` selects the hosts that have a role, not the fleet. A grain
+holding a list matches when any entry does, so `roles:web` selects a host
+whose `roles` are `[web, cache]`.
+
+Patterns combine with `and`, `or`, `not`, and parentheses:
+
+```yaml
+base:
+  'web* and not L@web9':
+    - webserver
+  '(db* or cache*) and os_family:FreeBSD':
+    - freebsd.tuning
+```
+
+```sh
+halite run 'web* and not L@web9' state.highstate -test
+```
+
+Two patterns side by side are an error rather than an implied `and`, and
+a matcher halite does not implement (`I@` pillar, `S@` subnet, `N@`
+nodegroup, `R@` range) is reported where it is written — a target that
+does not parse must not look like a fleet that happens to be empty.
 
 ## Custom grains
 

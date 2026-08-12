@@ -214,7 +214,7 @@ func TestTopFileTargetsAndNames(t *testing.T) {
 			"base:\n" +
 			"  '*':\n" +
 			"    - common\n" +
-			"  'G@os_family:FreeBSD and web*':\n" +
+			"  'I@role:web':\n" +
 			"    - web\n" +
 			"  'web*':\n" +
 			"    - gone\n" +
@@ -224,7 +224,7 @@ func TestTopFileTargetsAndNames(t *testing.T) {
 		"common.sls": "p:\n  pkg.installed:\n    - name: vim\n",
 		"web.sls":    "p2:\n  pkg.installed:\n    - name: curl\n",
 	}, KindState)
-	for _, want := range []string{"compound-target", "missing-sls", "top-environment"} {
+	for _, want := range []string{"unsupported-target", "missing-sls", "top-environment"} {
 		if !hasCode(tr, want) {
 			t.Fatalf("want %q, got %v", want, codes(tr))
 		}

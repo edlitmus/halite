@@ -110,7 +110,7 @@ features it leaves out are reported rather than mis-parsed.
 | `short-declaration` | `pkg:` with `- installed` as the first argument | the dotted form, `pkg.installed:` — halite reads nothing else |
 | `unsupported-module` | the state function is not compiled into halite | see the hint on the finding; usually `cmd.run` with a `creates:`/`unless:` gate, or an executable in `_modules/` ([external modules](external-modules.md)) |
 | `unsupported-requisite` | `require_in`, `watch_in`, `onfail`, `listen`, `names`, `order`, `retry`, … | halite has `require`, `watch`, `onchanges`, and `prereq`. The `_in` forms invert: declare the requisite on the other state. `names` has no expansion — write one state per name |
-| `ignored-argument` | the module does not read this argument | the hint says what halite does instead. `pkg.installed: version` and `file.managed: source_hash` are errors rather than warnings because ignoring them changes the result |
+| `ignored-argument` | the module does not read this argument | the hint says what halite does instead. A few — `file.managed: source_hash`, `file.managed: replace`, `cmd.run: runas` — are errors rather than warnings, because ignoring them changes the result rather than doing less |
 | `salt-uri` | `source: salt://web/nginx.conf` | drop the prefix: the whole tree ships, and sources resolve relative to the SLS file |
 | `remote-source` | `file.managed` with an `http(s)://` source | fetch it with `archive.extracted` (which requires a `source_hash` for remote sources) or `cmd.run` |
 | `extend`, `exclude` | Salt's cross-file overrides | declare the override in the state itself, or leave the SLS name out of the top file |
@@ -121,12 +121,14 @@ features it leaves out are reported rather than mis-parsed.
 ### Top files and targeting
 
 halite has one target language, shared by top files and `halite run`:
-`*`, `grain:valueglob` (`os_family:FreeBSD`, `osrelease:14.*`), or a glob
-on the host id.
+`*`, a glob on the host id, `grain:valueglob` (`os_family:FreeBSD`,
+`osrelease:14.*`), the `G@`/`L@`/`E@`/`P@` matchers, and `and`/`or`/`not`
+combinations of those. See
+[writing-states.md](writing-states.md#targeting).
 
 | Code | Meaning |
 |---|---|
-| `compound-target` | `G@`, `I@`, `P@`, `E@`, `L@`, `N@`, `S@`, and boolean expressions are not implemented. Split the target, or move the distinction into a grain-based one |
+| `unsupported-target` | the target does not parse. `G@`, `L@`, `E@`, `P@` and `and`/`or`/`not` are implemented; `I@` (pillar), `S@` (subnet), `N@` (nodegroup) and `R@` (range) are not — move the distinction into a grain |
 | `top-match-directive` | a `- match:` entry under a target: the matcher is inferred from the pattern instead |
 | `missing-sls` | the top file names an SLS that does not resolve under the root |
 | `top-environment` | halite has no environment selection: every environment in a top file is applied |

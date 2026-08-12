@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+New: compound targeting. One target language still serves top files,
+`halite run`, `halite ssh`, the mine, and the reactor — it just says more.
+
+* `and`, `or`, `not`, and parentheses combine patterns:
+  `web* and not L@web9`, `(db* or cache*) and os_family:FreeBSD`. "The web
+  hosts, except the one being rebuilt" had no single-pattern spelling.
+* Salt's matcher prefixes are read where they mean something halite can
+  do: `G@grain:glob`, `L@id,id`, `E@regex` on the id, `P@grain:regex`.
+  `I@` (pillar), `S@` (subnet), `N@` (nodegroup) and `R@` (range) are not
+  implemented.
+* A target that does not parse is now an error where it is written — in a
+  top file, in `halite parse`, and at dispatch on the control plane —
+  rather than a silent non-match that looks like an empty fleet. Two
+  patterns side by side are an error too, not an implied `and`.
+* A grain holding a list matches when any entry does, so `roles:web`
+  selects a host whose `roles` are `[web, cache]`.
+* `halite parse` checks targets by asking the matcher itself, so its
+  report tracks the target language instead of a copy of it.
+
 New: the module set a real server fleet needs.
 
 * `file.recurse` copies a directory from the state tree onto the host,

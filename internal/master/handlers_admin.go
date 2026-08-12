@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/event"
+	"github.com/edlitmus/halite/internal/sls"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -36,6 +37,9 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request, peer tra
 func (s *Server) Dispatch(req transport.DispatchRequest, by string) (transport.DispatchResponse, error) {
 	if req.Target == "" {
 		return transport.DispatchResponse{}, fmt.Errorf("a target is required (use '*' for the whole fleet)")
+	}
+	if err := sls.ValidTarget(req.Target); err != nil {
+		return transport.DispatchResponse{}, err
 	}
 	if err := validKind(req); err != nil {
 		return transport.DispatchResponse{}, err

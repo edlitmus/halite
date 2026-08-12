@@ -394,7 +394,7 @@ func (s *Scanner) topStructure(fr *FileReport, m *yamlite.Map, root string, kind
 			continue
 		}
 		for _, pattern := range body.Keys {
-			if f, ok := targetFinding(pattern); ok {
+			if f, ok := targetFinding(pattern, s.Grains); ok {
 				fr.Findings = append(fr.Findings, f)
 			}
 			names, ok := body.Vals[pattern].([]any)
@@ -441,20 +441,16 @@ func (s *Scanner) topNames(fr *FileReport, pattern string, names []any, root str
 	}
 }
 
-// targetFinding checks a top-file target against halite's target language:
-// '*', 'grain:valueglob', or a glob on the host id.
-func targetFinding(pattern string) (Finding, bool) {
-	at := func(code, msg, hint string) (Finding, bool) {
-		return Finding{Severity: SevError, Code: code,
-			Message: fmt.Sprintf("target %q: %s", pattern, msg), Hint: hint}, true
-	}
-	hint := "halite targets are '*', 'grain:valueglob' (e.g. 'os_family:FreeBSD'), or a glob on the host id"
-	switch {
-	case strings.Contains(pattern, "@"):
-		return at("compound-target", "compound matchers (G@, I@, P@, E@, L@, N@, S@) are not implemented", hint)
-	case strings.Contains(pattern, " and "), strings.Contains(pattern, " or "),
-		strings.HasPrefix(pattern, "not "), strings.Contains(pattern, " not "):
-		return at("compound-target", "boolean target expressions are not implemented", hint)
+// targetFinding checks a top-file target by asking the matcher itself, so
+// the report tracks the target language rather than a copy of it.
+func targetFinding(pattern string, grains map[string]any) (Finding, bool) {
+	if _, err := sls.MatchTarget(pattern, grains); err != nil {
+		return Finding{
+			Severity: SevError, Code: "unsupported-target",
+			Message: fmt.Sprintf("target %q: %v", pattern, err),
+			Hint: "halite targets are '*', a glob on the host id, 'grain:valueglob', " +
+				"G@/L@/E@/P@, and 'and'/'or'/'not' combinations of those",
+		}, true
 	}
 	return Finding{}, false
 }

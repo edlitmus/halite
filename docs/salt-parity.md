@@ -36,7 +36,7 @@ not.
 | salt-master / salt-minion daemons | `halite master` + `halite agent` | done | single binary, mode by subcommand |
 | ZeroMQ transport, AES key exchange | mTLS over HTTP/2 (stdlib) | done | TLS 1.3 only, long-poll job delivery; no ZeroMQ, no custom crypto |
 | Minion key accept/reject | TLS client-cert issuance (`halite key`) | done | CSR flow replaces Salt's key dance; see docs/pki.md |
-| Targeting (`salt '<tgt>' ...`) | `halite run <target> <kind>` | done | one target language shared with top files |
+| Targeting (`salt '<tgt>' ...`) | `halite run <target> <kind>` | done | one target language shared with top files: globs, grain matches, G@/L@/E@/P@, and and/or/not |
 | Event bus | tagged event stream (`/v1/events`, `halite events`) | done | in-memory, glob tag matching; see docs/events.md |
 | Reactor | rules matching tags to jobs | done | templated actions, loop guard, rate limit; see docs/events.md |
 | Beacons | agent-side watchers emitting events | done | disk, service, file; edge triggered; tags constrained to the agent's own id. See docs/events.md |
@@ -113,10 +113,10 @@ out of here by earning a phase, the way P1–P4 did.
 
 ### Targeting and grains
 
-* Salt's compound matchers (`G@os:Debian and not L@web1,web2`), pillar
-  (`I@`), regex (`E@`), list (`L@`), subnet (`S@`), and nodegroups have no
-  equivalent. halite's whole target language is an id glob and a single
-  `grain:glob` — no boolean combinations, no negation.
+* Pillar (`I@`), subnet (`S@`), nodegroup (`N@`), and range (`R@`)
+  matchers have no equivalent; a target using one is refused rather than
+  silently matching nothing. Grain, list (`L@`), and regex (`E@`, `P@`)
+  matchers and boolean combinations are implemented.
 * Custom grains are static only: a YAML file merged over the detected
   facts (`halite grains set`, or `file.managed` on the file). Salt also
   has grains modules — code that computes a grain at run time — and
@@ -197,7 +197,8 @@ In priority order, judged by what blocks a real Salt migration first:
    detected facts, with `halite grains set/unset`.
 2. ~~`file.recurse`, `ssh_auth.present`, pkg pinning + `pkgrepo`~~ —
    **done**: the minimum module set for real server fleets.
-3. Compound targeting: `and`/`not` over the two existing matchers.
+3. ~~Compound targeting~~ — **done**: `and`/`or`/`not`, parentheses, and
+   the `G@`/`L@`/`E@`/`P@` matchers.
 4. An agent-side scheduler, so the fleet converges without external cron.
 5. `_in` requisites and `names:` — most Salt trees need both to compile.
 

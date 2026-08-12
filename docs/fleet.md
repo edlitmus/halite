@@ -70,7 +70,18 @@ halite run 'web1' pillar
 ```
 
 Targets use the same language as a top file: `'*'` for everything,
-`grain:valueglob` for a fact, and a bare glob for the host's identity.
+`grain:valueglob` for a fact, a bare glob for the host's identity, Salt's
+`G@`/`L@`/`E@`/`P@` spellings, and `and`/`or`/`not` combinations of those:
+
+```sh
+halite run 'web* and not L@web9' state.highstate       # all but one host
+halite run '(db* or cache*) and os_family:FreeBSD' state.apply tuning
+```
+
+The full table is in
+[writing-states.md](writing-states.md#targeting). A target that does not
+parse — including `I@`, `S@`, `N@`, and `R@`, which halite does not
+implement — is refused at dispatch rather than reported as an empty fleet.
 
 `halite run` waits for results (`-wait`, default two minutes) and prints
 them per agent, in the same format as a local `halite apply`. It exits
