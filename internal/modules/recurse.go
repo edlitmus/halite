@@ -133,8 +133,19 @@ func (p recursePlan) empty() bool {
 // summary describes the plan in one line, in the tense the caller needs.
 func (p recursePlan) summary(tense, dest string) string {
 	var parts []string
-	if n := len(p.written()); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d path(s) %s written", n, tense))
+	files, dirs := 0, 0
+	for _, e := range p.written() {
+		if e.dir {
+			dirs++
+			continue
+		}
+		files++
+	}
+	if files > 0 {
+		parts = append(parts, fmt.Sprintf("%d file(s) %s written", files, tense))
+	}
+	if dirs > 0 {
+		parts = append(parts, fmt.Sprintf("%d director(ies) %s created", dirs, tense))
 	}
 	if n := len(p.remove); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d %s removed", n, tense))
@@ -164,11 +175,16 @@ func (p recursePlan) changes() map[string]string {
 		}
 		changes[key] = strings.Join(paths, ", ")
 	}
-	var written []string
+	var written, created []string
 	for _, e := range p.written() {
+		if e.dir {
+			created = append(created, e.rel)
+			continue
+		}
 		written = append(written, e.rel)
 	}
 	add("written", written)
+	add("created", created)
 	add("removed", p.remove)
 	add("chowned", p.chown)
 	add("chmodded", p.chmod)

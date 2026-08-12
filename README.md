@@ -8,18 +8,20 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.6.0 — the roadmap is complete (P1–P4).** Three ways to run:
+**Status: v0.6.0 — the roadmap is complete (P1–P5).** Three ways to run:
 
 * **Masterless** — `halite apply` on the host. Highstate with top.sls
-  targeting, pillar, includes, the full requisite set, and the
-  file/pkg/service/cmd/user/group/cron/sysctl/archive/git/mount modules.
+  targeting, custom grains, pillar, includes, the full requisite set with
+  its `_in` forms and `names:` expansion, and the file/pkg/pkgrepo/
+  service/cmd/user/group/ssh_auth/cron/sysctl/archive/git/mount modules.
 * **Fleet** — an mTLS HTTP/2 control plane, CSR-based enrollment, and
   targeted dispatch to agents.
 * **Agentless** — `halite ssh` pushes the binary, runs, and cleans up.
 
 Plus the event layer: a tagged event bus with a live stream, a reactor
-turning events into jobs, agent-side beacons and an agent-side scheduler,
-durable returners, a mine of fleet-wide facts, and ordered orchestration. What remains are the
+turning events into jobs, agent-side beacons and a scheduler that keeps a
+fleet converging on its own, durable returners, a mine of fleet-wide
+facts, and ordered orchestration. What remains are the
 deliberate non-goals and an honest list of known gaps against Salt
 3008 — see [docs/salt-parity.md](docs/salt-parity.md).
 

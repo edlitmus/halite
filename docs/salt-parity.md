@@ -190,20 +190,13 @@ publishing (minion-to-minion), mine ACLs (`allow_tgt`), the external job
 cache. Some of these are close cousins of the listed non-goals; they are
 recorded here so the boundary is explicit rather than implied.
 
-### If there is ever a P5
+### What P5 closed
 
-In priority order, judged by what blocks a real Salt migration first:
-
-1. ~~Static custom grains~~ — **done**: a YAML file merged over the
-   detected facts, with `halite grains set/unset`.
-2. ~~`file.recurse`, `ssh_auth.present`, pkg pinning + `pkgrepo`~~ —
-   **done**: the minimum module set for real server fleets.
-3. ~~Compound targeting~~ — **done**: `and`/`or`/`not`, parentheses, and
-   the `G@`/`L@`/`E@`/`P@` matchers.
-4. ~~An agent-side scheduler~~ — **done**: intervals with splay, reported
-   on the event bus.
-5. ~~`_in` requisites and `names:`~~ — **done**: most Salt trees needed
-   both to compile.
+The five gaps that blocked a real Salt migration first are done — see the
+Phases section below. What is left in this section is the honest
+remainder: a module library halite does not have, Jinja's ecosystem,
+environments and external fileservers, eauth, and the subsystems recorded
+as non-goals. None of it is promised.
 
 ## Phases
 
@@ -222,6 +215,13 @@ In priority order, judged by what blocks a real Salt migration first:
 * **P3 — events**. **Complete**: event bus and streaming, returners,
   reactor, beacons, mine, orchestration.
 * **P4 — long tail**. **Complete**: external process modules, multi-master
-  failover, Windows registry. The roadmap's four phases are done; what
-  remains are the deliberate non-goals and the known gaps above, and
-  whatever real use turns up.
+  failover, Windows registry.
+* **P5 — what blocked a migration**. **Complete**: static custom grains
+  (grain targeting had nothing to select on); `file.recurse`,
+  `ssh_auth.present`, pkg `version`/`hold`, and `pkgrepo.managed` (the
+  module set a real server fleet reaches for first); compound targeting
+  with `and`/`or`/`not` and Salt's `G@`/`L@`/`E@`/`P@` matchers; an
+  agent-side scheduler, so a fleet converges without anything poking it;
+  and the `_in` requisites plus `names:` expansion, without which most
+  Salt trees do not compile. What remains are the deliberate non-goals and
+  the known gaps above, and whatever real use turns up.
