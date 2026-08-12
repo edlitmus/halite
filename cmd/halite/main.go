@@ -100,6 +100,7 @@ fleet mode:
       [-orch-root DIR]                     orchestration files
   halite agent -master HOST                run the agent on a managed host
       [-beacons FILE] [-mine FILE]         watches, and facts to publish
+      [-schedule FILE]                     work it runs on its own clock
   halite run <target> <kind> [args]        dispatch work and collect results
   halite agents                            list the fleet
   halite events [-tag PATTERN]             tail the event bus

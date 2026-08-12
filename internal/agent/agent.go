@@ -23,6 +23,7 @@ import (
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/event"
 	"github.com/edlitmus/halite/internal/mine"
+	"github.com/edlitmus/halite/internal/schedule"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -43,6 +44,9 @@ type Config struct {
 
 	// MineJobs are facts this agent publishes for the rest of the fleet.
 	MineJobs []mine.Job
+
+	// Schedule is work this agent runs on its own clock.
+	Schedule []schedule.Job
 }
 
 func (c *Config) withDefaults() {
@@ -169,6 +173,41 @@ func (a *Agent) startWatchers(ctx context.Context) {
 		a.log.Printf("publishing %d function(s) to the mine", runner.Count())
 		go runner.Run(ctx)
 	}
+	if len(a.cfg.Schedule) > 0 {
+		runner := schedule.NewRunner(a.cfg.Schedule, a.runScheduled, a.log)
+		a.log.Printf("running %d scheduled job(s)", runner.Count())
+		go runner.Run(ctx)
+	}
+}
+
+// runScheduled runs one scheduled job and reports it on the event bus.
+// Scheduled work is the agent's own, not the control plane's: it carries no
+// dispatched job to answer, so it is announced rather than returned.
+func (a *Agent) runScheduled(ctx context.Context, job schedule.Job) {
+	result := a.execute(ctx, transport.Job{
+		ID:   fmt.Sprintf("schedule/%s/%d", job.Name, time.Now().UnixNano()),
+		Kind: job.Kind,
+		SLS:  job.SLS,
+		Fn:   job.Fn,
+		Args: job.Args,
+		Test: job.Test,
+	})
+	data := map[string]any{
+		"job":       job.Name,
+		"kind":      job.Kind,
+		"result":    result.Ok,
+		"succeeded": result.Succeeded,
+		"failed":    result.Failed,
+		"changed":   result.Changed,
+		"duration":  result.Duration.String(),
+		"test":      job.Test,
+	}
+	if result.Error != "" {
+		data["error"] = result.Error
+	}
+	a.postEvent(fmt.Sprintf(event.TagSchedule, a.cfg.ID, job.Name), data)
+	a.log.Printf("schedule %s: ok=%v changed=%d failed=%d",
+		job.Name, result.Ok, result.Changed, result.Failed)
 }
 
 // pollLoop asks for work until a poll fails, at which point Run says hello
@@ -208,23 +247,28 @@ func (a *Agent) sayHello(ctx context.Context) error {
 // logged and dropped: the next check will report the condition again if it
 // still holds, and blocking a watcher on a flaky connection helps nobody.
 func (a *Agent) raiseBeacon(name string, data map[string]any) {
+	if a.postEvent(fmt.Sprintf(event.TagBeacon, a.cfg.ID, name), data) {
+		a.log.Printf("beacon %s fired: %v", name, data)
+	}
+}
+
+// postEvent puts one event on the control plane's bus, reporting whether it
+// landed. A disconnected agent drops it rather than queueing: the next
+// check or run says the same thing again.
+func (a *Agent) postEvent(tag string, data map[string]any) bool {
+	client := a.currentClient()
+	if client == nil {
+		return false
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	ev := transport.Event{
-		Tag:  fmt.Sprintf(event.TagBeacon, a.cfg.ID, name),
-		Time: time.Now().UTC(),
-		Data: data,
-	}
-	client := a.currentClient()
-	if client == nil {
-		return
-	}
+	ev := transport.Event{Tag: tag, Time: time.Now().UTC(), Data: data}
 	if err := client.Post(ctx, transport.PathEvents, ev, nil); err != nil {
-		a.log.Printf("beacon %s: %v", name, err)
-		return
+		a.log.Printf("event %s: %v", tag, err)
+		return false
 	}
-	a.log.Printf("beacon %s fired: %v", name, data)
+	return true
 }
 
 // publishMine sends one function's output to the control plane. As with

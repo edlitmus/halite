@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+New: an agent-side scheduler. A halite fleet converged only when something
+poked the control plane, so a host that drifted at 02:00 stayed drifted
+until somebody noticed.
+
+* `halite agent -schedule FILE` runs highstates, `apply`, or `call` on an
+  interval, with `splay`, `test`, and `at_start`. The splay delays the run
+  rather than the tick, so the period stays what the config says while a
+  fleet spreads out inside it — two hundred hosts pulling the state tree in
+  the same second is a thundering herd.
+* A scheduled run uses the same loader, engine, and modules as a dispatched
+  one. It answers no dispatched job, so it is announced on the bus as
+  `halite/schedule/<agent>/<name>` rather than returned — which means the
+  reactor can act on it. A nightly `test: true` highstate reporting
+  `changed > 0` is a drift alarm.
+* Agents may now raise `halite/schedule/<their-own-id>/<name>` alongside
+  their beacon tags, under the same rule: an agent speaks only for itself.
+* A job that could never run — no interval, an unknown kind, an `apply`
+  with no `sls`, a splay longer than the interval — is refused when the
+  file is read, not discovered at 02:00. A missing schedule file is not an
+  error.
+
 New: compound targeting. One target language still serves top files,
 `halite run`, `halite ssh`, the mine, and the reactor — it just says more.
 

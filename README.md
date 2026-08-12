@@ -18,8 +18,8 @@ runtime, onedir/relenv packaging, or the deprecation treadmill.
 * **Agentless** — `halite ssh` pushes the binary, runs, and cleans up.
 
 Plus the event layer: a tagged event bus with a live stream, a reactor
-turning events into jobs, agent-side beacons, durable returners, a mine
-of fleet-wide facts, and ordered orchestration. What remains are the
+turning events into jobs, agent-side beacons and an agent-side scheduler,
+durable returners, a mine of fleet-wide facts, and ordered orchestration. What remains are the
 deliberate non-goals and an honest list of known gaps against Salt
 3008 — see [docs/salt-parity.md](docs/salt-parity.md).
 
@@ -116,6 +116,9 @@ halite run 'web*' call pkg.installed name=nginx
 # Watch what the fleet is doing, and run ordered work across it
 halite events -tag 'halite/job/**'
 halite orchestrate deploy
+
+# Let each agent converge on its own clock (Salt: the minion scheduler)
+halite agent -master master.example.com -schedule schedule.sls
 ```
 
 mTLS 1.3 throughout, agent identity from the client certificate, and no
@@ -183,7 +186,7 @@ gate while a conversion is in progress. See
 * [docs/writing-states.md](docs/writing-states.md) — SLS format, templating, requisites
 * [docs/states.md](docs/states.md) — state module reference (file, pkg, service, cmd)
 * [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
-* [docs/events.md](docs/events.md) — the event bus, reactor, returners, beacons, mine
+* [docs/events.md](docs/events.md) — the event bus, reactor, returners, beacons, scheduler, mine
 * [docs/orchestration.md](docs/orchestration.md) — ordered fleet-wide runs
 * [docs/external-modules.md](docs/external-modules.md) — custom modules in any language
 * [docs/agentless.md](docs/agentless.md) — `halite ssh`, rosters, bootstrapping

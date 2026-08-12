@@ -63,21 +63,26 @@ func (s *Server) handleAgentEvent(w http.ResponseWriter, r *http.Request, peer t
 // rules match on the *tag* — so without this, web1 could raise
 // `halite/beacon/db1/service` and fire a rule written for db1.
 //
-// Agents may raise exactly `halite/beacon/<their-own-id>/<name>`. Anything
-// else under `halite/` belongs to the control plane.
+// Agents may raise `halite/beacon/<their-own-id>/<name>` and
+// `halite/schedule/<their-own-id>/<name>`. Anything else under `halite/`
+// belongs to the control plane.
 func agentMayRaise(id, tag string) error {
 	segments := strings.Split(tag, "/")
-	if len(segments) != 4 || segments[0] != "halite" || segments[1] != "beacon" {
-		return fmt.Errorf("agents may only raise halite/beacon/%s/<name> events", id)
+	if len(segments) != 4 || segments[0] != "halite" || !agentNamespaces[segments[1]] {
+		return fmt.Errorf("agents may only raise halite/{beacon,schedule}/%s/<name> events", id)
 	}
 	if segments[2] != id {
 		return fmt.Errorf("cannot raise an event for %q", segments[2])
 	}
 	if segments[3] == "" {
-		return fmt.Errorf("beacon events need a name")
+		return fmt.Errorf("%s events need a name", segments[1])
 	}
 	return nil
 }
+
+// agentNamespaces are the tag namespaces an agent speaks in: what it
+// watched, and what it ran on its own clock.
+var agentNamespaces = map[string]bool{"beacon": true, "schedule": true}
 
 // handleEventStream writes newline-delimited JSON events until the client
 // goes away. Each event is flushed on its own, so a tail is live rather

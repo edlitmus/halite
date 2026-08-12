@@ -24,6 +24,7 @@ const (
 	TagJobDispatch   = "halite/job/%s/dispatch"
 	TagJobReturn     = "halite/job/%s/ret/%s"
 	TagBeacon        = "halite/beacon/%s/%s"
+	TagSchedule      = "halite/schedule/%s/%s"
 )
 
 // Event is one thing that happened. Data is shared by reference between

@@ -255,16 +255,92 @@ watcher does not take the agent down. A beacon event that cannot be
 delivered is dropped, and the condition is reported again the next time it
 changes.
 
-### Beacon tags are constrained
+### Agent tags are constrained
 
-An agent may raise exactly `halite/beacon/<its-own-id>/<name>`. Anything
-else is refused with a 403.
+An agent may raise exactly `halite/beacon/<its-own-id>/<name>` and
+`halite/schedule/<its-own-id>/<name>`. Anything else is refused with a
+403.
 
 The source of an event already comes from the client certificate, but
 reactor rules match on the **tag** — so without this, `web1` could raise
 `halite/beacon/db1/service` and fire a rule written for `db1`. The tag is
 as trustworthy as the source; the *data* inside it is still whatever the
 agent chose to send.
+
+## The scheduler
+
+A halite fleet converges because something makes it. Under a control plane
+that something can be the agent itself: `-schedule FILE` gives it work to
+run on its own clock, the way Salt's minion-side scheduler does.
+
+```yaml
+# schedule.sls
+converge:
+  kind: highstate
+  interval: 30m
+  splay: 5m
+  at_start: true
+
+nightly-audit:
+  kind: highstate
+  interval: 24h
+  test: true
+
+tls-renewal:
+  kind: apply
+  sls:
+    - web.tls
+  interval: 12h
+
+disk:
+  kind: call
+  fn: disk.usage
+  interval: 5m
+```
+
+```sh
+halite agent -master master.example.com -schedule schedule.sls
+```
+
+| Setting | Meaning |
+|---|---|
+| `kind` | `highstate` (the default), `apply`, or `call` |
+| `interval` | how often, as a duration (`30s`, `5m`, `24h`). Required |
+| `splay` | delay each run by a random amount up to this. Must be shorter than the interval |
+| `test` | run as a dry run: a drift report that changes nothing |
+| `at_start` | also run once when the agent starts, rather than waiting out the first interval |
+| `sls` | for `apply`: the SLS names |
+| `fn`, `args` | for `call`: the function and its arguments |
+
+The splay delays the run, not the tick, so the period stays what the
+config says while a fleet spreads out inside it — two hundred hosts
+pulling the state tree in the same second is a thundering herd.
+
+A scheduled run uses the same loader, engine, and modules as a dispatched
+one. What differs is the reporting: it answers no dispatched job, so it is
+announced on the bus rather than returned.
+
+| Tag | Raised when | Data |
+|---|---|---|
+| `halite/schedule/<id>/<name>` | a scheduled job finishes | `job`, `kind`, `result`, `succeeded`, `failed`, `changed`, `duration`, `test`, `error` if it failed |
+
+```sh
+halite events -tag 'halite/schedule/**'
+```
+
+Because it is an event, the reactor can act on it: a nightly `test: true`
+highstate that reports `changed > 0` is a drift alarm, and a rule matching
+`halite/schedule/*/nightly-audit` can turn it into a webhook or a real
+highstate.
+
+A job that could never run — no interval, an unknown kind, an `apply` with
+no `sls` — is refused when the file is read, not discovered at 02:00. A
+missing schedule file is not an error: an unscheduled agent is a valid
+choice, and the one every existing deployment already has.
+
+Masterless hosts keep using cron (see
+[getting-started.md](getting-started.md)); the scheduler needs an agent to
+run in.
 
 ## The mine
 

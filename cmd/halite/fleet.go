@@ -27,6 +27,7 @@ import (
 	"github.com/edlitmus/halite/internal/orch"
 	"github.com/edlitmus/halite/internal/reactor"
 	"github.com/edlitmus/halite/internal/returner"
+	"github.com/edlitmus/halite/internal/schedule"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -113,6 +114,7 @@ func cmdAgent(args []string) {
 	retry := fs.Duration("retry", 10*time.Second, "delay between reconnection and enrollment attempts")
 	beaconFile := fs.String("beacons", "", "beacon config file (watches that raise events)")
 	mineFile := fs.String("mine", "", "mine config file (facts published for the rest of the fleet)")
+	scheduleFile := fs.String("schedule", "", "schedule config file (work this agent runs on its own clock)")
 	_ = parseFlags(fs, args)
 
 	beacons, err := beacon.Load(*beaconFile)
@@ -120,6 +122,10 @@ func cmdAgent(args []string) {
 		fatal("%v", err)
 	}
 	mineJobs, err := mine.Load(*mineFile)
+	if err != nil {
+		fatal("%v", err)
+	}
+	scheduled, err := schedule.Load(*scheduleFile)
 	if err != nil {
 		fatal("%v", err)
 	}
@@ -137,6 +143,7 @@ func cmdAgent(args []string) {
 		RetryInterval: *retry,
 		Beacons:       beacons,
 		MineJobs:      mineJobs,
+		Schedule:      scheduled,
 	}
 	if err := os.MkdirAll(cfg.CacheDir, 0o755); err != nil {
 		fatal("cache directory: %v", err)

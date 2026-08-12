@@ -92,6 +92,15 @@ Set `HALITE_MASTER` to avoid repeating `-master` on every command.
 Watch what the fleet is doing with `halite events` — see
 [events.md](events.md).
 
+An agent can also run work on its own clock, so the fleet converges
+without anything poking it:
+
+```sh
+halite agent -master master.example.com -schedule /usr/local/etc/halite/schedule.sls
+```
+
+See [the scheduler](events.md#the-scheduler).
+
 ## The `id` grain
 
 Under a control plane, an agent's `id` grain is the identity it enrolled

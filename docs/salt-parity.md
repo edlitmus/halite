@@ -40,6 +40,7 @@ not.
 | Event bus | tagged event stream (`/v1/events`, `halite events`) | done | in-memory, glob tag matching; see docs/events.md |
 | Reactor | rules matching tags to jobs | done | templated actions, loop guard, rate limit; see docs/events.md |
 | Beacons | agent-side watchers emitting events | done | disk, service, file; edge triggered; tags constrained to the agent's own id. See docs/events.md |
+| Minion scheduler | `halite agent -schedule FILE` | done | highstate, apply, or call on an interval, with splay and `test`; reports on the event bus. No `when:`/cron expressions, no `maxrunning`, no runner jobs |
 | salt-ssh (agentless) | `halite ssh` pushing the static binary | done | copies one binary, ships the tree, collects JSON; pillar rendered operator-side. See docs/agentless.md |
 | Syndic | | out | flat fleets over mTLS scale far enough |
 | Multi-master | agent failover across a list | done | masters share a CA and nothing else; failover, not a cluster (ADR-11) |
@@ -160,10 +161,10 @@ story.
 
 ### Scheduling and job management
 
-* No minion-side scheduler: Salt's "highstate every 30 minutes, splayed"
-  has no equivalent — beacons and mine intervals are the only periodic
-  machinery, and neither runs states. A halite fleet does not converge on
-  its own; something external must poke the control plane.
+* The scheduler runs on intervals with splay. Salt also takes calendar
+  expressions (`when: 5:00pm`, cron syntax), `maxrunning`, `until`/`after`
+  windows, and schedules pushed from the master or set from pillar;
+  halite's is a file on the host, and masterless hosts still use cron.
 * The job cache is in-memory, bounded, and lost on master restart;
   returners are the durable record and nothing queries them. No
   `--batch-size`, splay, or subset execution for rolling changes.
@@ -199,7 +200,8 @@ In priority order, judged by what blocks a real Salt migration first:
    **done**: the minimum module set for real server fleets.
 3. ~~Compound targeting~~ — **done**: `and`/`or`/`not`, parentheses, and
    the `G@`/`L@`/`E@`/`P@` matchers.
-4. An agent-side scheduler, so the fleet converges without external cron.
+4. ~~An agent-side scheduler~~ — **done**: intervals with splay, reported
+   on the event bus.
 5. `_in` requisites and `names:` — most Salt trees need both to compile.
 
 ## Phases
