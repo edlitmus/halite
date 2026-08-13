@@ -1,62 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 — 2026-08-13
 
-New: the `_in` requisites and `- names:` expansion — the two pieces of the
-SLS dialect most existing Salt trees will not compile without.
+P5: the five gaps that blocked a real Salt migration, closed in the order
+they block one. Plus `halite parse`, which reads an existing Salt tree and
+says what halite can do with it, and a full-repo review pass.
 
-* `require_in`, `watch_in`, `onchanges_in`, and `prereq_in` are resolved
-  onto the states they name before ordering, so the result is exactly what
-  writing the plain requisite on the other state would have produced. It
-  is the only way to attach a requisite to a state another SLS file
-  declares, which is why Salt trees lean on it. An `_in` naming a state no
-  loaded file declares is a compile error, not a silent no-op.
-* `names:` declares the same state once per name. Each expansion gets its
-  own arguments with `name` set, and an id of `install_tools (vim)` so the
-  output says which one did what. A requisite pointing at the declaration
-  reaches every expansion: it runs after all of them, and a `watch` fires
-  if any of them changed.
-* `halite parse` no longer reports either as unsupported.
+New: static custom grains. halite detects a fixed set of facts, so until
+now `role:web` targeting — which the documentation's own examples use —
+had no way to be fed.
 
-New: an agent-side scheduler. A halite fleet converged only when something
-poked the control plane, so a host that drifted at 02:00 stayed drifted
-until somebody noticed.
-
-* `halite agent -schedule FILE` runs highstates, `apply`, or `call` on an
-  interval, with `splay`, `test`, and `at_start`. The splay delays the run
-  rather than the tick, so the period stays what the config says while a
-  fleet spreads out inside it — two hundred hosts pulling the state tree in
-  the same second is a thundering herd.
-* A scheduled run uses the same loader, engine, and modules as a dispatched
-  one. It answers no dispatched job, so it is announced on the bus as
-  `halite/schedule/<agent>/<name>` rather than returned — which means the
-  reactor can act on it. A nightly `test: true` highstate reporting
-  `changed > 0` is a drift alarm.
-* Agents may now raise `halite/schedule/<their-own-id>/<name>` alongside
-  their beacon tags, under the same rule: an agent speaks only for itself.
-* A job that could never run — no interval, an unknown kind, an `apply`
-  with no `sls`, a splay longer than the interval — is refused when the
-  file is read, not discovered at 02:00. A missing schedule file is not an
-  error.
-
-New: compound targeting. One target language still serves top files,
-`halite run`, `halite ssh`, the mine, and the reactor — it just says more.
-
-* `and`, `or`, `not`, and parentheses combine patterns:
-  `web* and not L@web9`, `(db* or cache*) and os_family:FreeBSD`. "The web
-  hosts, except the one being rebuilt" had no single-pattern spelling.
-* Salt's matcher prefixes are read where they mean something halite can
-  do: `G@grain:glob`, `L@id,id`, `E@regex` on the id, `P@grain:regex`.
-  `I@` (pillar), `S@` (subnet), `N@` (nodegroup) and `R@` (range) are not
-  implemented.
-* A target that does not parse is now an error where it is written — in a
-  top file, in `halite parse`, and at dispatch on the control plane —
-  rather than a silent non-match that looks like an empty fleet. Two
-  patterns side by side are an error too, not an implied `and`.
-* A grain holding a list matches when any entry does, so `roles:web`
-  selects a host whose `roles` are `[web, cache]`.
-* `halite parse` checks targets by asking the matcher itself, so its
-  report tracks the target language instead of a copy of it.
+* A static grains file (`/usr/local/etc/halite/grains` on FreeBSD,
+  `/etc/halite/grains` on Linux, `$HALITE_GRAINS` or `-file` to override)
+  is plain YAML, merged over the detected grains. Custom grains win: a
+  site that sets `os_family` by hand means it. A file that does not parse
+  is reported and skipped, because a typo in it must not stop a host from
+  converging.
+* `halite grains set role=web` and `halite grains unset role` write it —
+  Salt's `grains.setval`. The file is ordinary YAML, so the fleet-wide way
+  to set a grain is `file.managed` on the grains file.
+* `yamlite.Plain` converts a parsed tree to plain Go maps; pillar's private
+  copy of it is gone.
 
 New: the module set a real server fleet needs.
 
@@ -85,21 +49,61 @@ New: the module set a real server fleet needs.
 * `halite parse` knows the new modules and arguments, so a Salt tree using
   them no longer reports them as unsupported.
 
-New: static custom grains. halite detects a fixed set of facts, so until
-now `role:web` targeting — which the documentation's own examples use —
-had no way to be fed.
+New: compound targeting. One target language still serves top files,
+`halite run`, `halite ssh`, the mine, and the reactor — it just says more.
 
-* A static grains file (`/usr/local/etc/halite/grains` on FreeBSD,
-  `/etc/halite/grains` on Linux, `$HALITE_GRAINS` or `-file` to override)
-  is plain YAML, merged over the detected grains. Custom grains win: a
-  site that sets `os_family` by hand means it. A file that does not parse
-  is reported and skipped, because a typo in it must not stop a host from
-  converging.
-* `halite grains set role=web` and `halite grains unset role` write it —
-  Salt's `grains.setval`. The file is ordinary YAML, so the fleet-wide way
-  to set a grain is `file.managed` on the grains file.
-* `yamlite.Plain` converts a parsed tree to plain Go maps; pillar's private
-  copy of it is gone.
+* `and`, `or`, `not`, and parentheses combine patterns:
+  `web* and not L@web9`, `(db* or cache*) and os_family:FreeBSD`. "The web
+  hosts, except the one being rebuilt" had no single-pattern spelling.
+* Salt's matcher prefixes are read where they mean something halite can
+  do: `G@grain:glob`, `L@id,id`, `E@regex` on the id, `P@grain:regex`.
+  `I@` (pillar), `S@` (subnet), `N@` (nodegroup) and `R@` (range) are not
+  implemented.
+* A target that does not parse is now an error where it is written — in a
+  top file, in `halite parse`, and at dispatch on the control plane —
+  rather than a silent non-match that looks like an empty fleet. Two
+  patterns side by side are an error too, not an implied `and`.
+* A grain holding a list matches when any entry does, so `roles:web`
+  selects a host whose `roles` are `[web, cache]`.
+* `halite parse` checks targets by asking the matcher itself, so its
+  report tracks the target language instead of a copy of it.
+
+New: an agent-side scheduler. A halite fleet converged only when something
+poked the control plane, so a host that drifted at 02:00 stayed drifted
+until somebody noticed.
+
+* `halite agent -schedule FILE` runs highstates, `apply`, or `call` on an
+  interval, with `splay`, `test`, and `at_start`. The splay delays the run
+  rather than the tick, so the period stays what the config says while a
+  fleet spreads out inside it — two hundred hosts pulling the state tree in
+  the same second is a thundering herd.
+* A scheduled run uses the same loader, engine, and modules as a dispatched
+  one. It answers no dispatched job, so it is announced on the bus as
+  `halite/schedule/<agent>/<name>` rather than returned — which means the
+  reactor can act on it. A nightly `test: true` highstate reporting
+  `changed > 0` is a drift alarm.
+* Agents may now raise `halite/schedule/<their-own-id>/<name>` alongside
+  their beacon tags, under the same rule: an agent speaks only for itself.
+* A job that could never run — no interval, an unknown kind, an `apply`
+  with no `sls`, a splay longer than the interval — is refused when the
+  file is read, not discovered at 02:00. A missing schedule file is not an
+  error.
+
+New: the `_in` requisites and `- names:` expansion — the two pieces of the
+SLS dialect most existing Salt trees will not compile without.
+
+* `require_in`, `watch_in`, `onchanges_in`, and `prereq_in` are resolved
+  onto the states they name before ordering, so the result is exactly what
+  writing the plain requisite on the other state would have produced. It
+  is the only way to attach a requisite to a state another SLS file
+  declares, which is why Salt trees lean on it. An `_in` naming a state no
+  loaded file declares is a compile error, not a silent no-op.
+* `names:` declares the same state once per name. Each expansion gets its
+  own arguments with `name` set, and an id of `install_tools (vim)` so the
+  output says which one did what. A requisite pointing at the declaration
+  reaches every expansion: it runs after all of them, and a `watch` fires
+  if any of them changed.
+* `halite parse` no longer reports either as unsupported.
 
 New: `halite parse` reads an existing Salt state and pillar tree and
 reports what halite can use as written.
@@ -120,10 +124,11 @@ reports what halite can use as written.
   anchors, aliases, merge keys, flow collections, multiple documents,
   tags, tabs); Salt's undotted `pkg:`/`- installed` declaration; state
   modules and requisites halite does not implement; arguments it would
-  ignore, with the ones that change the result (`pkg.installed: version`,
-  `file.managed: source_hash`) raised to errors; `salt://` and remote
+  ignore, with the ones that change the result (`file.managed:
+  source_hash`, `cmd.run: runas`) raised to errors; `salt://` and remote
   sources; `template: jinja`; unresolvable includes and top-file SLS
-  names; compound targets; and Salt's Python extension directories.
+  names; targets that do not parse; and Salt's Python extension
+  directories.
 * A file that does not render is read again with its template constructs
   stripped, so the report still holds its state inventory. Those findings
   are marked approximate, because what a Jinja loop would have expanded

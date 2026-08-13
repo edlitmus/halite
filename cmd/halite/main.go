@@ -31,7 +31,7 @@ import (
 	"github.com/edlitmus/halite/internal/sls"
 )
 
-const version = "0.6.0"
+const version = "0.7.0"
 
 func main() {
 	if len(os.Args) < 2 {
