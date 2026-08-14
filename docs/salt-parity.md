@@ -57,6 +57,7 @@ not.
 | file.symlink / file.copy | done | links repointed, a real file in the way needs `force`; copy takes a host path |
 | file.append / prepend / line / replace / blockreplace / comment / uncomment | done | partial-file edits, atomic, preserving mode and ownership. `file.replace` is Go regexp with `$1`; `file.line` matches on a substring, as Salt's does |
 | pkg.installed / removed | done | backends: pkg(8), apt, dnf, yum, zypper, pacman, apk, brew, choco, winget. `version` and `hold` where the backend can express them; a pin it cannot express fails rather than installing the current version |
+| pip.installed / removed, virtualenv.managed | done | into a virtualenv with `bin_env`; an exact pin is compared, anything looser is pip's to judge |
 | pkgrepo.managed / absent | done | repository file per platform (pkg(8), apt, dnf/yum, zypper, apk) plus a metadata refresh; halite does not fetch signing keys |
 | ssh_auth.present / absent | done | one authorized_keys entry per state, identified by the key body |
 | service.running / dead | done | rc.d (+sysrc enable), systemd, sysvinit, launchd (partial), Windows SCM |
@@ -155,10 +156,10 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-48 state functions and 4 execution modules. Raw counts flatter Salt —
+51 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
-firewall states, `selinux`, `lvm`, `x509`, container states,
-`pip`/`npm`/`virtualenv`, Windows updates and ACLs. The `_modules/` escape hatch exists, but it is per-site effort, not
+firewall states, `selinux`, `lvm`, `x509`, container states, `npm`,
+Windows updates and ACLs. The `_modules/` escape hatch exists, but it is per-site effort, not
 a library.
 
 ### Environments and fileservers

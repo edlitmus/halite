@@ -502,6 +502,63 @@ editor-choice:
 installing it: choosing something the system does not offer is a
 different intent from adding it.
 
+## pip
+
+### pip.installed
+
+Install Python packages, into a virtualenv when the state names one.
+
+| Arg | Description |
+|---|---|
+| `name` | one requirement, e.g. `django==4.2` (default: state ID) |
+| `pkgs` | several requirements |
+| `requirements` | a requirements file to install from |
+| `bin_env` | a virtualenv directory, or a path to a `pip` |
+| `upgrade` | `true` passes `--upgrade` |
+
+```yaml
+app requirements:
+  pip.installed:
+    - bin_env: /opt/app/venv
+    - requirements: /opt/app/requirements.txt
+
+django:
+  pip.installed:
+    - name: django==4.2
+```
+
+An exact `==` pin is compared against what `pip freeze` reports, so a
+downgrade is a change like any other. Anything looser — `>=4.0`, a marker,
+an extra — is left for pip to judge, because reimplementing PEP 440 to
+second-guess it would be worse than asking. Names fold the way pip folds
+them, so `zope.interface` and `zope_interface` are one package.
+
+A `requirements` file is pip's to read: the state runs pip and reports the
+difference between the freeze before and after, which is also how it
+reports the transitive installs a requirement pulled in.
+
+### pip.removed
+
+Uninstall Python packages. Args: `name`, `pkgs`, `bin_env`.
+
+## virtualenv
+
+### virtualenv.managed
+
+Create a Python virtual environment, and install a requirements file into
+it. Args: `name` (the directory), `python` (default `python3`),
+`requirements`.
+
+```yaml
+/opt/app/venv:
+  virtualenv.managed:
+    - requirements: /opt/app/requirements.txt
+```
+
+The environment is created with `python3 -m venv`, and the requirements go
+in through that environment's own pip — the same code path as
+`pip.installed` with `bin_env`.
+
 ## service
 
 Backend is auto-detected: FreeBSD rc.d (uses `onestart`/`onestatus` so

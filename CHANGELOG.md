@@ -18,6 +18,23 @@ Salt's `state.show_sls` and `state.show_highstate`.
 * `apply` and `show` now share one target-to-plan resolution, so a file
   path, a dotted name, and a highstate mean the same thing to both.
 
+New: the Python states. `pip.installed`, `pip.removed`, and
+`virtualenv.managed` are what a Salt tree deploying a Python application
+reaches for, and had no equivalent.
+
+* `bin_env` names a virtualenv (or a pip inside one), so a state installs
+  into an application's environment rather than the system's.
+  `virtualenv.managed` creates the environment with `python3 -m venv` and
+  hands its requirements to the same code path.
+* An exact `==` pin is compared against `pip freeze`, so a downgrade is a
+  change like any other. Anything looser is left for pip to judge:
+  reimplementing PEP 440 to second-guess it would be worse than asking.
+  Names fold the way pip folds them, so `zope.interface` and
+  `zope_interface` are one package.
+* A `requirements` file is pip's to read. The state runs pip and reports
+  the difference between the freeze before and after, which is also how
+  the transitive installs a requirement pulled in get reported.
+
 New: the boot-configuration states.
 
 * `service.enabled` / `service.disabled` set whether a service starts at
