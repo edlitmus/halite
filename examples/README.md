@@ -24,6 +24,7 @@ the state they undo and are documented beside it in
 | `identity.sls` | the settings a host has one of: hostname, timezone, `/etc/hosts`, locale, kernel modules |
 | `pyapp.sls` | deploying an application: `file.recurse`, `virtualenv.managed`, `pip.installed`, `file.symlink` |
 | `repo.sls` | a third-party repository and a held package version |
+| `tls.sls` | an internal CA and a certificate signed by it, renewed inside a window |
 | `provisioning.sls` | getting content onto a host: `git.latest`, `archive.extracted`, `mount.mounted`, `cron.present` |
 | `linux-hardening.sls` | Linux-only settings behind a grain guard: `selinux`, `service.enabled`/`disabled`, `kmod`, `alternatives` |
 | `windows.sls` | Windows-only, behind the same kind of guard: `reg.*`, and `cron` as a scheduled task |

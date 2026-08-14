@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+New: `x509.private_key_managed` and `x509.certificate_managed`. An
+internal CA and the certificates under it, from `crypto/x509` — the same
+standard library the fleet CA uses, so there is no openssl to install and
+what the states write is what openssl reads.
+
+* Keys are `ec` (P-256) or `rsa`, written 0600. An existing key of the
+  right kind is left alone: rotating one invalidates every certificate
+  signed from it, so it takes `new: true` or a changed `algo`/`bits`. A
+  key found group-readable is chmodded back without being rotated.
+* Certificates are self-signed, or signed by a CA the state names with
+  `signing_private_key` and `signing_cert`. `ca: true` issues a signing
+  certificate rather than a serving one, which is the other half of
+  running an internal CA from a state file.
+* A certificate is reissued when it is missing, inside the
+  `days_remaining` window (28 days by default), no longer matches its
+  private key, or its common name, alternative names, or `ca` flag differ
+  from the state. That window is what makes a converging fleet renew
+  itself. Shortening `days_valid` does not reissue a certificate that is
+  still outside the window: that would be churn, not convergence.
+* A server certificate with no `subject_alt_names` gets its common name as
+  one, because nothing modern accepts a certificate without.
+* Verified end to end: `openssl verify -CAfile ca.crt site.crt` returns
+  OK for what `examples/tls.sls` produces.
+
 Documentation and examples, audited against the code rather than read
 over.
 

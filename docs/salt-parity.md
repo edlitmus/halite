@@ -66,6 +66,7 @@ not.
 | user.present/absent, group.present/absent | done | pw(8), useradd/usermod, sysadminctl (partial), net user (partial); drift repair for uid/shell/home/gecos/groups |
 | cron.present/absent | done | crontab(1) with identifier markers; Windows via schtasks under \halite\ (translation unit tested, unverified on a real Windows host) |
 | selinux.mode / boolean | done | Linux with policycoreutils; running and configured modes set together, and crossing `disabled` says a reboot is needed |
+| x509.private_key_managed / certificate_managed | done | stdlib crypto/x509: ec or rsa keys, self-signed or signed by a named CA, renewed inside a `days_remaining` window. No CSR workflow, no remote signing policies |
 | sysctl.present | done | runtime + persist (sysctl.conf / sysctl.d); FreeBSD, Linux, macOS-runtime |
 | archive.extracted | done | tar, tar.gz, zip; local or http(s) source with a required sha256 for remote; traversal-safe extraction |
 | git.latest | done | shells to git; refuses dirty checkouts and foreign remotes unless forced |
@@ -157,11 +158,12 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-53 state functions and 4 execution modules. Raw counts flatter Salt —
+55 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
 firewall states, SELinux beyond the mode and booleans (`fcontext`, `port`,
-`module`), `lvm`, `x509`, container states, `npm`, Windows updates and
-ACLs. The `_modules/` escape hatch exists, but it is per-site effort, not
+`module`), `lvm`, container states, `npm`, Windows updates and ACLs. The
+x509 states cover a host's own key and certificate, not Salt's CSR
+workflow or its remote signing policies. The `_modules/` escape hatch exists, but it is per-site effort, not
 a library.
 
 ### Environments and fileservers

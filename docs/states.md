@@ -599,6 +599,75 @@ httpd_can_network_connect:
 `persist` is the default because `setsebool` without `-P` is lost on the
 next reboot, which is rarely what a state file means.
 
+## x509
+
+Keys and certificates, from `crypto/x509` — the same standard library the
+fleet CA uses, so what these states write is readable by openssl and
+everything else. This is for a host's own TLS material; the fleet's own
+PKI is [pki.md](pki.md).
+
+### x509.private_key_managed
+
+| Arg | Description |
+|---|---|
+| `name` | the key file (default: state ID) |
+| `algo` | `ec` (P-256, the default) or `rsa` |
+| `bits` | RSA size, at least 2048 (default 2048) |
+| `new` | `true` rotates the key |
+| `mode` | default `0600` |
+| `user`, `group`, `makedirs` | as elsewhere |
+
+```yaml
+/usr/local/etc/ssl/site.key:
+  x509.private_key_managed:
+    - algo: ec
+```
+
+An existing key of the right kind is **left alone**: rotating one
+invalidates every certificate signed from it, so it happens only on
+`new: true` or when `algo`/`bits` no longer match. A key found with a
+loose mode is chmodded back without being rotated.
+
+### x509.certificate_managed
+
+| Arg | Description |
+|---|---|
+| `name` | the certificate file (default: state ID) |
+| `private_key` | the key to certify (required) |
+| `CN` | common name (default: the file's base name) |
+| `O`, `OU`, `C` | organisation, unit, country |
+| `subject_alt_names` | `DNS:name`, `IP:address`, `email:address`; a bare entry is a DNS name |
+| `days_valid` | lifetime, default 365 |
+| `days_remaining` | renew when the certificate expires within this many days, default 28 |
+| `ca` | `true` issues a signing certificate rather than a serving one |
+| `signing_private_key`, `signing_cert` | sign with this CA instead of self-signing |
+
+```yaml
+/usr/local/etc/ssl/site.crt:
+  x509.certificate_managed:
+    - private_key: /usr/local/etc/ssl/site.key
+    - CN: site.example.com
+    - subject_alt_names:
+      - DNS:site.example.com
+      - IP:10.0.0.5
+    - require:
+      - x509: /usr/local/etc/ssl/site.key
+```
+
+The certificate is reissued when it is missing, inside the renewal
+window, no longer matches its private key, or its common name, alternative
+names, or `ca` flag differ from the state. `days_remaining` is what makes
+a converging fleet renew itself: each run checks, and reissues in the
+window rather than at expiry.
+
+A server certificate with no `subject_alt_names` gets its common name as
+one, because nothing modern accepts a certificate without. A `ca: true`
+certificate does not, since a CA is identified by its subject.
+
+Shortening `days_valid` does not reissue a certificate that is still
+outside the renewal window — it applies to the next issuance. Reissuing
+because the configured lifetime shrank would be churn, not convergence.
+
 ## service
 
 Backend is auto-detected: FreeBSD rc.d (uses `onestart`/`onestatus` so
