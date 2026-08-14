@@ -10,6 +10,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/sls"
+	"github.com/edlitmus/halite/internal/yamlite"
 )
 
 // cmdShow prints the compiled plan for a target without running any of it:
@@ -120,7 +121,7 @@ func planJSON(states []sls.State, root string) []map[string]any {
 			"id":       st.ID,
 			"module":   st.Module,
 			"function": st.Fn,
-			"args":     st.Args,
+			"args":     plainArgs(st.Args),
 			"source":   relativeTo(root, st.Src),
 		}
 		if st.BaseID != "" {
@@ -142,6 +143,16 @@ func planJSON(states []sls.State, root string) []map[string]any {
 	return out
 }
 
+// plainArgs flattens the parser's own types, so the JSON is the arguments
+// rather than the shape the parser held them in.
+func plainArgs(args map[string]any) map[string]any {
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = yamlite.Plain(v)
+	}
+	return out
+}
+
 // refName renders a requisite reference the way an SLS file writes it.
 func refName(r sls.Ref) string {
 	if r.Module == "" {
@@ -152,8 +163,11 @@ func refName(r sls.Ref) string {
 
 // flatValue renders an argument value on one line. The plan is for reading,
 // so a long list is summarised rather than wrapped.
+//
+// Arguments arrive as the parser produced them, so a nested mapping is a
+// *yamlite.Map: flattened here rather than printed as a Go struct.
 func flatValue(v any) string {
-	switch t := v.(type) {
+	switch t := yamlite.Plain(v).(type) {
 	case []any:
 		parts := make([]string, 0, len(t))
 		for _, item := range t {

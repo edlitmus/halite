@@ -12,9 +12,9 @@ runtime, onedir/relenv packaging, or the deprecation treadmill.
 
 * **Masterless** — `halite apply` on the host. Highstate with top.sls
   targeting, custom grains, pillar, includes, the full requisite set with
-  its `_in` forms and `names:` expansion, and 55 state functions across
-  file/pkg/pkgrepo/pip/service/cmd/user/group/ssh_auth/host/cron/sysctl/
-  kmod/selinux/timezone/x509/archive/git/mount.
+  its `_in` forms and `names:` expansion, and 59 state functions across
+  file/pkg/pkgrepo/pip/service/cmd/user/group/ssh_auth/host/jail/cron/
+  sysctl/kmod/selinux/timezone/x509/archive/git/mount.
 * **Fleet** — an mTLS HTTP/2 control plane, CSR-based enrollment, and
   targeted dispatch to agents.
 * **Agentless** — `halite ssh` pushes the binary, runs, and cleans up.

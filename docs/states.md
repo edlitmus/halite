@@ -668,6 +668,83 @@ Shortening `days_valid` does not reissue a certificate that is still
 outside the renewal window — it applies to the next issuance. Reissuing
 because the configured lifetime shrank would be churn, not convergence.
 
+## jail (FreeBSD)
+
+Jails are halite's own, not a Salt port: Salt has no jail states, so
+nothing here comes from a tree you might be migrating.
+
+The split matches `file.managed` + `service.running`: **`jail.present`**
+writes the configuration, **`jail.running`** starts it, and a `watch`
+between them restarts a jail whose configuration changed.
+
+### jail.present
+
+| Arg | Description |
+|---|---|
+| `name` | the jail name (default: state ID) |
+| `path` | the jail's root directory (required) |
+| `hostname` | `host.hostname` (default: the jail name) |
+| `ip4_addr`, `ip6_addr`, `interface` | the usual networking parameters |
+| `params` | a mapping of any other jail parameters |
+| `config` | override the file path |
+| `boot` | `true` adds the jail to rc.conf's `jail_list`, `false` removes it |
+
+```yaml
+www:
+  jail.present:
+    - path: /usr/local/jails/www
+    - hostname: www.example.com
+    - ip4_addr: 10.0.0.10
+    - interface: em0
+    - boot: true
+    - params:
+        allow.raw_sockets: true
+        devfs_ruleset: "4"
+
+start-www:
+  jail.running:
+    - name: www
+    - watch:
+      - jail: www
+```
+
+The file is `/etc/jail.conf.d/<name>.conf`, which is where `rc.d/jail`
+looks for a named jail — so `/etc/jail.conf`, with the operator's global
+settings in it, is left alone. Every parameter is written in a fixed
+order, because a block that reordered itself would report a change on
+every run.
+
+Three defaults are supplied, since a jail without them is a namespace
+rather than a running system: `exec.start = "/bin/sh /etc/rc"`,
+`exec.stop = "/bin/sh /etc/rc.shutdown"`, and `mount.devfs`. Any of them
+can be overridden through `params`, including to an empty value, which
+drops the parameter.
+
+In `params`, `true` writes the bare flag form (`allow.raw_sockets;`), a
+list writes a comma-separated value (`ip4.addr = "10.0.0.20",
+"10.0.0.21";`), and anything else is quoted. **There is no translation for
+turning a boolean off**: jail.conf spells that by prefixing the last
+component with `no` (`allow.nomount.devfs`), and guessing where that
+prefix belongs is how a state writes a file that means something other
+than what it says. Write the negated name as a parameter.
+
+**It writes the configuration and nothing else.** The jail's filesystem —
+a base tarball, a ZFS clone, `file.recurse` — is the operator's.
+
+### jail.running / jail.stopped
+
+Start or stop a jail, through `service jail start|stop <name>` so that a
+jail halite starts is started exactly as the host starts it at boot.
+`jail.running` restarts when a watched state changed, which is how a
+reconfigured jail picks up its new configuration.
+
+### jail.absent
+
+Stops the jail, removes its configuration file, and takes it out of
+`jail_list`. **The filesystem is left alone** — a jail root is somebody's
+data, and a state that deleted it would be the most expensive kind of
+surprise.
+
 ## service
 
 Backend is auto-detected: FreeBSD rc.d (uses `onestart`/`onestatus` so

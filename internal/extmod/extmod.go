@@ -24,11 +24,24 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/modules"
+	"github.com/edlitmus/halite/internal/yamlite"
 )
 
 // DirName is the directory external modules live in, relative to the state
 // tree root. It ships to agents with the rest of the tree.
 const DirName = "_modules"
+
+// plainArgs flattens the parser's own types out of a module's arguments.
+// A nested mapping in an SLS file is a *yamlite.Map, which would reach the
+// module as {"Keys":[...],"Vals":{...}} — a shape nobody writing a module
+// should have to know about.
+func plainArgs(args map[string]any) map[string]any {
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = yamlite.Plain(v)
+	}
+	return out
+}
 
 // DefaultTimeout bounds one module call.
 const DefaultTimeout = 5 * time.Minute
@@ -176,7 +189,7 @@ func (r *Resolver) run(program, function string, c *modules.Ctx, id string, args
 		Function: function,
 		ID:       id,
 		Test:     c.Test,
-		Args:     args,
+		Args:     plainArgs(args),
 		Grains:   c.Grains,
 		Pillar:   c.Pillar,
 		Mine:     c.Mine,

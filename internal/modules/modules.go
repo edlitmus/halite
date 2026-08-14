@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/yamlite"
 )
 
 // Ctx is the execution context shared by all module calls in a run.
@@ -94,6 +96,30 @@ func List(args map[string]any, key string) []string {
 		return out
 	}
 	return nil
+}
+
+// Map returns args[key] as a mapping of names to values, and whether the
+// argument was there at all.
+//
+// State arguments arrive as the parser produced them, so a nested mapping
+// in an SLS file is a *yamlite.Map rather than a plain Go map — the values
+// are flattened here so a module can read one without knowing that.
+func Map(args map[string]any, key string) (map[string]any, bool) {
+	raw, present := args[key]
+	if !present {
+		return nil, false
+	}
+	switch t := raw.(type) {
+	case *yamlite.Map:
+		out := make(map[string]any, len(t.Keys))
+		for _, k := range t.Keys {
+			out[k] = yamlite.Plain(t.Vals[k])
+		}
+		return out, true
+	case map[string]any:
+		return t, true
+	}
+	return nil, true // present, but not a mapping: the caller reports it
 }
 
 // run executes argv directly (no shell) and returns combined behavior pieces.

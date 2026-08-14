@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+New: FreeBSD jail states — `jail.present`, `jail.absent`, `jail.running`,
+`jail.stopped`. Containers are where halite and Salt diverge rather than
+lag: Salt has no jail states, so nothing here ports from a Salt tree, and
+nothing has to be translated either.
+
+* The split matches `file.managed` + `service.running`: `jail.present`
+  writes the configuration, `jail.running` starts it, and a `watch`
+  between them restarts a jail whose block changed. `jail.running` and
+  `jail.stopped` go through `service jail start|stop`, so a jail halite
+  starts is started exactly as the host starts it at boot — including
+  which configuration file rc.d/jail decides to read.
+* The file is `/etc/jail.conf.d/<name>.conf`, where rc.d/jail looks for a
+  named jail, leaving `/etc/jail.conf` and its global settings alone.
+  Parameters are written in a fixed order: a block that reordered itself
+  would report a change on every run.
+* `params` takes any jail parameter. `true` writes the bare flag form, a
+  list writes a comma-separated value, anything else is quoted, and an
+  empty value drops the parameter — which is how the three defaults
+  (`exec.start`, `exec.stop`, `mount.devfs`) are overridden. There is no
+  translation for switching a boolean *off*: jail.conf spells that by
+  prefixing the last component with `no`, and guessing where that prefix
+  goes is how a state writes a file that means something else.
+* `jail.absent` stops the jail, removes the file, and takes it out of
+  `jail_list` — and leaves the filesystem alone. A jail root is somebody's
+  data.
+* Verified against jail(8) itself: `jail -f <file> -e ';'` parses what
+  halite writes and reports back the parameters intended, and that check
+  is now a test which runs wherever jail(8) exists.
+* `modules.Map` reads a nested mapping argument, which arrives as the
+  parser's own `*yamlite.Map` rather than a Go map. `halite show` and the
+  external-module JSON flatten the same way — both would otherwise have
+  printed `&{[keys] map[...]}` at whoever was reading.
+
 New: `x509.private_key_managed` and `x509.certificate_managed`. An
 internal CA and the certificates under it, from `crypto/x509` — the same
 standard library the fleet CA uses, so there is no openssl to install and

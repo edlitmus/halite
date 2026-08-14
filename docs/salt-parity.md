@@ -77,6 +77,7 @@ not.
 | locale.system | done | Linux only: localectl, /etc/default/locale, or /etc/locale.conf. FreeBSD has no single system locale |
 | alternatives.install / remove / set | done | update-alternatives or alternatives; setting an unregistered path fails |
 | network.system (hostname) | done | applied and recorded: hostnamectl, or hostname plus sysrc/scutil//etc/hostname. The rest of Salt's network.system is not implemented |
+| jail.present / absent / running / stopped | done (halite original) | FreeBSD jails: a jail.conf.d block plus the lifecycle through rc.d/jail. Salt has no jail states, so nothing ports — but nothing has to be translated either |
 | network.managed | out | too OS-entangled; use file + service |
 
 ## Execution modules (ad hoc)
@@ -158,10 +159,13 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-55 state functions and 4 execution modules. Raw counts flatter Salt —
+59 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
 firewall states, SELinux beyond the mode and booleans (`fcontext`, `port`,
-`module`), `lvm`, container states, `npm`, Windows updates and ACLs. The
+`module`), `lvm`, `npm`, Windows updates and ACLs. Containers are the
+place halite and Salt diverge rather than lag: there are FreeBSD jail
+states, which Salt does not have, and no OCI (`docker_container`,
+`docker_image`) states, which Salt does. The
 x509 states cover a host's own key and certificate, not Salt's CSR
 workflow or its remote signing policies. The `_modules/` escape hatch exists, but it is per-site effort, not
 a library.
