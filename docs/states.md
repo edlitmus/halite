@@ -525,9 +525,54 @@ nginx:
       - file: nginx_conf
 ```
 
+### service.enabled / service.disabled
+
+Set whether a service starts at boot, without starting or stopping it now.
+Args: `name`.
+
+```yaml
+pf:
+  service.enabled
+```
+
+`service.running` with `enable: true` covers the usual case; these exist
+for the one it cannot express — a service that should come up on the next
+boot but must not be started by this run, or one that should stop coming
+up without being stopped now.
+
+A backend that cannot report enablement (launchd, sysvinit) fails the
+state rather than acting blindly: without a probe every run would report a
+change, and being idempotent about boot configuration is the point.
+
 ### service.dead
 
 Ensure a service is stopped. Args: `name`.
+
+## network
+
+### network.system
+
+Set the host's own name.
+
+```yaml
+web1.example.com:
+  network.system
+
+set-hostname:
+  network.system:
+    - hostname: web1.example.com
+```
+
+The name is applied now *and* recorded for the next boot —
+`hostnamectl` where it exists, otherwise `hostname` plus `sysrc hostname=`
+(FreeBSD), `scutil --set` (macOS), or `/etc/hostname`. A hostname that
+reverts on the next reboot is the failure this state exists to prevent, so
+it reports drift when the running name and the recorded one disagree.
+
+Salt's `network.system` also writes the RHEL-era `/etc/sysconfig/network`
+switches. halite sets the hostname and nothing else: interface
+configuration is a stated non-goal, and half a state would be worse than
+none. Not implemented on Windows.
 
 ## cmd
 

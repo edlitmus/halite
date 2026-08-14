@@ -18,6 +18,23 @@ Salt's `state.show_sls` and `state.show_highstate`.
 * `apply` and `show` now share one target-to-plan resolution, so a file
   path, a dotted name, and a highstate mean the same thing to both.
 
+New: the boot-configuration states.
+
+* `service.enabled` / `service.disabled` set whether a service starts at
+  boot without starting or stopping it now — the case `service.running`
+  with `enable: true` cannot express. A backend that cannot report
+  enablement (launchd, sysvinit) fails the state rather than acting
+  blindly: without a probe every run would report a change, and being
+  idempotent about boot configuration is the point.
+* `network.system` sets the hostname, applying it now *and* recording it
+  for the next boot (`hostnamectl`, or `hostname` plus `sysrc`, `scutil`,
+  or `/etc/hostname`). It reports drift when the running name and the
+  recorded one disagree, because a hostname that reverts on the next
+  reboot is the failure the state exists to prevent. The rest of Salt's
+  network.system — the RHEL-era /etc/sysconfig/network switches — is not
+  implemented: interface configuration is a stated non-goal, and half a
+  state would be worse than none.
+
 New: the system states — the settings a host has one of.
 
 * `host.present` / `host.absent` manage `/etc/hosts`. Names for one

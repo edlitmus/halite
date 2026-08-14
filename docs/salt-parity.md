@@ -60,6 +60,7 @@ not.
 | pkgrepo.managed / absent | done | repository file per platform (pkg(8), apt, dnf/yum, zypper, apk) plus a metadata refresh; halite does not fetch signing keys |
 | ssh_auth.present / absent | done | one authorized_keys entry per state, identified by the key body |
 | service.running / dead | done | rc.d (+sysrc enable), systemd, sysvinit, launchd (partial), Windows SCM |
+| service.enabled / disabled | done | boot-time only; fails on a backend that cannot probe enablement (launchd, sysvinit) rather than reporting a change every run |
 | cmd.run / cmd.wait | done | unless, onlyif, creates, cwd, env |
 | user.present/absent, group.present/absent | done | pw(8), useradd/usermod, sysadminctl (partial), net user (partial); drift repair for uid/shell/home/gecos/groups |
 | cron.present/absent | done | crontab(1) with identifier markers; Windows via schtasks under \halite\ (translation unit tested, unverified on a real Windows host) |
@@ -72,6 +73,7 @@ not.
 | timezone.system | done | timedatectl where it exists, otherwise /etc/localtime plus the recorded name; an unknown zone fails |
 | locale.system | done | Linux only: localectl, /etc/default/locale, or /etc/locale.conf. FreeBSD has no single system locale |
 | alternatives.install / remove / set | done | update-alternatives or alternatives; setting an unregistered path fails |
+| network.system (hostname) | done | applied and recorded: hostnamectl, or hostname plus sysrc/scutil//etc/hostname. The rest of Salt's network.system is not implemented |
 | network.managed | out | too OS-entangled; use file + service |
 
 ## Execution modules (ad hoc)
@@ -153,11 +155,10 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-45 state functions and 4 execution modules. Raw counts flatter Salt —
+48 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
-the hostname (`network.system`), firewall states, `selinux`, `lvm`,
-`x509`, container states, `pip`/`npm`/`virtualenv`, Windows updates and
-ACLs. The `_modules/` escape hatch exists, but it is per-site effort, not
+firewall states, `selinux`, `lvm`, `x509`, container states,
+`pip`/`npm`/`virtualenv`, Windows updates and ACLs. The `_modules/` escape hatch exists, but it is per-site effort, not
 a library.
 
 ### Environments and fileservers
