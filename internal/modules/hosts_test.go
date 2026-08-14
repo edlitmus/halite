@@ -28,11 +28,13 @@ func TestHostIsAddedThenLeftAlone(t *testing.T) {
 }
 
 func TestSeveralNamesShareOneLine(t *testing.T) {
+	// `names:` is the state compiler's expansion, so the module sees one
+	// name per call — and each has to land on the address's existing line.
 	args, path := hostsFixture(t, "127.0.0.1\tlocalhost\n")
 	args["ip"] = "10.0.0.1"
-	args["names"] = []any{"db1", "db1.internal"}
 
-	hostPresent(&Ctx{}, "db", args)
+	hostPresent(&Ctx{}, "db1", args)
+	hostPresent(&Ctx{}, "db1.internal", args)
 	if got := read(t, path); got != "127.0.0.1\tlocalhost\n10.0.0.1\tdb1 db1.internal\n" {
 		t.Fatalf("names for one address belong on one line, got %q", got)
 	}

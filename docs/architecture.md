@@ -21,7 +21,9 @@ internal/returner/   durable sinks for job results
 internal/beacon/     agent-side watchers raising events
 internal/mine/       fleet-wide published facts
 internal/orch/       ordered fleet-wide runs
+internal/schedule/   work an agent runs on its own clock
 internal/extmod/     external modules: executables in the state tree
+internal/compat/     reads a Salt tree and reports what halite can use
 ```
 
 ## Pipeline
@@ -33,10 +35,15 @@ the mine ─────→ (fleet only)   function -> agent -> facts         �
 file.sls                                                           ↓
   → sls.Render      text/template: .Grains, .Pillar, .Mine in scope
   → yamlite.Parse   ordered tree of maps/lists/scalars
-  → sls.Compile     flatten args, extract require/watch, topo-sort
+  → sls.Compile     flatten args, expand names:, extract requisites,
+                    resolve the _in forms, topo-sort
   → engine.RunWith  run states in order, gate on failed requisites,
                     propagate watch triggers, return results
 ```
+
+`halite show` stops after the compile and prints the plan; `halite parse`
+runs the same pipeline over a tree it does not own and reports where it
+stops (`internal/compat`).
 
 Pillar and the mine load first because state files template against them.
 The executor lives in `internal/engine` and takes its function resolver

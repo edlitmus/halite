@@ -29,10 +29,17 @@ Override with `-pki DIR` or `HALITE_PKI`.
 ```sh
 halite key init -cn "acme fleet ca"        # once per fleet
 halite key server master.example.com -san 10.0.0.1
+halite key admin ed                        # an operator certificate
+halite key admin ed -out ~/.halite         # somewhere other than the PKI directory
 ```
 
 `key init` refuses to run over an existing `ca.crt`: replacing a CA
 invalidates every certificate in the fleet, so it has to be deliberate.
+
+`key admin` issues the certificate that may dispatch work. `-out` writes
+the pair somewhere other than the PKI directory, which is what an operator
+wants: the key belongs on the workstation that will use it, not beside the
+CA. `key gen` takes `-out` for the same reason.
 
 ## On an agent
 

@@ -385,7 +385,7 @@ Ensure a hostname resolves to an address in the hosts file
 | Arg | Description |
 |---|---|
 | `name` | the hostname (default: state ID) |
-| `names` | several hostnames for one address |
+| `names` | several hostnames for one address — the compiler's `names:` expansion, one state per name |
 | `ip` | the address (required) |
 | `clean` | `true` also removes these names from other addresses |
 | `config` | override the hosts file path |
@@ -399,8 +399,11 @@ db1:
       - db1.internal
 ```
 
-Names for one address land on one line, which is what the file's readers
-expect and what a second run has to leave alone. Comments, blank lines,
+`names:` is the state compiler's own expansion, as it is in Salt: it
+declares the state once per name, and each adds its name to the line that
+already carries the address. Names for one address therefore land on one
+line, which is what the file's readers expect and what a second run has to
+leave alone. Comments, blank lines,
 and every address the state does not name are kept exactly as they were.
 
 Without `clean`, a name that also appears on another address is left
@@ -409,8 +412,8 @@ is destructive enough to be asked for.
 
 ### host.absent
 
-Remove a hostname. Args: `name`, `names`, `ip` (restrict to one address),
-`config`. A line left with no names is removed.
+Remove a hostname. Args: `name`, `names` (the same expansion), `ip`
+(restrict to one address), `config`. A line left with no names is removed.
 
 ## kmod
 
@@ -443,7 +446,7 @@ Set the system timezone. Arg: `name` (a tzdata zone).
 
 ```yaml
 America/Los_Angeles:
-  timezone.system
+  timezone.system:
 ```
 
 A zone with no file under `/usr/share/zoneinfo` fails the state: a typo
@@ -461,7 +464,7 @@ Set the system locale. Args: `name`, `key` (default `LANG`).
 
 ```yaml
 en_US.UTF-8:
-  locale.system
+  locale.system:
 ```
 
 Linux only. `localectl` owns the setting where it exists; otherwise the
@@ -570,7 +573,7 @@ Set the enforcement mode. Arg: `name` — `enforcing`, `permissive`, or
 
 ```yaml
 enforcing:
-  selinux.mode
+  selinux.mode:
 ```
 
 The running mode and the configured one are set together: they can differ,
@@ -626,7 +629,7 @@ Args: `name`.
 
 ```yaml
 pf:
-  service.enabled
+  service.enabled:
 ```
 
 `service.running` with `enable: true` covers the usual case; these exist
@@ -650,7 +653,7 @@ Set the host's own name.
 
 ```yaml
 web1.example.com:
-  network.system
+  network.system:
 
 set-hostname:
   network.system:

@@ -1,5 +1,6 @@
 include:
   - common
+  - web.tls
 
 install_nginx:
   pkg.installed:

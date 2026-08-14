@@ -119,6 +119,7 @@ halite agents
 halite run '*' state.highstate -test
 halite run 'os_family:FreeBSD' state.apply web.nginx
 halite run 'web*' call pkg.installed name=nginx
+halite mine network.interfaces                  # facts agents published
 
 # Watch what the fleet is doing, and run ordered work across it
 halite events -tag 'halite/job/**'
@@ -201,7 +202,7 @@ gate while a conversion is in progress. See
 * [docs/pillar-security.md](docs/pillar-security.md) — protecting pillar data
 * [docs/architecture.md](docs/architecture.md) — design decisions and internals
 * [docs/salt-parity.md](docs/salt-parity.md) — Salt 3008 feature map and roadmap
-* [examples/](examples/) — working state files
+* [examples/](examples/) — working state files, one per feature area ([index](examples/README.md))
 
 ## Non-goals
 

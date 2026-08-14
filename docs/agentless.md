@@ -49,6 +49,7 @@ failed.
 
 1. `-binary PATH`, if given.
 2. `<dist>/halite-<os>-<arch>` — run `make cross` to populate `dist/`.
+   `-dist DIR` points at another directory of cross-built binaries.
 3. This very executable, when the remote platform matches the local one.
 
 An unbuilt platform is an error, not a wrong binary.

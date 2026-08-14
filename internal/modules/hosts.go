@@ -20,67 +20,46 @@ func init() {
 //	      - db1
 //	      - db1.internal
 //
-// Names are added to the line that already carries the address, so an
-// entry with several names stays one line — which is what the file's
-// readers expect, and what a second run has to leave alone.
+// `names:` is the state compiler's own expansion, as it is in Salt: it
+// declares this state once per name, and each of them adds its name to the
+// line that already carries the address. An entry with several names
+// therefore stays one line, which is what the file's readers expect and
+// what a second run has to leave alone.
 func hostPresent(c *Ctx, id string, args map[string]any) Result {
 	ip := Str(args, "ip", "")
 	if ip == "" {
 		return resFail("host.present needs an ip")
 	}
-	wanted := hostNames(id, args)
+	name := Str(args, "name", id)
 	clean := Bool(args, "clean", false)
 
 	return editPath(c, hostsFile(args), args, func(current []byte, _ bool) ([]byte, string, error) {
 		entries := parseHosts(splitLines(current))
-		added, moved := 0, 0
-		for _, name := range wanted {
-			var change hostChange
-			entries, change = addHostName(entries, ip, name, clean)
-			switch change {
-			case hostAdded:
-				added++
-			case hostMoved:
-				moved++
-			}
-		}
-		if added == 0 && moved == 0 {
+		entries, change := addHostName(entries, ip, name, clean)
+		switch change {
+		case hostUnchanged:
 			return current, "", nil
+		case hostMoved:
+			return joinLines(renderHosts(entries)),
+				fmt.Sprintf("%s moved to %s", name, ip), nil
 		}
-		change := fmt.Sprintf("%s: %d name(s) added", ip, added)
-		if moved > 0 {
-			change += fmt.Sprintf(", %d moved from another address", moved)
-		}
-		return joinLines(renderHosts(entries)), change, nil
+		return joinLines(renderHosts(entries)), fmt.Sprintf("%s added to %s", name, ip), nil
 	})
 }
 
 // hostAbsent removes a hostname from the hosts file, and the line with it
 // when nothing else is left on it.
 func hostAbsent(c *Ctx, id string, args map[string]any) Result {
-	wanted := hostNames(id, args)
+	name := Str(args, "name", id)
 	onlyIP := Str(args, "ip", "")
 
 	return editPath(c, hostsFile(args), args, func(current []byte, _ bool) ([]byte, string, error) {
 		entries := parseHosts(splitLines(current))
-		removed := 0
-		for _, name := range wanted {
-			removed += removeHostName(entries, name, onlyIP)
-		}
-		if removed == 0 {
+		if removeHostName(entries, name, onlyIP) == 0 {
 			return current, "", nil
 		}
-		return joinLines(renderHosts(entries)), fmt.Sprintf("%d name(s) removed", removed), nil
+		return joinLines(renderHosts(entries)), name + " removed", nil
 	})
-}
-
-// hostNames is the list of hostnames a state manages: `names`, or the
-// single `name`.
-func hostNames(id string, args map[string]any) []string {
-	if names := List(args, "names"); len(names) > 0 {
-		return names
-	}
-	return []string{Str(args, "name", id)}
 }
 
 // hostsFile is the file to edit: the platform's, or `config` when the

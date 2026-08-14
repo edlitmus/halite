@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+Documentation and examples, audited against the code rather than read
+over.
+
+* Six new example files, and every one of them compiles — `halite parse`
+  reports no errors and `halite show` prints its plan. `sshd.sls` edits a
+  config the OS package owns, `identity.sls` sets what a host has one of,
+  `pyapp.sls` deploys a Python application, `repo.sls` pins a package to a
+  third-party repository, `provisioning.sls` fetches content and schedules
+  work, and `linux-hardening.sls` and `windows.sls` show platform-guarded
+  states. `examples/README.md` indexes them.
+* The example tree now shows the language features it did not: `names:`
+  expansion, a `watch_in` reaching a state another file declares, compound
+  targeting, and a static grains file for the grain that targeting needs.
+* Doc examples that wrote a state function bare (`timezone.system` with no
+  colon) do not parse, and now say so correctly. Found by running them.
+* `host.present` no longer reads its own `names` argument: `names:` is the
+  state compiler's expansion, as it is in Salt, and the module sees one
+  name per call. The result in `/etc/hosts` is the same line either way,
+  which is what the test now pins.
+* `halite parse` recognises `halite.run`, so an orchestration file no
+  longer reports three unsupported modules.
+* Flags that existed but were undocumented: `-poll-timeout`,
+  `-orch-timeout`, `-retry`, `-dist`, and `key admin -out`. The
+  architecture layout gained `internal/schedule` and `internal/compat`,
+  and its pipeline now mentions where `show` and `parse` stop.
+
 ## 0.8.0 — 2026-08-14
 
 P6: module breadth and legibility. Twenty-six state functions, taking the

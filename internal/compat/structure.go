@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/modules"
+	"github.com/edlitmus/halite/internal/orch"
 	"github.com/edlitmus/halite/internal/sls"
 	"github.com/edlitmus/halite/internal/yamlite"
 )
@@ -84,6 +85,11 @@ func (s *Scanner) declaration(fr *FileReport, id, fn string, body any, external 
 	module := fn[:strings.Index(fn, ".")]
 	switch {
 	case modules.Registry[fn] != nil:
+		use.Supported = true
+	case fn == orch.StepFunction:
+		// The orchestration step is a real function, but only inside an
+		// orchestration file — which looks like any other SLS file from
+		// here, so it is recognised rather than reported.
 		use.Supported = true
 	case external[module]:
 		use.Supported, use.External = true, true

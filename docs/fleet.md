@@ -189,4 +189,12 @@ two reactors watching two buses react twice. See ADR-11.
 | Pillar tree | `-pillar-root`, `$HALITE_PILLAR_ROOT`, else beside the states |
 | Agent cache | `-cache`, else `/var/cache/halite` |
 
+Timing, where the defaults are not what a site wants:
+
+| Flag | On | Default | Bounds |
+|---|---|---|---|
+| `-poll-timeout` | `master` | 30s | how long an agent's job poll is held open before it is answered empty |
+| `-orch-timeout` | `master` | 30m | a whole orchestration, so a stuck step cannot hold the control plane forever |
+| `-retry` | `agent` | 10s | the delay between reconnection and enrollment attempts |
+
 Both daemons shut down cleanly on SIGINT and SIGTERM.

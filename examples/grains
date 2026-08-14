@@ -1,0 +1,13 @@
+# Static custom grains: the facts halite cannot detect but a site targets
+# on. Merged over the detected grains, so `role:web` in a top file works.
+#
+#   halite grains set role=web           # writes this file
+#   halite grains -file examples/grains  # read one somewhere else
+#
+# Default location: /usr/local/etc/halite/grains (FreeBSD),
+# /etc/halite/grains (Linux), or $HALITE_GRAINS.
+role: web
+datacenter: lax1
+roles:
+  - web
+  - cache
