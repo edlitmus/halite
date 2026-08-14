@@ -234,7 +234,6 @@ var moduleHints = map[string]string{
 	"pkg.purged":         "pkg.removed is the only removal form",
 	"service.enabled":    "service.running takes 'enable: true'",
 	"service.disabled":   "not implemented; service.dead stops the service",
-	"host.present":       "manage /etc/hosts with file.managed",
 	"network.managed":    "a deliberate non-goal: it is too OS-entangled (docs/salt-parity.md)",
 	"selinux.*":          "not implemented; drive it from cmd.run",
 	"firewalld.*":        "not implemented; manage the rules as files and reload the service",
@@ -242,7 +241,6 @@ var moduleHints = map[string]string{
 	"virtualenv.*":       "not implemented; run it from cmd.run with 'creates:'",
 	"npm.*":              "not implemented; run npm from cmd.run with 'creates:' or 'unless:'",
 	"docker_container.*": "not implemented; drive docker from cmd.run, or write an external module",
-	"timezone.*":         "not implemented; set it from cmd.run",
 	"module.run":         "there are no Python execution modules to call; use cmd.run or an external module",
 	"test.*":             "no test module; the closest equivalent is cmd.run with 'unless:'",
 }

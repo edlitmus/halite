@@ -375,6 +375,133 @@ user — sshd ignores them otherwise.
 Removes the entry whose key body matches. Other keys in the file are left
 untouched. Args: `name`, `user`, `config`.
 
+## host
+
+### host.present
+
+Ensure a hostname resolves to an address in the hosts file
+(`/etc/hosts`, or `config` to name another).
+
+| Arg | Description |
+|---|---|
+| `name` | the hostname (default: state ID) |
+| `names` | several hostnames for one address |
+| `ip` | the address (required) |
+| `clean` | `true` also removes these names from other addresses |
+| `config` | override the hosts file path |
+
+```yaml
+db1:
+  host.present:
+    - ip: 10.0.0.1
+    - names:
+      - db1
+      - db1.internal
+```
+
+Names for one address land on one line, which is what the file's readers
+expect and what a second run has to leave alone. Comments, blank lines,
+and every address the state does not name are kept exactly as they were.
+
+Without `clean`, a name that also appears on another address is left
+there: two addresses for one name is usually a leftover, but removing one
+is destructive enough to be asked for.
+
+### host.absent
+
+Remove a hostname. Args: `name`, `names`, `ip` (restrict to one address),
+`config`. A line left with no names is removed.
+
+## kmod
+
+### kmod.present / kmod.absent
+
+Load or unload a kernel module. Args: `name`, `persist`, `config`.
+
+```yaml
+nfs:
+  kmod.present:
+    - persist: true
+```
+
+| Platform | Loads with | Persists in |
+|---|---|---|
+| Linux | `modprobe` | `/etc/modules-load.d/halite.conf` |
+| FreeBSD | `kldload` | `/boot/loader.conf` (`<name>_load="YES"`) |
+
+Nothing else has kernel modules, and the state says so rather than
+pretending. `persist` adds or removes one line and leaves the rest of the
+file alone — `/boot/loader.conf` belongs to the host, not to halite.
+Module names fold dashes to underscores, so `ip-tables` and `ip_tables`
+are the same module.
+
+## timezone
+
+### timezone.system
+
+Set the system timezone. Arg: `name` (a tzdata zone).
+
+```yaml
+America/Los_Angeles:
+  timezone.system
+```
+
+A zone with no file under `/usr/share/zoneinfo` fails the state: a typo
+that quietly left the host on UTC would be worse. Where `timedatectl`
+exists it owns the setting; elsewhere the zoneinfo file is installed as
+`/etc/localtime` and the name recorded in `/var/db/zoneinfo` (FreeBSD) or
+`/etc/timezone`, which is what `tzsetup` and `dpkg-reconfigure` come down
+to. Not implemented on Windows.
+
+## locale
+
+### locale.system
+
+Set the system locale. Args: `name`, `key` (default `LANG`).
+
+```yaml
+en_US.UTF-8:
+  locale.system
+```
+
+Linux only. `localectl` owns the setting where it exists; otherwise the
+key is written to `/etc/default/locale` (Debian) or `/etc/locale.conf`,
+keeping the other keys. FreeBSD has no single system-wide locale — it is
+`login.conf` and shell profiles — so the state fails there rather than
+writing a file nothing reads.
+
+## alternatives
+
+### alternatives.install / remove / set
+
+Drive the alternatives system (`update-alternatives`, or `alternatives`
+on RHEL).
+
+| State | Args | Does |
+|---|---|---|
+| `alternatives.install` | `name`, `link`, `path`, `priority` | registers a candidate |
+| `alternatives.remove` | `name`, `path` | withdraws a candidate |
+| `alternatives.set` | `name`, `path` | points the link at one candidate, leaving automatic mode |
+
+```yaml
+editor:
+  alternatives.install:
+    - link: /usr/bin/editor
+    - path: /usr/bin/vim
+    - priority: 100
+
+editor-choice:
+  alternatives.set:
+    - name: editor
+    - path: /usr/bin/vim
+    - require:
+      - alternatives: editor
+```
+
+`alternatives.set` on a path that is not registered fails rather than
+installing it: choosing something the system does not offer is a
+different intent from adding it.
+
 ## service
 
 Backend is auto-detected: FreeBSD rc.d (uses `onestart`/`onestatus` so

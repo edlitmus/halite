@@ -67,6 +67,11 @@ not.
 | archive.extracted | done | tar, tar.gz, zip; local or http(s) source with a required sha256 for remote; traversal-safe extraction |
 | git.latest | done | shells to git; refuses dirty checkouts and foreign remotes unless forced |
 | mount.mounted / unmounted | done | fstab per-OS; FreeBSD `mount -p`, Linux /proc/self/mounts, macOS `mount` |
+| host.present / absent | done | one line per address, keeping comments and every entry the state does not name |
+| kmod.present / absent | done | modprobe on Linux, kldload on FreeBSD, with an optional persist line |
+| timezone.system | done | timedatectl where it exists, otherwise /etc/localtime plus the recorded name; an unknown zone fails |
+| locale.system | done | Linux only: localectl, /etc/default/locale, or /etc/locale.conf. FreeBSD has no single system locale |
+| alternatives.install / remove / set | done | update-alternatives or alternatives; setting an unregistered path fails |
 | network.managed | out | too OS-entangled; use file + service |
 
 ## Execution modules (ad hoc)
@@ -148,12 +153,12 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-36 state functions and 4 execution modules. Raw counts flatter Salt —
+45 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
-`timezone`/`locale`/`hostname`, `kmod`, `alternatives`, firewall states,
-`selinux`, `lvm`, `x509`, container states, `pip`/`npm`/`virtualenv`,
-Windows updates and ACLs. The `_modules/` escape hatch exists, but it is
-per-site effort, not a library.
+the hostname (`network.system`), firewall states, `selinux`, `lvm`,
+`x509`, container states, `pip`/`npm`/`virtualenv`, Windows updates and
+ACLs. The `_modules/` escape hatch exists, but it is per-site effort, not
+a library.
 
 ### Environments and fileservers
 
@@ -221,10 +226,11 @@ as non-goals. None of it is promised.
   failover, Windows registry.
 * **P6 — module breadth and legibility**. **In progress**: the file
   states that edit part of a file rather than owning all of it (symlink,
-  copy, append, prepend, line, replace, blockreplace, comment, uncomment)
-  and `halite show`, which prints the compiled plan without running it.
-  Next in the section above: the system states (`host`, `timezone`,
-  `locale`, `kmod`, `alternatives`).
+  copy, append, prepend, line, replace, blockreplace, comment, uncomment);
+  the system states (host, kmod, timezone, locale, alternatives); and
+  `halite show`, which prints the compiled plan without running it. Next
+  in the section above: whatever the remaining module list makes a case
+  for.
 * **P5 — what blocked a migration**. **Complete**: static custom grains
   (grain targeting had nothing to select on); `file.recurse`,
   `ssh_auth.present`, pkg `version`/`hold`, and `pkgrepo.managed` (the

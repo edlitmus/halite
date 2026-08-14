@@ -25,7 +25,13 @@ func init() {
 // change. Returning the contents unchanged means the state is satisfied.
 func editFile(c *Ctx, id string, args map[string]any,
 	transform func(current []byte, exists bool) (updated []byte, change string, err error)) Result {
-	name := Str(args, "name", id)
+	return editPath(c, Str(args, "name", id), args, transform)
+}
+
+// editPath is editFile against a path the state names some other way — the
+// host states edit /etc/hosts, whose `name` is a hostname.
+func editPath(c *Ctx, name string, args map[string]any,
+	transform func(current []byte, exists bool) (updated []byte, change string, err error)) Result {
 	current, readErr := os.ReadFile(name)
 	exists := readErr == nil
 	if !exists && !os.IsNotExist(readErr) {

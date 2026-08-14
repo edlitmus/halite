@@ -156,7 +156,7 @@ func TestUnsupportedStateDeclarationsAreReported(t *testing.T) {
 		want string
 	}{
 		{"short form", "nginx:\n  pkg:\n    - installed\n", "short-declaration"},
-		{"unknown module", "tz:\n  timezone.system:\n    - name: UTC\n", "unsupported-module"},
+		{"unknown module", "venv:\n  virtualenv.managed:\n    - name: /opt/app\n", "unsupported-module"},
 		{"unimplemented requisite", "p:\n  pkg.installed:\n    - onfail:\n      - service: s\n", "unsupported-requisite"},
 		{"salt uri", "f:\n  file.managed:\n    - source: salt://web/nginx.conf\n", "salt-uri"},
 		{"remote source", "f:\n  file.managed:\n    - source: https://example.com/x\n", "remote-source"},
@@ -349,7 +349,7 @@ func TestSupportedTreeHasNoFindings(t *testing.T) {
 
 func TestReportTotalsAndModuleUsage(t *testing.T) {
 	tr := scanTree(t, map[string]string{
-		"a.sls": "p:\n  pkg.installed:\n    - name: vim\ntz:\n  timezone.system:\n    - name: UTC\n",
+		"a.sls": "p:\n  pkg.installed:\n    - name: vim\nvenv:\n  virtualenv.managed:\n    - name: /opt/app\n",
 		"b.sls": "p2:\n  pkg.installed:\n    - name: curl\n",
 	}, KindState)
 	report := Report{Trees: []TreeReport{tr}}
@@ -359,11 +359,11 @@ func TestReportTotalsAndModuleUsage(t *testing.T) {
 		t.Fatalf("unexpected totals: %+v", totals)
 	}
 	if totals.Errors != 1 {
-		t.Fatalf("want one error (timezone.system) plus a missing top warning, got %+v", totals)
+		t.Fatalf("want one error (virtualenv.managed) plus a missing top warning, got %+v", totals)
 	}
 
 	usage := report.ModuleUsage()
-	if usage[0].Name != "timezone.system" || usage[0].Supported {
+	if usage[0].Name != "virtualenv.managed" || usage[0].Supported {
 		t.Fatalf("unsupported modules come first, got %+v", usage)
 	}
 	if usage[1].Name != "pkg.installed" || usage[1].Count != 2 {

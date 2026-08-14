@@ -18,6 +18,31 @@ Salt's `state.show_sls` and `state.show_highstate`.
 * `apply` and `show` now share one target-to-plan resolution, so a file
   path, a dotted name, and a highstate mean the same thing to both.
 
+New: the system states — the settings a host has one of.
+
+* `host.present` / `host.absent` manage `/etc/hosts`. Names for one
+  address land on one line, comments and unrelated entries survive
+  verbatim, and a line left with no names goes. `clean` also takes a name
+  off other addresses, which is not the default because removing an entry
+  somebody else put there is destructive.
+* `kmod.present` / `kmod.absent` load and unload kernel modules —
+  `modprobe` on Linux, `kldload` on FreeBSD — and with `persist` add or
+  remove one line in `/etc/modules-load.d/halite.conf` or
+  `/boot/loader.conf`, leaving the rest of a file that belongs to the host.
+  Module names fold dashes to underscores, the two spellings of the same
+  module.
+* `timezone.system` sets the zone through `timedatectl` where it exists,
+  and otherwise installs the zoneinfo file and records the name. A zone
+  with no file under `/usr/share/zoneinfo` fails the state: a typo that
+  quietly left the host on UTC would be worse.
+* `locale.system` sets `LANG` (or another key) through `localectl`,
+  `/etc/default/locale`, or `/etc/locale.conf`, keeping the other keys.
+  Linux only — FreeBSD has no single system locale, and writing a file
+  nothing reads would be a lie.
+* `alternatives.install` / `remove` / `set` drive `update-alternatives`
+  (or `alternatives`). Setting a path the group does not offer fails
+  rather than installing it: choosing is a different intent from adding.
+
 P6 continues with module breadth: the file states that edit part of a file
 rather than owning all of it. `file.managed` is the wrong tool for a file
 something else also writes to, and until now there was no right one.
