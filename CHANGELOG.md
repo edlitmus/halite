@@ -2,7 +2,23 @@
 
 ## Unreleased
 
-P6 begins with module breadth: the file states that edit part of a file
+New: `halite show` prints the compiled plan without running any of it —
+Salt's `state.show_sls` and `state.show_highstate`.
+
+* It takes the same targets `apply` does (nothing for a highstate, a file
+  path, or dotted SLS names) and prints the states in the order they would
+  run, with their arguments, requisites, and the file each came from.
+  `-json` for a script.
+* It is not `apply -test`. A dry run calls every module to ask what it
+  would change, which reads the host and takes as long as the run does;
+  `show` stops after the compile. It answers the question you have when a
+  highstate does something surprising: what did my templates, includes,
+  `_in` requisites, and `names:` expansions actually produce, and in what
+  order?
+* `apply` and `show` now share one target-to-plan resolution, so a file
+  path, a dotted name, and a highstate mean the same thing to both.
+
+P6 continues with module breadth: the file states that edit part of a file
 rather than owning all of it. `file.managed` is the wrong tool for a file
 something else also writes to, and until now there was no right one.
 

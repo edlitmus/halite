@@ -80,6 +80,10 @@ halite apply -root ./states web.nginx        # dotted sls names work too
 # Dry run (Salt: test=True)
 halite apply -test examples/webserver.sls
 
+# See the compiled plan without running it (Salt: state.show_sls)
+halite show examples/webserver.sls
+halite show -root ./states            # the whole highstate, in order
+
 # Run one state function ad hoc (Salt: salt-call --local pkg.install nginx)
 halite call pkg.installed name=nginx
 halite call file.managed name=/tmp/x contents=hello mode=0644

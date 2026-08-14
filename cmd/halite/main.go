@@ -6,6 +6,8 @@
 //	    file path:  apply that SLS file
 //	    dotted name(s): apply <root>/<name>.sls (or <name>/init.sls)
 //	halite call [-test] module.fn k=v        run a single state function
+//	halite show [-json] [target ...]         print the compiled plan without
+//	                                         running any of it
 //	halite pillar [-json]                    show the pillar data for this host
 //	halite parse [-root DIR] [PATH]          report what halite can use in an
 //	                                         existing Salt state/pillar tree
@@ -49,6 +51,8 @@ func main() {
 		cmdPillar(os.Args[2:])
 	case "parse":
 		cmdParse(os.Args[2:])
+	case "show":
+		cmdShow(os.Args[2:])
 	case "key":
 		cmdKey(os.Args[2:])
 	case "master":
@@ -87,6 +91,8 @@ func usage() {
       no target: highstate from <root>/top.sls
       target:    an SLS file path, or dotted sls name(s) under the root
   halite call [-test] <module.fn> [k=v ...] run a single state function
+  halite show [-json] [-root DIR] [target ...]
+                                           print the compiled plan, unrun
   halite pillar [-json] [-pillar-root DIR] show the pillar data for this host
   halite parse [-root DIR] [PATH]          check an existing state/pillar tree
       [-pillar-root DIR] [-json] [-errors] for what halite can use as written
@@ -401,6 +407,39 @@ func cmdCall(args []string) {
 	}
 }
 
+// rootIsExplicit reports whether the operator named the state tree, rather
+// than falling back to the platform default.
+func rootIsExplicit(flagValue string) bool {
+	return flagValue != "" || os.Getenv("HALITE_ROOT") != ""
+}
+
+// loadPlan compiles the states a command's positional targets name, under
+// the rules every such command shares: no target is a highstate, a single
+// file path is that file, and anything else is dotted SLS names under the
+// root.
+func loadPlan(targets []string, root string, rootExplicit bool,
+	g, p map[string]any) ([]sls.State, error) {
+	switch {
+	case len(targets) == 0:
+		return (&sls.Loader{Root: root, Grains: g, Pillar: p}).LoadTop()
+	case len(targets) == 1 && isFile(targets[0]):
+		fileRoot := root
+		if !rootExplicit {
+			// Single-file apply: includes resolve next to the file unless a
+			// root was given explicitly.
+			fileRoot = filepath.Dir(targets[0])
+		}
+		return (&sls.Loader{Root: fileRoot, Grains: g, Pillar: p}).LoadPath(targets[0])
+	default:
+		for _, t := range targets {
+			if isFile(t) {
+				return nil, fmt.Errorf("mixing file paths and sls names is not supported (got %q)", t)
+			}
+		}
+		return (&sls.Loader{Root: root, Grains: g, Pillar: p}).LoadNames(targets)
+	}
+}
+
 func cmdApply(args []string) {
 	fs := flag.NewFlagSet("apply", flag.ExitOnError)
 	test := fs.Bool("test", false, "dry run: report changes without applying")
@@ -422,30 +461,7 @@ func cmdApply(args []string) {
 		fatal("%v", err)
 	}
 
-	var states []sls.State
-
-	switch {
-	case len(targets) == 0:
-		ld := &sls.Loader{Root: root, Grains: g, Pillar: p}
-		states, err = ld.LoadTop()
-	case len(targets) == 1 && isFile(targets[0]):
-		fileRoot := root
-		if *rootFlag == "" && os.Getenv("HALITE_ROOT") == "" {
-			// Single-file apply: includes resolve next to the file unless a
-			// root was given explicitly.
-			fileRoot = filepath.Dir(targets[0])
-		}
-		ld := &sls.Loader{Root: fileRoot, Grains: g, Pillar: p}
-		states, err = ld.LoadPath(targets[0])
-	default:
-		for _, t := range targets {
-			if isFile(t) {
-				fatal("mixing file paths and sls names is not supported (got %q)", t)
-			}
-		}
-		ld := &sls.Loader{Root: root, Grains: g, Pillar: p}
-		states, err = ld.LoadNames(targets)
-	}
+	states, err := loadPlan(targets, root, rootIsExplicit(*rootFlag), g, p)
 	if err != nil {
 		fatal("%v", err)
 	}

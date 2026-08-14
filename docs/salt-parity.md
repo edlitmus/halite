@@ -21,6 +21,7 @@ not.
 | `grains.items` | `halite grains [-json]` | done | id, os, os_family, osrelease, kernel, arch, num_cpus, mem_total, host, username |
 | Static grains file, `grains.setval` | `/etc/halite/grains` (or `$HALITE_GRAINS`), `halite grains set/unset` | done | plain YAML, merged over the detected grains; no grains modules |
 | Highstate output | Salt-style block output + `-json` | done | |
+| `state.show_sls` / `state.show_highstate` | `halite show [target ...]` | done | the compiled, ordered plan with requisites and sources; compiles only, runs nothing |
 | `state.highstate` / top.sls | `halite apply` (no target) | done | grain and id glob targeting; single merged environment |
 | Pillar | pillar tree with its own top file | done | targeted, deep-merged, include-capable; exposed as `{{ .Pillar.x }}` in states and templated sources |
 | Requisites: require, watch | require, watch | done | watch triggers service restart / cmd.wait |
@@ -131,8 +132,9 @@ out of here by earning a phase, the way P1–P4 did.
 
 Missing from the SLS dialect: `onfail`/`onfail_in`, `listen`/`listen_in`,
 `order:`, `failhard`, `retry:`, `parallel: true`, `check_cmd`, and the
-`_any` requisite variants. There are no debugging equivalents of
-`state.show_sls`, `state.sls_id`, or `state.single`.
+`_any` requisite variants. `halite show` compiles a plan the way
+`state.show_sls` does, but there is no `state.sls_id` or `state.single`,
+and `show` is local only — a fleet-wide plan has no job kind.
 
 ### Rendering
 
@@ -217,11 +219,12 @@ as non-goals. None of it is promised.
   reactor, beacons, mine, orchestration.
 * **P4 — long tail**. **Complete**: external process modules, multi-master
   failover, Windows registry.
-* **P6 — module breadth**. **In progress**: the file states that edit
-  part of a file rather than owning all of it — symlink, copy, append,
-  prepend, line, replace, blockreplace, comment, uncomment. Next in the
-  section above: the system states (`timezone`, `hostname`, `kmod`,
-  `alternatives`) and plan inspection (`state.show_highstate`).
+* **P6 — module breadth and legibility**. **In progress**: the file
+  states that edit part of a file rather than owning all of it (symlink,
+  copy, append, prepend, line, replace, blockreplace, comment, uncomment)
+  and `halite show`, which prints the compiled plan without running it.
+  Next in the section above: the system states (`host`, `timezone`,
+  `locale`, `kmod`, `alternatives`).
 * **P5 — what blocked a migration**. **Complete**: static custom grains
   (grain targeting had nothing to select on); `file.recurse`,
   `ssh_auth.present`, pkg `version`/`hold`, and `pkgrepo.managed` (the

@@ -399,6 +399,42 @@ It ships to agents with the tree and is called with JSON on stdin. See
 changes nothing. Every module honors this. Use it in CI and before any
 production apply, same discipline as `test=True`.
 
+## Seeing the plan
+
+`halite show` prints what the tree compiles to — the states, in the order
+they would run, with their arguments, requisites, and the file each came
+from. It takes the same targets `apply` does:
+
+```sh
+halite show                       # the highstate for this host
+halite show web.nginx             # one dotted sls name
+halite show ./site.sls            # one file
+halite show -json | jq '.[].id'   # for a script
+```
+
+```
+1. install_nginx
+     pkg.installed  (web/init.sls)
+       name: nginx
+2. nginx_conf
+     file.managed  (web/init.sls)
+       name: /usr/local/etc/nginx/nginx.conf
+       source: files/nginx.conf
+       require: pkg:install_nginx
+
+2 states from 1 sls file, in the order they would run
+```
+
+This is Salt's `state.show_sls` and `state.show_highstate`. It is not
+`-test`: a dry run calls every module to ask what it would change, which
+reads the host and takes as long as the run does. `show` stops after the
+compile, so it answers the question you have when a highstate does
+something surprising — what did my templates, includes, `_in` requisites,
+and `names:` expansions actually produce, and in what order?
+
+It runs locally, against this host's grains and pillar. There is no
+fleet-wide plan: `halite run '*' show` has no job kind behind it.
+
 ## Ad hoc calls
 
 Any state function can run directly:
