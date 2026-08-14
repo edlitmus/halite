@@ -559,6 +559,43 @@ The environment is created with `python3 -m venv`, and the requirements go
 in through that environment's own pip — the same code path as
 `pip.installed` with `bin_env`.
 
+## selinux
+
+Linux only, and only where the policycoreutils tools are installed.
+
+### selinux.mode
+
+Set the enforcement mode. Arg: `name` — `enforcing`, `permissive`, or
+`disabled`.
+
+```yaml
+enforcing:
+  selinux.mode
+```
+
+The running mode and the configured one are set together: they can differ,
+and a state that changed only one would report success for a host that
+reverts on the next reboot. `enforcing` and `permissive` switch at run
+time; crossing `disabled` in either direction cannot, so the state writes
+the configuration and says a reboot is needed rather than pretending.
+
+`SELINUXTYPE` and the comments in `/etc/selinux/config` — which explain
+the very values being set — are left alone.
+
+### selinux.boolean
+
+Set an SELinux boolean. Args: `name`, `value` (default `true`), `persist`
+(default `true`).
+
+```yaml
+httpd_can_network_connect:
+  selinux.boolean:
+    - value: true
+```
+
+`persist` is the default because `setsebool` without `-P` is lost on the
+next reboot, which is rarely what a state file means.
+
 ## service
 
 Backend is auto-detected: FreeBSD rc.d (uses `onestart`/`onestatus` so

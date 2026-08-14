@@ -18,6 +18,18 @@ Salt's `state.show_sls` and `state.show_highstate`.
 * `apply` and `show` now share one target-to-plan resolution, so a file
   path, a dotted name, and a highstate mean the same thing to both.
 
+New: `selinux.mode` and `selinux.boolean`, for the RHEL fleets where
+every other state fails until SELinux is set right.
+
+* The running mode and the configured one are set together: they can
+  differ, and changing only one would report success for a host that
+  reverts on reboot. Crossing `disabled` cannot take effect at run time,
+  so the state writes the configuration and says a reboot is needed
+  instead of pretending. `SELINUXTYPE` and the comments in
+  `/etc/selinux/config` survive.
+* `selinux.boolean` persists by default, since `setsebool` without `-P` is
+  lost on the next reboot — rarely what a state file means.
+
 New: the Python states. `pip.installed`, `pip.removed`, and
 `virtualenv.managed` are what a Salt tree deploying a Python application
 reaches for, and had no equivalent.

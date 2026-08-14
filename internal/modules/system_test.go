@@ -132,3 +132,68 @@ Priority: -100
 		t.Fatal("an empty query has no value")
 	}
 }
+
+func TestSelinuxConfiguredModeIsRead(t *testing.T) {
+	config := `# This file controls the state of SELinux on the system.
+# SELINUX= can take one of these three values:
+SELINUX=enforcing
+SELINUXTYPE=targeted
+`
+	if got := selinuxConfiguredMode(config); got != "enforcing" {
+		t.Fatalf("want enforcing, got %q", got)
+	}
+	if got := selinuxConfiguredMode("# SELINUX=enforcing\n"); got != "" {
+		t.Fatalf("a commented line is not the setting, got %q", got)
+	}
+	if got := selinuxConfiguredMode(""); got != "" {
+		t.Fatalf("want an empty answer for an empty file, got %q", got)
+	}
+}
+
+func TestSelinuxModeIsWrittenWithoutLosingTheRest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config")
+	original := "# SELINUX= can take one of these three values:\nSELINUX=enforcing\nSELINUXTYPE=targeted\n"
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSelinuxMode(path, "permissive"); err != nil {
+		t.Fatal(err)
+	}
+	want := "# SELINUX= can take one of these three values:\nSELINUX=permissive\nSELINUXTYPE=targeted\n"
+	if got := read(t, path); got != want {
+		t.Fatalf("the comments explain the values being set, so they stay:\nwant %q\ngot  %q", want, got)
+	}
+}
+
+func TestSeboolOutputIsRead(t *testing.T) {
+	cases := []struct {
+		out   string
+		want  bool
+		fails bool
+	}{
+		{"httpd_can_network_connect --> on\n", true, false},
+		{"httpd_can_network_connect --> off", false, false},
+		{"nonsense", false, true},
+		{"httpd_can_network_connect --> maybe", false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.out, func(t *testing.T) {
+			got, err := parseSebool(tc.out)
+			if tc.fails {
+				if err == nil {
+					t.Fatal("want an error rather than a guess")
+				}
+				return
+			}
+			if err != nil || got != tc.want {
+				t.Fatalf("want %v, got %v (%v)", tc.want, got, err)
+			}
+		})
+	}
+}
+
+func TestSelinuxModeRejectsAnUnknownMode(t *testing.T) {
+	if r := selinuxMode(&Ctx{}, "sideways", nil); r.Ok {
+		t.Fatal("only enforcing, permissive and disabled are modes")
+	}
+}

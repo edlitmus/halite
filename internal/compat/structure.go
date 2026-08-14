@@ -233,7 +233,6 @@ var moduleHints = map[string]string{
 	"pkg.latest":         "halite installs what the backend considers current; pkg.installed is the only form",
 	"pkg.purged":         "pkg.removed is the only removal form",
 	"network.managed":    "a deliberate non-goal: it is too OS-entangled (docs/salt-parity.md). network.system sets the hostname",
-	"selinux.*":          "not implemented; drive it from cmd.run",
 	"firewalld.*":        "not implemented; manage the rules as files and reload the service",
 	"npm.*":              "not implemented; run npm from cmd.run with 'creates:' or 'unless:'",
 	"docker_container.*": "not implemented; drive docker from cmd.run, or write an external module",
