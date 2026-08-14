@@ -53,6 +53,8 @@ not.
 |---|---|---|
 | file.managed / directory / absent | done | ownership, line diffs, and templated sources (`template: true`) |
 | file.recurse | done | whole-tree copy with modes, ownership, templating, and optional `clean` |
+| file.symlink / file.copy | done | links repointed, a real file in the way needs `force`; copy takes a host path |
+| file.append / prepend / line / replace / blockreplace / comment / uncomment | done | partial-file edits, atomic, preserving mode and ownership. `file.replace` is Go regexp with `$1`; `file.line` matches on a substring, as Salt's does |
 | pkg.installed / removed | done | backends: pkg(8), apt, dnf, yum, zypper, pacman, apk, brew, choco, winget. `version` and `hold` where the backend can express them; a pin it cannot express fails rather than installing the current version |
 | pkgrepo.managed / absent | done | repository file per platform (pkg(8), apt, dnf/yum, zypper, apk) plus a metadata refresh; halite does not fetch signing keys |
 | ssh_auth.present / absent | done | one authorized_keys entry per state, identified by the key body |
@@ -144,13 +146,12 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-27 state functions and 4 execution modules. Raw counts flatter Salt —
+36 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
-`file.symlink`, `file.replace`/`blockreplace`/`line`,
 `timezone`/`locale`/`hostname`, `kmod`, `alternatives`, firewall states,
-`selinux`, `lvm`, `x509`, container states, Windows updates and ACLs. The
-`_modules/` escape hatch exists, but it is per-site effort, not a
-library.
+`selinux`, `lvm`, `x509`, container states, `pip`/`npm`/`virtualenv`,
+Windows updates and ACLs. The `_modules/` escape hatch exists, but it is
+per-site effort, not a library.
 
 ### Environments and fileservers
 
@@ -216,6 +217,11 @@ as non-goals. None of it is promised.
   reactor, beacons, mine, orchestration.
 * **P4 — long tail**. **Complete**: external process modules, multi-master
   failover, Windows registry.
+* **P6 — module breadth**. **In progress**: the file states that edit
+  part of a file rather than owning all of it — symlink, copy, append,
+  prepend, line, replace, blockreplace, comment, uncomment. Next in the
+  section above: the system states (`timezone`, `hostname`, `kmod`,
+  `alternatives`) and plan inspection (`state.show_highstate`).
 * **P5 — what blocked a migration**. **Complete**: static custom grains
   (grain targeting had nothing to select on); `file.recurse`,
   `ssh_auth.present`, pkg `version`/`hold`, and `pkgrepo.managed` (the

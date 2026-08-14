@@ -1,5 +1,48 @@
 # Changelog
 
+## Unreleased
+
+P6 begins with module breadth: the file states that edit part of a file
+rather than owning all of it. `file.managed` is the wrong tool for a file
+something else also writes to, and until now there was no right one.
+
+* `file.symlink` — links are repointed when they aim somewhere else; a
+  real file or directory in the way fails the state unless `force: true`,
+  because deleting something that was not a link is not a thing a run
+  should do on its own. Ownership applies to the link, not its target.
+  Not implemented on Windows, where symlinks need a privilege most
+  services do not hold.
+* `file.copy` — copies a file already on the host, with `preserve` for its
+  ownership. The source is a host path; `file.managed` is the one that
+  reads from the state tree.
+* `file.append` / `file.prepend` — ensure lines are present, adding only
+  what is missing. A line already somewhere in the file stays where it is.
+* `file.line` — `ensure` (present exactly once, replacing matches and
+  dropping duplicates), `replace`, `delete`, and `insert`, with `before`,
+  `after`, and `location` anchors. `match` is a substring, as Salt's is;
+  `file.replace` is the regular-expression state. Salt spells this state's
+  action `mode`, which is permission bits everywhere else in halite, so
+  `file.line` takes the Salt meaning and leaves the file's permissions
+  alone.
+* `file.replace` — Go regexp with `$1` expansion, `count`,
+  `append_if_not_found` / `prepend_if_not_found`, and `ignore_if_missing`.
+  `^` and `$` match at line boundaries: Salt's file.replace defaults to
+  MULTILINE and nearly every pattern written for it anchors a line, so a
+  ported `^#?PermitRootLogin` has to match the second line of the file
+  rather than silently matching nothing.
+* `file.blockreplace` — owns the text between two markers and leaves the
+  rest of the file alone. A `marker_start` with no `marker_end` after it
+  fails rather than guessing where the block ends. Multi-line bodies come
+  from `source`, since the YAML subset has no block scalars.
+* `file.comment` / `file.uncomment` — by regular expression, skipping
+  lines that are already commented so a second run is a no-op.
+* All of them share one edit path: read, transform, write atomically,
+  report a line diff. It keeps the file's existing permissions **and its
+  ownership** — an atomic write renames a file this process created, so
+  without restoring the owner, editing one line of a user's dotfile as
+  root would have handed the file to root.
+* `halite parse` knows the new states and their arguments.
+
 ## 0.7.0 — 2026-08-13
 
 P5: the five gaps that blocked a real Salt migration, closed in the order

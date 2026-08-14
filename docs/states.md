@@ -90,6 +90,161 @@ The changes report is capped at ten paths per category, with a count for
 the rest: a first run over a large tree should not bury the rest of the
 output.
 
+### file.symlink
+
+Ensure a symbolic link points where it should. Args: `name` (the link),
+`target`, `force`, `makedirs`, `user`, `group`.
+
+```yaml
+/usr/local/etc/nginx/sites-enabled/site:
+  file.symlink:
+    - target: /usr/local/etc/nginx/sites-available/site
+    - makedirs: true
+```
+
+A link pointing elsewhere is repointed. A real file or directory in the
+way fails the state unless `force: true` — deleting something that was
+not a link is not a thing a run should do on its own. Ownership applies to
+the link itself, not its target. Not implemented on Windows, where
+symlinks need a privilege most services do not hold.
+
+### file.copy
+
+Copy a file that is already on the host. Args: `name` (destination),
+`source` (a **host path**, not a state-tree path), `force` (default true),
+`makedirs`, `preserve` (copy the source's ownership), `mode`, `user`,
+`group`, `show_diff`.
+
+For a file that comes from the state tree, use `file.managed`; for a
+directory, `file.recurse`.
+
+## Editing part of a file
+
+`file.managed` owns a whole file. These states change part of one, for the
+files something else also writes to. All of them take `mode`, `user`,
+`group`, `show_diff`, and `makedirs`, write atomically, and keep the
+file's existing permissions and ownership unless told otherwise.
+
+### file.append / file.prepend
+
+Ensure lines are present, adding what is missing at the end (or the
+start). Args: `name`, `text` (a string or a list of lines).
+
+```yaml
+/etc/rc.conf:
+  file.append:
+    - text:
+      - 'nginx_enable="YES"'
+      - 'sshd_enable="YES"'
+```
+
+A line already somewhere in the file is left where it is: these states are
+about presence, not position. A missing file is created.
+
+### file.line
+
+Manage a single line.
+
+| Arg | Description |
+|---|---|
+| `name` | the file (default: state ID) |
+| `content` | the line |
+| `match` | substring identifying the line to act on (default: `content`) |
+| `mode` | `ensure` (default), `replace`, `delete`, `insert` |
+| `location` | `start` or `end` (default) for an insert with no anchor |
+| `before`, `after` | insert relative to the first/last line containing this substring |
+| `create` | `false` refuses to create a missing file (default true) |
+
+```yaml
+/etc/ssh/sshd_config:
+  file.line:
+    - content: "PermitRootLogin no"
+    - match: "PermitRootLogin"
+```
+
+`ensure` means present exactly once: matching lines are replaced and any
+duplicates dropped; if nothing matches, the line is inserted. `replace`
+never creates, `delete` removes every match, and `insert` adds the line
+only when no line matches.
+
+`match` is a **substring**, not a regular expression — that is what Salt's
+`file.line` matches on, and `file.replace` is the regular expression
+state. Note that `mode` here is Salt's line mode, not permission bits: a
+`file.line` keeps whatever permissions the file already has.
+
+### file.replace
+
+Substitute a regular expression throughout a file.
+
+| Arg | Description |
+|---|---|
+| `name` | the file (default: state ID) |
+| `pattern` | Go regular expression |
+| `repl` | replacement; `$1` expands a capture group |
+| `count` | replace at most this many (default: all) |
+| `append_if_not_found`, `prepend_if_not_found` | add `not_found_content` (default: `repl`) when nothing matches |
+| `ignore_if_missing` | `true` makes a missing file a no-op instead of a failure |
+
+```yaml
+/etc/ssh/sshd_config:
+  file.replace:
+    - pattern: '^#?PermitRootLogin .*'
+    - repl: 'PermitRootLogin no'
+    - append_if_not_found: true
+```
+
+The pattern is [Go's regexp syntax](https://pkg.go.dev/regexp/syntax) and
+the replacement uses `$1`, not Python's `\1`. `^` and `$` match at line
+boundaries — Salt's `file.replace` defaults to MULTILINE and nearly every
+pattern written for it anchors a line, so halite sets the same flag. Use
+`\A` and `\z` for the whole file. Most Salt patterns port unchanged;
+back-references in the *pattern* do not exist in Go's engine.
+
+### file.blockreplace
+
+Manage the text between two markers, leaving the rest of the file alone.
+
+| Arg | Description |
+|---|---|
+| `name` | the file (default: state ID) |
+| `marker_start`, `marker_end` | the lines delimiting the block |
+| `content` | the block body |
+| `source`, `template` | read the body from a file beside the SLS, optionally rendered |
+| `append_if_not_found`, `prepend_if_not_found` | add the block when the markers are absent |
+
+```yaml
+/etc/hosts:
+  file.blockreplace:
+    - marker_start: '# BEGIN halite'
+    - marker_end: '# END halite'
+    - source: files/hosts-block
+    - append_if_not_found: true
+```
+
+This is how one state owns its share of a file that other things also
+write to. A `marker_start` with no `marker_end` after it fails the state
+rather than guessing where the block ends.
+
+A multi-line body comes from `source`, because the YAML subset has no
+block scalars (`content: |`). A one-line body can be written inline as
+`- content: "10.0.0.1 db1"`, and `\n` in a double-quoted string works for
+a short block.
+
+### file.comment / file.uncomment
+
+Comment out lines matching a regular expression, or uncomment them. Args:
+`name`, `regex`, `char` (default `#`).
+
+```yaml
+/etc/ssh/sshd_config:
+  file.comment:
+    - regex: ^PermitRootLogin yes
+```
+
+`file.comment` skips lines that are already commented, so it is idempotent;
+`file.uncomment` matches the regex against the line with its comment
+character removed.
+
 ## pkg
 
 Backend is auto-detected: FreeBSD pkg(8); apt, dnf, yum, zypper, pacman,

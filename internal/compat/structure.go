@@ -229,11 +229,6 @@ func unsupportedModule(id, fn string) Finding {
 // moduleHints answers "then what do I do?" for the Salt state functions a
 // real tree most often uses. A "<module>.*" key covers a whole module.
 var moduleHints = map[string]string{
-	"file.symlink":       "not implemented; cmd.run with 'creates:' is the usual stand-in",
-	"file.line":          "halite manages whole files: use file.managed with contents or a source",
-	"file.replace":       "halite manages whole files: use file.managed with contents or a source",
-	"file.append":        "halite manages whole files: use file.managed with contents or a source",
-	"file.blockreplace":  "halite manages whole files: use file.managed with contents or a source",
 	"file.touch":         "file.managed creates an empty file when given neither contents nor source",
 	"pkg.latest":         "halite installs what the backend considers current; pkg.installed is the only form",
 	"pkg.purged":         "pkg.removed is the only removal form",

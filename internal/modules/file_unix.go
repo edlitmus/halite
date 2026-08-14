@@ -20,3 +20,6 @@ func statOwner(path string) (uid, gid int, ok bool) {
 }
 
 func chown(path string, uid, gid int) error { return os.Chown(path, uid, gid) }
+
+// lchown sets the ownership of a symlink itself rather than its target.
+func lchown(path string, uid, gid int) error { return os.Lchown(path, uid, gid) }
