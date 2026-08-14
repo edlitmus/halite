@@ -8,12 +8,13 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.7.0 — the roadmap is complete (P1–P5).** Three ways to run:
+**Status: v0.8.0 — P1–P5 complete, P6 (module breadth) in progress.** Three ways to run:
 
 * **Masterless** — `halite apply` on the host. Highstate with top.sls
   targeting, custom grains, pillar, includes, the full requisite set with
-  its `_in` forms and `names:` expansion, and the file/pkg/pkgrepo/
-  service/cmd/user/group/ssh_auth/cron/sysctl/archive/git/mount modules.
+  its `_in` forms and `names:` expansion, and 53 state functions across
+  file/pkg/pkgrepo/pip/service/cmd/user/group/ssh_auth/host/cron/sysctl/
+  kmod/selinux/timezone/archive/git/mount.
 * **Fleet** — an mTLS HTTP/2 control plane, CSR-based enrollment, and
   targeted dispatch to agents.
 * **Agentless** — `halite ssh` pushes the binary, runs, and cleans up.

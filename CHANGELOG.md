@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-08-14
+
+P6: module breadth and legibility. Twenty-six state functions, taking the
+set from 27 to 53, and `halite show` — which answers "what does this tree
+actually compile to" without running any of it.
 
 New: `halite show` prints the compiled plan without running any of it —
 Salt's `state.show_sls` and `state.show_highstate`.
@@ -18,80 +22,9 @@ Salt's `state.show_sls` and `state.show_highstate`.
 * `apply` and `show` now share one target-to-plan resolution, so a file
   path, a dotted name, and a highstate mean the same thing to both.
 
-New: `selinux.mode` and `selinux.boolean`, for the RHEL fleets where
-every other state fails until SELinux is set right.
-
-* The running mode and the configured one are set together: they can
-  differ, and changing only one would report success for a host that
-  reverts on reboot. Crossing `disabled` cannot take effect at run time,
-  so the state writes the configuration and says a reboot is needed
-  instead of pretending. `SELINUXTYPE` and the comments in
-  `/etc/selinux/config` survive.
-* `selinux.boolean` persists by default, since `setsebool` without `-P` is
-  lost on the next reboot — rarely what a state file means.
-
-New: the Python states. `pip.installed`, `pip.removed`, and
-`virtualenv.managed` are what a Salt tree deploying a Python application
-reaches for, and had no equivalent.
-
-* `bin_env` names a virtualenv (or a pip inside one), so a state installs
-  into an application's environment rather than the system's.
-  `virtualenv.managed` creates the environment with `python3 -m venv` and
-  hands its requirements to the same code path.
-* An exact `==` pin is compared against `pip freeze`, so a downgrade is a
-  change like any other. Anything looser is left for pip to judge:
-  reimplementing PEP 440 to second-guess it would be worse than asking.
-  Names fold the way pip folds them, so `zope.interface` and
-  `zope_interface` are one package.
-* A `requirements` file is pip's to read. The state runs pip and reports
-  the difference between the freeze before and after, which is also how
-  the transitive installs a requirement pulled in get reported.
-
-New: the boot-configuration states.
-
-* `service.enabled` / `service.disabled` set whether a service starts at
-  boot without starting or stopping it now — the case `service.running`
-  with `enable: true` cannot express. A backend that cannot report
-  enablement (launchd, sysvinit) fails the state rather than acting
-  blindly: without a probe every run would report a change, and being
-  idempotent about boot configuration is the point.
-* `network.system` sets the hostname, applying it now *and* recording it
-  for the next boot (`hostnamectl`, or `hostname` plus `sysrc`, `scutil`,
-  or `/etc/hostname`). It reports drift when the running name and the
-  recorded one disagree, because a hostname that reverts on the next
-  reboot is the failure the state exists to prevent. The rest of Salt's
-  network.system — the RHEL-era /etc/sysconfig/network switches — is not
-  implemented: interface configuration is a stated non-goal, and half a
-  state would be worse than none.
-
-New: the system states — the settings a host has one of.
-
-* `host.present` / `host.absent` manage `/etc/hosts`. Names for one
-  address land on one line, comments and unrelated entries survive
-  verbatim, and a line left with no names goes. `clean` also takes a name
-  off other addresses, which is not the default because removing an entry
-  somebody else put there is destructive.
-* `kmod.present` / `kmod.absent` load and unload kernel modules —
-  `modprobe` on Linux, `kldload` on FreeBSD — and with `persist` add or
-  remove one line in `/etc/modules-load.d/halite.conf` or
-  `/boot/loader.conf`, leaving the rest of a file that belongs to the host.
-  Module names fold dashes to underscores, the two spellings of the same
-  module.
-* `timezone.system` sets the zone through `timedatectl` where it exists,
-  and otherwise installs the zoneinfo file and records the name. A zone
-  with no file under `/usr/share/zoneinfo` fails the state: a typo that
-  quietly left the host on UTC would be worse.
-* `locale.system` sets `LANG` (or another key) through `localectl`,
-  `/etc/default/locale`, or `/etc/locale.conf`, keeping the other keys.
-  Linux only — FreeBSD has no single system locale, and writing a file
-  nothing reads would be a lie.
-* `alternatives.install` / `remove` / `set` drive `update-alternatives`
-  (or `alternatives`). Setting a path the group does not offer fails
-  rather than installing it: choosing is a different intent from adding.
-
-P6 continues with module breadth: the file states that edit part of a file
-rather than owning all of it. `file.managed` is the wrong tool for a file
-something else also writes to, and until now there was no right one.
+New: the file states that edit part of a file rather than owning all of
+it. `file.managed` is the wrong tool for a file something else also
+writes to, and until now there was no right one.
 
 * `file.symlink` — links are repointed when they aim somewhere else; a
   real file or directory in the way fails the state unless `force: true`,
@@ -129,6 +62,77 @@ something else also writes to, and until now there was no right one.
   without restoring the owner, editing one line of a user's dotfile as
   root would have handed the file to root.
 * `halite parse` knows the new states and their arguments.
+
+New: the system states — the settings a host has one of.
+
+* `host.present` / `host.absent` manage `/etc/hosts`. Names for one
+  address land on one line, comments and unrelated entries survive
+  verbatim, and a line left with no names goes. `clean` also takes a name
+  off other addresses, which is not the default because removing an entry
+  somebody else put there is destructive.
+* `kmod.present` / `kmod.absent` load and unload kernel modules —
+  `modprobe` on Linux, `kldload` on FreeBSD — and with `persist` add or
+  remove one line in `/etc/modules-load.d/halite.conf` or
+  `/boot/loader.conf`, leaving the rest of a file that belongs to the host.
+  Module names fold dashes to underscores, the two spellings of the same
+  module.
+* `timezone.system` sets the zone through `timedatectl` where it exists,
+  and otherwise installs the zoneinfo file and records the name. A zone
+  with no file under `/usr/share/zoneinfo` fails the state: a typo that
+  quietly left the host on UTC would be worse.
+* `locale.system` sets `LANG` (or another key) through `localectl`,
+  `/etc/default/locale`, or `/etc/locale.conf`, keeping the other keys.
+  Linux only — FreeBSD has no single system locale, and writing a file
+  nothing reads would be a lie.
+* `alternatives.install` / `remove` / `set` drive `update-alternatives`
+  (or `alternatives`). Setting a path the group does not offer fails
+  rather than installing it: choosing is a different intent from adding.
+
+New: the boot-configuration states.
+
+* `service.enabled` / `service.disabled` set whether a service starts at
+  boot without starting or stopping it now — the case `service.running`
+  with `enable: true` cannot express. A backend that cannot report
+  enablement (launchd, sysvinit) fails the state rather than acting
+  blindly: without a probe every run would report a change, and being
+  idempotent about boot configuration is the point.
+* `network.system` sets the hostname, applying it now *and* recording it
+  for the next boot (`hostnamectl`, or `hostname` plus `sysrc`, `scutil`,
+  or `/etc/hostname`). It reports drift when the running name and the
+  recorded one disagree, because a hostname that reverts on the next
+  reboot is the failure the state exists to prevent. The rest of Salt's
+  network.system — the RHEL-era /etc/sysconfig/network switches — is not
+  implemented: interface configuration is a stated non-goal, and half a
+  state would be worse than none.
+
+New: the Python states. `pip.installed`, `pip.removed`, and
+`virtualenv.managed` are what a Salt tree deploying a Python application
+reaches for, and had no equivalent.
+
+* `bin_env` names a virtualenv (or a pip inside one), so a state installs
+  into an application's environment rather than the system's.
+  `virtualenv.managed` creates the environment with `python3 -m venv` and
+  hands its requirements to the same code path.
+* An exact `==` pin is compared against `pip freeze`, so a downgrade is a
+  change like any other. Anything looser is left for pip to judge:
+  reimplementing PEP 440 to second-guess it would be worse than asking.
+  Names fold the way pip folds them, so `zope.interface` and
+  `zope_interface` are one package.
+* A `requirements` file is pip's to read. The state runs pip and reports
+  the difference between the freeze before and after, which is also how
+  the transitive installs a requirement pulled in get reported.
+
+New: `selinux.mode` and `selinux.boolean`, for the RHEL fleets where
+every other state fails until SELinux is set right.
+
+* The running mode and the configured one are set together: they can
+  differ, and changing only one would report success for a host that
+  reverts on reboot. Crossing `disabled` cannot take effect at run time,
+  so the state writes the configuration and says a reboot is needed
+  instead of pretending. `SELINUXTYPE` and the comments in
+  `/etc/selinux/config` survive.
+* `selinux.boolean` persists by default, since `setsebool` without `-P` is
+  lost on the next reboot — rarely what a state file means.
 
 ## 0.7.0 — 2026-08-13
 
