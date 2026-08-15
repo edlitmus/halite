@@ -8,7 +8,7 @@ halite targets the Salt 3008-era workflow (SLS state files, grains,
 requisites, `test=True` dry runs, execution modules) without the Python
 runtime, onedir/relenv packaging, or the deprecation treadmill.
 
-**Status: v0.8.0 — P1–P5 complete, P6 (module breadth) in progress.** Three ways to run:
+**Status: v0.9.0 — P1–P5 complete, P6 (module breadth) in progress.** Three ways to run:
 
 * **Masterless** — `halite apply` on the host. Highstate with top.sls
   targeting, custom grains, pillar, includes, the full requisite set with
