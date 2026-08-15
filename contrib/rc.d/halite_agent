@@ -1,0 +1,71 @@
+#!/bin/sh
+#
+# PROVIDE: halite_agent
+# REQUIRE: LOGIN NETWORKING
+# KEYWORD: shutdown
+#
+# Add these to /etc/rc.conf with sysrc(8):
+#
+#   sysrc halite_agent_enable="YES"
+#
+# The control plane to talk to belongs in the config file, but it is the
+# one setting a host often gets from an image or a provisioning script, so
+# it can be given here too:
+#
+#   halite_agent_enable      run the agent at boot (default NO)
+#   halite_agent_config      settings file
+#                            (default /usr/local/etc/halite/agent.conf)
+#   halite_agent_master      control plane host[:port], or several
+#                            comma-separated for failover. Overrides the
+#                            config file's `master`
+#   halite_agent_program     the halite binary (default /usr/local/bin/halite)
+#   halite_agent_flags       extra flags, appended after -config
+#   halite_agent_pidfile     (default /var/run/halite_agent.pid)
+#   halite_agent_daemon_args flags for daemon(8) itself; add -r to have it
+#                            restart the agent if it exits
+#
+# The agent applies states, so it runs as root. Output goes to syslog
+# under the daemon facility.
+
+. /etc/rc.subr
+
+name="halite_agent"
+rcvar="halite_agent_enable"
+
+load_rc_config $name
+
+: ${halite_agent_enable:="NO"}
+: ${halite_agent_config:="/usr/local/etc/halite/agent.conf"}
+: ${halite_agent_program:="/usr/local/bin/halite"}
+: ${halite_agent_master:=""}
+: ${halite_agent_flags:=""}
+: ${halite_agent_pidfile:="/var/run/${name}.pid"}
+: ${halite_agent_daemon_args:=""}
+
+halite_agent_master_flag=""
+if [ -n "${halite_agent_master}" ]; then
+	halite_agent_master_flag="-master ${halite_agent_master}"
+fi
+
+pidfile="${halite_agent_pidfile}"
+procname="${halite_agent_program}"
+command="/usr/sbin/daemon"
+command_args="-S -T ${name} -p ${pidfile} ${halite_agent_daemon_args} \
+    ${halite_agent_program} agent -config ${halite_agent_config} \
+    ${halite_agent_master_flag} ${halite_agent_flags}"
+
+start_precmd="halite_agent_precmd"
+
+halite_agent_precmd()
+{
+	# An agent with neither a config file nor halite_agent_master has no
+	# control plane to reach, and would fail a second later with a less
+	# useful message.
+	if [ -n "${halite_agent_config}" ] && [ ! -r "${halite_agent_config}" ] &&
+	    [ -z "${halite_agent_master}" ]; then
+		err 1 "no ${halite_agent_config} and no halite_agent_master: the agent has no control plane to reach"
+	fi
+	install -d "$(dirname "${pidfile}")"
+}
+
+run_rc_command "$1"

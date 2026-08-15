@@ -89,6 +89,10 @@ non-zero if any agent failed or if any targeted agent never answered.
 
 Set `HALITE_MASTER` to avoid repeating `-master` on every command.
 
+At boot, neither daemon should be run from a command line in `rc.conf`:
+each reads a config file, and there are rc.d scripts for both. See
+[service.md](service.md).
+
 Watch what the fleet is doing with `halite events` — see
 [events.md](events.md).
 

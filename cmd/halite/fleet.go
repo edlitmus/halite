@@ -61,7 +61,9 @@ func cmdMaster(args []string) {
 	reactorFile := fs.String("reactor", "", "reactor rules file (tag patterns to jobs)")
 	var returnerSpecs stringList
 	fs.Var(&returnerSpecs, "returner", "durable result sink, kind:target (repeatable): file:PATH or webhook:URL")
+	configFile := fs.String("config", "", "settings file (default: <config dir>/master.conf)")
 	_ = parseFlags(fs, args)
+	loadDaemonConfig(fs, "master", *configFile)
 
 	rules, err := reactor.Load(*reactorFile)
 	if err != nil {
@@ -115,7 +117,9 @@ func cmdAgent(args []string) {
 	beaconFile := fs.String("beacons", "", "beacon config file (watches that raise events)")
 	mineFile := fs.String("mine", "", "mine config file (facts published for the rest of the fleet)")
 	scheduleFile := fs.String("schedule", "", "schedule config file (work this agent runs on its own clock)")
+	configFile := fs.String("config", "", "settings file (default: <config dir>/agent.conf)")
 	_ = parseFlags(fs, args)
+	loadDaemonConfig(fs, "agent", *configFile)
 
 	beacons, err := beacon.Load(*beaconFile)
 	if err != nil {

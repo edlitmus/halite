@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/engine"
 	"github.com/edlitmus/halite/internal/extmod"
 	"github.com/edlitmus/halite/internal/grains"
@@ -115,6 +116,30 @@ fleet mode:
 
 agentless:
   halite ssh <hosts> <kind> [args]         push the binary over ssh and run`)
+}
+
+// configDir is where the daemon configuration files live: beside the
+// state tree, with the PKI directory and everything else halite owns.
+func configDir() string {
+	return filepath.Dir(defaultRoot())
+}
+
+// loadDaemonConfig reads a daemon's configuration file and applies it to
+// the flags that were not given on the command line. `-config` names a
+// file; without it the platform path is read, and a missing file there is
+// simply no configuration.
+func loadDaemonConfig(fs *flag.FlagSet, daemon, flagValue string) {
+	path := flagValue
+	if path == "" {
+		path = config.DefaultPath(daemon, configDir())
+	}
+	cfg, err := config.Load(path)
+	if err != nil {
+		fatal("%v", err)
+	}
+	if err := cfg.Apply(fs); err != nil {
+		fatal("%v", err)
+	}
 }
 
 // defaultRoot is the state tree location when -root and HALITE_ROOT are

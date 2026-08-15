@@ -138,6 +138,10 @@ halite orchestrate deploy
 halite agent -master master.example.com -schedule schedule.sls
 ```
 
+Under an init system both daemons read a config file instead of a command
+line — see [docs/service.md](docs/service.md) for those and the FreeBSD
+rc.d scripts.
+
 mTLS 1.3 throughout, agent identity from the client certificate, and no
 inbound connections to managed hosts. See [docs/fleet.md](docs/fleet.md).
 
@@ -203,6 +207,7 @@ gate while a conversion is in progress. See
 * [docs/writing-states.md](docs/writing-states.md) — SLS format, templating, requisites
 * [docs/states.md](docs/states.md) — state module reference (file, pkg, service, cmd)
 * [docs/fleet.md](docs/fleet.md) — control plane, agents, targeting
+* [docs/service.md](docs/service.md) — config files, FreeBSD rc.d, and sysrc settings
 * [docs/events.md](docs/events.md) — the event bus, reactor, returners, beacons, scheduler, mine
 * [docs/orchestration.md](docs/orchestration.md) — ordered fleet-wide runs
 * [docs/external-modules.md](docs/external-modules.md) — custom modules in any language

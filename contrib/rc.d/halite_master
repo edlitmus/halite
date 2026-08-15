@@ -1,0 +1,64 @@
+#!/bin/sh
+#
+# PROVIDE: halite_master
+# REQUIRE: LOGIN NETWORKING
+# KEYWORD: shutdown
+#
+# Add these to /etc/rc.conf with sysrc(8):
+#
+#   sysrc halite_master_enable="YES"
+#
+# Everything else has a default, and the settings a fleet actually varies
+# belong in the config file rather than here:
+#
+#   halite_master_enable      run the control plane at boot (default NO)
+#   halite_master_config      settings file
+#                             (default /usr/local/etc/halite/master.conf)
+#   halite_master_program     the halite binary
+#                             (default /usr/local/bin/halite)
+#   halite_master_flags       extra flags, appended after -config
+#   halite_master_user        account to run as (default root)
+#   halite_master_pidfile     (default /var/run/halite_master.pid)
+#   halite_master_daemon_args flags for daemon(8) itself; add -r to have it
+#                             restart the control plane if it exits
+#
+# The control plane needs to read the PKI directory, the state tree, and
+# the pillar tree, and to bind its port — none of which requires root, so
+# halite_master_user is worth setting to an account that owns exactly
+# those. Output goes to syslog under the daemon facility.
+
+. /etc/rc.subr
+
+name="halite_master"
+rcvar="halite_master_enable"
+
+load_rc_config $name
+
+: ${halite_master_enable:="NO"}
+: ${halite_master_config:="/usr/local/etc/halite/master.conf"}
+: ${halite_master_program:="/usr/local/bin/halite"}
+: ${halite_master_flags:=""}
+: ${halite_master_user:="root"}
+: ${halite_master_pidfile:="/var/run/${name}.pid"}
+: ${halite_master_daemon_args:=""}
+
+pidfile="${halite_master_pidfile}"
+procname="${halite_master_program}"
+command="/usr/sbin/daemon"
+command_args="-S -T ${name} -p ${pidfile} ${halite_master_daemon_args} \
+    ${halite_master_program} master -config ${halite_master_config} ${halite_master_flags}"
+
+start_precmd="halite_master_precmd"
+
+halite_master_precmd()
+{
+	# rc.subr already refuses to run a program that is not there. What it
+	# cannot know is that the config file is optional: a fleet can run
+	# entirely on flags, so a missing one is a warning rather than a stop.
+	if [ -n "${halite_master_config}" ] && [ ! -r "${halite_master_config}" ]; then
+		warn "${halite_master_config} is not readable; starting on flags alone"
+	fi
+	install -d -o "${halite_master_user}" "$(dirname "${pidfile}")"
+}
+
+run_rc_command "$1"

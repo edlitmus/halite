@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+New: config files and FreeBSD rc.d scripts for both daemons, so running
+halite at boot does not mean keeping a command line in `rc.conf`.
+
+* `halite master` and `halite agent` read
+  `/usr/local/etc/halite/{master,agent}.conf` (or `/etc/halite/...` on
+  Linux), or the file `-config` names. Every setting is a flag without its
+  dash, and a repeatable flag is a list. A missing file is not an error:
+  running entirely on flags keeps working.
+* Precedence is **flag, then environment, then file, then platform
+  default** — the most specific thing somebody typed wins. The environment
+  only outranks the file for the four settings that have a variable at
+  all (`$HALITE_ROOT`, `$HALITE_PILLAR_ROOT`, `$HALITE_PKI`,
+  `$HALITE_MASTER`).
+* A setting the daemon does not have is an error naming it, not a warning.
+  A config file that quietly did nothing would surface as a fleet behaving
+  oddly rather than as a daemon saying why.
+* `contrib/rc.d/halite_master` and `halite_agent` wrap the daemon in
+  `daemon(8)` with `-S`, so output goes to syslog. Neither supervises by
+  default — FreeBSD's rc does not, and adding it silently would surprise
+  whoever reads the script — but `halite_*_daemon_args="-r"` asks for it.
+  Sample configs are in `examples/`, and `docs/service.md` documents every
+  sysrc variable.
+* Three more checks in `internal/docs`: every sysrc variable a script sets
+  is documented, both scripts parse under `sh -n` and are executable, and
+  every setting in the sample configs is a real flag of that daemon. Each
+  was verified by breaking what it catches.
+
+
 New: ZFS states — `zfs.filesystem_present`, `zfs.filesystem_absent`,
 `zfs.snapshot_present`, `zfs.snapshot_absent`. They carry Salt's names,
 because Salt has the same states, and they pair with the jails: a jail's

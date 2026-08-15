@@ -12,6 +12,7 @@ package docs
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -310,4 +311,69 @@ func referenceDocs(t *testing.T) string {
 		b.WriteString(read(t, doc))
 	}
 	return b.String()
+}
+
+// TestEverySysrcVariableIsDocumented holds the rc.d scripts to the same
+// standard as the flags: a knob nobody wrote down is a knob nobody can
+// set.
+func TestEverySysrcVariableIsDocumented(t *testing.T) {
+	service := read(t, "docs/service.md")
+	defaults := regexp.MustCompile(`(?m)^: \$\{(halite_[a-z_]+):`)
+
+	for _, script := range []string{"contrib/rc.d/halite_master", "contrib/rc.d/halite_agent"} {
+		matches := defaults.FindAllStringSubmatch(read(t, script), -1)
+		if len(matches) == 0 {
+			t.Fatalf("%s declares no settings: this check would pass on an empty file", script)
+		}
+		for _, match := range matches {
+			if !strings.Contains(service, match[1]) {
+				t.Errorf("%s sets %s, which docs/service.md does not document", script, match[1])
+			}
+		}
+	}
+}
+
+// TestRcScriptsParse checks the shell scripts with a shell. They are the
+// part of halite that no Go test would otherwise touch.
+func TestRcScriptsParse(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("no /bin/sh")
+	}
+	for _, script := range []string{"contrib/rc.d/halite_master", "contrib/rc.d/halite_agent"} {
+		out, err := exec.Command("/bin/sh", "-n", filepath.Join(root, script)).CombinedOutput()
+		if err != nil {
+			t.Errorf("%s does not parse: %v\n%s", script, err, out)
+		}
+		info, err := os.Stat(filepath.Join(root, script))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm()&0o111 == 0 {
+			t.Errorf("%s is not executable; rc.d will not run it", script)
+		}
+	}
+}
+
+// TestSampleConfigsNameRealSettings keeps examples/master.conf and
+// agent.conf from drifting into settings the daemons do not have — the
+// mistake the config loader refuses to start on.
+func TestSampleConfigsNameRealSettings(t *testing.T) {
+	fleet := read(t, "cmd/halite/fleet.go")
+	setting := regexp.MustCompile(`(?m)^#?\s*([a-z-]+):`)
+
+	for _, sample := range []struct{ file, command string }{
+		{"examples/master.conf", "func cmdMaster"},
+		{"examples/agent.conf", "func cmdAgent"},
+	} {
+		body := section(fleet, sample.command, "\n}")
+		if body == "" {
+			t.Fatalf("cannot find %s in cmd/halite/fleet.go", sample.command)
+		}
+		for _, match := range setting.FindAllStringSubmatch(read(t, sample.file), -1) {
+			name := match[1]
+			if !strings.Contains(body, `"`+name+`"`) {
+				t.Errorf("%s names %q, which is not a flag of %s", sample.file, name, sample.command)
+			}
+		}
+	}
 }
