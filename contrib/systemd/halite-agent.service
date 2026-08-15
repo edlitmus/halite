@@ -1,0 +1,46 @@
+# halite agent.
+#
+#   install -m 0755 dist/halite-linux-amd64 /usr/local/bin/halite
+#   install -m 0644 contrib/systemd/halite-agent.service \
+#       /etc/systemd/system/halite-agent.service
+#   echo HALITE_MASTER=master.example.com > /etc/halite/agent.env
+#   systemctl daemon-reload && systemctl enable --now halite-agent
+#
+# Settings live in /etc/halite/agent.conf. The control plane to talk to
+# can go there too, but it is the one setting a host usually gets from an
+# image or a provisioning script, which is what agent.env is for.
+
+[Unit]
+Description=halite agent
+Documentation=https://github.com/edlitmus/halite/blob/main/docs/service.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/halite agent -config /etc/halite/agent.conf
+
+# HALITE_MASTER is a host[:port], or several comma-separated for
+# failover; it outranks the config file's `master`. The leading dash
+# makes the file optional. An agent with neither has no control plane to
+# reach and exits saying so.
+EnvironmentFile=-/etc/halite/agent.env
+
+# Creates /var/cache/halite, where the fetched state tree lives.
+CacheDirectory=halite
+
+Restart=on-failure
+RestartSec=10s
+
+# The agent applies states: it installs packages, writes files anywhere,
+# restarts services, and manages jails, containers, and filesystems.
+# There is deliberately no User=, ProtectSystem=, or capability set here.
+# Sandboxing this daemon would only mean a highstate failing halfway
+# through, in a way that reads as a broken state rather than as a
+# service restricted by its unit file.
+
+# A state run may hold the machine for a while — a package upgrade, an
+# orchestration step — and killing it midway is worse than waiting.
+TimeoutStopSec=5min
+
+[Install]
+WantedBy=multi-user.target

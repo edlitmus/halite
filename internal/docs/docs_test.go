@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/compat"
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/modules"
 	"github.com/edlitmus/halite/internal/orch"
 )
@@ -373,6 +374,128 @@ func TestSampleConfigsNameRealSettings(t *testing.T) {
 			name := match[1]
 			if !strings.Contains(body, `"`+name+`"`) {
 				t.Errorf("%s names %q, which is not a flag of %s", sample.file, name, sample.command)
+			}
+		}
+	}
+}
+
+// units are the systemd units, paired with the daemon they start and the
+// function in cmd/halite that owns that daemon's flags.
+var units = []struct{ file, daemon, command string }{
+	{"contrib/systemd/halite-master.service", "master", "func cmdMaster"},
+	{"contrib/systemd/halite-agent.service", "agent", "func cmdAgent"},
+}
+
+// directives returns a unit file's settings as directive -> values. A
+// systemd unit is INI-shaped, and the parts this package checks — one
+// ExecStart, the paths it names — do not need more than that.
+func directives(t *testing.T, rel string) map[string][]string {
+	t.Helper()
+	found := map[string][]string{}
+	for n, line := range strings.Split(read(t, rel), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if strings.HasPrefix(line, "[") {
+			found["section"] = append(found["section"], strings.Trim(line, "[]"))
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			t.Errorf("%s:%d: not a section, comment, or Key=value: %q", rel, n+1, line)
+			continue
+		}
+		found[key] = append(found[key], value)
+	}
+	return found
+}
+
+// TestUnitsStartTheDaemonTheyClaimTo checks the units against the flags
+// the daemons actually have — the same standard the sample configs are
+// held to, because a unit naming a flag that went away fails at boot on
+// somebody else's machine.
+func TestUnitsStartTheDaemonTheyClaimTo(t *testing.T) {
+	fleet := read(t, "cmd/halite/fleet.go")
+
+	for _, unit := range units {
+		found := directives(t, unit.file)
+		for _, required := range []string{"Description", "ExecStart", "WantedBy"} {
+			if len(found[required]) == 0 {
+				t.Errorf("%s has no %s", unit.file, required)
+			}
+		}
+		if len(found["ExecStart"]) != 1 {
+			t.Fatalf("%s has %d ExecStart lines; this check assumes one", unit.file, len(found["ExecStart"]))
+		}
+
+		flags := section(fleet, unit.command, "\n}")
+		if flags == "" {
+			t.Fatalf("cannot find %s in cmd/halite/fleet.go", unit.command)
+		}
+		fields := strings.Fields(found["ExecStart"][0])
+		if len(fields) < 2 || fields[1] != unit.daemon {
+			t.Errorf("%s: ExecStart does not run `halite %s`: %q", unit.file, unit.daemon, found["ExecStart"][0])
+		}
+		for i, field := range fields {
+			if !strings.HasPrefix(field, "-") {
+				continue
+			}
+			name := strings.TrimLeft(field, "-")
+			if !strings.Contains(flags, `"`+name+`"`) {
+				t.Errorf("%s: ExecStart passes -%s, which is not a flag of halite %s", unit.file, name, unit.daemon)
+			}
+			// A unit that points somewhere other than the path the daemon
+			// would have read anyway is a second answer to the same
+			// question, and one of them will be forgotten.
+			if name == "config" && i+1 < len(fields) {
+				if want := config.DefaultPath(unit.daemon, "/etc/halite"); fields[i+1] != want {
+					t.Errorf("%s: -config names %s, not the Linux default %s", unit.file, fields[i+1], want)
+				}
+			}
+		}
+	}
+}
+
+// TestUnitFilesAreVerified hands the units to systemd itself where there
+// is one. On a host without systemd the shape checks above are all there
+// is, which is worth knowing when reading a green run on FreeBSD.
+func TestUnitFilesAreVerified(t *testing.T) {
+	analyze, err := exec.LookPath("systemd-analyze")
+	if err != nil {
+		t.Skip("no systemd-analyze on this host")
+	}
+	for _, unit := range units {
+		out, err := exec.Command(analyze, "verify", filepath.Join(root, unit.file)).CombinedOutput()
+		if err != nil {
+			t.Errorf("%s does not verify: %v\n%s", unit.file, err, out)
+		}
+	}
+}
+
+// TestEveryUnitKnobIsDocumented holds the units to the same standard as
+// the sysrc variables: an operator has to be able to look up the account
+// a daemon runs as and the files it reads before installing it.
+func TestEveryUnitKnobIsDocumented(t *testing.T) {
+	service := read(t, "docs/service.md")
+
+	for _, unit := range units {
+		if !strings.Contains(service, filepath.Base(unit.file)) {
+			t.Errorf("docs/service.md does not name %s", unit.file)
+		}
+		found := directives(t, unit.file)
+		documented := append(append([]string{}, found["EnvironmentFile"]...), found["User"]...)
+		documented = append(documented, found["ReadWritePaths"]...)
+		if len(documented) == 0 {
+			t.Fatalf("%s sets no paths or account: this check would pass on an empty file", unit.file)
+		}
+		for _, value := range documented {
+			// Backticked, because these are paths and an account name:
+			// a bare substring search finds "nobody" in a sentence and
+			// calls the account documented.
+			literal := "`" + strings.TrimPrefix(value, "-") + "`"
+			if !strings.Contains(service, literal) {
+				t.Errorf("%s uses %q, which docs/service.md does not document", unit.file, value)
 			}
 		}
 	}

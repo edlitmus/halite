@@ -2,7 +2,7 @@
 
 `halite master` and `halite agent` run in the foreground and log to
 stderr, which is what an init system wants. This page is the config files
-they read and the FreeBSD rc.d scripts that start them.
+they read and the FreeBSD rc.d scripts and systemd units that start them.
 
 ## Config files
 
@@ -139,9 +139,90 @@ it silently would surprise whoever reads the script. Ask for it:
 sysrc halite_master_daemon_args="-r"
 ```
 
+## systemd
+
+Two units are in [contrib/systemd/](../contrib/systemd). Install the one
+the host needs, and the binary:
+
+```sh
+install -m 0755 dist/halite-linux-amd64 /usr/local/bin/halite
+install -m 0644 contrib/systemd/halite-master.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now halite-master
+```
+
+Output goes to the journal (`journalctl -u halite-master -f`). Both units
+restart on failure after a few seconds, which is the systemd norm and is
+visible in the file — unlike the rc.d scripts, where supervision is
+opt-in through `halite_*_daemon_args="-r"`.
+
+Settings belong in `/etc/halite/{master,agent}.conf`, so the unit is the
+same on every host. Change a unit with a drop-in rather than in place,
+so a reinstall does not undo it:
+
+```sh
+systemctl edit halite-agent
+```
+
+### Environment files
+
+Each unit reads an optional `EnvironmentFile`, which is where the four
+settings that have a variable can come from:
+
+| File | Used for |
+|---|---|
+| `/etc/halite/master.env` | `HALITE_ROOT`, `HALITE_PILLAR_ROOT`, `HALITE_PKI` |
+| `/etc/halite/agent.env` | `HALITE_MASTER` |
+
+`HALITE_MASTER` is the systemd counterpart of `halite_agent_master`: the
+one setting a host usually gets from an image or a provisioning script
+rather than from a file that is the same everywhere.
+
+```sh
+echo HALITE_MASTER=master.example.com > /etc/halite/agent.env
+```
+
+Remember that the environment outranks the config file, so a stale
+`agent.env` beats a corrected `agent.conf`.
+
+### Which account, and what is sandboxed
+
+`halite-master.service` runs as **`halite`**, which the unit does not
+create:
+
+```sh
+useradd --system --home-dir /etc/halite --shell /usr/sbin/nologin halite
+```
+
+It is sandboxed: a read-only filesystem, no capabilities, private `/tmp`
+and `/dev`, and only inet and unix sockets. Two paths stay writable —
+`/etc/halite/pki`, because signing an enrollment and recording an
+accepted key are writes, and `/var/log/halite` from `LogsDirectory=`,
+where the default file returner writes. **Point `-pki` or a file
+returner somewhere else and that list has to grow**, or the daemon fails
+with a read-only filesystem:
+
+```sh
+systemctl edit halite-master     # ReadWritePaths=/srv/halite/pki
+```
+
+`halite-agent.service` runs as **root with no sandboxing at all**, and
+that is deliberate. The agent installs packages, writes files anywhere,
+restarts services, and manages jails, containers, and filesystems; a
+restriction here would surface as a highstate failing halfway through,
+read as a broken state rather than as a unit file. It gets
+`CacheDirectory=halite` for the fetched state tree and a five-minute
+`TimeoutStopSec`, because interrupting a package upgrade is worse than
+waiting for it.
+
+The FreeBSD default differs: `halite_master_user` is `root` there,
+because that is what `rc.subr` does without one. Both agree that the
+control plane does not need root — systemd just makes it easy to say so
+in the file everyone installs.
+
 ## Elsewhere
 
-There is no systemd unit or launchd plist in the tree yet. Both daemons
-are a foreground process that logs to stderr and stops on SIGINT or
-SIGTERM, which is all either init system needs — the unit is four lines
-and nobody has asked for one to be maintained here.
+There is no launchd plist in the tree. Both daemons are a foreground
+process that logs to stderr and stops on SIGINT or SIGTERM, which is all
+launchd needs — the plist is a dozen lines and nobody has asked for one
+to be maintained here.

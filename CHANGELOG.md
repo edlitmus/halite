@@ -24,10 +24,25 @@ halite at boot does not mean keeping a command line in `rc.conf`.
   whoever reads the script — but `halite_*_daemon_args="-r"` asks for it.
   Sample configs are in `examples/`, and `docs/service.md` documents every
   sysrc variable.
+* `contrib/systemd/halite-master.service` and `halite-agent.service` do
+  the same on Linux. The control plane runs as an unprivileged `halite`
+  account under a read-only filesystem, with `/etc/halite/pki` and
+  `LogsDirectory=` writable; the agent runs as root with **no** sandbox,
+  because a restriction there surfaces as a highstate failing halfway
+  through. `HALITE_MASTER` comes from an optional
+  `/etc/halite/agent.env`, the systemd counterpart of
+  `halite_agent_master`. Not verified against systemd itself — this was
+  developed on FreeBSD, and `systemd-analyze verify` runs only where
+  there is one.
 * Three more checks in `internal/docs`: every sysrc variable a script sets
   is documented, both scripts parse under `sh -n` and are executable, and
   every setting in the sample configs is a real flag of that daemon. Each
   was verified by breaking what it catches.
+* Three more again for the units: every flag in an `ExecStart` is a real
+  flag of that daemon and its `-config` is the path the daemon would have
+  read anyway, each unit is INI-shaped with a `Description`, `ExecStart`,
+  and `WantedBy`, and every account and file path a unit names is
+  documented in `docs/service.md`.
 
 
 New: ZFS states — `zfs.filesystem_present`, `zfs.filesystem_absent`,

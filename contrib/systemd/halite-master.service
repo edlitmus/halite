@@ -1,0 +1,64 @@
+# halite control plane.
+#
+#   install -m 0755 dist/halite-linux-amd64 /usr/local/bin/halite
+#   install -m 0644 contrib/systemd/halite-master.service \
+#       /etc/systemd/system/halite-master.service
+#   systemctl daemon-reload && systemctl enable --now halite-master
+#
+# Settings live in /etc/halite/master.conf, not here: this file should be
+# the same on every control plane. Change anything below with a drop-in
+# (`systemctl edit halite-master`) so a package upgrade does not undo it.
+
+[Unit]
+Description=halite control plane
+Documentation=https://github.com/edlitmus/halite/blob/main/docs/service.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/halite master -config /etc/halite/master.conf
+
+# The four settings with an environment variable ($HALITE_ROOT,
+# $HALITE_PILLAR_ROOT, $HALITE_PKI, $HALITE_MASTER) can come from here.
+# The leading dash makes the file optional.
+EnvironmentFile=-/etc/halite/master.env
+
+# The control plane reads the PKI, state, and pillar trees and binds a
+# port above 1024. None of that needs root, and the pillar tree's mode is
+# what keeps its secrets. Create the account once:
+#
+#   useradd --system --home-dir /etc/halite --shell /usr/sbin/nologin halite
+User=halite
+Group=halite
+
+Restart=on-failure
+RestartSec=5s
+
+# The default file returner writes /var/log/halite/results.ndjson.
+# LogsDirectory creates it owned by User= and keeps it writable under the
+# read-only filesystem below.
+LogsDirectory=halite
+
+# Signing an enrollment and recording an accepted key are writes into the
+# PKI directory, so it is the one place under /etc this daemon may write.
+# Point -pki or -returner somewhere else and this list has to grow, or
+# the daemon will fail with a read-only filesystem.
+ProtectSystem=strict
+ReadWritePaths=/etc/halite/pki
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+LockPersonality=yes
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
