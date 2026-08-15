@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+Security fixes from an audit of the control plane, the CA, and the
+service files. Nothing here needs a state tree change; upgrading the
+binary and reinstalling the rc.d scripts is the whole migration.
+
+* **The rc.d master script took ownership of `/var/run`.** `install -d -o
+  ${halite_master_user}` applies its owner and mode whether or not it had
+  to create the path, so pointing `halite_master_user` at an unprivileged
+  account — the documented recommendation — handed that account every pid
+  file and socket in `/var/run`, and with them a way back to root. Both
+  scripts now use `/var/run/halite` and create it only when it is missing.
+  **Reinstall `contrib/rc.d/halite_master` and `halite_agent`**, and check
+  `ls -ld /var/run` on any host that ran the previous ones.
+* **Enrollment answered `accepted` without checking the key.** `Submit`
+  compared the CSR for a pending or rejected identity but not for an
+  accepted one, so any caller who guessed an id received that agent's
+  certificate from the one route that answers before authentication —
+  a fleet-enumeration oracle. The comparison now covers every state.
+* **A webhook returner had to be told to use https.** Results carry the
+  run's changes, which hold whatever a state templated out of pillar. An
+  `http://` endpoint is now refused unless it is on the loopback, and a
+  redirect to another host fails the delivery instead of re-sending the
+  record there.
+* **`docs/pillar-security.md` promised more isolation than the code
+  gives.** The control plane pins an agent's id from its certificate but
+  renders pillar through the grains that agent reported, so a host that
+  claims `role: db` receives whatever `role:db` selects. Pillar tops
+  should target the id; the page now says so and explains why grain
+  targets are fine in a state top and not in a pillar top.
+
+Known and not yet fixed, from the same audit: there is no certificate
+revocation or renewal (`halite key remove` forgets the CA's records, but
+the issued certificate stays valid for its year), `/v1/enroll` has no
+per-source rate limit, and `MaxPendingEnrollments` is not wired to a
+flag.
+
 New: config files and FreeBSD rc.d scripts for both daemons, so running
 halite at boot does not mean keeping a command line in `rc.conf`.
 
