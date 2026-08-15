@@ -745,6 +745,77 @@ Stops the jail, removes its configuration file, and takes it out of
 data, and a state that deleted it would be the most expensive kind of
 surprise.
 
+## container
+
+OCI containers through `docker` or `podman`, whichever the host has —
+they take the same subcommands for everything used here. `runtime:` names
+one explicitly.
+
+These are halite's spelling, not Salt's: a Salt tree's
+`docker_container.running` is `container.running`, and `halite parse`
+says so where it finds one.
+
+### container.image_present / container.image_absent
+
+Pull or remove an image. Args: `name` (the reference), `force` (pull even
+when present, which is how a moving tag is refreshed), `runtime`.
+
+```yaml
+docker.io/library/nginx:1.27:
+  container.image_present:
+```
+
+### container.running
+
+| Arg | Description |
+|---|---|
+| `name` | container name (default: state ID) |
+| `image` | image reference (required) |
+| `command` | the command, replacing the image's own |
+| `env` | a mapping, or a list of `KEY=VALUE` |
+| `labels` | a mapping, or a list of `KEY=VALUE` |
+| `ports` | `8080:80`, one per entry |
+| `volumes` | `/host:/container:ro`, one per entry |
+| `network`, `user`, `workdir`, `restart` | passed straight through |
+| `run_args` | anything else, appended to the create command |
+| `runtime` | `docker` or `podman` |
+
+```yaml
+web:
+  container.running:
+    - image: docker.io/library/nginx:1.27
+    - ports:
+      - 8080:80
+    - volumes:
+      - /srv/site:/usr/share/nginx/html:ro
+    - env:
+        NGINX_HOST: example.com
+    - restart: always
+```
+
+**Drift is one comparison.** The arguments are hashed into a
+`halite.spec` label at creation, and each run compares the hash of what
+the state says now against the label on the container. Anything that
+differs — a port, an environment value, the command, the resolved image
+id — recreates it, including arguments this module grows later. A
+container that is there but carries no such label was made by something
+else, and is reported as that before being replaced.
+
+A changed container is **replaced, not adjusted**: the runtimes cannot
+change most of these on a live container, and a half-applied container
+would be worse than a recreated one. `watch` restarts a container whose
+watched state changed, without recreating it.
+
+The resolved image id is part of the hash where it can be read, so a tag
+that moved recreates the container. A `container.image_present` with
+`force: true` in front of it, with a `require`, is how a `:latest`
+deployment stays current.
+
+### container.stopped / container.absent
+
+Stop a container, or stop and remove it. Named volumes are left alone: one
+outlives its container by design, and removing it is data loss.
+
 ## service
 
 Backend is auto-detected: FreeBSD rc.d (uses `onestart`/`onestatus` so

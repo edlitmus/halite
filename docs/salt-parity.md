@@ -77,6 +77,7 @@ not.
 | locale.system | done | Linux only: localectl, /etc/default/locale, or /etc/locale.conf. FreeBSD has no single system locale |
 | alternatives.install / remove / set | done | update-alternatives or alternatives; setting an unregistered path fails |
 | network.system (hostname) | done | applied and recorded: hostnamectl, or hostname plus sysrc/scutil//etc/hostname. The rest of Salt's network.system is not implemented |
+| docker_container.* / docker_image.* | done, renamed | `container.running` / `stopped` / `absent` and `container.image_present` / `image_absent`, driving docker **or podman**. Drift is a spec hash in a label, so every argument is compared; a changed container is replaced. Salt's hundred-argument surface is not reproduced — `run_args` is the escape hatch |
 | jail.present / absent / running / stopped | done (halite original) | FreeBSD jails: a jail.conf.d block plus the lifecycle through rc.d/jail. Salt has no jail states, so nothing ports — but nothing has to be translated either |
 | network.managed | out | too OS-entangled; use file + service |
 
@@ -159,13 +160,15 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-59 state functions and 4 execution modules. Raw counts flatter Salt —
+64 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
 firewall states, SELinux beyond the mode and booleans (`fcontext`, `port`,
-`module`), `lvm`, `npm`, Windows updates and ACLs. Containers are the
-place halite and Salt diverge rather than lag: there are FreeBSD jail
-states, which Salt does not have, and no OCI (`docker_container`,
-`docker_image`) states, which Salt does. The
+`module`), `lvm`, `npm`, Windows updates and ACLs. Containers are covered
+from both ends — FreeBSD jails, which Salt has no states for, and OCI
+containers under halite's own names — but not to Salt's depth: there are
+no `docker_network`, `docker_volume`, or compose-shaped states, and the
+hundred arguments of `docker_container.running` are a dozen plus
+`run_args`. The
 x509 states cover a host's own key and certificate, not Salt's CSR
 workflow or its remote signing policies. The `_modules/` escape hatch exists, but it is per-site effort, not
 a library.

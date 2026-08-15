@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+New: OCI container states — `container.image_present`,
+`container.image_absent`, `container.running`, `container.stopped`,
+`container.absent` — driving `docker` or `podman`, whichever the host has.
+They take the same subcommands for everything used here, so one backend
+covers both: podman on the FreeBSD hosts halite targets, docker on the
+Linux ones.
+
+* They carry halite's names rather than Salt's, because `docker_container`
+  is the wrong word for something driving podman. `halite parse` reports
+  a Salt tree's `docker_container.running` with the name to rename it to.
+* **Drift is one comparison.** The arguments are hashed into a
+  `halite.spec` label at creation, and each run compares that against the
+  hash of what the state says now. A port, an environment value, the
+  command, the resolved image id — anything that differs recreates the
+  container, including arguments this module grows later. A container
+  carrying no such label was made by something else, and says so before
+  being replaced.
+* A changed container is replaced rather than adjusted: the runtimes
+  cannot change most of these on a live container, and a half-applied one
+  would be worse. `watch` restarts without recreating.
+* The runtime's own parser checks the command line halite builds, in a
+  test that runs wherever docker or podman exists. It uses an image
+  reference that cannot resolve, so the run fails after the flags are
+  parsed and before anything is created — a test must not leave a
+  container behind.
+
+Fixed: `halite parse` was blind to the arguments of twenty state modules —
+every file-editing state, `host`, `kmod`, `timezone`, `locale`, `selinux`,
+and `alternatives`. Their argument tables had never landed, so a typo in
+one of their arguments was accepted in silence. The tables are there now,
+and two tests keep the checker and the module registry from drifting apart
+again: every registered state must have a table, and every table must name
+a registered state.
+
 New: FreeBSD jail states — `jail.present`, `jail.absent`, `jail.running`,
 `jail.stopped`. Containers are where halite and Salt diverge rather than
 lag: Salt has no jail states, so nothing here ports from a Salt tree, and

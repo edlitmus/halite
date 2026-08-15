@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/modules"
+	"github.com/edlitmus/halite/internal/orch"
 )
 
 // writeTree writes files under a fresh directory: "path" -> contents.
@@ -392,5 +395,34 @@ func TestMissingRootIsAnError(t *testing.T) {
 	s := &Scanner{}
 	if _, err := s.ScanTree(filepath.Join(t.TempDir(), "nope"), KindState); err == nil {
 		t.Fatal("a missing root should be reported to the caller")
+	}
+}
+
+// TestEveryStateHasKnownArguments keeps the argument tables from drifting
+// behind the module registry. An entry is what lets `halite parse` report
+// a typo in an argument; without one the checker is silently blind to that
+// module, which is how twenty of them went unchecked until an audit
+// noticed.
+func TestEveryStateHasKnownArguments(t *testing.T) {
+	// The orchestration step is checked through its own entry, and the
+	// execution modules take no state arguments.
+	for name := range modules.Registry {
+		if _, ok := knownArgs[name]; !ok {
+			t.Errorf("%s has no knownArgs entry: halite parse cannot check its arguments", name)
+		}
+	}
+}
+
+// TestKnownArgumentsNameRealStates is the other direction: an entry for a
+// module that no longer exists checks nothing and misleads whoever reads
+// the table.
+func TestKnownArgumentsNameRealStates(t *testing.T) {
+	for name := range knownArgs {
+		if name == orch.StepFunction {
+			continue
+		}
+		if modules.Registry[name] == nil {
+			t.Errorf("knownArgs has %s, which is not a registered state", name)
+		}
 	}
 }
