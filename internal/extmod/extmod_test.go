@@ -258,3 +258,61 @@ func TestBoundedBufferTruncatesFloods(t *testing.T) {
 		t.Fatal("flood was not flagged as truncated")
 	}
 }
+
+// TestAWritableModuleIsRefused covers the way one careless mode in a
+// state tree becomes root on every managed host: the tree's permission
+// bits survive to an agent's cache, and these programs run as the agent.
+func TestAWritableModuleIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	writeModule(t, dir, "demo", `echo '{"result": true, "comment": "ran"}'`)
+	path := filepath.Join(dir, "demo")
+
+	for _, tc := range []struct {
+		what string
+		mode os.FileMode
+	}{
+		{"world-writable", 0o777},
+		{"group-writable", 0o775},
+	} {
+		if err := os.Chmod(path, tc.mode); err != nil {
+			t.Fatal(err)
+		}
+		fn, ok := Lookup(dir)("demo.thing")
+		if !ok {
+			t.Fatal("module not found")
+		}
+		res := fn(&modules.Ctx{}, "id", nil)
+		if res.Ok {
+			t.Errorf("a %s module must not run", tc.what)
+		}
+		if !strings.Contains(res.Comment, "refusing to run") {
+			t.Errorf("%s: unhelpful comment %q", tc.what, res.Comment)
+		}
+	}
+
+	// The same module, owner-writable only, still works.
+	if err := os.Chmod(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fn, _ := Lookup(dir)("demo.thing")
+	if res := fn(&modules.Ctx{}, "id", nil); !res.Ok {
+		t.Errorf("a 0755 module should run: %+v", res)
+	}
+}
+
+// TestAModuleInAWritableDirectoryIsRefused is the other half: a directory
+// anyone can write is a directory anyone can drop a module into.
+func TestAModuleInAWritableDirectoryIsRefused(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "_modules")
+	writeModule(t, dir, "demo", `echo '{"result": true, "comment": "ran"}'`)
+	if err := os.Chmod(dir, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	fn, ok := Lookup(dir)("demo.thing")
+	if !ok {
+		t.Fatal("module not found")
+	}
+	if res := fn(&modules.Ctx{}, "id", nil); res.Ok {
+		t.Error("a module in a world-writable directory must not run")
+	}
+}

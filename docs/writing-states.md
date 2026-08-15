@@ -151,7 +151,7 @@ control gets decrypted into the tree at deploy time. See
 
 ## The mine
 
-Under a control plane, `.Mine` holds facts other hosts published about
+Under a control plane, `.Mine` holds what other hosts published about
 themselves — `function -> agent -> data` — so one host's states can be
 built from another's reality:
 

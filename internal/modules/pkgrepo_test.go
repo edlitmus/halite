@@ -119,3 +119,36 @@ func TestRepositoryBodyIsStable(t *testing.T) {
 		}
 	}
 }
+
+// TestRepoChangesHonoursShowDiff keeps a repository credential out of a
+// job result. docs/pillar-security.md tells operators that show_diff is
+// how to do that, which only works if every state that emits a diff obeys
+// it — this one did not.
+func TestRepoChangesHonoursShowDiff(t *testing.T) {
+	repo := repoFile{
+		path: "/etc/yum.repos.d/acme.repo",
+		body: "[acme]\nbaseurl=https://user:s3cret@repo.example.com/rpm\n",
+	}
+	current := []byte("[acme]\nbaseurl=https://old.example.com/rpm\n")
+
+	shown := repoChanges(repo, current, true, true)
+	if shown["diff"] == "" {
+		t.Error("a diff is still the default")
+	}
+	hidden := repoChanges(repo, current, true, false)
+	if diff, ok := hidden["diff"]; ok {
+		t.Errorf("show_diff: false still reported a diff: %q", diff)
+	}
+	for key, value := range hidden {
+		if strings.Contains(value, "s3cret") {
+			t.Errorf("changes[%q] carries the credential: %q", key, value)
+		}
+	}
+	if hidden[repo.path] != "written" {
+		t.Errorf("the file itself is still reported: %v", hidden)
+	}
+	// A repository that did not exist has nothing to diff against.
+	if created := repoChanges(repo, nil, false, true); created["diff"] != "" {
+		t.Errorf("a new file should have no diff: %v", created)
+	}
+}

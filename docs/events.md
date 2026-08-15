@@ -395,6 +395,27 @@ upstream backends {
 underscores so the path resolves: `network.interfaces` is
 `{{ .Mine.network_interfaces }}`.
 
+### What the mine is worth trusting for
+
+The **agent names** are authenticated: the control plane stamps each
+entry with the id in that agent's client certificate, so no host can
+publish under another's name. Iterating `$agent`, matching on it, and
+using it as a target are all sound.
+
+The **values are claims**, not facts. Anything an agent publishes is what
+that host said about itself, and every enrolled agent can read the lot.
+So a value from the mine is input from another machine:
+
+* Fine: a hostname you use to build a config file that a service will
+  fail to start on if it is wrong.
+* Not fine: rendering one into `cmd.run`, into a path a state writes, or
+  into anything that grants access. One compromised agent would then be
+  reconfiguring hosts it has no other reach into.
+
+Pillar is the place for anything that must be true — the control plane
+owns it, and an agent cannot write it (see
+[pillar-security.md](pillar-security.md)).
+
 Masterless and `halite ssh` runs get an empty `.Mine` — there is no fleet
 to gather from. A state tree that iterates over it produces nothing rather
 than failing.

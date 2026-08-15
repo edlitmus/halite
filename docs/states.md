@@ -32,6 +32,20 @@ Ensure a file exists with the given content and mode.
 | `template` | `true` renders the source through text/template with grains |
 | `makedirs` | create parent directories |
 | `show_diff` | include a line diff in Changes (default true) |
+| `follow_symlinks` | change the mode and owner of what a link points at (default false) |
+
+**Mode and ownership are not applied through a symlink.** If the managed
+path is a link, a state that only sets `mode`, `user`, or `group` fails
+naming the link, because `chmod` and `chown` follow one — a path an
+unprivileged user can pre-create would otherwise be a way to have a root
+state widen or take ownership of any file on the host. `follow_symlinks:
+true` is the opt-in for a state that means it.
+
+Writing content needs no such guard and has none: the write goes to a
+temp file in the same directory and the rename replaces the link, so the
+target is untouched and the mode then applies to the file halite just
+wrote. The same rule holds for `file.directory`, `file.recurse`, the
+edit-style states, and `x509`.
 
 If neither `contents` nor `source` is given, the file is created empty if
 absent (touch semantics). Double-quoted `contents` process `\n` and `\t`
@@ -330,6 +344,12 @@ Files land in `/usr/local/etc/pkg/repos/<name>.conf` (FreeBSD),
 `/etc/zypp/repos.d/<name>.repo`, or `/etc/apk/repositories.d/<name>`.
 pacman, Homebrew, Chocolatey, and winget have no repository file to write,
 and the state says so rather than doing nothing.
+
+`show_diff` (default true) works as it does for `file.managed`, and
+matters more here: a repository URL routinely carries a token or
+`user:password`, and the diff travels into job results, returners, and
+the event bus. Set `show_diff: false` on a repository with a credential
+in it.
 
 **halite does not fetch signing keys.** `signed_by` and `gpgkey` point at
 a key that a `file.managed` (with `require`) puts there first. A

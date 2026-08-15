@@ -58,10 +58,7 @@ func pkgrepoManaged(c *Ctx, id string, args map[string]any) Result {
 	if err := atomicWrite(repo.path, []byte(repo.body), 0o644); err != nil {
 		return resFail("write %s: %v", repo.path, err)
 	}
-	changes := map[string]string{repo.path: "written"}
-	if diff := lineDiff(current, []byte(repo.body)); readErr == nil && diff != "" {
-		changes["diff"] = diff
-	}
+	changes := repoChanges(repo, current, readErr == nil, Bool(args, "show_diff", true))
 	if out, err := refreshRepos(args, repo); err != nil {
 		return resFail("repository %s written, but refresh failed: %v: %s", name, err, strings.TrimSpace(out))
 	} else if out != "" {
@@ -143,6 +140,21 @@ func repoLocation(name string) (repoFile, error) {
 		return repoFile{}, fmt.Errorf("pkgrepo is not implemented for this platform's package manager")
 	}
 	return repoFile{path: filepath.Join(dir, name), refresh: refreshArgv()}, nil
+}
+
+// repoChanges reports what writing the repository file changed. The diff
+// is behind show_diff for the same reason file.managed's is: a repository
+// URL routinely carries a token or user:password, and changes travel to
+// the control plane, the returners, and the event bus.
+func repoChanges(repo repoFile, current []byte, existed, showDiff bool) map[string]string {
+	changes := map[string]string{repo.path: "written"}
+	if !existed || !showDiff {
+		return changes
+	}
+	if diff := lineDiff(current, []byte(repo.body)); diff != "" {
+		changes["diff"] = diff
+	}
+	return changes
 }
 
 func refreshArgv() []string {

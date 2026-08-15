@@ -26,6 +26,23 @@ The directory ships to agents with the rest of the state tree, executable
 bit intact, so a module works masterless, under a control plane, and over
 `halite ssh` without being installed anywhere.
 
+## Permissions
+
+**A module that anyone but its owner can write is refused**, and so is a
+module in a directory anyone can write:
+
+```
+refusing to run motd: /var/cache/halite/_modules/motd is mode 0777, which
+lets a group or everyone rewrite it, and a module runs with this agent's
+privileges
+```
+
+The state tree's permission bits survive the trip to an agent's cache, so
+one `chmod 777` in the tree — or a checkout from a filesystem with no
+mode bits — would otherwise mean every local user on every managed host
+can run code as root. Keep `_modules/` and its contents `0755`, the same
+rule ssh and cron apply to their own files.
+
 ## The protocol
 
 halite runs the executable with the function as its only argument, writes

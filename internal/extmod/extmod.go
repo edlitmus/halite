@@ -176,6 +176,31 @@ func (r *Resolver) program(module string) (string, bool) {
 	return "", false
 }
 
+// safeToRun refuses a module that somebody other than its owner can
+// rewrite. These programs run with the agent's privileges, which is root,
+// and the state tree's permission bits survive the trip to an agent's
+// cache — so one 0777 file in the tree would otherwise mean every local
+// user on every managed host can run code as root.
+//
+// Checked here rather than at lookup, so the mode is read at the moment
+// it matters and the state that wanted the module is the one that fails.
+func safeToRun(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil // permissions are ACLs here, not mode bits
+	}
+	for _, candidate := range []string{path, filepath.Dir(path)} {
+		info, err := os.Stat(candidate)
+		if err != nil {
+			return fmt.Errorf("refusing to run %s: %v", path, err)
+		}
+		if perm := info.Mode().Perm(); perm&0o022 != 0 {
+			return fmt.Errorf("refusing to run %s: %s is mode %04o, which lets a group or everyone rewrite it, and a module runs with this agent's privileges",
+				filepath.Base(path), candidate, perm)
+		}
+	}
+	return nil
+}
+
 // run invokes a module and turns its answer into a Result.
 func (r *Resolver) run(program, function string, c *modules.Ctx, id string, args map[string]any) modules.Result {
 	timeout := r.Timeout
@@ -197,6 +222,10 @@ func (r *Resolver) run(program, function string, c *modules.Ctx, id string, args
 	body, err := json.Marshal(request)
 	if err != nil {
 		return modules.Result{Comment: fmt.Sprintf("encode request: %v", err)}
+	}
+
+	if err := safeToRun(program); err != nil {
+		return modules.Result{Comment: err.Error()}
 	}
 
 	cmd := exec.CommandContext(ctx, program, function)
