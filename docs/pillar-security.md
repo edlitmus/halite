@@ -65,14 +65,55 @@ Only that host's own rendered pillar, never the tree:
 
 * **Fleet.** The agent fetches `GET /v1/pillar` over mTLS and keeps the
   result in memory for the length of the run; it is never written to disk.
-  The control plane renders it from that agent's grains, so one host cannot
-  ask for another's data.
+  The control plane renders it for the identity in that agent's
+  certificate — an agent cannot ask for another host's pillar. **What it
+  can do is claim a grain**; see below.
 * **ssh.** Pillar is rendered on your workstation and shipped as a single
   JSON file into a `0700` working directory, written with `umask 077`, and
   removed when the run ends.
 * **Masterless.** The whole tree is on the host, because there is nowhere
   else for it to be. If a host must not see other hosts' data, do not give
   it a shared pillar tree — use fleet or ssh mode.
+
+## Target pillar on the id, not on a grain
+
+In a pillar top file, **only the id is authenticated**. The control plane
+takes it from the client certificate and overwrites whatever the agent
+reported, so a host cannot answer to another host's name:
+
+```yaml
+base:
+  'web*':          # id glob — safe
+    - web
+  'L@db1,db2':     # explicit ids — safe
+    - db
+  'E@^web[0-9]+$': # regular expression on the id — safe
+    - web
+```
+
+Every **other** grain is self-reported. An agent sends its grains in
+`POST /v1/hello`, and the control plane renders that agent's pillar
+through them. A host with a shell on it can add `role: db` to its custom
+grains file, restart the agent, and receive whatever `role:db` selects:
+
+```yaml
+base:
+  'role:db':       # a claim, not a fact — do not gate secrets on this
+    - db-credentials
+  'G@role:db':     # the same thing, spelled Salt's way
+    - db-credentials
+  'P@role:^db$':   # and the same again
+    - db-credentials
+```
+
+This is not a bug in targeting — grains are how a host describes itself,
+and that is exactly what you want in a **state** top file, where every
+agent fetches the whole tree anyway. It is only a boundary question in a
+pillar top, where the target decides who sees a secret.
+
+If you want role-based pillar, keep the roles where an operator controls
+them — a `L@` list per role in the pillar top, generated from your
+inventory — rather than trusting each host's answer.
 
 ## Encrypting at rest with an external tool
 
