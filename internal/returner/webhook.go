@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,6 +26,34 @@ type Webhook struct {
 	retryWait time.Duration
 }
 
+// isLoopback reports whether a URL's host is this machine, where an
+// unencrypted POST never reaches a network.
+func isLoopback(host string) bool {
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
+// refuseOffHostRedirect stops a redirect from re-sending the record to
+// somewhere else. Following one would hand the run's changes to whatever
+// host the endpoint named, which is the disclosure https was meant to
+// prevent.
+func refuseOffHostRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) > 0 && req.URL.Host != via[0].URL.Host {
+		return fmt.Errorf("refusing redirect to %s", req.URL.Host)
+	}
+	if len(via) >= webhookMaxRedirects {
+		return fmt.Errorf("too many redirects")
+	}
+	return nil
+}
+
+// webhookMaxRedirects bounds same-host redirects, which are a path
+// change an endpoint is entitled to make.
+const webhookMaxRedirects = 5
+
 // NewWebhook validates the endpoint and builds a client for it.
 func NewWebhook(endpoint string) (*Webhook, error) {
 	parsed, err := url.Parse(endpoint)
@@ -37,11 +66,21 @@ func NewWebhook(endpoint string) (*Webhook, error) {
 	if parsed.Host == "" {
 		return nil, fmt.Errorf("returner webhook: %q has no host", endpoint)
 	}
+	// A result carries the run's changes, which can hold anything a state
+	// templated out of pillar. Off the loopback that has to be encrypted;
+	// on it there is no wire to encrypt.
+	if parsed.Scheme == "http" && !isLoopback(parsed.Hostname()) {
+		return nil, fmt.Errorf("returner webhook: %q must be https (results can carry pillar-derived changes); "+
+			"http is allowed for a loopback endpoint only", endpoint)
+	}
 	return &Webhook{
 		url: endpoint,
 		// Bounded, and short enough that one unresponsive endpoint cannot
 		// hold up the queue behind it for long.
-		client:    &http.Client{Timeout: 30 * time.Second},
+		client: &http.Client{
+			Timeout:       30 * time.Second,
+			CheckRedirect: refuseOffHostRedirect,
+		},
 		retryWait: time.Second,
 	}, nil
 }

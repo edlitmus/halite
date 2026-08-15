@@ -58,6 +58,54 @@ func TestParseRejectsBadSpecs(t *testing.T) {
 	}
 }
 
+// TestWebhookRequiresHTTPSOffTheLoopback guards the one returner that
+// puts results on a network. A record carries the run's changes, which
+// can hold anything a state templated out of pillar.
+func TestWebhookRequiresHTTPSOffTheLoopback(t *testing.T) {
+	for _, tc := range []struct {
+		endpoint string
+		wantErr  bool
+	}{
+		{"https://example.com/halite", false},
+		{"http://example.com/halite", true},
+		{"http://10.0.0.1:8080/halite", true},
+		{"http://127.0.0.1:8080/halite", false},
+		{"http://localhost:8080/halite", false},
+		{"http://[::1]:8080/halite", false},
+	} {
+		_, err := NewWebhook(tc.endpoint)
+		if tc.wantErr && err == nil {
+			t.Errorf("NewWebhook(%q) succeeded; results would go out in the clear", tc.endpoint)
+		}
+		if !tc.wantErr && err != nil {
+			t.Errorf("NewWebhook(%q): %v", tc.endpoint, err)
+		}
+	}
+}
+
+// TestWebhookDoesNotFollowARedirectOffHost checks that an endpoint
+// cannot point the record at somebody else after the fact.
+func TestWebhookDoesNotFollowARedirectOffHost(t *testing.T) {
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("the record reached the redirect target")
+	}))
+	defer elsewhere.Close()
+
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+
+	hook, err := NewWebhook(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook.retryWait = time.Millisecond
+	if err := hook.Return(sampleRecord("web1")); err == nil {
+		t.Fatal("a redirect to another host must fail the delivery, not follow it")
+	}
+}
+
 func TestFileReturnerAppendsOneJSONObjectPerLine(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "results.ndjson")
 	r, err := NewFile(path)

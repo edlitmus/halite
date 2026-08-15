@@ -99,7 +99,14 @@ halite master -root /usr/local/etc/halite/states \
 | Kind | Target | Writes |
 |---|---|---|
 | `file` | a path | one JSON object per line, appended, mode 0600 |
-| `webhook` | an http(s) URL | one POST per result, `Content-Type: application/json` |
+| `webhook` | an `https://` URL | one POST per result, `Content-Type: application/json` |
+
+A webhook must be **https**, and a redirect to another host fails the
+delivery rather than being followed. A result carries the run's changes,
+which hold whatever a state templated out of pillar — see
+[pillar-security.md](pillar-security.md). `http://` is accepted for a
+loopback endpoint (`127.0.0.1`, `[::1]`, `localhost`), where there is no
+wire to encrypt.
 
 Each record is the job and one agent's answer to it, including every state
 outcome:

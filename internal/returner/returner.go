@@ -156,6 +156,8 @@ func (m *Manager) Dropped() int {
 //
 //	file:/var/log/halite/results.ndjson
 //	webhook:https://example.com/halite
+//
+// A webhook endpoint must be https unless it is on the loopback.
 func Parse(spec string) (Returner, error) {
 	kind, target, found := strings.Cut(spec, ":")
 	if !found || target == "" {
