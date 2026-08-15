@@ -85,9 +85,26 @@ findings.
 * Not covered, and documented as such: an open long poll finishes, and
   the host stays listed as online until its last contact goes stale.
 
-Known and not yet fixed, from the same audit: `/v1/enroll` has no
-per-source rate limit, and `MaxPendingEnrollments` is not wired to a
-flag.
+New: **bounds on the one route that answers before authentication.**
+
+* `-enroll-rate` (default 60 a minute) is a token bucket per source
+  address on `/v1/enroll`, checked before the body is read, because
+  verifying a CSR signature is the most expensive thing the control plane
+  does for a stranger. The address comes from the connection and never
+  from a header. Over the limit is `429` with a `Retry-After`, which
+  agents already treat as "come back later", plus
+  `halite/enroll/throttled` at most once every five minutes per source.
+* A full bucket holds a minute's worth, so a fleet coming up together is
+  not turned away for arriving at once, and a pending host — which
+  retries every ten seconds — uses a tenth of it. Several behind one NAT
+  gateway still fit.
+* `-max-pending` (default 512) finally reaches `MaxPendingEnrollments`,
+  which had been declared and read by the handler since the control plane
+  landed, and assigned by nothing. Neither flag accepts zero: turning off
+  a bound is not something to do by typing a number.
+* A new check in `internal/docs` fails if any control plane setting is
+  reachable from nowhere in `cmdMaster`, which is the mistake that hid
+  this one. Settings computed from another are listed as such.
 
 New: config files and FreeBSD rc.d scripts for both daemons, so running
 halite at boot does not mean keeping a command line in `rc.conf`.

@@ -20,6 +20,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/agent"
 	"github.com/edlitmus/halite/internal/beacon"
+	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/master"
 	"github.com/edlitmus/halite/internal/mine"
@@ -54,6 +55,8 @@ func cmdMaster(args []string) {
 	rootFlag := fs.String("root", "", "state tree root served to agents")
 	pillarRootFlag := fs.String("pillar-root", "", "pillar tree root")
 	autoAccept := fs.Bool("auto-accept", false, "sign enrollment requests without an operator decision (labs only)")
+	maxPending := fs.Int("max-pending", ca.DefaultMaxPending, "how many enrollment requests may wait for an operator at once")
+	enrollRate := fs.Int("enroll-rate", master.DefaultEnrollRate, "enrollment requests allowed per minute from one source address")
 	pollTimeout := fs.Duration("poll-timeout", 30*time.Second, "how long an agent's job poll is held open")
 	orchRoot := fs.String("orch-root", "", "orchestration tree (default: <root>/../orch)")
 	orchTimeout := fs.Duration("orch-timeout", master.DefaultOrchTimeout, "bound on a whole orchestration")
@@ -79,14 +82,28 @@ func cmdMaster(args []string) {
 		returners = append(returners, r)
 	}
 
+	// Both bound what an unauthenticated caller can do, so neither may be
+	// turned off by typing zero: a control plane with no cap is one bad
+	// afternoon away from a full disk.
+	if *maxPending < 1 {
+		fatal("-max-pending must be at least 1")
+	}
+	if *enrollRate < 1 {
+		fatal("-enroll-rate must be at least 1")
+	}
+
 	root := resolveRoot(*rootFlag)
 	cfg := master.Config{
-		Addr:         *addr,
-		PKIDir:       resolvePKI(*pkiFlag),
-		StatesRoot:   root,
-		PillarRoot:   resolvePillarRoot(*pillarRootFlag, root),
-		AutoAccept:   *autoAccept,
-		PollTimeout:  *pollTimeout,
+		Addr:        *addr,
+		PKIDir:      resolvePKI(*pkiFlag),
+		StatesRoot:  root,
+		PillarRoot:  resolvePillarRoot(*pillarRootFlag, root),
+		AutoAccept:  *autoAccept,
+		PollTimeout: *pollTimeout,
+
+		MaxPendingEnrollments: *maxPending,
+		EnrollRate:            *enrollRate,
+
 		Returners:    returners,
 		ReactorRules: rules,
 

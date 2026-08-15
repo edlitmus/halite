@@ -45,6 +45,12 @@ type Config struct {
 	// CA's default (ca.DefaultMaxPending).
 	MaxPendingEnrollments int
 
+	// EnrollRate is how many enrollment requests one source address may
+	// make per minute. It bounds the time an unauthenticated caller can
+	// spend on the control plane's behalf, where the pending cap bounds
+	// the disk. Zero means DefaultEnrollRate.
+	EnrollRate int
+
 	// PollTimeout is how long an agent's job poll is held open before it is
 	// answered with an empty list.
 	PollTimeout time.Duration
@@ -109,6 +115,9 @@ type Server struct {
 	returners *returner.Manager
 	log       *log.Logger
 
+	// enrollLimit paces the one route that answers before authentication.
+	enrollLimit *rateLimiter
+
 	// refusals throttles the log when a revoked agent keeps trying.
 	refusals struct {
 		mu sync.Mutex
@@ -120,12 +129,13 @@ type Server struct {
 func New(cfg Config, logger *log.Logger) *Server {
 	cfg.withDefaults()
 	return &Server{
-		cfg:       cfg,
-		ca:        &ca.Store{Dir: cfg.PKIDir},
-		registry:  newRegistry(cfg.OnlineAfter, cfg.JobTTL),
-		bus:       event.NewBus(),
-		returners: returner.NewManager(cfg.Returners, logger),
-		log:       logger,
+		cfg:         cfg,
+		ca:          &ca.Store{Dir: cfg.PKIDir},
+		registry:    newRegistry(cfg.OnlineAfter, cfg.JobTTL),
+		bus:         event.NewBus(),
+		returners:   returner.NewManager(cfg.Returners, logger),
+		log:         logger,
+		enrollLimit: newRateLimiter(cfg.EnrollRate),
 	}
 }
 
@@ -305,11 +315,12 @@ func decode(r *http.Request, v any) error {
 // there without losing everything else in the log to it.
 const refusalInterval = 5 * time.Minute
 
-// noteRefusal logs and announces that a revoked identity tried to work,
-// at most once per refusalInterval per id.
-func (s *Server) noteRefusal(id, path string) {
+// noteOnce runs report at most once per refusalInterval for a key. Both
+// callers are things a rejected caller repeats until somebody notices, so
+// the log has to say them without being buried in them.
+func (s *Server) noteOnce(key string, report func()) {
 	s.refusals.mu.Lock()
-	last, seen := s.refusals.at[id]
+	last, seen := s.refusals.at[key]
 	if seen && time.Since(last) < refusalInterval {
 		s.refusals.mu.Unlock()
 		return
@@ -317,10 +328,27 @@ func (s *Server) noteRefusal(id, path string) {
 	if s.refusals.at == nil {
 		s.refusals.at = map[string]time.Time{}
 	}
-	s.refusals.at[id] = time.Now()
+	s.refusals.at[key] = time.Now()
 	s.refusals.mu.Unlock()
+	report()
+}
 
-	s.log.Printf("refused %s for %q: revoked", path, id)
-	s.bus.Emit(fmt.Sprintf(event.TagKeyRefused, id), event.SourceMaster,
-		map[string]any{"id": id, "path": path})
+// noteRefusal logs and announces that a revoked identity tried to work.
+func (s *Server) noteRefusal(id, path string) {
+	s.noteOnce("revoked:"+id, func() {
+		s.log.Printf("refused %s for %q: revoked", path, id)
+		s.bus.Emit(fmt.Sprintf(event.TagKeyRefused, id), event.SourceMaster,
+			map[string]any{"id": id, "path": path})
+	})
+}
+
+// noteFlood logs and announces that a source address is enrolling faster
+// than it is allowed to.
+func (s *Server) noteFlood(source string) {
+	s.noteOnce("flood:"+source, func() {
+		s.log.Printf("throttling enrollment from %s: more than %d a minute",
+			source, s.enrollLimit.perMinute)
+		s.bus.Emit(event.TagEnrollThrottled, event.SourceMaster,
+			map[string]any{"source": source, "per_minute": s.enrollLimit.perMinute})
+	})
 }

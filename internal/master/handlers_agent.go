@@ -22,6 +22,12 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "use POST")
 		return
 	}
+	// Paced before anything is read: verifying a CSR signature is the
+	// most expensive thing this route does, and nobody has authenticated
+	// yet.
+	if s.limitEnrollment(w, r) {
+		return
+	}
 	// The server has no ReadTimeout (long polls need to block), so this
 	// pre-auth route bounds its own body read: an unauthenticated client
 	// must not hold a connection open by dribbling bytes.

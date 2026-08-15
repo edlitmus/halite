@@ -522,3 +522,43 @@ func TestPidFilesLiveInADedicatedDirectory(t *testing.T) {
 		}
 	}
 }
+
+// derivedSettings are control plane settings the CLI deliberately leaves
+// to withDefaults, because they are computed from another one rather than
+// typed by an operator.
+var derivedSettings = map[string]bool{
+	"OnlineAfter": true, // three poll windows
+	"JobTTL":      true,
+}
+
+// TestEveryControlPlaneSettingIsReachable is here for the same reason as
+// the rest of this package: a field whose comment describes behaviour
+// nobody can ask for is a documented lie. `MaxPendingEnrollments` was one
+// for three releases — declared, read by the handler, and assigned by
+// nothing.
+func TestEveryControlPlaneSettingIsReachable(t *testing.T) {
+	config := section(read(t, "internal/master/master.go"), "type Config struct", "\n}")
+	if config == "" {
+		t.Fatal("cannot find master.Config")
+	}
+	wiring := section(read(t, "cmd/halite/fleet.go"), "func cmdMaster", "\n}")
+	if wiring == "" {
+		t.Fatal("cannot find cmdMaster")
+	}
+
+	fields := regexp.MustCompile(`(?m)^\t([A-Z][A-Za-z]*)\s`)
+	found := 0
+	for _, match := range fields.FindAllStringSubmatch(config, -1) {
+		name := match[1]
+		found++
+		if derivedSettings[name] {
+			continue
+		}
+		if !strings.Contains(wiring, name+":") {
+			t.Errorf("master.Config.%s is set by nothing in cmdMaster: no flag reaches it", name)
+		}
+	}
+	if found < 5 {
+		t.Fatalf("only found %d settings; this check would pass on an empty struct", found)
+	}
+}

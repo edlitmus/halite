@@ -196,6 +196,14 @@ two reactors watching two buses react twice. See ADR-11.
 | Pillar tree | `-pillar-root`, `$HALITE_PILLAR_ROOT`, else beside the states |
 | Agent cache | `-cache`, else `/var/cache/halite` |
 
+Bounds on the unauthenticated route, explained in
+[pki.md](pki.md#what-the-open-port-costs):
+
+| Flag | On | Default | Bounds |
+|---|---|---|---|
+| `-enroll-rate` | `master` | 60/min | enrollment requests from one source address |
+| `-max-pending` | `master` | 512 | requests waiting for an operator at once |
+
 Timing, where the defaults are not what a site wants:
 
 | Flag | On | Default | Bounds |

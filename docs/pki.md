@@ -85,6 +85,38 @@ identity entirely so that host can enroll again from scratch.
   dash, and underscore, because identities arrive over the network and are
   used to build file paths.
 
+## What the open port costs
+
+Enrollment is the one route that answers before anyone has authenticated,
+and it verifies a signature — the most expensive thing the control plane
+does for a stranger. Two bounds keep that from being a lever:
+
+| Flag | Default | Bounds |
+|---|---|---|
+| `-enroll-rate` | 60 a minute | how often **one source address** may ask |
+| `-max-pending` | 512 | how many requests may wait for an operator at once |
+
+The rate limit is a token bucket per source IP, taken from the connection
+and never from a header — there is no proxy in front of a control plane
+that terminates its own TLS, so `X-Forwarded-For` would be nothing but
+what the caller typed. A full bucket holds a minute's worth, so a fleet
+coming up together is not turned away for arriving at once, and a host
+waiting to be accepted (which retries every ten seconds) uses a tenth of
+the budget. Several such hosts behind one NAT gateway still fit.
+
+Over the limit is `429` with a `Retry-After`, which agents already treat
+as "come back later". The control plane logs it and raises
+`halite/enroll/throttled` at most once every five minutes per source.
+
+The pending cap refuses **new** identities only: a host whose request is
+already on file keeps getting its honest answer, so a full queue cannot
+break retries. Over the cap is `503` — a full queue is the control
+plane's condition, not the agent's mistake.
+
+Neither may be set to zero. A control plane with no cap is one bad
+afternoon away from a full disk, and turning off a bound is not something
+to do by typing a number.
+
 ## Lifetimes
 
 | Certificate | Default | Flag |
