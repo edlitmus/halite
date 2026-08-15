@@ -272,6 +272,10 @@ read. With the control plane running (see [fleet.md](fleet.md)):
   results are only accepted from agents a job was actually dispatched to.
 * **Agents cannot dispatch.** Only an operator certificate can queue work
   or list the fleet.
+* **A revoked identity is refused at the door.** `halite key revoke` files
+  the certificate under `revoked/`, and every authenticated route checks
+  the store per request — no CRL to distribute, and no restart to pick it
+  up. The certificate stays valid; the only thing it opened is shut.
 * **Renewal cannot become enrollment.** An agent replaces its own
   certificate before it expires over `/v1/renew`, authenticated by the
   certificate it is replacing, and the CA refuses to sign for any key but

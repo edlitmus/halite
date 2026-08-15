@@ -40,6 +40,10 @@ const (
 	StatePending  State = "pending"
 	StateAccepted State = "accepted"
 	StateRejected State = "rejected"
+	// StateRevoked is an identity that was accepted and has been denied
+	// since. It is terminal: only `halite key remove` takes it back to a
+	// host that can enroll.
+	StateRevoked State = "revoked"
 )
 
 // Entry is one identity known to the CA.
@@ -82,7 +86,12 @@ func (s *Store) SubmitLimited(id string, csrPEM []byte, maxPending int) (State, 
 	for _, known := range []struct {
 		dir   string
 		state State
-	}{{"accepted", StateAccepted}, {"pending", StatePending}, {"rejected", StateRejected}} {
+	}{
+		{"accepted", StateAccepted},
+		{"pending", StatePending},
+		{"rejected", StateRejected},
+		{"revoked", StateRevoked},
+	} {
 		path := s.path(known.dir, id+".csr")
 		existing, err := os.ReadFile(path)
 		if err != nil {
@@ -247,6 +256,57 @@ func samePublicKey(a, b crypto.PublicKey) bool {
 	return ok && key.Equal(b)
 }
 
+// Revoke denies an accepted identity now, instead of waiting for its
+// certificate to expire. The certificate stays cryptographically valid —
+// there is no CRL, and adding one would mean every agent fetching and
+// refreshing it — so the control plane enforces this at the door: a
+// revoked id is refused on every authenticated route, and cannot enroll
+// or be reissued.
+//
+// That is weaker than revocation in the TLS sense and stronger in the way
+// that matters here, because the only thing the certificate opens is this
+// control plane. A revoked host can still prove who it is; it just cannot
+// do anything with it.
+func (s *Store) Revoke(id string) error {
+	if err := ValidateID(id); err != nil {
+		return err
+	}
+	if s.IsRevoked(id) {
+		return fmt.Errorf("id %q is already revoked", id)
+	}
+	certPEM, err := os.ReadFile(s.path("accepted", id+".crt"))
+	if err != nil {
+		return fmt.Errorf("no accepted certificate for %q", id)
+	}
+	// The revoked entry is written before the accepted one goes away: a
+	// crash in between leaves the identity denied, which is the safe half
+	// of the two.
+	if err := writeNew(s.path("revoked", id+".crt"), certPEM, 0o644); err != nil {
+		return fmt.Errorf("record revocation: %w", err)
+	}
+	// The request goes with it, so nothing can be reissued from it.
+	if csrPEM, err := os.ReadFile(s.path("accepted", id+".csr")); err == nil {
+		if err := writeNew(s.path("revoked", id+".csr"), csrPEM, 0o644); err != nil {
+			return fmt.Errorf("record revocation: %w", err)
+		}
+		os.Remove(s.path("accepted", id+".csr"))
+	}
+	return os.Remove(s.path("accepted", id+".crt"))
+}
+
+// IsRevoked reports whether an identity has been denied. It reads the
+// store every time it is asked, so revoking takes effect on a running
+// control plane without a restart — and an id that is not safe to build a
+// path from is treated as revoked, because the alternative is looking
+// somewhere it was never meant to.
+func (s *Store) IsRevoked(id string) bool {
+	if err := ValidateID(id); err != nil {
+		return true
+	}
+	_, err := os.Stat(s.path("revoked", id+".crt"))
+	return err == nil
+}
+
 // Reject moves a pending request to rejected. The agent keeps retrying and
 // keeps being refused until an operator removes the entry.
 func (s *Store) Reject(id string) error {
@@ -274,6 +334,8 @@ func (s *Store) Remove(id string) error {
 		filepath.Join("accepted", id+".crt"),
 		filepath.Join("accepted", id+".csr"),
 		filepath.Join("rejected", id+".csr"),
+		filepath.Join("revoked", id+".crt"),
+		filepath.Join("revoked", id+".csr"),
 	} {
 		if err := os.Remove(s.path(rel)); err == nil {
 			found = true
@@ -309,6 +371,7 @@ func (s *Store) List() ([]Entry, error) {
 		{"pending", ".csr", StatePending},
 		{"accepted", ".crt", StateAccepted},
 		{"rejected", ".csr", StateRejected},
+		{"revoked", ".crt", StateRevoked},
 	} {
 		entries, err := os.ReadDir(s.path(d.dir))
 		if err != nil {
@@ -340,7 +403,9 @@ func (s *Store) List() ([]Entry, error) {
 // or an empty string if it cannot be read — listing must not fail because
 // one file is malformed.
 func (s *Store) fingerprintOf(dir, id string, state State) string {
-	if state == StateAccepted {
+	// A revoked entry is a certificate like an accepted one; the request
+	// beside it may not have been there to move.
+	if state == StateAccepted || state == StateRevoked {
 		certPEM, err := os.ReadFile(s.path(dir, id+".crt"))
 		if err != nil {
 			return ""

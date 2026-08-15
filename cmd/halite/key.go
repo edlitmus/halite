@@ -27,6 +27,10 @@ const keyUsage = `usage:
   halite key accept <id> ... | -all
   halite key reject <id> ...
   halite key remove <id> ...
+  halite key revoke <id> ...
+      deny an accepted identity now, without waiting for its certificate
+      to expire. The control plane refuses it on every route; 'remove'
+      afterwards lets that host enroll again from scratch
   halite key show <id>
       print the issued certificate, or the pending request
 
@@ -67,7 +71,7 @@ func cmdKey(args []string) {
 		keySubmit(rest)
 	case "list":
 		keyList(rest)
-	case "accept", "reject", "remove":
+	case "accept", "reject", "remove", "revoke":
 		keyDecide(sub, rest)
 	case "show":
 		keyShow(rest)
@@ -248,6 +252,12 @@ func keyDecide(action string, args []string) {
 	ids := parseFlags(fs, args)
 
 	store := &ca.Store{Dir: pki()}
+	if *all && action == "revoke" {
+		// -all collects the pending identities, which is the opposite of
+		// what anyone revoking means. Locking a fleet out by reflex is not
+		// a mistake worth making convenient.
+		fatal("-all applies to pending identities; name the ids to revoke")
+	}
 	if *all {
 		entries, err := store.List()
 		if err != nil {
@@ -273,6 +283,8 @@ func keyDecide(action string, args []string) {
 			err = store.Reject(id)
 		case "remove":
 			err = store.Remove(id)
+		case "revoke":
+			err = store.Revoke(id)
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", id, err)

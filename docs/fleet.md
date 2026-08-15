@@ -52,7 +52,9 @@ halite key accept web1
 ```
 
 The agent picks up its certificate on its next attempt and connects. See
-[pki.md](pki.md) for the enrollment rules.
+[pki.md](pki.md) for the enrollment rules, for how an agent renews before
+its year is up, and for `halite key revoke`, which denies a host from the
+next request onward.
 
 `-auto-accept` signs requests without asking. It is for labs and
 disposable test fleets: with it on, any host that can reach the port

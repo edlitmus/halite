@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -369,4 +370,99 @@ func expiredSerial(t *testing.T, path string) []byte {
 		return nil // already usable; nothing to wait for
 	}
 	return cert.SerialNumber.Bytes()
+}
+
+// TestARevokedAgentIsRefusedEverywhere is the enforcement half of
+// revocation: the certificate stays cryptographically valid, so the
+// control plane is what has to say no — on every route, without a
+// restart.
+func TestARevokedAgentIsRefusedEverywhere(t *testing.T) {
+	f := newFleet(t, Config{})
+	client, keyPEM, _ := f.enrolledKeypair(t, "web1")
+	ctx := context.Background()
+
+	hello := transport.HelloRequest{Grains: map[string]any{"id": "web1"}}
+	if err := client.Post(ctx, transport.PathHello, hello, nil); err != nil {
+		t.Fatalf("the agent should work before it is revoked: %v", err)
+	}
+
+	// Revoked while the control plane is running and holding this
+	// connection open.
+	events, unsubscribe := f.server.Bus().Subscribe("halite/key/web1/refused")
+	defer unsubscribe()
+	if err := f.store.Revoke("web1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Each of these has to be refused *for being revoked* — a poll that
+	// merely timed out, or a renewal that failed because the certificate
+	// moved, would pass a bare "did it error" check while the denylist
+	// did nothing.
+	refused := func(what string, err error) {
+		t.Helper()
+		if err == nil {
+			t.Errorf("a revoked agent must not %s", what)
+			return
+		}
+		if !strings.Contains(err.Error(), "revoked") {
+			t.Errorf("%s was refused for the wrong reason: %v", what, err)
+		}
+	}
+
+	refused("say hello", client.Post(ctx, transport.PathHello, hello, nil))
+	var jobs []transport.Job
+	refused("poll for work", client.Get(ctx, transport.PathJobs, &jobs))
+	var pillarData map[string]any
+	refused("fetch pillar", client.Get(ctx, transport.PathPillar, &pillarData))
+
+	key, err := ca.ParseKey(keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csrPEM, err := ca.NewCSR(key, "web1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var renewed transport.RenewResponse
+	refused("renew", client.Post(ctx, transport.PathRenew,
+		transport.RenewRequest{CSR: string(csrPEM)}, &renewed))
+
+	// An operator has to be able to see that a revoked host is still out
+	// there knocking.
+	select {
+	case ev := <-events:
+		if ev.Data["id"] != "web1" {
+			t.Errorf("refusal event carries %v", ev.Data)
+		}
+	case <-time.After(5 * time.Second):
+		t.Error("no halite/key/web1/refused event was raised")
+	}
+
+	// Nor can it go back to the door it came in through.
+	var resp transport.EnrollResponse
+	if err := f.anonymousClient(t).Post(ctx, transport.PathEnroll,
+		transport.EnrollRequest{ID: "web1", CSR: string(csrPEM)}, &resp); err == nil {
+		t.Errorf("a revoked identity must not enroll again: %+v", resp)
+	}
+}
+
+// TestRevokingOneAgentLeavesTheRestAlone guards the obvious way to get
+// this wrong.
+func TestRevokingOneAgentLeavesTheRestAlone(t *testing.T) {
+	f := newFleet(t, Config{})
+	web1, _, _ := f.enrolledKeypair(t, "web1")
+	web2, _, _ := f.enrolledKeypair(t, "web2")
+	ctx := context.Background()
+
+	if err := f.store.Revoke("web1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := web1.Post(ctx, transport.PathHello,
+		transport.HelloRequest{Grains: map[string]any{"id": "web1"}}, nil); err == nil {
+		t.Error("web1 was revoked")
+	}
+	if err := web2.Post(ctx, transport.PathHello,
+		transport.HelloRequest{Grains: map[string]any{"id": "web2"}}, nil); err != nil {
+		t.Errorf("web2 was not: %v", err)
+	}
 }

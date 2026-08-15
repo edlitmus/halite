@@ -61,11 +61,33 @@ binary and reinstalling the rc.d scripts is the whole migration.
   should target the id; the page now says so and explains why grain
   targets are fine in a state top and not in a pillar top.
 
-Known and not yet fixed, from the same audit: there is no certificate
-revocation (`halite key remove` forgets the CA's records, but the issued
-certificate stays valid until it expires — renewal bounds that at a
-year), `/v1/enroll` has no per-source rate limit, and
-`MaxPendingEnrollments` is not wired to a flag.
+New: **`halite key revoke <id>`** — denying a host without waiting for
+its certificate to expire, the other half of the audit's certificate
+findings.
+
+* The identity is refused from the next request onward, on every
+  authenticated route and on enrollment. The control plane reads the
+  store per request, so a revocation lands on a running fleet without a
+  restart.
+* The certificate stays cryptographically valid: there is no CRL to
+  distribute and no OCSP responder, and the only thing an agent
+  certificate opens is this control plane, so the check belongs at the
+  door. A revoked host can still prove who it is and can do nothing with
+  it.
+* Revoking moves the certificate and the request into `<pki>/revoked/`,
+  so nothing is left to renew or reissue from, and a fresh enrollment is
+  refused rather than filed — `key accept -all` cannot let a revoked host
+  back in. `halite key remove` is still the way to let one start over,
+  and it starts over needing an operator. `-all` is refused for `revoke`,
+  because it collects the *pending* ids.
+* A revoked agent keeps retrying, so the refusal is logged and raised as
+  `halite/key/<id>/refused` at most once every five minutes per identity.
+* Not covered, and documented as such: an open long poll finishes, and
+  the host stays listed as online until its last contact goes stale.
+
+Known and not yet fixed, from the same audit: `/v1/enroll` has no
+per-source rate limit, and `MaxPendingEnrollments` is not wired to a
+flag.
 
 New: config files and FreeBSD rc.d scripts for both daemons, so running
 halite at boot does not mean keeping a command line in `rc.conf`.

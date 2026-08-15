@@ -23,6 +23,7 @@ const (
 	TagKeyRejected   = "halite/key/%s/rejected"
 	TagKeyRenewed    = "halite/key/%s/renewed"
 	TagKeyReissued   = "halite/key/%s/reissued"
+	TagKeyRefused    = "halite/key/%s/refused"
 	TagJobDispatch   = "halite/job/%s/dispatch"
 	TagJobReturn     = "halite/job/%s/ret/%s"
 	TagBeacon        = "halite/beacon/%s/%s"

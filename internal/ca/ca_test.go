@@ -545,3 +545,72 @@ func TestReissueExpiredNeedsAnAcceptedIdentity(t *testing.T) {
 		t.Error("an identity nobody accepted has nothing to reissue")
 	}
 }
+
+func TestRevokeDeniesAnIdentityUntilItIsRemoved(t *testing.T) {
+	s, _, csrPEM := renewable(t, "web1", time.Hour)
+	if s.IsRevoked("web1") {
+		t.Fatal("an accepted identity is not revoked")
+	}
+
+	if err := s.Revoke("web1"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.IsRevoked("web1") {
+		t.Fatal("revoke did not take")
+	}
+	// Nothing is left to renew or reissue from: the certificate and the
+	// request move out of accepted together.
+	if _, err := s.IssuedCert("web1"); err == nil {
+		t.Error("a revoked identity must not have an issued certificate on file")
+	}
+	if _, err := s.Renew("web1", csrPEM); err == nil {
+		t.Error("a revoked identity must not renew")
+	}
+	if _, _, err := s.ReissueExpired("web1"); err == nil {
+		t.Error("a revoked identity must not be reissued")
+	}
+
+	// Enrolling again is refused rather than filed as a new request, so
+	// `key accept -all` cannot quietly let it back in.
+	state, err := s.Submit("web1", csrPEM)
+	if err == nil && state == StatePending {
+		t.Fatal("a revoked identity must not become pending again")
+	}
+	if entries, _ := s.List(); len(entries) != 1 || entries[0].State != StateRevoked {
+		t.Errorf("key list should show it as revoked: %+v", entries)
+	}
+
+	// Removing is the way back, and it starts over needing an operator.
+	if err := s.Remove("web1"); err != nil {
+		t.Fatal(err)
+	}
+	if s.IsRevoked("web1") {
+		t.Fatal("remove must clear the revocation, or the host can never come back")
+	}
+	if state, err := s.Submit("web1", csrPEM); err != nil || state != StatePending {
+		t.Errorf("after remove, enrolling starts over: state=%q err=%v", state, err)
+	}
+}
+
+func TestRevokeNeedsAnAcceptedIdentity(t *testing.T) {
+	s := newStore(t)
+	if err := s.Revoke("web1"); err == nil {
+		t.Error("there is nothing to revoke for an unknown id")
+	}
+	if _, err := s.Submit("web1", csrFor(t, "web1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Revoke("web1"); err == nil {
+		t.Error("a pending request is rejected, not revoked")
+	}
+}
+
+func TestRevokeTwiceIsAnError(t *testing.T) {
+	s, _, _ := renewable(t, "web1", time.Hour)
+	if err := s.Revoke("web1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Revoke("web1"); err == nil {
+		t.Error("revoking twice should say it is already revoked")
+	}
+}

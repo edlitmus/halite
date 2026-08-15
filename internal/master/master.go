@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/ca"
@@ -107,6 +108,12 @@ type Server struct {
 	bus       *event.Bus
 	returners *returner.Manager
 	log       *log.Logger
+
+	// refusals throttles the log when a revoked agent keeps trying.
+	refusals struct {
+		mu sync.Mutex
+		at map[string]time.Time
+	}
 }
 
 // New builds a control plane. It does not listen until Run is called.
@@ -250,6 +257,15 @@ func (s *Server) authorized(
 			writeError(w, http.StatusUnauthorized, "a client certificate issued by this fleet's CA is required")
 			return
 		}
+		if s.ca.IsRevoked(peer.ID) {
+			// Read from the store per request, so `halite key revoke`
+			// takes effect on a running control plane. The certificate is
+			// still cryptographically valid — this is the door it opens
+			// being shut, not the key being destroyed.
+			s.noteRefusal(peer.ID, r.URL.Path)
+			writeError(w, http.StatusForbidden, "the certificate for %q has been revoked", peer.ID)
+			return
+		}
 		if !allow(peer.Role) {
 			s.log.Printf("denied %s %s for %q", r.Method, r.URL.Path, peer.ID)
 			writeError(w, http.StatusForbidden, "this operation requires an operator certificate")
@@ -281,4 +297,30 @@ func decode(r *http.Request, v any) error {
 		return fmt.Errorf("malformed request body: %w", err)
 	}
 	return nil
+}
+
+// refusalInterval is how often one revoked identity is worth a line in
+// the log. A revoked agent keeps retrying — it has no way to know why it
+// is being turned away — and an operator needs to see that it is out
+// there without losing everything else in the log to it.
+const refusalInterval = 5 * time.Minute
+
+// noteRefusal logs and announces that a revoked identity tried to work,
+// at most once per refusalInterval per id.
+func (s *Server) noteRefusal(id, path string) {
+	s.refusals.mu.Lock()
+	last, seen := s.refusals.at[id]
+	if seen && time.Since(last) < refusalInterval {
+		s.refusals.mu.Unlock()
+		return
+	}
+	if s.refusals.at == nil {
+		s.refusals.at = map[string]time.Time{}
+	}
+	s.refusals.at[id] = time.Now()
+	s.refusals.mu.Unlock()
+
+	s.log.Printf("refused %s for %q: revoked", path, id)
+	s.bus.Emit(fmt.Sprintf(event.TagKeyRefused, id), event.SourceMaster,
+		map[string]any{"id": id, "path": path})
 }

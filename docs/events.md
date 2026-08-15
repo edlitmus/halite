@@ -39,6 +39,7 @@ below here".
 | `halite/key/<id>/rejected` | a request is rejected | `id`, `state` |
 | `halite/key/<id>/renewed` | an agent renewed its own certificate | `id` |
 | `halite/key/<id>/reissued` | an expired certificate was reissued from the request on file | `id` |
+| `halite/key/<id>/refused` | a revoked identity tried to work; at most one every five minutes | `id`, `path` |
 | `halite/agent/<id>/enrolled` | an agent collects its certificate | `id` |
 | `halite/agent/<id>/hello` | an agent connects or reconnects | `id`, `version` |
 | `halite/job/<jid>/dispatch` | work is queued | `job_id`, `kind`, `target`, `test`, `agents` |

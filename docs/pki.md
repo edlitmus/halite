@@ -156,10 +156,46 @@ To take a host out permanently, use `halite key remove <id>`: that deletes
 the request, so the next enrollment starts over as pending and waits for
 an operator.
 
-Revocation is still missing: `halite key remove` forgets the CA's records,
-but a certificate already issued stays valid until it expires. Renewal
-makes that window a year at most, which is the whole reason to keep the
-lifetime short.
+## Revocation
+
+```sh
+halite key revoke web1
+```
+
+The identity is denied from the next request onward. The control plane
+reads the store on every authenticated request, so this takes effect on a
+running fleet without a restart, and it covers every route: hello, job
+polls, pillar, the state tree, results, renewal, and enrollment.
+
+**The certificate itself stays cryptographically valid.** There is no CRL
+and no OCSP; a revoked host can still prove who it is, it just cannot do
+anything with that. Distributing a revocation list would mean every agent
+fetching and refreshing one, and the only thing an agent certificate opens
+is this control plane — so the door is the right place to check.
+
+| Command | Leaves the identity | The host can |
+|---|---|---|
+| `halite key reject <id>` | rejected, no certificate ever issued | nothing, until removed |
+| `halite key revoke <id>` | revoked, its certificate filed under `revoked/` | nothing, until removed |
+| `halite key remove <id>` | forgotten | enroll again, as a new pending request |
+
+Revoking moves the certificate and the request into `<pki>/revoked/`, so
+there is nothing left to renew or reissue from, and an enrollment attempt
+is refused rather than filed — `halite key accept -all` cannot quietly let
+a revoked host back in. `remove` afterwards is what lets that host start
+over, and it starts over needing an operator.
+
+`-all` is not accepted for `revoke`: it collects the *pending* identities,
+which is the opposite of what anyone revoking means.
+
+A revoked agent has no way to know why it is being turned away, so it keeps
+retrying. The control plane logs that and raises
+`halite/key/<id>/refused`, at most once every five minutes per identity.
+
+What is left unprotected: an agent already holding an open long poll
+finishes it, and the fleet keeps listing the host as online until its last
+contact goes stale (three poll windows, 90 seconds by default). Dispatched
+work it never collects expires with the job TTL.
 
 For the other half of the picture — protecting pillar data, which is not
 encrypted — see [pillar-security.md](pillar-security.md).
