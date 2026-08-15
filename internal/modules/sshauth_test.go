@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -152,4 +153,84 @@ func TestKeyBodyIdentifiesTheEntry(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSSHAuthRefusesASymlinkedSSHDirectory covers the escalation this
+// state is most exposed to: the account being granted access owns its own
+// home, so `ln -s /etc ~/.ssh` would have had root chown /etc to that
+// user on the next highstate.
+func TestSSHAuthRefusesASymlinkedSSHDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("authorized_keys is unix-only")
+	}
+	dir := t.TempDir()
+	elsewhere := filepath.Join(dir, "elsewhere")
+	if err := os.Mkdir(elsewhere, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	home := filepath.Join(dir, "home")
+	if err := os.Mkdir(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(home, ".ssh")); err != nil {
+		t.Fatal(err)
+	}
+
+	res := sshAuthPresent(&Ctx{}, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample operator@example", map[string]any{
+		"user":   currentUserName(t),
+		"config": filepath.Join(home, ".ssh", "authorized_keys"),
+	})
+	if res.Ok {
+		t.Error("writing through a symlinked .ssh must fail")
+	}
+	if !strings.Contains(res.Comment, "symlink") {
+		t.Errorf("the comment should say why: %q", res.Comment)
+	}
+	entries, err := os.ReadDir(elsewhere)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("%d file(s) landed in the link's target", len(entries))
+	}
+}
+
+// TestSSHAuthRefusesASymlinkedKeyFile is the same check one level down.
+func TestSSHAuthRefusesASymlinkedKeyFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("authorized_keys is unix-only")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "sensitive")
+	if err := os.WriteFile(target, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ssh := filepath.Join(dir, ".ssh")
+	if err := os.Mkdir(ssh, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	keys := filepath.Join(ssh, "authorized_keys")
+	if err := os.Symlink(target, keys); err != nil {
+		t.Fatal(err)
+	}
+
+	res := sshAuthPresent(&Ctx{}, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample operator@example", map[string]any{
+		"user":   currentUserName(t),
+		"config": keys,
+	})
+	if res.Ok {
+		t.Error("writing through a symlinked authorized_keys must fail")
+	}
+	if b, err := os.ReadFile(target); err != nil || string(b) != "secret\n" {
+		t.Errorf("the target was modified: %q %v", b, err)
+	}
+}
+
+func currentUserName(t *testing.T) string {
+	t.Helper()
+	u, err := user.Current()
+	if err != nil {
+		t.Skip("no current user")
+	}
+	return u.Username
 }

@@ -211,6 +211,25 @@ func keyBody(line string) string {
 	return parsed.key
 }
 
+// refuseAuthorizedKeysSymlink checks the two paths this state writes
+// through. MkdirAll is happy with a symlink to an existing directory and
+// chown follows it, so the check has to happen before either runs.
+func refuseAuthorizedKeysSymlink(dir, path string) error {
+	for _, candidate := range []string{dir, path} {
+		info, err := os.Lstat(candidate)
+		if err != nil || info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		target, err := os.Readlink(candidate)
+		if err != nil {
+			target = "its target"
+		}
+		return fmt.Errorf("%s is a symlink to %s: refusing to write authorized keys through a link, because the account it belongs to controls this path",
+			candidate, target)
+	}
+	return nil
+}
+
 // isKeyType reports whether a field is an SSH public key type name.
 func isKeyType(field string) bool {
 	for _, prefix := range []string{"ssh-", "ecdsa-sha2-", "sk-ssh-", "sk-ecdsa-"} {
@@ -225,6 +244,14 @@ func isKeyType(field string) bool {
 // the ownership of the user it belongs to.
 func writeAuthorizedKeys(path string, lines []string, entry authorizedKey) error {
 	dir := filepath.Dir(path)
+	// The account being granted access owns this directory, so a link here
+	// is either a mistake or an attempt to have root chown and write
+	// somewhere else — `ln -s /etc ~/.ssh` and wait for a highstate. There
+	// is no configuration that makes following one safe, so unlike the
+	// file states this has no opt-in.
+	if err := refuseAuthorizedKeysSymlink(dir, path); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
