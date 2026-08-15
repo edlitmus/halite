@@ -1,6 +1,123 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — 2026-08-15
+
+The release where a fleet stops having a one-year fuse. Agent
+certificates renew themselves, a host that was switched off past its
+expiry can get back in, and an operator can deny one before it expires —
+none of which existed a release ago, when every agent enrolled on the
+same day would have stopped connecting on the same day.
+
+The rest is two security audits and the fixes they produced: the first
+over the control plane, the CA, and the service files, the second over
+the state modules, the external-module runner, and the parsers. Both are
+summarised below with what was verified and how. Also here: config files
+and init scripts for both daemons, ZFS states, and documentation that
+`make check` now enforces rather than trusts.
+
+New: **agents renew their own certificates.** An agent certificate is
+good for a year, and until now nothing replaced it — a fleet enrolled on
+one day stopped connecting exactly a year later, with no way back but
+re-enrolling every host by hand.
+
+* An agent watches its own expiry and, with 45 days left, asks
+  `POST /v1/renew` for another year. No operator, nothing to enable.
+* Renewal is authenticated by the certificate it replaces, and **cannot
+  change the key**: the CA refuses a request for any key but the one on
+  file, because changing keys is an enrollment somebody has to approve.
+  There is no id in a renewal request — it comes from the certificate.
+* The agent verifies what it is given before keeping it: the certificate
+  has to parse, chain to the CA it trusts, carry its own name, and match
+  the key on disk. `agent.crt` is then replaced atomically.
+* A failed renewal is a log line and another attempt an hour later, not
+  an exit — it starts weeks before anything breaks. The control plane
+  raises `halite/key/<id>/renewed`.
+* A certificate that has **already** expired cannot renew — there is no
+  authenticated connection left to renew over — so the agent goes back to
+  `/v1/enroll` with the key it already has, and the control plane reissues
+  from the request in its store. No operator, no re-enrollment by hand for
+  a host that was switched off too long.
+* That reissue is deliberately narrow: it signs the CSR already on file
+  (never the caller's), only when the stored certificate has expired, and
+  a request for a different key is refused exactly as it is at any other
+  time. Anyone else who tries receives a certificate for a private key
+  they do not hold. It raises `halite/key/<id>/reissued`.
+* `halite key remove <id>` is still how a host is taken out for good: it
+  deletes the request, so the next enrollment waits for an operator.
+
+New: **`halite key revoke <id>`** — denying a host without waiting for
+its certificate to expire, the other half of the audit's certificate
+findings.
+
+* The identity is refused from the next request onward, on every
+  authenticated route and on enrollment. The control plane reads the
+  store per request, so a revocation lands on a running fleet without a
+  restart.
+* The certificate stays cryptographically valid: there is no CRL to
+  distribute and no OCSP responder, and the only thing an agent
+  certificate opens is this control plane, so the check belongs at the
+  door. A revoked host can still prove who it is and can do nothing with
+  it.
+* Revoking moves the certificate and the request into `<pki>/revoked/`,
+  so nothing is left to renew or reissue from, and a fresh enrollment is
+  refused rather than filed — `key accept -all` cannot let a revoked host
+  back in. `halite key remove` is still the way to let one start over,
+  and it starts over needing an operator. `-all` is refused for `revoke`,
+  because it collects the *pending* ids.
+* A revoked agent keeps retrying, so the refusal is logged and raised as
+  `halite/key/<id>/refused` at most once every five minutes per identity.
+* Not covered, and documented as such: an open long poll finishes, and
+  the host stays listed as online until its last contact goes stale.
+
+Security fixes from an audit of the control plane, the CA, and the
+service files. Nothing here needs a state tree change; upgrading the
+binary and reinstalling the rc.d scripts is the whole migration.
+
+* **The rc.d master script took ownership of `/var/run`.** `install -d -o
+  ${halite_master_user}` applies its owner and mode whether or not it had
+  to create the path, so pointing `halite_master_user` at an unprivileged
+  account — the documented recommendation — handed that account every pid
+  file and socket in `/var/run`, and with them a way back to root. Both
+  scripts now use `/var/run/halite` and create it only when it is missing.
+  **Reinstall `contrib/rc.d/halite_master` and `halite_agent`**, and check
+  `ls -ld /var/run` on any host that ran the previous ones.
+* **Enrollment answered `accepted` without checking the key.** `Submit`
+  compared the CSR for a pending or rejected identity but not for an
+  accepted one, so any caller who guessed an id received that agent's
+  certificate from the one route that answers before authentication —
+  a fleet-enumeration oracle. The comparison now covers every state.
+* **A webhook returner had to be told to use https.** Results carry the
+  run's changes, which hold whatever a state templated out of pillar. An
+  `http://` endpoint is now refused unless it is on the loopback, and a
+  redirect to another host fails the delivery instead of re-sending the
+  record there.
+* **`docs/pillar-security.md` promised more isolation than the code
+  gives.** The control plane pins an agent's id from its certificate but
+  renders pillar through the grains that agent reported, so a host that
+  claims `role: db` receives whatever `role:db` selects. Pillar tops
+  should target the id; the page now says so and explains why grain
+  targets are fine in a state top and not in a pillar top.
+
+New: **bounds on the one route that answers before authentication.**
+
+* `-enroll-rate` (default 60 a minute) is a token bucket per source
+  address on `/v1/enroll`, checked before the body is read, because
+  verifying a CSR signature is the most expensive thing the control plane
+  does for a stranger. The address comes from the connection and never
+  from a header. Over the limit is `429` with a `Retry-After`, which
+  agents already treat as "come back later", plus
+  `halite/enroll/throttled` at most once every five minutes per source.
+* A full bucket holds a minute's worth, so a fleet coming up together is
+  not turned away for arriving at once, and a pending host — which
+  retries every ten seconds — uses a tenth of it. Several behind one NAT
+  gateway still fit.
+* `-max-pending` (default 512) finally reaches `MaxPendingEnrollments`,
+  which had been declared and read by the handler since the control plane
+  landed, and assigned by nothing. Neither flag accepts zero: turning off
+  a bound is not something to do by typing a number.
+* A new check in `internal/docs` fails if any control plane setting is
+  reachable from nowhere in `cmdMaster`, which is the mistake that hid
+  this one. Settings computed from another are listed as such.
 
 Security fixes from an audit of the state modules, the external-module
 runner, and the parsers — the surface the first audit explicitly left
@@ -40,110 +157,6 @@ deliberate exceptions), `halite ssh` quotes every interpolated value,
 private keys are written 0600 before the rename, no state puts a secret
 on a command line, and the SLS parser took 5000-deep nesting and 200k
 keys without a crash.
-
-New: **agents renew their own certificates.** An agent certificate is
-good for a year, and until now nothing replaced it — a fleet enrolled on
-one day stopped connecting exactly a year later, with no way back but
-re-enrolling every host by hand.
-
-* An agent watches its own expiry and, with 45 days left, asks
-  `POST /v1/renew` for another year. No operator, nothing to enable.
-* Renewal is authenticated by the certificate it replaces, and **cannot
-  change the key**: the CA refuses a request for any key but the one on
-  file, because changing keys is an enrollment somebody has to approve.
-  There is no id in a renewal request — it comes from the certificate.
-* The agent verifies what it is given before keeping it: the certificate
-  has to parse, chain to the CA it trusts, carry its own name, and match
-  the key on disk. `agent.crt` is then replaced atomically.
-* A failed renewal is a log line and another attempt an hour later, not
-  an exit — it starts weeks before anything breaks. The control plane
-  raises `halite/key/<id>/renewed`.
-* A certificate that has **already** expired cannot renew — there is no
-  authenticated connection left to renew over — so the agent goes back to
-  `/v1/enroll` with the key it already has, and the control plane reissues
-  from the request in its store. No operator, no re-enrollment by hand for
-  a host that was switched off too long.
-* That reissue is deliberately narrow: it signs the CSR already on file
-  (never the caller's), only when the stored certificate has expired, and
-  a request for a different key is refused exactly as it is at any other
-  time. Anyone else who tries receives a certificate for a private key
-  they do not hold. It raises `halite/key/<id>/reissued`.
-* `halite key remove <id>` is still how a host is taken out for good: it
-  deletes the request, so the next enrollment waits for an operator.
-
-Security fixes from an audit of the control plane, the CA, and the
-service files. Nothing here needs a state tree change; upgrading the
-binary and reinstalling the rc.d scripts is the whole migration.
-
-* **The rc.d master script took ownership of `/var/run`.** `install -d -o
-  ${halite_master_user}` applies its owner and mode whether or not it had
-  to create the path, so pointing `halite_master_user` at an unprivileged
-  account — the documented recommendation — handed that account every pid
-  file and socket in `/var/run`, and with them a way back to root. Both
-  scripts now use `/var/run/halite` and create it only when it is missing.
-  **Reinstall `contrib/rc.d/halite_master` and `halite_agent`**, and check
-  `ls -ld /var/run` on any host that ran the previous ones.
-* **Enrollment answered `accepted` without checking the key.** `Submit`
-  compared the CSR for a pending or rejected identity but not for an
-  accepted one, so any caller who guessed an id received that agent's
-  certificate from the one route that answers before authentication —
-  a fleet-enumeration oracle. The comparison now covers every state.
-* **A webhook returner had to be told to use https.** Results carry the
-  run's changes, which hold whatever a state templated out of pillar. An
-  `http://` endpoint is now refused unless it is on the loopback, and a
-  redirect to another host fails the delivery instead of re-sending the
-  record there.
-* **`docs/pillar-security.md` promised more isolation than the code
-  gives.** The control plane pins an agent's id from its certificate but
-  renders pillar through the grains that agent reported, so a host that
-  claims `role: db` receives whatever `role:db` selects. Pillar tops
-  should target the id; the page now says so and explains why grain
-  targets are fine in a state top and not in a pillar top.
-
-New: **`halite key revoke <id>`** — denying a host without waiting for
-its certificate to expire, the other half of the audit's certificate
-findings.
-
-* The identity is refused from the next request onward, on every
-  authenticated route and on enrollment. The control plane reads the
-  store per request, so a revocation lands on a running fleet without a
-  restart.
-* The certificate stays cryptographically valid: there is no CRL to
-  distribute and no OCSP responder, and the only thing an agent
-  certificate opens is this control plane, so the check belongs at the
-  door. A revoked host can still prove who it is and can do nothing with
-  it.
-* Revoking moves the certificate and the request into `<pki>/revoked/`,
-  so nothing is left to renew or reissue from, and a fresh enrollment is
-  refused rather than filed — `key accept -all` cannot let a revoked host
-  back in. `halite key remove` is still the way to let one start over,
-  and it starts over needing an operator. `-all` is refused for `revoke`,
-  because it collects the *pending* ids.
-* A revoked agent keeps retrying, so the refusal is logged and raised as
-  `halite/key/<id>/refused` at most once every five minutes per identity.
-* Not covered, and documented as such: an open long poll finishes, and
-  the host stays listed as online until its last contact goes stale.
-
-New: **bounds on the one route that answers before authentication.**
-
-* `-enroll-rate` (default 60 a minute) is a token bucket per source
-  address on `/v1/enroll`, checked before the body is read, because
-  verifying a CSR signature is the most expensive thing the control plane
-  does for a stranger. The address comes from the connection and never
-  from a header. Over the limit is `429` with a `Retry-After`, which
-  agents already treat as "come back later", plus
-  `halite/enroll/throttled` at most once every five minutes per source.
-* A full bucket holds a minute's worth, so a fleet coming up together is
-  not turned away for arriving at once, and a pending host — which
-  retries every ten seconds — uses a tenth of it. Several behind one NAT
-  gateway still fit.
-* `-max-pending` (default 512) finally reaches `MaxPendingEnrollments`,
-  which had been declared and read by the handler since the control plane
-  landed, and assigned by nothing. Neither flag accepts zero: turning off
-  a bound is not something to do by typing a number.
-* A new check in `internal/docs` fails if any control plane setting is
-  reachable from nowhere in `cmdMaster`, which is the mistake that hid
-  this one. Settings computed from another are listed as such.
 
 New: config files and FreeBSD rc.d scripts for both daemons, so running
 halite at boot does not mean keeping a command line in `rc.conf`.
@@ -195,7 +208,6 @@ halite at boot does not mean keeping a command line in `rc.conf`.
   and `WantedBy`, and every account and file path a unit names is
   documented in `docs/service.md`.
 
-
 New: ZFS states — `zfs.filesystem_present`, `zfs.filesystem_absent`,
 `zfs.snapshot_present`, `zfs.snapshot_absent`. They carry Salt's names,
 because Salt has the same states, and they pair with the jails: a jail's
@@ -217,7 +229,6 @@ reversible.
   host's real pools under `-test` — an existing dataset with a matching
   property reports no change, and a differing one reports
   `compression lz4 -> zstd, quota none -> 10G` without touching it.
-
 
 Documentation is now part of the definition of done rather than a habit.
 `internal/docs` holds no code — only checks that read the tree from disk
@@ -245,6 +256,12 @@ Fixed while writing them: `docs/states.md` abbreviated one combined
 heading (`### alternatives.install / remove / set`), which named neither
 `alternatives.remove` nor `alternatives.set` in a form anybody could grep
 for.
+
+Known and not fixed, carried forward from the audits: `halite key gen`
+overwrites an existing `agent.key` instead of refusing like the CA store
+does; pillar loader errors reach the agent with server-side paths in
+them; and archive extraction still preserves a world-writable mode from
+the state tree — only *running* a module in that state is refused.
 
 ## 0.9.0 — 2026-08-14
 
