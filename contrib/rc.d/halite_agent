@@ -20,7 +20,7 @@
 #                            config file's `master`
 #   halite_agent_program     the halite binary (default /usr/local/bin/halite)
 #   halite_agent_flags       extra flags, appended after -config
-#   halite_agent_pidfile     (default /var/run/halite_agent.pid)
+#   halite_agent_pidfile     (default /var/run/halite/halite_agent.pid)
 #   halite_agent_daemon_args flags for daemon(8) itself; add -r to have it
 #                            restart the agent if it exits
 #
@@ -39,7 +39,7 @@ load_rc_config $name
 : ${halite_agent_program:="/usr/local/bin/halite"}
 : ${halite_agent_master:=""}
 : ${halite_agent_flags:=""}
-: ${halite_agent_pidfile:="/var/run/${name}.pid"}
+: ${halite_agent_pidfile:="/var/run/halite/${name}.pid"}
 : ${halite_agent_daemon_args:=""}
 
 halite_agent_master_flag=""
@@ -65,7 +65,13 @@ halite_agent_precmd()
 	    [ -z "${halite_agent_master}" ]; then
 		err 1 "no ${halite_agent_config} and no halite_agent_master: the agent has no control plane to reach"
 	fi
-	install -d "$(dirname "${pidfile}")"
+	# install(1) applies its mode whether or not it had to create the path,
+	# so running it on an existing shared directory like /var/run silently
+	# resets that directory's permissions. Create only what is missing.
+	halite_agent_rundir=$(dirname "${pidfile}")
+	if [ ! -d "${halite_agent_rundir}" ]; then
+		install -d -m 0755 "${halite_agent_rundir}"
+	fi
 }
 
 run_rc_command "$1"

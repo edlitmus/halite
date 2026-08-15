@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -497,6 +498,27 @@ func TestEveryUnitKnobIsDocumented(t *testing.T) {
 			if !strings.Contains(service, literal) {
 				t.Errorf("%s uses %q, which docs/service.md does not document", unit.file, value)
 			}
+		}
+	}
+}
+
+// TestPidFilesLiveInADedicatedDirectory keeps the rc.d scripts out of a
+// shared run directory. install(1) applies -o and -m whether or not it
+// created the path, so a script that creates the directory holding its
+// pid file must own that directory — pointing it at /var/run hands the
+// service account every pid file and socket in there.
+func TestPidFilesLiveInADedicatedDirectory(t *testing.T) {
+	shared := map[string]bool{"/var/run": true, "/run": true, "/tmp": true, "/var/tmp": true, "/": true}
+	setting := regexp.MustCompile(`(?m)^: \$\{halite_[a-z_]+_pidfile:="([^"]+)"\}`)
+
+	for _, script := range []string{"contrib/rc.d/halite_master", "contrib/rc.d/halite_agent"} {
+		matches := setting.FindAllStringSubmatch(read(t, script), -1)
+		if len(matches) != 1 {
+			t.Fatalf("%s sets %d pid file defaults, want 1", script, len(matches))
+		}
+		dir := path.Dir(matches[0][1])
+		if shared[dir] {
+			t.Errorf("%s puts its pid file directly in %s, a directory it does not own", script, dir)
 		}
 	}
 }

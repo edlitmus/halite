@@ -18,7 +18,9 @@
 #                             (default /usr/local/bin/halite)
 #   halite_master_flags       extra flags, appended after -config
 #   halite_master_user        account to run as (default root)
-#   halite_master_pidfile     (default /var/run/halite_master.pid)
+#   halite_master_pidfile     (default /var/run/halite/halite_master.pid;
+#                             the directory is created for halite_master_user,
+#                             and an existing one is never modified)
 #   halite_master_daemon_args flags for daemon(8) itself; add -r to have it
 #                             restart the control plane if it exits
 #
@@ -39,7 +41,7 @@ load_rc_config $name
 : ${halite_master_program:="/usr/local/bin/halite"}
 : ${halite_master_flags:=""}
 : ${halite_master_user:="root"}
-: ${halite_master_pidfile:="/var/run/${name}.pid"}
+: ${halite_master_pidfile:="/var/run/halite/${name}.pid"}
 : ${halite_master_daemon_args:=""}
 
 pidfile="${halite_master_pidfile}"
@@ -58,7 +60,23 @@ halite_master_precmd()
 	if [ -n "${halite_master_config}" ] && [ ! -r "${halite_master_config}" ]; then
 		warn "${halite_master_config} is not readable; starting on flags alone"
 	fi
-	install -d -o "${halite_master_user}" "$(dirname "${pidfile}")"
+
+	# install(1) applies -o and -m whether or not it had to create the
+	# path, so running it on a directory that already exists rewrites that
+	# directory. On a shared one like /var/run that hands the service
+	# account every pid file and socket in it — which is a way back to
+	# root. Create only a directory that is not there, and only ever this
+	# service's own.
+	halite_master_rundir=$(dirname "${pidfile}")
+	if [ ! -d "${halite_master_rundir}" ]; then
+		install -d -o "${halite_master_user}" -m 0755 "${halite_master_rundir}"
+	elif halite_master_rundir_owner=$(stat -f %Su "${halite_master_rundir}" 2>/dev/null) &&
+	    [ "${halite_master_rundir_owner}" != "${halite_master_user}" ]; then
+		# Pointed at a directory somebody else owns — usually /var/run
+		# itself. Say so rather than fix it: taking ownership is the bug
+		# this guard exists to prevent.
+		warn "${halite_master_rundir} is owned by ${halite_master_rundir_owner}, not ${halite_master_user}; the pid file may not be written"
+	fi
 }
 
 run_rc_command "$1"
