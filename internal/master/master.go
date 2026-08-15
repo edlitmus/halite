@@ -132,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc(transport.PathEnroll, s.handleEnroll)
 
+	mux.Handle(transport.PathRenew, s.agentOnly(s.handleRenew))
 	mux.Handle(transport.PathHello, s.agentOnly(s.handleHello))
 	mux.Handle(transport.PathJobs, s.agentOnly(s.handleJobs))
 	mux.Handle(transport.PathResults, s.agentOnly(s.handleResults))

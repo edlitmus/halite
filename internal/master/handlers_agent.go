@@ -92,6 +92,32 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request, peer transp
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// handleRenew reissues the calling agent's certificate. Unlike enrollment
+// it needs no operator: the caller is already authenticated by the
+// certificate it is replacing, and the CA refuses to change the key on
+// file, so this can only ever extend the life of an identity somebody
+// already accepted.
+func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request, peer transport.Peer) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "use POST")
+		return
+	}
+	var req transport.RenewRequest
+	if err := decode(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	certPEM, err := s.ca.Renew(peer.ID, []byte(req.CSR))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "%v", err)
+		return
+	}
+	s.log.Printf("renewed the certificate for %q", peer.ID)
+	s.bus.Emit(fmt.Sprintf(event.TagKeyRenewed, peer.ID), event.SourceMaster,
+		map[string]any{"id": peer.ID})
+	writeJSON(w, http.StatusOK, transport.RenewResponse{Cert: string(certPEM)})
+}
+
 // handleJobs is the agent's long poll. It returns as soon as there is work,
 // and returns an empty list when the poll times out so the agent can come
 // straight back.

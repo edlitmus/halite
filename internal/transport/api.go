@@ -10,6 +10,7 @@ import "time"
 // API paths. Only PathEnroll is reachable without a client certificate.
 const (
 	PathEnroll    = "/v1/enroll"
+	PathRenew     = "/v1/renew"
 	PathHello     = "/v1/hello"
 	PathJobs      = "/v1/jobs"
 	PathResults   = "/v1/results"
@@ -43,6 +44,19 @@ type EnrollRequest struct {
 type EnrollResponse struct {
 	State string `json:"state"` // pending, accepted, rejected
 	Cert  string `json:"cert,omitempty"`
+}
+
+// RenewRequest is an agent asking for a fresh certificate before its
+// current one expires. There is no id in it: the control plane takes that
+// from the certificate the agent is connecting with, which is the whole
+// reason renewal needs no operator.
+type RenewRequest struct {
+	CSR string `json:"csr"` // PEM, for the key the agent already holds
+}
+
+// RenewResponse carries the reissued certificate.
+type RenewResponse struct {
+	Cert string `json:"cert"`
 }
 
 // HelloRequest registers an agent and its facts with the control plane.

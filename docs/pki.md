@@ -91,11 +91,46 @@ identity entirely so that host can enroll again from scratch.
 |---|---|---|
 | CA | 10 years | `key init -days` |
 | Server | 825 days | `key server -days` |
-| Agent | 1 year | fixed; re-enroll to renew |
+| Agent | 1 year | fixed; renewed automatically |
 
-Revocation is a CRL or short-lived certificates; today, `halite key remove`
-plus a re-issued CA is the blunt instrument. Proper revocation lands with
-the control plane.
+## Renewal
+
+An agent watches its own certificate and asks for a new one when 45 days
+of its year are left. Nothing on the control plane has to be enabled, and
+no operator is involved:
+
+```
+agent                                     control plane
+  |--- POST /v1/renew (CSR, mTLS) ------->|  same id, same key
+  |<-- [certificate, another year] -------|
+  |    replace agent.crt, reconnect       |
+```
+
+Renewal is not enrollment, and the differences are the point:
+
+* **The identity comes from the certificate the agent is already using**,
+  not from the request body. There is nowhere in a renewal request to name
+  an identity, so there is nothing to lie about.
+* **The key cannot change.** The control plane refuses a request for any
+  key other than the one on file. Changing keys is an enrollment, and an
+  operator decides those.
+* **The agent checks the answer before it keeps it** — the certificate has
+  to parse, chain to the CA the agent trusts, carry the agent's own name,
+  and belong to the key on disk. `agent.crt` is then replaced atomically,
+  so a crash mid-write cannot leave the host with half a certificate.
+* **A failure is not fatal.** Renewal starts with weeks to spare, so an
+  unreachable control plane means a line in the log and another attempt an
+  hour later, not an agent that stops working.
+
+An agent whose certificate has **already expired** cannot renew: the
+control plane will not accept the connection. It says so at startup and
+names the fix, which is an operator running `halite key remove <id>` so
+the host can enroll again.
+
+Revocation is still missing: `halite key remove` forgets the CA's records,
+but a certificate already issued stays valid until it expires. Renewal
+makes that window a year at most, which is the whole reason to keep the
+lifetime short.
 
 For the other half of the picture — protecting pillar data, which is not
 encrypted — see [pillar-security.md](pillar-security.md).

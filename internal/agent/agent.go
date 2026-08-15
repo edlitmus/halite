@@ -38,6 +38,9 @@ type Config struct {
 	Version  string // reported to the control plane
 	// RetryInterval paces reconnection and enrollment attempts.
 	RetryInterval time.Duration
+	// RenewBefore is how much of the certificate's life may remain when
+	// the agent asks for a new one. Zero means ca.RenewBefore.
+	RenewBefore time.Duration
 
 	// Beacons watch the host and raise events.
 	Beacons []beacon.Beacon
@@ -52,6 +55,9 @@ type Config struct {
 func (c *Config) withDefaults() {
 	if c.RetryInterval == 0 {
 		c.RetryInterval = 10 * time.Second
+	}
+	if c.RenewBefore == 0 {
+		c.RenewBefore = ca.RenewBefore
 	}
 }
 
@@ -69,6 +75,12 @@ type Agent struct {
 	// publishing through it, so it is only reached under the lock.
 	mu     sync.RWMutex
 	client *transport.Client
+
+	// expiresAt is when the certificate this agent holds stops working,
+	// and nextRenewal is the earliest another renewal may be attempted
+	// after one failed. Both belong to the Run goroutine.
+	expiresAt   time.Time
+	nextRenewal time.Time
 }
 
 // currentClient returns the control plane connection in use, or nil before
@@ -113,13 +125,26 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err := a.ensureEnrolled(ctx); err != nil {
 		return err
 	}
-	tlsCfg, err := transport.ClientTLS(a.cfg.agentCert(), a.cfg.agentKey(), a.cfg.caCert())
-	if err != nil {
-		return err
+	if expiry, err := a.certExpiry(); err == nil {
+		a.expiresAt = expiry
+		if remaining := time.Until(expiry); remaining <= 0 {
+			a.log.Printf("this agent's certificate expired on %s; the control plane will refuse it. "+
+				"An operator must run 'halite key remove %s' so the host can enroll again",
+				expiry.Format(time.RFC3339), a.cfg.ID)
+		} else if remaining <= a.cfg.RenewBefore {
+			a.log.Printf("certificate expires %s; renewing on the first connection",
+				expiry.Format(time.RFC3339))
+		}
 	}
 
 	started := false
 	for ctx.Err() == nil {
+		// Built inside the loop: a renewal replaces the certificate on
+		// disk, and the next connection has to be made with the new one.
+		tlsCfg, err := transport.ClientTLS(a.cfg.agentCert(), a.cfg.agentKey(), a.cfg.caCert())
+		if err != nil {
+			return err
+		}
 		connected := a.connectSomewhere(ctx, tlsCfg)
 		if !connected {
 			if !sleepCtx(ctx, a.cfg.RetryInterval) {
@@ -211,10 +236,15 @@ func (a *Agent) runScheduled(ctx context.Context, job schedule.Job) {
 }
 
 // pollLoop asks for work until a poll fails, at which point Run says hello
-// again — a failed poll usually means the control plane restarted.
+// again — a failed poll usually means the control plane restarted. It also
+// returns after renewing the certificate, so the next connection is made
+// with the new one.
 func (a *Agent) pollLoop(ctx context.Context) {
 	client := a.currentClient()
 	for ctx.Err() == nil {
+		if a.renewIfDue(ctx) {
+			return // reconnect with the certificate that was just issued
+		}
 		var jobs []transport.Job
 		if err := client.Get(ctx, transport.PathJobs, &jobs); err != nil {
 			if ctx.Err() == nil {

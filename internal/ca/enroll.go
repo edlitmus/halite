@@ -2,6 +2,7 @@ package ca
 
 import (
 	"bytes"
+	"crypto"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +21,12 @@ const AgentCertLifetime = 365 * 24 * time.Hour
 // without a bound anyone who can reach the port can fill the disk with
 // CSRs. A whole fleet enrolling at once fits comfortably.
 const DefaultMaxPending = 512
+
+// RenewBefore is how much of an agent certificate's life may remain when
+// the agent starts asking for a new one. It is long enough that a host
+// which is off for a month, or whose control plane is down for one, still
+// renews before it is locked out.
+const RenewBefore = 45 * 24 * time.Hour
 
 // ErrPendingFull is returned by Submit when pending/ is at capacity and a
 // new identity asks to enroll. Callers match it with errors.Is to answer
@@ -149,6 +156,54 @@ func (s *Store) Accept(id string) ([]byte, error) {
 		return nil, fmt.Errorf("archive request: %w", err)
 	}
 	return certPEM, nil
+}
+
+// Renew issues a fresh certificate for an identity that already holds one.
+// No operator decides: the caller proved it is this host by connecting
+// with the certificate the CA issued, which is a stronger claim than the
+// one enrollment makes.
+//
+// The request must carry the key already on file. A renewal that could
+// change keys would be an enrollment nobody approved, and would turn one
+// stolen certificate into a permanent identity — the CA has no revocation
+// list to take it back with.
+func (s *Store) Renew(id string, csrPEM []byte) ([]byte, error) {
+	if err := ValidateID(id); err != nil {
+		return nil, err
+	}
+	csr, err := ParseCSR(csrPEM)
+	if err != nil {
+		return nil, err
+	}
+	if csr.Subject.CommonName != id {
+		return nil, fmt.Errorf("csr common name %q does not match id %q", csr.Subject.CommonName, id)
+	}
+	currentPEM, err := os.ReadFile(s.path("accepted", id+".crt"))
+	if err != nil {
+		return nil, fmt.Errorf("no accepted certificate for %q", id)
+	}
+	current, err := parseCertPEM(currentPEM)
+	if err != nil {
+		return nil, err
+	}
+	if !samePublicKey(current.PublicKey, csr.PublicKey) {
+		return nil, fmt.Errorf("renewal for %q must use the key on file; a new key is a new enrollment", id)
+	}
+	freshPEM, err := s.Sign(csrPEM, id, RoleAgent, nil, AgentCertLifetime)
+	if err != nil {
+		return nil, err
+	}
+	if err := ReplaceFile(s.path("accepted", id+".crt"), freshPEM, 0o644); err != nil {
+		return nil, fmt.Errorf("store certificate: %w", err)
+	}
+	return freshPEM, nil
+}
+
+// samePublicKey compares two parsed public keys. Every key type halite
+// issues implements Equal; anything that does not is not a match.
+func samePublicKey(a, b crypto.PublicKey) bool {
+	key, ok := a.(interface{ Equal(crypto.PublicKey) bool })
+	return ok && key.Equal(b)
 }
 
 // Reject moves a pending request to rejected. The agent keeps retrying and

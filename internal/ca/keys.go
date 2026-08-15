@@ -111,6 +111,12 @@ func CSRFingerprint(csrPEM []byte) (string, error) {
 	return Fingerprint(csr.RawSubjectPublicKeyInfo), nil
 }
 
+// ParseCert parses a PEM certificate, so an agent can read the expiry of
+// the one it holds without a second copy of this five-line function.
+func ParseCert(certPEM []byte) (*x509.Certificate, error) {
+	return parseCertPEM(certPEM)
+}
+
 func parseCertPEM(certPEM []byte) (*x509.Certificate, error) {
 	block, _ := pem.Decode(certPEM)
 	if block == nil || block.Type != "CERTIFICATE" {
@@ -139,6 +145,36 @@ func parseKeyPEM(keyPEM []byte) (crypto.Signer, error) {
 		return nil, fmt.Errorf("key of type %T cannot sign", key)
 	}
 	return signer, nil
+}
+
+// ReplaceFile writes data over a path that already exists, atomically: a
+// reader sees either the old file or the new one, never half a
+// certificate. Renewal overwrites an issued certificate on both sides of
+// the wire, so both sides use this.
+func ReplaceFile(path string, data []byte, mode os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // no-op once the rename has happened
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	// Durable before it is visible: a crash must not leave the name
+	// pointing at a file whose contents never reached the disk.
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // writeNew writes a file only if it does not already exist, so issuing a

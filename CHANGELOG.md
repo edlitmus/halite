@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+New: **agents renew their own certificates.** An agent certificate is
+good for a year, and until now nothing replaced it — a fleet enrolled on
+one day stopped connecting exactly a year later, with no way back but
+re-enrolling every host by hand.
+
+* An agent watches its own expiry and, with 45 days left, asks
+  `POST /v1/renew` for another year. No operator, nothing to enable.
+* Renewal is authenticated by the certificate it replaces, and **cannot
+  change the key**: the CA refuses a request for any key but the one on
+  file, because changing keys is an enrollment somebody has to approve.
+  There is no id in a renewal request — it comes from the certificate.
+* The agent verifies what it is given before keeping it: the certificate
+  has to parse, chain to the CA it trusts, carry its own name, and match
+  the key on disk. `agent.crt` is then replaced atomically.
+* A failed renewal is a log line and another attempt an hour later, not
+  an exit — it starts weeks before anything breaks. The control plane
+  raises `halite/key/<id>/renewed`.
+* An agent whose certificate has **already** expired still cannot renew:
+  the control plane will not accept the connection. It now says so at
+  startup and names the fix (`halite key remove <id>`, then enroll
+  again).
+
 Security fixes from an audit of the control plane, the CA, and the
 service files. Nothing here needs a state tree change; upgrading the
 binary and reinstalling the rc.d scripts is the whole migration.
@@ -32,10 +54,10 @@ binary and reinstalling the rc.d scripts is the whole migration.
   targets are fine in a state top and not in a pillar top.
 
 Known and not yet fixed, from the same audit: there is no certificate
-revocation or renewal (`halite key remove` forgets the CA's records, but
-the issued certificate stays valid for its year), `/v1/enroll` has no
-per-source rate limit, and `MaxPendingEnrollments` is not wired to a
-flag.
+revocation (`halite key remove` forgets the CA's records, but the issued
+certificate stays valid until it expires — renewal bounds that at a
+year), `/v1/enroll` has no per-source rate limit, and
+`MaxPendingEnrollments` is not wired to a flag.
 
 New: config files and FreeBSD rc.d scripts for both daemons, so running
 halite at boot does not mean keeping a command line in `rc.conf`.

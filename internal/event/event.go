@@ -21,6 +21,7 @@ const (
 	TagKeyPending    = "halite/key/%s/pending"
 	TagKeyAccepted   = "halite/key/%s/accepted"
 	TagKeyRejected   = "halite/key/%s/rejected"
+	TagKeyRenewed    = "halite/key/%s/renewed"
 	TagJobDispatch   = "halite/job/%s/dispatch"
 	TagJobReturn     = "halite/job/%s/ret/%s"
 	TagBeacon        = "halite/beacon/%s/%s"

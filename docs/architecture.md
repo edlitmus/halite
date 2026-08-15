@@ -268,6 +268,10 @@ read. With the control plane running (see [fleet.md](fleet.md)):
   results are only accepted from agents a job was actually dispatched to.
 * **Agents cannot dispatch.** Only an operator certificate can queue work
   or list the fleet.
+* **Renewal cannot become enrollment.** An agent replaces its own
+  certificate before it expires over `/v1/renew`, authenticated by the
+  certificate it is replacing, and the CA refuses to sign for any key but
+  the one on file — see [pki.md](pki.md).
 * **JSON only.** Nothing is deserialized into behavior — no pickle, no
   msgpack, no code from the wire. The state tree arrives as an archive that
   is refused if any entry escapes the destination or is not a regular file

@@ -124,6 +124,7 @@ agent                                     control plane
   |--- GET  /v1/statetree --------------->|  tar.gz of the tree
   |    extract, then engine.Run(...)      |
   |--- POST /v1/results ----------------->|
+  |--- POST /v1/renew ------------------->|  once a year, near expiry
 ```
 
 Job polls are long-lived HTTP/2 requests: the control plane holds one open

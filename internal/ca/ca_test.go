@@ -1,6 +1,7 @@
 package ca
 
 import (
+	"crypto"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -379,5 +380,95 @@ func TestTamperedCSRIsRejected(t *testing.T) {
 
 	if _, err := s.Submit("web1", tampered); err == nil {
 		t.Fatal("a CSR that fails signature verification must be rejected")
+	}
+}
+
+// renewable returns a store holding an accepted identity whose certificate
+// is nearly out of time, plus the key it belongs to.
+func renewable(t *testing.T, id string, remaining time.Duration) (*Store, crypto.Signer, []byte) {
+	t.Helper()
+	s := newStore(t)
+	key, _, err := GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	csrPEM, err := NewCSR(key, id, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Submit(id, csrPEM); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Accept(id); err != nil {
+		t.Fatal(err)
+	}
+	// Accept issues a full year. Replace it with one that is nearly up, so
+	// the test is about renewal rather than about the clock.
+	expiring, err := s.Sign(csrPEM, id, RoleAgent, nil, remaining)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceFile(s.path("accepted", id+".crt"), expiring, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return s, key, csrPEM
+}
+
+func TestRenewIssuesAFullLifetimeForTheSameKey(t *testing.T) {
+	s, key, _ := renewable(t, "web1", time.Hour)
+
+	// A renewal carries a fresh request for the key the agent still holds.
+	csrPEM, err := NewCSR(key, "web1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewedPEM, err := s.Renew("web1", csrPEM)
+	if err != nil {
+		t.Fatalf("renew: %v", err)
+	}
+	renewed, err := parseCertPEM(renewedPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remaining := time.Until(renewed.NotAfter); remaining < AgentCertLifetime-time.Minute {
+		t.Errorf("renewed certificate expires in %s, want about %s", remaining, AgentCertLifetime)
+	}
+	if !samePublicKey(renewed.PublicKey, key.Public()) {
+		t.Error("the renewed certificate is for a different key")
+	}
+	// The store must hand out the new one from now on, or the next
+	// enrollment check compares against a certificate nobody holds.
+	stored, err := os.ReadFile(s.path("accepted", "web1.crt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stored) != string(renewedPEM) {
+		t.Error("accepted/web1.crt still holds the old certificate")
+	}
+}
+
+func TestRenewRefusesADifferentKey(t *testing.T) {
+	s, _, _ := renewable(t, "web1", time.Hour)
+
+	// A stolen certificate must not be a way to swap in a key an operator
+	// never saw: that is an enrollment, and the CA has no revocation list
+	// to take the result back with.
+	if _, err := s.Renew("web1", csrFor(t, "web1")); err == nil {
+		t.Fatal("renewal with a new key must be refused")
+	}
+}
+
+func TestRenewRefusesUnknownAndMismatchedIdentities(t *testing.T) {
+	s, key, _ := renewable(t, "web1", time.Hour)
+
+	if _, err := s.Renew("web2", csrFor(t, "web2")); err == nil {
+		t.Error("renewing an identity with no certificate must fail")
+	}
+	otherName, err := NewCSR(key, "web2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Renew("web1", otherName); err == nil {
+		t.Error("a request whose common name is another id must be refused")
 	}
 }
