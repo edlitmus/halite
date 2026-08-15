@@ -125,13 +125,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	if err := a.ensureEnrolled(ctx); err != nil {
 		return err
 	}
+	// ensureEnrolled has just made sure there is a usable certificate, so
+	// what is left to decide is whether it is close enough to expiring to
+	// renew on the first connection.
 	if expiry, err := a.certExpiry(); err == nil {
 		a.expiresAt = expiry
-		if remaining := time.Until(expiry); remaining <= 0 {
-			a.log.Printf("this agent's certificate expired on %s; the control plane will refuse it. "+
-				"An operator must run 'halite key remove %s' so the host can enroll again",
-				expiry.Format(time.RFC3339), a.cfg.ID)
-		} else if remaining <= a.cfg.RenewBefore {
+		if time.Until(expiry) <= a.cfg.RenewBefore {
 			a.log.Printf("certificate expires %s; renewing on the first connection",
 				expiry.Format(time.RFC3339))
 		}

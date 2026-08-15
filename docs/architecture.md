@@ -258,9 +258,13 @@ read. With the control plane running (see [fleet.md](fleet.md)):
 
 * **mTLS 1.3 on every connection**, with no downgrade path. Both ends
   authenticate against the fleet CA and nothing else.
-* **One unauthenticated endpoint**, `/v1/enroll`, which can do exactly one
-  thing: file a signing request that an operator must then accept. All
-  bodies are size-capped, enrolled or not.
+* **One unauthenticated endpoint**, `/v1/enroll`, which can do exactly two
+  things: file a signing request that an operator must then accept, and
+  hand back the certificate for a request already on file — reissuing it
+  first if it has expired, since a host that was off that long has no
+  authenticated way back. Either way the key is one an operator accepted;
+  a request for any other key is refused. All bodies are size-capped,
+  enrolled or not.
 * **Identity comes from the certificate.** An agent's id, and its role, are
   read from its client certificate; the request body cannot influence
   either. A reported `id` grain is overwritten with the enrolled identity,

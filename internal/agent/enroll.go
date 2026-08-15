@@ -16,10 +16,24 @@ import (
 // an agent that starts before its key is accepted should converge on its
 // own once someone says yes, not exit and need restarting.
 func (a *Agent) ensureEnrolled(ctx context.Context) error {
-	if _, err := os.Stat(a.cfg.agentCert()); err == nil {
+	switch expiry, err := a.certExpiry(); {
+	case err != nil:
+		// No certificate, or one that will not parse: enroll.
+	case time.Now().Before(expiry):
 		return nil
+	default:
+		// An expired certificate cannot renew, because the control plane
+		// will not accept it on the wire. Enrolling again with the same
+		// key is the way back: the request is already on file there, so a
+		// control plane that recognises it reissues without an operator.
+		a.log.Printf("this agent's certificate expired on %s; asking to be issued a new one for the same key",
+			expiry.Format(time.RFC3339))
 	}
 	csrPEM, err := a.ensureKeyAndRequest()
+	if err != nil {
+		return err
+	}
+	keyPEM, err := os.ReadFile(a.cfg.agentKey())
 	if err != nil {
 		return err
 	}
@@ -50,7 +64,16 @@ func (a *Agent) ensureEnrolled(ctx context.Context) error {
 			case err != nil:
 				a.log.Printf("enrollment via %s: %v", addr, err)
 			case resp.State == string(ca.StateAccepted):
-				if err := os.WriteFile(a.cfg.agentCert(), []byte(resp.Cert), 0o644); err != nil {
+				// Checked before it is kept: a certificate that does not
+				// verify, or that belongs to another key, would take the
+				// agent down at its next start with nothing to retry with.
+				// An expired one lands here too, from a control plane too
+				// old to reissue.
+				if err := a.verifyIssued([]byte(resp.Cert), keyPEM); err != nil {
+					a.log.Printf("%s issued a certificate this agent cannot use: %v", addr, err)
+					continue
+				}
+				if err := ca.ReplaceFile(a.cfg.agentCert(), []byte(resp.Cert), 0o644); err != nil {
 					return fmt.Errorf("write certificate: %w", err)
 				}
 				a.log.Printf("enrolled: certificate written to %s", a.cfg.agentCert())

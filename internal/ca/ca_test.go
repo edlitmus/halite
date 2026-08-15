@@ -472,3 +472,76 @@ func TestRenewRefusesUnknownAndMismatchedIdentities(t *testing.T) {
 		t.Error("a request whose common name is another id must be refused")
 	}
 }
+
+// expire replaces an accepted identity's certificate with one that has
+// already run out, which is the state a host switched off for a year
+// comes back to.
+func expire(t *testing.T, s *Store, id string) {
+	t.Helper()
+	csrPEM, err := os.ReadFile(s.path("accepted", id+".csr"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale, err := s.Sign(csrPEM, id, RoleAgent, nil, -30*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceFile(s.path("accepted", id+".crt"), stale, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReissueExpiredOnlyActsOnAnExpiredCertificate(t *testing.T) {
+	s, _, _ := renewable(t, "web1", time.Hour)
+
+	certPEM, reissued, err := s.ReissueExpired("web1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reissued {
+		t.Error("a certificate with an hour left must not be reissued: renewal is the authenticated way to replace it")
+	}
+	onFile, err := s.IssuedCert("web1")
+	if err != nil || string(onFile) != string(certPEM) {
+		t.Error("the certificate on file should have been returned unchanged")
+	}
+
+	expire(t, s, "web1")
+	fresh, reissued, err := s.ReissueExpired("web1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reissued {
+		t.Fatal("an expired certificate must be reissued; the host cannot renew with it")
+	}
+	cert, err := parseCertPEM(fresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if remaining := time.Until(cert.NotAfter); remaining < AgentCertLifetime-time.Minute {
+		t.Errorf("reissued certificate expires in %s, want about %s", remaining, AgentCertLifetime)
+	}
+	// It has to be for the accepted key, which is what makes issuing it to
+	// an unauthenticated caller harmless: nobody else holds that key.
+	original, err := os.ReadFile(s.path("accepted", "web1.csr"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	csr, err := ParseCSR(original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !samePublicKey(cert.PublicKey, csr.PublicKey) {
+		t.Error("the reissued certificate is for a different key than the accepted request")
+	}
+	if stored, _ := s.IssuedCert("web1"); string(stored) != string(fresh) {
+		t.Error("the store still holds the expired certificate")
+	}
+}
+
+func TestReissueExpiredNeedsAnAcceptedIdentity(t *testing.T) {
+	s := newStore(t)
+	if _, _, err := s.ReissueExpired("web1"); err == nil {
+		t.Error("an identity nobody accepted has nothing to reissue")
+	}
+}

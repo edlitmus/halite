@@ -19,10 +19,18 @@ re-enrolling every host by hand.
 * A failed renewal is a log line and another attempt an hour later, not
   an exit — it starts weeks before anything breaks. The control plane
   raises `halite/key/<id>/renewed`.
-* An agent whose certificate has **already** expired still cannot renew:
-  the control plane will not accept the connection. It now says so at
-  startup and names the fix (`halite key remove <id>`, then enroll
-  again).
+* A certificate that has **already** expired cannot renew — there is no
+  authenticated connection left to renew over — so the agent goes back to
+  `/v1/enroll` with the key it already has, and the control plane reissues
+  from the request in its store. No operator, no re-enrollment by hand for
+  a host that was switched off too long.
+* That reissue is deliberately narrow: it signs the CSR already on file
+  (never the caller's), only when the stored certificate has expired, and
+  a request for a different key is refused exactly as it is at any other
+  time. Anyone else who tries receives a certificate for a private key
+  they do not hold. It raises `halite/key/<id>/reissued`.
+* `halite key remove <id>` is still how a host is taken out for good: it
+  deletes the request, so the next enrollment waits for an operator.
 
 Security fixes from an audit of the control plane, the CA, and the
 service files. Nothing here needs a state tree change; upgrading the

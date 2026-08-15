@@ -122,10 +122,39 @@ Renewal is not enrollment, and the differences are the point:
   unreachable control plane means a line in the log and another attempt an
   hour later, not an agent that stops working.
 
-An agent whose certificate has **already expired** cannot renew: the
-control plane will not accept the connection. It says so at startup and
-names the fix, which is an operator running `halite key remove <id>` so
-the host can enroll again.
+### A certificate that already expired
+
+A host switched off for longer than a year comes back holding a
+certificate the control plane will not accept, so it cannot renew — there
+is no authenticated connection left to renew over. It goes back to the
+route it enrolled through, with the key it already has:
+
+```
+agent                                     control plane
+  |--- POST /v1/enroll (the same CSR) --->|  matches the request on file,
+  |<-- [certificate, another year] -------|  and the certificate has expired
+```
+
+The agent notices at startup, says so, and recovers without an operator.
+What keeps that from being a way in:
+
+* **The request is not the caller's.** The control plane signs the CSR
+  already in its store, so the certificate is for the key an operator
+  accepted. Anyone else receives a certificate for a private key they do
+  not hold, which is no more use to them than the certificate they could
+  already read off the master.
+* **A different key is still refused**, exactly as it is for a certificate
+  that has not expired. The reissue happens only for a request that
+  matches the stored one byte for byte.
+* **Only once it has actually expired.** While a certificate is still
+  valid, renewal over mTLS is the authenticated way to replace it, and
+  this route hands back the certificate on file unchanged.
+* It raises `halite/key/<id>/reissued`, which is worth watching in a fleet
+  where hosts are not supposed to disappear for a year.
+
+To take a host out permanently, use `halite key remove <id>`: that deletes
+the request, so the next enrollment starts over as pending and waits for
+an operator.
 
 Revocation is still missing: `halite key remove` forgets the CA's records,
 but a certificate already issued stays valid until it expires. Renewal

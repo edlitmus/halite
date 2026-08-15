@@ -2,6 +2,7 @@ package master
 
 import (
 	"context"
+	"crypto"
 	"crypto/x509"
 	"io"
 	"log"
@@ -213,4 +214,159 @@ func waitForCert(t *testing.T, path string, notSerial []byte) *x509.Certificate 
 	}
 	t.Fatalf("no new certificate at %s within the deadline", path)
 	return nil
+}
+
+// expireIssued replaces the certificate an identity holds, on the control
+// plane and wherever else the test keeps a copy, with one that has already
+// run out — the state a host switched off for a year comes back to.
+func expireIssued(t *testing.T, f *fleet, id string, csrPEM []byte, copies ...string) []byte {
+	t.Helper()
+	stale, err := f.store.Sign(csrPEM, id, ca.RoleAgent, nil, -30*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := append([]string{filepath.Join(f.pki, "accepted", id+".crt")}, copies...)
+	for _, path := range paths {
+		if err := os.WriteFile(path, stale, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return stale
+}
+
+// TestAnExpiredIdentityEnrollsItsWayBack covers the host that was off for
+// longer than a certificate lasts. It cannot renew — the control plane
+// will not accept an expired certificate on the wire — so the only route
+// left is the one it enrolled through.
+func TestAnExpiredIdentityEnrollsItsWayBack(t *testing.T) {
+	f := newFleet(t, Config{})
+	_, keyPEM, _ := f.enrolledKeypair(t, "web1")
+	csrPEM, err := os.ReadFile(filepath.Join(f.pki, "accepted", "web1.csr"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := expireIssued(t, f, "web1", csrPEM)
+
+	var resp transport.EnrollResponse
+	if err := f.anonymousClient(t).Post(context.Background(), transport.PathEnroll,
+		transport.EnrollRequest{ID: "web1", CSR: string(csrPEM)}, &resp); err != nil {
+		t.Fatalf("re-enroll: %v", err)
+	}
+	if resp.Cert == "" || resp.Cert == string(stale) {
+		t.Fatal("the control plane handed back the expired certificate")
+	}
+	fresh, err := ca.ParseCert([]byte(resp.Cert))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !time.Now().Before(fresh.NotAfter) {
+		t.Fatal("the reissued certificate is not valid now")
+	}
+
+	// The proof is that it works: connect with it.
+	client := f.clientFrom(t, "web1", keyPEM, []byte(resp.Cert))
+	if err := client.Post(context.Background(), transport.PathHello,
+		transport.HelloRequest{Grains: map[string]any{"id": "web1"}}, nil); err != nil {
+		t.Fatalf("the reissued certificate does not work: %v", err)
+	}
+
+	// And an attacker who noticed the expiry still cannot take the id: the
+	// reissue is for the request on file, not for anything they send.
+	other, err := ca.NewCSR(mustKey(t), "web1", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.anonymousClient(t).Post(context.Background(), transport.PathEnroll,
+		transport.EnrollRequest{ID: "web1", CSR: string(other)}, &resp); err == nil {
+		t.Fatal("a different key for an expired identity must still be refused")
+	}
+}
+
+func mustKey(t *testing.T) crypto.Signer {
+	t.Helper()
+	key, _, err := ca.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+// TestAgentRecoversFromAnExpiredCertificate drives the whole recovery in
+// real processes' worth of code: an agent that enrolled, was off past its
+// expiry, and comes back to a control plane that has never stopped.
+func TestAgentRecoversFromAnExpiredCertificate(t *testing.T) {
+	f := newFleet(t, Config{AutoAccept: true})
+	pki := t.TempDir()
+	caPEM, err := f.store.CACertPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pki, "ca.crt"), caPEM, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func() {
+		t.Helper()
+		a, err := agent.New(agent.Config{
+			ID:            "web1",
+			Masters:       []string{f.host()},
+			PKIDir:        pki,
+			CacheDir:      t.TempDir(),
+			RetryInterval: 20 * time.Millisecond,
+		}, map[string]any{"host": "web1"}, log.New(io.Discard, "", 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if err := a.Run(ctx); err != nil && ctx.Err() == nil {
+				t.Errorf("agent: %v", err)
+			}
+		}()
+		waitForCert(t, filepath.Join(pki, "agent.crt"), expiredSerial(t, filepath.Join(pki, "agent.crt")))
+		cancel()
+		<-done
+	}
+
+	run() // enrolls
+	csrPEM, err := os.ReadFile(filepath.Join(pki, "agent.key.csr"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := expireIssued(t, f, "web1", csrPEM, filepath.Join(pki, "agent.crt"))
+	staleCert, err := ca.ParseCert(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run() // comes back with an expired certificate and recovers
+
+	recovered := waitForCert(t, filepath.Join(pki, "agent.crt"), staleCert.SerialNumber.Bytes())
+	if !time.Now().Before(recovered.NotAfter) {
+		t.Fatal("the agent kept an expired certificate")
+	}
+	if recovered.Subject.CommonName != "web1" {
+		t.Errorf("recovered certificate is for %q", recovered.Subject.CommonName)
+	}
+}
+
+// expiredSerial returns the serial of whatever certificate is at path, or
+// nil if there is none yet — so waitForCert means "any certificate" on the
+// first run and "a different one" afterwards.
+func expiredSerial(t *testing.T, path string) []byte {
+	t.Helper()
+	certPEM, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	cert, err := ca.ParseCert(certPEM)
+	if err != nil {
+		return nil
+	}
+	if time.Now().Before(cert.NotAfter) {
+		return nil // already usable; nothing to wait for
+	}
+	return cert.SerialNumber.Bytes()
 }

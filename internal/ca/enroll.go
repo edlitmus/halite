@@ -199,6 +199,47 @@ func (s *Store) Renew(id string, csrPEM []byte) ([]byte, error) {
 	return freshPEM, nil
 }
 
+// ReissueExpired returns the certificate on file for an accepted identity,
+// signing a fresh one first if the current one has already expired. It
+// reports whether it had to.
+//
+// This is how a host that was switched off for longer than a certificate
+// lasts gets back: it cannot renew, because the control plane will not
+// accept an expired certificate on the wire, and the only route left is
+// the unauthenticated one it enrolled through.
+//
+// What makes that safe is that nothing here comes from the caller. The
+// request signed is the one already in the store, so the certificate is
+// for the key an operator accepted and is useless to anyone else — and
+// the caller had to send a byte-identical request to get this far. It is
+// deliberately limited to a certificate that has *expired*: while one is
+// still valid, renewal over mTLS is the authenticated way to replace it.
+func (s *Store) ReissueExpired(id string) ([]byte, bool, error) {
+	certPEM, err := s.IssuedCert(id)
+	if err != nil {
+		return nil, false, err
+	}
+	cert, err := parseCertPEM(certPEM)
+	if err != nil {
+		return nil, false, err
+	}
+	if time.Now().Before(cert.NotAfter) {
+		return certPEM, false, nil
+	}
+	csrPEM, err := os.ReadFile(s.path("accepted", id+".csr"))
+	if err != nil {
+		return nil, false, fmt.Errorf("id %q is accepted but its request is missing; remove it and enroll again", id)
+	}
+	freshPEM, err := s.Sign(csrPEM, id, RoleAgent, nil, AgentCertLifetime)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := ReplaceFile(s.path("accepted", id+".crt"), freshPEM, 0o644); err != nil {
+		return nil, false, fmt.Errorf("store certificate: %w", err)
+	}
+	return freshPEM, true, nil
+}
+
 // samePublicKey compares two parsed public keys. Every key type halite
 // issues implements Equal; anything that does not is not a match.
 func samePublicKey(a, b crypto.PublicKey) bool {

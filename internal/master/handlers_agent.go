@@ -59,12 +59,22 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 
 	resp := transport.EnrollResponse{State: string(state)}
 	if state == ca.StateAccepted {
-		certPEM, err := s.ca.IssuedCert(req.ID)
+		// A host that was off for longer than its certificate lasts cannot
+		// renew — the control plane will not accept an expired one on the
+		// wire — so the expired case is issued from the request already on
+		// file. Getting here at all means the caller sent that same
+		// request, byte for byte.
+		certPEM, reissued, err := s.ca.ReissueExpired(req.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "%v", err)
 			return
 		}
 		resp.Cert = string(certPEM)
+		if reissued {
+			s.log.Printf("reissued an expired certificate for %q from %s", req.ID, r.RemoteAddr)
+			s.bus.Emit(fmt.Sprintf(event.TagKeyReissued, req.ID), event.SourceMaster,
+				map[string]any{"id": req.ID})
+		}
 		s.bus.Emit(fmt.Sprintf(event.TagAgentEnrolled, req.ID), event.SourceMaster,
 			map[string]any{"id": req.ID})
 	} else {
