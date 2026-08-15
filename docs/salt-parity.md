@@ -78,6 +78,7 @@ not.
 | alternatives.install / remove / set | done | update-alternatives or alternatives; setting an unregistered path fails |
 | network.system (hostname) | done | applied and recorded: hostnamectl, or hostname plus sysrc/scutil//etc/hostname. The rest of Salt's network.system is not implemented |
 | docker_container.* / docker_image.* | done, renamed | `container.running` / `stopped` / `absent` and `container.image_present` / `image_absent`, driving docker **or podman**. Drift is a spec hash in a label, so every argument is compared; a changed container is replaced. Salt's hundred-argument surface is not reproduced — `run_args` is the escape hatch |
+| zfs.filesystem_present / absent, zfs.snapshot_present / absent | done | datasets and snapshots with property drift repair; sizes compared as sizes. No volumes, bookmarks, or holds |
 | jail.present / absent / running / stopped | done (halite original) | FreeBSD jails: a jail.conf.d block plus the lifecycle through rc.d/jail. Salt has no jail states, so nothing ports — but nothing has to be translated either |
 | network.managed | out | too OS-entangled; use file + service |
 
@@ -160,10 +161,11 @@ Salt tree is a rewrite, not a transliteration.
 ### Module breadth
 
 Salt 3008 ships roughly 470 state and 500 execution modules; halite has
-64 state functions and 4 execution modules. Raw counts flatter Salt —
+68 state functions and 4 execution modules. Raw counts flatter Salt —
 much of it is niche — but these are everyday Salt with no halite answer:
 firewall states, SELinux beyond the mode and booleans (`fcontext`, `port`,
-`module`), `lvm`, `npm`, Windows updates and ACLs. Containers are covered
+`module`), `lvm` (ZFS is covered, LVM is not), `npm`, Windows updates and
+ACLs. Containers are covered
 from both ends — FreeBSD jails, which Salt has no states for, and OCI
 containers under halite's own names — but not to Salt's depth: there are
 no `docker_network`, `docker_volume`, or compose-shaped states, and the

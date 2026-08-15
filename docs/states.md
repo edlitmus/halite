@@ -816,6 +816,54 @@ deployment stays current.
 Stop a container, or stop and remove it. Named volumes are left alone: one
 outlives its container by design, and removing it is data loss.
 
+## zfs
+
+Datasets and snapshots, through `zfs(8)`. These carry Salt's names, since
+Salt has the same states.
+
+### zfs.filesystem_present
+
+| Arg | Description |
+|---|---|
+| `name` | the dataset, e.g. `zroot/jails/www` (default: state ID) |
+| `properties` | a mapping of zfs properties |
+| `parents` | `true` creates missing parent datasets (`zfs create -p`) |
+
+```yaml
+zroot/jails/www:
+  zfs.filesystem_present:
+    - parents: true
+    - properties:
+        compression: lz4
+        mountpoint: /usr/local/jails/www
+        quota: 10G
+```
+
+Properties are compared and set on a dataset that already exists, so this
+state owns them rather than applying them once at creation. Sizes are
+compared **as sizes**: a state asking for `quota: 10G` does not fight zfs
+over whether it says `10G`, `10.0G`, or `10737418240` back, which would
+otherwise set the property and report a change on every run. `none` and
+`0` are the same absence of a limit.
+
+### zfs.filesystem_absent
+
+Destroy a dataset. Args: `name`, `recursive`.
+
+A dataset with snapshots or child datasets is **refused** unless
+`recursive: true` says to take them too — `zfs destroy -r` is the most
+expensive typo in this module, so it has to be spelled out.
+
+### zfs.snapshot_present / zfs.snapshot_absent
+
+Take or destroy a snapshot, named `dataset@snapshot`. Args: `name`,
+`recursive` (`-r`, for the same snapshot name across a dataset's
+children).
+
+A snapshot is immutable, so `zfs.snapshot_present` only ever creates: a
+name already taken is already right. Pair it with `jail.present` to
+snapshot a jail's dataset before an upgrade.
+
 ## service
 
 Backend is auto-detected: FreeBSD rc.d (uses `onestart`/`onestatus` so

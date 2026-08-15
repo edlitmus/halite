@@ -5,6 +5,20 @@
 #   halite apply examples/jail.sls -test
 
 {{ if eq .Grains.os_family "FreeBSD" }}
+# A jail's filesystem is a dataset, and the dataset is a state too. The
+# snapshot is what makes the upgrade below reversible.
+zroot/jails/www:
+  zfs.filesystem_present:
+    - parents: true
+    - properties:
+        compression: lz4
+        mountpoint: /usr/local/jails/www
+
+zroot/jails/www@before-upgrade:
+  zfs.snapshot_present:
+    - require:
+      - zfs: zroot/jails/www
+
 www:
   jail.present:
     - path: /usr/local/jails/www
@@ -16,6 +30,8 @@ www:
         allow.raw_sockets: true
         devfs_ruleset: "4"
         exec.poststart: logger jail www started
+    - require:
+      - zfs: zroot/jails/www
 
 # The configuration is what the next start reads, so a jail whose block
 # changed has to be restarted to pick it up. That is a watch, exactly as

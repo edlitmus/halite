@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+New: ZFS states — `zfs.filesystem_present`, `zfs.filesystem_absent`,
+`zfs.snapshot_present`, `zfs.snapshot_absent`. They carry Salt's names,
+because Salt has the same states, and they pair with the jails: a jail's
+filesystem is a dataset, and a snapshot is what makes an upgrade
+reversible.
+
+* Properties are compared and set on a dataset that already exists, so
+  the state owns them rather than applying them once at creation.
+* **Sizes are compared as sizes.** A state asking for `quota: 10G` does
+  not fight zfs over whether it reports `10G`, `10.0G`, or the byte count
+  back — a text comparison would set the property, and report a change, on
+  every run forever. `none` and `0` are the same absence of a limit.
+* `zfs.filesystem_absent` refuses a dataset that has snapshots or children
+  unless `recursive: true` says to take them too. `zfs destroy -r` is the
+  most expensive typo in the module.
+* Verified against zfs itself: `zfs create -n` validates the dataset name
+  and every property without creating anything, and that is now a test
+  which runs wherever zfs exists. Drift detection was checked against this
+  host's real pools under `-test` — an existing dataset with a matching
+  property reports no change, and a differing one reports
+  `compression lz4 -> zstd, quota none -> 10G` without touching it.
+
+
 Documentation is now part of the definition of done rather than a habit.
 `internal/docs` holds no code — only checks that read the tree from disk
 and hold this repository's prose to it:
