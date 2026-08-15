@@ -202,6 +202,48 @@ func TestSubmitAfterAcceptReportsAccepted(t *testing.T) {
 	}
 }
 
+// TestAcceptedIdentityDoesNotHandOutItsCertificateToAnotherKey covers the
+// one route that answers before authentication: a caller who guesses an
+// accepted id must not learn that it exists, let alone receive its
+// certificate, by submitting a key of their own.
+func TestAcceptedIdentityDoesNotHandOutItsCertificateToAnotherKey(t *testing.T) {
+	s := newStore(t)
+	if _, err := s.Submit("web1", csrFor(t, "web1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Accept("web1"); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := s.Submit("web1", csrFor(t, "web1"))
+	if err == nil {
+		t.Fatalf("an attacker's key for an accepted id returned %q instead of an error", state)
+	}
+	if !strings.Contains(err.Error(), "web1") {
+		t.Errorf("the error should name the id: %v", err)
+	}
+}
+
+// TestAcceptedIdentityWithNoArchivedRequestIsRefused is the fail-closed
+// half: an entry whose CSR somebody deleted by hand cannot be compared,
+// so it is refused rather than trusted.
+func TestAcceptedIdentityWithNoArchivedRequestIsRefused(t *testing.T) {
+	s := newStore(t)
+	csrPEM := csrFor(t, "web1")
+	if _, err := s.Submit("web1", csrPEM); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Accept("web1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(s.path("accepted", "web1.csr")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Submit("web1", csrPEM); err == nil {
+		t.Fatal("an accepted id with no request on file must not be answered")
+	}
+}
+
 func TestAcceptIsStableAcrossCalls(t *testing.T) {
 	s := newStore(t)
 	if _, err := s.Submit("web1", csrFor(t, "web1")); err != nil {

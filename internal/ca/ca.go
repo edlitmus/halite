@@ -29,6 +29,12 @@ func (s *Store) path(parts ...string) string {
 	return filepath.Join(append([]string{s.Dir}, parts...)...)
 }
 
+// hasCert reports whether an identity has an issued certificate on file.
+func (s *Store) hasCert(id string) bool {
+	_, err := os.Stat(s.path("accepted", id+".crt"))
+	return err == nil
+}
+
 // Role decides the key usages and organizational unit of an issued
 // certificate. Agents may only authenticate as clients, the control plane
 // may only serve, and operators are agents' peers on the wire but are the

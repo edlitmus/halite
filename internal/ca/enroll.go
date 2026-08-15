@@ -68,16 +68,23 @@ func (s *Store) SubmitLimited(id string, csrPEM []byte, maxPending int) (State, 
 		return "", fmt.Errorf("csr common name %q does not match id %q", csr.Subject.CommonName, id)
 	}
 
-	if _, err := os.Stat(s.path("accepted", id+".crt")); err == nil {
-		return StateAccepted, nil
-	}
+	// Accepted is checked the same way as the rest: enrollment is
+	// unauthenticated, so answering "accepted" — and handing over the
+	// certificate — for a key the CA never saw would turn a guessed id
+	// into a way to enumerate the fleet.
 	for _, known := range []struct {
 		dir   string
 		state State
-	}{{"pending", StatePending}, {"rejected", StateRejected}} {
+	}{{"accepted", StateAccepted}, {"pending", StatePending}, {"rejected", StateRejected}} {
 		path := s.path(known.dir, id+".csr")
 		existing, err := os.ReadFile(path)
 		if err != nil {
+			if known.state == StateAccepted && s.hasCert(id) {
+				// Accept archives the CSR beside the certificate, so this
+				// is an entry somebody edited by hand. Refusing is the
+				// fail-closed answer: `halite key remove` starts it over.
+				return "", fmt.Errorf("id %q is accepted but its request is missing; remove it and enroll again", id)
+			}
 			continue
 		}
 		if !bytes.Equal(bytes.TrimSpace(existing), bytes.TrimSpace(csrPEM)) {

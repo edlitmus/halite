@@ -69,11 +69,13 @@ identity entirely so that host can enroll again from scratch.
 * **It ignores the identity in the request.** The common name of an issued
   certificate is the id an operator accepted, never a value the requester
   chose. A host cannot ask to be called `master`.
-* **It refuses a second key for a known identity.** Re-sending the same
-  request is a safe no-op, so agents can retry; sending a *different* key
-  for an id that already exists is an error until an operator removes the
-  entry. That is the case that would otherwise let a new host silently take
-  over an existing one's identity.
+* **It refuses a second key for a known identity**, in every state —
+  pending, rejected, and accepted alike. Re-sending the same request is a
+  safe no-op, so agents can retry; sending a *different* key for an id that
+  already exists is an error until an operator removes the entry. That is
+  the case that would otherwise let a new host silently take over an
+  existing one's identity, and — because enrollment answers before
+  authentication — turn a guessed id into a way to enumerate the fleet.
 * **It verifies the request signature**, which proves the requester holds
   the matching private key.
 * **It scopes key usage.** Agent certificates are valid for client
