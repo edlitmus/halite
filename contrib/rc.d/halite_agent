@@ -18,7 +18,7 @@
 #   halite_agent_master      control plane host[:port], or several
 #                            comma-separated for failover. Overrides the
 #                            config file's `master`
-#   halite_agent_program     the halite binary (default /usr/local/bin/halite)
+#   halite_agent_binary     the halite binary (default /usr/local/bin/halite)
 #   halite_agent_flags       extra flags, appended after -config
 #   halite_agent_pidfile     (default /var/run/halite/halite_agent.pid)
 #   halite_agent_daemon_args flags for daemon(8) itself; add -r to have it
@@ -27,6 +27,10 @@
 # The agent applies states, so it runs as root. Output goes to syslog
 # under the daemon facility.
 
+# Note the name: rc.subr reserves ${name}_program and uses it to replace
+# $command, which here is daemon(8). Calling this halite_agent_program
+# made rc.subr run halite with daemon's arguments — "unknown command -S".
+#
 . /etc/rc.subr
 
 name="halite_agent"
@@ -36,7 +40,7 @@ load_rc_config $name
 
 : ${halite_agent_enable:="NO"}
 : ${halite_agent_config:="/usr/local/etc/halite/agent.conf"}
-: ${halite_agent_program:="/usr/local/bin/halite"}
+: ${halite_agent_binary:="/usr/local/bin/halite"}
 : ${halite_agent_master:=""}
 : ${halite_agent_flags:=""}
 : ${halite_agent_pidfile:="/var/run/halite/${name}.pid"}
@@ -47,12 +51,20 @@ if [ -n "${halite_agent_master}" ]; then
 	halite_agent_master_flag="-master ${halite_agent_master}"
 fi
 
+# rc.subr builds "$command $rc_flags $command_args", and $command here is
+# daemon(8) — so anything left in halite_agent_flags would be passed to
+# daemon rather than to halite. Take the operator's flags, put them where
+# they belong (after the subcommand, below), and leave rc.subr nothing to
+# splice in.
+halite_agent_extra_flags="${halite_agent_flags}"
+halite_agent_flags=""
+
 pidfile="${halite_agent_pidfile}"
-procname="${halite_agent_program}"
+procname="${halite_agent_binary}"
 command="/usr/sbin/daemon"
 command_args="-S -T ${name} -p ${pidfile} ${halite_agent_daemon_args} \
-    ${halite_agent_program} agent -config ${halite_agent_config} \
-    ${halite_agent_master_flag} ${halite_agent_flags}"
+    ${halite_agent_binary} agent -config ${halite_agent_config} \
+    ${halite_agent_master_flag} ${halite_agent_extra_flags}"
 
 start_precmd="halite_agent_precmd"
 

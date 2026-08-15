@@ -161,6 +161,14 @@ halite at boot does not mean keeping a command line in `rc.conf`.
 * A setting the daemon does not have is an error naming it, not a warning.
   A config file that quietly did nothing would surface as a fleet behaving
   oddly rather than as a daemon saying why.
+* The rc.d scripts name the binary `halite_{master,agent}_binary`, **not**
+  `_program`: rc.subr reserves `${name}_program` and uses it to replace
+  `$command`, so that spelling made it run halite with `daemon(8)`'s
+  arguments (`unknown command "-S"`). For the same reason the scripts
+  move `${name}_flags` aside before `run_rc_command`, since rc.subr
+  splices it in as `$command $rc_flags $command_args` — daemon's flag
+  position, not halite's. Two checks in `internal/docs` now fail on
+  either mistake.
 * `contrib/rc.d/halite_master` and `halite_agent` wrap the daemon in
   `daemon(8)` with `-S`, so output goes to syslog. Neither supervises by
   default — FreeBSD's rc does not, and adding it silently would surprise

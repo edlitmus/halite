@@ -92,7 +92,7 @@ service halite_master start
 |---|---|---|
 | `halite_master_enable` | `NO` | run the control plane at boot |
 | `halite_master_config` | `/usr/local/etc/halite/master.conf` | settings file |
-| `halite_master_program` | `/usr/local/bin/halite` | the binary |
+| `halite_master_binary` | `/usr/local/bin/halite` | the binary. **Not** `_program`: rc.subr reserves that name and would run halite in place of `daemon(8)` |
 | `halite_master_flags` | — | extra flags, appended after `-config` |
 | `halite_master_user` | `root` | account to run as |
 | `halite_master_pidfile` | `/var/run/halite/halite_master.pid` | its directory is created for `halite_master_user`; an existing one is left alone |
@@ -109,7 +109,7 @@ service halite_agent start
 | `halite_agent_enable` | `NO` | run the agent at boot |
 | `halite_agent_config` | `/usr/local/etc/halite/agent.conf` | settings file |
 | `halite_agent_master` | — | control plane host[:port], or several comma-separated. Overrides the file's `master` |
-| `halite_agent_program` | `/usr/local/bin/halite` | the binary |
+| `halite_agent_binary` | `/usr/local/bin/halite` | the binary (see the note on the master's) |
 | `halite_agent_flags` | — | extra flags, appended after `-config` |
 | `halite_agent_pidfile` | `/var/run/halite/halite_agent.pid` | its directory is created if missing |
 | `halite_agent_daemon_args` | — | flags for `daemon(8)`; `-r` restarts the agent if it exits |

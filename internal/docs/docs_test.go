@@ -562,3 +562,53 @@ func TestEveryControlPlaneSettingIsReachable(t *testing.T) {
 		t.Fatalf("only found %d settings; this check would pass on an empty struct", found)
 	}
 }
+
+// rcReservedNames are the ${name}_* variables rc.subr(8) defines itself.
+// Setting one gives it rc.subr's meaning, not the script's — and
+// ${name}_program silently replaces $command, which is how these scripts
+// shipped running halite with daemon(8)'s arguments.
+var rcReservedNames = []string{
+	"program", "chroot", "chdir", "cpuset", "env", "env_file", "fib",
+	"nice", "oomprotect", "umask", "group", "groups", "prepend", "setup",
+	"login_class", "limits", "offcmd", "audit_user",
+}
+
+// TestRcScriptsDoNotShadowRcSubr keeps a sysrc knob from colliding with a
+// variable the framework owns. `_user` and `_flags` are not listed: the
+// scripts use `_user` exactly as rc.subr means it, and `_flags` is
+// handled below.
+func TestRcScriptsDoNotShadowRcSubr(t *testing.T) {
+	for _, script := range []string{"contrib/rc.d/halite_master", "contrib/rc.d/halite_agent"} {
+		body := read(t, script)
+		service := strings.TrimPrefix(filepath.Base(script), "")
+		for _, reserved := range rcReservedNames {
+			assignment := regexp.MustCompile(`(?m)^: \$\{` + service + `_` + reserved + `:`)
+			if assignment.MatchString(body) {
+				t.Errorf("%s sets %s_%s, which rc.subr defines itself — pick another name",
+					script, service, reserved)
+			}
+		}
+	}
+}
+
+// TestRcScriptsKeepFlagsAwayFromDaemon covers the other half of the same
+// mistake. rc.subr builds "$command $rc_flags $command_args", so with
+// daemon(8) as $command anything left in ${name}_flags is passed to
+// daemon rather than to halite.
+func TestRcScriptsKeepFlagsAwayFromDaemon(t *testing.T) {
+	for _, script := range []string{"contrib/rc.d/halite_master", "contrib/rc.d/halite_agent"} {
+		body := read(t, script)
+		service := filepath.Base(script)
+		if !strings.Contains(body, `command="/usr/sbin/daemon"`) {
+			continue // not wrapping daemon(8); rc_flags lands where it should
+		}
+		if !strings.Contains(body, service+`_flags=""`) {
+			t.Errorf("%s wraps daemon(8) but never empties %s_flags, so an operator's flags would go to daemon",
+				script, service)
+		}
+		if !strings.Contains(body, service+`_extra_flags="${`+service+`_flags}"`) {
+			t.Errorf("%s empties %s_flags without saving it first: an operator's flags would be dropped",
+				script, service)
+		}
+	}
+}

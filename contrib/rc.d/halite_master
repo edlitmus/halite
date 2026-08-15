@@ -14,7 +14,7 @@
 #   halite_master_enable      run the control plane at boot (default NO)
 #   halite_master_config      settings file
 #                             (default /usr/local/etc/halite/master.conf)
-#   halite_master_program     the halite binary
+#   halite_master_binary     the halite binary
 #                             (default /usr/local/bin/halite)
 #   halite_master_flags       extra flags, appended after -config
 #   halite_master_user        account to run as (default root)
@@ -29,6 +29,10 @@
 # halite_master_user is worth setting to an account that owns exactly
 # those. Output goes to syslog under the daemon facility.
 
+# Note the name: rc.subr reserves ${name}_program and uses it to replace
+# $command, which here is daemon(8). Calling this halite_master_program
+# made rc.subr run halite with daemon's arguments — "unknown command -S".
+#
 . /etc/rc.subr
 
 name="halite_master"
@@ -38,17 +42,25 @@ load_rc_config $name
 
 : ${halite_master_enable:="NO"}
 : ${halite_master_config:="/usr/local/etc/halite/master.conf"}
-: ${halite_master_program:="/usr/local/bin/halite"}
+: ${halite_master_binary:="/usr/local/bin/halite"}
 : ${halite_master_flags:=""}
 : ${halite_master_user:="root"}
 : ${halite_master_pidfile:="/var/run/halite/${name}.pid"}
 : ${halite_master_daemon_args:=""}
 
+# rc.subr builds "$command $rc_flags $command_args", and $command here is
+# daemon(8) — so anything left in halite_master_flags would be passed to
+# daemon rather than to halite. Take the operator's flags, put them where
+# they belong (after the subcommand, below), and leave rc.subr nothing to
+# splice in.
+halite_master_extra_flags="${halite_master_flags}"
+halite_master_flags=""
+
 pidfile="${halite_master_pidfile}"
-procname="${halite_master_program}"
+procname="${halite_master_binary}"
 command="/usr/sbin/daemon"
 command_args="-S -T ${name} -p ${pidfile} ${halite_master_daemon_args} \
-    ${halite_master_program} master -config ${halite_master_config} ${halite_master_flags}"
+    ${halite_master_binary} master -config ${halite_master_config} ${halite_master_extra_flags}"
 
 start_precmd="halite_master_precmd"
 
