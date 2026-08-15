@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+Documentation is now part of the definition of done rather than a habit.
+`internal/docs` holds no code — only checks that read the tree from disk
+and hold this repository's prose to it:
+
+* every state function appears in `docs/states.md`, and every heading
+  there names a state that exists;
+* every CLI command and flag is documented in the README or `docs/` — the
+  changelog does not count, since a flag mentioned only in a release note
+  is one nobody can look up;
+* every internal markdown link resolves, and `docs/architecture.md` lists
+  every package;
+* every example compiles, checked under FreeBSD, Linux, and Windows grains
+  so a platform guard cannot hide one from the check;
+* no state function is written without the colon that makes it a mapping
+  key — the mistake that reads correctly and does not parse;
+* the counts quoted in the README and the parity map match the registry.
+
+They run inside `make test`, so `make check` — what the README calls the
+definition of done — now fails on a change that leaves a doc behind.
+`make docs` runs them alone while editing prose. Each check was verified
+by breaking the thing it exists to catch.
+
+Fixed while writing them: `docs/states.md` abbreviated one combined
+heading (`### alternatives.install / remove / set`), which named neither
+`alternatives.remove` nor `alternatives.set` in a form anybody could grep
+for.
+
 ## 0.9.0 — 2026-08-14
 
 P6 continues, and reaches the two things a FreeBSD fleet runs workloads

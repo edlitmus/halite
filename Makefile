@@ -1,7 +1,7 @@
 BIN     := bin/halite
 TARGETS := freebsd/amd64 freebsd/arm64 linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64
 
-.PHONY: all build test race vet check cross clean
+.PHONY: all build test race vet check docs cross clean
 
 all: build
 
@@ -22,7 +22,16 @@ race:
 vet:
 	go vet ./...
 
-# What to run before calling a change done.
+# The documentation checks: every state in the module reference, every
+# command and flag documented, every link resolving, every example
+# compiling, and the counts matching the registry. They are part of `test`
+# already — this target is for running them alone while editing docs.
+docs:
+	go test ./internal/docs/
+
+# What to run before calling a change done. Documentation is not a
+# separate step: `test` includes the checks in internal/docs, so a change
+# that leaves a doc behind fails here rather than shipping.
 check: vet test race
 
 cross:

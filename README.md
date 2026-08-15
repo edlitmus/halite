@@ -56,8 +56,17 @@ make            # builds ./bin/halite for the host
 make cross      # builds dist/halite-<os>-<arch> for all targets
 make test       # go test ./...
 make race       # the same under the race detector
+make docs       # the documentation checks alone
 make check      # vet, test, and race — what to run before calling it done
 ```
+
+**Definition of done**: `make check` passes. That includes the checks in
+`internal/docs`, which hold this repository's prose to its code — every
+state function appears in the module reference, every command and flag is
+documented, every internal link resolves, every example compiles, and the
+counts quoted in the README and the parity map match the registry. A
+change that leaves the documentation behind fails the build rather than
+shipping.
 
 Requires Go 1.25+ (the version go.mod declares). No other dependencies.
 

@@ -475,7 +475,7 @@ writing a file nothing reads.
 
 ## alternatives
 
-### alternatives.install / remove / set
+### alternatives.install / alternatives.remove / alternatives.set
 
 Drive the alternatives system (`update-alternatives`, or `alternatives`
 on RHEL).

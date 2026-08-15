@@ -24,6 +24,7 @@ internal/orch/       ordered fleet-wide runs
 internal/schedule/   work an agent runs on its own clock
 internal/extmod/     external modules: executables in the state tree
 internal/compat/     reads a Salt tree and reports what halite can use
+internal/docs/       no code: the checks that hold the docs to the code
 ```
 
 ## Pipeline
