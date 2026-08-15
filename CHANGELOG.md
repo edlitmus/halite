@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+Security fixes from an audit of the state modules, the external-module
+runner, and the parsers — the surface the first audit explicitly left
+alone. Every finding below was reproduced before it was fixed.
+
+* **Mode and ownership are no longer applied through a symlink.** `chmod`
+  and `chown` follow one, so a path an unprivileged user could
+  pre-create — a file under an app-owned directory — let a root state
+  widen or take ownership of any file on the host. A state that sets only
+  `mode`, `user`, or `group` on a symlink now fails naming the link;
+  `follow_symlinks: true` is the opt-in. Writing *content* was already
+  safe and is unguarded: the rename replaces the link and leaves its
+  target alone. Covers `file.managed`, `file.directory`, `file.recurse`,
+  the edit-style states, and `x509`.
+* **`ssh_auth.present` refuses a symlinked `.ssh` or key file.**
+  `MkdirAll` is satisfied by a link to an existing directory and `chown`
+  follows it, so `ln -s /etc ~/.ssh` had root hand `/etc` to the account
+  the key was being added for. That path belongs to the account by
+  definition, so there is no opt-in here.
+* **A group- or world-writable external module is refused**, as is one in
+  a writable directory. `_modules/` programs run with the agent's
+  privileges and the state tree's permission bits survive to an agent's
+  cache, so a single `chmod 777` in the tree meant local root on every
+  managed host.
+* **`pkgrepo.managed` honours `show_diff`.** A repository URL routinely
+  carries a token, and the diff went to the control plane, the returners,
+  and the event bus with no way to suppress it — while
+  `pillar-security.md` names `show_diff` as the mitigation.
+* **The mine's trust boundary is documented.** Agent *names* are
+  authenticated from the publishing certificate; the values are claims
+  from another host. `docs/events.md` now says which uses are sound.
+
+Clean, and worth recording: every module runs commands as argv rather
+than through a shell (`cmd.run` and the `unless`/`onlyif` gates are the
+deliberate exceptions), `halite ssh` quotes every interpolated value,
+`archive.extracted` refuses a remote source without a `source_hash`,
+private keys are written 0600 before the rename, no state puts a secret
+on a command line, and the SLS parser took 5000-deep nesting and 200k
+keys without a crash.
+
 New: **agents renew their own certificates.** An agent certificate is
 good for a year, and until now nothing replaced it — a fleet enrolled on
 one day stopped connecting exactly a year later, with no way back but
