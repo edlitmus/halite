@@ -53,6 +53,50 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	return nil
 }
 
+// FollowSymlinksArg is the argument that lets a state change the mode or
+// ownership of what a symlink points at.
+const FollowSymlinksArg = "follow_symlinks"
+
+// setMode applies a mode, refusing to do it through a symlink.
+func setMode(path string, mode os.FileMode, follow bool) error {
+	if err := refuseSymlink(path, follow); err != nil {
+		return err
+	}
+	return os.Chmod(path, mode)
+}
+
+// setOwner applies ownership, refusing to do it through a symlink.
+func setOwner(path string, uid, gid int, follow bool) error {
+	if err := refuseSymlink(path, follow); err != nil {
+		return err
+	}
+	return chown(path, uid, gid)
+}
+
+// refuseSymlink stops a mode or ownership change from landing on whatever
+// a link points at. Writing *content* is safe without this — the write
+// goes to a temp file and the rename replaces the link, leaving its
+// target alone — but chmod and chown follow, so a path an unprivileged
+// user can pre-create is otherwise a way to have a root state widen or
+// take ownership of any file on the host.
+//
+// A state that means it says follow_symlinks: true.
+func refuseSymlink(path string, follow bool) error {
+	if follow {
+		return nil
+	}
+	info, err := os.Lstat(path)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	target, err := os.Readlink(path)
+	if err != nil {
+		target = "its target"
+	}
+	return fmt.Errorf("%s is a symlink to %s: refusing to change the mode or owner of a link's target (set %s: true to allow it)",
+		path, target, FollowSymlinksArg)
+}
+
 // resolveOwner turns user/group names (or numeric IDs) into uid/gid.
 // Returns -1 for unspecified fields.
 func resolveOwner(userName, groupName string) (uid, gid int, err error) {
@@ -113,6 +157,7 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 	mode := Str(args, "mode", "")
 	makedirs := Bool(args, "makedirs", false)
 	showDiff := Bool(args, "show_diff", true)
+	follow := Bool(args, FollowSymlinksArg, false)
 
 	wantUID, wantGID, ownerErr := resolveOwner(Str(args, "user", ""), Str(args, "group", ""))
 	if ownerErr != nil && !c.Test {
@@ -231,7 +276,7 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 		// The rename resets ownership to this process; put back an owner
 		// the caller pinned but that was not otherwise drifting.
 		if !needOwner && (wantUID >= 0 || wantGID >= 0) {
-			if err := chown(name, wantUID, wantGID); err != nil {
+			if err := setOwner(name, wantUID, wantGID, follow); err != nil {
 				return resFail("chown %s: %v", name, err)
 			}
 		}
@@ -242,14 +287,14 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 		}
 	}
 	if needMode {
-		if err := os.Chmod(name, wantMode); err != nil {
-			return resFail("chmod %s: %v", name, err)
+		if err := setMode(name, wantMode, follow); err != nil {
+			return resFail("%v", err)
 		}
 		changes["mode"] = mode
 	}
 	if needOwner {
-		if err := chown(name, wantUID, wantGID); err != nil {
-			return resFail("chown %s: %v", name, err)
+		if err := setOwner(name, wantUID, wantGID, follow); err != nil {
+			return resFail("%v", err)
 		}
 		changes["owner"] = fmt.Sprintf("uid=%d gid=%d", wantUID, wantGID)
 	}
@@ -259,6 +304,7 @@ func fileManaged(c *Ctx, id string, args map[string]any) Result {
 func fileDirectory(c *Ctx, id string, args map[string]any) Result {
 	name := Str(args, "name", id)
 	mode := Str(args, "mode", "")
+	follow := Bool(args, FollowSymlinksArg, false)
 	wantUID, wantGID, ownerErr := resolveOwner(Str(args, "user", ""), Str(args, "group", ""))
 	if ownerErr != nil && !c.Test {
 		return resFail("%v", ownerErr)
@@ -304,22 +350,22 @@ func fileDirectory(c *Ctx, id string, args map[string]any) Result {
 		}
 		if haveMode {
 			// MkdirAll's mode is filtered by the umask; assert the real one.
-			if err := os.Chmod(name, wantMode); err != nil {
-				return resFail("chmod %s: %v", name, err)
+			if err := setMode(name, wantMode, follow); err != nil {
+				return resFail("%v", err)
 			}
 		}
 		changes["directory"] = "created"
 	}
 	if needMode {
-		if err := os.Chmod(name, wantMode); err != nil {
-			return resFail("chmod %s: %v", name, err)
+		if err := setMode(name, wantMode, follow); err != nil {
+			return resFail("%v", err)
 		}
 		changes["mode"] = mode
 	}
 	if wantUID >= 0 || wantGID >= 0 {
 		if !exists || needOwner {
-			if err := chown(name, wantUID, wantGID); err != nil {
-				return resFail("chown %s: %v", name, err)
+			if err := setOwner(name, wantUID, wantGID, follow); err != nil {
+				return resFail("%v", err)
 			}
 			changes["owner"] = fmt.Sprintf("uid=%d gid=%d", wantUID, wantGID)
 		}

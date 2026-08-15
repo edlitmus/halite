@@ -82,7 +82,7 @@ func fileRecurse(c *Ctx, id string, args map[string]any) Result {
 	if c.Test {
 		return resWould(plan.summary("would be", dest))
 	}
-	if err := plan.apply(dest, fileMode, dirMode, wantUID, wantGID); err != nil {
+	if err := plan.apply(dest, fileMode, dirMode, wantUID, wantGID, Bool(args, FollowSymlinksArg, false)); err != nil {
 		return resFail("%v", err)
 	}
 	return resChanged(plan.summary("were", dest), plan.changes())
@@ -303,7 +303,7 @@ func driftedModes(managed []recurseEntry, fileMode, dirMode os.FileMode) []strin
 
 // apply performs the planned work: directories first, then files, then the
 // removals, then ownership and modes over everything managed.
-func (p recursePlan) apply(dest string, fileMode, dirMode os.FileMode, uid, gid int) error {
+func (p recursePlan) apply(dest string, fileMode, dirMode os.FileMode, uid, gid int, follow bool) error {
 	mkdirMode := dirMode
 	if mkdirMode == 0 {
 		mkdirMode = 0o755
@@ -343,14 +343,14 @@ func (p recursePlan) apply(dest string, fileMode, dirMode os.FileMode, uid, gid 
 				want = dirMode
 			}
 			if want != 0 {
-				if err := os.Chmod(e.path, want); err != nil {
-					return fmt.Errorf("chmod %s: %w", e.path, err)
+				if err := setMode(e.path, want, follow); err != nil {
+					return err
 				}
 			}
 		}
 		if uid >= 0 || gid >= 0 {
-			if err := chown(e.path, uid, gid); err != nil {
-				return fmt.Errorf("chown %s: %w", e.path, err)
+			if err := setOwner(e.path, uid, gid, follow); err != nil {
+				return err
 			}
 		}
 	}

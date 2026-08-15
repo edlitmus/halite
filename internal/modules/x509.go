@@ -196,8 +196,8 @@ func applyKeyPermissions(c *Ctx, path string, args map[string]any) error {
 	if err != nil || info.Mode().Perm() == want || c.Test {
 		return nil
 	}
-	if err := os.Chmod(path, want); err != nil {
-		return fmt.Errorf("chmod %s: %w", path, err)
+	if err := setMode(path, want, Bool(args, FollowSymlinksArg, false)); err != nil {
+		return err
 	}
 	return applyEditOwner(path, args)
 }

@@ -115,8 +115,8 @@ func applyEditOwner(name string, args map[string]any) error {
 	if err != nil {
 		return err
 	}
-	if err := chown(name, uid, gid); err != nil {
-		return fmt.Errorf("chown %s: %w", name, err)
+	if err := setOwner(name, uid, gid, Bool(args, FollowSymlinksArg, false)); err != nil {
+		return err
 	}
 	return nil
 }

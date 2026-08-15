@@ -163,3 +163,117 @@ func TestFileAbsentRemovesADanglingSymlink(t *testing.T) {
 		t.Error("symlink still present")
 	}
 }
+
+// symlinkTarget builds a 0600 file and a symlink pointing at it, which is
+// what an unprivileged user plants at a path a root state manages.
+func symlinkTarget(t *testing.T) (link, target string) {
+	t.Helper()
+	dir := t.TempDir()
+	target = filepath.Join(dir, "sensitive")
+	if err := os.WriteFile(target, []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link = filepath.Join(dir, "managed")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	return link, target
+}
+
+func modeOf(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st.Mode().Perm()
+}
+
+// TestFileManagedWillNotChmodThroughASymlink is the local privilege
+// escalation this guard exists for: chmod follows a link, so a path an
+// unprivileged user can pre-create would otherwise let a root state widen
+// any file on the host.
+func TestFileManagedWillNotChmodThroughASymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are unix-only")
+	}
+	link, target := symlinkTarget(t)
+
+	res := fileManaged(&Ctx{}, link, map[string]any{"mode": "0644"})
+	if res.Ok {
+		t.Error("managing only the mode of a symlink must fail")
+	}
+	if !strings.Contains(res.Comment, "symlink") {
+		t.Errorf("the comment should say why: %q", res.Comment)
+	}
+	if got := modeOf(t, target); got != 0o600 {
+		t.Errorf("the link's target is now %o, want 0600", got)
+	}
+}
+
+// TestFileManagedFollowsASymlinkWhenToldTo keeps the door open for a state
+// that means it.
+func TestFileManagedFollowsASymlinkWhenToldTo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are unix-only")
+	}
+	link, target := symlinkTarget(t)
+
+	res := fileManaged(&Ctx{}, link, map[string]any{"mode": "0644", "follow_symlinks": "true"})
+	if !res.Ok {
+		t.Fatalf("follow_symlinks: true should be allowed: %+v", res)
+	}
+	if got := modeOf(t, target); got != 0o644 {
+		t.Errorf("target mode = %o, want 0644", got)
+	}
+}
+
+// TestFileManagedWithContentReplacesTheSymlink is the case that must keep
+// working: the write goes to a temp file and the rename replaces the link,
+// so the target is never touched and there is nothing to refuse.
+func TestFileManagedWithContentReplacesTheSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are unix-only")
+	}
+	link, target := symlinkTarget(t)
+
+	res := fileManaged(&Ctx{}, link, map[string]any{"contents": "managed", "mode": "0644"})
+	if !res.Ok {
+		t.Fatalf("writing content through a managed path must work: %+v", res)
+	}
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Error("the link should have been replaced by a real file")
+	}
+	if b, err := os.ReadFile(target); err != nil || string(b) != "secret\n" {
+		t.Errorf("the target was modified: %q %v", b, err)
+	}
+}
+
+// TestFileDirectoryWillNotChmodThroughASymlink covers the same mistake on
+// a directory, where the target is somebody else's whole tree.
+func TestFileDirectoryWillNotChmodThroughASymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file modes are unix-only")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "real")
+	if err := os.Mkdir(target, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "managed")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+
+	res := fileDirectory(&Ctx{}, link, map[string]any{"mode": "0777"})
+	if res.Ok {
+		t.Error("managing the mode of a symlinked directory must fail")
+	}
+	if got := modeOf(t, target); got != 0o700 {
+		t.Errorf("the target directory is now %o, want 0700", got)
+	}
+}
