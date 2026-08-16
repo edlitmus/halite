@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 — 2026-08-16
+
+One change, and it is a port number: the control plane no longer listens
+on salt's 4506. This is the smallest release halite has cut and the only
+one that does not upgrade itself — a fleet moves both ends together or
+pins the old port on the master while it catches up. What it buys is a
+host that can run halite and salt at once with neither able to answer for
+the other.
 
 Changed: **the control plane's default port is 5617, not 4506.** halite
 took salt's port when it took salt's shape, and on a host running both
