@@ -58,7 +58,7 @@ func (s *Server) Dispatch(req transport.DispatchRequest, by string) (transport.D
 	byReactor := by == reactorSource
 	matched := s.registry.dispatch(job, byReactor)
 	sort.Strings(matched)
-	s.log.Printf("job %s: %s on %q dispatched to %d agent(s) by %q",
+	s.log.Infof("job %s: %s on %q dispatched to %d agent(s) by %q",
 		job.ID, job.Kind, job.Target, len(matched), by)
 
 	data := map[string]any{

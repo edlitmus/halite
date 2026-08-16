@@ -61,12 +61,12 @@ func (a *Agent) renewIfDue(ctx context.Context) bool {
 		// The current certificate is still valid — that is the whole point
 		// of starting well before it expires — so this is worth a line in
 		// the log and another attempt later, not an exit.
-		a.log.Printf("renewing the certificate: %v (expires %s)",
+		a.log.Warnf("renewing the certificate: %v (expires %s)",
 			err, a.expiresAt.Format(time.RFC3339))
 		return false
 	}
 	if err := ca.ReplaceFile(a.cfg.agentCert(), certPEM, 0o644); err != nil {
-		a.log.Printf("writing the renewed certificate: %v", err)
+		a.log.Errorf("writing the renewed certificate: %v", err)
 		return false
 	}
 	cert, err := ca.ParseCert(certPEM)
@@ -74,7 +74,7 @@ func (a *Agent) renewIfDue(ctx context.Context) bool {
 		return false
 	}
 	a.expiresAt = cert.NotAfter
-	a.log.Printf("certificate renewed; valid until %s", cert.NotAfter.Format(time.RFC3339))
+	a.log.Infof("certificate renewed; valid until %s", cert.NotAfter.Format(time.RFC3339))
 	return true
 }
 

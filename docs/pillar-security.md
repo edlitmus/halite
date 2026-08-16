@@ -46,8 +46,9 @@ chmod -R go-rwx     /usr/local/etc/halite/pillar
 non-root user from reading files inside, whatever their own modes are. Use
 `wheel` on FreeBSD and macOS, `root` on Linux.
 
-halite warns on stderr when it opens a pillar tree that group or others can
-read. The warning is not a failure — some setups deliberately run as a
+halite warns when it opens a pillar tree that group or others can read —
+on stderr for a one-shot command, and at `warn` in the control plane's log
+([service.md](service.md#logging)). The warning is not a failure — some setups deliberately run as a
 non-root user with a dedicated group — but an unexpected one means the tree
 is readable by every account on the box.
 
@@ -170,6 +171,12 @@ What the rest of the system does with results:
 * `halite run -json` and `halite ssh -json` print whatever the agent
   reported. Redirecting that into a file or a CI log puts it wherever that
   log goes.
+* An agent logs the **error text** of a job that failed, which is not the
+  content of a change but can quote what went wrong — a template that
+  failed to render, a command that returned a message. On stderr that
+  goes wherever the init system puts it; under `-log-file`
+  ([service.md](service.md#writing-to-a-file)) it is on disk at mode
+  `0640` until something rotates it.
 
 ## Private keys
 

@@ -11,9 +11,10 @@ package beacon
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
+
+	"github.com/edlitmus/halite/internal/logging"
 )
 
 // DefaultInterval is how often a beacon checks when its config does not
@@ -47,11 +48,11 @@ type Emitter func(name string, data map[string]any)
 type Runner struct {
 	beacons []Beacon
 	emit    Emitter
-	log     *log.Logger
+	log     *logging.Logger
 }
 
 // NewRunner builds a runner. It does nothing until Run is called.
-func NewRunner(beacons []Beacon, emit Emitter, logger *log.Logger) *Runner {
+func NewRunner(beacons []Beacon, emit Emitter, logger *logging.Logger) *Runner {
 	return &Runner{beacons: beacons, emit: emit, log: logger}
 }
 
@@ -98,7 +99,7 @@ func (r *Runner) watch(ctx context.Context, b Beacon) {
 func (r *Runner) tick(b Beacon) {
 	defer func() {
 		if problem := recover(); problem != nil {
-			r.log.Printf("beacon %s: panicked: %v", b.Name(), problem)
+			r.log.Errorf("beacon %s: panicked: %v", b.Name(), problem)
 		}
 	}()
 	for _, emission := range b.Check() {

@@ -2,18 +2,17 @@ package mine
 
 import (
 	"context"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
-func quietLogger() *log.Logger { return log.New(io.Discard, "", 0) }
+func quietLogger() *logging.Logger { return logging.Discard() }
 
 func writeConfig(t *testing.T, content string) string {
 	t.Helper()

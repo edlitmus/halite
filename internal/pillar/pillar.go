@@ -39,7 +39,7 @@ func PermissionWarning(root string) string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"warning: pillar tree %s is mode %04o; anyone on this host can read it (chmod 0700)",
+		"pillar tree %s is mode %04o; anyone on this host can read it (chmod 0700)",
 		root, mode)
 }
 

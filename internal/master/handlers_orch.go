@@ -40,7 +40,7 @@ func (s *Server) handleOrchestrate(w http.ResponseWriter, r *http.Request, peer 
 
 	id := newJobID()
 	s.registry.startOrchestration(id, req.Name, peer.ID)
-	s.log.Printf("orchestration %s: %q started by %q (%d step(s))",
+	s.log.Infof("orchestration %s: %q started by %q (%d step(s))",
 		id, req.Name, peer.ID, len(states))
 
 	go s.runOrchestration(id, req, states, peer.ID)
@@ -79,7 +79,7 @@ func (s *Server) runOrchestration(id string, req transport.OrchestrateRequest, s
 			failed++
 		}
 	}
-	s.log.Printf("orchestration %s: finished, %d step(s), %d failed", id, len(outcomes), failed)
+	s.log.Infof("orchestration %s: finished, %d step(s), %d failed", id, len(outcomes), failed)
 }
 
 // loadOrchestration reads an orchestration by name from the orchestration

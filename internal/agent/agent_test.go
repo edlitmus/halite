@@ -2,17 +2,16 @@ package agent
 
 import (
 	"bytes"
-	"io"
-	"log"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
-func quietLogger() *log.Logger { return log.New(io.Discard, "", 0) }
+func quietLogger() *logging.Logger { return logging.Discard() }
 
 func TestNewRequiresAControlPlane(t *testing.T) {
 	if _, err := New(Config{ID: "web1"}, map[string]any{}, quietLogger()); err == nil {

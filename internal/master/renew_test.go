@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/x509"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/agent"
 	"github.com/edlitmus/halite/internal/ca"
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -159,7 +158,7 @@ func TestAgentRenewsAgainstARunningControlPlane(t *testing.T) {
 		CacheDir:      t.TempDir(),
 		RetryInterval: 20 * time.Millisecond,
 		RenewBefore:   2 * ca.AgentCertLifetime,
-	}, map[string]any{"host": "web1"}, log.New(io.Discard, "", 0))
+	}, map[string]any{"host": "web1"}, logging.Discard())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +313,7 @@ func TestAgentRecoversFromAnExpiredCertificate(t *testing.T) {
 			PKIDir:        pki,
 			CacheDir:      t.TempDir(),
 			RetryInterval: 20 * time.Millisecond,
-		}, map[string]any{"host": "web1"}, log.New(io.Discard, "", 0))
+		}, map[string]any{"host": "web1"}, logging.Discard())
 		if err != nil {
 			t.Fatal(err)
 		}

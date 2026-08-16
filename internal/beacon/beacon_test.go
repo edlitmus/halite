@@ -3,17 +3,17 @@ package beacon
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/edlitmus/halite/internal/logging"
 )
 
-func quietLogger() *log.Logger { return log.New(io.Discard, "", 0) }
+func quietLogger() *logging.Logger { return logging.Discard() }
 
 func TestDiskBeaconIsEdgeTriggered(t *testing.T) {
 	usage := 50
@@ -325,7 +325,7 @@ func (exploding) Check() []Emission       { panic("boom") }
 
 func TestABrokenBeaconDoesNotTakeDownTheAgent(t *testing.T) {
 	var logged strings.Builder
-	runner := NewRunner([]Beacon{exploding{}}, func(string, map[string]any) {}, log.New(&logged, "", 0))
+	runner := NewRunner([]Beacon{exploding{}}, func(string, map[string]any) {}, logging.New(&logged, "", logging.Debug))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

@@ -1,5 +1,68 @@
 # Changelog
 
+## Unreleased
+
+New: **the daemons take a log level and a log file.** Until now both
+printed every line they had to stderr and nothing else, which is right
+under `daemon(8)` or journald and no help at all on a host running
+neither.
+
+* `-log-level error|warn|info|debug` on `halite master` and
+  `halite agent`, `info` by default — the lines the fleet has always
+  printed, so an upgrade does not quiet a host that was working.
+* Every existing message was classified rather than moved wholesale:
+  `error` is work that was lost, `warn` is something refused or retried
+  that the daemon carried on from, `info` is the fleet working. Nothing
+  is ever silent — a daemon that says nothing when it drops a result
+  would be worse than a noisy one.
+* `debug` adds what was missing when an agent is not getting what it
+  asks for: one line per authenticated request the control plane serves,
+  and what each poll came back with.
+* net/http's own errors are now `warn` rather than unlabelled. They are
+  worth the level: the listener finishes the handshake for a caller that
+  offers no certificate and turns it away in the handlers, so what
+  reaches that sink is a caller that offered one and failed
+  verification — a foreign or expired certificate being tried.
+* `-log-file PATH` writes there instead, creating the directory,
+  appending rather than truncating, at mode `0640`. Starting by hand
+  still prints one line to stderr saying where the log went.
+* **`SIGHUP` reopens it**, which is the handshake `newsyslog(8)` and
+  logrotate expect; without it a rotated log keeps growing on a file
+  nobody can find. Both are configured in
+  [docs/service.md](docs/service.md#rotation). A daemon on stderr owns
+  nothing to reopen, so `SIGHUP` there does nothing rather than failing.
+* Both are settings in `master.conf` and `agent.conf` like every other
+  flag, and the level token goes in front of the message rather than
+  changing the line's shape, so anything already reading these logs
+  keeps working.
+
+Verified by starting a real control plane and agent, enrolling, running
+jobs through them at each level, and rotating the file underneath the
+running master with `mv` and `kill -HUP`. Not exercised: Windows, where
+`SIGHUP` does not arrive and `-log-file` is the only way to keep a log.
+
+Fixed, from auditing the documentation against the code afterwards:
+
+* `docs/fleet.md` said both daemons shut down on SIGINT and SIGTERM and
+  stopped there; SIGHUP now matters. It also gained a `Log` row beside
+  the other ports-and-files defaults.
+* `docs/pillar-security.md` said halite warns **on stderr** about a
+  readable pillar tree — true for a one-shot command, no longer the whole
+  story for a daemon with a log file. Its list of everywhere a pillar
+  value can surface also had no entry for `-log-file`, which is a new
+  on-disk destination; an agent logs the error *text* of a failed job,
+  which can quote a template that did not render.
+* `examples/README.md` never listed `master.conf` or `agent.conf` at all,
+  though `docs/service.md` points readers at them. Long-standing, not new
+  in this release.
+* The `fleet mode` usage block, the README's two pointers to
+  `docs/service.md`, and the README's `Status:` line, which still said
+  v0.9.0 one release after the fact.
+
+The pillar-tree warning lost its literal `warning: ` prefix, which read as
+`WARN  warning: ...` once a level was in front of it. The one-shot command
+that has no level to carry it adds the word itself.
+
 ## 0.10.0 — 2026-08-15
 
 The release where a fleet stops having a one-year fuse. Agent

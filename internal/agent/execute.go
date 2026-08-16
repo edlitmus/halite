@@ -20,7 +20,7 @@ import (
 func (a *Agent) execute(ctx context.Context, job transport.Job) transport.JobResult {
 	started := time.Now()
 	result := transport.JobResult{JobID: job.ID, AgentID: a.cfg.ID}
-	a.log.Printf("job %s: %s (test=%v)", job.ID, job.Kind, job.Test)
+	a.log.Infof("job %s: %s (test=%v)", job.ID, job.Kind, job.Test)
 
 	switch job.Kind {
 	case transport.KindGrains:
@@ -45,7 +45,7 @@ func (a *Agent) execute(ctx context.Context, job transport.Job) transport.JobRes
 	result.Finished = time.Now().UTC()
 	result.Duration = time.Since(started)
 	if result.Error != "" {
-		a.log.Printf("job %s: %s", job.ID, result.Error)
+		a.log.Errorf("job %s: %s", job.ID, result.Error)
 	}
 	return result
 }

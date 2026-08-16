@@ -12,7 +12,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -22,6 +21,7 @@ import (
 	"github.com/edlitmus/halite/internal/beacon"
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/event"
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/mine"
 	"github.com/edlitmus/halite/internal/schedule"
 	"github.com/edlitmus/halite/internal/transport"
@@ -68,7 +68,7 @@ func (c Config) agentCert() string { return filepath.Join(c.PKIDir, "agent.crt")
 // Agent is a running agent.
 type Agent struct {
 	cfg    Config
-	log    *log.Logger
+	log    *logging.Logger
 	grains map[string]any
 
 	// client is replaced on failover while beacons and the mine are
@@ -100,7 +100,7 @@ func (a *Agent) setClient(client *transport.Client) {
 // New builds an agent. Grains are collected once by the caller: they
 // describe the host, and a long-running agent that re-derived them on every
 // poll would spend most of its life shelling out.
-func New(cfg Config, grains map[string]any, logger *log.Logger) (*Agent, error) {
+func New(cfg Config, grains map[string]any, logger *logging.Logger) (*Agent, error) {
 	cfg.withDefaults()
 	if len(cfg.Masters) == 0 {
 		return nil, fmt.Errorf("no control plane address (-master)")
@@ -131,7 +131,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	if expiry, err := a.certExpiry(); err == nil {
 		a.expiresAt = expiry
 		if time.Until(expiry) <= a.cfg.RenewBefore {
-			a.log.Printf("certificate expires %s; renewing on the first connection",
+			a.log.Warnf("certificate expires %s; renewing on the first connection",
 				expiry.Format(time.RFC3339))
 		}
 	}
@@ -176,11 +176,11 @@ func (a *Agent) connectSomewhere(ctx context.Context, tlsCfg *tls.Config) bool {
 		a.setClient(transport.NewJSONClient(addr, tlsCfg, 5*time.Minute))
 		if err := a.sayHello(ctx); err != nil {
 			if ctx.Err() == nil {
-				a.log.Printf("%s: %v", addr, err)
+				a.log.Warnf("%s: %v", addr, err)
 			}
 			continue
 		}
-		a.log.Printf("agent %q connected to %s", a.cfg.ID, addr)
+		a.log.Infof("agent %q connected to %s", a.cfg.ID, addr)
 		return true
 	}
 	return false
@@ -189,17 +189,17 @@ func (a *Agent) connectSomewhere(ctx context.Context, tlsCfg *tls.Config) bool {
 func (a *Agent) startWatchers(ctx context.Context) {
 	if len(a.cfg.Beacons) > 0 {
 		runner := beacon.NewRunner(a.cfg.Beacons, a.raiseBeacon, a.log)
-		a.log.Printf("watching with %d beacon(s)", runner.Count())
+		a.log.Infof("watching with %d beacon(s)", runner.Count())
 		go runner.Run(ctx)
 	}
 	if len(a.cfg.MineJobs) > 0 {
 		runner := mine.NewRunner(a.cfg.MineJobs, a.grains, a.publishMine, a.log)
-		a.log.Printf("publishing %d function(s) to the mine", runner.Count())
+		a.log.Infof("publishing %d function(s) to the mine", runner.Count())
 		go runner.Run(ctx)
 	}
 	if len(a.cfg.Schedule) > 0 {
 		runner := schedule.NewRunner(a.cfg.Schedule, a.runScheduled, a.log)
-		a.log.Printf("running %d scheduled job(s)", runner.Count())
+		a.log.Infof("running %d scheduled job(s)", runner.Count())
 		go runner.Run(ctx)
 	}
 }
@@ -230,7 +230,7 @@ func (a *Agent) runScheduled(ctx context.Context, job schedule.Job) {
 		data["error"] = result.Error
 	}
 	a.postEvent(fmt.Sprintf(event.TagSchedule, a.cfg.ID, job.Name), data)
-	a.log.Printf("schedule %s: ok=%v changed=%d failed=%d",
+	a.log.Infof("schedule %s: ok=%v changed=%d failed=%d",
 		job.Name, result.Ok, result.Changed, result.Failed)
 }
 
@@ -247,15 +247,16 @@ func (a *Agent) pollLoop(ctx context.Context) {
 		var jobs []transport.Job
 		if err := client.Get(ctx, transport.PathJobs, &jobs); err != nil {
 			if ctx.Err() == nil {
-				a.log.Printf("poll: %v", err)
+				a.log.Warnf("poll: %v", err)
 				sleepCtx(ctx, a.cfg.RetryInterval)
 			}
 			return
 		}
+		a.log.Debugf("poll: %d job(s)", len(jobs))
 		for _, job := range jobs {
 			result := a.execute(ctx, job)
 			if err := client.Post(ctx, transport.PathResults, result, nil); err != nil {
-				a.log.Printf("job %s: reporting result: %v", job.ID, err)
+				a.log.Errorf("job %s: reporting result: %v", job.ID, err)
 			}
 		}
 	}
@@ -277,7 +278,7 @@ func (a *Agent) sayHello(ctx context.Context) error {
 // still holds, and blocking a watcher on a flaky connection helps nobody.
 func (a *Agent) raiseBeacon(name string, data map[string]any) {
 	if a.postEvent(fmt.Sprintf(event.TagBeacon, a.cfg.ID, name), data) {
-		a.log.Printf("beacon %s fired: %v", name, data)
+		a.log.Infof("beacon %s fired: %v", name, data)
 	}
 }
 
@@ -294,7 +295,7 @@ func (a *Agent) postEvent(tag string, data map[string]any) bool {
 
 	ev := transport.Event{Tag: tag, Time: time.Now().UTC(), Data: data}
 	if err := client.Post(ctx, transport.PathEvents, ev, nil); err != nil {
-		a.log.Printf("event %s: %v", tag, err)
+		a.log.Warnf("event %s: %v", tag, err)
 		return false
 	}
 	return true
@@ -312,7 +313,7 @@ func (a *Agent) publishMine(function string, data map[string]any) {
 	}
 	report := transport.MineReport{Function: function, Data: data}
 	if err := client.Post(ctx, transport.PathMine, report, nil); err != nil {
-		a.log.Printf("mine %s: %v", function, err)
+		a.log.Warnf("mine %s: %v", function, err)
 	}
 }
 
@@ -322,7 +323,7 @@ func (a *Agent) publishMine(function string, data map[string]any) {
 func (a *Agent) fetchMine(ctx context.Context) map[string]any {
 	var raw transport.Mine
 	if err := a.currentClient().Get(ctx, transport.PathMine, &raw); err != nil {
-		a.log.Printf("mine: %v", err)
+		a.log.Warnf("mine: %v", err)
 		return map[string]any{}
 	}
 	return mine.ForTemplates(raw)

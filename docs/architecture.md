@@ -25,6 +25,7 @@ internal/schedule/   work an agent runs on its own clock
 internal/extmod/     external modules: executables in the state tree
 internal/compat/     reads a Salt tree and reports what halite can use
 internal/config/     daemon config files: flags without their dashes
+internal/logging/    levelled daemon logs, to stderr or a file
 internal/docs/       no code: the checks that hold the docs to the code
 ```
 

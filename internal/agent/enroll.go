@@ -26,7 +26,7 @@ func (a *Agent) ensureEnrolled(ctx context.Context) error {
 		// will not accept it on the wire. Enrolling again with the same
 		// key is the way back: the request is already on file there, so a
 		// control plane that recognises it reissues without an operator.
-		a.log.Printf("this agent's certificate expired on %s; asking to be issued a new one for the same key",
+		a.log.Warnf("this agent's certificate expired on %s; asking to be issued a new one for the same key",
 			expiry.Format(time.RFC3339))
 	}
 	csrPEM, err := a.ensureKeyAndRequest()
@@ -41,9 +41,9 @@ func (a *Agent) ensureEnrolled(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	a.log.Printf("enrolling as %q with %s", a.cfg.ID, strings.Join(a.cfg.Masters, ", "))
-	a.log.Printf("key fingerprint: %s", fingerprint)
-	a.log.Printf("accept it on the control plane with: halite key accept %s", a.cfg.ID)
+	a.log.Infof("enrolling as %q with %s", a.cfg.ID, strings.Join(a.cfg.Masters, ", "))
+	a.log.Infof("key fingerprint: %s", fingerprint)
+	a.log.Infof("accept it on the control plane with: halite key accept %s", a.cfg.ID)
 
 	// Enrollment runs before the agent has a certificate, so the client
 	// authenticates the control plane but cannot yet authenticate itself.
@@ -62,7 +62,7 @@ func (a *Agent) ensureEnrolled(ctx context.Context) error {
 			err := client.Post(ctx, transport.PathEnroll, request, &resp)
 			switch {
 			case err != nil:
-				a.log.Printf("enrollment via %s: %v", addr, err)
+				a.log.Warnf("enrollment via %s: %v", addr, err)
 			case resp.State == string(ca.StateAccepted):
 				// Checked before it is kept: a certificate that does not
 				// verify, or that belongs to another key, would take the
@@ -70,19 +70,19 @@ func (a *Agent) ensureEnrolled(ctx context.Context) error {
 				// An expired one lands here too, from a control plane too
 				// old to reissue.
 				if err := a.verifyIssued([]byte(resp.Cert), keyPEM); err != nil {
-					a.log.Printf("%s issued a certificate this agent cannot use: %v", addr, err)
+					a.log.Errorf("%s issued a certificate this agent cannot use: %v", addr, err)
 					continue
 				}
 				if err := ca.ReplaceFile(a.cfg.agentCert(), []byte(resp.Cert), 0o644); err != nil {
 					return fmt.Errorf("write certificate: %w", err)
 				}
-				a.log.Printf("enrolled: certificate written to %s", a.cfg.agentCert())
+				a.log.Infof("enrolled: certificate written to %s", a.cfg.agentCert())
 				return nil
 			case resp.State == string(ca.StateRejected):
 				return fmt.Errorf("enrollment rejected for %q; an operator must run 'halite key remove %s' before this host can retry",
 					a.cfg.ID, a.cfg.ID)
 			default:
-				a.log.Printf("waiting to be accepted as %q on %s", a.cfg.ID, addr)
+				a.log.Infof("waiting to be accepted as %q on %s", a.cfg.ID, addr)
 			}
 		}
 		if !sleepCtx(ctx, a.cfg.RetryInterval) {

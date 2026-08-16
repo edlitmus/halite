@@ -43,7 +43,7 @@ func (s *Server) handleAgentEvent(w http.ResponseWriter, r *http.Request, peer t
 		return
 	}
 	if err := agentMayRaise(peer.ID, ev.Tag); err != nil {
-		s.log.Printf("refused event %q from %q: %v", ev.Tag, peer.ID, err)
+		s.log.Warnf("refused event %q from %q: %v", ev.Tag, peer.ID, err)
 		writeError(w, http.StatusForbidden, "%v", err)
 		return
 	}

@@ -10,12 +10,12 @@ package mine
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/modules"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/yamlite"
@@ -43,11 +43,11 @@ type Runner struct {
 	jobs    []Job
 	grains  map[string]any
 	publish Publisher
-	log     *log.Logger
+	log     *logging.Logger
 }
 
 // NewRunner builds a runner. It does nothing until Run is called.
-func NewRunner(jobs []Job, grains map[string]any, publish Publisher, logger *log.Logger) *Runner {
+func NewRunner(jobs []Job, grains map[string]any, publish Publisher, logger *logging.Logger) *Runner {
 	return &Runner{jobs: jobs, grains: grains, publish: publish, log: logger}
 }
 
@@ -91,7 +91,7 @@ func (r *Runner) publishLoop(ctx context.Context, job Job) {
 func (r *Runner) publishOnce(function string) {
 	data, err := r.collect(function)
 	if err != nil {
-		r.log.Printf("mine %s: %v", function, err)
+		r.log.Errorf("mine %s: %v", function, err)
 		return
 	}
 	r.publish(function, data)

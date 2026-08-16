@@ -2,8 +2,6 @@ package master
 
 import (
 	"context"
-	"io"
-	"log"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -14,6 +12,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/archive"
 	"github.com/edlitmus/halite/internal/ca"
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -56,7 +55,7 @@ func newFleet(t *testing.T, cfg Config) *fleet {
 	cfg.StatesRoot = states
 	cfg.PillarRoot = pillarDir
 	cfg.withDefaults()
-	server := New(cfg, log.New(io.Discard, "", 0))
+	server := New(cfg, logging.Discard())
 
 	ts := httptest.NewUnstartedServer(server.Handler())
 	tlsCfg, err := transport.ServerTLS(
@@ -478,7 +477,7 @@ func TestShutdownIsGraceful(t *testing.T) {
 	}
 	server := New(Config{
 		Addr: "127.0.0.1:0", PKIDir: dir, StatesRoot: dir, PillarRoot: dir,
-	}, log.New(io.Discard, "", 0))
+	}, logging.Discard())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -526,7 +525,7 @@ func TestShutdownWaitsForTheReturnerDrain(t *testing.T) {
 	server := New(Config{
 		Addr: "127.0.0.1:0", PKIDir: dir, StatesRoot: dir, PillarRoot: dir,
 		Returners: []returner.Returner{sink},
-	}, log.New(io.Discard, "", 0))
+	}, logging.Discard())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

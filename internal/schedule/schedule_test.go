@@ -2,13 +2,13 @@ package schedule
 
 import (
 	"context"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/edlitmus/halite/internal/logging"
 )
 
 func writeConfig(t *testing.T, body string) string {
@@ -118,7 +118,7 @@ func TestJobsFireOnTheirInterval(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		fired[job.Name]++
-	}, log.New(io.Discard, "", 0))
+	}, logging.Discard())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -138,7 +138,7 @@ func TestAtStartRunsBeforeTheFirstInterval(t *testing.T) {
 	done := make(chan struct{})
 	runner := NewRunner([]Job{
 		{Name: "converge", Kind: "state.highstate", Every: time.Hour, AtStart: true},
-	}, func(context.Context, Job) { close(done) }, log.New(io.Discard, "", 0))
+	}, func(context.Context, Job) { close(done) }, logging.Discard())
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -155,7 +155,7 @@ func TestCancellationStopsTheRunner(t *testing.T) {
 	runner := NewRunner([]Job{
 		{Name: "converge", Kind: "state.highstate", Every: time.Millisecond, Splay: time.Hour},
 	}, func(context.Context, Job) { t.Error("a splayed job should not fire after cancellation") },
-		log.New(io.Discard, "", 0))
+		logging.Discard())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan struct{})

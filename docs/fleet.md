@@ -195,6 +195,7 @@ two reactors watching two buses react twice. See ADR-11.
 | State tree | `-root`, `$HALITE_ROOT`, else the platform path |
 | Pillar tree | `-pillar-root`, `$HALITE_PILLAR_ROOT`, else beside the states |
 | Agent cache | `-cache`, else `/var/cache/halite` |
+| Log | stderr, or `-log-file`; `-log-level` sets how much (see [service.md](service.md#logging)) |
 
 Bounds on the unauthenticated route, explained in
 [pki.md](pki.md#what-the-open-port-costs):
@@ -212,4 +213,6 @@ Timing, where the defaults are not what a site wants:
 | `-orch-timeout` | `master` | 30m | a whole orchestration, so a stuck step cannot hold the control plane forever |
 | `-retry` | `agent` | 10s | the delay between reconnection and enrollment attempts |
 
-Both daemons shut down cleanly on SIGINT and SIGTERM.
+Both daemons shut down cleanly on SIGINT and SIGTERM, and reopen their
+log file on SIGHUP so a rotation does not leave them writing to a file
+that has moved.

@@ -42,7 +42,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	state, err := s.ca.SubmitLimited(req.ID, []byte(req.CSR), s.cfg.MaxPendingEnrollments)
 	if err != nil {
-		s.log.Printf("enrollment refused for %q from %s: %v", req.ID, r.RemoteAddr, err)
+		s.log.Warnf("enrollment refused for %q from %s: %v", req.ID, r.RemoteAddr, err)
 		// A full pending queue is the server's condition, not the agent's
 		// mistake; 503 tells the agent to retry rather than give up.
 		if errors.Is(err, ca.ErrPendingFull) {
@@ -57,7 +57,7 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "%v", err)
 			return
 		}
-		s.log.Printf("auto-accepted %q from %s", req.ID, r.RemoteAddr)
+		s.log.Infof("auto-accepted %q from %s", req.ID, r.RemoteAddr)
 		state = ca.StateAccepted
 	}
 	s.bus.Emit(fmt.Sprintf("halite/key/%s/%s", req.ID, state), event.SourceMaster,
@@ -77,14 +77,14 @@ func (s *Server) handleEnroll(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.Cert = string(certPEM)
 		if reissued {
-			s.log.Printf("reissued an expired certificate for %q from %s", req.ID, r.RemoteAddr)
+			s.log.Infof("reissued an expired certificate for %q from %s", req.ID, r.RemoteAddr)
 			s.bus.Emit(fmt.Sprintf(event.TagKeyReissued, req.ID), event.SourceMaster,
 				map[string]any{"id": req.ID})
 		}
 		s.bus.Emit(fmt.Sprintf(event.TagAgentEnrolled, req.ID), event.SourceMaster,
 			map[string]any{"id": req.ID})
 	} else {
-		s.log.Printf("enrollment %s for %q from %s", state, req.ID, r.RemoteAddr)
+		s.log.Infof("enrollment %s for %q from %s", state, req.ID, r.RemoteAddr)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -102,7 +102,7 @@ func (s *Server) handleHello(w http.ResponseWriter, r *http.Request, peer transp
 		return
 	}
 	s.registry.touch(peer.ID, req.Grains, req.Version)
-	s.log.Printf("hello from %q (halite %s)", peer.ID, req.Version)
+	s.log.Infof("hello from %q (halite %s)", peer.ID, req.Version)
 	s.bus.Emit(fmt.Sprintf(event.TagAgentHello, peer.ID), peer.ID,
 		map[string]any{"id": peer.ID, "version": req.Version})
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -128,7 +128,7 @@ func (s *Server) handleRenew(w http.ResponseWriter, r *http.Request, peer transp
 		writeError(w, http.StatusBadRequest, "%v", err)
 		return
 	}
-	s.log.Printf("renewed the certificate for %q", peer.ID)
+	s.log.Infof("renewed the certificate for %q", peer.ID)
 	s.bus.Emit(fmt.Sprintf(event.TagKeyRenewed, peer.ID), event.SourceMaster,
 		map[string]any{"id": peer.ID})
 	writeJSON(w, http.StatusOK, transport.RenewResponse{Cert: string(certPEM)})
@@ -178,7 +178,7 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request, peer tran
 		writeError(w, http.StatusBadRequest, "%v", err)
 		return
 	}
-	s.log.Printf("job %s: %q returned ok=%v changed=%d failed=%d",
+	s.log.Infof("job %s: %q returned ok=%v changed=%d failed=%d",
 		res.JobID, peer.ID, res.Ok, res.Changed, res.Failed)
 	returned := map[string]any{
 		"job_id": res.JobID, "result": res.Ok,
@@ -210,7 +210,7 @@ func (s *Server) handlePillar(w http.ResponseWriter, r *http.Request, peer trans
 	}
 	data, err := (&pillar.Loader{Root: s.cfg.PillarRoot, Grains: grains}).Load()
 	if err != nil {
-		s.log.Printf("pillar for %q: %v", peer.ID, err)
+		s.log.Errorf("pillar for %q: %v", peer.ID, err)
 		writeError(w, http.StatusInternalServerError, "pillar: %v", err)
 		return
 	}
@@ -224,7 +224,7 @@ func (s *Server) handleStateTree(w http.ResponseWriter, r *http.Request, peer tr
 	if err := archive.PackDir(s.cfg.StatesRoot, w); err != nil {
 		// Headers may already be out; log it and drop the connection rather
 		// than pretend the body is complete.
-		s.log.Printf("state tree for %q: %v", peer.ID, err)
+		s.log.Errorf("state tree for %q: %v", peer.ID, err)
 		panic(http.ErrAbortHandler)
 	}
 }

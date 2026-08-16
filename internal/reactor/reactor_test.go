@@ -2,8 +2,6 @@ package reactor
 
 import (
 	"context"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,10 +10,11 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/event"
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
-func quietLogger() *log.Logger { return log.New(io.Discard, "", 0) }
+func quietLogger() *logging.Logger { return logging.Discard() }
 
 // recorder is a Dispatcher that remembers what it was asked to run.
 type recorder struct {
@@ -349,7 +348,7 @@ func TestRenderErrorsAreReportedNotDispatched(t *testing.T) {
 		Actions: []Action{{Kind: transport.KindGrains, Target: "{{ .Nope"}},
 	}}
 	rec := newRecorder()
-	engine := New(rules, rec.dispatch, log.New(&logged, "", 0))
+	engine := New(rules, rec.dispatch, logging.New(&logged, "", logging.Debug))
 
 	engine.react(event.Event{Tag: "halite/test", Source: "web1"})
 	if fired := rec.all(); len(fired) != 0 {

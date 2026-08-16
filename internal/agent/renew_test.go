@@ -2,14 +2,13 @@ package agent
 
 import (
 	"context"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/edlitmus/halite/internal/ca"
+	"github.com/edlitmus/halite/internal/logging"
 )
 
 // enrolledAgent returns an agent whose PKI directory holds a CA, a key,
@@ -55,7 +54,7 @@ func enrolledAgent(t *testing.T, id string) (*Agent, *ca.Store, []byte) {
 	}
 	cfg := Config{ID: id, Masters: []string{"master.example.com"}, PKIDir: pki}
 	cfg.withDefaults()
-	return &Agent{cfg: cfg, log: log.New(io.Discard, "", 0)}, store, keyPEM
+	return &Agent{cfg: cfg, log: logging.Discard()}, store, keyPEM
 }
 
 func TestCertExpiryReadsTheCertificateOnDisk(t *testing.T) {

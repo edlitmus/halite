@@ -12,13 +12,13 @@ package schedule
 import (
 	"context"
 	"fmt"
-	"log"
 	"math/rand/v2"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/yamlite"
 )
@@ -44,11 +44,11 @@ type Run func(ctx context.Context, job Job)
 type Runner struct {
 	jobs []Job
 	run  Run
-	log  *log.Logger
+	log  *logging.Logger
 }
 
 // NewRunner builds a runner. It does nothing until Run is called.
-func NewRunner(jobs []Job, run Run, logger *log.Logger) *Runner {
+func NewRunner(jobs []Job, run Run, logger *logging.Logger) *Runner {
 	return &Runner{jobs: jobs, run: run, log: logger}
 }
 
@@ -93,7 +93,7 @@ func (r *Runner) fire(ctx context.Context, job Job) {
 	if ctx.Err() != nil {
 		return
 	}
-	r.log.Printf("schedule %s: running %s", job.Name, job.Kind)
+	r.log.Infof("schedule %s: running %s", job.Name, job.Kind)
 	r.run(ctx, job)
 }
 

@@ -11,11 +11,11 @@ package returner
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -53,7 +53,7 @@ type sink struct {
 // Manager fans records out to every configured returner.
 type Manager struct {
 	sinks []*sink
-	log   *log.Logger
+	log   *logging.Logger
 
 	mu     sync.Mutex
 	closed bool
@@ -61,7 +61,7 @@ type Manager struct {
 
 // NewManager builds a manager over the given returners. It does nothing
 // until Run is called.
-func NewManager(returners []Returner, logger *log.Logger) *Manager {
+func NewManager(returners []Returner, logger *logging.Logger) *Manager {
 	m := &Manager{log: logger}
 	for _, r := range returners {
 		m.sinks = append(m.sinks, &sink{r: r, queue: make(chan Record, queueDepth)})
@@ -86,14 +86,14 @@ func (m *Manager) Submit(rec Record) {
 	for _, s := range m.sinks {
 		if m.closed {
 			s.dropped++
-			m.log.Printf("returner %s stopped, dropped a result (%d total)", s.r.Name(), s.dropped)
+			m.log.Warnf("returner %s stopped, dropped a result (%d total)", s.r.Name(), s.dropped)
 			continue
 		}
 		select {
 		case s.queue <- rec:
 		default:
 			s.dropped++
-			m.log.Printf("returner %s queue full, dropped a result (%d total)", s.r.Name(), s.dropped)
+			m.log.Warnf("returner %s queue full, dropped a result (%d total)", s.r.Name(), s.dropped)
 		}
 	}
 }
@@ -116,11 +116,11 @@ func (m *Manager) Run(done <-chan struct{}) {
 			// ends, so this loop is both the steady state and the flush.
 			for rec := range s.queue {
 				if err := s.r.Return(rec); err != nil {
-					m.log.Printf("returner %s: %v", s.r.Name(), err)
+					m.log.Errorf("returner %s: %v", s.r.Name(), err)
 				}
 			}
 			if err := s.r.Close(); err != nil {
-				m.log.Printf("returner %s: closing: %v", s.r.Name(), err)
+				m.log.Errorf("returner %s: closing: %v", s.r.Name(), err)
 			}
 		}(s)
 	}

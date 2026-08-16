@@ -13,13 +13,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/event"
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/orch"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/reactor"
@@ -113,7 +113,7 @@ type Server struct {
 	registry  *registry
 	bus       *event.Bus
 	returners *returner.Manager
-	log       *log.Logger
+	log       *logging.Logger
 
 	// enrollLimit paces the one route that answers before authentication.
 	enrollLimit *rateLimiter
@@ -126,7 +126,7 @@ type Server struct {
 }
 
 // New builds a control plane. It does not listen until Run is called.
-func New(cfg Config, logger *log.Logger) *Server {
+func New(cfg Config, logger *logging.Logger) *Server {
 	cfg.withDefaults()
 	return &Server{
 		cfg:         cfg,
@@ -181,7 +181,11 @@ func (s *Server) Run(ctx context.Context) error {
 		// Job polls are long-lived, so no write timeout; the poll bounds
 		// itself and idle connections are reaped below.
 		IdleTimeout: 2 * s.cfg.PollTimeout,
-		ErrorLog:    s.log,
+		// Warn, because ClientAuth is VerifyClientCertIfGiven: a caller
+		// with no certificate finishes the handshake and is turned away
+		// by the handlers, so what reaches here is a caller that offered
+		// one and failed — a foreign or expired certificate being tried.
+		ErrorLog: s.log.StdLogger(logging.Warn),
 	}
 
 	// Returners drain in their own goroutines for the life of the server, so
@@ -203,24 +207,24 @@ func (s *Server) Run(ctx context.Context) error {
 		reactorCtx, stopReactor := context.WithCancel(ctx)
 		defer stopReactor()
 		engine := reactor.New(s.cfg.ReactorRules, s.Dispatch, s.log)
-		s.log.Printf("reactor: %d rule(s) loaded", engine.Rules())
+		s.log.Infof("reactor: %d rule(s) loaded", engine.Rules())
 		go engine.Run(reactorCtx, s.bus)
 	}
 
 	done := make(chan error, 1)
 	go func() {
-		s.log.Printf("control plane listening on %s (states %s, pillar %s)",
+		s.log.Infof("control plane listening on %s (states %s, pillar %s)",
 			s.cfg.Addr, s.cfg.StatesRoot, s.cfg.PillarRoot)
 		// The control plane holds the whole fleet's pillar, so a tree every
 		// local account can read matters more here than anywhere else.
 		if warning := pillar.PermissionWarning(s.cfg.PillarRoot); warning != "" {
-			s.log.Print(warning)
+			s.log.Warnf("%s", warning)
 		}
 		for _, r := range s.cfg.Returners {
-			s.log.Printf("returning results to %s", r.Name())
+			s.log.Infof("returning results to %s", r.Name())
 		}
 		if s.cfg.AutoAccept {
-			s.log.Print("WARNING: -auto-accept is on; any host that can reach this port will be enrolled")
+			s.log.Warnf("-auto-accept is on; any host that can reach this port will be enrolled")
 		}
 		err := srv.ListenAndServeTLS("", "")
 		if errors.Is(err, http.ErrServerClosed) {
@@ -277,10 +281,14 @@ func (s *Server) authorized(
 			return
 		}
 		if !allow(peer.Role) {
-			s.log.Printf("denied %s %s for %q", r.Method, r.URL.Path, peer.ID)
+			s.log.Warnf("denied %s %s for %q", r.Method, r.URL.Path, peer.ID)
 			writeError(w, http.StatusForbidden, "this operation requires an operator certificate")
 			return
 		}
+		// One line per authenticated request is far too much for a
+		// running fleet and exactly what is wanted when an agent is not
+		// getting what it asks for.
+		s.log.Debugf("%s %s from %q", r.Method, r.URL.Path, peer.ID)
 		r.Body = http.MaxBytesReader(w, r.Body, transport.MaxBodyBytes)
 		h(w, r, peer)
 	})
@@ -336,7 +344,7 @@ func (s *Server) noteOnce(key string, report func()) {
 // noteRefusal logs and announces that a revoked identity tried to work.
 func (s *Server) noteRefusal(id, path string) {
 	s.noteOnce("revoked:"+id, func() {
-		s.log.Printf("refused %s for %q: revoked", path, id)
+		s.log.Warnf("refused %s for %q: revoked", path, id)
 		s.bus.Emit(fmt.Sprintf(event.TagKeyRefused, id), event.SourceMaster,
 			map[string]any{"id": id, "path": path})
 	})
@@ -346,7 +354,7 @@ func (s *Server) noteRefusal(id, path string) {
 // than it is allowed to.
 func (s *Server) noteFlood(source string) {
 	s.noteOnce("flood:"+source, func() {
-		s.log.Printf("throttling enrollment from %s: more than %d a minute",
+		s.log.Warnf("throttling enrollment from %s: more than %d a minute",
 			source, s.enrollLimit.perMinute)
 		s.bus.Emit(event.TagEnrollThrottled, event.SourceMaster,
 			map[string]any{"source": source, "per_minute": s.enrollLimit.perMinute})

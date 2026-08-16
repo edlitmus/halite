@@ -11,7 +11,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/event"
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/sls"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/yamlite"
@@ -55,7 +55,7 @@ const DefaultRateLimit = 60
 type Reactor struct {
 	rules    []Rule
 	dispatch Dispatcher
-	log      *log.Logger
+	log      *logging.Logger
 
 	limit  int
 	mu     sync.Mutex
@@ -64,7 +64,7 @@ type Reactor struct {
 }
 
 // New builds a reactor over the given rules.
-func New(rules []Rule, dispatch Dispatcher, logger *log.Logger) *Reactor {
+func New(rules []Rule, dispatch Dispatcher, logger *logging.Logger) *Reactor {
 	return &Reactor{rules: rules, dispatch: dispatch, log: logger,
 		limit: DefaultRateLimit, fired: map[string]int{}}
 }
@@ -113,21 +113,21 @@ func (r *Reactor) react(ev event.Event) {
 
 func (r *Reactor) fire(rule Rule, action Action, ev event.Event) {
 	if !r.allow(rule.Tag) {
-		r.log.Printf("reactor: rule %q hit its rate limit of %d/min, dropping reaction for %q "+
+		r.log.Warnf("reactor: rule %q hit its rate limit of %d/min, dropping reaction for %q "+
 			"(it is probably reacting to its own work)", rule.Tag, r.limit, ev.Tag)
 		return
 	}
 	req, err := render(action, ev)
 	if err != nil {
-		r.log.Printf("reactor: rule %q: %v", rule.Tag, err)
+		r.log.Errorf("reactor: rule %q: %v", rule.Tag, err)
 		return
 	}
 	resp, err := r.dispatch(req, "reactor")
 	if err != nil {
-		r.log.Printf("reactor: rule %q: dispatch: %v", rule.Tag, err)
+		r.log.Errorf("reactor: rule %q: dispatch: %v", rule.Tag, err)
 		return
 	}
-	r.log.Printf("reactor: %q fired on %q: job %s -> %d agent(s)",
+	r.log.Infof("reactor: %q fired on %q: job %s -> %d agent(s)",
 		rule.Tag, ev.Tag, resp.JobID, len(resp.Agents))
 }
 

@@ -2,8 +2,6 @@ package orch
 
 import (
 	"context"
-	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,11 +9,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/sls"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
-func quietLogger() *log.Logger { return log.New(io.Discard, "", 0) }
+func quietLogger() *logging.Logger { return logging.Discard() }
 
 // fleet is a stand-in control plane: it records dispatches and answers
 // them with whatever outcome the test asked for.

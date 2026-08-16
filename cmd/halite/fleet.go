@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
 	"os/signal"
@@ -22,6 +21,7 @@ import (
 	"github.com/edlitmus/halite/internal/beacon"
 	"github.com/edlitmus/halite/internal/ca"
 	"github.com/edlitmus/halite/internal/grains"
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/master"
 	"github.com/edlitmus/halite/internal/mine"
 	"github.com/edlitmus/halite/internal/modules"
@@ -48,6 +48,48 @@ func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 }
 
+// buildLogger turns -log-level and -log-file into the logger a daemon
+// runs on. Writing to a file is announced on standard error, because
+// somebody who started the daemon by hand has just watched its output
+// disappear.
+func buildLogger(prefix, levelName, path string) *logging.Logger {
+	level, err := logging.ParseLevel(levelName)
+	if err != nil {
+		fatal("%v", err)
+	}
+	if path == "" {
+		return logging.New(os.Stderr, prefix, level)
+	}
+	logger, err := logging.Open(path, prefix, level)
+	if err != nil {
+		fatal("%v", err)
+	}
+	fmt.Fprintf(os.Stderr, "%slogging to %s at level %s\n", prefix, path, level)
+	return logger
+}
+
+// reopenOnHangup reopens the log file on SIGHUP, which is the handshake
+// newsyslog(8) and logrotate use: they rename the file, signal the
+// daemon, and expect it to start writing to the name again. Without it a
+// rotated log keeps growing on a file nobody can find.
+func reopenOnHangup(ctx context.Context, logger *logging.Logger) {
+	hangup := make(chan os.Signal, 1)
+	signal.Notify(hangup, syscall.SIGHUP)
+	go func() {
+		defer signal.Stop(hangup)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-hangup:
+				if err := logger.Reopen(); err != nil {
+					logger.Errorf("reopening %s: %v", logger.Path(), err)
+				}
+			}
+		}
+	}()
+}
+
 func cmdMaster(args []string) {
 	fs := flag.NewFlagSet("master", flag.ExitOnError)
 	addr := fs.String("addr", fmt.Sprintf(":%d", transport.DefaultPort), "listen address")
@@ -65,6 +107,10 @@ func cmdMaster(args []string) {
 	var returnerSpecs stringList
 	fs.Var(&returnerSpecs, "returner", "durable result sink, kind:target (repeatable): file:PATH or webhook:URL")
 	configFile := fs.String("config", "", "settings file (default: <config dir>/master.conf)")
+	logLevel := fs.String("log-level", strings.ToLower(logging.DefaultLevel.String()),
+		"how much the daemon logs: error, warn, info, or debug")
+	logFile := fs.String("log-file", "",
+		"write the log to this file instead of standard error (SIGHUP reopens it)")
 	_ = parseFlags(fs, args)
 	loadDaemonConfig(fs, "master", *configFile)
 
@@ -117,7 +163,9 @@ func cmdMaster(args []string) {
 
 	ctx, stop := signalContext()
 	defer stop()
-	logger := log.New(os.Stderr, "halite-master ", log.LstdFlags)
+	logger := buildLogger("halite-master ", *logLevel, *logFile)
+	defer logger.Close()
+	reopenOnHangup(ctx, logger)
 	if err := master.New(cfg, logger).Run(ctx); err != nil {
 		fatal("%v", err)
 	}
@@ -135,6 +183,10 @@ func cmdAgent(args []string) {
 	mineFile := fs.String("mine", "", "mine config file (facts published for the rest of the fleet)")
 	scheduleFile := fs.String("schedule", "", "schedule config file (work this agent runs on its own clock)")
 	configFile := fs.String("config", "", "settings file (default: <config dir>/agent.conf)")
+	logLevel := fs.String("log-level", strings.ToLower(logging.DefaultLevel.String()),
+		"how much the daemon logs: error, warn, info, or debug")
+	logFile := fs.String("log-file", "",
+		"write the log to this file instead of standard error (SIGHUP reopens it)")
 	_ = parseFlags(fs, args)
 	loadDaemonConfig(fs, "agent", *configFile)
 
@@ -170,13 +222,15 @@ func cmdAgent(args []string) {
 		fatal("cache directory: %v", err)
 	}
 
-	logger := log.New(os.Stderr, "halite-agent ", log.LstdFlags)
+	logger := buildLogger("halite-agent ", *logLevel, *logFile)
+	defer logger.Close()
 	a, err := agent.New(cfg, grains.Collect(), logger)
 	if err != nil {
 		fatal("%v", err)
 	}
 	ctx, stop := signalContext()
 	defer stop()
+	reopenOnHangup(ctx, logger)
 	if err := a.Run(ctx); err != nil {
 		fatal("%v", err)
 	}

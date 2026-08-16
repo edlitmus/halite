@@ -105,9 +105,11 @@ fleet mode:
       [-returner file:PATH|webhook:URL]    durable result sinks (repeatable)
       [-reactor FILE]                      rules turning events into jobs
       [-orch-root DIR]                     orchestration files
+      [-log-level LEVEL] [-log-file PATH]  how much it logs, and where
   halite agent -master HOST                run the agent on a managed host
       [-beacons FILE] [-mine FILE]         watches, and facts to publish
       [-schedule FILE]                     work it runs on its own clock
+      [-log-level LEVEL] [-log-file PATH]  how much it logs, and where
   halite run <target> <kind> [args]        dispatch work and collect results
   halite agents                            list the fleet
   halite events [-tag PATTERN]             tail the event bus
@@ -200,7 +202,9 @@ func resolvePillarRoot(flagValue, statesRoot string) string {
 // one check that makes the documented posture verifiable.
 func warnPillarPermissions(root string) {
 	if warning := pillar.PermissionWarning(root); warning != "" {
-		fmt.Fprintln(os.Stderr, warning)
+		// The daemons put a level in front of this; a one-shot command
+		// has nothing to mark it as a warning but the word.
+		fmt.Fprintln(os.Stderr, "warning: "+warning)
 	}
 }
 

@@ -14,11 +14,11 @@ package orch
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/engine"
+	"github.com/edlitmus/halite/internal/logging"
 	"github.com/edlitmus/halite/internal/modules"
 	"github.com/edlitmus/halite/internal/sls"
 	"github.com/edlitmus/halite/internal/transport"
@@ -45,7 +45,7 @@ type Runner struct {
 	Dispatch    Dispatcher
 	Jobs        JobReader
 	Emit        Emitter
-	Log         *log.Logger
+	Log         *logging.Logger
 	StepTimeout time.Duration
 	// By is the identity steps are dispatched under.
 	By string
@@ -128,7 +128,7 @@ func (r *Runner) step(
 	outcome.JobID = resp.JobID
 	outcome.Agents = resp.Agents
 
-	r.Log.Printf("orchestration %s: step %q dispatched %s to %d agent(s)",
+	r.Log.Infof("orchestration %s: step %q dispatched %s to %d agent(s)",
 		orchID, stepID, req.Kind, len(resp.Agents))
 	r.Emit(fmt.Sprintf("halite/orch/%s/step/%s", orchID, stepID), map[string]any{
 		"orchestration": orchID, "step": stepID,
