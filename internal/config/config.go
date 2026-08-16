@@ -5,7 +5,7 @@
 // A file names the same settings the flags do:
 //
 //	# /usr/local/etc/halite/master.conf
-//	addr: ":4506"
+//	addr: ":5617"
 //	root: /usr/local/etc/halite/states
 //	returner:
 //	  - file:/var/log/halite/results.ndjson

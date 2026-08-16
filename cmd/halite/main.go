@@ -101,7 +101,7 @@ func usage() {
   halite version
 
 fleet mode:
-  halite master [-addr :4506] [-root DIR]  run the control plane
+  halite master [-addr :5617] [-root DIR]  run the control plane
       [-returner file:PATH|webhook:URL]    durable result sinks (repeatable)
       [-reactor FILE]                      rules turning events into jobs
       [-orch-root DIR]                     orchestration files

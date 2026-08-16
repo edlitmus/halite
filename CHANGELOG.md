@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+Changed: **the control plane's default port is 5617, not 4506.** halite
+took salt's port when it took salt's shape, and on a host running both
+that is one socket with two owners. The failure it produces is not the
+one an operator expects to debug: whichever daemon binds the wildcard
+address answers every client that resolves anywhere else, so an agent
+pointed at a name that resolves to loopback gets salt's ZeroMQ socket
+and reports `tls: first record does not look like a TLS handshake` —
+a TLS error for a problem that has nothing to do with TLS.
+
+* 5617/tcp is unassigned by IANA and carries no conventional service,
+  so nothing else expects it.
+* `-addr` on the master and a `host:port` in the agent's `-master`
+  still override it, which is the upgrade path for a fleet that cannot
+  move both sides at once: pin `-addr :4506` on the master and keep the
+  agents as they are.
+* **Both sides must agree.** An agent from an older release defaults to
+  4506 and will not find a master on 5617. Upgrade the master, then the
+  agents, or pin the old port until both have moved.
+
 ## 0.11.0 — 2026-08-16
 
 A small release with one subject: the two daemons learn to say how much

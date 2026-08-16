@@ -26,8 +26,10 @@ const (
 	PathJobInfo     = "/v1/job/"  // + job id
 )
 
-// DefaultPort is the control plane's listening port.
-const DefaultPort = 4506
+// DefaultPort is the control plane's listening port. It is deliberately
+// not salt's 4506: a host running both stacks would have them fighting
+// over one socket, and 5617 is unassigned by IANA.
+const DefaultPort = 5617
 
 // MaxBodyBytes caps request bodies. Enrollment is reachable before
 // authentication, so every body is bounded.

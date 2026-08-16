@@ -18,7 +18,7 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 func daemonFlags() (*flag.FlagSet, *string, *bool, *stringList, *string) {
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
 	fs.SetOutput(os.NewFile(0, os.DevNull))
-	addr := fs.String("addr", ":4506", "")
+	addr := fs.String("addr", ":5617", "")
 	auto := fs.Bool("auto-accept", false, "")
 	var returners stringList
 	fs.Var(&returners, "returner", "")
@@ -49,7 +49,7 @@ func TestMissingFileIsNotAnError(t *testing.T) {
 }
 
 func TestSettingsReachTheFlags(t *testing.T) {
-	path := writeConfig(t, "addr: 127.0.0.1:4507\nauto-accept: \"true\"\nroot: /srv/states\n")
+	path := writeConfig(t, "addr: 127.0.0.1:5618\nauto-accept: \"true\"\nroot: /srv/states\n")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -61,7 +61,7 @@ func TestSettingsReachTheFlags(t *testing.T) {
 	if err := cfg.Apply(fs); err != nil {
 		t.Fatal(err)
 	}
-	if *addr != "127.0.0.1:4507" || !*auto || *root != "/srv/states" {
+	if *addr != "127.0.0.1:5618" || !*auto || *root != "/srv/states" {
 		t.Fatalf("want the file's values, got addr=%q auto=%v root=%q", *addr, *auto, *root)
 	}
 }
@@ -85,7 +85,7 @@ func TestARepeatableFlagTakesAList(t *testing.T) {
 }
 
 func TestAFlagOnTheCommandLineWins(t *testing.T) {
-	path := writeConfig(t, "addr: 127.0.0.1:4507\n")
+	path := writeConfig(t, "addr: 127.0.0.1:5618\n")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestAFlagOnTheCommandLineWins(t *testing.T) {
 
 func TestTheEnvironmentOutranksTheFile(t *testing.T) {
 	t.Setenv("HALITE_ROOT", "/from/the/environment")
-	path := writeConfig(t, "root: /from/the/file\naddr: 127.0.0.1:4507\n")
+	path := writeConfig(t, "root: /from/the/file\naddr: 127.0.0.1:5618\n")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -121,13 +121,13 @@ func TestTheEnvironmentOutranksTheFile(t *testing.T) {
 	if *root != "" {
 		t.Fatalf("the file should not have set root while $HALITE_ROOT is set; got %q", *root)
 	}
-	if *addr != "127.0.0.1:4507" {
+	if *addr != "127.0.0.1:5618" {
 		t.Fatalf("a setting with no environment variable still applies; got %q", *addr)
 	}
 }
 
 func TestAnUnknownSettingIsAnError(t *testing.T) {
-	path := writeConfig(t, "adr: \":4506\"\n")
+	path := writeConfig(t, "adr: \":5617\"\n")
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestAnUnknownSettingIsAnError(t *testing.T) {
 }
 
 func TestAMalformedFileIsReported(t *testing.T) {
-	if _, err := Load(writeConfig(t, "addr: [\":4506\", \":4507\"]\n")); err == nil {
+	if _, err := Load(writeConfig(t, "addr: [\":5617\", \":5618\"]\n")); err == nil {
 		t.Fatal("a flow collection is not the YAML subset; it should be reported")
 	}
 	if _, err := Load(writeConfig(t, "- addr\n")); err == nil {

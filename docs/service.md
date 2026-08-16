@@ -24,7 +24,7 @@ Every setting is a flag without its dash, so `halite master -h` and
 
 ```yaml
 # /usr/local/etc/halite/master.conf
-addr: ":4506"
+addr: ":5617"
 root: /usr/local/etc/halite/states
 pillar-root: /usr/local/etc/halite/pillar
 pki: /usr/local/etc/halite/pki

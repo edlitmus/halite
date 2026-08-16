@@ -190,7 +190,7 @@ two reactors watching two buses react twice. See ADR-11.
 
 | | |
 |---|---|
-| Port | 4506/tcp, `-addr` to change |
+| Port | 5617/tcp, `-addr` to change |
 | PKI | `-pki`, `$HALITE_PKI`, else the platform path (see pki.md) |
 | State tree | `-root`, `$HALITE_ROOT`, else the platform path |
 | Pillar tree | `-pillar-root`, `$HALITE_PILLAR_ROOT`, else beside the states |
