@@ -107,6 +107,57 @@ func TestClaimedCountsMatchTheRegistry(t *testing.T) {
 	}
 }
 
+// TestReadmeStatusMatchesTheVersion holds the README's version banner to
+// the constant the binary prints. Cutting a release means bumping both by
+// hand, and 0.10.0 shipped having bumped only one: the README announced
+// v0.9.0 for a release that called itself 0.10.0, and nothing noticed
+// until somebody read the two lines side by side.
+func TestReadmeStatusMatchesTheVersion(t *testing.T) {
+	banner := regexp.MustCompile(`\*\*Status: v(\d+\.\d+\.\d+)`).
+		FindStringSubmatch(read(t, "README.md"))
+	if banner == nil {
+		t.Fatal("README.md no longer opens with a **Status: vX.Y.Z** banner")
+	}
+	if version := declaredVersion(t); banner[1] != version {
+		t.Errorf("README.md says v%s; cmd/halite/main.go says %s "+
+			"(a release bumps both)", banner[1], version)
+	}
+}
+
+// TestChangelogNamesTheCurrentVersion checks the newest released section
+// against the same constant, so a release cannot ship without an entry
+// and an entry cannot name a version the binary does not claim.
+//
+// An `## Unreleased` section on top is the normal state between releases
+// and is skipped rather than failed on: the constant is not bumped until
+// the release is actually cut, so during development the newest *version*
+// heading is still the last release, which is what this compares.
+func TestChangelogNamesTheCurrentVersion(t *testing.T) {
+	released := regexp.MustCompile(`(?m)^## (\d+\.\d+\.\d+)`).
+		FindAllStringSubmatch(read(t, "CHANGELOG.md"), -1)
+	if released == nil {
+		t.Fatal("CHANGELOG.md has no `## X.Y.Z` sections")
+	}
+	if newest := released[0][1]; newest != declaredVersion(t) {
+		t.Errorf("the newest CHANGELOG.md section is %s; cmd/halite/main.go says %s "+
+			"(a release adds a section and bumps the constant)",
+			newest, declaredVersion(t))
+	}
+}
+
+// declaredVersion is the version the binary prints, read out of its own
+// source so the checks above compare documentation against the code
+// rather than against each other.
+func declaredVersion(t *testing.T) string {
+	t.Helper()
+	match := regexp.MustCompile(`const version = "(\d+\.\d+\.\d+)"`).
+		FindStringSubmatch(read(t, "cmd/halite/main.go"))
+	if match == nil {
+		t.Fatal("cannot find `const version` in cmd/halite/main.go")
+	}
+	return match[1]
+}
+
 // TestEveryCommandIsDocumented reads the CLI out of its own source. A
 // subcommand nobody documented is one nobody can find.
 func TestEveryCommandIsDocumented(t *testing.T) {
