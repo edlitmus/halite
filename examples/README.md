@@ -57,6 +57,8 @@ These are read by the daemons, not applied as states.
 
 | File | Read by |
 |---|---|
+| `master.conf` | `halite master -config` — every master flag as a setting |
+| `agent.conf` | `halite agent -config` — every agent flag as a setting |
 | `beacons.sls` | `halite agent -beacons` — watches that raise events |
 | `schedule.sls` | `halite agent -schedule` — work the agent runs on its own clock |
 | `mine.sls` | `halite agent -mine` — facts published for the rest of the fleet |
