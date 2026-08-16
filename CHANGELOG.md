@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 — 2026-08-16
+
+A small release with one subject: the two daemons learn to say how much
+they say, and where. Everything a fleet has printed since the control
+plane existed went to stderr unlabelled, which is exactly right under
+`daemon(8)` or journald and no help at all on a host running neither.
+Every existing message was classified rather than moved wholesale, the
+default level prints what it always printed, and the line's shape did
+not change — so an upgrade neither quiets a working host nor breaks
+anything already reading these logs. The documentation audit that
+followed is here too.
 
 New: **the daemons take a log level and a log file.** Until now both
 printed every line they had to stderr and nothing else, which is right
