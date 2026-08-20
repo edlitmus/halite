@@ -615,3 +615,36 @@ func TestPlainScalarsInsideFlow(t *testing.T) {
 		t.Errorf("pair = %v", pair.StringKeys())
 	}
 }
+
+// White space is allowed between a key and its colon, and after the
+// colon a tab separates the value just as a space does.
+func TestWhitespaceAroundTheKeyColon(t *testing.T) {
+	cases := map[string]string{
+		"'key' : value\n":   "value",
+		"\"key\" : value\n": "value",
+		"key\t: value\n":    "value",
+		"key   :   value\n": "value",
+		"key:\tvalue\n":     "value",
+	}
+	for src, want := range cases {
+		v, _, err := Parse([]byte(src), Options{File: "t.sls"})
+		if err != nil {
+			t.Errorf("%q: %v", src, err)
+			continue
+		}
+		got, ok := v.(*value.Map).Get("key")
+		if !ok || got != want {
+			t.Errorf("%q -> %#v, want key=%q", src, v, want)
+		}
+	}
+
+	// A key that ends in a colon with no separator is still one token, so
+	// `a:b` is the scalar "a:b" rather than a mapping.
+	v, _, err := Parse([]byte("a:b\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != "a:b" {
+		t.Errorf("a:b parsed as %#v, want the string", v)
+	}
+}

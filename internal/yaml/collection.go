@@ -43,7 +43,7 @@ func (p *parser) lineIsMappingEntry() bool {
 			}
 			i++
 		case ':':
-			if flow == 0 && (i+1 >= len(p.src) || p.src[i+1] == ' ' || p.src[i+1] == '\n') {
+			if flow == 0 && (i+1 >= len(p.src) || p.src[i+1] == ' ' || p.src[i+1] == '\t' || p.src[i+1] == '\n') {
 				return true
 			}
 			i++
@@ -141,7 +141,7 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 				return nil, err
 			}
 			if p.col == indent && p.peek() == ':' &&
-				(p.peekAt(1) == ' ' || p.peekAt(1) == '\n' || p.peekAt(1) == 0) {
+				(p.peekAt(1) == ' ' || p.peekAt(1) == '\t' || p.peekAt(1) == '\n' || p.peekAt(1) == 0) {
 				p.next()
 			} else {
 				noValue = true
@@ -183,6 +183,11 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 					}
 				}
 			}
+			// `"key" : value` and `key\t: value` are ordinary YAML: white
+			// space is allowed between a key and its colon, and a quoted
+			// key leaves the parser sitting on that space rather than on
+			// the colon.
+			p.skipSpaces()
 			if p.peek() != ':' {
 				return nil, p.err("expected `:` after the mapping key %q", value.KeyString(key))
 			}
@@ -190,7 +195,7 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 			p.bind(np, key)
 		}
 
-		if !noValue && !p.eof() && p.peek() != ' ' && p.peek() != '\n' {
+		if !noValue && !p.eof() && p.peek() != ' ' && p.peek() != '\t' && p.peek() != '\n' {
 			return nil, p.err("a `:` that ends a mapping key must be followed by a space or a line break")
 		}
 

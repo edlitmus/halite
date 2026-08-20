@@ -53,7 +53,7 @@ func (p *parser) parsePlain(minIndent int, asKey, inFlow bool) (string, error) {
 			}
 			if c == ':' {
 				n := p.peekAt(1)
-				if n == ' ' || n == '\n' || n == 0 || (inFlow && isFlowIndicator(n)) {
+				if n == ' ' || n == '\t' || n == '\n' || n == 0 || (inFlow && isFlowIndicator(n)) {
 					if inFlow && hasContent(lines) {
 						// The scalar already folded a line break with
 						// something on it, so it cannot be an implicit
