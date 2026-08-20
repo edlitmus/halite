@@ -176,9 +176,17 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 				}
 				p.skipSpaces()
 			} else {
+				keyLine := p.line
 				raw, quoted, err := p.parseScalar(indent, true, notFlow)
 				if err != nil {
 					return nil, err
+				}
+				if p.line != keyLine {
+					// A quoted scalar folds line breaks, so it can reach
+					// here having spanned several lines. A key may not:
+					// YAML holds an implicit key to one line, which is
+					// what keeps a parser's lookahead bounded.
+					return nil, p.errAt(keyPos, "a mapping key must be on one line")
 				}
 				if quoted {
 					key = raw

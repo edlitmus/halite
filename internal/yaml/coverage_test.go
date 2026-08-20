@@ -928,3 +928,39 @@ func TestAliasCannotCarryProperties(t *testing.T) {
 		t.Errorf("ordinary anchors and aliases were refused: %v", err)
 	}
 }
+
+// A quoted scalar folds line breaks, so it can reach the key position
+// having spanned several lines. A key may not: YAML holds an implicit key
+// to one line, which is what keeps a parser's lookahead bounded.
+//
+// The first entry has to be well formed for the parser to be reading a
+// mapping at all; a document that opens with the folded key fails earlier
+// and for a different reason, which is also correct.
+func TestMappingKeyMustBeOnOneLine(t *testing.T) {
+	for _, src := range []string{
+		"\"a\\nb\": 1\n\"c\n d\": 1\n",
+		"'a': 1\n'c\n d': 1\n",
+	} {
+		_, _, err := Parse([]byte(src), Options{File: "t.sls"})
+		if err == nil {
+			t.Errorf("%q parsed; a key spanning lines should be refused", src)
+			continue
+		}
+		if !strings.Contains(err.Error(), "one line") {
+			t.Errorf("%q: error %q does not say why", src, err)
+		}
+	}
+
+	// An escaped newline inside the key is one line of source, so it is
+	// fine, and so is a multi-line quoted *value*.
+	v, _, err := Parse([]byte("\"a\\nb\": 1\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatalf("an escaped newline in a key was refused: %v", err)
+	}
+	if got, _ := v.(*value.Map).Get("a\nb"); got != int64(1) {
+		t.Errorf("value = %#v", v)
+	}
+	if _, _, err := Parse([]byte("k: \"a\n b\"\n"), Options{File: "t.sls"}); err != nil {
+		t.Errorf("a multi-line quoted value was refused: %v", err)
+	}
+}
