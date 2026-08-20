@@ -78,6 +78,20 @@ cover:
 race:
 	@env $(DEV_ENV) go test -race ./...
 
+# Fuzzing, SPEC section 31. Go runs one target per invocation, so each is
+# named. FUZZTIME is per target; the default is a short smoke run, and a
+# real campaign is `make fuzz FUZZTIME=30m`.
+FUZZTIME ?= 60s
+
+fuzz:
+	@env $(DEV_ENV) go test ./internal/yaml/ -run=XXX -fuzz='^FuzzParse$$' -fuzztime=$(FUZZTIME)
+	@env $(DEV_ENV) go test ./internal/yaml/ -run=XXX -fuzz='^FuzzParseStream$$' -fuzztime=$(FUZZTIME)
+	@env $(DEV_ENV) go test ./internal/yaml/ -run=XXX -fuzz='^FuzzEncodeScalar$$' -fuzztime=$(FUZZTIME)
+	@env $(DEV_ENV) go test ./internal/template/ -run=XXX -fuzz='^FuzzRender$$' -fuzztime=$(FUZZTIME)
+	@env $(DEV_ENV) go test ./internal/template/ -run=XXX -fuzz='^FuzzRenderStrictUndefined$$' -fuzztime=$(FUZZTIME)
+	@env $(DEV_ENV) go test ./internal/target/ -run=XXX -fuzz='^FuzzCompileAuto$$' -fuzztime=$(FUZZTIME)
+	@env $(DEV_ENV) go test ./internal/target/ -run=XXX -fuzz='^FuzzCompileKind$$' -fuzztime=$(FUZZTIME)
+
 vet:
 	@env $(DEV_ENV) go vet ./...
 
