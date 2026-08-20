@@ -392,7 +392,7 @@ doing the checking.
 | Package | Statement coverage | SPEC 31 bar |
 |---|---|---|
 | `internal/regexcompat` | 100.0% | — |
-| `internal/yaml` | 96.5% | >90% branch — met on statements, unmeasured on branches |
+| `internal/yaml` | 96.1% | >90% branch — met on statements, unmeasured on branches |
 | `internal/cli` | 93.4% | — |
 | `internal/target` | 92.8% | >90% branch — met on statements, unmeasured on branches |
 | `internal/state` | 90.7% | >90% branch — met on statements, unmeasured on branches |
@@ -437,7 +437,7 @@ nine are absent.
 
 | Layer | Status |
 |---|---|
-| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 270 of 402 agree, 34 disagree by design, 98 are gaps — see 5.5. |
+| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 300 of 402 agree, 34 disagree by design, 68 are gaps — see 5.4. |
 | Conformance, templates | **absent.** No Jinja corpus with expected output. |
 | Differential against Salt | **absent.** This is named the primary correctness gate and it has never been run. There is no Salt installation to run it against on this host. |
 | Differential, version comparison | **absent**, and blocked: `pkg.version_cmp` is not implemented. |
@@ -486,8 +486,11 @@ target parser, all clean. The corpora are committed under each package's
 ### 5.4 Where YAML conformance stands
 
 Running the suite for the first time put the parser at 228 of 402, with
-140 defects. Four fixes took it to 270 and 98. What each fix was, and why
-it mattered beyond the score:
+140 defects. Eleven fixes took it to **300 and 68**. Statement coverage of
+`internal/yaml` rose to 96.1% along the way, but the suite is the thing
+actually measuring correctness here.
+
+What the fixes were, and why each mattered beyond the score:
 
 - **A document beginning on the `---` line was thrown away.** The marker
   line was skipped whole, so `--- |` lost the `|` and everything under it
@@ -495,40 +498,65 @@ it mattered beyond the score:
   lost its style and its chomping — `--- |` over ` ab` gave `"ab"` rather
   than `"ab\n"` — which is a file that differs from the one the state
   describes and a state that reports a change on every run. 15 cases.
-- **`%YAML` and `%TAG` directives were parsed as content**, so a file
-  opening with `%YAML 1.1` produced two documents. 13 cases.
+- **Folding was wrong in three ways.** A break next to a more-indented
+  line is preserved rather than folded, and that is *in addition* to the
+  newlines the blank lines contribute, so halite produced one fewer
+  newline every time an indented block sat inside a folded scalar. A line
+  beginning with a tab is more-indented too. And a blank line's own
+  indentation is content. SPEC 10.1.1 names the more-indented rule as the
+  one naive implementations get wrong; it was wrong. 7 cases.
 - **A multi-line plain scalar as a mapping value was cut at its first
   line**, and the continuation was then read as a stray over-indented
-  mapping entry. One parameter was carrying two meanings: where a node
-  starts, and where a continued scalar ends. 7 cases, two of which had
-  been misrecorded as deliberate tab rejections.
+  entry. One parameter carried two meanings: where a node starts, and
+  where a continued scalar ends. 7 cases, two of which had been
+  misrecorded as deliberate tab rejections.
+- **Anchors, tags, and aliases on mapping keys were not read**, so
+  `&anchor key: 1` had the literal key `"&anchor key"` and `!!str 1: x`
+  had the integer 1. Behind it, a mapping whose first key carries
+  properties starts where those properties do, not where the key text
+  does. 10 cases, four of them previously misrecorded.
+- **`%YAML` and `%TAG` directives were parsed as content**, then, once
+  consumed, were not validated: a directive with no document, two `%YAML`
+  lines, extra words, and a malformed version all passed. 17 cases.
 - **An escaped tab at a folded line break was dropped.** After unescaping,
-  `\t` is the same byte as a layout tab, and folding trimmed both. 8 cases.
+  `\t` is the same byte as a layout tab and folding trimmed both. 8 cases.
+- **An explicit `? ` key with no `:` line was refused**, though that is how
+  a set is written; so were a block scalar key and a key on the lines
+  below the `?`. 5 cases.
+- **White space between a key and its colon was refused** — `'key' : v`
+  and `key\t: v` — and a tab after the colon was not a separator. 2 cases.
+- **A plain scalar inside a flow collection was cut at the line break**,
+  and with it came a bound that was missing: a key in a flow sequence must
+  sit on one line. 1 case.
+- **An empty block scalar was an error.** `strip: >-` with the next key at
+  the mapping's own column is a key whose value is the empty string. 1
+  case.
+
+Two of those eleven were caught only because the deviation table is
+enforced in both directions: earlier fixes moved cases along, and what had
+been recorded as a deliberate refusal turned out to be a defect wearing
+the wrong reason. Seven rows in total have been reclassified that way.
 
 What remains, largest first:
 
 | Class | Cases | What it is |
 |---|---|---|
-| `gapLenient` | 40 | halite parses a document the suite requires to be an error. The safe direction for an existing tree, which is why it ranks last. |
-| `gapValueOther` | 10 | unclassified value differences. |
-| `gapFlow` | 8 | implicit pairs and multi-line plain scalars inside flow collections. |
-| `gapAfterDocument` | 7 | content belonging to the document read as trailing content. |
-| `gapExplicitKey` | 6 | `? key` with no `:` line is legal and means null. |
-| `gapMultilinePlain` | 6 | the remainder of the plain-scalar work, in sequences and around anchors. |
-| `gapChomping` | 5 | block scalar chomping in the cases the `---` fix did not reach. |
-| `gapMappingKey` | 5 | key recognition around whitespace and quoting before the colon. |
-| `gapFolding` | 4 | folded scalars, including the more-indented rule SPEC 10.1.1 names. |
-| `gapPlainScalar` | 3 | a plain scalar cut short by a character special only elsewhere. |
-| `gapOther`, `gapAnchor`, `gapDirective` | 4 | singletons. |
+| `gapLenient` | 36 | halite parses a document the suite requires to be an error. Accepting too much is the safe direction for an existing tree, which is why it ranks last. |
+| `gapFlow` | 7 | mostly a multi-line plain scalar used as a flow mapping key. YAML allows it in a mapping and forbids it in a sequence, and halite has one rule for both: letting it fold everywhere fixes two cases and breaks two valid ones, so the two contexts need telling apart first. |
+| `gapValueOther` | 5 | unclassified value differences. |
+| `gapChomping` | 4 | trailing-space lines and binary payloads at the end of a block scalar. |
+| `gapAfterDocument`, `gapMappingKey`, `gapPlainScalar` | 9 | content read as trailing, keys not recognised in flow, scalars cut short by a character special only elsewhere. |
+| `gapExplicitKey`, `gapMultilinePlain`, `gapOther`, `gapDirective` | 7 | remainders and singletons. |
 
-None of the remaining classes has been seen in a real Salt tree; the four
-that were fixed all had shapes that do occur. That is a judgement about
-priority, not evidence that the rest are harmless.
+Of the 34 deliberate disagreements, 20 are tags outside the nine types, 7
+are tabs used for indentation, 6 are complex keys, and 1 is a duplicate
+key. Those are SPEC 10.1.2 working as specified, and they are excluded
+from the conformance figure, since halite does not claim to be YAML 1.2
+there.
 
-The suite's own value comparison is only run where it supplies `in.json`
-and halite parses the document. The 34 deliberate disagreements are
-excluded from the conformance figure, since halite does not claim to be
-YAML 1.2 there.
+The value comparison runs only where the suite supplies `in.json` and
+halite parses the document, so a case that fails to parse is counted once,
+as a rejection, and its value is never checked.
 
 ### 5.5 What the lab run does cover
 
@@ -605,11 +633,11 @@ excavation.
 
 Ranked by correctness value per unit of work, given one FreeBSD host:
 
-1. **The remaining 98 YAML conformance gaps.** The suite is vendored and
-   running (5.4), so this is now incremental rather than a project: each
-   fix forces its rows out of the table and the count down. The 40
+1. **The remaining 68 YAML conformance gaps.** Incremental work: each fix
+   forces its rows out of the table and the count down. The 36
    `gapLenient` cases rank last, since accepting too much is the safe
-   direction.
+   direction. The largest actionable cluster is `gapFlow`, which needs the
+   flow-mapping and flow-sequence key rules told apart.
 2. **A Jinja corpus with expected output**, the other absent conformance
    layer, and `internal/template` at 79.8% is also the one correctness-core
    package under the SPEC 31 bar. Same shape of work as the YAML suite.
