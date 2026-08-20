@@ -37,6 +37,11 @@ type Conformance struct {
 	Setup func() error
 	// Cleanup runs after the case.
 	Cleanup func()
+	// Probe reports the observable state the function manages, as a string
+	// to compare. It is optional, and it is the direct check that test
+	// mode changed nothing: the harness otherwise has to infer that from
+	// the module's own answers.
+	Probe func() (string, error)
 	// SkipIdempotence marks a function whose second run legitimately
 	// differs, such as one that appends. It must be justified in the case
 	// where it is set.
@@ -79,6 +84,14 @@ func (cf Conformance) Check(r *Registry, newContext func(test bool) *exec.Contex
 			return failures
 		}
 	}
+	var beforeTest string
+	if cf.Probe != nil {
+		var err error
+		if beforeTest, err = cf.Probe(); err != nil {
+			fail("setup", "probe failed: %v", err)
+			return failures
+		}
+	}
 	testRes, err := r.Call(newContext(true), cf.Name, cf.Args)
 	if err != nil {
 		fail("test mode", "returned an error: %v", err)
@@ -95,6 +108,31 @@ func (cf Conformance) Check(r *Registry, newContext func(test bool) *exec.Contex
 	}
 	if err := checkComment(testRes.Comment); err != nil {
 		fail("test mode", "%v", err)
+	}
+
+	// Phase 1b: test mode is asked the same question again, with no setup
+	// in between. A function that honoured test mode changed nothing, so
+	// it must still say the system does not match. One that quietly
+	// applied its change now reports there is nothing to do, which is how
+	// the contract's central promise is caught without the harness
+	// needing to know anything about the system being managed.
+	//
+	// Probe, when a case supplies one, checks the same thing directly.
+	repeat, err := r.Call(newContext(true), cf.Name, cf.Args)
+	if err != nil {
+		fail("test mode", "returned an error when asked a second time: %v", err)
+		return failures
+	}
+	if repeat.Result != nil && *repeat.Result {
+		fail("test mode", "changed the system: a second test-mode run reports there is nothing left to do")
+	}
+	if cf.Probe != nil {
+		after, err := cf.Probe()
+		if err != nil {
+			fail("test mode", "probe failed: %v", err)
+		} else if after != beforeTest {
+			fail("test mode", "changed the system: the probe went from %q to %q", beforeTest, after)
+		}
 	}
 
 	// Phase 2: apply for real, and confirm the prediction was honest.

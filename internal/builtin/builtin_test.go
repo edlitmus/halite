@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,9 +42,37 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 	r := New()
 	dir := t.TempDir()
 
+	// A probe reports the observable state of a path, so the harness can
+	// check directly that test mode touched nothing rather than inferring
+	// it from the module's own answers.
+	probePath := func(path string) func() (string, error) {
+		return func() (string, error) {
+			info, err := os.Lstat(path)
+			if os.IsNotExist(err) {
+				return "absent", nil
+			}
+			if err != nil {
+				return "", err
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(path)
+				return "symlink -> " + target, err
+			}
+			if info.IsDir() {
+				return "dir " + formatMode(info.Mode()), nil
+			}
+			b, err := os.ReadFile(path)
+			if err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("file %s %q %d", formatMode(info.Mode()), b, info.ModTime().UnixNano()), nil
+		}
+	}
+
 	cases := []states.Conformance{
 		{
-			Name: "file.managed",
+			Name:  "file.managed",
+			Probe: probePath(filepath.Join(dir, "managed.conf")),
 			Args: value.MapOf(
 				"name", filepath.Join(dir, "managed.conf"),
 				"contents", "hello\n",
@@ -53,22 +82,26 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 		},
 		{
 			Name:  "file.directory",
+			Probe: probePath(filepath.Join(dir, "adir")),
 			Args:  value.MapOf("name", filepath.Join(dir, "adir"), "mode", "0750"),
 			Setup: func() error { return os.RemoveAll(filepath.Join(dir, "adir")) },
 		},
 		{
 			Name:  "file.symlink",
+			Probe: probePath(filepath.Join(dir, "alink")),
 			Args:  value.MapOf("name", filepath.Join(dir, "alink"), "target", "/etc/hosts"),
 			Setup: func() error { return os.RemoveAll(filepath.Join(dir, "alink")) },
 		},
 		{
 			Name:  "file.touch",
+			Probe: probePath(filepath.Join(dir, "touched")),
 			Args:  value.MapOf("name", filepath.Join(dir, "touched")),
 			Setup: func() error { return os.RemoveAll(filepath.Join(dir, "touched")) },
 		},
 		{
-			Name: "file.absent",
-			Args: value.MapOf("name", filepath.Join(dir, "doomed")),
+			Name:  "file.absent",
+			Probe: probePath(filepath.Join(dir, "doomed")),
+			Args:  value.MapOf("name", filepath.Join(dir, "doomed")),
 			Setup: func() error {
 				return os.WriteFile(filepath.Join(dir, "doomed"), []byte("x"), 0o644)
 			},
