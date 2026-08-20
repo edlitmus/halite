@@ -12,7 +12,19 @@ import (
 //
 // asKey stops a plain scalar at the `:` that ends a mapping key. inFlow
 // stops it at a flow indicator.
-func (p *parser) parseScalar(minIndent int, asKey, inFlow bool) (string, bool, error) {
+// flowMode says which flow construct a scalar sits in, because the two
+// bound an implicit key differently: inside a flow sequence a key must fit
+// on one line, and inside a flow mapping it may take a line break before
+// its colon. One rule for both is wrong whichever way it is written.
+type flowMode int
+
+const (
+	notFlow flowMode = iota
+	flowInSeq
+	flowInMap
+)
+
+func (p *parser) parseScalar(minIndent int, asKey bool, flow flowMode) (string, bool, error) {
 	switch p.peek() {
 	case '\'':
 		s, err := p.parseSingleQuoted()
@@ -21,13 +33,14 @@ func (p *parser) parseScalar(minIndent int, asKey, inFlow bool) (string, bool, e
 		s, err := p.parseDoubleQuoted()
 		return s, true, err
 	}
-	s, err := p.parsePlain(minIndent, asKey, inFlow)
+	s, err := p.parsePlain(minIndent, asKey, flow)
 	return s, false, err
 }
 
 // parsePlain reads an unquoted scalar, including its continuation onto
 // more-indented following lines, which YAML folds with a space.
-func (p *parser) parsePlain(minIndent int, asKey, inFlow bool) (string, error) {
+func (p *parser) parsePlain(minIndent int, asKey bool, flow flowMode) (string, error) {
+	inFlow := flow != notFlow
 	var lines []string
 
 	for {
@@ -54,14 +67,17 @@ func (p *parser) parsePlain(minIndent int, asKey, inFlow bool) (string, error) {
 			if c == ':' {
 				n := p.peekAt(1)
 				if n == ' ' || n == '\t' || n == '\n' || n == 0 || (inFlow && isFlowIndicator(n)) {
-					if inFlow && hasContent(lines) {
+					if flow == flowInSeq && hasContent(lines) {
 						// The scalar already folded a line break with
-						// something on it, so it cannot be an implicit
-						// key: YAML requires one to sit on a single line,
-						// which is what keeps a parser's lookahead
-						// bounded. A blank line before the scalar does not
-						// count, since the key still starts on one line.
-						return "", p.err("an implicit key must be on one line")
+						// something on it, so it cannot be the key of a
+						// single-pair entry: inside a flow sequence such a
+						// key must sit on one line, which is what keeps a
+						// parser's lookahead bounded. A flow mapping is
+						// the other case and allows the break, so this
+						// fires only for a sequence. A blank line before
+						// the scalar does not count, since the key still
+						// starts on one line.
+						return "", p.err("a key written inside a flow sequence must be on one line")
 					}
 					if asKey || inFlow {
 						break

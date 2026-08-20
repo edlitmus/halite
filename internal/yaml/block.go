@@ -210,7 +210,7 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 	// anything indented past the key, so passing minIndent here ended the
 	// scalar at the first continuation line and left it to be read as a
 	// stray, over-indented mapping entry.
-	raw, quoted, err := p.parseScalar(parentIndent+1, false, false)
+	raw, quoted, err := p.parseScalar(parentIndent+1, false, notFlow)
 	if err != nil {
 		return nil, err
 	}

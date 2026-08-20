@@ -92,7 +92,10 @@ func (p *parser) parseFlowMap() (*value.Map, error) {
 		if p.peek() == '[' || p.peek() == '{' {
 			return nil, p.errAt(keyPos, "a mapping or sequence cannot be used as a key")
 		}
-		raw, quoted, err := p.parseScalar(0, true, true)
+		// Not asKey: a plain scalar in a flow mapping may span lines, both
+		// as an entry with no value and as a key that takes its colon on
+		// the following line. `{foo\n: bar}` is valid YAML.
+		raw, quoted, err := p.parseScalar(0, false, flowInMap)
 		if err != nil {
 			return nil, err
 		}
@@ -214,7 +217,13 @@ func (p *parser) parseFlowNode(allowImplicitPair bool) (any, error) {
 	}
 
 	pos := p.pos()
-	raw, quoted, err := p.parseScalar(0, false, true)
+	// A single-pair entry is only spelled without braces inside a flow
+	// sequence, and that is exactly where its key is held to one line.
+	mode := flowInMap
+	if allowImplicitPair {
+		mode = flowInSeq
+	}
+	raw, quoted, err := p.parseScalar(0, false, mode)
 	if err != nil {
 		return nil, err
 	}

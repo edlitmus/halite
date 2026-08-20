@@ -597,12 +597,33 @@ func TestPlainScalarsInsideFlow(t *testing.T) {
 		t.Errorf("first entry = %#v, want the folded scalar", got[0])
 	}
 
-	// A key that folds a line break before its colon is refused.
+	// A key that folds a line break before its colon is refused inside a
+	// flow sequence, where a single-pair entry's key must fit on one line.
 	_, _, err = Parse([]byte("[ key\n  : value ]\n"), Options{File: "t.sls"})
 	if err == nil {
-		t.Error("an implicit key spanning lines should be refused")
+		t.Error("a key spanning lines in a flow sequence should be refused")
 	} else if !strings.Contains(err.Error(), "one line") {
 		t.Errorf("the error should say why: %v", err)
+	}
+
+	// A flow mapping is the other case: there the break is allowed, and
+	// treating the two alike is wrong whichever way it is written.
+	v, _, err = Parse([]byte("{foo\n: bar}\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatalf("a flow mapping key may take its colon on the next line: %v", err)
+	}
+	if got, _ := v.(*value.Map).Get("foo"); got != "bar" {
+		t.Errorf("value = %#v", v)
+	}
+
+	// A folded key with no value at all is an entry in its own right.
+	v, _, err = Parse([]byte("{ multi\n  line, a: b }\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := v.(*value.Map)
+	if got, ok := m.Get("multi line"); !ok || got != nil {
+		t.Errorf("keys = %v, want a folded key with a null value", m.StringKeys())
 	}
 
 	// A key that merely begins on the line after the bracket is fine.

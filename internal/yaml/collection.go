@@ -173,7 +173,7 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 				}
 				p.skipSpaces()
 			} else {
-				raw, quoted, err := p.parseScalar(indent, true, false)
+				raw, quoted, err := p.parseScalar(indent, true, notFlow)
 				if err != nil {
 					return nil, err
 				}
@@ -337,7 +337,7 @@ func (p *parser) parseExplicitKey(indent int) (any, error) {
 		}
 		return v, nil
 	}
-	raw, quoted, err := p.parseScalar(indent, false, false)
+	raw, quoted, err := p.parseScalar(indent, false, notFlow)
 	if err != nil {
 		return nil, err
 	}
