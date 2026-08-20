@@ -437,7 +437,7 @@ nine are absent.
 
 | Layer | Status |
 |---|---|
-| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 300 of 402 agree, 34 disagree by design, 68 are gaps — see 5.4. |
+| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 301 of 402 agree, 34 disagree by design, 67 are gaps — see 5.4. |
 | Conformance, templates | **absent.** No Jinja corpus with expected output. |
 | Differential against Salt | **absent.** This is named the primary correctness gate and it has never been run. There is no Salt installation to run it against on this host. |
 | Differential, version comparison | **absent**, and blocked: `pkg.version_cmp` is not implemented. |
@@ -486,7 +486,7 @@ target parser, all clean. The corpora are committed under each package's
 ### 5.4 Where YAML conformance stands
 
 Running the suite for the first time put the parser at 228 of 402, with
-140 defects. Eleven fixes took it to **300 and 68**. Statement coverage of
+140 defects. Twelve fixes took it to **301 and 67**. Statement coverage of
 `internal/yaml` rose to 96.1% along the way, but the suite is the thing
 actually measuring correctness here.
 
@@ -531,6 +531,15 @@ What the fixes were, and why each mattered beyond the score:
 - **An empty block scalar was an error.** `strip: >-` with the next key at
   the mapping's own column is a key whose value is the empty string. 1
   case.
+- **Three round-trip defects, found by re-fuzzing rather than by the
+  suite.** `\xNN` emitted the raw byte instead of the code point, so
+  anything above 0x7F produced a string that is not valid UTF-8 and the
+  parser refused its own encoder's output. An unbalanced `]` drove the
+  mapping-entry lookahead's flow counter negative, hiding the colon after
+  it. And a mapping key needs stricter quoting than a value, since it has
+  to survive that lookahead: `b[1]` is a fine plain scalar as a value and
+  breaks the entry as a key. 1 suite case, and three shapes the suite does
+  not cover — which is the argument for running both.
 
 Two of those eleven were caught only because the deviation table is
 enforced in both directions: earlier fixes moved cases along, and what had
@@ -633,7 +642,7 @@ excavation.
 
 Ranked by correctness value per unit of work, given one FreeBSD host:
 
-1. **The remaining 68 YAML conformance gaps.** Incremental work: each fix
+1. **The remaining 67 YAML conformance gaps.** Incremental work: each fix
    forces its rows out of the table and the count down. The 36
    `gapLenient` cases rank last, since accepting too much is the safe
    direction. The largest actionable cluster is `gapFlow`, which needs the
