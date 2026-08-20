@@ -452,7 +452,10 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 			p.next()
 		}
 		if blank {
-			raw = append(raw, rawLine{blank: true})
+			// A blank line's indentation is not nothing: whitespace past
+			// the block's own indent is content, so `|+` over a line of
+			// two spaces at indent 1 keeps one of them.
+			raw = append(raw, rawLine{blank: true, indent: indent})
 			continue
 		}
 		raw = append(raw, rawLine{text: text, indent: indent})
@@ -473,41 +476,72 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 	trailing := len(raw) - 1 - lastContent
 	raw = raw[:lastContent+1]
 
+	// extra is the whitespace a line carries past the block's own indent,
+	// which is content in both styles.
+	extra := func(ln rawLine) string {
+		if n := ln.indent - blockIndent; n > 0 {
+			return strings.Repeat(" ", n)
+		}
+		return ""
+	}
+	// moreIndented reports whether a line begins with white space past the
+	// block indent. Such a line's breaks are preserved rather than folded,
+	// which is the rule SPEC section 10.1.1 names and naive
+	// implementations miss. A leading tab counts: the scanner stops
+	// counting indentation at it, so it arrives at the head of the text.
+	moreIndented := func(ln rawLine) bool {
+		return ln.indent > blockIndent || strings.HasPrefix(ln.text, "\t")
+	}
+
 	var b strings.Builder
 	if !folded {
 		for i, ln := range raw {
 			if ln.blank {
+				b.WriteString(extra(ln))
 				b.WriteByte('\n')
 				continue
 			}
-			b.WriteString(strings.Repeat(" ", ln.indent-blockIndent))
+			b.WriteString(extra(ln))
 			b.WriteString(ln.text)
 			if i < len(raw)-1 {
 				b.WriteByte('\n')
 			}
 		}
 	} else {
-		prevMoreIndented := false
-		for i, ln := range raw {
+		// Folding, stated as it actually works: between two content lines
+		// separated by k blank lines, the break becomes a space when k is
+		// zero and k newlines otherwise, plus one more newline whenever
+		// either of the two lines is more indented, because that break is
+		// preserved rather than folded.
+		blanks := 0
+		started := false
+		prevMore := false
+		for _, ln := range raw {
 			if ln.blank {
-				b.WriteByte('\n')
-				prevMoreIndented = false
+				blanks++
 				continue
 			}
-			moreIndented := ln.indent > blockIndent
-			if i > 0 {
-				switch {
-				case raw[i-1].blank:
-					// The line break was already written.
-				case moreIndented || prevMoreIndented:
-					b.WriteByte('\n')
-				default:
-					b.WriteByte(' ')
+			more := moreIndented(ln)
+			switch {
+			case !started:
+				// Blank lines before any content are literal breaks.
+				b.WriteString(strings.Repeat("\n", blanks))
+				started = true
+			case blanks > 0:
+				n := blanks
+				if more || prevMore {
+					n++
 				}
+				b.WriteString(strings.Repeat("\n", n))
+			case more || prevMore:
+				b.WriteByte('\n')
+			default:
+				b.WriteByte(' ')
 			}
-			b.WriteString(strings.Repeat(" ", ln.indent-blockIndent))
+			blanks = 0
+			b.WriteString(extra(ln))
 			b.WriteString(ln.text)
-			prevMoreIndented = moreIndented
+			prevMore = more
 		}
 	}
 
