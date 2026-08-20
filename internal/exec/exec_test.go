@@ -408,3 +408,36 @@ func asUnknown(err error, target **UnknownFunctionError) bool {
 	}
 	return ok
 }
+
+// The one failure an unconverted Salt state reliably produces: `name` was
+// a shell line in Salt and is a program name here, so the exec fails with
+// a "no such file" naming the whole line. Without a hint that reads as
+// "argument parsing", an operator reads it as "the binary is missing".
+func TestAnUnsplitCommandLineExplainsItself(t *testing.T) {
+	r := &OSRunner{}
+	_, err := r.Run(context.Background(), Command{Argv: []string{"/bin/echo hello world"}})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{"args", "shell: true", "cmd_default_shell", "15.2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error should mention %q:\n%v", want, err)
+		}
+	}
+
+	// A genuinely missing program with no space gets no hint, or the hint
+	// becomes noise on every typo.
+	_, err = r.Run(context.Background(), Command{Argv: []string{"/nonexistent/halite-test"}})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(err.Error(), "cmd_default_shell") {
+		t.Errorf("a missing program should not get the migration hint:\n%v", err)
+	}
+
+	// Nor does a shell command, where a space is the normal case.
+	_, err = r.Run(context.Background(), Command{Argv: []string{"/nonexistent/x y"}, Shell: true})
+	if err != nil && strings.Contains(err.Error(), "cmd_default_shell") {
+		t.Errorf("a shell command should not get the migration hint:\n%v", err)
+	}
+}

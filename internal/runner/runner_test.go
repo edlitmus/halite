@@ -22,7 +22,9 @@ import (
 // probe records what actually ran, which is the only way to tell "skipped"
 // from "ran and did nothing".
 type probe struct {
-	ran []string
+	ran   []string
+	runAs []string
+	umask []string
 }
 
 // registries builds a state registry whose behaviour a test can script
@@ -40,6 +42,9 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 				{Name: "changes", Type: signature.Bool, Default: false},
 				{Name: "fail", Type: signature.Bool, Default: false},
 				{Name: "watch_marker", Type: signature.String},
+				// runas is read as a per-state option and left in the
+				// arguments, so a module it is used on has to declare it.
+				{Name: "runas", Type: signature.String},
 			},
 			Mutates: true, TestMode: signature.TestReliable, Section: "test",
 		}
@@ -47,6 +52,11 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 
 	run := func(c *exec.Context, args *value.Map) (states.Result, error) {
 		name := states.Str(args, "name", "")
+		// The per-state execution options are recorded so that a test can
+		// assert they reached the module rather than stopping at the
+		// unless and onlyif conditions.
+		p.runAs = append(p.runAs, c.RunAs)
+		p.umask = append(p.umask, c.Umask)
 		// A test-mode invocation is recorded distinctly, because prereq
 		// runs its target in test mode before deciding, and a trace that
 		// hid that would look like the target ran twice.
@@ -862,5 +872,36 @@ func TestEmptyRun(t *testing.T) {
 	}
 	if out.RetCode() != 2 {
 		t.Errorf("an empty run should exit 2, got %d", out.RetCode())
+	}
+}
+
+// SPEC section 11.7 lists runas and umask as per-state options. They were
+// applied to a state's unless and onlyif conditions but not to the state
+// itself, which is the wrong half: a cmd.run asking for umask 077 wrote a
+// world-readable file and reported success.
+func TestPerStateExecutionOptionsReachTheModule(t *testing.T) {
+	_, p := compileAndRun(t, `
+masked:
+  probe.run:
+    - umask: '077'
+    - runas: someone
+
+bare:
+  probe.run: []
+`)
+	if len(p.ran) != 2 {
+		t.Fatalf("ran = %v", p.ran)
+	}
+	// The states run in declaration order, so index 0 is the masked one.
+	if p.umask[0] != "077" {
+		t.Errorf("umask reached the module as %q, want 077", p.umask[0])
+	}
+	if p.runAs[0] != "someone" {
+		t.Errorf("runas reached the module as %q, want someone", p.runAs[0])
+	}
+	// A state that asked for neither must not inherit its neighbour's,
+	// which is what sharing one context between chunks would do.
+	if p.umask[1] != "" || p.runAs[1] != "" {
+		t.Errorf("a state with no options saw umask %q and runas %q", p.umask[1], p.runAs[1])
 	}
 }

@@ -8,6 +8,7 @@ package exec
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -54,6 +55,18 @@ type Context struct {
 	// can observe what a module would have run without running it, which
 	// is what makes the platform modules testable off their platform.
 	Runner CommandRunner
+
+	// RunAs and Umask are the per-state options of SPEC section 11.7,
+	// applied to every command the state runs. They live on the context
+	// rather than being threaded through each module's arguments, because
+	// the option is a statement about the state's whole execution: a
+	// state that shells out three times must do all three under the
+	// account and mask it asked for, not only the first.
+	//
+	// A module that sets either on the Command it builds wins, since that
+	// is a deliberate choice about that one command.
+	RunAs string
+	Umask string
 }
 
 // FileFetcher resolves a managed URI to a local path.
@@ -406,9 +419,27 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 			}
 			return res, fmt.Errorf("%s exited %d: %s", cmd.String(), res.Code, firstLine(res.Stderr))
 		}
-		return res, fmt.Errorf("%s: %w", cmd.String(), err)
+		return res, fmt.Errorf("%s: %w%s", cmd.String(), err, migrationHint(cmd, err))
 	}
 	return res, nil
+}
+
+// migrationHint explains the one failure that an unconverted Salt state
+// reliably produces: `name: some command with args` was a shell line in
+// Salt and is a single program name here, so the exec fails with a
+// "no such file" naming the whole line. SPEC section 15.2.
+func migrationHint(cmd Command, err error) string {
+	if cmd.Shell || len(cmd.Argv) == 0 || !errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	if !strings.ContainsAny(cmd.Argv[0], " \t") {
+		return ""
+	}
+	return "\n  the program name contains a space, so it was not split into arguments:" +
+		"\n  halite runs a command without a shell by default, where `name` is the program" +
+		"\n  and `args` is the list of arguments. Pass the arguments in `args`, or set" +
+		"\n  `shell: true` on this state, or `cmd_default_shell: true` for a transition." +
+		"\n  See SPEC section 15.2."
 }
 
 func asExitError(err error, target **exec.ExitError) bool {
@@ -467,6 +498,12 @@ func (r *RecordingRunner) RanCommands() []string {
 func (c *Context) Run(cmd Command) (Result, error) {
 	if c.Runner == nil {
 		c.Runner = &OSRunner{}
+	}
+	if cmd.RunAs == "" {
+		cmd.RunAs = c.RunAs
+	}
+	if cmd.Umask == "" {
+		cmd.Umask = c.Umask
 	}
 	ctx := c.Ctx
 	if ctx == nil {

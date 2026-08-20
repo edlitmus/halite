@@ -364,6 +364,18 @@ func (r *Runner) evalCondition(ch *state.Chunk, cond any) (bool, error) {
 		value.TypeName(cond))
 }
 
+// chunkContext is the module context with the chunk's per-state execution
+// options bound to it.
+func (r *Runner) chunkContext(ch *state.Chunk) *exec.Context {
+	if ch.Opts.RunAs == "" && ch.Opts.Umask == "" {
+		return r.Ctx
+	}
+	c := *r.Ctx
+	c.RunAs = ch.Opts.RunAs
+	c.Umask = ch.Opts.Umask
+	return &c
+}
+
 func mustGet(m *value.Map, key string) any {
 	v, _ := m.Get(key)
 	return v
@@ -371,11 +383,16 @@ func mustGet(m *value.Map, key string) any {
 
 // execute runs one chunk, applying the retry loop and the check_cmd.
 func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
+	// The chunk's own runas and umask apply to every command the state
+	// runs, not only to its unless and onlyif conditions. SPEC section
+	// 11.7 lists both as per-state options, and an option that governs
+	// the conditions but not the state itself is the wrong half.
+	ctx := r.chunkContext(ch)
 	call := func() (states.Result, error) {
 		if watchFired {
-			return r.States.CallWatch(r.Ctx, ch.Func(), ch.Args)
+			return r.States.CallWatch(ctx, ch.Func(), ch.Args)
 		}
-		return r.States.Call(r.Ctx, ch.Func(), ch.Args)
+		return r.States.Call(ctx, ch.Func(), ch.Args)
 	}
 
 	res, err := call()
