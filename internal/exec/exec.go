@@ -280,6 +280,67 @@ func CleanEnv() []string {
 	}
 }
 
+// applyUmask rewrites a command so the child runs under a given umask.
+//
+// There is no SysProcAttr field for a umask and no way to run code between
+// fork and exec in Go, so the umask is set by a shell that then execs the
+// real program. syscall.Umask is not an option: it is process-global, and
+// setting it around a fork would change the umask of every other goroutine
+// creating a file at that moment.
+//
+// The argument vector is single-quoted before it reaches the shell, so the
+// no-shell promise still holds for its contents: a value containing `;` or
+// `$(...)` is one argument to the program, not a second command.
+func applyUmask(cmd Command) (Command, error) {
+	if cmd.Umask == "" {
+		return cmd, nil
+	}
+	mask, err := normalizeUmask(cmd.Umask)
+	if err != nil {
+		return cmd, err
+	}
+	if len(cmd.Argv) == 0 {
+		return cmd, fmt.Errorf("no command given")
+	}
+	prefix := []string{"umask", mask, ";"}
+	if cmd.Shell {
+		// Argv is already a script; the umask goes in front of it.
+		cmd.Argv = append(prefix, cmd.Argv...)
+		return cmd, nil
+	}
+	cmd.Shell = true
+	cmd.Argv = append(append(prefix, "exec"), quoteAll(cmd.Argv)...)
+	return cmd, nil
+}
+
+// normalizeUmask refuses anything that is not an octal mask, because the
+// value reaches a shell and a state file is not a trusted source.
+func normalizeUmask(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" || len(s) > 4 {
+		return "", fmt.Errorf("umask %q is not an octal mask", s)
+	}
+	for _, r := range s {
+		if r < '0' || r > '7' {
+			return "", fmt.Errorf("umask %q is not an octal mask", s)
+		}
+	}
+	return s, nil
+}
+
+// shellQuote wraps a string in single quotes for /bin/sh.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func quoteAll(argv []string) []string {
+	out := make([]string, len(argv))
+	for i, a := range argv {
+		out[i] = shellQuote(a)
+	}
+	return out
+}
+
 // Run implements CommandRunner.
 func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	if len(cmd.Argv) == 0 {
@@ -289,6 +350,11 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, cmd.Timeout)
 		defer cancel()
+	}
+
+	cmd, err := applyUmask(cmd)
+	if err != nil {
+		return Result{}, err
 	}
 
 	var c *exec.Cmd
@@ -318,7 +384,7 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	c.Stderr = &stderr
 
 	start := time.Now()
-	err := c.Run()
+	err = c.Run()
 	res := Result{
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
