@@ -124,17 +124,33 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 			continue
 		}
 		if p.atDocStart() {
-			p.skipLine()
+			// Consume the three dashes rather than the whole line: a
+			// document may begin on the marker line itself, as in
+			// `--- |` or `--- !!str x` or `--- foo`, and skipping to the
+			// newline threw that node away. What followed was then
+			// reparsed as a plain scalar, which is why a block scalar
+			// written this way silently lost its style and its chomping.
+			p.next()
+			p.next()
+			p.next()
 			// A directives-end marker resets the anchor scope.
 			p.anchors = map[string]any{}
-			if err := p.skipBlank(); err != nil {
-				return nil, p.warnings, err
-			}
-			if p.eof() || p.atDocStart() || p.atDocEnd() {
-				docs = append(docs, nil)
-				continue
+			p.skipSpaces()
+
+			inline := !p.eof() && p.peek() != '\n' && !p.commentStart()
+			if !inline {
+				if err := p.skipBlank(); err != nil {
+					return nil, p.warnings, err
+				}
+				if p.eof() || p.atDocStart() || p.atDocEnd() {
+					docs = append(docs, nil)
+					continue
+				}
 			}
 		}
+		// A node on the marker line sits at whatever column the marker
+		// left it at, and its parent is the document, so the minimum
+		// indentation stays -1 either way.
 		v, err := p.parseBlockValue(0, -1)
 		if err != nil {
 			return nil, p.warnings, err

@@ -164,10 +164,6 @@ type deviation struct {
 var deviations = []deviation{
 	{"26DV", devRejects, gapMappingKey},
 	{"27NA", devValue, gapDirective},
-	{"2G84/00", devAccepts, gapLenient},
-	{"2G84/01", devAccepts, gapLenient},
-	{"2G84/02", devValue, gapValueOther},
-	{"2G84/03", devValue, gapValueOther},
 	{"2JQS", devRejects, specDuplicateKey},
 	{"2LFX", devValue, gapDirective},
 	{"2SXE", devRejects, gapAfterDocument},
@@ -181,7 +177,6 @@ var deviations = []deviation{
 	{"4CQQ", devRejects, gapMultilinePlain},
 	{"4FJ6", devRejects, gapFlow},
 	{"4JVG", devAccepts, gapLenient},
-	{"4Q9F", devValue, gapFolding},
 	{"52DL", devRejects, specTag},
 	{"565N", devValue, gapChomping},
 	{"57H4", devRejects, specTag},
@@ -195,7 +190,6 @@ var deviations = []deviation{
 	{"6CK3", devRejects, specTag},
 	{"6FWR", devValue, gapChomping},
 	{"6HB6", devRejects, specTab},
-	{"6JQW", devValue, gapChomping},
 	{"6LVF", devValue, gapDirective},
 	{"6M2F", devRejects, gapAnchor},
 	{"6PBE", devRejects, gapExplicitKey},
@@ -212,7 +206,6 @@ var deviations = []deviation{
 	{"8KB6", devRejects, gapFlow},
 	{"8MK2", devRejects, specTag},
 	{"8UDB", devRejects, gapFlow},
-	{"96L6", devValue, gapFolding},
 	{"9C9N", devAccepts, gapLenient},
 	{"9DXL", devValue, gapDirective},
 	{"9JBA", devAccepts, gapLenient},
@@ -221,14 +214,12 @@ var deviations = []deviation{
 	{"9MAG", devAccepts, gapLenient},
 	{"9MMA", devAccepts, gapLenient},
 	{"9MMW", devRejects, gapFlow},
-	{"9MQT/00", devValue, gapValueOther},
 	{"9MQT/01", devAccepts, gapLenient},
 	{"9WXW", devRejects, specTag},
 	{"A2M4", devRejects, gapMultilinePlain},
 	{"A984", devRejects, gapMultilinePlain},
 	{"AB8U", devRejects, gapAfterDocument},
 	{"AZW3", devRejects, gapPlainScalar},
-	{"B3HG", devValue, gapFolding},
 	{"B63P", devAccepts, gapLenient},
 	{"BEC7", devValue, gapDirective},
 	{"BU8L", devRejects, gapMultilinePlain},
@@ -246,7 +237,6 @@ var deviations = []deviation{
 	{"DE56/01", devValue, gapQuotedTab},
 	{"DE56/02", devValue, gapQuotedTab},
 	{"DE56/03", devValue, gapQuotedTab},
-	{"DK3J", devRejects, gapAfterDocument},
 	{"DK95/00", devRejects, specTab},
 	{"DK95/01", devAccepts, gapLenient},
 	{"DK95/03", devRejects, specTab},
@@ -255,20 +245,18 @@ var deviations = []deviation{
 	{"DWX9", devValue, gapValueOther},
 	{"E76Z", devRejects, gapAfterDocument},
 	{"FH7J", devRejects, specTag},
-	{"FP8R", devValue, gapFolding},
 	{"G5U8", devAccepts, gapLenient},
 	{"H2RW", devValue, gapValueOther},
 	{"H7TQ", devAccepts, gapLenient},
 	{"HMQ5", devRejects, specTag},
 	{"J3BT", devRejects, gapMappingKey},
+	{"J7PZ", devRejects, specTag},
 	{"JTV5", devRejects, gapExplicitKey},
 	{"K54U", devValue, gapValueOther},
 	{"K858", devRejects, gapMultilinePlain},
 	{"KK5P", devRejects, specComplexKey},
-	{"KSS4", devValue, gapValueOther},
 	{"L24T/00", devValue, gapChomping},
 	{"L24T/01", devValue, gapChomping},
-	{"L383", devValue, gapValueOther},
 	{"L94M", devValue, gapValueOther},
 	{"LQZ7", devRejects, gapMappingKey},
 	{"LX3P", devRejects, gapOther},
@@ -292,7 +280,6 @@ var deviations = []deviation{
 	{"Q5MG", devRejects, specTab},
 	{"Q9WF", devRejects, gapOther},
 	{"QB6E", devAccepts, gapLenient},
-	{"QLJ7", devAccepts, gapLenient},
 	{"R4YG", devValue, gapFolding},
 	{"RTP8", devValue, gapDirective},
 	{"RXY3", devAccepts, gapLenient},
@@ -307,7 +294,6 @@ var deviations = []deviation{
 	{"SU74", devAccepts, gapLenient},
 	{"SY6V", devAccepts, gapLenient},
 	{"T26H", devValue, gapChomping},
-	{"T5N4", devValue, gapQuotedTab},
 	{"U3C3", devRejects, specTag},
 	{"U3XV", devValue, gapValueOther},
 	{"U99R", devAccepts, gapLenient},
@@ -419,6 +405,19 @@ func TestYAMLTestSuite(t *testing.T) {
 	cases := loadSuite(t)
 	index := deviationIndex(t)
 	seen := map[string]bool{}
+
+	// Fixing a gap moves many rows at once, so the table can be rebuilt
+	// from what the parser now does:
+	//
+	//	HALITE_YAML_SUITE_REGEN=1 go test ./internal/yaml/ -run TestYAMLTestSuite
+	//
+	// It prints the rows and fails, deliberately: the reasons it carries
+	// forward are the ones already recorded, and a newly deviating case
+	// gets a placeholder that a person has to classify.
+	if os.Getenv("HALITE_YAML_SUITE_REGEN") != "" {
+		regenerateTable(t, cases, index)
+		return
+	}
 
 	for _, c := range cases {
 		c := c
@@ -617,4 +616,48 @@ func indented(s string) string {
 		b.WriteString("    | " + ln + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// regenerateTable prints the deviation table as it would be for the
+// parser's current behaviour, carrying forward the reason already recorded
+// for each case.
+func regenerateTable(t *testing.T, cases []suiteCase, index map[string]deviation) {
+	t.Helper()
+	var b strings.Builder
+	var unclassified []string
+	counts := map[string]int{}
+
+	for _, c := range cases {
+		got := runSuiteCase(c)
+		if got.agrees {
+			continue
+		}
+		reason := "REASON_UNCLASSIFIED"
+		if d, ok := index[c.ID]; ok && d.Kind == got.kind {
+			reason = d.Reason
+		} else {
+			unclassified = append(unclassified, fmt.Sprintf("%s (%s) %s\n  %s", c.ID, c.Name, got.kind, got.detail))
+		}
+		counts[reason]++
+		fmt.Fprintf(&b, "\t{%q, %s, %s},\n", c.ID, kindName(got.kind), reason)
+	}
+
+	t.Logf("deviation table, regenerated:\n\n%s", b.String())
+	if len(unclassified) > 0 {
+		t.Logf("%d case(s) need a reason chosen by hand:", len(unclassified))
+		for _, u := range unclassified {
+			t.Logf("  %s", u)
+		}
+	}
+	t.Fatal("regeneration mode: the table above was printed, not applied")
+}
+
+func kindName(k devKind) string {
+	switch k {
+	case devRejects:
+		return "devRejects"
+	case devAccepts:
+		return "devAccepts"
+	}
+	return "devValue"
 }
