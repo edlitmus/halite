@@ -158,7 +158,7 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 			// a string. Reading them here rather than letting them fall
 			// into the scalar is what stops the key from coming out as
 			// the literal text "&anchor key".
-			np, err := p.readProps()
+			np, err := p.readProps(indent)
 			if err != nil {
 				return nil, err
 			}

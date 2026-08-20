@@ -187,7 +187,8 @@ func (p *parser) parseFlowMap() (*value.Map, error) {
 // allowImplicitPair enables the `a: 1` spelling that YAML permits for a
 // single-pair mapping written directly inside a flow sequence.
 func (p *parser) parseFlowNode(allowImplicitPair bool) (any, error) {
-	np, err := p.readProps()
+	// A flow collection has no line-indentation rule of its own here.
+	np, err := p.readProps(0)
 	if err != nil {
 		return nil, err
 	}

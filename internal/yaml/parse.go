@@ -463,13 +463,22 @@ func (p *parser) skipInlineTrailer() error {
 }
 
 func (p *parser) atDocStart() bool {
-	return p.col == 1 && bytes.HasPrefix(p.src[p.off:], []byte("---")) &&
-		(p.off+3 >= len(p.src) || p.src[p.off+3] == ' ' || p.src[p.off+3] == '\n')
+	return p.col == 1 && bytes.HasPrefix(p.src[p.off:], []byte("---")) && markerEnd(p, 3)
 }
 
 func (p *parser) atDocEnd() bool {
-	return p.col == 1 && bytes.HasPrefix(p.src[p.off:], []byte("...")) &&
-		(p.off+3 >= len(p.src) || p.src[p.off+3] == ' ' || p.src[p.off+3] == '\n')
+	return p.col == 1 && bytes.HasPrefix(p.src[p.off:], []byte("...")) && markerEnd(p, 3)
+}
+
+// markerEnd reports whether a document marker ends at offset n, which it
+// does at end of input or at any white space. A tab separates a marker
+// from what follows it just as a space does.
+func markerEnd(p *parser, n int) bool {
+	if p.off+n >= len(p.src) {
+		return true
+	}
+	c := p.src[p.off+n]
+	return c == ' ' || c == '\t' || c == '\n'
 }
 
 func isBlockSeqEntry(p *parser) bool {
@@ -477,5 +486,6 @@ func isBlockSeqEntry(p *parser) bool {
 		return false
 	}
 	n := p.peekAt(1)
-	return n == ' ' || n == '\n' || n == 0
+	// A tab separates the dash from the entry as well as a space does.
+	return n == ' ' || n == '\t' || n == '\n' || n == 0
 }

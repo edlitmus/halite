@@ -768,3 +768,38 @@ func TestHexEscapeIsACodePoint(t *testing.T) {
 		}
 	}
 }
+
+// An anchor and a tag are properties of the same node even when they sit
+// on separate lines, which is Spec Example 6.23 and the shape a tree uses
+// when an anchor would make a line too long.
+func TestNodePropertiesAcrossLines(t *testing.T) {
+	v, _, err := Parse([]byte("key: &anchor\n !!map\n  a: b\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner, _ := v.(*value.Map).Get("key")
+	m, ok := inner.(*value.Map)
+	if !ok {
+		t.Fatalf("key = %#v, want a mapping", inner)
+	}
+	if got, _ := m.Get("a"); got != "b" {
+		t.Errorf("inner = %v", m.StringKeys())
+	}
+
+	// A property less indented than its parent belongs to something else,
+	// so this one is refused rather than absorbed.
+	if _, _, err := Parse([]byte("key: &x\n!!map\n  a: b\n"), Options{File: "t.sls"}); err == nil {
+		t.Error("an unindented continuation property should be refused")
+	}
+
+	// Two anchors are two nodes, not one node with two anchors: the
+	// second belongs to the key below it.
+	v, _, err = Parse([]byte("top: &node\n  &key k: v\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner, _ = v.(*value.Map).Get("top")
+	if m, ok := inner.(*value.Map); !ok || !m.Has("k") {
+		t.Errorf("top = %#v, want a mapping holding k", inner)
+	}
+}

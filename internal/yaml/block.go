@@ -18,7 +18,10 @@ type nodeProps struct {
 }
 
 // readProps consumes any &anchor and !tag prefix at the current position.
-func (p *parser) readProps() (nodeProps, error) {
+// minIndent is the column a property continued onto a following line
+// must reach; a property less indented than that belongs to something
+// else, not to this node.
+func (p *parser) readProps(minIndent int) (nodeProps, error) {
 	var np nodeProps
 	np.pos = p.pos()
 	for i := 0; i < 2; i++ {
@@ -36,7 +39,7 @@ func (p *parser) readProps() (nodeProps, error) {
 			if np.anchor == "" {
 				return np, p.err("anchor name is empty")
 			}
-			p.skipSpaces()
+			p.skipToNextProp(np, minIndent)
 		case '!':
 			if np.tag != "" {
 				return np, p.err("a node may carry only one tag")
@@ -50,12 +53,42 @@ func (p *parser) readProps() (nodeProps, error) {
 				p.next()
 			}
 			np.tag = string(p.src[start:p.off])
-			p.skipSpaces()
+			p.skipToNextProp(np, minIndent)
 		default:
 			return np, nil
 		}
 	}
 	return np, nil
+}
+
+// skipToNextProp advances past the white space after a node property,
+// including a line break when another property follows it.
+//
+// `&a1` on one line and `!!str` on the next are properties of the same
+// node, which is Spec Example 6.23 and the shape a Salt tree uses when an
+// anchor would otherwise make a line too long. Stopping at the line break
+// left the tag to be read as the node's content.
+func (p *parser) skipToNextProp(np nodeProps, minIndent int) {
+	p.skipSpaces()
+	if p.eof() || p.peek() != '\n' {
+		return
+	}
+	save := *p
+	for !p.eof() && (p.peek() == '\n' || p.peek() == ' ' || p.peek() == '\t') {
+		p.next()
+	}
+	// A node carries at most one anchor and one tag, so a line break is
+	// only crossed for the kind this node has not got yet. Crossing it for
+	// a second anchor would take the one belonging to the next node:
+	// `top: &node\n  &key k: v` has two nodes, not one with two anchors.
+	switch {
+	case p.eof(), p.col < minIndent:
+	case p.peek() == '&' && np.anchor == "":
+		return
+	case p.peek() == '!' && np.tag == "":
+		return
+	}
+	*p = save
 }
 
 func isFlowIndicator(c byte) bool {
@@ -90,7 +123,7 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 	}
 
 	beforeProps := *p
-	np, err := p.readProps()
+	np, err := p.readProps(minIndent)
 	if err != nil {
 		return nil, err
 	}

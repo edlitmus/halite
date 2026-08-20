@@ -98,9 +98,6 @@ var reasons = map[string]reason{
 		"block scalar chomping drops trailing line breaks that should be kept. SPEC 10.1.1 " +
 			"names this as mattering for file.managed contents, so it is the most damaging " +
 			"gap in this table."},
-	gapMultilinePlain: {false,
-		"a plain scalar continued onto following lines is not read as one scalar when it is " +
-			"a mapping value."},
 	gapDirective: {false,
 		"a %YAML or %TAG directive is emitted as a scalar document instead of being consumed."},
 	gapExplicitKey: {false,
@@ -132,17 +129,16 @@ const (
 	specComplexKey   = "specComplexKey"
 	specDuplicateKey = "specDuplicateKey"
 
-	gapAfterDocument  = "gapAfterDocument"
-	gapChomping       = "gapChomping"
-	gapDirective      = "gapDirective"
-	gapExplicitKey    = "gapExplicitKey"
-	gapFlow           = "gapFlow"
-	gapLenient        = "gapLenient"
-	gapMappingKey     = "gapMappingKey"
-	gapMultilinePlain = "gapMultilinePlain"
-	gapOther          = "gapOther"
-	gapPlainScalar    = "gapPlainScalar"
-	gapValueOther     = "gapValueOther"
+	gapAfterDocument = "gapAfterDocument"
+	gapChomping      = "gapChomping"
+	gapDirective     = "gapDirective"
+	gapExplicitKey   = "gapExplicitKey"
+	gapFlow          = "gapFlow"
+	gapLenient       = "gapLenient"
+	gapMappingKey    = "gapMappingKey"
+	gapOther         = "gapOther"
+	gapPlainScalar   = "gapPlainScalar"
+	gapValueOther    = "gapValueOther"
 )
 
 type deviation struct {
@@ -167,7 +163,6 @@ var deviations = []deviation{
 	{"5TRB", devAccepts, gapLenient},
 	{"5TYM", devRejects, specTag},
 	{"5U3A", devAccepts, gapLenient},
-	{"6BCT", devRejects, gapAfterDocument},
 	{"6CA3", devRejects, specTab},
 	{"6CK3", devRejects, specTag},
 	{"6FWR", devValue, gapChomping},
@@ -180,15 +175,12 @@ var deviations = []deviation{
 	{"8MK2", devRejects, specTag},
 	{"9C9N", devAccepts, gapLenient},
 	{"9JBA", devAccepts, gapLenient},
-	{"9KAX", devValue, gapValueOther},
 	{"9KBC", devAccepts, gapLenient},
 	{"9MAG", devAccepts, gapLenient},
 	{"9MMW", devRejects, gapFlow},
 	{"9MQT/01", devAccepts, gapLenient},
 	{"9WXW", devRejects, specTag},
-	{"A2M4", devRejects, gapMultilinePlain},
 	{"AB8U", devRejects, gapAfterDocument},
-	{"BU8L", devRejects, gapMultilinePlain},
 	{"C4HZ", devRejects, specTag},
 	{"CC74", devRejects, specTag},
 	{"CN3R", devValue, gapValueOther},
@@ -204,7 +196,6 @@ var deviations = []deviation{
 	{"DK95/07", devRejects, specTab},
 	{"G5U8", devAccepts, gapLenient},
 	{"J7PZ", devRejects, specTag},
-	{"K54U", devValue, gapValueOther},
 	{"KK5P", devRejects, specComplexKey},
 	{"L24T/00", devValue, gapChomping},
 	{"L24T/01", devValue, gapChomping},
@@ -246,7 +237,6 @@ var deviations = []deviation{
 	{"Y79Y/005", devAccepts, gapLenient},
 	{"Y79Y/006", devAccepts, gapLenient},
 	{"Y79Y/008", devAccepts, gapLenient},
-	{"Y79Y/010", devValue, gapValueOther},
 	{"YJV2", devAccepts, gapLenient},
 	{"Z67P", devRejects, specTag},
 	{"Z9M4", devRejects, specTag},
