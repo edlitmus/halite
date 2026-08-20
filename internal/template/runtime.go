@@ -65,6 +65,9 @@ type Dispatcher interface {
 	HasModule(name string) bool
 }
 
+// NewDispatch wraps a Dispatcher as the `salt` context variable.
+func NewDispatch(d Dispatcher) any { return dispatchValue{d: d} }
+
 // dispatchValue is the `salt` context variable. It supports both spellings
 // SPEC section 10.2.7 requires: salt['cmd.run']('id') and salt.cmd.run('id').
 type dispatchValue struct {

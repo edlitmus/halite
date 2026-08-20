@@ -213,15 +213,22 @@ func (l *lexer) findNextDelim() (int, tokenKind) {
 }
 
 // emitText writes a literal span, applying the whitespace controls.
+//
+// The reported position is where the text begins *after* trimming, not
+// where the raw span began: the source map maps verbatim text line by
+// line, so a position that is one line early puts every later diagnostic
+// in the wrong place.
 func (l *lexer) emitText(s string, trimAfter bool) {
+	raw := s
 	if l.trimNextText {
 		s = strings.TrimLeft(s, " \t\r\n")
 		l.trimNextText = false
-	} else if l.opts.TrimBlocks && strings.HasPrefix(s, "\n") {
-		s = s[1:]
 	} else if l.opts.TrimBlocks && strings.HasPrefix(s, "\r\n") {
 		s = s[2:]
+	} else if l.opts.TrimBlocks && strings.HasPrefix(s, "\n") {
+		s = s[1:]
 	}
+	skippedLines := strings.Count(raw[:len(raw)-len(s)], "\n")
 	if trimAfter {
 		s = strings.TrimRight(s, " \t\r\n")
 	} else if l.opts.LstripBlocks {
@@ -234,7 +241,12 @@ func (l *lexer) emitText(s string, trimAfter bool) {
 		}
 	}
 	if s != "" {
-		l.emit(token{kind: tokText, val: s, pos: l.pos()})
+		pos := l.pos()
+		pos.Line += skippedLines
+		if skippedLines > 0 {
+			pos.Col = 1
+		}
+		l.emit(token{kind: tokText, val: s, pos: pos})
 	}
 }
 

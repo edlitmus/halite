@@ -247,6 +247,32 @@ func (r *renderer) renderNodes(nodes []Node) error {
 	return nil
 }
 
+// writeText writes a literal span from the template. Because the text is
+// copied verbatim, its lines and the output's lines advance together, so
+// each one gets its own source map entry. That is what lets a YAML error
+// forty lines into a rendered loop still name the line the operator wrote.
+func (r *renderer) writeText(s string, pos Pos) error {
+	if s == "" {
+		return nil
+	}
+	if err := r.budget.write(len(s), pos); err != nil {
+		return err
+	}
+	if pos.Line != 0 {
+		lines := strings.Count(s, "\n")
+		for k := 0; k <= lines; k++ {
+			r.srcMap = append(r.srcMap, SourceMapEntry{
+				OutLine: r.outLine + k,
+				Pos:     Pos{File: pos.File, Line: pos.Line + k, Col: 1},
+			})
+		}
+		r.lastPos = Pos{}
+	}
+	r.out.WriteString(s)
+	r.outLine += strings.Count(s, "\n")
+	return nil
+}
+
 func (r *renderer) write(s string, pos Pos) error {
 	if s == "" {
 		return nil
@@ -276,7 +302,7 @@ func (r *renderer) renderNode(n Node) error {
 
 	switch t := n.(type) {
 	case *TextNode:
-		return r.write(t.Text, t.position())
+		return r.writeText(t.Text, t.position())
 
 	case *OutputNode:
 		v, err := r.eval(t.Expr)

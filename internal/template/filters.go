@@ -1,7 +1,6 @@
 package template
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -417,62 +416,33 @@ func jsonFilter(fc *FilterContext, v any, args []any, kwargs map[string]any) (an
 	if i, ok := arg(args, kwargs, 0, "indent"); ok {
 		indent, _ = asInt(i)
 	}
-	native := toJSONNative(v)
-	var b []byte
-	var err error
-	if indent > 0 {
-		b, err = json.MarshalIndent(native, "", strings.Repeat(" ", int(indent)))
-	} else {
-		b, err = json.Marshal(native)
-	}
+	b, err := value.EncodeJSON(stripUndefined(v), int(indent))
 	if err != nil {
 		return nil, fc.Errorf("tojson: %v", err)
 	}
 	return string(b), nil
 }
 
-// toJSONNative converts the ordered model into something encoding/json can
-// serialise, keeping key order by using json.RawMessage for mappings.
-func toJSONNative(v any) any {
+// stripUndefined replaces undefined markers with null, so that a partly
+// built structure still serialises under permissive mode.
+func stripUndefined(v any) any {
 	switch t := v.(type) {
+	case Undefined:
+		return nil
 	case *value.Map:
-		return orderedJSON{t}
+		out := value.NewMap(t.Len())
+		for _, e := range t.Entries() {
+			out.SetAt(e.Key, stripUndefined(e.Val), e.KeyPos, e.ValPos)
+		}
+		return out
 	case []any:
 		out := make([]any, len(t))
 		for i, item := range t {
-			out[i] = toJSONNative(item)
+			out[i] = stripUndefined(item)
 		}
 		return out
-	case Undefined:
-		return nil
 	}
 	return v
-}
-
-type orderedJSON struct{ m *value.Map }
-
-// MarshalJSON writes the mapping in declaration order.
-func (o orderedJSON) MarshalJSON() ([]byte, error) {
-	var b strings.Builder
-	b.WriteByte('{')
-	for i, e := range o.m.Entries() {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		k, err := json.Marshal(value.KeyString(e.Key))
-		if err != nil {
-			return nil, err
-		}
-		b.Write(k)
-		b.WriteByte(':')
-		v, err := json.Marshal(toJSONNative(e.Val))
-		if err != nil {
-			return nil, err
-		}
-		b.Write(v)
-	}
-	b.WriteByte('}')
-	return []byte(b.String()), nil
 }
 
 func strFilter(name string, fn func(string) string) FilterFunc {

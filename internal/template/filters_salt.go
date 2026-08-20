@@ -9,7 +9,6 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/netip"
@@ -143,7 +142,7 @@ func jsonDecode(wantMap bool) FilterFunc {
 		if err != nil {
 			return nil, err
 		}
-		out, err := decodeJSONOrdered([]byte(s))
+		out, err := value.DecodeJSON([]byte(s))
 		if err != nil {
 			return nil, fc.Errorf("decoding JSON: %v", err)
 		}
@@ -156,75 +155,6 @@ func jsonDecode(wantMap bool) FilterFunc {
 		}
 		return out, nil
 	}
-}
-
-// decodeJSONOrdered decodes JSON into the ordered model, keeping object
-// key order rather than losing it to a Go map.
-func decodeJSONOrdered(b []byte) (any, error) {
-	dec := json.NewDecoder(strings.NewReader(string(b)))
-	dec.UseNumber()
-	v, err := decodeJSONValue(dec)
-	if err != nil {
-		return nil, err
-	}
-	return v, nil
-}
-
-func decodeJSONValue(dec *json.Decoder) (any, error) {
-	tok, err := dec.Token()
-	if err != nil {
-		return nil, err
-	}
-	switch t := tok.(type) {
-	case json.Delim:
-		switch t {
-		case '{':
-			m := value.NewMap(4)
-			for dec.More() {
-				kt, err := dec.Token()
-				if err != nil {
-					return nil, err
-				}
-				key, ok := kt.(string)
-				if !ok {
-					return nil, fmt.Errorf("object key is not a string")
-				}
-				v, err := decodeJSONValue(dec)
-				if err != nil {
-					return nil, err
-				}
-				m.Set(key, v)
-			}
-			if _, err := dec.Token(); err != nil {
-				return nil, err
-			}
-			return m, nil
-		case '[':
-			out := []any{}
-			for dec.More() {
-				v, err := decodeJSONValue(dec)
-				if err != nil {
-					return nil, err
-				}
-				out = append(out, v)
-			}
-			if _, err := dec.Token(); err != nil {
-				return nil, err
-			}
-			return out, nil
-		}
-		return nil, fmt.Errorf("unexpected %v", t)
-	case json.Number:
-		if n, err := t.Int64(); err == nil {
-			return n, nil
-		}
-		fl, err := t.Float64()
-		if err != nil {
-			return nil, err
-		}
-		return fl, nil
-	}
-	return tok, nil
 }
 
 func addHashFilters(f map[string]FilterFunc) {
