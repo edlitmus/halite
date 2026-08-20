@@ -189,7 +189,6 @@ var deviations = []deviation{
 	{"9WXW", devRejects, specTag},
 	{"A2M4", devRejects, gapMultilinePlain},
 	{"AB8U", devRejects, gapAfterDocument},
-	{"AZW3", devRejects, gapPlainScalar},
 	{"BU8L", devRejects, gapMultilinePlain},
 	{"C4HZ", devRejects, specTag},
 	{"CC74", devRejects, specTag},

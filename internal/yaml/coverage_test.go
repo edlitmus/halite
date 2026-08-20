@@ -713,3 +713,37 @@ func TestDirectiveValidation(t *testing.T) {
 		t.Errorf("a directive after a closed document was refused: %v", err)
 	}
 }
+
+// `\xNN` names the code point U+00NN, not the byte NN. Emitting the raw
+// byte produced a string that is not valid UTF-8 for anything above 0x7F,
+// which the encoder then wrote out and the parser refused to read back.
+func TestHexEscapeIsACodePoint(t *testing.T) {
+	cases := map[string]string{
+		`"\x41"`:   "A",
+		`"\x00"`:   "\x00",
+		`"\x80"`:   "\u0080",
+		`"\xff"`:   "\u00ff",
+		`"\u00e9"`: "\u00e9",
+	}
+	for src, want := range cases {
+		v, _, err := Parse([]byte(src+"\n"), Options{File: "t.sls"})
+		if err != nil {
+			t.Errorf("%s: %v", src, err)
+			continue
+		}
+		if v != any(want) {
+			t.Errorf("%s = % x, want % x", src, v, want)
+			continue
+		}
+		// Whatever came out must survive a round trip through the encoder.
+		out := Encode(v, EncodeOptions{})
+		back, _, err := Parse([]byte(out), Options{File: "t.sls"})
+		if err != nil {
+			t.Errorf("%s re-encoded to %q, which does not parse: %v", src, out, err)
+			continue
+		}
+		if back != any(want) {
+			t.Errorf("%s round-tripped to % x", src, back)
+		}
+	}
+}

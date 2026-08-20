@@ -387,7 +387,11 @@ func (p *parser) hexEscape(n int) (string, error) {
 		return "", p.err("invalid hexadecimal escape %q", digits)
 	}
 	if n == 2 {
-		return string([]byte{byte(v)}), nil
+		// `\xNN` names the code point U+00NN, not the byte NN. Emitting
+		// the raw byte produced a string that is not valid UTF-8 for
+		// anything above 0x7F, which the encoder then wrote out and the
+		// parser refused to read back.
+		return string(rune(v)), nil
 	}
 	if v > utf8.MaxRune {
 		return "", p.err("escape %q is not a Unicode code point", digits)

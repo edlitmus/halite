@@ -35,7 +35,13 @@ func (p *parser) lineIsMappingEntry() bool {
 			flow++
 			i++
 		case ']', '}':
-			flow--
+			// A closing bracket with no opener is an ordinary character
+			// in a plain scalar, not flow nesting. Letting the counter go
+			// negative meant the `:` after it never matched the `flow ==
+			// 0` test, so `0]: null` was not seen as a mapping entry.
+			if flow > 0 {
+				flow--
+			}
 			i++
 		case '#':
 			if i > p.off && (p.src[i-1] == ' ' || p.src[i-1] == '\t') {

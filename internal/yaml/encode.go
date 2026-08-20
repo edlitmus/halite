@@ -57,7 +57,7 @@ func writeBlock(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 			if i > 0 || indent > 0 {
 				b.WriteString(pad)
 			}
-			writeScalar(b, e.Key)
+			writeKey(b, e.Key)
 			b.WriteByte(':')
 			writeChild(b, e.Val, indent, opts)
 		}
@@ -110,7 +110,7 @@ func writeBlockIndented(b *strings.Builder, v any, indent int, opts EncodeOption
 	case *value.Map:
 		for _, e := range t.Entries() {
 			b.WriteString(pad)
-			writeScalar(b, e.Key)
+			writeKey(b, e.Key)
 			b.WriteByte(':')
 			writeChild(b, e.Val, indent, opts)
 		}
@@ -131,7 +131,7 @@ func writeFlow(b *strings.Builder, v any) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			writeScalar(b, e.Key)
+			writeKey(b, e.Key)
 			b.WriteString(": ")
 			writeFlow(b, e.Val)
 		}
@@ -148,6 +148,45 @@ func writeFlow(b *strings.Builder, v any) {
 	default:
 		writeScalar(b, v)
 	}
+}
+
+// writeKey renders a mapping key, which is held to a stricter rule than a
+// value.
+//
+// A value is quoted when a plain rendering would resolve to something
+// else. A key has to survive one more thing: the lookahead that decides
+// whether a line is a mapping entry at all, which tracks quoting and flow
+// nesting as it hunts for the colon. `b[1]` is a perfectly good plain
+// scalar as a value, and as a key its `[` opens a flow collection to that
+// lookahead, so the entry stops being an entry.
+//
+// The rule is therefore an allowlist rather than a list of characters
+// to avoid. Trying to name the dangerous ones lost twice: first to `[`, then
+// to a key holding a colon and a quote. Salt keys are identifiers, paths,
+// and the occasional sentence, all of which pass.
+func writeKey(b *strings.Builder, v any) {
+	if s, ok := v.(string); ok && !plainSafeKey(s) {
+		b.WriteString(Quote(s))
+		return
+	}
+	writeScalar(b, v)
+}
+
+// plainSafeKey reports whether a string can be written as a plain mapping
+// key and read back as itself.
+func plainSafeKey(s string) bool {
+	if needsQuoting(s) {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '_', r == '-', r == '.', r == '/', r == '+', r == ' ':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func writeScalar(b *strings.Builder, v any) {
