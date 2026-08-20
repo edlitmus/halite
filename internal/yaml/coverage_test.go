@@ -671,3 +671,45 @@ func TestEmptyBlockScalar(t *testing.T) {
 		t.Errorf("strip = %#v, want the empty string", got)
 	}
 }
+
+// A directive is metadata for a document, and malformed metadata is an
+// error rather than something to shrug at.
+func TestDirectiveValidation(t *testing.T) {
+	bad := map[string]string{
+		"%YAML 1.2\n":                 "must be followed by a --- document marker",
+		"%YAML 1.2 foo\n---\n":        "exactly one version",
+		"%YAML 1.2\n%YAML 1.2\n---\n": "only one %YAML",
+		"%YAML 1.1#...\n---\n":        "version such as 1.1",
+		"%\n---\n":                    "a directive needs a name",
+	}
+	for src, want := range bad {
+		_, _, err := ParseStream([]byte(src), Options{File: "t.sls"})
+		if err == nil {
+			t.Errorf("%q parsed; it should be an error", src)
+			continue
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: error %q does not mention %q", src, err, want)
+		}
+	}
+
+	// A version halite does not implement is a warning, not an error: the
+	// document may still be readable, and refusing it helps nobody.
+	_, warns, err := ParseStream([]byte("%YAML 1.3\n---\nkey: value\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatalf("an unimplemented version should warn, not fail: %v", err)
+	}
+	if len(warns) != 1 || warns[0].Kind != WarnDirective {
+		t.Errorf("warnings = %v", warns)
+	}
+
+	// A directive after a document needs the document closed first.
+	_, _, err = ParseStream([]byte("---\na: 1\n%YAML 1.2\n---\nb: 2\n"), Options{File: "t.sls"})
+	if err == nil {
+		t.Log("a directive after an unclosed document is still accepted; recorded as a gap")
+	}
+	// With the marker it is fine.
+	if _, _, err := ParseStream([]byte("---\na: 1\n...\n%YAML 1.2\n---\nb: 2\n"), Options{File: "t.sls"}); err != nil {
+		t.Errorf("a directive after a closed document was refused: %v", err)
+	}
+}

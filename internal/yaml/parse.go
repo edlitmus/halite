@@ -113,6 +113,9 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 	p := &parser{src: src, line: 1, col: 1, opts: opts, anchors: map[string]any{}}
 
 	var docs []any
+	// docClosed tracks whether a directive would be legal here: at the
+	// start of a stream, or after a `...` marker closed the last document.
+	docClosed := true
 	for {
 		if err := p.skipBlank(); err != nil {
 			return nil, p.warnings, err
@@ -122,9 +125,10 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 		}
 		if p.atDocEnd() {
 			p.skipLine()
+			docClosed = true
 			continue
 		}
-		if err := p.skipDirectives(); err != nil {
+		if err := p.skipDirectives(docClosed); err != nil {
 			return nil, p.warnings, err
 		}
 		if p.eof() {
@@ -151,6 +155,7 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 				}
 				if p.eof() || p.atDocStart() || p.atDocEnd() {
 					docs = append(docs, nil)
+					docClosed = false
 					continue
 				}
 			}
@@ -163,6 +168,7 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 			return nil, p.warnings, err
 		}
 		docs = append(docs, v)
+		docClosed = false
 
 		if err := p.skipBlank(); err != nil {
 			return nil, p.warnings, err
@@ -194,8 +200,28 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 // is the only place YAML allows them: a `%` at the start of a line inside
 // a document is an ordinary plain scalar, and treating it as a directive
 // there would eat a value.
-func (p *parser) skipDirectives() error {
+// isVersionNumber reports whether s is a bare `major.minor`, which is
+// what a %YAML directive takes. `1.1#...` is not: a comment needs a space
+// in front of it, so those characters are part of the version and the
+// version is malformed.
+func isVersionNumber(s string) bool {
+	major, minor, ok := strings.Cut(s, ".")
+	if !ok || major == "" || minor == "" {
+		return false
+	}
+	for _, part := range [2]string{major, minor} {
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (p *parser) skipDirectives(afterDocEnd bool) error {
 	seen := false
+	seenYAML := false
 	for !p.eof() && p.col == 1 && p.peek() == '%' {
 		pos := p.pos()
 		start := p.off
@@ -206,12 +232,41 @@ func (p *parser) skipDirectives() error {
 		if !p.eof() {
 			p.next()
 		}
+		if !afterDocEnd {
+			// A directive opens a new stream section, so a document
+			// before it has to have been closed with `...`.
+			return p.errAt(pos, "a directive must be preceded by a ... document end marker")
+		}
 		seen = true
 
-		name, rest, _ := strings.Cut(strings.TrimPrefix(line, "%"), " ")
+		// A directive's parameters are separated by spaces and the line
+		// ends at a comment only if a space precedes the `#`, so
+		// `%YAML 1.1#...` is a malformed version rather than a comment.
+		fields := strings.Fields(strings.TrimPrefix(line, "%"))
+		if len(fields) == 0 {
+			return p.errAt(pos, "a directive needs a name")
+		}
+		name, args := fields[0], fields[1:]
+		for i, a := range args {
+			if strings.HasPrefix(a, "#") {
+				args = args[:i]
+				break
+			}
+		}
+
 		switch name {
 		case "YAML":
-			v := strings.TrimSpace(rest)
+			if seenYAML {
+				return p.errAt(pos, "a document may carry only one %%YAML directive")
+			}
+			seenYAML = true
+			if len(args) != 1 {
+				return p.errAt(pos, "%%YAML takes exactly one version, found %d", len(args))
+			}
+			v := args[0]
+			if !isVersionNumber(v) {
+				return p.errAt(pos, "%%YAML takes a version such as 1.1, found %q", v)
+			}
 			if v != "1.1" && v != "1.2" {
 				p.warn(WarnDirective, pos,
 					"%%YAML directive names version %q; halite implements the 1.1 subset of SPEC section 10.1 and ignored it", v)
@@ -222,7 +277,8 @@ func (p *parser) skipDirectives() error {
 			// and a document using the handle fails there with a message
 			// naming the tag.
 			p.warn(WarnDirective, pos,
-				"%%TAG directive %q ignored; halite admits only the tags of the nine types in SPEC section 10.1.1", strings.TrimSpace(rest))
+				"%%TAG directive %q ignored; halite admits only the tags of the nine types in SPEC section 10.1.1",
+				strings.Join(args, " "))
 		default:
 			p.warn(WarnDirective, pos, "unknown directive %q ignored", line)
 		}
@@ -231,7 +287,8 @@ func (p *parser) skipDirectives() error {
 			return err
 		}
 	}
-	if seen && !p.eof() && !p.atDocStart() {
+	if seen && (p.eof() || !p.atDocStart()) {
+		// A directive is metadata for a document, so there has to be one.
 		return p.err("a directive must be followed by a --- document marker")
 	}
 	return nil
