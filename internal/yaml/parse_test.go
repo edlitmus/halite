@@ -222,7 +222,7 @@ func TestQuotedScalars(t *testing.T) {
 }
 
 func TestFlowCollections(t *testing.T) {
-	v := parse(t, "list: [1, 2, three]\nmap: {a: 1, b: [xx, yy]}\nnested: [{k: v}]\n")
+	v := parse(t, "list: [1, 2, three]\nmap: {a: 1, b: [x, y]}\nnested: [{k: v}]\n")
 	items := get(t, v, "list").([]any)
 	if len(items) != 3 || items[0] != int64(1) || items[2] != "three" {
 		t.Errorf("list = %#v", items)
@@ -230,7 +230,7 @@ func TestFlowCollections(t *testing.T) {
 	if got := get(t, v, "map:a"); got != int64(1) {
 		t.Errorf("map:a = %#v", got)
 	}
-	if got := get(t, v, "map:b:1"); got != "yy" {
+	if got := get(t, v, "map:b:1"); got != "y" {
 		t.Errorf("map:b:1 = %#v", got)
 	}
 	if got := get(t, v, "nested:0:k"); got != "v" {
@@ -564,4 +564,32 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestSingleLetterYNStayStrings records a deliberate divergence from SPEC
+// section 10.1.3, whose resolution table lists y, Y, n, and N as YAML 1.1
+// booleans.
+//
+// PyYAML does not resolve the single letters, so Salt does not either.
+// Following the table as written would make `name: n` a boolean here and a
+// string in Salt, breaking the compatibility the section exists to
+// preserve. See docs/DIVERGENCE.md.
+func TestSingleLetterYNStayStrings(t *testing.T) {
+	for _, s := range []string{"y", "Y", "n", "N"} {
+		v, warns := parseWarn(t, "v: "+s+"\n")
+		got := get(t, v, "v")
+		if got != s {
+			t.Errorf("%q resolved to %#v (%T); PyYAML leaves the single letters as strings", s, got, got)
+		}
+		if len(warns) != 0 {
+			t.Errorf("%q produced warnings %v; there is nothing ambiguous about it", s, warns)
+		}
+	}
+	// The spellings PyYAML *does* resolve are unaffected.
+	for _, s := range []string{"yes", "no", "on", "off", "Yes", "NO"} {
+		got := get(t, parse(t, "v: "+s+"\n"), "v")
+		if _, ok := got.(bool); !ok {
+			t.Errorf("%q should still resolve to a bool, got %#v", s, got)
+		}
+	}
 }

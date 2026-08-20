@@ -54,29 +54,44 @@ func (p *parser) parse() (node, error) {
 
 // tokenize splits on whitespace and on parentheses, keeping each token's
 // column so a diagnostic can point at it.
+//
+// A parenthesis groups only when it opens a token. Once a token has begun,
+// parentheses belong to it and are tracked to their close, because a regex
+// target is full of them: `E@^(web|db)[0-9]` is one term, not three, and
+// splitting it produced an error about a type sigil with no value.
 func (p *parser) tokenize() {
-	col := 1
 	start := -1
+	depth := 0
 	flush := func(end int) {
 		if start >= 0 {
 			p.toks = append(p.toks, compoundToken{text: p.src[start:end], col: start + 1})
 			start = -1
+			depth = 0
 		}
 	}
 	for i := 0; i < len(p.src); i++ {
-		c := p.src[i]
-		switch {
+		switch c := p.src[i]; {
 		case c == ' ' || c == '\t':
+			if depth > 0 {
+				// Whitespace inside a term's parentheses is part of it,
+				// which a regex alternation may legitimately contain.
+				continue
+			}
 			flush(i)
-		case c == '(' || c == ')':
+		case c == '(' && start < 0:
+			p.toks = append(p.toks, compoundToken{text: "(", col: i + 1})
+		case c == '(':
+			depth++
+		case c == ')' && depth > 0:
+			depth--
+		case c == ')':
 			flush(i)
-			p.toks = append(p.toks, compoundToken{text: string(c), col: i + 1})
+			p.toks = append(p.toks, compoundToken{text: ")", col: i + 1})
 		default:
 			if start < 0 {
 				start = i
 			}
 		}
-		col++
 	}
 	flush(len(p.src))
 }

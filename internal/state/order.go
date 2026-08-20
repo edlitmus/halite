@@ -143,7 +143,38 @@ func order(chunks []*Chunk, diags *Diags) []*Chunk {
 			out = append(out, chunks[i])
 		}
 	}
+
+	remapResolved(chunks, out)
 	return out
+}
+
+// remapResolved rewrites every requisite's resolved indices to positions
+// in the ordered slice.
+//
+// Resolution happens before ordering, so the indices it produces are
+// positions in the declaration-ordered slice. The runner indexes its
+// results by run position. Those two agree only while ordering moves
+// nothing, which is why the bug this prevents showed up first under
+// prereq: it is the one requisite that puts a chunk *before* its target.
+// The contract, from here on, is that Resolved indexes the ordered slice.
+func remapResolved(before, after []*Chunk) {
+	position := make(map[*Chunk]int, len(after))
+	for i, c := range after {
+		position[c] = i
+	}
+	for _, c := range after {
+		for ri := range c.Reqs {
+			resolved := c.Reqs[ri].Resolved
+			for j, old := range resolved {
+				if old < 0 || old >= len(before) {
+					continue
+				}
+				if newPos, ok := position[before[old]]; ok {
+					resolved[j] = newPos
+				}
+			}
+		}
+	}
 }
 
 // reportCycle finds one requisite cycle and prints it as a path, which is
@@ -229,9 +260,6 @@ func renderCycle(chunks []*Chunk, cyc []int) string {
 // message.
 func kindBetween(from, to *Chunk) string {
 	for _, req := range from.Reqs {
-		for _, idx := range req.Resolved {
-			_ = idx
-		}
 		if requisiteTargets(req, to) {
 			return req.Kind.String()
 		}
@@ -240,8 +268,13 @@ func kindBetween(from, to *Chunk) string {
 }
 
 func requisiteTargets(req Req, to *Chunk) bool {
-	if req.Ref.ID == to.ID {
-		return true
+	for _, ref := range req.Refs {
+		if ref.ID == to.ID {
+			return true
+		}
+		if ref.SLS != "" && ref.SLS == to.SLS {
+			return true
+		}
 	}
-	return req.Ref.SLS != "" && req.Ref.SLS == to.SLS
+	return false
 }

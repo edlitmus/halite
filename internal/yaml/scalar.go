@@ -60,11 +60,24 @@ func (p *parser) resolvePlain(s string, pos value.Pos) any {
 	return s
 }
 
+// bool11 recognises the boolean spellings YAML 1.1 has and YAML 1.2 does
+// not. The set is PyYAML's, exactly.
+//
+// SPEC section 10.1.3's table also lists the single letters y, Y, n, and N,
+// with the rationale "PyYAML does this, so Salt does this, so existing
+// trees depend on it". PyYAML does not: its bool resolver matches
+//
+//	yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF
+//
+// and stops there. Implementing the table as written would make `name: n`
+// a boolean here and a string in Salt, which breaks the compatibility the
+// section exists to preserve. The letters are therefore omitted, and the
+// divergence is recorded in docs/DIVERGENCE.md.
 func bool11(s string) (bool, bool) {
 	switch s {
-	case "yes", "Yes", "YES", "on", "On", "ON", "y", "Y":
+	case "yes", "Yes", "YES", "on", "On", "ON":
 		return true, true
-	case "no", "No", "NO", "off", "Off", "OFF", "n", "N":
+	case "no", "No", "NO", "off", "Off", "OFF":
 		return false, true
 	}
 	return false, false
@@ -76,7 +89,6 @@ func Bool11Spellings() []string {
 	return []string{
 		"yes", "Yes", "YES", "no", "No", "NO",
 		"on", "On", "ON", "off", "Off", "OFF",
-		"y", "Y", "n", "N",
 	}
 }
 
@@ -122,7 +134,10 @@ func (p *parser) resolveNumber(s string, pos value.Pos) (any, bool) {
 	case strings.HasPrefix(body, "+"):
 		body = body[1:]
 	}
-	if body == "" {
+	// A second sign is not a number. Without this check the leading sign
+	// is stripped once and strconv parses the rest, so --1 would resolve
+	// to 1 rather than staying the string it is.
+	if body == "" || body[0] == '-' || body[0] == '+' {
 		return nil, false
 	}
 

@@ -44,24 +44,6 @@ func (s *scope) setExisting(name string, v any) bool {
 	return false
 }
 
-// flatten collapses the chain into a single map, for passing a context to
-// an included or imported template.
-func (s *scope) flatten() map[string]any {
-	out := map[string]any{}
-	var walk func(*scope)
-	walk = func(cur *scope) {
-		if cur == nil {
-			return
-		}
-		walk(cur.parent)
-		for k, v := range cur.vars {
-			out[k] = v
-		}
-	}
-	walk(s)
-	return out
-}
-
 type renderer struct {
 	env    *Environment
 	opts   Options
@@ -71,9 +53,8 @@ type renderer struct {
 	rnd    *rand.Rand
 
 	// Template inheritance state.
-	blocks     map[string][]*BlockNode
-	blockDepth map[string]int
-	tpl        *Template
+	blocks map[string][]*BlockNode
+	tpl    *Template
 
 	depth        int
 	includeDepth int
@@ -85,13 +66,12 @@ type renderer struct {
 
 func newRenderer(env *Environment, b *budget) *renderer {
 	return &renderer{
-		env:        env,
-		opts:       env.Opts,
-		budget:     b,
-		out:        &strings.Builder{},
-		blocks:     map[string][]*BlockNode{},
-		blockDepth: map[string]int{},
-		outLine:    1,
+		env:     env,
+		opts:    env.Opts,
+		budget:  b,
+		out:     &strings.Builder{},
+		blocks:  map[string][]*BlockNode{},
+		outLine: 1,
 	}
 }
 
@@ -102,7 +82,6 @@ func (r *renderer) sub() *renderer {
 	c := newRenderer(r.env, r.budget)
 	c.rnd = r.rnd
 	c.blocks = r.blocks
-	c.blockDepth = r.blockDepth
 	c.depth = r.depth
 	c.includeDepth = r.includeDepth
 	c.tpl = r.tpl
@@ -612,27 +591,37 @@ func (r *renderer) renderBlock(t *BlockNode) error {
 	if len(defs) == 0 {
 		return r.renderNodes(t.Body)
 	}
-	idx := r.blockDepth[t.Name]
-	if idx >= len(defs) {
-		return r.renderNodes(t.Body)
-	}
+	return r.renderBlockAt(t.Name, defs, 0)
+}
 
+// renderBlockAt renders one definition in a block's override chain and
+// binds a super() that reaches the *next* one.
+//
+// The index is a parameter rather than renderer state because super() is a
+// closure: with shared state, the super bound while rendering the parent's
+// body still pointed at the parent, so a three-level chain rendered the
+// same definition forever. Each level gets its own index, so each super()
+// walks exactly one step toward the root.
+func (r *renderer) renderBlockAt(name string, defs []*BlockNode, idx int) error {
+	if idx >= len(defs) {
+		return nil
+	}
 	saved := r.scope
 	r.scope = newScope(saved)
+	defer func() { r.scope = saved }()
+
+	scope := r.scope
 	r.scope.set("super", funcValue{"super", func([]any, map[string]any) (any, error) {
-		r.blockDepth[t.Name] = idx + 1
-		defer func() { r.blockDepth[t.Name] = idx }()
 		if idx+1 >= len(defs) {
 			return "", nil
 		}
 		sub := r.sub()
-		sub.scope = r.scope
-		if err := sub.renderNodes(defs[idx+1].Body); err != nil {
+		sub.scope = scope
+		if err := sub.renderBlockAt(name, defs, idx+1); err != nil {
 			return nil, err
 		}
 		return sub.out.String(), nil
 	}})
-	defer func() { r.scope = saved }()
 
 	return r.renderNodes(defs[idx].Body)
 }

@@ -2,7 +2,6 @@ package template
 
 import (
 	"math"
-	"sort"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -592,6 +591,3 @@ func stdev(ns []float64) float64 {
 	}
 	return math.Sqrt(sum / float64(len(ns)-1))
 }
-
-// sortStringsStable is used where a deterministic key order is needed.
-func sortStringsStable(s []string) { sort.Strings(s) }

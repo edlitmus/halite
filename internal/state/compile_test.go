@@ -357,9 +357,16 @@ base_pkg:
 		t.Errorf("extend clobbered mode: %#v", got)
 	}
 	// A list is appended rather than replaced, which is what makes the
-	// idiomatic extend-plus-require work.
-	if len(conf.Reqs) != 2 {
-		t.Fatalf("requisites = %d, want the original plus the extended one", len(conf.Reqs))
+	// idiomatic extend-plus-require work. One `require` argument is one
+	// requisite holding both references.
+	if len(conf.Reqs) != 1 {
+		t.Fatalf("requisites = %d, want one require argument", len(conf.Reqs))
+	}
+	if len(conf.Reqs[0].Refs) != 2 {
+		t.Fatalf("references = %d, want the original plus the extended one", len(conf.Reqs[0].Refs))
+	}
+	if len(conf.Reqs[0].Resolved) != 2 {
+		t.Fatalf("resolved = %d, want both", len(conf.Reqs[0].Resolved))
 	}
 }
 

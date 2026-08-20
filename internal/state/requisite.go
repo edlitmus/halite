@@ -104,13 +104,27 @@ func (r ReqRef) String() string {
 	}
 }
 
-// Req is one requisite on one chunk.
+// Req is one requisite argument on one chunk.
+//
+// A requisite holds every reference in its list rather than one per
+// entry, because the `_any` and `_all` forms are statements about the
+// whole list: splitting `onchanges: [a, b]` into two requisites would make
+// `_all` mean "either", which is the opposite of what it says.
 type Req struct {
 	Kind ReqKind
-	Ref  ReqRef
+	Refs []ReqRef
 	// Resolved holds the chunk indices this requisite points at, filled in
 	// by resolution.
 	Resolved []int
+}
+
+// Describe renders the requisite's targets for a diagnostic.
+func (r Req) Describe() string {
+	parts := make([]string, len(r.Refs))
+	for i, ref := range r.Refs {
+		parts[i] = ref.String()
+	}
+	return strings.Join(parts, ", ")
 }
 
 // parseReqList reads the value of a requisite argument into references.
@@ -190,15 +204,28 @@ func resolveRequisites(chunks []*Chunk, diags *Diags) {
 	for _, c := range chunks {
 		for ri := range c.Reqs {
 			req := &c.Reqs[ri]
-			ref := req.Ref
+			for _, ref := range req.Refs {
+				resolveOneRef(chunks, c, req, ref, byID, bySLS, byStateID, diags)
+			}
+		}
+	}
+}
 
+// resolveOneRef turns a single reference into chunk indices.
+func resolveOneRef(
+	chunks []*Chunk, c *Chunk, req *Req, ref ReqRef,
+	byID map[string][]int, bySLS map[string][]int, byStateID map[string]int,
+	diags *Diags,
+) {
+	{
+		{
 			switch {
 			case ref.SLS != "":
 				idx, ok := bySLS[ref.SLS]
 				if !ok {
 					diags.Add(ref.Pos, c.SLS, c.ID,
 						"%s names sls %q, which is not part of this run", req.Kind, ref.SLS)
-					continue
+					return
 				}
 				req.Resolved = append(req.Resolved, idx...)
 
@@ -212,11 +239,11 @@ func resolveRequisites(chunks []*Chunk, diags *Diags) {
 							"%s names `%s: %s`, but %q is declared by %s; matching by ID",
 							req.Kind, ref.State, ref.ID, ref.ID, chunks[byIDMatches[0]].State)
 						req.Resolved = append(req.Resolved, byIDMatches[0])
-						continue
+						return
 					}
 					diags.Add(ref.Pos, c.SLS, c.ID,
 						"%s names `%s: %s`, which is not declared in this run", req.Kind, ref.State, ref.ID)
-					continue
+					return
 				}
 				req.Resolved = append(req.Resolved, i)
 

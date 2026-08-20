@@ -105,13 +105,13 @@ func TestGroupbyAndDictsort(t *testing.T) {
 func TestSaltSerializationFilters(t *testing.T) {
 	ctx := map[string]any{
 		"m":    value.MapOf("b", int64(2), "a", int64(1)),
-		"list": []any{"x", "zz"},
+		"list": []any{"x", "y"},
 	}
 	cases := []struct{ src, want string }{
 		{`{{ m | tojson }}`, `{"b":2,"a":1}`},
 		{`{{ 'yes' | yaml_encode }}`, `"yes"`},
 		{`{{ 'plain' | yaml_encode }}`, `plain`},
-		{`{{ list | yaml_encode }}`, `[x, zz]`},
+		{`{{ list | yaml_encode }}`, `[x, y]`},
 		{`{{ 'a"b' | yaml_dquote }}`, `"a\"b"`},
 		{`{{ "it's" | yaml_squote }}`, `'it''s'`},
 		{`{{ '{"a": 1}' | json_decode_dict | attr('a') }}`, "1"},

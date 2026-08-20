@@ -56,8 +56,8 @@ func TestEncodeRoundTrip(t *testing.T) {
 }
 
 func TestEncodeFlow(t *testing.T) {
-	v := value.MapOf("a", int64(1), "b", []any{"x", "z"})
-	if got := Encode(v, EncodeOptions{Flow: true}); got != `{a: 1, b: [x, z]}` {
+	v := value.MapOf("a", int64(1), "b", []any{"x", "y"})
+	if got := Encode(v, EncodeOptions{Flow: true}); got != `{a: 1, b: [x, y]}` {
 		t.Errorf("flow encode = %s", got)
 	}
 }

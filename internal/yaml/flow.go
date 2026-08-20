@@ -40,7 +40,9 @@ func (p *parser) parseFlowSeq() ([]any, error) {
 			p.next()
 			return items, nil
 		}
-		v, err := p.parseFlowNode()
+		// Inside a sequence, `a: 1` without braces is a single-pair
+		// mapping, which YAML permits and Salt trees use.
+		v, err := p.parseFlowNode(true)
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +117,11 @@ func (p *parser) parseFlowMap() (*value.Map, error) {
 			if p.peek() == ',' || p.peek() == '}' {
 				val = nil
 			} else {
-				val, err = p.parseFlowNode()
+				// A mapping value is a plain node: the implicit
+				// single-pair spelling is only legal inside a sequence,
+				// and allowing it here would read `{a: 1 b: 2}` as a
+				// nested mapping instead of the error it is.
+				val, err = p.parseFlowNode(false)
 				if err != nil {
 					return nil, err
 				}
@@ -174,7 +180,10 @@ func (p *parser) parseFlowMap() (*value.Map, error) {
 }
 
 // parseFlowNode reads one entry inside a flow collection.
-func (p *parser) parseFlowNode() (any, error) {
+//
+// allowImplicitPair enables the `a: 1` spelling that YAML permits for a
+// single-pair mapping written directly inside a flow sequence.
+func (p *parser) parseFlowNode(allowImplicitPair bool) (any, error) {
 	np, err := p.readProps()
 	if err != nil {
 		return nil, err
@@ -216,7 +225,8 @@ func (p *parser) parseFlowNode() (any, error) {
 	// `{a: 1, b: 2}` nested as `[{a: 1}]` reaches here only for the
 	// scalar; a `:` following it means a single-pair mapping written
 	// without braces, which YAML permits inside a flow sequence.
-	if p.peek() == ':' && (p.peekAt(1) == ' ' || isFlowIndicator(p.peekAt(1)) || p.peekAt(1) == '\n') {
+	if allowImplicitPair && p.peek() == ':' &&
+		(p.peekAt(1) == ' ' || isFlowIndicator(p.peekAt(1)) || p.peekAt(1) == '\n') {
 		p.next()
 		if err := p.skipFlowBlank(); err != nil {
 			return nil, err
@@ -229,7 +239,7 @@ func (p *parser) parseFlowNode() (any, error) {
 		}
 		var val any
 		if p.peek() != ',' && p.peek() != ']' && p.peek() != '}' {
-			val, err = p.parseFlowNode()
+			val, err = p.parseFlowNode(false)
 			if err != nil {
 				return nil, err
 			}

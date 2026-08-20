@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/value"
-	"github.com/edlitmus/halite/internal/yaml"
 )
 
 // Undefined is the value of a name that does not resolve.
@@ -739,9 +738,4 @@ func typeName(v any) string {
 		return "a function"
 	}
 	return value.TypeName(v)
-}
-
-// toYAML renders a value as YAML for the yaml_encode family of filters.
-func toYAML(v any, flow bool) string {
-	return yaml.Encode(v, yaml.EncodeOptions{Flow: flow})
 }

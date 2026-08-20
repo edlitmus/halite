@@ -314,3 +314,47 @@ func TestKindFromFlag(t *testing.T) {
 		t.Error("range targeting is not supported and must not resolve")
 	}
 }
+
+// TestRegexTargetWithParentheses covers the tokenizer rule that a
+// parenthesis groups only when it opens a term. A regex target is full of
+// them, and splitting `E@^(web|db)[0-9]` into three tokens produced an
+// error about a type sigil with no value.
+func TestRegexTargetWithParentheses(t *testing.T) {
+	cases := []struct {
+		expr string
+		web  bool
+		db   bool
+	}{
+		{`E@^(web|db)[0-9]`, true, true},
+		{`E@^(web)[0-9]`, true, false},
+		{`E@^(web|db)[0-9] and G@os_family:Debian`, true, false},
+		{`(E@^web[0-9] or E@^db[0-9]) and not G@os_family:RedHat`, true, false},
+		{`G@osrelease:22.04 or E@^(db)`, true, true},
+	}
+	for _, c := range cases {
+		mustMatch(t, Compound, c.expr, web1(), c.web)
+		mustMatch(t, Compound, c.expr, db1(), c.db)
+	}
+
+	// An unsupported construct inside the parentheses is still refused by
+	// name rather than mis-tokenized into a confusing error.
+	_, err := Compile(Compound, `E@web(?=1)`, nil)
+	if err == nil || !strings.Contains(err.Error(), "lookahead") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestGroupingStillWorksAfterTheParenChange(t *testing.T) {
+	// The change must not cost ordinary grouping.
+	mustMatch(t, Compound, "(web* or db*) and G@os_family:Debian", web1(), true)
+	mustMatch(t, Compound, "(web* or db*) and G@os_family:Debian", db1(), false)
+	mustMatch(t, Compound, "not (db* or G@os_family:RedHat)", web1(), true)
+
+	// And an unbalanced grouping paren is still an error.
+	if _, err := Compile(Compound, "( web*", nil); err == nil {
+		t.Error("an unclosed group must be refused")
+	}
+	if _, err := Compile(Compound, "web* )", nil); err == nil {
+		t.Error("an unmatched close must be refused")
+	}
+}

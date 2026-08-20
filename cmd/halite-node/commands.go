@@ -219,7 +219,7 @@ func renderLow(out *state.Compiled) []any {
 		if len(ch.Reqs) > 0 {
 			reqs := make([]any, 0, len(ch.Reqs))
 			for _, req := range ch.Reqs {
-				reqs = append(reqs, value.MapOf(req.Kind.String(), req.Ref.String()))
+				reqs = append(reqs, value.MapOf(req.Kind.String(), req.Describe()))
 			}
 			m.Set("__requisites__", reqs)
 		}

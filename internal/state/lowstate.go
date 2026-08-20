@@ -254,6 +254,10 @@ func argPos(args *value.Map, name string) value.Pos {
 	return value.Pos{}
 }
 
+// collectRequisites reads one declaration's requisite arguments.
+//
+// One argument produces one requisite holding every reference in its list,
+// because `_any` and `_all` are statements about the whole list.
 func collectRequisites(f *FuncDecl, d *Decl, diags *Diags) []Req {
 	var out []Req
 	for _, e := range f.Args.Entries() {
@@ -262,9 +266,11 @@ func collectRequisites(f *FuncDecl, d *Decl, diags *Diags) []Req {
 		if !ok {
 			continue
 		}
-		for _, ref := range parseReqList(e.Val, e.ValPos, d.SLS, d.ID, name, diags) {
-			out = append(out, Req{Kind: kind, Ref: ref})
+		refs := parseReqList(e.Val, e.ValPos, d.SLS, d.ID, name, diags)
+		if len(refs) == 0 {
+			continue
 		}
+		out = append(out, Req{Kind: kind, Refs: refs})
 	}
 	return out
 }

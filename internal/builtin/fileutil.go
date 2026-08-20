@@ -184,3 +184,7 @@ func splitKeepEmpty(s string) []string {
 	}
 	return lines
 }
+
+// dirOf is filepath.Dir, named locally so the editing helpers do not each
+// need the import.
+func dirOf(p string) string { return filepath.Dir(p) }
