@@ -119,8 +119,8 @@ func foldLines(lines []string) string {
 func (p *parser) parseSingleQuoted() (string, error) {
 	openPos := p.pos()
 	p.next()
-	var lines []string
-	var cur strings.Builder
+	var lines []qline
+	var cur qline
 	for {
 		if p.eof() {
 			return "", p.errAt(openPos, "unterminated single-quoted string")
@@ -131,19 +131,21 @@ func (p *parser) parseSingleQuoted() (string, error) {
 			p.next()
 			if p.peek() == '\'' {
 				p.next()
-				cur.WriteByte('\'')
+				cur.write("'", false)
 				continue
 			}
-			lines = append(lines, cur.String())
+			lines = append(lines, cur)
 			return foldQuoted(lines), nil
 		case '\n':
 			p.next()
-			lines = append(lines, cur.String())
-			cur.Reset()
+			lines = append(lines, cur)
+			cur = qline{}
 			p.skipSpaces()
 		default:
+			// A single-quoted scalar has no escape that can produce
+			// whitespace, so nothing in it is protected from folding.
 			p.next()
-			cur.WriteByte(c)
+			cur.write(string(c), false)
 		}
 	}
 }
@@ -151,8 +153,8 @@ func (p *parser) parseSingleQuoted() (string, error) {
 func (p *parser) parseDoubleQuoted() (string, error) {
 	openPos := p.pos()
 	p.next()
-	var lines []string
-	var cur strings.Builder
+	var lines []qline
+	var cur qline
 	for {
 		if p.eof() {
 			return "", p.errAt(openPos, "unterminated double-quoted string")
@@ -161,12 +163,12 @@ func (p *parser) parseDoubleQuoted() (string, error) {
 		switch c {
 		case '"':
 			p.next()
-			lines = append(lines, cur.String())
+			lines = append(lines, cur)
 			return foldQuoted(lines), nil
 		case '\n':
 			p.next()
-			lines = append(lines, cur.String())
-			cur.Reset()
+			lines = append(lines, cur)
+			cur = qline{}
 			p.skipSpaces()
 		case '\\':
 			p.next()
@@ -182,42 +184,89 @@ func (p *parser) parseDoubleQuoted() (string, error) {
 				continue
 			}
 			p.next()
-			s, err := p.escape(e)
+			str, err := p.escape(e)
 			if err != nil {
 				return "", err
 			}
-			cur.WriteString(s)
+			// What an escape produced is content, even when it is a space
+			// or a tab. Folding must not trim it away.
+			cur.write(str, true)
 		default:
 			p.next()
-			cur.WriteByte(c)
+			cur.write(string(c), false)
 		}
 	}
 }
 
+// qline is one line of a quoted scalar, remembering which of its bytes
+// came from an escape.
+//
+// The distinction only matters at a line boundary: folding trims the
+// whitespace around a line break, and `\t` written as an escape is a tab
+// the author asked for rather than layout. Without the mask the two are
+// the same byte, and an escaped tab at the end of a folded line
+// disappeared.
+type qline struct {
+	text      strings.Builder
+	protected []bool
+}
+
+func (l *qline) write(s string, protected bool) {
+	l.text.WriteString(s)
+	for i := 0; i < len(s); i++ {
+		l.protected = append(l.protected, protected)
+	}
+}
+
+func (l qline) String() string { return l.text.String() }
+
+// trimmed returns the line with unprotected leading and trailing blanks
+// removed, as folding requires.
+func (l qline) trimmed(left, right bool) string {
+	s := l.text.String()
+	start, end := 0, len(s)
+	if left {
+		for start < end && isBlankByte(s[start]) && !l.protected[start] {
+			start++
+		}
+	}
+	if right {
+		for end > start && isBlankByte(s[end-1]) && !l.protected[end-1] {
+			end--
+		}
+	}
+	return s[start:end]
+}
+
+// blank reports whether the line folds away to nothing, which is what
+// turns a run of empty lines into line breaks.
+func (l qline) blank() bool { return l.trimmed(true, true) == "" }
+
+func isBlankByte(c byte) bool { return c == ' ' || c == '\t' }
+
 // foldQuoted applies YAML's folding to the lines of a quoted scalar. It
 // differs from a plain scalar only in that leading spaces on the last line
 // and trailing spaces on the first are handled separately.
-func foldQuoted(lines []string) string {
+func foldQuoted(lines []qline) string {
 	if len(lines) == 1 {
-		return lines[0]
+		return lines[0].String()
 	}
 	var b strings.Builder
 	pendingBreaks := 0
 	for i, ln := range lines {
 		switch {
 		case i == 0:
-			b.WriteString(strings.TrimRight(ln, " \t"))
+			b.WriteString(ln.trimmed(false, true))
 		case i == len(lines)-1:
-			ln = strings.TrimLeft(ln, " \t")
+			text := ln.trimmed(true, false)
 			if pendingBreaks > 0 {
 				b.WriteString(strings.Repeat("\n", pendingBreaks))
 			} else {
 				b.WriteByte(' ')
 			}
-			b.WriteString(ln)
+			b.WriteString(text)
 		default:
-			ln = strings.TrimSpace(ln)
-			if ln == "" {
+			if ln.blank() {
 				pendingBreaks++
 				continue
 			}
@@ -227,7 +276,7 @@ func foldQuoted(lines []string) string {
 			} else {
 				b.WriteByte(' ')
 			}
-			b.WriteString(ln)
+			b.WriteString(ln.trimmed(true, true))
 		}
 	}
 	return b.String()

@@ -106,8 +106,6 @@ var reasons = map[string]reason{
 			"a mapping value."},
 	gapDirective: {false,
 		"a %YAML or %TAG directive is emitted as a scalar document instead of being consumed."},
-	gapQuotedTab: {false,
-		"a literal tab inside a quoted scalar is stripped rather than kept."},
 	gapExplicitKey: {false,
 		"an explicit `? ` key with no `:` line is legal and means a null value; halite " +
 			"requires the `:` line."},
@@ -149,7 +147,6 @@ const (
 	gapMultilinePlain = "gapMultilinePlain"
 	gapOther          = "gapOther"
 	gapPlainScalar    = "gapPlainScalar"
-	gapQuotedTab      = "gapQuotedTab"
 	gapValueOther     = "gapValueOther"
 )
 
@@ -167,10 +164,6 @@ var deviations = []deviation{
 	{"2SXE", devRejects, gapAfterDocument},
 	{"2XXW", devRejects, gapExplicitKey},
 	{"3HFZ", devAccepts, gapLenient},
-	{"3RLN/00", devValue, gapQuotedTab},
-	{"3RLN/01", devValue, gapQuotedTab},
-	{"3RLN/03", devValue, gapQuotedTab},
-	{"3RLN/04", devValue, gapQuotedTab},
 	{"4FJ6", devRejects, gapFlow},
 	{"4JVG", devAccepts, gapLenient},
 	{"52DL", devRejects, specTag},
@@ -223,10 +216,6 @@ var deviations = []deviation{
 	{"CXX2", devAccepts, gapLenient},
 	{"D49Q", devAccepts, gapLenient},
 	{"DC7X", devRejects, gapMappingKey},
-	{"DE56/00", devValue, gapQuotedTab},
-	{"DE56/01", devValue, gapQuotedTab},
-	{"DE56/02", devValue, gapQuotedTab},
-	{"DE56/03", devValue, gapQuotedTab},
 	{"DK95/00", devRejects, specTab},
 	{"DK95/01", devAccepts, gapLenient},
 	{"DK95/03", devRejects, specTab},
