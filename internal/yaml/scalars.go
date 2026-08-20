@@ -474,11 +474,19 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 
 		if !blank {
 			if !detected {
+				if indent <= parentIndent {
+					// Nothing is indented further than the owner, so the
+					// block scalar has no content: `key: |` with the next
+					// line back at the mapping's own column is an empty
+					// scalar, not a mistake. The line belongs to whatever
+					// owns the mapping, so the parser hands it back.
+					p.off = lineStart
+					p.col = startCol
+					raw = nil
+					break
+				}
 				blockIndent = indent
 				detected = true
-				if blockIndent <= parentIndent {
-					return "", p.err("a block scalar's content must be indented further than the key that owns it")
-				}
 			}
 			if indent < blockIndent {
 				p.off = lineStart

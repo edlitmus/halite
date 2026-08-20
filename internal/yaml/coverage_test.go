@@ -648,3 +648,26 @@ func TestWhitespaceAroundTheKeyColon(t *testing.T) {
 		t.Errorf("a:b parsed as %#v, want the string", v)
 	}
 }
+
+// A block scalar with nothing indented under it is empty, not an error.
+// `strip: >-` followed by the next key at the mapping's own column is a
+// mapping of three empty values, which is Spec Example 8.6.
+func TestEmptyBlockScalar(t *testing.T) {
+	v, _, err := Parse([]byte("strip: >-\n\nclip: >\n\nkeep: |+\n\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := v.(*value.Map)
+	if !ok {
+		t.Fatalf("value = %#v", v)
+	}
+	for _, k := range []string{"strip", "clip", "keep"} {
+		if !m.Has(k) {
+			t.Errorf("key %q is missing; keys are %v", k, m.StringKeys())
+		}
+	}
+	// Chomping still applies to the nothing that is there.
+	if got, _ := m.Get("strip"); got != "" {
+		t.Errorf("strip = %#v, want the empty string", got)
+	}
+}
