@@ -81,6 +81,11 @@ func Parse(argv []string) (*Args, error) {
 		arg := argv[i]
 		switch {
 		case arg == "--":
+			// -- ends option parsing, not argument parsing: a key=value
+			// pair after it is still a kwarg, because it is an argument
+			// rather than an option. A literal that must not be read as a
+			// kwarg is one whose key is not an identifier, which is
+			// already the rule looksLikeKwarg applies.
 			positionalOnly = true
 
 		case !positionalOnly && strings.HasPrefix(arg, "--"):
