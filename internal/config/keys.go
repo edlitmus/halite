@@ -1,0 +1,186 @@
+package config
+
+import "sort"
+
+// Key describes one configuration setting: which roles accept it, what it
+// means, and what it defaults to.
+//
+// The table is the single source of truth for three things that otherwise
+// drift apart: the loader's "is this key recognised" check, the generated
+// documentation, and the migration report's key-by-key translation.
+type Key struct {
+	Name    string
+	Roles   []Role
+	Default string
+	Doc     string
+	// Section names the part of SPEC that defines the setting.
+	Section string
+}
+
+func (k Key) appliesTo(r Role) bool {
+	for _, role := range k.Roles {
+		if role == r {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	all      = []Role{Node, Hub, API}
+	nodeOnly = []Role{Node}
+	hubOnly  = []Role{Hub}
+	nodeHub  = []Role{Node, Hub}
+	hubAPI   = []Role{Hub, API}
+)
+
+// Keys is the recognised configuration surface. It grows with each
+// delivery phase; a key that is not here is reported as unrecognised
+// rather than silently ignored.
+var Keys = []Key{
+	// Identity and transport.
+	{"node_id", nodeOnly, "", "This node's identity. Resolution order is in SPEC section 7.2.", "7.2"},
+	{"node_id_source", nodeOnly, "auto", "Where the node ID comes from: auto, config, env, file, cloud, fqdn, hostname.", "7.2"},
+	{"node_id_caching", nodeOnly, "true", "Pin the resolved node ID at first enrollment.", "7.2"},
+	{"node_id_lowercase", nodeOnly, "false", "Lowercase the resolved node ID.", "7.2"},
+	{"node_id_remove_domain", nodeOnly, "false", "Strip the domain from a resolved FQDN.", "7.2"},
+	{"hub", nodeOnly, "", "The hub to dial. The node dials the hub; the hub never dials the node.", "5.1"},
+	{"hub_port", nodeOnly, "4510", "The hub's TCP port.", "6.1"},
+	{"hub_fingerprint", nodeOnly, "", "Expected fingerprint of the hub's CA, checked at enrollment.", "7.3"},
+	{"hub_alive_interval", nodeOnly, "30s", "Ping interval on the subscribe stream.", "6.2"},
+	{"hub_tries", nodeOnly, "0", "Reconnect attempts before giving up; 0 means retry forever.", "6.2"},
+	{"hub_type", nodeOnly, "static", "static or failover, selecting how a list of hubs is used.", "6.2"},
+	{"listen", hubAPI, ":4510", "Listen address.", "6.1"},
+	{"pki_dir", all, "/etc/halite/pki", "Key material.", "27.3"},
+	{"cache_dir", all, "/var/cache/halite", "Discardable cache.", "27.3"},
+	{"state_dir", all, "/var/lib/halite", "Durable state: job cache, events, evidence.", "27.3"},
+	{"socket_dir", all, "/run/halite", "Sockets and PID files.", "27.3"},
+	{"config_file", all, "", "The primary configuration file, set by the loader.", "27.3"},
+
+	// Enrollment.
+	{"enrollment_mode", hubOnly, "manual", "manual, token, or attested. There is no auto_accept.", "7.3"},
+	{"certificate_lifetime", hubOnly, "2160h", "Issued certificate lifetime; renewal happens at half of it.", "7.4"},
+	{"key_algorithm", hubOnly, "ecdsa-p256", "ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or ed25519 in non-FIPS builds.", "7.1"},
+
+	// State and pillar.
+	{"file_roots", nodeHub, "", "Environment to an ordered list of state directories.", "13.1"},
+	{"pillar_roots", hubOnly, "", "Environment to an ordered list of pillar directories.", "12.2"},
+	{"env", all, "base", "The default environment. saltenv is a permanent alias.", "13.1"},
+	{"pillarenv", nodeHub, "", "The pillar environment, defaulting to env.", "12.2"},
+	{"env_allowlist", nodeHub, "", "Environments a run may use.", "28.3"},
+	{"env_denylist", nodeHub, "", "Environments a run may not use.", "28.3"},
+	{"top_file_merging_strategy", nodeHub, "merge", "merge, same, or merge_all.", "11.2"},
+	{"pillar_source_merging_strategy", hubOnly, "smart", "smart, recurse, aggregate, or overwrite.", "12.3"},
+	{"pillar_merge_lists", hubOnly, "false", "Concatenate lists when merging pillar sources.", "12.3"},
+	{"pillar_trusted_grains", hubOnly, "", "Grains a node may use to target pillar. Custom grains are excluded by default.", "12.4"},
+	{"pillar_cache_disk", nodeOnly, "false", "Cache pillar on the node's disk, encrypted at rest.", "12.8"},
+	{"ext_pillar", hubOnly, "", "External pillar sources.", "12.7"},
+	{"ext_pillar_fail", hubOnly, "hard", "hard or ignore. A partial pillar is worse than no pillar.", "12.7"},
+	{"state_allowlist", nodeHub, "", "SLS names a state run may include.", "28.3"},
+	{"state_denylist", nodeHub, "", "SLS names a state run may not include.", "28.3"},
+	{"startup_states", nodeOnly, "", "What to run when the node starts: highstate, sls, or top.", "20.1"},
+	{"failhard", nodeHub, "false", "Abort a state run on the first failure.", "11.4"},
+	{"test", nodeHub, "false", "Run every state in test mode by default.", "11.6"},
+
+	// Renderers.
+	{"renderer", nodeHub, "jinja|yaml", "The default renderer pipeline.", "10"},
+	{"undefined", nodeHub, "strict", "strict or permissive name resolution in templates.", "10.2.6"},
+	{"yaml_bool_11", nodeHub, "true", "Resolve yes, no, on, off, y, and n as booleans, as PyYAML does.", "10.1.3"},
+	{"template_trim_blocks", nodeHub, "false", "Jinja trim_blocks.", "10.2.1"},
+	{"template_lstrip_blocks", nodeHub, "false", "Jinja lstrip_blocks.", "10.2.1"},
+	{"random_seed", nodeHub, "deterministic", "deterministic or nondeterministic template randomness.", "10.2.4"},
+	{"regex_engine", nodeHub, "re2", "re2 only until the backtracking engine of SPEC section 10.4 ships.", "10.4"},
+
+	// File server.
+	{"fileserver_backend", hubOnly, "roots", "Ordered list of file server backends.", "13.2"},
+	{"fileserver_follow_symlinks", hubOnly, "false", "Follow symlinks inside a served root. Never outside it.", "13.5"},
+	{"file_ignore_regex", hubOnly, "", "Paths the file server hides.", "13.5"},
+	{"file_ignore_glob", hubOnly, "", "Paths the file server hides.", "13.5"},
+	{"gitfs_env_allowlist", hubOnly, "", "Git refs the file server exposes as environments.", "13.3"},
+	{"gitfs_env_denylist", hubOnly, "", "Git refs the file server refuses to expose.", "13.3"},
+	{"gitfs_base", hubOnly, "main", "The branch that becomes the base environment.", "13.3"},
+	{"gitfs_verify_signatures", hubOnly, "false", "Serve a ref only if its tip carries a trusted signature.", "13.3"},
+	{"hash_type", all, "sha256", "sha256, sha384, sha512, or sha3-256.", "13.5"},
+
+	// Grains, mine, scheduler, beacons, reactor.
+	{"grains", nodeOnly, "", "Static grains merged last, so they can override.", "14.2"},
+	{"grains_refresh_interval", nodeOnly, "30m", "How often grains are re-collected.", "8.3"},
+	{"grain_stale_after", hubOnly, "1h", "When cached grains are annotated as stale during targeting.", "8.3"},
+	{"cloud_grains", nodeOnly, "false", "Collect cloud metadata grains. Opt-in, because it costs a round trip.", "14.1"},
+	{"mine_functions", nodeOnly, "", "What this node publishes to the mine.", "19.5"},
+	{"mine_interval", nodeOnly, "60", "Mine publication interval in minutes.", "19.5"},
+	{"schedule", nodeOnly, "", "Scheduled jobs.", "20.1"},
+	{"beacons", nodeOnly, "", "Beacon configuration.", "16.1"},
+	{"reactor", hubOnly, "", "Event tag globs to reaction SLS.", "18.1"},
+	{"returner", nodeOnly, "local", "Default returner.", "20.3"},
+	{"nodegroups", hubOnly, "", "Named compound target expressions.", "8.1"},
+
+	// Jobs and policy.
+	{"job_cache", hubOnly, "local", "Job cache backend.", "9.4"},
+	{"job_cache_retention", hubOnly, "720h", "Job cache retention by age.", "9.4"},
+	{"job_cache_max_size", hubOnly, "10GiB", "Job cache retention by total size.", "9.4"},
+	{"policy", hubAPI, "/etc/halite/policy.yaml", "The RBAC policy file. Deny by default.", "23.5"},
+	{"legacy_acl", hubOnly, "", "Salt ACL keys the shim preserved for review rather than translating.", "28.3"},
+	{"quiesce", nodeOnly, "false", "Refuse jobs other than the allowlist. Salt calls this blackout.", "2.1"},
+	{"quiesce_allowlist", nodeOnly, "", "Functions still permitted while quiesced.", "2.1"},
+
+	// Relay.
+	{"relay_upstream", hubOnly, "", "The hub this relay reports to.", "5.3"},
+	{"relay_upstream_port", hubOnly, "4510", "The upstream hub's port.", "5.3"},
+	{"accept_relays", hubOnly, "false", "Accept connections from relays as well as nodes.", "5.3"},
+
+	// Observability.
+	{"log_level", all, "info", "error, warn, info, debug, or trace.", "26.1"},
+	{"log_level_file", all, "", "Level for the file sink, defaulting to log_level.", "26.1"},
+	{"log_file", all, "", "Log file; empty logs to stderr or the journal.", "26.1"},
+	{"log_format", all, "json", "json or console.", "26.1"},
+	{"metrics_listen", hubAPI, "", "Prometheus exposition address; empty disables it.", "26.2"},
+	{"tracing", all, "off", "off or otlp.", "26.3"},
+
+	// Node execution.
+	{"node_data_cache", hubOnly, "true", "Keep per-node grains, pillar, and mine on the hub.", "28.3"},
+	{"parallel_jobs", nodeOnly, "false", "Allow jobs to run alongside one another by default.", "9.6"},
+	{"job_queue_depth", nodeOnly, "100", "How many jobs may wait before the node refuses more.", "9.6"},
+	{"require_job_signature", nodeOnly, "false", "Refuse a job without a valid detached operator signature.", "25.6"},
+	{"job_signer_keys", nodeOnly, "", "Public keys whose detached job signatures this node accepts.", "25.6"},
+	{"extension_trust_keys", nodeOnly, "", "Keys whose signed extension bundles this node accepts.", "24.4"},
+	{"extension_require_signature", nodeOnly, "true", "Refuse an unsigned extension.", "24.4"},
+	{"cmd_default_shell", nodeOnly, "false", "Run cmd.run through a shell by default, as Salt does.", "15.2"},
+	{"legacy_arg_parse", nodeHub, "false", "Restore Salt's YAML coercion of command line arguments.", "9.2"},
+	{"event_tag_compat", hubOnly, "false", "Additionally emit every event under its salt/ equivalent.", "17.1"},
+}
+
+var keyIndex = func() map[string][]Role {
+	m := make(map[string][]Role, len(Keys))
+	for _, k := range Keys {
+		m[k.Name] = k.Roles
+	}
+	return m
+}()
+
+// IsKnownKey reports whether a role recognises a configuration key.
+func IsKnownKey(role Role, name string) bool {
+	roles, ok := keyIndex[name]
+	if !ok {
+		return false
+	}
+	for _, r := range roles {
+		if r == role {
+			return true
+		}
+	}
+	return false
+}
+
+// KeysFor lists the keys a role accepts, sorted, for documentation and for
+// `doctor`.
+func KeysFor(role Role) []Key {
+	var out []Key
+	for _, k := range Keys {
+		if k.appliesTo(role) {
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}

@@ -20,7 +20,7 @@ type TestFunc func(fc *FilterContext, v any, args []any) (bool, error)
 func (r *renderer) applyTest(t *TestExpr) (any, error) {
 	fn, ok := r.env.tests[t.Name]
 	if !ok {
-		return nil, errorf(t.position(), "unknown test %q", t.Name)
+		return nil, errorf(t.Pos(), "unknown test %q", t.Name)
 	}
 	obj, err := r.eval(t.Obj)
 	if err != nil {
@@ -34,13 +34,13 @@ func (r *renderer) applyTest(t *TestExpr) (any, error) {
 		}
 		args = append(args, v)
 	}
-	fc := &FilterContext{r: r, Pos: t.position()}
+	fc := &FilterContext{r: r, Pos: t.Pos()}
 	res, err := fn(fc, obj, args)
 	if err != nil {
 		if _, ok := err.(*Error); ok {
 			return nil, err
 		}
-		return nil, &Error{Pos: t.position(), Msg: err.Error(), Cause: err}
+		return nil, &Error{Pos: t.Pos(), Msg: err.Error(), Cause: err}
 	}
 	if t.Not {
 		return !res, nil

@@ -154,7 +154,7 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 			if !p.opts.AllowDuplicateKeys {
 				return nil, e
 			}
-			p.warnings = append(p.warnings, Warning{Pos: keyPos, Msg: e.Msg})
+			p.warnings = append(p.warnings, Warning{Kind: WarnDuplicateKey, Pos: keyPos, Msg: e.Msg})
 		}
 		if err := p.count(); err != nil {
 			return nil, err

@@ -79,7 +79,26 @@ const (
 	// YAML 1.1 reads as 90 and this parser deliberately reads as a
 	// string.
 	WarnSexagesimal
+	// WarnDuplicateKey is a mapping key defined twice. It is an error by
+	// default; it reaches a caller as a warning only when the caller set
+	// AllowDuplicateKeys in order to collect every one of them, which is
+	// what the migration report does.
+	WarnDuplicateKey
 )
+
+// String names the warning kind, for a report that groups by it.
+func (w WarnKind) String() string {
+	switch w {
+	case WarnOctalImplicit:
+		return "octal"
+	case WarnSexagesimal:
+		return "sexagesimal"
+	case WarnDuplicateKey:
+		return "duplicate_key"
+	default:
+		return "yaml_1_1_boolean"
+	}
+}
 
 // Warning is a diagnostic that does not stop parsing. `halite-node lint`
 // and `halite-hub lint` report these; a normal parse collects them so a

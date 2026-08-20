@@ -141,19 +141,19 @@ func (r *renderer) renderRoot(t *Template) error {
 			break
 		}
 		if len(chain) > r.opts.MaxIncludeDepth {
-			return errorf(ext.position(), "template inheritance deeper than %d levels", r.opts.MaxIncludeDepth)
+			return errorf(ext.Pos(), "template inheritance deeper than %d levels", r.opts.MaxIncludeDepth)
 		}
 		nameVal, err := r.eval(ext.Name)
 		if err != nil {
 			return err
 		}
-		name, err := r.toStrErr(nameVal, ext.position())
+		name, err := r.toStrErr(nameVal, ext.Pos())
 		if err != nil {
 			return err
 		}
 		parent, err := r.env.load(name)
 		if err != nil {
-			return errorf(ext.position(), "extends %q: %v", name, err)
+			return errorf(ext.Pos(), "extends %q: %v", name, err)
 		}
 		chain = append(chain, parent)
 		cur = parent
@@ -290,30 +290,30 @@ func (r *renderer) write(s string, pos Pos) error {
 }
 
 func (r *renderer) renderNode(n Node) error {
-	if err := r.budget.tick(n.position()); err != nil {
+	if err := r.budget.tick(n.Pos()); err != nil {
 		return err
 	}
 	r.depth++
 	if r.depth > r.opts.MaxDepth {
 		r.depth--
-		return errorf(n.position(), "template nesting deeper than %d levels", r.opts.MaxDepth)
+		return errorf(n.Pos(), "template nesting deeper than %d levels", r.opts.MaxDepth)
 	}
 	defer func() { r.depth-- }()
 
 	switch t := n.(type) {
 	case *TextNode:
-		return r.writeText(t.Text, t.position())
+		return r.writeText(t.Text, t.Pos())
 
 	case *OutputNode:
 		v, err := r.eval(t.Expr)
 		if err != nil {
 			return err
 		}
-		s, err := r.toStrErr(v, t.position())
+		s, err := r.toStrErr(v, t.Pos())
 		if err != nil {
 			return err
 		}
-		return r.write(s, t.position())
+		return r.write(s, t.Pos())
 
 	case *IfNode:
 		for i, cond := range t.Conds {
@@ -366,11 +366,11 @@ func (r *renderer) renderNode(n Node) error {
 		if err != nil {
 			return err
 		}
-		s, err := r.toStrErr(v, t.position())
+		s, err := r.toStrErr(v, t.Pos())
 		if err != nil {
 			return err
 		}
-		return r.write(s, t.position())
+		return r.write(s, t.Pos())
 
 	case *DoNode:
 		_, err := r.eval(t.Expr)
@@ -392,7 +392,7 @@ func (r *renderer) renderNode(n Node) error {
 	case *AutoescapeNode:
 		return r.renderNodes(t.Body)
 	}
-	return errorf(n.position(), "unhandled node %T", n)
+	return errorf(n.Pos(), "unhandled node %T", n)
 }
 
 func (r *renderer) renderFor(t *ForNode) error {
@@ -403,7 +403,7 @@ func (r *renderer) renderFor(t *ForNode) error {
 
 	var run func(items any, depth int) error
 	run = func(iterable any, depth int) error {
-		items, err := r.iterate(iterable, t.position())
+		items, err := r.iterate(iterable, t.Pos())
 		if err != nil {
 			return err
 		}
@@ -415,7 +415,7 @@ func (r *renderer) renderFor(t *ForNode) error {
 			saved := r.scope
 			r.scope = newScope(saved)
 			for _, item := range items {
-				if err := r.bindTargets(t.Targets, item, t.position()); err != nil {
+				if err := r.bindTargets(t.Targets, item, t.Pos()); err != nil {
 					r.scope = saved
 					return err
 				}
@@ -452,13 +452,13 @@ func (r *renderer) renderFor(t *ForNode) error {
 		}
 
 		for i, item := range items {
-			if err := r.budget.iterate(t.position()); err != nil {
+			if err := r.budget.iterate(t.Pos()); err != nil {
 				return err
 			}
 			loop.Index0 = i
 			r.scope = newScope(saved)
 			r.scope.set("loop", loop)
-			if err := r.bindTargets(t.Targets, item, t.position()); err != nil {
+			if err := r.bindTargets(t.Targets, item, t.Pos()); err != nil {
 				return err
 			}
 			if err := r.renderNodes(t.Body); err != nil {
@@ -473,7 +473,7 @@ func (r *renderer) renderFor(t *ForNode) error {
 
 // renderForRecursive re-enters a recursive loop's body for loop().
 func (r *renderer) renderForRecursive(t *ForNode, iterable any, depth int) error {
-	items, err := r.iterate(iterable, t.position())
+	items, err := r.iterate(iterable, t.Pos())
 	if err != nil {
 		return err
 	}
@@ -481,7 +481,7 @@ func (r *renderer) renderForRecursive(t *ForNode, iterable any, depth int) error
 		return r.renderNodes(t.Else)
 	}
 	if depth > r.opts.MaxDepth {
-		return errorf(t.position(), "recursive loop deeper than %d levels", r.opts.MaxDepth)
+		return errorf(t.Pos(), "recursive loop deeper than %d levels", r.opts.MaxDepth)
 	}
 	saved := r.scope
 	defer func() { r.scope = saved }()
@@ -496,13 +496,13 @@ func (r *renderer) renderForRecursive(t *ForNode, iterable any, depth int) error
 		return sub.out.String(), nil
 	}
 	for i, item := range items {
-		if err := r.budget.iterate(t.position()); err != nil {
+		if err := r.budget.iterate(t.Pos()); err != nil {
 			return err
 		}
 		loop.Index0 = i
 		r.scope = newScope(saved)
 		r.scope.set("loop", loop)
-		if err := r.bindTargets(t.Targets, item, t.position()); err != nil {
+		if err := r.bindTargets(t.Targets, item, t.Pos()); err != nil {
 			return err
 		}
 		if err := r.renderNodes(t.Body); err != nil {
@@ -536,11 +536,11 @@ func (r *renderer) renderSet(t *SetNode) error {
 	if t.Namespace != "" {
 		nsVal, ok := r.scope.lookup(t.Namespace)
 		if !ok {
-			return errorf(t.position(), "%s is undefined; a namespace must be created with namespace() before assigning to it", t.Namespace)
+			return errorf(t.Pos(), "%s is undefined; a namespace must be created with namespace() before assigning to it", t.Namespace)
 		}
 		ns, ok := nsVal.(*Namespace)
 		if !ok {
-			return errorf(t.position(), "%s is not a namespace", t.Namespace)
+			return errorf(t.Pos(), "%s is not a namespace", t.Namespace)
 		}
 		v, err := r.eval(t.Value)
 		if err != nil {
@@ -579,7 +579,7 @@ func (r *renderer) renderSet(t *SetNode) error {
 	}
 	parts, ok := v.([]any)
 	if !ok || len(parts) != len(t.Targets) {
-		return errorf(t.position(), "cannot unpack %s into %d names", typeName(v), len(t.Targets))
+		return errorf(t.Pos(), "cannot unpack %s into %d names", typeName(v), len(t.Targets))
 	}
 	for i, name := range t.Targets {
 		if !r.scope.setExisting(name, parts[i]) {
@@ -638,12 +638,12 @@ func (r *renderer) renderBlock(t *BlockNode) error {
 }
 
 func (r *renderer) renderInclude(t *IncludeNode) error {
-	names, err := r.templateNames(t.Name, t.position())
+	names, err := r.templateNames(t.Name, t.Pos())
 	if err != nil {
 		return err
 	}
 	if r.includeDepth >= r.opts.MaxIncludeDepth {
-		return errorf(t.position(), "include and import nesting deeper than %d levels", r.opts.MaxIncludeDepth)
+		return errorf(t.Pos(), "include and import nesting deeper than %d levels", r.opts.MaxIncludeDepth)
 	}
 
 	var lastErr error
@@ -654,7 +654,7 @@ func (r *renderer) renderInclude(t *IncludeNode) error {
 				lastErr = err
 				continue
 			}
-			return errorf(t.position(), "include %q: %v", name, err)
+			return errorf(t.Pos(), "include %q: %v", name, err)
 		}
 		sub := r.sub()
 		sub.includeDepth = r.includeDepth + 1
@@ -669,13 +669,13 @@ func (r *renderer) renderInclude(t *IncludeNode) error {
 		if err := sub.renderRoot(tpl); err != nil {
 			return err
 		}
-		return r.write(sub.out.String(), t.position())
+		return r.write(sub.out.String(), t.Pos())
 	}
 
 	if t.IgnoreMissing {
 		return nil
 	}
-	return errorf(t.position(), "include %s: %v", strings.Join(names, ", "), lastErr)
+	return errorf(t.Pos(), "include %s: %v", strings.Join(names, ", "), lastErr)
 }
 
 // templateNames resolves the operand of include, import, or extends, which
@@ -749,7 +749,7 @@ func (r *renderer) importModule(e Expr, withContext bool, pos Pos) (*value.Map, 
 }
 
 func (r *renderer) renderImport(t *ImportNode) error {
-	m, err := r.importModule(t.Name, t.WithContext, t.position())
+	m, err := r.importModule(t.Name, t.WithContext, t.Pos())
 	if err != nil {
 		return err
 	}
@@ -758,14 +758,14 @@ func (r *renderer) renderImport(t *ImportNode) error {
 }
 
 func (r *renderer) renderFromImport(t *FromImportNode) error {
-	m, err := r.importModule(t.Name, t.WithContext, t.position())
+	m, err := r.importModule(t.Name, t.WithContext, t.Pos())
 	if err != nil {
 		return err
 	}
 	for _, im := range t.Names {
 		v, ok := m.Get(im.Name)
 		if !ok {
-			return errorf(t.position(), "the imported template does not define %q", im.Name)
+			return errorf(t.Pos(), "the imported template does not define %q", im.Name)
 		}
 		r.scope.set(im.As, v)
 	}
@@ -779,7 +779,7 @@ const callerKey = "\x00caller"
 func (r *renderer) renderCall(t *CallNode) error {
 	call, ok := t.Call.(*CallExpr)
 	if !ok {
-		return errorf(t.position(), "{%% call %%} must name a macro invocation")
+		return errorf(t.Pos(), "{%% call %%} must name a macro invocation")
 	}
 	// The caller closes over the scope at the call site, and is bound
 	// inside the macro's scope rather than the caller's, because a macro
@@ -802,15 +802,15 @@ func (r *renderer) renderCall(t *CallNode) error {
 	}
 	kwargs[callerKey] = caller
 
-	v, err := r.callValue(fn, args, kwargs, t.position())
+	v, err := r.callValue(fn, args, kwargs, t.Pos())
 	if err != nil {
 		return err
 	}
-	s, err := r.toStrErr(v, t.position())
+	s, err := r.toStrErr(v, t.Pos())
 	if err != nil {
 		return err
 	}
-	return r.write(s, t.position())
+	return r.write(s, t.Pos())
 }
 
 // ---- macros ----
@@ -888,7 +888,7 @@ func (m *Macro) Call(args []any, kwargs map[string]any) (any, error) {
 // ---- expressions ----
 
 func (r *renderer) eval(e Expr) (any, error) {
-	if err := r.budget.tick(e.position()); err != nil {
+	if err := r.budget.tick(e.Pos()); err != nil {
 		return nil, err
 	}
 	switch t := e.(type) {
@@ -899,14 +899,14 @@ func (r *renderer) eval(e Expr) (any, error) {
 		if v, ok := r.scope.lookup(t.Name); ok {
 			return v, nil
 		}
-		return Undefined{Name: t.Name, Pos: t.position()}, nil
+		return Undefined{Name: t.Name, Pos: t.Pos()}, nil
 
 	case *AttrExpr:
 		obj, err := r.eval(t.Obj)
 		if err != nil {
 			return nil, err
 		}
-		return r.getAttr(obj, t.Attr, t.position())
+		return r.getAttr(obj, t.Attr, t.Pos())
 
 	case *ItemExpr:
 		obj, err := r.eval(t.Obj)
@@ -917,7 +917,7 @@ func (r *renderer) eval(e Expr) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return r.getItem(obj, key, t.position())
+		return r.getItem(obj, key, t.Pos())
 
 	case *SliceExpr:
 		return r.evalSlice(t)
@@ -947,7 +947,7 @@ func (r *renderer) eval(e Expr) (any, error) {
 			return !truthy(x), nil
 		}
 		if u, ok := x.(Undefined); ok {
-			if err := r.undefinedError(u, t.position()); err != nil {
+			if err := r.undefinedError(u, t.Pos()); err != nil {
 				return nil, err
 			}
 			return int64(0), nil
@@ -958,7 +958,7 @@ func (r *renderer) eval(e Expr) (any, error) {
 		if f, ok := asFloat(x); ok {
 			return -f, nil
 		}
-		return nil, errorf(t.position(), "cannot negate %s", typeName(x))
+		return nil, errorf(t.Pos(), "cannot negate %s", typeName(x))
 
 	case *CondExpr:
 		cond, err := r.eval(t.Cond)
@@ -969,7 +969,7 @@ func (r *renderer) eval(e Expr) (any, error) {
 			return r.eval(t.True)
 		}
 		if t.False == nil {
-			return Undefined{Name: "conditional expression", Pos: t.position(),
+			return Undefined{Name: "conditional expression", Pos: t.Pos(),
 				Hint: "the condition was false and there is no else branch"}, nil
 		}
 		return r.eval(t.False)
@@ -1011,7 +1011,7 @@ func (r *renderer) eval(e Expr) (any, error) {
 		}
 		return m, nil
 	}
-	return nil, errorf(e.position(), "unhandled expression %T", e)
+	return nil, errorf(e.Pos(), "unhandled expression %T", e)
 }
 
 func (r *renderer) evalBinary(t *BinaryExpr) (any, error) {
@@ -1039,7 +1039,7 @@ func (r *renderer) evalBinary(t *BinaryExpr) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return r.binary(t.Op, l, rv, t.position())
+	return r.binary(t.Op, l, rv, t.Pos())
 }
 
 func (r *renderer) evalSlice(t *SliceExpr) (any, error) {
@@ -1057,7 +1057,7 @@ func (r *renderer) evalSlice(t *SliceExpr) (any, error) {
 		}
 		n, ok := asInt(v)
 		if !ok {
-			return 0, errorf(t.position(), "a slice bound must be an integer, found %s", typeName(v))
+			return 0, errorf(t.Pos(), "a slice bound must be an integer, found %s", typeName(v))
 		}
 		return int(n), nil
 	}
@@ -1073,9 +1073,9 @@ func (r *renderer) evalSlice(t *SliceExpr) (any, error) {
 		runes = []rune(s)
 		length, isStr = len(runes), true
 	case Undefined:
-		return nil, r.undefinedError(s, t.position())
+		return nil, r.undefinedError(s, t.Pos())
 	default:
-		return nil, errorf(t.position(), "cannot slice %s", typeName(obj))
+		return nil, errorf(t.Pos(), "cannot slice %s", typeName(obj))
 	}
 
 	step, err := idx(t.Step, 1)
@@ -1083,7 +1083,7 @@ func (r *renderer) evalSlice(t *SliceExpr) (any, error) {
 		return nil, err
 	}
 	if step == 0 {
-		return nil, errorf(t.position(), "a slice step cannot be zero")
+		return nil, errorf(t.Pos(), "a slice step cannot be zero")
 	}
 	defStart, defStop := 0, length
 	if step < 0 {
@@ -1141,7 +1141,7 @@ func (r *renderer) evalCall(t *CallExpr) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return r.callValue(fn, args, kwargs, t.position())
+	return r.callValue(fn, args, kwargs, t.Pos())
 }
 
 // evalCallArgs evaluates a call site's positional arguments, keyword
@@ -1162,7 +1162,7 @@ func (r *renderer) evalCallArgs(t *CallExpr) ([]any, map[string]any, error) {
 		}
 		extra, ok := v.([]any)
 		if !ok {
-			return nil, nil, errorf(t.position(), "*args must unpack a sequence, found %s", typeName(v))
+			return nil, nil, errorf(t.Pos(), "*args must unpack a sequence, found %s", typeName(v))
 		}
 		args = append(args, extra...)
 	}
@@ -1182,7 +1182,7 @@ func (r *renderer) evalCallArgs(t *CallExpr) ([]any, map[string]any, error) {
 		}
 		m, ok := v.(*value.Map)
 		if !ok {
-			return nil, nil, errorf(t.position(), "**kwargs must unpack a mapping, found %s", typeName(v))
+			return nil, nil, errorf(t.Pos(), "**kwargs must unpack a mapping, found %s", typeName(v))
 		}
 		for _, e := range m.Entries() {
 			kwargs[value.KeyString(e.Key)] = e.Val

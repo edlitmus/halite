@@ -46,7 +46,7 @@ type FilterFunc func(fc *FilterContext, v any, args []any, kwargs map[string]any
 func (r *renderer) applyFilter(f *FilterExpr, obj any) (any, error) {
 	fn, ok := r.env.filters[f.Name]
 	if !ok {
-		return nil, errorf(f.position(), "unknown filter %q", f.Name)
+		return nil, errorf(f.Pos(), "unknown filter %q", f.Name)
 	}
 	args := make([]any, 0, len(f.Args))
 	for _, a := range f.Args {
@@ -64,13 +64,13 @@ func (r *renderer) applyFilter(f *FilterExpr, obj any) (any, error) {
 		}
 		kwargs[kw.Name] = v
 	}
-	fc := &FilterContext{r: r, Pos: f.position()}
+	fc := &FilterContext{r: r, Pos: f.Pos()}
 	out, err := fn(fc, obj, args, kwargs)
 	if err != nil {
 		if _, ok := err.(*Error); ok {
 			return nil, err
 		}
-		return nil, &Error{Pos: f.position(), Msg: err.Error(), Cause: err}
+		return nil, &Error{Pos: f.Pos(), Msg: err.Error(), Cause: err}
 	}
 	return out, nil
 }

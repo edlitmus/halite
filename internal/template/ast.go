@@ -28,11 +28,14 @@ func errorf(pos Pos, format string, args ...any) *Error {
 // ---- statements ----
 
 // Node is a statement in a template body.
-type Node interface{ position() Pos }
+type Node interface {
+	// Pos is where the statement begins in its template source.
+	Pos() Pos
+}
 
 type baseNode struct{ P Pos }
 
-func (b baseNode) position() Pos { return b.P }
+func (b baseNode) Pos() Pos { return b.P }
 
 // TextNode is a literal span between tags.
 type TextNode struct {
@@ -175,7 +178,10 @@ type AutoescapeNode struct {
 // ---- expressions ----
 
 // Expr is an expression node.
-type Expr interface{ position() Pos }
+type Expr interface {
+	// Pos is where the expression begins in its template source.
+	Pos() Pos
+}
 
 // LiteralExpr is a constant.
 type LiteralExpr struct {
