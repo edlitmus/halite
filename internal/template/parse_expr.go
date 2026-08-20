@@ -400,6 +400,12 @@ func (p *parser) parseSubscript(obj Expr, pos Pos) (Expr, error) {
 	}
 
 	if colons == 0 {
+		if parts[0] == nil {
+			// `x[]` with no colon is an empty subscript, which Python and
+			// Jinja both reject. Accepting it built an ItemExpr with a nil
+			// index that the evaluator then dereferenced.
+			return nil, errorf(pos, "a subscript needs an index; write x[0], or x[:] for a slice")
+		}
 		return &ItemExpr{baseNode{pos}, obj, parts[0]}, nil
 	}
 	sl := &SliceExpr{baseNode: baseNode{pos}, Obj: obj, Start: parts[0]}

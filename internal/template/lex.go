@@ -333,11 +333,19 @@ func findEndTag(src string, d Delimiters, endTag string) (body string, consumed 
 			return "", 0, false, false, false
 		}
 		j += i
-		k := strings.Index(src[j:], d.BlockEnd)
+		// The search for the closing delimiter starts past the opening
+		// one, because the two overlap: the default `{%` and `%}` share a
+		// `%`, so scanning from j finds the opener's own second byte and
+		// produces an end offset before the start of the tag body.
+		after := j + len(d.BlockStart)
+		if after > len(src) {
+			return "", 0, false, false, false
+		}
+		k := strings.Index(src[after:], d.BlockEnd)
 		if k < 0 {
 			return "", 0, false, false, false
 		}
-		k += j
+		k += after
 		inner := strings.TrimSpace(strings.Trim(src[j+len(d.BlockStart):k], "-"))
 		word := inner
 		if sp := strings.IndexAny(inner, " \t"); sp >= 0 {
