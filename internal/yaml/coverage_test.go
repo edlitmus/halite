@@ -803,3 +803,47 @@ func TestNodePropertiesAcrossLines(t *testing.T) {
 		t.Errorf("top = %#v, want a mapping holding k", inner)
 	}
 }
+
+// A whitespace-only line indented past the block is content, not a blank
+// line: the spaces beyond the block's own indent are part of the scalar.
+// It shows at the end, where chomping counts trailing blank lines.
+func TestBlockScalarKeepsOverIndentedBlankLines(t *testing.T) {
+	v, _, err := Parse([]byte("foo: |\n  x\n   \n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := v.(*value.Map).Get("foo")
+	if got != "x\n \n" {
+		t.Errorf("foo = %q, want %q", got, "x\n \n")
+	}
+
+	// A blank line at or below the block indent really is blank.
+	v, _, err = Parse([]byte("foo: |\n  x\n\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ = v.(*value.Map).Get("foo")
+	if got != "x\n" {
+		t.Errorf("foo = %q, want %q", got, "x\n")
+	}
+}
+
+// A quoted key in a flow sequence may be followed by white space before
+// its colon, the same as in a block mapping.
+func TestQuotedImplicitKeyInFlowSequence(t *testing.T) {
+	v, _, err := Parse([]byte("[\n  'implicit key' : value,\n]\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seq, ok := v.([]any)
+	if !ok || len(seq) != 1 {
+		t.Fatalf("value = %#v", v)
+	}
+	pair, ok := seq[0].(*value.Map)
+	if !ok {
+		t.Fatalf("entry = %#v, want a single-pair mapping", seq[0])
+	}
+	if got, _ := pair.Get("implicit key"); got != "value" {
+		t.Errorf("pair = %v", pair.StringKeys())
+	}
+}

@@ -533,6 +533,18 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 		raw = append(raw, rawLine{text: text, indent: indent})
 	}
 
+	// A whitespace-only line indented past the block is not blank: the
+	// spaces beyond the block's own indent are content. That matters at
+	// the end of a scalar, where chomping counts trailing *blank* lines,
+	// so `|` over "x" and a line of three spaces at indent 2 keeps the
+	// leftover space and its line break.
+	for i := range raw {
+		if raw[i].blank && detected && raw[i].indent > blockIndent {
+			raw[i].blank = false
+			raw[i].text = ""
+		}
+	}
+
 	lastContent := -1
 	for i, ln := range raw {
 		if !ln.blank {

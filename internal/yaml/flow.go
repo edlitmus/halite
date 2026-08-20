@@ -232,6 +232,17 @@ func (p *parser) parseFlowNode(allowImplicitPair bool) (any, error) {
 		return nil, err
 	}
 
+	// A quoted key leaves the parser on the space before the colon rather
+	// than on the colon, and white space between a key and its colon is
+	// allowed here as it is in a block mapping.
+	if allowImplicitPair && (p.peek() == ' ' || p.peek() == '\t') {
+		save := *p
+		p.skipSpaces()
+		if p.peek() != ':' {
+			*p = save
+		}
+	}
+
 	// `{a: 1, b: 2}` nested as `[{a: 1}]` reaches here only for the
 	// scalar; a `:` following it means a single-pair mapping written
 	// without braces, which YAML permits inside a flow sequence.
