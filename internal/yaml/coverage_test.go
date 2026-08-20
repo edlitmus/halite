@@ -1,6 +1,7 @@
 package yaml
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -962,5 +963,45 @@ func TestMappingKeyMustBeOnOneLine(t *testing.T) {
 	}
 	if _, _, err := Parse([]byte("k: \"a\n b\"\n"), Options{File: "t.sls"}); err != nil {
 		t.Errorf("a multi-line quoted value was refused: %v", err)
+	}
+}
+
+// A quoted scalar is read byte by byte, so a multi-byte character has to
+// survive intact. Converting each byte to a string would read its value
+// as a code point and re-encode it, turning one character into two.
+func TestQuotedScalarsKeepMultiByteCharacters(t *testing.T) {
+	for _, style := range []string{`"%s"`, `'%s'`, `%s`} {
+		for _, want := range []string{"caf\u00e9", "\u4e16\u754c", "\u06f3", "a\u00e9b"} {
+			src := "k: " + fmt.Sprintf(style, want) + "\n"
+			v, _, err := Parse([]byte(src), Options{File: "t.sls"})
+			if err != nil {
+				t.Errorf("%q: %v", src, err)
+				continue
+			}
+			got, _ := v.(*value.Map).Get("k")
+			if got != any(want) {
+				t.Errorf("%q = % x, want % x", src, got, want)
+			}
+		}
+	}
+}
+
+// A string can reach the encoder holding bytes that are not UTF-8, since
+// cmd.run returns whatever a program wrote. YAML is UTF-8, so the honest
+// rendering is the binary tag rather than a document the parser refuses.
+func TestEncodingNonUTF8(t *testing.T) {
+	bad := string([]byte{0xc2})
+	out := EncodeScalar(bad)
+	if !strings.HasPrefix(out, "!!binary ") {
+		t.Fatalf("EncodeScalar of invalid UTF-8 = %q, want a binary tag", out)
+	}
+	v, _, err := Parse([]byte("k: "+out+"\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatalf("%q does not parse: %v", out, err)
+	}
+	got, _ := v.(*value.Map).Get("k")
+	b, ok := got.([]byte)
+	if !ok || string(b) != bad {
+		t.Errorf("round trip gave %#v", got)
 	}
 }

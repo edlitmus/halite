@@ -191,7 +191,7 @@ func (p *parser) parseSingleQuoted() (string, error) {
 			p.next()
 			if p.peek() == '\'' {
 				p.next()
-				cur.write("'", false)
+				cur.writeByte('\'')
 				continue
 			}
 			lines = append(lines, cur)
@@ -205,7 +205,7 @@ func (p *parser) parseSingleQuoted() (string, error) {
 			// A single-quoted scalar has no escape that can produce
 			// whitespace, so nothing in it is protected from folding.
 			p.next()
-			cur.write(string(c), false)
+			cur.writeByte(c)
 		}
 	}
 }
@@ -253,7 +253,7 @@ func (p *parser) parseDoubleQuoted() (string, error) {
 			cur.write(str, true)
 		default:
 			p.next()
-			cur.write(string(c), false)
+			cur.writeByte(c)
 		}
 	}
 }
@@ -276,6 +276,15 @@ func (l *qline) write(s string, protected bool) {
 	for i := 0; i < len(s); i++ {
 		l.protected = append(l.protected, protected)
 	}
+}
+
+// writeByte appends one raw byte. It exists so that a multi-byte UTF-8
+// character survives: converting the byte to a string would read its
+// value as a code point and re-encode it, turning the two bytes of a
+// character into two characters.
+func (l *qline) writeByte(c byte) {
+	l.text.WriteByte(c)
+	l.protected = append(l.protected, false)
 }
 
 func (l qline) String() string { return l.text.String() }

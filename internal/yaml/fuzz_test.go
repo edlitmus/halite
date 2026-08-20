@@ -102,6 +102,15 @@ func FuzzEncodeScalar(f *testing.F) {
 			t.Fatalf("expected a mapping, got %T", v)
 		}
 		got, _ := m.Get("k")
+		// A string that is not UTF-8 comes back as binary, which is the
+		// only honest rendering YAML has for it. The bytes still have to
+		// match.
+		if b, ok := got.([]byte); ok {
+			if string(b) != s {
+				t.Errorf("EncodeScalar(%q) = %q, whose bytes came back as %q", s, out, b)
+			}
+			return
+		}
 		if got != any(s) {
 			t.Errorf("EncodeScalar(%q) = %q, which parsed back as %#v", s, out, got)
 		}

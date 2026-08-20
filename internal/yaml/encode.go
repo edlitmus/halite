@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -175,7 +176,7 @@ func writeKey(b *strings.Builder, v any) {
 // plainSafeKey reports whether a string can be written as a plain mapping
 // key and read back as itself.
 func plainSafeKey(s string) bool {
-	if needsQuoting(s) {
+	if needsQuoting(s) || !utf8.ValidString(s) {
 		return false
 	}
 	for _, r := range s {
@@ -222,6 +223,16 @@ func writeScalar(b *strings.Builder, v any) {
 		b.WriteString("!!timestamp ")
 		b.WriteString(t.Format(time.RFC3339Nano))
 	case string:
+		if !utf8.ValidString(t) {
+			// A string can reach the encoder holding bytes that are not
+			// UTF-8: cmd.run returns whatever a program wrote. YAML is
+			// UTF-8, so the honest rendering is the binary tag, which
+			// round-trips exactly instead of producing a document the
+			// parser then refuses.
+			b.WriteString("!!binary ")
+			b.WriteString(base64.StdEncoding.EncodeToString([]byte(t)))
+			return
+		}
 		writeString(b, t)
 	default:
 		writeString(b, fmt.Sprint(v))
