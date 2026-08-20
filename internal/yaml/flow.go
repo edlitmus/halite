@@ -40,6 +40,12 @@ func (p *parser) parseFlowSeq() ([]any, error) {
 			p.next()
 			return items, nil
 		}
+		if p.peek() == ',' {
+			// A trailing comma before `]` is fine and is handled above;
+			// a comma where an entry should be is an empty entry, which
+			// is how `[ , a ]` and `[ a, , b ]` are wrong.
+			return nil, p.err("a flow sequence entry is missing before this `,`")
+		}
 		// Inside a sequence, `a: 1` without braces is a single-pair
 		// mapping, which YAML permits and Salt trees use.
 		v, err := p.parseFlowNode(true)
@@ -86,6 +92,9 @@ func (p *parser) parseFlowMap() (*value.Map, error) {
 		if p.peek() == '}' {
 			p.next()
 			break
+		}
+		if p.peek() == ',' {
+			return nil, p.err("a flow mapping entry is missing before this `,`")
 		}
 
 		keyPos := p.pos()
@@ -218,6 +227,13 @@ func (p *parser) parseFlowNode(allowImplicitPair bool) (any, error) {
 	}
 
 	pos := p.pos()
+	// A bare `-` is a block sequence indicator, and there is no block
+	// structure inside a flow collection for it to indicate. `[-]` and
+	// `[-, -]` are errors rather than a list holding dashes.
+	if p.peek() == '-' && (isFlowIndicator(p.peekAt(1)) || p.peekAt(1) == ' ' ||
+		p.peekAt(1) == '\t' || p.peekAt(1) == '\n') {
+		return nil, p.err("`-` is a block sequence indicator and has no meaning inside a flow collection")
+	}
 	// A single-pair entry is only spelled without braces inside a flow
 	// sequence, and that is exactly where its key is held to one line.
 	mode := flowInMap
@@ -289,6 +305,12 @@ func (p *parser) skipFlowBlank() error {
 			}
 			p.next()
 		case c == '#':
+			if !p.commentStart() {
+				// `a,#x` is not a comment: YAML needs white space in
+				// front of a `#` for it to start one, so this is content
+				// where none can go.
+				return p.err("a `#` starts a comment only at the start of a line or after white space")
+			}
 			p.skipLine()
 		default:
 			return nil

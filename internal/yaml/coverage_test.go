@@ -847,3 +847,35 @@ func TestQuotedImplicitKeyInFlowSequence(t *testing.T) {
 		t.Errorf("pair = %v", pair.StringKeys())
 	}
 }
+
+// Flow collections have their own malformed shapes, and accepting them
+// quietly turns a typo into data.
+func TestFlowMalformedEntries(t *testing.T) {
+	cases := map[string]string{
+		"[ , a, b ]\n":   "entry is missing",
+		"[ a, , b ]\n":   "entry is missing",
+		"{ , a: 1 }\n":   "entry is missing",
+		"[ a, b,#no ]\n": "after white space",
+		"[ a, b ]#no\n":  "after white space",
+		"[-]\n":          "block sequence indicator",
+		"[a, -, b]\n":    "block sequence indicator",
+	}
+	for src, want := range cases {
+		_, _, err := Parse([]byte(src), Options{File: "t.sls"})
+		if err == nil {
+			t.Errorf("%q parsed; it should be an error", src)
+			continue
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: error %q does not mention %q", src, err, want)
+		}
+	}
+
+	// The shapes next to them stay valid: a trailing comma before the
+	// close, a comment with a space in front, and a dash inside a word.
+	for _, src := range []string{"[ a, b, ]\n", "[ a, b ] # yes\n", "[ a-b, -1 ]\n", "{ a: 1, }\n"} {
+		if _, _, err := Parse([]byte(src), Options{File: "t.sls"}); err != nil {
+			t.Errorf("%q was refused: %v", src, err)
+		}
+	}
+}

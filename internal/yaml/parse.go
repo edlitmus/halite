@@ -450,6 +450,11 @@ func (p *parser) skipBlank() error {
 func (p *parser) skipInlineTrailer() error {
 	p.skipSpaces()
 	if p.peek() == '#' {
+		if !p.commentStart() {
+			// `[a]#x` is not a comment: YAML needs white space in front
+			// of a `#` for it to start one.
+			return p.err("a `#` starts a comment only at the start of a line or after white space")
+		}
 		p.skipLine()
 		return nil
 	}
