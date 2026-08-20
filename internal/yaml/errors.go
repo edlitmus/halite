@@ -84,6 +84,10 @@ const (
 	// AllowDuplicateKeys in order to collect every one of them, which is
 	// what the migration report does.
 	WarnDuplicateKey
+	// WarnDirective is a %YAML naming a version this parser does not
+	// implement, or a %TAG handle. Both are consumed; the warning says
+	// what was ignored rather than letting it pass in silence.
+	WarnDirective
 )
 
 // String names the warning kind, for a report that groups by it.
@@ -95,6 +99,8 @@ func (w WarnKind) String() string {
 		return "sexagesimal"
 	case WarnDuplicateKey:
 		return "duplicate_key"
+	case WarnDirective:
+		return "directive"
 	default:
 		return "yaml_1_1_boolean"
 	}

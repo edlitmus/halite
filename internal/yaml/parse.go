@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -123,6 +124,12 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 			p.skipLine()
 			continue
 		}
+		if err := p.skipDirectives(); err != nil {
+			return nil, p.warnings, err
+		}
+		if p.eof() {
+			break
+		}
 		if p.atDocStart() {
 			// Consume the three dashes rather than the whole line: a
 			// document may begin on the marker line itself, as in
@@ -178,6 +185,56 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 		}
 	}
 	return docs, p.warnings, nil
+}
+
+// skipDirectives consumes the %YAML and %TAG lines that may precede a
+// document, which are stream metadata rather than content.
+//
+// They are recognised only here, before a document's `---`, because that
+// is the only place YAML allows them: a `%` at the start of a line inside
+// a document is an ordinary plain scalar, and treating it as a directive
+// there would eat a value.
+func (p *parser) skipDirectives() error {
+	seen := false
+	for !p.eof() && p.col == 1 && p.peek() == '%' {
+		pos := p.pos()
+		start := p.off
+		for !p.eof() && p.peek() != '\n' {
+			p.next()
+		}
+		line := strings.TrimSpace(string(p.src[start:p.off]))
+		if !p.eof() {
+			p.next()
+		}
+		seen = true
+
+		name, rest, _ := strings.Cut(strings.TrimPrefix(line, "%"), " ")
+		switch name {
+		case "YAML":
+			v := strings.TrimSpace(rest)
+			if v != "1.1" && v != "1.2" {
+				p.warn(WarnDirective, pos,
+					"%%YAML directive names version %q; halite implements the 1.1 subset of SPEC section 10.1 and ignored it", v)
+			}
+		case "TAG":
+			// The handle is consumed. Nothing can come of defining one,
+			// since SPEC 10.1.2 admits only the tags of the nine types,
+			// and a document using the handle fails there with a message
+			// naming the tag.
+			p.warn(WarnDirective, pos,
+				"%%TAG directive %q ignored; halite admits only the tags of the nine types in SPEC section 10.1.1", strings.TrimSpace(rest))
+		default:
+			p.warn(WarnDirective, pos, "unknown directive %q ignored", line)
+		}
+
+		if err := p.skipBlank(); err != nil {
+			return err
+		}
+	}
+	if seen && !p.eof() && !p.atDocStart() {
+		return p.err("a directive must be followed by a --- document marker")
+	}
+	return nil
 }
 
 func normalizeNewlines(src []byte) []byte {
