@@ -580,3 +580,38 @@ func TestNodePropertiesOnAMappingKey(t *testing.T) {
 		t.Errorf("the untagged key is not the integer 2: %v", m.StringKeys())
 	}
 }
+
+// A plain scalar spans lines inside a flow collection too, and an
+// implicit key does not: YAML requires a key to sit on one line, which is
+// what keeps a parser's lookahead bounded.
+func TestPlainScalarsInsideFlow(t *testing.T) {
+	v, _, err := Parse([]byte("[\n  multi\n  line,\n  b,\n]\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := v.([]any)
+	if !ok || len(got) != 2 {
+		t.Fatalf("value = %#v", v)
+	}
+	if got[0] != "multi line" {
+		t.Errorf("first entry = %#v, want the folded scalar", got[0])
+	}
+
+	// A key that folds a line break before its colon is refused.
+	_, _, err = Parse([]byte("[ key\n  : value ]\n"), Options{File: "t.sls"})
+	if err == nil {
+		t.Error("an implicit key spanning lines should be refused")
+	} else if !strings.Contains(err.Error(), "one line") {
+		t.Errorf("the error should say why: %v", err)
+	}
+
+	// A key that merely begins on the line after the bracket is fine.
+	v, _, err = Parse([]byte("[\nfoo: bar\n]\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatalf("a key on its own line was refused: %v", err)
+	}
+	pair := v.([]any)[0].(*value.Map)
+	if got, _ := pair.Get("foo"); got != "bar" {
+		t.Errorf("pair = %v", pair.StringKeys())
+	}
+}

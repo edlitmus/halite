@@ -109,8 +109,10 @@ var reasons = map[string]reason{
 	gapAfterDocument: {false,
 		"content that belongs to the document is read as trailing content after it."},
 	gapFlow: {false,
-		"a flow collection construct is not parsed: implicit pairs and multi-line plain " +
-			"scalars inside flow."},
+		"a flow collection construct is not parsed. What remains is a multi-line plain " +
+			"scalar used as a flow mapping key, which YAML allows in a mapping and forbids " +
+			"in a sequence: letting it fold in both places fixes two cases and breaks two " +
+			"valid ones, so it needs the two contexts told apart rather than one rule."},
 	gapMappingKey: {false,
 		"a mapping key is not recognised, mostly around whitespace and quoting before the colon."},
 	gapPlainScalar: {false,
@@ -177,7 +179,6 @@ var deviations = []deviation{
 	{"87E4", devRejects, gapMappingKey},
 	{"8KB6", devRejects, gapFlow},
 	{"8MK2", devRejects, specTag},
-	{"8UDB", devRejects, gapFlow},
 	{"9C9N", devAccepts, gapLenient},
 	{"9JBA", devAccepts, gapLenient},
 	{"9KAX", devValue, gapValueOther},

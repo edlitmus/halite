@@ -31,11 +31,18 @@ func (p *parser) parsePlain(minIndent int, asKey, inFlow bool) (string, error) {
 	var lines []string
 
 	for {
+		lineStart := p.off
 		start := p.off
 		end := p.off
+		// atBreak records that the scan stopped at a line break rather
+		// than at something that ends the scalar for good. Only a break
+		// can be folded into a continuation; stopping at a `:` or a flow
+		// indicator means this scalar is finished.
+		atBreak := false
 		for !p.eof() {
 			c := p.peek()
 			if c == '\n' {
+				atBreak = true
 				break
 			}
 			if c == '#' && p.off > start && (p.src[p.off-1] == ' ' || p.src[p.off-1] == '\t') {
@@ -47,6 +54,15 @@ func (p *parser) parsePlain(minIndent int, asKey, inFlow bool) (string, error) {
 			if c == ':' {
 				n := p.peekAt(1)
 				if n == ' ' || n == '\n' || n == 0 || (inFlow && isFlowIndicator(n)) {
+					if inFlow && hasContent(lines) {
+						// The scalar already folded a line break with
+						// something on it, so it cannot be an implicit
+						// key: YAML requires one to sit on a single line,
+						// which is what keeps a parser's lookahead
+						// bounded. A blank line before the scalar does not
+						// count, since the key still starts on one line.
+						return "", p.err("an implicit key must be on one line")
+					}
 					if asKey || inFlow {
 						break
 					}
@@ -62,7 +78,7 @@ func (p *parser) parsePlain(minIndent int, asKey, inFlow bool) (string, error) {
 		}
 		lines = append(lines, string(p.src[start:end]))
 
-		if asKey || inFlow || p.eof() {
+		if asKey || p.eof() || !atBreak {
 			break
 		}
 		// A plain scalar continues on the next line only when that line
@@ -74,8 +90,25 @@ func (p *parser) parsePlain(minIndent int, asKey, inFlow bool) (string, error) {
 			blanks++
 		}
 		p.skipSpaces()
-		if p.eof() || p.col <= minIndent || p.atDocStart() || p.atDocEnd() ||
-			p.peek() == '#' || isBlockSeqEntry(p) || p.lineIsMappingEntry() {
+
+		stop := p.eof() || p.col <= minIndent || p.atDocStart() || p.atDocEnd() || p.peek() == '#'
+		if inFlow {
+			// Inside a flow collection a plain scalar spans lines too:
+			// `{ multi\n  line, a: b}` has the key "multi line". What
+			// ends it is a flow indicator rather than a block structure,
+			// since there is no block structure to run into.
+			stop = stop || isFlowIndicator(p.peek())
+		} else {
+			stop = stop || isBlockSeqEntry(p) || p.lineIsMappingEntry()
+		}
+		if stop {
+			*p = save
+			break
+		}
+		// A continuation that would consume nothing is not a
+		// continuation. Without this a flow scalar that ends at a `:`
+		// re-scanned the same empty span forever.
+		if p.off == lineStart {
 			*p = save
 			break
 		}
@@ -85,6 +118,17 @@ func (p *parser) parsePlain(minIndent int, asKey, inFlow bool) (string, error) {
 	}
 
 	return foldLines(lines), nil
+}
+
+// hasContent reports whether any line collected so far holds something
+// other than white space.
+func hasContent(lines []string) bool {
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // foldLines joins the lines of a multi-line plain scalar: a single line
