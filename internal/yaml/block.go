@@ -89,6 +89,7 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 		return nil, nil
 	}
 
+	beforeProps := *p
 	np, err := p.readProps()
 	if err != nil {
 		return nil, err
@@ -177,7 +178,22 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 	}
 
 	if p.lineIsMappingEntry() {
-		v, err := p.parseBlockMap(col)
+		// A mapping whose first key carries its own properties starts
+		// where those properties do, not where the key text does:
+		// `&k1 key1: one` is a mapping at the column of the `&`, and its
+		// following keys line up there. Using the key's column made the
+		// mapping four characters deeper than its own second entry.
+		//
+		// The properties belong to that first key rather than to the
+		// mapping, so the parser rewinds and lets parseBlockMap read them
+		// as part of the key.
+		mapCol := col
+		if (np.anchor != "" || np.tag != "") && np.pos.Line == p.line {
+			mapCol = np.pos.Col
+			*p = beforeProps
+			np = nodeProps{pos: np.pos}
+		}
+		v, err := p.parseBlockMap(mapCol)
 		if err != nil {
 			return nil, err
 		}

@@ -545,3 +545,38 @@ func TestExplicitKeyThatIsABlockScalar(t *testing.T) {
 		t.Errorf("value = %#v", got)
 	}
 }
+
+// A mapping key carries anchors and tags like any other node. Pillar
+// trees anchor keys as well as values, and without this the key came out
+// as the literal text "&anchor key".
+func TestNodePropertiesOnAMappingKey(t *testing.T) {
+	v, _, err := Parse([]byte("top:\n  &k1 key1: one\n  &k2 key2: two\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inner, _ := v.(*value.Map).Get("top")
+	m, ok := inner.(*value.Map)
+	if !ok {
+		t.Fatalf("top = %#v", inner)
+	}
+	if got := m.StringKeys(); len(got) != 2 || got[0] != "key1" || got[1] != "key2" {
+		t.Fatalf("keys = %v; the anchors should not be part of them", got)
+	}
+	if got, _ := m.Get("key1"); got != "one" {
+		t.Errorf("key1 = %#v", got)
+	}
+
+	// A tag on a key applies to the key, so an explicitly tagged number
+	// stays a string while its untagged neighbour resolves.
+	v, _, err = Parse([]byte("!!str 1: one\n2: two\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m = v.(*value.Map)
+	if _, ok := m.Get("1"); !ok {
+		t.Errorf("the tagged key is not the string \"1\": %v", m.StringKeys())
+	}
+	if _, ok := m.Get(int64(2)); !ok {
+		t.Errorf("the untagged key is not the integer 2: %v", m.StringKeys())
+	}
+}

@@ -147,19 +147,47 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 				noValue = true
 			}
 		} else {
-			raw, quoted, err := p.parseScalar(indent, true, false)
+			// A key carries anchors and tags like any other node:
+			// `&anchor key: 1` anchors the key, and `!!str 1: x` keeps it
+			// a string. Reading them here rather than letting them fall
+			// into the scalar is what stops the key from coming out as
+			// the literal text "&anchor key".
+			np, err := p.readProps()
 			if err != nil {
 				return nil, err
 			}
+			if np.anchor != "" || np.tag != "" {
+				keyPos = np.pos
+			}
+
+			if p.peek() == '*' {
+				key, err = p.parseAlias()
+				if err != nil {
+					return nil, err
+				}
+				p.skipSpaces()
+			} else {
+				raw, quoted, err := p.parseScalar(indent, true, false)
+				if err != nil {
+					return nil, err
+				}
+				if quoted {
+					key = raw
+				} else {
+					key = p.resolvePlain(raw, keyPos)
+				}
+				if np.tag != "" {
+					key, err = p.applyTag(np.tag, raw, quoted, np.pos)
+					if err != nil {
+						return nil, err
+					}
+				}
+			}
 			if p.peek() != ':' {
-				return nil, p.err("expected `:` after the mapping key %q", raw)
+				return nil, p.err("expected `:` after the mapping key %q", value.KeyString(key))
 			}
 			p.next()
-			if quoted {
-				key = raw
-			} else {
-				key = p.resolvePlain(raw, keyPos)
-			}
+			p.bind(np, key)
 		}
 
 		if !noValue && !p.eof() && p.peek() != ' ' && p.peek() != '\n' {

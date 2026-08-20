@@ -115,8 +115,6 @@ var reasons = map[string]reason{
 		"a mapping key is not recognised, mostly around whitespace and quoting before the colon."},
 	gapPlainScalar: {false,
 		"a plain scalar is cut short by a character that is only special elsewhere."},
-	gapAnchor: {false,
-		"anchor and alias placement that halite does not accept."},
 	gapLenient: {false,
 		"halite parses a document the suite requires to be an error. Leniency is the safer " +
 			"direction for an existing tree, so these rank below the rejections."},
@@ -133,7 +131,6 @@ const (
 	specDuplicateKey = "specDuplicateKey"
 
 	gapAfterDocument  = "gapAfterDocument"
-	gapAnchor         = "gapAnchor"
 	gapChomping       = "gapChomping"
 	gapDirective      = "gapDirective"
 	gapExplicitKey    = "gapExplicitKey"
@@ -157,7 +154,6 @@ type deviation struct {
 var deviations = []deviation{
 	{"26DV", devRejects, gapMappingKey},
 	{"2JQS", devRejects, specDuplicateKey},
-	{"2SXE", devRejects, gapAfterDocument},
 	{"2XXW", devRejects, gapExplicitKey},
 	{"3HFZ", devAccepts, gapLenient},
 	{"4FJ6", devRejects, gapFlow},
@@ -176,8 +172,6 @@ var deviations = []deviation{
 	{"6HB6", devRejects, specTab},
 	{"6PBE", devRejects, gapExplicitKey},
 	{"6WLZ", devRejects, specTag},
-	{"74H7", devRejects, specTag},
-	{"7BMT", devValue, gapValueOther},
 	{"7FWL", devRejects, specTag},
 	{"7LBH", devAccepts, gapLenient},
 	{"87E4", devRejects, gapMappingKey},
@@ -211,11 +205,8 @@ var deviations = []deviation{
 	{"DK95/01", devAccepts, gapLenient},
 	{"DK95/03", devRejects, specTab},
 	{"DK95/07", devRejects, specTab},
-	{"E76Z", devRejects, gapAfterDocument},
-	{"FH7J", devRejects, specTag},
 	{"G5U8", devAccepts, gapLenient},
 	{"H7TQ", devAccepts, gapLenient},
-	{"HMQ5", devRejects, specTag},
 	{"J3BT", devRejects, gapMappingKey},
 	{"J7PZ", devRejects, specTag},
 	{"K54U", devValue, gapValueOther},
@@ -234,7 +225,6 @@ var deviations = []deviation{
 	{"N782", devAccepts, gapLenient},
 	{"NJ66", devRejects, gapFlow},
 	{"P76L", devRejects, specTag},
-	{"PW8X", devRejects, gapAfterDocument},
 	{"Q5MG", devRejects, specTab},
 	{"Q9WF", devRejects, gapOther},
 	{"QB6E", devAccepts, gapLenient},
@@ -249,7 +239,6 @@ var deviations = []deviation{
 	{"SU74", devAccepts, gapLenient},
 	{"SY6V", devAccepts, gapLenient},
 	{"U3C3", devRejects, specTag},
-	{"U3XV", devValue, gapValueOther},
 	{"U99R", devAccepts, gapLenient},
 	{"UGM3", devRejects, gapMultilinePlain},
 	{"UKK6/02", devRejects, specTag},
@@ -272,9 +261,7 @@ var deviations = []deviation{
 	{"Z67P", devRejects, specTag},
 	{"Z9M4", devRejects, specTag},
 	{"ZCZ6", devAccepts, gapLenient},
-	{"ZH7C", devRejects, gapAfterDocument},
 	{"ZL4Z", devAccepts, gapLenient},
-	{"ZWK4", devValue, gapAnchor},
 }
 
 func loadSuite(t *testing.T) []suiteCase {
