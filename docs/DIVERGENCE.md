@@ -572,6 +572,15 @@ Fixes after the first twelve, each of which the suite found:
 - **A block mapping key must be on one line**, which a folded quoted
   scalar can otherwise slip past. 2 cases.
 
+Fuzzing alongside the suite found three more the suite does not cover, one
+of them a regression this work introduced: a quoted scalar read byte by
+byte had each byte converted as if it were a code point, so `"café"` came
+back as `"cafÃ©"`; a string holding bytes that are not UTF-8, which
+cmd.run can return, was written out as a document the parser then refused,
+and is now tagged binary; and an unbalanced `]` drove the mapping-entry
+lookahead's nesting count negative. The suite is not a substitute for the
+fuzzer or the other way round.
+
 What remains, largest first:
 
 | Class | Cases | What it is |
