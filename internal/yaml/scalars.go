@@ -354,9 +354,19 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 	// The indentation indicator counts from the parent node's own
 	// indentation. Without one, the block takes the indentation of its
 	// first non-empty line.
+	//
+	// detected is a separate flag rather than a zero sentinel on
+	// blockIndent, because zero is a legitimate detected indent: a block
+	// scalar at the top of a document has a parent indent of -1, so its
+	// content may begin in column 0. Reusing zero as "not yet detected"
+	// let the detection run a second time on a later, deeper line, which
+	// raised the indent after shallower lines had already been accepted
+	// below it and left the render loop subtracting its way negative.
 	blockIndent := 0
+	detected := false
 	if explicitIndent > 0 {
 		blockIndent = max(parentIndent, 0) + explicitIndent
+		detected = true
 	}
 
 	for !p.eof() {
@@ -370,8 +380,9 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 		blank := p.eof() || p.peek() == '\n'
 
 		if !blank {
-			if blockIndent == 0 {
+			if !detected {
 				blockIndent = indent
+				detected = true
 				if blockIndent <= parentIndent {
 					return "", p.err("a block scalar's content must be indented further than the key that owns it")
 				}

@@ -16,38 +16,21 @@ func (p *parser) lineIsMappingEntry() bool {
 		switch c {
 		case '\n':
 			return false
-		case '\'':
-			j := i + 1
-			for j < len(p.src) && p.src[j] != '\n' {
-				if p.src[j] == '\'' {
-					if j+1 < len(p.src) && p.src[j+1] == '\'' {
-						j += 2
-						continue
-					}
-					break
-				}
-				j++
+		case '\'', '"':
+			if !p.quoteOpensAToken(i) {
+				// A quote in the middle of a token is an ordinary
+				// character: `a"b: 1` is a mapping entry whose key is
+				// `a"b`, which is what PyYAML makes of it too. Treating
+				// every quote as an opener made an unpaired one swallow
+				// the rest of the line and hide the colon.
+				i++
+				continue
 			}
-			if j >= len(p.src) || p.src[j] != '\'' {
+			end, ok := p.scanQuoted(i)
+			if !ok {
 				return false
 			}
-			i = j + 1
-		case '"':
-			j := i + 1
-			for j < len(p.src) && p.src[j] != '\n' {
-				if p.src[j] == '\\' {
-					j += 2
-					continue
-				}
-				if p.src[j] == '"' {
-					break
-				}
-				j++
-			}
-			if j >= len(p.src) || p.src[j] != '"' {
-				return false
-			}
-			i = j + 1
+			i = end
 		case '[', '{':
 			flow++
 			i++
@@ -69,6 +52,48 @@ func (p *parser) lineIsMappingEntry() bool {
 		}
 	}
 	return false
+}
+
+// quoteOpensAToken reports whether the quote at i begins a quoted scalar
+// rather than sitting inside a plain one. A quoted scalar can only start
+// where a token can start: at the head of the line, or after a flow
+// punctuation character.
+func (p *parser) quoteOpensAToken(i int) bool {
+	for j := i - 1; j >= p.off; j-- {
+		switch p.src[j] {
+		case ' ', '\t':
+			continue
+		case '[', '{', ',', ':', '-', '?':
+			return true
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// scanQuoted returns the offset just past the quoted scalar starting at i,
+// and whether it was closed before the end of the line.
+func (p *parser) scanQuoted(i int) (int, bool) {
+	quote := p.src[i]
+	j := i + 1
+	for j < len(p.src) && p.src[j] != '\n' {
+		if quote == '"' && p.src[j] == '\\' {
+			j += 2
+			continue
+		}
+		if p.src[j] == quote {
+			// Inside a single-quoted scalar, a doubled quote is an
+			// escaped quote rather than the close.
+			if quote == '\'' && j+1 < len(p.src) && p.src[j+1] == '\'' {
+				j += 2
+				continue
+			}
+			return j + 1, true
+		}
+		j++
+	}
+	return j, false
 }
 
 // parseBlockMap reads a block mapping whose keys sit at column indent.
