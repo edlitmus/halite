@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -294,6 +295,12 @@ func CleanEnv() []string {
 func applyUmask(cmd Command) (Command, error) {
 	if cmd.Umask == "" {
 		return cmd, nil
+	}
+	if runtime.GOOS == "windows" {
+		// The rewrite below needs a POSIX shell. Refusing is the honest
+		// answer: silently ignoring the mask is the bug this function was
+		// written to fix.
+		return cmd, fmt.Errorf("umask is not supported on this platform yet")
 	}
 	mask, err := normalizeUmask(cmd.Umask)
 	if err != nil {

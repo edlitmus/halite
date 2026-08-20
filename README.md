@@ -26,6 +26,19 @@ Delivery follows the phases in SPEC section 32.
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
 
+Phases 0 and 1 are done in the sense that their contents are implemented and
+exercised, not that the module inventory of SPEC section 15 is complete: this
+build ships 32 execution modules and 16 state modules against a specification
+that names roughly 90 and 46. FreeBSD is the only platform anything has been
+run on. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is the full accounting —
+every module gap, every unexercised platform, every test layer SPEC section 31
+requires that does not exist yet, and the handful of places the implementation
+deliberately departs from the specification text.
+
+That ledger is checked mechanically: `internal/specaudit` compares it against
+both SPEC.md and the registries a build actually ships, and fails if a gap is
+unrecorded, a recorded gap has been filled, or a function count has drifted.
+
 ## What works today
 
 A node compiles and applies its own tree, from local roots, with no hub:
@@ -129,6 +142,7 @@ internal/runner      low state execution and the return schema
 internal/grains      fact collection
 internal/migrate     the Salt tree audit
 internal/buildpolicy the specification's own build rules, as tests
+internal/specaudit   SPEC.md and the gap ledger, held to what ships
 ```
 
 ## Licence
