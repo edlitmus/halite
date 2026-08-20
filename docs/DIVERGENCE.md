@@ -77,31 +77,7 @@ stays positional.
 
 **Where:** `internal/cli/cli.go`, `Parse`.
 
-### 1.4 `runas` is only usable on a module that declares it
-
-**Spec:** section 11.7 lists `runas` among the per-state options, alongside
-`umask`, `order`, and `failhard`. The list reads as options available on any
-state.
-
-**Implementation:** `umask` is consumed as an option and applies to every
-command the state runs. `runas` is read as an option *and left in the
-arguments*, so a state using it on a module that does not declare a `runas`
-parameter fails to compile with "is not a parameter of this function".
-
-**Why:** `runas` is genuinely both — `cmd.run` takes it as an argument — and
-leaving it in place lets that module read it directly. The cost is that the
-option is not uniformly available, and the error an operator gets names the
-parameter rather than the option.
-
-**What it should probably be:** consumed like `umask`, with modules that
-want it reading it from the context. The context now carries both, so the
-change is small; it is left undone because it changes the compile behaviour
-of existing states rather than only adding to it.
-
-**Where:** `internal/state/lowstate.go`, the comment at the `runas`
-extraction. Pinned by `TestPerStateExecutionOptionsReachTheModule`.
-
-### 1.5 Test-mode conformance is checked more strictly than specified
+### 1.4 Test-mode conformance is checked more strictly than specified
 
 **Spec:** section 11.6 states the contract; section 31 requires a shared
 harness asserting it.
@@ -382,6 +358,14 @@ branches of `pkg` — which do not exist at all.
 Grain collection is the sharpest edge here. It was verified against this host
 and returns 63 grains including correct hardware detail. On Linux it will
 take entirely different code paths, none exercised.
+
+A per-state `runas` or `umask` governs the commands a state runs. On a
+state that runs none — `file.managed` writes through the Go runtime rather
+than through a program — the option is accepted and has no effect, silently.
+Whether a module shells out is not visible to the compiler, so warning about
+it would need the signature to declare it. Salt behaves the same way, so
+this is a shared limitation rather than a divergence, but it is the same
+silent-no-op shape as the defects in 5.3 and is worth closing eventually.
 
 `internal/exec/credential_other.go` refuses `runas` off unix rather than
 ignoring it, and `umask` refuses on Windows for the same reason: it is
