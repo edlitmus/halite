@@ -187,7 +187,14 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 		return p.bind(np, v), nil
 	}
 
-	raw, quoted, err := p.parseScalar(minIndent, false, false)
+	// A plain scalar continued onto following lines is bounded by its
+	// parent's indentation, not by the column this node happens to start
+	// at. The two differ whenever the value sits on the key's own line:
+	// in `plain: a` the node starts at column 8 and its continuation is
+	// anything indented past the key, so passing minIndent here ended the
+	// scalar at the first continuation line and left it to be read as a
+	// stray, over-indented mapping entry.
+	raw, quoted, err := p.parseScalar(parentIndent+1, false, false)
 	if err != nil {
 		return nil, err
 	}
