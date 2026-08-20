@@ -126,7 +126,7 @@ var optionNames = map[string]bool{
 	"unless": true, "onlyif": true, "creates": true, "check_cmd": true,
 	"retry": true, "parallel": true, "order": true, "failhard": true,
 	"reload_modules": true, "reload_grains": true, "reload_pillar": true,
-	"runas_password": true, "umask": true, "timeout": true,
+	"runas": true, "runas_password": true, "umask": true, "timeout": true,
 	"fire_event": true, "aggregate": true,
 	// `names` drives expansion and never reaches the module.
 	"names": true,
@@ -316,6 +316,9 @@ func parseOptions(f *FuncDecl, d *Decl, diags *Diags) Options {
 	if v, _, ok := get("fire_event"); ok {
 		o.FireEvent = v
 	}
+	if v, _, ok := get("runas"); ok {
+		o.RunAs = value.KeyString(v)
+	}
 	if v, _, ok := get("runas_password"); ok {
 		o.RunAsPassword, _ = v.(string)
 	}
@@ -333,12 +336,6 @@ func parseOptions(f *FuncDecl, d *Decl, diags *Diags) Options {
 			diags.Add(pos, d.SLS, d.ID, "timeout: %v", err)
 		}
 	}
-	// `runas` is both a module argument and a runner option, so it is read
-	// here and left in the arguments for the module that wants it.
-	if v, ok := f.Args.Get("runas"); ok {
-		o.RunAs = value.KeyString(v)
-	}
-
 	if v, pos, ok := get("order"); ok {
 		switch t := v.(type) {
 		case int64:

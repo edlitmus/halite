@@ -970,3 +970,47 @@ func TestCmdDefaultShellIsHonoured(t *testing.T) {
 		t.Error("an explicit shell: true was not honoured")
 	}
 }
+
+// `runas` reaches a command by two routes, and both have to work. From a
+// state file it is a per-state option of SPEC section 11.7, consumed by
+// the compiler and carried on the context. From `halite-node call` it is
+// an ordinary argument to cmd.run, since there is no state layer there.
+func TestRunAsArrivesByBothRoutes(t *testing.T) {
+	r := New()
+
+	// The direct call: runas is an argument.
+	c := newCtx(false)
+	c.Runner = &exec.RecordingRunner{}
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/echo", "runas", "someone")); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Runner.(*exec.RecordingRunner).Ran[0].RunAs; got != "someone" {
+		t.Errorf("a direct call passed runas as %q", got)
+	}
+
+	// The state route: the compiler consumed it, so it arrives on the
+	// context and the arguments have no trace of it.
+	c = newCtx(false)
+	c.Runner = &exec.RecordingRunner{}
+	c.RunAs = "someone"
+	c.Umask = "077"
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/echo")); err != nil {
+		t.Fatal(err)
+	}
+	ran := c.Runner.(*exec.RecordingRunner).Ran[0]
+	if ran.RunAs != "someone" || ran.Umask != "077" {
+		t.Errorf("the context options did not reach the command: runas=%q umask=%q", ran.RunAs, ran.Umask)
+	}
+
+	// An argument beats the context, because it is the more specific
+	// statement: it is about this one command.
+	c = newCtx(false)
+	c.Runner = &exec.RecordingRunner{}
+	c.RunAs = "from-context"
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/echo", "runas", "from-argument")); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Runner.(*exec.RecordingRunner).Ran[0].RunAs; got != "from-argument" {
+		t.Errorf("the context overrode an explicit argument: %q", got)
+	}
+}

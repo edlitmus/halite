@@ -42,9 +42,6 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 				{Name: "changes", Type: signature.Bool, Default: false},
 				{Name: "fail", Type: signature.Bool, Default: false},
 				{Name: "watch_marker", Type: signature.String},
-				// runas is read as a per-state option and left in the
-				// arguments, so a module it is used on has to declare it.
-				{Name: "runas", Type: signature.String},
 			},
 			Mutates: true, TestMode: signature.TestReliable, Section: "test",
 		}
@@ -879,6 +876,10 @@ func TestEmptyRun(t *testing.T) {
 // applied to a state's unless and onlyif conditions but not to the state
 // itself, which is the wrong half: a cmd.run asking for umask 077 wrote a
 // world-readable file and reported success.
+//
+// The probe module declares neither, which is the point: a per-state
+// option is available on any state, so it must not require the module to
+// have a parameter of the same name.
 func TestPerStateExecutionOptionsReachTheModule(t *testing.T) {
 	_, p := compileAndRun(t, `
 masked:
