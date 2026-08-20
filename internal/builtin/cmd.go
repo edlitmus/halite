@@ -22,7 +22,11 @@ func registerCmd(r *Registries) {
 		base := []signature.Param{
 			req("name", signature.String, "The program to run, or the shell line when shell is true."),
 			opt("args", signature.List, nil, "Arguments to the program, when not using a shell."),
-			opt("shell", signature.Bool, false, "Run the command through a shell. Off by default; see SPEC section 15.2."),
+			// The declared default is nil rather than false so that an
+			// omitted `shell` stays absent from the bound arguments and
+			// can fall back to the `cmd_default_shell` setting, while an
+			// explicit `shell: false` still wins over it.
+			opt("shell", signature.Bool, nil, "Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2."),
 			opt("cwd", signature.Path, "", "Working directory."),
 			opt("runas", signature.String, "", "Account to run as, applied with setuid and setgid."),
 			opt("umask", signature.String, "", "Umask for the child."),
@@ -34,9 +38,21 @@ func registerCmd(r *Registries) {
 		return append(base, extra...)
 	}
 
+	// defaultShell is the `cmd_default_shell` transition of SPEC section
+	// 15.2: an estate that cannot rewrite every cmd.run at once turns it
+	// on, and the Salt reading of `name` as a shell line keeps working
+	// until it can.
+	defaultShell := func(c *exec.Context) bool {
+		if c == nil || c.Config == nil {
+			return false
+		}
+		v, ok := c.Config.Get("cmd_default_shell")
+		return ok && value.Truthy(v)
+	}
+
 	build := func(c *exec.Context, args *value.Map) exec.Command {
 		cmd := exec.Command{
-			Shell:          states.Bool(args, "shell", false),
+			Shell:          states.Bool(args, "shell", defaultShell(c)),
 			Dir:            states.Str(args, "cwd", ""),
 			RunAs:          states.Str(args, "runas", ""),
 			Umask:          states.Str(args, "umask", ""),

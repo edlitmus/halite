@@ -912,3 +912,61 @@ func TestStateAndExecModulesAgreeOnNames(t *testing.T) {
 		t.Errorf("the %s state module has no execution module; an operator cannot inspect it from the command line", m)
 	}
 }
+
+// SPEC section 15.2 inverts Salt's shell default and names
+// `cmd_default_shell` as the transition for an estate that cannot rewrite
+// every cmd.run at once. A declared setting that nothing reads is the same
+// silent failure the inversion exists to prevent.
+func TestCmdDefaultShellIsHonoured(t *testing.T) {
+	r := New()
+
+	withConfig := func(cfg *value.Map) *exec.Context {
+		c := newCtx(false)
+		c.Config = cfg
+		c.Runner = &exec.RecordingRunner{}
+		return c
+	}
+
+	// Off, which is the default: `name` is the program, so a name with
+	// arguments in it is one argv element and not a shell line.
+	c := withConfig(value.NewMap(0))
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/echo", "args", []any{"hello"})); err != nil {
+		t.Fatal(err)
+	}
+	rec := c.Runner.(*exec.RecordingRunner)
+	if rec.Ran[0].Shell {
+		t.Error("a shell was used with cmd_default_shell unset")
+	}
+
+	// On: the same call runs through a shell, which is what makes an
+	// unconverted `name: some command with args` keep working.
+	c = withConfig(value.MapOf("cmd_default_shell", true))
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "echo hello")); err != nil {
+		t.Fatal(err)
+	}
+	rec = c.Runner.(*exec.RecordingRunner)
+	if !rec.Ran[0].Shell {
+		t.Error("cmd_default_shell: true did not take effect")
+	}
+
+	// An explicit `shell: false` beats the setting, or the per-state
+	// argument is not an override at all.
+	c = withConfig(value.MapOf("cmd_default_shell", true))
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/echo", "shell", false)); err != nil {
+		t.Fatal(err)
+	}
+	rec = c.Runner.(*exec.RecordingRunner)
+	if rec.Ran[0].Shell {
+		t.Error("an explicit shell: false was overridden by the setting")
+	}
+
+	// And an explicit true beats the setting the other way.
+	c = withConfig(value.NewMap(0))
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "echo hi", "shell", true)); err != nil {
+		t.Fatal(err)
+	}
+	rec = c.Runner.(*exec.RecordingRunner)
+	if !rec.Ran[0].Shell {
+		t.Error("an explicit shell: true was not honoured")
+	}
+}
