@@ -83,6 +83,9 @@ var ExemptPaths = []string{
 	// Vendored allowlist code is not ours to reword.
 	"vendor/",
 	".git/",
+	// Build output is not source.
+	"bin/",
+	"dist/",
 }
 
 // IsExempt reports whether a repository-relative path is outside the

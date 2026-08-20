@@ -10,28 +10,36 @@
 #   GOFLAGS=-mod=vendor  builds read the vendored allowlist
 #   GOPROXY=off          the build network is disabled
 
-BINARIES := halite-node halite-hub halite-api
-VERSION  ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)
-COMMIT   ?= $(shell git rev-parse HEAD 2>/dev/null)
+BINARIES = halite-node halite-hub halite-api
+
+# `!=` rather than `$(shell ...)`: BSD make has no $(shell), and this
+# project is developed on FreeBSD. GNU make has supported `!=` since 4.0,
+# so one spelling serves both.
+GIT_VERSION != git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev
+GIT_COMMIT  != git rev-parse HEAD 2>/dev/null || echo unknown
+GIT_EPOCH   != git log -1 --format=%ct 2>/dev/null || echo 0
+
+VERSION ?= $(GIT_VERSION)
+COMMIT  ?= $(GIT_COMMIT)
 
 # SOURCE_DATE_EPOCH is honoured so two builders on two machines produce
 # identical digests.
-SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || echo 0)
+SOURCE_DATE_EPOCH ?= $(GIT_EPOCH)
 
-MODULE  := github.com/edlitmus/halite
-LDFLAGS := -s -w \
+MODULE  = github.com/edlitmus/halite
+LDFLAGS = -s -w \
 	-X $(MODULE)/internal/version.Version=$(VERSION) \
 	-X $(MODULE)/internal/version.Commit=$(COMMIT)
 
-BUILDFLAGS := -trimpath -buildvcs=true -ldflags="$(LDFLAGS)"
+BUILDFLAGS = -trimpath -buildvcs=true -ldflags="$(LDFLAGS)"
 
 # The vendored build environment. `dev` targets leave it off so that a
 # working tree without vendor/ still builds during development; `release`
 # turns it on and is what CI runs.
-RELEASE_ENV := CGO_ENABLED=0 GOFLAGS=-mod=vendor GOPROXY=off SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
-DEV_ENV     := CGO_ENABLED=0
+RELEASE_ENV = CGO_ENABLED=0 GOFLAGS=-mod=vendor GOPROXY=off SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
+DEV_ENV     = CGO_ENABLED=0
 
-TARGETS := linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
+TARGETS = linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
 	darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .PHONY: all build test race vet cover check release cross clean tidy vendor policy fmt
@@ -74,7 +82,7 @@ vet:
 	@env $(DEV_ENV) go vet ./...
 
 fmt:
-	@gofmt -l -w $(shell find . -name '*.go' -not -path './vendor/*')
+	@gofmt -l -w cmd internal
 
 # policy runs the specification's own build rules: the lexicon of section
 # 2.3, the dependency allowlist of section 4.2, and the import checks of

@@ -45,23 +45,39 @@ func (d Diag) Error() string { return d.String() }
 
 func (d Diag) String() string {
 	var b strings.Builder
-	switch {
-	case !d.Pos.IsZero():
-		b.WriteString(d.Pos.String())
-	case d.SLS != "":
-		b.WriteString(d.SLS)
-	default:
-		b.WriteString("<state>")
+	// An error that arrived from the renderer or the parser already
+	// carries its own position, and prefixing it again turns one path
+	// into two.
+	if !d.messageCarriesPosition() {
+		switch {
+		case !d.Pos.IsZero():
+			b.WriteString(d.Pos.String())
+		case d.SLS != "":
+			b.WriteString(d.SLS)
+		default:
+			b.WriteString("<state>")
+		}
+		if d.ID != "" {
+			fmt.Fprintf(&b, " [%s]", d.ID)
+		}
+		b.WriteString(": ")
+	} else if d.ID != "" {
+		fmt.Fprintf(&b, "[%s] ", d.ID)
 	}
-	if d.ID != "" {
-		fmt.Fprintf(&b, " [%s]", d.ID)
-	}
-	b.WriteString(": ")
 	b.WriteString(d.Msg)
 	for _, r := range d.Related {
 		fmt.Fprintf(&b, "\n    %s: %s", r.Pos, r.Msg)
 	}
 	return b.String()
+}
+
+// messageCarriesPosition reports whether the message already starts with
+// the file this diagnostic would otherwise prefix.
+func (d Diag) messageCarriesPosition() bool {
+	if d.Pos.File == "" {
+		return false
+	}
+	return strings.HasPrefix(d.Msg, d.Pos.File+":")
 }
 
 // Diags is a collection of diagnostics, ordered for reporting.
