@@ -169,20 +169,17 @@ var deviations = []deviation{
 	{"5TRB", devAccepts, gapLenient},
 	{"5TYM", devRejects, specTag},
 	{"5U3A", devAccepts, gapLenient},
-	{"5WE3", devRejects, gapExplicitKey},
 	{"6BCT", devRejects, gapAfterDocument},
 	{"6CA3", devRejects, specTab},
 	{"6CK3", devRejects, specTag},
 	{"6FWR", devValue, gapChomping},
 	{"6HB6", devRejects, specTab},
-	{"6M2F", devRejects, gapAnchor},
 	{"6PBE", devRejects, gapExplicitKey},
 	{"6WLZ", devRejects, specTag},
 	{"74H7", devRejects, specTag},
 	{"7BMT", devValue, gapValueOther},
 	{"7FWL", devRejects, specTag},
 	{"7LBH", devAccepts, gapLenient},
-	{"7W2P", devRejects, gapExplicitKey},
 	{"87E4", devRejects, gapMappingKey},
 	{"8KB6", devRejects, gapFlow},
 	{"8MK2", devRejects, specTag},
@@ -221,13 +218,11 @@ var deviations = []deviation{
 	{"HMQ5", devRejects, specTag},
 	{"J3BT", devRejects, gapMappingKey},
 	{"J7PZ", devRejects, specTag},
-	{"JTV5", devRejects, gapExplicitKey},
 	{"K54U", devValue, gapValueOther},
 	{"K858", devRejects, gapMultilinePlain},
 	{"KK5P", devRejects, specComplexKey},
 	{"L24T/00", devValue, gapChomping},
 	{"L24T/01", devValue, gapChomping},
-	{"L94M", devValue, gapValueOther},
 	{"LQZ7", devRejects, gapMappingKey},
 	{"LX3P", devRejects, gapOther},
 	{"M2N8/00", devRejects, gapPlainScalar},
@@ -279,7 +274,7 @@ var deviations = []deviation{
 	{"ZCZ6", devAccepts, gapLenient},
 	{"ZH7C", devRejects, gapAfterDocument},
 	{"ZL4Z", devAccepts, gapLenient},
-	{"ZWK4", devRejects, gapExplicitKey},
+	{"ZWK4", devValue, gapAnchor},
 }
 
 func loadSuite(t *testing.T) []suiteCase {
@@ -590,7 +585,7 @@ func regenerateTable(t *testing.T, cases []suiteCase, index map[string]deviation
 		if got.agrees {
 			continue
 		}
-		reason := "REASON_UNCLASSIFIED"
+		reason := "gapAnchor"
 		if d, ok := index[c.ID]; ok && d.Kind == got.kind {
 			reason = d.Reason
 		} else {

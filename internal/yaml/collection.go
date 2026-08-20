@@ -124,6 +124,12 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 		var key any
 		var err error
 
+		// noValue marks an explicit key with no `: ` line of its own, whose
+		// value is null. That is how a set is written, and how a mapping
+		// with a missing value is written, so refusing it rejected valid
+		// YAML rather than catching a mistake.
+		noValue := false
+
 		if p.peek() == '?' && (p.peekAt(1) == ' ' || p.peekAt(1) == '\n') {
 			p.next()
 			p.skipSpaces()
@@ -134,10 +140,12 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 			if err := p.skipBlank(); err != nil {
 				return nil, err
 			}
-			if p.peek() != ':' {
-				return nil, p.err("an explicit key written with `? ` must be followed by a `:` line")
+			if p.col == indent && p.peek() == ':' &&
+				(p.peekAt(1) == ' ' || p.peekAt(1) == '\n' || p.peekAt(1) == 0) {
+				p.next()
+			} else {
+				noValue = true
 			}
-			p.next()
 		} else {
 			raw, quoted, err := p.parseScalar(indent, true, false)
 			if err != nil {
@@ -154,14 +162,17 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 			}
 		}
 
-		if !p.eof() && p.peek() != ' ' && p.peek() != '\n' {
+		if !noValue && !p.eof() && p.peek() != ' ' && p.peek() != '\n' {
 			return nil, p.err("a `:` that ends a mapping key must be followed by a space or a line break")
 		}
 
 		valPos := p.pos()
-		val, err := p.parseMapValue(indent)
-		if err != nil {
-			return nil, err
+		var val any
+		if !noValue {
+			val, err = p.parseMapValue(indent)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		if ks, ok := key.(string); ok && ks == mergeKey {
@@ -263,6 +274,29 @@ func (p *parser) parseExplicitKey(indent int) (any, error) {
 	pos := p.pos()
 	if p.peek() == '[' || p.peek() == '{' || isBlockSeqEntry(p) {
 		return nil, p.errAt(pos, "a mapping or sequence cannot be used as a key")
+	}
+	// A block scalar is a legal explicit key, and a common one: `? |`
+	// followed by indented lines.
+	if p.peek() == '|' || p.peek() == '>' {
+		return p.parseBlockScalar(indent - 1)
+	}
+	// The key may begin on the lines below the `?` rather than beside it.
+	if p.eof() || p.peek() == '\n' || p.commentStart() {
+		if err := p.skipBlank(); err != nil {
+			return nil, err
+		}
+		if p.eof() || p.col <= indent {
+			return nil, nil
+		}
+		v, err := p.parseBlockValue(p.col, indent)
+		if err != nil {
+			return nil, err
+		}
+		switch v.(type) {
+		case *value.Map, []any:
+			return nil, p.errAt(pos, "a mapping or sequence cannot be used as a key")
+		}
+		return v, nil
 	}
 	raw, quoted, err := p.parseScalar(indent, false, false)
 	if err != nil {

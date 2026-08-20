@@ -280,7 +280,9 @@ func TestMergeKeyRejections(t *testing.T) {
 
 func TestMappingRejections(t *testing.T) {
 	mustFail(t, "a: 1\n  b: 2\n", "unexpected indentation")
-	mustFail(t, "? key\nvalue\n", "must be followed by a `:` line")
+	// `? key` with no `: ` line is a key with a null value, so what fails
+	// here is the bare `value` line that follows it, not the explicit key.
+	mustFail(t, "? key\nvalue\n", "expected `:` after the mapping key")
 }
 
 func TestAllowDuplicateKeysCollectsThemAll(t *testing.T) {
@@ -498,5 +500,48 @@ func TestDocumentMarkerHandling(t *testing.T) {
 	_, _, err = ParseStream([]byte("a: &x 1\n---\nb: *x\n"), DefaultOptions("s.sls"))
 	if err == nil {
 		t.Error("an anchor should not survive a document boundary")
+	}
+}
+
+// An explicit key with no value line is how a set is written, and how a
+// mapping with a missing value is written. SPEC section 10.1.1 lists `? `
+// among the supported constructs.
+func TestExplicitKeyWithoutAValue(t *testing.T) {
+	v, _, err := Parse([]byte("? a\n? b\nc:\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, ok := v.(*value.Map)
+	if !ok {
+		t.Fatalf("expected a mapping, got %T", v)
+	}
+	for _, k := range []string{"a", "b", "c"} {
+		got, ok := m.Get(k)
+		if !ok {
+			t.Errorf("key %q is missing; keys are %v", k, m.StringKeys())
+			continue
+		}
+		if got != nil {
+			t.Errorf("key %q = %#v, want null", k, got)
+		}
+	}
+	if got := m.StringKeys(); len(got) != 3 {
+		t.Errorf("keys = %v", got)
+	}
+}
+
+// A block scalar is a legal explicit key.
+func TestExplicitKeyThatIsABlockScalar(t *testing.T) {
+	v, _, err := Parse([]byte("? |\n  block key\n: value\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := v.(*value.Map)
+	got, ok := m.Get("block key\n")
+	if !ok {
+		t.Fatalf("keys = %v", m.StringKeys())
+	}
+	if got != "value" {
+		t.Errorf("value = %#v", got)
 	}
 }
