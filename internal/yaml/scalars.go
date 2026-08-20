@@ -477,6 +477,9 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 	// below it and left the render loop subtracting its way negative.
 	blockIndent := 0
 	detected := false
+	// leadingBlankIndent is the deepest blank line seen before any
+	// content, which the detected indent has to account for.
+	leadingBlankIndent := 0
 	if explicitIndent > 0 {
 		blockIndent = max(parentIndent, 0) + explicitIndent
 		detected = true
@@ -492,6 +495,9 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 		}
 		blank := p.eof() || p.peek() == '\n'
 
+		if blank && !detected && indent > leadingBlankIndent {
+			leadingBlankIndent = indent
+		}
 		if !blank {
 			if !detected {
 				if indent <= parentIndent {
@@ -507,6 +513,13 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 				}
 				blockIndent = indent
 				detected = true
+				if leadingBlankIndent > blockIndent {
+					// A blank line before the content may not be more
+					// indented than the content itself: it would look
+					// like the block started further in than it does,
+					// and YAML calls that an error rather than guessing.
+					return "", p.err("a blank line before a block scalar's content is indented further than the content")
+				}
 			}
 			if indent < blockIndent {
 				p.off = lineStart

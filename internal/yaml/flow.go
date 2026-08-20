@@ -206,6 +206,9 @@ func (p *parser) parseFlowNode(allowImplicitPair bool) (any, error) {
 	}
 	switch p.peek() {
 	case '*':
+		if err := refuseAliasProps(p, np); err != nil {
+			return nil, err
+		}
 		v, err := p.parseAlias()
 		if err != nil {
 			return nil, err

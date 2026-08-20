@@ -879,3 +879,52 @@ func TestFlowMalformedEntries(t *testing.T) {
 		}
 	}
 }
+
+// A blank line before a block scalar's content may not be more indented
+// than the content: it would look like the block started further in than
+// it does, and YAML calls that an error rather than guessing.
+func TestBlockScalarLeadingBlankIndentation(t *testing.T) {
+	for _, src := range []string{
+		"block: |\n     \n  content\n",
+		"block: >\n \n  \n   \n invalid\n",
+	} {
+		if _, _, err := Parse([]byte(src), Options{File: "t.sls"}); err == nil {
+			t.Errorf("%q parsed; the leading blank is deeper than the content", src)
+		}
+	}
+
+	// A blank line no deeper than the content is ordinary.
+	v, _, err := Parse([]byte("block: |\n\n  content\n"), Options{File: "t.sls"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := v.(*value.Map).Get("block"); got != "\ncontent\n" {
+		t.Errorf("block = %q", got)
+	}
+}
+
+// An alias is a reference to a node, not a node of its own, so it has
+// nothing for an anchor or a tag to attach to.
+func TestAliasCannotCarryProperties(t *testing.T) {
+	cases := map[string]string{
+		"a: &x 1\nb: &y *x\n":    "cannot carry an anchor",
+		"a: &x 1\nb: !!str *x\n": "cannot carry a tag",
+		"a: &x 1\n&y *x: 2\n":    "cannot carry an anchor",
+		"a: &x 1\nb: [&y *x]\n":  "cannot carry an anchor",
+	}
+	for src, want := range cases {
+		_, _, err := Parse([]byte(src), Options{File: "t.sls"})
+		if err == nil {
+			t.Errorf("%q parsed; a property on an alias should be refused", src)
+			continue
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: error %q does not mention %q", src, err, want)
+		}
+	}
+
+	// A plain alias, and an anchor on a real node, both still work.
+	if _, _, err := Parse([]byte("a: &x 1\nb: *x\nc: &y 2\n"), Options{File: "t.sls"}); err != nil {
+		t.Errorf("ordinary anchors and aliases were refused: %v", err)
+	}
+}

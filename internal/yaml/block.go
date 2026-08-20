@@ -91,6 +91,20 @@ func (p *parser) skipToNextProp(np nodeProps, minIndent int) {
 	*p = save
 }
 
+// refuseAliasProps rejects an anchor or tag written in front of an alias.
+// An alias is a reference to a node, not a node of its own, so it has
+// nothing for a property to attach to; `key: &b *a` names an anchor that
+// would point at nothing.
+func refuseAliasProps(p *parser, np nodeProps) error {
+	switch {
+	case np.anchor != "":
+		return p.errAt(np.pos, "an alias cannot carry an anchor; &%s has nothing to name", np.anchor)
+	case np.tag != "":
+		return p.errAt(np.pos, "an alias cannot carry a tag; %s has nothing to apply to", np.tag)
+	}
+	return nil
+}
+
 func isFlowIndicator(c byte) bool {
 	return c == ',' || c == '[' || c == ']' || c == '{' || c == '}'
 }
@@ -143,6 +157,9 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 
 	switch {
 	case p.peek() == '*':
+		if err := refuseAliasProps(p, np); err != nil {
+			return nil, err
+		}
 		v, err := p.parseAlias()
 		if err != nil {
 			return nil, err

@@ -167,6 +167,9 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 			}
 
 			if p.peek() == '*' {
+				if err := refuseAliasProps(p, np); err != nil {
+					return nil, err
+				}
 				key, err = p.parseAlias()
 				if err != nil {
 					return nil, err
