@@ -383,26 +383,35 @@ doing the checking.
 
 | Package | Statement coverage | SPEC 31 bar |
 |---|---|---|
-| `internal/state` | 89.7% | >90% branch — not met |
-| `internal/yaml` | 88.5% | >90% branch — not met |
-| `internal/template` | 79.5% | >90% branch — not met |
-| `internal/target` | 90.3% | >90% branch — not met on the stated metric |
-| `internal/regexcompat` | 100% | — |
+| `internal/regexcompat` | 100.0% | — |
+| `internal/yaml` | 96.5% | >90% branch — met on statements, unmeasured on branches |
 | `internal/cli` | 93.4% | — |
+| `internal/target` | 92.8% | >90% branch — met on statements, unmeasured on branches |
+| `internal/state` | 90.7% | >90% branch — met on statements, unmeasured on branches |
 | `internal/buildpolicy` | 90.7% | — |
 | `internal/value` | 89.6% | — |
-| `internal/fileserver` | 87.6% | — |
+| `internal/fileserver` | 89.4% | — |
+| `internal/states` | 86.1% | — |
 | `internal/pillar` | 84.7% | — |
 | `internal/render` | 83.7% | — |
 | `internal/runner` | 83.0% | — |
-| `internal/exec` | 81.6% | — |
+| `internal/exec` | 81.3% | — |
+| `internal/template` | 79.8% | **>90% branch — not met** |
 | `internal/signature` | 79.3% | — |
 | `internal/config` | 77.8% | — |
 | `internal/grains` | 75.3% | — |
 | `internal/migrate` | 69.4% | — |
 | `internal/builtin` | 36.3% | — |
+| `internal/specaudit` | n/a | it tests documents, not code |
 | `cmd/halite-node`, `cmd/halite-hub`, `cmd/halite-api` | 0% | — |
 | `internal/version` | 0% | — |
+
+Whole tree: 70.8%.
+
+`internal/template` is the one correctness-core package still short of the
+bar on either metric. It is also the largest: roughly 130 filters, the
+expression grammar, inheritance, and macros. Closing it is a matter of
+volume rather than difficulty.
 
 `internal/builtin` at 36.3% is structurally limited rather than neglected: a
 large share of its statements need root, a package manager with a writable
@@ -412,9 +421,11 @@ means the containerised integration suite of SPEC 31, which is phase 5 work.
 The three `cmd` packages are argument dispatch over tested libraries. They
 are exercised by hand and by the lab run, not by `go test`.
 
-### 5.2 Test layers not present at all
+### 5.2 The fourteen test layers
 
-Of the fourteen layers SPEC 31 requires, these do not exist:
+Every layer SPEC 31 requires, and where it stands. Two of the fourteen
+are present, one is present and stronger than specified, one is partial, and
+ten are absent.
 
 | Layer | Status |
 |---|---|
@@ -423,8 +434,8 @@ Of the fourteen layers SPEC 31 requires, these do not exist:
 | Differential against Salt | **absent.** This is named the primary correctness gate and it has never been run. There is no Salt installation to run it against on this host. |
 | Differential, version comparison | **absent**, and blocked: `pkg.version_cmp` is not implemented. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
-| Property | **absent.** None of the five named properties has a test: path containment never escapes a root, the topological sort is stable, requisite resolution terminates, the YAML parser never panics, targeting is monotonic under grain addition. Four of the five are cheap and should come next. |
-| Fuzz | **absent.** No `Fuzz*` function exists. The spec names eight targets and calls a panic a release blocker. The YAML parser, the template lexer, and the compound target parser are all reachable from untrusted-ish input and all three are worth fuzzing before anything else on this list. |
+| Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
+| Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder, all of which belong to phases that have not started. |
 | Integration | **absent.** No containerised hub-plus-nodes harness. Blocked on phase 2. |
 | Scale | **absent.** Blocked on phase 2. |
 | Upgrade | **absent.** Nothing to upgrade from. |
@@ -432,7 +443,39 @@ Of the fourteen layers SPEC 31 requires, these do not exist:
 | Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`). `govulncheck` is not wired in. No static analysis beyond `go vet`. No external review. |
 | Reproducibility | **unverified.** One builder, one platform. Two independent builders producing identical digests has never been attempted. |
 
-### 5.3 What the lab run does cover
+### 5.3 What fuzzing found
+
+Recorded because "we added fuzzing" is worth less than what it caught. Four
+defects, all reachable from a `.sls` file, all of which had passed the
+hand-written suite:
+
+- **A block scalar could be parsed with a negative indent**, panicking in
+  `strings.Repeat`. `blockIndent == 0` doubled as "not yet detected", but
+  zero is a legitimate detected indent for a block scalar at the top of a
+  document, where the parent indent is -1. Detection therefore ran a second
+  time on a later, deeper line and raised the indent after shallower lines
+  had already been accepted below it.
+- **A quote anywhere on a line hid the mapping colon after it.**
+  `lineIsMappingEntry` treated any `'` or `"` as opening a quoted scalar and
+  scanned for its close, so an unpaired one swallowed the rest of the line
+  and `a"b: 1` parsed as a plain scalar, then failed on the colon. PyYAML
+  reads it as a mapping with the key `a"b`, so this was also a Salt
+  compatibility defect. Quotes now open a token only where a token can
+  start.
+- **`{%}` panicked in the template lexer.** The default block delimiters
+  `{%` and `%}` overlap on the `%`, so searching for the closing delimiter
+  from the start of the opening one found the opener's own second byte and
+  produced an end offset before the start of the tag body.
+- **`x[]` panicked in the template evaluator.** An empty subscript produced
+  an `ItemExpr` with a nil index, which the evaluator then dereferenced.
+  Python and Jinja both reject it; now so does this.
+
+After those fixes: 800000 executions against the YAML parser, 2780000
+against the template engine, and a four-minute campaign against the compound
+target parser, all clean. The corpora are committed under each package's
+`testdata/fuzz/`.
+
+### 5.4 What the lab run does cover
 
 Not a substitute for the above, but recorded so the gaps are not read as
 "nothing was verified". On this host, against a real state tree: a
@@ -507,20 +550,15 @@ excavation.
 
 Ranked by correctness value per unit of work, given one FreeBSD host:
 
-1. **Fuzz the YAML parser, the template lexer, and the compound target
-   parser.** Three `Fuzz*` functions, no new infrastructure, and SPEC 31
-   calls a panic a release blocker. Highest value on this list.
-2. **The five property tests of SPEC 31.** Four are cheap and one of them —
-   path containment never escapes a root — is the CVE-2020-11652 control.
-3. **Vendor and run the YAML test suite.** The largest single correctness
-   gap, and it needs no host but this one.
-4. **Language and runtime modules.** Nine modules, each wrapping one binary,
+1. **Vendor and run the YAML test suite.** Now the largest single
+   correctness gap, and it needs no host but this one.
+2. **Language and runtime modules.** Nine modules, each wrapping one binary,
    all runnable here.
-5. **`x509`.** Self-contained, entirely `crypto/x509`, no platform
+3. **`x509`.** Self-contained, entirely `crypto/x509`, no platform
    dependency.
-6. **Function depth in `file`, `cmd`, `pkg`, and `service`.** Mechanical, and
+4. **Function depth in `file`, `cmd`, `pkg`, and `service`.** Mechanical, and
    it is what a real tree actually hits.
-7. **A Linux host.** Everything in section 4 is blocked on this, and it is
+5. **A Linux host.** Everything in section 4 is blocked on this, and it is
    the point at which the apt and systemd providers stop being theoretical.
-8. **A Salt installation to run the differential gate against.** Named the
+6. **A Salt installation to run the differential gate against.** Named the
    primary correctness gate; currently unrun.
