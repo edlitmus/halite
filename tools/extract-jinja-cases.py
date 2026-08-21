@@ -39,6 +39,14 @@ def environment_options(node):
     name = f.id if isinstance(f, ast.Name) else getattr(f, "attr", None)
     if name not in ("Environment", "overlay"):
         return None
+    # Jinja's Environment takes its delimiters positionally as well as by
+    # keyword, and further along the same signature sit line_statement_prefix
+    # and line_comment_prefix, which halite does not have. Reading only the
+    # keywords captured the flags and silently dropped the delimiters, so a
+    # case ran against the wrong syntax and its difference was recorded as a
+    # defect. Any positional argument means the case is not ours to measure.
+    if node.args:
+        return "unsupported"
     opts = {}
     for kw in node.keywords:
         if kw.arg is None or kw.arg not in ENV_OPTIONS:

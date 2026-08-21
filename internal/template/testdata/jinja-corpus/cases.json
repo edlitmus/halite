@@ -956,26 +956,6 @@
  },
  {
   "context": {},
-  "expected": "hello    ",
-  "id": "test_lexnparse::test_lstrip_angle_bracket_simple",
-  "options": {
-   "lstrip_blocks": true,
-   "trim_blocks": true
-  },
-  "template": "    <% if True %>hello    <% endif %>"
- },
- {
-  "context": {},
-  "expected": "hello    ",
-  "id": "test_lexnparse::test_lstrip_angle_bracket_comment",
-  "options": {
-   "lstrip_blocks": true,
-   "trim_blocks": true
-  },
-  "template": "    <%# if True %>hello    <%# endif %>"
- },
- {
-  "context": {},
   "expected": "        ",
   "id": "test_lexnparse::test_trim",
   "options": {
@@ -1159,46 +1139,6 @@
    "trim_blocks": false
   },
   "template": "{{x}}{% raw %}\n\n      {% endraw +%}\n\n{{ y }}"
- },
- {
-  "context": {},
-  "expected": "\n\n",
-  "id": "test_lexnparse::test_no_trim_angle_bracket",
-  "options": {
-   "lstrip_blocks": true,
-   "trim_blocks": true
-  },
-  "template": "    <% if True +%>\n\n    <% endif %>"
- },
- {
-  "context": {},
-  "expected": "\n\n   ",
-  "id": "test_lexnparse::test_no_trim_angle_bracket#1",
-  "options": {
-   "lstrip_blocks": true,
-   "trim_blocks": true
-  },
-  "template": "    <%# comment +%>\n\n   "
- },
- {
-  "context": {},
-  "expected": "    \n\n    ",
-  "id": "test_lexnparse::test_no_trim_php_syntax",
-  "options": {
-   "lstrip_blocks": false,
-   "trim_blocks": true
-  },
-  "template": "    <? if True +?>\n\n    <? endif ?>"
- },
- {
-  "context": {},
-  "expected": "    \n\n    ",
-  "id": "test_lexnparse::test_no_trim_php_syntax#1",
-  "options": {
-   "lstrip_blocks": false,
-   "trim_blocks": true
-  },
-  "template": "    <!-- comment +-->\n\n    "
  },
  {
   "context": {
