@@ -227,6 +227,14 @@ different reason is given.
 
 `file.accumulated`, which SPEC 15.5 requires, is not implemented.
 
+The `x509` states are worth a note. Salt's own re-issue a certificate on
+every highstate, because a re-issued certificate carries a new serial and
+a new expiry and so never matches what the last run left. These read what
+is on disk first and re-issue only when the certificate is missing, no
+longer matches its private key, was not signed by the configured CA, or
+has fallen inside the renewal window — and the comment says which. A
+second run leaves the bytes alone, which the tests assert.
+
 ### 2.3 Platform modules (SPEC 15.3)
 
 2 of 62 present. This is the largest single gap and it is a direct
@@ -790,20 +798,16 @@ both are down to isolated cases — 40 YAML and 25 template — with no
 cluster left in either. That is a good place for them to be, and it means
 the next fix in each is worth less than anything above it.
 
-1. **`x509`.** Self-contained, entirely `crypto/x509`, no platform
-   dependency, and it replaces the M2Crypto and `cryptography`
-   dependencies that make Salt's own `x509` notoriously hard to install.
-   Nothing else on this list is both that large and that unblocked.
-2. **Function depth in `file`, `cmd`, `pkg`, and `service`** (section 3).
+1. **Function depth in `file`, `cmd`, `pkg`, and `service`** (section 3).
    `file` has 14 exec functions of about 50, `pkg` 6 of 26. Mechanical
    work, and it is what a real tree actually hits.
-3. **A Linux host.** Everything in section 4 is blocked on it, and it is
+2. **A Linux host.** Everything in section 4 is blocked on it, and it is
    the point at which the apt and systemd providers stop being
    theoretical. 60 of the 62 platform modules of SPEC 15.3 wait behind it.
-4. **A Salt installation to run the differential gate against.** SPEC 31
+3. **A Salt installation to run the differential gate against.** SPEC 31
    calls it the primary correctness gate. It has never been run.
-5. **The remaining 40 YAML conformance gaps** (5.4). 23 are documents
+4. **The remaining 40 YAML conformance gaps** (5.4). 23 are documents
    accepted that should be refused, which is the safe direction; the other
    17 are spread across nine classes of two or fewer.
-6. **The remaining 25 template conformance gaps** (5.5). The largest class
+5. **The remaining 25 template conformance gaps** (5.5). The largest class
    is 9, and it is float and dict spelling.
