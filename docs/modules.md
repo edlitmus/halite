@@ -3273,7 +3273,7 @@ file.line(name: path, content: string = , mode: string = ensure, match: string =
 Ensure a file exists with the given contents, mode, and ownership.
 
 ```
-file.managed(name: path, source: string = , source_hash: string = , contents: string, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = 0755, create: bool = true, replace: bool = true, backup: string = , hash_type: string = sha256, show_changes: bool = true)
+file.managed(name: path, source: string = , source_hash: string = , contents: any, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = 0755, create: bool = true, replace: bool = true, backup: string = , hash_type: string = sha256, show_changes: bool = true)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -3281,7 +3281,7 @@ file.managed(name: path, source: string = , source_hash: string = , contents: st
 | `name` | path | — | The file to manage. Defaults to the state ID. |
 | `source` | string | `` | A halite:// or salt:// URI, or a local path. |
 | `source_hash` | string | `` | Expected digest of the source, as `algorithm=digest`. |
-| `contents` | string | — | Literal contents, as an alternative to a source. |
+| `contents` | any | — | Literal contents, as a string or a list of lines, as an alternative to a source. |
 | `contents_pillar` | string | `` | A pillar key whose value becomes the contents. |
 | `mode` | mode | `` | The file mode, written as a quoted string such as '0644'. |
 | `user` | string | `` | Owner. |

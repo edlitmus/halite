@@ -339,6 +339,14 @@ func coerce(s Signature, p Param, v any) (any, error) {
 			}
 			return str, nil
 		}
+		// Salt YAML-parses every argument, so a tree written against it
+		// says `user: 0` and means the string. Refusing the integer here
+		// stops a tree that Salt compiles, and the only thing an integer
+		// could mean in a string parameter is its decimal spelling.
+		// `mode` is deliberately not part of this: see the case below.
+		if n, ok := v.(int64); ok {
+			return strconv.FormatInt(n, 10), nil
+		}
 		return nil, fail("a string")
 
 	case Mode:

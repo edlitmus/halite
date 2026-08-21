@@ -174,7 +174,10 @@ func registerFileStates(r *Registries) {
 		pathParam("The file to manage. Defaults to the state ID."),
 		opt("source", signature.String, "", "A halite:// or salt:// URI, or a local path."),
 		opt("source_hash", signature.String, "", "Expected digest of the source, as `algorithm=digest`."),
-		opt("contents", signature.String, nil, "Literal contents, as an alternative to a source."),
+		// Salt accepts a list of lines here as well as a string, and
+		// desiredContents has always handled both; only the signature
+		// refused the list.
+		opt("contents", signature.Any, nil, "Literal contents, as a string or a list of lines, as an alternative to a source."),
 		opt("contents_pillar", signature.String, "", "A pillar key whose value becomes the contents."),
 		opt("mode", signature.Mode, "", "The file mode, written as a quoted string such as '0644'."),
 		opt("user", signature.String, "", "Owner."),
