@@ -205,6 +205,7 @@ func ledgerEntries(t *testing.T, doc, heading string) map[string]ledgerEntry {
 const (
 	execHeading  = "### 2.1 Core execution modules"
 	stateHeading = "### 2.2 Core state modules"
+	langHeading  = "### 2.4 Language and runtime modules"
 )
 
 // ledgerNames is the set of module names mentioned anywhere in the ledger,
@@ -302,6 +303,7 @@ func TestNoLedgerRowClaimsAGapThatIsFilled(t *testing.T) {
 		have    map[string][]string
 	}{
 		{execHeading, "execution", inv.exec},
+		{langHeading, "language runtime", inv.exec},
 		{stateHeading, "state", inv.state},
 	} {
 		for _, e := range ledgerEntries(t, doc, table.heading) {
@@ -329,6 +331,7 @@ func TestLedgerFunctionCountsMatchTheBuild(t *testing.T) {
 		have    map[string][]string
 	}{
 		{execHeading, inv.exec},
+		{langHeading, inv.exec},
 		{stateHeading, inv.state},
 	} {
 		for _, e := range ledgerEntries(t, doc, table.heading) {

@@ -97,8 +97,8 @@ section exists to make. This is a strengthening, not a conflict.
 
 ## 2. Module coverage
 
-The build ships **32 execution modules / 127 functions** and **16 state
-modules / 46 functions**.
+The build ships **41 execution modules / 158 functions** and **19 state
+modules / 52 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -199,7 +199,7 @@ different reason is given.
 | `beacon` | not implemented | 0 | phase 3 |
 | `environ` | not implemented | 0 | |
 | `firewall` | not implemented | 0 | |
-| `gem` | not implemented | 0 | |
+| `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `hostname` | not implemented | 0 | |
 | `iptables` | not implemented | 0 | Linux only |
 | `kernelpkg` | not implemented | 0 | |
@@ -209,8 +209,8 @@ different reason is given.
 | `mac_defaults` | not implemented | 0 | macOS only |
 | `mount` | not implemented | 0 | the exec side is read-only, so the state has nothing to build on |
 | `nftables` | not implemented | 0 | Linux only |
-| `npm` | not implemented | 0 | |
-| `pip` | not implemented | 0 | |
+| `npm` | implemented | 2 | install and remove, comparing against the tool's own listing |
+| `pip` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pkgrepo` | not implemented | 0 | |
 | `pro` | not implemented | 0 | Ubuntu only |
 | `reboot` | not implemented | 0 | |
@@ -256,12 +256,45 @@ Two notes on this table:
 
 ### 2.4 Language and runtime modules (SPEC 15.4)
 
-0 of 9 present: `pip`, `virtualenv`, `npm`, `gem`, `cargo`, `go`, `composer`,
-`cpan`, `maven`. None of the Extended container modules (`docker`, `podman`,
-`kubernetes`, `helm`) are present either.
+All 9 present. Each wraps a system binary and parses its machine-readable
+output; no language runtime is embedded and no library is linked, so the
+node inherits the operating system's patching cadence for the tool.
 
-These are the cheapest remaining breadth: each wraps one binary with a
-machine-readable output mode, and none needs a platform this host lacks.
+| Module | Status | Functions | Note |
+|---|---|---|---|
+| `cargo` | implemented | 4 | install, uninstall, list, version |
+| `composer` | implemented | 4 | install, require, list, version |
+| `cpan` | implemented | 3 | install, version, module_version; the last asks perl directly, since `cpan -D` opens a session and reaches the network |
+| `go` | implemented | 3 | install, env, version |
+| `gem` | implemented | 4 | install, uninstall, list, version |
+| `maven` | implemented | 2 | run, version |
+| `npm` | implemented | 4 | install, uninstall, list, version |
+| `pip` | implemented | 5 | install, uninstall, list, freeze, version |
+| `virtualenv` | implemented | 2 | create, version |
+
+Verified against the real binary on this host: `npm`, `cargo`, `go`,
+`cpan`. Exercised only through the recording runner, because the host has
+no such binary: `gem`, `composer`, `maven`, and `pip` — a `pip` script
+exists here but no importable pip for the system python, so its output
+parsing is tested against captured text rather than a live tool.
+`virtualenv` is in the same position as pip.
+
+One thing only the real tool showed: `npm ls --json` omits the `version`
+key for a package it cannot resolve. A state pinning a version against one
+of those would reinstall on every run and never converge, and never say
+why. It now refuses and names the package; an unpinned request is still
+satisfied by the package's presence. That is the shape of defect a
+recorded fixture would not have produced.
+
+The output each parses is the tool's own machine-readable form:
+`pip list --format=json`, `npm ls --json --depth=0`, `composer show
+--format=json`, `cargo install --list`, `go env`, and `gem list --local`.
+Where the format is text rather than JSON the parser is written against
+the real output, not against a guess, and the two text parsers have their
+own tests.
+
+None of the Extended container modules (`docker`, `podman`, `kubernetes`,
+`helm`) is present. SPEC 15.4 puts them in a later tier.
 
 ### 2.5 Provider depth for the virtual modules
 
@@ -750,23 +783,27 @@ excavation.
 
 ## 8. Suggested order for closing this
 
-Ranked by correctness value per unit of work, given one FreeBSD host:
+Ranked by correctness value per unit of work, given one FreeBSD host.
 
-1. **The remaining 40 YAML conformance gaps.** Incremental work: each fix
-   forces its rows out of the table and the count down. What is left is 23
-   documents accepted that should be refused, which is the safe direction,
-   and 17 spread across nine classes of two or fewer. There is no cluster
-   left to take: from here it is one case at a time.
-2. **The remaining 25 template conformance gaps** (5.5). Nothing left is a
-   cluster: the largest class is 9, and it is float and dict spelling.
-   Value per fix from here is lower than anything else on this list.
-3. **Language and runtime modules.** Nine modules, each wrapping one binary,
-   all runnable here.
-4. **`x509`.** Self-contained, entirely `crypto/x509`, no platform
-   dependency.
-5. **Function depth in `file`, `cmd`, `pkg`, and `service`.** Mechanical, and
-   it is what a real tree actually hits.
-6. **A Linux host.** Everything in section 4 is blocked on this, and it is
-   the point at which the apt and systemd providers stop being theoretical.
-7. **A Salt installation to run the differential gate against.** Named the
-   primary correctness gate; currently unrun.
+The two conformance suites have moved to the bottom. Both are running and
+both are down to isolated cases — 40 YAML and 25 template — with no
+cluster left in either. That is a good place for them to be, and it means
+the next fix in each is worth less than anything above it.
+
+1. **`x509`.** Self-contained, entirely `crypto/x509`, no platform
+   dependency, and it replaces the M2Crypto and `cryptography`
+   dependencies that make Salt's own `x509` notoriously hard to install.
+   Nothing else on this list is both that large and that unblocked.
+2. **Function depth in `file`, `cmd`, `pkg`, and `service`** (section 3).
+   `file` has 14 exec functions of about 50, `pkg` 6 of 26. Mechanical
+   work, and it is what a real tree actually hits.
+3. **A Linux host.** Everything in section 4 is blocked on it, and it is
+   the point at which the apt and systemd providers stop being
+   theoretical. 60 of the 62 platform modules of SPEC 15.3 wait behind it.
+4. **A Salt installation to run the differential gate against.** SPEC 31
+   calls it the primary correctness gate. It has never been run.
+5. **The remaining 40 YAML conformance gaps** (5.4). 23 are documents
+   accepted that should be refused, which is the safe direction; the other
+   17 are spread across nine classes of two or fewer.
+6. **The remaining 25 template conformance gaps** (5.5). The largest class
+   is 9, and it is float and dict spelling.

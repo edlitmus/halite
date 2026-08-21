@@ -28,7 +28,7 @@ Delivery follows the phases in SPEC section 32.
 
 Phases 0 and 1 are done in the sense that their contents are implemented and
 exercised, not that the module inventory of SPEC section 15 is complete: this
-build ships 32 execution modules and 16 state modules against a specification
+build ships 41 execution modules and 19 state modules against a specification
 that names roughly 90 and 46. FreeBSD is the only platform anything has been
 run on. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is the full accounting —
 every module gap, every unexercised platform, every test layer SPEC section 31
