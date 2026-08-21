@@ -438,7 +438,7 @@ eight are absent.
 | Layer | Status |
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 328 of 402 agree, 34 disagree by design, 40 are gaps — see 5.4. |
-| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 204 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 105 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 142 of 204 agree, 27 are outside the subset, 35 are gaps — see 5.6. |
+| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 204 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 113 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 145 of 204 agree, 27 are outside the subset, 32 are gaps — see 5.5. |
 | Differential against Salt | **absent.** This is named the primary correctness gate and it has never been run. There is no Salt installation to run it against on this host. |
 | Differential, version comparison | **absent**, and blocked: `pkg.version_cmp` is not implemented. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
@@ -605,8 +605,8 @@ as a rejection, and its value is never checked.
 
 ### 5.5 Where template conformance stands
 
-142 of 204 of Jinja's own extractable cases, 27 of the rest outside the
-subset by design and 35 gaps. `internal/template` rose to 81.6% statements
+145 of 204 of Jinja's own extractable cases, 27 of the rest outside the
+subset by design and 32 gaps. `internal/template` rose to 81.6% statements
 on the way, still the one correctness-core package under the SPEC 31 bar.
 
 Writing the second corpus found a crash on the first run.
@@ -629,6 +629,15 @@ Three other fixes came out of it:
   It is the explicit opposite of `-`, keeping whitespace that
   `trim_blocks` or `lstrip_blocks` would eat, which a tree templating a
   file with meaningful indentation needs.
+- **`{% set %}` assigned into an enclosing scope.** It walked outward to
+  the innermost scope already holding the name, so an assignment inside a
+  loop survived to the next iteration and escaped the loop entirely.
+  Jinja assigns in the current scope and nowhere else, which is the whole
+  reason `namespace()` exists: without that rule there would be no need
+  for it. A tree written against Salt's behaviour and relying on the leak
+  would have rendered differently here, silently. `if` introduces no
+  scope, so a set inside one is still visible after it; `for`, `with`,
+  and a macro body each do, and all four boundaries are pinned.
 
 The corpus itself had two defects worth recording, because a conformance
 suite that lies is worse than none. A case's environment options were
@@ -643,7 +652,7 @@ What remains, largest first:
 | Class | Cases | What it is |
 |---|---|---|
 | `gapRendering` | 16 | a value renders differently: tuples print as lists, and some float and dict spellings differ. |
-| `gapScoping` | 7 | a name's scope differs, mostly `set` inside a loop, which Jinja confines to the iteration and halite lets persist, and `loop` inside a nested loop. |
+| `gapScoping` | 4 | what remains needs a `test` callable those Jinja tests register on the context, which the extractor cannot carry; they are scoping cases in name only. |
 | `gapOther` | 4 | unclassified. |
 | `gapFilterBehaviour`, `gapNumericAttribute`, `gapTestArgument` | 6 | a filter differing from Jinja's, the Django-style `a.0` subscript, and a test taking an argument in a position the parser does not reach. |
 | `gapCallResult`, `gapWhitespaceControl` | 2 | calling the result of a filter, and one remaining whitespace case. |
@@ -734,10 +743,10 @@ Ranked by correctness value per unit of work, given one FreeBSD host:
    documents accepted that should be refused, which is the safe direction,
    and 17 spread across nine classes of two or fewer. There is no cluster
    left to take: from here it is one case at a time.
-2. **The remaining 35 template conformance gaps** (5.5). The two largest
-   are worth doing: tuples rendering as lists, and `set` inside a loop
-   persisting across iterations where Jinja confines it. The second is a
-   scoping difference a real tree can trip over silently.
+2. **The remaining 32 template conformance gaps** (5.5). The largest is
+   `gapRendering` at 16, mostly tuples printing as lists, which is
+   cosmetic. Nothing left in this corpus is the shape of the scoping bug
+   it already found.
 3. **Language and runtime modules.** Nine modules, each wrapping one binary,
    all runnable here.
 4. **`x509`.** Self-contained, entirely `crypto/x509`, no platform
