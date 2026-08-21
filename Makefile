@@ -75,8 +75,12 @@ cover:
 	@env $(DEV_ENV) go test -cover \
 		./internal/yaml/ ./internal/template/ ./internal/state/ ./internal/target/ 2>/dev/null || true
 
+# The race detector is the one place cgo is wanted: DEV_ENV pins
+# CGO_ENABLED=0 for every other target, and -race with it off fails
+# outright rather than quietly running without the detector.
 race:
-	@env $(DEV_ENV) go test -race ./...
+	@env CGO_ENABLED=1 go test -race ./...
+
 
 # Fuzzing, SPEC section 31. Go runs one target per invocation, so each is
 # named. FUZZTIME is per target; the default is a short smoke run, and a
