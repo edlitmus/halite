@@ -42,6 +42,19 @@ func New() *Registries {
 	registerSystem(r)
 	registerSSH(r)
 	registerGit(r)
+
+	// The language and runtime modules of SPEC section 15.4, and the
+	// three states section 15.5 names for them.
+	registerPip(r)
+	registerVirtualenv(r)
+	registerNpm(r)
+	registerGem(r)
+	registerCargo(r)
+	registerGoTool(r)
+	registerComposer(r)
+	registerCpan(r)
+	registerMaven(r)
+	registerLangStates(r)
 	registerZFS(r)
 	registerSys(r)
 	return r
