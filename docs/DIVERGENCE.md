@@ -846,16 +846,16 @@ both are down to isolated cases — 40 YAML and 25 template — with no
 cluster left in either. That is a good place for them to be, and it means
 the next fix in each is worth less than anything above it.
 
-1. **Function depth in `file`, `cmd`, `pkg`, and `service`** (section 3).
-   `file` has 14 exec functions of about 50, `pkg` 6 of 26. Mechanical
-   work, and it is what a real tree actually hits.
-2. **A Linux host.** Everything in section 4 is blocked on it, and it is
+1. **A Linux host.** Everything in section 4 is blocked on it, and it is
    the point at which the apt and systemd providers stop being
-   theoretical. 60 of the 62 platform modules of SPEC 15.3 wait behind it.
-3. **A Salt installation to run the differential gate against.** SPEC 31
+   theoretical. 60 of the 62 platform modules of SPEC 15.3 wait behind it,
+   and so does the other half of every optional provider capability
+   written in this pass: holding, upgrading, and file ownership exist for
+   pkgng because pkgng is what this host runs.
+2. **A Salt installation to run the differential gate against.** SPEC 31
    calls it the primary correctness gate. It has never been run.
-4. **The remaining 40 YAML conformance gaps** (5.4). 23 are documents
+3. **The remaining 40 YAML conformance gaps** (5.4). 23 are documents
    accepted that should be refused, which is the safe direction; the other
    17 are spread across nine classes of two or fewer.
-5. **The remaining 25 template conformance gaps** (5.5). The largest class
+4. **The remaining 25 template conformance gaps** (5.5). The largest class
    is 9, and it is float and dict spelling.
