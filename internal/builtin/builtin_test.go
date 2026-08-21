@@ -107,6 +107,12 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 			},
 		},
 		{
+			Name:  "x509.private_key_managed",
+			Args:  value.MapOf("name", filepath.Join(dir, "conf.key"), "algorithm", "ec", "curve", "p256"),
+			Probe: probePath(filepath.Join(dir, "conf.key")),
+			Setup: func() error { return os.RemoveAll(filepath.Join(dir, "conf.key")) },
+		},
+		{
 			Name: "test.succeed_with_changes",
 			Args: value.MapOf("name", "synthetic"),
 			// The synthetic state reports a change every time by design,

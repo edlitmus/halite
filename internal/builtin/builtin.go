@@ -55,6 +55,10 @@ func New() *Registries {
 	registerCpan(r)
 	registerMaven(r)
 	registerLangStates(r)
+
+	// x509, SPEC sections 15.2 and 15.5.
+	registerX509(r)
+	registerX509States(r)
 	registerZFS(r)
 	registerSys(r)
 	return r

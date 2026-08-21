@@ -97,8 +97,8 @@ section exists to make. This is a strengthening, not a conflict.
 
 ## 2. Module coverage
 
-The build ships **41 execution modules / 158 functions** and **19 state
-modules / 52 functions**.
+The build ships **42 execution modules / 166 functions** and **20 state
+modules / 54 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -169,7 +169,7 @@ different reason is given.
 | `system` | not implemented | 0 | |
 | `tls` | not implemented | 0 | |
 | `tmpfs` | not implemented | 0 | |
-| `x509` | not implemented | 0 | sizeable and entirely `crypto/x509`; a good standalone unit of work |
+| `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification |
 
 ### 2.2 Core state modules (SPEC 15.5)
 
@@ -222,7 +222,7 @@ different reason is given.
 | `win_dacl` | not implemented | 0 | Windows only |
 | `win_task` | not implemented | 0 | Windows only |
 | `win_wua` | not implemented | 0 | Windows only |
-| `x509` | not implemented | 0 | |
+| `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run |
 | `zpool` | not implemented | 0 | the exec side reads; no state writes |
 
 `file.accumulated`, which SPEC 15.5 requires, is not implemented.
