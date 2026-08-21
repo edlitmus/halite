@@ -12,6 +12,7 @@ package signature
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -363,6 +364,17 @@ func coerce(s Signature, p Param, v any) (any, error) {
 			if t == float64(int64(t)) {
 				return int64(t), nil
 			}
+		case string:
+			// A command line argument arrives as a string, because SPEC
+			// section 9.2 refuses to guess at its type. The declared type
+			// is what converts it, and this is where that happens: a
+			// parameter declared Int takes `days=30` from the command
+			// line, while one declared String keeps `version=1.0` a
+			// string. Without this every numeric parameter was unusable
+			// from `halite-node call`.
+			if n, err := strconv.ParseInt(strings.TrimSpace(t), 10, 64); err == nil {
+				return n, nil
+			}
 		}
 		return nil, fail("an integer")
 
@@ -372,12 +384,25 @@ func coerce(s Signature, p Param, v any) (any, error) {
 			return t, nil
 		case int64:
 			return float64(t), nil
+		case string:
+			if f, err := strconv.ParseFloat(strings.TrimSpace(t), 64); err == nil {
+				return f, nil
+			}
 		}
 		return nil, fail("a number")
 
 	case Bool:
-		if b, ok := v.(bool); ok {
-			return b, nil
+		switch t := v.(type) {
+		case bool:
+			return t, nil
+		case string:
+			// The spellings a command line and a YAML 1.1 tree both use.
+			switch strings.ToLower(strings.TrimSpace(t)) {
+			case "true", "yes", "on", "1":
+				return true, nil
+			case "false", "no", "off", "0":
+				return false, nil
+			}
 		}
 		return nil, fail("a boolean")
 

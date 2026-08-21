@@ -186,3 +186,51 @@ func TestDescribeNamesTheDangerousFlags(t *testing.T) {
 		}
 	}
 }
+
+// SPEC section 9.2: a command line argument arrives as a string, because
+// the parser refuses to guess at its type. The declared type is what
+// converts it, and without that every numeric parameter was unusable from
+// `halite-node call`.
+func TestDeclaredTypeConvertsACommandLineString(t *testing.T) {
+	s := Signature{Module: "m", Function: "f", Params: []Param{
+		{Name: "count", Type: Int},
+		{Name: "ratio", Type: Float},
+		{Name: "flag", Type: Bool},
+		{Name: "version", Type: String},
+	}}
+	bound, errs := s.Bind(nil, value.MapOf(
+		"count", "30", "ratio", "1.5", "flag", "yes", "version", "1.0"))
+	if len(errs) > 0 {
+		t.Fatalf("errors: %v", errs)
+	}
+	if v, _ := bound.Get("count"); v != int64(30) {
+		t.Errorf("count = %#v, want the integer 30", v)
+	}
+	if v, _ := bound.Get("ratio"); v != 1.5 {
+		t.Errorf("ratio = %#v", v)
+	}
+	if v, _ := bound.Get("flag"); v != true {
+		t.Errorf("flag = %#v", v)
+	}
+	// The property this must not break: a parameter declared String keeps
+	// its string, so a package version of 1.0 does not become a float.
+	if v, _ := bound.Get("version"); v != "1.0" {
+		t.Errorf("version = %#v, want the string; SPEC 9.2 exists to stop 1.0 becoming a float", v)
+	}
+}
+
+func TestAStringThatIsNotANumberIsStillAnError(t *testing.T) {
+	s := Signature{Module: "m", Function: "f", Params: []Param{{Name: "count", Type: Int}}}
+	if _, errs := s.Bind(nil, value.MapOf("count", "many")); len(errs) == 0 {
+		t.Error("a string that is not a number should be refused, not coerced to zero")
+	}
+	// A float where an integer belongs is refused too, rather than
+	// truncated: 1.5 retries is not 1 retry.
+	if _, errs := s.Bind(nil, value.MapOf("count", "1.5")); len(errs) == 0 {
+		t.Error("a fractional string should not become an integer")
+	}
+	b := Signature{Module: "m", Function: "f", Params: []Param{{Name: "on", Type: Bool}}}
+	if _, errs := b.Bind(nil, value.MapOf("on", "maybe")); len(errs) == 0 {
+		t.Error("a string that is not a boolean should be refused")
+	}
+}
