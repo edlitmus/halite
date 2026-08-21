@@ -126,6 +126,33 @@ case("stmt/loop-cycle", "{% for i in [1, 2, 3] %}{{ loop.cycle('a', 'b') }}{% en
 case("stmt/loop-previtem-nextitem",
      "{% for i in [1, 2] %}{{ loop.previtem | default('-') }}{{ loop.nextitem | default('-') }}{% endfor %}",
      "-21-")
+# `{% set %}` assigns in the current scope and nowhere else. A loop body
+# is a fresh scope per iteration, so an assignment there neither survives
+# to the next iteration nor escapes the loop. This is Jinja's rule and the
+# whole reason namespace() exists; a tree relying on the assignment
+# leaking would render differently under Salt.
+case("scope/set-in-a-loop-does-not-persist",
+     "{% for item in seq %}{{ x }}{% set x = item %}{{ x }}{% endfor %}", "010203",
+     {"seq": [1, 2, 3], "x": 0})
+case("scope/set-in-a-loop-does-not-escape",
+     "{% set foo = 0 %}{% for i in [1, 2] %}{% set foo = 1 %}{% endfor %}{{ foo }}", "0")
+case("scope/set-outside-a-loop-persists",
+     "{% set x = 1 %}{{ x }}{% set x = 2 %}{{ x }}", "12")
+case("scope/namespace-carries-out-of-a-loop",
+     "{% set ns = namespace(n=0) %}{% for i in [1, 2, 3] %}{% set ns.n = ns.n + i %}{% endfor %}{{ ns.n }}",
+     "6")
+# `if` introduces no scope, so a set inside one is visible after it and
+# overwrites an outer name. `for`, `with`, and a macro body each do
+# introduce one. Getting the loop right must not take these with it.
+case("scope/set-inside-if-is-visible-after",
+     "{% if true %}{% set x = 1 %}{% endif %}{{ x }}", "1")
+case("scope/set-inside-if-overwrites-an-outer-name",
+     "{% set z = 0 %}{% if true %}{% set z = 1 %}{% endif %}{{ z }}", "1")
+case("scope/set-inside-with-does-not-escape",
+     "{% with %}{% set w = 1 %}{% endwith %}{{ w | default('gone') }}", "gone")
+case("scope/set-inside-a-macro-does-not-escape",
+     "{% macro m() %}{% set q = 1 %}{% endmacro %}{{ m() }}{{ q | default('gone') }}", "gone")
+
 case("stmt/set-and-namespace",
      "{% set ns = namespace(n=0) %}{% for i in [1, 2] %}{% set ns.n = ns.n + i %}{% endfor %}{{ ns.n }}",
      "3")

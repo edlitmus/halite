@@ -31,19 +31,6 @@ func (s *scope) lookup(name string) (any, bool) {
 
 func (s *scope) set(name string, v any) { s.vars[name] = v }
 
-// setExisting assigns to the innermost scope that already holds the name,
-// which is how `{% set %}` inside a loop body updates an outer variable
-// where Jinja's own scoping rules allow it.
-func (s *scope) setExisting(name string, v any) bool {
-	for cur := s; cur != nil; cur = cur.parent {
-		if _, ok := cur.vars[name]; ok {
-			cur.vars[name] = v
-			return true
-		}
-	}
-	return false
-}
-
 type renderer struct {
 	env    *Environment
 	opts   Options
@@ -550,10 +537,16 @@ func (r *renderer) renderSet(t *SetNode) error {
 		}
 	}
 
+	// `{% set %}` always assigns in the current scope, never in an
+	// enclosing one. A loop body is a fresh scope per iteration, so an
+	// assignment there does not survive to the next iteration and does not
+	// escape the loop; `{% set x = 1 %}` inside a for is invisible after
+	// `{% endfor %}`. That is Jinja's rule, and it is the whole reason
+	// Jinja has `namespace()`: without it there is no way to carry a value
+	// out of a loop, and a tree that relied on halite's leaking assignment
+	// would have produced a different result under Salt.
 	if len(t.Targets) == 1 {
-		if !r.scope.setExisting(t.Targets[0], v) {
-			r.scope.set(t.Targets[0], v)
-		}
+		r.scope.set(t.Targets[0], v)
 		return nil
 	}
 	parts, ok := v.([]any)
@@ -561,9 +554,7 @@ func (r *renderer) renderSet(t *SetNode) error {
 		return errorf(t.Pos(), "cannot unpack %s into %d names", typeName(v), len(t.Targets))
 	}
 	for i, name := range t.Targets {
-		if !r.scope.setExisting(name, parts[i]) {
-			r.scope.set(name, parts[i])
-		}
+		r.scope.set(name, parts[i])
 	}
 	return nil
 }

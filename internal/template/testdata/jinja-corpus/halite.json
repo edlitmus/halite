@@ -446,6 +446,54 @@
   "template": "{% for i in [1, 2] %}{{ loop.previtem | default('-') }}{{ loop.nextitem | default('-') }}{% endfor %}"
  },
  {
+  "context": {
+   "seq": [
+    1,
+    2,
+    3
+   ],
+   "x": 0
+  },
+  "expected": "010203",
+  "id": "scope/set-in-a-loop-does-not-persist",
+  "template": "{% for item in seq %}{{ x }}{% set x = item %}{{ x }}{% endfor %}"
+ },
+ {
+  "expected": "0",
+  "id": "scope/set-in-a-loop-does-not-escape",
+  "template": "{% set foo = 0 %}{% for i in [1, 2] %}{% set foo = 1 %}{% endfor %}{{ foo }}"
+ },
+ {
+  "expected": "12",
+  "id": "scope/set-outside-a-loop-persists",
+  "template": "{% set x = 1 %}{{ x }}{% set x = 2 %}{{ x }}"
+ },
+ {
+  "expected": "6",
+  "id": "scope/namespace-carries-out-of-a-loop",
+  "template": "{% set ns = namespace(n=0) %}{% for i in [1, 2, 3] %}{% set ns.n = ns.n + i %}{% endfor %}{{ ns.n }}"
+ },
+ {
+  "expected": "1",
+  "id": "scope/set-inside-if-is-visible-after",
+  "template": "{% if true %}{% set x = 1 %}{% endif %}{{ x }}"
+ },
+ {
+  "expected": "1",
+  "id": "scope/set-inside-if-overwrites-an-outer-name",
+  "template": "{% set z = 0 %}{% if true %}{% set z = 1 %}{% endif %}{{ z }}"
+ },
+ {
+  "expected": "gone",
+  "id": "scope/set-inside-with-does-not-escape",
+  "template": "{% with %}{% set w = 1 %}{% endwith %}{{ w | default('gone') }}"
+ },
+ {
+  "expected": "gone",
+  "id": "scope/set-inside-a-macro-does-not-escape",
+  "template": "{% macro m() %}{% set q = 1 %}{% endmacro %}{{ m() }}{{ q | default('gone') }}"
+ },
+ {
   "expected": "3",
   "id": "stmt/set-and-namespace",
   "template": "{% set ns = namespace(n=0) %}{% for i in [1, 2] %}{% set ns.n = ns.n + i %}{% endfor %}{{ ns.n }}"
