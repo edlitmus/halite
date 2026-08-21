@@ -44,6 +44,11 @@ type corpusCase struct {
 	// Permissive runs the case with the undefined mode of Salt rather than
 	// halite's strict default.
 	Permissive bool
+	// Options are the environment settings the case was written against.
+	// A Jinja test that builds its own Environment carries them, and
+	// without them a `lstrip_blocks` case measures the wrong engine and
+	// reads as a defect in this one.
+	Options map[string]any
 }
 
 // loadCorpus reads a corpus through halite's own JSON decoder, which keeps
@@ -82,6 +87,14 @@ func loadCorpus(t *testing.T, path string) []corpusCase {
 		if b, ok := m.Get("permissive"); ok {
 			c.Permissive, _ = b.(bool)
 		}
+		if o, ok := m.Get("options"); ok {
+			if om, ok := o.(*value.Map); ok {
+				c.Options = map[string]any{}
+				for _, e := range om.Entries() {
+					c.Options[value.KeyString(e.Key)] = e.Val
+				}
+			}
+		}
 		c.Context = map[string]any{}
 		if ctx, ok := m.Get("context"); ok {
 			if cm, ok := ctx.(*value.Map); ok {
@@ -119,9 +132,6 @@ var corpusReasons = map[string]corpusReason{
 		"the construct is outside the subset of SPEC 10.2. The subset is defined by what Salt " +
 			"trees contain, and an SLS file is not HTML, so the markup filters and the i18n " +
 			"statements are not there."},
-	specNoExtensions: {true,
-		"SPEC 10.2.2 does not admit arbitrary Jinja extensions, including the loop controls " +
-			"`break` and `continue` and anything a test registers for itself."},
 	specNoAutoescape: {true,
 		"SPEC 10.2.2 parses `autoescape` and does nothing with it, because SLS output is not " +
 			"HTML. Escaping is available through explicit filters."},
@@ -155,7 +165,6 @@ var corpusReasons = map[string]corpusReason{
 
 const (
 	specNotInSubset     = "specNotInSubset"
-	specNoExtensions    = "specNoExtensions"
 	specNoAutoescape    = "specNoAutoescape"
 	specStrictUndefined = "specStrictUndefined"
 	specPythonMethod    = "specPythonMethod"
@@ -186,26 +195,10 @@ var corpusDeviations = []corpusDeviation{
 	{"test_core_tags::test_loop_errors", specStrictUndefined},
 	{"test_core_tags::test_intended_scoping_with_set", gapScoping},
 	{"test_core_tags::test_intended_scoping_with_set#1", gapScoping},
-	{"test_core_tags::test_block_escaping", specNoAutoescape},
-	{"test_core_tags::test_block_escaping_filtered", specNoAutoescape},
 	{"test_core_tags::test_with_argument_scoping", gapRendering},
 	{"test_ext::test_extend_late", specNoAutoescape},
-	{"test_ext::test_loop_controls", specNoExtensions},
-	{"test_ext::test_loop_controls#1", specNoExtensions},
-	{"test_ext::test_do", gapScoping},
-	{"test_ext::test_extension_nodes", specNoExtensions},
-	{"test_ext::test_contextreference_node_passes_context", specNoExtensions},
-	{"test_ext::test_contextreference_node_can_pass_locals", specNoExtensions},
-	{"test_ext::test_preprocessor_extension", gapRendering},
-	{"test_ext::test_basic_scope_behavior", specNoExtensions},
-	{"test_ext::test_autoescape_support", specNoAutoescape},
-	{"test_ext::test_autoescape_support#1", specNoAutoescape},
-	{"test_ext::test_nonvolatile", specNotInSubset},
-	{"test_ext::test_volatile#1", specNotInSubset},
 	{"test_ext::test_scoping", specNoAutoescape},
-	{"test_ext::test_overlay_scopes", specNoExtensions},
 	{"test_filters::test_indent_width_string", gapFilterBehaviour},
-	{"test_filters::test_join", specNoAutoescape},
 	{"test_filters::test_title#1", gapFilterBehaviour},
 	{"test_filters::test_urlize", specNotInSubset},
 	{"test_filters::test_urlize#1", specNotInSubset},
@@ -217,33 +210,15 @@ var corpusDeviations = []corpusDeviation{
 	{"test_filters::test_sum_attributes_tuple", specPythonMethod},
 	{"test_filters::test_unique", specPythonMethod},
 	{"test_filters::test_groupby_tuple_index", gapNumericAttribute},
-	{"test_filters::test_replace", gapOther},
-	{"test_filters::test_replace#1", specNoAutoescape},
-	{"test_filters::test_replace#2", specNoAutoescape},
-	{"test_filters::test_safe#1", specNoAutoescape},
-	{"test_filters::test_json_dump#1", gapFilterBehaviour},
-	{"test_filters::test_json_dump#2", gapFilterBehaviour},
-	{"test_filters::test_json_dump#3", gapFilterBehaviour},
-	{"test_imports::test_import_from_with_context", gapOther},
 	{"test_inheritance::test_reuse_blocks", gapOther},
-	{"test_lexnparse::test_raw3", gapRendering},
 	{"test_lexnparse::test_call", gapOther},
 	{"test_lexnparse::test_tuple", gapRendering},
 	{"test_lexnparse::test_django_attr", gapNumericAttribute},
 	{"test_lexnparse::test_short_conditional_expression", specStrictUndefined},
 	{"test_lexnparse::test_localset", gapScoping},
-	{"test_lexnparse::test_lstrip", gapRendering},
 	{"test_lexnparse::test_lstrip_trim", gapRendering},
-	{"test_lexnparse::test_lstrip_inline", gapRendering},
-	{"test_lexnparse::test_lstrip_nested", gapRendering},
-	{"test_lexnparse::test_lstrip_embeded_strings", gapRendering},
-	{"test_lexnparse::test_lstrip_comment", gapRendering},
 	{"test_lexnparse::test_lstrip_angle_bracket_simple", gapRendering},
 	{"test_lexnparse::test_lstrip_angle_bracket_comment", gapRendering},
-	{"test_lexnparse::test_trim", gapRendering},
-	{"test_lexnparse::test_lstrip_no_trim", gapWhitespaceControl},
-	{"test_lexnparse::test_trim_nested", gapRendering},
-	{"test_lexnparse::test_no_trim_nested", gapWhitespaceControl},
 	{"test_lexnparse::test_comment_trim", gapRendering},
 	{"test_lexnparse::test_comment_no_trim", gapRendering},
 	{"test_lexnparse::test_multiple_comment_trim_lstrip", gapRendering},
@@ -254,11 +229,8 @@ var corpusDeviations = []corpusDeviation{
 	{"test_lexnparse::test_no_trim_angle_bracket#1", gapRendering},
 	{"test_lexnparse::test_no_trim_php_syntax", gapRendering},
 	{"test_lexnparse::test_no_trim_php_syntax#1", gapRendering},
-	{"test_regression::test_extends_output_bugs#1", gapRendering},
 	{"test_regression::test_urlize_filter_escaping", specNotInSubset},
 	{"test_regression::test_urlize_filter_closing_punctuation", specNotInSubset},
-	{"test_regression::test_stacked_locals_scoping_bug", gapRendering},
-	{"test_regression::test_block_set_with_extends", gapOther},
 	{"test_regression::test_nested_for_else", specStrictUndefined},
 	{"test_regression::test_double_caller", gapRendering},
 	{"test_regression::test_pass_context_loop_vars", gapScoping},
@@ -297,12 +269,41 @@ func corpusIndex(t *testing.T) map[string]corpusDeviation {
 func renderCase(c corpusCase, undef UndefinedMode) (out string, err error) {
 	opts := DefaultOptions()
 	opts.Undefined = undef
+	applyCorpusOptions(&opts, c.Options)
 	env := NewEnvironment(nil, opts)
 	res, err := env.RenderString(c.Template, c.ID, c.Context)
 	if err != nil {
 		return "", err
 	}
 	return res.Output, nil
+}
+
+// applyCorpusOptions maps the environment settings a case carries onto
+// halite's own. A Jinja option halite does not have is dropped by the
+// extractor, so anything arriving here is one it does.
+func applyCorpusOptions(opts *Options, set map[string]any) {
+	boolOpt := func(name string, dst *bool) {
+		if v, ok := set[name]; ok {
+			b, _ := v.(bool)
+			*dst = b
+		}
+	}
+	strOpt := func(name string, dst *string) {
+		if v, ok := set[name]; ok {
+			if s, ok := v.(string); ok {
+				*dst = s
+			}
+		}
+	}
+	boolOpt("trim_blocks", &opts.TrimBlocks)
+	boolOpt("lstrip_blocks", &opts.LstripBlocks)
+	boolOpt("keep_trailing_newline", &opts.KeepTrailingNewline)
+	strOpt("variable_start_string", &opts.Delimiters.VarStart)
+	strOpt("variable_end_string", &opts.Delimiters.VarEnd)
+	strOpt("block_start_string", &opts.Delimiters.BlockStart)
+	strOpt("block_end_string", &opts.Delimiters.BlockEnd)
+	strOpt("comment_start_string", &opts.Delimiters.CommentStart)
+	strOpt("comment_end_string", &opts.Delimiters.CommentEnd)
 }
 
 type corpusOutcome struct {

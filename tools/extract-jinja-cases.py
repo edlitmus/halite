@@ -22,6 +22,33 @@ def try_literal(node):
     except Exception:
         return False, None
 
+# The environment options a case may set, and which halite honours. A test
+# that sets anything else is dropped: the case would be measuring an
+# environment halite does not have.
+ENV_OPTIONS = {"trim_blocks", "lstrip_blocks", "keep_trailing_newline",
+               "variable_start_string", "variable_end_string",
+               "block_start_string", "block_end_string",
+               "comment_start_string", "comment_end_string"}
+
+def environment_options(node):
+    """Environment(lstrip_blocks=True, ...) -> the options, or None if the
+    call sets something outside the set halite implements."""
+    if not isinstance(node, ast.Call):
+        return None
+    f = node.func
+    name = f.id if isinstance(f, ast.Name) else getattr(f, "attr", None)
+    if name not in ("Environment", "overlay"):
+        return None
+    opts = {}
+    for kw in node.keywords:
+        if kw.arg is None or kw.arg not in ENV_OPTIONS:
+            return "unsupported"
+        ok, v = try_literal(kw.value)
+        if not ok:
+            return "unsupported"
+        opts[kw.arg] = v
+    return opts
+
 def env_call(node):
     """env.from_string("...") -> the template string, else None."""
     if not isinstance(node, ast.Call):
@@ -92,6 +119,24 @@ for fn in sorted(os.listdir(root)):
     for func in walk_funcs(tree):
         if func.name.startswith("test_") is False:
             continue
+        # Environment options are a property of the whole function, so they
+        # are collected first.
+        options = {}
+        skip = False
+        for stmt in ast.walk(func):
+            if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+                o = environment_options(stmt.value)
+                if o == "unsupported":
+                    skip = True
+                elif o is not None:
+                    options = o
+        if skip:
+            continue
+
+        # Templates and assertions are walked together, in order, so that
+        # an assertion pairs with the template assigned most recently
+        # before it. A function that builds several templates under the
+        # same name would otherwise pair every assertion with the last.
         templates = {}
         for stmt in ast.walk(func):
             if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
@@ -104,12 +149,15 @@ for fn in sorted(os.listdir(root)):
             name, ctx, expected = r
             if name not in templates:
                 continue
-            out.append({
+            c = {
                 "id": "%s::%s" % (fn[:-3], func.name),
                 "template": templates[name],
                 "context": ctx,
                 "expected": expected,
-            })
+            }
+            if options:
+                c["options"] = options
+            out.append(c)
 
 # De-duplicate, and number repeats within one test function.
 seen = {}

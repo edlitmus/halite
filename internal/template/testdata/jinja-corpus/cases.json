@@ -30,14 +30,6 @@
   "template": "{{ foo[\"items\"] }}"
  },
  {
-  "context": {
-   "foo": "<foo>"
-  },
-  "expected": "<foo>",
-  "id": "test_api::test_autoescape_autoselect",
-  "template": "{{ foo }}"
- },
- {
   "context": {},
   "expected": "bar",
   "id": "test_api::test_custom_code_generator",
@@ -224,22 +216,6 @@
  },
  {
   "context": {
-   "test": "<unsafe>"
-  },
-  "expected": "foo: <em>&lt;unsafe&gt;</em>",
-  "id": "test_core_tags::test_block_escaping",
-  "template": "{% set foo %}<em>{{ test }}</em>{% endset %}foo: {{ foo }}"
- },
- {
-  "context": {
-   "test": "<unsafe>"
-  },
-  "expected": "foo: <em>&lt;unsafe&gt;</em>",
-  "id": "test_core_tags::test_block_escaping_filtered",
-  "template": "{% set foo | trim %}<em>{{ test }}</em>    {% endset %}foo: {{ foo }}"
- },
- {
-  "context": {
    "b": 3,
    "e": 4
   },
@@ -254,118 +230,12 @@
   "template": "{% autoescape true %}{{ \"<test>\" }}{% endautoescape %}"
  },
  {
-  "context": {},
-  "expected": "13",
-  "id": "test_ext::test_loop_controls",
-  "template": "\n            {%- for item in [1, 2, 3, 4] %}\n                {%- if item % 2 == 0 %}{% continue %}{% endif -%}\n                {{ item }}\n            {%- endfor %}"
- },
- {
-  "context": {},
-  "expected": "12",
-  "id": "test_ext::test_loop_controls#1",
-  "template": "\n            {%- for item in [1, 2, 3, 4] %}\n                {%- if item > 2 %}{% break %}{% endif -%}\n                {{ item }}\n            {%- endfor %}"
- },
- {
-  "context": {},
-  "expected": "0f, 1o, 2o",
-  "id": "test_ext::test_do",
-  "template": "\n            {%- set items = [] %}\n            {%- for char in \"foo\" %}\n                {%- do items.append(loop.index0 ~ char) %}\n            {%- endfor %}{{ items|join(', ') }}"
- },
- {
-  "context": {},
-  "expected": "False|42|23|{}|None",
-  "id": "test_ext::test_extension_nodes",
-  "template": "{% test %}"
- },
- {
-  "context": {},
-  "expected": "False|42|23|{}|test_content",
-  "id": "test_ext::test_contextreference_node_passes_context",
-  "template": "{% set test_var=\"test_content\" %}{% test %}"
- },
- {
-  "context": {},
-  "expected": "False|42|23|{}|test_content",
-  "id": "test_ext::test_contextreference_node_can_pass_locals",
-  "template": "{% for test_var in [\"test_content\"] %}{% test %}{% endfor %}"
- },
- {
-  "context": {
-   "foo": 42
-  },
-  "expected": "{(42)}",
-  "id": "test_ext::test_preprocessor_extension",
-  "template": "{[[TEST]]}"
- },
- {
-  "context": {
-   "b": 3,
-   "e": 4
-  },
-  "expected": "1|2|2|4|5",
-  "id": "test_ext::test_basic_scope_behavior",
-  "template": "        {%- scope a=1, b=2, c=b, d=e, e=5 -%}\n            {{ a }}|{{ b }}|{{ c }}|{{ d }}|{{ e }}\n        {%- endscope -%}\n        "
- },
- {
-  "context": {
-   "ae": true
-  },
-  "expected": "<strong>Wert: &lt;test&gt;</strong>",
-  "id": "test_ext::test_autoescape_support",
-  "template": "{% autoescape ae %}{{ gettext(\"foo\", name=\"<test>\") }}{% endautoescape %}"
- },
- {
-  "context": {
-   "ae": false
-  },
-  "expected": "<strong>Wert: <test></strong>",
-  "id": "test_ext::test_autoescape_support#1",
-  "template": "{% autoescape ae %}{{ gettext(\"foo\", name=\"<test>\") }}{% endautoescape %}"
- },
- {
-  "context": {},
-  "expected": " foo=\"&lt;test&gt;\"",
-  "id": "test_ext::test_nonvolatile",
-  "template": "{{ {\"foo\": \"<test>\"}|xmlattr|escape }}"
- },
- {
-  "context": {},
-  "expected": " foo=&#34;&amp;lt;test&amp;gt;&#34;",
-  "id": "test_ext::test_nonvolatile#1",
-  "template": "{% autoescape false %}{{ {\"foo\": \"<test>\"}|xmlattr|escape }}{% endautoescape %}"
- },
- {
-  "context": {
-   "foo": false
-  },
-  "expected": " foo=&#34;&amp;lt;test&amp;gt;&#34;",
-  "id": "test_ext::test_volatile",
-  "template": "{% autoescape foo %}{{ {\"foo\": \"<test>\"}|xmlattr|escape }}{% endautoescape %}"
- },
- {
-  "context": {
-   "foo": true
-  },
-  "expected": " foo=\"&lt;test&gt;\"",
-  "id": "test_ext::test_volatile#1",
-  "template": "{% autoescape foo %}{{ {\"foo\": \"<test>\"}|xmlattr|escape }}{% endautoescape %}"
- },
- {
   "context": {
    "x": 1
   },
   "expected": "&lt;x&gt;1<y>",
   "id": "test_ext::test_scoping",
   "template": "{% autoescape true %}{% set x = \"<x>\" %}{{ x }}{% endautoescape %}{{ x }}{{ \"<y>\" }}"
- },
- {
-  "context": {
-   "x": 42,
-   "y": 23
-  },
-  "expected": "42|23|99|[1][2][3]|42",
-  "id": "test_ext::test_overlay_scopes",
-  "template": "\n            {{- x }}|{% set z = 99 %}\n            {%- overlay %}\n                {{- y }}|{{ z }}|{% for item in x %}[{{ item }}]{% endfor %}\n            {%- endoverlay %}|\n            {{- x -}}\n        "
  },
  {
   "context": {},
@@ -426,12 +296,6 @@
   "expected": "1",
   "id": "test_filters::test_int_default",
   "template": "{{ value|int(default=1) }}"
- },
- {
-  "context": {},
-  "expected": "&lt;foo&gt;<span>foo</span>",
-  "id": "test_filters::test_join",
-  "template": "{{ [1, 2, 3]|join(\"|\") }}"
  },
  {
   "context": {},
@@ -552,12 +416,6 @@
   "expected": "foo <a href=\"tel:+1-514-555-1234\" rel=\"noopener\">tel:+1-514-555-1234</a> <a href=\"ftp://localhost\" rel=\"noopener\">ftp://localhost</a> bar",
   "id": "test_filters::test_urlize_extra_schemes_parameter",
   "template": "{{ \"foo tel:+1-514-555-1234 ftp://localhost bar\"|urlize(extra_schemes=[\"tel:\", \"ftp:\"]) }}"
- },
- {
-  "context": {},
-  "expected": "3",
-  "id": "test_filters::test_wordcount",
-  "template": "{{ \"foo bar baz\"|wordcount }}"
  },
  {
   "context": {},
@@ -692,42 +550,6 @@
   "template": "{% filter upper|replace('FOO', 'foo') %}foobar{% endfilter %}"
  },
  {
-  "context": {
-   "string": "<foo>"
-  },
-  "expected": "<f4242>",
-  "id": "test_filters::test_replace",
-  "template": "{{ string|replace(\"o\", 42) }}"
- },
- {
-  "context": {
-   "string": "<foo>"
-  },
-  "expected": "&lt;f4242&gt;",
-  "id": "test_filters::test_replace#1",
-  "template": "{{ string|replace(\"o\", 42) }}"
- },
- {
-  "context": {
-   "string": "<foo>"
-  },
-  "expected": "42foo&gt;",
-  "id": "test_filters::test_replace#2",
-  "template": "{{ string|replace(\"<\", 42) }}"
- },
- {
-  "context": {},
-  "expected": "<div>foo</div>",
-  "id": "test_filters::test_safe",
-  "template": "{{ \"<div>foo</div>\"|safe }}"
- },
- {
-  "context": {},
-  "expected": "&lt;div&gt;foo&lt;/div&gt;",
-  "id": "test_filters::test_safe#1",
-  "template": "{{ \"<div>foo</div>\" }}"
- },
- {
   "context": {},
   "expected": "6",
   "id": "test_filters::test_simple_map",
@@ -770,40 +592,6 @@
   "template": "{{ [none, false, 0, 1, 2, 3, 4, 5]|reject|join(\"|\") }}"
  },
  {
-  "context": {
-   "x": {
-    "foo": "bar"
-   }
-  },
-  "expected": "{\"foo\": \"bar\"}",
-  "id": "test_filters::test_json_dump",
-  "template": "{{ x|tojson }}"
- },
- {
-  "context": {
-   "x": "\"ba&r'"
-  },
-  "expected": "\"\\\"ba\\u0026r\\u0027\"",
-  "id": "test_filters::test_json_dump#1",
-  "template": "{{ x|tojson }}"
- },
- {
-  "context": {
-   "x": "<bar>"
-  },
-  "expected": "\"\\u003cbar\\u003e\"",
-  "id": "test_filters::test_json_dump#2",
-  "template": "{{ x|tojson }}"
- },
- {
-  "context": {
-   "x": 23
-  },
-  "expected": "42",
-  "id": "test_filters::test_json_dump#3",
-  "template": "{{ x|tojson }}"
- },
- {
   "context": {},
   "expected": "x",
   "id": "test_filters::test_filter_undefined_in_if",
@@ -837,12 +625,6 @@
  },
  {
   "context": {},
-  "expected": "42",
-  "id": "test_imports::test_import_from_with_context",
-  "template": "{% set foobar = 42 %}{% from 'a' import x with context %}{{ x() }}"
- },
- {
-  "context": {},
   "expected": "42|42|42",
   "id": "test_inheritance::test_reuse_blocks",
   "template": "{{ self.foo() }}|{% block foo %}42{% endblock %}|{{ self.foo() }}"
@@ -865,12 +647,20 @@
   },
   "expected": "bar\n\n  {{baz}}2 spaces\nfoo",
   "id": "test_lexnparse::test_raw3",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "bar\n{% raw %}\n  {{baz}}2 spaces\n{% endraw %}\nfoo"
  },
  {
   "context": {},
   "expected": "bar2 spaces\n spacefoo",
   "id": "test_lexnparse::test_raw4",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "bar\n{%- raw -%}\n\n  \n  2 spaces\n space{%- endraw -%}\nfoo"
  },
  {
@@ -1048,180 +838,300 @@
   "context": {},
   "expected": "\n",
   "id": "test_lexnparse::test_lstrip",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "    {% if True %}\n    {% endif %}"
  },
  {
   "context": {},
   "expected": "",
   "id": "test_lexnparse::test_lstrip_trim",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    {% if True %}\n    {% endif %}"
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_no_lstrip",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "    {%+ if True %}\n    {%+ endif %}"
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_lstrip_blocks_false_with_no_lstrip",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": false
+  },
   "template": "    {% if True %}\n    {% endif %}"
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_lstrip_blocks_false_with_no_lstrip#1",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": false
+  },
   "template": "    {%+ if True %}\n    {%+ endif %}"
  },
  {
   "context": {},
   "expected": "    hello\n    goodbye",
   "id": "test_lexnparse::test_lstrip_endline",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "    hello{% if True %}\n    goodbye{% endif %}"
  },
  {
   "context": {},
   "expected": "hello    ",
   "id": "test_lexnparse::test_lstrip_inline",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "    {% if True %}hello    {% endif %}"
  },
  {
   "context": {},
   "expected": "a b c ",
   "id": "test_lexnparse::test_lstrip_nested",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "    {% if True %}a {% if True %}b {% endif %}c {% endif %}"
  },
  {
   "context": {},
   "expected": "    abc \n        hello",
   "id": "test_lexnparse::test_lstrip_left_chars",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "    abc {% if True %}\n        hello{% endif %}"
  },
  {
   "context": {},
   "expected": " {% str %} ",
   "id": "test_lexnparse::test_lstrip_embeded_strings",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "    {% set x = \" {% str %} \" %}{{ x }}"
  },
  {
   "context": {},
   "expected": "\n\n\n",
   "id": "test_lexnparse::test_lstrip_preserve_leading_newlines",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "\n\n\n{% set hello = 1 %}"
  },
  {
   "context": {},
   "expected": "\nhello\n",
   "id": "test_lexnparse::test_lstrip_comment",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "    {# if True #}\nhello\n    {#endif#}"
  },
  {
   "context": {},
   "expected": "hello    ",
   "id": "test_lexnparse::test_lstrip_angle_bracket_simple",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    <% if True %>hello    <% endif %>"
  },
  {
   "context": {},
   "expected": "hello    ",
   "id": "test_lexnparse::test_lstrip_angle_bracket_comment",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    <%# if True %>hello    <%# endif %>"
  },
  {
   "context": {},
   "expected": "        ",
   "id": "test_lexnparse::test_trim",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": true
+  },
   "template": "    {% if True %}\n    {% endif %}"
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_no_trim",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": true
+  },
   "template": "    {% if True +%}\n    {% endif %}"
  },
  {
   "context": {},
   "expected": "X\nmore things",
   "id": "test_lexnparse::test_no_trim_outer",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": true
+  },
   "template": "{% if True %}X{% endif +%}\nmore things"
  },
  {
   "context": {},
   "expected": "\n",
   "id": "test_lexnparse::test_lstrip_no_trim",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    {% if True +%}\n    {% endif %}"
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_trim_blocks_false_with_no_trim",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": false
+  },
   "template": "    {% if True %}\n    {% endif %}"
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#1",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": false
+  },
   "template": "    {% if True +%}\n    {% endif %}"
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#2",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": false
+  },
   "template": "    {# comment #}\n    "
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#3",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": false
+  },
   "template": "    {# comment +#}\n    "
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#4",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": false
+  },
   "template": "    {% raw %}{% endraw %}\n    "
  },
  {
   "context": {},
   "expected": "    \n    ",
   "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#5",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": false
+  },
   "template": "    {% raw %}{% endraw +%}\n    "
  },
  {
   "context": {},
   "expected": "a b c ",
   "id": "test_lexnparse::test_trim_nested",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    {% if True %}\na {% if True %}\nb {% endif %}\nc {% endif %}"
  },
  {
   "context": {},
   "expected": "\na \nb \nc ",
   "id": "test_lexnparse::test_no_trim_nested",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    {% if True +%}\na {% if True +%}\nb {% endif +%}\nc {% endif %}"
  },
  {
   "context": {},
   "expected": "\n  ",
   "id": "test_lexnparse::test_comment_trim",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    {# comment #}\n\n  "
  },
  {
   "context": {},
   "expected": "\n\n  ",
   "id": "test_lexnparse::test_comment_no_trim",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    {# comment +#}\n\n  "
  },
  {
   "context": {},
   "expected": "\n   \n\n ",
   "id": "test_lexnparse::test_multiple_comment_trim_lstrip",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "   {# comment #}\n\n{# comment2 #}\n   \n{# comment3 #}\n\n "
  },
  {
   "context": {},
   "expected": "\n\n\n   \n\n\n ",
   "id": "test_lexnparse::test_multiple_comment_no_trim_lstrip",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "   {# comment +#}\n\n{# comment2 +#}\n   \n{# comment3 +#}\n\n "
  },
  {
@@ -1231,6 +1141,10 @@
   },
   "expected": "1\n\n\n2",
   "id": "test_lexnparse::test_raw_trim_lstrip",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "{{x}}{% raw %}\n\n    {% endraw %}\n\n{{ y }}"
  },
  {
@@ -1240,30 +1154,50 @@
   },
   "expected": "1\n\n\n\n2",
   "id": "test_lexnparse::test_raw_no_trim_lstrip",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": false
+  },
   "template": "{{x}}{% raw %}\n\n      {% endraw +%}\n\n{{ y }}"
  },
  {
   "context": {},
   "expected": "\n\n",
   "id": "test_lexnparse::test_no_trim_angle_bracket",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    <% if True +%>\n\n    <% endif %>"
  },
  {
   "context": {},
   "expected": "\n\n   ",
   "id": "test_lexnparse::test_no_trim_angle_bracket#1",
+  "options": {
+   "lstrip_blocks": true,
+   "trim_blocks": true
+  },
   "template": "    <%# comment +%>\n\n   "
  },
  {
   "context": {},
   "expected": "    \n\n    ",
   "id": "test_lexnparse::test_no_trim_php_syntax",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": true
+  },
   "template": "    <? if True +?>\n\n    <? endif ?>"
  },
  {
   "context": {},
   "expected": "    \n\n    ",
   "id": "test_lexnparse::test_no_trim_php_syntax#1",
+  "options": {
+   "lstrip_blocks": false,
+   "trim_blocks": true
+  },
   "template": "    <!-- comment +-->\n\n    "
  },
  {
@@ -1317,22 +1251,6 @@
   "template": "\n        {%- for item in (1, 2, 3, 4) %}\n            {%- macro wrapper() %}[{{ item }}]{% endmacro %}\n            {{- wrapper() }}\n        {%- endfor %}\n        {{- wrapper -}}\n        "
  },
  {
-  "context": {
-   "expr": false
-  },
-  "expected": "[[title]](1)(2)(3)",
-  "id": "test_regression::test_extends_output_bugs",
-  "template": "{% if expr %}{% extends \"parent.html\" %}{% endif %}[[{% block title %}title{% endblock %}]]{% for item in [1, 2, 3] %}({{ item }}){% endfor %}"
- },
- {
-  "context": {
-   "expr": true
-  },
-  "expected": "((title))",
-  "id": "test_regression::test_extends_output_bugs#1",
-  "template": "{% if expr %}{% extends \"parent.html\" %}{% endif %}[[{% block title %}title{% endblock %}]]{% for item in [1, 2, 3] %}({{ item }}){% endfor %}"
- },
- {
   "context": {},
   "expected": "<a href=\"http://www.example.org/&lt;foo\" rel=\"noopener\">http://www.example.org/&lt;foo</a>",
   "id": "test_regression::test_urlize_filter_escaping",
@@ -1365,23 +1283,6 @@
   "expected": "42",
   "id": "test_regression::test_partial_conditional_assignments#1",
   "template": "{% if b %}{% set a = 42 %}{% endif %}{{ a }}"
- },
- {
-  "context": {
-   "a": 0,
-   "b": false,
-   "c": 42,
-   "d": 42.0
-  },
-  "expected": "1111C",
-  "id": "test_regression::test_stacked_locals_scoping_bug",
-  "template": "# for j in [1, 2]:\n#   set x = 1\n#   for i in [1, 2]:\n#     print x\n#     if i % 2 == 0:\n#       set x = x + 1\n#     endif\n#   endfor\n# endfor\n# if a\n#   print 'A'\n# elif b\n#   print 'B'\n# elif c == d\n#   print 'C'\n# else\n#   print 'D'\n# endif\n    "
- },
- {
-  "context": {},
-  "expected": "[42]",
-  "id": "test_regression::test_block_set_with_extends",
-  "template": "{% extends \"main\" %}{% set x %}42{% endset %}"
  },
  {
   "context": {},
