@@ -416,7 +416,12 @@ func jsonFilter(fc *FilterContext, v any, args []any, kwargs map[string]any) (an
 	if i, ok := arg(args, kwargs, 0, "indent"); ok {
 		indent, _ = asInt(i)
 	}
-	b, err := value.EncodeJSON(stripUndefined(v), int(indent))
+	// Spaced separators, because Python's json.dumps spaces them by
+	// default and Jinja's tojson inherits that. A tree writing JSON into a
+	// file through this filter produced spaced output under Salt, and
+	// compact output here would make the file differ on the first run
+	// after a migration.
+	b, err := value.EncodeJSONSpaced(stripUndefined(v), int(indent), true)
 	if err != nil {
 		return nil, fc.Errorf("tojson: %v", err)
 	}

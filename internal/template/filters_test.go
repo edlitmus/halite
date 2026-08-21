@@ -108,7 +108,7 @@ func TestSaltSerializationFilters(t *testing.T) {
 		"list": []any{"x", "y"},
 	}
 	cases := []struct{ src, want string }{
-		{`{{ m | tojson }}`, `{"b":2,"a":1}`},
+		{`{{ m | tojson }}`, `{"b": 2, "a": 1}`},
 		{`{{ 'yes' | yaml_encode }}`, `"yes"`},
 		{`{{ 'plain' | yaml_encode }}`, `plain`},
 		{`{{ list | yaml_encode }}`, `[x, y]`},
@@ -132,7 +132,7 @@ func TestSaltSerializationFilters(t *testing.T) {
 func TestJSONKeepsDeclarationOrder(t *testing.T) {
 	m := value.MapOf("zebra", int64(1), "apple", int64(2), "mango", int64(3))
 	got := render(t, `{{ m | tojson }}`, map[string]any{"m": m})
-	if got != `{"zebra":1,"apple":2,"mango":3}` {
+	if got != `{"zebra": 1, "apple": 2, "mango": 3}` {
 		t.Errorf("tojson lost declaration order: %s", got)
 	}
 }

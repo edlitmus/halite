@@ -95,14 +95,27 @@ func decodeValue(dec *json.Decoder) (any, error) {
 // EncodeJSON renders a value as JSON, preserving mapping order. indent of
 // zero produces the compact form.
 func EncodeJSON(v any, indent int) ([]byte, error) {
+	return EncodeJSONSpaced(v, indent, false)
+}
+
+// EncodeJSONSpaced renders JSON with Python's separators when spaced is
+// set: `, ` between items and `: ` after a key.
+//
+// It exists for the `tojson` filter. Python's json.dumps spaces its
+// separators by default and Jinja's tojson inherits that, so a tree that
+// writes JSON into a file through the filter produces spaced output under
+// Salt. Rendering it compact here would make every such file differ on the
+// first run after a migration, which reads as a change the tree did not
+// ask for. The wire format of SPEC section 6.4 stays compact.
+func EncodeJSONSpaced(v any, indent int, spaced bool) ([]byte, error) {
 	var b bytes.Buffer
-	if err := writeJSON(&b, v, indent, 0); err != nil {
+	if err := writeJSON(&b, v, indent, 0, spaced); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil
 }
 
-func writeJSON(b *bytes.Buffer, v any, indent, depth int) error {
+func writeJSON(b *bytes.Buffer, v any, indent, depth int, spaced bool) error {
 	pad := func(n int) {
 		if indent > 0 {
 			b.WriteByte('\n')
@@ -120,16 +133,19 @@ func writeJSON(b *bytes.Buffer, v any, indent, depth int) error {
 		for i, e := range t.Entries() {
 			if i > 0 {
 				b.WriteByte(',')
+				if spaced && indent == 0 {
+					b.WriteByte(' ')
+				}
 			}
 			pad(depth + 1)
 			if err := writeJSONString(b, KeyString(e.Key)); err != nil {
 				return err
 			}
 			b.WriteByte(':')
-			if indent > 0 {
+			if indent > 0 || spaced {
 				b.WriteByte(' ')
 			}
-			if err := writeJSON(b, e.Val, indent, depth+1); err != nil {
+			if err := writeJSON(b, e.Val, indent, depth+1, spaced); err != nil {
 				return err
 			}
 		}
@@ -146,9 +162,12 @@ func writeJSON(b *bytes.Buffer, v any, indent, depth int) error {
 		for i, item := range t {
 			if i > 0 {
 				b.WriteByte(',')
+				if spaced && indent == 0 {
+					b.WriteByte(' ')
+				}
 			}
 			pad(depth + 1)
-			if err := writeJSON(b, item, indent, depth+1); err != nil {
+			if err := writeJSON(b, item, indent, depth+1, spaced); err != nil {
 				return err
 			}
 		}
