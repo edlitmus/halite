@@ -97,7 +97,7 @@ section exists to make. This is a strengthening, not a conflict.
 
 ## 2. Module coverage
 
-The build ships **42 execution modules / 186 functions** and **20 state
+The build ships **42 execution modules / 199 functions** and **20 state
 modules / 54 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -115,7 +115,7 @@ different reason is given.
 | Module | Status | Functions | Note |
 |---|---|---|---|
 | `archive` | implemented | 2 | tar, tar.gz, zip; entries are refused if they escape the destination |
-| `cmd` | implemented | 7 | |
+| `cmd` | implemented | 12 | |
 | `config` | implemented | 3 | |
 | `cron` | implemented | 2 | |
 | `disk` | implemented | 1 | |
@@ -135,7 +135,7 @@ different reason is given.
 | `pkg` | implemented | 8 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
 | `random` | implemented | 3 | `crypto/rand` |
 | `saltutil` | implemented | 5 | stubs that name the phase that will implement them |
-| `service` | implemented | 8 | FreeBSD rc provider only; see 2.5 |
+| `service` | implemented | 16 | FreeBSD rc provider only; see 2.5 |
 | `ssh_auth` | implemented | 1 | registered as `ssh.auth_keys` |
 | `status` | implemented | 4 | |
 | `sys` | implemented | 8 | |
@@ -366,15 +366,23 @@ backup copy before overwriting a file silently gets none today. Salt spells
 that option with a role name SPEC section 2.3 prohibits, so the replacement
 spelling is itself an open question.
 
-### `cmd` — 7 of 13
+### `cmd` — 12 of 13
 
 Present: `run`, `run_all`, `run_stdout`, `run_stderr`, `retcode`, `which`,
-`has_exec`. Absent: `script`, `script_retcode`, `shell`, `exec_code`,
-`run_chroot`, `run_bg`.
+`has_exec`, `shell`, `script`, `script_retcode`, `exec_code`, `run_bg`.
+Absent: `run_chroot`, which needs a chroot to be worth testing in.
 
-The security-relevant parts of the spec's `cmd` paragraph *are* implemented:
+The security-relevant parts of the spec's `cmd` paragraph are implemented:
 argv by default, `shell=True` as the opt-in, and `runas` through setuid and
-setgid with the full supplementary group set rather than `su -c`.
+setgid with the full supplementary group set rather than `su -c`. `shell`
+and `script` are the two that run a shell on purpose, and `cmd.shell` logs
+that it did — SPEC 15.2 asks that opting back in be visible, and a silent
+shell is the thing the inversion exists to stop.
+
+A script is fetched to a file only its owner can read or run, and removed
+after. Many carry a credential, and the temporary directory is
+world-readable. A `salt://` source goes through the file server, so the
+containment rules of 13.5 apply to it as to any other file.
 
 ### `pkg` — 6 of 26
 
@@ -384,14 +392,20 @@ Present: `install`, `remove`, `version`, `latest_version`, `list_pkgs`,
 `info_installed`, `owner`, `file_list`, `file_dict`, `mod_repo`, `del_repo`,
 `list_repos`, `list_downloaded`, `download`, `autoremove`, `version_cmp`.
 
-### `service` — 8 of 18
+### `service` — 16 of 18
 
-Present: `start`, `stop`, `restart`, `reload`, `status`, `enable`, `disable`,
-`enabled`. Absent: `force_reload`, `disabled`, `available`, `missing`,
-`get_all`, `mask`, `unmask`, `masked`, `execs`.
+Present: `start`, `stop`, `restart`, `reload`, `force_reload`, `status`,
+`enable`, `disable`, `enabled`, `disabled`, `available`, `missing`,
+`get_all`, `mask`, `unmask`, `masked`. Absent: `execs`, and the
+`run_chroot`-shaped corner of the module.
 
-`mask` and `unmask` are systemd concepts with no FreeBSD equivalent, so they
-are blocked on a Linux host rather than on effort.
+`get_all` needed a second interface beside the provider one, because not
+every init system can enumerate its services and folding it into the main
+interface would make the others implement a stub that lies. `mask` needed a
+third: masking is systemd's alone, and a node that is not running systemd
+gets an error naming the init system it *is* running and pointing at
+`disable`, rather than a silent no-op. Verified here — 235 services listed
+by `service -l`, `available sshd` true, and masking refused by name.
 
 ---
 
