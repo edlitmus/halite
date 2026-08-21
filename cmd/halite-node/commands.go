@@ -228,7 +228,7 @@ func renderLow(out *state.Compiled) []any {
 	return low
 }
 
-// runGrains is `halite-node grains items|get <key>`.
+// runGrains is `halite-node grains items|item|get <key>`.
 func runGrains(args *cli.Args) int {
 	n := setup(args)
 	sub := "items"
@@ -238,16 +238,23 @@ func runGrains(args *cli.Args) int {
 	switch sub {
 	case "items":
 		n.out(value.MapOf(n.nodeID, n.grains))
-	case "get", "item":
-		if len(args.Positional) < 2 {
-			cli.Fatalf("grains %s needs a key", sub)
+	case "get":
+		// `get` is one key and the bare value; `item` is any number of
+		// them and a mapping. Taking a second key here and answering
+		// about only the first is how a caller reads the wrong grain.
+		if len(args.Positional) != 2 {
+			cli.Fatalf("grains get takes exactly one key; use `grains item` for several")
 		}
-		key := args.Positional[1]
-		v, ok := value.Traverse(n.grains, key, ":")
+		v, ok := value.Traverse(n.grains, args.Positional[1], ":")
 		if !ok {
 			v = ""
 		}
 		n.out(value.MapOf(n.nodeID, v))
+	case "item":
+		if len(args.Positional) < 2 {
+			cli.Fatalf("grains item needs a key")
+		}
+		n.out(value.MapOf(n.nodeID, traverseAll(n.grains, args.Positional[1:])))
 	case "ls", "keys":
 		names := make([]any, 0, n.grains.Len())
 		for _, k := range n.grains.SortedKeys() {
@@ -255,12 +262,27 @@ func runGrains(args *cli.Args) int {
 		}
 		n.out(value.MapOf(n.nodeID, names))
 	default:
-		cli.Fatalf("grains has no subcommand %q; try items, get, or ls", sub)
+		cli.Fatalf("grains has no subcommand %q; try items, item, get, or ls", sub)
 	}
 	return 0
 }
 
-// runPillar is `halite-node pillar items|get <key>`.
+// traverseAll resolves several colon-separated keys against one mapping,
+// answering with the empty string for a key that is not there, as Salt's
+// grains.item and pillar.item do.
+func traverseAll(m *value.Map, keys []string) *value.Map {
+	out := value.NewMap(len(keys))
+	for _, key := range keys {
+		v, ok := value.Traverse(m, key, ":")
+		if !ok {
+			v = ""
+		}
+		out.Set(key, v)
+	}
+	return out
+}
+
+// runPillar is `halite-node pillar items|item|get <key>`.
 func runPillar(args *cli.Args) int {
 	n := setup(args)
 	p := n.compilePillar()
@@ -271,17 +293,22 @@ func runPillar(args *cli.Args) int {
 	switch sub {
 	case "items":
 		n.out(value.MapOf(n.nodeID, p))
-	case "get", "item":
-		if len(args.Positional) < 2 {
-			cli.Fatalf("pillar %s needs a key", sub)
+	case "get":
+		if len(args.Positional) != 2 {
+			cli.Fatalf("pillar get takes exactly one key; use `pillar item` for several")
 		}
 		v, ok := value.Traverse(p, args.Positional[1], ":")
 		if !ok {
 			v = ""
 		}
 		n.out(value.MapOf(n.nodeID, v))
+	case "item":
+		if len(args.Positional) < 2 {
+			cli.Fatalf("pillar item needs a key")
+		}
+		n.out(value.MapOf(n.nodeID, traverseAll(p, args.Positional[1:])))
 	default:
-		cli.Fatalf("pillar has no subcommand %q; try items or get", sub)
+		cli.Fatalf("pillar has no subcommand %q; try items, item, or get", sub)
 	}
 	return 0
 }
