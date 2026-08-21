@@ -809,17 +809,28 @@ type Macro struct {
 	Name   string
 	Params []Param
 	Body   []Node
+	pos    Pos
 	scope  *scope
 	r      *renderer
 }
 
 func (r *renderer) makeMacro(t *MacroNode) *Macro {
-	return &Macro{Name: t.Name, Params: t.Params, Body: t.Body, scope: r.scope, r: r}
+	return &Macro{Name: t.Name, Params: t.Params, Body: t.Body, pos: t.Pos(), scope: r.scope, r: r}
 }
 
 // Call renders the macro body with its parameters bound.
 func (m *Macro) Call(args []any, kwargs map[string]any) (any, error) {
 	sub := m.r.sub()
+	// A macro that calls itself is recursion, and the depth limit of SPEC
+	// section 10.2.8 has to see it. Nothing counted macro calls, so
+	// `{% macro m %}{{ m() }}{% endmacro %}{{ m() }}` ran until the
+	// goroutine stack gave out: a template could crash the node rather
+	// than get a named error.
+	sub.budget.callDepth++
+	defer func() { sub.budget.callDepth-- }()
+	if sub.budget.callDepth > sub.opts.MaxDepth {
+		return nil, errorf(m.pos, "macro %q recursed deeper than %d levels", m.Name, sub.opts.MaxDepth)
+	}
 	sub.scope = newScope(m.scope)
 
 	if c, ok := kwargs[callerKey]; ok {

@@ -300,6 +300,11 @@ func (e *Environment) RenderString(src, name string, ctx map[string]any) (Result
 // budget is the shared resource accounting for one render operation,
 // including the macros and includes it reaches.
 type budget struct {
+	// callDepth counts macro calls in progress. It lives here rather than
+	// on the renderer because a macro is called through the renderer it
+	// was *defined* in, whose depth never changes; the budget is the one
+	// thing every sub-renderer of a render shares.
+	callDepth     int
 	deadline      time.Time
 	iterations    int64
 	maxIterations int64
