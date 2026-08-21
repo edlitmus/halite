@@ -379,6 +379,15 @@ and `script` are the two that run a shell on purpose, and `cmd.shell` logs
 that it did — SPEC 15.2 asks that opting back in be visible, and a silent
 shell is the thing the inversion exists to stop.
 
+The `cmd.run` **state** does not take Salt's `bg` argument, so a tree
+carrying one does not compile. The execution module has `run_bg`, so the
+capability is there; what is missing is the decision about what a
+backgrounded state means — it cannot report whether it changed anything,
+it cannot be meaningfully run under `--test`, and nothing waits for it or
+reaps it. Salt answers all three by returning success immediately.
+Copying that is a choice rather than an oversight, and it has not been
+made. The differential gate found this.
+
 A script is fetched to a file only its owner can read or run, and removed
 after. Many carry a credential, and the temporary directory is
 world-readable. A `salt://` source goes through the file server, so the
@@ -562,15 +571,15 @@ only behaviour they have to test.
 
 ### 5.2 The fourteen test layers
 
-Every layer SPEC 31 requires, and where it stands. Two of the fourteen
-are present, one is present and stronger than specified, one is partial, and
-eight are absent.
+Every layer SPEC 31 requires beyond the unit layer of 5.1, and where each
+stands. Four are present, one of them stronger than
+specified, three are partial, four are absent, and one is unverified.
 
 | Layer | Status |
 |---|---|
-| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 328 of 402 agree, 34 disagree by design, 40 are gaps — see 5.4. |
+| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 328 of 402 agree, 34 disagree by design, 40 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 146 of 198 agree, 27 are outside the subset, 25 are gaps — see 5.5. |
-| Differential against Salt | **absent.** This is named the primary correctness gate and it has never been run. There is no Salt installation to run it against on this host. |
+| Differential against Salt | **partial.** `internal/saltdiff` compiles eight trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. SPEC 31 asks for three comparisons and this makes two: the state *results* of actually applying a tree are not compared — see 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
@@ -716,7 +725,7 @@ What remains, largest first:
 
 | Class | Cases | What it is |
 |---|---|---|
-| `gapLenient` | 23 | halite parses a document the suite requires to be an error. Accepting too much is the safe direction for an existing tree, which is why it ranks last. What is left here is mostly tabs in odd positions, document markers inside quoted scalars, and under-indented continuations. |
+| `gapLenient` | 23 | halite parses a document the suite requires to be an error. This was called the safe direction, and the PyYAML differential of 5.8 showed the framing was wrong: a document the reference implementation refuses is one Salt would not load, so accepting it means the tree loads here and means something nobody wrote. What is left is mostly tabs in odd positions, document markers inside quoted scalars, and under-indented continuations. |
 | `gapFlow` | 4 | complex keys in flow, which SPEC 10.1.2 refuses on purpose but with a message about the wrong thing, and an explicit `? ` key inside flow. |
 | `gapAfterDocument`, `gapExplicitKey`, `gapOther`, `gapPlainScalar`, `gapValueOther` | 10 | five classes of two. |
 | `gapChomping`, `gapDirective`, `gapMappingKey` | 3 | singletons. |
@@ -820,6 +829,71 @@ reconverged; `onchanges` fired only on the run where its target changed.
 Real reads verified against the host: 63 grains including chassis and disk
 detail, `zpool` health, `git` revision, uptime.
 
+### 5.7 What the Salt differential covers, and what it does not
+
+`make check` runs it against whichever `salt-call` is on PATH. It has
+been run against Salt 3006.25 and 3008.2.
+
+Compared, over nine trees:
+
+- the low state: the chunk sequence first, then each chunk's arguments
+- the pillar, with its merge across two files
+
+Not compared:
+
+- **the state results.** SPEC 31 asks for these and they are the half
+  that would catch a module doing the wrong thing rather than a compiler
+  planning the wrong thing. Applying a tree twice under both
+  implementations and comparing `changes` needs a container to apply it
+  in, which is the integration layer, which is phase 2.
+- **a real estate's trees.** SPEC 31 says "a corpus of real SLS and
+  pillar trees from this estate". These nine are written for the gate.
+  They cover the constructs, not the volume, and volume is where the
+  surprises are.
+- **the renderers other than jinja|yaml**, and `#!py`, which is not
+  implemented at all.
+
+What it found on its first run, all now fixed: `order: first` refused
+though Salt gives it the order 0; `user: 0` refused though Salt reads an
+integer as a uid; `contents` as a list of lines refused by a signature
+though the code behind it had always handled one; and a per-state
+`timeout` parsed, stripped from the arguments, and then read by nothing.
+
+The two recorded deviations are both schema rather than behaviour. Salt
+passes `timeout` through to the module where halite reads it as a
+per-state option of SPEC 11.7 and applies it there. And Salt 3006
+resolves the reversed requisites while executing rather than while
+compiling, so `show_lowstate` does not carry them; 3008 does, as halite
+does. The two majors disagree with each other, so a deviation row names
+the version it was observed under.
+
+### 5.8 Where the PyYAML differential stands
+
+SPEC 10.1 specifies the dialect as PyYAML's. 114 documents go to both
+and the resolved type is compared as well as the value.
+
+100 agree. Ten differ by design:
+
+| Rule | Cases | Why |
+|---|---|---|
+| Duplicate keys are an error | 2 | SPEC 10.1.2. PyYAML takes the last silently. |
+| A date stays a string | 4 | SPEC 10.1.3. A date becoming a struct breaks `file.managed` contents. |
+| A sexagesimal stays a string | 3 | SPEC 10.1.3, with a lint warning where it would have differed. `12:30` is 750 under PyYAML. |
+| Integers are int64 | 1 | Python's are unbounded. |
+
+Four are gaps, and all four are the dangerous direction — halite reads a
+document PyYAML refuses:
+
+| Document | halite reads | PyYAML |
+|---|---|---|
+| `k: -` | a one-element sequence | refuses |
+| `k: ?` | a mapping of null to null | refuses |
+| `k: :` | a mapping of null to null | refuses |
+| `a: b: c` | a nested mapping | refuses |
+
+These are the same class as the 23 in 5.4: a tree Salt would not load
+loads here and means something. They are the ones worth closing first.
+
 ---
 
 ## 6. Everything else not started
@@ -883,10 +957,14 @@ excavation.
 
 Ranked by correctness value per unit of work, given one FreeBSD host.
 
-The two conformance suites have moved to the bottom. Both are running and
-both are down to isolated cases — 40 YAML and 25 template — with no
-cluster left in either. That is a good place for them to be, and it means
-the next fix in each is worth less than anything above it.
+The differential gate against Salt has moved off this list's top: it
+runs. What is left of it is the half that needs a container, which is
+phase 2 work, so it sits at 2 rather than 1.
+
+The template conformance suite stays at the bottom. It is running and
+down to isolated cases — 25, largest class 9 — with no cluster left. The
+YAML suite has moved *up*, not because the count changed but because the
+reason changed: see 3.
 
 1. **A Linux host.** The compat layer got the platform-neutral code and
    the `/proc` grain collector run under Linux (4.1), which was the part
@@ -896,10 +974,18 @@ the next fix in each is worth less than anything above it.
    half of every optional provider capability written in this pass —
    holding, upgrading, and file ownership exist for pkgng because pkgng is
    what this host runs.
-2. **A Salt installation to run the differential gate against.** SPEC 31
-   calls it the primary correctness gate. It has never been run.
-3. **The remaining 40 YAML conformance gaps** (5.4). 23 are documents
-   accepted that should be refused, which is the safe direction; the other
-   17 are spread across nine classes of two or fewer.
+2. **The state-results half of the differential gate** (5.7). The gate
+   runs now, against Salt 3006.25 and 3008.2, and compares the low state
+   and the pillar. Comparing what actually *changes* needs a container to
+   apply a tree in, which is the integration layer and phase 2 work. Its
+   cheaper neighbour is volume: nine trees written for the gate cover the
+   constructs, and a real estate's trees are where the surprises are.
+3. **The documents accepted that should be refused** (5.4 and 5.8). 23
+   in the conformance suite and 4 in the PyYAML differential, and the
+   framing in earlier versions of this file was wrong: accepting a
+   document the reference implementation refuses is not the safe
+   direction. It means a tree Salt would not load loads here and means
+   something. `a: b: c` becoming a nested mapping is the sharpest of
+   them.
 4. **The remaining 25 template conformance gaps** (5.5). The largest class
    is 9, and it is float and dict spelling.
