@@ -1,0 +1,52 @@
+#!/bin/sh
+
+# PROVIDE: halite_api
+# REQUIRE: LOGIN FILESYSTEMS halite_hub
+# KEYWORD: shutdown
+#
+# halite-api, the HTTP API service.
+#
+#   halite_api_enable (bool):  Set to "NO" by default.
+#   halite_api_config (str):   Configuration file.
+#                              Default /usr/local/etc/halite/api.yaml
+#   halite_api_flags (str):    Extra arguments to `halite-api serve`.
+#   halite_api_user (str):     Account to run as. Default halite.
+#
+# `serve` arrives in phase 4 of SPEC section 32.
+
+. /etc/rc.subr
+
+name=halite_api
+rcvar=halite_api_enable
+desc="halite HTTP API"
+
+load_rc_config $name
+
+: ${halite_api_enable="NO"}
+: ${halite_api_config="/usr/local/etc/halite/api.yaml"}
+: ${halite_api_flags=""}
+: ${halite_api_user="halite"}
+
+pidfile="/var/run/${name}.pid"
+logfile="/var/log/halite/api.log"
+
+command="/usr/sbin/daemon"
+command_args="-c -f -p ${pidfile} -u ${halite_api_user} -o ${logfile} \
+	/usr/local/bin/halite-api serve --config ${halite_api_config} ${halite_api_flags}"
+
+required_files="${halite_api_config}"
+start_precmd="halite_api_prestart"
+
+halite_api_prestart()
+{
+	# Create the log directory if it is missing. An existing one is left
+	# exactly as it is: a site that has given it to another account, or
+	# pointed it at a separate filesystem, meant to, and refusing to start
+	# over that would be this script second-guessing the operator.
+	if [ ! -d /var/log/halite ]; then
+		install -d -o "${halite_api_user}" -m 0750 /var/log/halite || return 1
+	fi
+	return 0
+}
+
+run_rc_command "$1"

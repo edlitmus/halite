@@ -1,0 +1,54 @@
+[Unit]
+Description=halite node agent
+Documentation=https://github.com/edlitmus/halite
+# The tree lives on disk and the hub is reached over the network, so both
+# have to be there before the agent is useful.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# `serve` connects to a hub, which arrives in phase 2 of SPEC section 32.
+# Until then it exits immediately saying so, and a node is driven by
+# halite-highstate.service, which works today.
+ExecStart=/usr/local/bin/halite-node serve --config /etc/halite/node.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+# `serve` exits 1 while its phase has not landed. Restarting on that would
+# be a loop that fills the journal and tells the operator nothing, so exit
+# 1 stops the unit and leaves the message in the log where it can be read.
+# Once the phase lands, a genuine failure exits with something else.
+RestartPreventExitStatus=1
+
+# A node applies state to the whole system, so it runs as root. Nearly
+# every sandbox systemd offers is therefore off: a state that installs a
+# package, writes into /etc, or restarts a service needs exactly the
+# access those options remove. The ones below are the ones that can be
+# kept without lying about what the agent does.
+User=root
+ProtectHome=no
+ProtectSystem=no
+PrivateTmp=yes
+NoNewPrivileges=no
+# Kernel tunables are managed by the sysctl module, so /proc/sys stays
+# writable; the rest of the kernel surface does not.
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectClock=no
+RestrictSUIDSGID=no
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+
+# The rendering limits of SPEC 10.2.8 bound one template; these bound the
+# process, so a runaway state cannot take the node with it.
+TasksMax=4096
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=halite-node
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Apply halite's highstate periodically
+Documentation=https://github.com/edlitmus/halite
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+# Without a spread, every node in a fleet converges on the same second and
+# hits the file server together. The window should be a decent fraction of
+# the interval.
+RandomizedDelaySec=10min
+# A node that was off when the timer should have fired catches up once on
+# boot, rather than skipping the run or firing every missed one.
+Persistent=true
+Unit=halite-highstate.service
+
+[Install]
+WantedBy=timers.target

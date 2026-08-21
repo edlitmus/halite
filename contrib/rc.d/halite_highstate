@@ -1,0 +1,62 @@
+#!/bin/sh
+
+# PROVIDE: halite_highstate
+# REQUIRE: LOGIN FILESYSTEMS
+# KEYWORD: nojail
+#
+# Apply halite's highstate once, from local roots.
+#
+# This is the part of halite that works today: a node compiles and applies
+# its own tree with no hub at all. Run it from cron for a periodic
+# convergence, or by hand after changing the tree:
+#
+#   service halite_highstate onestart
+#
+# Add to /etc/rc.conf to enable at boot:
+#
+#   halite_highstate_enable (bool): Set to "NO" by default.
+#   halite_highstate_config (str):  Configuration file.
+#   halite_highstate_flags (str):   Extra arguments. `--test` makes the run
+#                                   predict without changing anything.
+#
+# The exit code follows SPEC section 11.8: 0 when something changed, 2 when
+# the node was already converged, and non-zero-and-not-2 when a state
+# failed. A cron job that treats 2 as success will not page you for a
+# node that had nothing to do.
+
+. /etc/rc.subr
+
+name=halite_highstate
+rcvar=halite_highstate_enable
+desc="halite highstate, applied once"
+
+load_rc_config $name
+
+: ${halite_highstate_enable="NO"}
+: ${halite_highstate_config="/usr/local/etc/halite/node.yaml"}
+: ${halite_highstate_flags=""}
+
+required_files="${halite_highstate_config}"
+start_cmd="halite_highstate_start"
+stop_cmd=":"
+
+halite_highstate_start()
+{
+	install -d -m 0750 /var/log/halite || return 1
+	echo "Applying halite highstate."
+	/usr/local/bin/halite-node state apply --local \
+		--config "${halite_highstate_config}" ${halite_highstate_flags} \
+		>> /var/log/halite/highstate.log 2>&1
+	rc=$?
+	# 2 is "converged, nothing to do", which is a success at boot.
+	if [ $rc -eq 2 ]; then
+		echo "halite: already converged."
+		return 0
+	fi
+	if [ $rc -ne 0 ]; then
+		warn "halite highstate failed; see /var/log/halite/highstate.log"
+	fi
+	return $rc
+}
+
+run_rc_command "$1"

@@ -1,0 +1,63 @@
+[Unit]
+Description=halite hub
+Documentation=https://github.com/edlitmus/halite
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# `serve` arrives in phase 2 of SPEC section 32. Until then the hub is a
+# command-line tool: `halite-hub migrate` and `halite-hub lint`.
+ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+# `serve` exits 1 while its phase has not landed. Restarting on that would
+# be a loop that fills the journal and tells the operator nothing, so exit
+# 1 stops the unit and leaves the message in the log where it can be read.
+# Once the phase lands, a genuine failure exits with something else.
+RestartPreventExitStatus=1
+
+# The hub serves files, compiles pillar, and holds the enrollment CA. It
+# changes nothing about the host it runs on, so unlike the node it can
+# take the full sandbox.
+User=halite
+Group=halite
+DynamicUser=no
+StateDirectory=halite
+StateDirectoryMode=0700
+LogsDirectory=halite
+RuntimeDirectory=halite
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+TasksMax=8192
+LimitNOFILE=65536
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=halite-hub
+
+[Install]
+WantedBy=multi-user.target

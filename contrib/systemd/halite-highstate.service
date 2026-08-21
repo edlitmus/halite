@@ -1,0 +1,33 @@
+[Unit]
+Description=halite highstate, applied once
+Documentation=https://github.com/edlitmus/halite
+After=network-online.target
+Wants=network-online.target
+# Two highstates at once would race each other over the same files.
+# systemd will not start a second while this one runs, and the timer's
+# Persistent= catches up a missed run rather than piling them up.
+ConditionPathExists=/etc/halite/node.yaml
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/halite-node state apply --local --config /etc/halite/node.yaml
+
+# SPEC section 11.8: 0 when something changed, 2 when the node was already
+# converged, and anything else when a state failed. Without this, every
+# converged run is a failed unit and the alerting is useless within a day.
+SuccessExitStatus=0 2
+
+PrivateTmp=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+TimeoutStartSec=30min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=halite-highstate
+
+[Install]
+WantedBy=multi-user.target
