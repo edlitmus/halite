@@ -100,7 +100,33 @@ func saltCall(t *testing.T) string {
 			"Set HALITE_SALT_CALL to one, or `pip install salt` into a virtualenv. " +
 			"SPEC 31 calls this the primary correctness gate, so a skip here is a gap, not a pass.")
 	}
+	requireVisibleTempDir(t, p)
 	return p
+}
+
+// requireVisibleTempDir checks that salt-call can see a directory this
+// process created. On a FreeBSD host running the test binary under the
+// Linux compat layer the two have separate /tmp namespaces, so the
+// configuration written for salt-call is not there when it looks. That
+// is the environment rather than a difference worth reporting, and it
+// must skip rather than fail — but loudly, saying which it was.
+func requireVisibleTempDir(t *testing.T, saltcall string) {
+	t.Helper()
+	dir := t.TempDir()
+	config := "file_client: local\ncachedir: " + filepath.Join(dir, "cache") +
+		"\nroot_dir: " + dir + "\nid: " + nodeID + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "minion"), []byte(config), 0o644); err != nil { // lexicon:allow — Salt requires this filename
+		t.Fatal(err)
+	}
+	cmd := exec.Command(saltcall, "--config-dir="+dir, "--local", "test.true", "--out=json")
+	cmd.Env = append(os.Environ(), "SHELL=/bin/sh")
+	out, err := cmd.CombinedOutput()
+	if err != nil && strings.Contains(string(out), "does not exist") {
+		t.Skipf("Salt differential skipped: %s cannot see %s, so the two processes "+
+			"do not share a filesystem namespace. This is what running a Linux test "+
+			"binary against a FreeBSD salt-call looks like. Run the gate natively.",
+			saltcall, dir)
+	}
 }
 
 // saltRun invokes one Salt function against a tree, masterless.
