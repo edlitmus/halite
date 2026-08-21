@@ -315,11 +315,11 @@ func TestNumberEdgeCases(t *testing.T) {
 	}{
 		{"v: 0b1010", int64(10)},
 		{"v: -0x10", int64(-16)},
-		{"v: +0o17", int64(15)},
+		{"v: +0o17", "+0o17"},
 		{"v: 1_0_0", int64(100)},
-		{"v: 1e3", 1000.0},
-		{"v: 1E+3", 1000.0},
-		{"v: 1e-3", 0.001},
+		{"v: 1e3", "1e3"},
+		{"v: 1E+3", "1E+3"},
+		{"v: 1e-3", "1e-3"},
 		// These are strings, because YAML's float grammar does not
 		// accept them even though strconv would.
 		{"v: 1p3", "1p3"},

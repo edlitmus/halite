@@ -156,11 +156,6 @@ func (p *parser) resolveNumber(s string, pos value.Pos) (any, bool) {
 			return sign * n, true
 		}
 		return nil, false
-	case strings.HasPrefix(lower, "0o"):
-		if n, err := strconv.ParseInt(stripUnderscores(body[2:]), 8, 64); err == nil {
-			return sign * n, true
-		}
-		return nil, false
 	case strings.HasPrefix(lower, "0b"):
 		if n, err := strconv.ParseInt(stripUnderscores(body[2:]), 2, 64); err == nil {
 			return sign * n, true
@@ -223,8 +218,14 @@ func allDigits(s string) bool {
 	return len(s) > 0
 }
 
-// looksLikeFloat holds ParseFloat to YAML's float grammar, so that "inf",
-// "nan", "1p3", and "0x1.8p3" are strings rather than numbers.
+// looksLikeFloat holds ParseFloat to the float grammar PyYAML resolves, so
+// that "inf", "nan", "1p3", and "0x1.8p3" are strings rather than numbers.
+//
+// YAML 1.1 requires a decimal point, and requires an explicit sign on an
+// exponent, so `1e3` and `1.0e3` are both strings and `1.0e+3` is a
+// float. YAML 1.2 resolves all three, and following it here would give a
+// tree a number where Salt gives it a string. SPEC 10.1 says the dialect
+// is PyYAML's, and this is one of the places the two differ.
 func looksLikeFloat(s string) bool {
 	seenDigit, seenDot, seenExp := false, false, false
 	for i := 0; i < len(s); i++ {
@@ -242,9 +243,10 @@ func looksLikeFloat(s string) bool {
 				return false
 			}
 			seenExp = true
-			if i+1 < len(s) && (s[i+1] == '+' || s[i+1] == '-') {
-				i++
+			if i+1 >= len(s) || (s[i+1] != '+' && s[i+1] != '-') {
+				return false
 			}
+			i++
 			if i+1 >= len(s) {
 				return false
 			}
@@ -252,7 +254,7 @@ func looksLikeFloat(s string) bool {
 			return false
 		}
 	}
-	return seenDigit && (seenDot || seenExp)
+	return seenDigit && seenDot
 }
 
 // applyTag applies an explicit tag to a scalar, which is the only path by
