@@ -401,7 +401,7 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if c.Test {
-		return states.WouldChange(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source), changes), nil
+		return states.WouldChange(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source, true), changes), nil
 	}
 
 	if states.Bool(args, "makedirs", false) {
@@ -444,10 +444,17 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 		}
 	}
 
-	return states.Changed(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source), changes), nil
+	return states.Changed(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source, false), changes), nil
 }
 
-func describeFileChange(path string, exists, contents, mode, owner bool, source string) string {
+// describeFileChange builds the comment SPEC section 11.6 requires.
+//
+// The tense is a parameter because the same description serves both
+// outcomes, and getting it wrong is not cosmetic: a test run that reports
+// "/etc/motd was created" reads as though it happened. An operator
+// scanning a --test log for what it is about to do would see a past tense
+// and believe the change had already been made.
+func describeFileChange(path string, exists, contents, mode, owner bool, source string, planned bool) string {
 	var parts []string
 	if contents {
 		if source != "" && source != "contents" && source != "contents_pillar" {
@@ -468,6 +475,9 @@ func describeFileChange(path string, exists, contents, mode, owner bool, source 
 	}
 	if len(parts) == 0 {
 		return fmt.Sprintf("%s is already in the requested state.", path)
+	}
+	if planned {
+		return fmt.Sprintf("%s would be %s: %s.", path, verb, strings.Join(parts, ", "))
 	}
 	return fmt.Sprintf("%s was %s: %s.", path, verb, strings.Join(parts, ", "))
 }

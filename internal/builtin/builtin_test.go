@@ -529,3 +529,38 @@ func TestEveryStateModuleDeclaresItsTestMode(t *testing.T) {
 		}
 	}
 }
+
+// A test-mode comment must read as a prediction. The same description
+// serves both outcomes, and a test run reporting "/etc/motd was created"
+// reads as though it happened: an operator scanning a --test log for what
+// it is about to do would see a past tense and believe the change had
+// already been made.
+func TestTestModeCommentsArePredictions(t *testing.T) {
+	r := New()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "f")
+
+	args := value.MapOf("name", path, "contents", "x\n", "mode", "0644")
+	res, err := r.States.Call(newCtx(true), "file.managed", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result != nil {
+		t.Fatalf("test mode should predict: %+v", res)
+	}
+	if !strings.Contains(res.Comment, "would be created") {
+		t.Errorf("test-mode comment %q should be in the conditional", res.Comment)
+	}
+	if strings.Contains(res.Comment, "was created") {
+		t.Errorf("test-mode comment %q reads as though the change happened", res.Comment)
+	}
+
+	// The real run says it happened, because it did.
+	res, err = r.States.Call(newCtx(false), "file.managed", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(res.Comment, "was created") {
+		t.Errorf("applied comment %q should be in the past tense", res.Comment)
+	}
+}
