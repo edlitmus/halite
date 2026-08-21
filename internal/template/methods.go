@@ -13,6 +13,8 @@ import (
 // `.get('key', default)` — so the common ones are implemented rather than
 // left to filters.
 func method(obj any, name string) (Callable, bool) {
+	obj = untuple(obj)
+
 	switch t := obj.(type) {
 	case string:
 		if fn, ok := stringMethod(t, name); ok {

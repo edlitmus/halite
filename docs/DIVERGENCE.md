@@ -404,7 +404,7 @@ doing the checking.
 | `internal/render` | 83.7% | — |
 | `internal/runner` | 83.0% | — |
 | `internal/exec` | 81.3% | — |
-| `internal/template` | 81.6% | **>90% branch — not met** |
+| `internal/template` | 81.9% | **>90% branch — not met** |
 | `internal/signature` | 79.3% | — |
 | `internal/config` | 77.8% | — |
 | `internal/grains` | 75.3% | — |
@@ -438,7 +438,7 @@ eight are absent.
 | Layer | Status |
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 328 of 402 agree, 34 disagree by design, 40 are gaps — see 5.4. |
-| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 204 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 113 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 145 of 204 agree, 27 are outside the subset, 32 are gaps — see 5.5. |
+| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 146 of 198 agree, 27 are outside the subset, 25 are gaps — see 5.5. |
 | Differential against Salt | **absent.** This is named the primary correctness gate and it has never been run. There is no Salt installation to run it against on this host. |
 | Differential, version comparison | **absent**, and blocked: `pkg.version_cmp` is not implemented. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
@@ -605,8 +605,8 @@ as a rejection, and its value is never checked.
 
 ### 5.5 Where template conformance stands
 
-145 of 204 of Jinja's own extractable cases, 27 of the rest outside the
-subset by design and 32 gaps. `internal/template` rose to 81.6% statements
+146 of 198 of Jinja's own extractable cases, 27 of the rest outside the
+subset by design and 25 gaps. `internal/template` rose to 81.9% statements
 on the way, still the one correctness-core package under the SPEC 31 bar.
 
 Writing the second corpus found a crash on the first run.
@@ -629,6 +629,15 @@ Three other fixes came out of it:
   It is the explicit opposite of `-`, keeping whitespace that
   `trim_blocks` or `lstrip_blocks` would eat, which a tree templating a
   file with meaningful indentation needs.
+- **A tuple rendered as a list.** `(1, 2)` printed `[1, 2]` and `(1,)`
+  printed `[1]`, losing the trailing comma that tells a one-element tuple
+  from a parenthesised expression. A tuple is now its own type inside a
+  render: it prints with parentheses and behaves as a sequence in every
+  other way — iteration, unpacking, indexing, slicing, membership, length,
+  concatenation, the sequence tests, and every filter. It exists only
+  inside the render, since the nine-type model of SPEC 6.4 has no tuple
+  and nothing may put one into pillar or a state argument; by the time a
+  value leaves the engine it is text, and `tojson` writes a list.
 - **`{% set %}` assigned into an enclosing scope.** It walked outward to
   the innermost scope already holding the name, so an assignment inside a
   loop survived to the next iteration and escaped the loop entirely.
@@ -639,19 +648,24 @@ Three other fixes came out of it:
   scope, so a set inside one is still visible after it; `for`, `with`,
   and a macro body each do, and all four boundaries are pinned.
 
-The corpus itself had two defects worth recording, because a conformance
+The corpus itself had three defects worth recording, because a conformance
 suite that lies is worse than none. A case's environment options were
 dropped in extraction, so a `lstrip_blocks` test ran against the default
 environment and its difference was recorded as a defect here — about a
-dozen rows were that. And collecting every template before matching the
+dozen rows were that. Collecting every template before matching the
 assertions paired each assertion with the *last* template of its name.
-Both are fixed, and the numbers above are the honest ones.
+And Jinja's `Environment` takes its delimiters positionally as well as by
+keyword, so a test setting `<%` and `%>` that way had its flags captured
+and its delimiters silently dropped, leaving the case to run against the
+wrong syntax; those cases are now dropped instead, along with the ones
+setting a line-statement prefix halite does not have. All three are fixed,
+and the numbers above are the honest ones.
 
 What remains, largest first:
 
 | Class | Cases | What it is |
 |---|---|---|
-| `gapRendering` | 16 | a value renders differently: tuples print as lists, and some float and dict spellings differ. |
+| `gapRendering` | 9 | what is left is float and dict spelling, and cases needing a custom code generator. |
 | `gapScoping` | 4 | what remains needs a `test` callable those Jinja tests register on the context, which the extractor cannot carry; they are scoping cases in name only. |
 | `gapOther` | 4 | unclassified. |
 | `gapFilterBehaviour`, `gapNumericAttribute`, `gapTestArgument` | 6 | a filter differing from Jinja's, the Django-style `a.0` subscript, and a test taking an argument in a position the parser does not reach. |
@@ -743,10 +757,9 @@ Ranked by correctness value per unit of work, given one FreeBSD host:
    documents accepted that should be refused, which is the safe direction,
    and 17 spread across nine classes of two or fewer. There is no cluster
    left to take: from here it is one case at a time.
-2. **The remaining 32 template conformance gaps** (5.5). The largest is
-   `gapRendering` at 16, mostly tuples printing as lists, which is
-   cosmetic. Nothing left in this corpus is the shape of the scoping bug
-   it already found.
+2. **The remaining 25 template conformance gaps** (5.5). Nothing left is a
+   cluster: the largest class is 9, and it is float and dict spelling.
+   Value per fix from here is lower than anything else on this list.
 3. **Language and runtime modules.** Nine modules, each wrapping one binary,
    all runnable here.
 4. **`x509`.** Self-contained, entirely `crypto/x509`, no platform

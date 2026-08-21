@@ -391,6 +391,8 @@ func addCoreFilters(f map[string]FilterFunc) {
 }
 
 func lengthFilter(fc *FilterContext, v any, _ []any, _ map[string]any) (any, error) {
+	v = untuple(v)
+
 	switch t := v.(type) {
 	case string:
 		return int64(len([]rune(t))), nil
@@ -431,6 +433,8 @@ func jsonFilter(fc *FilterContext, v any, args []any, kwargs map[string]any) (an
 // stripUndefined replaces undefined markers with null, so that a partly
 // built structure still serialises under permissive mode.
 func stripUndefined(v any) any {
+	v = untuple(v)
+
 	switch t := v.(type) {
 	case Undefined:
 		return nil

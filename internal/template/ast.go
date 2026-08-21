@@ -276,8 +276,7 @@ type ListExpr struct {
 	Items []Expr
 }
 
-// TupleExpr is a tuple literal, which Jinja treats as a list everywhere
-// that matters here.
+// TupleExpr is a tuple literal.
 type TupleExpr struct {
 	baseNode
 	Items []Expr

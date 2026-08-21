@@ -81,15 +81,15 @@ func standardTests() map[string]TestFunc {
 	t["mapping"] = kindTest(isMapping)
 	t["dict"] = kindTest(isMapping)
 	t["sequence"] = kindTest(func(v any) bool {
-		switch v.(type) {
+		switch untuple(v).(type) {
 		case []any, string, *value.Map:
 			return true
 		}
 		return false
 	})
-	t["list"] = kindTest(func(v any) bool { _, ok := v.([]any); return ok })
+	t["list"] = kindTest(func(v any) bool { _, ok := untuple(v).([]any); return ok })
 	t["iterable"] = kindTest(func(v any) bool {
-		switch v.(type) {
+		switch untuple(v).(type) {
 		case []any, string, *value.Map, map[string]any:
 			return true
 		}

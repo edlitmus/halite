@@ -10,6 +10,33 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
+// Tuple is a tuple literal's value.
+//
+// It behaves as a sequence everywhere — iteration, indexing, length,
+// membership, and every filter that takes a list — and differs from one
+// only in how it renders: `(1, 2)` rather than `[1, 2]`, and `(1,)` for
+// the single-element form, which is how Python and Jinja spell it. A tree
+// printing a tuple into a file would otherwise write brackets where Salt
+// wrote parentheses.
+//
+// It exists only inside a render. The nine-type model of SPEC section 6.4
+// has no tuple, and nothing here puts one into pillar or a state
+// argument: by the time a value leaves the engine it is text.
+type Tuple []any
+
+// untuple replaces a tuple with a plain slice.
+//
+// Every path that cares only that a value is a sequence calls this first,
+// so a tuple iterates, indexes, unpacks, and filters exactly as a list
+// does. Rendering is the one path that must not, since the parentheses
+// are the whole difference.
+func untuple(v any) any {
+	if t, ok := v.(Tuple); ok {
+		return []any(t)
+	}
+	return v
+}
+
 // Undefined is the value of a name that does not resolve.
 //
 // Under strict mode, the default, using one is an error naming the file,
@@ -170,6 +197,8 @@ func (r *renderer) getItem(obj, key any, pos Pos) (any, error) {
 }
 
 func indexSeq(obj any, i int, pos Pos) (any, error) {
+	obj = untuple(obj)
+
 	switch t := obj.(type) {
 	case []any:
 		if i < 0 {
@@ -313,6 +342,7 @@ func (r *renderer) callValue(fn any, args []any, kwargs map[string]any, pos Pos)
 // ---- operators ----
 
 func (r *renderer) binary(op string, l, rv any, pos Pos) (any, error) {
+	l, rv = untuple(l), untuple(rv)
 	switch op {
 	case "~":
 		return r.toStr(l, pos) + r.toStr(rv, pos), nil
@@ -466,6 +496,8 @@ func arith(op string, l, rv any, pos Pos) (any, error) {
 }
 
 func contains(haystack, needle any) bool {
+	haystack, needle = untuple(haystack), untuple(needle)
+
 	switch t := haystack.(type) {
 	case string:
 		s, ok := needle.(string)
@@ -491,6 +523,8 @@ func contains(haystack, needle any) bool {
 }
 
 func equalValues(a, b any) bool {
+	a, b = untuple(a), untuple(b)
+
 	if ai, ok := asInt(a); ok {
 		if bi, ok := asInt(b); ok {
 			return ai == bi
@@ -605,6 +639,8 @@ func truthy(v any) bool {
 
 // iterate turns a value into the sequence a for loop walks.
 func (r *renderer) iterate(v any, pos Pos) ([]any, error) {
+	v = untuple(v)
+
 	switch t := v.(type) {
 	case Undefined:
 		return nil, r.undefinedError(t, pos)
@@ -694,6 +730,17 @@ func renderValue(v any) string {
 			parts[i] = reprValue(item)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
+	case Tuple:
+		parts := make([]string, len(t))
+		for i, item := range t {
+			parts[i] = reprValue(item)
+		}
+		if len(t) == 1 {
+			// Python spells a one-element tuple with a trailing comma, to
+			// tell it from a parenthesised expression.
+			return "(" + parts[0] + ",)"
+		}
+		return "(" + strings.Join(parts, ", ") + ")"
 	case *value.Map:
 		parts := make([]string, 0, t.Len())
 		for _, e := range t.Entries() {

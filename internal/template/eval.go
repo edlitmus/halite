@@ -481,6 +481,7 @@ func (r *renderer) renderForRecursive(t *ForNode, iterable any, depth int) error
 // bindTargets assigns a loop item to one or more target names, unpacking a
 // sequence when there is more than one target.
 func (r *renderer) bindTargets(targets []string, item any, pos Pos) error {
+	item = untuple(item)
 	if len(targets) == 1 {
 		r.scope.set(targets[0], item)
 		return nil
@@ -549,7 +550,7 @@ func (r *renderer) renderSet(t *SetNode) error {
 		r.scope.set(t.Targets[0], v)
 		return nil
 	}
-	parts, ok := v.([]any)
+	parts, ok := untuple(v).([]any)
 	if !ok || len(parts) != len(t.Targets) {
 		return errorf(t.Pos(), "cannot unpack %s into %d names", typeName(v), len(t.Targets))
 	}
@@ -977,7 +978,7 @@ func (r *renderer) eval(e Expr) (any, error) {
 		return out, nil
 
 	case *TupleExpr:
-		out := make([]any, len(t.Items))
+		out := make(Tuple, len(t.Items))
 		for i, item := range t.Items {
 			v, err := r.eval(item)
 			if err != nil {
@@ -1038,6 +1039,7 @@ func (r *renderer) evalSlice(t *SliceExpr) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	obj = untuple(obj)
 	idx := func(e Expr, def int) (int, error) {
 		if e == nil {
 			return def, nil

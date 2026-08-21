@@ -108,6 +108,23 @@ case("expr/string-repeat", "{{ 'ab' * 2 }}", "abab")
 case("expr/list-concat", "{{ [1] + [2] }}", "[1, 2]")
 case("expr/conditional", "{{ 'y' if true else 'n' }}", "y")
 case("expr/slice", "{{ [1, 2, 3, 4][1:3] }}", "[2, 3]")
+
+# A tuple is a sequence in every way but its spelling. It prints with
+# parentheses, and a one-element tuple carries the trailing comma that
+# tells it from a parenthesised expression; everything else about it
+# behaves as a list, because the nine-type model of SPEC 6.4 has no tuple
+# and one must never reach pillar or a state argument.
+case("tuple/renders-with-parentheses", "{{ () }}|{{ (1,) }}|{{ (1, 2) }}", "()|(1,)|(1, 2)")
+case("tuple/iterates", "{% for a, b in [(1, 2), (3, 4)] %}{{ a }}{{ b }}{% endfor %}", "1234")
+case("tuple/indexes-and-slices", "{{ (1, 2, 3)[0] }}|{{ (1, 2, 3)[1:] }}", "1|[2, 3]")
+case("tuple/length-and-membership", "{{ (1, 2) | length }}|{{ 1 in (1, 2) }}", "2|True")
+case("tuple/unpacks-in-set", "{% set a, b = (1, 2) %}{{ a }}{{ b }}", "12")
+case("tuple/filters-as-a-list", "{{ (3, 1) | sort }}|{{ (1, 2) | join('-') }}", "[1, 3]|1-2")
+case("tuple/concatenates", "{{ (1, 2) + (3,) }}", "[1, 2, 3]")
+case("tuple/answers-the-sequence-tests",
+     "{{ (1,2) is sequence }}|{{ (1,2) is iterable }}|{{ (1,2) is list }}", "True|True|True")
+case("tuple/equals-a-list", "{{ (1, 2) == [1, 2] }}", "True")
+case("tuple/serialises-as-a-list", "{{ (1, 2) | tojson }}", "[1, 2]")
 case("expr/slice-step", "{{ [1, 2, 3, 4][::2] }}", "[1, 3]")
 case("expr/negative-index", "{{ [1, 2, 3][-1] }}", "3")
 case("expr/divide-by-zero-is-an-error", "{{ 1 / 0 }}", error="zero")

@@ -10,6 +10,8 @@ import (
 // asSeq coerces a filter operand into a sequence, treating a mapping as
 // its keys the way iteration does.
 func asSeq(fc *FilterContext, v any) ([]any, error) {
+	v = untuple(v)
+
 	switch t := v.(type) {
 	case []any:
 		return t, nil

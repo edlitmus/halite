@@ -379,6 +379,56 @@
   "template": "{{ [1, 2, 3, 4][1:3] }}"
  },
  {
+  "expected": "()|(1,)|(1, 2)",
+  "id": "tuple/renders-with-parentheses",
+  "template": "{{ () }}|{{ (1,) }}|{{ (1, 2) }}"
+ },
+ {
+  "expected": "1234",
+  "id": "tuple/iterates",
+  "template": "{% for a, b in [(1, 2), (3, 4)] %}{{ a }}{{ b }}{% endfor %}"
+ },
+ {
+  "expected": "1|[2, 3]",
+  "id": "tuple/indexes-and-slices",
+  "template": "{{ (1, 2, 3)[0] }}|{{ (1, 2, 3)[1:] }}"
+ },
+ {
+  "expected": "2|True",
+  "id": "tuple/length-and-membership",
+  "template": "{{ (1, 2) | length }}|{{ 1 in (1, 2) }}"
+ },
+ {
+  "expected": "12",
+  "id": "tuple/unpacks-in-set",
+  "template": "{% set a, b = (1, 2) %}{{ a }}{{ b }}"
+ },
+ {
+  "expected": "[1, 3]|1-2",
+  "id": "tuple/filters-as-a-list",
+  "template": "{{ (3, 1) | sort }}|{{ (1, 2) | join('-') }}"
+ },
+ {
+  "expected": "[1, 2, 3]",
+  "id": "tuple/concatenates",
+  "template": "{{ (1, 2) + (3,) }}"
+ },
+ {
+  "expected": "True|True|True",
+  "id": "tuple/answers-the-sequence-tests",
+  "template": "{{ (1,2) is sequence }}|{{ (1,2) is iterable }}|{{ (1,2) is list }}"
+ },
+ {
+  "expected": "True",
+  "id": "tuple/equals-a-list",
+  "template": "{{ (1, 2) == [1, 2] }}"
+ },
+ {
+  "expected": "[1, 2]",
+  "id": "tuple/serialises-as-a-list",
+  "template": "{{ (1, 2) | tojson }}"
+ },
+ {
   "expected": "[1, 3]",
   "id": "expr/slice-step",
   "template": "{{ [1, 2, 3, 4][::2] }}"
