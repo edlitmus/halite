@@ -147,6 +147,12 @@ case("stmt/autoescape-is-a-no-op",
 case("ws/minus-left", "a\n  {{- 'b' }}", "ab")
 case("ws/minus-right", "{{ 'a' -}}\n  b", "ab")
 case("ws/statement-both", "a\n{%- if true -%}\nb\n{%- endif -%}\nc", "abc")
+# `+` is the explicit opposite of `-`: it keeps whitespace that
+# trim_blocks or lstrip_blocks would otherwise have eaten. A tree
+# templating a file whose leading indentation matters needs it.
+case("ws/plus-keeps-the-newline", "{% if true +%}\nx{% endif %}", "\nx")
+case("ws/plus-in-a-filter-block", "{% filter upper|replace('A', 'b') %}aa{% endfilter %}", "bb")
+case("stmt/filter-block-chain", "{% filter trim|upper %}  ab  {% endfilter %}", "AB")
 
 # ---- SPEC 10.2.8, limits, each with a named error.
 case("limits/output-size", "{% for i in range(100000000) %}xxxxxxxxxx{% endfor %}", error="limit")

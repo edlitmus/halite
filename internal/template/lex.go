@@ -109,6 +109,10 @@ type lexer struct {
 	// trimNextText records that the tag just closed asked, with `-%}` or
 	// `-}}`, for the whitespace after it to go.
 	trimNextText bool
+	// keepNextText records that the tag just closed asked, with `+%}`, for
+	// the text after it to be left alone. It is the explicit opposite of
+	// `-%}` and turns off `trim_blocks` for that one delimiter.
+	keepNextText bool
 }
 
 type lexOptions struct {
@@ -144,7 +148,7 @@ func (l *lexer) run() error {
 	for l.off < len(l.src) {
 		next, kind := l.findNextDelim()
 		if next < 0 {
-			l.emitText(l.src[l.off:], false)
+			l.emitText(l.src[l.off:], false, false)
 			l.advance(len(l.src) - l.off)
 			break
 		}
@@ -153,8 +157,11 @@ func (l *lexer) run() error {
 		// A `-` immediately after the opening delimiter strips the
 		// whitespace before the tag.
 		openLen := l.delimLen(kind)
-		trimBefore := next+openLen < len(l.src) && l.src[next+openLen] == '-'
-		l.emitText(raw, trimBefore)
+		var marker byte
+		if next+openLen < len(l.src) {
+			marker = l.src[next+openLen]
+		}
+		l.emitText(raw, marker == '-', marker == '+')
 		l.advance(next - l.off)
 
 		switch kind {
@@ -218,20 +225,25 @@ func (l *lexer) findNextDelim() (int, tokenKind) {
 // where the raw span began: the source map maps verbatim text line by
 // line, so a position that is one line early puts every later diagnostic
 // in the wrong place.
-func (l *lexer) emitText(s string, trimAfter bool) {
+func (l *lexer) emitText(s string, trimAfter, keepBefore bool) {
 	raw := s
-	if l.trimNextText {
+	keepAfter := l.keepNextText
+	l.keepNextText = false
+	switch {
+	case l.trimNextText:
 		s = strings.TrimLeft(s, " \t\r\n")
 		l.trimNextText = false
-	} else if l.opts.TrimBlocks && strings.HasPrefix(s, "\r\n") {
+	case keepAfter:
+		// `+%}` asked for this text verbatim, so trim_blocks stands down.
+	case l.opts.TrimBlocks && strings.HasPrefix(s, "\r\n"):
 		s = s[2:]
-	} else if l.opts.TrimBlocks && strings.HasPrefix(s, "\n") {
+	case l.opts.TrimBlocks && strings.HasPrefix(s, "\n"):
 		s = s[1:]
 	}
 	skippedLines := strings.Count(raw[:len(raw)-len(s)], "\n")
 	if trimAfter {
 		s = strings.TrimRight(s, " \t\r\n")
-	} else if l.opts.LstripBlocks {
+	} else if l.opts.LstripBlocks && !keepBefore {
 		if i := strings.LastIndexByte(s, '\n'); i >= 0 {
 			if strings.TrimLeft(s[i+1:], " \t") == "" {
 				s = s[:i+1]
@@ -253,7 +265,7 @@ func (l *lexer) emitText(s string, trimAfter bool) {
 func (l *lexer) lexComment() error {
 	start := l.pos()
 	l.advance(len(l.delims.CommentStart))
-	if l.off < len(l.src) && l.src[l.off] == '-' {
+	if l.off < len(l.src) && (l.src[l.off] == '-' || l.src[l.off] == '+') {
 		l.advance(1)
 	}
 	i := strings.Index(l.src[l.off:], l.delims.CommentEnd)
@@ -278,7 +290,7 @@ func (l *lexer) lexBlock() error {
 // peekTagName reads the first word inside a `{% ... %}` without consuming.
 func (l *lexer) peekTagName() (string, bool) {
 	i := l.off + len(l.delims.BlockStart)
-	if i < len(l.src) && l.src[i] == '-' {
+	if i < len(l.src) && (l.src[i] == '-' || l.src[i] == '+') {
 		i++
 	}
 	for i < len(l.src) && (l.src[i] == ' ' || l.src[i] == '\t') {
@@ -373,7 +385,7 @@ func (l *lexer) lexTag(open, close string, openKind, closeKind tokenKind) error 
 	start := l.pos()
 	l.emit(token{kind: openKind, val: open, pos: start})
 	l.advance(len(open))
-	if l.off < len(l.src) && l.src[l.off] == '-' {
+	if l.off < len(l.src) && (l.src[l.off] == '-' || l.src[l.off] == '+') {
 		l.advance(1)
 	}
 
@@ -382,11 +394,15 @@ func (l *lexer) lexTag(open, close string, openKind, closeKind tokenKind) error 
 		if l.off >= len(l.src) {
 			return &Error{Pos: start, Msg: "unterminated tag; expected " + close}
 		}
-		// The closing delimiter, with or without a whitespace-control dash.
-		if l.src[l.off] == '-' && strings.HasPrefix(l.src[l.off+1:], close) {
+		// The closing delimiter, with or without a whitespace-control
+		// marker. `-` strips what follows; `+` is its opposite and keeps
+		// what follows even when trim_blocks would have eaten it.
+		if (l.src[l.off] == '-' || l.src[l.off] == '+') && strings.HasPrefix(l.src[l.off+1:], close) {
+			marker := l.src[l.off]
 			l.advance(1 + len(close))
 			l.emit(token{kind: closeKind, val: close, pos: l.pos()})
-			l.trimNextText = true
+			l.trimNextText = marker == '-'
+			l.keepNextText = marker == '+'
 			return nil
 		}
 		if strings.HasPrefix(l.src[l.off:], close) {

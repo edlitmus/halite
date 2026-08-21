@@ -136,8 +136,6 @@ var corpusReasons = map[string]corpusReason{
 	gapWhitespaceControl: {false,
 		"the `+` whitespace marker, which turns off `trim_blocks` or `lstrip_blocks` for one " +
 			"delimiter, is not parsed."},
-	gapFilterChain: {false,
-		"`{% filter a|b %}` takes only one filter; a chain is refused."},
 	gapCallResult: {false,
 		"the result of a filter or a subscript cannot be called."},
 	gapNumericAttribute: {false,
@@ -164,7 +162,6 @@ const (
 
 	gapCallResult        = "gapCallResult"
 	gapFilterBehaviour   = "gapFilterBehaviour"
-	gapFilterChain       = "gapFilterChain"
 	gapNumericAttribute  = "gapNumericAttribute"
 	gapOther             = "gapOther"
 	gapRendering         = "gapRendering"
@@ -217,11 +214,9 @@ var corpusDeviations = []corpusDeviation{
 	{"test_filters::test_urlize_rel_policy", specNotInSubset},
 	{"test_filters::test_urlize_target_parameter", specNotInSubset},
 	{"test_filters::test_urlize_extra_schemes_parameter", specNotInSubset},
-	{"test_filters::test_block", specNoAutoescape},
 	{"test_filters::test_sum_attributes_tuple", specPythonMethod},
 	{"test_filters::test_unique", specPythonMethod},
 	{"test_filters::test_groupby_tuple_index", gapNumericAttribute},
-	{"test_filters::test_filtertag", gapFilterChain},
 	{"test_filters::test_replace", gapOther},
 	{"test_filters::test_replace#1", specNoAutoescape},
 	{"test_filters::test_replace#2", specNoAutoescape},
@@ -239,8 +234,6 @@ var corpusDeviations = []corpusDeviation{
 	{"test_lexnparse::test_localset", gapScoping},
 	{"test_lexnparse::test_lstrip", gapRendering},
 	{"test_lexnparse::test_lstrip_trim", gapRendering},
-	{"test_lexnparse::test_no_lstrip", gapWhitespaceControl},
-	{"test_lexnparse::test_lstrip_blocks_false_with_no_lstrip#1", gapWhitespaceControl},
 	{"test_lexnparse::test_lstrip_inline", gapRendering},
 	{"test_lexnparse::test_lstrip_nested", gapRendering},
 	{"test_lexnparse::test_lstrip_embeded_strings", gapRendering},
@@ -248,10 +241,7 @@ var corpusDeviations = []corpusDeviation{
 	{"test_lexnparse::test_lstrip_angle_bracket_simple", gapRendering},
 	{"test_lexnparse::test_lstrip_angle_bracket_comment", gapRendering},
 	{"test_lexnparse::test_trim", gapRendering},
-	{"test_lexnparse::test_no_trim", gapWhitespaceControl},
-	{"test_lexnparse::test_no_trim_outer", gapWhitespaceControl},
 	{"test_lexnparse::test_lstrip_no_trim", gapWhitespaceControl},
-	{"test_lexnparse::test_trim_blocks_false_with_no_trim#1", gapWhitespaceControl},
 	{"test_lexnparse::test_trim_nested", gapRendering},
 	{"test_lexnparse::test_no_trim_nested", gapWhitespaceControl},
 	{"test_lexnparse::test_comment_trim", gapRendering},

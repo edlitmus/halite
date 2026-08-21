@@ -516,6 +516,21 @@
   "template": "a\n{%- if true -%}\nb\n{%- endif -%}\nc"
  },
  {
+  "expected": "\nx",
+  "id": "ws/plus-keeps-the-newline",
+  "template": "{% if true +%}\nx{% endif %}"
+ },
+ {
+  "expected": "bb",
+  "id": "ws/plus-in-a-filter-block",
+  "template": "{% filter upper|replace('A', 'b') %}aa{% endfilter %}"
+ },
+ {
+  "expected": "AB",
+  "id": "stmt/filter-block-chain",
+  "template": "{% filter trim|upper %}  ab  {% endfilter %}"
+ },
+ {
   "error": "limit",
   "id": "limits/output-size",
   "template": "{% for i in range(100000000) %}xxxxxxxxxx{% endfor %}"

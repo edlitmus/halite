@@ -560,6 +560,16 @@ func (p *parser) parseFilter(start Pos) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	// `{% filter upper|replace('a', 'b') %}` is a chain, the same as the
+	// one a `|` builds in an expression. Reading only the first filter
+	// left the `|` to be reported as a stray token.
+	for p.peek().kind == tokOp && p.peek().val == "|" {
+		p.i++
+		f, err = p.parseFilterChain(f)
+		if err != nil {
+			return nil, err
+		}
+	}
 	n.Filter = f
 	if _, err := p.expect(tokTagEnd, ""); err != nil {
 		return nil, err
