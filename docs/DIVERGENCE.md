@@ -97,7 +97,7 @@ section exists to make. This is a strengthening, not a conflict.
 
 ## 2. Module coverage
 
-The build ships **42 execution modules / 199 functions** and **20 state
+The build ships **42 execution modules / 209 functions** and **20 state
 modules / 54 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -132,7 +132,7 @@ different reason is given.
 | `mount` | implemented | 1 | read-only; `mount`/`umount`/`fstab` not written |
 | `network` | implemented | 5 | |
 | `pillar` | implemented | 5 | |
-| `pkg` | implemented | 8 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
+| `pkg` | implemented | 18 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
 | `random` | implemented | 3 | `crypto/rand` |
 | `saltutil` | implemented | 5 | stubs that name the phase that will implement them |
 | `service` | implemented | 16 | FreeBSD rc provider only; see 2.5 |
@@ -384,13 +384,29 @@ after. Many carry a credential, and the temporary directory is
 world-readable. A `salt://` source goes through the file server, so the
 containment rules of 13.5 apply to it as to any other file.
 
-### `pkg` — 6 of 26
+### `pkg` — 18 of 26
 
-Present: `install`, `remove`, `version`, `latest_version`, `list_pkgs`,
-`refresh_db`. Absent: `purge`, `upgrade`, `available_version`,
-`upgrade_available`, `hold`, `unhold`, `list_holds`, `list_upgrades`,
-`info_installed`, `owner`, `file_list`, `file_dict`, `mod_repo`, `del_repo`,
-`list_repos`, `list_downloaded`, `download`, `autoremove`, `version_cmp`.
+Present: `install`, `remove`, `purge`, `upgrade`, `version`,
+`version_cmp`, `latest_version`, `upgrade_available`, `list_pkgs`,
+`list_upgrades`, `list_holds`, `list_repos`, `hold`, `unhold`,
+`file_list`, `owner`, `refresh_db`, `available_version`.
+Absent: `info_installed`, `file_dict`, `mod_repo`, `del_repo`,
+`list_downloaded`, `download`, `autoremove`.
+
+The optional capabilities — holding, upgrading everything at once, mapping
+a package to the files it owns, and listing repositories — sit behind
+interfaces beside the provider one rather than in it, because they are not
+universal: apk has no hold in the dpkg sense, and pkgng's idea of a
+repository is a file rather than a line in sources.list. A provider that
+cannot answer says so and names itself, rather than returning an empty
+answer that a tree would read as "there are none". Only pkgng implements
+them so far, which is what this host can verify; apt, dnf, and apk are
+recorded above as unexercised anyway.
+
+Every mutating function answers with what actually changed, by comparing
+the package list before and after, rather than with what was asked for. A
+state's `changes` is then the truth even when the package manager pulled a
+dependency in with it.
 
 ### `service` — 16 of 18
 
