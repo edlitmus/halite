@@ -177,7 +177,12 @@ the same directory Salt reads. A sensible order is:
 4. Apply for real on that one machine.
 5. Widen.
 
-Step 3 is the one worth not skipping. It is also, at estate scale, the
-differential test SPEC section 31 calls the primary correctness gate —
-which has not yet been run against a real Salt installation, and is
-recorded as outstanding in [DIVERGENCE.md](DIVERGENCE.md).
+Step 3 is the one worth not skipping. It is, at estate scale, the
+differential test SPEC section 31 calls the primary correctness gate.
+A small version of it runs in this project's own test suite: nine trees
+compiled by both halite and Salt, with the low state and the pillar
+compared, against Salt 3006.25 and 3008.2. It found four defects on its
+first run. What it does not do is compare what actually *changes* when a
+tree is applied, and it does not run against a real estate's trees —
+yours. See [DIVERGENCE.md](DIVERGENCE.md) section 5.7 for exactly where
+the line is.

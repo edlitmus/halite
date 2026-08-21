@@ -136,6 +136,19 @@ make fuzz       # FUZZTIME=30m for a real campaign
 lexicon policy of section 2.3, the dependency allowlist of section 4.2,
 and the import restrictions of section 25.3.
 
+It also runs two differentials against the implementations halite is
+specified in terms of, where they are installed: the same trees compiled
+by Salt and by halite, and the same documents parsed by PyYAML and by
+halite. Both skip loudly rather than passing quietly when the reference
+is absent — SPEC section 31 calls the first the primary correctness
+gate, so a skip there is a gap and not a pass.
+
+```sh
+python3 -m venv /tmp/salt && /tmp/salt/bin/pip install salt PyYAML
+HALITE_SALT_CALL=/tmp/salt/bin/salt-call \
+HALITE_PYYAML_PYTHON=/tmp/salt/bin/python make test
+```
+
 ## Service files
 
 `contrib/rc.d/` and `contrib/systemd/` hold service definitions for
@@ -169,6 +182,7 @@ internal/migrate     the Salt tree audit
 internal/buildpolicy the specification's own build rules, as tests
 internal/specaudit   SPEC.md and the gap ledger, held to what ships
 internal/docsaudit   the generated documentation, held to the code
+internal/saltdiff    the differential gate against Salt itself
 
 contrib/rc.d         FreeBSD service scripts
 contrib/systemd      systemd units and timers
