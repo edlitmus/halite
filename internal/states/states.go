@@ -116,9 +116,17 @@ func NewRegistry() *Registry {
 }
 
 // Add registers state modules.
+//
+// Registering the same name twice panics, for the reason the execution
+// registry does: it is a build-time mistake, and a silent overwrite
+// leaves a function under a name whose signature is not its own.
 func (r *Registry) Add(mods ...Module) {
 	for _, m := range mods {
-		r.fns[m.Sig.Name()] = m
+		name := m.Sig.Name()
+		if _, dup := r.fns[name]; dup {
+			panic("states: " + name + " is registered twice")
+		}
+		r.fns[name] = m
 		r.sigs.Add(m.Sig)
 	}
 }

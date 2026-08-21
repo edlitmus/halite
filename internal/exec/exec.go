@@ -124,9 +124,19 @@ func NewRegistry() *Registry {
 }
 
 // Add registers module functions.
+//
+// Registering the same name twice panics. It can only happen while a
+// build wires its modules up, never from data at runtime, and the
+// alternative is what it replaced: the second registration quietly
+// winning, so a function exists under a name whose signature belongs to
+// something else and the first one is simply gone.
 func (r *Registry) Add(mods ...Module) {
 	for _, m := range mods {
-		r.fns[m.Sig.Name()] = m.Fn
+		name := m.Sig.Name()
+		if _, dup := r.fns[name]; dup {
+			panic("exec: " + name + " is registered twice")
+		}
+		r.fns[name] = m.Fn
 		r.sigs.Add(m.Sig)
 	}
 }
