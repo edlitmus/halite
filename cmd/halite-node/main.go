@@ -31,8 +31,8 @@ const usage = `halite-node — the managed endpoint agent and local executor
 Usage:
   halite-node call <module.function> [args...]   run one module function
   halite-node state <subcommand> [args...]       compile or apply state
-  halite-node grains <items|get|setval> [key]    read this node's grains
-  halite-node pillar <items|get> [key]           read this node's pillar
+  halite-node grains <items|item|get|ls> [key]   read this node's grains
+  halite-node pillar <items|item|get> [key]      read this node's pillar
   halite-node lint <path>                        render and parse without executing
   halite-node version                            print the build identity
   halite-node serve                              connect to a hub (phase 2)
