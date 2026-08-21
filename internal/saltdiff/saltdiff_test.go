@@ -103,8 +103,8 @@ func saltCall(t *testing.T) string {
 	return p
 }
 
-// saltLowstate compiles a tree with Salt and returns its low state.
-func saltLowstate(t *testing.T, saltcall, tree string) []map[string]any {
+// saltRun invokes one Salt function against a tree, masterless.
+func saltRun(t *testing.T, saltcall, tree, function string, args ...string) []byte {
 	t.Helper()
 	dir := t.TempDir()
 	pillarRoot := filepath.Join(tree, "pillar")
@@ -125,8 +125,9 @@ id: %s
 		t.Fatal(err)
 	}
 
-	cmd := exec.Command(saltcall, "--config-dir="+dir, "--local",
-		"state.show_lowstate", "--out=json", "--log-level=quiet")
+	argv := append([]string{"--config-dir=" + dir, "--local", function}, args...)
+	argv = append(argv, "--out=json", "--log-level=quiet")
+	cmd := exec.Command(saltcall, argv...)
 	// Salt reads $SHELL to decide what to run commands with, and refuses
 	// to start if it does not exist. A FreeBSD host has no /bin/bash, so
 	// an inherited Linux $SHELL stops the gate before it begins.
@@ -137,8 +138,15 @@ id: %s
 		if ee, ok := err.(*exec.ExitError); ok {
 			stderr = string(ee.Stderr)
 		}
-		t.Fatalf("salt-call on %s: %v\n%s", tree, err, stderr)
+		t.Fatalf("salt-call %s on %s: %v\n%s", function, tree, err, stderr)
 	}
+	return out
+}
+
+// saltLowstate compiles a tree with Salt and returns its low state.
+func saltLowstate(t *testing.T, saltcall, tree string) []map[string]any {
+	t.Helper()
+	out := saltRun(t, saltcall, tree, "state.show_lowstate")
 	var wrapper struct {
 		Local []map[string]any `json:"local"`
 	}
@@ -148,8 +156,24 @@ id: %s
 	return wrapper.Local
 }
 
-// haliteLowstate compiles the same tree with halite.
-func haliteLowstate(t *testing.T, tree string) []*state.Chunk {
+// saltPillar compiles a tree's pillar with Salt.
+func saltPillar(t *testing.T, saltcall, tree string) map[string]any {
+	t.Helper()
+	// Salt 3008 redacts every string in pillar.items output, which would
+	// make the comparison assert only that both sides have the same
+	// shape of asterisks. 3006 accepts the argument and ignores it.
+	out := saltRun(t, saltcall, tree, "pillar.items", "unmask=True")
+	var wrapper struct {
+		Local map[string]any `json:"local"`
+	}
+	if err := json.Unmarshal(out, &wrapper); err != nil {
+		t.Fatalf("decoding salt's pillar for %s: %v\n%s", tree, err, out)
+	}
+	return wrapper.Local
+}
+
+// halitePillar compiles the same pillar with halite.
+func halitePillar(t *testing.T, tree string) *value.Map {
 	t.Helper()
 	g, _ := grains.Collect(grains.Options{NodeID: nodeID})
 
@@ -169,13 +193,19 @@ func haliteLowstate(t *testing.T, tree string) []*state.Chunk {
 	if err := compiledPillar.Err(); err != nil {
 		t.Fatalf("compiling the pillar of %s: %v", tree, err)
 	}
+	return compiledPillar.Pillar
+}
 
+// haliteLowstate compiles the same tree with halite.
+func haliteLowstate(t *testing.T, tree string) []*state.Chunk {
+	t.Helper()
+	g, _ := grains.Collect(grains.Options{NodeID: nodeID})
 	compiler := &state.Compiler{
 		Loader:   fileserver.NewRoots(map[string][]string{"base": {tree}}),
 		Registry: builtin.New().States.Signatures(),
 		Config: state.Config{
 			Env: "base", PillarEnv: "base", NodeID: nodeID, JobID: "saltdiff",
-			Grains: g, Pillar: compiledPillar.Pillar, ConfigValues: value.NewMap(0),
+			Grains: g, Pillar: halitePillar(t, tree), ConfigValues: value.NewMap(0),
 			Undefined: template.Strict,
 		},
 	}
@@ -312,6 +342,45 @@ func trees(t *testing.T) []string {
 		}
 	}
 	return out
+}
+
+// TestPillarMatchesSalt is the second half of what SPEC 31 asks the
+// differential to compare. A pillar difference is worse than a low state
+// difference, because it is silent: the tree compiles either way and the
+// values inside it are wrong.
+func TestPillarMatchesSalt(t *testing.T) {
+	saltcall := saltCall(t)
+	for _, name := range trees(t) {
+		tree, err := filepath.Abs(filepath.Join("testdata", "trees", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(filepath.Join(tree, "pillar")); err != nil {
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			theirs := saltPillar(t, saltcall, tree)
+			ours := halitePillar(t, tree)
+
+			for _, e := range ours.Entries() {
+				k := value.KeyString(e.Key)
+				got := shape(jsonShape(e.Val))
+				want, ok := theirs[k]
+				if !ok {
+					t.Errorf("halite's pillar has %q = %s; Salt's does not have the key", k, got)
+					continue
+				}
+				if w := shape(want); got != w {
+					t.Errorf("pillar %q:\nhalite: %s\nsalt:   %s", k, got, w)
+				}
+			}
+			for k := range theirs {
+				if _, ok := ours.Get(k); !ok {
+					t.Errorf("Salt's pillar has %q and halite's does not", k)
+				}
+			}
+		})
+	}
 }
 
 // TestLowstateMatchesSalt is the gate. For every tree in the corpus, the
