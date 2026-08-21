@@ -1,0 +1,1662 @@
+[
+ {
+  "context": {
+   "foo": {
+    "items": 42
+   }
+  },
+  "expected": "[('items', 42)]",
+  "id": "test_api::test_item_and_attribute",
+  "template": "{{ foo.items()|list }}"
+ },
+ {
+  "context": {
+   "foo": {
+    "items": 42
+   }
+  },
+  "expected": "[('items', 42)]",
+  "id": "test_api::test_item_and_attribute#1",
+  "template": "{{ foo|attr(\"items\")()|list }}"
+ },
+ {
+  "context": {
+   "foo": {
+    "items": 42
+   }
+  },
+  "expected": "42",
+  "id": "test_api::test_item_and_attribute#2",
+  "template": "{{ foo[\"items\"] }}"
+ },
+ {
+  "context": {
+   "foo": "<foo>"
+  },
+  "expected": "<foo>",
+  "id": "test_api::test_autoescape_autoselect",
+  "template": "{{ foo }}"
+ },
+ {
+  "context": {},
+  "expected": "bar",
+  "id": "test_api::test_custom_code_generator",
+  "template": "{% set foo = \"foo\" %}{{ foo }}"
+ },
+ {
+  "context": {},
+  "expected": "resolve-foo",
+  "id": "test_api::test_custom_context",
+  "template": "{{ foo }}"
+ },
+ {
+  "context": {},
+  "expected": "...",
+  "id": "test_core_tags::test_else",
+  "template": "{% for item in seq %}XXX{% else %}...{% endfor %}"
+ },
+ {
+  "context": {
+   "item": 42
+  },
+  "expected": "42",
+  "id": "test_core_tags::test_else_scoping_item",
+  "template": "{% for item in [] %}{% else %}{{ item }}{% endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "<>",
+  "id": "test_core_tags::test_empty_blocks",
+  "template": "<{% for item in seq %}{% else %}{% endfor %}>"
+ },
+ {
+  "context": {
+   "table": [
+    "ab",
+    "cd"
+   ]
+  },
+  "expected": "[1|1][1|2][2|1][2|2]",
+  "id": "test_core_tags::test_looploop",
+  "template": "{% for row in table %}\n            {%- set rowloop = loop -%}\n            {% for cell in row -%}\n                [{{ rowloop.index }}|{{ loop.index }}]\n            {%- endfor %}\n        {%- endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "",
+  "id": "test_core_tags::test_loop_errors",
+  "template": "{% for item in [] %}...{% else\n            %}{{ loop }}{% endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "[0][2][4][6][8]",
+  "id": "test_core_tags::test_loop_filter",
+  "template": "{% for item in range(10) if item is even %}[{{ item }}]{% endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "[1:0][2:2][3:4][4:6][5:8]",
+  "id": "test_core_tags::test_loop_filter#1",
+  "template": "\n            {%- for item in range(10) if item is even %}[{{\n                loop.index }}:{{ item }}]{% endfor %}"
+ },
+ {
+  "context": {
+   "seq": [
+    "ab",
+    "cd"
+   ]
+  },
+  "expected": "[True|True|False][False|True|False]",
+  "id": "test_core_tags::test_scoped_special_var",
+  "template": "{% for s in seq %}[{{ loop.first }}{% for c in s %}|{{ loop.first }}{% endfor %}]{% endfor %}"
+ },
+ {
+  "context": {
+   "seq": "ab"
+  },
+  "expected": "TrueFalse",
+  "id": "test_core_tags::test_scoped_loop_var",
+  "template": "{% for x in seq %}{{ loop.first }}{% for y in seq %}{% endfor %}{% endfor %}"
+ },
+ {
+  "context": {
+   "seq": "ab"
+  },
+  "expected": "TrueFalseTrueFalse",
+  "id": "test_core_tags::test_scoped_loop_var#1",
+  "template": "{% for x in seq %}{% for y in seq %}{{ loop.first }}{% endfor %}{% endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "[1][2][3]",
+  "id": "test_core_tags::test_call_in_loop",
+  "template": "\n        {%- macro do_something() -%}\n            [{{ caller() }}]\n        {%- endmacro %}\n\n        {%- for i in [1, 2, 3] %}\n            {%- call do_something() -%}\n                {{ i }}\n            {%- endcall %}\n        {%- endfor -%}\n        "
+ },
+ {
+  "context": {
+   "foo": [
+    1
+   ]
+  },
+  "expected": "...1......2...",
+  "id": "test_core_tags::test_scoping_bug",
+  "template": "\n        {%- for item in foo %}...{{ item }}...{% endfor %}\n        {%- macro item(a) %}...{{ a }}...{% endmacro %}\n        {{- item(2) -}}\n        "
+ },
+ {
+  "context": {},
+  "expected": "1|2|3",
+  "id": "test_core_tags::test_unpacking",
+  "template": "{% for a, b, c in [[1, 2, 3]] %}{{ a }}|{{ b }}|{{ c }}{% endfor %}"
+ },
+ {
+  "context": {
+   "seq": [
+    1,
+    2,
+    3
+   ],
+   "x": 0
+  },
+  "expected": "010203",
+  "id": "test_core_tags::test_intended_scoping_with_set",
+  "template": "{% for item in seq %}{{ x }}{% set x = item %}{{ x }}{% endfor %}"
+ },
+ {
+  "context": {
+   "seq": [
+    1,
+    2,
+    3
+   ],
+   "x": 0
+  },
+  "expected": "919293",
+  "id": "test_core_tags::test_intended_scoping_with_set#1",
+  "template": "{% set x = 9 %}{% for item in seq %}{{ x }}{% set x = item %}{{ x }}{% endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "...",
+  "id": "test_core_tags::test_simple",
+  "template": "{% if true %}...{% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "...",
+  "id": "test_core_tags::test_elif",
+  "template": "{% if false %}XXX{% elif true\n            %}...{% else %}XXX{% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "...",
+  "id": "test_core_tags::test_else#1",
+  "template": "{% if false %}XXX{% else %}...{% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "[]",
+  "id": "test_core_tags::test_empty",
+  "template": "[{% if true %}{% else %}{% endif %}]"
+ },
+ {
+  "context": {
+   "a": 0,
+   "b": false,
+   "c": 42,
+   "d": 42.0
+  },
+  "expected": "C",
+  "id": "test_core_tags::test_complete",
+  "template": "{% if a %}A{% elif b %}B{% elif c == d %}C{% else %}D{% endif %}"
+ },
+ {
+  "context": {
+   "a": true
+  },
+  "expected": "1",
+  "id": "test_core_tags::test_no_scope",
+  "template": "{% if a %}{% set foo = 1 %}{% endif %}{{ foo }}"
+ },
+ {
+  "context": {},
+  "expected": "1",
+  "id": "test_core_tags::test_no_scope#1",
+  "template": "{% if true %}{% set foo = 1 %}{% endif %}{{ foo }}"
+ },
+ {
+  "context": {
+   "test": "<unsafe>"
+  },
+  "expected": "foo: <em>&lt;unsafe&gt;</em>",
+  "id": "test_core_tags::test_block_escaping",
+  "template": "{% set foo %}<em>{{ test }}</em>{% endset %}foo: {{ foo }}"
+ },
+ {
+  "context": {
+   "test": "<unsafe>"
+  },
+  "expected": "foo: <em>&lt;unsafe&gt;</em>",
+  "id": "test_core_tags::test_block_escaping_filtered",
+  "template": "{% set foo | trim %}<em>{{ test }}</em>    {% endset %}foo: {{ foo }}"
+ },
+ {
+  "context": {
+   "b": 3,
+   "e": 4
+  },
+  "expected": "1|2|3|4|5",
+  "id": "test_core_tags::test_with_argument_scoping",
+  "template": "        {%- with a=1, b=2, c=b, d=e, e=5 -%}\n            {{ a }}|{{ b }}|{{ c }}|{{ d }}|{{ e }}\n        {%- endwith -%}\n        "
+ },
+ {
+  "context": {},
+  "expected": "&lt;test&gt;",
+  "id": "test_ext::test_extend_late",
+  "template": "{% autoescape true %}{{ \"<test>\" }}{% endautoescape %}"
+ },
+ {
+  "context": {},
+  "expected": "13",
+  "id": "test_ext::test_loop_controls",
+  "template": "\n            {%- for item in [1, 2, 3, 4] %}\n                {%- if item % 2 == 0 %}{% continue %}{% endif -%}\n                {{ item }}\n            {%- endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "12",
+  "id": "test_ext::test_loop_controls#1",
+  "template": "\n            {%- for item in [1, 2, 3, 4] %}\n                {%- if item > 2 %}{% break %}{% endif -%}\n                {{ item }}\n            {%- endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "0f, 1o, 2o",
+  "id": "test_ext::test_do",
+  "template": "\n            {%- set items = [] %}\n            {%- for char in \"foo\" %}\n                {%- do items.append(loop.index0 ~ char) %}\n            {%- endfor %}{{ items|join(', ') }}"
+ },
+ {
+  "context": {},
+  "expected": "False|42|23|{}|None",
+  "id": "test_ext::test_extension_nodes",
+  "template": "{% test %}"
+ },
+ {
+  "context": {},
+  "expected": "False|42|23|{}|test_content",
+  "id": "test_ext::test_contextreference_node_passes_context",
+  "template": "{% set test_var=\"test_content\" %}{% test %}"
+ },
+ {
+  "context": {},
+  "expected": "False|42|23|{}|test_content",
+  "id": "test_ext::test_contextreference_node_can_pass_locals",
+  "template": "{% for test_var in [\"test_content\"] %}{% test %}{% endfor %}"
+ },
+ {
+  "context": {
+   "foo": 42
+  },
+  "expected": "{(42)}",
+  "id": "test_ext::test_preprocessor_extension",
+  "template": "{[[TEST]]}"
+ },
+ {
+  "context": {
+   "b": 3,
+   "e": 4
+  },
+  "expected": "1|2|2|4|5",
+  "id": "test_ext::test_basic_scope_behavior",
+  "template": "        {%- scope a=1, b=2, c=b, d=e, e=5 -%}\n            {{ a }}|{{ b }}|{{ c }}|{{ d }}|{{ e }}\n        {%- endscope -%}\n        "
+ },
+ {
+  "context": {
+   "ae": true
+  },
+  "expected": "<strong>Wert: &lt;test&gt;</strong>",
+  "id": "test_ext::test_autoescape_support",
+  "template": "{% autoescape ae %}{{ gettext(\"foo\", name=\"<test>\") }}{% endautoescape %}"
+ },
+ {
+  "context": {
+   "ae": false
+  },
+  "expected": "<strong>Wert: <test></strong>",
+  "id": "test_ext::test_autoescape_support#1",
+  "template": "{% autoescape ae %}{{ gettext(\"foo\", name=\"<test>\") }}{% endautoescape %}"
+ },
+ {
+  "context": {},
+  "expected": " foo=\"&lt;test&gt;\"",
+  "id": "test_ext::test_nonvolatile",
+  "template": "{{ {\"foo\": \"<test>\"}|xmlattr|escape }}"
+ },
+ {
+  "context": {},
+  "expected": " foo=&#34;&amp;lt;test&amp;gt;&#34;",
+  "id": "test_ext::test_nonvolatile#1",
+  "template": "{% autoescape false %}{{ {\"foo\": \"<test>\"}|xmlattr|escape }}{% endautoescape %}"
+ },
+ {
+  "context": {
+   "foo": false
+  },
+  "expected": " foo=&#34;&amp;lt;test&amp;gt;&#34;",
+  "id": "test_ext::test_volatile",
+  "template": "{% autoescape foo %}{{ {\"foo\": \"<test>\"}|xmlattr|escape }}{% endautoescape %}"
+ },
+ {
+  "context": {
+   "foo": true
+  },
+  "expected": " foo=\"&lt;test&gt;\"",
+  "id": "test_ext::test_volatile#1",
+  "template": "{% autoescape foo %}{{ {\"foo\": \"<test>\"}|xmlattr|escape }}{% endautoescape %}"
+ },
+ {
+  "context": {
+   "x": 1
+  },
+  "expected": "&lt;x&gt;1<y>",
+  "id": "test_ext::test_scoping",
+  "template": "{% autoescape true %}{% set x = \"<x>\" %}{{ x }}{% endautoescape %}{{ x }}{{ \"<y>\" }}"
+ },
+ {
+  "context": {
+   "x": 42,
+   "y": 23
+  },
+  "expected": "42|23|99|[1][2][3]|42",
+  "id": "test_ext::test_overlay_scopes",
+  "template": "\n            {{- x }}|{% set z = 99 %}\n            {%- overlay %}\n                {{- y }}|{{ z }}|{% for item in x %}[{{ item }}]{% endfor %}\n            {%- endoverlay %}|\n            {{- x -}}\n        "
+ },
+ {
+  "context": {},
+  "expected": "Foo bar",
+  "id": "test_filters::test_capitalize",
+  "template": "{{ \"foo bar\"|capitalize }}"
+ },
+ {
+  "context": {},
+  "expected": "   foo   ",
+  "id": "test_filters::test_center",
+  "template": "{{ \"foo\"|center(9) }}"
+ },
+ {
+  "context": {
+   "given": "yes"
+  },
+  "expected": "no|False|no|yes",
+  "id": "test_filters::test_default",
+  "template": "{{ missing|default('no') }}|{{ false|default('no') }}|{{ false|default('no', true) }}|{{ given|default('no') }}"
+ },
+ {
+  "context": {
+   "value": "abc"
+  },
+  "expected": "1.0",
+  "id": "test_filters::test_float_default",
+  "template": "{{ value|float(default=1.0) }}"
+ },
+ {
+  "context": {},
+  "expected": "jinja",
+  "id": "test_filters::test_indent",
+  "template": "{{ \"jinja\"|indent }}"
+ },
+ {
+  "context": {},
+  "expected": "    jinja",
+  "id": "test_filters::test_indent#1",
+  "template": "{{ \"jinja\"|indent(first=true) }}"
+ },
+ {
+  "context": {},
+  "expected": "jinja",
+  "id": "test_filters::test_indent#2",
+  "template": "{{ \"jinja\"|indent(blank=true) }}"
+ },
+ {
+  "context": {},
+  "expected": ">>> jinja\n>>> flask",
+  "id": "test_filters::test_indent_width_string",
+  "template": "{{ 'jinja\nflask'|indent(width='>>> ', first=True) }}"
+ },
+ {
+  "context": {
+   "value": "abc"
+  },
+  "expected": "1",
+  "id": "test_filters::test_int_default",
+  "template": "{{ value|int(default=1) }}"
+ },
+ {
+  "context": {},
+  "expected": "&lt;foo&gt;<span>foo</span>",
+  "id": "test_filters::test_join",
+  "template": "{{ [1, 2, 3]|join(\"|\") }}"
+ },
+ {
+  "context": {},
+  "expected": "raboof|[3, 2, 1]",
+  "id": "test_filters::test_reverse",
+  "template": "{{ 'foobar'|reverse|join }}|{{ [1, 2, 3]|reverse|list }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo Bar",
+  "id": "test_filters::test_title",
+  "template": "{{ \"foo bar\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo's Bar",
+  "id": "test_filters::test_title#1",
+  "template": "{{ \"foo's bar\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo   Bar",
+  "id": "test_filters::test_title#2",
+  "template": "{{ \"foo   bar\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "F Bar F",
+  "id": "test_filters::test_title#3",
+  "template": "{{ \"f bar f\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo-Bar",
+  "id": "test_filters::test_title#4",
+  "template": "{{ \"foo-bar\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo\tBar",
+  "id": "test_filters::test_title#5",
+  "template": "{{ \"foo\tbar\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo\tBar",
+  "id": "test_filters::test_title#6",
+  "template": "{{ \"FOO\tBAR\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo (Bar)",
+  "id": "test_filters::test_title#7",
+  "template": "{{ \"foo (bar)\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo {Bar}",
+  "id": "test_filters::test_title#8",
+  "template": "{{ \"foo {bar}\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo [Bar]",
+  "id": "test_filters::test_title#9",
+  "template": "{{ \"foo [bar]\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "Foo <Bar>",
+  "id": "test_filters::test_title#10",
+  "template": "{{ \"foo <bar>\"|title }}"
+ },
+ {
+  "context": {},
+  "expected": "FOO",
+  "id": "test_filters::test_upper",
+  "template": "{{ \"foo\"|upper }}"
+ },
+ {
+  "context": {},
+  "expected": "foo <a href=\"https://example.org\" rel=\"noopener\">example.org</a> bar",
+  "id": "test_filters::test_urlize",
+  "template": "{{ \"foo example.org bar\"|urlize }}"
+ },
+ {
+  "context": {},
+  "expected": "foo <a href=\"http://www.example.com/\" rel=\"noopener\">http://www.example.com/</a> bar",
+  "id": "test_filters::test_urlize#1",
+  "template": "{{ \"foo http://www.example.com/ bar\"|urlize }}"
+ },
+ {
+  "context": {},
+  "expected": "foo <a href=\"mailto:email@example.com\">email@example.com</a> bar",
+  "id": "test_filters::test_urlize#2",
+  "template": "{{ \"foo mailto:email@example.com bar\"|urlize }}"
+ },
+ {
+  "context": {},
+  "expected": "foo <a href=\"mailto:email@example.com\">email@example.com</a> bar",
+  "id": "test_filters::test_urlize#3",
+  "template": "{{ \"foo email@example.com bar\"|urlize }}"
+ },
+ {
+  "context": {},
+  "expected": "foo <a href=\"http://www.example.com/\">http://www.example.com/</a> bar",
+  "id": "test_filters::test_urlize_rel_policy",
+  "template": "{{ \"foo http://www.example.com/ bar\"|urlize }}"
+ },
+ {
+  "context": {},
+  "expected": "foo <a href=\"http://www.example.com/\" rel=\"noopener\" target=\"_blank\">http://www.example.com/</a> bar",
+  "id": "test_filters::test_urlize_target_parameter",
+  "template": "{{ \"foo http://www.example.com/ bar\"|urlize(target=\"_blank\") }}"
+ },
+ {
+  "context": {},
+  "expected": "foo <a href=\"tel:+1-514-555-1234\" rel=\"noopener\">tel:+1-514-555-1234</a> <a href=\"ftp://localhost\" rel=\"noopener\">ftp://localhost</a> bar",
+  "id": "test_filters::test_urlize_extra_schemes_parameter",
+  "template": "{{ \"foo tel:+1-514-555-1234 ftp://localhost bar\"|urlize(extra_schemes=[\"tel:\", \"ftp:\"]) }}"
+ },
+ {
+  "context": {},
+  "expected": "3",
+  "id": "test_filters::test_wordcount",
+  "template": "{{ \"foo bar baz\"|wordcount }}"
+ },
+ {
+  "context": {},
+  "expected": "&lt;hehe&gt;",
+  "id": "test_filters::test_block",
+  "template": "{% filter lower|escape %}<HEHE>{% endfilter %}"
+ },
+ {
+  "context": {},
+  "expected": "&lt;FOO&gt;",
+  "id": "test_filters::test_chaining",
+  "template": "{{ ['<foo>', '<bar>']|first|upper|escape }}"
+ },
+ {
+  "context": {},
+  "expected": "21",
+  "id": "test_filters::test_sum",
+  "template": "{{ [1, 2, 3, 4, 5, 6]|sum }}"
+ },
+ {
+  "context": {
+   "values": [
+    {
+     "value": 23
+    },
+    {
+     "value": 1
+    },
+    {
+     "value": 18
+    }
+   ]
+  },
+  "expected": "42",
+  "id": "test_filters::test_sum_attributes",
+  "template": "{{ values|sum('value') }}"
+ },
+ {
+  "context": {
+   "values": [
+    {
+     "real": {
+      "value": 23
+     }
+    },
+    {
+     "real": {
+      "value": 1
+     }
+    },
+    {
+     "real": {
+      "value": 18
+     }
+    }
+   ]
+  },
+  "expected": "42",
+  "id": "test_filters::test_sum_attributes_nested",
+  "template": "{{ values|sum('real.value') }}"
+ },
+ {
+  "context": {
+   "values": {
+    "bar": 1,
+    "baz": 18,
+    "foo": 23
+   }
+  },
+  "expected": "42",
+  "id": "test_filters::test_sum_attributes_tuple",
+  "template": "{{ values.items()|sum('1') }}"
+ },
+ {
+  "context": {},
+  "expected": "1|1",
+  "id": "test_filters::test_abs",
+  "template": "{{ -1|abs }}|{{ 1|abs }}"
+ },
+ {
+  "context": {},
+  "expected": "3.0|2.0|2.123|3.0",
+  "id": "test_filters::test_round_positive",
+  "template": "{{ 2.7|round }}|{{ 2.1|round }}|{{ 2.1234|round(3, 'floor') }}|{{ 2.1|round(0, 'ceil') }}"
+ },
+ {
+  "context": {},
+  "expected": "20.0|30.0|20.0",
+  "id": "test_filters::test_round_negative",
+  "template": "{{ 21.3|round(-1)}}|{{ 21.3|round(-1, 'ceil')}}|{{ 21.3|round(-1, 'floor')}}"
+ },
+ {
+  "context": {},
+  "expected": "[1, 2, 3]|[3, 2, 1]",
+  "id": "test_filters::test_sort1",
+  "template": "{{ [2, 3, 1]|sort }}|{{ [2, 3, 1]|sort(true) }}"
+ },
+ {
+  "context": {},
+  "expected": "AbcD",
+  "id": "test_filters::test_sort2",
+  "template": "{{ \"\".join([\"c\", \"A\", \"b\", \"D\"]|sort) }}"
+ },
+ {
+  "context": {},
+  "expected": "['Bar', 'blah', 'foo']",
+  "id": "test_filters::test_sort3",
+  "template": "{{ ['foo', 'Bar', 'blah']|sort }}"
+ },
+ {
+  "context": {},
+  "expected": "bA",
+  "id": "test_filters::test_unique",
+  "template": "{{ \"\".join([\"b\", \"A\", \"a\", \"b\"]|unique) }}"
+ },
+ {
+  "context": {},
+  "expected": "bAa",
+  "id": "test_filters::test_unique_case_sensitive",
+  "template": "{{ \"\".join([\"b\", \"A\", \"a\", \"b\"]|unique(true)) }}"
+ },
+ {
+  "context": {},
+  "expected": "a:1:2|b:1|",
+  "id": "test_filters::test_groupby_tuple_index",
+  "template": "\n        {%- for grouper, list in [('a', 1), ('a', 2), ('b', 1)]|groupby(0) -%}\n            {{ grouper }}{% for x in list %}:{{ x.1 }}{% endfor %}|\n        {%- endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "fooBAR",
+  "id": "test_filters::test_filtertag",
+  "template": "{% filter upper|replace('FOO', 'foo') %}foobar{% endfilter %}"
+ },
+ {
+  "context": {
+   "string": "<foo>"
+  },
+  "expected": "<f4242>",
+  "id": "test_filters::test_replace",
+  "template": "{{ string|replace(\"o\", 42) }}"
+ },
+ {
+  "context": {
+   "string": "<foo>"
+  },
+  "expected": "&lt;f4242&gt;",
+  "id": "test_filters::test_replace#1",
+  "template": "{{ string|replace(\"o\", 42) }}"
+ },
+ {
+  "context": {
+   "string": "<foo>"
+  },
+  "expected": "42foo&gt;",
+  "id": "test_filters::test_replace#2",
+  "template": "{{ string|replace(\"<\", 42) }}"
+ },
+ {
+  "context": {},
+  "expected": "<div>foo</div>",
+  "id": "test_filters::test_safe",
+  "template": "{{ \"<div>foo</div>\"|safe }}"
+ },
+ {
+  "context": {},
+  "expected": "&lt;div&gt;foo&lt;/div&gt;",
+  "id": "test_filters::test_safe#1",
+  "template": "{{ \"<div>foo</div>\" }}"
+ },
+ {
+  "context": {},
+  "expected": "6",
+  "id": "test_filters::test_simple_map",
+  "template": "{{ [\"1\", \"2\", \"3\"]|map(\"int\")|sum }}"
+ },
+ {
+  "context": {},
+  "expected": "[3, 3, 15]",
+  "id": "test_filters::test_map_sum",
+  "template": "{{ [[1,2], [3], [4,5,6]]|map(\"sum\")|list }}"
+ },
+ {
+  "context": {},
+  "expected": "[]",
+  "id": "test_filters::test_empty_map",
+  "template": "{{ none|map(\"upper\")|list }}"
+ },
+ {
+  "context": {},
+  "expected": "1|3|5",
+  "id": "test_filters::test_simple_select",
+  "template": "{{ [1, 2, 3, 4, 5]|select(\"odd\")|join(\"|\") }}"
+ },
+ {
+  "context": {},
+  "expected": "1|2|3|4|5",
+  "id": "test_filters::test_bool_select",
+  "template": "{{ [none, false, 0, 1, 2, 3, 4, 5]|select|join(\"|\") }}"
+ },
+ {
+  "context": {},
+  "expected": "2|4",
+  "id": "test_filters::test_simple_reject",
+  "template": "{{ [1, 2, 3, 4, 5]|reject(\"odd\")|join(\"|\") }}"
+ },
+ {
+  "context": {},
+  "expected": "None|False|0",
+  "id": "test_filters::test_bool_reject",
+  "template": "{{ [none, false, 0, 1, 2, 3, 4, 5]|reject|join(\"|\") }}"
+ },
+ {
+  "context": {
+   "x": {
+    "foo": "bar"
+   }
+  },
+  "expected": "{\"foo\": \"bar\"}",
+  "id": "test_filters::test_json_dump",
+  "template": "{{ x|tojson }}"
+ },
+ {
+  "context": {
+   "x": "\"ba&r'"
+  },
+  "expected": "\"\\\"ba\\u0026r\\u0027\"",
+  "id": "test_filters::test_json_dump#1",
+  "template": "{{ x|tojson }}"
+ },
+ {
+  "context": {
+   "x": "<bar>"
+  },
+  "expected": "\"\\u003cbar\\u003e\"",
+  "id": "test_filters::test_json_dump#2",
+  "template": "{{ x|tojson }}"
+ },
+ {
+  "context": {
+   "x": 23
+  },
+  "expected": "42",
+  "id": "test_filters::test_json_dump#3",
+  "template": "{{ x|tojson }}"
+ },
+ {
+  "context": {},
+  "expected": "x",
+  "id": "test_filters::test_filter_undefined_in_if",
+  "template": "{%- if x is defined -%}{{ x|f }}{%- else -%}x{% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "foo",
+  "id": "test_filters::test_filter_undefined_in_elif",
+  "template": "{%- if x is defined -%}{{ x }}{%- elif y is defined -%}{{ y|f }}{%- else -%}foo{%- endif -%}"
+ },
+ {
+  "context": {},
+  "expected": "foo",
+  "id": "test_filters::test_filter_undefined_in_else",
+  "template": "{%- if x is not defined -%}foo{%- else -%}{{ x|f }}{%- endif -%}"
+ },
+ {
+  "context": {},
+  "expected": "foo",
+  "id": "test_filters::test_filter_undefined_in_nested_if",
+  "template": "{%- if x is not defined -%}foo{%- else -%}{%- if y is defined -%}{{ y|f }}{%- endif -%}{{ x }}{%- endif -%}"
+ },
+ {
+  "context": {
+   "x": 42
+  },
+  "expected": "42",
+  "id": "test_filters::test_filter_undefined_in_nested_if#1",
+  "template": "{%- if x is not defined -%}foo{%- else -%}{%- if y is defined -%}{{ y|f }}{%- endif -%}{{ x }}{%- endif -%}"
+ },
+ {
+  "context": {},
+  "expected": "42",
+  "id": "test_imports::test_import_from_with_context",
+  "template": "{% set foobar = 42 %}{% from 'a' import x with context %}{{ x() }}"
+ },
+ {
+  "context": {},
+  "expected": "42|42|42",
+  "id": "test_inheritance::test_reuse_blocks",
+  "template": "{{ self.foo() }}|{% block foo %}42{% endblock %}|{{ self.foo() }}"
+ },
+ {
+  "context": {},
+  "expected": "foo|{{ bar }}|{% baz %}",
+  "id": "test_lexnparse::test_raw1",
+  "template": "{% raw %}foo{% endraw %}|{%raw%}{{ bar }}|{% baz %}{%       endraw    %}"
+ },
+ {
+  "context": {},
+  "expected": "123",
+  "id": "test_lexnparse::test_raw2",
+  "template": "1  {%- raw -%}   2   {%- endraw -%}   3"
+ },
+ {
+  "context": {
+   "baz": "test"
+  },
+  "expected": "bar\n\n  {{baz}}2 spaces\nfoo",
+  "id": "test_lexnparse::test_raw3",
+  "template": "bar\n{% raw %}\n  {{baz}}2 spaces\n{% endraw %}\nfoo"
+ },
+ {
+  "context": {},
+  "expected": "bar2 spaces\n spacefoo",
+  "id": "test_lexnparse::test_raw4",
+  "template": "bar\n{%- raw -%}\n\n  \n  2 spaces\n space{%- endraw -%}\nfoo"
+ },
+ {
+  "context": {},
+  "expected": "bar",
+  "id": "test_lexnparse::test_balancing",
+  "template": "{{{'foo':'bar'}.foo}}"
+ },
+ {
+  "context": {},
+  "expected": "abdfh",
+  "id": "test_lexnparse::test_call",
+  "template": "{{ foo('a', c='d', e='f', *['b'], **{'g': 'h'}) }}"
+ },
+ {
+  "context": {},
+  "expected": "[1, 2, 3]|[3, 2, 1]",
+  "id": "test_lexnparse::test_slicing",
+  "template": "{{ [1, 2, 3][:] }}|{{ [1, 2, 3][::-1] }}"
+ },
+ {
+  "context": {
+   "foo": {
+    "bar": 42
+   }
+  },
+  "expected": "42|42",
+  "id": "test_lexnparse::test_attr",
+  "template": "{{ foo.bar }}|{{ foo['bar'] }}"
+ },
+ {
+  "context": {
+   "foo": [
+    0,
+    1,
+    2
+   ]
+  },
+  "expected": "0|2",
+  "id": "test_lexnparse::test_subscript",
+  "template": "{{ foo[0] }}|{{ foo[-1] }}"
+ },
+ {
+  "context": {},
+  "expected": "()|(1,)|(1, 2)",
+  "id": "test_lexnparse::test_tuple",
+  "template": "{{ () }}|{{ (1,) }}|{{ (1, 2) }}"
+ },
+ {
+  "context": {},
+  "expected": "1.5|8",
+  "id": "test_lexnparse::test_math",
+  "template": "{{ (1 + 1 * 2) - 3 / 2 }}|{{ 2**3 }}"
+ },
+ {
+  "context": {},
+  "expected": "1|1.5|1",
+  "id": "test_lexnparse::test_div",
+  "template": "{{ 3 // 2 }}|{{ 3 / 2 }}|{{ 3 % 2 }}"
+ },
+ {
+  "context": {},
+  "expected": "3|-3",
+  "id": "test_lexnparse::test_unary",
+  "template": "{{ +3 }}|{{ -3 }}"
+ },
+ {
+  "context": {},
+  "expected": "[1, 2]foo",
+  "id": "test_lexnparse::test_concat",
+  "template": "{{ [1, 2] ~ 'foo' }}"
+ },
+ {
+  "context": {
+   "i": 2,
+   "j": 3
+  },
+  "expected": "2",
+  "id": "test_lexnparse::test_compare_parens",
+  "template": "{{ i * (j < 5) }}"
+ },
+ {
+  "context": {},
+  "expected": "True|False",
+  "id": "test_lexnparse::test_inop",
+  "template": "{{ 1 in [1, 2, 3] }}|{{ 1 not in [1, 2, 3] }}"
+ },
+ {
+  "context": {},
+  "expected": "False|True|True",
+  "id": "test_lexnparse::test_bool",
+  "template": "{{ true and false }}|{{ false or true }}|{{ not false }}"
+ },
+ {
+  "context": {},
+  "expected": "False",
+  "id": "test_lexnparse::test_grouping",
+  "template": "{{ (true and false) or (false and true) and not false }}"
+ },
+ {
+  "context": {},
+  "expected": "1|1",
+  "id": "test_lexnparse::test_django_attr",
+  "template": "{{ [1, 2, 3].0 }}|{{ [[1]].0.0 }}"
+ },
+ {
+  "context": {},
+  "expected": "0",
+  "id": "test_lexnparse::test_conditional_expression",
+  "template": "{{ 0 if true else 1 }}"
+ },
+ {
+  "context": {},
+  "expected": "<>",
+  "id": "test_lexnparse::test_short_conditional_expression",
+  "template": "<{{ 1 if false }}>"
+ },
+ {
+  "context": {},
+  "expected": "FOOBAR",
+  "id": "test_lexnparse::test_filter_priority",
+  "template": "{{ \"foo\"|upper + \"bar\"|upper }}"
+ },
+ {
+  "context": {},
+  "expected": "foobarbaz",
+  "id": "test_lexnparse::test_string_concatenation",
+  "template": "{{ \"foo\" \"bar\" \"baz\" }}"
+ },
+ {
+  "context": {},
+  "expected": "5",
+  "id": "test_lexnparse::test_operator_precedence",
+  "template": "{{ 2 * 3 + 4 % 2 + 1 - 2 }}"
+ },
+ {
+  "context": {},
+  "expected": "{{ FOO }} and {% BAR %}",
+  "id": "test_lexnparse::test_raw2#1",
+  "template": "{% raw %}{{ FOO }} and {% BAR %}{% endraw %}"
+ },
+ {
+  "context": {},
+  "expected": "True|False|None|True|False",
+  "id": "test_lexnparse::test_const",
+  "template": "{{ true }}|{{ false }}|{{ none }}|{{ none is defined }}|{{ missing is defined }}"
+ },
+ {
+  "context": {},
+  "expected": "0",
+  "id": "test_lexnparse::test_localset",
+  "template": "{% set foo = 0 %}{% for item in [1, 2] %}{% set foo = 1 %}{% endfor %}{{ foo }}"
+ },
+ {
+  "context": {
+   "foo": {
+    "bar": 42
+   }
+  },
+  "expected": "-42",
+  "id": "test_lexnparse::test_parse_unary",
+  "template": "{{ -foo[\"bar\"] }}"
+ },
+ {
+  "context": {
+   "foo": {
+    "bar": 42
+   }
+  },
+  "expected": "42",
+  "id": "test_lexnparse::test_parse_unary#1",
+  "template": "{{ -foo[\"bar\"]|abs }}"
+ },
+ {
+  "context": {},
+  "expected": "\n",
+  "id": "test_lexnparse::test_lstrip",
+  "template": "    {% if True %}\n    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "",
+  "id": "test_lexnparse::test_lstrip_trim",
+  "template": "    {% if True %}\n    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_no_lstrip",
+  "template": "    {%+ if True %}\n    {%+ endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_lstrip_blocks_false_with_no_lstrip",
+  "template": "    {% if True %}\n    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_lstrip_blocks_false_with_no_lstrip#1",
+  "template": "    {%+ if True %}\n    {%+ endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    hello\n    goodbye",
+  "id": "test_lexnparse::test_lstrip_endline",
+  "template": "    hello{% if True %}\n    goodbye{% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "hello    ",
+  "id": "test_lexnparse::test_lstrip_inline",
+  "template": "    {% if True %}hello    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "a b c ",
+  "id": "test_lexnparse::test_lstrip_nested",
+  "template": "    {% if True %}a {% if True %}b {% endif %}c {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    abc \n        hello",
+  "id": "test_lexnparse::test_lstrip_left_chars",
+  "template": "    abc {% if True %}\n        hello{% endif %}"
+ },
+ {
+  "context": {},
+  "expected": " {% str %} ",
+  "id": "test_lexnparse::test_lstrip_embeded_strings",
+  "template": "    {% set x = \" {% str %} \" %}{{ x }}"
+ },
+ {
+  "context": {},
+  "expected": "\n\n\n",
+  "id": "test_lexnparse::test_lstrip_preserve_leading_newlines",
+  "template": "\n\n\n{% set hello = 1 %}"
+ },
+ {
+  "context": {},
+  "expected": "\nhello\n",
+  "id": "test_lexnparse::test_lstrip_comment",
+  "template": "    {# if True #}\nhello\n    {#endif#}"
+ },
+ {
+  "context": {},
+  "expected": "hello    ",
+  "id": "test_lexnparse::test_lstrip_angle_bracket_simple",
+  "template": "    <% if True %>hello    <% endif %>"
+ },
+ {
+  "context": {},
+  "expected": "hello    ",
+  "id": "test_lexnparse::test_lstrip_angle_bracket_comment",
+  "template": "    <%# if True %>hello    <%# endif %>"
+ },
+ {
+  "context": {},
+  "expected": "        ",
+  "id": "test_lexnparse::test_trim",
+  "template": "    {% if True %}\n    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_no_trim",
+  "template": "    {% if True +%}\n    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "X\nmore things",
+  "id": "test_lexnparse::test_no_trim_outer",
+  "template": "{% if True %}X{% endif +%}\nmore things"
+ },
+ {
+  "context": {},
+  "expected": "\n",
+  "id": "test_lexnparse::test_lstrip_no_trim",
+  "template": "    {% if True +%}\n    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_trim_blocks_false_with_no_trim",
+  "template": "    {% if True %}\n    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#1",
+  "template": "    {% if True +%}\n    {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#2",
+  "template": "    {# comment #}\n    "
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#3",
+  "template": "    {# comment +#}\n    "
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#4",
+  "template": "    {% raw %}{% endraw %}\n    "
+ },
+ {
+  "context": {},
+  "expected": "    \n    ",
+  "id": "test_lexnparse::test_trim_blocks_false_with_no_trim#5",
+  "template": "    {% raw %}{% endraw +%}\n    "
+ },
+ {
+  "context": {},
+  "expected": "a b c ",
+  "id": "test_lexnparse::test_trim_nested",
+  "template": "    {% if True %}\na {% if True %}\nb {% endif %}\nc {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "\na \nb \nc ",
+  "id": "test_lexnparse::test_no_trim_nested",
+  "template": "    {% if True +%}\na {% if True +%}\nb {% endif +%}\nc {% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "\n  ",
+  "id": "test_lexnparse::test_comment_trim",
+  "template": "    {# comment #}\n\n  "
+ },
+ {
+  "context": {},
+  "expected": "\n\n  ",
+  "id": "test_lexnparse::test_comment_no_trim",
+  "template": "    {# comment +#}\n\n  "
+ },
+ {
+  "context": {},
+  "expected": "\n   \n\n ",
+  "id": "test_lexnparse::test_multiple_comment_trim_lstrip",
+  "template": "   {# comment #}\n\n{# comment2 #}\n   \n{# comment3 #}\n\n "
+ },
+ {
+  "context": {},
+  "expected": "\n\n\n   \n\n\n ",
+  "id": "test_lexnparse::test_multiple_comment_no_trim_lstrip",
+  "template": "   {# comment +#}\n\n{# comment2 +#}\n   \n{# comment3 +#}\n\n "
+ },
+ {
+  "context": {
+   "x": 1,
+   "y": 2
+  },
+  "expected": "1\n\n\n2",
+  "id": "test_lexnparse::test_raw_trim_lstrip",
+  "template": "{{x}}{% raw %}\n\n    {% endraw %}\n\n{{ y }}"
+ },
+ {
+  "context": {
+   "x": 1,
+   "y": 2
+  },
+  "expected": "1\n\n\n\n2",
+  "id": "test_lexnparse::test_raw_no_trim_lstrip",
+  "template": "{{x}}{% raw %}\n\n      {% endraw +%}\n\n{{ y }}"
+ },
+ {
+  "context": {},
+  "expected": "\n\n",
+  "id": "test_lexnparse::test_no_trim_angle_bracket",
+  "template": "    <% if True +%>\n\n    <% endif %>"
+ },
+ {
+  "context": {},
+  "expected": "\n\n   ",
+  "id": "test_lexnparse::test_no_trim_angle_bracket#1",
+  "template": "    <%# comment +%>\n\n   "
+ },
+ {
+  "context": {},
+  "expected": "    \n\n    ",
+  "id": "test_lexnparse::test_no_trim_php_syntax",
+  "template": "    <? if True +?>\n\n    <? endif ?>"
+ },
+ {
+  "context": {},
+  "expected": "    \n\n    ",
+  "id": "test_lexnparse::test_no_trim_php_syntax#1",
+  "template": "    <!-- comment +-->\n\n    "
+ },
+ {
+  "context": {
+   "a": {
+    "b": 0
+   }
+  },
+  "expected": "01",
+  "id": "test_regression::test_load_parameter_when_set_in_all_if_branches",
+  "template": "{% if True %}{{ a.b }}{% set a = 1 %}{% elif False %}{% set a = 2 %}{% else %}{% set a = 3 %}{% endif %}{{ a }}"
+ },
+ {
+  "context": {
+   "item": 42
+  },
+  "expected": "[1][2][3][4]42",
+  "id": "test_regression::test_assigned_scoping",
+  "template": "\n        {%- for item in (1, 2, 3, 4) -%}\n            [{{ item }}]\n        {%- endfor %}\n        {{- item -}}\n        "
+ },
+ {
+  "context": {},
+  "expected": "[1][2][3][4]42",
+  "id": "test_regression::test_assigned_scoping#1",
+  "template": "\n        {%- for item in (1, 2, 3, 4) -%}\n            [{{ item }}]\n        {%- endfor %}\n        {%- set item = 42 %}\n        {{- item -}}\n        "
+ },
+ {
+  "context": {},
+  "expected": "[1][2][3][4]42",
+  "id": "test_regression::test_assigned_scoping#2",
+  "template": "\n        {%- set item = 42 %}\n        {%- for item in (1, 2, 3, 4) -%}\n            [{{ item }}]\n        {%- endfor %}\n        {{- item -}}\n        "
+ },
+ {
+  "context": {},
+  "expected": "[1][2][3][4]<FOO>",
+  "id": "test_regression::test_closure_scoping",
+  "template": "\n        {%- set wrapper = \"<FOO>\" %}\n        {%- for item in (1, 2, 3, 4) %}\n            {%- macro wrapper() %}[{{ item }}]{% endmacro %}\n            {{- wrapper() }}\n        {%- endfor %}\n        {{- wrapper -}}\n        "
+ },
+ {
+  "context": {},
+  "expected": "[1][2][3][4]<FOO>",
+  "id": "test_regression::test_closure_scoping#1",
+  "template": "\n        {%- for item in (1, 2, 3, 4) %}\n            {%- macro wrapper() %}[{{ item }}]{% endmacro %}\n            {{- wrapper() }}\n        {%- endfor %}\n        {%- set wrapper = \"<FOO>\" %}\n        {{- wrapper -}}\n        "
+ },
+ {
+  "context": {
+   "wrapper": 23
+  },
+  "expected": "[1][2][3][4]23",
+  "id": "test_regression::test_closure_scoping#2",
+  "template": "\n        {%- for item in (1, 2, 3, 4) %}\n            {%- macro wrapper() %}[{{ item }}]{% endmacro %}\n            {{- wrapper() }}\n        {%- endfor %}\n        {{- wrapper -}}\n        "
+ },
+ {
+  "context": {
+   "expr": false
+  },
+  "expected": "[[title]](1)(2)(3)",
+  "id": "test_regression::test_extends_output_bugs",
+  "template": "{% if expr %}{% extends \"parent.html\" %}{% endif %}[[{% block title %}title{% endblock %}]]{% for item in [1, 2, 3] %}({{ item }}){% endfor %}"
+ },
+ {
+  "context": {
+   "expr": true
+  },
+  "expected": "((title))",
+  "id": "test_regression::test_extends_output_bugs#1",
+  "template": "{% if expr %}{% extends \"parent.html\" %}{% endif %}[[{% block title %}title{% endblock %}]]{% for item in [1, 2, 3] %}({{ item }}){% endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "<a href=\"http://www.example.org/&lt;foo\" rel=\"noopener\">http://www.example.org/&lt;foo</a>",
+  "id": "test_regression::test_urlize_filter_escaping",
+  "template": "{{ \"http://www.example.org/<foo\"|urlize }}"
+ },
+ {
+  "context": {},
+  "expected": "(see <a href=\"http://www.example.org/?page=subj_&lt;desc.h&gt;\" rel=\"noopener\">http://www.example.org/?page=subj_&lt;desc.h&gt;</a>)",
+  "id": "test_regression::test_urlize_filter_closing_punctuation",
+  "template": "{{ \"(see http://www.example.org/?page=subj_<desc.h>)\"|urlize }}"
+ },
+ {
+  "context": {},
+  "expected": "123",
+  "id": "test_regression::test_old_macro_loop_scoping_bug",
+  "template": "{% for i in (1, 2) %}{{ i }}{% endfor %}{% macro i() %}3{% endmacro %}{{ i() }}"
+ },
+ {
+  "context": {
+   "a": 23
+  },
+  "expected": "23",
+  "id": "test_regression::test_partial_conditional_assignments",
+  "template": "{% if b %}{% set a = 42 %}{% endif %}{{ a }}"
+ },
+ {
+  "context": {
+   "b": true
+  },
+  "expected": "42",
+  "id": "test_regression::test_partial_conditional_assignments#1",
+  "template": "{% if b %}{% set a = 42 %}{% endif %}{{ a }}"
+ },
+ {
+  "context": {
+   "a": 0,
+   "b": false,
+   "c": 42,
+   "d": 42.0
+  },
+  "expected": "1111C",
+  "id": "test_regression::test_stacked_locals_scoping_bug",
+  "template": "# for j in [1, 2]:\n#   set x = 1\n#   for i in [1, 2]:\n#     print x\n#     if i % 2 == 0:\n#       set x = x + 1\n#     endif\n#   endfor\n# endfor\n# if a\n#   print 'A'\n# elif b\n#   print 'B'\n# elif c == d\n#   print 'C'\n# else\n#   print 'D'\n# endif\n    "
+ },
+ {
+  "context": {},
+  "expected": "[42]",
+  "id": "test_regression::test_block_set_with_extends",
+  "template": "{% extends \"main\" %}{% set x %}42{% endset %}"
+ },
+ {
+  "context": {},
+  "expected": "012",
+  "id": "test_regression::test_nested_for_else",
+  "template": "{% for x in y %}{{ loop.index0 }}{% else %}{% for i in range(3) %}{{ i }}{% endfor %}{% endfor %}"
+ },
+ {
+  "context": {
+   "x": {
+    "y": [
+     0,
+     1,
+     2
+    ]
+   }
+  },
+  "expected": "012",
+  "id": "test_regression::test_variable_reuse",
+  "template": "{% for x in x.y %}{{ x }}{% endfor %}"
+ },
+ {
+  "context": {
+   "x": {
+    "y": [
+     0,
+     1,
+     2
+    ]
+   }
+  },
+  "expected": "0|01|12|2",
+  "id": "test_regression::test_variable_reuse#1",
+  "template": "{% for x in x.y %}{{ loop.index0 }}|{{ x }}{% endfor %}"
+ },
+ {
+  "context": {
+   "x": {
+    "y": [
+     0,
+     1,
+     2
+    ]
+   }
+  },
+  "expected": "012",
+  "id": "test_regression::test_variable_reuse#2",
+  "template": "{% for x in x.y recursive %}{{ x }}{% endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "[][aha!]",
+  "id": "test_regression::test_double_caller",
+  "template": "{% macro x(caller=none) %}[{% if caller %}{{ caller() }}{% endif %}]{% endmacro %}{{ x() }}{% call x() %}aha!{% endcall %}"
+ },
+ {
+  "context": {},
+  "expected": "x",
+  "id": "test_regression::test_macro_blocks",
+  "template": "{% macro x() %}{% block foo %}x{% endblock %}{% endmacro %}{{ x() }}"
+ },
+ {
+  "context": {},
+  "expected": "2",
+  "id": "test_regression::test_scoped_block",
+  "template": "{% set x = 1 %}{% with x = 2 %}{% block y scoped %}{{ x }}{% endblock %}{% endwith %}"
+ },
+ {
+  "context": {
+   "foo": false
+  },
+  "expected": "42",
+  "id": "test_regression::test_empty_if",
+  "template": "{% if foo %}{% else %}42{% endif %}"
+ },
+ {
+  "context": {
+   "object1": {
+    "subproperty1": "value"
+   },
+   "object2": {
+    "subproperty2": "value"
+   }
+  },
+  "expected": "42",
+  "id": "test_regression::test_subproperty_if",
+  "template": "{% if object1.subproperty1 is eq object2.subproperty2 %}42{% endif %}"
+ },
+ {
+  "context": {
+   "values": []
+  },
+  "expected": "0",
+  "id": "test_regression::test_recursive_loop_bug",
+  "template": "{%- for value in values recursive %}1{% else %}0{% endfor -%}"
+ },
+ {
+  "context": {},
+  "expected": "Start\n1) foo\n2) bar last\nEnd",
+  "id": "test_regression::test_scoped_block_loop_vars",
+  "template": "Start\n{% for i in [\"foo\", \"bar\"] -%}\n{% block body scoped -%}\n{{ loop.index }}) {{ i }}{% if loop.last %} last{% endif -%}\n{%- endblock %}\n{% endfor -%}\nEnd"
+ },
+ {
+  "context": {},
+  "expected": "42\n01\n01\n42\n12\n12\n42",
+  "id": "test_regression::test_pass_context_loop_vars",
+  "template": "{% set i = 42 %}\n{%- for idx in range(2) -%}\n{{ i }}{{ j }}\n{% set i = idx -%}\n{%- set j = loop.index -%}\n{{ test() }}\n{{ i }}{{ j }}\n{% endfor -%}\n{{ i }}{{ j }}"
+ },
+ {
+  "context": {},
+  "expected": "42\n0\n42\n1\n42",
+  "id": "test_regression::test_pass_context_scoped_loop_vars",
+  "template": "{% set i = 42 %}\n{%- for idx in range(2) -%}\n{{ i }}\n{%- set i = loop.index0 -%}\n{% block body scoped %}\n{{ test() }}\n{% endblock -%}\n{% endfor -%}\n{{ i }}"
+ },
+ {
+  "context": {},
+  "expected": "42\n24\n42",
+  "id": "test_regression::test_pass_context_in_blocks",
+  "template": "{%- set i = 42 -%}\n{{ i }}\n{% block body -%}\n{% set i = 24 -%}\n{{ test() }}\n{% endblock -%}\n{{ i }}"
+ },
+ {
+  "context": {},
+  "expected": "42\n0\n24\n0\n42\n1\n24\n1\n42",
+  "id": "test_regression::test_pass_context_block_and_loop",
+  "template": "{%- set i = 42 -%}\n{% for idx in range(2) -%}\n{{ test() }}\n{%- set i = idx -%}\n{% block body scoped %}\n{{ test() }}\n{% set i = 24 -%}\n{{ test() }}\n{% endblock -%}\n{{ test() }}\n{% endfor -%}\n{{ test() }}"
+ },
+ {
+  "context": {},
+  "expected": "hellohellohello",
+  "id": "test_regression::test_nested_loop_scoping",
+  "template": "{% set output %}{% for x in [1,2,3] %}hello{% endfor %}{% endset %}{{ output }}"
+ },
+ {
+  "context": {},
+  "expected": "foo",
+  "id": "test_regression::test_pass_context_with_select",
+  "template": "{% for x in ['one', 'foo'] | select('foo') %}{{ x }}{% endfor %}"
+ },
+ {
+  "context": {},
+  "expected": "ab",
+  "id": "test_security::test_basic_format_safety",
+  "template": "{{ \"a{0.__class__}b\".format(42) }}"
+ },
+ {
+  "context": {},
+  "expected": "a42b",
+  "id": "test_security::test_basic_format_all_okay",
+  "template": "{{ \"a{0.foo}b\".format({\"foo\": 42}) }}"
+ },
+ {
+  "context": {},
+  "expected": "ab&lt;foo&gt;",
+  "id": "test_security::test_safe_format_safety",
+  "template": "{{ (\"a{0.__class__}b{1}\"|safe).format(42, \"<foo>\") }}"
+ },
+ {
+  "context": {},
+  "expected": "a42b&lt;foo&gt;",
+  "id": "test_security::test_safe_format_all_okay",
+  "template": "{{ (\"a{0.foo}b{1}\"|safe).format({\"foo\": 42}, \"<foo>\") }}"
+ },
+ {
+  "context": {},
+  "expected": "afoob42",
+  "id": "test_security::test_empty_braces_format",
+  "template": "{{ (\"a{}b{}\").format(\"foo\", \"42\")}}"
+ },
+ {
+  "context": {},
+  "expected": "a42b&lt;foo&gt;",
+  "id": "test_security::test_empty_braces_format#1",
+  "template": "{{ (\"a{}b{}\"|safe).format(42, \"<foo>\") }}"
+ },
+ {
+  "context": {},
+  "expected": "ab",
+  "id": "test_security::test_basic_format_safety#1",
+  "template": "{{ \"a{x.__class__}b\".format_map({\"x\":42}) }}"
+ },
+ {
+  "context": {},
+  "expected": "a42b",
+  "id": "test_security::test_basic_format_all_okay#1",
+  "template": "{{ \"a{x.foo}b\".format_map({\"x\":{\"foo\": 42}}) }}"
+ },
+ {
+  "context": {},
+  "expected": "a42b&lt;foo&gt;",
+  "id": "test_security::test_safe_format_all_okay#1",
+  "template": "{{ (\"a{x.foo}b{y}\"|safe).format_map({\"x\":{\"foo\": 42}, \"y\":\"<foo>\"}) }}"
+ },
+ {
+  "context": {},
+  "expected": "",
+  "id": "test_tests::test_name_undefined_in_if",
+  "template": "{% if x is defined %}{{ x is f }}{% endif %}"
+ },
+ {
+  "context": {},
+  "expected": "False|True",
+  "id": "test_tests::test_defined",
+  "template": "{{ missing is defined }}|{{ true is defined }}"
+ },
+ {
+  "context": {},
+  "expected": "False|True",
+  "id": "test_tests::test_even",
+  "template": "{{ 1 is even }}|{{ 2 is even }}"
+ },
+ {
+  "context": {},
+  "expected": "True|False",
+  "id": "test_tests::test_odd",
+  "template": "{{ 1 is odd }}|{{ 2 is odd }}"
+ },
+ {
+  "context": {},
+  "expected": "True|False",
+  "id": "test_tests::test_lower",
+  "template": "{{ \"foo\" is lower }}|{{ \"FOO\" is lower }}"
+ },
+ {
+  "context": {},
+  "expected": "True|False",
+  "id": "test_tests::test_upper",
+  "template": "{{ \"FOO\" is upper }}|{{ \"foo\" is upper }}"
+ },
+ {
+  "context": {
+   "bar": "baz",
+   "foo": 12
+  },
+  "expected": "True|False|True|True|False|True|True|False",
+  "id": "test_tests::test_equalto",
+  "template": "{{ foo is eq 12 }}|{{ foo is eq 0 }}|{{ foo is eq (3 * 4) }}|{{ bar is eq \"baz\" }}|{{ bar is eq \"zab\" }}|{{ bar is eq (\"ba\" + \"z\") }}|{{ bar is eq bar }}|{{ bar is eq foo }}"
+ },
+ {
+  "context": {
+   "foo": false
+  },
+  "expected": "True|False",
+  "id": "test_tests::test_sameas",
+  "template": "{{ foo is sameas false }}|{{ 0 is sameas false }}"
+ },
+ {
+  "context": {
+   "foo": null
+  },
+  "expected": "True",
+  "id": "test_tests::test_no_paren_for_arg1",
+  "template": "{{ foo is sameas none }}"
+ },
+ {
+  "context": {},
+  "expected": "True|False",
+  "id": "test_tests::test_greaterthan",
+  "template": "{{ 1 is greaterthan 0 }}|{{ 0 is greaterthan 1 }}"
+ },
+ {
+  "context": {},
+  "expected": "True|False",
+  "id": "test_tests::test_lessthan",
+  "template": "{{ 0 is lessthan 1 }}|{{ 1 is lessthan 0 }}"
+ },
+ {
+  "context": {},
+  "expected": "False",
+  "id": "test_tests::test_multiple_tests",
+  "template": "{{ 'us-west-1' is matching '(us-east-1|ap-northeast-1)' or 'stage' is matching '(dev|stage)' }}"
+ },
+ {
+  "context": {},
+  "expected": "True|True|False|True|False|True|False|True|False",
+  "id": "test_tests::test_in",
+  "template": "{{ \"o\" is in \"foo\" }}|{{ \"foo\" is in \"foo\" }}|{{ \"b\" is in \"foo\" }}|{{ 1 is in ((1, 2)) }}|{{ 3 is in ((1, 2)) }}|{{ 1 is in [1, 2] }}|{{ 3 is in [1, 2] }}|{{ \"foo\" is in {\"foo\": 1}}}|{{ \"baz\" is in {\"bar\": 1}}}"
+ }
+]

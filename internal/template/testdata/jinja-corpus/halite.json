@@ -1,0 +1,548 @@
+[
+ {
+  "error": "nope",
+  "id": "undefined/strict-is-an-error",
+  "template": "{{ nope }}"
+ },
+ {
+  "error": ":2:",
+  "id": "undefined/strict-names-the-position",
+  "template": "line1\n{{ nope }}"
+ },
+ {
+  "expected": "[]",
+  "id": "undefined/permissive-renders-empty",
+  "permissive": true,
+  "template": "[{{ nope }}]"
+ },
+ {
+  "expected": "fallback",
+  "id": "undefined/default-filter",
+  "template": "{{ nope | default('fallback') }}"
+ },
+ {
+  "expected": "fallback",
+  "id": "undefined/default-filter-short",
+  "template": "{{ nope | d('fallback') }}"
+ },
+ {
+  "expected": "n",
+  "id": "undefined/is-defined",
+  "template": "{% if nope is defined %}y{% else %}n{% endif %}"
+ },
+ {
+  "expected": "y",
+  "id": "undefined/is-undefined",
+  "template": "{% if nope is undefined %}y{% else %}n{% endif %}"
+ },
+ {
+  "context": {
+   "here": "value"
+  },
+  "expected": "value",
+  "id": "undefined/defined-name-wins",
+  "template": "{{ here | default('x') }}"
+ },
+ {
+  "error": "nope",
+  "id": "undefined/attribute-of-missing",
+  "template": "{{ nope.attr }}"
+ },
+ {
+  "expected": "a b",
+  "id": "filter/yaml_encode-plain",
+  "template": "{{ 'a b' | yaml_encode }}"
+ },
+ {
+  "expected": "\"yes\"",
+  "id": "filter/yaml_encode-quotes-a-boolean-word",
+  "template": "{{ 'yes' | yaml_encode }}"
+ },
+ {
+  "expected": "\"0644\"",
+  "id": "filter/yaml_encode-quotes-a-number-word",
+  "template": "{{ '0644' | yaml_encode }}"
+ },
+ {
+  "expected": "\"say \\\"hi\\\"\"",
+  "id": "filter/yaml_dquote",
+  "template": "{{ 'say \"hi\"' | yaml_dquote }}"
+ },
+ {
+  "expected": "'plain'",
+  "id": "filter/yaml_squote",
+  "template": "{{ 'plain' | yaml_squote }}"
+ },
+ {
+  "expected": "True",
+  "id": "filter/to_bool-yes",
+  "template": "{{ 'yes' | to_bool }}"
+ },
+ {
+  "expected": "False",
+  "id": "filter/to_bool-no",
+  "template": "{{ 'no' | to_bool }}"
+ },
+ {
+  "expected": "'x'",
+  "id": "filter/quote",
+  "template": "{{ 'x' | quote }}"
+ },
+ {
+  "expected": "a\\.b",
+  "id": "filter/regex_escape",
+  "template": "{{ 'a.b' | regex_escape }}"
+ },
+ {
+  "expected": "aXc",
+  "id": "filter/regex_replace",
+  "template": "{{ 'abc' | regex_replace('b', 'X') }}"
+ },
+ {
+  "expected": "['01']",
+  "id": "filter/regex_match",
+  "template": "{{ 'web01' | regex_match('web(\\\\d+)') }}"
+ },
+ {
+  "expected": "['01']",
+  "id": "filter/regex_search",
+  "template": "{{ 'x web01' | regex_search('web(\\\\d+)') }}"
+ },
+ {
+  "expected": "900150983cd24fb0d6963f7d28e17f72",
+  "id": "filter/md5",
+  "template": "{{ 'abc' | md5 }}"
+ },
+ {
+  "expected": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  "id": "filter/sha256",
+  "template": "{{ 'abc' | sha256 }}"
+ },
+ {
+  "expected": "YWJj",
+  "id": "filter/base64_encode",
+  "template": "{{ 'abc' | base64_encode }}"
+ },
+ {
+  "expected": "abc",
+  "id": "filter/base64_decode",
+  "template": "{{ 'YWJj' | base64_decode }}"
+ },
+ {
+  "expected": "616263",
+  "id": "filter/hex_encode",
+  "template": "{{ 'abc' | hex_encode }}"
+ },
+ {
+  "expected": "[1, 2, 3]",
+  "id": "filter/unique",
+  "template": "{{ [1, 2, 2, 3] | unique | list }}"
+ },
+ {
+  "expected": "[1, 2, 3]",
+  "id": "filter/union",
+  "template": "{{ [1, 2] | union([2, 3]) | list }}"
+ },
+ {
+  "expected": "[2, 3]",
+  "id": "filter/intersect",
+  "template": "{{ [1, 2, 3] | intersect([2, 3, 4]) | list }}"
+ },
+ {
+  "expected": "[1, 3]",
+  "id": "filter/difference",
+  "template": "{{ [1, 2, 3] | difference([2]) | list }}"
+ },
+ {
+  "expected": "True",
+  "id": "filter/is_list-true",
+  "template": "{{ [1] | is_list }}"
+ },
+ {
+  "expected": "False",
+  "id": "filter/is_list-false",
+  "template": "{{ 'x' | is_list }}"
+ },
+ {
+  "expected": "[1, 2, 3]",
+  "id": "filter/flatten",
+  "template": "{{ [[1, 2], [3]] | flatten | list }}"
+ },
+ {
+  "expected": "2.0",
+  "id": "filter/avg",
+  "template": "{{ [1, 2, 3] | avg }}"
+ },
+ {
+  "expected": "a/b",
+  "id": "filter/path_join",
+  "template": "{{ ['a', 'b'] | path_join }}"
+ },
+ {
+  "expected": "1024",
+  "id": "filter/human_to_bytes",
+  "template": "{{ '1KB' | human_to_bytes }}"
+ },
+ {
+  "expected": "42",
+  "id": "filter/to_num",
+  "template": "{{ '42' | to_num }}"
+ },
+ {
+  "expected": "d",
+  "id": "filter/default-on-empty-string",
+  "template": "{{ '' | default('d', true) }}"
+ },
+ {
+  "expected": "a-b",
+  "id": "filter/join",
+  "template": "{{ ['a', 'b'] | join('-') }}"
+ },
+ {
+  "expected": "3",
+  "id": "filter/length",
+  "template": "{{ [1, 2, 3] | length }}"
+ },
+ {
+  "expected": "ABab",
+  "id": "filter/upper-lower",
+  "template": "{{ 'aB' | upper }}{{ 'aB' | lower }}"
+ },
+ {
+  "expected": "bba",
+  "id": "filter/replace",
+  "template": "{{ 'aaa' | replace('a', 'b', 2) }}"
+ },
+ {
+  "expected": "33.0",
+  "id": "filter/int-float",
+  "template": "{{ '3' | int }}{{ '3' | float }}"
+ },
+ {
+  "expected": "[1, 2, 3]",
+  "id": "filter/sort",
+  "template": "{{ [3, 1, 2] | sort | list }}"
+ },
+ {
+  "context": {
+   "items": [
+    {
+     "n": 1
+    },
+    {
+     "n": 2
+    }
+   ]
+  },
+  "expected": "[1, 2]",
+  "id": "filter/map-attribute",
+  "template": "{{ items | map(attribute='n') | list }}"
+ },
+ {
+  "context": {
+   "items": [
+    {
+     "ok": true
+    },
+    {
+     "ok": false
+    }
+   ]
+  },
+  "expected": "1",
+  "id": "filter/selectattr",
+  "template": "{{ items | selectattr('ok') | list | length }}"
+ },
+ {
+  "expected": "a\n  b",
+  "id": "filter/indent",
+  "template": "{{ 'a\\nb' | indent(2) }}"
+ },
+ {
+  "expected": "x",
+  "id": "filter/trim",
+  "template": "{{ '  x  ' | trim }}"
+ },
+ {
+  "expected": "{\"a\": 1}",
+  "id": "filter/tojson",
+  "template": "{{ {\"a\": 1} | tojson }}"
+ },
+ {
+  "expected": "[1, 2]",
+  "id": "filter/tojson-list",
+  "template": "{{ [1, 2] | tojson }}"
+ },
+ {
+  "expected": "13",
+  "id": "filter/first-last",
+  "template": "{{ [1, 2, 3] | first }}{{ [1, 2, 3] | last }}"
+ },
+ {
+  "expected": "[[1, 2], [3]]",
+  "id": "filter/batch",
+  "template": "{{ [1, 2, 3] | batch(2) | list }}"
+ },
+ {
+  "expected": "3.0",
+  "id": "filter/round",
+  "template": "{{ 2.5 | round }}"
+ },
+ {
+  "expected": "5",
+  "id": "filter/abs",
+  "template": "{{ -5 | abs }}"
+ },
+ {
+  "expected": "True",
+  "id": "test/defined",
+  "template": "{{ 1 is defined }}"
+ },
+ {
+  "expected": "TrueTrue",
+  "id": "test/even-odd",
+  "template": "{{ 2 is even }}{{ 3 is odd }}"
+ },
+ {
+  "expected": "True",
+  "id": "test/divisibleby",
+  "template": "{{ 6 is divisibleby(3) }}"
+ },
+ {
+  "expected": "TrueTrue",
+  "id": "test/string-number",
+  "template": "{{ 'a' is string }}{{ 1 is number }}"
+ },
+ {
+  "expected": "TrueTrue",
+  "id": "test/mapping-sequence",
+  "template": "{{ {} is mapping }}{{ [] is sequence }}"
+ },
+ {
+  "expected": "True",
+  "id": "test/in",
+  "template": "{{ 1 is in([1, 2]) }}"
+ },
+ {
+  "expected": "True",
+  "id": "test/salt-list",
+  "template": "{{ [1] is list }}"
+ },
+ {
+  "expected": "True",
+  "id": "test/salt-dict",
+  "template": "{{ {'a': 1} is dict }}"
+ },
+ {
+  "expected": "True",
+  "id": "test/equalto",
+  "template": "{{ 1 is equalto(1) }}"
+ },
+ {
+  "expected": "1.5",
+  "id": "expr/true-division",
+  "template": "{{ 3 / 2 }}"
+ },
+ {
+  "expected": "1",
+  "id": "expr/floor-division",
+  "template": "{{ 3 // 2 }}"
+ },
+ {
+  "expected": "1024",
+  "id": "expr/power",
+  "template": "{{ 2 ** 10 }}"
+ },
+ {
+  "expected": "a1",
+  "id": "expr/string-concat-tilde",
+  "template": "{{ 'a' ~ 1 }}"
+ },
+ {
+  "expected": "abab",
+  "id": "expr/string-repeat",
+  "template": "{{ 'ab' * 2 }}"
+ },
+ {
+  "expected": "[1, 2]",
+  "id": "expr/list-concat",
+  "template": "{{ [1] + [2] }}"
+ },
+ {
+  "expected": "y",
+  "id": "expr/conditional",
+  "template": "{{ 'y' if true else 'n' }}"
+ },
+ {
+  "expected": "[2, 3]",
+  "id": "expr/slice",
+  "template": "{{ [1, 2, 3, 4][1:3] }}"
+ },
+ {
+  "expected": "[1, 3]",
+  "id": "expr/slice-step",
+  "template": "{{ [1, 2, 3, 4][::2] }}"
+ },
+ {
+  "expected": "3",
+  "id": "expr/negative-index",
+  "template": "{{ [1, 2, 3][-1] }}"
+ },
+ {
+  "error": "zero",
+  "id": "expr/divide-by-zero-is-an-error",
+  "template": "{{ 1 / 0 }}"
+ },
+ {
+  "error": "cannot add",
+  "id": "expr/mixed-add-is-an-error",
+  "template": "{{ 'a' + 1 }}"
+ },
+ {
+  "error": "use ~ to concatenate",
+  "id": "expr/mixed-add-suggests-tilde",
+  "template": "{{ 'a' + 1 }}"
+ },
+ {
+  "expected": "d",
+  "id": "expr/truthiness",
+  "template": "{% if '' %}a{% endif %}{% if [] %}b{% endif %}{% if 0 %}c{% endif %}d"
+ },
+ {
+  "expected": "1TrueFalse2FalseTrue",
+  "id": "stmt/for-loop-vars",
+  "template": "{% for i in [1, 2] %}{{ loop.index }}{{ loop.first }}{{ loop.last }}{% endfor %}"
+ },
+ {
+  "expected": "empty",
+  "id": "stmt/for-else",
+  "template": "{% for i in [] %}x{% else %}empty{% endfor %}"
+ },
+ {
+  "context": {
+   "pairs": [
+    [
+     1,
+     2
+    ],
+    [
+     3,
+     4
+    ]
+   ]
+  },
+  "expected": "1234",
+  "id": "stmt/for-tuple-unpack",
+  "template": "{% for a, b in pairs %}{{ a }}{{ b }}{% endfor %}"
+ },
+ {
+  "expected": "aba",
+  "id": "stmt/loop-cycle",
+  "template": "{% for i in [1, 2, 3] %}{{ loop.cycle('a', 'b') }}{% endfor %}"
+ },
+ {
+  "expected": "-21-",
+  "id": "stmt/loop-previtem-nextitem",
+  "template": "{% for i in [1, 2] %}{{ loop.previtem | default('-') }}{{ loop.nextitem | default('-') }}{% endfor %}"
+ },
+ {
+  "expected": "3",
+  "id": "stmt/set-and-namespace",
+  "template": "{% set ns = namespace(n=0) %}{% for i in [1, 2] %}{% set ns.n = ns.n + i %}{% endfor %}{{ ns.n }}"
+ },
+ {
+  "expected": "body",
+  "id": "stmt/block-set",
+  "template": "{% set x %}body{% endset %}{{ x }}"
+ },
+ {
+  "expected": "12",
+  "id": "stmt/macro",
+  "template": "{% macro m(a, b=2) %}{{ a }}{{ b }}{% endmacro %}{{ m(1) }}"
+ },
+ {
+  "expected": "1,2",
+  "id": "stmt/macro-varargs",
+  "template": "{% macro m() %}{{ varargs | join(',') }}{% endmacro %}{{ m(1, 2) }}"
+ },
+ {
+  "expected": "[body]",
+  "id": "stmt/call-and-caller",
+  "template": "{% macro m() %}[{{ caller() }}]{% endmacro %}{% call m() %}body{% endcall %}"
+ },
+ {
+  "expected": "AB",
+  "id": "stmt/filter-block",
+  "template": "{% filter upper %}ab{% endfilter %}"
+ },
+ {
+  "expected": "{{ not a variable }}",
+  "id": "stmt/raw",
+  "template": "{% raw %}{{ not a variable }}{% endraw %}"
+ },
+ {
+  "expected": "1",
+  "id": "stmt/with",
+  "template": "{% with x = 1 %}{{ x }}{% endwith %}"
+ },
+ {
+  "expected": "0",
+  "id": "stmt/do",
+  "template": "{% set ns = namespace(n=0) %}{% do ns.__setattr__ %}{{ ns.n }}"
+ },
+ {
+  "expected": "ab",
+  "id": "stmt/comment",
+  "template": "a{# hidden #}b"
+ },
+ {
+  "expected": "<x>",
+  "id": "stmt/autoescape-is-a-no-op",
+  "template": "{% autoescape true %}{{ '<x>' }}{% endautoescape %}"
+ },
+ {
+  "expected": "ab",
+  "id": "ws/minus-left",
+  "template": "a\n  {{- 'b' }}"
+ },
+ {
+  "expected": "ab",
+  "id": "ws/minus-right",
+  "template": "{{ 'a' -}}\n  b"
+ },
+ {
+  "expected": "abc",
+  "id": "ws/statement-both",
+  "template": "a\n{%- if true -%}\nb\n{%- endif -%}\nc"
+ },
+ {
+  "error": "limit",
+  "id": "limits/output-size",
+  "template": "{% for i in range(100000000) %}xxxxxxxxxx{% endfor %}"
+ },
+ {
+  "error": "recursed deeper",
+  "id": "limits/recursion",
+  "template": "{% macro m() %}{{ m() }}{% endmacro %}{{ m() }}"
+ },
+ {
+  "error": "no_such_filter",
+  "id": "refused/unknown-filter",
+  "template": "{{ 'x' | no_such_filter }}"
+ },
+ {
+  "error": "no_such_test",
+  "id": "refused/unknown-test",
+  "template": "{{ 'x' is no_such_test }}"
+ },
+ {
+  "error": "no_such_tag",
+  "id": "refused/unknown-tag",
+  "template": "{% no_such_tag %}"
+ },
+ {
+  "error": "trans",
+  "id": "refused/trans-not-supported",
+  "template": "{% trans %}x{% endtrans %}"
+ }
+]
