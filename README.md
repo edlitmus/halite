@@ -80,8 +80,10 @@ place before any hub exists.
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
 this build ships 42 execution modules and 20 state modules against a
-specification naming roughly 90 and 46. FreeBSD is the only platform
-anything has been run on. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is
+specification naming roughly 90 and 46. FreeBSD is the platform it is
+verified on; `make test-linux` runs the suite as Linux binaries under this
+host's compat layer, which covers the platform-neutral code and the
+`/proc` grain collector but reaches no apt, dnf, or systemd. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is
 the full accounting — every module gap, every unexercised platform, every
 test layer SPEC section 31 requires that does not exist yet, and the
 handful of places the implementation deliberately departs from the
@@ -125,6 +127,7 @@ described in the specification section named.
 make build      # bin/halite-node, halite-hub, halite-api
 make test
 make check      # fmt, vet, test, race, and the build policy
+make test-linux # the suite as Linux binaries, under the compat layer
 make cover
 make fuzz       # FUZZTIME=30m for a real campaign
 ```

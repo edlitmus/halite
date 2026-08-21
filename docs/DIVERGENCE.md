@@ -427,26 +427,54 @@ by `service -l`, `available sshd` true, and masking refused by name.
 
 ## 4. Platform coverage
 
-Every platform-conditional path other than FreeBSD's is **written but never
-executed**. It compiles, and that is all that is known about it.
-
 | Platform | Compiles | Unit tests run | Verified against a real system |
 |---|---|---|---|
 | FreeBSD amd64 | yes | yes | yes — grains, highstate, drift reconvergence, requisites |
-| Linux amd64 | yes (`GOOS=linux go build`) | no | no |
+| Linux amd64 | yes | yes, under emulation — 19 of 21 packages | partly — grains only |
 | Linux arm64 | yes | no | no |
 | macOS | yes | no | no |
 | Windows | yes | no | no |
 
-Concretely, on Linux the following have never run: the `useradd`/`groupadd`
-branch of `user` and `group`, `/etc/sysctl.conf` handling that differs from
-FreeBSD's `/etc/sysctl.conf` semantics, the Linux branch of every grain that
-reads `/proc` or `/sys`, `systemctl` service handling, and the apt/dnf
-branches of `pkg` — which do not exist at all.
+### 4.1 What the Linux runs did establish
 
-Grain collection is the sharpest edge here. It was verified against this host
-and returns 63 grains including correct hardware detail. On Linux it will
-take entirely different code paths, none exercised.
+The development host is FreeBSD with the Linux compat layer, linprocfs, and
+linsysfs, so it executes Linux ELF binaries directly. `make test-linux`
+cross-compiles the test binaries and runs them there. Two packages fail and
+both are the emulator rather than the code:
+
+- `builtin/TestFileAccess` — the compat layer resolves a symlink's absolute
+  target against the FreeBSD root, so a stat through the link fails while a
+  stat of the same path string succeeds. Reduced to a nine-line Go program
+  that reproduces it with no halite involved.
+- `docsaudit` — shells out to the Go toolchain, which a cross-executed
+  binary cannot reach.
+
+Grain collection was the sharpest edge and is no longer theoretical. The
+Linux grain code reads `/proc` and `/sys` where the FreeBSD code reads
+sysctl — a separate implementation, previously never executed. Run here it
+returns the same 63 keys the FreeBSD collector returns, no key unique to
+either side, and every hardware fact agrees between them: the same CPU
+model, the same 12 cores, the same 130902 MB. `os` comes back `Rocky` and
+`os_family` `RedHat`, from the userland actually installed.
+
+### 4.2 What it did not establish
+
+The compat layer has no Linux package manager and no init: no `apt`,
+`apt-get`, `dpkg`, `dnf`, `yum`, `rpm`, `apk`, `zypper`, `systemctl`,
+`useradd`, `groupadd`, or `usermod`. Provider selection is by probing for
+the binary, so the Linux binary correctly reached for the FreeBSD `pkg` and
+`service` that are there and answered from them. That is the right
+behaviour and it is also why the following remain **written and never
+executed**:
+
+- the apt, dnf, and apk providers of `pkg`
+- the systemd provider of `service`, and `service.masked`
+- the `useradd`/`groupadd`/`usermod` branch of `user` and `group`
+- Linux `sysctl` handling, which differs from FreeBSD's
+
+These need a real Linux host. Nothing short of one will exercise them.
+
+### 4.3 The per-state `runas` and `umask` no-op
 
 A per-state `runas` or `umask` governs the commands a state runs. On a
 state that runs none — `file.managed` writes through the Go runtime rather
@@ -846,12 +874,14 @@ both are down to isolated cases — 40 YAML and 25 template — with no
 cluster left in either. That is a good place for them to be, and it means
 the next fix in each is worth less than anything above it.
 
-1. **A Linux host.** Everything in section 4 is blocked on it, and it is
-   the point at which the apt and systemd providers stop being
-   theoretical. 60 of the 62 platform modules of SPEC 15.3 wait behind it,
-   and so does the other half of every optional provider capability
-   written in this pass: holding, upgrading, and file ownership exist for
-   pkgng because pkgng is what this host runs.
+1. **A Linux host.** The compat layer got the platform-neutral code and
+   the `/proc` grain collector run under Linux (4.1), which was the part
+   that could be got cheaply. What is left needs a real one: the apt, dnf,
+   and apk providers, the systemd provider, and `useradd`. 60 of the 62
+   platform modules of SPEC 15.3 wait behind it, and so does the other
+   half of every optional provider capability written in this pass —
+   holding, upgrading, and file ownership exist for pkgng because pkgng is
+   what this host runs.
 2. **A Salt installation to run the differential gate against.** SPEC 31
    calls it the primary correctness gate. It has never been run.
 3. **The remaining 40 YAML conformance gaps** (5.4). 23 are documents

@@ -81,6 +81,45 @@ cover:
 race:
 	@env CGO_ENABLED=1 go test -race ./...
 
+# Run the test suite as Linux binaries.
+#
+# Everything outside the FreeBSD-specific modules is platform-neutral Go,
+# but "it cross-compiles" is not the same as "it runs", and the Linux
+# grain code reads /proc and /sys rather than sysctl — an entirely
+# separate implementation that was never executed. On a FreeBSD host with
+# the Linux compat layer and linprocfs mounted, the cross-compiled test
+# binaries run here, so it can be.
+#
+# Two failures are expected and are the emulator rather than the code:
+#
+#   builtin/TestFileAccess    the compat layer resolves a symlink's
+#                             absolute target against the FreeBSD root, so
+#                             a stat through the link fails while a stat of
+#                             the same path string succeeds.
+#   docsaudit                 shells out to the Go toolchain, which a
+#                             cross-executed binary cannot reach.
+#
+# What this does NOT exercise: the apt, dnf, and apk package providers and
+# the systemd service provider. The compat layer has no Linux package
+# manager and no init, so provider selection correctly reaches for the
+# FreeBSD binaries that are there. Those wait on a real Linux host.
+test-linux:
+	@set -e; \
+	tmp=$$(mktemp -d); trap "rm -rf $$tmp" EXIT; \
+	pass=0; fail=0; failed=""; \
+	for p in $$(go list ./internal/...); do \
+		n=$${p##*/}; d=$${p#github.com/edlitmus/halite/}; \
+		env $(DEV_ENV) GOOS=linux GOARCH=amd64 go test -c -o "$$tmp/$$n.test" "$$p" 2>/dev/null || continue; \
+		[ -f "$$tmp/$$n.test" ] || continue; \
+		if ( cd "$$d" && "$$tmp/$$n.test" -test.count=1 >"$$tmp/$$n.out" 2>&1 ); then \
+			pass=$$((pass+1)); \
+		else \
+			fail=$$((fail+1)); failed="$$failed $$n"; \
+			echo "FAIL $$n"; grep -E '^\s+--- FAIL|^--- FAIL' "$$tmp/$$n.out" | head -5; \
+		fi; \
+	done; \
+	echo "linux: $$pass package(s) passed, $$fail failed:$$failed"; \
+	echo "(builtin and docsaudit are expected to fail here; see the Makefile comment)"
 
 # Fuzzing, SPEC section 31. Go runs one target per invocation, so each is
 # named. FUZZTIME is per target; the default is a short smoke run, and a
