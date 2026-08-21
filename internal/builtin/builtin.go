@@ -59,6 +59,7 @@ func New() *Registries {
 	// x509, SPEC sections 15.2 and 15.5.
 	registerX509(r)
 	registerX509States(r)
+	registerPkgVersion(r)
 	registerZFS(r)
 	registerSys(r)
 	return r

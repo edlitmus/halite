@@ -97,7 +97,7 @@ section exists to make. This is a strengthening, not a conflict.
 
 ## 2. Module coverage
 
-The build ships **42 execution modules / 166 functions** and **20 state
+The build ships **42 execution modules / 168 functions** and **20 state
 modules / 54 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -132,7 +132,7 @@ different reason is given.
 | `mount` | implemented | 1 | read-only; `mount`/`umount`/`fstab` not written |
 | `network` | implemented | 5 | |
 | `pillar` | implemented | 5 | |
-| `pkg` | implemented | 6 | FreeBSD `pkg` provider only; see 2.5 |
+| `pkg` | implemented | 8 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
 | `random` | implemented | 3 | `crypto/rand` |
 | `saltutil` | implemented | 5 | stubs that name the phase that will implement them |
 | `service` | implemented | 8 | FreeBSD rc provider only; see 2.5 |
@@ -314,9 +314,15 @@ platform family. Both have exactly one provider implemented and verified:
 | `pkg` | apt, dnf, yum, zypper, apk, pacman, pkgng, brew, macpkg, winrepo, choco | pkgng (FreeBSD) | yes, on this host |
 | `service` | systemd, sysvinit, upstart, openrc, launchd, freebsd_rc, smf, windows | freebsd_rc | yes, on this host |
 
-Neither `pkg.version_cmp` nor the Debian/RPM version comparison it requires
-is implemented, so the differential test SPEC 31 requires against
-`dpkg --compare-versions` and `rpmdev-vercmp` has nothing to run against.
+`pkg.version_cmp` is implemented for all three orderings: Debian and RPM
+transcribed from dpkg and rpmvercmp, FreeBSD's asked of pkg(8). Doing the
+first two directly rather than shelling out matters twice — it works on a
+node that has neither tool, which is every node when the hub decides
+whether an upgrade is needed, and it is one process rather than one per
+comparison, which a `pkg.latest` over a few hundred packages notices.
+
+The live differential against `dpkg --compare-versions` and
+`rpmdev-vercmp` still needs a host that has them. See 5.2.
 
 The D-Bus client SPEC 15.2 specifies for talking to systemd is not written.
 The `service` module would fall back to `systemctl` on a Linux host, and that
@@ -481,7 +487,7 @@ eight are absent.
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 328 of 402 agree, 34 disagree by design, 40 are gaps — see 5.4. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 146 of 198 agree, 27 are outside the subset, 25 are gaps — see 5.5. |
 | Differential against Salt | **absent.** This is named the primary correctness gate and it has never been run. There is no Salt installation to run it against on this host. |
-| Differential, version comparison | **absent**, and blocked: `pkg.version_cmp` is not implemented. |
+| Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
 | Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder, all of which belong to phases that have not started. |
