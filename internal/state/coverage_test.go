@@ -360,8 +360,8 @@ retry_disabled:
 
 func TestMalformedOptionsAreReported(t *testing.T) {
 	cases := []struct{ src, want string }{
-		{"a:\n  test.nop:\n    - order: sideways\n", "must be an integer or `last`"},
-		{"a:\n  test.nop:\n    - order: [1]\n", "must be an integer or `last`"},
+		{"a:\n  test.nop:\n    - order: sideways\n", "must be an integer, `first`, or `last`"},
+		{"a:\n  test.nop:\n    - order: [1]\n", "must be an integer, `first`, or `last`"},
 		{"a:\n  test.nop:\n    - retry:\n        attempts: many\n", "attempts must be an integer"},
 		{"a:\n  test.nop:\n    - retry:\n        interval: {}\n", "interval must be a duration"},
 		{"a:\n  test.nop:\n    - retry:\n        nope: 1\n", "retry has no option"},
@@ -744,5 +744,28 @@ dependent:
 	}
 	if !strings.Contains(dep.Reqs[0].Describe(), "a") || !strings.Contains(dep.Reqs[0].Describe(), "b") {
 		t.Errorf("Describe = %q", dep.Reqs[0].Describe())
+	}
+}
+
+func TestOrderFirstIsAccepted(t *testing.T) {
+	// Salt gives `order: first` the order 0, ahead of every unnumbered
+	// state. Refusing it stopped a tree that Salt compiles, which the
+	// differential gate found.
+	compiled := mustCompile(t, map[string]string{"base|web": `
+last_one:
+  test.nop:
+    - order: last
+
+plain:
+  test.nop: []
+
+first_one:
+  test.nop:
+    - order: first
+`}, "web")
+	got := runOrder(compiled)
+	want := []string{"first_one", "plain", "last_one"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("order = %v, want %v", got, want)
 	}
 }

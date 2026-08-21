@@ -345,14 +345,21 @@ func parseOptions(f *FuncDecl, d *Decl, diags *Diags) Options {
 				o.OrderMode = OrderLast
 				break
 			}
+			// Salt gives `first` the order 0, which is ahead of every
+			// unnumbered state and of any positive number. Refusing it
+			// stopped a tree that Salt compiles.
+			if strings.EqualFold(t, "first") {
+				o.OrderMode, o.OrderValue = OrderExplicit, 0
+				break
+			}
 			n, err := strconv.Atoi(t)
 			if err != nil {
-				diags.Add(pos, d.SLS, d.ID, "order must be an integer or `last`, found %q", t)
+				diags.Add(pos, d.SLS, d.ID, "order must be an integer, `first`, or `last`, found %q", t)
 				break
 			}
 			o.OrderMode, o.OrderValue = OrderExplicit, n
 		default:
-			diags.Add(pos, d.SLS, d.ID, "order must be an integer or `last`, found %s", value.TypeName(v))
+			diags.Add(pos, d.SLS, d.ID, "order must be an integer, `first`, or `last`, found %s", value.TypeName(v))
 		}
 	}
 
