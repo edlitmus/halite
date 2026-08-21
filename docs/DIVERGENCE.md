@@ -97,7 +97,7 @@ section exists to make. This is a strengthening, not a conflict.
 
 ## 2. Module coverage
 
-The build ships **42 execution modules / 168 functions** and **20 state
+The build ships **42 execution modules / 186 functions** and **20 state
 modules / 54 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -122,7 +122,7 @@ different reason is given.
 | `dnsutil` | implemented | 2 | |
 | `environ` | implemented | 3 | |
 | `event` | implemented | 1 | local only until the hub exists |
-| `file` | implemented | 14 | |
+| `file` | implemented | 32 | |
 | `git` | implemented | 5 | through the system `git` binary |
 | `grains` | implemented | 6 | |
 | `group` | implemented | 1 | |
@@ -335,18 +335,30 @@ fallback has never been executed.
 Module presence is not function parity. Where SPEC 15.2 enumerates a
 module's functions, this is the shortfall.
 
-### `file` — 14 exec functions of the ~50 enumerated
+### `file` — 32 exec functions of the ~50 enumerated
 
-Present: `append`, `contains`, `copy`, `directory_exists`, `file_exists`,
-`get_diff`, `get_hash`, `prepend`, `read`, `remove`, `replace`, `search`,
-`stats`, `write`. The state side additionally covers `managed`, `directory`,
-`symlink`, `touch`, `line`, `blockreplace`, `comment`, `uncomment`, `absent`.
+Present: `access`, `append`, `basename`, `check_hash`, `chgrp`, `chmod`,
+`chown`, `contains`, `copy`, `directory_exists`, `dirname`, `file_exists`,
+`find`, `get_diff`, `get_hash`, `grep`, `hardlink`, `is_link`, `join`,
+`makedirs`, `mkdir`, `move`, `prepend`, `read`, `readlink`, `remove`,
+`replace`, `rmdir`, `search`, `stats`, `truncate`, `write`. The state side
+additionally covers `managed`, `directory`, `symlink`, `touch`, `line`,
+`blockreplace`, `comment`, `uncomment`, `absent`.
 
-Absent: `move`, `readlink`, `hardlink`, `chown`, `chgrp`, `chmod`, `access`,
-`find`, `patch`, `sed`, `check_hash`, `grep`, `mkdir`, `makedirs`, `rmdir`,
-`set_selinux_context`, `get_selinux_context`, `extract_hash`,
-`apply_template_on_contents`, `join`, `basename`, `dirname`, `is_link`,
-`list_backups`, `restore_backup`, `truncate`, `seek_read`, `seek_write`.
+Absent: `patch`, `sed`, `set_selinux_context`, `get_selinux_context`,
+`extract_hash`, `apply_template_on_contents`, `list_backups`,
+`restore_backup`, `seek_read`, `seek_write`.
+
+Two of those absences are choices rather than work not done. `sed` and
+`patch` both shell out to a tool to edit a file in place, which is the
+pattern `file.replace` and `file.blockreplace` exist to replace: a state
+that describes the file it wants converges, and one that applies an edit
+does not. `patch` may still be worth having for a vendor-supplied diff.
+
+`file.check_hash` refuses an MD5 or SHA-1 digest by name rather than
+comparing it. A tree carrying one should hear that it verifies nothing;
+MD5 collisions are cheap and SHA-1's are within reach, and the same source
+that published either almost certainly publishes a sha256.
 
 `list_backups` and `restore_backup` are worth calling out: the backup
 mechanism they manage is itself not implemented, so a state asking for a

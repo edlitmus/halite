@@ -60,6 +60,7 @@ func New() *Registries {
 	registerX509(r)
 	registerX509States(r)
 	registerPkgVersion(r)
+	registerFileMore(r)
 	registerZFS(r)
 	registerSys(r)
 	return r
