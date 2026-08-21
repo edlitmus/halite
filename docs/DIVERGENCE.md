@@ -448,7 +448,7 @@ by `service -l`, `available sshd` true, and masking refused by name.
 
 The development host is FreeBSD with the Linux compat layer, linprocfs, and
 linsysfs, so it executes Linux ELF binaries directly. `make test-linux`
-cross-compiles the test binaries and runs them there: 22 of 24 packages pass, the CLI
+cross-compiles the test binaries and runs them there: 23 of 25 packages pass, the CLI
 tests among them. The two failures are the emulator rather than the code:
 
 - `builtin/TestFileAccess` — the compat layer resolves a symlink's absolute
