@@ -439,8 +439,8 @@ by `service -l`, `available sshd` true, and masking refused by name.
 
 The development host is FreeBSD with the Linux compat layer, linprocfs, and
 linsysfs, so it executes Linux ELF binaries directly. `make test-linux`
-cross-compiles the test binaries and runs them there. Two packages fail and
-both are the emulator rather than the code:
+cross-compiles the test binaries and runs them there: 22 of 24 packages pass, the CLI
+tests among them. The two failures are the emulator rather than the code:
 
 - `builtin/TestFileAccess` — the compat layer resolves a symlink's absolute
   target against the FreeBSD root, so a stat through the link fails while a
@@ -509,42 +509,56 @@ doing the checking.
 | Package | Statement coverage | SPEC 31 bar |
 |---|---|---|
 | `internal/regexcompat` | 100.0% | — |
-| `internal/yaml` | 96.1% | >90% branch — met on statements, unmeasured on branches |
+| `internal/yaml` | 96.2% | >90% branch — met on statements, unmeasured on branches |
 | `internal/cli` | 93.4% | — |
 | `internal/target` | 92.8% | >90% branch — met on statements, unmeasured on branches |
 | `internal/state` | 90.7% | >90% branch — met on statements, unmeasured on branches |
 | `internal/buildpolicy` | 90.7% | — |
-| `internal/value` | 89.6% | — |
 | `internal/fileserver` | 89.4% | — |
-| `internal/states` | 86.1% | — |
+| `internal/value` | 89.1% | — |
+| `internal/states` | 85.9% | — |
 | `internal/pillar` | 84.7% | — |
 | `internal/render` | 83.7% | — |
-| `internal/runner` | 83.0% | — |
-| `internal/exec` | 81.3% | — |
+| `internal/runner` | 83.3% | — |
 | `internal/template` | 81.9% | **>90% branch — not met** |
-| `internal/signature` | 79.3% | — |
+| `internal/exec` | 81.4% | — |
+| `internal/signature` | 80.9% | — |
 | `internal/config` | 77.8% | — |
 | `internal/grains` | 75.3% | — |
 | `internal/migrate` | 69.4% | — |
-| `internal/builtin` | 36.3% | — |
-| `internal/specaudit` | n/a | it tests documents, not code |
-| `cmd/halite-node`, `cmd/halite-hub`, `cmd/halite-api` | 0% | — |
+| `cmd/halite-api` | 66.7% | — |
+| `cmd/halite-node` | 54.5% | — |
+| `cmd/halite-hub` | 49.2% | — |
+| `internal/builtin` | 44.8% | — |
+| `internal/specaudit`, `internal/docsaudit` | n/a | they test documents, not code |
 | `internal/version` | 0% | — |
 
-Whole tree: 70.8%.
+Whole tree: 71.5%.
 
 `internal/template` is the one correctness-core package still short of the
 bar on either metric. It is also the largest: roughly 130 filters, the
 expression grammar, inheritance, and macros. Closing it is a matter of
 volume rather than difficulty.
 
-`internal/builtin` at 36.3% is structurally limited rather than neglected: a
+`internal/builtin` at 44.8% is structurally limited rather than neglected: a
 large share of its statements need root, a package manager with a writable
 database, or a service manager with services to stop. Raising it honestly
 means the containerised integration suite of SPEC 31, which is phase 5 work.
 
-The three `cmd` packages are argument dispatch over tested libraries. They
-are exercised by hand and by the lab run, not by `go test`.
+The three `cmd` packages were 0% until this pass, on the reasoning that they
+are argument dispatch over tested libraries and are covered by hand and by
+the lab run. That reasoning was wrong, and testing them showed it within the
+hour: `grains item a b c` resolved only `a`, `--fail-on` took a misspelled
+level as the default and audited less than it was asked to, and the usage
+text advertised a `grains setval` that had never existed. All three are the
+same shape — a CLI that accepts input it does not honour — and none was
+reachable from a library test, because the defect was in the dispatch.
+
+They are tested now by re-executing the test binary as the command, so the
+tests need no toolchain at run time and pass under the Linux run in section
+4.1. What is still uncovered there is what needs a hub: the phase 2 and
+phase 4 subcommands are stubs that report the phase, and that report is the
+only behaviour they have to test.
 
 ### 5.2 The fourteen test layers
 
