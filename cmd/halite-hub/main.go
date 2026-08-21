@@ -107,7 +107,11 @@ func runMigrate(args *cli.Args) int {
 	}
 
 	counts := rep.Count()
-	switch args.Flag("fail-on", "blocking") {
+	// An unrecognised level used to fall through to blocking, so
+	// `--fail-on reveiw` audited less than it was asked to and said
+	// nothing about it. A gate that quietly loosens is worse than no
+	// gate.
+	switch level := args.Flag("fail-on", "blocking"); level {
 	case "note":
 		if counts.Total > 0 {
 			return 1
@@ -116,10 +120,12 @@ func runMigrate(args *cli.Args) int {
 		if counts.Blocking+counts.BySeverity[migrate.Review] > 0 {
 			return 1
 		}
-	default:
+	case "blocking":
 		if counts.Blocking > 0 {
 			return 1
 		}
+	default:
+		cli.Fatalf("--fail-on %q is not a level; try blocking, review, or note", level)
 	}
 	return 0
 }
