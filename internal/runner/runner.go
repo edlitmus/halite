@@ -7,6 +7,7 @@
 package runner
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -387,8 +388,20 @@ func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
 	// runs, not only to its unless and onlyif conditions. SPEC section
 	// 11.7 lists both as per-state options, and an option that governs
 	// the conditions but not the state itself is the wrong half.
-	ctx := r.chunkContext(ch)
+	base := r.chunkContext(ch)
 	call := func() (states.Result, error) {
+		ctx := base
+		// A per-state `timeout` bounds each attempt, not the retry loop
+		// as a whole, which is how Salt reads it. It was parsed into the
+		// options and then read by nothing, so a state carrying one ran
+		// unbounded.
+		if ch.Opts.Timeout > 0 {
+			bounded := *base
+			var cancel context.CancelFunc
+			bounded.Ctx, cancel = context.WithTimeout(base.Ctx, ch.Opts.Timeout)
+			defer cancel()
+			ctx = &bounded
+		}
 		if watchFired {
 			return r.States.CallWatch(ctx, ch.Func(), ch.Args)
 		}

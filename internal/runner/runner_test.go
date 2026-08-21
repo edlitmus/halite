@@ -22,9 +22,10 @@ import (
 // probe records what actually ran, which is the only way to tell "skipped"
 // from "ran and did nothing".
 type probe struct {
-	ran   []string
-	runAs []string
-	umask []string
+	ran       []string
+	runAs     []string
+	umask     []string
+	deadlines []time.Duration
 }
 
 // registries builds a state registry whose behaviour a test can script
@@ -54,6 +55,13 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 		// unless and onlyif conditions.
 		p.runAs = append(p.runAs, c.RunAs)
 		p.umask = append(p.umask, c.Umask)
+		// A per-state timeout reaches a module as a deadline on its
+		// context, which is the only thing a module can act on.
+		var remaining time.Duration
+		if deadline, ok := c.Ctx.Deadline(); ok {
+			remaining = time.Until(deadline)
+		}
+		p.deadlines = append(p.deadlines, remaining)
 		// A test-mode invocation is recorded distinctly, because prereq
 		// runs its target in test mode before deciding, and a trace that
 		// hid that would look like the target ran twice.
@@ -904,5 +912,54 @@ bare:
 	// which is what sharing one context between chunks would do.
 	if p.umask[1] != "" || p.runAs[1] != "" {
 		t.Errorf("a state with no options saw umask %q and runas %q", p.umask[1], p.runAs[1])
+	}
+}
+
+func TestPerStateTimeoutReachesTheModule(t *testing.T) {
+	// `timeout` was parsed into the chunk's options, stripped from the
+	// arguments, and then read by nothing, so a state declaring one ran
+	// unbounded while its tree said otherwise.
+	_, p := compileAndRun(t, `
+bounded:
+  probe.run:
+    - timeout: 30
+`)
+	if len(p.deadlines) != 1 {
+		t.Fatalf("the state ran %d times", len(p.deadlines))
+	}
+	if p.deadlines[0] <= 0 || p.deadlines[0] > 30*time.Second {
+		t.Errorf("the module saw a deadline of %v, want one just under 30s", p.deadlines[0])
+	}
+
+	// A state without one is not bounded, so a long-running command is
+	// not killed by a default nobody asked for.
+	_, p = compileAndRun(t, `
+unbounded:
+  probe.run: []
+`)
+	if p.deadlines[0] != 0 {
+		t.Errorf("a state with no timeout saw a deadline of %v", p.deadlines[0])
+	}
+}
+
+func TestPerStateTimeoutBoundsEachAttempt(t *testing.T) {
+	// Salt's timeout bounds one attempt. A deadline shared across the
+	// retry loop would give the last attempt almost none of it.
+	_, p := compileAndRun(t, `
+flaky:
+  probe.run:
+    - fail: true
+    - timeout: 30
+    - retry:
+        attempts: 3
+        interval: 1
+`)
+	if len(p.deadlines) != 3 {
+		t.Fatalf("the state ran %d times, want 3", len(p.deadlines))
+	}
+	for i, d := range p.deadlines {
+		if d <= 29*time.Second {
+			t.Errorf("attempt %d saw %v; each attempt gets the full timeout", i+1, d)
+		}
 	}
 }
