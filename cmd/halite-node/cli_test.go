@@ -1,0 +1,251 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// The CLI is tested by re-executing this test binary as halite-node.
+// Building the real binary would need the Go toolchain at test time,
+// which a cross-compiled test binary run under emulation cannot reach;
+// re-execution needs nothing but the binary already running. SPEC 11.8's
+// exit codes and the argument dispatch are the contract under test, and
+// both are only observable from outside the process.
+const reexec = "HALITE_TEST_REEXEC"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(reexec) != "" {
+		main()
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+type result struct {
+	stdout string
+	stderr string
+	code   int
+}
+
+func run(t *testing.T, args ...string) result {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], args...)
+	cmd.Env = append(os.Environ(), reexec+"=1")
+	var out, errb strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	err := cmd.Run()
+	code := 0
+	if ee, ok := err.(*exec.ExitError); ok {
+		code = ee.ExitCode()
+	} else if err != nil {
+		t.Fatalf("%v: %v", args, err)
+	}
+	return result{out.String(), errb.String(), code}
+}
+
+// tree writes an SLS root and returns the flags that point at it. Each
+// test gets its own root and its own target directory.
+func tree(t *testing.T, files map[string]string) []string {
+	t.Helper()
+	root := t.TempDir()
+	for name, body := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return []string{"--local", "--file-root", root, "--config", filepath.Join(root, "absent.yaml")}
+}
+
+func TestVersionAndHelp(t *testing.T) {
+	if got := run(t, "version"); got.code != 0 || !strings.HasPrefix(got.stdout, "halite-node ") {
+		t.Errorf("version = %+v", got)
+	}
+	if got := run(t, "help"); got.code != 0 || !strings.Contains(got.stdout, "Usage:") {
+		t.Errorf("help = %+v", got)
+	}
+}
+
+func TestUnknownSubcommandIsUsageNotSuccess(t *testing.T) {
+	// Exit 2 is "converged" for a state run, so a typo must not reach it
+	// by a path a script would read as success. Usage failure is also 2
+	// by convention, and both go to stderr, which is what tells them
+	// apart from a run that produced output.
+	got := run(t, "nosuchthing")
+	if got.code != 2 {
+		t.Errorf("exit = %d, want 2", got.code)
+	}
+	if !strings.Contains(got.stderr, "unknown subcommand") || got.stdout != "" {
+		t.Errorf("got %+v", got)
+	}
+
+	if got := run(t); got.code != 2 || !strings.Contains(got.stderr, "Usage:") {
+		t.Errorf("no arguments = %+v", got)
+	}
+}
+
+func TestPhaseTwoSubcommandsSayWhy(t *testing.T) {
+	for _, sub := range []string{"serve", "event"} {
+		got := run(t, sub)
+		if got.code != 1 {
+			t.Errorf("%s exit = %d, want 1", sub, got.code)
+		}
+		if !strings.Contains(got.stderr, "phase 2") {
+			t.Errorf("%s should name the phase: %q", sub, got.stderr)
+		}
+	}
+}
+
+func TestGrainsItemAnswersEveryKey(t *testing.T) {
+	flags := tree(t, nil)
+	got := run(t, append([]string{"grains", "item", "kernel", "osrelease", "--out", "json"}, flags...)...)
+	if got.code != 0 {
+		t.Fatalf("%+v", got)
+	}
+	var decoded map[string]map[string]any
+	if err := json.Unmarshal([]byte(got.stdout), &decoded); err != nil {
+		t.Fatalf("output is not JSON: %v: %s", err, got.stdout)
+	}
+	for _, m := range decoded {
+		if len(m) != 2 || m["kernel"] == "" || m["osrelease"] == "" {
+			t.Errorf("item answered %v, want both keys", m)
+		}
+	}
+
+	// get is one key, and refuses a second rather than answering about
+	// the first and dropping the rest.
+	if got := run(t, append([]string{"grains", "get", "kernel", "osrelease"}, flags...)...); got.code == 0 {
+		t.Errorf("get with two keys should fail: %+v", got)
+	}
+}
+
+func TestCallRunsAModuleFunction(t *testing.T) {
+	flags := tree(t, nil)
+	got := run(t, append([]string{"call", "test.ping", "--out", "json"}, flags...)...)
+	if got.code != 0 || !strings.Contains(got.stdout, "true") {
+		t.Errorf("test.ping = %+v", got)
+	}
+
+	// An unknown function is an error naming it, not an empty result.
+	got = run(t, append([]string{"call", "nosuch.function"}, flags...)...)
+	if got.code == 0 || !strings.Contains(got.stderr, "nosuch.function") {
+		t.Errorf("unknown function = %+v", got)
+	}
+}
+
+// TestExitCodeContract is SPEC 11.8: 0 when something changed, 2 when
+// there was nothing to do, non-zero-non-2 when it failed. A scheduler
+// reads these, so they are the most load-bearing integers in the
+// program.
+func TestExitCodeContract(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "managed.conf")
+	flags := tree(t, map[string]string{
+		"top.sls": "base:\n  '*':\n    - m\n",
+		"m.sls": target + `:
+  file.managed:
+    - contents: hello
+    - mode: '0644'
+`,
+	})
+
+	if got := run(t, append([]string{"state", "apply"}, flags...)...); got.code != 0 {
+		t.Fatalf("a run that changes something should exit 0: %+v", got)
+	}
+	// contents gains a trailing newline, as Salt's does.
+	if data, err := os.ReadFile(target); err != nil || string(data) != "hello\n" {
+		t.Fatalf("the file was not written: %q %v", data, err)
+	}
+
+	if got := run(t, append([]string{"state", "apply"}, flags...)...); got.code != 2 {
+		t.Errorf("a converged run should exit 2: %+v", got)
+	}
+
+	// Drift, and it changes again.
+	os.WriteFile(target, []byte("drifted"), 0o644)
+	if got := run(t, append([]string{"state", "apply"}, flags...)...); got.code != 0 {
+		t.Errorf("a reconverging run should exit 0: %+v", got)
+	}
+	if data, _ := os.ReadFile(target); string(data) != "hello\n" {
+		t.Errorf("drift was not corrected: %q", data)
+	}
+}
+
+func TestTestModeChangesNothing(t *testing.T) {
+	target := filepath.Join(t.TempDir(), "managed.conf")
+	flags := tree(t, map[string]string{
+		"top.sls": "base:\n  '*':\n    - m\n",
+		"m.sls":   target + ":\n  file.managed:\n    - contents: hello\n",
+	})
+
+	got := run(t, append([]string{"state", "apply", "--test"}, flags...)...)
+	if got.code != 0 {
+		t.Errorf("a test run with pending work should exit 0: %+v", got)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Error("--test wrote the file")
+	}
+}
+
+func TestCompilationErrorsAreNotExitTwo(t *testing.T) {
+	flags := tree(t, map[string]string{
+		"top.sls": "base:\n  '*':\n    - m\n",
+		"m.sls":   "broken:\n  file.managed:\n    - contents: {{ undefined_name }}\n",
+	})
+	got := run(t, append([]string{"state", "apply"}, flags...)...)
+	if got.code == 0 || got.code == 2 {
+		t.Errorf("a failed compile must not report changed or converged: %+v", got)
+	}
+	if !strings.Contains(got.stderr+got.stdout, "undefined_name") {
+		t.Errorf("the error should name the identifier: %+v", got)
+	}
+}
+
+func TestOutputFormatsAreParseable(t *testing.T) {
+	flags := tree(t, nil)
+	if got := run(t, append([]string{"grains", "items", "--out", "json"}, flags...)...); got.code != 0 {
+		t.Errorf("json: %+v", got)
+	} else if !json.Valid([]byte(got.stdout)) {
+		t.Errorf("json output does not parse: %s", got.stdout)
+	}
+	if got := run(t, append([]string{"grains", "items", "--out", "quiet"}, flags...)...); got.stdout != "" {
+		t.Errorf("quiet printed %q", got.stdout)
+	}
+}
+
+// TestUsageAdvertisesOnlyRealSubcommands reads the subcommand lists out
+// of the usage text and runs each one. The usage offered `grains setval`
+// for as long as it existed, and no such subcommand was ever
+// implemented; an operator reading `--help` found out from an error.
+func TestUsageAdvertisesOnlyRealSubcommands(t *testing.T) {
+	flags := tree(t, nil)
+	for _, line := range strings.Split(usage, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "halite-node" {
+			continue
+		}
+		// `<a|b|c>` is a list of real subcommands; `<subcommand>` is a
+		// placeholder for one, and there is nothing to check in it.
+		spec := ""
+		for _, f := range fields[2:] {
+			if strings.HasPrefix(f, "<") && strings.HasSuffix(f, ">") && strings.Contains(f, "|") {
+				spec = strings.Trim(f, "<>")
+			}
+		}
+		if spec == "" {
+			continue
+		}
+		for _, sub := range strings.Split(spec, "|") {
+			got := run(t, append([]string{fields[1], sub, "x"}, flags...)...)
+			if strings.Contains(got.stderr, "has no subcommand") {
+				t.Errorf("`%s %s` is advertised in the usage and does not exist", fields[1], sub)
+			}
+		}
+	}
+}

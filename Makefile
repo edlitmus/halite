@@ -99,6 +99,9 @@ race:
 #   docsaudit                 shells out to the Go toolchain, which a
 #                             cross-executed binary cannot reach.
 #
+# The cmd packages are included: their tests re-execute the test binary
+# as the command, so they need no toolchain and run here unchanged.
+#
 # What this does NOT exercise: the apt, dnf, and apk package providers and
 # the systemd service provider. The compat layer has no Linux package
 # manager and no init, so provider selection correctly reaches for the
@@ -107,7 +110,7 @@ test-linux:
 	@set -e; \
 	tmp=$$(mktemp -d); trap "rm -rf $$tmp" EXIT; \
 	pass=0; fail=0; failed=""; \
-	for p in $$(go list ./internal/...); do \
+	for p in $$(go list ./internal/... ./cmd/...); do \
 		n=$${p##*/}; d=$${p#github.com/edlitmus/halite/}; \
 		env $(DEV_ENV) GOOS=linux GOARCH=amd64 go test -c -o "$$tmp/$$n.test" "$$p" 2>/dev/null || continue; \
 		[ -f "$$tmp/$$n.test" ] || continue; \
