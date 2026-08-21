@@ -40,12 +40,11 @@ func registerFileMore(r *Registries) {
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				// applyOwnership rather than os.Chown: it is build-split,
+				// so this compiles on Windows, where it refuses with a
+				// message instead of pretending to work.
 				path := states.Str(args, "path", "")
-				uid, gid, err := resolveOwner(states.Str(args, "user", ""), states.Str(args, "group", ""))
-				if err != nil {
-					return nil, err
-				}
-				if err := os.Chown(path, uid, gid); err != nil {
+				if err := applyOwnership(path, states.Str(args, "user", ""), states.Str(args, "group", "")); err != nil {
 					return nil, err
 				}
 				return path, nil
@@ -65,11 +64,7 @@ func registerFileMore(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				path := states.Str(args, "path", "")
-				_, gid, err := resolveOwner("", states.Str(args, "group", ""))
-				if err != nil {
-					return nil, err
-				}
-				if err := os.Chown(path, -1, gid); err != nil {
+				if err := applyOwnership(path, "", states.Str(args, "group", "")); err != nil {
 					return nil, err
 				}
 				return path, nil
