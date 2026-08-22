@@ -345,3 +345,79 @@ func runInBackground(c *exec.Context, args *value.Map) (any, error) {
 	}
 	return value.MapOf("pid", int64(pid)), nil
 }
+
+// registerCmdScriptState adds the `cmd.script` state. Salt's takes the
+// source as the state's `name`, which is how a tree spells
+// `cmd.script: - name: salt://files/x.sh`, and that is the spelling a
+// real tree used.
+func registerCmdScriptState(r *Registries) {
+	r.States.Add(states.Module{
+		Sig: signature.Signature{
+			Module: "cmd", Function: "script",
+			Doc: "Fetch a script, run it, and remove it. Use unless, onlyif, or creates to make it idempotent.",
+			Params: []signature.Param{
+				req("name", signature.String, "The script source: a halite:// or salt:// URI, or a local path."),
+				opt("source", signature.String, "", "The source, when it differs from the state ID."),
+				opt("args", signature.List, nil, "Arguments passed to the script."),
+				opt("shell", signature.String, "", "Interpreter to run it with. Empty honours the script's shebang."),
+				opt("cwd", signature.Path, "", "Working directory."),
+				opt("runas", signature.String, "", "Account to run as."),
+				opt("umask", signature.String, "", "Umask for the child."),
+				opt("env", signature.Map, nil, "Environment, replacing the clean default."),
+				opt("timeout", signature.Duration, nil, "How long it may run."),
+				opt("ignore_retcode", signature.Bool, false, "Treat a non-zero exit as success."),
+			},
+			Mutates:       true,
+			ArbitraryCode: true,
+			TestMode:      signature.TestUnreliable,
+			Section:       "15.5",
+		},
+		Fn: cmdScriptState,
+	})
+}
+
+func cmdScriptState(c *exec.Context, args *value.Map) (states.Result, error) {
+	source := states.Str(args, "source", "")
+	if source == "" {
+		source = states.Str(args, "name", "")
+	}
+	if source == "" {
+		return states.False("This state needs a script source."), nil
+	}
+
+	if c.Test {
+		return states.WouldChange(
+			fmt.Sprintf("The script %s would be fetched and run.", source),
+			value.MapOf("cmd", states.Change("not run", source)),
+		), nil
+	}
+
+	// runScript reads `source`, and the state may have carried it as
+	// `name`, so the resolved one is put where the execution module
+	// looks for it.
+	call := args.Clone()
+	call.Set("source", source)
+
+	out, err := runScript(c, call, true)
+	if err != nil {
+		return states.False(fmt.Sprintf("The script %s could not be run: %v", source, err)), nil
+	}
+	res, ok := out.(*value.Map)
+	if !ok {
+		return states.Changed(fmt.Sprintf("The script %s ran.", source), value.MapOf("cmd", states.Change("not run", source))), nil
+	}
+
+	code, _ := res.Get("retcode")
+	changes := value.NewMap(4)
+	for _, key := range []string{"pid", "retcode", "stdout", "stderr"} {
+		if v, ok := res.Get(key); ok {
+			changes.Set(key, v)
+		}
+	}
+	if n, ok := code.(int64); ok && n != 0 && !states.Bool(args, "ignore_retcode", false) {
+		failed := states.False(fmt.Sprintf("The script %s exited %d.", source, n))
+		failed.Changes = changes
+		return failed, nil
+	}
+	return states.Changed(fmt.Sprintf("The script %s ran.", source), changes), nil
+}

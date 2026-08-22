@@ -216,6 +216,7 @@ func registerFileStates(r *Registries) {
 				opt("user", signature.String, "", "Owner."),
 				opt("group", signature.String, "", "Group."),
 				opt("makedirs", signature.Bool, false, "Create the parent directories if they are missing."),
+				opt("dir_mode", signature.Mode, "0755", "Mode for parent directories created by makedirs."),
 			},
 			Mutates:  true,
 			TestMode: signature.TestReliable,
@@ -594,11 +595,19 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if !exists {
-		mk := os.Mkdir
+		// The parents get dir_mode and the leaf gets mode. Creating the
+		// whole chain with the leaf's mode is how a private directory
+		// ends up with a private parent nobody asked for, or the reverse.
 		if states.Bool(args, "makedirs", false) {
-			mk = os.MkdirAll
+			dirMode, err := parseMode(states.Str(args, "dir_mode", "0755"))
+			if err != nil {
+				return states.False(fmt.Sprintf("The dir_mode for %s is invalid: %v", path, err)), nil
+			}
+			if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
+				return states.False(fmt.Sprintf("The parent directories of %s could not be created: %v", path, err)), nil
+			}
 		}
-		if err := mk(path, wantMode); err != nil {
+		if err := os.Mkdir(path, wantMode); err != nil {
 			return states.False(fmt.Sprintf("%s could not be created: %v", path, err)), nil
 		}
 	} else if modeDiffers {

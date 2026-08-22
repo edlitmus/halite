@@ -359,7 +359,7 @@ func coerce(s Signature, p Param, v any) (any, error) {
 		if n, ok := v.(int64); ok {
 			return nil, &ArgError{
 				Function: s.Name(), Param: p.Name,
-				Msg: fmt.Sprintf("must be a quoted string, found the integer %d; write it as '%04o'", n, n),
+				Msg: fmt.Sprintf("must be a quoted string, found the integer %d; %s", n, modeAdvice(n)),
 			}
 		}
 		return nil, fail("a quoted file mode such as '0644'")
@@ -567,4 +567,40 @@ func (s Signature) JSON() *value.Map {
 		m.Set("spec_section", s.Section)
 	}
 	return m
+}
+
+// modeAdvice suggests the spelling the author meant. YAML has already
+// destroyed the evidence by the time the value arrives here, and the two
+// readings need opposite advice:
+//
+//	mode: 0644   YAML 1.1 octal, so this arrives as 420, and `%04o` puts
+//	             back what was typed.
+//	mode: 640    plain decimal, so it arrives as 640, and `%04o` would
+//	             suggest 1200 — the octal of the wrong number. What the
+//	             author meant is the digits they wrote.
+//
+// Where the decimal digits are all octal digits, both readings are
+// plausible and both are offered. Salt, for what it is worth, takes the
+// decimal digits and reads them as octal, so `mode: 640` happens to work
+// there and `mode: 0644` silently applies 0420.
+func modeAdvice(n int64) string {
+	if n < 0 {
+		return "write it as a quoted string"
+	}
+	asTyped := fmt.Sprintf("%d", n)
+	asOctal := fmt.Sprintf("%04o", n)
+	if isOctalDigits(asTyped) && asOctal != "0"+asTyped {
+		return fmt.Sprintf("write it as '0%s' if you meant that mode, or '%s' if you meant the number %d",
+			asTyped, asOctal, n)
+	}
+	return fmt.Sprintf("write it as '%s'", asOctal)
+}
+
+func isOctalDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '7' {
+			return false
+		}
+	}
+	return s != ""
 }

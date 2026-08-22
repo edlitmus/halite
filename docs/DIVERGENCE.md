@@ -98,7 +98,7 @@ section exists to make. This is a strengthening, not a conflict.
 ## 2. Module coverage
 
 The build ships **42 execution modules / 209 functions** and **20 state
-modules / 54 functions**.
+modules / 56 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -178,7 +178,7 @@ different reason is given.
 | Module | Status | Functions | Note |
 |---|---|---|---|
 | `archive` | implemented | 1 | |
-| `cmd` | implemented | 2 | |
+| `cmd` | implemented | 3 | `script` takes its source as the state's name, as Salt's does |
 | `cron` | implemented | 2 | |
 | `file` | implemented | 13 | |
 | `git` | implemented | 1 | |
@@ -189,7 +189,7 @@ different reason is given.
 | `service` | implemented | 4 | |
 | `ssh_auth` | implemented | 2 | |
 | `sysctl` | implemented | 1 | |
-| `sysrc` | implemented | 2 | not in SPEC 15.5; FreeBSD's equivalent of the `hostname`/`service`-enable states |
+| `sysrc` | implemented | 3 | not in SPEC 15.5; FreeBSD's equivalent of the `hostname`/`service`-enable states. `managed` is Salt's name and `present` is this build's, and they are the same function |
 | `test` | implemented | 5 | |
 | `user` | implemented | 2 | |
 | `zfs` | implemented | 2 | `filesystem_present`, `absent`; no `zpool` state |

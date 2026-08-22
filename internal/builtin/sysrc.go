@@ -89,23 +89,38 @@ func registerSysrc(r *Registries) {
 		},
 	)
 
+	// Salt spells this one `managed`, and a FreeBSD tree written against
+	// Salt says `sysrc.managed`. `present` is kept beside it because it
+	// is the name every other state module in this build uses for the
+	// same idea, and because the two are the same function.
+	sysrcSetParams := func() []signature.Param {
+		return []signature.Param{
+			nameParam("The setting. Defaults to the state ID."),
+			req("value", signature.String, "The value."),
+			opt("file", signature.Path, "", "An rc.conf other than the default."),
+		}
+	}
+	sysrcSetSig := func(function, doc string) signature.Signature {
+		return signature.Signature{
+			Module: "sysrc", Function: function,
+			Doc:        doc,
+			Params:     sysrcSetParams(),
+			Mutates:    true,
+			TestMode:   signature.TestReliable,
+			Privileges: []string{"root"},
+			Platforms:  []string{"freebsd"},
+			Section:    "15.5",
+		}
+	}
+
 	r.States.Add(
 		states.Module{
-			Sig: signature.Signature{
-				Module: "sysrc", Function: "present",
-				Doc: "Ensure an rc.conf setting has a value.",
-				Params: []signature.Param{
-					nameParam("The setting. Defaults to the state ID."),
-					req("value", signature.String, "The value."),
-					opt("file", signature.Path, "", "An rc.conf other than the default."),
-				},
-				Mutates:    true,
-				TestMode:   signature.TestReliable,
-				Privileges: []string{"root"},
-				Platforms:  []string{"freebsd"},
-				Section:    "15.5",
-			},
-			Fn: sysrcPresent,
+			Sig: sysrcSetSig("managed", "Ensure an rc.conf setting has a value. Salt's name for it."),
+			Fn:  sysrcPresent,
+		},
+		states.Module{
+			Sig: sysrcSetSig("present", "Ensure an rc.conf setting has a value."),
+			Fn:  sysrcPresent,
 		},
 		states.Module{
 			Sig: signature.Signature{

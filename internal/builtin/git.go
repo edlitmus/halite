@@ -126,7 +126,11 @@ func registerGit(r *Registries) {
 				opt("rev", signature.String, "", "The branch, tag, or commit; defaults to the remote's head."),
 				opt("remote", signature.String, "origin", "The remote name."),
 				opt("depth", signature.Int, nil, "Clone with this depth."),
+				opt("branch", signature.String, "", "Local branch name for the checkout; defaults to rev."),
 				opt("force_reset", signature.Bool, false, "Discard local changes when the revision differs."),
+				opt("force_checkout", signature.Bool, false, "Check out even when it would discard local changes."),
+				opt("force_clone", signature.Bool, false, "Clone into a target directory that already has files in it."),
+				opt("force_fetch", signature.Bool, false, "Fetch even when it would overwrite a local ref."),
 				opt("user", signature.String, "", "Run git as this account."),
 			},
 			Mutates:  true,
@@ -164,6 +168,9 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	target := states.Str(args, "target", "")
 	rev := states.Str(args, "rev", "")
 	remote := states.Str(args, "remote", "origin")
+	// Salt's `branch` names the local branch; it defaults to the
+	// revision, which is what a tree naming both the same thing means.
+	branch := states.Str(args, "branch", "")
 
 	if url == "" || target == "" {
 		return states.False("This state needs a repository URL and a target directory."), nil
@@ -176,9 +183,11 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	exists := err == nil
 
 	if !exists {
-		if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 {
+		if entries, err := os.ReadDir(target); err == nil && len(entries) > 0 &&
+			!states.Bool(args, "force_clone", false) {
 			return states.False(fmt.Sprintf(
-				"%s already exists and is not a checkout; halite will not clone over a directory that has files in it.", target)), nil
+				"%s already exists and is not a checkout; halite will not clone over a directory that has files in it. "+
+					"Set force_clone to do it anyway.", target)), nil
 		}
 		changes := value.MapOf(target, states.Change(nil, "cloned from "+url))
 		if c.Test {
@@ -190,6 +199,9 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 		}
 		if rev != "" {
 			argv = append(argv, "--branch", rev)
+		}
+		if branch != "" && branch != rev {
+			argv = append(argv, "--branch", branch)
 		}
 		argv = append(argv, url, target)
 		if _, err := gitRun(c, "", argv...); err != nil {
@@ -208,14 +220,14 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 	current := strings.TrimSpace(before.Stdout)
 
-	if c.Test {
-		// A fetch is a network call that changes nothing in the working
-		// tree, so test mode does it: without it the state cannot say
-		// whether it would change anything, and guessing is worse.
-		if _, err := gitRun(c, target, "fetch", "--quiet", remote); err != nil {
-			return states.False(fmt.Sprintf("%s could not be fetched: %v", remote, err)), nil
-		}
-	} else if _, err := gitRun(c, target, "fetch", "--quiet", remote); err != nil {
+	// A fetch is a network call that changes nothing in the working tree,
+	// so test mode does it too: without it the state cannot say whether
+	// it would change anything, and guessing is worse.
+	fetch := []string{"fetch", "--quiet"}
+	if states.Bool(args, "force_fetch", false) {
+		fetch = append(fetch, "--force")
+	}
+	if _, err := gitRun(c, target, append(fetch, remote)...); err != nil {
 		return states.False(fmt.Sprintf("%s could not be fetched: %v", remote, err)), nil
 	}
 
@@ -244,7 +256,18 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 			fmt.Sprintf("%s would move from %s to %s.", target, shortCommit(current), shortCommit(want)), changes), nil
 	}
 
-	argv := []string{"checkout", "--quiet", want}
+	argv := []string{"checkout", "--quiet"}
+	if states.Bool(args, "force_checkout", false) {
+		argv = append(argv, "--force")
+	}
+	if branch != "" {
+		// `-B` moves the named branch to the wanted commit and checks it
+		// out, which is what Salt's branch argument does. Without it a
+		// checkout by commit leaves a detached HEAD and the next run
+		// finds no branch to advance.
+		argv = append(argv, "-B", branch)
+	}
+	argv = append(argv, want)
 	if states.Bool(args, "force_reset", false) {
 		argv = []string{"reset", "--hard", want}
 	}

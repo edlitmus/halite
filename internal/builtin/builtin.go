@@ -63,6 +63,7 @@ func New() *Registries {
 	registerFileMore(r)
 	registerServiceMore(r)
 	registerCmdMore(r)
+	registerCmdScriptState(r)
 	registerPkgMore(r)
 	registerZFS(r)
 	registerSys(r)

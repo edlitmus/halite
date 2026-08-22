@@ -234,3 +234,29 @@ func TestAStringThatIsNotANumberIsStillAnError(t *testing.T) {
 		t.Error("a string that is not a boolean should be refused")
 	}
 }
+
+func TestModeAdviceSuggestsWhatWasTyped(t *testing.T) {
+	// YAML has destroyed the evidence by the time the value arrives, and
+	// the two readings need opposite advice. `mode: 0644` is YAML 1.1
+	// octal and arrives as 420, where %04o puts back what was typed;
+	// `mode: 640` is plain decimal and arrives as 640, where %04o would
+	// suggest 1200 — the octal of a number the author never wrote.
+	cases := map[int64][]string{
+		640: {"'0640'", "'1200'"},
+		420: {"'0644'"},
+		777: {"'0777'", "'1411'"},
+	}
+	for n, wants := range cases {
+		got := modeAdvice(n)
+		for _, want := range wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("modeAdvice(%d) = %q, should offer %s", n, got, want)
+			}
+		}
+	}
+
+	// A number with a digit above 7 can only be the second reading.
+	if got := modeAdvice(888); !strings.Contains(got, "'1570'") || strings.Contains(got, "if you meant") {
+		t.Errorf("modeAdvice(888) = %q, want the single octal spelling", got)
+	}
+}
