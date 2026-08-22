@@ -111,6 +111,29 @@ does halite. A bare `n` is the string. This is documented in
 [DIVERGENCE.md](DIVERGENCE.md) section 1.1 because SPEC.md says otherwise
 and SPEC.md is wrong.
 
+## Encrypted pillar
+
+A `#!yaml|gpg` pillar file works. halite drives the system `gpg` binary,
+as Salt does, and links no OpenPGP library; the ciphertext goes to it on
+standard input and never on a command line. Salt's `gpg_keydir` is read
+as `gpg_home` through the compatibility shim, so an existing
+configuration needs no edit.
+
+```yaml
+# /etc/halite/node.yaml
+gpg_home: /usr/local/etc/salt/gpgkeys
+gpg_binary: gpg          # the default
+gpg_timeout: 30s         # per value
+```
+
+If `gpg` is not installed, a tree that names the renderer fails at load
+with that reason rather than at the first encrypted value. A value that
+cannot be decrypted names the pillar key it sits at, and never its
+contents.
+
+The `crypt` renderer of SPEC section 12.5, which is halite's own, is not
+built yet. Until it is, an encrypted tree stays on gpg.
+
 ## Vocabulary
 
 halite does not use the role names Salt uses. The audit translates a
