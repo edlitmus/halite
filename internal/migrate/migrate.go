@@ -260,10 +260,15 @@ func auditSLS(rep *Report, opts Options, rel string, src []byte, isPillar bool, 
 				Action: "Rewrite as jinja|yaml, move the logic into a bridged module, or use the exec renderer. SPEC section 28.4.",
 			})
 		case info.Support == render.Bridged:
+			// Blocking rather than review: no build ships the bridge yet,
+			// so a file naming one of these does not render. Calling it
+			// review said the tree could be applied once the item was
+			// "understood", and it cannot be applied at all.
 			rep.Findings = append(rep.Findings, Finding{
-				Category: CatRenderer, Severity: Review, File: rel, Subject: stage,
-				Msg:    fmt.Sprintf("the %s renderer runs as a bridged extension: %s", stage, info.Note),
-				Action: "Confirm the bridge is deployed before this file is applied.",
+				Category: CatRenderer, Severity: Blocking, File: rel, Subject: stage,
+				Msg: fmt.Sprintf("the %s renderer runs as a bridged extension, and no build ships the bridge yet: %s",
+					stage, info.Note),
+				Action: "This file will not render. Decrypt the values into the tree, or wait for the bridge. SPEC section 24.",
 			})
 		}
 	}
