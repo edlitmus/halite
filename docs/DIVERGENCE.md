@@ -980,16 +980,39 @@ at the line that wrote it, and the audit reports a note. Refusing a
 harmless argument stops a tree Salt runs; accepting it silently is the
 defect in 5.3 that this project keeps finding in itself.
 
-**The tree compiles.** With its state files corrected by its author on
-2026-08-22 and the fixes above, `state show_lowstate` produces 51 chunks
-across the 11 SLS files this host matches. That is the first time an
-estate's real tree has been compiled by halite end to end.
+**The tree compiles, and Salt agrees with the result.** With its state
+files corrected by its author on 2026-08-22, `state show_lowstate`
+produces 51 chunks across the 11 SLS files this host matches, and the
+differential of 5.7 was pointed at it:
 
-What that does *not* mean is that it has been applied. Compilation
-proves the tree is understood, not that the modules do the right thing
-with it; SPEC 31's differential compares the low state and the pillar
-and stops short of the results for the same reason (5.7). Nothing in
-this tree has been run.
+> halite 49 chunks (after the two below), Salt 3008.2 49 — identical, in
+> the same order, with the same arguments.
+
+The two set aside are a state gated on `grains.get('productname')`.
+halite reads the SMBIOS tables through kenv and gets `PowerEdge R730xd`,
+which is what the machine is; Salt shells out to dmidecode, which needs
+`/dev/mem` and therefore root, and unprivileged it returns the error
+text *as the grain's value*. A tree branching on the hardware takes the
+wrong branch under Salt and the right one here. As root they agree.
+
+Comparing against Salt 3006.25 additionally differs on ordering, which
+is the recorded deviation: 3006 resolves requisites while executing
+rather than while compiling, so its `show_lowstate` is declaration
+order.
+
+Getting there took three more fixes, and the first is the most damaging
+defect the differential has found:
+
+| What | Why it mattered |
+|---|---|
+| A `names` entry's own arguments were dropped in the list form | Which is the form Salt takes; the mapping form halite handled raises a ValueError out of Salt's compiler. On `file.managed` the dropped argument was the `source`, so a tree installing seven scripts would have written seven empty files over them. |
+| Colon traversal would not descend into a list | Salt searches the mappings inside a list for a non-numeric key. `salt['pillar.get']('users:ed:password_bsd')` returned nothing, and the template rendered the empty value into `user.present` — an account created with no password rather than a state that failed. |
+| The differential harness had the CLI's dispatcher hole | Invisible because the written corpus never used `salt['pillar.get']`. |
+
+What none of this means is that the tree has been applied. Compilation
+proves it is understood and the differential proves both implementations
+plan the same thing; neither says the modules do the right thing when
+they run. Nothing in this tree has been run.
 
 Still open, from the same tree:
 
