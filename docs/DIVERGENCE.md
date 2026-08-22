@@ -869,6 +869,30 @@ reconverged; `onchanges` fired only on the run where its target changed.
 Real reads verified against the host: 63 grains including chassis and disk
 detail, `zpool` health, `git` revision, uptime.
 
+**2026-08-22: the estate's own tree, in test mode, as root.** Run by its
+owner, with the encrypted pillar decrypted for real:
+
+    Succeeded: 47  Would change: 4  Failed: 0  Total: 51 (2 held back)
+
+That is the first time halite's *modules* have been asked about a real
+estate's declarations rather than its compiler. 51 chunks across pkg,
+file, service, user, cmd, sysrc, and git, against a live FreeBSD host,
+in 22 seconds, with nothing failing.
+
+It is worth being exact about what it establishes. Test mode is a
+prediction: 47 states read the system and reported it already as
+declared, 4 reported that they would change something, and 2 were held
+back by their own `unless` guards. Nothing was written. The prediction
+has not been checked against what an apply would actually do — that is
+the state-results half of the differential in 5.7, and it is still
+absent. A state whose test mode is wrong reports exactly this and then
+does something else, which is why SPEC 11.6 makes the contract testable
+and 1.4 checks it more strictly than specified.
+
+The run also found a defect, in the summary line rather than the states:
+it read `Skipped: 2` beside the other counts, so the line added to 53
+against a total of 51.
+
 ### 5.7 What the Salt differential covers, and what it does not
 
 `make check` runs it against whichever `salt-call` is on PATH. It has
