@@ -50,6 +50,24 @@ func registerCmd(r *Registries) {
 		return ok && value.Truthy(v)
 	}
 
+	// argvForm reports whether a declaration gave `args`, which is how a
+	// state says it has been converted to an argument vector.
+	argvForm := func(args *value.Map) bool {
+		v, ok := args.Get("args")
+		if !ok || v == nil {
+			return false
+		}
+		list, ok := v.([]any)
+		return ok && len(list) > 0
+	}
+
+	// conflictingShell reports the contradiction of asking for a shell
+	// line and supplying argument-vector arguments in the same state.
+	conflictingShell := func(args *value.Map) bool {
+		v, ok := args.Get("shell")
+		return ok && v != nil && value.Truthy(v) && argvForm(args)
+	}
+
 	build := func(c *exec.Context, args *value.Map) exec.Command {
 		cmd := exec.Command{
 			Shell:          states.Bool(args, "shell", defaultShell(c)),
@@ -60,9 +78,17 @@ func registerCmd(r *Registries) {
 			IgnoreExitCode: true,
 		}
 		name := states.Str(args, "name", "")
-		if cmd.Shell {
+		// A state that supplies `args` is in argument-vector form, and
+		// says so. `cmd_default_shell` is a default for states that do
+		// not say, so it does not apply here: applying it dropped the
+		// arguments silently, and appending them to a shell line would
+		// hand the shell strings the author had already separated from
+		// it. An explicit `shell: true` beside `args` is a contradiction
+		// and is refused by the caller.
+		if cmd.Shell && !argvForm(args) {
 			cmd.Argv = []string{name}
 		} else {
+			cmd.Shell = false
 			cmd.Argv = append([]string{name}, states.Strings(args, "args")...)
 		}
 		if envMap := states.Mapping(args, "env"); envMap != nil {
@@ -81,6 +107,10 @@ func registerCmd(r *Registries) {
 	}
 
 	runAll := func(c *exec.Context, args *value.Map) (*value.Map, error) {
+		if conflictingShell(args) {
+			return nil, fmt.Errorf("this state asks for `shell: true` and also gives `args`; " +
+				"a shell line is one string and an argument vector is a list, so pick one. SPEC section 15.2")
+		}
 		cmd := build(c, args)
 		if cmd.Shell {
 			c.Logf("warn", "cmd is running through a shell: %s", cmd.String())
@@ -194,6 +224,10 @@ func registerCmd(r *Registries) {
 	// a command's effect cannot be predicted, so test mode reports that it
 	// would run the command rather than pretending to know the outcome.
 	runState := func(c *exec.Context, args *value.Map) (states.Result, error) {
+		if conflictingShell(args) {
+			return states.False("This state asks for `shell: true` and also gives `args`; " +
+				"a shell line is one string and an argument vector is a list, so pick one. SPEC section 15.2"), nil
+		}
 		cmd := build(c, args)
 		if c.Test {
 			return states.WouldChange(

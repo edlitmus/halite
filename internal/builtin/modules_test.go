@@ -1017,3 +1017,68 @@ func TestRunAsArrivesByBothRoutes(t *testing.T) {
 		t.Errorf("the context overrode an explicit argument: %q", got)
 	}
 }
+
+// TestArgvFormBeatsTheDefaultShell. `cmd_default_shell` is a default for
+// states that do not say which form they are in. A state supplying
+// `args` has said: it is an argument vector, and the whole point of the
+// vector is that the shell never sees it.
+//
+// Applying the default to one of those dropped `args` on the floor, so a
+// state converted during a transition silently stopped passing its
+// arguments — running `/bin/echo` where the tree said
+// `/bin/echo a b`. Appending them to the shell line instead would have
+// been worse: it hands the shell the strings the author had just
+// finished separating from it.
+func TestArgvFormBeatsTheDefaultShell(t *testing.T) {
+	r := New()
+	withShellDefault := func() *exec.Context {
+		c := newCtx(false)
+		c.Config = value.MapOf("cmd_default_shell", true)
+		c.Runner = &exec.RecordingRunner{}
+		return c
+	}
+
+	c := withShellDefault()
+	if _, err := r.Exec.Call(c, "cmd.run",
+		value.MapOf("name", "/bin/echo", "args", []any{"a b; touch /tmp/injected"})); err != nil {
+		t.Fatal(err)
+	}
+	ran := c.Runner.(*exec.RecordingRunner).Ran[0]
+	if ran.Shell {
+		t.Error("a state giving args ran through a shell; the vector exists so it does not")
+	}
+	if len(ran.Argv) != 2 || ran.Argv[0] != "/bin/echo" || ran.Argv[1] != "a b; touch /tmp/injected" {
+		t.Errorf("argv = %#v; the arguments should arrive whole and unsplit", ran.Argv)
+	}
+
+	// A state with no args still follows the setting, which is what
+	// makes an unconverted tree keep working.
+	c = withShellDefault()
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "echo hello")); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Runner.(*exec.RecordingRunner).Ran[0].Shell {
+		t.Error("a state with no args should follow cmd_default_shell")
+	}
+
+	// Asking for both is a contradiction rather than a preference, and
+	// silently honouring either one loses something the author wrote.
+	c = withShellDefault()
+	_, err := r.Exec.Call(c, "cmd.run",
+		value.MapOf("name", "echo hi", "shell", true, "args", []any{"x"}))
+	if err == nil {
+		t.Error("`shell: true` with `args` should be refused")
+	} else if !strings.Contains(err.Error(), "pick one") {
+		t.Errorf("the error should name the contradiction: %v", err)
+	}
+
+	// And the state says so too, rather than only the execution module.
+	res, err := r.States.Call(withShellDefault(), "cmd.run",
+		value.MapOf("name", "echo hi", "shell", true, "args", []any{"x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() {
+		t.Error("the cmd.run state should refuse the same contradiction")
+	}
+}
