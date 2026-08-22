@@ -134,6 +134,12 @@ contents.
 The `crypt` renderer of SPEC section 12.5, which is halite's own, is not
 built yet. Until it is, an encrypted tree stays on gpg.
 
+## Every command, side by side
+
+[The command reference](command-reference.md) is the table this section
+would otherwise repeat: each Salt command, what to type instead, and
+whether it works in this build or waits on a phase.
+
 ## Vocabulary
 
 halite does not use the role names Salt uses. The audit translates a
@@ -152,7 +158,7 @@ configuration file; a tree needs the same edits:
 
 halite ships a subset of Salt's roughly 400 modules, chosen by what a
 real estate applies. This build has 209 execution functions across 42
-modules and 54 state functions across 20. The [module
+modules and 56 state functions across 20. The [module
 reference](modules.md) lists all of them and
 [DIVERGENCE.md](DIVERGENCE.md) lists what is missing, module by module,
 with the reason.

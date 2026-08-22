@@ -308,3 +308,89 @@ func TestSaltDispatcherIsBound(t *testing.T) {
 		t.Errorf("a pillar file calling salt['pillar.get'] = %+v", got)
 	}
 }
+
+// TestCommandMatrixIsTrue reads docs/command-reference.md and checks
+// every halite-node command it presents as working.
+//
+// A table of equivalents is the page an operator reads first and the
+// page nothing else keeps honest: it is prose, so nothing fails when a
+// subcommand is renamed or a module function moves. This runs each one.
+func TestCommandMatrixIsTrue(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "command-reference.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags := tree(t, nil)
+
+	checked := 0
+	for _, row := range strings.Split(string(data), "\n") {
+		cells := matrixRow(row)
+		if len(cells) < 3 {
+			continue
+		}
+		command := strings.Fields(strings.Trim(cells[1], "`"))
+		if len(command) < 2 || command[0] != "halite-node" {
+			continue
+		}
+
+		// A row that promises something in a later phase must name a
+		// subcommand the binary knows and that says which phase, rather
+		// than one it reports as a typo.
+		if strings.HasPrefix(cells[2], "phase") {
+			got := run(t, command[1])
+			output := got.stdout + got.stderr
+			if strings.Contains(output, "unknown subcommand") {
+				t.Errorf("the matrix promises `%s` in %s, and the binary has never heard of it",
+					strings.Join(command, " "), cells[2])
+			} else if !strings.Contains(output, "phase") {
+				t.Errorf("`%s` should say which phase it arrives in: %s",
+					strings.Join(command, " "), strings.TrimSpace(output))
+			}
+			continue
+		}
+		if cells[2] != "works" {
+			continue
+		}
+		checked++
+
+		// The subcommand and, where there is one, the thing after it:
+		// `state apply`, `grains item`, `call test.ping`. Running the
+		// pair is enough to prove the dispatch knows it; the arguments
+		// after it are the operator's business.
+		args := []string{command[1]}
+		if len(command) > 2 && !strings.HasPrefix(command[2], "-") {
+			args = append(args, command[2])
+		}
+		got := run(t, append(args, flags...)...)
+		output := got.stdout + got.stderr
+		for _, broken := range []string{
+			"unknown subcommand",
+			"has no subcommand",
+			"is not a function this build ships",
+			"no function named",
+		} {
+			if strings.Contains(output, broken) {
+				t.Errorf("the matrix presents `%s` as working, and it reports:\n  %s",
+					strings.Join(command, " "), strings.TrimSpace(output))
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no halite-node row in the matrix was checked; this test has stopped checking anything")
+	}
+	t.Logf("checked %d halite-node commands from the matrix", checked)
+}
+
+// matrixRow splits a markdown table row into its cells, or returns nil
+// for a line that is not one.
+func matrixRow(line string) []string {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "|") || strings.HasPrefix(line, "|---") {
+		return nil
+	}
+	var cells []string
+	for _, c := range strings.Split(strings.Trim(line, "|"), "|") {
+		cells = append(cells, strings.TrimSpace(c))
+	}
+	return cells
+}

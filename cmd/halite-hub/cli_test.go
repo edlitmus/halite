@@ -133,3 +133,77 @@ func TestMigrateNeedsATree(t *testing.T) {
 		t.Errorf("migrate on a missing tree should fail: %+v", got)
 	}
 }
+
+// TestCommandMatrixIsTrue is the halite-hub half of the check in
+// cmd/halite-node. Every row the matrix presents as working must work,
+// and every row it presents as arriving in a later phase must say so
+// rather than being an unknown subcommand — a matrix that promises
+// `halite-hub keys accept` in phase 2 is wrong if the binary has never
+// heard of `keys`.
+func TestCommandMatrixIsTrue(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "command-reference.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree := salttree(t, map[string]string{
+		"top.sls": "base:\n  '*':\n    - web\n",
+		"web.sls": "a:\n  cmd.run:\n    - name: /bin/echo\n",
+	})
+
+	works, phased := 0, 0
+	for _, row := range strings.Split(string(data), "\n") {
+		cells := matrixRow(row)
+		if len(cells) < 3 {
+			continue
+		}
+		command := strings.Fields(strings.Trim(cells[1], "`"))
+		if len(command) < 2 || command[0] != "halite-hub" {
+			continue
+		}
+		status := cells[2]
+
+		args := []string{command[1]}
+		if command[1] == "migrate" || command[1] == "lint" {
+			args = append(args, tree)
+		}
+		got := run(t, args...)
+		output := got.stdout + got.stderr
+
+		switch {
+		case status == "works":
+			works++
+			if strings.Contains(output, "unknown subcommand") {
+				t.Errorf("the matrix presents `%s` as working: %s",
+					strings.Join(command, " "), strings.TrimSpace(output))
+			}
+		case strings.HasPrefix(status, "phase"):
+			phased++
+			// The binary must know the name and say which phase, rather
+			// than reporting it as a typo.
+			if strings.Contains(output, "unknown subcommand") {
+				t.Errorf("the matrix promises `%s` in %s, and the binary has never heard of it",
+					strings.Join(command, " "), status)
+			}
+			if !strings.Contains(output, "phase") {
+				t.Errorf("`%s` should say which phase it arrives in: %s",
+					strings.Join(command, " "), strings.TrimSpace(output))
+			}
+		}
+	}
+	if works == 0 || phased == 0 {
+		t.Errorf("checked %d working and %d phased rows; this test has stopped checking something", works, phased)
+	}
+	t.Logf("checked %d working and %d phased halite-hub commands", works, phased)
+}
+
+func matrixRow(line string) []string {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "|") || strings.HasPrefix(line, "|---") {
+		return nil
+	}
+	var cells []string
+	for _, c := range strings.Split(strings.Trim(line, "|"), "|") {
+		cells = append(cells, strings.TrimSpace(c))
+	}
+	return cells
+}

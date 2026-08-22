@@ -1,0 +1,6 @@
+# halite-api.
+#
+# The service arrives in phase 4 of SPEC section 32. The settings are
+# read and validated today.
+log_level: info
+log_format: json

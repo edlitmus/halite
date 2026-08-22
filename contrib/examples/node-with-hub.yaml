@@ -1,0 +1,33 @@
+# halite-node reporting to a hub.
+#
+# The transport arrives in phase 2 of SPEC section 32, so `halite-node
+# serve` says so rather than failing obscurely. The settings are read and
+# validated today, which is what makes this file worth keeping now: a
+# configuration written against it will not need rewriting when the
+# transport lands.
+hub: hub.example.com
+hub_port: 4510
+
+# Checked at enrollment against the hub's CA. Without it, the first
+# connection trusts whatever answers, which is the one moment an attacker
+# gets to insert themselves.
+hub_fingerprint: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+# static uses the first hub that answers; failover rotates through a list.
+hub_type: static
+# 0 retries forever, which is what an unattended node should do.
+hub_tries: 0
+
+# The node dials the hub and the hub never dials the node, so this is the
+# interval at which the node proves it is still there.
+hub_alive_interval: 30s
+
+node_id: web1.prod.example.com
+
+# Refuse a job that arrives without a valid detached operator signature.
+# Off by default because it needs keys distributed first; on is the right
+# end state. SPEC section 25.6.
+require_job_signature: false
+
+log_level: info
+log_format: json

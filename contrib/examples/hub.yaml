@@ -1,0 +1,27 @@
+# halite-hub.
+#
+# `halite-hub serve` arrives with the transport in phase 2 of SPEC
+# section 32. `halite-hub migrate` and `halite-hub lint` work today and
+# read this file for the tree layout and the compatibility settings.
+file_roots:
+  base:
+    - /srv/halite/states
+pillar_roots:
+  base:
+    - /srv/halite/pillar
+
+# Which grains a pillar top file may target on. SPEC section 12.4: a node
+# controls its own grains, so an unlisted one is refused by name rather
+# than silently matching nothing.
+pillar_trusted_grains:
+  - nodename
+  - os_family
+
+# smart, recurse, aggregate, or overwrite.
+pillar_source_merging_strategy: smart
+
+# Deny by default. Every rule is an explicit grant.
+policy: /usr/local/etc/halite/policy.yaml
+
+log_level: info
+log_format: json

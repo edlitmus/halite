@@ -1,0 +1,54 @@
+# halite-node, running its own tree with no hub.
+#
+# This is Salt's masterless mode and everything halite ships today works
+# in it. Install as node.yaml in the configuration root:
+#
+#   FreeBSD and the other BSDs   /usr/local/etc/halite/node.yaml
+#   Linux                        /etc/halite/node.yaml
+#
+# Every setting below has a default; a file that sets none of them is
+# valid. A key halite does not recognise is an error at startup rather
+# than a line that quietly does nothing, so a typo is found immediately.
+
+# Where the tree lives. The configuration root is searched for `state`
+# and `pillar` directories before these, so a tree symlinked beside this
+# file needs no roots at all.
+file_roots:
+  base:
+    - /srv/halite/states
+pillar_roots:
+  base:
+    - /srv/halite/pillar
+
+# A pillar top file may target on a grain only if the grain is named
+# here. A node controls its own grains, so trusting one is a decision
+# rather than a default. SPEC section 12.4.
+pillar_trusted_grains:
+  - nodename
+
+# An existing `#!yaml|gpg` pillar keeps working. halite drives the system
+# gpg binary and links no OpenPGP library; the ciphertext goes to it on
+# standard input and never on a command line. Salt's `gpg_keydir` is read
+# as this setting through the compatibility shim.
+gpg_home: /usr/local/etc/salt/gpgkeys
+
+# An undefined name in a template is an error naming the file, the line,
+# and the identifier. Set this to `permissive` while converting a tree:
+# it restores Salt's empty string and logs every occurrence with its
+# position, which is the list of things to fix.
+undefined: strict
+
+# Salt reads `cmd.run`'s name as a shell line; halite reads it as a
+# program name with `args` beside it. Turn this on to keep Salt's
+# reading while a tree is converted. `halite-hub migrate` lists every
+# state that needs it.
+cmd_default_shell: false
+
+# Static grains, merged last so they win. The same file may live at
+# <config root>/grains, which is where an existing Salt tree keeps them.
+grains:
+  roles:
+    - webserver
+
+log_level: info
+log_format: console

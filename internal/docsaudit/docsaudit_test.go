@@ -13,8 +13,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/builtin"
 )
 
 // generated names each file, the go run target that writes it, and a
@@ -213,4 +216,69 @@ func stripCodeSpans(s string) string {
 		b.WriteByte(s[i])
 	}
 	return b.String()
+}
+
+// TestCountsInProseMatchTheBuild. The generated pages cannot drift
+// because they are generated. A sentence in a hand-written page saying
+// how many functions ship can, and did: migrating-from-salt.md claimed
+// 54 state functions for weeks after there were 56.
+//
+// Any page that states a count states it in the same shape, so the shape
+// is what this looks for.
+func TestCountsInProseMatchTheBuild(t *testing.T) {
+	root := repoRoot(t)
+	r := builtin.New()
+	want := map[string]int{
+		"execution functions": len(r.Exec.Signatures().Names()),
+		"state functions":     len(r.States.Signatures().Names()),
+	}
+	wantModules := map[string]int{
+		"execution functions": countModules(r.Exec.Signatures().Names()),
+		"state functions":     countModules(r.States.Signatures().Names()),
+	}
+
+	// "209 execution functions across 42 modules", and "56 state
+	// functions across 20", where the trailing noun may be left implied.
+	pattern := regexp.MustCompile(`(\d+)\s+(execution functions|state functions)\s+across\s+(\d+)`)
+
+	pages, err := filepath.Glob(filepath.Join(root, "docs", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pages = append(pages, filepath.Join(root, "README.md"))
+
+	checked := 0
+	for _, page := range pages {
+		data, err := os.ReadFile(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range pattern.FindAllStringSubmatch(string(data), -1) {
+			checked++
+			kind := m[2]
+			functions, _ := strconv.Atoi(m[1])
+			modules, _ := strconv.Atoi(m[3])
+			if functions != want[kind] {
+				t.Errorf("%s says %d %s; this build has %d",
+					filepath.Base(page), functions, kind, want[kind])
+			}
+			if modules != wantModules[kind] {
+				t.Errorf("%s says %d modules for %s; this build has %d",
+					filepath.Base(page), modules, kind, wantModules[kind])
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no page states a function count; this check has stopped checking anything")
+	}
+}
+
+// countModules counts the distinct modules in a list of dotted names.
+func countModules(names []string) int {
+	seen := map[string]bool{}
+	for _, n := range names {
+		module, _, _ := strings.Cut(n, ".")
+		seen[module] = true
+	}
+	return len(seen)
 }

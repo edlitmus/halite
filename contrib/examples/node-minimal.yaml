@@ -1,0 +1,12 @@
+# The smallest useful halite-node configuration.
+#
+# Everything else has a working default. A node with no configuration
+# file at all also starts: it reads /srv/halite/states and /srv/salt for
+# state, /srv/halite/pillar and /srv/pillar for pillar, and takes its
+# identity from the hostname.
+file_roots:
+  base:
+    - /srv/salt
+pillar_roots:
+  base:
+    - /srv/pillar

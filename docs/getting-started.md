@@ -151,6 +151,12 @@ Every setting is in the [configuration reference](configuration.md). A
 key halite does not recognise is an error at startup, not a line that
 quietly does nothing.
 
+Fuller examples, one per shape of deployment, are in
+[`contrib/examples/`](../contrib/examples/): a masterless node, a node
+with a hub, the smallest file worth having, and one each for the hub and
+the API. Each is loaded by a test as the program it is written for, so
+none of them can teach a setting that does not exist.
+
 ## Pillar: what differs between machines
 
 States describe the shape; pillar fills in the values.
@@ -213,4 +219,5 @@ plus "and restart me if it changed". `halite-node state show_lowstate
 - [Migrating from Salt](migrating-from-salt.md) — the audit tool, and
   what is deliberately different.
 - [Module reference](modules.md) — every function this build ships.
+- [Command reference](command-reference.md) — every Salt command and its halite equivalent.
 - [DIVERGENCE.md](DIVERGENCE.md) — what is not built yet, in detail.

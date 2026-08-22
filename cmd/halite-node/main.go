@@ -28,7 +28,7 @@ import (
 	"github.com/edlitmus/halite/internal/version"
 )
 
-const usage = `halite-node — the managed endpoint agent and local executor
+var usage = `halite-node — the managed endpoint agent and local executor
 
 Usage:
   halite-node call <module.function> [args...]   run one module function
@@ -41,8 +41,8 @@ Usage:
 
 Common flags:
   --local              work from local roots rather than through a hub
-  --config <path>      configuration file, default /etc/halite/node.yaml
-  --root <dir>         configuration root, default /etc/halite
+  --config <path>      configuration file, default <root>/node.yaml
+  --root <dir>         configuration root, default ` + config.DefaultRoot + `
   --file-root <dir>    a state root, repeatable; implies --local
   --pillar-root <dir>  a pillar root, repeatable; implies --local
   --env <name>         environment, default base
