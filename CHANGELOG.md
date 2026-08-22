@@ -48,7 +48,7 @@ The **Jinja-compatible template engine** of section 10.2, with the
 statements, filters, and tests that section names, strict undefined by
 default, and deterministic seeding so a `--test` run and the run after it
 agree. It runs two corpora: 198 cases extracted from Jinja's own test
-suite, of which 153 agree and 27 are outside the subset by design, and
+suite, of which 157 agree and 26 are outside the subset by design, and
 123 written here for the surface those cannot reach.
 
 Both corpora are enforced in both directions — an unrecorded disagreement

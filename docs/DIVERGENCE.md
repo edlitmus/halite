@@ -617,7 +617,7 @@ specified, three are partial, four are absent, and one is unverified.
 | Layer | Status |
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 34 disagree by design, 37 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
-| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 153 of 198 agree, 27 are outside the subset, 18 are gaps — see 5.5. |
+| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 157 of 198 agree, 26 are outside the subset, 15 are gaps — see 5.5. |
 | Differential against Salt | **partial.** `internal/saltdiff` compiles eight trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
@@ -785,8 +785,8 @@ as a rejection, and its value is never checked.
 
 ### 5.5 Where template conformance stands
 
-153 of 198 of Jinja's own extractable cases, 27 of the rest outside the
-subset by design and 18 gaps. `internal/template` rose to 81.9% statements
+157 of 198 of Jinja's own extractable cases, 26 of the rest outside the
+subset by design and 15 gaps. `internal/template` rose to 81.9% statements
 on the way, still the one correctness-core package under the SPEC 31 bar.
 
 Writing the second corpus found a crash on the first run.
@@ -843,13 +843,24 @@ and the numbers above are the honest ones.
 
 What remains, largest first:
 
+Every one of the fifteen has been read rather than counted, which had
+not been done before and changed what three of the class names mean.
+
 | Class | Cases | What it is |
 |---|---|---|
-| `gapScoping` | 4 | needs a `test` callable those Jinja tests register on the context, which the extractor cannot carry; they are scoping cases in name only. |
-| `gapOther` | 4 | unclassified. |
-| `gapRendering` | 3 | cases needing a custom code generator, and `with` argument scoping. |
-| `gapFilterBehaviour`, `gapNumericAttribute`, `gapTestArgument` | 6 | a filter differing from Jinja's, the Django-style `a.0` subscript, and a test taking an argument in a position the parser does not reach. |
-| `gapCallResult` | 1 | calling the result of a filter. |
+| `gapScoping` | 4 | needs a `test` callable those Jinja tests register on the context, which the extractor cannot carry. Scoping cases in name only. |
+| `gapOther` | 4 | a custom `Context` class, a custom `select` test, `self.foo()` block self-reference, and a call with `*args` and `**kwargs`. Three of the four need something the extractor cannot carry; only the block self-reference is a real absence. |
+| `gapRendering` | 2 | both need a custom code generator. |
+| `gapTestArgument` | 2 | both use a `matching` test the Jinja suite registers itself. `is divisibleby 3` and its like already work, with or without parentheses — the class name was misleading. |
+| `gapFilterBehaviour` | 1 | `indent(width='>>> ')`, where the width may be a string used as the prefix. |
+| `gapNumericAttribute` | 1 | `groupby(0)`, grouping by index rather than attribute name. |
+| `gapCallResult` | 1 | calling the result of a filter: `foo|attr("items")()`. |
+
+So of fifteen, **eight need a Python callable the corpus extractor cannot
+carry across** and are not gaps in the engine at all; the extractor
+records them as gaps because it cannot tell the difference, which is the
+honest default. What is left is five small features and one absence,
+`self.foo()`.
 
 The whitespace class is gone. `lstrip_blocks` strips the whitespace
 running from the start of a line to a block tag, and four of those five
@@ -1184,8 +1195,8 @@ runs. What is left of it is the half that needs a container, which is
 phase 2 work, so it sits at 2 rather than 1.
 
 The template conformance suite stays at the bottom. It is running and
-down to isolated cases — 18, no class larger than 4 — with no cluster
-left. The one that was a cluster, whitespace control, turned out to be a
+down to isolated cases — 15, of which eight are the extractor's limits
+rather than the engine's — with no cluster left. The one that was a cluster, whitespace control, turned out to be a
 single rule applied in four wrong places and is closed. The YAML suite
 has moved *up*, not because the count changed but because the reason
 changed: see 3.
@@ -1214,6 +1225,6 @@ changed: see 3.
    positions, document markers inside quoted scalars, and under-indented
    continuations — none of which a Salt tree contains, which is why this
    sits below the two above it.
-4. **The remaining 18 template conformance gaps** (5.5). The largest two
-   classes are 4 apiece: cases needing a callable the extractor cannot
-   carry, and unclassified ones. Nothing left is a cluster.
+4. **The remaining 15 template conformance gaps** (5.5), of which eight
+   need a Python callable the corpus extractor cannot carry and are not
+   engine gaps at all. The six that are real are one feature each.
