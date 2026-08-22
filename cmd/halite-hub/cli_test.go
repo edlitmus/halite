@@ -207,3 +207,63 @@ func matrixRow(line string) []string {
 	}
 	return cells
 }
+
+// TestLintDecryptsAndRedacts. `lint` renders, and rendering a
+// `#!yaml|gpg` file decrypts, so this program holds a secret even though
+// it never applies a state. It had no redactor at all, and no gpg
+// settings either — so a file the node renders perfectly well was
+// reported as unrenderable whenever the keyring was not the one in the
+// environment.
+func TestLintDecryptsAndRedacts(t *testing.T) {
+	if _, err := exec.LookPath("gpg"); err != nil {
+		t.Skip("no gpg on PATH; SPEC 12.6 drives the system binary")
+	}
+	const secret = "s3cret-value-from-the-pillar"
+
+	home := t.TempDir()
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	gpg := func(args ...string) *exec.Cmd {
+		c := exec.Command("gpg", args...)
+		c.Env = append(os.Environ(), "GNUPGHOME="+home)
+		return c
+	}
+	if out, err := gpg("--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+		"--quick-generate-key", "hub lint <t@example.invalid>", "default", "default", "never").
+		CombinedOutput(); err != nil {
+		t.Skipf("a throwaway key could not be generated here: %v\n%s", err, out)
+	}
+	t.Cleanup(func() { _ = exec.Command("gpgconf", "--kill", "gpg-agent").Run() })
+
+	enc := gpg("--batch", "--yes", "--trust-model", "always", "--encrypt", "--armor", "-r", "t@example.invalid")
+	enc.Stdin = strings.NewReader(secret)
+	armored, err := enc.Output()
+	if err != nil {
+		t.Fatalf("encrypting: %v", err)
+	}
+	indented := strings.ReplaceAll(strings.TrimRight(string(armored), "\n"), "\n", "\n    ")
+
+	dir := t.TempDir()
+	// `on:` gives the renderer something to warn about, so the run has
+	// output for a secret to hide in.
+	sls := filepath.Join(dir, "secrets.sls")
+	if err := os.WriteFile(sls, []byte("#!yaml|gpg\non: yes\ntoken: |\n    "+indented+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := filepath.Join(dir, "hub.yaml")
+	if err := os.WriteFile(cfg, []byte("gpg_home: "+home+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := run(t, "lint", sls, "--config", cfg)
+	all := got.stdout + got.stderr
+	if strings.Contains(all, secret) {
+		t.Errorf("the decrypted value reached lint's output:\n%s", all)
+	}
+	// The file renders, which is what proves the gpg settings were read:
+	// without them the keyring is not found and this reports a failure.
+	if !strings.Contains(all, "renders and parses") {
+		t.Errorf("the file should render with the configured keyring:\n%s", all)
+	}
+}

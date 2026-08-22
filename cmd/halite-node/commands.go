@@ -355,6 +355,8 @@ func runLint(args *cli.Args) int {
 			continue
 		}
 		res, err := render.Render(src, render.Options{
+			GPG:       n.gpgOptions(),
+			OnSecret:  n.secrets.Add,
 			File:      path,
 			SLS:       strings.TrimSuffix(path, ".sls"),
 			Env:       n.env,
@@ -365,12 +367,15 @@ func runLint(args *cli.Args) int {
 			Loader:    n.files.Templates(n.env),
 			Undefined: n.undef,
 		})
+		// Linting renders, and rendering a `#!yaml|gpg` file decrypts,
+		// so a lint is a place a secret can reach the screen. Its
+		// output goes through the redactor like everything else.
 		for _, w := range res.Warnings {
-			fmt.Println(w.String())
+			fmt.Println(n.secrets.Scrub(w.String()))
 			problems++
 		}
 		if err != nil {
-			fmt.Println(err.Error())
+			fmt.Println(n.secrets.Scrub(err.Error()))
 			problems++
 			continue
 		}

@@ -11,11 +11,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/migrate"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
@@ -155,6 +157,13 @@ func runLint(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
+	// `lint` renders, and rendering a `#!yaml|gpg` file decrypts, so
+	// this program can hold a secret even though it never applies a
+	// state. SPEC 26.1 puts the redactor at the sink; here the sinks are
+	// this loop's output and Fatalf.
+	secrets := redact.New()
+	cli.Redact = secrets.Scrub
+
 	problems := 0
 	for _, path := range args.Positional {
 		src, err := os.ReadFile(path)
@@ -164,7 +173,16 @@ func runLint(args *cli.Args) int {
 			continue
 		}
 		res, err := render.Render(src, render.Options{
-			File:   path,
+			File:     path,
+			OnSecret: secrets.Add,
+			// The gpg settings are read by both programs, and a lint
+			// that could not find the keyring would report a file as
+			// unrenderable when the node renders it perfectly well.
+			GPG: render.GPGOptions{
+				Binary:  cfg.String("gpg_binary", ""),
+				Home:    cfg.String("gpg_home", ""),
+				Timeout: gpgTimeout(cfg),
+			},
 			SLS:    strings.TrimSuffix(path, ".sls"),
 			Env:    cfg.String("env", "base"),
 			Grains: value.NewMap(0),
@@ -177,11 +195,11 @@ func runLint(args *cli.Args) int {
 			Undefined: 1,
 		})
 		for _, w := range res.Warnings {
-			fmt.Println(w.String())
+			fmt.Println(secrets.Scrub(w.String()))
 			problems++
 		}
 		if err != nil {
-			fmt.Println(err.Error())
+			fmt.Println(secrets.Scrub(err.Error()))
 			problems++
 			continue
 		}
@@ -191,4 +209,13 @@ func runLint(args *cli.Args) int {
 		return 1
 	}
 	return 0
+}
+
+// gpgTimeout reads the per-decryption bound of SPEC section 12.6.
+func gpgTimeout(cfg *config.Config) time.Duration {
+	d, err := time.ParseDuration(cfg.String("gpg_timeout", "30s"))
+	if err != nil {
+		return 30 * time.Second
+	}
+	return d
 }
