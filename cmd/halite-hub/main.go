@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/migrate"
@@ -79,14 +80,21 @@ func runMigrate(args *cli.Args) int {
 		configFiles = strings.Split(v, ",")
 	}
 
+	registries := builtin.New()
 	rep, err := migrate.Run(migrate.Options{
 		Root:        args.Positional[0],
 		PillarRoot:  args.Flag("pillar-root", ""),
 		ConfigFiles: configFiles,
-		// No registry is supplied here: this build's module set is not
-		// the one a migration will land on, and judging a tree against an
-		// incomplete set would report work that does not exist. Module
-		// usage is still counted, which is the number that matters first.
+		// The registries this build ships. The audit used to withhold
+		// them, on the reasoning that a later build will have more
+		// modules and judging a tree against an incomplete set reports
+		// work that does not exist. The cost of that was worse: a real
+		// tree with twenty-seven compilation errors was reported clean,
+		// because the audit was not looking at the states at all. The
+		// question an operator asks is "will this run", and the only
+		// build that can answer it is this one.
+		Registry:      registries.Exec.Signatures(),
+		StateRegistry: registries.States.Signatures(),
 	})
 	if err != nil {
 		cli.Fatalf("%v", err)

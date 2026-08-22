@@ -52,6 +52,8 @@ const (
 	CatACL Category = "acl"
 	// CatParse is a file that would not parse at all.
 	CatParse Category = "parse"
+	// CatState is a state declaration this build cannot run.
+	CatState Category = "state"
 )
 
 // Severity says whether a finding blocks a migration.
@@ -121,6 +123,10 @@ type Options struct {
 	// registry reports module usage without judging it, which is what the
 	// phase 0 skeleton does before the modules exist.
 	Registry *signature.Registry
+	// StateRegistry is the set of state functions this build ships. A nil
+	// registry skips the declaration audit rather than reporting every
+	// state as unknown.
+	StateRegistry *signature.Registry
 	// TrustedGrains is the pillar targeting allowlist to check against.
 	// Empty means SPEC section 12.4's default.
 	TrustedGrains []string
@@ -275,6 +281,10 @@ func auditSLS(rep *Report, opts Options, rel string, src []byte, isPillar bool, 
 
 	auditTemplate(rep, opts, rel, body)
 	auditYAMLText(rep, rel, body)
+	// A top file's keys are target expressions, not state IDs.
+	if !isPillar && !strings.HasSuffix(rel, "top.sls") {
+		auditDeclarations(rep, opts, rel, body)
+	}
 	if isPillar && strings.HasSuffix(rel, "top.sls") {
 		auditPillarTop(rep, rel, body, trusted)
 	}

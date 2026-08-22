@@ -371,3 +371,76 @@ func TestStripTemplatingPreservesPositions(t *testing.T) {
 		t.Errorf("templating survived: %q", out)
 	}
 }
+
+// TestStateDeclarationsAreAudited covers the gap that let a real tree
+// with twenty-seven compilation errors be reported clean: the audit was
+// not looking at the state declarations at all.
+func TestStateDeclarationsAreAudited(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("top.sls", "base:\n  'nodename:host.example':\n    - match: grain\n    - web\n")
+	write("web.sls", `/etc/thing:
+  file.managed:
+    - mode: 640
+    - nosucharg: 1
+    - require:
+      - pkg: something
+
+short_form:
+  file.managed
+
+wrong_function:
+  file.nosuchfunction:
+    - name: x
+`)
+
+	states := signature.NewRegistry()
+	states.Add(
+		signature.Signature{Module: "file", Function: "managed", Params: []signature.Param{
+			{Name: "name", Type: signature.Path},
+			{Name: "mode", Type: signature.Mode},
+		}},
+		signature.Signature{Module: "file", Function: "directory"},
+	)
+	rep, err := Run(Options{Root: root, StateRegistry: states})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var msgs []string
+	for _, f := range findingsFor(rep, CatState) {
+		msgs = append(msgs, f.Msg)
+		if f.Severity != Blocking {
+			t.Errorf("%q should be blocking", f.Msg)
+		}
+	}
+	joined := strings.Join(msgs, "\n")
+
+	for _, want := range []string{
+		`"nosucharg" is not an argument of file.managed`,
+		"mode is the integer 640",
+		"file.nosuchfunction is not a state function this build ships",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("the audit should report %q, got:\n%s", want, joined)
+		}
+	}
+
+	// The module's own functions are named, so the reader learns what to
+	// write instead of only that they were wrong.
+	if !strings.Contains(joined, "file provides directory, managed") {
+		t.Errorf("the unknown function should name its siblings:\n%s", joined)
+	}
+
+	// A requisite is not an argument, the short declaration form is not a
+	// finding, and a top file's target expressions are not state IDs.
+	for _, unwanted := range []string{"require", "short_form", "nodename"} {
+		if strings.Contains(joined, unwanted) {
+			t.Errorf("%q should not be reported:\n%s", unwanted, joined)
+		}
+	}
+}
