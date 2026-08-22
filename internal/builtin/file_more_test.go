@@ -344,3 +344,109 @@ func TestFileManagedRendersItsSource(t *testing.T) {
 		t.Errorf("the comment should name the engine: %q", res.Comment)
 	}
 }
+
+func TestFileDirectoryRecurse(t *testing.T) {
+	r := New()
+	root := t.TempDir()
+	deep := filepath.Join(root, "sub", "deeper")
+	if err := os.MkdirAll(deep, 0o777); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{
+		filepath.Join(root, "top.txt"),
+		filepath.Join(root, "sub", "mid.txt"),
+		filepath.Join(deep, "leaf.txt"),
+	} {
+		if err := os.WriteFile(f, []byte("x"), 0o666); err != nil {
+			t.Fatal(err)
+		}
+		// WriteFile's mode goes through the umask, and this test is
+		// about modes.
+		if err := os.Chmod(f, 0o666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	args := func(extra ...any) *value.Map {
+		base := []any{
+			"name", root,
+			"mode", "0755",
+			"dir_mode", "0750",
+			"file_mode", "0640",
+			"recurse", []any{"mode"},
+		}
+		return value.MapOf(append(base, extra...)...)
+	}
+
+	// Test mode reports the whole plan and changes nothing.
+	res, err := r.States.Call(newCtx(true), "file.directory", args())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result != nil {
+		t.Errorf("test mode should report a pending change, got %v", res.Result)
+	}
+	if info, _ := os.Stat(filepath.Join(root, "top.txt")); info.Mode().Perm() != 0o666 {
+		t.Errorf("test mode changed a file's mode to %04o", info.Mode().Perm())
+	}
+
+	// The real run gives directories dir_mode and files file_mode. A
+	// directory mode on a file is the mistake the two options exist to
+	// prevent.
+	if _, err := r.States.Call(newCtx(false), "file.directory", args()); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]os.FileMode{
+		filepath.Join(root, "sub"):      0o750,
+		deep:                            0o750,
+		filepath.Join(root, "top.txt"):  0o640,
+		filepath.Join(deep, "leaf.txt"): 0o640,
+	} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != want {
+			t.Errorf("%s is %04o, want %04o", filepath.Base(path), info.Mode().Perm(), want)
+		}
+	}
+
+	// A second run converges.
+	res, err = r.States.Call(newCtx(false), "file.directory", args())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasChanges() {
+		t.Errorf("a second run reported changes: %v", res.Changes)
+	}
+
+	// max_depth bounds the walk.
+	os.Chmod(filepath.Join(deep, "leaf.txt"), 0o666)
+	os.Chmod(filepath.Join(root, "top.txt"), 0o666)
+	if _, err := r.States.Call(newCtx(false), "file.directory", args("max_depth", int64(1))); err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := os.Stat(filepath.Join(root, "top.txt")); info.Mode().Perm() != 0o640 {
+		t.Errorf("depth 1 should have been reached: %04o", info.Mode().Perm())
+	}
+	if info, _ := os.Stat(filepath.Join(deep, "leaf.txt")); info.Mode().Perm() != 0o666 {
+		t.Errorf("depth 3 should not have been reached: %04o", info.Mode().Perm())
+	}
+
+	// Naming mode without saying what mode a file gets is refused, since
+	// the alternative is silently giving a file a directory's mode.
+	res, _ = r.States.Call(newCtx(false), "file.directory",
+		value.MapOf("name", root, "recurse", []any{"mode"}))
+	if res.Succeeded() {
+		t.Error("recurse: mode with no mode of any kind should fail")
+	}
+	// So is a word recurse does not take.
+	res, _ = r.States.Call(newCtx(false), "file.directory",
+		value.MapOf("name", root, "recurse", []any{"modes"}))
+	if res.Succeeded() || !strings.Contains(res.Comment, "modes") {
+		t.Errorf("an unknown recurse word should be named: %q", res.Comment)
+	}
+}

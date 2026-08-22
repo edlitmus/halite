@@ -3256,7 +3256,7 @@ file.copy(name: path, source: path, mode: mode = , makedirs: bool = false)
 Ensure a directory exists with the given mode and ownership.
 
 ```
-file.directory(name: path, mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = 0755)
+file.directory(name: path, mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , file_mode: mode = , recurse: list, max_depth: int = -1)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -3266,7 +3266,10 @@ file.directory(name: path, mode: mode = , user: string = , group: string = , mak
 | `user` | string | `` | Owner. |
 | `group` | string | `` | Group. |
 | `makedirs` | bool | `false` | Create the parent directories if they are missing. |
-| `dir_mode` | mode | `0755` | Mode for parent directories created by makedirs. |
+| `dir_mode` | mode | `` | Mode for parent directories created by makedirs, and for directories found by recurse. Empty uses 0755 for makedirs and leaves a recursed directory alone. |
+| `file_mode` | mode | `` | Mode for files found by recurse. |
+| `recurse` | list | — | What to enforce below the directory: user, group, mode, silent, ignore_files, ignore_dirs. |
+| `max_depth` | int | `-1` | How deep recurse descends; -1 is unlimited. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
@@ -3298,7 +3301,7 @@ file.line(name: path, content: string = , mode: string = ensure, match: string =
 Ensure a file exists with the given contents, mode, and ownership.
 
 ```
-file.managed(name: path, source: string = , source_hash: string = , contents: any, template: string = , context: map, defaults: map, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = 0755, create: bool = true, replace: bool = true, backup: string = , hash_type: string = sha256, show_changes: bool = true)
+file.managed(name: path, source: string = , source_hash: string = , contents: any, template: string = , context: map, defaults: map, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, replace: bool = true, backup: string = , hash_type: string = sha256, show_changes: bool = true)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -3315,7 +3318,7 @@ file.managed(name: path, source: string = , source_hash: string = , contents: an
 | `user` | string | `` | Owner. |
 | `group` | string | `` | Group. |
 | `makedirs` | bool | `false` | Create the parent directories if they are missing. |
-| `dir_mode` | mode | `0755` | Mode for directories created by makedirs. |
+| `dir_mode` | mode | `` | Mode for directories created by makedirs. Empty uses 0755. |
 | `create` | bool | `true` | Create the file if it does not exist. |
 | `replace` | bool | `true` | Rewrite the file when its contents differ. |
 | `backup` | string | `` | Keep a copy of the previous contents with this suffix. |

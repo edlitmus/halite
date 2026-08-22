@@ -186,7 +186,7 @@ func registerFileStates(r *Registries) {
 		opt("user", signature.String, "", "Owner."),
 		opt("group", signature.String, "", "Group."),
 		opt("makedirs", signature.Bool, false, "Create the parent directories if they are missing."),
-		opt("dir_mode", signature.Mode, "0755", "Mode for directories created by makedirs."),
+		opt("dir_mode", signature.Mode, "", "Mode for directories created by makedirs. Empty uses 0755."),
 		opt("create", signature.Bool, true, "Create the file if it does not exist."),
 		opt("replace", signature.Bool, true, "Rewrite the file when its contents differ."),
 		opt("backup", signature.String, "", "Keep a copy of the previous contents with this suffix."),
@@ -216,7 +216,10 @@ func registerFileStates(r *Registries) {
 				opt("user", signature.String, "", "Owner."),
 				opt("group", signature.String, "", "Group."),
 				opt("makedirs", signature.Bool, false, "Create the parent directories if they are missing."),
-				opt("dir_mode", signature.Mode, "0755", "Mode for parent directories created by makedirs."),
+				opt("dir_mode", signature.Mode, "", "Mode for parent directories created by makedirs, and for directories found by recurse. Empty uses 0755 for makedirs and leaves a recursed directory alone."),
+				opt("file_mode", signature.Mode, "", "Mode for files found by recurse."),
+				opt("recurse", signature.List, nil, "What to enforce below the directory: user, group, mode, silent, ignore_files, ignore_dirs."),
+				opt("max_depth", signature.Int, int64(-1), "How deep recurse descends; -1 is unlimited."),
 			},
 			Mutates:  true,
 			TestMode: signature.TestReliable,
@@ -579,17 +582,43 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 		changes.Set("ownership", ownerChange)
 	}
 
-	if exists && !modeDiffers && !ownerDiffers {
+	// What is under the directory, when `recurse` asks for it. The walk
+	// happens before anything is written so that test mode reports the
+	// whole plan rather than the directory alone.
+	recurse, err := parseRecurse(args)
+	if err != nil {
+		return states.False(fmt.Sprintf("%s: %v", path, err)), nil
+	}
+	var below []recurseTarget
+	if recurse.any && exists {
+		below, err = planRecurse(c, path, recurse, args)
+		if err != nil {
+			return states.False(fmt.Sprintf("%s could not be walked: %v", path, err)), nil
+		}
+	}
+
+	if exists && !modeDiffers && !ownerDiffers && len(below) == 0 {
+		if recurse.any {
+			return states.True(fmt.Sprintf(
+				"%s and everything under it already have the requested mode and ownership.", path)), nil
+		}
 		return states.True(fmt.Sprintf("%s already exists with the requested mode and ownership.", path)), nil
 	}
 	if !exists {
 		changes.Set("directory", states.Change(nil, "created"))
+	}
+	for _, e := range recurseChanges(below).Entries() {
+		changes.SetAt(e.Key, e.Val, e.KeyPos, e.ValPos)
 	}
 
 	if c.Test {
 		verb := "updated"
 		if !exists {
 			verb = "created"
+		}
+		if len(below) > 0 {
+			return states.WouldChange(fmt.Sprintf(
+				"The directory %s would be %s, and %d path(s) under it.", path, verb, len(below)), changes), nil
 		}
 		return states.WouldChange(fmt.Sprintf("The directory %s would be %s.", path, verb), changes), nil
 	}
@@ -624,6 +653,13 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 	verb := "updated"
 	if !exists {
 		verb = "created"
+	}
+	if len(below) > 0 {
+		if err := applyRecurse(below, args, recurse); err != nil {
+			return states.False(fmt.Sprintf("%s: recursing under %s failed: %v", path, path, err)), nil
+		}
+		return states.Changed(fmt.Sprintf(
+			"The directory %s was %s, and %d path(s) under it.", path, verb, len(below)), changes), nil
 	}
 	return states.Changed(fmt.Sprintf("The directory %s was %s.", path, verb), changes), nil
 }
