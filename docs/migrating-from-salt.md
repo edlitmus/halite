@@ -97,6 +97,13 @@ someone turns a setting off is not a tree with no work. A command
 that fails with "no such file" and a path containing a space is this,
 and halite says so in the error.
 
+The setting applies only to a state that has not been converted. One
+that gives `args` is already an argument vector and stays one, so a tree
+can be converted a state at a time with the setting on, and each state
+stops going through a shell the moment it is rewritten. Asking for both
+— `shell: true` beside `args` — is refused rather than resolved in
+either direction.
+
 ### Unquoted file modes
 
 `mode: 0644` is the integer 420 in YAML. Salt accepts it and writes the
