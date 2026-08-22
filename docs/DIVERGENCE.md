@@ -894,6 +894,43 @@ document PyYAML refuses:
 These are the same class as the 23 in 5.4: a tree Salt would not load
 loads here and means something. They are the ones worth closing first.
 
+### 5.9 What a real Salt tree found
+
+The corpus in 5.7 is written for the gate: it covers constructs, not
+volume, and this project's own author called that its weakest point. A
+real tree — seventeen state files and eight pillar files running a small
+estate of FreeBSD hosts — was pointed at halite on 2026-08-21. It found
+more in an hour than the written corpus had in a day.
+
+Fixed as a result:
+
+| What | Why it mattered |
+|---|---|
+| The `salt` dispatcher was never bound | Both compilers carried the field, passed it to the renderer, and nothing ever set it, so `salt['pillar.get']` was undefined in every SLS and pillar file. The tree used it six times in four files. |
+| A renderer stage after the serializer was dropped | `#!yaml|gpg` rendered as plain yaml and delivered the PGP armor as the value. Five of eight pillar files use it. |
+| `ignore_missing` in a pillar top | Parsed out of the SLS list and acted on by nothing, so a tree naming a pillar file per host failed to compile on every host missing one. |
+| `ignore_missing` in a state top | Read as an SLS name and reported as an error. Salt accepts it there and ignores it. |
+| Salt's short declaration | `apache24:` followed by a bare `pkg.latest`. Four of seventeen files. |
+| `file.managed: template: jinja` | Six uses in five files. The source was written unrendered. |
+| `sysrc.managed`, `cmd.script`, `git.latest`'s branch and force flags, `file.directory: dir_mode` | Named or accepted by Salt and not by this build. |
+| The advice on an unquoted mode | Right for `0644` and wrong for `640`, where it suggested the octal of a number nobody wrote. |
+| The migration audit ignored state declarations | It reported the tree clean. Compiling it produced twenty-seven errors, twenty-two of them declarations. |
+
+Still open, from the same tree:
+
+- **`user.present` takes no `password` or `usergroup`.** The password is
+  a hash, and the obvious implementations put it on a command line where
+  `ps` can read it. FreeBSD's `pw useradd -H 0` takes it on stdin and
+  Linux's `chpasswd -e` does the same; neither is written yet, and
+  writing it carelessly is worse than not having it.
+- **`file.replace` takes no `bufsize`.** Salt's names a read buffer.
+  This implementation reads the file whole, so the argument has no
+  meaning here, and accepting it silently would be the same
+  accept-but-ignore defect this file lists three of.
+- **The tree's own `mkdirs`** is not a Salt argument either — the name is
+  `makedirs` — so Salt has been ignoring it in four places. halite
+  reports it, which is the audit working rather than a gap.
+
 ---
 
 ## 6. Everything else not started
@@ -974,12 +1011,13 @@ reason changed: see 3.
    half of every optional provider capability written in this pass —
    holding, upgrading, and file ownership exist for pkgng because pkgng is
    what this host runs.
-2. **The state-results half of the differential gate** (5.7). The gate
-   runs now, against Salt 3006.25 and 3008.2, and compares the low state
-   and the pillar. Comparing what actually *changes* needs a container to
-   apply a tree in, which is the integration layer and phase 2 work. Its
-   cheaper neighbour is volume: nine trees written for the gate cover the
-   constructs, and a real estate's trees are where the surprises are.
+2. **More real trees** (5.9). One was pointed at halite and found ten
+   defects in an hour, against a written corpus that had found four in a
+   day. The written corpus covers constructs; a real tree covers what
+   people write. This is the cheapest finding-per-hour on the list by a
+   wide margin and needs no new machinery — only trees. The state-results
+   half of the gate (5.7) still waits on a container to apply one in,
+   which is phase 2.
 3. **The documents accepted that should be refused** (5.4 and 5.8). 23
    in the conformance suite and 4 in the PyYAML differential, and the
    framing in earlier versions of this file was wrong: accepting a
