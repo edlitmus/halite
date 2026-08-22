@@ -658,7 +658,7 @@ specified, three are partial, four are absent, and one is unverified.
 | Scale | **absent.** Blocked on phase 2. |
 | Upgrade | **absent.** Nothing to upgrade from. |
 | Chaos | **absent.** Blocked on phase 2. |
-| Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`). `govulncheck` is not wired in. No static analysis beyond `go vet`. No external review. |
+| Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. Clean against the database of 2026-08-21. No static analysis beyond `go vet`. No external review. |
 | Reproducibility | **unverified.** One builder, one platform. Two independent builders producing identical digests has never been attempted. |
 
 ### 5.3 What fuzzing found

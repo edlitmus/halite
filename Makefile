@@ -150,6 +150,21 @@ fmt:
 policy:
 	@env $(DEV_ENV) go test ./internal/buildpolicy/
 
+# The vulnerability scan of SPEC section 31's security layer.
+#
+# It is not part of `check`, and the reason is the point: it fetches the
+# tool and the vulnerability database, and `check` has to work on a
+# machine with no network, which is the same machine a release is built
+# on with GOPROXY=off.
+#
+# With no third-party dependencies, this is a scan of the Go standard
+# library and nothing else — `go list -m all` returns one module, and
+# buildpolicy fails the build if that stops being true. That makes it a
+# check on the toolchain rather than on a supply chain, which is a
+# smaller claim than the name suggests and the one worth making.
+vuln:
+	@env $(DEV_ENV) go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
 # What to run before calling a change done.
 check: fmt vet test race policy
 
