@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,11 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 	sr.Add(
 		states.Module{Sig: sig("probe", "run"), Fn: run, ModWatch: watch},
 		states.Module{Sig: sig("probe", "plain"), Fn: run},
+		states.Module{Sig: func() signature.Signature {
+			s := sig("probe", "privileged")
+			s.Privileges = []string{"root"}
+			return s
+		}(), Fn: run},
 	)
 	er.Add(exec.Module{
 		Sig: signature.Signature{
@@ -1065,5 +1071,43 @@ leaky:
 	out.Secrets = nil
 	if !strings.Contains(out.Nested(false), "s3cret-bearer-token") {
 		t.Error("a run with no secrets should render as it always did")
+	}
+}
+
+// TestPrivilegeNoteExplainsAFailure. A mutating function that declares
+// root and fails while the process is not root has almost certainly
+// failed for that reason, and the tool it shelled out to will have said
+// something about permissions rather than about privilege. The
+// declaration exists; saying what it means at the moment it matters is
+// the whole of its value.
+func TestPrivilegeNoteExplainsAFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root, which is the case this is not about")
+	}
+	out, _ := compileAndRun(t, `
+needs_root:
+  probe.privileged:
+    - fail: true
+
+no_privilege_declared:
+  probe.run:
+    - fail: true
+
+succeeds:
+  probe.privileged: []
+`)
+	byID := map[string]string{}
+	for _, res := range out.Results {
+		byID[res.Chunk.ID] = res.Result.Comment
+	}
+	if !strings.Contains(byID["needs_root"], "needs root") {
+		t.Errorf("a failure of a root-declaring state should say so: %q", byID["needs_root"])
+	}
+	if strings.Contains(byID["no_privilege_declared"], "needs root") {
+		t.Errorf("a state declaring nothing should get no note: %q", byID["no_privilege_declared"])
+	}
+	// A success is not explained away: the note is about a failure.
+	if strings.Contains(byID["succeeds"], "needs root") {
+		t.Errorf("a succeeding state should get no note: %q", byID["succeeds"])
 	}
 }

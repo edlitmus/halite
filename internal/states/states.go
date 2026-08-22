@@ -156,6 +156,9 @@ func (r *Registry) Call(c *exec.Context, name string, args *value.Map) (Result, 
 	if !ok {
 		return Result{}, fmt.Errorf("%q is not a state function this build ships", name)
 	}
+	if err := m.Sig.CheckPlatform(); err != nil {
+		return Result{}, err
+	}
 	bound, errs := m.Sig.Bind(nil, args)
 	if len(errs) > 0 {
 		msgs := make([]string, len(errs))
@@ -173,6 +176,9 @@ func (r *Registry) CallWatch(c *exec.Context, name string, args *value.Map) (Res
 	m, ok := r.fns[name]
 	if !ok {
 		return Result{}, fmt.Errorf("%q is not a state function this build ships", name)
+	}
+	if err := m.Sig.CheckPlatform(); err != nil {
+		return Result{}, err
 	}
 	fn := m.ModWatch
 	if fn == nil {

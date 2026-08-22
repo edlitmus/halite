@@ -9,6 +9,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -424,6 +425,7 @@ func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
 	if err != nil {
 		res = states.False(fmt.Sprintf("The state raised an error: %v", err))
 	}
+	res = r.notePrivilege(ch, res)
 
 	if retry := ch.Opts.Retry; retry != nil {
 		for attempt := 1; attempt < retry.Attempts; attempt++ {
@@ -578,4 +580,25 @@ func describeAll(chunks []*state.Chunk, targets []int) string {
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// notePrivilege appends what a declared privilege accounts for.
+//
+// A mutating function that declares `root` and fails while the process
+// is not root has almost certainly failed for that reason, and the tool
+// it shelled out to will have said something about permissions rather
+// than about privilege. The declaration exists; saying what it means at
+// the moment it matters is the whole of its value.
+func (r *Runner) notePrivilege(ch *state.Chunk, res states.Result) states.Result {
+	if !res.Failed() || r.States == nil {
+		return res
+	}
+	sig, ok := r.States.Signatures().Lookup(ch.Func())
+	if !ok {
+		return res
+	}
+	if note := sig.PrivilegeNote(os.Geteuid()); note != "" {
+		res.Comment += note
+	}
+	return res
 }

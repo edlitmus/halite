@@ -166,6 +166,9 @@ func (r *Registry) Call(c *Context, name string, args *value.Map) (any, error) {
 		return nil, &UnknownFunctionError{Name: name, Known: r.nearMisses(name)}
 	}
 	sig, _ := r.sigs.Lookup(name)
+	if err := sig.CheckPlatform(); err != nil {
+		return nil, err
+	}
 	bound, errs := sig.Bind(nil, args)
 	if len(errs) > 0 {
 		msgs := make([]string, len(errs))
@@ -185,6 +188,9 @@ func (r *Registry) CallPositional(c *Context, name string, args []any, kwargs *v
 		return nil, &UnknownFunctionError{Name: name, Known: r.nearMisses(name)}
 	}
 	sig, _ := r.sigs.Lookup(name)
+	if err := sig.CheckPlatform(); err != nil {
+		return nil, err
+	}
 	bound, errs := sig.Bind(args, kwargs)
 	if len(errs) > 0 {
 		msgs := make([]string, len(errs))
