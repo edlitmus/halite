@@ -919,6 +919,9 @@ Fixed as a result:
 | `user.present` took no `password` or `usergroup` | The tree sets its account password from an encrypted pillar value. |
 | `file.replace` took no `bufsize` | Salt's names a read buffer. |
 | The migration audit ignored state declarations | It reported the tree clean. Compiling it produced twenty-seven errors, twenty-two of them declarations. |
+| The pillar top ignored `- match: grain` | The state top read it; the pillar top had its own copy that did not, so a `nodename:host` target was compiled as a glob, matched nothing, and the file was absent from the pillar with nothing reported. |
+| An untrusted grain target was neither refused nor reported | SPEC 12.4's check looked for a `G@` sigil, which `- match: grain` does not use, so the target compiled against an empty grain set and delivered nothing. |
+| `pillar_trusted_grains` was hub-only | Along with the two pillar merge settings, so a node compiling its own pillar masterless could not set the option it was about to be told to set. |
 
 The password was left undone for one pass and then done carefully. The
 value is a hash, and `usermod -p <hash>` puts it in the process table
@@ -937,6 +940,17 @@ change it cannot verify — which would never converge.
 at the line that wrote it, and the audit reports a note. Refusing a
 harmless argument stops a tree Salt runs; accepting it silently is the
 defect in 5.3 that this project keeps finding in itself.
+
+**The tree compiles.** With its state files corrected by its author on
+2026-08-22 and the fixes above, `state show_lowstate` produces 51 chunks
+across the 11 SLS files this host matches. That is the first time an
+estate's real tree has been compiled by halite end to end.
+
+What that does *not* mean is that it has been applied. Compilation
+proves the tree is understood, not that the modules do the right thing
+with it; SPEC 31's differential compares the low state and the pillar
+and stops short of the results for the same reason (5.7). Nothing in
+this tree has been run.
 
 Still open, from the same tree:
 
