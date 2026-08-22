@@ -429,6 +429,14 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 			}
 			return res, fmt.Errorf("%s exited %d: %s", cmd.String(), res.Code, firstLine(res.Stderr))
 		}
+		// os/exec's own error already names the program, so prefixing
+		// it again gives the operator the command three times over: once
+		// in the state's Name line, once here, and once inside the
+		// wrapped error.
+		var runErr *exec.Error
+		if errors.As(err, &runErr) {
+			return res, fmt.Errorf("%w%s", err, migrationHint(cmd, err))
+		}
 		return res, fmt.Errorf("%s: %w%s", cmd.String(), err, migrationHint(cmd, err))
 	}
 	return res, nil
@@ -439,7 +447,16 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 // Salt and is a single program name here, so the exec fails with a
 // "no such file" naming the whole line. SPEC section 15.2.
 func migrationHint(cmd Command, err error) string {
-	if cmd.Shell || len(cmd.Argv) == 0 || !errors.Is(err, os.ErrNotExist) {
+	if cmd.Shell || len(cmd.Argv) == 0 {
+		return ""
+	}
+	// Two different errors mean "that program is not there", and the
+	// hint tested only one of them, so it never fired for the case it
+	// was written for. A bare name that is not on PATH gives
+	// exec.ErrNotFound; a path that does not exist gives fs.ErrNotExist.
+	// A Salt state's `name: some command with args` has no slash in it,
+	// so it takes the first branch every time.
+	if !errors.Is(err, exec.ErrNotFound) && !errors.Is(err, os.ErrNotExist) {
 		return ""
 	}
 	if !strings.ContainsAny(cmd.Argv[0], " \t") {

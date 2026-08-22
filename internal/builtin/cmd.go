@@ -207,7 +207,11 @@ func registerCmd(r *Registries) {
 		start := time.Now()
 		res, err := c.Run(cmd)
 		if err != nil {
-			return states.False(fmt.Sprintf("The command %q could not be run: %v", cmd.String(), err)), nil
+			// The state's Name line already carries the command, and
+			// the error names it again, so this does not. Repeating it
+			// with %q also quoted it twice, because String() quotes an
+			// argument that needs it.
+			return states.False(fmt.Sprintf("The command could not be run: %v", err)), nil
 		}
 		ignore := states.Bool(args, "ignore_retcode", false)
 		changes := value.MapOf(

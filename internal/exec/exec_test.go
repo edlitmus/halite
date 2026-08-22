@@ -441,3 +441,48 @@ func TestAnUnsplitCommandLineExplainsItself(t *testing.T) {
 		t.Errorf("a shell command should not get the migration hint:\n%v", err)
 	}
 }
+
+// TestMigrationHintFiresForAnUnconvertedShellLine covers the failure an
+// unconverted Salt state reliably produces, and the hint that was
+// written for it and never appeared.
+//
+// `name: bastille stop troupe` was a shell line in Salt and is a single
+// program name here. The hint tested errors.Is(err, os.ErrNotExist),
+// and a bare name that is not on PATH gives exec.ErrNotFound instead —
+// so the one case it existed for was the one case it missed.
+func TestMigrationHintFiresForAnUnconvertedShellLine(t *testing.T) {
+	r := &OSRunner{}
+
+	_, err := r.Run(context.Background(), Command{Argv: []string{"bastille stop troupe"}})
+	if err == nil {
+		t.Fatal("a command named after a whole shell line should fail")
+	}
+	for _, want := range []string{"contains a space", "args", "shell: true", "cmd_default_shell", "15.2"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error should mention %q:\n%v", want, err)
+		}
+	}
+
+	// A path that does not exist takes the other branch and must still
+	// be explained.
+	_, err = r.Run(context.Background(), Command{Argv: []string{"/nonexistent/dir/some command"}})
+	if err == nil || !strings.Contains(err.Error(), "contains a space") {
+		t.Errorf("an absolute path with a space should be explained too: %v", err)
+	}
+
+	// A program that is simply missing, with no space in its name, is
+	// not a migration problem and must not be given migration advice.
+	_, err = r.Run(context.Background(), Command{Argv: []string{"halite-no-such-program"}})
+	if err == nil {
+		t.Fatal("a missing program should fail")
+	}
+	if strings.Contains(err.Error(), "contains a space") {
+		t.Errorf("a plain missing program should not get the hint:\n%v", err)
+	}
+
+	// Neither should a shell command, where the whole line is the point.
+	_, err = r.Run(context.Background(), Command{Shell: true, Argv: []string{"halite-no-such-program --flag"}})
+	if err != nil && strings.Contains(err.Error(), "contains a space") {
+		t.Errorf("a shell command should not get the hint:\n%v", err)
+	}
+}
