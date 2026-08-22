@@ -44,8 +44,13 @@ const devOnFailInTestMode = "Salt fires onfail when the target did not *succeed*
 	"onfail state will run when a real run would not run it. halite fires onfail when the target " +
 	"failed, which is what the requisite means and what the real run will do."
 
+const devTestModeChanges = "in test mode halite reports what would change and Salt reports " +
+	"nothing. SPEC 11.6 asks a state that would change to say what, and an empty `changes` on a " +
+	"result of None tells an operator only that something was going to happen."
+
 var resultDeviations = []resultDeviation{
 	{"requisites", "cmd_|-fourth_|-echo fourth_|-run", "", devOnFailInTestMode},
+	{"basic", "cmd_|-a_script_|-salt://files/probe.sh_|-script", "", devTestModeChanges},
 }
 
 type prediction struct {

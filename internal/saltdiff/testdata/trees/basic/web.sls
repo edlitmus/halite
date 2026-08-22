@@ -11,3 +11,7 @@ say_hello:
 
 short_declaration:
   cmd.run
+
+a_script:
+  cmd.script:
+    - name: salt://files/probe.sh
