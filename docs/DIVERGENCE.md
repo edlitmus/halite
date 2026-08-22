@@ -1093,6 +1093,21 @@ operator makes precisely because they are not ready to be root, so it
 explains a failure instead. Two fields, two different right answers,
 which is why "enforce what is declared" is not one change.
 
+The last surface is the command line. A flag in the usage that nothing
+parses, or one parsed and never documented, is the same defect where an
+operator meets it first. Both directions are checked in both programs.
+That found `--root` on the hub, parsed and undocumented, and something
+worse: `--config` named the program's own configuration in
+`halite-hub lint` and "a Salt file to translate" in `halite-hub
+migrate`. One flag, two meanings, one program, and pointing it at
+hub.yaml asked the audit to translate that as Salt without saying so.
+The migrate one is `--salt-config`.
+
+Counting the whole sweep: thirteen settings, one module parameter, two
+signature fields, and two flags. The pattern in all of them is the same
+and is worth stating once — something was written down, and writing it
+down was mistaken for doing it.
+
 Two things the sweep taught about sweeps. The first version counted a
 key mentioned in a *test* as read; the second counted a module parameter
 of the same name. Both are the shape of a check that passes for the
