@@ -642,8 +642,10 @@ only behaviour they have to test.
 ### 5.2 The fourteen test layers
 
 Every layer SPEC 31 requires beyond the unit layer of 5.1, and where each
-stands. Four are present, one of them stronger than
-specified, three are partial, four are absent, and one is unverified.
+stands. Five are present, one of them stronger than
+specified, four are partial, and four are absent. Nothing is unverified
+any more: the reproducibility layer was, and it is now partial with the
+limit stated rather than the question left open.
 
 | Layer | Status |
 |---|---|
