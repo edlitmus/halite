@@ -210,18 +210,14 @@ func buildChunksForFunc(d *Decl, f *FuncDecl, diags *Diags) []*Chunk {
 
 		switch t := n.(type) {
 		case *value.Map:
-			// `- names: [{web1: {port: 80}}]` sets per-name arguments.
+			// A names entry may carry arguments for that name alone.
 			if t.Len() != 1 {
 				diags.Add(c.Pos, d.SLS, d.ID, "a names entry mapping must have exactly one key")
 				continue
 			}
 			e := t.Entries()[0]
 			c.Name = value.KeyString(e.Key)
-			if sub, ok := e.Val.(*value.Map); ok {
-				for _, se := range sub.Entries() {
-					c.Args.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
-				}
-			}
+			applyPerNameArgs(c, e.Val, d, diags)
 		default:
 			c.Name = value.KeyString(n)
 		}
@@ -229,6 +225,44 @@ func buildChunksForFunc(d *Decl, f *FuncDecl, diags *Diags) []*Chunk {
 		out = append(out, c)
 	}
 	return out
+}
+
+// applyPerNameArgs sets the arguments attached to one entry of a `names`
+// list. Salt writes them two ways and a real tree uses the second:
+//
+//   - names:
+//   - web1: {port: 80}          a mapping
+//   - /usr/local/bin/x:         a list, spelled like a declaration
+//   - source: salt://x
+//
+// Only the mapping was handled, and the list was dropped without a word.
+// On `file.managed` that meant the expanded chunks had no `source` at
+// all, so a tree that copies seven scripts into place would have written
+// seven empty files.
+func applyPerNameArgs(c *Chunk, v any, d *Decl, diags *Diags) {
+	switch sub := v.(type) {
+	case nil:
+		// `- name:` with nothing under it is the name alone.
+	case *value.Map:
+		for _, se := range sub.Entries() {
+			c.Args.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
+		}
+	case []any:
+		for _, item := range sub {
+			m, ok := item.(*value.Map)
+			if !ok {
+				diags.Add(c.Pos, d.SLS, d.ID,
+					"a names entry's arguments must be `key: value` pairs, found %s", value.TypeName(item))
+				continue
+			}
+			for _, se := range m.Entries() {
+				c.Args.SetAt(se.Key, se.Val, se.KeyPos, se.ValPos)
+			}
+		}
+	default:
+		diags.Add(c.Pos, d.SLS, d.ID,
+			"a names entry's arguments must be a mapping or a list of them, found %s", value.TypeName(v))
+	}
 }
 
 func extractNames(args *value.Map, d *Decl, diags *Diags) []any {
