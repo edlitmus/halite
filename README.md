@@ -146,6 +146,7 @@ make check      # fmt, vet, test, race, and the build policy
 make test-linux # the suite as Linux binaries, under the compat layer
 make cover
 make vuln       # govulncheck; needs the network, so not part of check
+make repro      # build twice from two paths and compare the digests
 make fuzz       # FUZZTIME=30m for a real campaign
 ```
 

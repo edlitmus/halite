@@ -165,6 +165,34 @@ policy:
 vuln:
 	@env $(DEV_ENV) go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
+# Build every binary twice and compare the digests.
+#
+# SPEC section 31 asks that two independent builders produce identical
+# artifacts. This is not that, and the difference is worth stating: it is
+# one builder, one toolchain, one machine. What it does establish is that
+# the build does not embed the clock, the working directory, or anything
+# else that varies between two runs of it — which is the half that
+# usually breaks first, and the half that has to hold before two
+# builders can agree about anything.
+#
+# The second build is made from a copy of the tree at a different path,
+# so -trimpath is exercised rather than assumed.
+repro:
+	@set -e; \
+	tmp=$$(mktemp -d); trap "rm -rf $$tmp" EXIT; \
+	mkdir -p $$tmp/a $$tmp/b/src; \
+	tar -cf - --exclude=bin --exclude=cover.out --exclude=dist . | (cd $$tmp/b/src && tar -xf -); \
+	for b in $(BINARIES); do \
+		env $(RELEASE_ENV) go build $(BUILDFLAGS) -o $$tmp/a/$$b ./cmd/$$b; \
+		( cd $$tmp/b/src && env $(RELEASE_ENV) go build $(BUILDFLAGS) -o $$tmp/b/$$b ./cmd/$$b ); \
+		if cmp -s $$tmp/a/$$b $$tmp/b/$$b; then \
+			echo "$$b: identical"; \
+		else \
+			echo "$$b: DIFFERS between two builds of the same source"; \
+			exit 1; \
+		fi; \
+	done
+
 # What to run before calling a change done.
 check: fmt vet test race policy
 

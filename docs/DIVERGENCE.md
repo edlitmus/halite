@@ -659,7 +659,7 @@ specified, three are partial, four are absent, and one is unverified.
 | Upgrade | **absent.** Nothing to upgrade from. |
 | Chaos | **absent.** Blocked on phase 2. |
 | Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. Clean against the database of 2026-08-21. No static analysis beyond `go vet`. No external review. |
-| Reproducibility | **unverified.** One builder, one platform. Two independent builders producing identical digests has never been attempted. |
+| Reproducibility | **partial.** `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine — not the two independent builders SPEC 31 asks for — but it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. A second builder has still never been tried. |
 
 ### 5.3 What fuzzing found
 
