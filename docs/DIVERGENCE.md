@@ -1053,6 +1053,39 @@ null to null, and `a: b: c` became a nested mapping, where YAML puts a
 block collection on the following lines and PyYAML refuses all four.
 Closing it also closed three of the lenient gaps in 5.4.
 
+### 5.10 What the declared-and-unread sweep found
+
+Three defects in a row were one setting each that nothing acted on:
+`cmd_default_shell` applied where it should not have been, a per-state
+`timeout` parsed and dropped, and the `salt` dispatcher plumbed and never
+populated. Rather than wait for the fourth, `internal/config`'s
+`TestEveryDeclaredKeyIsReadOrRecorded` requires every key to be passed to
+a configuration accessor somewhere, or listed with the reason it is not,
+enforced in both directions.
+
+Thirteen were live: `yaml_bool_11`, `random_seed`, `legacy_arg_parse`,
+`template_trim_blocks`, `template_lstrip_blocks`, `env_allowlist`,
+`env_denylist`, `node_id_lowercase`, `node_id_remove_domain`,
+`log_level`, `log_format`, `log_file`, `pillarenv`, and `renderer` —
+four of them named in SPEC as the switch a tree throws during a
+migration, one an access control that did not control, and three the
+whole of the logging configuration.
+
+The same sweep one level down, over the 167 parameter names the module
+registry declares, found exactly one: `hash_type` on `file.managed`. The
+module layer was in better shape than the configuration layer, which is
+worth knowing.
+
+Two things the sweep taught about sweeps. The first version counted a
+key mentioned in a *test* as read; the second counted a module parameter
+of the same name. Both are the shape of a check that passes for the
+wrong reason, which is worse than no check, because the list of
+exceptions grows and nobody looks again. And the strict version turned
+two correct reads into false positives — `file_roots` and `pillar_roots`
+go through a helper that takes the key as an argument — which is
+recorded as an exception with its reason rather than fixed by loosening
+the rule.
+
 ### 5.9 What a real Salt tree found
 
 The corpus in 5.7 is written for the gate: it covers constructs, not
@@ -1079,7 +1112,7 @@ Fixed as a result:
 | `file.managed` read an unreadable file as empty | The error from the read was discarded, so a 0640 credential the run could not read compared as empty: the state reported that the contents differed, showed a diff adding the whole file, rewrote it, and would have done so on every run for ever, because it still could not read what it had written. |
 | `file.replace` took no `bufsize` | Salt's names a read buffer. |
 | A decrypted pillar value could reach a log | The `gpg` renderer works, so a real secret now travels through code that has no idea what it is holding. SPEC 26.1's value-based redactor is applied at the sink — the logger and `Fatalf` — and seeded from every decryption and every setting whose name says it holds a secret. The state return is scrubbed too — both output formats and the SPEC 11.8 key, which carries the state's name and therefore whatever a `cmd.run` was pointed at. The run's own data is left intact, because `onchanges` and `prereq` compare changes and two secrets both becoming asterisks would make two states look alike. |
-| Ten settings were declared and read by nothing | `yaml_bool_11`, `random_seed`, `legacy_arg_parse`, `template_trim_blocks`, `template_lstrip_blocks`, and the pair `env_allowlist` and `env_denylist` — three named in SPEC as the switch a tree throws during a migration, and one an access control that did not control. `node_id_lowercase` and `node_id_remove_domain` came with them: the shim translated a Salt configuration into keys nothing read, so the same file produced a different identity here, and the identity is what pillar and targeting are keyed by. So did `log_level`, `log_format`, and `log_file`: every diagnostic went to stderr whatever it was, so `log_level: error` on an unattended node changed nothing, and one of this project's own example configurations set a `log_format` that did nothing. The audit had a false negative of its own and it was the sharper kind — it counted a key mentioned in a *test* as read, and a test that proves the loader carries a key says nothing about whether anything acts on it. A test now requires every declared key to be read or listed with the reason it is not, enforced in both directions, so the class cannot grow again in silence. |
+| Thirteen settings were declared and read by nothing | `yaml_bool_11`, `random_seed`, `legacy_arg_parse`, `template_trim_blocks`, `template_lstrip_blocks`, and the pair `env_allowlist` and `env_denylist` — three named in SPEC as the switch a tree throws during a migration, and one an access control that did not control. `node_id_lowercase` and `node_id_remove_domain` came with them: the shim translated a Salt configuration into keys nothing read, so the same file produced a different identity here, and the identity is what pillar and targeting are keyed by. So did `log_level`, `log_format`, and `log_file`: every diagnostic went to stderr whatever it was, so `log_level: error` on an unattended node changed nothing, and one of this project's own example configurations set a `log_format` that did nothing. The audit had two false negatives of its own, and they were the sharper find. It counted a key mentioned in a *test* as read, and a test proving the loader carries a key says nothing about whether anything acts on it. It also counted a *module parameter* of the same name: `hash_type` is declared on `file.managed` **and** is a configuration key, and neither was read by anything. Looking for the key passed to a configuration accessor — which is what reading one looks like — found `pillarenv` (a tree holding its pillar in one environment while its states moved between several got the states' environment for both), `renderer` (every file got `jinja|yaml` whatever the tree asked for), and `hash_type` itself, whose `file.managed` parameter claimed to be the "digest used to compare contents" where the contents are compared byte for byte. A test now requires every declared key to be read or listed with the reason it is not, enforced in both directions, so the class cannot grow again in silence. |
 | `cmd_default_shell` silently dropped `args` | The setting is a default for states that do not say which form they are in, and it was applied to states that had said. A state converted during a transition stopped passing its arguments and reported success: the tree said `/bin/echo a b` and the node ran `/bin/echo`. Every state converted while the setting was on was quietly doing nothing of what it said. |
 | The migration audit ignored state declarations | It reported the tree clean. Compiling it produced twenty-seven errors, twenty-two of them declarations. |
 | The pillar top ignored `- match: grain` | The state top read it; the pillar top had its own copy that did not, so a `nodename:host` target was compiled as a glob, matched nothing, and the file was absent from the pillar with nothing reported. |
