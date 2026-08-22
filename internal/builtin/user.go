@@ -56,6 +56,13 @@ type userSpec struct {
 	Groups     []string
 	CreateHome bool
 	System     bool
+	// Password is a hash, never a plaintext, and never reaches an
+	// argument vector. See user_password.go.
+	Password string
+	// UserGroup asks for a primary group named after the account. Nil
+	// means the platform's default, which is what a tree that does not
+	// mention it wants.
+	UserGroup *bool
 }
 
 // freebsdTool drives pw(8), which is FreeBSD's single account tool.
@@ -152,6 +159,16 @@ var linuxTool = accountTool{
 		}
 		if u.System {
 			argv = append(argv, "-r")
+		}
+		if u.UserGroup != nil {
+			// -U creates a group named after the account and makes it
+			// primary; -N does not. Without either, useradd follows
+			// USERGROUPS_ENAB in login.defs.
+			if *u.UserGroup {
+				argv = append(argv, "-U")
+			} else {
+				argv = append(argv, "-N")
+			}
 		}
 		if u.CreateHome {
 			argv = append(argv, "-m")
@@ -368,6 +385,8 @@ func registerUserStates(r *Registries) {
 					opt("groups", signature.List, nil, "Supplementary groups."),
 					opt("createhome", signature.Bool, true, "Create the home directory."),
 					opt("system", signature.Bool, false, "Create a system account."),
+					opt("password", signature.String, "", "The password hash. Passed to the account tool on standard input, never in an argument vector."),
+					opt("usergroup", signature.Bool, nil, "Give the account a primary group named after it. Unset follows the platform default."),
 				},
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
@@ -432,7 +451,21 @@ func specFrom(args *value.Map) userSpec {
 		Groups:     states.Strings(args, "groups"),
 		CreateHome: states.Bool(args, "createhome", true),
 		System:     states.Bool(args, "system", false),
+		Password:   states.Str(args, "password", ""),
+		UserGroup:  optionalBool(args, "usergroup"),
 	}
+}
+
+// optionalBool distinguishes "not mentioned" from "false", which matters
+// for an option whose unmentioned behaviour is the platform's default
+// rather than either value.
+func optionalBool(args *value.Map, name string) *bool {
+	v, ok := args.Get(name)
+	if !ok || v == nil {
+		return nil
+	}
+	b := value.Truthy(v)
+	return &b
 }
 
 func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
@@ -458,6 +491,27 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		diffAccount(current, spec, changes)
 	}
 
+	// The password is compared separately: it does not live in the
+	// account record, and reading it needs the same privilege as setting
+	// it. A state that cannot read the stored hash cannot tell whether
+	// it converged, and reporting a change every run would be worse than
+	// saying so.
+	passwordDiffers := false
+	if spec.Password != "" {
+		stored, _, err := currentHash(spec.Name)
+		if err != nil {
+			return states.False(fmt.Sprintf(
+				"The password for %s could not be compared: %v", spec.Name, err)), nil
+		}
+		if stored != spec.Password {
+			passwordDiffers = true
+			// The hashes are not reported. What changed is enough, and a
+			// job return carrying a hash is a hash in every returner,
+			// event bus, and log the estate has.
+			changes.Set("password", states.Change("(unchanged)", "(set)"))
+		}
+	}
+
 	if changes.Len() == 0 {
 		return states.True(fmt.Sprintf("The account %s is already in the requested state.", spec.Name)), nil
 	}
@@ -469,12 +523,28 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.WouldChange(fmt.Sprintf("The account %s would be %s.", spec.Name, verb), changes), nil
 	}
 
+	// A change that is only the password does not need the account tool
+	// run at all, and running usermod with no attributes to set is a
+	// needless write to the passwd database.
+	if exists && changes.Len() == 1 && passwordDiffers {
+		if err := setPassword(c, tool, spec.Name, spec.Password); err != nil {
+			return states.False(fmt.Sprintf("The password for %s could not be set: %v", spec.Name, err)), nil
+		}
+		return states.Changed(fmt.Sprintf("The password for %s was set.", spec.Name), changes), nil
+	}
+
 	argv := tool.AddUser(spec)
 	if exists {
 		argv = tool.ModUser(spec)
 	}
 	if _, err := c.Run(exec.Command{Argv: argv}); err != nil {
 		return states.False(fmt.Sprintf("The account %s could not be %s: %v", spec.Name, verb, err)), nil
+	}
+	if passwordDiffers || (!exists && spec.Password != "") {
+		if err := setPassword(c, tool, spec.Name, spec.Password); err != nil {
+			return states.False(fmt.Sprintf(
+				"The account %s was %s but its password could not be set: %v", spec.Name, verb, err)), nil
+		}
 	}
 	return states.Changed(fmt.Sprintf("The account %s was %s.", spec.Name, verb), changes), nil
 }

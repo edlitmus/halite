@@ -3951,7 +3951,7 @@ user.absent(name: string, purge: bool = false)
 Ensure an account exists with the given attributes.
 
 ```
-user.present(name: string, uid: int, gid: int, home: path = , shell: path = , fullname: string = , groups: list, createhome: bool = true, system: bool = false)
+user.present(name: string, uid: int, gid: int, home: path = , shell: path = , fullname: string = , groups: list, createhome: bool = true, system: bool = false, password: string = , usergroup: bool)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -3965,6 +3965,8 @@ user.present(name: string, uid: int, gid: int, home: path = , shell: path = , fu
 | `groups` | list | — | Supplementary groups. |
 | `createhome` | bool | `true` | Create the home directory. |
 | `system` | bool | `false` | Create a system account. |
+| `password` | string | `` | The password hash. Passed to the account tool on standard input, never in an argument vector. |
+| `usergroup` | bool | — | Give the account a primary group named after it. Unset follows the platform default. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
