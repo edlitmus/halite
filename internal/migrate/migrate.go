@@ -469,9 +469,15 @@ func stripTemplating(src string) string {
 	}
 	for i := 0; i < len(src); i++ {
 		var closeTag string
+		// An expression yields text and a statement yields nothing, so
+		// only the expression leaves a mark. Blanking `{{ sls }} create
+		// jail:` to spaces moved the key ten columns to the right, which
+		// made the file stop parsing and took every finding in it with
+		// the file. A placeholder keeps the key where its author put it.
+		placeholder := false
 		switch {
 		case strings.HasPrefix(src[i:], "{{"):
-			closeTag = "}}"
+			closeTag, placeholder = "}}", true
 		case strings.HasPrefix(src[i:], "{%"):
 			closeTag = "%}"
 		case strings.HasPrefix(src[i:], "{#"):
@@ -485,6 +491,9 @@ func stripTemplating(src string) string {
 			break
 		}
 		blank(i, i+end+len(closeTag))
+		if placeholder && i < len(out) && out[i] != '\n' {
+			out[i] = 'x'
+		}
 		i += end + len(closeTag) - 1
 	}
 	return string(out)

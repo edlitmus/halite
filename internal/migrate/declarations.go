@@ -138,6 +138,24 @@ func checkStateFunction(rep *Report, opts Options, rel, id, name string, args []
 			continue
 		}
 
+		// A `cmd` state whose name reads as a shell line is the single
+		// most common thing an unconverted tree gets wrong, and it fails
+		// at run time rather than at compile time — so without this the
+		// audit reports the tree clean and the operator finds out one
+		// state at a time, during an apply.
+		if argName == "name" && isCommandState(name) {
+			if line, ok := arg.Val.(string); ok && looksLikeShellLine(line) && !hasShellArgument(args) {
+				rep.Findings = append(rep.Findings, Finding{
+					Category: CatState, Severity: Review, File: rel, Line: arg.KeyPos.Line, Col: arg.KeyPos.Col,
+					Subject: name,
+					Msg: fmt.Sprintf("%s names a program with arguments in it: %q. "+
+						"halite runs a command without a shell, so this is one program name", name, clipLine(line)),
+					Action: "Put the program in `name` and the rest in `args`, or set `shell: true` " +
+						"on this state, or `cmd_default_shell: true` for a transition. SPEC section 15.2.",
+				})
+			}
+		}
+
 		// A mode that arrived as an integer is the one type error worth
 		// reporting from a stripped body: an integer is an integer
 		// whatever the templating did, and it is the difference between
@@ -207,4 +225,47 @@ func raiseFindingAt(rep *Report, file string, line int) bool {
 		}
 	}
 	return false
+}
+
+// isCommandState reports whether a state function runs its `name` as a
+// program rather than treating it as a path or an identifier.
+func isCommandState(name string) bool {
+	module, fn, _ := strings.Cut(name, ".")
+	if module != "cmd" {
+		return false
+	}
+	// cmd.script's name is a source URI, not a command line.
+	return fn != "script"
+}
+
+// looksLikeShellLine reports whether a command name reads as a whole
+// shell line rather than a program.
+//
+// The test is a space outside quotes. A path with a space in it is legal
+// and rare; a program name with an argument after it is neither.
+func looksLikeShellLine(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return false
+	}
+	return strings.ContainsAny(trimmed, " \t")
+}
+
+// hasShellArgument reports whether the declaration opts into a shell, in
+// which case the whole line is the point.
+func hasShellArgument(args []value.Entry) bool {
+	for _, a := range args {
+		if value.KeyString(a.Key) == "shell" {
+			return value.Truthy(a.Val)
+		}
+	}
+	return false
+}
+
+func clipLine(s string) string {
+	s = strings.TrimSpace(strings.SplitN(s, "\n", 2)[0])
+	if len(s) > 60 {
+		return s[:60] + "..."
+	}
+	return s
 }

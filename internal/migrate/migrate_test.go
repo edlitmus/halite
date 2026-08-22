@@ -444,3 +444,101 @@ wrong_function:
 		}
 	}
 }
+
+// TestTemplatedKeysKeepTheirColumn covers a silence in the audit itself.
+// A state ID built from an expression — `{{ sls }} create jail:` — was
+// blanked to spaces, which moved the key ten columns to the right, broke
+// the file's structure, and made the declaration audit skip the whole
+// file without saying so. Two real trees had five such files between
+// them.
+func TestTemplatedKeysKeepTheirColumn(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("top.sls", "base:\n  '*':\n    - web\n")
+	write("web.sls", `plain:
+  cmd.run:
+    - name: /bin/echo
+
+{%- if grains['os'] == 'FreeBSD' %}
+{{ sls }} start jail:
+  cmd.run:
+    - name: bastille start troupe
+{%- endif %}
+`)
+	states := signature.NewRegistry()
+	states.Add(signature.Signature{Module: "cmd", Function: "run", Params: []signature.Param{
+		{Name: "name", Type: signature.String},
+		{Name: "shell", Type: signature.Bool},
+	}})
+
+	rep, err := Run(Options{Root: root, StateRegistry: states})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msgs []string
+	for _, f := range findingsFor(rep, CatState) {
+		msgs = append(msgs, f.Msg)
+	}
+	joined := strings.Join(msgs, "\n")
+
+	// The declaration inside the conditional, under a templated ID, is
+	// audited like any other.
+	if !strings.Contains(joined, "bastille start troupe") {
+		t.Errorf("the templated declaration was not audited:\n%s", joined)
+	}
+	// A program with no arguments in its name is not reported.
+	if strings.Contains(joined, "/bin/echo") {
+		t.Errorf("a plain program name should not be reported:\n%s", joined)
+	}
+}
+
+// TestShellLinesAreReported is the most common thing an unconverted tree
+// gets wrong, and it fails at run time rather than at compile time — so
+// without this the audit calls the tree clean and the operator finds out
+// one state at a time, during an apply.
+func TestShellLinesAreReported(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "top.sls"), []byte("base:\n  '*':\n    - web\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "web.sls"), []byte(`needs_splitting:
+  cmd.run:
+    - name: systemctl restart nginx
+
+opted_in:
+  cmd.run:
+    - name: systemctl restart nginx
+    - shell: true
+
+already_split:
+  cmd.run:
+    - name: /usr/bin/systemctl
+    - args: [restart, nginx]
+`), 0o644)
+
+	states := signature.NewRegistry()
+	states.Add(signature.Signature{Module: "cmd", Function: "run", Params: []signature.Param{
+		{Name: "name", Type: signature.String},
+		{Name: "args", Type: signature.List},
+		{Name: "shell", Type: signature.Bool},
+	}})
+	rep, err := Run(Options{Root: root, StateRegistry: states})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var reported []string
+	for _, f := range findingsFor(rep, CatState) {
+		if strings.Contains(f.Msg, "names a program with arguments") {
+			reported = append(reported, f.Subject)
+			if f.Severity != Review {
+				t.Errorf("%s should be a review finding, not %s", f.Subject, f.Severity)
+			}
+		}
+	}
+	if len(reported) != 1 {
+		t.Errorf("reported %d shell lines, want 1 (the one that did not opt in): %v", len(reported), reported)
+	}
+}
