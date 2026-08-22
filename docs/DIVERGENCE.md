@@ -930,6 +930,13 @@ Compared, over nine trees:
   changes. Opt in with `HALITE_SALTDIFF_RESULTS=1`; it evaluates every
   state against the host, reading the system and writing nothing.
 
+  This one wants the privileges the tree itself needs. Run against a
+  real tree unprivileged it reports a dozen differences and almost all
+  of them are one thing: Salt's `service`, `sysrc`, and `file` modules
+  fail or raise where halite reads the same state without privilege, so
+  the two disagree about a host neither of them was allowed to inspect.
+  That is worth knowing once and not worth reading every time.
+
 Not compared:
 
 - **what an apply actually does.** A prediction is not a result. This
@@ -952,12 +959,17 @@ integer as a uid; `contents` as a list of lines refused by a signature
 though the code behind it had always handled one; and a per-state
 `timeout` parsed, stripped from the arguments, and then read by nothing.
 
-The prediction comparison has one recorded deviation, and it is the
+The prediction comparison has two recorded deviations. The first is the
 claim the README has been making about `test=True` all along. Salt fires
 `onfail` when its target did not *succeed*, and in test mode a state
 that would change reports neither success nor failure — so Salt predicts
 that an onfail state will run when a real run would not run it. halite
 fires onfail when the target failed, which is what the requisite means.
+
+The second: in test mode halite reports what would change and Salt
+reports nothing. SPEC 11.6 asks a state that would change to say what,
+and an empty `changes` on a result of None tells an operator only that
+something was going to happen.
 
 The low state comparison has one deviation, and it is a difference
 between the two Salt majors rather than between Salt and halite: 3006
@@ -1016,6 +1028,7 @@ Fixed as a result:
 | `sysrc.managed`, `cmd.script`, `git.latest`'s branch and force flags, `file.directory: dir_mode` | Named or accepted by Salt and not by this build. |
 | The advice on an unquoted mode | Right for `0644` and wrong for `640`, where it suggested the octal of a number nobody wrote. |
 | `user.present` took no `password` or `usergroup` | The tree sets its account password from an encrypted pillar value. |
+| `file.managed` read an unreadable file as empty | The error from the read was discarded, so a 0640 credential the run could not read compared as empty: the state reported that the contents differed, showed a diff adding the whole file, rewrote it, and would have done so on every run for ever, because it still could not read what it had written. |
 | `file.replace` took no `bufsize` | Salt's names a read buffer. |
 | The migration audit ignored state declarations | It reported the tree clean. Compiling it produced twenty-seven errors, twenty-two of them declarations. |
 | The pillar top ignored `- match: grain` | The state top read it; the pillar top had its own copy that did not, so a `nodename:host` target was compiled as a glob, matched nothing, and the file was absent from the pillar with nothing reported. |
