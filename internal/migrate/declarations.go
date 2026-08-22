@@ -26,6 +26,7 @@ import (
 // a missed finding is a surprise later, and a false one is a surprise now
 // about something that is fine.
 func auditDeclarations(rep *Report, opts Options, rel, body string) {
+	source := strings.Split(body, "\n")
 	if opts.StateRegistry == nil {
 		return
 	}
@@ -50,14 +51,14 @@ func auditDeclarations(rep *Report, opts Options, rel, body string) {
 		switch body := decl.Val.(type) {
 		case string:
 			// Salt's short declaration: the function with no arguments.
-			checkStateFunction(rep, opts, rel, id, body, nil, decl.ValPos)
+			checkStateFunction(rep, opts, rel, source, id, body, nil, decl.ValPos)
 		case *value.Map:
 			for _, fn := range body.Entries() {
 				name := value.KeyString(fn.Key)
 				if strings.HasPrefix(name, "__") {
 					continue
 				}
-				checkStateFunction(rep, opts, rel, id, name, declaredArgs(fn.Val), fn.KeyPos)
+				checkStateFunction(rep, opts, rel, source, id, name, declaredArgs(fn.Val), fn.KeyPos)
 			}
 		}
 	}
@@ -91,7 +92,7 @@ func declaredArgs(v any) []value.Entry {
 	return args
 }
 
-func checkStateFunction(rep *Report, opts Options, rel, id, name string, args []value.Entry, pos value.Pos) {
+func checkStateFunction(rep *Report, opts Options, rel string, source []string, id, name string, args []value.Entry, pos value.Pos) {
 	if !strings.Contains(name, ".") {
 		return
 	}
@@ -149,7 +150,8 @@ func checkStateFunction(rep *Report, opts Options, rel, id, name string, args []
 					Category: CatState, Severity: Review, File: rel, Line: arg.KeyPos.Line, Col: arg.KeyPos.Col,
 					Subject: name,
 					Msg: fmt.Sprintf("%s names a program with arguments in it: %q. "+
-						"halite runs a command without a shell, so this is one program name", name, clipLine(line)),
+						"halite runs a command without a shell, so this is one program name",
+						name, sourceLine(source, arg.ValPos.Line, line)),
 					Action: "Put the program in `name` and the rest in `args`, or set `shell: true` " +
 						"on this state, or `cmd_default_shell: true` for a transition. SPEC section 15.2.",
 				})
@@ -260,6 +262,24 @@ func hasShellArgument(args []value.Entry) bool {
 		}
 	}
 	return false
+}
+
+// sourceLine quotes the line as its author wrote it. The audit reads a
+// body with the template expressions replaced, so the value it parsed
+// carries placeholders where a tree carries `{{ network }}`, and quoting
+// that back at an operator is quoting something they never typed.
+func sourceLine(source []string, line int, parsed string) string {
+	if line < 1 || line > len(source) {
+		return clipLine(parsed)
+	}
+	text := strings.TrimSpace(source[line-1])
+	if _, after, found := strings.Cut(text, ":"); found {
+		text = strings.TrimSpace(after)
+	}
+	if text == "" {
+		return clipLine(parsed)
+	}
+	return clipLine(text)
 }
 
 func clipLine(s string) string {

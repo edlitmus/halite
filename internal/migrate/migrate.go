@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/config"
@@ -460,6 +461,7 @@ func isDefiniteYAMLHazard(msg string) bool {
 // the file on disk.
 func stripTemplating(src string) string {
 	out := []byte(src)
+	expressions := 0
 	blank := func(from, to int) {
 		for i := from; i < to && i < len(out); i++ {
 			if out[i] != '\n' {
@@ -490,9 +492,21 @@ func stripTemplating(src string) string {
 			blank(i, len(src))
 			break
 		}
-		blank(i, i+end+len(closeTag))
-		if placeholder && i < len(out) && out[i] != '\n' {
-			out[i] = 'x'
+		width := end + len(closeTag)
+		blank(i, i+width)
+		if placeholder {
+			// Each expression gets its own token. Two state IDs built
+			// from different expressions are different keys, and giving
+			// them the same placeholder reported a duplicate key that
+			// the file does not have.
+			token := "x" + strconv.FormatInt(int64(expressions), 36)
+			expressions++
+			for j := 0; j < len(token) && i+j < len(out) && j < width; j++ {
+				if out[i+j] == '\n' {
+					break
+				}
+				out[i+j] = token[j]
+			}
 		}
 		i += end + len(closeTag) - 1
 	}

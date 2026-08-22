@@ -542,3 +542,44 @@ already_split:
 		t.Errorf("reported %d shell lines, want 1 (the one that did not opt in): %v", len(reported), reported)
 	}
 }
+
+// TestTemplatedKeysAreDistinct guards the placeholder itself. Two state
+// IDs built from different expressions are different keys, and giving
+// them the same placeholder reported a duplicate key the file does not
+// have — a blocking finding invented by the audit.
+func TestTemplatedKeysAreDistinct(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "top.sls"), []byte("base:\n  '*':\n    - web\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "web.sls"), []byte(`{{ service }}:
+  test.nop: []
+
+{{ other }}:
+  test.nop: []
+`), 0o644)
+
+	rep, err := Run(Options{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range rep.Findings {
+		if strings.Contains(f.Msg, "duplicate mapping key") {
+			t.Errorf("the audit invented a duplicate key: %s", f.Msg)
+		}
+	}
+
+	// A file that really does repeat a key is still reported.
+	os.WriteFile(filepath.Join(root, "web.sls"), []byte("a: 1\na: 2\n"), 0o644)
+	rep, err = Run(Options{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, f := range rep.Findings {
+		if strings.Contains(f.Msg, "duplicate mapping key") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("a real duplicate key should still be reported")
+	}
+}
