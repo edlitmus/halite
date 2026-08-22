@@ -109,6 +109,11 @@ type lexer struct {
 	// trimNextText records that the tag just closed asked, with `-%}` or
 	// `-}}`, for the whitespace after it to go.
 	trimNextText bool
+	// atLineStart says the next literal span begins at the start of a
+	// line, which is what lstrip_blocks acts on. It is not always
+	// visible in the span itself: trim_blocks removes the newline that
+	// put it there.
+	atLineStart bool
 	// keepNextText records that the tag just closed asked, with `+%}`, for
 	// the text after it to be left alone. It is the explicit opposite of
 	// `-%}` and turns off `trim_blocks` for that one delimiter.
@@ -121,7 +126,7 @@ type lexOptions struct {
 }
 
 func lex(src, file string, delims Delimiters, opts lexOptions) ([]token, error) {
-	l := &lexer{src: src, file: file, line: 1, col: 1, delims: delims, opts: opts}
+	l := &lexer{src: src, file: file, line: 1, col: 1, delims: delims, opts: opts, atLineStart: true}
 	if err := l.run(); err != nil {
 		return nil, err
 	}
@@ -148,7 +153,7 @@ func (l *lexer) run() error {
 	for l.off < len(l.src) {
 		next, kind := l.findNextDelim()
 		if next < 0 {
-			l.emitText(l.src[l.off:], false, false)
+			l.emitText(l.src[l.off:], false, false, followedByNothing)
 			l.advance(len(l.src) - l.off)
 			break
 		}
@@ -161,7 +166,7 @@ func (l *lexer) run() error {
 		if next+openLen < len(l.src) {
 			marker = l.src[next+openLen]
 		}
-		l.emitText(raw, marker == '-', marker == '+')
+		l.emitText(raw, marker == '-', marker == '+', kindFollowing(kind))
 		l.advance(next - l.off)
 
 		switch kind {
@@ -219,16 +224,52 @@ func (l *lexer) findNextDelim() (int, tokenKind) {
 	return l.off + best, kind
 }
 
+// kindFollowing maps the delimiter findNextDelim found onto what it
+// means for the whitespace before it. A comment has no token kind of its
+// own, so findNextDelim reports it as zero.
+func kindFollowing(kind tokenKind) followedBy {
+	switch kind {
+	case tokVarStart:
+		return followedByVariable
+	case tokTagStart:
+		return followedByBlock
+	}
+	return followedByComment
+}
+
+// followedBy says what ends a literal span, because `lstrip_blocks`
+// depends on it: Jinja strips the whitespace running from a line start
+// to a *block* tag or a comment, and leaves it before a variable or at
+// the end of the template.
+type followedBy int
+
+const (
+	followedByNothing followedBy = iota
+	followedByVariable
+	followedByBlock
+	followedByComment
+)
+
+// stripsLeadingWhitespace reports whether `lstrip_blocks` acts on the
+// whitespace before this kind of tag.
+func (f followedBy) stripsLeadingWhitespace() bool {
+	return f == followedByBlock || f == followedByComment
+}
+
 // emitText writes a literal span, applying the whitespace controls.
 //
 // The reported position is where the text begins *after* trimming, not
 // where the raw span began: the source map maps verbatim text line by
 // line, so a position that is one line early puts every later diagnostic
 // in the wrong place.
-func (l *lexer) emitText(s string, trimAfter, keepBefore bool) {
+func (l *lexer) emitText(s string, trimAfter, keepBefore bool, next followedBy) {
 	raw := s
 	keepAfter := l.keepNextText
 	l.keepNextText = false
+	// trim_blocks eats the newline that ends a tag's line, which puts
+	// what follows at the start of a line even though no newline remains
+	// in the span for lstrip_blocks to find.
+	openedLine := false
 	switch {
 	case l.trimNextText:
 		s = strings.TrimLeft(s, " \t\r\n")
@@ -236,21 +277,27 @@ func (l *lexer) emitText(s string, trimAfter, keepBefore bool) {
 	case keepAfter:
 		// `+%}` asked for this text verbatim, so trim_blocks stands down.
 	case l.opts.TrimBlocks && strings.HasPrefix(s, "\r\n"):
-		s = s[2:]
+		s, openedLine = s[2:], true
 	case l.opts.TrimBlocks && strings.HasPrefix(s, "\n"):
-		s = s[1:]
+		s, openedLine = s[1:], true
 	}
+	atLineStart := l.atLineStart || openedLine
 	skippedLines := strings.Count(raw[:len(raw)-len(s)], "\n")
 	if trimAfter {
 		s = strings.TrimRight(s, " \t\r\n")
-	} else if l.opts.LstripBlocks && !keepBefore {
+	} else if l.opts.LstripBlocks && !keepBefore && next.stripsLeadingWhitespace() {
 		if i := strings.LastIndexByte(s, '\n'); i >= 0 {
 			if strings.TrimLeft(s[i+1:], " \t") == "" {
 				s = s[:i+1]
 			}
-		} else if strings.TrimLeft(s, " \t") == "" && len(l.toks) == 0 {
+		} else if atLineStart && strings.TrimLeft(s, " \t") == "" {
 			s = ""
 		}
+	}
+	if s == "" {
+		l.atLineStart = atLineStart
+	} else {
+		l.atLineStart = strings.HasSuffix(s, "\n")
 	}
 	if s != "" {
 		pos := l.pos()
@@ -273,8 +320,13 @@ func (l *lexer) lexComment() error {
 		return &Error{Pos: start, Msg: "unterminated comment; expected " + l.delims.CommentEnd}
 	}
 	trimAfter := i > 0 && l.src[l.off+i-1] == '-'
+	// `+#}` is the explicit opposite: it keeps the newline that
+	// trim_blocks would otherwise eat. A comment takes both markers, as
+	// a block tag does, and only the `-` was read.
+	keepAfter := i > 0 && l.src[l.off+i-1] == '+'
 	l.advance(i + len(l.delims.CommentEnd))
 	l.trimNextText = trimAfter
+	l.keepNextText = keepAfter
 	return nil
 }
 
@@ -326,10 +378,21 @@ func (l *lexer) lexRaw(name string) error {
 	}
 	if trimBeforeClose {
 		body = strings.TrimRight(body, " \t\r\n")
+	} else if l.opts.LstripBlocks {
+		// `{% endraw %}` is a block tag like any other, so the
+		// whitespace running from a line start to it is stripped. The
+		// body is emitted verbatim, which is the point of raw, and this
+		// is not part of the body: it belongs to the closing tag's line.
+		if i := strings.LastIndexByte(body, '\n'); i >= 0 {
+			if strings.TrimLeft(body[i+1:], " \t") == "" {
+				body = body[:i+1]
+			}
+		}
 	}
 	if body != "" {
 		l.emit(token{kind: tokText, val: body, pos: l.pos()})
 	}
+	l.atLineStart = strings.HasSuffix(body, "\n")
 	l.advance(consumed)
 	l.trimNextText = trimAfterClose
 	return nil

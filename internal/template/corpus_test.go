@@ -143,9 +143,6 @@ var corpusReasons = map[string]corpusReason{
 		"the template calls a Python string or dict method. halite has filters, not the " +
 			"Python object model, and no code path that reaches an arbitrary method."},
 
-	gapWhitespaceControl: {false,
-		"the `+` whitespace marker, which turns off `trim_blocks` or `lstrip_blocks` for one " +
-			"delimiter, is not parsed."},
 	gapCallResult: {false,
 		"the result of a filter or a subscript cannot be called."},
 	gapNumericAttribute: {false,
@@ -169,14 +166,13 @@ const (
 	specStrictUndefined = "specStrictUndefined"
 	specPythonMethod    = "specPythonMethod"
 
-	gapCallResult        = "gapCallResult"
-	gapFilterBehaviour   = "gapFilterBehaviour"
-	gapNumericAttribute  = "gapNumericAttribute"
-	gapOther             = "gapOther"
-	gapRendering         = "gapRendering"
-	gapScoping           = "gapScoping"
-	gapTestArgument      = "gapTestArgument"
-	gapWhitespaceControl = "gapWhitespaceControl"
+	gapCallResult       = "gapCallResult"
+	gapFilterBehaviour  = "gapFilterBehaviour"
+	gapNumericAttribute = "gapNumericAttribute"
+	gapOther            = "gapOther"
+	gapRendering        = "gapRendering"
+	gapScoping          = "gapScoping"
+	gapTestArgument     = "gapTestArgument"
 )
 
 type corpusDeviation struct {
@@ -212,13 +208,6 @@ var corpusDeviations = []corpusDeviation{
 	{"test_lexnparse::test_call", gapOther},
 	{"test_lexnparse::test_django_attr", gapNumericAttribute},
 	{"test_lexnparse::test_short_conditional_expression", specStrictUndefined},
-	{"test_lexnparse::test_lstrip_trim", gapRendering},
-	{"test_lexnparse::test_comment_trim", gapRendering},
-	{"test_lexnparse::test_comment_no_trim", gapRendering},
-	{"test_lexnparse::test_multiple_comment_trim_lstrip", gapRendering},
-	{"test_lexnparse::test_multiple_comment_no_trim_lstrip", gapRendering},
-	{"test_lexnparse::test_raw_trim_lstrip", gapRendering},
-	{"test_lexnparse::test_raw_no_trim_lstrip", gapWhitespaceControl},
 	{"test_regression::test_urlize_filter_escaping", specNotInSubset},
 	{"test_regression::test_urlize_filter_closing_punctuation", specNotInSubset},
 	{"test_regression::test_nested_for_else", specStrictUndefined},
