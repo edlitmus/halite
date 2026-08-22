@@ -182,27 +182,47 @@ func (c *Compiler) matchTop(v any, filePath string, diags *Diags) map[string][]s
 // compileTopTarget builds the matcher for one top file entry. Salt allows
 // the match type to be given as the first list item, `- match: grain`.
 func (c *Compiler) compileTopTarget(expr string, body any) (*target.Matcher, error) {
-	kindName := ""
-	if items, ok := body.([]any); ok {
-		for _, item := range items {
-			m, ok := item.(*value.Map)
-			if !ok || m.Len() != 1 {
-				continue
-			}
-			e := m.Entries()[0]
-			if value.KeyString(e.Key) == "match" {
-				kindName = value.KeyString(e.Val)
-			}
+	return CompileTopTarget(expr, body, c.Config.Nodegroups)
+}
+
+// TopMatchKind reads the `- match: <kind>` directive out of a top file
+// entry's body, or returns "" where there is none.
+func TopMatchKind(body any) string {
+	items, ok := body.([]any)
+	if !ok {
+		return ""
+	}
+	for _, item := range items {
+		m, ok := item.(*value.Map)
+		if !ok || m.Len() != 1 {
+			continue
+		}
+		e := m.Entries()[0]
+		if value.KeyString(e.Key) == "match" {
+			return value.KeyString(e.Val)
 		}
 	}
+	return ""
+}
+
+// CompileTopTarget builds the matcher for one top file entry, honouring
+// the `- match: grain` directive Salt allows as the first list item.
+//
+// The pillar top file needs exactly this and had its own copy that did
+// not read the directive, so a pillar targeted `nodename:host` under
+// `match: grain` was compiled as a glob against the node id, matched
+// nothing, and delivered no pillar — without an error, because "no
+// target matched" is a legitimate outcome.
+func CompileTopTarget(expr string, body any, nodegroups target.Nodegroups) (*target.Matcher, error) {
+	kindName := TopMatchKind(body)
 	if kindName == "" {
-		return target.CompileAuto(expr, c.Config.Nodegroups)
+		return target.CompileAuto(expr, nodegroups)
 	}
 	kind, ok := target.KindFromFlag(matchAlias(kindName))
 	if !ok {
 		return nil, &target.Error{Expr: expr, Msg: "unknown match type " + kindName}
 	}
-	return target.Compile(kind, expr, c.Config.Nodegroups)
+	return target.Compile(kind, expr, nodegroups)
 }
 
 // matchAlias maps the long names a top file uses to the flag letters.

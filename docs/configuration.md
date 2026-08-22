@@ -70,6 +70,9 @@ Read by the node agent.
 | `node_id_source` | `auto` | 7.2 | Where the node ID comes from: auto, config, env, file, cloud, fqdn, hostname. |
 | `parallel_jobs` | `false` | 9.6 | Allow jobs to run alongside one another by default. |
 | `pillar_cache_disk` | `false` | 12.8 | Cache pillar on the node's disk, encrypted at rest. |
+| `pillar_merge_lists` | `false` | 12.3 | Concatenate lists when merging pillar sources. |
+| `pillar_source_merging_strategy` | `smart` | 12.3 | smart, recurse, aggregate, or overwrite. |
+| `pillar_trusted_grains` | — | 12.4 | Grains a node may use to target pillar. Custom grains are excluded by default. |
 | `pillarenv` | — | 12.2 | The pillar environment, defaulting to env. |
 | `pki_dir` | `/etc/halite/pki` | 27.3 | Key material. |
 | `quiesce` | `false` | 2.1 | Refuse jobs other than the allowlist. Salt calls this blackout. |

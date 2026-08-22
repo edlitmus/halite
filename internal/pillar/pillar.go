@@ -204,12 +204,12 @@ func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 		}
 		for _, te := range targets.Entries() {
 			expr := value.KeyString(te.Key)
-			basis, err := c.checkTargetIsPermitted(expr)
+			basis, err := c.checkTargetIsPermitted(expr, state.TopMatchKind(te.Val))
 			if err != nil {
 				out.Diags.Add(te.KeyPos, state.TopName, "", "%v", err)
 				continue
 			}
-			matcher, err := target.CompileAuto(expr, c.Config.Nodegroups)
+			matcher, err := state.CompileTopTarget(expr, te.Val, c.Config.Nodegroups)
 			if err != nil {
 				out.Diags.Add(te.KeyPos, state.TopName, "", "%v", err)
 				continue
@@ -233,7 +233,7 @@ func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 // checkTargetIsPermitted refuses a pillar top expression that targets on
 // pillar, and reports which grains an expression relies on so that an
 // untrusted one can be refused by name.
-func (c *Compiler) checkTargetIsPermitted(expr string) (string, error) {
+func (c *Compiler) checkTargetIsPermitted(expr, matchKind string) (string, error) {
 	// Pillar cannot target on pillar: it does not exist yet, and
 	// pretending it does produces an ordering-dependent result. SPEC
 	// section 12.4.
@@ -244,7 +244,24 @@ func (c *Compiler) checkTargetIsPermitted(expr string) (string, error) {
 		}
 	}
 
+	if matchKind == "pillar" || matchKind == "pillar_pcre" {
+		return "", fmt.Errorf(
+			"pillar top expression %q targets on pillar, which is not available while pillar is being compiled", expr)
+	}
+
 	grains := grainNamesIn(expr)
+	// `- match: grain` names the grain in the expression rather than
+	// with a G@ sigil, and is the spelling an existing Salt tree uses.
+	// Missing it meant the rule of SPEC 12.4 was neither enforced nor
+	// reported: the target compiled, matched nothing, because the node a
+	// pillar target sees carries only the trusted grains, and the file
+	// was silently absent from the pillar.
+	if matchKind == "grain" || matchKind == "grain_pcre" {
+		name, _, _ := strings.Cut(expr, ":")
+		if name != "" {
+			grains = append(grains, name)
+		}
+	}
 	if len(grains) == 0 {
 		return "glob", nil
 	}

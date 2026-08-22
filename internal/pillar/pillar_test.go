@@ -474,3 +474,72 @@ base:
 		t.Error("a missing include should be reported even under ignore_missing")
 	}
 }
+
+// TestPillarTopHonoursTheMatchDirective covers a silence, not an error.
+// The state top read `- match: grain` and the pillar top did not, so a
+// pillar targeted `nodename:host` was compiled as a glob against the node
+// id, matched nothing, and the file was simply absent. Nothing was
+// reported, because "no target matched" is a legitimate outcome.
+func TestPillarTopHonoursTheMatchDirective(t *testing.T) {
+	files := map[string]string{
+		"base|top": `
+base:
+  '*':
+    - common
+  'role:web':
+    - match: grain
+    - hostspecific
+`,
+		"base|common":       "common_key: here\n",
+		"base|hostspecific": "host_key: matched\n",
+	}
+	cfg := Config{
+		Grains:        value.MapOf("role", "web"),
+		TrustedGrains: []string{"role"},
+	}
+	out := mustCompile(t, files, cfg)
+	if v, _ := out.Pillar.Get("host_key"); v != "matched" {
+		t.Errorf("the grain-targeted file was not merged: %v", out.Pillar)
+	}
+	if v, _ := out.Pillar.Get("common_key"); v != "here" {
+		t.Errorf("the glob-targeted file was not merged: %v", out.Pillar)
+	}
+
+	// The same expression without the directive is a glob against the
+	// node id, and matches nothing.
+	files["base|top"] = `
+base:
+  'role:web':
+    - hostspecific
+`
+	plain := mustCompile(t, files, cfg)
+	if _, ok := plain.Pillar.Get("host_key"); ok {
+		t.Error("without `match: grain` the expression is a glob and should not match")
+	}
+}
+
+// TestAnUntrustedGrainTargetIsReported is the other half. A pillar target
+// sees only the trusted grains, so an untrusted one matches nothing —
+// which used to happen silently, because the permission check looked for
+// a G@ sigil and `- match: grain` does not use one.
+func TestAnUntrustedGrainTargetIsReported(t *testing.T) {
+	files := map[string]string{
+		"base|top": `
+base:
+  'role:web':
+    - match: grain
+    - hostspecific
+`,
+		"base|hostspecific": "host_key: matched\n",
+	}
+	out := compile(t, files, Config{Grains: value.MapOf("role", "web")})
+	err := out.Err()
+	if err == nil {
+		t.Fatal("targeting on an untrusted grain should be reported")
+	}
+	for _, want := range []string{"role", "pillar_trusted_grains", "12.4"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error should mention %q: %v", want, err)
+		}
+	}
+}
