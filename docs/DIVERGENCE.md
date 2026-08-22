@@ -889,9 +889,31 @@ absent. A state whose test mode is wrong reports exactly this and then
 does something else, which is why SPEC 11.6 makes the contract testable
 and 1.4 checks it more strictly than specified.
 
-The run also found a defect, in the summary line rather than the states:
-it read `Skipped: 2` beside the other counts, so the line added to 53
-against a total of 51.
+The run also found defects, and none of them in the states it ran.
+
+The summary line read `Skipped: 2` beside the other counts, so it added
+to 53 against a total of 51.
+
+A later apply produced the failure an unconverted tree reliably
+produces: `name: bastille stop troupe` is a shell line in Salt and one
+program name here. `docs/migrating-from-salt.md` promises that halite
+explains this in the error, and the explanation had been written and
+never appeared — it tested `errors.Is(err, os.ErrNotExist)`, and a bare
+name that is not on PATH gives `exec.ErrNotFound`. The one case the hint
+existed for was the one case it missed.
+
+Worse, the audit had not warned. This is the most common thing an
+unconverted tree gets wrong and the reason the default was inverted at
+all, and `halite-hub migrate` was not looking for it — so the tree was
+reported clean and its author found out one state at a time, mid-apply.
+It is a review finding now, and there were six.
+
+The audit could not see the files where it mattered most, either. A
+state ID built from an expression — `{{ sls }} create jail:` — was
+blanked to spaces, which moved the key ten columns right, broke the
+file's structure, and made the declaration audit skip the whole file
+silently. Two of the tree's files were invisible to it, and one of them
+used two `file.directory` arguments this build did not have.
 
 ### 5.7 What the Salt differential covers, and what it does not
 
