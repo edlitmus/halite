@@ -439,3 +439,134 @@ func TestTransitionSwitchesTakeEffect(t *testing.T) {
 		t.Errorf("every coercion should be logged: %q", got.stderr)
 	}
 }
+
+// TestEnvironmentControls covers SPEC 28.3's pair to state_allowlist and
+// state_denylist. They were declared, documented, listed in the
+// configuration reference, and enforced by nothing — so a node
+// restricted to `base` would apply whatever a `--env` asked for. A
+// control that does not control is worse than an absent one, because
+// someone is relying on it.
+func TestEnvironmentControls(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) string {
+		p := filepath.Join(root, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	allow := write("allow.yaml", "env_allowlist:\n  - base\n  - prod\n")
+	deny := write("deny.yaml", "env_denylist:\n  - '*-test'\n")
+	both := write("both.yaml", "env_allowlist:\n  - '*'\nenv_denylist:\n  - forbidden\n")
+
+	flags := tree(t, nil)
+	call := func(cfg, env string) result {
+		args := append([]string{"grains", "item", "id", "--out", "json"}, flags...)
+		args = append(args, "--config", cfg)
+		if env != "" {
+			args = append(args, "--env", env)
+		}
+		return run(t, args...)
+	}
+
+	if got := call(allow, ""); got.code != 0 {
+		t.Errorf("the default environment is in the allowlist: %+v", got)
+	}
+	if got := call(allow, "prod"); got.code != 0 {
+		t.Errorf("prod is in the allowlist: %+v", got)
+	}
+	got := call(allow, "staging")
+	if got.code == 0 {
+		t.Error("an environment outside the allowlist should be refused")
+	}
+	if !strings.Contains(got.stderr, "env_allowlist") || !strings.Contains(got.stderr, "staging") {
+		t.Errorf("the refusal should name the environment and the setting: %q", got.stderr)
+	}
+
+	// The denylist takes patterns, and an empty allowlist is no
+	// restriction rather than a refusal of everything.
+	if got := call(deny, "prod"); got.code != 0 {
+		t.Errorf("an empty allowlist should not refuse anything: %+v", got)
+	}
+	if got := call(deny, "web-test"); got.code == 0 {
+		t.Error("a pattern in the denylist should refuse")
+	}
+
+	// The denylist wins over the allowlist, which is what makes it worth
+	// having alongside one.
+	if got := call(both, "anything"); got.code != 0 {
+		t.Errorf("`*` should allow: %+v", got)
+	}
+	if got := call(both, "forbidden"); got.code == 0 {
+		t.Error("the denylist should beat an allowlist of `*`")
+	}
+}
+
+// TestNodeIDModifiers covers Salt's `minion_id_lowercase` and
+// `minion_id_remove_domain`, which the compatibility shim translates
+// into keys nothing read — so a Salt configuration carrying them
+// produced a different identity under halite, and an identity is what
+// pillar and targeting are keyed by.
+func TestNodeIDModifiers(t *testing.T) {
+	root := t.TempDir()
+	cfg := func(name, body string) string {
+		p := filepath.Join(root, name)
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	flags := tree(t, nil)
+	id := func(config string, extra ...string) string {
+		args := append([]string{"grains", "get", "id", "--out", "json"}, flags...)
+		args = append(args, "--config", config)
+		args = append(args, extra...)
+		got := run(t, args...)
+		if got.code != 0 {
+			t.Fatalf("%+v", got)
+		}
+		var m map[string]string
+		if err := json.Unmarshal([]byte(got.stdout), &m); err != nil {
+			t.Fatalf("%v: %s", err, got.stdout)
+		}
+		for _, v := range m {
+			return v
+		}
+		return ""
+	}
+
+	plain := id(cfg("none.yaml", "{}\n"))
+	if plain == "" {
+		t.Fatal("no identity was resolved")
+	}
+
+	// An explicit identity is the answer rather than a draft of it, so
+	// the modifiers leave it alone. Salt draws the line in the same
+	// place.
+	explicit := id(cfg("explicit.yaml", "node_id: Web1.Example.COM\nnode_id_lowercase: true\n"))
+	if explicit != "Web1.Example.COM" {
+		t.Errorf("an explicit node_id should be used as written, got %q", explicit)
+	}
+
+	// A detected one is modified. The host this runs on may or may not
+	// have a domain, so the assertion is about the relationship.
+	stripped := id(cfg("strip.yaml", "node_id_remove_domain: true\n"))
+	if host, _, found := strings.Cut(plain, "."); found {
+		if stripped != host {
+			t.Errorf("remove_domain gave %q, want %q", stripped, host)
+		}
+		// Naming the domain strips that one specifically.
+		_, domain, _ := strings.Cut(plain, ".")
+		named := id(cfg("named.yaml", "node_id_remove_domain: "+domain+"\n"))
+		if named != host {
+			t.Errorf("removing %q gave %q, want %q", domain, named, host)
+		}
+		// A domain the identity does not end in is left alone.
+		other := id(cfg("other.yaml", "node_id_remove_domain: nowhere.invalid\n"))
+		if other != plain {
+			t.Errorf("removing a domain that does not match gave %q, want %q", other, plain)
+		}
+	} else if stripped != plain {
+		t.Errorf("an identity with no domain should be unchanged, got %q", stripped)
+	}
+}

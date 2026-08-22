@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -148,6 +149,15 @@ func setup(args *cli.Args) *node {
 		n.undef = template.Permissive
 	}
 
+	// SPEC 28.3's environment controls, the pair to state_allowlist and
+	// state_denylist. They were declared, documented, and enforced by
+	// nothing, so a node restricted to `base` would happily apply
+	// anything a `--env` said. A control that does not control is worse
+	// than an absent one, because someone is relying on it.
+	if err := checkEnvPermitted(cfg, n.env); err != nil {
+		cli.Fatalf("%v", err)
+	}
+
 	n.nodeID = resolveNodeID(args, cfg)
 
 	g, warnings := grains.Collect(grains.Options{
@@ -195,7 +205,36 @@ func resolveNodeID(args *cli.Args, cfg *config.Config) string {
 	if err != nil {
 		return "unknown"
 	}
-	return host
+	// The modifiers apply to a detected identity and not to one the
+	// operator wrote down: an explicit `node_id` is the answer, not a
+	// draft of it. Salt draws the line in the same place.
+	return applyNodeIDModifiers(cfg, host)
+}
+
+// applyNodeIDModifiers is Salt's `minion_id_lowercase` and
+// `minion_id_remove_domain`, which the compatibility shim translates and
+// nothing read. `remove_domain` takes true, meaning any domain, or a
+// domain to strip if the identity ends in it.
+func applyNodeIDModifiers(cfg *config.Config, id string) string {
+	if v, ok := cfg.Get("node_id_remove_domain"); ok && v != nil {
+		switch t := v.(type) {
+		case bool:
+			if t {
+				if host, _, found := strings.Cut(id, "."); found {
+					id = host
+				}
+			}
+		case string:
+			suffix := "." + t
+			if len(id) > len(suffix) && strings.EqualFold(id[len(id)-len(suffix):], suffix) {
+				id = id[:len(id)-len(suffix)]
+			}
+		}
+	}
+	if cfg.Bool("node_id_lowercase", false) {
+		id = strings.ToLower(id)
+	}
+	return id
 }
 
 // rootsFrom builds the environment-to-directories map from the flags, the
@@ -351,4 +390,28 @@ func (n *node) out(v any) {
 	if err := cli.Write(os.Stdout, v, n.format, n.indent); err != nil {
 		cli.Fatalf("%v", err)
 	}
+}
+
+// checkEnvPermitted applies env_allowlist and env_denylist.
+//
+// The denylist wins, and an empty allowlist means no restriction — the
+// same shape as state_allowlist and state_denylist, because an operator
+// who has learnt one should not have to learn the other.
+func checkEnvPermitted(cfg *config.Config, env string) error {
+	for _, pattern := range cfg.StringSlice("env_denylist") {
+		if ok, err := path.Match(pattern, env); err == nil && ok {
+			return fmt.Errorf("environment %q is excluded by env_denylist (%q). SPEC section 28.3", env, pattern)
+		}
+	}
+	allow := cfg.StringSlice("env_allowlist")
+	if len(allow) == 0 {
+		return nil
+	}
+	for _, pattern := range allow {
+		if ok, err := path.Match(pattern, env); err == nil && ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("environment %q is not in env_allowlist (%s). SPEC section 28.3",
+		env, strings.Join(allow, ", "))
 }
