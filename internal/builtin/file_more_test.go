@@ -450,3 +450,40 @@ func TestFileDirectoryRecurse(t *testing.T) {
 		t.Errorf("an unknown recurse word should be named: %q", res.Comment)
 	}
 }
+
+func TestFileManagedRefusesAnUnreadableFile(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can read anything, which is the case this is not about")
+	}
+	r := New()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "secret.conf")
+	if err := os.WriteFile(path, []byte("real contents\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+
+	// The error from the read was discarded, so an unreadable file
+	// compared as empty: the state said the contents differed, showed a
+	// diff adding the whole file, and rewrote it — every run, for ever,
+	// because it still could not read what it had written.
+	res, err := r.States.Call(newCtx(true), "file.managed",
+		value.MapOf("name", path, "contents", "real contents"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() {
+		t.Errorf("an unreadable file should not be reported as converged or as differing: %q", res.Comment)
+	}
+	if !strings.Contains(res.Comment, "could not be read") {
+		t.Errorf("the comment should say what happened: %q", res.Comment)
+	}
+
+	// The file is untouched, and readable again for the cleanup.
+	os.Chmod(path, 0o600)
+	if data, _ := os.ReadFile(path); string(data) != "real contents\n" {
+		t.Errorf("the file was written: %q", data)
+	}
+}

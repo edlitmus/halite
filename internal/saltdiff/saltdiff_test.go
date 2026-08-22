@@ -157,7 +157,11 @@ id: %s
 	// an inherited Linux $SHELL stops the gate before it begins.
 	cmd.Env = append(os.Environ(), "SHELL=/bin/sh")
 	out, err := cmd.Output()
-	if err != nil {
+	// `state.apply` exits non-zero when any state failed, which is a
+	// result rather than a breakage: the output is what the comparison
+	// wants either way. Only an invocation that produced nothing usable
+	// is fatal.
+	if err != nil && !looksLikeJSON(out) {
 		stderr := ""
 		if ee, ok := err.(*exec.ExitError); ok {
 			stderr = string(ee.Stderr)
@@ -648,4 +652,11 @@ func warnAboutHardwareGrains(t *testing.T, saltcall string) {
 			"as the value of its hardware grains, so a tree that branches on `productname` or " +
 			"`manufacturer` will differ here and would not as root")
 	}
+}
+
+// looksLikeJSON reports whether output can be parsed as a result rather
+// than being the wreckage of a failed invocation.
+func looksLikeJSON(out []byte) bool {
+	trimmed := strings.TrimSpace(string(out))
+	return strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")
 }

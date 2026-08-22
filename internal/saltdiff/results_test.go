@@ -51,13 +51,28 @@ var resultDeviations = []resultDeviation{
 type prediction struct {
 	verdict string // "would change", "unchanged", or "failed"
 	changes bool
+	// why is the implementation's own comment. It is not compared — the
+	// two write it differently on purpose — but a difference reported
+	// without it says only that one of them disagreed, which leaves the
+	// reader to reproduce the run to find out why.
+	why string
 }
 
 func (p prediction) String() string {
+	out := p.verdict
 	if p.changes {
-		return p.verdict + ", with changes"
+		out += ", with changes"
 	}
-	return p.verdict
+	if p.why != "" {
+		out += ": " + clip(strings.TrimSpace(strings.SplitN(p.why, "\n", 2)[0]))
+	}
+	return out
+}
+
+// same compares the verdict and whether there would be changes, and not
+// the comment.
+func (p prediction) same(q prediction) bool {
+	return p.verdict == q.verdict && p.changes == q.changes
 }
 
 // saltPredictions runs a tree through Salt in test mode.
@@ -71,6 +86,7 @@ func saltPredictions(t *testing.T, saltcall string, tree corpusTree) map[string]
 		Local map[string]struct {
 			Result  *bool          `json:"result"`
 			Changes map[string]any `json:"changes"`
+			Comment string         `json:"comment"`
 		} `json:"local"`
 	}
 	if err := json.Unmarshal(out, &wrapper); err != nil {
@@ -78,7 +94,7 @@ func saltPredictions(t *testing.T, saltcall string, tree corpusTree) map[string]
 	}
 	got := map[string]prediction{}
 	for key, res := range wrapper.Local {
-		p := prediction{changes: len(res.Changes) > 0}
+		p := prediction{changes: len(res.Changes) > 0, why: res.Comment}
 		switch {
 		case res.Result == nil:
 			p.verdict = "would change"
@@ -114,7 +130,7 @@ func halitePredictions(t *testing.T, tree corpusTree) map[string]prediction {
 
 	got := map[string]prediction{}
 	for _, res := range out.Results {
-		p := prediction{changes: res.Result.HasChanges()}
+		p := prediction{changes: res.Result.HasChanges(), why: res.Result.Comment}
 		switch {
 		case res.Result.Failed():
 			p.verdict = "failed"
@@ -133,11 +149,14 @@ type dispatch struct{ r *hexec.Registry }
 func (d dispatch) Call(c *hexec.Context, name string, args *value.Map) (any, error) {
 	return d.r.Call(c, name, args)
 }
+func (d dispatch) CallPositional(c *hexec.Context, name string, args []any, kwargs *value.Map) (any, error) {
+	return d.r.CallPositional(c, name, args, kwargs)
+}
 func (d dispatch) Has(name string) bool { return d.r.Has(name) }
 
 func clip(s string) string {
-	if len(s) > 400 {
-		return s[:400] + "..."
+	if len(s) > 160 {
+		return s[:160] + "..."
 	}
 	return s
 }
@@ -172,7 +191,7 @@ func TestResultsMatchSalt(t *testing.T) {
 					t.Errorf("halite predicted %s for %s; Salt has no such state", our, key)
 					continue
 				}
-				if our == their {
+				if our.same(their) {
 					continue
 				}
 				k := tree.name + " " + key

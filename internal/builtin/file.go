@@ -363,9 +363,22 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	// Contents.
+	//
+	// A read that fails is not an empty file. Discarding the error made
+	// an unreadable file compare as empty, so the state reported that
+	// the contents differed, showed a diff adding the whole file, and
+	// rewrote it — and then did the same on the next run and the next,
+	// because it still could not read what it had written. A state that
+	// cannot see the current contents cannot say whether it converged.
 	var current []byte
 	if exists && info.Mode().IsRegular() {
-		current, _ = os.ReadFile(path)
+		var err error
+		current, err = os.ReadFile(path)
+		if err != nil {
+			return states.False(fmt.Sprintf(
+				"%s exists and could not be read, so this state cannot tell whether it has converged: %v",
+				path, err)), nil
+		}
 	}
 	contentsDiffer := want != nil && string(current) != string(want)
 	if contentsDiffer && exists && !states.Bool(args, "replace", true) {

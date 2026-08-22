@@ -841,6 +841,9 @@ type testDispatcher struct{ r *Registries }
 func (d testDispatcher) Call(c *exec.Context, name string, args *value.Map) (any, error) {
 	return d.r.Exec.Call(c, name, args)
 }
+func (d testDispatcher) CallPositional(c *exec.Context, name string, args []any, kwargs *value.Map) (any, error) {
+	return d.r.Exec.CallPositional(c, name, args, kwargs)
+}
 func (d testDispatcher) Has(name string) bool { return d.r.Exec.Has(name) }
 
 func dispatcherFor(r *Registries) exec.Dispatcher { return testDispatcher{r} }

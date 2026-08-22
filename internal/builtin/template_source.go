@@ -10,14 +10,6 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
-// positionalDispatcher is the optional half of exec.Dispatcher: a
-// dispatcher that can bind Salt's positional argument convention. A
-// dispatcher without it can still be called with keywords, which is
-// every call a rendered file template makes in practice.
-type positionalDispatcher interface {
-	CallPositional(c *exec.Context, name string, args []any, kwargs *value.Map) (any, error)
-}
-
 // dispatchAdapter presents the module registry to a template as `salt`.
 type dispatchAdapter struct{ c *exec.Context }
 
@@ -31,13 +23,10 @@ func (d dispatchAdapter) CallModule(name string, args []any, kwargs map[string]a
 	for _, k := range names {
 		kw.Set(k, kwargs[k])
 	}
-	if p, ok := d.c.Dispatch.(positionalDispatcher); ok {
-		return p.CallPositional(d.c, name, args, kw)
+	if d.c.Dispatch == nil {
+		return nil, fmt.Errorf("no module dispatcher is available to call %s", name)
 	}
-	if len(args) > 0 {
-		return nil, fmt.Errorf("%s: this dispatcher takes keyword arguments only", name)
-	}
-	return d.c.Call(name, kw)
+	return d.c.Dispatch.CallPositional(d.c, name, args, kw)
 }
 
 func (d dispatchAdapter) HasModule(name string) bool {

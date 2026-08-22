@@ -83,6 +83,14 @@ type FileFetcher interface {
 // Dispatcher calls a module function by name.
 type Dispatcher interface {
 	Call(c *Context, name string, args *value.Map) (any, error)
+	// CallPositional binds Salt's argument convention, which a template
+	// needs: `salt['pillar.get']('a:b')` passes its argument by
+	// position. It was optional, and a dispatcher that did not have it
+	// fell back to keywords and refused every positional call with a
+	// message about the dispatcher rather than about the template. An
+	// interface whose optional half produces that is one method short,
+	// not one method too many.
+	CallPositional(c *Context, name string, args []any, kwargs *value.Map) (any, error)
 	Has(name string) bool
 }
 
