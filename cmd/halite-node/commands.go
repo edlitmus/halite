@@ -7,6 +7,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/exec"
+	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/runner"
 	"github.com/edlitmus/halite/internal/state"
@@ -41,7 +42,7 @@ func runCall(args *cli.Args) int {
 	}
 	kwargs := args.Kwargs
 	if n.legacyArgs(args) {
-		positional, kwargs = coerceLegacyArgs(positional, kwargs)
+		positional, kwargs = coerceLegacyArgs(n.log, positional, kwargs)
 	}
 	out, err := n.registry.Exec.CallPositional(ctx, fn, positional, kwargs)
 	if err != nil {
@@ -105,7 +106,7 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 	switch fn {
 	case "apply", "highstate", "sls":
 		out := compile(rest)
-		reportCompilation(out)
+		reportCompilation(n, out)
 		if err := out.Err(); err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -113,7 +114,7 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 
 	case "show_top":
 		out := compile(nil)
-		reportCompilation(out)
+		reportCompilation(n, out)
 		if err := out.Err(); err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -126,7 +127,7 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 
 	case "show_highstate", "show_sls":
 		out := compile(rest)
-		reportCompilation(out)
+		reportCompilation(n, out)
 		if err := out.Err(); err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -135,7 +136,7 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 
 	case "show_lowstate":
 		out := compile(rest)
-		reportCompilation(out)
+		reportCompilation(n, out)
 		if err := out.Err(); err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -144,7 +145,7 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 
 	case "show_states":
 		out := compile(rest)
-		reportCompilation(out)
+		reportCompilation(n, out)
 		if err := out.Err(); err != nil {
 			cli.Fatalf("%v", err)
 		}
@@ -187,12 +188,12 @@ func applyStates(n *node, p *value.Map, compiled *state.Compiled) int {
 
 // reportCompilation prints the warnings a compilation produced. They go to
 // stderr so that piping the output gives only the data.
-func reportCompilation(out *state.Compiled) {
+func reportCompilation(n *node, out *state.Compiled) {
 	for _, w := range out.RenderWarnings {
-		fmt.Fprintln(os.Stderr, "halite-node: "+w.String())
+		n.log.Warn(w.String(), "component", "render")
 	}
 	for _, d := range out.Diags.Warnings().Sorted() {
-		fmt.Fprintln(os.Stderr, "halite-node: "+d.String())
+		n.log.Warn(d.String(), "component", "state")
 	}
 }
 
@@ -391,10 +392,10 @@ func (n *node) legacyArgs(args *cli.Args) bool {
 // and `NO` becoming a boolean. Every coercion is logged: the point of
 // the switch is to be turned off again, and the log is the list of
 // arguments that need a type or a quote first.
-func coerceLegacyArgs(positional []any, kwargs *value.Map) ([]any, *value.Map) {
+func coerceLegacyArgs(logger *hlog.Logger, positional []any, kwargs *value.Map) ([]any, *value.Map) {
 	coerced := make([]any, len(positional))
 	for i, a := range positional {
-		coerced[i] = coerceLegacyArg(fmt.Sprintf("argument %d", i+1), a)
+		coerced[i] = coerceLegacyArg(logger, fmt.Sprintf("argument %d", i+1), a)
 	}
 	if kwargs == nil {
 		return coerced, nil
@@ -402,12 +403,12 @@ func coerceLegacyArgs(positional []any, kwargs *value.Map) ([]any, *value.Map) {
 	out := value.NewMap(kwargs.Len())
 	for _, e := range kwargs.Entries() {
 		name := value.KeyString(e.Key)
-		out.SetAt(e.Key, coerceLegacyArg(name, e.Val), e.KeyPos, e.ValPos)
+		out.SetAt(e.Key, coerceLegacyArg(logger, name, e.Val), e.KeyPos, e.ValPos)
 	}
 	return coerced, out
 }
 
-func coerceLegacyArg(what string, v any) any {
+func coerceLegacyArg(logger *hlog.Logger, what string, v any) any {
 	s, ok := v.(string)
 	if !ok {
 		return v
@@ -422,10 +423,10 @@ func coerceLegacyArg(what string, v any) any {
 	if parsed == nil {
 		// An empty argument, or one spelled `null`. Salt reads it as
 		// nothing; saying so is more useful than doing it quietly.
-		fmt.Fprintf(os.Stderr, "halite-node: legacy_arg_parse: %s %q was read as null\n", what, s)
+		logger.Warn(fmt.Sprintf("%s %q was read as null", what, s), "component", "legacy_arg_parse")
 		return parsed
 	}
-	fmt.Fprintf(os.Stderr, "halite-node: legacy_arg_parse: %s %q was read as %s %v\n",
-		what, s, value.TypeName(parsed), parsed)
+	logger.Warn(fmt.Sprintf("%s %q was read as %s %v", what, s, value.TypeName(parsed), parsed),
+		"component", "legacy_arg_parse")
 	return parsed
 }

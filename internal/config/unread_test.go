@@ -45,37 +45,44 @@ var unreadKeys = map[string]string{
 
 	// Read today, and not yet acted on. Each is a live gap rather than a
 	// phase boundary, and DIVERGENCE says so.
-	"log_file":            "the node logs to stderr; there is no file sink yet",
-	"log_format":          "the node logs to stderr in one format; see DIVERGENCE 6.2",
-	"log_level_file":      "there is no file sink to give a level to",
-	"regex_engine":        "re2 is the only engine, so the setting has one value",
-	"node_id_source":      "the resolution order of SPEC 7.2 is implemented; naming one source is not",
-	"node_id_caching":     "phase 2: there is no enrollment to pin an identity at",
-	"config_file":         "set by the loader, and read by the loader that set it",
-	"cache_dir":           "phase 2: nothing is cached on the node yet",
-	"pki_dir":             "phase 2: there is no key material",
-	"socket_dir":          "phase 2: there are no sockets",
-	"nodegroups":          "phase 2: targeting over the wire",
-	"quiesce":             "phase 2: there are no jobs to refuse",
-	"quiesce_allowlist":   "phase 2: there are no jobs to refuse",
-	"accept_relays":       "phase 5: relays",
-	"relay_upstream":      "phase 5: relays",
-	"relay_upstream_port": "phase 5: relays",
-	"beacons":             "phase 3: the automation loop",
-	"schedule":            "phase 3: the scheduler",
-	"mine_functions":      "phase 3: the mine",
-	"mine_interval":       "phase 3: the mine",
-	"returner":            "phase 4: returners",
-	"startup_states":      "phase 2: a node with a hub applies at startup",
-	"ext_pillar":          "phase 2: external pillar is a hub concern",
-	"fileserver_backend":  "phase 2: the file server is a hub concern",
-	"gitfs_env_allowlist": "phase 5: gitfs",
-	"gitfs_env_denylist":  "phase 5: gitfs",
-	"job_cache":           "phase 2: there is no job cache",
-	"node_data_cache":     "phase 2: the hub caches node data",
-	"hub_fingerprint":     "phase 2: nothing dials a hub yet",
-	"hub_tries":           "phase 2: nothing dials a hub yet",
-	"hub_type":            "phase 2: nothing dials a hub yet",
+	"log_level_file":          "SPEC 26.1's per-sink level; the file sink takes the global one",
+	"regex_engine":            "re2 is the only engine, so the setting has one value",
+	"node_id_source":          "the resolution order of SPEC 7.2 is implemented; naming one source is not",
+	"node_id_caching":         "phase 2: there is no enrollment to pin an identity at",
+	"config_file":             "set by the loader, and read by the loader that set it",
+	"enrollment_mode":         "phase 2: there is no enrollment",
+	"extension_trust_keys":    "phase 5: bridged extensions",
+	"grains_refresh_interval": "phase 2: a long-running node re-collects; a one-shot run does not",
+	"hub_alive_interval":      "phase 2: nothing dials a hub yet",
+	"hub_port":                "phase 2: nothing dials a hub yet",
+	"job_queue_depth":         "phase 2: there is no job queue",
+	"legacy_acl":              "phase 2: RBAC is a hub concern",
+	"parallel_jobs":           "phase 2: there is one job at a time",
+	"reactor":                 "phase 3: the automation loop",
+	"cache_dir":               "phase 2: nothing is cached on the node yet",
+	"pki_dir":                 "phase 2: there is no key material",
+	"socket_dir":              "phase 2: there are no sockets",
+	"nodegroups":              "phase 2: targeting over the wire",
+	"quiesce":                 "phase 2: there are no jobs to refuse",
+	"quiesce_allowlist":       "phase 2: there are no jobs to refuse",
+	"accept_relays":           "phase 5: relays",
+	"relay_upstream":          "phase 5: relays",
+	"relay_upstream_port":     "phase 5: relays",
+	"beacons":                 "phase 3: the automation loop",
+	"schedule":                "phase 3: the scheduler",
+	"mine_functions":          "phase 3: the mine",
+	"mine_interval":           "phase 3: the mine",
+	"returner":                "phase 4: returners",
+	"startup_states":          "phase 2: a node with a hub applies at startup",
+	"ext_pillar":              "phase 2: external pillar is a hub concern",
+	"fileserver_backend":      "phase 2: the file server is a hub concern",
+	"gitfs_env_allowlist":     "phase 5: gitfs",
+	"gitfs_env_denylist":      "phase 5: gitfs",
+	"job_cache":               "phase 2: there is no job cache",
+	"node_data_cache":         "phase 2: the hub caches node data",
+	"hub_fingerprint":         "phase 2: nothing dials a hub yet",
+	"hub_tries":               "phase 2: nothing dials a hub yet",
+	"hub_type":                "phase 2: nothing dials a hub yet",
 }
 
 func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
@@ -89,8 +96,17 @@ func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
 		// Salt key maps onto. Neither reads one, and counting either as
 		// a use is how `log_level_file` looked read when nothing reads
 		// it.
+		//
+		// Tests are excluded for the same reason and it is the sharper
+		// one: a test may set a key to prove the loader carries it,
+		// which says nothing about whether anything acts on it.
+		// `log_level` looked read because a configuration test mentions
+		// it, and nothing in the node has ever consulted it.
+		if strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
 		switch filepath.Base(path) {
-		case "keys.go", "shim.go", "unread_test.go":
+		case "keys.go", "shim.go":
 			return nil
 		}
 		data, err := os.ReadFile(path)

@@ -22,6 +22,7 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/grains"
+	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/template"
@@ -52,6 +53,8 @@ Common flags:
   --indent <n>         indent for json output
   --test               run every state in test mode, changing nothing
   --permissive         allow undefined template names, as Salt does
+  --log-level <level>  error, warn, info (default), debug, or trace
+  --log-fmt <format>   json (default) or console
   --legacy-arg-parse   read every argument as YAML, as Salt does, and log
                        each coercion; SPEC section 9.2
 
@@ -111,6 +114,7 @@ type node struct {
 	test     bool
 	format   cli.Format
 	indent   int
+	log      *hlog.Logger
 	files    *fileserver.Roots
 	pillars  *fileserver.Roots
 	undef    template.UndefinedMode
@@ -127,8 +131,12 @@ func setup(args *cli.Args) *node {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	logger, err := buildLogger(args, cfg)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
 	for _, w := range cfg.Warnings {
-		fmt.Fprintln(os.Stderr, "halite-node: "+w)
+		logger.Warn(w, "component", "config")
 	}
 
 	format, err := cli.ParseFormat(args.Flag("out", cfg.String("output", "nested")))
@@ -138,6 +146,7 @@ func setup(args *cli.Args) *node {
 
 	n := &node{
 		cfg:      cfg,
+		log:      logger,
 		registry: builtin.New(),
 		env:      args.Flag("env", cfg.String("env", "base")),
 		test:     args.Bool("test", cfg.Bool("test", false)),
@@ -159,6 +168,10 @@ func setup(args *cli.Args) *node {
 	}
 
 	n.nodeID = resolveNodeID(args, cfg)
+	// SPEC 26.1 puts the identity on every record. It cannot go on at
+	// construction because the logger reports the problems found while
+	// resolving it.
+	n.log = n.log.With("node_id", n.nodeID)
 
 	g, warnings := grains.Collect(grains.Options{
 		NodeID:     n.nodeID,
@@ -168,7 +181,7 @@ func setup(args *cli.Args) *node {
 		Cloud:      cfg.Bool("cloud_grains", false),
 	})
 	for _, w := range warnings {
-		fmt.Fprintln(os.Stderr, "halite-node: grains: "+w.String())
+		n.log.Warn(w.String(), "component", "grains")
 	}
 	n.grains = g
 
@@ -296,7 +309,7 @@ func (n *node) templateOptions() *template.Options {
 func (n *node) gpgOptions() render.GPGOptions {
 	timeout, err := time.ParseDuration(n.cfg.String("gpg_timeout", "30s"))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "halite-node: gpg_timeout: %v; using 30s\n", err)
+		n.log.Warn(fmt.Sprintf("gpg_timeout: %v; using 30s", err), "component", "render")
 		timeout = 30 * time.Second
 	}
 	return render.GPGOptions{
@@ -337,7 +350,7 @@ func (n *node) compilePillar() *value.Map {
 	}
 	out := c.Compile()
 	for _, w := range out.Warnings {
-		fmt.Fprintln(os.Stderr, "halite-node: pillar: "+w.String())
+		n.log.Warn(w.String(), "component", "pillar")
 	}
 	if err := out.Err(); err != nil {
 		cli.Fatalf("%v", err)
@@ -360,9 +373,10 @@ func (n *node) context(p *value.Map) *exec.Context {
 		Dispatch: dispatcher{n.registry.Exec},
 		Runner:   &exec.OSRunner{},
 		Log: func(level, msg string) {
-			if level == "warn" || level == "error" {
-				fmt.Fprintf(os.Stderr, "halite-node: %s: %s\n", level, msg)
-			}
+			// A module names its own level, so the threshold is the
+			// logger's rather than a hard-coded pair.
+			lv, _ := hlog.ParseLevel(level)
+			n.log.Log(lv, msg, "component", "module")
 		},
 	}
 }
@@ -414,4 +428,27 @@ func checkEnvPermitted(cfg *config.Config, env string) error {
 	}
 	return fmt.Errorf("environment %q is not in env_allowlist (%s). SPEC section 28.3",
 		env, strings.Join(allow, ", "))
+}
+
+// buildLogger reads SPEC section 26.1's settings. They were declared,
+// documented, and consulted by nothing, so every diagnostic went to
+// stderr at whatever level it happened to be and `log_level: error` on
+// an unattended node changed nothing.
+func buildLogger(args *cli.Args, cfg *config.Config) (*hlog.Logger, error) {
+	levelName := args.Flag("log-level", cfg.String("log_level", "info"))
+	level, ok := hlog.ParseLevel(levelName)
+	if !ok {
+		return nil, fmt.Errorf("log_level %q is not a level; try error, warn, info, debug, or trace", levelName)
+	}
+	formatName := args.Flag("log-fmt", cfg.String("log_format", "json"))
+	format, ok := hlog.ParseFormat(formatName)
+	if !ok {
+		return nil, fmt.Errorf("log_format %q is not a format; try json or console", formatName)
+	}
+	return hlog.New(hlog.Options{
+		Level:  level,
+		Format: format,
+		File:   cfg.String("log_file", ""),
+		Fields: map[string]any{"component": "node"},
+	})
 }
