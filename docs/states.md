@@ -141,6 +141,68 @@ Available in every template: `grains`, `pillar`, `salt` (the execution
 modules), `opts`, `env`, `sls`, `id`, and the path helpers. See SPEC
 section 10.2.7.
 
+### The short form, for a state with no arguments
+
+A declaration whose function takes nothing may be written as a bare
+name:
+
+```yaml
+nginx:
+  pkg.installed
+```
+
+which is the same as `pkg.installed: []`. It is how a tree spells "just
+install it".
+
+### One declaration, several targets
+
+`names` expands a declaration into one state per name, and each name may
+carry arguments of its own:
+
+```yaml
+scripts:
+  file.managed:
+    - user: root
+    - mode: '0755'
+    - names:
+      - /usr/local/bin/one:
+        - contents: first
+      - /usr/local/bin/two:
+        - contents: second
+        - mode: '0700'
+```
+
+That produces two `file.managed` states. Both get `user: root`; the
+first gets mode 0755 from the declaration and the second overrides it.
+Requisites pointing at the ID reach every state the expansion produced.
+
+The arguments under a name are a list, spelled like any other
+declaration body. A mapping there is accepted here and is not valid
+Salt, so a tree that has to work under both should use the list.
+
+### Rendering a file before writing it
+
+A `source` may be a template rather than a finished file:
+
+```yaml
+/usr/local/etc/app.conf:
+  file.managed:
+    - source: salt://files/app.conf.jinja
+    - template: jinja
+    - context:
+        port: 8080
+    - defaults:
+        workers: 4
+```
+
+The source is rendered with the same names a template in an SLS file
+sees — `grains`, `pillar`, `salt`, `opts` — plus anything in `context`
+and `defaults`, where `context` wins. Only `jinja` is supported; another
+engine is refused by name rather than ignored.
+
+Rendering happens after `source_hash` is checked, so the digest verifies
+the file that was fetched rather than what was made from it.
+
 ### Undefined names are an error
 
 This is halite's most visible departure from Salt. In Salt,
