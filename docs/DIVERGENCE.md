@@ -1147,9 +1147,14 @@ Still open, from the same tree:
 - **The tree's own `mkdirs`** is not a Salt argument — the name is
   `makedirs` — so Salt has been ignoring it in four places. halite
   reports it, which is the audit working rather than a gap.
-- **The pillar decrypts.** Confirmed by the estate's owner on
-  2026-08-22, running `halite-node` as root against the real tree and
-  its own keyring at `/usr/local/etc/salt/gpgkeys`. The renderer's tests
+- **The pillar decrypts, and its values do not reach the output.**
+  Confirmed by the estate's owner on 2026-08-22, running `halite-node`
+  as root against the real tree and its own keyring at
+  `/usr/local/etc/salt/gpgkeys`, and again with `--test` once the
+  redactor existed: the zerotier bearer token and network id, which the
+  tree renders into a `cmd.run`'s own name, were censored from the run's
+  output. That is the redactor checked against real secrets rather than
+  against a value its own test invented. The renderer's tests
   generate a throwaway keyring, so before that the path had only ever
   been exercised against data written by the test itself; it has now
   been run against the encrypted pillar it was written for. An
