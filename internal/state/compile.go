@@ -57,6 +57,8 @@ type Config struct {
 
 	// YAMLBool11 enables YAML 1.1's extra boolean spellings.
 	YAMLBool11 *bool
+	// GPG configures the gpg renderer of SPEC section 12.6.
+	GPG render.GPGOptions
 
 	Nodegroups target.Nodegroups
 
@@ -267,6 +269,7 @@ func (c *Compiler) renderOptions(env, sls, filePath string) render.Options {
 		Undefined:   c.Config.Undefined,
 		OnUndefined: c.Config.OnUndefined,
 		YAMLBool11:  c.Config.YAMLBool11,
+		GPG:         c.Config.GPG,
 	}
 }
 

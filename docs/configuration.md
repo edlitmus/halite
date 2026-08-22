@@ -42,6 +42,9 @@ Read by the node agent.
 | `extension_trust_keys` | — | 24.4 | Keys whose signed extension bundles this node accepts. |
 | `failhard` | `false` | 11.4 | Abort a state run on the first failure. |
 | `file_roots` | — | 13.1 | Environment to an ordered list of state directories. |
+| `gpg_binary` | `gpg` | 12.6 | The gpg binary the gpg renderer drives. |
+| `gpg_home` | — | 12.6 | GNUPGHOME for the gpg renderer. Empty uses the environment's. |
+| `gpg_timeout` | `30s` | 12.6 | How long one decryption may take. |
 | `grains` | — | 14.2 | Static grains merged last, so they can override. |
 | `grains_refresh_interval` | `30m` | 8.3 | How often grains are re-collected. |
 | `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
@@ -117,6 +120,9 @@ Read by the hub.
 | `gitfs_env_allowlist` | — | 13.3 | Git refs the file server exposes as environments. |
 | `gitfs_env_denylist` | — | 13.3 | Git refs the file server refuses to expose. |
 | `gitfs_verify_signatures` | `false` | 13.3 | Serve a ref only if its tip carries a trusted signature. |
+| `gpg_binary` | `gpg` | 12.6 | The gpg binary the gpg renderer drives. |
+| `gpg_home` | — | 12.6 | GNUPGHOME for the gpg renderer. Empty uses the environment's. |
+| `gpg_timeout` | `30s` | 12.6 | How long one decryption may take. |
 | `grain_stale_after` | `1h` | 8.3 | When cached grains are annotated as stale during targeting. |
 | `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
 | `job_cache` | `local` | 9.4 | Job cache backend. |

@@ -48,6 +48,7 @@ var renames = []Rename{
 	{Salt: "master_type", Halite: "hub_type"},
 	{Salt: "master_alive_interval", Halite: "hub_alive_interval"},
 	{Salt: "master_tries", Halite: "hub_tries"},
+	{Salt: "gpg_keydir", Halite: "gpg_home"},
 	{Salt: "id", Halite: "node_id"},
 	{Salt: "minion_id_caching", Halite: "node_id_caching"},
 	{Salt: "minion_id_lowercase", Halite: "node_id_lowercase"},

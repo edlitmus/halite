@@ -51,8 +51,8 @@ var Stages = map[string]StageInfo{
 	"yaml":      {"yaml", Supported, "serializer", "the default serializer stage"},
 	"json":      {"json", Supported, "serializer", ""},
 	"text":      {"text", Supported, "serializer", "passthrough, no parsing"},
-	"gpg":       {"gpg", Bridged, "template", "via the system gpg binary; SPEC section 12.6"},
-	"crypt":     {"crypt", Bridged, "template", "native encrypted pillar; SPEC section 12.5"},
+	"gpg":       {"gpg", Supported, "data", "decrypts PGP values through the system gpg binary; SPEC section 12.6"},
+	"crypt":     {"crypt", Bridged, "data", "native encrypted pillar; SPEC section 12.5"},
 	"exec":      {"exec", Bridged, "template", "delegates to a bridged process; SPEC section 10.3"},
 	"mako":      {"mako", Unsupported, "template", "rare in practice; rewrite as jinja"},
 	"wempy":     {"wempy", Unsupported, "template", "effectively unused"},
@@ -106,6 +106,9 @@ type Options struct {
 	AllowDuplicateKeys bool
 	// Nondeterministic restores Salt's unseeded random behaviour.
 	Nondeterministic bool
+
+	// GPG configures the gpg renderer of SPEC section 12.6.
+	GPG GPGOptions
 
 	// Extra adds names to the template context, which orchestration and
 	// reactor rendering use for `data` and `tag`.
@@ -176,7 +179,15 @@ func ParsePipeline(src string) ([]string, string) {
 
 // checkStages refuses a pipeline this build cannot run, whatever the
 // position of the offending stage.
+//
+// Position matters as much as membership. A template stage transforms
+// text and a serializer turns text into data, so a template named after
+// a serializer has nothing to work on; a data stage transforms parsed
+// data, so one named before a serializer has nothing either. Salt's
+// `#!yaml|gpg` is the second kind and is the ordinary spelling for an
+// encrypted pillar file.
 func checkStages(stages []string, file string) error {
+	serialized := false
 	for _, stage := range stages {
 		info, known := Stages[stage]
 		if !known {
@@ -187,6 +198,21 @@ func checkStages(stages []string, file string) error {
 			return fmt.Errorf("%s: the %s renderer is not supported: %s", file, stage, info.Note)
 		case Bridged:
 			return fmt.Errorf("%s: the %s renderer runs as a bridged extension, which is not available in this build: %s", file, stage, info.Note)
+		}
+		switch info.Kind {
+		case "template":
+			if serialized {
+				return fmt.Errorf("%s: the %s renderer transforms text and is named after a serializer, which leaves it nothing to transform", file, stage)
+			}
+		case "serializer":
+			if serialized {
+				return fmt.Errorf("%s: the pipeline names two serializers; only the first would have anything to parse", file)
+			}
+			serialized = true
+		case "data":
+			if !serialized {
+				return fmt.Errorf("%s: the %s renderer transforms parsed data and is named before any serializer, which leaves it nothing to transform", file, stage)
+			}
 		}
 	}
 	return nil
@@ -209,6 +235,7 @@ func Render(src []byte, opts Options) (Result, error) {
 
 	current := body
 	var rendered *template.Result
+	serialized := false
 
 	for _, stage := range stages {
 		switch stage {
@@ -226,8 +253,7 @@ func Render(src []byte, opts Options) (Result, error) {
 			if err != nil {
 				return res, err
 			}
-			res.Value = v
-			return res, nil
+			res.Value, serialized = v, true
 
 		case "json":
 			res.Text = current
@@ -235,19 +261,27 @@ func Render(src []byte, opts Options) (Result, error) {
 			if err != nil {
 				return res, err
 			}
-			res.Value = v
-			return res, nil
+			res.Value, serialized = v, true
 
 		case "text":
 			res.Text = current
-			res.Value = current
-			return res, nil
+			res.Value, serialized = current, true
+
+		case "gpg":
+			v, err := decryptGPG(res.Value, opts)
+			if err != nil {
+				return res, fmt.Errorf("%s: %w", opts.File, err)
+			}
+			res.Value = v
 
 		default:
 			return res, fmt.Errorf("%s: renderer %q has no implementation in this build", opts.File, stage)
 		}
 	}
 
+	if serialized {
+		return res, nil
+	}
 	res.Text = current
 	res.Value = current
 	return res, nil

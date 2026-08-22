@@ -21,6 +21,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/pillar"
+	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
@@ -234,6 +235,20 @@ func parseInt(s string) int64 {
 	return n
 }
 
+// gpgOptions reads the gpg renderer's settings of SPEC section 12.6.
+func (n *node) gpgOptions() render.GPGOptions {
+	timeout, err := time.ParseDuration(n.cfg.String("gpg_timeout", "30s"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "halite-node: gpg_timeout: %v; using 30s\n", err)
+		timeout = 30 * time.Second
+	}
+	return render.GPGOptions{
+		Binary:  n.cfg.String("gpg_binary", ""),
+		Home:    n.cfg.String("gpg_home", ""),
+		Timeout: timeout,
+	}
+}
+
 // compilePillar assembles this node's pillar from the local roots.
 func (n *node) compilePillar() *value.Map {
 	strategy, _ := value.ParseStrategy(n.cfg.String("pillar_source_merging_strategy", "smart"))
@@ -253,6 +268,7 @@ func (n *node) compilePillar() *value.Map {
 			Strategy:      strategy,
 			MergeLists:    n.cfg.Bool("pillar_merge_lists", false),
 			Undefined:     n.undef,
+			GPG:           n.gpgOptions(),
 			Local:         true,
 		},
 	}

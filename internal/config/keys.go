@@ -148,6 +148,11 @@ var Keys = []Key{
 	{"cmd_default_shell", nodeOnly, "false", "Run cmd.run through a shell by default, as Salt does.", "15.2"},
 	{"legacy_arg_parse", nodeHub, "false", "Restore Salt's YAML coercion of command line arguments.", "9.2"},
 	{"event_tag_compat", hubOnly, "false", "Additionally emit every event under its salt/ equivalent.", "17.1"},
+
+	// GPG pillar compatibility.
+	{"gpg_binary", nodeHub, "gpg", "The gpg binary the gpg renderer drives.", "12.6"},
+	{"gpg_home", nodeHub, "", "GNUPGHOME for the gpg renderer. Empty uses the environment's.", "12.6"},
+	{"gpg_timeout", nodeHub, "30s", "How long one decryption may take.", "12.6"},
 }
 
 var keyIndex = func() map[string][]Role {

@@ -208,24 +208,32 @@ func TestDeterministicRandomAcrossRuns(t *testing.T) {
 }
 
 func TestAStageAfterTheSerializerIsNotDropped(t *testing.T) {
-	// A serializer ends the pipeline by returning, so a stage named
-	// after one used to be skipped without a word. `#!yaml|gpg` is the
-	// common spelling for an encrypted pillar file: it rendered as plain
-	// yaml and delivered ciphertext as the value, which a state would
-	// then have written somewhere as if it were the secret.
-	_, err := Render([]byte("#!yaml|gpg\nk: v\n"), Options{File: "p.sls"})
-	if err == nil {
-		t.Fatal("a bridged renderer after the serializer should be refused")
-	}
-	if !strings.Contains(err.Error(), "gpg") {
-		t.Errorf("the error should name the stage: %v", err)
-	}
-
-	// The same applies to an unsupported one and to a name that is not a
-	// renderer at all.
-	for _, src := range []string{"#!yaml|mako\nk: v\n", "#!yaml|nosuch\nk: v\n"} {
+	// A serializer ends the pipeline, so a stage named after one used to
+	// be skipped without a word. `#!yaml|gpg` is the common spelling for
+	// an encrypted pillar file: it rendered as plain yaml and delivered
+	// ciphertext as the value, which a state would then have written
+	// somewhere as if it were the secret. gpg is implemented now, so the
+	// stages that stand in for it here are the ones still unavailable.
+	for _, src := range []string{
+		"#!yaml|crypt\nk: v\n",  // bridged, no build ships the bridge
+		"#!yaml|mako\nk: v\n",   // unsupported
+		"#!yaml|nosuch\nk: v\n", // not a renderer at all
+	} {
 		if _, err := Render([]byte(src), Options{File: "p.sls"}); err == nil {
 			t.Errorf("%q should be refused", src)
+		}
+	}
+
+	// A template stage after a serializer has nothing to transform, and
+	// a data stage before one has nothing either. Both used to be
+	// accepted and silently dropped.
+	for _, src := range []string{
+		"#!yaml|jinja\nk: v\n",
+		"#!gpg|yaml\nk: v\n",
+		"#!jinja|yaml|json\nk: v\n",
+	} {
+		if _, err := Render([]byte(src), Options{File: "p.sls"}); err == nil {
+			t.Errorf("%q names its stages in an order that cannot run, and should be refused", src)
 		}
 	}
 

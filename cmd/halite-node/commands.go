@@ -79,6 +79,7 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 			StateAllowlist:   n.cfg.StringSlice("state_allowlist"),
 			StateDenylist:    n.cfg.StringSlice("state_denylist"),
 			Test:             n.test,
+			GPG:              n.gpgOptions(),
 		},
 	}
 

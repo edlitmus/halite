@@ -61,6 +61,8 @@ type Config struct {
 	Undefined  template.UndefinedMode
 	Nodegroups target.Nodegroups
 	YAMLBool11 *bool
+	// GPG configures the gpg renderer of SPEC section 12.6.
+	GPG render.GPGOptions
 
 	// Local marks a development compilation from a local pillar root.
 	// `halite-node call pillar.items --local` sets it; it never runs
@@ -471,6 +473,7 @@ func (c *Compiler) renderOptions(env, sls, path string, partial *value.Map) rend
 		Loader:     c.Loader.Templates(env),
 		Undefined:  c.Config.Undefined,
 		YAMLBool11: c.Config.YAMLBool11,
+		GPG:        c.Config.GPG,
 	}
 }
 
