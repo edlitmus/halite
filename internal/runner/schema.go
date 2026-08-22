@@ -98,6 +98,13 @@ func (r *RunResult) Envelope(j JobReturn) *value.Map {
 }
 
 // Summary counts the run for the line an operator reads at the end.
+//
+// Succeeded, WouldHave, and Failed partition the run and sum to Total.
+// Changed and Skipped are subsets that cut across them: a state may
+// succeed having changed something, and a state held back by a requisite
+// or a gate reports whichever result the requisite or gate produced.
+// Printing them as though all five were buckets makes the line add up to
+// more than the run.
 type Summary struct {
 	Succeeded int
 	Failed    int
@@ -142,10 +149,14 @@ func (s Summary) String() string {
 		parts = append(parts, fmt.Sprintf("Would change: %d", s.WouldHave))
 	}
 	parts = append(parts, fmt.Sprintf("Failed: %d", s.Failed))
+	total := fmt.Sprintf("Total: %d", s.Total)
 	if s.Skipped > 0 {
-		parts = append(parts, fmt.Sprintf("Skipped: %d", s.Skipped))
+		// Written against the total rather than beside the other counts,
+		// because a skipped state is already inside one of them and a
+		// reader who adds the line up should get the run.
+		total += fmt.Sprintf(" (%d held back by a requisite or a gate)", s.Skipped)
 	}
-	parts = append(parts, fmt.Sprintf("Total: %d", s.Total))
+	parts = append(parts, total)
 	parts = append(parts, fmt.Sprintf("Duration: %s", s.Duration.Round(time.Millisecond)))
 	return strings.Join(parts, "  ")
 }

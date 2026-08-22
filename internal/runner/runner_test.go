@@ -963,3 +963,52 @@ flaky:
 		}
 	}
 }
+
+// TestSummaryAddsUp pins the invariant an operator relies on without
+// being told: the counts on the summary line account for the run exactly
+// once. Succeeded, Would change, and Failed partition it; Changed and
+// Skipped cut across them and must not be printed as though they were
+// buckets of their own.
+func TestSummaryAddsUp(t *testing.T) {
+	out, _ := compileAndRun(t, `
+plain:
+  probe.run: []
+
+changes_something:
+  probe.run:
+    - changes: true
+
+fails:
+  probe.run:
+    - fail: true
+
+held_back:
+  probe.run:
+    - onchanges:
+      - probe: plain
+`)
+	s := out.Summarise()
+	if s.Succeeded+s.WouldHave+s.Failed != s.Total {
+		t.Errorf("succeeded %d + would change %d + failed %d = %d, but the run had %d states",
+			s.Succeeded, s.WouldHave, s.Failed, s.Succeeded+s.WouldHave+s.Failed, s.Total)
+	}
+	if s.Total != 4 {
+		t.Errorf("total = %d, want 4", s.Total)
+	}
+	if s.Failed != 1 || s.Changed != 1 || s.Skipped != 1 {
+		t.Errorf("failed=%d changed=%d skipped=%d; want 1 of each", s.Failed, s.Changed, s.Skipped)
+	}
+
+	// The line says what the skipped states are rather than listing them
+	// beside the counts, where a reader adding them up gets more states
+	// than ran.
+	line := s.String()
+	if !strings.Contains(line, "Total: 4 (1 held back") {
+		t.Errorf("the summary line does not place the skipped count against the total: %q", line)
+	}
+	for _, sum := range []string{"Skipped: 1"} {
+		if strings.Contains(line, sum) {
+			t.Errorf("%q reads as a bucket of its own: %q", sum, line)
+		}
+	}
+}
