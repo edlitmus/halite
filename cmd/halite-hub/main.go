@@ -23,7 +23,7 @@ import (
 	"github.com/edlitmus/halite/internal/version"
 )
 
-const usage = `halite-hub — the central service and the operator command line
+var usage = `halite-hub — the central service and the operator command line
 
 Usage:
   halite-hub migrate <tree>      audit an existing Salt tree and report
@@ -33,10 +33,14 @@ Usage:
 Available with the transport, in phase 2 (SPEC section 32):
   serve, run, runner, orch, keys, files, ssh, event, jobs
 
+Common flags:
+  --config <path>      configuration file, default <root>/hub.yaml
+  --root <dir>         configuration root, default ` + config.DefaultRoot + `
+  --out <format>       summary (default) or json
+
 migrate flags:
   --pillar-root <dir>  audit a separate pillar tree with pillar rules
-  --config <path>      also translate a Salt configuration file, repeatable
-  --out <format>       summary (default) or json
+  --salt-config <path> also translate a Salt configuration file, repeatable
   --indent <n>         indent for json output
   --fail-on <level>    exit non-zero at blocking (default), review, or note
   --cmd-default-shell  audit as though the nodes will set cmd_default_shell,
@@ -79,8 +83,13 @@ func runMigrate(args *cli.Args) int {
 		cli.Fatalf("migrate needs a tree to audit")
 	}
 
+	// `--config` names this program's own configuration everywhere else,
+	// including `halite-hub lint` two functions down. Using it here for
+	// "a Salt file to translate" meant one flag with two meanings inside
+	// one program, and the wrong one silently: pointing `--config` at
+	// hub.yaml asked the audit to translate it as Salt.
 	var configFiles []string
-	if v := args.Flag("config", ""); v != "" && v != "true" {
+	if v := args.Flag("salt-config", ""); v != "" && v != "true" {
 		configFiles = strings.Split(v, ",")
 	}
 
