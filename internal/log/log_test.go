@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/edlitmus/halite/internal/redact"
 )
 
 func fixed(l *Logger) *Logger {
@@ -137,5 +139,35 @@ func TestSaltLevelNamesAreMapped(t *testing.T) {
 	}
 	if _, ok := ParseLevel("verbose"); ok {
 		t.Error("an unknown level should be reported, not guessed at")
+	}
+}
+
+// TestSecretsAreScrubbedAtTheSink. SPEC 26.1 puts the redactor at the
+// sink so that a value cannot escape through a path that forgot about
+// it — which matters because a decrypted pillar value travels through
+// code that has no idea what it is holding.
+func TestSecretsAreScrubbedAtTheSink(t *testing.T) {
+	secrets := redact.New()
+	secrets.Add("s3cret-pillar-value")
+
+	var out strings.Builder
+	l, _ := New(Options{Level: Info, Stderr: &out, Secrets: secrets})
+	fixed(l)
+
+	// In the message.
+	l.Info(`the command "mysql -p s3cret-pillar-value" failed`)
+	// And in a field, because a secret arrives in whichever one the
+	// caller happened to put it in.
+	l.Info("a state failed", "comment", "wrote s3cret-pillar-value to disk")
+
+	if strings.Contains(out.String(), "s3cret-pillar-value") {
+		t.Errorf("a secret reached the sink:\n%s", out.String())
+	}
+	if strings.Count(out.String(), redact.Placeholder) != 2 {
+		t.Errorf("both occurrences should be replaced:\n%s", out.String())
+	}
+	// The diagnostic is still a diagnostic.
+	if !strings.Contains(out.String(), "mysql -p") {
+		t.Errorf("the message was mangled:\n%s", out.String())
 	}
 }

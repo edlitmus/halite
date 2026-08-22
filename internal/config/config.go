@@ -365,6 +365,11 @@ func redact(m *value.Map) *value.Map {
 	return m
 }
 
+// IsSecretKey reports whether a setting's name says it holds a secret,
+// which is how the redactor of SPEC 26.1 knows which configured values
+// it must never print.
+func IsSecretKey(key string) bool { return isSecretKey(key) }
+
 func isSecretKey(key string) bool {
 	for _, part := range secretKeyParts {
 		if strings.Contains(key, part) {

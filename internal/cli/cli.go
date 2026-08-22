@@ -307,9 +307,21 @@ func renderScalar(v any) string {
 	return value.KeyString(v)
 }
 
+// Redact scrubs secrets out of a fatal message. SPEC 26.1 puts the
+// redactor at the sink, and for an error message this is the sink: a
+// decrypted pillar value reaches here through whichever error happens to
+// quote it, and no caller can be relied on to remember.
+//
+// Nil scrubs nothing, which is what a program with no secrets wants.
+var Redact func(string) string
+
 // Fatalf prints an error and exits non-zero. The message goes to stderr so
 // that a caller piping the output gets only the data.
 func Fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "halite: "+format+"\n", args...)
+	msg := fmt.Sprintf(format, args...)
+	if Redact != nil {
+		msg = Redact(msg)
+	}
+	fmt.Fprintln(os.Stderr, "halite: "+msg)
 	os.Exit(1)
 }

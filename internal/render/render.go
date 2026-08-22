@@ -109,6 +109,10 @@ type Options struct {
 
 	// GPG configures the gpg renderer of SPEC section 12.6.
 	GPG GPGOptions
+	// OnSecret receives every value the gpg renderer decrypts, so that
+	// the redactor of SPEC 26.1 knows what it must never print. Nil
+	// discards them, which is what a caller with no log wants.
+	OnSecret func(string)
 
 	// Extra adds names to the template context, which orchestration and
 	// reactor rendering use for `data` and `tag`.

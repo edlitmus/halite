@@ -4,11 +4,9 @@
 // that section names. A console format exists for interactive use, where
 // a JSON object per diagnostic is worse than useless.
 //
-// What is here is the level and the two formats. The value-based
-// redactor of 26.1 is not, and it matters: a decrypted pillar value can
-// reach a log through a state's own comment, which is what a redactor
-// seeded at the sink is for. DIVERGENCE records it rather than this
-// package pretending otherwise.
+// The value-based redactor of 26.1 is applied here, at the sink, so a
+// value cannot escape through a path that forgot about it. What is not
+// here is per-component levels and the journal sink.
 package log
 
 import (
@@ -20,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/edlitmus/halite/internal/redact"
 )
 
 // Level is a severity. Ordered so that a threshold is a comparison.
@@ -103,6 +103,10 @@ type Logger struct {
 	fields map[string]any
 	// now is the clock, so a test can pin the timestamp.
 	now func() time.Time
+	// secrets scrubs known values out of every record. SPEC 26.1 puts
+	// the redactor at the sink for the reason that matters: a log line
+	// added later cannot forget to call it.
+	secrets *redact.Set
 	// closers are the sinks this logger opened and must close.
 	closers []io.Closer
 }
@@ -119,6 +123,8 @@ type Options struct {
 	Fields map[string]any
 	// Stderr is where the console sink writes. Nil means os.Stderr.
 	Stderr io.Writer
+	// Secrets are scrubbed from every record. Nil scrubs nothing.
+	Secrets *redact.Set
 }
 
 // New builds a logger. A file that cannot be opened is an error rather
@@ -129,7 +135,8 @@ func New(opts Options) (*Logger, error) {
 	if stderr == nil {
 		stderr = os.Stderr
 	}
-	l := &Logger{out: stderr, level: opts.Level, form: opts.Format, fields: opts.Fields, now: time.Now}
+	l := &Logger{out: stderr, level: opts.Level, form: opts.Format, fields: opts.Fields,
+		now: time.Now, secrets: opts.Secrets}
 	if l.fields == nil {
 		l.fields = map[string]any{}
 	}
@@ -166,7 +173,7 @@ func (l *Logger) With(key string, value any) *Logger {
 		fields[k] = v
 	}
 	fields[key] = value
-	return &Logger{out: l.out, level: l.level, form: l.form, fields: fields, now: l.now}
+	return &Logger{out: l.out, level: l.level, form: l.form, fields: fields, now: l.now, secrets: l.secrets}
 }
 
 // Log writes one record.
@@ -185,9 +192,14 @@ func (l *Logger) Log(level Level, msg string, kv ...any) {
 		}
 		rec[key] = kv[i+1]
 	}
+	// Every field, not only the message: a secret arrives in whichever
+	// one the caller happened to put it in.
+	for k, v := range rec {
+		rec[k] = l.secrets.ScrubValue(v)
+	}
 	rec["ts"] = l.now().UTC().Format("2006-01-02T15:04:05.000000Z07:00")
 	rec["level"] = level.String()
-	rec["msg"] = msg
+	rec["msg"] = l.secrets.Scrub(msg)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()

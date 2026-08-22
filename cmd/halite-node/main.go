@@ -24,6 +24,7 @@ import (
 	"github.com/edlitmus/halite/internal/grains"
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pillar"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
@@ -115,6 +116,7 @@ type node struct {
 	format   cli.Format
 	indent   int
 	log      *hlog.Logger
+	secrets  *redact.Set
 	files    *fileserver.Roots
 	pillars  *fileserver.Roots
 	undef    template.UndefinedMode
@@ -131,10 +133,16 @@ func setup(args *cli.Args) *node {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	logger, err := buildLogger(args, cfg)
+	// The redactor is built before the logger, because the logger holds
+	// it: SPEC 26.1 applies redaction at the sink so that a log line
+	// added later cannot forget about it.
+	secrets := redact.New()
+	seedConfiguredSecrets(secrets, cfg)
+	logger, err := buildLogger(args, cfg, secrets)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	cli.Redact = secrets.Scrub
 	for _, w := range cfg.Warnings {
 		logger.Warn(w, "component", "config")
 	}
@@ -147,6 +155,7 @@ func setup(args *cli.Args) *node {
 	n := &node{
 		cfg:      cfg,
 		log:      logger,
+		secrets:  secrets,
 		registry: builtin.New(),
 		env:      args.Flag("env", cfg.String("env", "base")),
 		test:     args.Bool("test", cfg.Bool("test", false)),
@@ -339,6 +348,7 @@ func (n *node) compilePillar() *value.Map {
 			MergeLists:    n.cfg.Bool("pillar_merge_lists", false),
 			Undefined:     n.undef,
 			GPG:           n.gpgOptions(),
+			OnSecret:      n.secrets.Add,
 			// Both are switches SPEC names and nothing read: 10.1.3's
 			// `yaml_bool_11: false` for a tree that has been audited,
 			// and 10.2.4's `random_seed: nondeterministic`.
@@ -434,7 +444,7 @@ func checkEnvPermitted(cfg *config.Config, env string) error {
 // documented, and consulted by nothing, so every diagnostic went to
 // stderr at whatever level it happened to be and `log_level: error` on
 // an unattended node changed nothing.
-func buildLogger(args *cli.Args, cfg *config.Config) (*hlog.Logger, error) {
+func buildLogger(args *cli.Args, cfg *config.Config, secrets *redact.Set) (*hlog.Logger, error) {
 	levelName := args.Flag("log-level", cfg.String("log_level", "info"))
 	level, ok := hlog.ParseLevel(levelName)
 	if !ok {
@@ -446,9 +456,24 @@ func buildLogger(args *cli.Args, cfg *config.Config) (*hlog.Logger, error) {
 		return nil, fmt.Errorf("log_format %q is not a format; try json or console", formatName)
 	}
 	return hlog.New(hlog.Options{
-		Level:  level,
-		Format: format,
-		File:   cfg.String("log_file", ""),
-		Fields: map[string]any{"component": "node"},
+		Level:   level,
+		Format:  format,
+		File:    cfg.String("log_file", ""),
+		Fields:  map[string]any{"component": "node"},
+		Secrets: secrets,
 	})
+}
+
+// seedConfiguredSecrets records the values of the settings whose names
+// say they hold one. The key-name rule already exists for what a
+// template sees as `opts`; this makes the same values unprintable.
+func seedConfiguredSecrets(secrets *redact.Set, cfg *config.Config) {
+	for _, k := range config.Keys {
+		if !config.IsSecretKey(k.Name) {
+			continue
+		}
+		if v, ok := cfg.Get(k.Name); ok {
+			secrets.AddTree(v)
+		}
+	}
 }

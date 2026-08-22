@@ -169,3 +169,45 @@ func TestGPGCiphertextGoesOnStandardInputNeverTheArgumentVector(t *testing.T) {
 		t.Errorf("the vector should ask for a decryption: %q", recorded)
 	}
 }
+
+// TestDecryptedValuesAreOfferedToTheRedactor is the seam SPEC 26.1
+// depends on: the renderer is the only place that knows a value was
+// encrypted, and once it hands the plaintext on, nothing downstream can
+// tell it from any other string.
+func TestDecryptedValuesAreOfferedToTheRedactor(t *testing.T) {
+	home, recipient := gpgKeyring(t)
+	secret := gpgEncrypt(t, home, recipient, "s3cret-from-the-pillar")
+	indented := strings.ReplaceAll(strings.TrimRight(secret, "\n"), "\n", "\n    ")
+
+	var offered []string
+	res, err := Render([]byte("#!yaml|gpg\nk: |\n    "+indented+"\n"), Options{
+		File:     "p.sls",
+		GPG:      GPGOptions{Home: home},
+		OnSecret: func(v string) { offered = append(offered, v) },
+	})
+	if err != nil {
+		t.Fatalf("rendering: %v", err)
+	}
+	if len(offered) != 1 || offered[0] != "s3cret-from-the-pillar" {
+		t.Errorf("the renderer offered %#v; want the one plaintext it produced", offered)
+	}
+
+	// And it is still delivered, because redacting is the log's job and
+	// not the renderer's.
+	m := res.Value.(*value.Map)
+	if got, _ := m.Get("k"); got != "s3cret-from-the-pillar" {
+		t.Errorf("the value should still reach the tree: %#v", got)
+	}
+
+	// A tree with nothing encrypted offers nothing.
+	offered = nil
+	if _, err := Render([]byte("#!yaml|gpg\nk: plain\n"), Options{
+		File: "p.sls", GPG: GPGOptions{Home: home},
+		OnSecret: func(v string) { offered = append(offered, v) },
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(offered) != 0 {
+		t.Errorf("a plain value was offered as a secret: %#v", offered)
+	}
+}

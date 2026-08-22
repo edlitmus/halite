@@ -68,6 +68,9 @@ type Config struct {
 	TemplateOptions *template.Options
 	// GPG configures the gpg renderer of SPEC section 12.6.
 	GPG render.GPGOptions
+	// OnSecret receives every decrypted value, for the redactor of
+	// SPEC 26.1.
+	OnSecret func(string)
 
 	// Local marks a development compilation from a local pillar root.
 	// `halite-node call pillar.items --local` sets it; it never runs
@@ -498,6 +501,7 @@ func (c *Compiler) renderOptions(env, sls, path string, partial *value.Map) rend
 		Nondeterministic: c.Config.Nondeterministic,
 		TemplateOptions:  c.Config.TemplateOptions,
 		GPG:              c.Config.GPG,
+		OnSecret:         c.Config.OnSecret,
 	}
 }
 

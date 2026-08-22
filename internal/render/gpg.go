@@ -64,19 +64,19 @@ func decryptGPG(v any, opts Options) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("the gpg renderer needs the %s binary, which is not on PATH: %w", g.binary(), err)
 	}
-	return walkDecrypt(v, path, g, nil)
+	return walkDecrypt(v, path, g, nil, opts.OnSecret)
 }
 
 // walkDecrypt rebuilds the tree, decrypting as it goes. `path` is the key
 // path so far, so a failure can say which value failed without saying
 // what was in it.
-func walkDecrypt(v any, gpgPath string, opts GPGOptions, at []string) (any, error) {
+func walkDecrypt(v any, gpgPath string, opts GPGOptions, at []string, onSecret func(string)) (any, error) {
 	switch t := v.(type) {
 	case *value.Map:
 		out := value.NewMap(t.Len())
 		for _, e := range t.Entries() {
 			key := value.KeyString(e.Key)
-			decrypted, err := walkDecrypt(e.Val, gpgPath, opts, append(at, key))
+			decrypted, err := walkDecrypt(e.Val, gpgPath, opts, append(at, key), onSecret)
 			if err != nil {
 				return nil, err
 			}
@@ -87,7 +87,7 @@ func walkDecrypt(v any, gpgPath string, opts GPGOptions, at []string) (any, erro
 	case []any:
 		out := make([]any, len(t))
 		for i, item := range t {
-			decrypted, err := walkDecrypt(item, gpgPath, opts, append(at, fmt.Sprintf("[%d]", i)))
+			decrypted, err := walkDecrypt(item, gpgPath, opts, append(at, fmt.Sprintf("[%d]", i)), onSecret)
 			if err != nil {
 				return nil, err
 			}
@@ -102,6 +102,11 @@ func walkDecrypt(v any, gpgPath string, opts GPGOptions, at []string) (any, erro
 		plain, err := runGPG(gpgPath, opts, t)
 		if err != nil {
 			return nil, fmt.Errorf("%s could not be decrypted: %w", pathOf(at), err)
+		}
+		// Whatever arrived encrypted was encrypted for a reason, so the
+		// plaintext is a secret whether or not its key name says so.
+		if onSecret != nil {
+			onSecret(plain)
 		}
 		return plain, nil
 	}
