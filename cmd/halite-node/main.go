@@ -51,6 +51,8 @@ Common flags:
   --indent <n>         indent for json output
   --test               run every state in test mode, changing nothing
   --permissive         allow undefined template names, as Salt does
+  --legacy-arg-parse   read every argument as YAML, as Salt does, and log
+                       each coercion; SPEC section 9.2
 
 State subcommands:
   apply [sls...]       apply the highstate, or the named SLS files
@@ -241,6 +243,16 @@ func parseInt(s string) int64 {
 	return n
 }
 
+// templateOptions reads the renderer settings a tree may set. They were
+// declared, documented, and read by nothing, so a tree asking for
+// `trim_blocks` did not get it.
+func (n *node) templateOptions() *template.Options {
+	opts := template.DefaultOptions()
+	opts.TrimBlocks = n.cfg.Bool("template_trim_blocks", opts.TrimBlocks)
+	opts.LstripBlocks = n.cfg.Bool("template_lstrip_blocks", opts.LstripBlocks)
+	return &opts
+}
+
 // gpgOptions reads the gpg renderer's settings of SPEC section 12.6.
 func (n *node) gpgOptions() render.GPGOptions {
 	timeout, err := time.ParseDuration(n.cfg.String("gpg_timeout", "30s"))
@@ -275,7 +287,13 @@ func (n *node) compilePillar() *value.Map {
 			MergeLists:    n.cfg.Bool("pillar_merge_lists", false),
 			Undefined:     n.undef,
 			GPG:           n.gpgOptions(),
-			Local:         true,
+			// Both are switches SPEC names and nothing read: 10.1.3's
+			// `yaml_bool_11: false` for a tree that has been audited,
+			// and 10.2.4's `random_seed: nondeterministic`.
+			YAMLBool11:       n.cfg.OptionalBool("yaml_bool_11"),
+			Nondeterministic: n.cfg.String("random_seed", "deterministic") == "nondeterministic",
+			TemplateOptions:  n.templateOptions(),
+			Local:            true,
 		},
 	}
 	out := c.Compile()

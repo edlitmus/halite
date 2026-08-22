@@ -57,6 +57,11 @@ type Config struct {
 
 	// YAMLBool11 enables YAML 1.1's extra boolean spellings.
 	YAMLBool11 *bool
+	// Nondeterministic restores Salt's unseeded template randomness.
+	Nondeterministic bool
+	// TemplateOptions carries the renderer settings a tree sets,
+	// such as trim_blocks. Nil takes the defaults.
+	TemplateOptions *template.Options
 	// GPG configures the gpg renderer of SPEC section 12.6.
 	GPG render.GPGOptions
 
@@ -255,21 +260,23 @@ func stripEnv(keys []string) []string {
 
 func (c *Compiler) renderOptions(env, sls, filePath string) render.Options {
 	return render.Options{
-		File:        filePath,
-		SLS:         sls,
-		Env:         env,
-		PillarEnv:   c.Config.PillarEnv,
-		NodeID:      c.Config.NodeID,
-		JobID:       c.Config.JobID,
-		Grains:      c.Config.Grains,
-		Pillar:      c.Config.Pillar,
-		Config:      c.Config.ConfigValues,
-		Salt:        c.Config.Salt,
-		Loader:      c.Loader.Templates(env),
-		Undefined:   c.Config.Undefined,
-		OnUndefined: c.Config.OnUndefined,
-		YAMLBool11:  c.Config.YAMLBool11,
-		GPG:         c.Config.GPG,
+		File:             filePath,
+		SLS:              sls,
+		Env:              env,
+		PillarEnv:        c.Config.PillarEnv,
+		NodeID:           c.Config.NodeID,
+		JobID:            c.Config.JobID,
+		Grains:           c.Config.Grains,
+		Pillar:           c.Config.Pillar,
+		Config:           c.Config.ConfigValues,
+		Salt:             c.Config.Salt,
+		Loader:           c.Loader.Templates(env),
+		Undefined:        c.Config.Undefined,
+		OnUndefined:      c.Config.OnUndefined,
+		YAMLBool11:       c.Config.YAMLBool11,
+		Nondeterministic: c.Config.Nondeterministic,
+		TemplateOptions:  c.Config.TemplateOptions,
+		GPG:              c.Config.GPG,
 	}
 }
 

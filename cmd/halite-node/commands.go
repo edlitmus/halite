@@ -11,6 +11,7 @@ import (
 	"github.com/edlitmus/halite/internal/runner"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/value"
+	"github.com/edlitmus/halite/internal/yaml"
 )
 
 // runCall is `halite-node call <module.function> [args...]`, the old
@@ -38,7 +39,11 @@ func runCall(args *cli.Args) int {
 	for i, a := range rest {
 		positional[i] = a
 	}
-	out, err := n.registry.Exec.CallPositional(ctx, fn, positional, args.Kwargs)
+	kwargs := args.Kwargs
+	if n.legacyArgs(args) {
+		positional, kwargs = coerceLegacyArgs(positional, kwargs)
+	}
+	out, err := n.registry.Exec.CallPositional(ctx, fn, positional, kwargs)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -66,7 +71,14 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 			// SLS file. The compiler has always passed this through to
 			// the renderer and nothing ever set it, so every one of them
 			// was undefined.
-			Salt:             exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.context(p)},
+			Salt: exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.context(p)},
+			// SPEC 10.1.3 names `yaml_bool_11: false` as the switch a
+			// tree throws once it has been audited, and SPEC 10.2.4
+			// names `random_seed`. Both were plumbed to the renderer and
+			// read from nothing.
+			YAMLBool11:       n.cfg.OptionalBool("yaml_bool_11"),
+			Nondeterministic: n.cfg.String("random_seed", "deterministic") == "nondeterministic",
+			TemplateOptions:  n.templateOptions(),
 			Env:              n.env,
 			PillarEnv:        n.env,
 			NodeID:           n.nodeID,
@@ -363,4 +375,57 @@ func runLint(args *cli.Args) int {
 		return 1
 	}
 	return 0
+}
+
+// legacyArgs reports whether this run restores Salt's YAML coercion of
+// command line arguments. SPEC section 9.2 names both spellings.
+func (n *node) legacyArgs(args *cli.Args) bool {
+	return args.Bool("legacy-arg-parse", n.cfg.Bool("legacy_arg_parse", false))
+}
+
+// coerceLegacyArgs applies Salt's reading of every command line argument
+// as YAML, and says what it did.
+//
+// This is the transition of SPEC section 9.2 and it is off by default,
+// because it is the cause of a package version `1.0` becoming a float
+// and `NO` becoming a boolean. Every coercion is logged: the point of
+// the switch is to be turned off again, and the log is the list of
+// arguments that need a type or a quote first.
+func coerceLegacyArgs(positional []any, kwargs *value.Map) ([]any, *value.Map) {
+	coerced := make([]any, len(positional))
+	for i, a := range positional {
+		coerced[i] = coerceLegacyArg(fmt.Sprintf("argument %d", i+1), a)
+	}
+	if kwargs == nil {
+		return coerced, nil
+	}
+	out := value.NewMap(kwargs.Len())
+	for _, e := range kwargs.Entries() {
+		name := value.KeyString(e.Key)
+		out.SetAt(e.Key, coerceLegacyArg(name, e.Val), e.KeyPos, e.ValPos)
+	}
+	return coerced, out
+}
+
+func coerceLegacyArg(what string, v any) any {
+	s, ok := v.(string)
+	if !ok {
+		return v
+	}
+	parsed, _, err := yaml.Parse([]byte(s), yaml.DefaultOptions("<argument>"))
+	if err != nil {
+		return v
+	}
+	if _, unchanged := parsed.(string); unchanged {
+		return v
+	}
+	if parsed == nil {
+		// An empty argument, or one spelled `null`. Salt reads it as
+		// nothing; saying so is more useful than doing it quietly.
+		fmt.Fprintf(os.Stderr, "halite-node: legacy_arg_parse: %s %q was read as null\n", what, s)
+		return parsed
+	}
+	fmt.Fprintf(os.Stderr, "halite-node: legacy_arg_parse: %s %q was read as %s %v\n",
+		what, s, value.TypeName(parsed), parsed)
+	return parsed
 }

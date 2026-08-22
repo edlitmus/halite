@@ -294,7 +294,19 @@ func renderJinja(src string, opts Options, res *Result) (*template.Result, error
 	}
 	topts.Undefined = opts.Undefined
 	topts.Nondeterministic = opts.Nondeterministic
-	topts.RandomSeed = opts.NodeID + "\x00" + opts.JobID
+	// The seed is the node and the template, and deliberately not the
+	// job. SPEC 10.2.4 says "derived from the node ID and the job ID by
+	// default, so that a `test=True` run and the subsequent real run
+	// agree" — and those are two jobs, so including the job ID
+	// guarantees they disagree. The mechanism defeats the purpose, and
+	// the purpose is the point: `random` in a template must not produce
+	// a phantom diff on every run.
+	//
+	// The node keeps the value varying between machines and the template
+	// path keeps it varying between files, which is what a tree wants
+	// from `random`. `random_seed: nondeterministic` restores Salt's
+	// unseeded behaviour for anyone who wants the churn.
+	topts.RandomSeed = opts.NodeID + "\x00" + opts.File
 
 	collected := []Warning{}
 	topts.OnUndefined = func(name string, pos template.Pos) {

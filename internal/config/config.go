@@ -208,6 +208,19 @@ func (c *Config) String(path, def string) string {
 	return def
 }
 
+// OptionalBool reads a boolean setting that has three states: set true,
+// set false, and not set at all. `yaml_bool_11` is one — its default is
+// "on unless a tree says otherwise", and a plain Bool cannot tell an
+// explicit `false` from an absent key.
+func (c *Config) OptionalBool(path string) *bool {
+	v, ok := c.Get(path)
+	if !ok || v == nil {
+		return nil
+	}
+	b := c.Bool(path, false)
+	return &b
+}
+
 // Bool reads a boolean setting.
 func (c *Config) Bool(path string, def bool) bool {
 	v, ok := c.Get(path)

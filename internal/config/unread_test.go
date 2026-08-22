@@ -1,0 +1,135 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+)
+
+// A declared setting that nothing reads is the defect this project keeps
+// finding in itself: `cmd_default_shell` was one, the per-state `timeout`
+// was one, and the `salt` dispatcher was the same shape a layer down.
+// Each was plumbed the whole way and never populated, so a tree could
+// set it, `--help` could document it, the configuration reference could
+// list it, and nothing would happen.
+//
+// This walks the other way: every key in Keys must be mentioned somewhere
+// outside keys.go, or be listed below with the reason it is not.
+//
+// The list is enforced in both directions. A key that starts being read
+// must come off it, because a stale entry here hides the next real one.
+var unreadKeys = map[string]string{
+	// Phase 2: the transport, the hub, and the job cache.
+	"state_dir":                   "phase 2: nothing durable is written yet",
+	"tracing":                     "phase 2: no spans are emitted yet",
+	"metrics_listen":              "phase 2: no metrics endpoint yet",
+	"certificate_lifetime":        "phase 2: no certificates are issued yet",
+	"key_algorithm":               "phase 2: no keys are generated yet",
+	"event_tag_compat":            "phase 2: no events are emitted yet",
+	"ext_pillar_fail":             "phase 2: external pillar is a hub concern",
+	"file_ignore_glob":            "phase 2: the file server is a hub concern",
+	"file_ignore_regex":           "phase 2: the file server is a hub concern",
+	"fileserver_follow_symlinks":  "phase 2: the file server is a hub concern",
+	"gitfs_base":                  "phase 5: gitfs",
+	"gitfs_verify_signatures":     "phase 5: gitfs",
+	"grain_stale_after":           "phase 2: the hub caches node data",
+	"job_cache_max_size":          "phase 2: there is no job cache",
+	"job_cache_retention":         "phase 2: there is no job cache",
+	"job_signer_keys":             "phase 6: detached job signing",
+	"require_job_signature":       "phase 6: detached job signing",
+	"extension_require_signature": "phase 5: bridged extensions",
+	"pillar_cache_disk":           "phase 2: the node caches pillar from a hub",
+
+	// Read today, and not yet acted on. Each is a live gap rather than a
+	// phase boundary, and DIVERGENCE says so.
+	"log_file":              "the node logs to stderr; there is no file sink yet",
+	"log_format":            "the node logs to stderr in one format; see DIVERGENCE 6.2",
+	"log_level_file":        "there is no file sink to give a level to",
+	"regex_engine":          "re2 is the only engine, so the setting has one value",
+	"node_id_source":        "the resolution order of SPEC 7.2 is implemented; naming one source is not",
+	"node_id_caching":       "phase 2: there is no enrollment to pin an identity at",
+	"node_id_lowercase":     "SPEC 7.2's identity modifiers are not applied yet",
+	"node_id_remove_domain": "SPEC 7.2's identity modifiers are not applied yet",
+	"config_file":           "set by the loader, and read by the loader that set it",
+	"env_allowlist":         "SPEC 28.3: the state and pillar allowlists are read; the environment ones are not",
+	"env_denylist":          "SPEC 28.3: the state and pillar allowlists are read; the environment ones are not",
+	"cache_dir":             "phase 2: nothing is cached on the node yet",
+	"pki_dir":               "phase 2: there is no key material",
+	"socket_dir":            "phase 2: there are no sockets",
+	"nodegroups":            "phase 2: targeting over the wire",
+	"quiesce":               "phase 2: there are no jobs to refuse",
+	"quiesce_allowlist":     "phase 2: there are no jobs to refuse",
+	"accept_relays":         "phase 5: relays",
+	"relay_upstream":        "phase 5: relays",
+	"relay_upstream_port":   "phase 5: relays",
+	"beacons":               "phase 3: the automation loop",
+	"schedule":              "phase 3: the scheduler",
+	"mine_functions":        "phase 3: the mine",
+	"mine_interval":         "phase 3: the mine",
+	"returner":              "phase 4: returners",
+	"startup_states":        "phase 2: a node with a hub applies at startup",
+	"ext_pillar":            "phase 2: external pillar is a hub concern",
+	"fileserver_backend":    "phase 2: the file server is a hub concern",
+	"gitfs_env_allowlist":   "phase 5: gitfs",
+	"gitfs_env_denylist":    "phase 5: gitfs",
+	"job_cache":             "phase 2: there is no job cache",
+	"node_data_cache":       "phase 2: the hub caches node data",
+	"hub_fingerprint":       "phase 2: nothing dials a hub yet",
+	"hub_tries":             "phase 2: nothing dials a hub yet",
+	"hub_type":              "phase 2: nothing dials a hub yet",
+}
+
+func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
+	root := ".."
+	var body strings.Builder
+	err := filepath.Walk(filepath.Join(root, ".."), func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+		// keys.go declares them and shim.go names the halite spelling a
+		// Salt key maps onto. Neither reads one, and counting either as
+		// a use is how `log_level_file` looked read when nothing reads
+		// it.
+		switch filepath.Base(path) {
+		case "keys.go", "shim.go", "unread_test.go":
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		body.Write(data)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := body.String()
+
+	var unread []string
+	for _, k := range Keys {
+		mentioned := strings.Contains(text, fmt.Sprintf("%q", k.Name))
+		reason, recorded := unreadKeys[k.Name]
+		switch {
+		case mentioned && recorded:
+			t.Errorf("%q is read now, and is still recorded as unread (%q). Remove its row: "+
+				"a stale entry hides the next setting that does nothing.", k.Name, reason)
+		case !mentioned && !recorded:
+			unread = append(unread, k.Name)
+		}
+	}
+	sort.Strings(unread)
+	for _, k := range unread {
+		t.Errorf("%q is declared, documented, and read by nothing. Either act on it or "+
+			"add it to unreadKeys with the reason.", k)
+	}
+
+	for name := range unreadKeys {
+		if _, ok := keyIndex[name]; !ok {
+			t.Errorf("unreadKeys names %q, which is not a declared setting", name)
+		}
+	}
+}

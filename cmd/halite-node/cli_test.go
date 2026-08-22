@@ -394,3 +394,48 @@ func matrixRow(line string) []string {
 	}
 	return cells
 }
+
+// TestTransitionSwitchesTakeEffect. Three settings that SPEC names as
+// the switch a tree throws during a migration, all of which were
+// declared, documented, listed in the configuration reference, and read
+// by nothing.
+func TestTransitionSwitchesTakeEffect(t *testing.T) {
+	flags := tree(t, map[string]string{
+		"top.sls": "base:\n  '*':\n    - s\n",
+		"s.sls":   "flag:\n  cmd.run:\n    - name: /bin/echo\n    - env:\n        on: yes\n",
+	})
+
+	// yaml_bool_11: false is SPEC 10.1.3's switch for a tree that has
+	// been audited. With it, `on: yes` is two strings.
+	got := run(t, append([]string{"state", "show_lowstate", "--out", "json"}, flags...)...)
+	if !strings.Contains(got.stderr, "resolves to the boolean") {
+		t.Errorf("the default should warn about a YAML 1.1 boolean: %q", got.stderr)
+	}
+
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "node.yaml"), []byte("yaml_bool_11: false\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withConfig := append(append([]string{}, flags...), "--config", filepath.Join(root, "node.yaml"))
+	got = run(t, append([]string{"state", "show_lowstate", "--out", "json"}, withConfig...)...)
+	if strings.Contains(got.stderr, "resolves to the boolean") {
+		t.Errorf("yaml_bool_11: false should turn the coercion off: %q", got.stderr)
+	}
+	if !strings.Contains(got.stdout, `"yes"`) {
+		t.Errorf("`on: yes` should stay two strings: %s", got.stdout)
+	}
+
+	// legacy_arg_parse is SPEC 9.2's, and logs every coercion because
+	// the log is the list of arguments that need a type or a quote.
+	got = run(t, append([]string{"call", "test.echo", "1.0", "--out", "json"}, flags...)...)
+	if !strings.Contains(got.stdout, `"1.0"`) {
+		t.Errorf("an argument should be a string by default: %s", got.stdout)
+	}
+	got = run(t, append([]string{"call", "test.echo", "1.0", "--legacy-arg-parse", "--out", "json"}, flags...)...)
+	if strings.Contains(got.stdout, `"1.0"`) {
+		t.Errorf("--legacy-arg-parse should coerce: %s", got.stdout)
+	}
+	if !strings.Contains(got.stderr, "was read as float") {
+		t.Errorf("every coercion should be logged: %q", got.stderr)
+	}
+}

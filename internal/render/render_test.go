@@ -1,6 +1,7 @@
 package render
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -246,5 +247,61 @@ func TestAStageAfterTheSerializerIsNotDropped(t *testing.T) {
 		t.Errorf("value = %T", res.Value)
 	} else if v, _ := m.Get("k"); v != int64(2) {
 		t.Errorf("k = %v", v)
+	}
+}
+
+// TestRandomSeedSurvivesTheJob. SPEC 10.2.4 asks that a `test=True` run
+// and the real run that follows give the same answer, and specifies a
+// seed derived from the node ID and the job ID. Those are two jobs, so
+// that seed guarantees they differ: the mechanism defeats the purpose.
+// The seed is the node and the template instead.
+func TestRandomSeedSurvivesTheJob(t *testing.T) {
+	render := func(file, node, job string) string {
+		res, err := Render([]byte("{{ range(100000) | random }}"), Options{
+			File: file, NodeID: node, JobID: job,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The default pipeline parses the rendered text, so the value
+		// arrives as the number it looks like.
+		return fmt.Sprint(res.Value)
+	}
+
+	// Two jobs, one node, one template: the same answer, which is the
+	// whole point.
+	first := render("web.sls", "node1", "20260101T000000.000000")
+	second := render("web.sls", "node1", "20260101T000001.000000")
+	if first != second {
+		t.Errorf("a second job gave %q where the first gave %q; a --test run and the "+
+			"real run after it would show a phantom diff", second, first)
+	}
+
+	// A different node gets a different answer, which is what `random`
+	// per node means.
+	if other := render("web.sls", "node2", "20260101T000000.000000"); other == first {
+		t.Errorf("two nodes drew the same value %q", other)
+	}
+
+	// So does a different template, so two files do not draw in step.
+	if other := render("db.sls", "node1", "20260101T000000.000000"); other == first {
+		t.Errorf("two templates drew the same value %q", other)
+	}
+
+	// And the switch still restores the churn.
+	a := func() string {
+		res, _ := Render([]byte("{{ range(100000) | random }}"), Options{
+			File: "web.sls", NodeID: "node1", Nondeterministic: true,
+		})
+		return fmt.Sprint(res.Value)
+	}
+	differed := false
+	for i := 0; i < 20 && !differed; i++ {
+		if a() != first {
+			differed = true
+		}
+	}
+	if !differed {
+		t.Error("random_seed: nondeterministic produced the seeded value twenty times running")
 	}
 }

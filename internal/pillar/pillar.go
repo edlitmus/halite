@@ -61,6 +61,11 @@ type Config struct {
 	Undefined  template.UndefinedMode
 	Nodegroups target.Nodegroups
 	YAMLBool11 *bool
+	// Nondeterministic restores Salt's unseeded template randomness.
+	Nondeterministic bool
+	// TemplateOptions carries the renderer settings a tree sets,
+	// such as trim_blocks. Nil takes the defaults.
+	TemplateOptions *template.Options
 	// GPG configures the gpg renderer of SPEC section 12.6.
 	GPG render.GPGOptions
 
@@ -477,20 +482,22 @@ func (c *Compiler) saltFor(partial *value.Map) template.Dispatcher {
 
 func (c *Compiler) renderOptions(env, sls, path string, partial *value.Map) render.Options {
 	return render.Options{
-		File:       path,
-		SLS:        sls,
-		Env:        env,
-		PillarEnv:  env,
-		NodeID:     c.Config.NodeID,
-		JobID:      c.Config.JobID,
-		Grains:     c.Config.Grains,
-		Pillar:     partial,
-		Config:     c.Config.ConfigValues,
-		Salt:       c.saltFor(partial),
-		Loader:     c.Loader.Templates(env),
-		Undefined:  c.Config.Undefined,
-		YAMLBool11: c.Config.YAMLBool11,
-		GPG:        c.Config.GPG,
+		File:             path,
+		SLS:              sls,
+		Env:              env,
+		PillarEnv:        env,
+		NodeID:           c.Config.NodeID,
+		JobID:            c.Config.JobID,
+		Grains:           c.Config.Grains,
+		Pillar:           partial,
+		Config:           c.Config.ConfigValues,
+		Salt:             c.saltFor(partial),
+		Loader:           c.Loader.Templates(env),
+		Undefined:        c.Config.Undefined,
+		YAMLBool11:       c.Config.YAMLBool11,
+		Nondeterministic: c.Config.Nondeterministic,
+		TemplateOptions:  c.Config.TemplateOptions,
+		GPG:              c.Config.GPG,
 	}
 }
 
