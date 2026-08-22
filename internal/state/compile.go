@@ -67,6 +67,8 @@ type Config struct {
 	// OnSecret receives every decrypted value, for the redactor of
 	// SPEC 26.1.
 	OnSecret func(string)
+	// Renderer is the default pipeline of SPEC section 10.
+	Renderer []string
 
 	Nodegroups target.Nodegroups
 
@@ -281,6 +283,7 @@ func (c *Compiler) renderOptions(env, sls, filePath string) render.Options {
 		TemplateOptions:  c.Config.TemplateOptions,
 		GPG:              c.Config.GPG,
 		OnSecret:         c.Config.OnSecret,
+		Renderer:         c.Config.Renderer,
 	}
 }
 

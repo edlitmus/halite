@@ -45,11 +45,21 @@ var unreadKeys = map[string]string{
 
 	// Read today, and not yet acted on. Each is a live gap rather than a
 	// phase boundary, and DIVERGENCE says so.
-	"log_level_file":          "SPEC 26.1's per-sink level; the file sink takes the global one",
-	"regex_engine":            "re2 is the only engine, so the setting has one value",
-	"node_id_source":          "the resolution order of SPEC 7.2 is implemented; naming one source is not",
-	"node_id_caching":         "phase 2: there is no enrollment to pin an identity at",
-	"config_file":             "set by the loader, and read by the loader that set it",
+	"log_level_file":  "SPEC 26.1's per-sink level; the file sink takes the global one",
+	"regex_engine":    "re2 is the only engine, so the setting has one value",
+	"node_id_source":  "the resolution order of SPEC 7.2 is implemented; naming one source is not",
+	"node_id_caching": "phase 2: there is no enrollment to pin an identity at",
+	"config_file":     "set by the loader, and read by the loader that set it",
+	"hash_type":       "phase 2: the file server compares digests; nothing here does",
+	"hub":             "phase 2: nothing dials a hub yet",
+	"listen":          "phase 2: there is nothing to listen on",
+	"policy":          "phase 2: RBAC is a hub concern",
+	// These two are read through rootsFrom, which takes the key as an
+	// argument rather than as a literal beside the accessor. The check
+	// is deliberately strict; an exception with a reason is better than
+	// a looser rule that lets a real one through.
+	"file_roots":              "read through rootsFrom, which takes the key as an argument",
+	"pillar_roots":            "read through rootsFrom, which takes the key as an argument",
 	"enrollment_mode":         "phase 2: there is no enrollment",
 	"extension_trust_keys":    "phase 5: bridged extensions",
 	"grains_refresh_interval": "phase 2: a long-running node re-collects; a one-shot run does not",
@@ -123,7 +133,7 @@ func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
 
 	var unread []string
 	for _, k := range Keys {
-		mentioned := strings.Contains(text, fmt.Sprintf("%q", k.Name))
+		mentioned := readSomewhere(text, k.Name)
 		reason, recorded := unreadKeys[k.Name]
 		switch {
 		case mentioned && recorded:
@@ -144,4 +154,24 @@ func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
 			t.Errorf("unreadKeys names %q, which is not a declared setting", name)
 		}
 	}
+}
+
+// readSomewhere reports whether a key is passed to a configuration
+// accessor anywhere.
+//
+// Looking for the bare string was wrong twice. A key mentioned in a test
+// looked read, and a test that proves the loader carries a key says
+// nothing about whether anything acts on it. And a *module parameter* of
+// the same name looked like a read of the setting: `hash_type` is
+// declared on `file.managed` and is a configuration key, and neither was
+// read by anything.
+func readSomewhere(text, key string) bool {
+	for _, accessor := range []string{
+		"String", "Bool", "OptionalBool", "Int", "Map", "StringSlice", "Roots", "Duration", "Get",
+	} {
+		if strings.Contains(text, fmt.Sprintf(".%s(%q", accessor, key)) {
+			return true
+		}
+	}
+	return false
 }

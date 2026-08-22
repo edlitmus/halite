@@ -49,6 +49,7 @@ Common flags:
   --file-root <dir>    a state root, repeatable; implies --local
   --pillar-root <dir>  a pillar root, repeatable; implies --local
   --env <name>         environment, default base
+  --pillarenv <name>   pillar environment, defaulting to --env
   --id <node-id>       override the node identity
   --out <format>       nested (default), json, yaml, txt, quiet
   --indent <n>         indent for json output
@@ -112,14 +113,18 @@ type node struct {
 	grains   *value.Map
 	nodeID   string
 	env      string
-	test     bool
-	format   cli.Format
-	indent   int
-	log      *hlog.Logger
-	secrets  *redact.Set
-	files    *fileserver.Roots
-	pillars  *fileserver.Roots
-	undef    template.UndefinedMode
+	// pillarEnv is the environment the pillar is compiled from, which
+	// defaults to env but need not equal it: SPEC 12.2 lets a tree hold
+	// its pillar in one environment while states move between several.
+	pillarEnv string
+	test      bool
+	format    cli.Format
+	indent    int
+	log       *hlog.Logger
+	secrets   *redact.Set
+	files     *fileserver.Roots
+	pillars   *fileserver.Roots
+	undef     template.UndefinedMode
 }
 
 // setup loads configuration, resolves the identity, and collects grains.
@@ -175,6 +180,13 @@ func setup(args *cli.Args) *node {
 	if err := checkEnvPermitted(cfg, n.env); err != nil {
 		cli.Fatalf("%v", err)
 	}
+	// SPEC 12.2's `pillarenv`, which was declared and read by nothing:
+	// a tree holding its pillar in one environment while its states
+	// moved between several got the states' environment for both.
+	n.pillarEnv = args.Flag("pillarenv", cfg.String("pillarenv", n.env))
+	if err := checkEnvPermitted(cfg, n.pillarEnv); err != nil {
+		cli.Fatalf("%v", err)
+	}
 
 	n.nodeID = resolveNodeID(args, cfg)
 	// SPEC 26.1 puts the identity on every record. It cannot go on at
@@ -202,7 +214,7 @@ func setup(args *cli.Args) *node {
 	n.files = fileserver.NewRoots(rootsFrom(args, cfg, "file-root", "file_roots",
 		[]string{filepath.Join(root, "state"), "/srv/halite/states", "/srv/salt"}, n.env))
 	n.pillars = fileserver.NewRoots(rootsFrom(args, cfg, "pillar-root", "pillar_roots",
-		[]string{filepath.Join(root, "pillar"), "/srv/halite/pillar", "/srv/pillar"}, n.env))
+		[]string{filepath.Join(root, "pillar"), "/srv/halite/pillar", "/srv/pillar"}, n.pillarEnv))
 	return n
 }
 
@@ -314,6 +326,23 @@ func (n *node) templateOptions() *template.Options {
 	return &opts
 }
 
+// defaultRenderer reads SPEC section 10's `renderer`, the pipeline a
+// file without a shebang gets. Declared, documented, and read by
+// nothing, so a tree asking for `jinja|json` got `jinja|yaml`.
+func (n *node) defaultRenderer() []string {
+	spec := n.cfg.String("renderer", "")
+	if spec == "" {
+		return nil
+	}
+	var stages []string
+	for _, part := range strings.Split(spec, "|") {
+		if p := strings.TrimSpace(part); p != "" {
+			stages = append(stages, p)
+		}
+	}
+	return stages
+}
+
 // gpgOptions reads the gpg renderer's settings of SPEC section 12.6.
 func (n *node) gpgOptions() render.GPGOptions {
 	timeout, err := time.ParseDuration(n.cfg.String("gpg_timeout", "30s"))
@@ -339,7 +368,7 @@ func (n *node) compilePillar() *value.Map {
 			NewSalt: func(partial *value.Map) template.Dispatcher {
 				return exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.context(partial)}
 			},
-			Env:           n.env,
+			Env:           n.pillarEnv,
 			NodeID:        n.nodeID,
 			Grains:        n.grains,
 			ConfigValues:  n.cfg.Redacted(),
@@ -349,6 +378,7 @@ func (n *node) compilePillar() *value.Map {
 			Undefined:     n.undef,
 			GPG:           n.gpgOptions(),
 			OnSecret:      n.secrets.Add,
+			Renderer:      n.defaultRenderer(),
 			// Both are switches SPEC names and nothing read: 10.1.3's
 			// `yaml_bool_11: false` for a tree that has been audited,
 			// and 10.2.4's `random_seed: nondeterministic`.

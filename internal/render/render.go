@@ -114,6 +114,10 @@ type Options struct {
 	// discards them, which is what a caller with no log wants.
 	OnSecret func(string)
 
+	// Renderer is the pipeline a file without a shebang gets. Empty is
+	// jinja|yaml. SPEC section 10.
+	Renderer []string
+
 	// Extra adds names to the template context, which orchestration and
 	// reactor rendering use for `data` and `tag`.
 	Extra map[string]any
@@ -153,8 +157,19 @@ func (w Warning) String() string {
 // list and the body with that line removed. A file without one gets the
 // default pipeline.
 func ParsePipeline(src string) ([]string, string) {
+	return ParsePipelineWith(src, nil)
+}
+
+// ParsePipelineWith is ParsePipeline with the default a tree configured.
+// SPEC section 10 lets `renderer` name the pipeline a file without a
+// shebang gets; it was declared, documented, and read by nothing, so a
+// tree asking for `jinja|json` got `jinja|yaml`.
+func ParsePipelineWith(src string, fallback []string) ([]string, string) {
+	if len(fallback) == 0 {
+		fallback = DefaultPipeline
+	}
 	if !strings.HasPrefix(src, "#!") {
-		return DefaultPipeline, src
+		return fallback, src
 	}
 	line := src
 	rest := ""
@@ -163,7 +178,7 @@ func ParsePipeline(src string) ([]string, string) {
 	}
 	spec := strings.TrimSpace(line[2:])
 	if spec == "" {
-		return DefaultPipeline, rest
+		return fallback, rest
 	}
 	var stages []string
 	for _, part := range strings.Split(spec, "|") {
@@ -172,7 +187,7 @@ func ParsePipeline(src string) ([]string, string) {
 		}
 	}
 	if len(stages) == 0 {
-		return DefaultPipeline, rest
+		return fallback, rest
 	}
 	// The body keeps a blank first line so that every subsequent line
 	// number still matches the file on disk. A diagnostic that is off by
@@ -224,7 +239,7 @@ func checkStages(stages []string, file string) error {
 
 // Render runs a source through its pipeline.
 func Render(src []byte, opts Options) (Result, error) {
-	stages, body := ParsePipeline(string(src))
+	stages, body := ParsePipelineWith(string(src), opts.Renderer)
 	res := Result{Pipeline: stages}
 
 	// Every stage is checked before any of them runs. A serializer ends

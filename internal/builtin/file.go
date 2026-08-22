@@ -190,7 +190,6 @@ func registerFileStates(r *Registries) {
 		opt("create", signature.Bool, true, "Create the file if it does not exist."),
 		opt("replace", signature.Bool, true, "Rewrite the file when its contents differ."),
 		opt("backup", signature.String, "", "Keep a copy of the previous contents with this suffix."),
-		choice("hash_type", "sha256", "Digest used to compare contents.", "sha256", "sha384", "sha512"),
 		opt("show_changes", signature.Bool, true, "Include a unified diff in the changes."),
 	}
 

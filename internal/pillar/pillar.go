@@ -71,6 +71,8 @@ type Config struct {
 	// OnSecret receives every decrypted value, for the redactor of
 	// SPEC 26.1.
 	OnSecret func(string)
+	// Renderer is the default pipeline of SPEC section 10.
+	Renderer []string
 
 	// Local marks a development compilation from a local pillar root.
 	// `halite-node call pillar.items --local` sets it; it never runs
@@ -502,6 +504,7 @@ func (c *Compiler) renderOptions(env, sls, path string, partial *value.Map) rend
 		TemplateOptions:  c.Config.TemplateOptions,
 		GPG:              c.Config.GPG,
 		OnSecret:         c.Config.OnSecret,
+		Renderer:         c.Config.Renderer,
 	}
 }
 

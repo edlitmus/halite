@@ -3301,7 +3301,7 @@ file.line(name: path, content: string = , mode: string = ensure, match: string =
 Ensure a file exists with the given contents, mode, and ownership.
 
 ```
-file.managed(name: path, source: string = , source_hash: string = , contents: any, template: string = , context: map, defaults: map, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, replace: bool = true, backup: string = , hash_type: string = sha256, show_changes: bool = true)
+file.managed(name: path, source: string = , source_hash: string = , contents: any, template: string = , context: map, defaults: map, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, replace: bool = true, backup: string = , show_changes: bool = true)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -3322,7 +3322,6 @@ file.managed(name: path, source: string = , source_hash: string = , contents: an
 | `create` | bool | `true` | Create the file if it does not exist. |
 | `replace` | bool | `true` | Rewrite the file when its contents differ. |
 | `backup` | string | `` | Keep a copy of the previous contents with this suffix. |
-| `hash_type` | string | `sha256` | Digest used to compare contents. |
 | `show_changes` | bool | `true` | Include a unified diff in the changes. |
 
 *changes the system · honours `--test` · SPEC section 15.5*

@@ -648,3 +648,83 @@ func TestDecryptedPillarNeverReachesTheRun(t *testing.T) {
 		}
 	}
 }
+
+// TestPillarEnvAndRenderer cover two more settings that were declared,
+// documented, and read by nothing. `pillarenv` let a tree hold its
+// pillar in one environment while its states moved between several, and
+// gave both the states' environment; `renderer` named the pipeline a
+// file without a shebang gets, and every file got jinja|yaml.
+func TestPillarEnvAndRenderer(t *testing.T) {
+	root := t.TempDir()
+	dir := func(name string, files map[string]string) string {
+		d := filepath.Join(root, name)
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for n, body := range files {
+			if err := os.WriteFile(filepath.Join(d, n), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return d
+	}
+
+	states := dir("states", map[string]string{
+		"top.sls": "base:\n  '*':\n    - s\n",
+		"s.sls":   "report:\n  cmd.run:\n    - name: /bin/echo\n    - args:\n      - \"{{ pillar['which'] }}\"\n",
+	})
+	base := dir("pil-base", map[string]string{
+		"top.sls": "base:\n  '*':\n    - v\n", "v.sls": "which: from-base\n",
+	})
+	prod := dir("pil-prod", map[string]string{
+		"top.sls": "base:\n  '*':\n    - v\n", "v.sls": "which: from-prod\n",
+	})
+
+	cfg := filepath.Join(root, "node.yaml")
+	writeCfg := func(extra string) {
+		body := "file_roots:\n  base: [" + states + "]\npillar_roots:\n  base: [" + base +
+			"]\n  prod: [" + prod + "]\n" + extra
+		if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	arg := func(extra ...string) string {
+		args := append([]string{"state", "show_lowstate", "--local", "--out", "json",
+			"--root", root, "--config", cfg}, extra...)
+		got := run(t, args...)
+		if got.code != 0 {
+			t.Fatalf("%+v", got)
+		}
+		var chunks []map[string]any
+		if err := json.Unmarshal([]byte(got.stdout), &chunks); err != nil {
+			t.Fatalf("%v: %s", err, got.stdout)
+		}
+		list, _ := chunks[0]["args"].([]any)
+		s, _ := list[0].(string)
+		return s
+	}
+
+	writeCfg("")
+	if got := arg(); got != "from-base" {
+		t.Errorf("without pillarenv the pillar follows env, got %q", got)
+	}
+	if got := arg("--pillarenv", "prod"); got != "from-prod" {
+		t.Errorf("--pillarenv should select the pillar environment, got %q", got)
+	}
+	writeCfg("pillarenv: prod\n")
+	if got := arg(); got != "from-prod" {
+		t.Errorf("the setting should work as well as the flag, got %q", got)
+	}
+
+	// `renderer` names the pipeline a file with no shebang gets. A JSON
+	// tree read as YAML happens to work, since YAML is a superset, so
+	// the observable proof is that a YAML file stops parsing.
+	writeCfg("renderer: jinja|json\n")
+	got := run(t, "state", "show_lowstate", "--local", "--out", "json", "--root", root, "--config", cfg)
+	if got.code == 0 {
+		t.Errorf("renderer: jinja|json should read the YAML tree as JSON and fail: %+v", got)
+	}
+	if !strings.Contains(got.stderr, "looking for beginning of value") {
+		t.Errorf("the failure should come from the JSON parser: %q", got.stderr)
+	}
+}

@@ -81,7 +81,7 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 			Nondeterministic: n.cfg.String("random_seed", "deterministic") == "nondeterministic",
 			TemplateOptions:  n.templateOptions(),
 			Env:              n.env,
-			PillarEnv:        n.env,
+			PillarEnv:        n.pillarEnv,
 			NodeID:           n.nodeID,
 			JobID:            newJobID(),
 			Grains:           n.grains,
@@ -94,6 +94,7 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 			Test:             n.test,
 			GPG:              n.gpgOptions(),
 			OnSecret:         n.secrets.Add,
+			Renderer:         n.defaultRenderer(),
 		},
 	}
 
