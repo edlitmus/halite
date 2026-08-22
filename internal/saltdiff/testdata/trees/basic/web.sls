@@ -8,3 +8,6 @@ say_hello:
   cmd.run:
     - name: echo hi
     - cwd: /tmp
+
+short_declaration:
+  cmd.run

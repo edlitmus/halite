@@ -208,7 +208,12 @@ func TestMalformedIncludeAndExcludeAreReported(t *testing.T) {
 
 func TestMalformedDeclarationsAreReported(t *testing.T) {
 	cases := []struct{ src, want string }{
-		{"a: notamapping\n", "must hold a mapping of module.function"},
+		// A bare string under an ID is Salt's short declaration, so this
+		// is now read as a module with no function rather than as the
+		// wrong type. Salt refuses it too, saying "The type a in
+		// notamapping is not formatted as a dictionary".
+		{"a: notamapping\n", "names a module with no function"},
+		{"a: 3\n", "must hold a mapping of module.function"},
 		{"a:\n  pkg: notalist\n", "must be a list or a mapping"},
 		{"a:\n  pkg:\n    - installed\n    - 1\n", "must be `- name: value`"},
 		{"a:\n  pkg: []\n", "names a module with no function"},
@@ -767,5 +772,43 @@ first_one:
 	want := []string{"first_one", "plain", "last_one"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("order = %v, want %v", got, want)
+	}
+}
+
+func TestShortDeclarationForm(t *testing.T) {
+	// `apache24:\n  pkg.latest` is Salt's short declaration: the
+	// function with no arguments. It is how a tree spells "just install
+	// it", and it appeared in four files of the first real tree.
+	compiled := mustCompile(t, map[string]string{"base|web": `
+short_form:
+  test.nop
+
+long_form:
+  test.nop: []
+`}, "web")
+	if len(compiled.Low) != 2 {
+		t.Fatalf("got %d chunks", len(compiled.Low))
+	}
+	short, long := compiled.Low[0], compiled.Low[1]
+	if short.State != long.State || short.Fun != long.Fun {
+		t.Errorf("the short form gave %s.%s, the long form %s.%s",
+			short.State, short.Fun, long.State, long.Fun)
+	}
+	// The name defaults to the ID in both, as it does in Salt.
+	if short.Name != "short_form" {
+		t.Errorf("name = %q, want the state ID", short.Name)
+	}
+}
+
+func TestIgnoreMissingIsAcceptedInAStateTop(t *testing.T) {
+	// Salt honours the directive only in a pillar top, but it accepts it
+	// in a state top rather than reading it as an SLS name. Reporting it
+	// stopped a tree Salt compiles.
+	compiled := mustCompile(t, map[string]string{
+		"base|top": "base:\n  '*':\n    - web\n    - ignore_missing: True\n",
+		"base|web": "a:\n  test.nop: []\n",
+	})
+	if len(compiled.Low) != 1 {
+		t.Fatalf("got %d chunks: %v", len(compiled.Low), runOrder(compiled))
 	}
 }

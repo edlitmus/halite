@@ -246,9 +246,16 @@ func topSLSNames(v any, pos value.Pos, diags *Diags) []string {
 		case string:
 			out = append(out, t)
 		case *value.Map:
-			// `- match: grain` is a directive, not an SLS name.
-			if t.Len() == 1 && value.KeyString(t.Entries()[0].Key) == "match" {
-				continue
+			// `- match: grain` is a directive, not an SLS name, and so is
+			// `- ignore_missing: true`. Salt honours the second only in a
+			// pillar top file, and accepts it silently here rather than
+			// treating it as a name — checked against 3006.25. Reporting
+			// it stopped a tree Salt compiles.
+			if t.Len() == 1 {
+				switch value.KeyString(t.Entries()[0].Key) {
+				case "match", "ignore_missing":
+					continue
+				}
 			}
 			diags.Add(pos, TopName, "", "an SLS name must be a string, found a mapping")
 		default:

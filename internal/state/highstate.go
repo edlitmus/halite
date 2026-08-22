@@ -274,6 +274,20 @@ func parseExcludes(v any, sls string, pos value.Pos, diags *Diags) []excludeRef 
 func parseDecl(id string, e value.Entry, sls, env string, diags *Diags) *Decl {
 	d := &Decl{ID: id, SLS: sls, Env: env, Pos: e.KeyPos}
 
+	// Salt's short declaration: a bare `module.function` under the ID,
+	// meaning that function with no arguments. `apache24:\n  pkg.latest`
+	// is the same low state as `pkg.latest: []`, and it is how a tree
+	// spells "just install it".
+	if short, ok := e.Val.(string); ok {
+		f := parseFuncDecl(short, value.Entry{Key: short, Val: nil, KeyPos: e.ValPos, ValPos: e.ValPos},
+			sls, id, diags)
+		if f == nil {
+			return nil
+		}
+		d.Funcs = append(d.Funcs, f)
+		return d
+	}
+
 	body, ok := e.Val.(*value.Map)
 	if !ok {
 		diags.Add(e.ValPos, sls, id,
