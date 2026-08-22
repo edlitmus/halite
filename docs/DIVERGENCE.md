@@ -1184,9 +1184,11 @@ runs. What is left of it is the half that needs a container, which is
 phase 2 work, so it sits at 2 rather than 1.
 
 The template conformance suite stays at the bottom. It is running and
-down to isolated cases — 25, largest class 9 — with no cluster left. The
-YAML suite has moved *up*, not because the count changed but because the
-reason changed: see 3.
+down to isolated cases — 18, no class larger than 4 — with no cluster
+left. The one that was a cluster, whitespace control, turned out to be a
+single rule applied in four wrong places and is closed. The YAML suite
+has moved *up*, not because the count changed but because the reason
+changed: see 3.
 
 1. **A Linux host.** The compat layer got the platform-neutral code and
    the `/proc` grain collector run under Linux (4.1), which was the part
