@@ -900,7 +900,8 @@ The corpus in 5.7 is written for the gate: it covers constructs, not
 volume, and this project's own author called that its weakest point. A
 real tree — seventeen state files and eight pillar files running a small
 estate of FreeBSD hosts — was pointed at halite on 2026-08-21. It found
-more in an hour than the written corpus had in a day.
+more in an hour than the written corpus had in a day: eleven defects,
+nine of which no test in this repository could have seen.
 
 Fixed as a result:
 
@@ -914,22 +915,41 @@ Fixed as a result:
 | `file.managed: template: jinja` | Six uses in five files. The source was written unrendered. |
 | `sysrc.managed`, `cmd.script`, `git.latest`'s branch and force flags, `file.directory: dir_mode` | Named or accepted by Salt and not by this build. |
 | The advice on an unquoted mode | Right for `0644` and wrong for `640`, where it suggested the octal of a number nobody wrote. |
+| `user.present` took no `password` or `usergroup` | The tree sets its account password from an encrypted pillar value. |
+| `file.replace` took no `bufsize` | Salt's names a read buffer. |
 | The migration audit ignored state declarations | It reported the tree clean. Compiling it produced twenty-seven errors, twenty-two of them declarations. |
+
+The password was left undone for one pass and then done carefully. The
+value is a hash, and `usermod -p <hash>` puts it in the process table
+where any unprivileged account on the machine can read it while the
+command runs. `pw usermod -H 0` and `chpasswd -e` both take it on
+standard input, which is the only way this module writes one; a test
+asserts the hash is absent from the argument vector on both platforms.
+It is not logged, not returned in `changes`, and not in any comment,
+because a job return carrying a hash is a hash in every returner, event
+bus, and log the estate has. Comparing it needs the root-only hash file,
+and a state that cannot read it reports that rather than claiming a
+change it cannot verify — which would never converge.
+
+`bufsize` produced the third answer: a parameter may now declare itself
+**ineffective** and say why. The tree compiles, the compiler warns once
+at the line that wrote it, and the audit reports a note. Refusing a
+harmless argument stops a tree Salt runs; accepting it silently is the
+defect in 5.3 that this project keeps finding in itself.
 
 Still open, from the same tree:
 
-- **`user.present` takes no `password` or `usergroup`.** The password is
-  a hash, and the obvious implementations put it on a command line where
-  `ps` can read it. FreeBSD's `pw useradd -H 0` takes it on stdin and
-  Linux's `chpasswd -e` does the same; neither is written yet, and
-  writing it carelessly is worse than not having it.
-- **`file.replace` takes no `bufsize`.** Salt's names a read buffer.
-  This implementation reads the file whole, so the argument has no
-  meaning here, and accepting it silently would be the same
-  accept-but-ignore defect this file lists three of.
-- **The tree's own `mkdirs`** is not a Salt argument either — the name is
+- **`mode: 640`** is refused, correctly: it is the integer 640, and the
+  tree means the mode 0640. Salt happens to get this right by reading
+  the decimal digits as octal, and gets `mode: 0644` wrong the same way,
+  silently applying 0420.
+- **The tree's own `mkdirs`** is not a Salt argument — the name is
   `makedirs` — so Salt has been ignoring it in four places. halite
   reports it, which is the audit working rather than a gap.
+- **The pillar cannot be compiled end to end**, because five of its
+  eight files use the `gpg` renderer and no build ships the bridge. That
+  leaves one template unrenderable and one state file uncheckable
+  against real values.
 
 ---
 
