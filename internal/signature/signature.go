@@ -93,6 +93,18 @@ type Param struct {
 	KeywordOnly bool
 	// Choices restricts a string parameter to a fixed set.
 	Choices []string
+	// Ineffective marks a parameter this build accepts and does not act
+	// on, and says why. It exists for the arguments Salt has that mean
+	// nothing against a different implementation — a buffer size for a
+	// reader that does not buffer, and its like.
+	//
+	// The alternative to naming them is one of two worse things:
+	// refusing an argument that is harmless, so a tree that Salt runs
+	// does not compile; or accepting it silently, which is the
+	// accept-but-ignore defect this project keeps finding in its own
+	// code. Declaring it lets the compiler warn once, at the line that
+	// wrote it.
+	Ineffective string
 }
 
 // Signature describes one `module.function`.

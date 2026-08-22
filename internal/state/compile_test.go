@@ -57,6 +57,10 @@ func testRegistry() *signature.Registry {
 			{Name: "pkgs", Type: signature.List},
 			{Name: "refresh", Type: signature.Bool},
 		}},
+		signature.Signature{Module: "test", Function: "ineffective", Mutates: true, Params: []signature.Param{
+			{Name: "name", Type: signature.String},
+			{Name: "pointless", Type: signature.Any, Ineffective: "there is nothing behind it"},
+		}},
 		signature.Signature{Module: "pkg", Function: "removed", Mutates: true, Params: []signature.Param{
 			{Name: "name", Type: signature.String},
 		}},

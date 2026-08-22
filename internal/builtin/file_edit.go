@@ -41,6 +41,12 @@ func replaceParams(nameDoc string) []signature.Param {
 		opt("not_found_content", signature.String, "", "What to add when the pattern is not found; defaults to repl."),
 		opt("backup", signature.String, "", "Keep a copy of the previous contents with this suffix."),
 		opt("show_changes", signature.Bool, true, "Include a unified diff in the changes."),
+		{
+			Name: "bufsize", Type: signature.Any,
+			Doc: "Accepted for compatibility with Salt, which uses it to size a chunked read.",
+			Ineffective: "this implementation reads the file whole rather than in chunks, " +
+				"so there is no buffer to size",
+		},
 	}
 }
 

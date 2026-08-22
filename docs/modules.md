@@ -1000,7 +1000,7 @@ file.remove(path: path)
 Replace every match of a pattern in a file.
 
 ```
-file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: list, append_if_not_found: bool = false, prepend_if_not_found: bool = false, not_found_content: string = , backup: string = , show_changes: bool = true)
+file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: list, append_if_not_found: bool = false, prepend_if_not_found: bool = false, not_found_content: string = , backup: string = , show_changes: bool = true, bufsize: any)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -1015,6 +1015,7 @@ file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: l
 | `not_found_content` | string | `` | What to add when the pattern is not found; defaults to repl. |
 | `backup` | string | `` | Keep a copy of the previous contents with this suffix. |
 | `show_changes` | bool | `true` | Include a unified diff in the changes. |
+| `bufsize` | any | — | Accepted for compatibility with Salt, which uses it to size a chunked read. |
 
 *changes the system · honours `--test` · SPEC section 15.2*
 
@@ -3345,7 +3346,7 @@ file.prepend(name: path, text: list, backup: string = , show_changes: bool = tru
 Ensure every match of a pattern in a file has been replaced.
 
 ```
-file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: list, append_if_not_found: bool = false, prepend_if_not_found: bool = false, not_found_content: string = , backup: string = , show_changes: bool = true)
+file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: list, append_if_not_found: bool = false, prepend_if_not_found: bool = false, not_found_content: string = , backup: string = , show_changes: bool = true, bufsize: any)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -3360,6 +3361,7 @@ file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: l
 | `not_found_content` | string | `` | What to add when the pattern is not found; defaults to repl. |
 | `backup` | string | `` | Keep a copy of the previous contents with this suffix. |
 | `show_changes` | bool | `true` | Include a unified diff in the changes. |
+| `bufsize` | any | — | Accepted for compatibility with Salt, which uses it to size a chunked read. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 

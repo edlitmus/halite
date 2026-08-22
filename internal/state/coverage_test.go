@@ -812,3 +812,37 @@ func TestIgnoreMissingIsAcceptedInAStateTop(t *testing.T) {
 		t.Fatalf("got %d chunks: %v", len(compiled.Low), runOrder(compiled))
 	}
 }
+
+func TestAnIneffectiveArgumentWarnsRatherThanFailing(t *testing.T) {
+	// Salt has arguments that mean nothing against a different
+	// implementation. Refusing one stops a tree Salt runs; accepting it
+	// silently is the accept-but-ignore defect this project keeps
+	// finding in itself. Declaring it warns once, at the line that wrote
+	// it.
+	compiled := compile(t, map[string]string{"base|web": `
+a:
+  test.ineffective:
+    - pointless: 1
+`}, "web")
+	if err := compiled.Err(); err != nil {
+		t.Fatalf("an ineffective argument should not stop compilation: %v", err)
+	}
+
+	var warned bool
+	for _, d := range compiled.Diags.Warnings() {
+		if strings.Contains(d.Msg, "has no effect here") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("no warning was reported: %v", compiled.Diags.Warnings())
+	}
+
+	// A state that does not use it says nothing.
+	quiet := compile(t, map[string]string{"base|web": "a:\n  test.ineffective: []\n"}, "web")
+	for _, d := range quiet.Diags {
+		if strings.Contains(d.Msg, "has no effect here") {
+			t.Errorf("an unused ineffective argument warned: %v", d.Msg)
+		}
+	}
+}

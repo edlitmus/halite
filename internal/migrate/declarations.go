@@ -128,6 +128,16 @@ func checkStateFunction(rep *Report, opts Options, rel, id, name string, args []
 			})
 			continue
 		}
+		if param.Ineffective != "" {
+			rep.Findings = append(rep.Findings, Finding{
+				Category: CatState, Severity: Note, File: rel, Line: arg.KeyPos.Line, Col: arg.KeyPos.Col,
+				Subject: name + "." + argName,
+				Msg:     fmt.Sprintf("%q is accepted and has no effect: %s", argName, param.Ineffective),
+				Action:  "Nothing breaks. Remove it when convenient.",
+			})
+			continue
+		}
+
 		// A mode that arrived as an integer is the one type error worth
 		// reporting from a stripped body: an integer is an integer
 		// whatever the templating did, and it is the difference between

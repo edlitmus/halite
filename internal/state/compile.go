@@ -526,6 +526,17 @@ func (c *Compiler) validate(chunks []*Chunk, out *Compiled) {
 			out.Diags.Add(ch.Pos, ch.SLS, ch.ID, "%v", err)
 		}
 
+		// An argument this build accepts and does not act on is a
+		// warning at the line that wrote it, so that a tree carrying one
+		// compiles and its author still finds out.
+		for _, p := range sig.Params {
+			if p.Ineffective == "" || !ch.Args.Has(p.Name) {
+				continue
+			}
+			out.Diags.Warn(ch.Pos, ch.SLS, ch.ID,
+				"%s: %q has no effect here: %s", ch.Func(), p.Name, p.Ineffective)
+		}
+
 		// A prereq target that cannot honestly predict its changes is a
 		// warning naming the risk, because a partial prereq is worse than
 		// none. SPEC section 11.5.
