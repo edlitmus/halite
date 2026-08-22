@@ -93,6 +93,45 @@ section exists to make. This is a strengthening, not a conflict.
 
 **Where:** `internal/states/conformance.go`. See also 5.3.
 
+### 1.5 The filesystem layout follows the platform, not the FHS
+
+SPEC section 27.3 fixes the layout in Linux FHS terms: `/etc/halite`,
+`/var/lib/halite`, `/run/halite`. A BSD uses none of those. A package's
+configuration lives under `/usr/local/etc`, durable state in `/var/db`,
+and `/run` does not exist at all.
+
+Following the text literally put three sets of files where no BSD
+administrator looks, and it had already caused a defect rather than a
+theoretical one: the rc.d scripts in `contrib/` say
+`/usr/local/etc/halite`, because that is where they belong, while the
+binary defaulted to `/etc/halite`. On the one platform this build is
+verified on, a service and a hand-run command read different
+configuration.
+
+| SPEC 27.3 | FreeBSD, OpenBSD, NetBSD, DragonFly |
+|---|---|
+| `/etc/halite` | `/usr/local/etc/halite` |
+| `/var/lib/halite` | `/var/db/halite` |
+| `/run/halite` | `/var/run/halite` |
+
+`/var/cache` and `/var/log` are the same on both and are unchanged.
+macOS is deliberately not in the list: Homebrew's prefix is not fixed, so
+`/etc` is the honest default there until someone with a Mac says
+otherwise.
+
+A test asserts the service files in `contrib/` and the compiled default
+agree, in both directions, so the drift that caused this cannot come
+back. `docs/configuration.md` writes these defaults as tokens rather
+than paths, so that a document generated on FreeBSD and one generated on
+Linux are the same document.
+
+The configuration root is additionally probed for `state` and `pillar`
+directories, ahead of 27.3's `/srv` paths. That is not in the
+specification. It is there because an administrator setting halite up
+beside an existing Salt installation symlinks the trees into the
+configuration root, and having to write `file_roots` to describe what is
+already sitting there is a papercut with no upside.
+
 ---
 
 ## 2. Module coverage

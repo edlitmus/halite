@@ -120,7 +120,7 @@ as `gpg_home` through the compatibility shim, so an existing
 configuration needs no edit.
 
 ```yaml
-# /etc/halite/node.yaml
+# /usr/local/etc/halite/node.yaml on a BSD, /etc/halite/node.yaml on Linux
 gpg_home: /usr/local/etc/salt/gpgkeys
 gpg_binary: gpg          # the default
 gpg_timeout: 30s         # per value
@@ -190,7 +190,8 @@ The larger absences today:
 ## Running both at once
 
 They can share a machine. halite's control plane does not use Salt's
-port, its configuration lives in `/etc/halite`, and its state tree can be
+port, its configuration lives in `/usr/local/etc/halite` on a BSD and
+`/etc/halite` on Linux, and its state tree can be
 the same directory Salt reads. A sensible order is:
 
 1. `halite-hub migrate` the tree, and read the report.

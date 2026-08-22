@@ -10,7 +10,7 @@ error rather than a typo that does nothing, so a key misspelled or put in
 the wrong file is reported at startup:
 
 ```yaml
-# /etc/halite/node.yaml
+# <config root>/node.yaml
 node_id: web1.prod.example.com
 file_roots:
   base:
@@ -24,6 +24,23 @@ Salt's own names are accepted where they differ, with a warning naming the
 halite spelling and the release the compatibility shim is removed in. See
 SPEC section 28.3.
 
+## Where the files live
+
+SPEC section 27.3 states the layout in Linux FHS terms, and a BSD keeps a
+package's configuration and state elsewhere. The defaults below are
+written with a token rather than a path, because the same build reads a
+different one depending on where it runs. The configuration root is also
+probed for `state` and `pillar` directories, so a tree
+that lives beside the configuration needs no roots set at all.
+
+| Token | Linux | FreeBSD, OpenBSD, NetBSD, DragonFly |
+|---|---|---|
+| `<config root>` | `/etc/halite` | `/usr/local/etc/halite` |
+| `<state dir>` | `/var/lib/halite` | `/var/db/halite` |
+| `<cache dir>` | `/var/cache/halite` | `/var/cache/halite` |
+| `<socket dir>` | `/run/halite` | `/var/run/halite` |
+| `<log dir>` | `/var/log/halite` | `/var/log/halite` |
+
 ## halite-node
 
 Read by the node agent.
@@ -31,7 +48,7 @@ Read by the node agent.
 | Setting | Default | SPEC | Meaning |
 |---|---|---|---|
 | `beacons` | — | 16.1 | Beacon configuration. |
-| `cache_dir` | `/var/cache/halite` | 27.3 | Discardable cache. |
+| `cache_dir` | `<cache dir>` | 27.3 | Discardable cache. |
 | `cloud_grains` | `false` | 14.1 | Collect cloud metadata grains. Opt-in, because it costs a round trip. |
 | `cmd_default_shell` | `false` | 15.2 | Run cmd.run through a shell by default, as Salt does. |
 | `config_file` | — | 27.3 | The primary configuration file, set by the loader. |
@@ -74,7 +91,7 @@ Read by the node agent.
 | `pillar_source_merging_strategy` | `smart` | 12.3 | smart, recurse, aggregate, or overwrite. |
 | `pillar_trusted_grains` | — | 12.4 | Grains a node may use to target pillar. Custom grains are excluded by default. |
 | `pillarenv` | — | 12.2 | The pillar environment, defaulting to env. |
-| `pki_dir` | `/usr/local/etc/halite/pki` | 27.3 | Key material. |
+| `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
 | `quiesce` | `false` | 2.1 | Refuse jobs other than the allowlist. Salt calls this blackout. |
 | `quiesce_allowlist` | — | 2.1 | Functions still permitted while quiesced. |
 | `random_seed` | `deterministic` | 10.2.4 | deterministic or nondeterministic template randomness. |
@@ -83,11 +100,11 @@ Read by the node agent.
 | `require_job_signature` | `false` | 25.6 | Refuse a job without a valid detached operator signature. |
 | `returner` | `local` | 20.3 | Default returner. |
 | `schedule` | — | 20.1 | Scheduled jobs. |
-| `socket_dir` | `/var/run/halite` | 27.3 | Sockets and PID files. |
+| `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
 | `startup_states` | — | 20.1 | What to run when the node starts: highstate, sls, or top. |
 | `state_allowlist` | — | 28.3 | SLS names a state run may include. |
 | `state_denylist` | — | 28.3 | SLS names a state run may not include. |
-| `state_dir` | `/var/db/halite` | 27.3 | Durable state: job cache, events, evidence. |
+| `state_dir` | `<state dir>` | 27.3 | Durable state: job cache, events, evidence. |
 | `template_lstrip_blocks` | `false` | 10.2.1 | Jinja lstrip_blocks. |
 | `template_trim_blocks` | `false` | 10.2.1 | Jinja trim_blocks. |
 | `test` | `false` | 11.6 | Run every state in test mode by default. |
@@ -103,7 +120,7 @@ Read by the hub.
 | Setting | Default | SPEC | Meaning |
 |---|---|---|---|
 | `accept_relays` | `false` | 5.3 | Accept connections from relays as well as nodes. |
-| `cache_dir` | `/var/cache/halite` | 27.3 | Discardable cache. |
+| `cache_dir` | `<cache dir>` | 27.3 | Discardable cache. |
 | `certificate_lifetime` | `2160h` | 7.4 | Issued certificate lifetime; renewal happens at half of it. |
 | `config_file` | — | 27.3 | The primary configuration file, set by the loader. |
 | `enrollment_mode` | `manual` | 7.3 | manual, token, or attested. There is no auto_accept. |
@@ -147,18 +164,18 @@ Read by the hub.
 | `pillar_source_merging_strategy` | `smart` | 12.3 | smart, recurse, aggregate, or overwrite. |
 | `pillar_trusted_grains` | — | 12.4 | Grains a node may use to target pillar. Custom grains are excluded by default. |
 | `pillarenv` | — | 12.2 | The pillar environment, defaulting to env. |
-| `pki_dir` | `/usr/local/etc/halite/pki` | 27.3 | Key material. |
-| `policy` | `/usr/local/etc/halite/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
+| `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
+| `policy` | `<config root>/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
 | `random_seed` | `deterministic` | 10.2.4 | deterministic or nondeterministic template randomness. |
 | `reactor` | — | 18.1 | Event tag globs to reaction SLS. |
 | `regex_engine` | `re2` | 10.4 | re2 only until the backtracking engine of SPEC section 10.4 ships. |
 | `relay_upstream` | — | 5.3 | The hub this relay reports to. |
 | `relay_upstream_port` | `4510` | 5.3 | The upstream hub's port. |
 | `renderer` | `jinja|yaml` | 10 | The default renderer pipeline. |
-| `socket_dir` | `/var/run/halite` | 27.3 | Sockets and PID files. |
+| `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
 | `state_allowlist` | — | 28.3 | SLS names a state run may include. |
 | `state_denylist` | — | 28.3 | SLS names a state run may not include. |
-| `state_dir` | `/var/db/halite` | 27.3 | Durable state: job cache, events, evidence. |
+| `state_dir` | `<state dir>` | 27.3 | Durable state: job cache, events, evidence. |
 | `template_lstrip_blocks` | `false` | 10.2.1 | Jinja lstrip_blocks. |
 | `template_trim_blocks` | `false` | 10.2.1 | Jinja trim_blocks. |
 | `test` | `false` | 11.6 | Run every state in test mode by default. |
@@ -173,7 +190,7 @@ Read by the API service.
 
 | Setting | Default | SPEC | Meaning |
 |---|---|---|---|
-| `cache_dir` | `/var/cache/halite` | 27.3 | Discardable cache. |
+| `cache_dir` | `<cache dir>` | 27.3 | Discardable cache. |
 | `config_file` | — | 27.3 | The primary configuration file, set by the loader. |
 | `env` | `base` | 13.1 | The default environment. saltenv is a permanent alias. |
 | `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
@@ -183,9 +200,9 @@ Read by the API service.
 | `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
 | `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
 | `metrics_listen` | — | 26.2 | Prometheus exposition address; empty disables it. |
-| `pki_dir` | `/usr/local/etc/halite/pki` | 27.3 | Key material. |
-| `policy` | `/usr/local/etc/halite/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
-| `socket_dir` | `/var/run/halite` | 27.3 | Sockets and PID files. |
-| `state_dir` | `/var/db/halite` | 27.3 | Durable state: job cache, events, evidence. |
+| `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
+| `policy` | `<config root>/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
+| `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
+| `state_dir` | `<state dir>` | 27.3 | Durable state: job cache, events, evidence. |
 | `tracing` | `off` | 26.3 | off or otlp. |
 

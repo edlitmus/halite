@@ -3,6 +3,7 @@ package config
 import (
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 // SPEC 27.3 fixes the filesystem layout in Linux FHS terms, and a BSD
@@ -65,4 +66,40 @@ func runPath() string {
 		return "/var/run/halite"
 	}
 	return "/run/halite"
+}
+
+// pathTokens map a resolved platform path back to the portable name the
+// generated documentation uses, so that a document generated on FreeBSD
+// and one generated on Linux are the same document.
+var pathTokens = []struct{ path, token string }{
+	{DefaultRoot, "<config root>"},
+	{DefaultStateDir, "<state dir>"},
+	{DefaultCacheDir, "<cache dir>"},
+	{DefaultSocketDir, "<socket dir>"},
+	{DefaultLogDir, "<log dir>"},
+}
+
+// PortablePath renders a default path without the platform in it.
+func PortablePath(p string) string {
+	for _, t := range pathTokens {
+		if p == t.path {
+			return t.token
+		}
+		if strings.HasPrefix(p, t.path+"/") {
+			return t.token + p[len(t.path):]
+		}
+	}
+	return p
+}
+
+// PathTable describes what each token resolves to, for the documentation
+// that uses them.
+func PathTable() []struct{ Token, Linux, BSD string } {
+	return []struct{ Token, Linux, BSD string }{
+		{"<config root>", "/etc/halite", "/usr/local/etc/halite"},
+		{"<state dir>", "/var/lib/halite", "/var/db/halite"},
+		{"<cache dir>", "/var/cache/halite", "/var/cache/halite"},
+		{"<socket dir>", "/run/halite", "/var/run/halite"},
+		{"<log dir>", "/var/log/halite", "/var/log/halite"},
+	}
 }

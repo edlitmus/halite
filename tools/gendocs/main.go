@@ -52,13 +52,27 @@ A configuration file is YAML. Settings a program does not read are an
 error rather than a typo that does nothing, so a key misspelled or put in
 the wrong file is reported at startup:
 
-` + "```yaml\n# /etc/halite/node.yaml\nnode_id: web1.prod.example.com\nfile_roots:\n  base:\n    - /srv/halite/states\npillar_roots:\n  base:\n    - /srv/halite/pillar\n```" + `
+` + "```yaml\n# <config root>/node.yaml\nnode_id: web1.prod.example.com\nfile_roots:\n  base:\n    - /srv/halite/states\npillar_roots:\n  base:\n    - /srv/halite/pillar\n```" + `
 
 Salt's own names are accepted where they differ, with a warning naming the
 halite spelling and the release the compatibility shim is removed in. See
 SPEC section 28.3.
 
+## Where the files live
+
+SPEC section 27.3 states the layout in Linux FHS terms, and a BSD keeps a
+package's configuration and state elsewhere. The defaults below are
+written with a token rather than a path, because the same build reads a
+different one depending on where it runs. The configuration root is also
+probed for ` + "`state`" + ` and ` + "`pillar`" + ` directories, so a tree
+that lives beside the configuration needs no roots set at all.
+
 `)
+	b.WriteString("| Token | Linux | FreeBSD, OpenBSD, NetBSD, DragonFly |\n|---|---|---|\n")
+	for _, t := range config.PathTable() {
+		fmt.Fprintf(&b, "| `%s` | `%s` | `%s` |\n", t.Token, t.Linux, t.BSD)
+	}
+	b.WriteString("\n")
 
 	roles := []struct {
 		role  config.Role
@@ -86,7 +100,7 @@ SPEC section 28.3.
 		fmt.Fprintf(&b, "## %s\n\n%s\n\n", r.title, r.intro)
 		b.WriteString("| Setting | Default | SPEC | Meaning |\n|---|---|---|---|\n")
 		for _, k := range keys {
-			def := k.Default
+			def := config.PortablePath(k.Default)
 			if def == "" {
 				def = "—"
 			} else {
