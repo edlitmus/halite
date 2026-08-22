@@ -149,6 +149,12 @@ HALITE_SALT_CALL=/tmp/salt/bin/salt-call \
 HALITE_PYYAML_PYTHON=/tmp/salt/bin/python make test
 ```
 
+Two further switches point the Salt gate at more than its own corpus:
+`HALITE_SALTDIFF_TREES=/srv/salt:/srv/pillar` compiles your tree with
+both implementations and compares the result, and
+`HALITE_SALTDIFF_RESULTS=1` compares what each predicts every state
+would do. Neither writes anything.
+
 ## Service files
 
 `contrib/rc.d/` and `contrib/systemd/` hold service definitions for

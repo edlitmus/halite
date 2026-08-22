@@ -618,7 +618,7 @@ specified, three are partial, four are absent, and one is unverified.
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 34 disagree by design, 37 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 146 of 198 agree, 27 are outside the subset, 25 are gaps — see 5.5. |
-| Differential against Salt | **partial.** `internal/saltdiff` compiles eight trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. SPEC 31 asks for three comparisons and this makes two: the state *results* of actually applying a tree are not compared — see 5.7. |
+| Differential against Salt | **partial.** `internal/saltdiff` compiles eight trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
@@ -903,13 +903,20 @@ Compared, over nine trees:
 - the low state: the chunk sequence first, then each chunk's arguments
 - the pillar, with its merge across two files
 
+- the **test-mode prediction** for every state: whether it says it would
+  change, is already as declared, or fails, and whether it reports
+  changes. Opt in with `HALITE_SALTDIFF_RESULTS=1`; it evaluates every
+  state against the host, reading the system and writing nothing.
+
 Not compared:
 
-- **the state results.** SPEC 31 asks for these and they are the half
-  that would catch a module doing the wrong thing rather than a compiler
-  planning the wrong thing. Applying a tree twice under both
-  implementations and comparing `changes` needs a container to apply it
-  in, which is the integration layer, which is phase 2.
+- **what an apply actually does.** A prediction is not a result. This
+  catches a module that predicts differently from Salt; it does not
+  catch one that predicts correctly and then does something else, which
+  is what SPEC 11.6's contract and 1.4's stricter check exist for.
+  Applying a tree twice under both implementations and comparing
+  `changes` needs a container to apply it in, which is the integration
+  layer, which is phase 2.
 - **a real estate's trees.** SPEC 31 says "a corpus of real SLS and
   pillar trees from this estate". These nine are written for the gate.
   They cover the constructs, not the volume, and volume is where the
@@ -923,13 +930,26 @@ integer as a uid; `contents` as a list of lines refused by a signature
 though the code behind it had always handled one; and a per-state
 `timeout` parsed, stripped from the arguments, and then read by nothing.
 
-The two recorded deviations are both schema rather than behaviour. Salt
-passes `timeout` through to the module where halite reads it as a
-per-state option of SPEC 11.7 and applies it there. And Salt 3006
+The prediction comparison has one recorded deviation, and it is the
+claim the README has been making about `test=True` all along. Salt fires
+`onfail` when its target did not *succeed*, and in test mode a state
+that would change reports neither success nor failure — so Salt predicts
+that an onfail state will run when a real run would not run it. halite
+fires onfail when the target failed, which is what the requisite means.
+
+The low state comparison has one deviation, and it is a difference
+between the two Salt majors rather than between Salt and halite: 3006
 resolves the reversed requisites while executing rather than while
-compiling, so `show_lowstate` does not carry them; 3008 does, as halite
-does. The two majors disagree with each other, so a deviation row names
-the version it was observed under.
+compiling, so its `show_lowstate` does not carry them, and 3008 does, as
+halite does. A deviation row therefore names the version it was observed
+under; one that did not would be unfalsifiable.
+
+The per-state options of SPEC 11.7 — `unless`, `timeout`, `runas` and
+their neighbours — are not compared as module arguments. Salt passes
+them through to the module and halite lifts them out for the runner to
+apply, so comparing where each files them compares two schemas rather
+than two behaviours. `timeout` was a recorded deviation until the
+comparison stopped asking the wrong question.
 
 ### 5.8 Where the PyYAML differential stands
 
