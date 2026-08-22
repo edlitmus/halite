@@ -55,6 +55,7 @@ mixing them up is why `grains item a b c` used to answer about `a`.
 |---|---|---|
 | no equivalent | `halite-hub migrate /srv/salt --pillar-root /srv/pillar` | works |
 | no equivalent | `halite-hub migrate /srv/salt --fail-on review` | works |
+| no equivalent | `halite-hub migrate /srv/salt --cmd-default-shell` | works |
 | `salt-call --local state.show_sls web` (to find errors) | `halite-node lint /srv/salt/web.sls` | works |
 | no equivalent | `halite-hub lint /srv/salt/web.sls` | works |
 

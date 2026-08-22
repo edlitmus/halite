@@ -37,6 +37,8 @@ migrate flags:
   --out <format>       summary (default) or json
   --indent <n>         indent for json output
   --fail-on <level>    exit non-zero at blocking (default), review, or note
+  --cmd-default-shell  audit as though the nodes will set cmd_default_shell,
+                       which is the transition of SPEC section 15.2
 `
 
 func main() {
@@ -95,6 +97,7 @@ func runMigrate(args *cli.Args) int {
 		// build that can answer it is this one.
 		Registry:      registries.Exec.Signatures(),
 		StateRegistry: registries.States.Signatures(),
+		DefaultShell:  args.Bool("cmd-default-shell", false),
 	})
 	if err != nil {
 		cli.Fatalf("%v", err)

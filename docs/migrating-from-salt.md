@@ -89,7 +89,11 @@ shell injection waiting for the right input. halite inverts the default
 and makes the shell explicit.
 
 The transition is `cmd_default_shell: true`, which restores Salt's
-reading of `name` as a shell line while a tree is converted. A command
+reading of `name` as a shell line while a tree is converted. Audit with
+`--cmd-default-shell` once it is set: the states stop being work to do,
+and the report says how many of them the tree now depends on the setting
+for, because a tree that reports no work and stops running the day
+someone turns a setting off is not a tree with no work. A command
 that fails with "no such file" and a path containing a space is this,
 and halite says so in the error.
 

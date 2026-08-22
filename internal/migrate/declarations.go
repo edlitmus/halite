@@ -146,15 +146,22 @@ func checkStateFunction(rep *Report, opts Options, rel string, source []string, 
 		// state at a time, during an apply.
 		if argName == "name" && isCommandState(name) {
 			if line, ok := arg.Val.(string); ok && looksLikeShellLine(line) && !hasShellArgument(args) {
-				rep.Findings = append(rep.Findings, Finding{
-					Category: CatState, Severity: Review, File: rel, Line: arg.KeyPos.Line, Col: arg.KeyPos.Col,
-					Subject: name,
-					Msg: fmt.Sprintf("%s names a program with arguments in it: %q. "+
-						"halite runs a command without a shell, so this is one program name",
-						name, sourceLine(source, arg.ValPos.Line, line)),
-					Action: "Put the program in `name` and the rest in `args`, or set `shell: true` " +
-						"on this state, or `cmd_default_shell: true` for a transition. SPEC section 15.2.",
-				})
+				rep.ShellLines++
+				// With `cmd_default_shell` the tree runs as it stands,
+				// so these are not work to do. Reporting them anyway
+				// would be the audit describing work that does not
+				// exist, which is the failing it was built to correct.
+				if !opts.DefaultShell {
+					rep.Findings = append(rep.Findings, Finding{
+						Category: CatState, Severity: Review, File: rel, Line: arg.KeyPos.Line, Col: arg.KeyPos.Col,
+						Subject: name,
+						Msg: fmt.Sprintf("%s names a program with arguments in it: %q. "+
+							"halite runs a command without a shell, so this is one program name",
+							name, sourceLine(source, arg.ValPos.Line, line)),
+						Action: "Put the program in `name` and the rest in `args`, or set `shell: true` " +
+							"on this state, or `cmd_default_shell: true` for a transition. SPEC section 15.2.",
+					})
+				}
 			}
 		}
 

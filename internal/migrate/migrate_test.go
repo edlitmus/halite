@@ -583,3 +583,71 @@ func TestTemplatedKeysAreDistinct(t *testing.T) {
 		t.Error("a real duplicate key should still be reported")
 	}
 }
+
+// TestCmdDefaultShellChangesWhatIsWork. A tree whose cmd states carry
+// shell lines has six problems or none, depending on one setting. The
+// audit exists to say how much work a migration is, so getting this
+// wrong in either direction is the failing it was built to correct:
+// without the setting the states fail one at a time mid-apply, and with
+// it they run as they stand.
+func TestCmdDefaultShellChangesWhatIsWork(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "top.sls"), []byte("base:\n  '*':\n    - web\n"), 0o644)
+	os.WriteFile(filepath.Join(root, "web.sls"), []byte(`one:
+  cmd.run:
+    - name: systemctl restart nginx
+
+two:
+  cmd.run:
+    - name: systemctl restart sshd
+
+converted:
+  cmd.run:
+    - name: /usr/bin/systemctl
+    - args: [restart, cron]
+`), 0o644)
+
+	states := signature.NewRegistry()
+	states.Add(signature.Signature{Module: "cmd", Function: "run", Params: []signature.Param{
+		{Name: "name", Type: signature.String},
+		{Name: "args", Type: signature.List},
+		{Name: "shell", Type: signature.Bool},
+	}})
+
+	report := func(defaultShell bool) *Report {
+		rep, err := Run(Options{Root: root, StateRegistry: states, DefaultShell: defaultShell})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep
+	}
+
+	off := report(false)
+	shellFindings := 0
+	for _, f := range findingsFor(off, CatState) {
+		if strings.Contains(f.Msg, "names a program with arguments") {
+			shellFindings++
+		}
+	}
+	if shellFindings != 2 {
+		t.Errorf("with the setting off, %d shell lines were reported; want 2", shellFindings)
+	}
+	if off.ShellLines != 2 {
+		t.Errorf("ShellLines = %d, want 2", off.ShellLines)
+	}
+
+	on := report(true)
+	for _, f := range findingsFor(on, CatState) {
+		if strings.Contains(f.Msg, "names a program with arguments") {
+			t.Errorf("with the setting on, a shell line was reported as work: %s", f.Msg)
+		}
+	}
+	// Counted either way, because the tree has acquired a dependency on
+	// the setting and a report that said only "no work" would hide it.
+	if on.ShellLines != 2 {
+		t.Errorf("ShellLines = %d with the setting on, want 2", on.ShellLines)
+	}
+	if !strings.Contains(on.Summary(), "cmd_default_shell was assumed") {
+		t.Errorf("the summary should say the tree depends on the setting:\n%s", on.Summary())
+	}
+}

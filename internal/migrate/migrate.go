@@ -110,6 +110,14 @@ type Report struct {
 	Modules map[string]int
 	// CustomModules lists the Python extension directories found.
 	CustomModules []string
+	// DefaultShell records that the audit assumed cmd_default_shell, so
+	// the report can say the tree depends on it.
+	DefaultShell bool
+	// ShellLines counts the cmd states whose name reads as a shell line,
+	// whether or not they were reported. They are only work to do when
+	// `cmd_default_shell` is off, and they are worth counting either
+	// way: with it on, the tree depends on the setting staying on.
+	ShellLines int
 }
 
 // Options control an audit.
@@ -128,6 +136,11 @@ type Options struct {
 	// registry skips the declaration audit rather than reporting every
 	// state as unknown.
 	StateRegistry *signature.Registry
+	// DefaultShell says the nodes applying this tree will set
+	// `cmd_default_shell`, which is the transition of SPEC 15.2. With it
+	// the shell lines a tree carries are not work to do; without it they
+	// are the most common thing an unconverted tree gets wrong.
+	DefaultShell bool
 	// TrustedGrains is the pillar targeting allowlist to check against.
 	// Empty means SPEC section 12.4's default.
 	TrustedGrains []string
@@ -154,9 +167,10 @@ func Run(opts Options) (*Report, error) {
 		return nil, fmt.Errorf("migrate: a tree to audit is required")
 	}
 	rep := &Report{
-		Root:      opts.Root,
-		Renderers: map[string]int{},
-		Modules:   map[string]int{},
+		Root:         opts.Root,
+		Renderers:    map[string]int{},
+		Modules:      map[string]int{},
+		DefaultShell: opts.DefaultShell,
 	}
 	trusted := opts.TrustedGrains
 	if len(trusted) == 0 {

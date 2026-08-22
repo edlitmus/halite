@@ -68,6 +68,9 @@ func (r *Report) Summary() string {
 
 	if counts.Total == 0 {
 		b.WriteString("\nNo findings. This tree compiles as written.\n")
+		// The tree with nothing else wrong is exactly the one whose
+		// dependency on cmd_default_shell would otherwise go unsaid.
+		b.WriteString(r.shellLineNote())
 		return b.String()
 	}
 
@@ -99,6 +102,8 @@ func (r *Report) Summary() string {
 	}
 	fmt.Fprintf(&b, "  %-16s %d\n", "TOTAL", counts.Total)
 	fmt.Fprintf(&b, "  %-16s %d\n", "BLOCKING", counts.Blocking)
+
+	b.WriteString(r.shellLineNote())
 
 	if counts.Blocking == 0 {
 		b.WriteString("\nNo blocking items. This tree can be applied once the review items are understood.\n")
@@ -164,6 +169,11 @@ func (r *Report) JSON() *value.Map {
 		"modules", modules,
 		"python_extension_dirs", custom,
 		"findings", findings,
+		// Counted whether or not they were reported, so a pipeline
+		// reading this can see a tree that depends on
+		// cmd_default_shell rather than one that has no work to do.
+		"shell_lines", int64(r.ShellLines),
+		"cmd_default_shell_assumed", r.DefaultShell,
 		"effort", value.MapOf(
 			"by_category", byCategory,
 			"by_severity", bySeverity,
@@ -190,4 +200,21 @@ func sortedCategoryKeys(m map[Category]int) []Category {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
+}
+
+// shellLineNote says a tree depends on cmd_default_shell.
+//
+// A tree audited with the setting has no work to do about its shell
+// lines and has acquired a dependency instead. Saying only the first
+// half would be the audit reporting a clean tree that stops working the
+// day someone turns the setting off.
+func (r *Report) shellLineNote() string {
+	if !r.DefaultShell || r.ShellLines == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n%d cmd state(s) name a program with arguments in it. They were not\n"+
+		"reported, because cmd_default_shell was assumed: with it on they run as\n"+
+		"they stand, and the day it is turned off they stop. Converting them is\n"+
+		"how the tree stops depending on it. SPEC section 15.2.\n",
+		r.ShellLines)
 }
