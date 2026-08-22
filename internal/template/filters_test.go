@@ -415,3 +415,29 @@ func TestFilterAndTestInventoryMatchesSpec(t *testing.T) {
 		t.Errorf("tests named by SPEC section 10.2.5 are missing: %s", strings.Join(missing, ", "))
 	}
 }
+
+// TestTitleFollowsJinjasWordRule. Jinja's `title` is neither Python's
+// str.title nor "capitalise after every non-letter". A word begins after
+// whitespace, a hyphen, or an opening bracket, and nowhere else, so an
+// apostrophe does not start one — `Foo'S Bar` was what capitalising
+// after every non-letter produced.
+func TestTitleFollowsJinjasWordRule(t *testing.T) {
+	for src, want := range map[string]string{
+		"foo's bar":    "Foo's Bar",
+		"o'neill":      "O'neill",
+		"foo-bar baz":  "Foo-Bar Baz",
+		"foo(bar":      "Foo(Bar",
+		"foo[bar":      "Foo[Bar",
+		"foo{bar":      "Foo{Bar",
+		"foo<bar":      "Foo<Bar",
+		"foo.bar":      "Foo.bar",
+		"foo_bar":      "Foo_bar",
+		"FOO BAR":      "Foo Bar",
+		"foo  bar":     "Foo  Bar",
+		"3com is here": "3com Is Here",
+	} {
+		if got := titleCase(src); got != want {
+			t.Errorf("title(%q) = %q, want %q", src, got, want)
+		}
+	}
+}

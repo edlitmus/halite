@@ -343,15 +343,24 @@ func (r *renderer) renderNode(n Node) error {
 		return err
 
 	case *WithNode:
-		saved := r.scope
-		r.scope = newScope(saved)
-		defer func() { r.scope = saved }()
-		for i, target := range t.Targets {
+		// Every value is evaluated in the enclosing scope before any of
+		// the names is bound, so `{% with x=1, y=x %}` gives y the outer
+		// x and not the one this statement is about to introduce.
+		// Binding as it went made each value see the ones before it,
+		// which reads plausibly and is not what Jinja does.
+		values := make([]any, len(t.Targets))
+		for i := range t.Targets {
 			v, err := r.eval(t.Values[i])
 			if err != nil {
 				return err
 			}
-			r.scope.set(target, v)
+			values[i] = v
+		}
+		saved := r.scope
+		r.scope = newScope(saved)
+		defer func() { r.scope = saved }()
+		for i, target := range t.Targets {
+			r.scope.set(target, values[i])
 		}
 		return r.renderNodes(t.Body)
 

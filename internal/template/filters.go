@@ -504,24 +504,38 @@ func capitalize(s string) string {
 	return string(rs)
 }
 
+// titleCase is Jinja's `title`, which is not Python's `str.title` and not
+// "capitalise after every non-letter" either. A word begins after
+// whitespace, a hyphen, or an opening bracket, and nowhere else — so
+// `foo's bar` is `Foo's Bar` rather than `Foo'S Bar`, and `foo.bar` is
+// `Foo.bar`. Everything after a word's first character is lowercased,
+// which is why `FOO BAR` comes out `Foo Bar`.
 func titleCase(s string) string {
 	var b strings.Builder
 	startOfWord := true
 	for _, r := range s {
-		switch {
-		case unicode.IsLetter(r) || unicode.IsDigit(r):
-			if startOfWord {
-				b.WriteRune(unicode.ToUpper(r))
-			} else {
-				b.WriteRune(unicode.ToLower(r))
-			}
-			startOfWord = false
-		default:
+		if isTitleBoundary(r) {
 			b.WriteRune(r)
 			startOfWord = true
+			continue
 		}
+		if startOfWord {
+			b.WriteRune(unicode.ToUpper(r))
+			startOfWord = false
+			continue
+		}
+		b.WriteRune(unicode.ToLower(r))
 	}
 	return b.String()
+}
+
+// isTitleBoundary matches Jinja's `([-\s({\[<]+)`.
+func isTitleBoundary(r rune) bool {
+	switch r {
+	case '-', '(', '{', '[', '<':
+		return true
+	}
+	return unicode.IsSpace(r)
 }
 
 func swapCase(s string) string {

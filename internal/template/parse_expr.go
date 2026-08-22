@@ -339,6 +339,16 @@ func (p *parser) parsePostfix() (Expr, error) {
 		case ".":
 			p.i++
 			nameTok := p.peek()
+			// `a.0.1` is two numeric subscripts, and the lexer reads the
+			// `0.1` between them as one float, because in every other
+			// position that is what it is. Jinja's own lexer has the
+			// same seam and splits it the same way.
+			if first, second, ok := splitNumericAttrs(nameTok); ok {
+				p.i++
+				e = &AttrExpr{baseNode{t.pos}, e, first}
+				e = &AttrExpr{baseNode{t.pos}, e, second}
+				continue
+			}
 			if nameTok.kind != tokName && nameTok.kind != tokInt {
 				return nil, errorf(nameTok.pos, "expected an attribute name after `.`, found %s", nameTok)
 			}
@@ -604,4 +614,36 @@ func (p *parser) parsePrimary() (Expr, error) {
 		}
 	}
 	return nil, errorf(t.pos, "unexpected %s in an expression", t)
+}
+
+// splitNumericAttrs reads a float token that is really two numeric
+// attribute names, as in `a.0.1`.
+func splitNumericAttrs(t token) (first, second string, ok bool) {
+	if t.kind != tokFloat {
+		return "", "", false
+	}
+	dot := -1
+	for i := 0; i < len(t.val); i++ {
+		if t.val[i] == '.' {
+			dot = i
+			break
+		}
+	}
+	if dot <= 0 || dot == len(t.val)-1 {
+		return "", "", false
+	}
+	a, b := t.val[:dot], t.val[dot+1:]
+	if !allDigits(a) || !allDigits(b) {
+		return "", "", false
+	}
+	return a, b, true
+}
+
+func allDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

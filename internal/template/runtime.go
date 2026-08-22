@@ -167,6 +167,16 @@ func (r *renderer) getAttr(obj any, name string, pos Pos) (any, error) {
 	if ok {
 		return v, nil
 	}
+	// `list.0` is Django's spelling of `list[0]`, which Jinja accepts
+	// because its getattr falls through to a subscript. `index` looks up
+	// a key in a mapping and a sequence has no key "0", so the
+	// fall-through goes to the sequence subscript instead.
+	if n, err := strconv.Atoi(name); err == nil {
+		switch obj.(type) {
+		case []any, Tuple, string:
+			return indexSeq(obj, n, pos)
+		}
+	}
 	return Undefined{Name: name, Pos: pos, Hint: fmt.Sprintf("%s has no attribute %q", typeName(obj), name)}, nil
 }
 
