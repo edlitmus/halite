@@ -61,7 +61,18 @@ func tree(t *testing.T, files map[string]string) []string {
 			t.Fatal(err)
 		}
 	}
-	return []string{"--local", "--file-root", root, "--config", filepath.Join(root, "absent.yaml")}
+	// --root isolates the run from the machine's own configuration. The
+	// default root is probed for `state` and `pillar` directories, so a
+	// test that left it alone would read the configuration of whatever
+	// host it happens to run on.
+	empty := t.TempDir()
+	return []string{
+		"--local",
+		"--file-root", root,
+		"--pillar-root", empty,
+		"--root", empty,
+		"--config", filepath.Join(empty, "absent.yaml"),
+	}
 }
 
 func TestVersionAndHelp(t *testing.T) {

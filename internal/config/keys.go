@@ -51,10 +51,10 @@ var Keys = []Key{
 	{"hub_tries", nodeOnly, "0", "Reconnect attempts before giving up; 0 means retry forever.", "6.2"},
 	{"hub_type", nodeOnly, "static", "static or failover, selecting how a list of hubs is used.", "6.2"},
 	{"listen", hubAPI, ":4510", "Listen address.", "6.1"},
-	{"pki_dir", all, "/etc/halite/pki", "Key material.", "27.3"},
-	{"cache_dir", all, "/var/cache/halite", "Discardable cache.", "27.3"},
-	{"state_dir", all, "/var/lib/halite", "Durable state: job cache, events, evidence.", "27.3"},
-	{"socket_dir", all, "/run/halite", "Sockets and PID files.", "27.3"},
+	{"pki_dir", all, DefaultPKIDir, "Key material.", "27.3"},
+	{"cache_dir", all, DefaultCacheDir, "Discardable cache.", "27.3"},
+	{"state_dir", all, DefaultStateDir, "Durable state: job cache, events, evidence.", "27.3"},
+	{"socket_dir", all, DefaultSocketDir, "Sockets and PID files.", "27.3"},
 	{"config_file", all, "", "The primary configuration file, set by the loader.", "27.3"},
 
 	// Enrollment.
@@ -119,7 +119,7 @@ var Keys = []Key{
 	{"job_cache", hubOnly, "local", "Job cache backend.", "9.4"},
 	{"job_cache_retention", hubOnly, "720h", "Job cache retention by age.", "9.4"},
 	{"job_cache_max_size", hubOnly, "10GiB", "Job cache retention by total size.", "9.4"},
-	{"policy", hubAPI, "/etc/halite/policy.yaml", "The RBAC policy file. Deny by default.", "23.5"},
+	{"policy", hubAPI, DefaultPolicy, "The RBAC policy file. Deny by default.", "23.5"},
 	{"legacy_acl", hubOnly, "", "Salt ACL keys the shim preserved for review rather than translating.", "28.3"},
 	{"quiesce", nodeOnly, "false", "Refuse jobs other than the allowlist. Salt calls this blackout.", "2.1"},
 	{"quiesce_allowlist", nodeOnly, "", "Functions still permitted while quiesced.", "2.1"},

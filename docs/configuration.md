@@ -74,7 +74,7 @@ Read by the node agent.
 | `pillar_source_merging_strategy` | `smart` | 12.3 | smart, recurse, aggregate, or overwrite. |
 | `pillar_trusted_grains` | — | 12.4 | Grains a node may use to target pillar. Custom grains are excluded by default. |
 | `pillarenv` | — | 12.2 | The pillar environment, defaulting to env. |
-| `pki_dir` | `/etc/halite/pki` | 27.3 | Key material. |
+| `pki_dir` | `/usr/local/etc/halite/pki` | 27.3 | Key material. |
 | `quiesce` | `false` | 2.1 | Refuse jobs other than the allowlist. Salt calls this blackout. |
 | `quiesce_allowlist` | — | 2.1 | Functions still permitted while quiesced. |
 | `random_seed` | `deterministic` | 10.2.4 | deterministic or nondeterministic template randomness. |
@@ -83,11 +83,11 @@ Read by the node agent.
 | `require_job_signature` | `false` | 25.6 | Refuse a job without a valid detached operator signature. |
 | `returner` | `local` | 20.3 | Default returner. |
 | `schedule` | — | 20.1 | Scheduled jobs. |
-| `socket_dir` | `/run/halite` | 27.3 | Sockets and PID files. |
+| `socket_dir` | `/var/run/halite` | 27.3 | Sockets and PID files. |
 | `startup_states` | — | 20.1 | What to run when the node starts: highstate, sls, or top. |
 | `state_allowlist` | — | 28.3 | SLS names a state run may include. |
 | `state_denylist` | — | 28.3 | SLS names a state run may not include. |
-| `state_dir` | `/var/lib/halite` | 27.3 | Durable state: job cache, events, evidence. |
+| `state_dir` | `/var/db/halite` | 27.3 | Durable state: job cache, events, evidence. |
 | `template_lstrip_blocks` | `false` | 10.2.1 | Jinja lstrip_blocks. |
 | `template_trim_blocks` | `false` | 10.2.1 | Jinja trim_blocks. |
 | `test` | `false` | 11.6 | Run every state in test mode by default. |
@@ -147,18 +147,18 @@ Read by the hub.
 | `pillar_source_merging_strategy` | `smart` | 12.3 | smart, recurse, aggregate, or overwrite. |
 | `pillar_trusted_grains` | — | 12.4 | Grains a node may use to target pillar. Custom grains are excluded by default. |
 | `pillarenv` | — | 12.2 | The pillar environment, defaulting to env. |
-| `pki_dir` | `/etc/halite/pki` | 27.3 | Key material. |
-| `policy` | `/etc/halite/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
+| `pki_dir` | `/usr/local/etc/halite/pki` | 27.3 | Key material. |
+| `policy` | `/usr/local/etc/halite/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
 | `random_seed` | `deterministic` | 10.2.4 | deterministic or nondeterministic template randomness. |
 | `reactor` | — | 18.1 | Event tag globs to reaction SLS. |
 | `regex_engine` | `re2` | 10.4 | re2 only until the backtracking engine of SPEC section 10.4 ships. |
 | `relay_upstream` | — | 5.3 | The hub this relay reports to. |
 | `relay_upstream_port` | `4510` | 5.3 | The upstream hub's port. |
 | `renderer` | `jinja|yaml` | 10 | The default renderer pipeline. |
-| `socket_dir` | `/run/halite` | 27.3 | Sockets and PID files. |
+| `socket_dir` | `/var/run/halite` | 27.3 | Sockets and PID files. |
 | `state_allowlist` | — | 28.3 | SLS names a state run may include. |
 | `state_denylist` | — | 28.3 | SLS names a state run may not include. |
-| `state_dir` | `/var/lib/halite` | 27.3 | Durable state: job cache, events, evidence. |
+| `state_dir` | `/var/db/halite` | 27.3 | Durable state: job cache, events, evidence. |
 | `template_lstrip_blocks` | `false` | 10.2.1 | Jinja lstrip_blocks. |
 | `template_trim_blocks` | `false` | 10.2.1 | Jinja trim_blocks. |
 | `test` | `false` | 11.6 | Run every state in test mode by default. |
@@ -183,9 +183,9 @@ Read by the API service.
 | `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
 | `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
 | `metrics_listen` | — | 26.2 | Prometheus exposition address; empty disables it. |
-| `pki_dir` | `/etc/halite/pki` | 27.3 | Key material. |
-| `policy` | `/etc/halite/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
-| `socket_dir` | `/run/halite` | 27.3 | Sockets and PID files. |
-| `state_dir` | `/var/lib/halite` | 27.3 | Durable state: job cache, events, evidence. |
+| `pki_dir` | `/usr/local/etc/halite/pki` | 27.3 | Key material. |
+| `policy` | `/usr/local/etc/halite/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
+| `socket_dir` | `/var/run/halite` | 27.3 | Sockets and PID files. |
+| `state_dir` | `/var/db/halite` | 27.3 | Durable state: job cache, events, evidence. |
 | `tracing` | `off` | 26.3 | off or otlp. |
 

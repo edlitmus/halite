@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -159,10 +160,15 @@ func setup(args *cli.Args) *node {
 	}
 	n.grains = g
 
+	// The configuration root is probed first, so that a node whose tree
+	// lives beside its configuration — or is symlinked there, which is
+	// what an administrator reaches for — needs no file_roots at all.
+	// SPEC 27.3's /srv paths follow, with Salt's own so that an existing
+	// tree needs no move.
 	n.files = fileserver.NewRoots(rootsFrom(args, cfg, "file-root", "file_roots",
-		[]string{"/srv/halite/states", "/srv/salt"}, n.env))
+		[]string{filepath.Join(root, "state"), "/srv/halite/states", "/srv/salt"}, n.env))
 	n.pillars = fileserver.NewRoots(rootsFrom(args, cfg, "pillar-root", "pillar_roots",
-		[]string{"/srv/halite/pillar", "/srv/pillar"}, n.env))
+		[]string{filepath.Join(root, "pillar"), "/srv/halite/pillar", "/srv/pillar"}, n.env))
 	return n
 }
 
@@ -178,7 +184,7 @@ func resolveNodeID(args *cli.Args, cfg *config.Config) string {
 	if id := os.Getenv("HALITE_NODE_ID"); id != "" {
 		return id
 	}
-	if b, err := os.ReadFile("/etc/halite/node_id"); err == nil {
+	if b, err := os.ReadFile(filepath.Join(config.DefaultRoot, "node_id")); err == nil {
 		if id := strings.TrimSpace(string(b)); id != "" {
 			return id
 		}

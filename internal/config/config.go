@@ -72,9 +72,6 @@ type LoadOptions struct {
 	AllowMissing bool
 }
 
-// DefaultRoot is where packaged configuration lives. SPEC section 27.3.
-const DefaultRoot = "/etc/halite"
-
 // Load reads a configuration: the primary file, then every drop-in
 // fragment in lexical order, then the overrides. Later sources deep merge
 // over earlier ones, so a drop-in can add a key without restating the
