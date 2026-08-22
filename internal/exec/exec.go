@@ -429,12 +429,14 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 			}
 			return res, fmt.Errorf("%s exited %d: %s", cmd.String(), res.Code, firstLine(res.Stderr))
 		}
-		// os/exec's own error already names the program, so prefixing
-		// it again gives the operator the command three times over: once
-		// in the state's Name line, once here, and once inside the
-		// wrapped error.
-		var runErr *exec.Error
-		if errors.As(err, &runErr) {
+		// os/exec names the program in its own error — as an exec.Error
+		// for a bare name and a PathError for a path — so prefixing it
+		// again gives the operator the command three times over: once in
+		// the state's Name line, once here, and once inside the wrapped
+		// error. The test is on the text rather than the type, because
+		// which type it is depends on whether the name has a slash in
+		// it, which is not a distinction worth encoding twice.
+		if len(cmd.Argv) > 0 && strings.Contains(err.Error(), cmd.Argv[0]) {
 			return res, fmt.Errorf("%w%s", err, migrationHint(cmd, err))
 		}
 		return res, fmt.Errorf("%s: %w%s", cmd.String(), err, migrationHint(cmd, err))

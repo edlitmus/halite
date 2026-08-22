@@ -486,3 +486,22 @@ func TestMigrationHintFiresForAnUnconvertedShellLine(t *testing.T) {
 		t.Errorf("a shell command should not get the hint:\n%v", err)
 	}
 }
+
+// TestCommandIsNamedOnceInAFailure. The state's Name line already
+// carries the command, and os/exec names it in its own error, so a
+// wrapper that adds it again gives the operator three copies.
+func TestCommandIsNamedOnceInAFailure(t *testing.T) {
+	r := &OSRunner{}
+	for _, argv := range [][]string{
+		{"halite-no-such-program"},              // exec.Error
+		{"/nonexistent/halite-no-such-program"}, // fs.PathError
+	} {
+		_, err := r.Run(context.Background(), Command{Argv: argv})
+		if err == nil {
+			t.Fatalf("%v should fail", argv)
+		}
+		if n := strings.Count(err.Error(), argv[0]); n != 1 {
+			t.Errorf("%v is named %d times in:\n%v", argv[0], n, err)
+		}
+	}
+}
