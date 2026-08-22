@@ -54,7 +54,10 @@ type Config struct {
 	// MergeLists concatenates lists under recurse and smart.
 	MergeLists bool
 
-	Salt       template.Dispatcher
+	Salt template.Dispatcher
+	// NewSalt builds the dispatcher for one render, given the pillar
+	// compiled so far. It takes precedence over Salt.
+	NewSalt    func(partial *value.Map) template.Dispatcher
 	Undefined  template.UndefinedMode
 	Nodegroups target.Nodegroups
 	YAMLBool11 *bool
@@ -442,6 +445,17 @@ func withoutKey(m *value.Map, key string) *value.Map {
 	return out
 }
 
+// saltFor builds the `salt` dispatcher for one pillar render. A pillar
+// file calling salt['pillar.get'] must see the pillar built so far and
+// not the finished one, which does not exist yet, so the dispatcher is
+// built per render rather than held on the configuration.
+func (c *Compiler) saltFor(partial *value.Map) template.Dispatcher {
+	if c.Config.NewSalt != nil {
+		return c.Config.NewSalt(partial)
+	}
+	return c.Config.Salt
+}
+
 func (c *Compiler) renderOptions(env, sls, path string, partial *value.Map) render.Options {
 	return render.Options{
 		File:       path,
@@ -453,7 +467,7 @@ func (c *Compiler) renderOptions(env, sls, path string, partial *value.Map) rend
 		Grains:     c.Config.Grains,
 		Pillar:     partial,
 		Config:     c.Config.ConfigValues,
-		Salt:       c.Config.Salt,
+		Salt:       c.saltFor(partial),
 		Loader:     c.Loader.Templates(env),
 		Undefined:  c.Config.Undefined,
 		YAMLBool11: c.Config.YAMLBool11,

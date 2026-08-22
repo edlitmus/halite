@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/runner"
 	"github.com/edlitmus/halite/internal/state"
@@ -61,6 +62,11 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 		Loader:   n.files,
 		Registry: n.registry.States.Signatures(),
 		Config: state.Config{
+			// `salt['pillar.get']` and its neighbours are ordinary in an
+			// SLS file. The compiler has always passed this through to
+			// the renderer and nothing ever set it, so every one of them
+			// was undefined.
+			Salt:             exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.context(p)},
 			Env:              n.env,
 			PillarEnv:        n.env,
 			NodeID:           n.nodeID,

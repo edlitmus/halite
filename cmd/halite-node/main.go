@@ -240,6 +240,11 @@ func (n *node) compilePillar() *value.Map {
 	c := &pillar.Compiler{
 		Loader: n.pillars,
 		Config: pillar.Config{
+			// `salt['pillar.get']` inside a pillar file sees the pillar
+			// built so far, so the dispatcher is built per render.
+			NewSalt: func(partial *value.Map) template.Dispatcher {
+				return exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.context(partial)}
+			},
 			Env:           n.env,
 			NodeID:        n.nodeID,
 			Grains:        n.grains,

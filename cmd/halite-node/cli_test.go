@@ -249,3 +249,51 @@ func TestUsageAdvertisesOnlyRealSubcommands(t *testing.T) {
 		}
 	}
 }
+
+// TestSaltDispatcherIsBound covers a field the compilers passed to the
+// renderer and nothing ever set: `salt['pillar.get']` and its neighbours
+// were undefined in every SLS and pillar file. It is ordinary Salt, and
+// a real tree used it six times in four files.
+func TestSaltDispatcherIsBound(t *testing.T) {
+	pillarRoot := t.TempDir()
+	write := func(dir, name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(pillarRoot, "top.sls", "base:\n  '*':\n    - v\n")
+	write(pillarRoot, "v.sls", "app:\n  port: 8080\n")
+
+	flags := tree(t, map[string]string{
+		"top.sls": "base:\n  '*':\n    - s\n",
+		"s.sls": `report:
+  cmd.run:
+    - name: echo {{ salt['pillar.get']('app:port') }} {{ salt['grains.get']('kernel') }} {{ salt['pillar.get']('app:absent', 'fallback') }}
+`,
+	})
+	flags = append(flags, "--pillar-root", pillarRoot)
+
+	got := run(t, append([]string{"state", "show_lowstate", "--out", "json"}, flags...)...)
+	if got.code != 0 {
+		t.Fatalf("%+v", got)
+	}
+	var chunks []map[string]any
+	if err := json.Unmarshal([]byte(got.stdout), &chunks); err != nil {
+		t.Fatalf("%v: %s", err, got.stdout)
+	}
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks", len(chunks))
+	}
+	name, _ := chunks[0]["name"].(string)
+	if !strings.HasPrefix(name, "echo 8080 ") || !strings.HasSuffix(name, " fallback") {
+		t.Errorf("name = %q; the pillar value, the grain, and the default should all have resolved", name)
+	}
+
+	// A pillar file may call it too, and sees the pillar built so far.
+	write(pillarRoot, "top.sls", "base:\n  '*':\n    - v\n    - w\n")
+	write(pillarRoot, "w.sls", "echoed: {{ salt['pillar.get']('app:port', 'unset') }}\n")
+	got = run(t, append([]string{"pillar", "items", "--out", "json"}, flags...)...)
+	if got.code != 0 || !strings.Contains(got.stdout, "8080") {
+		t.Errorf("a pillar file calling salt['pillar.get'] = %+v", got)
+	}
+}
