@@ -64,11 +64,19 @@ removed from text without removing everything that resembles it — a
 pillar value of `1` would turn every number in every message into
 asterisks — and a one-character secret was never secret.
 
-**Not yet:** per-component levels (`--log-level-component fileserver=debug`),
-the journal sink, and scrubbing of the state return itself. A state that
-puts a secret in its own `name` still shows it in the run's output,
-which is where an operator is most likely to meet one. That is true of
-Salt too, and is not a reason to leave it unsaid.
+The state return is scrubbed too, in both output formats and in the
+`state_|-id_|-name_|-fun` key, because a `cmd.run` that curls an API
+with a token from pillar puts the token in its own name. Every
+occurrence of one value becomes the same placeholder, so a dashboard
+parsing that key still parses it.
+
+What is *not* scrubbed is the run's own data structures, only its
+output: `onchanges` and `prereq` compare changes, and two different
+secrets both becoming asterisks would make two different states look
+alike.
+
+**Not yet:** per-component levels (`--log-level-component fileserver=debug`)
+and the journal sink.
 
 ## Running it on a schedule
 
