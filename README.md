@@ -84,12 +84,16 @@ Delivery follows the phases in SPEC section 32.
 
 A node manages its own tree today — Salt's masterless mode — and that is
 worth shipping on its own, because it can be validated against Salt in
-place before any hub exists.
+place before any hub exists. It has been: an estate's real seventeen-file
+tree compiles here to the same low state Salt 3008.2 produces, chunk for
+chunk and argument for argument, and the differential that says so runs
+on demand against any tree.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
 this build ships 42 execution modules and 20 state modules against a
-specification naming roughly 90 and 46. FreeBSD is the platform it is
+specification naming roughly 90 and 46 — 209 execution functions across 42
+modules and 56 state functions across 20. FreeBSD is the platform it is
 verified on; `make test-linux` runs the suite as Linux binaries under this
 host's compat layer, which covers the platform-neutral code and the
 `/proc` grain collector but reaches no apt, dnf, or systemd. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is
@@ -129,6 +133,9 @@ described in the specification section named.
 | Pillar grain targeting | Any grain, including one a node made up | An allowlist; trusting a custom grain is a recorded decision | 12.4 |
 | A templated YAML error | Reports the rendered position, or nothing | Reports the line in the `.sls` you wrote, and the rendered line | 10.1.4 |
 | `x509` | Needs M2Crypto or `cryptography`, and re-issues every run | `crypto/x509`, and converges | 15.2 |
+| Pillar top targeting on a grain | Any grain, silently | Refused by name unless the grain is trusted | 12.4 |
+| Filesystem layout | FHS everywhere | `/usr/local/etc` and `/var/db` on a BSD | 27.3 |
+| `onfail` in test mode | Fires when the target did not succeed, so it predicts a run that will not happen | Fires when the target failed | 11.5 |
 
 ## Building
 
@@ -150,7 +157,8 @@ specified in terms of, where they are installed: the same trees compiled
 by Salt and by halite, and the same documents parsed by PyYAML and by
 halite. Both skip loudly rather than passing quietly when the reference
 is absent — SPEC section 31 calls the first the primary correctness
-gate, so a skip there is a gap and not a pass.
+gate, so a skip there is a gap and not a pass. It has been run against
+Salt 3006.25 and 3008.2.
 
 ```sh
 python3 -m venv /tmp/salt && /tmp/salt/bin/pip install salt PyYAML

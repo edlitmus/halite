@@ -35,8 +35,14 @@ hand-edit.
 The **YAML 1.1 subset** parser of SPEC section 10.1, with ordered
 mappings, anchors, aliases, merge keys, block scalars with correct
 folding, and a node budget that stops an alias bomb. It runs the YAML
-Test Suite on every `go test`: 328 of 402 cases agree, 34 disagree by
-design under section 10.1.2, and 40 are recorded gaps.
+Test Suite on every `go test`: 331 of 402 cases agree, 34 disagree by
+design under section 10.1.2, and 37 are recorded gaps. The dialect SPEC
+10.1 actually asks for is PyYAML's rather than the standard's, so 114
+documents also go to PyYAML itself and the *resolved type* is compared
+as well as the value — the two agree on every character of `mode: 0644`
+and can still disagree on whether it is a string or the integer 420.
+That found SPEC 10.1.3 stating PyYAML's behaviour incorrectly twice
+more, for `0o17` and `1e3`.
 
 The **Jinja-compatible template engine** of section 10.2, with the
 statements, filters, and tests that section names, strict undefined by
@@ -50,7 +56,7 @@ quietly go stale.
 
 ### 42 execution modules, 20 state modules
 
-209 execution functions and 54 state functions, against a specification
+209 execution functions and 56 state functions, against a specification
 naming roughly 90 modules and 46. Every one is listed, with its
 parameters, in [docs/modules.md](docs/modules.md); every gap is listed in
 [docs/DIVERGENCE.md](docs/DIVERGENCE.md).
@@ -61,6 +67,12 @@ install fails; this one is `crypto/x509` and needs nothing. Its
 `certificate_managed` also converges, where Salt's re-issues on every
 highstate — a re-issued certificate has a new serial and a new expiry, so
 it never matches what the last run left.
+
+An existing `#!yaml|gpg` pillar works. SPEC 12.6 fixes the shape and this
+follows it: shell out to the system gpg, link no OpenPGP library, take
+the binary, home directory, and timeout from configuration, and pass the
+ciphertext on standard input and never on a command line. Salt's
+`gpg_keydir` maps onto `gpg_home` through the compatibility shim.
 
 ### The departures from Salt, each with a switch
 
@@ -79,10 +91,19 @@ restores Salt's behaviour for a transition.
 ### Documentation
 
 [Getting started](docs/getting-started.md), [writing
-states](docs/states.md), [operations](docs/operations.md), and [migrating
-from Salt](docs/migrating-from-salt.md), plus a configuration reference
-and a module reference generated from the code and checked against it by
-a test.
+states](docs/states.md), [operations](docs/operations.md), [migrating
+from Salt](docs/migrating-from-salt.md), and a [command
+reference](docs/command-reference.md) giving every Salt command and what
+to type instead — plus a configuration reference and a module reference
+generated from the code and checked against it by a test.
+
+The prose is checked too, as far as prose can be. A test runs every
+command the matrix presents as working and confirms that every command
+it promises in a later phase is one the binary already knows the name
+of; another reads any sentence stating how many functions ship and
+compares it with the registries. Example configurations live in
+`contrib/examples/`, and a test loads each as the program it is written
+for and fails on any warning.
 
 Service files for FreeBSD `rc.d` and systemd are in `contrib/`. The
 periodic-highstate ones work today; the daemons wait on phase 2.
@@ -96,11 +117,21 @@ nothing), all five named property tests, fuzzing of the YAML parser, the
 template engine, and the target parser, the dependency-graph assertion,
 and the FreeBSD half of the version-comparison differential.
 
-Absent, and recorded as such: the differential against Salt itself, which
-is named the primary correctness gate and needs a Salt installation to
-run against; the integration, scale, upgrade, and chaos suites, which
-need the hub; `govulncheck`; and reproducible-build verification, which
-needs a second builder.
+The **differential against Salt** — SPEC 31's primary correctness gate —
+runs, against Salt 3006.25 and 3008.2. It compiles a corpus of trees
+with both implementations and compares all three things the section asks
+for: the low state, the pillar, and the state results, the last as
+test-mode predictions rather than as an apply, since applying needs
+somewhere to apply. `HALITE_SALTDIFF_TREES` points it at a real estate's
+tree, and doing that to one found ten defects in an hour — among them a
+`names:` entry whose own arguments were dropped, which on
+`file.managed` meant seven scripts would have been overwritten with
+empty files.
+
+Absent, and recorded as such: the comparison of what an apply actually
+does, which needs the containerised harness; the integration, scale,
+upgrade, and chaos suites, which need the hub; `govulncheck`; and
+reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
@@ -110,10 +141,18 @@ beacons, reactors, orchestration, API, gitfs, or agentless mode.
 report which phase they need, which is deliberate: the alternative is a
 program that appears to work.
 
-FreeBSD is the only platform anything has run on. Linux, macOS, and
-Windows compile and are otherwise unexercised, which means 60 of the 62
-platform modules of SPEC section 15.3 and both non-FreeBSD package
-providers are theory.
+FreeBSD is the platform this is verified on. `make test-linux`
+cross-compiles the suite and runs it under this host's Linux compat
+layer — 23 of 25 packages pass, and the `/proc` grain collector returns
+the same 63 keys as the FreeBSD one with every hardware fact agreeing —
+but that layer has no apt, dnf, systemctl, or useradd, so the providers
+that need them, 60 of the 62 platform modules of SPEC section 15.3, and
+macOS and Windows entirely, remain compiled and unexercised.
+
+The filesystem layout follows the platform rather than SPEC 27.3's FHS
+paths: a BSD keeps configuration under `/usr/local/etc` and durable
+state in `/var/db`, and following the text literally put files in three
+places no BSD administrator looks. DIVERGENCE 1.5 records it.
 
 [docs/DIVERGENCE.md](docs/DIVERGENCE.md) is the full accounting, and it
 is checked against the code by `internal/specaudit` rather than
