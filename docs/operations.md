@@ -27,6 +27,32 @@ case $? in
 esac
 ```
 
+
+## Logging
+
+Structured JSON to stderr, one object per line, carrying `ts`, `level`,
+`msg`, `component`, and `node_id`. SPEC section 26.1.
+
+```yaml
+log_level: info      # error, warn, info, debug, trace
+log_format: json     # or console, for a person watching a terminal
+log_file: ''         # a path also receives the records
+```
+
+`--log-level` and `--log-fmt` override both for one run, which is what
+an interactive `halite-node call --log-fmt console` wants. Salt's
+`garbage`, `quiet`, and `profile` are read on input, so a translated
+configuration needs no edit.
+
+A log file that cannot be opened is an error rather than a fall back to
+stderr: an operator who asked for a file is relying on it.
+
+**Not yet:** the value-based redactor of SPEC 26.1, which is seeded with
+every decrypted pillar value and scrubs it at the sink. Until it exists,
+a state that puts a secret in its own `name` puts it in the log — which
+is true of Salt too, and is not a reason to leave it. Per-component
+levels and the journal sink are also absent.
+
 ## Running it on a schedule
 
 halite's own scheduler is phase 3 of SPEC section 32. Until it lands, the
