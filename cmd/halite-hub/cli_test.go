@@ -78,8 +78,10 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 func TestMigrateFailOnLevels(t *testing.T) {
 	tree := salttree(t, map[string]string{
 		"top.sls": "base:\n  '*':\n    - web\n",
-		// An unquoted mode is YAML 1.1 octal, so this is the integer 420.
-		"web.sls": "/etc/motd:\n  file.managed:\n    - mode: 0644\n",
+		// `yes` is a YAML 1.1 boolean, which is a review finding: the
+		// tree compiles and the value may not be what was written. An
+		// unquoted mode would be blocking, since compilation refuses it.
+		"web.sls": "nginx:\n  service.running:\n    - enable: yes\n",
 	})
 
 	got := run(t, "migrate", tree)

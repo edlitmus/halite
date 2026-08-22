@@ -135,6 +135,14 @@ func checkStateFunction(rep *Report, opts Options, rel, id, name string, args []
 		// caught by the YAML audit as an implicit octal; `mode: 640` has
 		// no leading zero, so nothing caught it until here.
 		if n, isInt := arg.Val.(int64); isInt && param.Type == signature.Mode {
+			// `mode: 0644` is already reported by the YAML audit as an
+			// implicit octal, at review, because an implicit octal is
+			// only a warning in general. On a mode it stops compilation,
+			// so that finding is raised rather than a second one added
+			// saying the same thing at the same line.
+			if raised := raiseFindingAt(rep, rel, arg.ValPos.Line); raised {
+				continue
+			}
 			rep.Findings = append(rep.Findings, Finding{
 				Category: CatState, Severity: Blocking, File: rel, Line: arg.KeyPos.Line, Col: arg.KeyPos.Col,
 				Subject: name + "." + argName,
@@ -173,6 +181,20 @@ func isRequisiteOrOption(name string) bool {
 		"retry", "timeout", "runas", "umask", "names", "parallel",
 		"fire_event", "reload_modules", "aggregate", "saltenv", "env":
 		return true
+	}
+	return false
+}
+
+// raiseFindingAt promotes an existing YAML finding on one line to
+// blocking, and reports whether it found one.
+func raiseFindingAt(rep *Report, file string, line int) bool {
+	for i := range rep.Findings {
+		f := &rep.Findings[i]
+		if f.Category == CatYAML && f.File == file && f.Line == line {
+			f.Severity = Blocking
+			f.Action = "Quote it. On a file mode this stops compilation. SPEC section 10.1.3."
+			return true
+		}
 	}
 	return false
 }
