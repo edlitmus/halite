@@ -160,6 +160,33 @@ tree depends on.
 
 ---
 
+### 1.7 The ALPN identifier is required in the offer, not selected
+
+SPEC 6.1 gives the ALPN protocol identifier as `halite/1` and asks that
+a peer which does not offer it be rejected at the handshake.
+
+`net/http` runs its bundled HTTP/2 server only for the exact identifier
+`h2`. A connection that negotiates any other non-empty protocol is
+closed after the handshake without a byte of HTTP being read
+(`net/http.(*conn).serve`, guarded by `validNextProto`), and no exported
+API registers a second name for the HTTP/2 handler. Selecting
+`halite/1` therefore means either serving HTTP/1.1 — losing the
+multiplexing the subscribe stream depends on — or vendoring an HTTP/2
+implementation, which section 4.2 forbids.
+
+So the identifier is mandatory in the *offer* and `h2` is what gets
+selected. `transport.requireProtocol` refuses a ClientHello whose
+`SupportedProtos` does not contain `halite/1`, before a certificate is
+exchanged, which is the effect section 6.1 asks the identifier for: a
+stray HTTPS client is rejected at the handshake and never reaches an
+endpoint. What is lost is the ability to read the identifier off a
+packet capture of the ServerHello; it is still in the ClientHello.
+
+`transport.Negotiated` is the selected name, and it is a constant so the
+two cannot be confused at a call site.
+
+---
+
 ## 2. Module coverage
 
 The build ships **42 execution modules / 209 functions** and **20 state
