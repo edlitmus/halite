@@ -213,6 +213,12 @@ func halitePillar(t *testing.T, tree string) *value.Map {
 		Config: pillar.Config{
 			Env: "base", NodeID: nodeID, Grains: g,
 			ConfigValues: value.NewMap(0), Undefined: template.Strict, Local: true,
+			// Salt lets a pillar top target on any grain; halite requires
+			// the grain to be named in pillar_trusted_grains, which is a
+			// recorded divergence rather than a difference to discover
+			// here. The corpus names what it targets on so that the two
+			// are comparing the same thing.
+			TrustedGrains: []string{"kernel", "os", "os_family", "nodename", "role"},
 		},
 	}
 	compiledPillar := pillars.Compile()
