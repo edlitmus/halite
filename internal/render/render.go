@@ -174,26 +174,43 @@ func ParsePipeline(src string) ([]string, string) {
 	return stages, "\n" + rest
 }
 
+// checkStages refuses a pipeline this build cannot run, whatever the
+// position of the offending stage.
+func checkStages(stages []string, file string) error {
+	for _, stage := range stages {
+		info, known := Stages[stage]
+		if !known {
+			return fmt.Errorf("%s: unknown renderer %q; the supported set is in SPEC section 10", file, stage)
+		}
+		switch info.Support {
+		case Unsupported:
+			return fmt.Errorf("%s: the %s renderer is not supported: %s", file, stage, info.Note)
+		case Bridged:
+			return fmt.Errorf("%s: the %s renderer runs as a bridged extension, which is not available in this build: %s", file, stage, info.Note)
+		}
+	}
+	return nil
+}
+
 // Render runs a source through its pipeline.
 func Render(src []byte, opts Options) (Result, error) {
 	stages, body := ParsePipeline(string(src))
 	res := Result{Pipeline: stages}
 
+	// Every stage is checked before any of them runs. A serializer ends
+	// the pipeline by returning, so a stage named after one used to be
+	// dropped without a word: `#!yaml|gpg` ran yaml, never reached the
+	// gpg check, and delivered a pillar whose encrypted values were
+	// still ciphertext. Silently rendering a file as something other
+	// than what its first line asks for is the worst available outcome.
+	if err := checkStages(stages, opts.File); err != nil {
+		return res, err
+	}
+
 	current := body
 	var rendered *template.Result
 
 	for _, stage := range stages {
-		info, known := Stages[stage]
-		if !known {
-			return res, fmt.Errorf("%s: unknown renderer %q; the supported set is in SPEC section 10", opts.File, stage)
-		}
-		switch info.Support {
-		case Unsupported:
-			return res, fmt.Errorf("%s: the %s renderer is not supported: %s", opts.File, stage, info.Note)
-		case Bridged:
-			return res, fmt.Errorf("%s: the %s renderer runs as a bridged extension, which is not available in this build: %s", opts.File, stage, info.Note)
-		}
-
 		switch stage {
 		case "jinja":
 			out, err := renderJinja(current, opts, &res)

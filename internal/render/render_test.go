@@ -206,3 +206,37 @@ func TestDeterministicRandomAcrossRuns(t *testing.T) {
 		t.Errorf("a test run and the real run disagreed: %v then %v", av, bv)
 	}
 }
+
+func TestAStageAfterTheSerializerIsNotDropped(t *testing.T) {
+	// A serializer ends the pipeline by returning, so a stage named
+	// after one used to be skipped without a word. `#!yaml|gpg` is the
+	// common spelling for an encrypted pillar file: it rendered as plain
+	// yaml and delivered ciphertext as the value, which a state would
+	// then have written somewhere as if it were the secret.
+	_, err := Render([]byte("#!yaml|gpg\nk: v\n"), Options{File: "p.sls"})
+	if err == nil {
+		t.Fatal("a bridged renderer after the serializer should be refused")
+	}
+	if !strings.Contains(err.Error(), "gpg") {
+		t.Errorf("the error should name the stage: %v", err)
+	}
+
+	// The same applies to an unsupported one and to a name that is not a
+	// renderer at all.
+	for _, src := range []string{"#!yaml|mako\nk: v\n", "#!yaml|nosuch\nk: v\n"} {
+		if _, err := Render([]byte(src), Options{File: "p.sls"}); err == nil {
+			t.Errorf("%q should be refused", src)
+		}
+	}
+
+	// A pipeline this build can run is unaffected.
+	res, err := Render([]byte("#!jinja|yaml\nk: {{ 1 + 1 }}\n"), Options{File: "p.sls"})
+	if err != nil {
+		t.Fatalf("a supported pipeline should render: %v", err)
+	}
+	if m, ok := res.Value.(*value.Map); !ok {
+		t.Errorf("value = %T", res.Value)
+	} else if v, _ := m.Get("k"); v != int64(2) {
+		t.Errorf("k = %v", v)
+	}
+}
