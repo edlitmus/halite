@@ -56,11 +56,6 @@ const (
 	diffSpecTimestamp = "SPEC 10.1.3 keeps a date a string; a date becoming a struct breaks file.managed contents"
 	diffSpecSexa      = "SPEC 10.1.3: a YAML 1.1 sexagesimal stays a string, with a lint warning where it would have differed"
 	diffInt64         = "the value is outside int64, and Python's integers are unbounded"
-
-	// The rest are gaps. Accepting a document PyYAML refuses is the
-	// dangerous direction: a tree Salt would not load must not quietly
-	// load here and mean something.
-	diffGapAccepts = "gap: halite reads a document PyYAML refuses, rather than refusing it too"
 )
 
 var diffDeviations = []diffDeviation{
@@ -77,14 +72,6 @@ var diffDeviations = []diffDeviation{
 	{"key/duplicate-nested", diffSpecDuplicate},
 
 	{"int/12345678901234567890", diffInt64},
-
-	// `k: -` becomes a one-element sequence, `k: ?` and `k: :` become a
-	// mapping of null to null, and `a: b: c` becomes a nested mapping.
-	// PyYAML refuses all four.
-	{"str/-", diffGapAccepts},
-	{"str/?", diffGapAccepts},
-	{"str/:", diffGapAccepts},
-	{"invalid/two-colons", diffGapAccepts},
 }
 
 // diffCorpus is built rather than written out, so that adding a spelling

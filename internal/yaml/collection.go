@@ -136,7 +136,14 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 		// YAML rather than catching a mistake.
 		noValue := false
 
+		// An explicit entry's value may be a compact block collection on
+		// the `:` line — `: - one` is YAML 8.17 — where an implicit
+		// `key:` value may not be. The two share this loop, so which one
+		// produced the key has to be remembered.
+		explicitEntry := false
+
 		if p.peek() == '?' && (p.peekAt(1) == ' ' || p.peekAt(1) == '\n') {
+			explicitEntry = true
 			p.next()
 			p.skipSpaces()
 			key, err = p.parseExplicitKey(indent)
@@ -219,7 +226,7 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 		valPos := p.pos()
 		var val any
 		if !noValue {
-			val, err = p.parseMapValue(indent)
+			val, err = p.parseMapValue(indent, explicitEntry)
 			if err != nil {
 				return nil, err
 			}
@@ -338,7 +345,7 @@ func (p *parser) parseExplicitKey(indent int) (any, error) {
 		if p.eof() || p.col <= indent {
 			return nil, nil
 		}
-		v, err := p.parseBlockValue(p.col, indent)
+		v, err := p.parseBlockValue(p.col, indent, false)
 		if err != nil {
 			return nil, err
 		}
@@ -360,7 +367,7 @@ func (p *parser) parseExplicitKey(indent int) (any, error) {
 
 // parseMapValue reads the value that follows a `key:`, whether it sits on
 // the same line or on the lines below.
-func (p *parser) parseMapValue(keyIndent int) (any, error) {
+func (p *parser) parseMapValue(keyIndent int, explicitEntry bool) (any, error) {
 	p.skipSpaces()
 
 	// Value on the same line. Its content is bounded by the key's own
@@ -371,7 +378,7 @@ func (p *parser) parseMapValue(keyIndent int) (any, error) {
 		if p.peek() == '|' || p.peek() == '>' {
 			return p.parseBlockScalar(keyIndent - 1)
 		}
-		return p.parseBlockValue(keyIndent+1, keyIndent-1)
+		return p.parseBlockValue(keyIndent+1, keyIndent-1, !explicitEntry)
 	}
 	if p.peek() == '#' {
 		p.skipLine()
@@ -388,7 +395,7 @@ func (p *parser) parseMapValue(keyIndent int) (any, error) {
 	}
 	switch {
 	case p.col > keyIndent:
-		return p.parseBlockValue(p.col, keyIndent-1)
+		return p.parseBlockValue(p.col, keyIndent-1, false)
 	case p.col == keyIndent && isBlockSeqEntry(p):
 		// A block sequence may sit at the same indentation as the key
 		// that owns it. Salt trees are written both ways, so both are
@@ -425,7 +432,7 @@ func (p *parser) parseBlockSeq(indent int) ([]any, error) {
 				return nil, err
 			}
 			if !p.eof() && p.col > indent && !p.atDocStart() && !p.atDocEnd() {
-				v, err := p.parseBlockValue(p.col, indent-1)
+				v, err := p.parseBlockValue(p.col, indent-1, false)
 				if err != nil {
 					return nil, err
 				}
@@ -436,7 +443,7 @@ func (p *parser) parseBlockSeq(indent int) ([]any, error) {
 			continue
 		}
 
-		v, err := p.parseBlockValue(p.col, indent-1)
+		v, err := p.parseBlockValue(p.col, indent-1, false)
 		if err != nil {
 			return nil, err
 		}

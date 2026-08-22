@@ -161,7 +161,6 @@ var deviations = []deviation{
 	{"57H4", devRejects, specTag},
 	{"5TRB", devAccepts, gapLenient},
 	{"5TYM", devRejects, specTag},
-	{"5U3A", devAccepts, gapLenient},
 	{"6CA3", devRejects, specTab},
 	{"6CK3", devRejects, specTag},
 	{"6HB6", devRejects, specTab},
@@ -222,8 +221,6 @@ var deviations = []deviation{
 	{"Y79Y/008", devAccepts, gapLenient},
 	{"Z67P", devRejects, specTag},
 	{"Z9M4", devRejects, specTag},
-	{"ZCZ6", devAccepts, gapLenient},
-	{"ZL4Z", devAccepts, gapLenient},
 }
 
 func loadSuite(t *testing.T) []suiteCase {

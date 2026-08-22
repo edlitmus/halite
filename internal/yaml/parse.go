@@ -163,7 +163,7 @@ func parseStream(src []byte, opts Options) ([]any, []Warning, error) {
 		// A node on the marker line sits at whatever column the marker
 		// left it at, and its parent is the document, so the minimum
 		// indentation stays -1 either way.
-		v, err := p.parseBlockValue(0, -1)
+		v, err := p.parseBlockValue(0, -1, false)
 		if err != nil {
 			return nil, p.warnings, err
 		}

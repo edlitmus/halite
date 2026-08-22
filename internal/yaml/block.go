@@ -123,12 +123,22 @@ func (p *parser) bind(np nodeProps, v any) any {
 // parentIndent is the indentation, counted in spaces, of the structure
 // that owns this node; a block scalar's content must be indented further
 // than that. A parentIndent of -1 means the node has no parent.
-func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
+// parseBlockValue reads the node that follows a key or a sequence
+// indicator. `inline` says the node begins on the same line as the thing
+// that owns it, which forbids a block collection: YAML puts a block
+// sequence or mapping on the following lines, more indented, and
+// `k: - x` is an error rather than a one-element sequence.
+func (p *parser) parseBlockValue(minIndent, parentIndent int, inline bool) (any, error) {
 	if err := p.enter(); err != nil {
 		return nil, err
 	}
 	defer p.leave()
 
+	// The caller says whether it is still on the key's line; the node
+	// itself may not be. `key: &anchor` puts the anchor there and the
+	// node it names on the following lines, which is ordinary and must
+	// not be refused.
+	keyLine := p.line
 	if err := p.skipBlank(); err != nil {
 		return nil, err
 	}
@@ -144,6 +154,7 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 	if err := p.skipBlank(); err != nil {
 		return nil, err
 	}
+	inline = inline && p.line == keyLine
 	if p.eof() || p.col < minIndent {
 		// An anchor or tag with an empty node, such as `key: !!null`.
 		v, err := p.applyTag(np.tag, "", false, np.pos)
@@ -170,6 +181,10 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 		return p.bind(np, v), nil
 
 	case isBlockSeqEntry(p):
+		if inline {
+			return nil, p.err("a block sequence cannot begin on the same line as the key it belongs to; " +
+				"put the `-` on the next line, indented under the key")
+		}
 		v, err := p.parseBlockSeq(col)
 		if err != nil {
 			return nil, err
@@ -217,6 +232,10 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 		return p.bind(np, v), nil
 
 	case p.peek() == '?' && (p.peekAt(1) == ' ' || p.peekAt(1) == '\n'):
+		if inline {
+			return nil, p.err("an explicit key cannot begin on the same line as the key it belongs to; " +
+				"put the `?` on the next line, indented under the key")
+		}
 		v, err := p.parseBlockMap(col)
 		if err != nil {
 			return nil, err
@@ -228,6 +247,10 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int) (any, error) {
 	}
 
 	if p.lineIsMappingEntry() {
+		if inline {
+			return nil, p.err("a mapping cannot begin on the same line as the key it belongs to; " +
+				"put it on the next line, indented under the key, or write it in flow style as `{a: b}`")
+		}
 		// A mapping whose first key carries its own properties starts
 		// where those properties do, not where the key text does:
 		// `&k1 key1: one` is a mapping at the column of the `&`, and its
