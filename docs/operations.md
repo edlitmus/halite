@@ -47,11 +47,28 @@ configuration needs no edit.
 A log file that cannot be opened is an error rather than a fall back to
 stderr: an operator who asked for a file is relying on it.
 
-**Not yet:** the value-based redactor of SPEC 26.1, which is seeded with
-every decrypted pillar value and scrubs it at the sink. Until it exists,
-a state that puts a secret in its own `name` puts it in the log — which
-is true of Salt too, and is not a reason to leave it. Per-component
-levels and the journal sink are also absent.
+### Secrets in the log
+
+Every value the `gpg` renderer decrypts, and every setting whose name
+says it holds a secret, is scrubbed from log records and error messages
+before they are written. Redaction happens at the sink, so a diagnostic
+added later cannot forget about it, and it covers every field of a
+record rather than the message alone.
+
+The line is between a diagnostic and requested data. `pillar items` is
+not scrubbed: it was asked for the pillar, and answering with asterisks
+would be a different program.
+
+A value shorter than six characters is not scrubbed. It cannot be
+removed from text without removing everything that resembles it — a
+pillar value of `1` would turn every number in every message into
+asterisks — and a one-character secret was never secret.
+
+**Not yet:** per-component levels (`--log-level-component fileserver=debug`),
+the journal sink, and scrubbing of the state return itself. A state that
+puts a secret in its own `name` still shows it in the run's output,
+which is where an operator is most likely to meet one. That is true of
+Salt too, and is not a reason to leave it unsaid.
 
 ## Running it on a schedule
 
