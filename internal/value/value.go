@@ -402,11 +402,33 @@ func Traverse(root any, path, delim string) (any, bool) {
 			}
 			cur = v
 		case []any:
-			i, err := strconv.Atoi(part)
-			if err != nil || i < 0 || i >= len(t) {
+			if i, err := strconv.Atoi(part); err == nil {
+				if i < 0 || i >= len(t) {
+					return nil, false
+				}
+				cur = t[i]
+				continue
+			}
+			// A non-numeric key against a list searches the mappings
+			// inside it, taking the first that has the key. Salt does
+			// this, and a pillar written as a list of single-key
+			// mappings — which is how a tree groups an account's
+			// attributes — depends on it. Refusing here returned nothing
+			// and a template rendered the empty value into a state.
+			found := false
+			for _, item := range t {
+				m, ok := item.(*Map)
+				if !ok {
+					continue
+				}
+				if v, ok := m.Get(part); ok {
+					cur, found = v, true
+					break
+				}
+			}
+			if !found {
 				return nil, false
 			}
-			cur = t[i]
 		default:
 			return nil, false
 		}

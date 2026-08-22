@@ -565,3 +565,39 @@ func equalStrings(a, b []string) bool {
 	}
 	return true
 }
+
+func TestTraverseSearchesMappingsInsideALisT(t *testing.T) {
+	// Salt's colon traversal descends into a list by searching the
+	// mappings inside it for the key, and a pillar written as a list of
+	// single-key mappings depends on it. Without this, `pillar.get`
+	// returned nothing and the template rendered the empty value into a
+	// state argument — an account with no password rather than an error.
+	root := MapOf("users", MapOf("ed", []any{
+		MapOf("password", "hashed"),
+		MapOf("shell", "/bin/sh"),
+		MapOf("keys", []any{"first", "second"}),
+	}))
+
+	cases := map[string]any{
+		"users:ed:password":   "hashed",
+		"users:ed:shell":      "/bin/sh",
+		"users:ed:keys:1":     "second",
+		"users:ed:0:password": "hashed",
+	}
+	for path, want := range cases {
+		got, ok := Traverse(root, path, ":")
+		if !ok || got != want {
+			t.Errorf("Traverse(%q) = %#v, %v; want %#v", path, got, ok, want)
+		}
+	}
+
+	// A key no mapping in the list has is still absent, rather than the
+	// first mapping's value or a panic.
+	if v, ok := Traverse(root, "users:ed:absent", ":"); ok {
+		t.Errorf("an absent key resolved to %#v", v)
+	}
+	// An index out of range stays out of range.
+	if _, ok := Traverse(root, "users:ed:9", ":"); ok {
+		t.Error("an index past the end resolved")
+	}
+}
