@@ -420,3 +420,57 @@ base:
 		t.Errorf("contributing files = %v", out.SLS)
 	}
 }
+
+func TestIgnoreMissingSkipsAbsentPillarFiles(t *testing.T) {
+	// A tree that names a pillar file per host and ships only some of
+	// them is why Salt has this. Without it the whole pillar fails to
+	// compile on every host that is missing one, which is most of them.
+	files := map[string]string{
+		"base|top": `
+base:
+  '*':
+    - present
+    - absent
+    - ignore_missing: True
+`,
+		"base|present": "present_key: value\n",
+	}
+	out := mustCompile(t, files, Config{})
+	if v, _ := out.Pillar.Get("present_key"); v != "value" {
+		t.Errorf("the present file should still be merged: %v", v)
+	}
+	if _, ok := out.Pillar.Get("absent"); ok {
+		t.Error("the absent file contributed a key")
+	}
+
+	// Without the directive the same tree is an error, which is Salt's
+	// behaviour too and the reason the directive exists.
+	delete(files, "base|top")
+	files["base|top"] = `
+base:
+  '*':
+    - present
+    - absent
+`
+	if err := compile(t, files, Config{}).Err(); err == nil {
+		t.Error("a missing pillar file without ignore_missing should be an error")
+	}
+}
+
+func TestIgnoreMissingDoesNotCoverIncludes(t *testing.T) {
+	// The top file says "some of these may not exist here". An include
+	// inside a file that does exist names something its author knew
+	// about, so a missing one is still a defect.
+	out := compile(t, map[string]string{
+		"base|top": `
+base:
+  '*':
+    - present
+    - ignore_missing: True
+`,
+		"base|present": "include:\n  - nosuchfile\n\nk: v\n",
+	}, Config{})
+	if err := out.Err(); err == nil {
+		t.Error("a missing include should be reported even under ignore_missing")
+	}
+}

@@ -120,11 +120,11 @@ func (c *Compiler) trusted() []string {
 func (c *Compiler) Compile() *Compiled {
 	out := &Compiled{Pillar: value.NewMap(32)}
 
-	matched := c.resolveTop(out)
+	matched, optional := c.resolveTop(out)
 	env := c.env()
 	seen := map[string]bool{}
 	for _, name := range matched {
-		c.mergeSLS(out, env, name, seen, nil)
+		c.mergeSLS(out, env, name, seen, nil, optional[name])
 	}
 	return out
 }
@@ -151,35 +151,40 @@ func (c *Compiler) targetNode() target.Node {
 }
 
 // resolveTop reads the pillar top file and returns the matched SLS names.
-func (c *Compiler) resolveTop(out *Compiled) []string {
+// resolveTop returns the SLS names this node matches, and the subset of
+// them declared under an `ignore_missing: true` target. Salt honours that
+// directive in a pillar top file and not in a state top file, so this is
+// the only place it applies.
+func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 	env := c.env()
 	src, path, err := c.Loader.Source(env, state.TopName)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			// A pillar tree with no top file delivers nothing, which is a
 			// legitimate configuration rather than an error.
-			return nil
+			return nil, nil
 		}
 		out.Diags.Add(value.Pos{File: state.TopName}, state.TopName, "",
 			"reading the pillar top file for %q: %v", env, err)
-		return nil
+		return nil, nil
 	}
 
 	res, err := render.Render(src, c.renderOptions(env, state.TopName, path, nil))
 	out.Warnings = append(out.Warnings, res.Warnings...)
 	if err != nil {
 		out.Diags.Add(value.Pos{File: path}, state.TopName, "", "%v", err)
-		return nil
+		return nil, nil
 	}
 
+	optional := map[string]bool{}
 	top, ok := res.Value.(*value.Map)
 	if !ok {
 		if res.Value == nil {
-			return nil
+			return nil, nil
 		}
 		out.Diags.Add(value.Pos{File: path}, state.TopName, "",
 			"a pillar top file must hold a mapping of environments, found %s", value.TypeName(res.Value))
-		return nil
+		return nil, nil
 	}
 
 	node := c.targetNode()
@@ -207,12 +212,17 @@ func (c *Compiler) resolveTop(out *Compiled) []string {
 			if !matcher.Match(node) {
 				continue
 			}
-			names := topSLSNames(te.Val, te.ValPos, &out.Diags)
+			names, ignoreMissing := topSLSNames(te.Val, te.ValPos, &out.Diags)
 			matched = appendUnique(matched, names)
+			if ignoreMissing {
+				for _, n := range names {
+					optional[n] = true
+				}
+			}
 			out.Audit = append(out.Audit, AuditEntry{Env: topEnv, Target: expr, Basis: basis, SLS: names})
 		}
 	}
-	return matched
+	return matched, optional
 }
 
 // checkTargetIsPermitted refuses a pillar top expression that targets on
@@ -281,29 +291,35 @@ func grainNamesIn(expr string) []string {
 	return out
 }
 
-func topSLSNames(v any, pos value.Pos, diags *state.Diags) []string {
+func topSLSNames(v any, pos value.Pos, diags *state.Diags) (names []string, ignoreMissing bool) {
 	items, ok := v.([]any)
 	if !ok {
 		diags.Add(pos, state.TopName, "", "a pillar top target must hold a list of SLS names, found %s", value.TypeName(v))
-		return nil
+		return nil, false
 	}
-	var out []string
 	for _, item := range items {
 		switch t := item.(type) {
 		case string:
-			out = append(out, t)
+			names = append(names, t)
 		case *value.Map:
-			if t.Len() == 1 && value.KeyString(t.Entries()[0].Key) == "match" {
+			if t.Len() != 1 {
 				continue
+			}
+			e := t.Entries()[0]
+			switch value.KeyString(e.Key) {
+			case "match":
+				// A directive, not an SLS name.
+			case "ignore_missing":
+				ignoreMissing = value.Truthy(e.Val)
 			}
 		}
 	}
-	return out
+	return names, ignoreMissing
 }
 
 // mergeSLS renders one pillar SLS, follows its includes, and merges the
 // result.
-func (c *Compiler) mergeSLS(out *Compiled, env, name string, seen map[string]bool, stack []string) {
+func (c *Compiler) mergeSLS(out *Compiled, env, name string, seen map[string]bool, stack []string, optional bool) {
 	key := env + "|" + name
 	for i, s := range stack {
 		if s == key {
@@ -321,6 +337,12 @@ func (c *Compiler) mergeSLS(out *Compiled, env, name string, seen map[string]boo
 	src, path, err := c.Loader.Source(env, name)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
+			if optional {
+				// `ignore_missing: true` in the top file. A tree that
+				// names a pillar file per host and ships only some of
+				// them is the reason Salt has this.
+				return
+			}
 			out.Diags.Add(value.Pos{File: name}, name, "",
 				"pillar sls %q was not found in environment %q", name, env)
 			return
@@ -353,7 +375,9 @@ func (c *Compiler) mergeSLS(out *Compiled, env, name string, seen map[string]boo
 	// file's own keys win.
 	if inc, ok := body.Get("include"); ok {
 		for _, n := range includeNames(inc, name) {
-			c.mergeSLS(out, env, n, seen, append(stack, key))
+			// An include names a file the author knew about, so a
+			// missing one is an error even under ignore_missing.
+			c.mergeSLS(out, env, n, seen, append(stack, key), false)
 		}
 		body = withoutKey(body, "include")
 	}
