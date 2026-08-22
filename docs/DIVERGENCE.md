@@ -501,6 +501,11 @@ by `service -l`, `available sshd` true, and masking refused by name.
 
 ## 4. Platform coverage
 
+A module restricted to a platform now refuses on any other by name,
+rather than reaching the module and reporting a missing binary. Twelve
+functions declare a restriction; the Linux binary answers
+`sysrc.get runs on freebsd, and this node is linux`.
+
 | Platform | Compiles | Unit tests run | Verified against a real system |
 |---|---|---|---|
 | FreeBSD amd64 | yes | yes | yes — grains, highstate, drift reconvergence, requisites |
@@ -1075,6 +1080,18 @@ The same sweep one level down, over the 167 parameter names the module
 registry declares, found exactly one: `hash_type` on `file.managed`. The
 module layer was in better shape than the configuration layer, which is
 worth knowing.
+
+A level down again, over the fields of a signature rather than its
+parameters, found two read by nothing at all. `Platforms` documents
+itself as "restricts the function; empty means every platform" and
+restricted nothing, so a `sysrc` call on Linux reached the module and
+reported a missing binary — true, and about the wrong thing. Twelve
+functions declare it. `Privileges` is declared by twenty-nine, all of
+them mutating and all of them naming `root`; refusing up front would be
+correct and would also refuse a `--test` run, which is the run an
+operator makes precisely because they are not ready to be root, so it
+explains a failure instead. Two fields, two different right answers,
+which is why "enforce what is declared" is not one change.
 
 Two things the sweep taught about sweeps. The first version counted a
 key mentioned in a *test* as read; the second counted a module parameter
