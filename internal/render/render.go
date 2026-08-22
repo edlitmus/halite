@@ -440,3 +440,19 @@ func parseJSON(src string, opts Options) (any, error) {
 	}
 	return v, nil
 }
+
+// Template renders a source through the template stage alone, with no
+// pipeline and no serializer.
+//
+// A `file.managed` source with `template: jinja` is rendered this way
+// rather than through Render, because the file being managed is not an
+// SLS file: its first line is content, and reading a `#!` there as a
+// renderer pipeline would silently deliver something other than the file.
+func Template(src []byte, opts Options) (string, []Warning, error) {
+	var res Result
+	out, err := renderJinja(string(src), opts, &res)
+	if err != nil {
+		return "", res.Warnings, err
+	}
+	return out.Output, res.Warnings, nil
+}

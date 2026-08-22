@@ -178,6 +178,9 @@ func registerFileStates(r *Registries) {
 		// desiredContents has always handled both; only the signature
 		// refused the list.
 		opt("contents", signature.Any, nil, "Literal contents, as a string or a list of lines, as an alternative to a source."),
+		opt("template", signature.String, "", "Render the source through this engine before writing it. Only jinja is supported."),
+		opt("context", signature.Map, nil, "Names added to the source template, overriding defaults."),
+		opt("defaults", signature.Map, nil, "Names added to the source template, overridden by context."),
 		opt("contents_pillar", signature.String, "", "A pillar key whose value becomes the contents."),
 		opt("mode", signature.Mode, "", "The file mode, written as a quoted string such as '0644'."),
 		opt("user", signature.String, "", "Owner."),
@@ -338,6 +341,13 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 		if err := verifySourceHash(c, want, expected); err != nil {
 			return states.False(fmt.Sprintf("The source for %s failed its hash check: %v", path, err)), nil
 		}
+	}
+
+	// Rendering happens after the hash check, so `source_hash` verifies
+	// the file that was fetched rather than the output of running it.
+	want, err = renderSourceTemplate(c, args, want, source)
+	if err != nil {
+		return states.False(fmt.Sprintf("The template for %s failed: %v", path, err)), nil
 	}
 
 	changes := value.NewMap(4)

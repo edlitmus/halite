@@ -297,6 +297,13 @@ func (d dispatcher) Call(c *exec.Context, name string, args *value.Map) (any, er
 
 func (d dispatcher) Has(name string) bool { return d.r.Has(name) }
 
+// CallPositional is the optional half of the dispatcher interface, which
+// a rendered file template needs so that `salt['pillar.get']('a:b')`
+// binds its argument by position as Salt does.
+func (d dispatcher) CallPositional(c *exec.Context, name string, args []any, kwargs *value.Map) (any, error) {
+	return d.r.CallPositional(c, name, args, kwargs)
+}
+
 // newJobID is the operator-readable, monotonic form of SPEC section 6.3.
 func newJobID() string { return time.Now().UTC().Format("20060102T150405.000000") }
 

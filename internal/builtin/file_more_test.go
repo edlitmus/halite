@@ -285,3 +285,62 @@ func TestFileTruncate(t *testing.T) {
 		t.Errorf("truncate with no length should empty the file: %q", data)
 	}
 }
+
+func TestFileManagedRendersItsSource(t *testing.T) {
+	r := New()
+	dir := t.TempDir()
+	source := filepath.Join(dir, "conf.jinja")
+	os.WriteFile(source, []byte(
+		"name = {{ pillar['app']['name'] }}\n"+
+			"kernel = {{ grains['kernel'] }}\n"+
+			"extra = {{ extra_name }}\n"+
+			"fallback = {{ from_defaults }}\n"), 0o644)
+	target := filepath.Join(dir, "conf")
+
+	ctx := newCtx(false)
+	ctx.Grains = value.MapOf("kernel", "FreeBSD")
+	ctx.Pillar = value.MapOf("app", value.MapOf("name", "from-pillar"))
+
+	args := value.MapOf(
+		"name", target,
+		"source", source,
+		"template", "jinja",
+		"context", value.MapOf("extra_name", "from-context"),
+		"defaults", value.MapOf("from_defaults", "default-value", "extra_name", "overridden"),
+	)
+	if _, err := r.States.Call(ctx, "file.managed", args); err != nil {
+		t.Fatalf("file.managed: %v", err)
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "name = from-pillar\nkernel = FreeBSD\nextra = from-context\nfallback = default-value\n"
+	if string(got) != want {
+		t.Errorf("wrote:\n%s\nwant:\n%s", got, want)
+	}
+
+	// Without the argument the source is written as it is, so a file
+	// that happens to contain braces is not mangled.
+	plain := filepath.Join(dir, "plain")
+	os.WriteFile(plain, []byte("literal {{ not_a_name }}\n"), 0o644)
+	out := filepath.Join(dir, "out")
+	if _, err := r.States.Call(ctx, "file.managed",
+		value.MapOf("name", out, "source", plain)); err != nil {
+		t.Fatalf("file.managed: %v", err)
+	}
+	if got, _ := os.ReadFile(out); string(got) != "literal {{ not_a_name }}\n" {
+		t.Errorf("an unrendered source was changed: %q", got)
+	}
+
+	// An engine this build does not have is named, rather than ignored.
+	res, err := r.States.Call(ctx, "file.managed",
+		value.MapOf("name", out, "source", source, "template", "mako"))
+	if err == nil && res.Succeeded() {
+		t.Error("template: mako should fail")
+	}
+	if err == nil && !strings.Contains(res.Comment, "mako") {
+		t.Errorf("the comment should name the engine: %q", res.Comment)
+	}
+}
