@@ -201,8 +201,11 @@ The larger absences today:
   matches its key, was not signed by the configured CA, or has entered
   the renewal window. Salt's re-issues on every highstate.
 - **Templates are deterministically seeded**, so `random` and `shuffle`
-  give the same answer in a `--test` run and the real run that follows.
-  Salt's do not, which produces phantom diffs.
+  give the same answer in a `--test` run and the real run that follows,
+  and on the run after that. Salt's do not, which produces phantom
+  diffs. The seed is the node and the template, so two machines differ
+  and two files differ, and nothing else does. `random_seed:
+  nondeterministic` restores Salt's behaviour.
 
 ## Running both at once
 

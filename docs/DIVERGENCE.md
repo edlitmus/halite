@@ -132,6 +132,32 @@ beside an existing Salt installation symlinks the trees into the
 configuration root, and having to write `file_roots` to describe what is
 already sitting there is a papercut with no upside.
 
+### 1.6 The template random seed is per node and template, not per job
+
+SPEC 10.2.4 says `random`, `shuffle`, and `rand_str` are "seeded per
+render from a deterministic seed derived from the node ID and the job ID
+by default, so that a `test=True` run and the subsequent real run
+agree."
+
+A `--test` run and the real run that follows it are two invocations with
+two job IDs, so a seed containing the job ID guarantees they disagree.
+The mechanism defeats the purpose in the same sentence that states it,
+and the purpose is the point: `random` in a template must not produce a
+phantom diff on every run. Implemented literally, it did — the two runs
+drew different numbers, which is exactly what the feature exists to
+prevent and what `docs/migrating-from-salt.md` promises it does not do.
+
+The seed is the node ID and the template's path. It is stable across
+runs, varies between machines, and varies between files so two templates
+do not draw in step. `random_seed: nondeterministic` still restores
+Salt's unseeded behaviour.
+
+This is the fourth place SPEC states a fact that can be checked and is
+wrong; the others are 1.1, and the `0o17` and `1e3` resolutions in 5.8.
+The pattern is worth naming: where the specification gives a mechanism
+*and* the reason for it, and the two disagree, the reason is what the
+tree depends on.
+
 ---
 
 ## 2. Module coverage
@@ -1052,6 +1078,7 @@ Fixed as a result:
 | `user.present` took no `password` or `usergroup` | The tree sets its account password from an encrypted pillar value. |
 | `file.managed` read an unreadable file as empty | The error from the read was discarded, so a 0640 credential the run could not read compared as empty: the state reported that the contents differed, showed a diff adding the whole file, rewrote it, and would have done so on every run for ever, because it still could not read what it had written. |
 | `file.replace` took no `bufsize` | Salt's names a read buffer. |
+| Five settings were declared and read by nothing | `yaml_bool_11`, `random_seed`, `legacy_arg_parse`, `template_trim_blocks`, and `template_lstrip_blocks` — three of them named in SPEC as the switch a tree throws during a migration. A test now requires every declared key to be read or listed with the reason it is not, enforced in both directions, so the class cannot grow again in silence. |
 | `cmd_default_shell` silently dropped `args` | The setting is a default for states that do not say which form they are in, and it was applied to states that had said. A state converted during a transition stopped passing its arguments and reported success: the tree said `/bin/echo a b` and the node ran `/bin/echo`. Every state converted while the setting was on was quietly doing nothing of what it said. |
 | The migration audit ignored state declarations | It reported the tree clean. Compiling it produced twenty-seven errors, twenty-two of them declarations. |
 | The pillar top ignored `- match: grain` | The state top read it; the pillar top had its own copy that did not, so a `nodename:host` target was compiled as a glob, matched nothing, and the file was absent from the pillar with nothing reported. |
