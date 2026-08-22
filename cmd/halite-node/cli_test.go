@@ -570,3 +570,81 @@ func TestNodeIDModifiers(t *testing.T) {
 		t.Errorf("an identity with no domain should be unchanged, got %q", stripped)
 	}
 }
+
+// TestDecryptedPillarNeverReachesTheRun is the whole chain: a pillar
+// file encrypted to a real key, decrypted by the real gpg, rendered into
+// a state's own name, and applied — with the secret appearing nowhere in
+// what the operator sees.
+//
+// This is the shape a real tree has. A `cmd.run` that curls an API with
+// a bearer token from pillar puts the token in the command, the command
+// in the name, and the name in the comment, the nested output, the
+// structured return, and the key of SPEC 11.8.
+func TestDecryptedPillarNeverReachesTheRun(t *testing.T) {
+	if _, err := exec.LookPath("gpg"); err != nil {
+		t.Skip("no gpg on PATH; SPEC 12.6 drives the system binary")
+	}
+	const secret = "s3cret-bearer-token-value"
+
+	home := t.TempDir()
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	gpg := func(args ...string) *exec.Cmd {
+		c := exec.Command("gpg", args...)
+		c.Env = append(os.Environ(), "GNUPGHOME="+home)
+		return c
+	}
+	if out, err := gpg("--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+		"--quick-generate-key", "halite test <t@example.invalid>", "default", "default", "never").
+		CombinedOutput(); err != nil {
+		t.Skipf("a throwaway key could not be generated here: %v\n%s", err, out)
+	}
+	t.Cleanup(func() { _ = gpg("--quiet").Run(); _ = exec.Command("gpgconf", "--kill", "gpg-agent").Run() })
+
+	enc := gpg("--batch", "--yes", "--trust-model", "always", "--encrypt", "--armor",
+		"-r", "t@example.invalid")
+	enc.Stdin = strings.NewReader(secret)
+	armored, err := enc.Output()
+	if err != nil {
+		t.Fatalf("encrypting: %v", err)
+	}
+	indented := strings.ReplaceAll(strings.TrimRight(string(armored), "\n"), "\n", "\n    ")
+
+	pillarRoot := t.TempDir()
+	write := func(dir, name, body string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(pillarRoot, "top.sls", "base:\n  '*':\n    - api\n")
+	write(pillarRoot, "api.sls", "#!yaml|gpg\ntoken: |\n    "+indented+"\n")
+
+	flags := tree(t, map[string]string{
+		"top.sls": "base:\n  '*':\n    - s\n",
+		"s.sls": `call_the_api:
+  cmd.run:
+    - name: /bin/echo
+    - args: ["Authorization Bearer {{ pillar['token'] }}"]
+`,
+	})
+	flags = append(flags, "--pillar-root", pillarRoot)
+
+	cfgDir := t.TempDir()
+	write(cfgDir, "node.yaml", "gpg_home: "+home+"\n")
+	flags = append(flags, "--config", filepath.Join(cfgDir, "node.yaml"))
+
+	for _, format := range []string{"nested", "json"} {
+		got := run(t, append([]string{"state", "apply", "--out", format}, flags...)...)
+		all := got.stdout + got.stderr
+		if !strings.Contains(all, "Authorization Bearer") {
+			t.Fatalf("the state did not run as expected in %s output:\n%s", format, all)
+		}
+		if strings.Contains(all, secret) {
+			t.Errorf("the decrypted pillar value reached the %s output:\n%s", format, all)
+		}
+		if !strings.Contains(all, "**********") {
+			t.Errorf("nothing was redacted in the %s output:\n%s", format, all)
+		}
+	}
+}

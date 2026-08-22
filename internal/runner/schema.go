@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -18,9 +19,47 @@ import (
 func (r *RunResult) Returns() *value.Map {
 	out := value.NewMap(len(r.Results))
 	for _, res := range r.Results {
-		out.Set(res.Chunk.Key(), res.Return())
+		// The key of SPEC 11.8 is `state_|-id_|-name_|-fun`, and the
+		// name is whatever the state was pointed at — which for a
+		// `cmd.run` is the command, secrets and all. It is scrubbed like
+		// any other text; every occurrence of one value becomes the same
+		// placeholder, so a dashboard parsing the key still parses it.
+		out.Set(r.Secrets.Scrub(res.Chunk.Key()), scrubReturn(r.Secrets, res.Return()))
 	}
 	return out
+}
+
+// scrubReturn removes known secrets from a rendered return. The inner
+// keys are left alone — `comment`, `changes`, and the rest are the
+// schema, not data — while every value is scrubbed. The outer key is
+// handled by the caller, because it carries the state's name.
+func scrubReturn(secrets *redact.Set, m *value.Map) *value.Map {
+	if secrets == nil || secrets.Len() == 0 {
+		return m
+	}
+	for _, e := range m.Entries() {
+		switch t := e.Val.(type) {
+		case string:
+			m.Set(e.Key, secrets.Scrub(t))
+		case *value.Map:
+			m.Set(e.Key, scrubReturn(secrets, t))
+		case []any:
+			out := make([]any, len(t))
+			for i, item := range t {
+				if sub, ok := item.(*value.Map); ok {
+					out[i] = scrubReturn(secrets, sub)
+					continue
+				}
+				if str, ok := item.(string); ok {
+					out[i] = secrets.Scrub(str)
+					continue
+				}
+				out[i] = item
+			}
+			m.Set(e.Key, out)
+		}
+	}
+	return m
 }
 
 // Return renders one state's result.
@@ -186,7 +225,10 @@ func (r *RunResult) Nested(colour bool) string {
 		}
 	}
 	fmt.Fprintf(&b, "\nSummary\n----------\n%s\n", r.Summarise())
-	return b.String()
+	// The whole rendering rather than each field: a comment, a change, a
+	// warning, and whatever line is added to this function next all go
+	// through one call that nobody has to remember.
+	return r.Secrets.Scrub(b.String())
 }
 
 func writeChanges(b *strings.Builder, m *value.Map, indent string) {

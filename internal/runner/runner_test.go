@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
+	"github.com/edlitmus/halite/internal/yaml"
 )
 
 // The runner decides whether each chunk runs at all. Every rule in this
@@ -1010,5 +1012,58 @@ held_back:
 		if strings.Contains(line, sum) {
 			t.Errorf("%q reads as a bucket of its own: %q", sum, line)
 		}
+	}
+}
+
+// TestStateReturnIsScrubbed. A state that puts a secret in its own name
+// puts it in the comment, and the comment is where an operator is most
+// likely to meet a decrypted pillar value: `cmd.run` with a bearer token
+// in the command is a real shape in a real tree.
+//
+// The scrub is on the rendered output rather than each field, so a line
+// added to the renderer later is covered without anyone remembering.
+func TestStateReturnIsScrubbed(t *testing.T) {
+	secrets := redact.New()
+	secrets.Add("s3cret-bearer-token")
+
+	out, _ := compileAndRun(t, `
+leaky:
+  probe.run:
+    - name: 'curl -H "Authorization: Bearer s3cret-bearer-token"' 
+    - changes: true
+`)
+	out.Secrets = secrets
+
+	nested := out.Nested(false)
+	if strings.Contains(nested, "s3cret-bearer-token") {
+		t.Errorf("the secret reached the nested output:\n%s", nested)
+	}
+	if !strings.Contains(nested, redact.Placeholder) {
+		t.Errorf("nothing was substituted:\n%s", nested)
+	}
+	// The rest of the report has to survive, or the redactor has made
+	// the run unreadable instead of safe.
+	if !strings.Contains(nested, "Authorization: Bearer") || !strings.Contains(nested, "leaky") {
+		t.Errorf("the report was mangled:\n%s", nested)
+	}
+
+	// And the structured return, which is what a returner ships.
+	returns := out.Returns()
+	rendered := yaml.Encode(returns, yaml.EncodeOptions{})
+	if strings.Contains(rendered, "s3cret-bearer-token") {
+		t.Errorf("the secret reached the structured return: %s", rendered)
+	}
+
+	// The results themselves are untouched, because onchanges and prereq
+	// compare changes and two secrets both becoming asterisks would make
+	// two different states look alike.
+	if !strings.Contains(out.Results[0].Result.Name, "s3cret-bearer-token") {
+		t.Error("the result itself should be intact for the requisite logic")
+	}
+
+	// With no secrets, nothing changes.
+	out.Secrets = nil
+	if !strings.Contains(out.Nested(false), "s3cret-bearer-token") {
+		t.Error("a run with no secrets should render as it always did")
 	}
 }

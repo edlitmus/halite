@@ -176,6 +176,9 @@ func applyStates(n *node, p *value.Map, compiled *state.Compiled) int {
 		FailHard: n.cfg.Bool("failhard", false),
 	}
 	result := r.Run(compiled.Low)
+	// Every value the gpg renderer decrypted, so that a state which puts
+	// one in its own name does not put it on the operator's screen.
+	result.Secrets = n.secrets
 
 	switch n.format {
 	case cli.Nested:

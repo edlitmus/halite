@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -40,6 +41,17 @@ type RunResult struct {
 	AbortedBy string
 	Started   time.Time
 	Duration  time.Duration
+	// Secrets scrubs known values out of the rendered return. It sits
+	// here rather than at each call site because a state's own comment
+	// is where an operator is most likely to meet a decrypted pillar
+	// value — `cmd.run` with a token in its name puts the token in the
+	// comment — and a caller choosing an output format must not be able
+	// to choose past the redactor. SPEC section 26.1.
+	//
+	// The results themselves are left intact: `onchanges` and `prereq`
+	// compare changes, and two different secrets both becoming
+	// asterisks would make two different states look alike.
+	Secrets *redact.Set
 }
 
 // Failed reports whether any state failed.
