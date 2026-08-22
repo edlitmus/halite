@@ -137,7 +137,7 @@ func TestDocumentationLinksResolve(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 			continue
 		}
-		for _, m := range link.FindAllStringSubmatch(string(data), -1) {
+		for _, m := range link.FindAllStringSubmatch(stripCodeSpans(string(data)), -1) {
 			target := m[1]
 			if strings.HasPrefix(target, "http://") ||
 				strings.HasPrefix(target, "https://") ||
@@ -176,4 +176,41 @@ func TestEveryDocPageIsLinkedFromTheReadme(t *testing.T) {
 				e.Name())
 		}
 	}
+}
+
+// stripCodeSpans blanks the contents of inline code and fenced blocks so
+// that the link check does not read them. `salt['pillar.get']('a:b')` is
+// not a link to a file called 'a:b', and a documented example that
+// happens to contain `](` should not have to be rewritten to keep this
+// test quiet.
+func stripCodeSpans(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inFence, inSpan := false, false
+	for i := 0; i < len(s); i++ {
+		if !inSpan && strings.HasPrefix(s[i:], "```") {
+			inFence = !inFence
+			b.WriteString("```")
+			i += 2
+			continue
+		}
+		if !inFence && s[i] == '`' {
+			inSpan = !inSpan
+			b.WriteByte('`')
+			continue
+		}
+		if inFence || inSpan {
+			if s[i] == '\n' {
+				// Newlines are kept so that a fence still terminates and
+				// the remaining offsets stay recognisable.
+				b.WriteByte('\n')
+				inSpan = false
+				continue
+			}
+			b.WriteByte(' ')
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
