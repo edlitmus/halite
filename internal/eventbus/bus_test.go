@@ -274,3 +274,35 @@ func TestASixtyFourBitIntegerSurvivesTheLog(t *testing.T) {
 		t.Errorf("wrote %d and read %d", exact, got)
 	}
 }
+
+// A tag glob that mixes `*` and `**` has to match segment by segment.
+//
+// It did not: everything before the `**` was compared as a plain
+// string, so `halite/node/*/deploy/**` looked for a node literally
+// called `*` and matched nothing at all. A subscriber that silently
+// matches nothing is the worst shape a filter can have, and this was
+// found by an orchestration step waiting for an event that had already
+// arrived.
+func TestATagGlobMatchesSegmentBySegment(t *testing.T) {
+	cases := []struct {
+		pattern, tag string
+		want         bool
+	}{
+		{"halite/node/*/deploy/**", "halite/node/web1.example/deploy/done", true},
+		{"halite/node/*/deploy/**", "halite/node/web1.example/deploy/a/b", true},
+		{"halite/node/*/deploy/**", "halite/node/web1.example/start", false},
+		{"halite/node/*/deploy/**", "halite/node/a/b/deploy/done", false},
+		{"halite/job/**", "halite/job/20260823T1/ret/web1", true},
+		{"halite/job/**", "halite/key/web1/accept", false},
+		{"halite/job/*/new", "halite/job/20260823T1/new", true},
+		{"halite/job/*/new", "halite/job/20260823T1/ret/web1", false},
+		{"halite/**/ret/*", "halite/job/20260823T1/ret/web1", true},
+		{"halite/**/ret/*", "halite/job/20260823T1/new", false},
+		{"**", "anything/at/all", true},
+	}
+	for _, c := range cases {
+		if got := MatchTag(c.pattern, c.tag); got != c.want {
+			t.Errorf("MatchTag(%q, %q) = %v, want %v", c.pattern, c.tag, got, c.want)
+		}
+	}
+}

@@ -73,12 +73,45 @@ func MatchTag(pattern, tag string) bool {
 	if pattern == "" || pattern == "*" || pattern == "**" {
 		return true
 	}
-	if i := strings.Index(pattern, "**"); i >= 0 {
-		prefix := pattern[:i]
-		return strings.HasPrefix(tag, prefix)
+	if !strings.Contains(pattern, "**") {
+		ok, err := path.Match(pattern, tag)
+		return err == nil && ok
 	}
-	ok, err := path.Match(pattern, tag)
-	return err == nil && ok
+	return matchSegments(strings.Split(pattern, "/"), strings.Split(tag, "/"))
+}
+
+// matchSegments matches a `/`-delimited pattern against a tag, with
+// `**` standing for any number of segments including none.
+//
+// Segment by segment, rather than the prefix comparison this used to
+// be. That took everything before the `**` and compared it as a plain
+// string, so a pattern mixing the two forms -- `halite/node/*/deploy/**`
+// -- looked for a node literally called `*` and quietly matched
+// nothing. A subscriber that matches nothing and says nothing is the
+// worst shape a filter can have.
+func matchSegments(pattern, tag []string) bool {
+	for len(pattern) > 0 {
+		if pattern[0] == "**" {
+			if len(pattern) == 1 {
+				return true
+			}
+			for i := 0; i <= len(tag); i++ {
+				if matchSegments(pattern[1:], tag[i:]) {
+					return true
+				}
+			}
+			return false
+		}
+		if len(tag) == 0 {
+			return false
+		}
+		ok, err := path.Match(pattern[0], tag[0])
+		if err != nil || !ok {
+			return false
+		}
+		pattern, tag = pattern[1:], tag[1:]
+	}
+	return len(tag) == 0
 }
 
 // MatchAny reports whether a tag matches any of the globs. No globs
