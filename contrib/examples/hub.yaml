@@ -1,8 +1,8 @@
 # halite-hub.
 #
 # `halite-hub serve` runs the control plane: enrollment, the key
-# lifecycle, the subscribe stream, and remote execution. The file
-# server, hub-side pillar, and RBAC are the rest of phase 2, so the
+# lifecycle, the subscribe stream, remote execution, and the file
+# server. Hub-side pillar and RBAC are the rest of phase 2, so the
 # settings for those are read and validated and nothing acts on them
 # yet.
 
@@ -27,6 +27,9 @@ certificate_lifetime: 2160h
 # ecdsa-p256 by default. ecdsa-p384 for a longer key.
 key_algorithm: ecdsa-p256
 
+# The tree this hub serves. It must not hold state_dir, cache_dir, or
+# pki_dir: `serve` refuses to start on an overlap, because serving the
+# job cache serves every return in the estate to every node.
 file_roots:
   base:
     - /srv/halite/states

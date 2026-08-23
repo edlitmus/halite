@@ -16,6 +16,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/transport"
@@ -291,6 +292,13 @@ func runConnect(args *cli.Args) int {
 		cli.Fatalf("this node is not enrolled; `halite-node enroll` is the first step")
 	}
 
+	// The hub's tree replaces the node's own, unless --local says
+	// otherwise. A node with a hub should be applying the tree the hub
+	// serves; SPEC section 13.
+	if !args.Bool("local", false) {
+		n.useHubTree(client)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -371,6 +379,31 @@ func grainsJSON(n *node) json.RawMessage {
 		return nil
 	}
 	return raw
+}
+
+// useHubTree points the node at the file server rather than at its own
+// directories.
+//
+// The environments come from the hub's manifest at first use. A hub
+// that cannot be asked leaves the node on its local tree with a warning
+// rather than failing: a node that stops managing itself because the
+// file server is briefly unreachable is worse than one that applies the
+// tree it already has.
+func (n *node) useHubTree(client *transport.Client) {
+	cacheDir := n.cfg.String("cache_dir", config.DefaultCacheDir)
+	remote := fileserver.NewRemote(client, cacheDir, nil)
+	remote.HashType = n.cfg.String("hash_type", "sha256")
+
+	m, err := remote.ManifestFor(n.env, "")
+	if err != nil {
+		n.log.Warn("the hub is not serving files; this node will apply its own tree",
+			"error", err.Error())
+		return
+	}
+	remote.Environments = []string{n.env}
+	n.files = remote
+	n.log.Info("compiling against the hub's tree",
+		"env", n.env, "files", len(m.Files), "cache", cacheDir)
 }
 
 // acceptJob turns a stream message into a job and queues it, or

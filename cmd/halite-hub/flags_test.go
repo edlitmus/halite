@@ -6,6 +6,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/keystore"
+	"github.com/edlitmus/halite/internal/pki"
 )
 
 // The halite-hub half of the check in cmd/halite-node. A flag in the
@@ -59,5 +63,40 @@ func TestEveryFlagIsDocumentedAndParsed(t *testing.T) {
 		if !documented[f] {
 			t.Errorf("%s is parsed and is in no usage text; an operator cannot find it", f)
 		}
+	}
+}
+
+// A file root that holds the hub's own state serves the key store and
+// the job cache — every return in the estate — to every enrolled node.
+// `file_roots: /srv/halite` beside `state_dir: /srv/halite/state` is an
+// easy thing to write, and it happened in this project's own lab.
+func TestAFileRootCannotHoldTheHubsOwnState(t *testing.T) {
+	base := t.TempDir()
+	h := &hubContext{
+		files: pki.Files{Dir: filepath.Join(base, "pki")},
+	}
+	store, err := keystore.Open(filepath.Join(base, "state", "keys"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.store = store
+	h.cfg, err = config.Load(config.Hub, config.LoadOptions{Root: base, AllowMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	overlapping := map[string][]string{"base": {filepath.Join(base, "state")}}
+	if err := checkRootsAreNotTheHubsOwn(h, overlapping); err == nil {
+		t.Error("a file root holding the key store was accepted")
+	}
+	// The other direction: the state directory holding the tree is the
+	// same mistake wearing a hat.
+	inverted := map[string][]string{"base": {base}}
+	if err := checkRootsAreNotTheHubsOwn(h, inverted); err == nil {
+		t.Error("a file root containing the key store was accepted")
+	}
+	separate := map[string][]string{"base": {filepath.Join(base, "tree")}}
+	if err := checkRootsAreNotTheHubsOwn(h, separate); err != nil {
+		t.Errorf("a separate tree was refused: %v", err)
 	}
 }

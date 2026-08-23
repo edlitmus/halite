@@ -76,7 +76,7 @@ Delivery follows the phases in SPEC section 32.
 |---|---|---|
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
-| 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **In progress**: enrollment, the transport, remote execution, targeting, and the job cache are built; the file server, hub-side pillar, RBAC, and the event bus are not |
+| 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **In progress**: enrollment, the transport, remote execution, targeting, the job cache, and the file server are built; hub-side pillar, RBAC, and the event bus are not |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | Not started |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
@@ -96,10 +96,13 @@ resolves the target, records the job, delivers it, and gathers the
 returns. A highstate has been driven from a hub across two nodes and run
 again to convergence.
 
-What is still missing from the phase is the file server: a hub-driven
-`state.apply` compiles against the node's own tree. [DIVERGENCE
-5.11](docs/DIVERGENCE.md) says what the lab run established, what it did
-not, and the two defects it found that the tests had not.
+An operator edits the tree on the hub and the fleet converges to it,
+which is the exit criterion SPEC section 32 names for this phase. What
+is still missing is hub-side pillar — pillar is compiled on the node
+from the node's own roots — along with RBAC and the event bus.
+[DIVERGENCE 5.11](docs/DIVERGENCE.md) says what the lab run
+established, what it did not, and the defects it found that the tests
+had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:

@@ -1,9 +1,10 @@
 # halite-node reporting to a hub.
 #
 # `halite-node enroll` asks for a certificate, `halite-node renew`
-# replaces it, and `halite-node connect` holds the stream open and runs
-# the jobs that arrive on it. The tree those jobs compile against is
-# this node's own: the hub's file server is the rest of phase 2.
+# replaces it, and `halite-node connect` holds the stream open, runs the
+# jobs that arrive on it, and compiles them against the tree the hub
+# serves. Pillar is still compiled here from pillar_roots: hub-side
+# pillar is the rest of phase 2.
 hub: hub.example.com
 hub_port: 4510
 
@@ -34,6 +35,11 @@ node_id: web1.prod.example.com
 # Off by default because it needs keys distributed first; on is the right
 # end state. SPEC section 25.6.
 require_job_signature: false
+
+# Where files fetched from the hub are kept. They are verified against
+# the digest the hub published before being moved into place, and asked
+# for conditionally afterwards.
+cache_dir: /var/cache/halite
 
 # One job at a time, per SPEC section 9.6. This bounds what waits; a
 # full queue is refused out loud rather than held in memory.

@@ -14,6 +14,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
@@ -176,6 +177,27 @@ func runServe(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
+	// The tree this hub serves. SPEC 13.5's two hiding settings and the
+	// symlink policy live on it, and they were all three declared and
+	// read by nothing until there was a file server to read them.
+	var files *fileserver.Roots
+	if roots := h.cfg.Roots("file_roots"); len(roots) > 0 {
+		if err := checkRootsAreNotTheHubsOwn(h, roots); err != nil {
+			cli.Fatalf("%v", err)
+		}
+		files = fileserver.NewRoots(roots)
+		files.FollowSymlinks = h.cfg.Bool("fileserver_follow_symlinks", false)
+		files.IgnoreGlobs = h.cfg.StringSlice("file_ignore_glob")
+		if backends := h.cfg.StringSlice("fileserver_backend"); len(backends) > 0 {
+			for _, b := range backends {
+				if b != "roots" {
+					h.log.Warn("this build serves only the roots backend",
+						"configured", b, "section", "13.2")
+				}
+			}
+		}
+	}
+
 	server := &hub.Server{
 		Authority:    h.auth,
 		Log:          h.log,
@@ -183,6 +205,8 @@ func runServe(args *cli.Args) int {
 		Jobs:         jobs,
 		Nodes:        nodes,
 		Nodegroups:   groups,
+		Files:        files,
+		HashType:     h.cfg.String("hash_type", "sha256"),
 	}
 
 	ln, err := hub.Listen(listen, pair, h.auth.CA.Cert, h.denied)
@@ -190,8 +214,13 @@ func runServe(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
+	envs := "none"
+	if files != nil {
+		envs = strings.Join(files.Envs(), ",")
+	}
 	fingerprint, _ := pki.FingerprintCert(h.auth.CA.Cert)
 	h.log.Info("hub listening",
+		"file_roots", envs,
 		"address", ln.Addr().String(),
 		"version", version.String(),
 		"enrollment_mode", string(h.auth.Mode),
@@ -212,6 +241,61 @@ func runServe(args *cli.Args) int {
 	}
 	h.log.Info("the hub stopped")
 	return 0
+}
+
+// checkRootsAreNotTheHubsOwn refuses a file root that holds the hub's
+// own state, cache, or key material.
+//
+// This is not hypothetical. Setting `file_roots: /srv/halite` beside
+// `state_dir: /srv/halite/state` is an easy thing to write, and it
+// makes the hub serve its key store and its job cache -- every return
+// in the estate, which is where pillar-derived values end up -- to
+// every enrolled node. It happened in this project's own lab. A
+// refusal at startup is the only place to catch it, because everything
+// afterwards looks like it is working.
+func checkRootsAreNotTheHubsOwn(h *hubContext, roots map[string][]string) error {
+	private := map[string]string{
+		"the key material": h.files.Dir,
+		"the key store":    h.store.Dir(),
+		"durable state":    h.cfg.String("state_dir", config.DefaultStateDir),
+		"the cache":        h.cfg.String("cache_dir", config.DefaultCacheDir),
+	}
+	for env, dirs := range roots {
+		for _, dir := range dirs {
+			served, err := filepath.Abs(dir)
+			if err != nil {
+				return fmt.Errorf("file root %q: %w", dir, err)
+			}
+			for what, path := range private {
+				if path == "" {
+					continue
+				}
+				mine, err := filepath.Abs(path)
+				if err != nil {
+					continue
+				}
+				if contains(served, mine) || contains(mine, served) {
+					return fmt.Errorf(
+						"file_roots for %q serves %s, which holds %s (%s): "+
+							"every enrolled node could read it. Move one of the two.",
+						env, served, what, mine)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// contains reports whether inner is outer or is beneath it.
+func contains(outer, inner string) bool {
+	if outer == inner {
+		return true
+	}
+	rel, err := filepath.Rel(outer, inner)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // nodegroupsFrom reads the nodegroup table, checked at load rather than

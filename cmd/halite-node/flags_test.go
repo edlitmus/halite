@@ -18,7 +18,6 @@ import (
 var flagExceptions = map[string]string{
 	"--file-root":   "read through repeatedFlag, which takes the name as an argument",
 	"--pillar-root": "read through repeatedFlag, which takes the name as an argument",
-	"--local":       "consumed by the argument parser, which knows the no-value flags",
 }
 
 func TestEveryFlagIsDocumentedAndParsed(t *testing.T) {

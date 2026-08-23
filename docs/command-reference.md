@@ -75,6 +75,27 @@ and without needing a node. See [Migrating from Salt](migrating-from-salt.md).
 | default nested output | `--out nested`, the default | works |
 | `--out-indent=2` | `--indent 2` | works |
 
+## The file server
+
+The hub serves the state tree, and a node compiles against it. Set
+`file_roots` on the hub; a node with a `hub` configured uses it unless
+`--local` says otherwise.
+
+| Salt | halite | Status |
+|---|---|---|
+| `salt://web/nginx.conf` in a state | works unchanged | works |
+| `salt-run fileserver.file_list` | `halite-hub run '*' cp.list_master` | phase 2 |
+| the master serves `file_roots` | the hub serves `file_roots` | works | <!-- lexicon:allow -->
+| `cp.cache_file` | happens automatically; the cache is under `cache_dir` | works |
+| gitfs, s3fs | `fileserver_backend` accepts only `roots` | phase 5 |
+
+Pillar is still compiled on the node from the node's own
+`pillar_roots`: hub-side pillar is the rest of phase 2.
+
+`serve` refuses to start if a file root holds the hub's own `state_dir`,
+`cache_dir`, or `pki_dir` — that arrangement serves the job cache, and
+so every return in the estate, to every enrolled node.
+
 ## Enrollment and the key lifecycle
 
 This works. A hub issues, an operator decides, and a node holds a
@@ -134,11 +155,6 @@ one, and `run` finds it if there is exactly one in the key directory.
 | `salt-call event.send` | `halite-node event send` | phase 2 |
 | `salt-run state.orchestrate` | `halite-hub orch` | phase 3 |
 | `salt-api` | `halite-api serve` | phase 4 |
-
-A hub-driven `state.apply` compiles against the **node's** local tree.
-The hub's file server is the next piece of phase 2; until it lands, the
-tree has to be on the node, which is how a masterless estate already has
-it. <!-- lexicon:allow -->
 
 `run` exits 0 when every node succeeded, 1 when one failed, and 3 when a
 node was sent the job and did not answer — because "it said no" and "it

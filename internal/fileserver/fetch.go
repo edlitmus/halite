@@ -13,7 +13,10 @@ import (
 // against the manifest hash and written atomically; against local roots it
 // resolves to the file in place, because there is nothing to transfer.
 type Fetcher struct {
-	Roots *Roots
+	// Embedded so that one value is both the state compiler's Loader
+	// and a module's FileFetcher, which is what lets a run compile
+	// against local roots or against a hub without knowing which.
+	*Roots
 	// HashType is the digest the file server reports.
 	HashType string
 }
@@ -24,7 +27,7 @@ func NewFetcher(r *Roots) *Fetcher { return &Fetcher{Roots: r, HashType: "sha256
 // Fetch implements exec.FileFetcher.
 func (f *Fetcher) Fetch(env, uri string) (string, error) {
 	target := EnvFromURI(uri, env)
-	path, err := f.Roots.Resolve(target, StripScheme(uri))
+	path, err := f.Resolve(target, StripScheme(uri))
 	if err != nil {
 		return "", fmt.Errorf("%s is not served from the %q environment: %w", uri, target, err)
 	}

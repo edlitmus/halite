@@ -164,9 +164,28 @@ restart cannot fix — this node's enrollment was revoked, or `hub_tries`
 was reached — and the units carry `RestartPreventExitStatus=1` so that
 stops the unit and leaves the reason in the journal.
 
-The agent runs the jobs that arrive on that stream. What it does not
-have yet is the hub's file server, so a hub-driven `state.apply`
-compiles against the tree on the node.
+The agent runs the jobs that arrive on that stream, and compiles them
+against the tree the hub serves. Pillar is still compiled on the node
+from the node's own `pillar_roots`.
+
+Set `file_roots` on the hub and the fleet follows it:
+
+```yaml
+# hub.yaml
+file_roots:
+  base:
+    - /srv/halite/states
+```
+
+A node fetches what it needs, verifies each file against the digest the
+hub published before moving it into place, and caches it under
+`cache_dir`. The next run asks conditionally, so a tree redeployed from
+git — new timestamps, identical contents — costs a round trip and no
+transfer.
+
+`serve` refuses to start if a file root holds the hub's own `state_dir`,
+`cache_dir`, or `pki_dir`. That arrangement serves the job cache, and so
+every return in the estate, to every node that has enrolled.
 
 ## Driving the fleet
 

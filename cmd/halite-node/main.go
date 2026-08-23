@@ -29,6 +29,7 @@ import (
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
+	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
@@ -152,9 +153,12 @@ type node struct {
 	indent    int
 	log       *hlog.Logger
 	secrets   *redact.Set
-	files     *fileserver.Roots
-	pillars   *fileserver.Roots
-	undef     template.UndefinedMode
+	// files is the tree a run compiles against: this node's own roots,
+	// or the hub's file server. One interface, because a state that
+	// says `source: salt://web/nginx.conf` must not know which it got.
+	files   stateTree
+	pillars *fileserver.Roots
+	undef   template.UndefinedMode
 	// args and root are kept so that a job from a hub naming a
 	// different environment can have its roots rebuilt, rather than
 	// silently running against the environment this invocation happened
@@ -254,7 +258,7 @@ func setup(args *cli.Args) *node {
 	n.args = args
 	n.root = root
 	n.refusals = make(chan *job.Return, 16)
-	n.files = fileserver.NewRoots(n.fileRootsFor(n.env))
+	n.files = fileserver.NewFetcher(fileserver.NewRoots(n.fileRootsFor(n.env)))
 	n.pillars = fileserver.NewRoots(n.pillarRootsFor(n.pillarEnv))
 	return n
 }
@@ -310,6 +314,17 @@ func applyNodeIDModifiers(cfg *config.Config, id string) string {
 		id = strings.ToLower(id)
 	}
 	return id
+}
+
+// tree is what a state run reads from: the compiler's view of it and a
+// module's view of it, which are the same tree seen two ways.
+//
+// Defined on the consumer, as an interface, so that the hub's file
+// server and the node's own roots are interchangeable at the one place
+// that chooses between them.
+type stateTree interface {
+	state.Loader
+	exec.FileFetcher
 }
 
 // fileRootsFor and pillarRootsFor are the roots for one environment.
@@ -479,7 +494,7 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 		Env:      n.env,
 		JobID:    jobID,
 		Test:     n.test,
-		Files:    fileserver.NewFetcher(n.files),
+		Files:    n.files,
 		Dispatch: dispatcher{n.registry.Exec},
 		Runner:   &exec.OSRunner{},
 		Log: func(level, msg string) {

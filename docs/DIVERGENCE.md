@@ -1301,6 +1301,16 @@ the worst defect in this phase:
 | A `--test` job put the agent into test mode **for ever** | `executeJob` set the flag on the long-lived node rather than on a copy. The first `run '*' state.apply --test` was correct; every real apply after it on that node reported what it *would* do, and an operator would have believed it had done it. A job now runs against a shallow copy of the node, and the same applies to the environment a job names. |
 | A state return came back as `map[Pos:map[Col:0 File: Line:0]]` | The return payload was `any` and went through `encoding/json`, which cannot see the ordered model: it marshalled the struct rather than the mapping. The payload is now encoded on the node with the model's own codec, which also keeps SPEC 6.4's promise about 64-bit integers. |
 
+One more thing came out of running it, and this one is a hazard an
+operator can create as easily as I did: the lab had `state_dir` inside
+`file_roots`, so the hub served **its own key store and job cache** to
+every enrolled node. The key store is not secret, but the job cache
+holds every return in the estate, and returns carry pillar-derived
+values. `file_roots: /srv/halite` beside `state_dir: /srv/halite/state`
+is an easy thing to write. `serve` now refuses to start on an overlap
+and names both directories, because everything after startup looks like
+it is working.
+
 What the lab run establishes: manual enrollment with an out-of-band
 fingerprint comparison, token enrollment within a node-ID glob and a
 source CIDR, single-use enforcement, acceptance and rejection,
@@ -1310,8 +1320,10 @@ that OpenSSL parses, a highstate driven from the hub across two nodes in
 test mode and then for real and then again to convergence, glob, list,
 and grain targeting, `--async`, a job for a node that is not connected
 reported as unanswered with exit code 3, a function that does not exist
-returned as a failure rather than a crash, and a node certificate
-refused at `/v1/jobs`.
+returned as a failure rather than a crash, a node certificate refused at
+`/v1/jobs`, and a highstate compiled from a tree that exists only on the
+hub -- including a `salt://` source fetched, verified against the
+published digest, and cached -- then edited on the hub and reconverged.
 
 What it does not: more than two nodes, more than one hub, a network that
 is not loopback, a hub restart with nodes connected, a certificate
@@ -1340,13 +1352,21 @@ that is filed in the job cache. `halite-hub jobs` reads that cache. A
 highstate has been driven from a hub against two nodes, applied, and
 run again to convergence.
 
+The file server followed, and with it the exit criterion SPEC section
+32 names for this phase: an operator edits the tree on the hub, and the
+fleet converges to it. A node compiles against the hub's tree, caches
+what it fetched, and asks conditionally afterwards, so a redeployed tree
+with identical contents costs a round trip and no transfer.
+
 What is **not** built, in phase 2:
 
-- **The file server.** A hub-driven `state.apply` compiles against the
-  node's own tree, not one the hub serves. This is the largest gap
-  left, and it is what SPEC's exit criterion for the phase means by
-  "driven from the hub".
-- **Hub-side pillar**, `/v1/pillar`. Pillar is compiled on the node.
+- **Hub-side pillar**, `/v1/pillar`. Pillar is compiled on the node from
+  the node's own `pillar_roots`. This is the largest gap left: an estate
+  whose pillar is centralised cannot centralise it here yet.
+- **`file_ignore_regex`.** `file_ignore_glob` hides paths; the regex
+  form is declared and read by nothing.
+- **gitfs and s3fs.** `fileserver_backend` accepts only `roots`, and
+  says so at startup rather than silently serving nothing.
 - **RBAC** (SPEC 23.5). An operator certificate is required and any
   valid one may run anything: the policy file is read by nothing. The
   first half of authorization -- knowing the peer is an operator and

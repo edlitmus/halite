@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/log"
@@ -48,6 +49,13 @@ type Server struct {
 	nodesOnce sync.Once
 	// Nodegroups is the configured nodegroup table.
 	Nodegroups target.Nodegroups
+
+	// Files is the state tree this hub serves, or nil for a hub that
+	// serves none. SPEC section 13.
+	Files *fileserver.Roots
+	// HashType is the digest the file server publishes, sha256 by
+	// default.
+	HashType string
 
 	jobClock job.Clock
 }
@@ -111,6 +119,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+transport.PathReturn, s.authenticated(s.returned))
 	mux.HandleFunc("POST "+transport.PathJobs, s.operator(s.submit))
 	mux.HandleFunc("GET "+transport.PathJob+"{jid}", s.operator(s.jobStatus))
+	mux.HandleFunc("GET "+transport.PathFiles+"{path...}", s.authenticated(s.files))
 	// An unrouted path under /v1/ is a version skew or a scan, and
 	// either way the answer is the same shape as every other failure.
 	mux.HandleFunc("/", s.notFound)

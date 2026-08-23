@@ -55,11 +55,17 @@ func (l *lab) operator(t *testing.T, name string) *transport.Client {
 
 // connect opens a node's subscribe stream and answers jobs with a
 // canned return, which is what a node does minus the executing.
-func (l *lab) connect(t *testing.T, client *transport.Client, nodeID string, grains string) context.CancelFunc {
+func (l *lab) connect(t *testing.T, client *transport.Client, nodeID string, grains string) func() {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan struct{})
+	// stopped closes when the goroutine has finished, including any
+	// return it was in the middle of posting. Without waiting for it, a
+	// test's temporary directory is removed while a return is being
+	// written into it, which fails the test that has already passed.
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
 		client.Subscribe(ctx, transport.SubscribeRequest{
 			NodeID: nodeID,
 			Grains: json.RawMessage(grains),
@@ -72,7 +78,9 @@ func (l *lab) connect(t *testing.T, client *transport.Client, nodeID string, gra
 					close(ready)
 				}
 			case transport.MsgJob:
-				client.Return(context.Background(), job.Return{
+				// ctx, not Background: a return in flight when the
+				// test ends must not outlive it.
+				client.Return(ctx, job.Return{
 					JID:     job.ID(msg.JID),
 					NodeID:  nodeID,
 					Fun:     msg.Fun,
@@ -90,7 +98,10 @@ func (l *lab) connect(t *testing.T, client *transport.Client, nodeID string, gra
 		cancel()
 		t.Fatalf("%s never connected", nodeID)
 	}
-	return cancel
+	return func() {
+		cancel()
+		<-stopped
+	}
 }
 
 func TestAJobReachesTheFleetAndTheReturnsComeBack(t *testing.T) {

@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/pki"
@@ -354,4 +355,61 @@ func (c *Client) JobStatus(ctx context.Context, jid string) (*JobStatus, error) 
 		return nil, fmt.Errorf("the hub's answer for %s is not readable: %w", jid, err)
 	}
 	return &out, nil
+}
+
+// FileManifest is a subtree's contents on the hub, as JSON: the node
+// decodes it with the fileserver's own type.
+func (c *Client) FileManifest(ctx context.Context, env, prefix string) ([]byte, error) {
+	path := PathFiles + url.PathEscape(env)
+	if prefix != "" {
+		path += "?prefix=" + url.QueryEscape(prefix)
+	}
+	body, _, _, err := c.get(ctx, path, "")
+	return body, err
+}
+
+// FetchFile reads one file from the hub.
+//
+// etag is what the node already has, and an empty answer with
+// notModified set means the cached copy is current. The digest the hub
+// publishes comes back so that the node can check what it wrote.
+func (c *Client) FetchFile(ctx context.Context, env, path, etag string) (body []byte, digest string, notModified bool, err error) {
+	escaped := PathFiles + url.PathEscape(env)
+	for _, segment := range strings.Split(strings.TrimPrefix(path, "/"), "/") {
+		escaped += "/" + url.PathEscape(segment)
+	}
+	return c.get(ctx, escaped, etag)
+}
+
+func (c *Client) get(ctx context.Context, path, etag string) ([]byte, string, bool, error) {
+	client, err := c.client()
+	if err != nil {
+		return nil, "", false, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(path), nil)
+	if err != nil {
+		return nil, "", false, err
+	}
+	if etag != "" {
+		req.Header.Set("If-None-Match", `"`+etag+`"`)
+	}
+	req.Header.Set("Accept-Encoding", "gzip")
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("%s: %w", path, err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotModified {
+		return nil, res.Header.Get("X-Halite-Hash"), true, nil
+	}
+	payload, err := io.ReadAll(io.LimitReader(res.Body, MaxRequestBody))
+	if err != nil {
+		return nil, "", false, fmt.Errorf("%s: %w", path, err)
+	}
+	if res.StatusCode >= 400 {
+		return nil, "", false, decodeError(path, payload, res.StatusCode)
+	}
+	return payload, res.Header.Get("X-Halite-Hash"), false, nil
 }

@@ -22,6 +22,8 @@ type lab struct {
 	ca     *pki.CA
 	denied *transport.Denylist
 	url    string
+	// root is the directory the hub serves, when a test gives it one.
+	root string
 }
 
 func newLab(t *testing.T) *lab {

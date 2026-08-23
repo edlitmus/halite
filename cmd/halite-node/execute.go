@@ -118,7 +118,13 @@ func (n *node) adoptJobEnvironment(j *job.Job) error {
 	}
 	n.env = j.Env
 	n.pillarEnv = j.Env
-	n.files = fileserver.NewRoots(n.fileRootsFor(n.env))
+	if remote, ok := n.files.(*fileserver.Remote); ok {
+		// The hub serves every environment from one connection, so
+		// only the environment the fetcher asks for changes.
+		n.files = remote.ForEnv(j.Env)
+	} else {
+		n.files = fileserver.NewFetcher(fileserver.NewRoots(n.fileRootsFor(n.env)))
+	}
 	n.pillars = fileserver.NewRoots(n.pillarRootsFor(n.pillarEnv))
 	return nil
 }
