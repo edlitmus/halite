@@ -2,9 +2,10 @@
 #
 # `halite-hub serve` runs the control plane: enrollment, the key
 # lifecycle, the subscribe stream, remote execution, the file server,
-# pillar, and RBAC. Batching and the event bus are the rest of phase 2,
-# so the settings for those are read and validated and nothing acts on
-# them yet.
+# pillar, RBAC, batching, and the event bus. The mine, the grain refresh
+# push, and `runner`/`files`/`ssh` are the rest of phase 2, so the
+# settings for those are read and validated and nothing acts on them
+# yet.
 
 # The one TCP port of SPEC section 6.1. There is no plaintext mode.
 listen: :4510
@@ -66,6 +67,16 @@ job_cache_max_size: 10737418240
 # nodegroups:
 #   web: 'G@os:FreeBSD and web*'
 
+
+# The event bus of SPEC section 17. Durable and segmented, so a
+# subscriber resumes from an offset and a reactor restart is lossless.
+# Retention is by age and by total size, whichever binds first.
+event_retention: 720h
+event_max_size: 4294967296
+
+# Additionally emit each event under its salt/ spelling, for a consumer
+# that cannot be changed at the same time as the estate.
+event_tag_compat: false
 
 log_level: info
 log_format: json

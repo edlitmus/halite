@@ -148,6 +148,8 @@ var Keys = []Key{
 	{"cmd_default_shell", nodeOnly, "false", "Run cmd.run through a shell by default, as Salt does.", "15.2"},
 	{"legacy_arg_parse", nodeHub, "false", "Restore Salt's YAML coercion of command line arguments.", "9.2"},
 	{"event_tag_compat", hubOnly, "false", "Additionally emit every event under its salt/ equivalent.", "17.1"},
+	{"event_retention", hubOnly, "720h", "How long the event bus keeps a record.", "17.2"},
+	{"event_max_size", hubOnly, "4294967296", "Ceiling on the whole event bus, whichever binds first.", "17.2"},
 
 	// GPG pillar compatibility.
 	{"gpg_binary", nodeHub, "gpg", "The gpg binary the gpg renderer drives.", "12.6"},

@@ -127,6 +127,8 @@ Read by the hub.
 | `env` | `base` | 13.1 | The default environment. saltenv is a permanent alias. |
 | `env_allowlist` | — | 28.3 | Environments a run may use. |
 | `env_denylist` | — | 28.3 | Environments a run may not use. |
+| `event_max_size` | `4294967296` | 17.2 | Ceiling on the whole event bus, whichever binds first. |
+| `event_retention` | `720h` | 17.2 | How long the event bus keeps a record. |
 | `event_tag_compat` | `false` | 17.1 | Additionally emit every event under its salt/ equivalent. |
 | `ext_pillar` | — | 12.7 | External pillar sources. |
 | `ext_pillar_fail` | `hard` | 12.7 | hard or ignore. A partial pillar is worse than no pillar. |

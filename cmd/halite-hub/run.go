@@ -150,18 +150,28 @@ func runRun(args *cli.Args) int {
 		ttl = int(d.Seconds())
 	}
 
+	subset := 0
+	fmt.Sscanf(args.Flag("subset", "0"), "%d", &subset)
+	safeLimit := 0
+	fmt.Sscanf(args.Flag("batch-safe-limit", "0"), "%d", &safeLimit)
+
 	client := operatorClient(args)
 	ctx := context.Background()
 	res, err := client.Submit(ctx, transport.SubmitRequest{
-		Target:     target,
-		TargetKind: kind,
-		Fun:        fun,
-		Arg:        rest,
-		Kwarg:      kwargs,
-		Env:        args.Flag("env", ""),
-		Test:       args.Bool("test", false),
-		Offline:    args.Flag("offline", ""),
-		TTLSeconds: ttl,
+		Target:           target,
+		TargetKind:       kind,
+		Fun:              fun,
+		Arg:              rest,
+		Kwarg:            kwargs,
+		Env:              args.Flag("env", ""),
+		Test:             args.Bool("test", false),
+		Offline:          args.Flag("offline", ""),
+		TTLSeconds:       ttl,
+		Batch:            args.Flag("batch", ""),
+		BatchWaitSeconds: seconds(args.Flag("batch-wait", ""), "batch-wait"),
+		BatchSafeLimit:   safeLimit,
+		BatchTimeoutSecs: seconds(args.Flag("batch-timeout", ""), "batch-timeout"),
+		Subset:           subset,
 	})
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -173,6 +183,11 @@ func runRun(args *cli.Args) int {
 	}
 	for _, id := range res.Absent {
 		fmt.Fprintf(os.Stderr, "%s: not connected\n", id)
+	}
+
+	if res.Batch > 0 {
+		fmt.Fprintf(os.Stderr, "%d nodes, %d at a time; the hub owns the batch, so this can be interrupted\n",
+			len(res.Nodes), res.Batch)
 	}
 
 	if args.Bool("async", false) {
@@ -194,6 +209,24 @@ func runRun(args *cli.Args) int {
 // hub-side records, so a caller that is disconnected, killed, or run
 // again later sees exactly the same thing. SPEC 9.3 makes the same
 // argument for batching.
+// seconds reads a duration as whole seconds, which is what the wire
+// carries.
+//
+// It takes the value rather than the flag name so that the literal sits
+// beside `args.Flag` at the call site: the audit in flags_test.go looks
+// for exactly that, and a helper that hides the name is how a flag ends
+// up documented and unparsed.
+func seconds(v, name string) int {
+	if v == "" {
+		return 0
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		cli.Fatalf("--%s %q: %v", name, v, err)
+	}
+	return int(d.Seconds())
+}
+
 func gather(client *transport.Client, sub *transport.SubmitResponse, timeout time.Duration, args *cli.Args) int {
 	deadline := time.Now().Add(timeout)
 	// Only the nodes the job was delivered to. Waiting the full gather
@@ -203,16 +236,41 @@ func gather(client *transport.Client, sub *transport.SubmitResponse, timeout tim
 	expected := len(sub.Nodes) - len(sub.Absent)
 	var status *transport.JobStatus
 
+	progress := args.Bool("progress", false)
+	seen := 0
 	for {
 		var err error
 		status, err = client.JobStatus(context.Background(), sub.JID)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
-		if len(status.Returns) >= expected || time.Now().After(deadline) {
+		if progress && len(status.Returns) != seen {
+			seen = len(status.Returns)
+			// Dispatched, returned, and still to be reached are three
+			// different things, and a batched run is the case where an
+			// operator most needs them apart.
+			fmt.Fprintf(os.Stderr, "\r%d returned, %d dispatched, %d of %d nodes    ",
+				seen, len(status.Delivered), len(status.Delivered), len(status.Nodes))
+		}
+		// A batched job is not finished when the delivered slice has
+		// answered; it is finished when every node has. The hub says
+		// which by the job's state.
+		done := len(status.Returns) >= expected
+		if status.State == "batching" {
+			done = false
+		}
+		if status.State == "aborted" {
+			fmt.Fprintf(os.Stderr, "\nthe batch was stopped by its safe limit with %d node(s) never reached\n",
+				len(status.Nodes)-len(status.Delivered))
+			break
+		}
+		if done || time.Now().After(deadline) {
 			break
 		}
 		time.Sleep(250 * time.Millisecond)
+	}
+	if progress {
+		fmt.Fprintln(os.Stderr)
 	}
 
 	returns := make([]*job.Return, 0, len(status.Returns))
@@ -251,6 +309,8 @@ func gather(client *transport.Client, sub *transport.SubmitResponse, timeout tim
 		}
 	}
 	switch {
+	case status.State == "aborted":
+		return 1
 	case failed > 0:
 		return 1
 	case len(status.Missing) > 0:

@@ -8,12 +8,14 @@
 package hub
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/eventbus"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
@@ -31,6 +33,9 @@ type Server struct {
 	Log       *log.Logger
 	// Now is the clock, for the tests.
 	Now func() time.Time
+	// Context bounds work the hub starts on its own -- a batch in
+	// flight -- so that stopping the hub stops it. Serve sets it.
+	Context context.Context
 	// PingInterval is how often an idle subscribe stream says
 	// something, so that a node can tell a quiet hub from a dead one.
 	PingInterval time.Duration
@@ -60,6 +65,11 @@ type Server struct {
 	// Pillar is what this hub needs to compile a node's pillar, or nil
 	// for a hub that compiles none.
 	Pillar *PillarOptions
+	// Events is the bus of SPEC 17, or nil for a hub that keeps none.
+	Events *eventbus.Bus
+	// EventTagCompat additionally emits every event under its `salt/`
+	// equivalent, per SPEC 17.1.
+	EventTagCompat bool
 	// Policy is the RBAC of SPEC 23.5. A nil policy authorizes
 	// nothing, which is what deny by default means when the file is
 	// missing as well as when it is empty.
@@ -127,8 +137,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+transport.PathReturn, s.authenticated(s.returned))
 	mux.HandleFunc("POST "+transport.PathJobs, s.operator(s.submit))
 	mux.HandleFunc("GET "+transport.PathJob+"{jid}", s.operator(s.jobStatus))
+	mux.HandleFunc("POST "+transport.PathJob+"{jid}/resume", s.operator(s.resume))
 	mux.HandleFunc("GET "+transport.PathFiles+"{path...}", s.authenticated(s.files))
 	mux.HandleFunc("POST "+transport.PathPillar, s.authenticated(s.pillarFor))
+	mux.HandleFunc("POST "+transport.PathEvent, s.authenticated(s.events))
+	mux.HandleFunc("GET "+transport.PathEvents, s.operator(s.eventStream))
 	// An unrouted path under /v1/ is a version skew or a scan, and
 	// either way the answer is the same shape as every other failure.
 	mux.HandleFunc("/", s.notFound)
@@ -229,6 +242,9 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, keystore.ErrPending):
 		s.info("enrollment request is pending",
 			"node_id", res.NodeID, "fingerprint", res.Fingerprint, "from", r.RemoteAddr)
+		s.emit(tagEnroll(res.NodeID, string(keystore.Pending)), res.NodeID, map[string]any{
+			"fingerprint": res.Fingerprint, "from": r.RemoteAddr,
+		})
 		transport.WriteJSON(w, http.StatusAccepted, transport.EnrollResponse{
 			NodeID:      res.NodeID,
 			State:       string(keystore.Pending),
@@ -239,6 +255,9 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		// The detail goes in the hub's log, where an operator can see
 		// it. The node is told that it was refused.
 		s.warn("enrollment refused", "from", r.RemoteAddr, "error", err.Error())
+		s.emit("halite/error/enrollment", "", map[string]any{
+			"from": r.RemoteAddr, "error": err.Error(),
+		})
 		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
 			errors.New("enrollment refused; the hub's log says why"))
 	case err != nil:
@@ -247,6 +266,9 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.info("enrollment issued",
 			"node_id", res.NodeID, "fingerprint", res.Fingerprint, "from", r.RemoteAddr)
+		s.emit(tagEnroll(res.NodeID, string(keystore.Accepted)), res.NodeID, map[string]any{
+			"fingerprint": res.Fingerprint, "from": r.RemoteAddr,
+		})
 		transport.WriteJSON(w, http.StatusOK, transport.EnrollResponse{
 			NodeID:      res.NodeID,
 			State:       string(keystore.Accepted),
@@ -281,6 +303,7 @@ func (s *Server) renew(w http.ResponseWriter, r *http.Request, nodeID string) {
 		return
 	}
 	s.info("certificate renewed", "node_id", res.NodeID, "fingerprint", res.Fingerprint)
+	s.emit(tagKey(res.NodeID, "renew"), res.NodeID, map[string]any{"fingerprint": res.Fingerprint})
 	// The stream this node is on was opened with the certificate that
 	// has just been superseded. Ending it makes the node come back
 	// holding the new one; leaving it open leaves a live stream

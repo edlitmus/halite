@@ -32,12 +32,13 @@ Usage:
   halite-hub run <target> <fun>  run a function across the fleet
   halite-hub jobs <subcommand>   the job cache
   halite-hub policy <show|test>  the RBAC policy, and what it decides
+  halite-hub event <listen|tags> the event bus
   halite-hub migrate <tree>      audit an existing Salt tree and report
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
 
 Still to come in phase 2 (SPEC section 32):
-  runner, orch, files, ssh, event
+  runner, orch, files, ssh
 
 Common flags:
   --help               describe the program without running a command
@@ -53,6 +54,13 @@ serve flags:
   --log-fmt <format>   json (default) or console
 
 run flags:
+  --batch <n|n%>       run against this many nodes at a time; the hub owns
+                       the batch, so closing the terminal does not stop it
+  --batch-wait <dur>   settle time between batches
+  --batch-safe-limit <n>  stop the run once this many nodes have failed
+  --batch-timeout <dur>   how long one batch waits for its returns
+  --subset <n>         run against a random n of the matched set
+  --progress           report dispatched, returned, and outstanding as it goes
   --async              print the jid and return at once
   --timeout <dur>      how long to gather returns, default 5m
   --test               run every state in test mode, changing nothing
@@ -68,10 +76,16 @@ run flags:
 
 jobs flags:
   --limit <n>          how many jobs to list, default 20
+  --as <name>          which operator certificate to present, for resume
 
 policy flags:
   --runner             evaluate the function as a runner rather than a job
   --kwarg <k=v>        an argument to include, repeatable as a comma list
+
+event flags:
+  --tag <glob>         a tag to follow, repeatable as a comma list
+  --from <position>    latest (default), earliest, or an offset
+  --once               read what is there and stop, rather than following
 
 migrate flags:
   --pillar-root <dir>  audit a separate pillar tree with pillar rules
@@ -119,7 +133,9 @@ func main() {
 		os.Exit(runJobs(args))
 	case "policy":
 		os.Exit(runPolicy(args))
-	case "runner", "orch", "files", "ssh", "event":
+	case "event":
+		os.Exit(runEvent(args))
+	case "runner", "orch", "files", "ssh":
 		cli.Fatalf("`%s` is the rest of phase 2 (SPEC section 32) and is not built yet. "+
 			"`serve`, `keys`, `run`, and `jobs` work today; `migrate` and `lint` measure a tree.", os.Args[1])
 	default:

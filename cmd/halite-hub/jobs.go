@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -17,6 +18,8 @@ var jobsUsage = `halite-hub jobs — the job cache (SPEC section 9.4)
   jobs show <jid>              one job and every return filed against it
   jobs lookup <jid>            the same, as JSON
   jobs missing <jid>           the nodes that were sent it and have not answered
+  jobs active                  jobs the hub has not finished delivering
+  jobs resume <jid>            pick up a batch the hub was part way through
   jobs prune                   enforce retention now rather than on the hour
 
 jobs flags:
@@ -82,6 +85,9 @@ func runJobs(args *cli.Args) int {
 			if len(missing) > 0 && state != string(job.Complete) {
 				state = fmt.Sprintf("%s, %d outstanding", state, len(missing))
 			}
+			if j.Batch.Size > 0 {
+				state = fmt.Sprintf("%s, %d/%d delivered", state, len(j.Delivered), len(j.Nodes))
+			}
 			fmt.Printf("%s  %-24s %-14s %s\n", j.JID, j.Fun, j.Target, state)
 		}
 		return 0
@@ -109,6 +115,12 @@ func runJobs(args *cli.Args) int {
 		fmt.Printf("created   %s\n", j.Created.UTC().Format(time.RFC3339))
 		fmt.Printf("expires   %s\n", j.Expires.UTC().Format(time.RFC3339))
 		fmt.Printf("nodes     %s\n", strings.Join(j.Nodes, ", "))
+		if j.Batch.Size > 0 {
+			fmt.Printf("batch     %d at a time, %d delivered\n", j.Batch.Size, len(j.Delivered))
+			if remaining := j.Remaining(); len(remaining) > 0 {
+				fmt.Printf("to go     %s\n", strings.Join(remaining, ", "))
+			}
+		}
 		missing, _ := cache.Missing(id)
 		if len(missing) > 0 {
 			fmt.Printf("missing   %s\n", strings.Join(missing, ", "))
@@ -138,6 +150,55 @@ func runJobs(args *cli.Args) int {
 		if len(nodes) > 0 {
 			return 1
 		}
+		return 0
+
+	case "active":
+		jobs, err := cache.List(200)
+		if err != nil {
+			cli.Fatalf("%v", err)
+		}
+		found := 0
+		now := time.Now()
+		for _, j := range jobs {
+			if j.State != job.Batching && j.State != job.Dispatched {
+				continue
+			}
+			// A job past its expiry is not in flight, whatever its
+			// record still says: the hub settles those on a timer, and
+			// this list should not wait for the timer to be honest.
+			if j.Expired(now) {
+				continue
+			}
+			missing, _ := cache.Missing(j.JID)
+			if j.State == job.Dispatched && len(missing) == 0 {
+				continue
+			}
+			found++
+			fmt.Printf("%s  %-20s %-12s delivered %d/%d, %d outstanding\n",
+				j.JID, j.Fun, j.State, len(j.Delivered), len(j.Nodes), len(missing))
+		}
+		if found == 0 {
+			fmt.Println("nothing is in flight")
+		}
+		return 0
+
+	case "resume":
+		if len(rest) == 0 {
+			cli.Fatalf("resume needs a jid; `jobs active` lists what is in flight")
+		}
+		// Resuming asks the running hub, because the hub is what owns
+		// a batch. Reading the cache would say what is left and could
+		// not deliver any of it.
+		client := operatorClient(args)
+		res, err := client.ResumeJob(context.Background(), rest[0])
+		if err != nil {
+			cli.Fatalf("%v", err)
+		}
+		if len(res.Remaining) == 0 {
+			fmt.Printf("%s has already reached every node\n", res.JID)
+			return 0
+		}
+		fmt.Printf("resuming %s: %d node(s) to go\n", res.JID, len(res.Remaining))
 		return 0
 
 	case "prune":

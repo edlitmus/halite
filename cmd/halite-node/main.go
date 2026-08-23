@@ -47,6 +47,7 @@ Usage:
   halite-node enroll                             ask a hub for a certificate
   halite-node renew                              replace this node's certificate
   halite-node connect                            hold the stream open to the hub
+  halite-node event send <tag> [json]            put an event on the hub's bus
 
 enroll and connect flags:
   --hub <address>      the hub to dial, default from the hub setting
@@ -58,6 +59,7 @@ enroll and connect flags:
   --force              enrol again from a new key, moving the old one aside
   --key-algorithm <a>  ecdsa-p256 (default) or ecdsa-p384
   --server-name <name> the name to verify in the hub's certificate
+  --correlation <id>   tie an event to the ones that caused it
 
 Common flags:
   --help               describe the program without running a command
@@ -129,8 +131,7 @@ func main() {
 	case "connect", "serve":
 		os.Exit(runConnect(args))
 	case "event":
-		cli.Fatalf("`%s` needs the event bus, which is the rest of phase 2 (SPEC section 32). "+
-			"`enroll`, `renew`, and `connect` work today.", sub)
+		os.Exit(runEvent(args))
 	default:
 		fmt.Fprintf(os.Stderr, "halite-node: unknown subcommand %q\n\n%s", sub, usage)
 		os.Exit(2)

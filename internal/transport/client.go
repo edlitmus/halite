@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -421,4 +422,71 @@ func (c *Client) Pillar(ctx context.Context, req PillarRequest) (*PillarResponse
 		return nil, err
 	}
 	return &res, nil
+}
+
+// ResumeJob asks the hub to pick up a batch it was part way through.
+func (c *Client) ResumeJob(ctx context.Context, jid string) (*ResumeResponse, error) {
+	var res ResumeResponse
+	if _, err := c.post(ctx, PathJob+jid+"/resume", struct{}{}, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// SendEvent puts something on the hub's bus. The hub namespaces the
+// tag under this node.
+func (c *Client) SendEvent(ctx context.Context, req EventRequest) (*EventResponse, error) {
+	var res EventResponse
+	if _, err := c.post(ctx, PathEvent, req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// FollowEvents streams the bus, calling onEvent for each record until
+// the context ends. A non-following read returns when the log is
+// exhausted.
+func (c *Client) FollowEvents(ctx context.Context, tags []string, from string, follow bool, limit int, onEvent func(json.RawMessage) error) error {
+	client, err := c.client()
+	if err != nil {
+		return err
+	}
+	query := url.Values{}
+	for _, tag := range tags {
+		query.Add("tag", tag)
+	}
+	if from != "" {
+		query.Set("from", from)
+	}
+	if follow {
+		query.Set("follow", "true")
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(PathEvents+"?"+query.Encode()), nil)
+	if err != nil {
+		return err
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		payload, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+		return decodeError(PathEvents, payload, res.StatusCode)
+	}
+	scanner := bufio.NewScanner(res.Body)
+	scanner.Buffer(make([]byte, 0, 64<<10), MaxSubscribeLine)
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+		if err := onEvent(append(json.RawMessage(nil), line...)); err != nil {
+			return err
+		}
+	}
+	return scanner.Err()
 }

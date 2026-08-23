@@ -17,6 +17,7 @@ import (
 	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/eventbus"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/job"
@@ -247,17 +248,30 @@ func runServe(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
+	// The event bus of SPEC 17. Durable, so that a reactor restart is
+	// lossless and an incident can be reconstructed -- which is the
+	// property Salt's in-memory bus does not have.
+	bus, err := eventbus.Open(filepath.Join(h.cfg.String("state_dir", config.DefaultStateDir), "events"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	bus.Retention = h.cfg.Duration("event_retention", eventbus.DefaultRetention)
+	bus.MaxBytes = h.cfg.Int("event_max_size", eventbus.DefaultMaxBytes)
+	defer bus.Close()
+
 	server := &hub.Server{
-		Authority:    h.auth,
-		Log:          h.log,
-		PingInterval: h.cfg.Duration("hub_alive_interval", 30*time.Second),
-		Jobs:         jobs,
-		Nodes:        nodes,
-		Nodegroups:   groups,
-		Files:        files,
-		HashType:     h.cfg.String("hash_type", "sha256"),
-		Pillar:       pillarOpts,
-		Policy:       loaded,
+		Authority:      h.auth,
+		Log:            h.log,
+		PingInterval:   h.cfg.Duration("hub_alive_interval", 30*time.Second),
+		Jobs:           jobs,
+		Nodes:          nodes,
+		Nodegroups:     groups,
+		Files:          files,
+		HashType:       h.cfg.String("hash_type", "sha256"),
+		Pillar:         pillarOpts,
+		Policy:         loaded,
+		Events:         bus,
+		EventTagCompat: h.cfg.Bool("event_tag_compat", false),
 	}
 
 	ln, err := hub.Listen(listen, pair, h.auth.CA.Cert, h.denied)
@@ -277,14 +291,19 @@ func runServe(args *cli.Args) int {
 		"enrollment_mode", string(h.auth.Mode),
 		"ca_fingerprint", fingerprint,
 		"revocations_loaded", n,
-		"keys", h.store.Dir())
+		"keys", h.store.Dir(),
+		"events", bus.Dir())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// A batch in flight belongs to the hub, so stopping the hub stops
+	// it -- rather than leaving a goroutine delivering into a store
+	// that is being shut down. `jobs resume` picks it up afterwards.
+	server.Context = ctx
 	// The operator command line is a separate process, so the running
 	// hub follows the key store rather than being told.
 	go server.Reconcile(ctx, 2*time.Second)
-	go prune(ctx, h, jobs)
+	go maintain(ctx, h, server, jobs, bus)
 
 	if err := server.Serve(ctx, ln); err != nil {
 		h.log.Error("the hub stopped", "error", err.Error())
@@ -438,21 +457,47 @@ func nodegroupsFrom(cfg *config.Config) (target.Nodegroups, error) {
 	return groups, nil
 }
 
-// prune enforces the job cache's retention on a timer, so that a hub
-// left running does not fill its disk. Salt's local_cache does. // lexicon:allow
-func prune(ctx context.Context, h *hubContext, jobs *job.Cache) {
-	ticker := time.NewTicker(time.Hour)
-	defer ticker.Stop()
-	for {
+// maintain does the hub's two housekeeping jobs: settling jobs whose
+// window has passed, so that "what is running" has an answer, and
+// enforcing the job cache's retention, so that a hub left running does
+// not fill its disk. Salt's local_cache does. // lexicon:allow
+func maintain(ctx context.Context, h *hubContext, server *hub.Server, jobs *job.Cache, bus *eventbus.Bus) {
+	settle := time.NewTicker(time.Minute)
+	defer settle.Stop()
+	prune := time.NewTicker(time.Hour)
+	defer prune.Stop()
+	// The `fsync: interval` class of SPEC 17.2. The security-relevant
+	// tags are already durable when Append returns; this is the rest.
+	sync := time.NewTicker(5 * time.Second)
+	defer sync.Stop()
+
+	sweep := func() {
 		if removed, err := jobs.Prune(); err != nil {
 			h.log.Warn("pruning the job cache", "error", err.Error())
 		} else if removed > 0 {
 			h.log.Info("pruned the job cache", "removed", removed)
 		}
+		if removed, err := bus.Prune(); err != nil {
+			h.log.Warn("pruning the event bus", "error", err.Error())
+		} else if removed > 0 {
+			h.log.Info("pruned the event bus", "segments", removed)
+		}
+	}
+	sweep()
+	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-settle.C:
+			if _, err := server.Settle(); err != nil {
+				h.log.Warn("settling finished jobs", "error", err.Error())
+			}
+		case <-sync.C:
+			if err := bus.Sync(); err != nil {
+				h.log.Warn("syncing the event bus", "error", err.Error())
+			}
+		case <-prune.C:
+			sweep()
 		}
 	}
 }

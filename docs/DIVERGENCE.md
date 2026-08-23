@@ -1360,6 +1360,23 @@ fleet converges to it. A node compiles against the hub's tree, caches
 what it fetched, and asks conditionally afterwards, so a redeployed tree
 with identical contents costs a round trip and no transfer.
 
+Batching and the event bus followed.
+
+Batching is hub-side, which is the point: in Salt `--batch` lives in the
+CLI, so closing the terminal abandons the run with half the estate
+updated and no record of where it stopped. Here the group has its own
+record, `jobs active` says what is in flight, and `jobs resume` picks up
+a batch a hub restart interrupted. A safe limit stops the rest of the
+estate getting the same broken change.
+
+The event bus is a durable segmented log rather than Salt's in-memory
+ZeroMQ bus. A subscriber resumes from an offset, so a reactor restart is
+lossless and an incident can be reconstructed — which is exactly what a
+Salt estate discovers it cannot do during one. A node's events are
+namespaced under `halite/node/<its own id>/` whatever tag it asks for:
+Salt's reactor runs with the control plane's full privilege, so a node
+that can fire the right event can cause fleet-wide execution.
+
 RBAC followed. A policy file grants a role a target and the functions
 permitted against it together, a request must match one rule entirely,
 and nothing is authorized without a rule -- including when the file is
@@ -1392,9 +1409,15 @@ What is **not** built, in phase 2:
   form is declared and read by nothing.
 - **gitfs and s3fs.** `fileserver_backend` accepts only `roots`, and
   says so at startup rather than silently serving nothing.
-- **Batching** (`--batch`, `--subset`, `--batch-wait`), the event bus,
-  `/v1/grains`, `/v1/mine`, and the `queue` offline policy, which is
-  accepted and behaves as `skip`.
+- **`/v1/grains` and `/v1/mine`.** A node reports its grains when it
+  connects and there is no refresh push; the mine is phase 3.
+- **The `queue` offline policy** (SPEC 9.5), which is accepted and
+  behaves as `skip`.
+- **`halite-hub runner`, `files`, and `ssh`**, and `jobs kill|export`.
+- **The event bus's tag-prefix index** (SPEC 17.2). A subscriber's
+  globs are matched while reading rather than looked up, so a narrow
+  glob over a long log reads the whole log. It is correct and it is
+  linear.
 - **Tokens** (SPEC 23.6). An operator authenticates with a certificate;
   there is no token issuance, which is what `halite-api` needs and
   which is phase 4.

@@ -45,6 +45,7 @@ const (
 	PathFiles       = "/v1/files/"
 	PathGrains      = "/v1/grains"
 	PathJobs        = "/v1/jobs"
+	PathEvents      = "/v1/events"
 	PathJob         = "/v1/jobs/"
 	PathMine        = "/v1/mine"
 )
@@ -141,6 +142,15 @@ type SubmitRequest struct {
 	Offline    string         `json:"offline,omitempty"`
 	// TTLSeconds bounds how long the job may be run, per SPEC 6.3.
 	TTLSeconds int `json:"ttl_seconds,omitempty"`
+
+	// Batch is SPEC 9.3's `--batch`, as the operator wrote it: a count
+	// or a percentage. The hub resolves it against the matched set,
+	// because the operator does not know that number.
+	Batch            string `json:"batch,omitempty"`
+	BatchWaitSeconds int    `json:"batch_wait_seconds,omitempty"`
+	BatchSafeLimit   int    `json:"batch_safe_limit,omitempty"`
+	BatchTimeoutSecs int    `json:"batch_timeout_seconds,omitempty"`
+	Subset           int    `json:"subset,omitempty"`
 }
 
 // SubmitResponse is the hub's acknowledgement: the jid and who is
@@ -149,20 +159,32 @@ type SubmitRequest struct {
 type SubmitResponse struct {
 	JID   string   `json:"jid"`
 	Nodes []string `json:"nodes"`
+	// Batch is the resolved batch size, zero for an unbatched job. The
+	// operator wrote `25%`; this is what that came to.
+	Batch int `json:"batch,omitempty"`
 	// Absent lists matched nodes that were not connected, by name. A
 	// count would send an operator looking for which.
 	Absent []string `json:"absent,omitempty"`
 }
 
+// ResumeResponse is the answer to POST /v1/jobs/{jid}/resume.
+type ResumeResponse struct {
+	JID       string   `json:"jid"`
+	Remaining []string `json:"remaining,omitempty"`
+}
+
 // JobStatus is the answer to GET /v1/jobs/{jid}.
 type JobStatus struct {
-	JID     string            `json:"jid"`
-	Fun     string            `json:"fun"`
-	Target  string            `json:"target,omitempty"`
-	State   string            `json:"state,omitempty"`
-	Nodes   []string          `json:"nodes,omitempty"`
-	Missing []string          `json:"missing,omitempty"`
-	Returns []json.RawMessage `json:"returns,omitempty"`
+	JID    string   `json:"jid"`
+	Fun    string   `json:"fun"`
+	Target string   `json:"target,omitempty"`
+	State  string   `json:"state,omitempty"`
+	Nodes  []string `json:"nodes,omitempty"`
+	// Delivered is who the job has reached, which lags Nodes while a
+	// batch is in flight.
+	Delivered []string          `json:"delivered,omitempty"`
+	Missing   []string          `json:"missing,omitempty"`
+	Returns   []json.RawMessage `json:"returns,omitempty"`
 }
 
 // PillarRequest is POST /v1/pillar: a node asking for its own pillar.
@@ -181,6 +203,21 @@ type PillarResponse struct {
 	Env    string          `json:"env"`
 	SLS    []string        `json:"sls,omitempty"`
 	Pillar json.RawMessage `json:"pillar"`
+}
+
+// EventRequest is POST /v1/event: a node putting something on the
+// hub's bus. The hub namespaces the tag under the node, so a node
+// cannot forge an event that looks like the hub's own.
+type EventRequest struct {
+	Tag         string          `json:"tag"`
+	Data        json.RawMessage `json:"data,omitempty"`
+	Correlation string          `json:"correlation,omitempty"`
+}
+
+// EventResponse says where the record landed.
+type EventResponse struct {
+	Tag    string `json:"tag"`
+	Offset string `json:"offset"`
 }
 
 // Error is the shape of every failure the control plane returns, so

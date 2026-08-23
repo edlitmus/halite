@@ -28,6 +28,46 @@ esac
 ```
 
 
+## The event bus
+
+Everything the hub does lands on a durable log — `halite/job/<jid>/new`,
+`halite/job/<jid>/ret/<node>`, `halite/node/<node>/start`,
+`halite/key/<node>/<action>`, and the rest. `halite-hub event tags`
+prints the namespace.
+
+```sh
+halite-hub event listen                                  # follow everything
+halite-hub event listen --tag 'halite/job/**'            # one class
+halite-hub event listen --from earliest --once           # replay the log
+halite-hub event listen --from '00000003:81920'          # resume from an offset
+```
+
+The offset is on every record, so a consumer stores it and resumes
+exactly where it stopped. Salt's bus is in-memory and lossy by
+construction; the events an estate wants during an incident are the ones
+it dropped.
+
+A node puts its own events on the bus:
+
+```sh
+halite-node event send deploy/finished version=1.2
+halite-node event send deploy/finished '{"version":"1.2","host":"web1"}'
+```
+
+What lands is `halite/node/<that node>/deploy/finished` — a node writes
+under its own prefix and nowhere else, whatever tag it asks for. Salt's
+reactor runs with the control plane's full privilege, so a node that can
+fire the right event can cause fleet-wide execution.
+
+Retention is `event_retention` and `event_max_size`, whichever binds
+first, enforced by the hub. Security-relevant tags — `halite/auth*` and
+`halite/key/*` — are written durably before the append returns; the rest
+are synced on an interval.
+
+`event_tag_compat: true` additionally emits each event under its
+`salt/...` spelling, for a consumer that cannot be changed at the same
+time as the estate.
+
 ## Logging
 
 Structured JSON to stderr, one object per line, carrying `ts`, `level`,
@@ -234,6 +274,34 @@ The third is deliberately not the second. "It said no" and "it said
 nothing" call for different actions, and Salt reports both as an absence
 in the output.
 
+### Applying to a lot of machines at once
+
+Don't. `--batch` runs against a slice at a time and waits for it to
+return before advancing:
+
+```sh
+halite-hub run '*' state.apply --batch 25% --batch-wait 30s
+halite-hub run '*' state.apply --batch 10 --batch-safe-limit 3
+halite-hub run '*' state.apply --subset 5     # a canary
+```
+
+The batch belongs to the hub, not to your terminal. In Salt `--batch`
+is implemented in the CLI, so closing the laptop abandons the run with
+half the estate updated and nothing recording where it stopped. Here:
+
+```sh
+halite-hub jobs active           # what is in flight, and how far it got
+halite-hub jobs resume <jid>     # pick it up after a hub restart
+```
+
+`--batch-safe-limit` is the one worth setting. It stops the run once
+that many nodes have failed, so the rest of the estate does not get the
+same broken change. The job ends in state `aborted`, `run` exits 1, and
+the nodes never reached are named.
+
+`--subset` picks its nodes with `crypto/rand`: a canary set that can be
+predicted is one that can be arranged to miss.
+
 Every job and every return is recorded on the hub before delivery, so a
 caller that disconnects loses nothing:
 
@@ -361,6 +429,46 @@ halite-hub keys export-crl --out /var/db/halite/halite.crl
 `keys revoke` run beside a hub that is already serving reaches it within
 a couple of seconds: the record on disk is the decision, and the running
 hub follows it.
+
+## The event bus
+
+Everything the hub does lands on a durable log — `halite/job/<jid>/new`,
+`halite/job/<jid>/ret/<node>`, `halite/node/<node>/start`,
+`halite/key/<node>/<action>`, and the rest. `halite-hub event tags`
+prints the namespace.
+
+```sh
+halite-hub event listen                                  # follow everything
+halite-hub event listen --tag 'halite/job/**'            # one class
+halite-hub event listen --from earliest --once           # replay the log
+halite-hub event listen --from '00000003:81920'          # resume from an offset
+```
+
+The offset is on every record, so a consumer stores it and resumes
+exactly where it stopped. Salt's bus is in-memory and lossy by
+construction; the events an estate wants during an incident are the ones
+it dropped.
+
+A node puts its own events on the bus:
+
+```sh
+halite-node event send deploy/finished version=1.2
+halite-node event send deploy/finished '{"version":"1.2","host":"web1"}'
+```
+
+What lands is `halite/node/<that node>/deploy/finished` — a node writes
+under its own prefix and nowhere else, whatever tag it asks for. Salt's
+reactor runs with the control plane's full privilege, so a node that can
+fire the right event can cause fleet-wide execution.
+
+Retention is `event_retention` and `event_max_size`, whichever binds
+first, enforced by the hub. Security-relevant tags — `halite/auth*` and
+`halite/key/*` — are written durably before the append returns; the rest
+are synced on an interval.
+
+`event_tag_compat: true` additionally emits each event under its
+`salt/...` spelling, for a consumer that cannot be changed at the same
+time as the estate.
 
 ## Logging
 

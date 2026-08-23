@@ -3,6 +3,7 @@ package job
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -49,6 +50,12 @@ const (
 	Complete State = "complete"
 	// Partial: the gather window closed with returns outstanding.
 	Partial State = "partial"
+	// Batching: a batched job with nodes still to be delivered to.
+	Batching State = "batching"
+	// Aborted: a batch stopped by its safe limit, with nodes never
+	// delivered to. Distinct from partial, which is nodes that did not
+	// answer.
+	Aborted State = "aborted"
 )
 
 // Job is the record the hub keeps and the message the node receives.
@@ -75,6 +82,86 @@ type Job struct {
 	Offline Offline  `json:"offline,omitempty"`
 	State   State    `json:"state,omitempty"`
 	Test    bool     `json:"test,omitempty"`
+
+	// Batch is the batching of SPEC 9.3, and it is a property of the
+	// job rather than of the client.
+	//
+	// In Salt `--batch` is implemented in the CLI, so closing the
+	// terminal abandons the batch with half the estate updated and no
+	// record of where it stopped. Here the hub owns it: the group has
+	// its own record, it survives the operator going home, and
+	// `halite-hub jobs resume` picks it up.
+	Batch Batch `json:"batch,omitempty"`
+	// Delivered is who the job has actually been written to, which
+	// differs from Nodes while a batch is in flight. It is the record
+	// that makes resuming possible.
+	Delivered []string `json:"delivered,omitempty"`
+}
+
+// Batch is the batching policy of SPEC 9.3.
+type Batch struct {
+	// Size is how many nodes run at once. Zero is all of them.
+	Size int `json:"size,omitempty"`
+	// Wait is the settle time between batches.
+	Wait time.Duration `json:"wait,omitempty"`
+	// SafeLimit aborts the run when more than this many nodes have
+	// failed. Zero does not abort.
+	SafeLimit int `json:"safe_limit,omitempty"`
+	// Timeout is how long one batch waits for its returns before
+	// moving on. Zero uses the job's own expiry.
+	Timeout time.Duration `json:"timeout,omitempty"`
+}
+
+// Batched reports whether this job is delivered in batches.
+func (j *Job) Batched() bool { return j.Batch.Size > 0 && j.Batch.Size < len(j.Nodes) }
+
+// Remaining lists the nodes a batched job has not been delivered to.
+func (j *Job) Remaining() []string {
+	sent := make(map[string]bool, len(j.Delivered))
+	for _, id := range j.Delivered {
+		sent[id] = true
+	}
+	var out []string
+	for _, id := range j.Nodes {
+		if !sent[id] {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// ParseBatchSize reads `25` or `25%` against a matched set.
+//
+// A percentage that rounds to zero becomes one: an operator who wrote
+// `--batch 1%` against fifty nodes meant "a few at a time", not "none
+// at a time", and a batch size of zero would mean the whole estate.
+func ParseBatchSize(spec string, matched int) (int, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return 0, nil
+	}
+	if strings.HasSuffix(spec, "%") {
+		var percent float64
+		if _, err := fmt.Sscanf(strings.TrimSuffix(spec, "%"), "%g", &percent); err != nil {
+			return 0, fmt.Errorf("--batch %q is not a number or a percentage", spec)
+		}
+		if percent <= 0 || percent > 100 {
+			return 0, fmt.Errorf("--batch %q is not between 0%% and 100%%", spec)
+		}
+		size := int(float64(matched) * percent / 100)
+		if size < 1 {
+			size = 1
+		}
+		return size, nil
+	}
+	var size int
+	if _, err := fmt.Sscanf(spec, "%d", &size); err != nil {
+		return 0, fmt.Errorf("--batch %q is not a number or a percentage", spec)
+	}
+	if size < 1 {
+		return 0, fmt.Errorf("--batch %q is not a positive number", spec)
+	}
+	return size, nil
 }
 
 // Expired reports whether the job may no longer be run.

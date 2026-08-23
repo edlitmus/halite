@@ -102,17 +102,12 @@ func TestUnknownSubcommandIsUsageNotSuccess(t *testing.T) {
 	}
 }
 
-func TestPhaseTwoSubcommandsSayWhy(t *testing.T) {
-	for _, sub := range []string{"event"} {
-		got := run(t, sub)
-		if got.code != 1 {
-			t.Errorf("%s exit = %d, want 1", sub, got.code)
-		}
-		if !strings.Contains(got.stderr, "phase 2") {
-			t.Errorf("%s should name the phase: %q", sub, got.stderr)
-		}
-	}
-}
+// There was a TestPhaseTwoSubcommandsSayWhy here, asserting that a
+// subcommand named in the usage but not yet built said which phase it
+// arrives in. Every subcommand halite-node names is built now, so the
+// test had nothing left to check and an empty loop passes for the
+// wrong reason. The matrix test below still checks the same property
+// in the other direction, and cmd/halite-hub still has phased rows.
 
 func TestGrainsItemAnswersEveryKey(t *testing.T) {
 	flags := tree(t, nil)

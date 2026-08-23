@@ -232,7 +232,15 @@ func TestAFingerprintIsRecognisedInEverySpelling(t *testing.T) {
 			t.Errorf("%q was not recognised as the same fingerprint", spelling)
 		}
 	}
-	if FingerprintEqual(spaced, strings.Replace(bare, "a", "b", 1)) {
+	// Mutated by construction, not by replacing a character that may
+	// not be there: the CA key is fresh on every run, so a digest
+	// without an "a" in it made this assertion pass for the wrong
+	// reason.
+	other := "0" + bare[1:]
+	if other == bare {
+		other = "1" + bare[1:]
+	}
+	if FingerprintEqual(spaced, other) {
 		t.Error("two different digests compared equal")
 	}
 }

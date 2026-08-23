@@ -145,3 +145,72 @@ func mustNonce(t *testing.T) string {
 	}
 	return n
 }
+
+func TestABatchSizeIsResolvedAgainstTheMatchedSet(t *testing.T) {
+	cases := []struct {
+		spec    string
+		matched int
+		want    int
+		bad     bool
+	}{
+		{"", 100, 0, false},
+		{"10", 100, 10, false},
+		{"25%", 100, 25, false},
+		{"50%", 5, 2, false},
+		// A percentage that rounds to zero becomes one: an operator
+		// who wrote 1% of fifty meant "a few at a time", not "none",
+		// and zero would mean the whole estate.
+		{"1%", 50, 1, false},
+		{"100%", 8, 8, false},
+		{"0", 10, 0, true},
+		{"-3", 10, 0, true},
+		{"0%", 10, 0, true},
+		{"200%", 10, 0, true},
+		{"lots", 10, 0, true},
+	}
+	for _, c := range cases {
+		got, err := ParseBatchSize(c.spec, c.matched)
+		if c.bad {
+			if err == nil {
+				t.Errorf("--batch %q was accepted as %d", c.spec, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("--batch %q: %v", c.spec, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("--batch %q of %d = %d, want %d", c.spec, c.matched, got, c.want)
+		}
+	}
+}
+
+// A batch's record is what makes it resumable, so Remaining has to be
+// exactly the nodes that were never delivered to.
+func TestRemainingIsWhatTheBatchHasNotReached(t *testing.T) {
+	j := &Job{
+		Nodes:     []string{"a", "b", "c", "d"},
+		Delivered: []string{"a", "b"},
+		Batch:     Batch{Size: 2},
+	}
+	if got := j.Remaining(); len(got) != 2 || got[0] != "c" || got[1] != "d" {
+		t.Errorf("remaining = %v", got)
+	}
+	if !j.Batched() {
+		t.Error("a size below the node count is a batch")
+	}
+	// A batch as large as the fleet is not a batch, and treating it as
+	// one would put a job through the staging machinery for nothing.
+	if (&Job{Nodes: []string{"a", "b"}, Batch: Batch{Size: 2}}).Batched() {
+		t.Error("a batch covering every node is not a batch")
+	}
+	if (&Job{Nodes: []string{"a", "b"}}).Batched() {
+		t.Error("no batch size is not a batch")
+	}
+	// Delivered to everything.
+	j.Delivered = []string{"a", "b", "c", "d"}
+	if got := j.Remaining(); len(got) != 0 {
+		t.Errorf("remaining = %v after reaching everything", got)
+	}
+}

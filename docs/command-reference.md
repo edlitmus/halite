@@ -93,6 +93,27 @@ The hub serves the state tree, and a node compiles against it. Set
 `cache_dir`, or `pki_dir` — that arrangement serves the job cache, and
 so every return in the estate, to every enrolled node.
 
+## The event bus
+
+The hub's bus is a durable append-only log, not Salt's in-memory one.
+A subscriber resumes from an offset, so a reactor that restarts loses
+nothing and an incident can be reconstructed afterwards.
+
+| Salt | halite | Status |
+|---|---|---|
+| `salt-run state.event` | `halite-hub event listen` | works |
+| `salt-run state.event tagmatch='salt/job/*'` | `halite-hub event listen --tag 'halite/job/**'` | works |
+| `salt-call event.send tag data` | `halite-node event send <tag> '{"k":"v"}'` | works |
+| no equivalent | `halite-hub event listen --from earliest` (replay) | works |
+| no equivalent | `halite-hub event tags` | works |
+| `salt-api` event stream | SSE and WebSocket at `/v1/events` | phase 4 |
+
+A node's events are namespaced under `halite/node/<node_id>/`
+regardless of the tag it asks for. Salt's reactor runs with the control
+plane's full privilege, so a node that can fire the right event can
+cause fleet-wide execution; here it cannot write another node's tag or
+the hub's.
+
 ## Pillar
 
 The hub compiles each node's pillar and sends that node only its own.
@@ -138,7 +159,7 @@ certificate it generated the key for. SPEC section 7.
 | no equivalent | `halite-hub keys token revoke <id>` | works |
 | the minion generates a key on first start | `halite-node enroll` | works | <!-- lexicon:allow -->
 | no equivalent | `halite-node renew` | works |
-| `salt-minion` (the daemon) | `halite-node connect` | connects; jobs are phase 2 | <!-- lexicon:allow -->
+| `salt-minion` (the daemon) | `halite-node connect` | works | <!-- lexicon:allow -->
 
 There is deliberately no `auto_accept`. A bootstrap token is the
 automatic path, and unlike `auto_accept` it has a mandatory lifetime of
@@ -176,11 +197,18 @@ startup rather than treating the absence as permission.
 | `publisher_acl`, `external_auth`, `client_acl` | one `policy.yaml`, SPEC 23.5 | works |
 | no equivalent | `halite-hub policy show` | works |
 | no equivalent | `halite-hub policy test <principal> <target> <fun>` | works |
-| `salt --batch=25% '*' state.apply` | `halite-hub run --batch 25% '*' state.apply` | phase 2 |
+| `salt --batch=25% '*' state.apply` | `halite-hub run --batch 25% '*' state.apply` | works |
+| `salt --batch-wait=30 …` | `halite-hub run --batch-wait 30s …` | works |
+| no equivalent | `halite-hub run --batch-safe-limit 3 …` | works |
+| `salt --subset=5 '*' test.ping` | `halite-hub run --subset 5 '*' test.ping` | works |
+| `salt --progress …` | `halite-hub run --progress …` | works |
+| no equivalent | `halite-hub jobs active` | works |
+| no equivalent | `halite-hub jobs resume <jid>` | works |
+| `salt-run jobs.active` | `halite-hub jobs active` | works |
 | `salt-run manage.up` | `halite-hub runner manage.up` | phase 2 |
 | `salt-cp '*' file /tmp/file` | `halite-hub files push` | phase 2 |
 | `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 2 |
-| `salt-call event.send` | `halite-node event send` | phase 2 |
+
 | `salt-run state.orchestrate` | `halite-hub orch` | phase 3 |
 | `salt-api` | `halite-api serve` | phase 4 |
 

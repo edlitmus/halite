@@ -63,6 +63,21 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		s.info("return recorded",
 			"jid", string(ret.JID), "node_id", nodeID, "fun", ret.Fun,
 			"success", ret.Success, "retcode", ret.RetCode, "duration_ms", ret.DurationMS)
+		s.emit(tagJobRet(string(ret.JID), nodeID), nodeID, map[string]any{
+			"jid": string(ret.JID), "fun": ret.Fun,
+			"success": ret.Success, "retcode": ret.RetCode, "duration_ms": ret.DurationMS,
+		})
+		// A state run gets its own tag as well, because that is what a
+		// reactor watches: SPEC 17.1's halite/state/<jid>/<node>/<result>.
+		if ret.Out == "highstate" {
+			result := "failed"
+			if ret.Success {
+				result = "ok"
+			}
+			s.emit(tagState(string(ret.JID), nodeID, result), nodeID, map[string]any{
+				"jid": string(ret.JID), "retcode": ret.RetCode,
+			})
+		}
 		s.completeIfDone(ret.JID)
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -131,6 +146,13 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		Offline:    offline,
 		TTL:        time.Duration(req.TTLSeconds) * time.Second,
 		Submitter:  principal,
+		BatchSpec:  req.Batch,
+		Subset:     req.Subset,
+		Batch: job.Batch{
+			Wait:      time.Duration(req.BatchWaitSeconds) * time.Second,
+			SafeLimit: req.BatchSafeLimit,
+			Timeout:   time.Duration(req.BatchTimeoutSecs) * time.Second,
+		},
 	})
 	if err != nil {
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
@@ -147,6 +169,62 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		JID:    string(j.JID),
 		Nodes:  j.Nodes,
 		Absent: absent,
+		Batch:  j.Batch.Size,
+	})
+}
+
+// resume is POST /v1/jobs/{jid}/resume: pick up a batch the hub was
+// part way through when it stopped.
+func (s *Server) resume(w http.ResponseWriter, r *http.Request, principal string) {
+	rest := strings.TrimPrefix(r.URL.Path, transport.PathJob)
+	id := job.ID(strings.TrimSuffix(rest, "/resume"))
+	if !id.Valid() {
+		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed,
+			fmt.Errorf("%q is not a job identifier", id))
+		return
+	}
+	if s.Jobs == nil {
+		transport.WriteError(w, http.StatusServiceUnavailable, transport.CodeInternal,
+			errors.New("this hub has no job cache"))
+		return
+	}
+	existing, err := s.Jobs.Get(id)
+	if errors.Is(err, job.ErrNoJob) {
+		transport.WriteError(w, http.StatusNotFound, transport.CodeRefused, err)
+		return
+	}
+	if err != nil {
+		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
+		return
+	}
+	// Resuming re-runs the original request, so it is authorized as
+	// the original request: an operator who may not run it now may not
+	// resume it either, whoever submitted it before.
+	decision := s.Policy.Authorize(policy.Request{
+		Principal: principal,
+		Target:    existing.Target,
+		Fun:       existing.Fun,
+		Arg:       existing.Arg,
+		Kwarg:     existing.Kwarg,
+	})
+	if !decision.Allowed {
+		s.warn("resume refused by policy",
+			"principal", principal, "jid", string(id), "reason", decision.Reason)
+		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
+			fmt.Errorf("%s", decision.Reason))
+		return
+	}
+
+	resumed, err := s.Resume(s.batchContext(), id)
+	if err != nil {
+		transport.WriteError(w, http.StatusConflict, transport.CodeRefused, err)
+		return
+	}
+	s.info("batch resumed", "jid", string(id), "principal", principal,
+		"remaining", len(resumed.Remaining()))
+	transport.WriteJSON(w, http.StatusAccepted, transport.ResumeResponse{
+		JID:       string(id),
+		Remaining: resumed.Remaining(),
 	})
 }
 
@@ -192,12 +270,13 @@ func (s *Server) jobStatus(w http.ResponseWriter, r *http.Request, principal str
 		encoded = append(encoded, raw)
 	}
 	transport.WriteJSON(w, http.StatusOK, transport.JobStatus{
-		JID:     string(j.JID),
-		Fun:     j.Fun,
-		Target:  j.Target,
-		State:   string(j.State),
-		Nodes:   j.Nodes,
-		Missing: missing,
-		Returns: encoded,
+		JID:       string(j.JID),
+		Fun:       j.Fun,
+		Target:    j.Target,
+		State:     string(j.State),
+		Nodes:     j.Nodes,
+		Delivered: j.Delivered,
+		Missing:   missing,
+		Returns:   encoded,
 	})
 }

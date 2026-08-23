@@ -100,8 +100,10 @@ An operator edits the tree on the hub and the fleet converges to it,
 which is the exit criterion SPEC section 32 names for this phase.
 Pillar is compiled on the hub too, per node, so a node holds no other
 node's secrets and cannot ask for them, and every submission is
-authorized against a policy that denies by default. What is still
-missing from the phase is batching and the event bus.
+authorized against a policy that denies by default. `--batch` is
+hub-side, so closing the terminal does not abandon a half-applied
+estate, and the event bus is a durable log a subscriber resumes from
+rather than Salt's in-memory one.
 [DIVERGENCE 5.11](docs/DIVERGENCE.md) says what the lab run
 established, what it did not, and the defects it found that the tests
 had not.
@@ -231,6 +233,7 @@ internal/keystore    the key lifecycle and bootstrap tokens
 internal/hub         the control plane endpoints
 internal/job         job identity, the replay guard, and the job cache
 internal/policy      the RBAC grammar and its decisions
+internal/eventbus    the durable append-only event log
 
 contrib/rc.d         FreeBSD service scripts
 contrib/systemd      systemd units and timers

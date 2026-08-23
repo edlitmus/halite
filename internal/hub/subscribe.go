@@ -56,7 +56,17 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 	defer s.fleet().detach(st)
 
 	s.info("node connected", "node_id", nodeID, "version", req.Version, "grains_bytes", len(req.Grains))
-	defer func() { s.info("node disconnected", "node_id", nodeID) }()
+	s.emit(tagNodeStart(nodeID), nodeID, map[string]any{"version": req.Version})
+	s.emit("halite/presence/change", nodeID, map[string]any{
+		"connected": len(s.fleet().Connected()), "joined": nodeID,
+	})
+	defer func() {
+		s.info("node disconnected", "node_id", nodeID)
+		s.emit(tagNodeStop(nodeID), nodeID, nil)
+		s.emit("halite/presence/change", nodeID, map[string]any{
+			"connected": len(s.fleet().Connected()), "left": nodeID,
+		})
+	}()
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Cache-Control", "no-store")
@@ -114,6 +124,7 @@ func (s *Server) Revoke(nodeID, reason string) error {
 	if _, err := s.Authority.Revoke(nodeID, reason); err != nil {
 		return err
 	}
+	s.emit(tagKey(nodeID, "revoke"), nodeID, map[string]any{"reason": reason})
 	s.fleet().Disconnect(nodeID, reason)
 	s.info("enrollment revoked", "node_id", nodeID, "reason", reason)
 	return nil
