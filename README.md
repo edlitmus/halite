@@ -77,7 +77,7 @@ Delivery follows the phases in SPEC section 32.
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
-| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | Not started |
+| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Started**: the runners of SPEC 19.2 are built; the rest is not |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
@@ -105,8 +105,14 @@ closing the terminal does not abandon a half-applied estate, and the
 event bus is a durable log a subscriber resumes from rather than Salt's
 in-memory one.
 
+Functions that run on the hub came next, and with them the start of
+phase 3. `halite-hub runner` is the old `salt-run`, granted by a role's
+`runners:` list rather than by its `functions:` list, because permission
+to ask the hub a question and permission to run a command on every node
+are different permissions.
+
 What is not built is what SPEC puts in later phases: reactors, the
-scheduler, beacons, orchestration, runners, and the mine are phase 3;
+scheduler, beacons, orchestration, and the mine are the rest of phase 3;
 the API is phase 4; gitfs, agentless mode, and Windows are phase 5.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
@@ -203,8 +209,9 @@ would do. Neither writes anything.
 ## Service files
 
 `contrib/rc.d/` and `contrib/systemd/` hold service definitions for
-FreeBSD and systemd. The periodic-highstate ones work today; the daemons
-wait on phase 2. See [Operations](docs/operations.md).
+FreeBSD and systemd. The periodic-highstate ones and the `halite-hub` and
+`halite-node` daemons work today; `halite-api` waits on phase 4. See
+[Operations](docs/operations.md).
 
 ## Layout
 

@@ -7,10 +7,10 @@ and carrying its code forward would have meant carrying its assumptions
 too. None of it remains, so its changelog has gone with it. `git log`
 before `3aec717` is where that history lives if it is ever wanted.
 
-Nothing here is released yet. Phases 0 and 1 of the delivery plan in SPEC
-section 32 are complete, which makes a node that manages its own tree.
-Versions resume at 1.0.0 when SPEC section 32's phase 6 exit criteria are
-met.
+Nothing here is released yet. Phases 0, 1, and 2 of the delivery plan in
+SPEC section 32 are complete: a node that manages its own tree, and a
+fleet driven from a hub. Phase 3 has started. Versions resume at 1.0.0
+when SPEC section 32's phase 6 exit criteria are met.
 
 ## Unreleased
 
@@ -29,6 +29,87 @@ grain-matched top file with an include, a templated pillar loop, a
 `salt://` source, `require` and `onchanges`, converging and then
 reporting nothing to do on the second run and reconverging after a
 hand-edit.
+
+### A fleet is enrolled and driven from a hub
+
+`halite-hub serve` is the control plane of SPEC section 6: one mutual-TLS
+port, an enrollment CA of its own, and NDJSON over a stream the node
+opens outward. A node generates its key, asks to enrol, and waits; an
+operator compares the fingerprint out of band and accepts. `halite-node
+enroll`, `renew`, and `connect` are the other half. There is no
+pre-shared secret and no key an operator has to copy.
+
+`halite-hub run '<target>' <fun>` resolves the target against the grains
+each node reported, records the job with its expected respondents
+*before* delivering it, and gathers the returns from the job cache. A
+missing return is therefore detectable rather than invisible, which is
+the difference between "it said no" and "it said nothing" — and the
+command exits 1 and 3 for those two things.
+
+An operator edits the tree on the hub and the fleet converges to it,
+which is the exit criterion SPEC section 32 names for the phase. A node
+compiles against the hub's tree, caches what it fetched, and asks
+conditionally afterwards, so redeploying an identical tree costs a round
+trip and no transfer. Pillar is compiled on the hub, per node, from the
+identity on the certificate — so a node holds no other node's secrets
+and has no way to ask for them.
+
+`--batch` belongs to the hub rather than to the terminal. In Salt it
+lives in the CLI, so closing the terminal abandons the run with half the
+estate updated and no record of where it stopped; here the group has its
+own record, `jobs active` says what is in flight, `jobs resume` picks up
+a batch a hub restart interrupted, and a safe limit stops the rest of the
+estate getting the same broken change.
+
+Every submission is authorized against one policy file that denies by
+default — including when the file is absent, which the hub says at
+startup rather than treating as permission. A wildcard never grants a
+function that runs arbitrary code, and the set of those comes from the
+signatures the build ships rather than from a list, so a function marked
+in a later build is covered without anyone remembering.
+
+The event bus is a durable segmented log, not Salt's in-memory one. A
+subscriber resumes from an offset, so a restart is lossless and an
+incident can be reconstructed afterwards — which is exactly what a Salt
+estate discovers it cannot do during one. A node's events are namespaced
+under its own ID whatever tag it asks for: in Salt a minion can fire any
+tag onto the master's bus, and a reactor listening on that tag turns that
+into fleet-wide execution. <!-- lexicon:allow -->
+
+Verified with real processes rather than only in tests: a hub and two
+nodes, a highstate driven across both, applied, and run again to
+convergence. [DIVERGENCE 5.11](docs/DIVERGENCE.md) says what that
+established, what it did not, and the defects it found that the tests had
+not.
+
+### Functions that run on the hub
+
+`halite-hub runner <module.function>` is the old `salt-run`, and the
+start of phase 3. It is a request to the hub even when it is typed on the
+hub, because an operator authenticates with a certificate and being
+logged in is not one.
+
+A runner is granted by the `runners:` list of a role rather than by
+`functions:`. Permission to ask the hub a question and permission to run
+a command on every node are different permissions, and Salt's
+`external_auth` conflating them is how a `@runner` grant turns out wider
+than it looked. A runner that then reaches the fleet —
+`saltutil.refresh_pillar` does — is authorized a second time as the job
+it dispatches, so the narrower grant cannot become the wider one.
+
+Forty-two functions across `jobs`, `manage`, `key`, `nodegroups`,
+`pillar`, `cache`, `fileserver`, `event`, `saltutil`, `survey`, and
+`error`. Every call gets a jid, is filed in the job cache with the
+principal that asked for it, and puts `halite/run/<jid>/new` and its
+return on the bus — so "who asked the hub to accept that key, and when"
+has an answer on disk.
+
+The other forty names in SPEC 19.2's inventory are registered and answer
+with the phase they arrive in, and `halite-hub runner list` prints the
+whole inventory either way. Leaving a name out of the registry would make
+"orchestration is not written yet" and "you have mistyped
+`state.orchestrate`" the same message at the terminal, and an operator
+cannot tell those apart.
 
 ### The dialects, held to their own specifications
 
@@ -107,7 +188,8 @@ compares it with the registries. Example configurations live in
 for and fails on any warning.
 
 Service files for FreeBSD `rc.d` and systemd are in `contrib/`. The
-periodic-highstate ones work today; the daemons wait on phase 2.
+periodic-highstate ones and the `halite-hub` and `halite-node` daemons
+work today; `halite-api` waits on phase 4.
 
 ### The tests the specification asks for
 
@@ -136,11 +218,18 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-Phases 2 through 6. No transport, hub, enrollment, targeting over a wire,
-beacons, reactors, orchestration, API, gitfs, or agentless mode.
-`halite-hub` and `halite-api` exist as programs that parse arguments and
-report which phase they need, which is deliberate: the alternative is a
-program that appears to work.
+The rest of phase 3, and phases 4 through 6. No beacons, no scheduler, no
+reactors, no orchestration, no mine, no API, no OIDC or LDAP, no
+webhooks, no returners, no bridge protocol, no gitfs, no s3fs, no
+agentless mode, no relays, no FIPS artifact set, no detached job signing,
+and no backtracking regex engine.
+
+Two things inside phase 2 are still absent: `halite-hub files`, the push
+in the other direction from `salt-cp`, and external pillar.
+
+`halite-api` exists as a program that parses arguments and reports which
+phase it needs, which is deliberate: the alternative is a program that
+appears to work.
 
 FreeBSD is the platform this is verified on. `make test-linux`
 cross-compiles the suite and runs it under this host's Linux compat
