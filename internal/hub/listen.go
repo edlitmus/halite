@@ -49,12 +49,20 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	}()
 	err := srv.Serve(ln)
 
-	// The work the hub started for itself is not a request and is not
-	// drained by Shutdown. A queued job being delivered to a node that
-	// has just connected is written after the handler that started it
-	// returned, and without this the hub reports it has stopped while
-	// that write is still going into the job cache.
-	s.background.Wait()
+	// Serve returns the moment Shutdown closes the listener, while the
+	// handlers it started are still running -- and the work the hub
+	// started for itself, a queued job going out to a node that has
+	// just reconnected, is not a request and is not drained by Shutdown
+	// at all. A caller that waits for Serve is waiting to know both
+	// have finished.
+	//
+	// Only on a context that has ended: a listener closed from under a
+	// running hub leaves the subscribe streams open, and waiting for
+	// those would never return.
+	if ctx.Err() != nil {
+		s.requests.wait()
+		s.background.Wait()
+	}
 
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

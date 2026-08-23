@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,24 @@ type lab struct {
 	url    string
 	// root is the directory the hub serves, when a test gives it one.
 	root string
+
+	// stopOnce, cancel, ln, and served let a test stop the hub before
+	// the cleanup does, and assert on what stopping it settled.
+	stopOnce sync.Once
+	cancel   context.CancelFunc
+	ln       net.Listener
+	served   chan struct{}
+}
+
+// stop ends the hub and waits for Serve to return. It is what the
+// cleanup does, and a test may call it first.
+func (l *lab) stop(t *testing.T) {
+	t.Helper()
+	l.stopOnce.Do(func() {
+		l.cancel()
+		l.ln.Close()
+		<-l.served
+	})
 }
 
 func newLab(t *testing.T) *lab {
@@ -85,19 +104,19 @@ func newLab(t *testing.T) *lab {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { defer close(done); srv.Serve(ctx, ln) }()
-	t.Cleanup(func() {
-		cancel()
-		ln.Close()
-		<-done
-	})
 
-	return &lab{
+	l := &lab{
 		server: srv,
 		files:  files,
 		ca:     ca,
 		denied: denied,
 		url:    "https://" + net.JoinHostPort("localhost", port(t, ln.Addr().String())),
+		cancel: cancel,
+		ln:     ln,
+		served: done,
 	}
+	t.Cleanup(func() { l.stop(t) })
+	return l
 }
 
 // testWriter sends the hub's log to the test's output, where it is

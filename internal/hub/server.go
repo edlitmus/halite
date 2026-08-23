@@ -85,6 +85,8 @@ type Server struct {
 	// for it, because a hub that reports it has stopped while a
 	// goroutine is still writing a job record has not stopped.
 	background sync.WaitGroup
+	// requests counts the handlers running, for the same reason.
+	requests inflight
 }
 
 // goBackground runs work that outlives the request that started it,
@@ -170,7 +172,9 @@ func (s *Server) Handler() http.Handler {
 	// An unrouted path under /v1/ is a version skew or a scan, and
 	// either way the answer is the same shape as every other failure.
 	mux.HandleFunc("/", s.notFound)
-	return mux
+	// Counted, so that stopping the hub can wait for what it is in the
+	// middle of answering.
+	return s.requests.track(mux)
 }
 
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
