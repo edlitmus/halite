@@ -102,7 +102,11 @@ func registerManageRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				hubVersion := version.Version
+				// version.String, not version.Version: a node reports
+				// the string, commit suffix and all, and comparing it
+				// against the bare version reported every node in a
+				// matched fleet as mismatched.
+				hubVersion := version.String()
 				byVersion := map[string][]string{}
 				for _, id := range accepted {
 					reported := "unknown"

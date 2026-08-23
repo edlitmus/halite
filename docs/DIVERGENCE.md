@@ -1334,6 +1334,39 @@ an expired job over the wire (the guard is covered by tests, not by the
 lab), a return large enough to need chunking, and the endpoints that do
 not exist. It has been run on FreeBSD only.
 
+### 5.12 What the runner lab run covers
+
+A hub, a node, and two operator certificates as separate processes on
+one machine. The `internal/hub` tests already drive the runners over a
+real listener with a real CA, and running it still found one defect:
+
+| Found by running it | What it was |
+|---|---|
+| `manage.versions` reported a matched fleet as mismatched | The hub compared `version.Version` against the string a node reports, which is `version.String()` — the same build, with the commit appended. Every node in an estate running the hub's own build was listed as behind it. |
+
+What the lab run establishes: `manage.status`, `up`, `versions`, and
+`list_state` against a connected node and against nothing; `key.list`
+over a real key store; `jobs.lookup_jid`, `exit_success`, `list_jobs`,
+and `survey.hash` against a job actually driven across the wire, with
+the runner's own call recorded in the same cache; `cache.grains` and
+`cache.clear_grains`; `fileserver.file_list` and `dir_list` over the
+hub's tree; `event.send` and `event.replay` round-tripping through the
+durable bus with the principal taken from the certificate;
+`nodegroups.expand` refusing a name that is not defined;
+`saltutil.refresh_grains` dispatching a real job to a real node;
+`error.error`; a runner declared and not built naming its phase; an
+unknown name listing its module's runners; and the two-stage
+authorization — an operator holding `runners: ['*']` and nothing else
+calls `manage.status` and is refused `saltutil.refresh_grains` because
+the job it would dispatch is not granted.
+
+What it does not: more than one node, `event.listen` waiting on a live
+event, `pillar.show_pillar` against a hub with pillar roots configured,
+`jobs.prune` against a cache old enough to prune, `key.accept`,
+`key.reject`, `key.revoke`, and `key.delete` through the runner rather
+than through `halite-hub keys`, and every runner registered as pending.
+It has been run on FreeBSD only.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -1479,9 +1512,8 @@ LDAP, no webhooks, no returners, no bridge protocol, no gitfs, no s3fs,
 no agentless mode, no relays, no FIPS artifact set, no detached job
 signing, no signed state trees, and no backtracking regex engine.
 
-The runners have not been exercised against a real fleet: the tests
-drive them over the wire against a lab hub with enrolled nodes, and no
-lab run like the one in 5.11 has been done for them.
+The runners have been run against a hub and a node as separate
+processes; 5.12 says what that established and what it did not.
 
 Two named pieces of section 7 are also absent:
 

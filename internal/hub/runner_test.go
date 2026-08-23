@@ -12,6 +12,7 @@ import (
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
+	"github.com/edlitmus/halite/internal/version"
 )
 
 // call runs a runner over the wire and fails the test if the request
@@ -419,5 +420,40 @@ func TestAFailedRunnerIsA200WithSuccessFalse(t *testing.T) {
 	var payload map[string]any
 	if err := json.Unmarshal(res.Return, &payload); err == nil && len(payload) > 0 {
 		t.Errorf("a failed runner returned a payload as well as an error: %s", res.Return)
+	}
+}
+
+// A node running the hub's own build is not behind it.
+//
+// The hub compared `version.Version` against what a node reports, which
+// is `version.String()` — the same thing with the commit appended — so
+// a matched fleet came back entirely mismatched. Found by running a hub
+// and a node rather than by a test.
+func TestManageVersionsDoesNotReportAMatchedFleetAsBehind(t *testing.T) {
+	// A commit, so that version.String and version.Version differ. A
+	// `go test` build has neither set, and without this the test agrees
+	// with the defect.
+	was := version.Commit
+	version.Commit = "0123456789abcdef"
+	t.Cleanup(func() { version.Commit = was })
+
+	l := newLab(t).withJobs(t)
+	l.enrolled(t, "web1.example")
+	err := l.server.nodes().Put(&NodeData{
+		NodeID:   "web1.example",
+		Version:  version.String(),
+		LastSeen: l.server.now(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	op := l.operator(t, "ed")
+	got := mapOf(t, returned(t, call(t, op, "manage.versions")))
+	if hub, _ := got.Get("hub"); hub != version.String() {
+		t.Errorf("the hub reports its version as %v, and a node reports %q", hub, version.String())
+	}
+	if behind := listOf(t, got, "mismatched"); len(behind) != 0 {
+		t.Errorf("a node on the hub's own build was reported as %v", behind)
 	}
 }
