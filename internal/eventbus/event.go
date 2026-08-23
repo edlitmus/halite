@@ -9,11 +9,14 @@
 package eventbus
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // Schema is the version of the event shape.
@@ -126,14 +129,25 @@ func (e Event) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON reads it back.
+//
+// The payload comes back through the nine-type model. The standard
+// decoder turns every number in a `map[string]any` into a float64, so
+// an event carrying a 64-bit identifier -- a job's, a serial, a
+// timestamp in nanoseconds -- came off the log with the last digits
+// changed. SPEC 6.4 requires that it does not.
 func (e *Event) UnmarshalJSON(raw []byte) error {
 	type alias Event
 	aux := &struct {
 		Stamp string `json:"_stamp"`
 		*alias
 	}{alias: (*alias)(e)}
-	if err := json.Unmarshal(raw, aux); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(aux); err != nil {
 		return err
+	}
+	for k, v := range e.Data {
+		e.Data[k] = value.FromJSON(v)
 	}
 	if aux.Stamp != "" {
 		stamp, err := time.Parse(time.RFC3339Nano, aux.Stamp)

@@ -51,10 +51,12 @@ func TestASubscriberResumesFromAnOffset(t *testing.T) {
 	if len(rest) != 3 {
 		t.Fatalf("the rest is %d events", len(rest))
 	}
-	// No record is read twice and none is skipped.
-	seen := map[float64]bool{}
+	// No record is read twice and none is skipped. The payload comes
+	// back as int64 rather than float64: a record read off the log is
+	// in the nine-type model, not in whatever `encoding/json` guessed.
+	seen := map[int64]bool{}
 	for _, e := range append(first, rest...) {
-		n, _ := e.Data["n"].(float64)
+		n, _ := e.Data["n"].(int64)
 		if seen[n] {
 			t.Errorf("event %v was read twice", n)
 		}
@@ -245,5 +247,30 @@ func TestABadOffsetIsRefusedRatherThanSilentlyStartingOver(t *testing.T) {
 		if _, _, err := b.Read(bad, nil, 10); err == nil {
 			t.Errorf("%q was accepted as an offset", bad)
 		}
+	}
+}
+
+// SPEC 6.4: a 64-bit integer survives the round trip. The bus is a file,
+// so "the round trip" here includes being written and read back, and the
+// standard decoder turns every number in a payload into a float64 —
+// which changes the last digits of an identifier without saying so.
+func TestASixtyFourBitIntegerSurvivesTheLog(t *testing.T) {
+	b := newBus(t)
+	const exact int64 = 9007199254740993
+	put(t, b, "halite/audit/one", map[string]any{"build": exact})
+
+	events, _, err := b.Read(Earliest, nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("read %d events", len(events))
+	}
+	got, ok := events[0].Data["build"].(int64)
+	if !ok {
+		t.Fatalf("the payload came back as %T", events[0].Data["build"])
+	}
+	if got != exact {
+		t.Errorf("wrote %d and read %d", exact, got)
 	}
 }

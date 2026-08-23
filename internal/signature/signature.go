@@ -435,8 +435,22 @@ func coerce(s Signature, p Param, v any) (any, error) {
 		return []any{v}, nil
 
 	case Map:
-		if m, ok := v.(*value.Map); ok {
+		switch m := v.(type) {
+		case *value.Map:
 			return m, nil
+		case map[string]any:
+			// What `encoding/json` produces for a nested object. The
+			// callers lift a decoded body into the model before
+			// binding, and this is the second line of that defence:
+			// refusing here made every Map-typed parameter unreachable
+			// from a job or a runner call -- `event.send` with a
+			// payload was refused with "must be a mapping, found
+			// map[string]interface {}".
+			lifted, ok := value.FromJSON(m).(*value.Map)
+			if !ok {
+				return nil, fail("a mapping")
+			}
+			return lifted, nil
 		}
 		return nil, fail("a mapping")
 

@@ -149,7 +149,10 @@ func (n *node) runFunction(j *job.Job) (outcome, error) {
 		if k == "test" {
 			continue
 		}
-		kwargs.Set(k, v)
+		// Lifted out of what `encoding/json` produced: a mapping
+		// argument arrives as a Go map with no order, and a number as
+		// a json.Number, and a module must see neither.
+		kwargs.Set(k, value.FromJSON(v))
 	}
 	out, err := n.registry.Exec.CallPositional(n.contextFor(p, string(j.JID)), j.Fun, positional, kwargs)
 	if err != nil {

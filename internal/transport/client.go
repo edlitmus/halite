@@ -296,7 +296,15 @@ func (c *Client) Subscribe(ctx context.Context, req SubscribeRequest, onMessage 
 			continue
 		}
 		var msg Message
-		if err := json.Unmarshal(line, &msg); err != nil {
+		// UseNumber, not json.Unmarshal: a job's keyword arguments
+		// land in a map[string]any, and the standard decoder turns
+		// every number in one into a float64. SPEC 6.4 promises a
+		// 64-bit integer survives the round trip, and 9007199254740993
+		// came back as ...992. The node lifts these into the model
+		// before a module sees them.
+		dec := json.NewDecoder(bytes.NewReader(line))
+		dec.UseNumber()
+		if err := dec.Decode(&msg); err != nil {
 			return fmt.Errorf("the hub sent a line that is not a message: %w", err)
 		}
 		if err := onMessage(msg); err != nil {

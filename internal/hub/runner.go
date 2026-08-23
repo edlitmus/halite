@@ -251,7 +251,7 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 	}
 	kwargs := value.NewMap(len(call.Kwarg))
 	for _, k := range sortedKeys(call.Kwarg) {
-		kwargs.Set(k, call.Kwarg[k])
+		kwargs.Set(k, value.FromJSON(call.Kwarg[k]))
 	}
 	bound, errs := sig.Bind(args, kwargs)
 	if len(errs) > 0 {

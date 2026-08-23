@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/eventbus"
 	"github.com/edlitmus/halite/internal/transport"
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // emit puts an event on the bus.
@@ -87,10 +89,19 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, nodeID string) {
 	}
 	var data map[string]any
 	if len(req.Data) > 0 {
-		if err := json.Unmarshal(req.Data, &data); err != nil {
+		// UseNumber and then the model, for the reason SPEC 6.4 gives:
+		// the standard decoder turns every number into a float64, and
+		// a node reporting a 64-bit identifier would have it changed
+		// on the way onto the log.
+		dec := json.NewDecoder(bytes.NewReader(req.Data))
+		dec.UseNumber()
+		if err := dec.Decode(&data); err != nil {
 			transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed,
 				fmt.Errorf("the event data is not readable: %w", err))
 			return
+		}
+		for k, v := range data {
+			data[k] = value.FromJSON(v)
 		}
 	}
 	offset, err := s.Events.Append(&eventbus.Event{

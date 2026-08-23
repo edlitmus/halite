@@ -12,6 +12,7 @@ import (
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/transport"
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // withJobs gives the lab a job cache and a node cache, as `serve` does.
@@ -364,5 +365,83 @@ func waitForReturns(t *testing.T, op *transport.Client, jid string, want int) *t
 			t.Fatalf("%d of %d returns arrived for %s", len(status.Returns), want, jid)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A structured argument reaches the node as the structure it was.
+//
+// It did not. The operator's command line parses `data='{"a":1}'` into
+// the ordered model, and the transport marshals its request bodies with
+// `encoding/json`, which wrote the model's position record instead of
+// its contents: every mapping argument arrived at the hub as
+// `{"Pos":{"File":"","Line":0,"Col":0}}`. The 64-bit integer is the
+// other half of SPEC 6.4's promise, and the node's decoder was turning
+// every number in a job's arguments into a float64.
+func TestAStructuredArgumentReachesTheNodeIntact(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	client := l.enrolled(t, "web1.example")
+
+	const exact int64 = 9007199254740993
+	got := make(chan transport.Message, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	ready := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		client.Subscribe(ctx, transport.SubscribeRequest{NodeID: "web1.example"},
+			func(msg transport.Message) error {
+				switch msg.T {
+				case transport.MsgPing:
+					select {
+					case <-ready:
+					default:
+						close(ready)
+					}
+				case transport.MsgJob:
+					select {
+					case got <- msg:
+					default:
+					}
+				}
+				return nil
+			})
+	}()
+	select {
+	case <-ready:
+	case <-time.After(3 * time.Second):
+		cancel()
+		t.Fatal("the node never connected")
+	}
+	defer func() { cancel(); <-stopped }()
+
+	op := l.operator(t, "ed")
+	_, err := op.Submit(context.Background(), transport.SubmitRequest{
+		Target: "*",
+		Fun:    "event.send",
+		Kwarg: map[string]any{
+			"tag":  "deploy/done",
+			"data": value.MapOf("version", "1.2", "build", exact),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var msg transport.Message
+	select {
+	case msg = <-got:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the job never reached the node")
+	}
+
+	data, ok := value.FromJSON(msg.Kwarg["data"]).(*value.Map)
+	if !ok {
+		t.Fatalf("the mapping argument arrived as %T: %v", msg.Kwarg["data"], msg.Kwarg["data"])
+	}
+	if v, _ := data.Get("version"); v != "1.2" {
+		t.Errorf("version arrived as %v", v)
+	}
+	if b, _ := data.Get("build"); b != exact {
+		t.Errorf("the 64-bit integer arrived as %v (%T)", b, b)
 	}
 }
