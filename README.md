@@ -76,7 +76,7 @@ Delivery follows the phases in SPEC section 32.
 |---|---|---|
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
-| 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **In progress**: enrollment, the transport, remote execution, targeting, the job cache, the file server, and hub-side pillar are built; RBAC, batching, and the event bus are not |
+| 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **In progress**: enrollment, the transport, remote execution, targeting, the job cache, the file server, hub-side pillar, and RBAC are built; batching and the event bus are not |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | Not started |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
@@ -99,8 +99,9 @@ again to convergence.
 An operator edits the tree on the hub and the fleet converges to it,
 which is the exit criterion SPEC section 32 names for this phase.
 Pillar is compiled on the hub too, per node, so a node holds no other
-node's secrets and cannot ask for them. What is still missing from the
-phase is RBAC, batching, and the event bus.
+node's secrets and cannot ask for them, and every submission is
+authorized against a policy that denies by default. What is still
+missing from the phase is batching and the event bus.
 [DIVERGENCE 5.11](docs/DIVERGENCE.md) says what the lab run
 established, what it did not, and the defects it found that the tests
 had not.
@@ -229,6 +230,7 @@ internal/transport   TLS 1.3, mutual authentication, and the wire types
 internal/keystore    the key lifecycle and bootstrap tokens
 internal/hub         the control plane endpoints
 internal/job         job identity, the replay guard, and the job cache
+internal/policy      the RBAC grammar and its decisions
 
 contrib/rc.d         FreeBSD service scripts
 contrib/systemd      systemd units and timers

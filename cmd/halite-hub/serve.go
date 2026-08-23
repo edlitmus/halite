@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"os"
 	"os/signal"
@@ -21,8 +23,10 @@ import (
 	"github.com/edlitmus/halite/internal/keystore"
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
+	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/transport"
@@ -238,6 +242,11 @@ func runServe(args *cli.Args) int {
 		}
 	}
 
+	loaded, err := loadPolicy(h)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
 	server := &hub.Server{
 		Authority:    h.auth,
 		Log:          h.log,
@@ -248,6 +257,7 @@ func runServe(args *cli.Args) int {
 		Files:        files,
 		HashType:     h.cfg.String("hash_type", "sha256"),
 		Pillar:       pillarOpts,
+		Policy:       loaded,
 	}
 
 	ln, err := hub.Listen(listen, pair, h.auth.CA.Cert, h.denied)
@@ -282,6 +292,58 @@ func runServe(args *cli.Args) int {
 	}
 	h.log.Info("the hub stopped")
 	return 0
+}
+
+// loadPolicy reads the RBAC file of SPEC 23.5.
+//
+// A missing file is not an error and is not a grant: the hub starts,
+// says so, and authorizes nothing until one exists. Deny by default has
+// to mean that when the file is absent as well as when it is empty, or
+// it means nothing at all.
+func loadPolicy(h *hubContext) (*policy.Policy, error) {
+	path := h.cfg.String("policy", filepath.Join(config.DefaultRoot, "policy.yaml"))
+	src, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		h.log.Warn("there is no policy file, so no operator may submit a job",
+			"path", path, "fix", "halite-hub keys operator create <name> --admin", "section", "23.5")
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading the policy at %s: %w", path, err)
+	}
+	loaded, warnings, err := policy.Load(src, path)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range warnings {
+		h.log.Warn(w.String(), "component", "policy", "path", path)
+	}
+	loaded.ArbitraryCode = arbitraryCodeFunctions()
+	h.log.Info("policy loaded",
+		"path", path, "roles", len(loaded.Roles), "bindings", len(loaded.Bindings),
+		"never_granted_by_wildcard", len(loaded.ArbitraryCode))
+	return loaded, nil
+}
+
+// arbitraryCodeFunctions is the set a wildcard never grants, taken from
+// the signatures this build ships rather than from a list here: a
+// function marked `arbitrary_code` in a later build is covered without
+// anyone remembering.
+func arbitraryCodeFunctions() map[string]bool {
+	out := map[string]bool{}
+	registries := builtin.New()
+	// Both registries: SPEC 23.5 names `module.run`, which is a state
+	// module rather than an execution one. It is not submittable in
+	// this build, and listing it costs nothing and covers the build
+	// where it is.
+	for _, r := range []*signature.Registry{registries.Exec.Signatures(), registries.States.Signatures()} {
+		for _, name := range r.Names() {
+			if sig, ok := r.Lookup(name); ok && sig.ArbitraryCode {
+				out[name] = true
+			}
+		}
+	}
+	return out
 }
 
 // gpgOptionsFor is SPEC 12.6's renderer settings, which the hub needs

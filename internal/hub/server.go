@@ -19,6 +19,7 @@ import (
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/version"
@@ -59,6 +60,10 @@ type Server struct {
 	// Pillar is what this hub needs to compile a node's pillar, or nil
 	// for a hub that compiles none.
 	Pillar *PillarOptions
+	// Policy is the RBAC of SPEC 23.5. A nil policy authorizes
+	// nothing, which is what deny by default means when the file is
+	// missing as well as when it is empty.
+	Policy *policy.Policy
 
 	jobClock job.Clock
 }

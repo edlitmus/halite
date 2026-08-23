@@ -198,11 +198,21 @@ every return in the estate, to every node that has enrolled.
 
 `halite-hub run` is the old `salt` command. It authenticates with an
 operator certificate — there is no "trusted because it is running on
-the hub" — so issue one first:
+the hub" — and every submission is authorized against the policy, which
+denies by default. Issue a certificate and, the first time, a policy:
 
 ```sh
-halite-hub keys operator create ed
+halite-hub keys operator create ed --admin
 ```
+
+`--admin` writes a bootstrap policy granting that one operator
+everything, and only if there is no policy yet. It is a starting point
+and not a destination: narrow it, and add roles for the people who do
+not need all of it.
+
+Without a policy file the hub starts, says so, and authorizes nothing.
+That is deliberate: security that depends on a file existing is not
+security.
 
 ```sh
 halite-hub run '*' test.ping
@@ -237,6 +247,50 @@ halite-hub jobs prune               # retention runs hourly; this is now
 The cache is bounded by `job_cache_retention` and `job_cache_max_size`,
 whichever binds first, and the hub enforces both. Salt's `local_cache` <!-- lexicon:allow -->
 grows until the disk is full.
+
+### Who may run what
+
+The policy is one file with one grammar. A rule names a target **and**
+the functions permitted against it, and a request must match one rule
+entirely — Salt's `publisher_acl` and `external_auth` grant those
+separately, with surprising precedence.
+
+```yaml
+roles:
+  webops:
+    - target: 'web*.prod'
+      functions: ['state.apply', 'service.*', 'pkg.installed']
+      args:
+        'state.apply':
+          allow_sls: ['webserver.*']
+          deny_kwargs: ['pillar']
+  readonly:
+    - target: '*'
+      functions: ['test.ping', 'grains.*', 'state.show_*']
+
+bindings:
+  - principal: 'cert:CN=alice'
+    roles: ['webops', 'readonly']
+```
+
+`deny_kwargs: ['pillar']` matters more than it looks: passing pillar on
+the command line is otherwise a trivial way round pillar-based
+authorization.
+
+A wildcard never grants a function that runs arbitrary code. Salt's
+`.*` grants everything, and everybody's Salt ACL grants `.*`; here
+`functions: ['*']` covers `pkg.installed` and not `cmd.run`, which has
+to be named. `halite-hub policy show` prints the list for this build.
+
+Test a policy before it is in production, and in CI:
+
+```sh
+halite-hub policy test 'cert:CN=alice' 'web1.prod' state.apply webserver.nginx
+halite-hub policy test 'cert:CN=alice' 'db1.prod' state.apply    # exits 1
+```
+
+Every decision is logged with the rule that matched, or the reason for
+the denial.
 
 ### What a node refuses
 

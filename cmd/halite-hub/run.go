@@ -196,7 +196,11 @@ func runRun(args *cli.Args) int {
 // argument for batching.
 func gather(client *transport.Client, sub *transport.SubmitResponse, timeout time.Duration, args *cli.Args) int {
 	deadline := time.Now().Add(timeout)
-	expected := len(sub.Nodes)
+	// Only the nodes the job was delivered to. Waiting the full gather
+	// window for a node the hub has already reported as not connected
+	// means `run '*' test.ping` blocks for five minutes because one
+	// machine is off, which is exactly the case an operator runs it in.
+	expected := len(sub.Nodes) - len(sub.Absent)
 	var status *transport.JobStatus
 
 	for {

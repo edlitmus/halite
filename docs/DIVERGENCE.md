@@ -1360,6 +1360,21 @@ fleet converges to it. A node compiles against the hub's tree, caches
 what it fetched, and asks conditionally afterwards, so a redeployed tree
 with identical contents costs a round trip and no transfer.
 
+RBAC followed. A policy file grants a role a target and the functions
+permitted against it together, a request must match one rule entirely,
+and nothing is authorized without a rule -- including when the file is
+absent, which a hub says at startup rather than treating as permission.
+`halite-hub policy test` evaluates a hypothetical request and exits
+non-zero on a denial, so a policy can be checked in CI.
+
+A wildcard never grants a function that runs arbitrary code. The set
+comes from the `arbitrary_code` flag on the signatures a build ships
+rather than from a list, so a function marked in a later build is
+covered without anyone remembering. In this build that is the `cmd.*`
+family and `module.run`/`module.wait`; SPEC 23.5 also names
+`cmd.script`, `cmd.shell`, `file.write`, and `file.replace`, none of
+which this build ships.
+
 Hub-side pillar followed that. A node posts its grains to `/v1/pillar`
 and the hub compiles that node's pillar and nothing else -- which is
 the point of moving the compilation: the node holds no other node's
@@ -1377,13 +1392,16 @@ What is **not** built, in phase 2:
   form is declared and read by nothing.
 - **gitfs and s3fs.** `fileserver_backend` accepts only `roots`, and
   says so at startup rather than silently serving nothing.
-- **RBAC** (SPEC 23.5). An operator certificate is required and any
-  valid one may run anything: the policy file is read by nothing. The
-  first half of authorization -- knowing the peer is an operator and
-  not a node -- is enforced.
 - **Batching** (`--batch`, `--subset`, `--batch-wait`), the event bus,
   `/v1/grains`, `/v1/mine`, and the `queue` offline policy, which is
   accepted and behaves as `skip`.
+- **Tokens** (SPEC 23.6). An operator authenticates with a certificate;
+  there is no token issuance, which is what `halite-api` needs and
+  which is phase 4.
+- **The RBAC principals that are not certificates.** The grammar
+  accepts `oidc:` and `node:` principals and matches them, and nothing
+  produces one: OIDC is phase 4, and the node peer policy of SPEC 19.5
+  is not built.
 - **Return chunking.** A return is one request; the 16 MiB paginating
   path of SPEC 6.5 is not built.
 

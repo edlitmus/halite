@@ -31,6 +31,7 @@ Usage:
   halite-hub keys <subcommand>   enrollment and the key lifecycle
   halite-hub run <target> <fun>  run a function across the fleet
   halite-hub jobs <subcommand>   the job cache
+  halite-hub policy <show|test>  the RBAC policy, and what it decides
   halite-hub migrate <tree>      audit an existing Salt tree and report
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
@@ -67,6 +68,10 @@ run flags:
 
 jobs flags:
   --limit <n>          how many jobs to list, default 20
+
+policy flags:
+  --runner             evaluate the function as a runner rather than a job
+  --kwarg <k=v>        an argument to include, repeatable as a comma list
 
 migrate flags:
   --pillar-root <dir>  audit a separate pillar tree with pillar rules
@@ -112,6 +117,8 @@ func main() {
 		os.Exit(runRun(args))
 	case "jobs":
 		os.Exit(runJobs(args))
+	case "policy":
+		os.Exit(runPolicy(args))
 	case "runner", "orch", "files", "ssh", "event":
 		cli.Fatalf("`%s` is the rest of phase 2 (SPEC section 32) and is not built yet. "+
 			"`serve`, `keys`, `run`, and `jobs` work today; `migrate` and `lint` measure a tree.", os.Args[1])

@@ -10,6 +10,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -27,7 +28,31 @@ func (l *lab) withJobs(t *testing.T) *lab {
 	}
 	l.server.Jobs = jobs
 	l.server.Nodes = nodes
+	l.server.Policy = labPolicy(t)
 	return l
+}
+
+// labPolicy grants the lab's operator everything, including the
+// functions a wildcard never covers. It is written out rather than
+// assumed, because the tests below check that the absence of one
+// authorizes nothing.
+func labPolicy(t *testing.T) *policy.Policy {
+	t.Helper()
+	loaded, _, err := policy.Load([]byte(`
+roles:
+  administrator:
+    - target: '*'
+      functions: ['*', 'cmd.run']
+    - runners: ['*']
+bindings:
+  - principal: 'cert:CN=ed'
+    roles: ['administrator']
+`), "lab-policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded.ArbitraryCode = map[string]bool{"cmd.run": true, "cmd.script": true, "module.run": true}
+	return loaded
 }
 
 // operator issues an operator certificate and returns a client holding
@@ -261,6 +286,62 @@ func TestARevokedNodeIsNotATarget(t *testing.T) {
 	}
 	if len(res.Nodes) != 1 || res.Nodes[0] != "web1.example" {
 		t.Errorf("a revoked node was targeted: %v", res.Nodes)
+	}
+}
+
+// SPEC 23.5: an empty policy grants nothing, and a missing one is the
+// same. A hub that authorized everything when its policy file was
+// absent would be a hub whose security depends on a file existing.
+func TestAHubWithNoPolicyAuthorizesNothing(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	l.server.Policy = nil
+	l.enrolled(t, "web1.example")
+
+	op := l.operator(t, "ed")
+	_, err := op.Submit(context.Background(), transport.SubmitRequest{Target: "*", Fun: "test.ping"})
+	if err == nil {
+		t.Fatal("a hub with no policy ran a job")
+	}
+	if !strings.Contains(err.Error(), "policy") {
+		t.Errorf("the refusal should say what is missing: %v", err)
+	}
+}
+
+// An operator the policy does not bind is authenticated and not
+// authorized, and the difference is the point of having a policy.
+func TestAnUnboundOperatorIsRefused(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	l.enrolled(t, "web1.example")
+
+	stranger := l.operator(t, "mallory")
+	_, err := stranger.Submit(context.Background(), transport.SubmitRequest{Target: "*", Fun: "test.ping"})
+	if err == nil {
+		t.Fatal("an unbound operator ran a job")
+	}
+	if !strings.Contains(err.Error(), "mallory") {
+		t.Errorf("the refusal should name the principal: %v", err)
+	}
+}
+
+// Salt's `.*` grants everything, and everybody's Salt ACL grants `.*`.
+func TestAWildcardDoesNotGrantAShell(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	l.enrolled(t, "web1.example")
+	// The lab's policy names cmd.run, so take that away and leave the
+	// wildcard.
+	l.server.Policy.Roles["administrator"][0].Functions = []string{"*"}
+
+	op := l.operator(t, "ed")
+	_, err := op.Submit(context.Background(), transport.SubmitRequest{Target: "*", Fun: "cmd.run"})
+	if err == nil {
+		t.Fatal("a wildcard granted cmd.run")
+	}
+	if !strings.Contains(err.Error(), "arbitrary code") {
+		t.Errorf("the refusal should say why: %v", err)
+	}
+	// And the wildcard still grants an ordinary function.
+	if _, err := op.Submit(context.Background(), transport.SubmitRequest{Target: "*", Fun: "test.ping"}); err != nil {
+		t.Errorf("a wildcard should grant test.ping: %v", err)
 	}
 }
 

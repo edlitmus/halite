@@ -152,8 +152,13 @@ expected respondents, and delivers it; each node validates it, runs it,
 and posts a return.
 
 `run` needs an operator certificate — there is no "trusted because it
-is running on the hub". `halite-hub keys operator create <name>` issues
-one, and `run` finds it if there is exactly one in the key directory.
+is running on the hub" — and a policy that permits the request.
+`halite-hub keys operator create <name> --admin` issues the certificate
+and, if there is no policy yet, a bootstrap one. `run` finds the
+certificate if there is exactly one in the key directory.
+
+Without a policy file nothing is authorized, and the hub says so at
+startup rather than treating the absence as permission.
 
 | Salt | halite | Status |
 |---|---|---|
@@ -168,6 +173,9 @@ one, and `run` finds it if there is exactly one in the key directory.
 | no equivalent | `halite-hub jobs missing <jid>` | works |
 | no equivalent | `halite-hub jobs prune` | works |
 | no equivalent | `halite-hub keys operator create <name>` | works |
+| `publisher_acl`, `external_auth`, `client_acl` | one `policy.yaml`, SPEC 23.5 | works |
+| no equivalent | `halite-hub policy show` | works |
+| no equivalent | `halite-hub policy test <principal> <target> <fun>` | works |
 | `salt --batch=25% '*' state.apply` | `halite-hub run --batch 25% '*' state.apply` | phase 2 |
 | `salt-run manage.up` | `halite-hub runner manage.up` | phase 2 |
 | `salt-cp '*' file /tmp/file` | `halite-hub files push` | phase 2 |

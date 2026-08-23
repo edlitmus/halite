@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/job"
+	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -97,6 +98,28 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
+
+	// SPEC 9.1 step 2, and SPEC 23.5: every decision is logged, allowed
+	// or denied, with the rule that matched. A denial that is not
+	// recorded is one nobody can explain afterwards.
+	decision := s.Policy.Authorize(policy.Request{
+		Principal: principal,
+		Target:    req.Target,
+		Fun:       req.Fun,
+		Arg:       req.Arg,
+		Kwarg:     req.Kwarg,
+	})
+	if !decision.Allowed {
+		s.warn("job refused by policy",
+			"principal", principal, "target", req.Target, "fun", req.Fun,
+			"reason", decision.Reason)
+		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
+			fmt.Errorf("%s", decision.Reason))
+		return
+	}
+	s.info("job authorized",
+		"principal", principal, "target", req.Target, "fun", req.Fun,
+		"role", decision.Role, "rule", decision.RuleIndex)
 	j, err := s.Dispatch(Submission{
 		Target:     req.Target,
 		TargetKind: req.TargetKind,

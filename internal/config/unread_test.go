@@ -42,7 +42,6 @@ var unreadKeys = map[string]string{
 	"log_level_file":          "SPEC 26.1's per-sink level; the file sink takes the global one",
 	"regex_engine":            "re2 is the only engine, so the setting has one value",
 	"node_id_source":          "the resolution order of SPEC 7.2 is implemented; naming one source is not",
-	"policy":                  "phase 2: RBAC is a hub concern",
 	"extension_trust_keys":    "phase 5: bridged extensions",
 	"grains_refresh_interval": "phase 2: a long-running node re-collects; a one-shot run does not",
 	"legacy_acl":              "phase 2: RBAC is a hub concern",

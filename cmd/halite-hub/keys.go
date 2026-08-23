@@ -31,6 +31,8 @@ operator create flags:
   --out <path>         where to write the certificate and key, default
                        <pki_dir>/operator-<name>.crt and .key
   --lifetime <dur>     default 720h
+  --admin              also write a bootstrap policy granting this
+                       operator everything, if there is no policy yet
 
 keys flags:
   --state <state>      list only pending, accepted, rejected, revoked, or expired
@@ -486,6 +488,14 @@ func runKeysOperator(args *cli.Args) int {
 	cert, err := pki.DecodeCert(pki.EncodeCert(der))
 	if err != nil {
 		cli.Fatalf("%v", err)
+	}
+	if args.Bool("admin", false) {
+		path, err := bootstrapAdmin(h.cfg, name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+		} else {
+			fmt.Printf("policy    %s (administrator)\n", path)
+		}
 	}
 	fmt.Printf("operator  %s\n", name)
 	fmt.Printf("principal %s\n", pki.Principal(name))

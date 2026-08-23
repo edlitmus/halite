@@ -181,9 +181,6 @@ with the reason.
 
 The larger absences today:
 
-- **RBAC.** An operator certificate is required to submit a job, and any
-  valid one may run anything; `policy.yaml` is read by nothing yet.
-  Phase 2 of SPEC section 32.
 - **Batching** — `--batch`, `--subset`, `--batch-wait` — and the event
   bus. Phase 2.
 - **External pillar.** `ext_pillar` warns that the sources it names
@@ -192,6 +189,12 @@ The larger absences today:
 - **The API.** Phase 4.
 - **Windows and macOS modules.** Phase 5. The code cross-compiles; none
   of it has been run.
+- **`publisher_acl` and friends.** halite has one authorization file
+  with one grammar (SPEC 23.5), not five overlapping mechanisms. The
+  shape is different enough that an existing Salt ACL is rewritten
+  rather than translated, and the audit does not attempt it. The
+  difference worth knowing before you start: `functions: ['*']` does
+  not grant `cmd.run` here, and everybody's Salt ACL grants `.*`.
 - **`file.accumulated`**, and the backup Salt's `backup:` option keeps. <!-- lexicon:allow -->
 
 ## What is better, and worth using

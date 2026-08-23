@@ -2,7 +2,7 @@
 #
 # `halite-hub serve` runs the control plane: enrollment, the key
 # lifecycle, the subscribe stream, remote execution, the file server,
-# and pillar. RBAC, batching, and the event bus are the rest of phase 2,
+# pillar, and RBAC. Batching and the event bus are the rest of phase 2,
 # so the settings for those are read and validated and nothing acts on
 # them yet.
 
@@ -47,10 +47,12 @@ pillar_trusted_grains:
 # smart, recurse, aggregate, or overwrite.
 pillar_source_merging_strategy: smart
 
-# Deny by default. Every rule is an explicit grant.
+# Deny by default. Every rule is an explicit grant, and an absent file
+# authorizes nothing rather than everything. SPEC section 23.5.
 #
-# Not enforced yet: an operator certificate is required to submit a job
-# and any valid one may run anything. SPEC section 23.5, phase 2.
+# `halite-hub keys operator create <name> --admin` writes a starting
+# one. `halite-hub policy test` evaluates a request against it, which
+# belongs in CI.
 policy: /usr/local/etc/halite/policy.yaml
 
 # How long a job and its returns are kept, and the ceiling on the whole
