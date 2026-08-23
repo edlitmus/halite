@@ -1,9 +1,10 @@
 # halite-hub.
 #
 # `halite-hub serve` runs the control plane: enrollment, the key
-# lifecycle, and the subscribe stream. Job delivery and the file server
-# are the rest of phase 2 and are not built, so the settings for them
-# are read and validated and nothing acts on them yet.
+# lifecycle, the subscribe stream, and remote execution. The file
+# server, hub-side pillar, and RBAC are the rest of phase 2, so the
+# settings for those are read and validated and nothing acts on them
+# yet.
 
 # The one TCP port of SPEC section 6.1. There is no plaintext mode.
 listen: :4510
@@ -44,7 +45,22 @@ pillar_trusted_grains:
 pillar_source_merging_strategy: smart
 
 # Deny by default. Every rule is an explicit grant.
+#
+# Not enforced yet: an operator certificate is required to submit a job
+# and any valid one may run anything. SPEC section 23.5, phase 2.
 policy: /usr/local/etc/halite/policy.yaml
+
+# How long a job and its returns are kept, and the ceiling on the whole
+# store. Whichever binds first wins, and the hub enforces both.
+job_cache_retention: 720h
+job_cache_max_size: 10737418240
+
+# Nodegroups are named target expressions, checked at load: a cycle or a
+# reference to a group that does not exist is a configuration error
+# rather than a surprise when a job is dispatched.
+# nodegroups:
+#   web: 'G@os:FreeBSD and web*'
+
 
 log_level: info
 log_format: json

@@ -1,9 +1,9 @@
 # halite-node reporting to a hub.
 #
 # `halite-node enroll` asks for a certificate, `halite-node renew`
-# replaces it, and `halite-node connect` holds the stream open. Running
-# a job that arrives on that stream is the rest of phase 2 and is not
-# built: a job is logged and refused rather than run.
+# replaces it, and `halite-node connect` holds the stream open and runs
+# the jobs that arrive on it. The tree those jobs compile against is
+# this node's own: the hub's file server is the rest of phase 2.
 hub: hub.example.com
 hub_port: 4510
 
@@ -34,6 +34,10 @@ node_id: web1.prod.example.com
 # Off by default because it needs keys distributed first; on is the right
 # end state. SPEC section 25.6.
 require_job_signature: false
+
+# One job at a time, per SPEC section 9.6. This bounds what waits; a
+# full queue is refused out loud rather than held in memory.
+job_queue_depth: 16
 
 log_level: info
 log_format: json

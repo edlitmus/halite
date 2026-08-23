@@ -1293,18 +1293,32 @@ configured with `hub: 127.0.0.1` could not verify it at all -- every
 test dialled by name; and the hub read `log_fmt`, which is not a
 setting, so the loader warned on every start.
 
+Remote execution added two more of the same kind, and one of them is
+the worst defect in this phase:
+
+| Found by running it | What it was |
+|---|---|
+| A `--test` job put the agent into test mode **for ever** | `executeJob` set the flag on the long-lived node rather than on a copy. The first `run '*' state.apply --test` was correct; every real apply after it on that node reported what it *would* do, and an operator would have believed it had done it. A job now runs against a shallow copy of the node, and the same applies to the environment a job names. |
+| A state return came back as `map[Pos:map[Col:0 File: Line:0]]` | The return payload was `any` and went through `encoding/json`, which cannot see the ordered model: it marshalled the struct rather than the mapping. The payload is now encoded on the node with the model's own codec, which also keeps SPEC 6.4's promise about 64-bit integers. |
+
 What the lab run establishes: manual enrollment with an out-of-band
 fingerprint comparison, token enrollment within a node-ID glob and a
 source CIDR, single-use enforcement, acceptance and rejection,
 revocation from a *separate process* reaching a running hub and the
-connected node, renewal with a fresh key while connected, and a signed
-CRL that OpenSSL parses.
+connected node, renewal with a fresh key while connected, a signed CRL
+that OpenSSL parses, a highstate driven from the hub across two nodes in
+test mode and then for real and then again to convergence, glob, list,
+and grain targeting, `--async`, a job for a node that is not connected
+reported as unanswered with exit code 3, a function that does not exist
+returned as a failure rather than a crash, and a node certificate
+refused at `/v1/jobs`.
 
 What it does not: more than two nodes, more than one hub, a network that
 is not loopback, a hub restart with nodes connected, a certificate
-actually reaching expiry, clock skew between hub and node, and any of
-phase 2's remaining endpoints, which do not exist. It has been run on
-FreeBSD only.
+actually reaching expiry, clock skew between hub and node, a replay or
+an expired job over the wire (the guard is covered by tests, not by the
+lab), a return large enough to need chunking, and the endpoints that do
+not exist. It has been run on FreeBSD only.
 
 ## 6. Everything else not started
 
@@ -1318,11 +1332,30 @@ manages the lifecycle, and `halite-node enroll`, `renew`, and `connect`
 are the node's side of it. A hub and two nodes have been run against
 each other; see 5.11.
 
-What is **not** built, in phase 2: job delivery and execution, the
-return path, targeting over the wire, the job cache, the file server,
-hub-side pillar, the grains and mine endpoints, the event bus, and RBAC.
-A job arriving on the subscribe stream is logged and refused by the
-node, deliberately, because refusing is honest and pretending is not.
+Remote execution followed: `halite-hub run` submits on an operator
+certificate, the hub resolves the target against the grains a node
+reported, records the job with its expected respondents, and delivers
+it; the node validates it against SPEC 6.3, runs it, and posts a return
+that is filed in the job cache. `halite-hub jobs` reads that cache. A
+highstate has been driven from a hub against two nodes, applied, and
+run again to convergence.
+
+What is **not** built, in phase 2:
+
+- **The file server.** A hub-driven `state.apply` compiles against the
+  node's own tree, not one the hub serves. This is the largest gap
+  left, and it is what SPEC's exit criterion for the phase means by
+  "driven from the hub".
+- **Hub-side pillar**, `/v1/pillar`. Pillar is compiled on the node.
+- **RBAC** (SPEC 23.5). An operator certificate is required and any
+  valid one may run anything: the policy file is read by nothing. The
+  first half of authorization -- knowing the peer is an operator and
+  not a node -- is enforced.
+- **Batching** (`--batch`, `--subset`, `--batch-wait`), the event bus,
+  `/v1/grains`, `/v1/mine`, and the `queue` offline policy, which is
+  accepted and behaves as `skip`.
+- **Return chunking.** A return is one request; the 16 MiB paginating
+  path of SPEC 6.5 is not built.
 
 Nothing of phases 3 through 6 exists: no beacons, no scheduler, no
 reactors, no orchestration, no runners, no mine over the wire, no API,

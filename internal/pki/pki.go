@@ -237,6 +237,63 @@ func splitNames(names []string) ([]string, []net.IP) {
 	return dns, ips
 }
 
+// OperatorURI is the identity an operator's certificate carries.
+//
+// SPEC 23.5 binds a role to a principal spelled `cert:CN=<name>`, so
+// the common name is what RBAC reads. The URI SAN is here for the same
+// reason it is on a node: it says which kind of peer this is, in a
+// field that has one meaning, so a node certificate cannot be presented
+// where an operator's is wanted.
+func OperatorURI(name string) *url.URL {
+	return &url.URL{Scheme: URIScheme, Host: "operator", Path: "/" + name}
+}
+
+// OperatorFromCert reads an operator's name, and refuses a certificate
+// that is not one.
+func OperatorFromCert(cert *x509.Certificate) (string, error) {
+	for _, u := range cert.URIs {
+		if u.Scheme != URIScheme || u.Host != "operator" {
+			continue
+		}
+		name := strings.TrimPrefix(u.Path, "/")
+		if err := ValidateNodeID(name); err != nil {
+			return "", fmt.Errorf("the certificate's %s URI names no usable operator: %w", URIScheme, err)
+		}
+		return name, nil
+	}
+	return "", fmt.Errorf("this is not an operator certificate: it carries no %s://operator/<name> URI", URIScheme)
+}
+
+// Principal is the RBAC spelling of who is asking, per SPEC 23.5.
+func Principal(name string) string { return "cert:CN=" + name }
+
+// IssueOperator signs a certificate for a person or a pipeline that
+// drives the hub.
+//
+// Client authentication only: an operator certificate must not be
+// usable to impersonate a hub, so it carries no server usage and no DNS
+// names.
+func (ca *CA) IssueOperator(key crypto.Signer, name string, lifetime time.Duration) ([]byte, error) {
+	if err := ValidateNodeID(name); err != nil {
+		return nil, err
+	}
+	serial, err := serialNumber()
+	if err != nil {
+		return nil, err
+	}
+	now := ca.now()
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: name},
+		URIs:         []*url.URL{OperatorURI(name)},
+		NotBefore:    now.Add(-time.Minute),
+		NotAfter:     now.Add(lifetime),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	return x509.CreateCertificate(rand.Reader, tmpl, ca.Cert, key.Public(), ca.Key)
+}
+
 // NodeIDFromCSR reads the identity a request asks for.
 //
 // The hub is not obliged to grant it -- IssueNode takes the identity

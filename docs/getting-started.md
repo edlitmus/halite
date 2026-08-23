@@ -10,11 +10,11 @@ which is the mode Salt calls masterless, and it is the mode worth
 starting in either way: the tree is the same tree a hub would serve, and
 you can watch it work.
 
-A hub exists and a fleet can be enrolled against it — `halite-hub serve`
-and `halite-node enroll` are in [Operations](operations.md#enrolling-a-node)
-— but *driving* a highstate from the hub is the rest of phase 2 of SPEC
-section 32 and is not built. So: enrol now if you want the identity in
-place, and drive from the node.
+A hub also works: `halite-hub serve`, `halite-node enroll`, and
+`halite-hub run '*' state.apply` are in
+[Operations](operations.md#enrolling-a-node). What the hub cannot do yet
+is serve the tree, so each node needs its own copy — which is what this
+page sets up anyway.
 
 ## Install
 

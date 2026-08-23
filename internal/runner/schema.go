@@ -240,19 +240,26 @@ func writeChanges(b *strings.Builder, m *value.Map, indent string) {
 			nw, hasNew := t.Get("new")
 			if hasOld || hasNew {
 				fmt.Fprintf(b, "%s%s:\n", indent, key)
-				fmt.Fprintf(b, "%s    from: %s\n", indent, renderScalar(old))
-				fmt.Fprintf(b, "%s      to: %s\n", indent, renderScalar(nw))
+				fmt.Fprintf(b, "%s    from: %s\n", indent, renderScalarAt(old, indent+"        "))
+				fmt.Fprintf(b, "%s      to: %s\n", indent, renderScalarAt(nw, indent+"        "))
 				continue
 			}
 			fmt.Fprintf(b, "%s%s:\n", indent, key)
 			writeChanges(b, t, indent+"    ")
 		default:
-			fmt.Fprintf(b, "%s%s: %s\n", indent, key, renderScalar(e.Val))
+			fmt.Fprintf(b, "%s%s: %s\n", indent, key, renderScalarAt(e.Val, indent+"    "))
 		}
 	}
 }
 
-func renderScalar(v any) string {
+// renderScalar keeps the old signature for callers that have no indent
+// to give.
+func renderScalar(v any) string { return renderScalarAt(v, "        ") }
+
+// renderScalarAt renders a value, continuing a multi-line one under the
+// indent its key sits at. A fixed indent put the body of a diff to the
+// left of the key that introduced it.
+func renderScalarAt(v any, indent string) string {
 	switch t := v.(type) {
 	case nil:
 		return "(absent)"
@@ -265,7 +272,7 @@ func renderScalar(v any) string {
 			if len(lines) > 6 {
 				lines = append(lines[:6], fmt.Sprintf("... %d more lines", len(lines)-6))
 			}
-			return "|\n        " + strings.Join(lines, "\n        ")
+			return "|\n" + indent + strings.Join(lines, "\n"+indent)
 		}
 		return t
 	case []any:
@@ -277,4 +284,146 @@ func renderScalar(v any) string {
 		return strings.Join(parts, ", ")
 	}
 	return value.KeyString(v)
+}
+
+// NestedFromReturns renders the wire form of a run the way Nested
+// renders a local one.
+//
+// An operator watching `halite-hub run '*' state.apply` and one
+// watching `halite-node state apply` are reading the same thing, and it
+// should look the same. The local renderer works from the compiled
+// chunks, which do not cross the wire; this one works from the return
+// schema of SPEC 9.4, which does.
+func NestedFromReturns(returns *value.Map, secrets *redact.Set) string {
+	if returns == nil {
+		return ""
+	}
+	type row struct {
+		key   string
+		entry *value.Map
+		order int64
+	}
+	var rows []row
+	for _, e := range returns.Entries() {
+		m, ok := e.Val.(*value.Map)
+		if !ok {
+			continue
+		}
+		order := int64(len(rows))
+		if v, ok := m.Get("__run_num__"); ok {
+			if n, ok := v.(int64); ok {
+				order = n
+			}
+		}
+		rows = append(rows, row{key: value.KeyString(e.Key), entry: m, order: order})
+	}
+	// Run order, which is the order the operator cares about and not
+	// necessarily the order the map arrived in.
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].order < rows[j].order })
+
+	var b strings.Builder
+	succeeded, failed, changed, unknown := 0, 0, 0, 0
+	elapsedMS := 0.0
+	for _, r := range rows {
+		id, _ := r.entry.Get("__id__")
+		name, _ := r.entry.Get("name")
+		result, _ := r.entry.Get("result")
+		comment, _ := r.entry.Get("comment")
+		started, _ := r.entry.Get("start_time")
+		duration, _ := r.entry.Get("duration")
+
+		fmt.Fprintf(&b, "----------\n")
+		fmt.Fprintf(&b, "          ID: %v\n", scalarOr(id, r.key))
+		fmt.Fprintf(&b, "    Function: %s\n", functionFromKey(r.key))
+		if fmt.Sprint(name) != fmt.Sprint(id) {
+			fmt.Fprintf(&b, "        Name: %v\n", name)
+		}
+		fmt.Fprintf(&b, "      Result: %s\n", resultWord(result))
+		fmt.Fprintf(&b, "     Comment: %v\n", scalarOr(comment, ""))
+		if started != nil {
+			fmt.Fprintf(&b, "     Started: %v\n", started)
+		}
+		if duration != nil {
+			fmt.Fprintf(&b, "    Duration: %v ms\n", duration)
+			if ms, ok := duration.(float64); ok {
+				elapsedMS += ms
+			}
+		}
+		if changes, ok := r.entry.Get("changes"); ok {
+			if m, ok := changes.(*value.Map); ok && m.Len() > 0 {
+				b.WriteString("     Changes:\n")
+				writeChanges(&b, m, "              ")
+				// A `None` result with changes is what a state *would*
+				// do, and counting it as a change would report a dry
+				// run as having done something.
+				if _, isBool := result.(bool); isBool {
+					changed++
+				}
+			}
+		}
+		if warnings, ok := r.entry.Get("warnings"); ok {
+			if list, ok := warnings.([]any); ok {
+				for _, w := range list {
+					fmt.Fprintf(&b, "     Warning: %v\n", w)
+				}
+			}
+		}
+
+		switch result.(type) {
+		case bool:
+			if result.(bool) {
+				succeeded++
+			} else {
+				failed++
+			}
+		default:
+			// `None` is test mode: neither a success nor a failure, and
+			// counting it as either would misreport a dry run.
+			unknown++
+		}
+	}
+
+	fmt.Fprintf(&b, "\nSummary\n----------\n%s\n", Summary{
+		Succeeded: succeeded,
+		Changed:   changed,
+		WouldHave: unknown,
+		Failed:    failed,
+		Total:     len(rows),
+		Duration:  time.Duration(elapsedMS * float64(time.Millisecond)),
+	})
+
+	if secrets != nil {
+		return secrets.Scrub(b.String())
+	}
+	return b.String()
+}
+
+// functionFromKey reads the module and function out of the compound key
+// the return schema uses: `file_|-id_|-name_|-managed`.
+func functionFromKey(key string) string {
+	parts := strings.Split(key, "_|-")
+	if len(parts) < 4 {
+		return key
+	}
+	return parts[0] + "." + parts[len(parts)-1]
+}
+
+func resultWord(v any) string {
+	switch t := v.(type) {
+	case bool:
+		if t {
+			return "True"
+		}
+		return "False"
+	case nil:
+		return "None"
+	}
+	return fmt.Sprint(v)
+}
+
+func scalarOr(v any, fallback string) any {
+	if v == nil {
+		return fallback
+	}
+	return v
 }

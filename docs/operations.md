@@ -164,10 +164,64 @@ restart cannot fix — this node's enrollment was revoked, or `hub_tries`
 was reached — and the units carry `RestartPreventExitStatus=1` so that
 stops the unit and leaves the reason in the journal.
 
-What the agent does **not** do yet is run a job that arrives from the
-hub. That is the rest of phase 2. A job on the stream is logged and
-refused, which is why `halite-highstate.service` and its timer are still
-how a node is driven.
+The agent runs the jobs that arrive on that stream. What it does not
+have yet is the hub's file server, so a hub-driven `state.apply`
+compiles against the tree on the node.
+
+## Driving the fleet
+
+`halite-hub run` is the old `salt` command. It authenticates with an
+operator certificate — there is no "trusted because it is running on
+the hub" — so issue one first:
+
+```sh
+halite-hub keys operator create ed
+```
+
+```sh
+halite-hub run '*' test.ping
+halite-hub run '*' state.apply --test
+halite-hub run -G 'os:FreeBSD' state.apply
+halite-hub run -L 'web1,web2' service.restart nginx
+halite-hub run '*' state.apply --async        # print the jid and return
+```
+
+Exit codes say which of the three things happened:
+
+| Code | Meaning |
+|---|---|
+| 0 | every node answered and succeeded |
+| 1 | a node answered and failed |
+| 3 | a node was sent the job and did not answer |
+
+The third is deliberately not the second. "It said no" and "it said
+nothing" call for different actions, and Salt reports both as an absence
+in the output.
+
+Every job and every return is recorded on the hub before delivery, so a
+caller that disconnects loses nothing:
+
+```sh
+halite-hub jobs list
+halite-hub jobs show <jid>
+halite-hub jobs missing <jid>       # who was sent it and has not answered
+halite-hub jobs prune               # retention runs hourly; this is now
+```
+
+The cache is bounded by `job_cache_retention` and `job_cache_max_size`,
+whichever binds first, and the hub enforces both. Salt's `local_cache` <!-- lexicon:allow -->
+grows until the disk is full.
+
+### What a node refuses
+
+A job carries a nonce and an absolute expiry (SPEC 6.3). A node refuses
+one it has already run, one whose nonce it has seen, and one past its
+expiry — and returns the refusal rather than dropping it, so a job that
+will not run says so instead of looking slow. `--ttl` sets the window;
+the default is 15 minutes.
+
+A node runs one job at a time. `job_queue_depth` bounds what waits, and
+a full queue is refused out loud rather than held in memory.
 
 ## Enrolling a node
 

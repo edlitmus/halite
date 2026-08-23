@@ -15,10 +15,12 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/hub"
+	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/redact"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -154,10 +156,33 @@ func runServe(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
+	jobs, err := job.OpenCache(filepath.Join(h.cfg.String("state_dir", config.DefaultStateDir), "jobs"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	// SPEC 9.4: retention is by age and by size, whichever binds first,
+	// and the hub enforces it rather than an external cron job.
+	jobs.Retention = h.cfg.Duration("job_cache_retention", 30*24*time.Hour)
+	jobs.MaxBytes = h.cfg.Int("job_cache_max_size", 10<<30)
+
+	nodes, err := hub.OpenNodeCache(filepath.Join(h.cfg.String("cache_dir", config.DefaultCacheDir), "nodes"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	nodes.StaleAfter = h.cfg.Duration("grain_stale_after", time.Hour)
+
+	groups, err := nodegroupsFrom(h.cfg)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
 	server := &hub.Server{
 		Authority:    h.auth,
 		Log:          h.log,
 		PingInterval: h.cfg.Duration("hub_alive_interval", 30*time.Second),
+		Jobs:         jobs,
+		Nodes:        nodes,
+		Nodegroups:   groups,
 	}
 
 	ln, err := hub.Listen(listen, pair, h.auth.CA.Cert, h.denied)
@@ -179,6 +204,7 @@ func runServe(args *cli.Args) int {
 	// The operator command line is a separate process, so the running
 	// hub follows the key store rather than being told.
 	go server.Reconcile(ctx, 2*time.Second)
+	go prune(ctx, h, jobs)
 
 	if err := server.Serve(ctx, ln); err != nil {
 		h.log.Error("the hub stopped", "error", err.Error())
@@ -186,6 +212,52 @@ func runServe(args *cli.Args) int {
 	}
 	h.log.Info("the hub stopped")
 	return 0
+}
+
+// nodegroupsFrom reads the nodegroup table, checked at load rather than
+// at use: a cycle or a reference to a group that does not exist is a
+// configuration error, and finding it when a job is dispatched means
+// finding it at the worst moment.
+func nodegroupsFrom(cfg *config.Config) (target.Nodegroups, error) {
+	m := cfg.Map("nodegroups")
+	if m == nil || m.Len() == 0 {
+		return nil, nil
+	}
+	groups := target.Nodegroups{}
+	for _, e := range m.Entries() {
+		name, ok := e.Key.(string)
+		if !ok {
+			return nil, fmt.Errorf("a nodegroup name must be a string, and %v is not", e.Key)
+		}
+		expr, ok := e.Val.(string)
+		if !ok {
+			return nil, fmt.Errorf("nodegroup %q must be a target expression, and %v is not", name, e.Val)
+		}
+		groups[name] = expr
+	}
+	if err := target.ValidateNodegroups(groups); err != nil {
+		return nil, err
+	}
+	return groups, nil
+}
+
+// prune enforces the job cache's retention on a timer, so that a hub
+// left running does not fill its disk. Salt's local_cache does. // lexicon:allow
+func prune(ctx context.Context, h *hubContext, jobs *job.Cache) {
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		if removed, err := jobs.Prune(); err != nil {
+			h.log.Warn("pruning the job cache", "error", err.Error())
+		} else if removed > 0 {
+			h.log.Info("pruned the job cache", "removed", removed)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 // servingCertificate loads the hub's own certificate, issuing one if

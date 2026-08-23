@@ -25,6 +25,12 @@ var keysUsage = `halite-hub keys — enrollment and the key lifecycle (SPEC sect
   keys token create --ttl <dur>    mint a bootstrap token
   keys token list                  every token, and what it admitted
   keys token revoke <id>           withdraw a token
+  keys operator create <name>      issue a certificate for an operator
+
+operator create flags:
+  --out <path>         where to write the certificate and key, default
+                       <pki_dir>/operator-<name>.crt and .key
+  --lifetime <dur>     default 720h
 
 keys flags:
   --state <state>      list only pending, accepted, rejected, revoked, or expired
@@ -52,6 +58,8 @@ func runKeys(args *cli.Args) int {
 		return 0
 	case "token":
 		return runKeysToken(args)
+	case "operator":
+		return runKeysOperator(args)
 	}
 
 	h := openHub(args, false)
@@ -422,6 +430,69 @@ func runKeysToken(args *cli.Args) int {
 		fmt.Fprintf(os.Stderr, "halite-hub keys token: unknown subcommand %q\n\n%s", args.Positional[1], keysUsage)
 		return 2
 	}
+}
+
+// runKeysOperator issues the certificate that `halite-hub run` presents.
+//
+// An operator is a peer like any other: SPEC 23.5 binds a role to
+// `cert:CN=<name>`, so the certificate is the credential and there is
+// no password, no shared secret, and no "trusted because it is running
+// on the hub".
+func runKeysOperator(args *cli.Args) int {
+	if len(args.Positional) < 2 || args.Positional[1] != "create" {
+		fmt.Fprint(os.Stderr, keysUsage)
+		return 2
+	}
+	if len(args.Positional) < 3 {
+		cli.Fatalf("operator create needs a name; it becomes the RBAC principal cert:CN=<name>")
+	}
+	name := args.Positional[2]
+	h := openHub(args, false)
+
+	lifetime, err := time.ParseDuration(args.Flag("lifetime", "720h"))
+	if err != nil {
+		cli.Fatalf("--lifetime %q: %v", args.Flag("lifetime", ""), err)
+	}
+	alg, err := pki.ParseKeyAlgorithm(h.cfg.String("key_algorithm", string(pki.ECDSAP256)))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	key, err := pki.GenerateKey(alg)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	der, err := h.auth.CA.IssueOperator(key, name, lifetime)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
+	base := args.Flag("out", "")
+	if base == "" {
+		base = h.files.Path("operator-" + name)
+	}
+	keyPEM, err := pki.EncodeKey(key)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	// The key first and 0600, because a certificate written beside a
+	// key that failed to write is a credential nobody can use and
+	// everybody can see.
+	if err := os.WriteFile(base+".key", keyPEM, 0o600); err != nil {
+		cli.Fatalf("%v", err)
+	}
+	if err := os.WriteFile(base+".crt", pki.EncodeCert(der), 0o644); err != nil {
+		cli.Fatalf("%v", err)
+	}
+	cert, err := pki.DecodeCert(pki.EncodeCert(der))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	fmt.Printf("operator  %s\n", name)
+	fmt.Printf("principal %s\n", pki.Principal(name))
+	fmt.Printf("cert      %s\n", base+".crt")
+	fmt.Printf("key       %s\n", base+".key")
+	fmt.Printf("expires   %s\n", cert.NotAfter.UTC().Format(time.RFC3339))
+	return 0
 }
 
 func orAny(s string) string {

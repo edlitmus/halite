@@ -14,9 +14,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -35,6 +37,38 @@ type Server struct {
 	// first use; a caller may set one to share it.
 	Fleet     *Fleet
 	fleetOnce sync.Once
+
+	// Jobs is the job cache of SPEC 9.4. Without one the hub still
+	// dispatches, and nothing can be looked up afterwards, so `serve`
+	// always provides it.
+	Jobs *job.Cache
+	// Nodes is the node data cache of SPEC 8.3, which is what targeting
+	// on a grain reads.
+	Nodes     *NodeCache
+	nodesOnce sync.Once
+	// Nodegroups is the configured nodegroup table.
+	Nodegroups target.Nodegroups
+
+	jobClock job.Clock
+}
+
+// clock assigns job identifiers that do not collide.
+func (s *Server) clock() *job.Clock {
+	if s.jobClock.Now == nil && s.Now != nil {
+		s.jobClock.Now = s.Now
+	}
+	return &s.jobClock
+}
+
+// nodes is the node data cache, or an empty one held in a temporary
+// directory-free form: a hub with no cache still targets on node ID.
+func (s *Server) nodes() *NodeCache {
+	s.nodesOnce.Do(func() {
+		if s.Nodes == nil {
+			s.Nodes = &NodeCache{}
+		}
+	})
+	return s.Nodes
 }
 
 func (s *Server) now() time.Time {
@@ -74,6 +108,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+transport.PathEnroll, s.enroll)
 	mux.HandleFunc("POST "+transport.PathEnrollRenew, s.authenticated(s.renew))
 	mux.HandleFunc("POST "+transport.PathSubscribe, s.authenticated(s.subscribe))
+	mux.HandleFunc("POST "+transport.PathReturn, s.authenticated(s.returned))
+	mux.HandleFunc("POST "+transport.PathJobs, s.operator(s.submit))
+	mux.HandleFunc("GET "+transport.PathJob+"{jid}", s.operator(s.jobStatus))
 	// An unrouted path under /v1/ is a version skew or a scan, and
 	// either way the answer is the same shape as every other failure.
 	mux.HandleFunc("/", s.notFound)
@@ -123,6 +160,36 @@ func (s *Server) authenticated(next func(http.ResponseWriter, *http.Request, str
 			}
 		}
 		next(w, r, nodeID)
+	}
+}
+
+// operator refuses a request that does not arrive on an operator
+// certificate.
+//
+// A node's certificate authenticates a node and nothing else: SPEC 9.1
+// has the hub authorize a submission against RBAC, and the first half
+// of that is knowing that the peer is an operator at all. A node that
+// could submit a job would be one compromised host driving the fleet.
+func (s *Server) operator(next func(http.ResponseWriter, *http.Request, string)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		peer, err := transport.PeerCert(r)
+		if err != nil {
+			transport.WriteError(w, http.StatusUnauthorized, transport.CodeRefused, err)
+			return
+		}
+		name, err := pki.OperatorFromCert(peer)
+		if err != nil {
+			transport.WriteError(w, http.StatusForbidden, transport.CodeRefused, err)
+			return
+		}
+		if revoker := s.Authority.Revoker; revoker != nil {
+			if reason, revoked := revoker.Revoked(pki.SerialString(peer)); revoked {
+				transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
+					fmt.Errorf("this operator certificate is revoked: %s", reason))
+				return
+			}
+		}
+		next(w, r, pki.Principal(name))
 	}
 }
 

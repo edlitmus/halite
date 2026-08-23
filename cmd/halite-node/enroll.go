@@ -16,6 +16,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
@@ -293,6 +294,23 @@ func runConnect(args *cli.Args) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// The executor runs jobs; the loop below reads the stream. They are
+	// separate goroutines with a bounded queue between them, per SPEC
+	// 9.6, so a state run that takes ten minutes does not stop the node
+	// hearing a revocation.
+	returns := make(chan *job.Return, 64)
+	exec := newExecutor(n, int(n.cfg.Int("job_queue_depth", 16)), func(ret *job.Return) {
+		select {
+		case returns <- ret:
+		default:
+			n.log.Error("dropping a return because the return queue is full",
+				"jid", string(ret.JID))
+		}
+	})
+	n.executor = exec
+	go exec.Run(ctx.Done())
+	go n.postReturns(ctx, args, returns)
+
 	backoff := time.Second
 	const maxBackoff = time.Minute
 	tries := n.cfg.Int("hub_tries", 0)
@@ -355,6 +373,86 @@ func grainsJSON(n *node) json.RawMessage {
 	return raw
 }
 
+// acceptJob turns a stream message into a job and queues it, or
+// returns the refusal.
+//
+// SPEC 6.3: a node refuses a replayed, expired, or malformed job with a
+// structured refusal rather than dropping it, because an operator
+// watching a job that vanished learns nothing.
+func (n *node) acceptJob(msg transport.Message) {
+	j := &job.Job{
+		JID:   job.ID(msg.JID),
+		Fun:   msg.Fun,
+		Arg:   msg.Arg,
+		Kwarg: msg.Kwarg,
+		Env:   msg.Env,
+		Nonce: msg.Nonce,
+	}
+	if msg.Expires != "" {
+		expires, err := time.Parse(time.RFC3339Nano, msg.Expires)
+		if err != nil {
+			n.refuse(j, fmt.Errorf("the job's expiry %q is not a timestamp: %w", msg.Expires, err))
+			return
+		}
+		j.Expires = expires
+	}
+	if n.executor == nil {
+		n.refuse(j, errors.New("this node is not running jobs"))
+		return
+	}
+	if err := n.executor.Offer(j); err != nil {
+		n.refuse(j, err)
+		return
+	}
+}
+
+// refuse files a refusal as a return.
+func (n *node) refuse(j *job.Job, err error) {
+	n.log.Warn("refusing a job", "jid", string(j.JID), "fun", j.Fun, "reason", err.Error())
+	if n.executor == nil || j.JID == "" {
+		return
+	}
+	select {
+	case n.refusals <- refusalReturn(n, j, err):
+	default:
+	}
+}
+
+// postReturns sends finished returns to the hub, retrying a transient
+// failure: a return that is lost because the connection blinked is a
+// job that looks unresponsive for ever.
+func (n *node) postReturns(ctx context.Context, args *cli.Args, returns <-chan *job.Return) {
+	send := func(ret *job.Return) {
+		client, _ := n.hubClient(args)
+		for attempt := 0; attempt < 5; attempt++ {
+			err := client.Return(ctx, ret)
+			if err == nil {
+				return
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			n.log.Warn("could not post a return", "jid", string(ret.JID), "error", err.Error())
+			select {
+			case <-time.After(time.Duration(attempt+1) * time.Second):
+			case <-ctx.Done():
+				return
+			}
+		}
+		n.log.Error("giving up on a return", "jid", string(ret.JID))
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ret := <-returns:
+			send(ret)
+		case ret := <-n.refusals:
+			send(ret)
+		}
+	}
+}
+
 // errRevoked ends the connect loop rather than restarting it.
 var errRevoked = errors.New("this node's enrollment has been revoked")
 
@@ -377,8 +475,7 @@ func (n *node) handle(msg transport.Message) error {
 	case transport.MsgReload:
 		n.log.Info("the hub asked this node to reconnect", "reason", msg.Reason)
 	case transport.MsgJob:
-		n.log.Warn("a job arrived and this build cannot run one yet",
-			"jid", msg.JID, "fun", msg.Fun)
+		n.acceptJob(msg)
 	default:
 		n.log.Info("message", "type", msg.T)
 	}

@@ -63,40 +63,7 @@ func runState(args *cli.Args) int {
 func runStateFunction(args *cli.Args, fn string, rest []string) int {
 	n := setup(args)
 	p := n.compilePillar()
-
-	compiler := &state.Compiler{
-		Loader:   n.files,
-		Registry: n.registry.States.Signatures(),
-		Config: state.Config{
-			// `salt['pillar.get']` and its neighbours are ordinary in an
-			// SLS file. The compiler has always passed this through to
-			// the renderer and nothing ever set it, so every one of them
-			// was undefined.
-			Salt: exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.context(p)},
-			// SPEC 10.1.3 names `yaml_bool_11: false` as the switch a
-			// tree throws once it has been audited, and SPEC 10.2.4
-			// names `random_seed`. Both were plumbed to the renderer and
-			// read from nothing.
-			YAMLBool11:       n.cfg.OptionalBool("yaml_bool_11"),
-			Nondeterministic: n.cfg.String("random_seed", "deterministic") == "nondeterministic",
-			TemplateOptions:  n.templateOptions(),
-			Env:              n.env,
-			PillarEnv:        n.pillarEnv,
-			NodeID:           n.nodeID,
-			JobID:            newJobID(),
-			Grains:           n.grains,
-			Pillar:           p,
-			ConfigValues:     n.cfg.Redacted(),
-			Undefined:        n.undef,
-			TopMergeStrategy: n.cfg.String("top_file_merging_strategy", "merge"),
-			StateAllowlist:   n.cfg.StringSlice("state_allowlist"),
-			StateDenylist:    n.cfg.StringSlice("state_denylist"),
-			Test:             n.test,
-			GPG:              n.gpgOptions(),
-			OnSecret:         n.secrets.Add,
-			Renderer:         n.defaultRenderer(),
-		},
-	}
+	compiler := n.stateCompiler(p, newJobID())
 
 	compile := func(names []string) *state.Compiled {
 		if len(names) == 0 {
@@ -165,6 +132,46 @@ func runStateFunction(args *cli.Args, fn string, rest []string) int {
 	}
 	cli.Fatalf("state has no subcommand %q; try apply, sls, show_top, show_highstate, show_lowstate, or show_states", fn)
 	return 2
+}
+
+// stateCompiler builds the compiler for one run. Extracted so that a
+// job arriving from a hub is compiled by exactly the same code as
+// `halite-node state apply`, rather than by a second arrangement that
+// can drift from it.
+func (n *node) stateCompiler(p *value.Map, jobID string) *state.Compiler {
+	return &state.Compiler{
+		Loader:   n.files,
+		Registry: n.registry.States.Signatures(),
+		Config: state.Config{
+			// `salt['pillar.get']` and its neighbours are ordinary in an
+			// SLS file. The compiler has always passed this through to
+			// the renderer and nothing ever set it, so every one of them
+			// was undefined.
+			Salt: exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.contextFor(p, jobID)},
+			// SPEC 10.1.3 names `yaml_bool_11: false` as the switch a
+			// tree throws once it has been audited, and SPEC 10.2.4
+			// names `random_seed`. Both were plumbed to the renderer and
+			// read from nothing.
+			YAMLBool11:       n.cfg.OptionalBool("yaml_bool_11"),
+			Nondeterministic: n.cfg.String("random_seed", "deterministic") == "nondeterministic",
+			TemplateOptions:  n.templateOptions(),
+			Env:              n.env,
+			PillarEnv:        n.pillarEnv,
+			NodeID:           n.nodeID,
+			JobID:            jobID,
+			Grains:           n.grains,
+			Pillar:           p,
+			ConfigValues:     n.cfg.Redacted(),
+			Undefined:        n.undef,
+			TopMergeStrategy: n.cfg.String("top_file_merging_strategy", "merge"),
+			StateAllowlist:   n.cfg.StringSlice("state_allowlist"),
+			StateDenylist:    n.cfg.StringSlice("state_denylist"),
+			Test:             n.test,
+			GPG:              n.gpgOptions(),
+			OnSecret:         n.secrets.Add,
+			Renderer:         n.defaultRenderer(),
+		},
+	}
 }
 
 // applyStates runs the compiled low state and prints the result.

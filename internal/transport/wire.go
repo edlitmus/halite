@@ -44,6 +44,8 @@ const (
 	PathPillar      = "/v1/pillar"
 	PathFiles       = "/v1/files/"
 	PathGrains      = "/v1/grains"
+	PathJobs        = "/v1/jobs"
+	PathJob         = "/v1/jobs/"
 	PathMine        = "/v1/mine"
 )
 
@@ -122,6 +124,45 @@ type SubscribeRequest struct {
 	// Version is the node's build, so a hub can say what it is talking
 	// to without asking.
 	Version string `json:"version,omitempty"`
+}
+
+// SubmitRequest is an operator asking for a job, at POST /v1/jobs.
+//
+// It carries no principal: who is asking comes from the certificate on
+// the connection, never from the body.
+type SubmitRequest struct {
+	Target     string         `json:"target"`
+	TargetKind string         `json:"target_kind,omitempty"`
+	Fun        string         `json:"fun"`
+	Arg        []string       `json:"arg,omitempty"`
+	Kwarg      map[string]any `json:"kwarg,omitempty"`
+	Env        string         `json:"env,omitempty"`
+	Test       bool           `json:"test,omitempty"`
+	Offline    string         `json:"offline,omitempty"`
+	// TTLSeconds bounds how long the job may be run, per SPEC 6.3.
+	TTLSeconds int `json:"ttl_seconds,omitempty"`
+}
+
+// SubmitResponse is the hub's acknowledgement: the jid and who is
+// expected to answer, so that a caller which disconnects can still find
+// out what happened.
+type SubmitResponse struct {
+	JID   string   `json:"jid"`
+	Nodes []string `json:"nodes"`
+	// Absent lists matched nodes that were not connected, by name. A
+	// count would send an operator looking for which.
+	Absent []string `json:"absent,omitempty"`
+}
+
+// JobStatus is the answer to GET /v1/jobs/{jid}.
+type JobStatus struct {
+	JID     string            `json:"jid"`
+	Fun     string            `json:"fun"`
+	Target  string            `json:"target,omitempty"`
+	State   string            `json:"state,omitempty"`
+	Nodes   []string          `json:"nodes,omitempty"`
+	Missing []string          `json:"missing,omitempty"`
+	Returns []json.RawMessage `json:"returns,omitempty"`
 }
 
 // Error is the shape of every failure the control plane returns, so

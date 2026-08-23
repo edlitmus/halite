@@ -29,12 +29,14 @@ var usage = `halite-hub — the central service and the operator command line
 Usage:
   halite-hub serve               run the control plane
   halite-hub keys <subcommand>   enrollment and the key lifecycle
+  halite-hub run <target> <fun>  run a function across the fleet
+  halite-hub jobs <subcommand>   the job cache
   halite-hub migrate <tree>      audit an existing Salt tree and report
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
 
 Still to come in phase 2 (SPEC section 32):
-  run, runner, orch, files, ssh, event, jobs
+  runner, orch, files, ssh, event
 
 Common flags:
   --help               describe the program without running a command
@@ -48,6 +50,23 @@ serve flags:
   --names <a,b>        names to issue the hub's certificate for
   --log-level <level>  error, warn, info (default), debug, or trace
   --log-fmt <format>   json (default) or console
+
+run flags:
+  --async              print the jid and return at once
+  --timeout <dur>      how long to gather returns, default 5m
+  --test               run every state in test mode, changing nothing
+  --env <name>         the environment the job names
+  --ttl <dur>          how long the job may be run, default 15m
+  --offline <policy>   skip (default), queue, or require
+  --as <name>          which operator certificate to present
+  --cert <path>        an operator certificate, instead of --as
+  --key <path>         its key
+  --hub <address>      the hub to reach, default localhost
+  --server-name <name> the name to verify in the hub's certificate
+  -L -E -G -P -I -J -S -N -C   the target kinds of SPEC section 8
+
+jobs flags:
+  --limit <n>          how many jobs to list, default 20
 
 migrate flags:
   --pillar-root <dir>  audit a separate pillar tree with pillar rules
@@ -89,9 +108,13 @@ func main() {
 		os.Exit(runServe(args))
 	case "keys":
 		os.Exit(runKeys(args))
-	case "run", "runner", "orch", "files", "ssh", "event", "jobs":
+	case "run":
+		os.Exit(runRun(args))
+	case "jobs":
+		os.Exit(runJobs(args))
+	case "runner", "orch", "files", "ssh", "event":
 		cli.Fatalf("`%s` is the rest of phase 2 (SPEC section 32) and is not built yet. "+
-			"`serve` and `keys` run the control plane today; `migrate` and `lint` measure a tree.", os.Args[1])
+			"`serve`, `keys`, `run`, and `jobs` work today; `migrate` and `lint` measure a tree.", os.Args[1])
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub: unknown subcommand %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)

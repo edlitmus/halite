@@ -106,20 +106,43 @@ admitted. SPEC section 7.3.
 
 ## Driving a fleet
 
-None of this works yet: it is the rest of phase 2. Each command says so
-rather than failing obscurely.
+This works. The hub resolves the target, records the job with its
+expected respondents, and delivers it; each node validates it, runs it,
+and posts a return.
+
+`run` needs an operator certificate — there is no "trusted because it
+is running on the hub". `halite-hub keys operator create <name>` issues
+one, and `run` finds it if there is exactly one in the key directory.
 
 | Salt | halite | Status |
 |---|---|---|
-| `salt '*' test.ping` | `halite-hub run '*' test.ping` | phase 2 |
-| `salt -G 'os:FreeBSD' state.apply` | `halite-hub run -G 'os:FreeBSD' state.apply` | phase 2 |
-| `salt-run jobs.list_jobs` | `halite-hub jobs list` | phase 2 |
+| `salt '*' test.ping` | `halite-hub run '*' test.ping` | works |
+| `salt -G 'os:FreeBSD' state.apply` | `halite-hub run -G 'os:FreeBSD' state.apply` | works |
+| `salt '*' state.apply test=True` | `halite-hub run '*' state.apply --test` | works |
+| `salt --async '*' state.apply` | `halite-hub run --async '*' state.apply` | works |
+| `salt --timeout=60 '*' test.ping` | `halite-hub run --timeout 60s '*' test.ping` | works |
+| `salt-run jobs.list_jobs` | `halite-hub jobs list` | works |
+| `salt-run jobs.lookup_jid <jid>` | `halite-hub jobs lookup <jid>` | works |
+| `salt-run jobs.print_job <jid>` | `halite-hub jobs show <jid>` | works |
+| no equivalent | `halite-hub jobs missing <jid>` | works |
+| no equivalent | `halite-hub jobs prune` | works |
+| no equivalent | `halite-hub keys operator create <name>` | works |
+| `salt --batch=25% '*' state.apply` | `halite-hub run --batch 25% '*' state.apply` | phase 2 |
 | `salt-run manage.up` | `halite-hub runner manage.up` | phase 2 |
 | `salt-cp '*' file /tmp/file` | `halite-hub files push` | phase 2 |
 | `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 2 |
 | `salt-call event.send` | `halite-node event send` | phase 2 |
 | `salt-run state.orchestrate` | `halite-hub orch` | phase 3 |
 | `salt-api` | `halite-api serve` | phase 4 |
+
+A hub-driven `state.apply` compiles against the **node's** local tree.
+The hub's file server is the next piece of phase 2; until it lands, the
+tree has to be on the node, which is how a masterless estate already has
+it. <!-- lexicon:allow -->
+
+`run` exits 0 when every node succeeded, 1 when one failed, and 3 when a
+node was sent the job and did not answer — because "it said no" and "it
+said nothing" call for different things.
 
 ## Targeting
 

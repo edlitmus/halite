@@ -38,6 +38,20 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 	}
 
 	now := s.now()
+	// The grains a node reports are what targeting on a grain reads,
+	// and they are recorded before the stream opens: a job dispatched
+	// in the same second as a node connects should not miss it.
+	if len(req.Grains) > 0 || req.Version != "" {
+		if err := s.nodes().Put(&NodeData{
+			NodeID:   nodeID,
+			Grains:   req.Grains,
+			Version:  req.Version,
+			LastSeen: now,
+		}); err != nil && !errors.Is(err, errNoNodeCache) {
+			s.warn("could not record what a node reported", "node_id", nodeID, "error", err.Error())
+		}
+	}
+
 	st := s.fleet().attach(nodeID, now)
 	defer s.fleet().detach(st)
 

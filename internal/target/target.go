@@ -49,6 +49,35 @@ const (
 	Compound
 )
 
+// String is the name a kind is written by: the long form of the flag,
+// so that a job record says `grain` rather than a number nobody can
+// read six months later.
+func (k Kind) String() string {
+	switch k {
+	case Glob:
+		return "glob"
+	case List:
+		return "list"
+	case Regex:
+		return "pcre"
+	case Grain:
+		return "grain"
+	case GrainRegex:
+		return "grain_pcre"
+	case Pillar:
+		return "pillar"
+	case PillarRegex:
+		return "pillar_pcre"
+	case Subnet:
+		return "ipcidr"
+	case Nodegroup:
+		return "nodegroup"
+	case Compound:
+		return "compound"
+	}
+	return "unknown"
+}
+
 // kindLetters map the compound-expression type sigils to kinds.
 var kindLetters = map[string]Kind{
 	"G": Grain,

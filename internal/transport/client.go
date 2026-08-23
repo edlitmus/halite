@@ -306,3 +306,52 @@ func (c *Client) Subscribe(ctx context.Context, req SubscribeRequest, onMessage 
 	}
 	return scanner.Err()
 }
+
+// Return posts one job return to the hub. SPEC 6.2: one request per
+// return, idempotent by (jid, node_id, chunk), so a retry after a lost
+// acknowledgement is safe.
+func (c *Client) Return(ctx context.Context, ret any) error {
+	_, err := c.post(ctx, PathReturn, ret, nil)
+	return err
+}
+
+// Submit asks the hub to run a job. The caller is an operator, and the
+// hub decides who that is from the certificate on the connection.
+func (c *Client) Submit(ctx context.Context, req SubmitRequest) (*SubmitResponse, error) {
+	var res SubmitResponse
+	if _, err := c.post(ctx, PathJobs, req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// JobStatus reads what has come back for a job so far.
+func (c *Client) JobStatus(ctx context.Context, jid string) (*JobStatus, error) {
+	client, err := c.client()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(PathJob+jid), nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(res.Body, MaxRequestBody))
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 400 {
+		return nil, decodeError(PathJob+jid, payload, res.StatusCode)
+	}
+	var out JobStatus
+	if err := json.Unmarshal(payload, &out); err != nil {
+		return nil, fmt.Errorf("the hub's answer for %s is not readable: %w", jid, err)
+	}
+	return &out, nil
+}

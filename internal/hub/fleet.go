@@ -29,6 +29,24 @@ type stream struct {
 	// since is when the node connected, for `keys list` and the
 	// operator's question "is it up".
 	since time.Time
+	// pong is when the node last answered a ping. A node whose stream
+	// is open but which has stopped answering is a half-open
+	// connection, which looks identical to a healthy one from the
+	// hub's side until something asks.
+	pongMu sync.Mutex
+	pong   time.Time
+}
+
+func (st *stream) sawPong(at time.Time) {
+	st.pongMu.Lock()
+	defer st.pongMu.Unlock()
+	st.pong = at
+}
+
+func (st *stream) lastPong() time.Time {
+	st.pongMu.Lock()
+	defer st.pongMu.Unlock()
+	return st.pong
 }
 
 func (st *stream) close() {
@@ -140,6 +158,27 @@ func (f *Fleet) end(nodeID string, msg transport.Message) bool {
 	}
 	st.close()
 	return true
+}
+
+// sawPong records that a node answered a ping.
+func (f *Fleet) sawPong(nodeID string, at time.Time) {
+	f.mu.Lock()
+	st, ok := f.streams[nodeID]
+	f.mu.Unlock()
+	if ok {
+		st.sawPong(at)
+	}
+}
+
+// LastPong is when a node last answered, zero if it never has.
+func (f *Fleet) LastPong(nodeID string) time.Time {
+	f.mu.Lock()
+	st, ok := f.streams[nodeID]
+	f.mu.Unlock()
+	if !ok {
+		return time.Time{}
+	}
+	return st.lastPong()
 }
 
 // Connected lists the nodes with a live stream, and since when.

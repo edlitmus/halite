@@ -76,7 +76,7 @@ Delivery follows the phases in SPEC section 32.
 |---|---|---|
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
-| 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **In progress**: the enrollment CA, the transport, and `serve`/`keys`/`enroll`/`renew`/`connect` are built; job delivery, the file server, and RBAC are not |
+| 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **In progress**: enrollment, the transport, remote execution, targeting, and the job cache are built; the file server, hub-side pillar, RBAC, and the event bus are not |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | Not started |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
@@ -89,13 +89,17 @@ tree compiles here to the same low state Salt 3008.2 produces, chunk for
 chunk and argument for argument, and the differential that says so runs
 on demand against any tree.
 
-A fleet can now be enrolled: a hub issues, an operator accepts after
-comparing a fingerprint out of band, and a node holds a certificate it
-generated the key for. Driving a highstate from the hub — SPEC's exit
-criterion for phase 2 — needs job delivery and the return path, which
-are the next piece. A hub and two nodes have been run against each
-other; [DIVERGENCE 5.11](docs/DIVERGENCE.md) says what that established
-and what it did not.
+A fleet can now be enrolled and driven. A hub issues certificates, an
+operator accepts after comparing a fingerprint out of band, and a node
+holds a key it generated itself; `halite-hub run '*' state.apply` then
+resolves the target, records the job, delivers it, and gathers the
+returns. A highstate has been driven from a hub across two nodes and run
+again to convergence.
+
+What is still missing from the phase is the file server: a hub-driven
+`state.apply` compiles against the node's own tree. [DIVERGENCE
+5.11](docs/DIVERGENCE.md) says what the lab run established, what it did
+not, and the two defects it found that the tests had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
@@ -220,6 +224,7 @@ internal/pki         the enrollment CA, key material, and fingerprints
 internal/transport   TLS 1.3, mutual authentication, and the wire types
 internal/keystore    the key lifecycle and bootstrap tokens
 internal/hub         the control plane endpoints
+internal/job         job identity, the replay guard, and the job cache
 
 contrib/rc.d         FreeBSD service scripts
 contrib/systemd      systemd units and timers

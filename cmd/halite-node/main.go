@@ -24,6 +24,7 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/grains"
+	"github.com/edlitmus/halite/internal/job"
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/redact"
@@ -154,6 +155,16 @@ type node struct {
 	files     *fileserver.Roots
 	pillars   *fileserver.Roots
 	undef     template.UndefinedMode
+	// args and root are kept so that a job from a hub naming a
+	// different environment can have its roots rebuilt, rather than
+	// silently running against the environment this invocation happened
+	// to be started in.
+	args *cli.Args
+	root string
+	// executor and refusals exist only in the agent: a one-shot command
+	// line has no queue and nothing to post a refusal to.
+	executor *executor
+	refusals chan *job.Return
 }
 
 // setup loads configuration, resolves the identity, and collects grains.
@@ -240,10 +251,11 @@ func setup(args *cli.Args) *node {
 	// what an administrator reaches for — needs no file_roots at all.
 	// SPEC 27.3's /srv paths follow, with Salt's own so that an existing
 	// tree needs no move.
-	n.files = fileserver.NewRoots(rootsFrom(args, cfg, "file-root", "file_roots",
-		[]string{filepath.Join(root, "state"), "/srv/halite/states", "/srv/salt"}, n.env))
-	n.pillars = fileserver.NewRoots(rootsFrom(args, cfg, "pillar-root", "pillar_roots",
-		[]string{filepath.Join(root, "pillar"), "/srv/halite/pillar", "/srv/pillar"}, n.pillarEnv))
+	n.args = args
+	n.root = root
+	n.refusals = make(chan *job.Return, 16)
+	n.files = fileserver.NewRoots(n.fileRootsFor(n.env))
+	n.pillars = fileserver.NewRoots(n.pillarRootsFor(n.pillarEnv))
 	return n
 }
 
@@ -298,6 +310,17 @@ func applyNodeIDModifiers(cfg *config.Config, id string) string {
 		id = strings.ToLower(id)
 	}
 	return id
+}
+
+// fileRootsFor and pillarRootsFor are the roots for one environment.
+func (n *node) fileRootsFor(env string) map[string][]string {
+	return rootsFrom(n.args, n.cfg, "file-root", "file_roots",
+		[]string{filepath.Join(n.root, "state"), "/srv/halite/states", "/srv/salt"}, env)
+}
+
+func (n *node) pillarRootsFor(env string) map[string][]string {
+	return rootsFrom(n.args, n.cfg, "pillar-root", "pillar_roots",
+		[]string{filepath.Join(n.root, "pillar"), "/srv/halite/pillar", "/srv/pillar"}, env)
 }
 
 // rootsFrom builds the environment-to-directories map from the flags, the
@@ -387,7 +410,7 @@ func (n *node) gpgOptions() render.GPGOptions {
 }
 
 // compilePillar assembles this node's pillar from the local roots.
-func (n *node) compilePillar() *value.Map {
+func (n *node) compilePillarOrErr() (*value.Map, error) {
 	strategy, _ := value.ParseStrategy(n.cfg.String("pillar_source_merging_strategy", "smart"))
 	c := &pillar.Compiler{
 		Loader: n.pillars,
@@ -421,14 +444,32 @@ func (n *node) compilePillar() *value.Map {
 	for _, w := range out.Warnings {
 		n.log.Warn(w.String(), "component", "pillar")
 	}
-	if err := out.Err(); err != nil {
-		cli.Fatalf("%v", err)
-	}
-	return out.Pillar
+	return out.Pillar, out.Err()
 }
 
-// context builds the module execution context.
+// compilePillar is the command-line form: a pillar that will not
+// compile ends the invocation. The agent uses the form above, because a
+// job that cannot be run has to be returned as a failure rather than
+// take the process with it.
+func (n *node) compilePillar() *value.Map {
+	p, err := n.compilePillarOrErr()
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	return p
+}
+
+// context builds the module execution context for a local run, which
+// assigns its own job identifier.
 func (n *node) context(p *value.Map) *exec.Context {
+	return n.contextFor(p, newJobID())
+}
+
+// contextFor is the same with the identifier supplied, so that a job
+// driven from a hub carries the hub's jid all the way down: a module
+// that logs one, and the return that is filed under it, name the same
+// job.
+func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 	return &exec.Context{
 		Ctx:      context.Background(),
 		Grains:   n.grains,
@@ -436,7 +477,7 @@ func (n *node) context(p *value.Map) *exec.Context {
 		Config:   n.cfg.Redacted(),
 		NodeID:   n.nodeID,
 		Env:      n.env,
-		JobID:    newJobID(),
+		JobID:    jobID,
 		Test:     n.test,
 		Files:    fileserver.NewFetcher(n.files),
 		Dispatch: dispatcher{n.registry.Exec},
@@ -466,8 +507,10 @@ func (d dispatcher) CallPositional(c *exec.Context, name string, args []any, kwa
 	return d.r.CallPositional(c, name, args, kwargs)
 }
 
-// newJobID is the operator-readable, monotonic form of SPEC section 6.3.
-func newJobID() string { return time.Now().UTC().Format("20060102T150405.000000") }
+// newJobID is the identifier a local run files itself under. The format
+// is shared with the hub's, so a jid means the same thing whichever end
+// assigned it. SPEC section 6.3.
+func newJobID() string { return string(job.NewID(time.Now())) }
 
 func (n *node) out(v any) {
 	if err := cli.Write(os.Stdout, v, n.format, n.indent); err != nil {

@@ -38,3 +38,26 @@ func TestTraverseAllAnswersEveryKeyAsked(t *testing.T) {
 		}
 	}
 }
+
+// A job runs against a copy of the node, because a job that carries
+// `test: true` used to set the flag on the agent itself and every job
+// after it on that node was a dry run. `halite-hub run '*' state.apply`
+// reported what it would do and an operator would have believed it had
+// done it.
+func TestAJobCannotChangeTheAgentItRunsIn(t *testing.T) {
+	agent := &node{env: "base", pillarEnv: "base", test: false}
+	worker := agent.forJob()
+	worker.test = true
+	worker.env = "staging"
+	worker.pillarEnv = "staging"
+
+	if agent.test {
+		t.Error("a job put the agent into test mode")
+	}
+	if agent.env != "base" || agent.pillarEnv != "base" {
+		t.Errorf("a job moved the agent to %s/%s", agent.env, agent.pillarEnv)
+	}
+	if worker == agent {
+		t.Error("forJob returned the agent itself")
+	}
+}
