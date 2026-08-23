@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/builtin"
+	"github.com/edlitmus/halite/internal/hub"
 )
 
 const (
@@ -442,5 +443,82 @@ func TestLedgerCitationsResolve(t *testing.T) {
 	}
 	if len(seen) == 0 {
 		t.Errorf("%s cites no SPEC section; the citations are how a reader checks it", ledgerFile)
+	}
+}
+
+// ---- the runner inventory ----
+
+// runnerRowsExempt names the rows of SPEC 19.2 whose second cell is
+// prose rather than a function list, so the audit does not read words
+// out of a sentence and call them runners.
+//
+// Named rather than inferred: a new prose row has to be added here on
+// purpose, which is the point. `virt` and its neighbours are the
+// dropped-or-bridged row, and the notification row describes transports
+// instead of listing functions.
+var runnerRowsExempt = map[string]bool{
+	"virt": true,
+	"smtp": true,
+}
+
+// Every runner SPEC 19.2 names is declared by the build: either
+// implemented, or registered with the phase it arrives in.
+//
+// The second half matters as much as the first. A name left out of the
+// registry makes "orchestration is not written yet" and "you have
+// mistyped state.orchestrate" the same message at the terminal, and an
+// operator cannot tell which.
+func TestEverySpecRunnerIsDeclared(t *testing.T) {
+	spec := repoFile(t, specFile)
+	reg := hub.NewRunners()
+
+	declared := 0
+	var missing []string
+	for _, row := range tableRows(section(t, spec, "19.2")) {
+		if len(row) < 2 {
+			continue
+		}
+		modules := namesIn(row[0])
+		if len(modules) == 0 || runnerRowsExempt[modules[0]] {
+			continue
+		}
+		if len(modules) != 1 {
+			t.Errorf("the SPEC 19.2 row for %v names several modules and is not exempt; "+
+				"the audit cannot tell which functions belong to which", modules)
+			continue
+		}
+		for _, fn := range namesIn(row[1]) {
+			name := modules[0] + "." + fn
+			declared++
+			if !reg.Has(name) {
+				missing = append(missing, name)
+			}
+		}
+	}
+	if declared < 50 {
+		t.Fatalf("read %d runners out of SPEC 19.2; this audit has stopped checking", declared)
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Errorf("%d runner(s) in SPEC 19.2 are neither built nor registered as pending:\n  %s",
+			len(missing), strings.Join(missing, "\n  "))
+	}
+	t.Logf("checked %d runners from SPEC 19.2", declared)
+}
+
+// A runner registered as pending and since built leaves a registry that
+// lies, in the direction that matters: an operator is told to wait for
+// something that already works.
+func TestNoBuiltRunnerIsStillMarkedPending(t *testing.T) {
+	reg := hub.NewRunners()
+	for _, name := range reg.Names() {
+		when, pending := reg.Pending(name)
+		if !pending {
+			continue
+		}
+		if !strings.Contains(when, "phase") && !strings.Contains(when, "SPEC section") {
+			t.Errorf("%s is pending on %q, which names neither a phase nor the section "+
+				"that would deliver it", name, when)
+		}
 	}
 }

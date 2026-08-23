@@ -205,13 +205,13 @@ startup rather than treating the absence as permission.
 | no equivalent | `halite-hub jobs active` | works |
 | no equivalent | `halite-hub jobs resume <jid>` | works |
 | `salt-run jobs.active` | `halite-hub jobs active` | works |
-| `salt-run manage.up` | `halite-hub runner manage.up` | phase 2 |
-| `salt-cp '*' file /tmp/file` | `halite-hub files push` | phase 2 |
+| `salt-run manage.up` | `halite-hub runner manage.up` | works |
+| `salt-cp '*' file /tmp/file` | `halite-hub files push` | phase 3 |
 | `salt-run jobs.kill <jid>` | `halite-hub jobs kill <jid>` | works |
 | no equivalent | `halite-hub jobs export <jid>` | works |
 | `salt '*' --queue state.apply` | `halite-hub run '*' state.apply --offline queue` | works |
 | `salt '*' saltutil.sync_grains` | pushed automatically on `grains_refresh_interval` | works |
-| `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 2 |
+| `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 5 |
 
 | `salt-run state.orchestrate` | `halite-hub orch` | phase 3 |
 | `salt-api` | `halite-api serve` | phase 4 |
@@ -219,6 +219,72 @@ startup rather than treating the absence as permission.
 `run` exits 0 when every node succeeded, 1 when one failed, and 3 when a
 node was sent the job and did not answer — because "it said no" and "it
 said nothing" call for different things.
+
+## Runners
+
+A runner runs on the hub rather than on a node. `halite-hub runner
+<module.function>` is the old `salt-run`, and it is a request to the hub
+even when it is typed on the hub: an operator authenticates with a
+certificate, and being logged in on the hub is not a credential.
+
+A runner is authorized by the `runners:` list of the caller's role, not
+by `functions:`. Permission to ask the hub a question and permission to
+run a command on every node are different permissions, and Salt's
+`external_auth` conflating them is how a `@runner` grant turns out to be
+wider than it looked. A runner that then reaches the fleet —
+`saltutil.refresh_pillar` does — is authorized a second time as the job
+it dispatches, so a `runners:` grant alone cannot become fleet-wide
+execution.
+
+Every runner call gets a jid, is recorded in the job cache with the
+principal that asked for it, and emits `halite/run/<jid>/new` and
+`halite/run/<jid>/ret` on the event bus.
+
+`halite-hub runner list` prints the whole SPEC 19.2 inventory, including
+the runners that are declared and not built yet, each with the phase it
+arrives in. `halite-hub runner doc <name>` prints one signature. Both
+answer from the binary, so they work when the hub does not.
+
+| Salt | halite | Status |
+|---|---|---|
+| `salt-run jobs.list_jobs` | `halite-hub runner jobs.list_jobs` | works |
+| `salt-run jobs.lookup_jid <jid>` | `halite-hub runner jobs.lookup_jid <jid>` | works |
+| `salt-run jobs.list_job <jid>` | `halite-hub runner jobs.list_job <jid>` | works |
+| `salt-run jobs.print_job <jid>` | `halite-hub runner jobs.print_job <jid>` | works |
+| `salt-run jobs.active` | `halite-hub runner jobs.active` | works |
+| `salt-run jobs.missing <jid>` | `halite-hub runner jobs.missing <jid>` | works |
+| `salt-run jobs.exit_success <jid>` | `halite-hub runner jobs.exit_success <jid>` | works |
+| `salt-run manage.status` | `halite-hub runner manage.status` | works |
+| `salt-run manage.up` | `halite-hub runner manage.up` | works |
+| `salt-run manage.down` | `halite-hub runner manage.down` | works |
+| `salt-run manage.versions` | `halite-hub runner manage.versions` | works |
+| `salt-run manage.list_state` | `halite-hub runner manage.list_state up` | works |
+| `salt-run key.list_all` | `halite-hub runner key.list` | works |
+| `salt-run key.accept <node>` | `halite-hub runner key.accept <node>` | works |
+| no equivalent | `halite-hub runner key.revoke <node>` | works |
+| `salt-run nodegroups.list` | `halite-hub runner nodegroups.list` | works |
+| no equivalent | `halite-hub runner nodegroups.expand <name>` | works |
+| `salt-run pillar.show_pillar` | `halite-hub runner pillar.show_pillar <node>` | works |
+| `salt-run cache.grains <node>` | `halite-hub runner cache.grains <node>` | works |
+| `salt-run fileserver.file_list` | `halite-hub runner fileserver.file_list` | works |
+| `salt-run event.send <tag>` | `halite-hub runner event.send <tag>` | works |
+| `salt-run survey.hash <jid>` | `halite-hub runner survey.hash <jid>` | works |
+| `salt-run saltutil.refresh_pillar` | `halite-hub runner saltutil.refresh_pillar` | works |
+| `salt-run state.orchestrate` | `halite-hub runner state.orchestrate` | phase 3 |
+| `salt-run mine.get` | `halite-hub runner mine.get` | phase 3 |
+| `salt-run queue.process_queue` | `halite-hub runner queue.process_queue` | phase 3 |
+| `salt-run net.find` | `halite-hub runner net.find` | phase 3 |
+| `salt-run fileserver.update` | `halite-hub runner fileserver.update` | phase 5 |
+| `salt-run manage.bootstrap` | `halite-hub runner manage.bootstrap` | phase 5 |
+
+Salt separates `manage.present`, `manage.alived`, and `manage.up`
+because its transport cannot tell a live connection from a dead one
+without asking. Here a node holds a stream to the hub or it does not, so
+the three names answer one fact. They are all kept, so existing
+orchestration reads unchanged.
+
+A runner that ran and failed exits 1 and prints its error; only a
+refusal, an unknown name, or a malformed call is a transport failure.
 
 ## Targeting
 

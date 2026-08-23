@@ -2,10 +2,10 @@
 // compiler, and the full operator command line, in one binary. SPEC
 // section 2.2.
 //
-// This build carries the control plane of SPEC section 6 -- `serve` and
-// `keys` -- and the tools that audit a tree before a hub exists. `run`,
-// `runner`, and the rest are the remainder of phase 2 and say so rather
-// than failing obscurely.
+// This build carries the control plane of SPEC section 6, the fleet
+// commands of section 9, the runners of section 19.2, and the tools that
+// audit a tree before a hub exists. `orch`, `files`, and `ssh` are later
+// phases and say so rather than failing obscurely.
 package main
 
 import (
@@ -30,6 +30,7 @@ Usage:
   halite-hub serve               run the control plane
   halite-hub keys <subcommand>   enrollment and the key lifecycle
   halite-hub run <target> <fun>  run a function across the fleet
+  halite-hub runner <fun>        run a function on the hub itself
   halite-hub jobs <subcommand>   the job cache
   halite-hub policy <show|test>  the RBAC policy, and what it decides
   halite-hub event <listen|tags> the event bus
@@ -37,8 +38,9 @@ Usage:
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
 
-Still to come in phase 2 (SPEC section 32):
-  runner, orch, files, ssh
+Still to come (SPEC section 32):
+  orch and the rest of the automation loop in phase 3; files in phase 3;
+  ssh with agentless mode in phase 5
 
 Common flags:
   --help               describe the program without running a command
@@ -73,6 +75,10 @@ run flags:
   --hub <address>      the hub to reach, default localhost
   --server-name <name> the name to verify in the hub's certificate
   -L -E -G -P -I -J -S -N -C   the target kinds of SPEC section 8
+
+runner flags:
+  --as <name>          which operator certificate to present
+  --hub <address>      the hub to reach, default localhost
 
 jobs flags:
   --limit <n>          how many jobs to list, default 20
@@ -135,9 +141,16 @@ func main() {
 		os.Exit(runPolicy(args))
 	case "event":
 		os.Exit(runEvent(args))
-	case "runner", "orch", "files", "ssh":
-		cli.Fatalf("`%s` is the rest of phase 2 (SPEC section 32) and is not built yet. "+
-			"`serve`, `keys`, `run`, and `jobs` work today; `migrate` and `lint` measure a tree.", os.Args[1])
+	case "runner":
+		os.Exit(runRunner(args))
+	case "orch":
+		cli.Fatalf("`orch` is orchestration, which arrives in phase 3 (SPEC section 32). " +
+			"`halite-hub runner list` says which runners this build ships.")
+	case "files":
+		cli.Fatalf("`files` is the hub-side file push, which arrives in phase 3 (SPEC section 32). " +
+			"A node fetches from `salt://` today; this is the push in the other direction.")
+	case "ssh":
+		cli.Fatalf("`ssh` is agentless mode, which arrives in phase 5 (SPEC section 21).")
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub: unknown subcommand %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)

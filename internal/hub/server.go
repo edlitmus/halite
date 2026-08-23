@@ -70,6 +70,10 @@ type Server struct {
 	// EventTagCompat additionally emits every event under its `salt/`
 	// equivalent, per SPEC 17.1.
 	EventTagCompat bool
+	// Runners is the runner registry of SPEC 19.2, built on first use.
+	Runners     *Runners
+	runnersOnce sync.Once
+
 	// Policy is the RBAC of SPEC 23.5. A nil policy authorizes
 	// nothing, which is what deny by default means when the file is
 	// missing as well as when it is empty.
@@ -154,6 +158,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+transport.PathSubscribe, s.authenticated(s.subscribe))
 	mux.HandleFunc("POST "+transport.PathReturn, s.authenticated(s.returned))
 	mux.HandleFunc("POST "+transport.PathJobs, s.operator(s.submit))
+	mux.HandleFunc("POST "+transport.PathRunners, s.operator(s.runnerCall))
 	mux.HandleFunc("GET "+transport.PathJob+"{jid}", s.operator(s.jobStatus))
 	mux.HandleFunc("POST "+transport.PathJob+"{jid}/resume", s.operator(s.resume))
 	mux.HandleFunc("POST "+transport.PathJob+"{jid}/kill", s.operator(s.kill))

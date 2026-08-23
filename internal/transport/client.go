@@ -327,6 +327,15 @@ func (c *Client) Submit(ctx context.Context, req SubmitRequest) (*SubmitResponse
 	return &res, nil
 }
 
+// Runner calls a hub runner, per SPEC section 19.2.
+func (c *Client) Runner(ctx context.Context, req RunnerRequest) (*RunnerResponse, error) {
+	var res RunnerResponse
+	if _, err := c.post(ctx, PathRunners, req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 // JobStatus reads what has come back for a job so far.
 func (c *Client) JobStatus(ctx context.Context, jid string) (*JobStatus, error) {
 	client, err := c.client()

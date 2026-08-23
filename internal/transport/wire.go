@@ -48,6 +48,7 @@ const (
 	PathEvents      = "/v1/events"
 	PathJob         = "/v1/jobs/"
 	PathMine        = "/v1/mine"
+	PathRunners     = "/v1/runners"
 )
 
 // EnrollRequest is the body of a POST to /v1/enroll.
@@ -170,6 +171,37 @@ type SubmitResponse struct {
 	// Absent lists matched nodes that were not connected, by name. A
 	// count would send an operator looking for which.
 	Absent []string `json:"absent,omitempty"`
+}
+
+// RunnerRequest is an operator asking the hub to run one of its own
+// functions, at POST /v1/runners. SPEC section 19.2.
+//
+// There is no target: a runner runs on the hub, and the fact that some
+// runners then reach the fleet is the runner's business, not the
+// caller's.
+type RunnerRequest struct {
+	Fun   string         `json:"fun"`
+	Arg   []string       `json:"arg,omitempty"`
+	Kwarg map[string]any `json:"kwarg,omitempty"`
+}
+
+// RunnerResponse is what the runner returned.
+//
+// Success is the runner's own verdict and is carried in a 200: a runner
+// that ran and reported a failure has answered the question, and only a
+// refusal or an unknown name is an HTTP error. A caller that treats any
+// 200 as success would report `jobs.exit_success` on a failed job as a
+// success, which is the opposite of what it was asked.
+type RunnerResponse struct {
+	JID     string `json:"jid"`
+	Fun     string `json:"fun"`
+	Success bool   `json:"success"`
+	// Return is already-encoded JSON, for the reason job.Return.Return
+	// is: a runner answers with the ordered map of the nine-type model,
+	// and re-encoding that through encoding/json marshals the struct.
+	Return     json.RawMessage `json:"return,omitempty"`
+	Error      string          `json:"error,omitempty"`
+	DurationMS int64           `json:"duration_ms,omitempty"`
 }
 
 // GrainsRequest is PUT /v1/grains: a node pushing a refreshed fact

@@ -1422,8 +1422,8 @@ What is **not** built, in phase 2:
   says so at startup rather than silently serving nothing.
 - **`halite-hub files`** (`salt-cp`). The file server serves; pushing a
   file the other way is not built.
-- **`/v1/mine`**, which is phase 3 along with runners, orchestration,
-  beacons, and the scheduler.
+- **`/v1/mine`**, which is phase 3 along with orchestration, beacons,
+  and the scheduler.
 - **The event bus's tag-prefix index** (SPEC 17.2). A subscriber's
   globs are matched while reading rather than looked up, so a narrow
   glob over a long log reads the whole log. It is correct and it is
@@ -1438,12 +1438,50 @@ What is **not** built, in phase 2:
 - **Return chunking.** A return is one request; the 16 MiB paginating
   path of SPEC 6.5 is not built.
 
-Nothing of phases 3 through 6 exists: no beacons, no scheduler, no
-reactors, no orchestration, no runners, no mine over the wire, no API,
-no OIDC or LDAP, no webhooks, no returners, no bridge protocol, no
-gitfs, no s3fs, no agentless mode, no relays, no FIPS artifact set, no
-detached job signing, no signed state trees, and no backtracking regex
-engine.
+Phase 3 has started with the runners of SPEC 19.2. `halite-hub runner`
+calls them over the same operator certificate `run` uses, and they are
+granted by the `runners:` list of a role rather than by `functions:`,
+because permission to ask the hub a question is not permission to run a
+command on every node. A runner that reaches the fleet is authorized a
+second time as the job it dispatches, so the narrower grant cannot
+become the wider one. Every call gets a jid, is filed in the job cache
+with the principal that asked, and emits `halite/run/<jid>/new` and
+`halite/run/<jid>/ret`.
+
+Built: `jobs`, `manage`, `key`, `nodegroups`, `pillar`, `cache`,
+`fileserver` (the parts a filesystem backend can answer), `event`,
+`saltutil`, `survey`, and `error` — 42 functions. The rest of the
+SPEC 19.2 inventory is **registered and not built**, each answering with
+the phase it arrives in. That is deliberate: a name left out of the
+registry makes "orchestration is not written yet" and "you have mistyped
+`state.orchestrate`" the same message at the terminal.
+
+Three of those pending entries are not waiting on a phase but on a
+subsystem this design does not have:
+
+- **`pillar.clear_cache`, `cache.pillar`, `cache.clear_pillar`.** The
+  hub compiles pillar on every request and caches none, so there is
+  nothing to clear. `pillar.show_pillar` compiles it on demand.
+- **`fileserver.update`, `clear_cache`, `lock`, `clear_lock`,
+  `versions`.** The `roots` backend reads the filesystem and has
+  nothing to fetch or lock. They arrive with gitfs and s3fs in phase 5.
+- **`fileserver.symlink_list`.** The roots backend resolves symbolic
+  links and does not list them.
+
+`key.revoke` is an addition: SPEC 19.2's `key` row does not name it,
+and a lifecycle with `accept`, `reject`, and `delete` but no way to
+withdraw an acceptance from an orchestration is missing the one an
+incident needs.
+
+The rest of phases 3 through 6 does not exist: no beacons, no scheduler,
+no reactors, no orchestration, no mine over the wire, no API, no OIDC or
+LDAP, no webhooks, no returners, no bridge protocol, no gitfs, no s3fs,
+no agentless mode, no relays, no FIPS artifact set, no detached job
+signing, no signed state trees, and no backtracking regex engine.
+
+The runners have not been exercised against a real fleet: the tests
+drive them over the wire against a lab hub with enrolled nodes, and no
+lab run like the one in 5.11 has been done for them.
 
 Two named pieces of section 7 are also absent:
 

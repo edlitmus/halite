@@ -62,13 +62,19 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 	if got := run(t, "nosuchthing"); got.code != 2 || !strings.Contains(got.stderr, "unknown subcommand") {
 		t.Errorf("unknown subcommand = %+v", got)
 	}
-	// The phase 2 subcommands are named in the usage and must say why
-	// rather than fail as typos.
-	for _, sub := range []string{"runner", "orch", "files", "ssh"} {
+	// The subcommands named in the usage but not built must say which
+	// phase they arrive in, rather than fail as typos.
+	for _, sub := range []string{"orch", "files", "ssh"} {
 		got := run(t, sub)
-		if got.code == 0 || !strings.Contains(got.stderr, "phase 2") {
+		if got.code == 0 || !strings.Contains(got.stderr, "phase") {
 			t.Errorf("%s = %+v", sub, got)
 		}
+	}
+	// `runner` is built. Bare, it describes itself and exits non-zero,
+	// because a runner call with no function is a mistake, not a
+	// request for nothing.
+	if got := run(t, "runner"); got.code != 2 || !strings.Contains(got.stderr, "module.function") {
+		t.Errorf("runner = %+v", got)
 	}
 }
 
@@ -171,6 +177,16 @@ func TestCommandMatrixIsTrue(t *testing.T) {
 			// listener and creates an enrollment CA, and the other
 			// dispatches a job to the fleet.
 			args = append(args, "--help")
+		case "runner":
+			// `runner doc` reads the inventory out of this binary
+			// without a hub, and the phase it prints is exactly what
+			// the row claims. Calling the runner itself would need an
+			// operator certificate and a listening hub.
+			if len(command) > 2 {
+				args = append(args, "doc", command[2])
+			} else {
+				args = append(args, "list")
+			}
 		}
 		got := run(t, args...)
 		output := got.stdout + got.stderr
@@ -271,5 +287,36 @@ func TestLintDecryptsAndRedacts(t *testing.T) {
 	// without them the keyring is not found and this reports a failure.
 	if !strings.Contains(all, "renders and parses") {
 		t.Errorf("the file should render with the configured keyring:\n%s", all)
+	}
+}
+
+// `runner list` answers from the build rather than from the hub, so an
+// operator who cannot reach the hub can still find out what exists —
+// and a pending runner has to say when it arrives, or the list reads as
+// though everything works.
+func TestRunnerListShowsBuiltAndPendingAlike(t *testing.T) {
+	got := run(t, "runner", "list")
+	if got.code != 0 {
+		t.Fatalf("runner list = %+v", got)
+	}
+	for _, want := range []string{"manage.up", "jobs.lookup_jid", "state.orchestrate"} {
+		if !strings.Contains(got.stdout, want) {
+			t.Errorf("runner list does not mention %s", want)
+		}
+	}
+	if !strings.Contains(got.stdout, "not built") {
+		t.Error("runner list does not distinguish the runners that are not built")
+	}
+
+	doc := run(t, "runner", "doc", "manage.status")
+	if doc.code != 0 || !strings.Contains(doc.stdout, "manage.status") {
+		t.Errorf("runner doc = %+v", doc)
+	}
+	pending := run(t, "runner", "doc", "state.orchestrate")
+	if pending.code != 0 || !strings.Contains(pending.stdout, "phase 3") {
+		t.Errorf("runner doc state.orchestrate = %+v", pending)
+	}
+	if bad := run(t, "runner", "nosuchrunner"); bad.code == 0 {
+		t.Errorf("a runner name with no module was accepted: %+v", bad)
 	}
 }
