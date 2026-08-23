@@ -127,6 +127,34 @@ whole inventory either way. Leaving a name out of the registry would make
 `state.orchestrate`" the same message at the terminal, and an operator
 cannot tell those apart.
 
+### Orchestration, with a timeline and a resume
+
+`halite-hub orch run <sls>` compiles an orchestration on the hub and
+drives it across the fleet. The SLS syntax is Salt's, and so is the
+meaning: an orchestration here *is* a state run whose modules act on the
+fleet, compiled and executed by the same compiler and runner a node
+uses. `require`, `onfail`, `prereq`, and ordering therefore mean exactly
+what they mean in a highstate, and a rollback step is expressible
+because `onfail` is the real thing rather than a second implementation
+of it.
+
+A run is a first-class record with its own jid, kept on disk: every step
+in the order it ran, the job each dispatched, and the per-node returns.
+`orch show` prints it, and `orch resume <jid> --from <step>` runs again
+from a named step, carrying the earlier ones forward as they finished so
+the requisites pointing back at them are satisfied. Salt cannot resume,
+and that is what makes a long deployment orchestration usable after one
+step fails. A resumed run is judged by the steps it ran, not by the
+failure that made someone resume it.
+
+Every step is authorized twice — once as the orchestration, again as the
+job it dispatches — so permission to run an orchestration is not
+permission to run whatever it happens to name. `--test` sends state
+steps out with `test` set, because a state honours test mode by
+contract; it does not dispatch an execution function at all, because
+finding out what a test run would do by running it is how a test run
+becomes a deployment.
+
 ### The dialects, held to their own specifications
 
 The **YAML 1.1 subset** parser of SPEC section 10.1, with ordered

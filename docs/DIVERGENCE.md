@@ -1360,6 +1360,8 @@ real listener with a real CA, and running it still found one defect:
 | `manage.versions` reported a matched fleet as mismatched | The hub compared `version.Version` against the string a node reports, which is `version.String()` — the same build, with the commit appended. Every node in an estate running the hub's own build was listed as behind it. |
 | Every structured argument reached the hub as a position record | The operator's command line parses `data='{"a":1}'` into the ordered model, and the transport marshals its bodies with `encoding/json`, which sees the model's unexported entries and its one exported field: what arrived was `{"Pos":{"File":"","Line":0,"Col":0}}`. This is the same defect the state return had, in the other direction, and it had been there since `run` landed — `run '*' state.apply pillar='{"a":1}'` included. `value.Map` marshals as its mapping now, which fixes it everywhere the standard encoder is reached rather than at each call site. |
 | A 64-bit integer in a job argument or an event came back changed | `9007199254740993` came back as `...992` at three decoders: the node's job stream, the hub's event ingest, and every read off the event log. SPEC 6.4 says it must not. They decode with `UseNumber` now and lift the result into the model. One test asserted the float64 behaviour and was holding it in place. |
+| A tag glob mixing `*` and `**` matched nothing | Everything before the `**` was compared as a plain string, so `halite/node/*/deploy/**` looked for a node literally called `*`. A filter that matches nothing and says nothing is the worst shape one can have. It matches segment by segment now, and `halite/**/ret/*` works too, which the prefix comparison could not express. |
+| A step's `timeout` was two timeouts that disagreed | SPEC 19.1 lists `timeout` among a step's options and SPEC 11.7 lists it among every state's, and they are the same option: the state runner strips it and bounds the step's context with it. The step module was waiting on its own default of five minutes while the context expired underneath it, so a step written with `timeout: 10s` waited its ten seconds and then reported that the run had been stopped. The module reads the deadline off the context now. |
 | `event.send` and `pillar.refresh` failed on every node | Both were registered as stubs saying they needed the hub, "which arrives in phase 2", for as long as phase 2 had been finished. The `saltutil.refresh_pillar` runner dispatched `pillar.refresh` to nodes that could only refuse it. An audit now reads the stubs out of the source and fails on any naming a delivered phase. |
 
 What the lab run establishes: `manage.status`, `up`, `versions`, and
@@ -1374,18 +1376,24 @@ durable bus with the principal taken from the certificate;
 `saltutil.refresh_grains` and `saltutil.refresh_pillar` dispatching real
 jobs to a real node; `event.send` called as a module on the node, with a
 payload holding a nested mapping and a 64-bit integer, arriving on the
-hub's log unchanged; `error.error`; a runner declared and not built naming its phase; an
+hub's log unchanged; `error.error`; a three-step orchestration compiled
+from a templated SLS with `require` between the steps, run in test mode
+and then for real, reaching a real node and a hub runner; a failing
+orchestration whose `onfail` rollback ran; `orch list`, `orch show`, and
+`orch resume --from` carrying a failed step forward and completing;
+`salt.wait_for_event` blocking until an event fired by a node arrived; a runner declared and not built naming its phase; an
 unknown name listing its module's runners; and the two-stage
 authorization — an operator holding `runners: ['*']` and nothing else
 calls `manage.status` and is refused `saltutil.refresh_grains` because
 the job it would dispatch is not granted.
 
 What it does not: more than one node, `event.listen` waiting on a live
-event, `pillar.show_pillar` against a hub with pillar roots configured,
-`jobs.prune` against a cache old enough to prune, `key.accept`,
+event, `jobs.prune` against a cache old enough to prune, `key.accept`,
 `key.reject`, `key.revoke`, and `key.delete` through the runner rather
-than through `halite-hub keys`, and every runner registered as pending.
-It has been run on FreeBSD only.
+than through `halite-hub keys`, every runner registered as pending, and
+on the orchestration side `batch` and `subset` on a step, `tolerate_failures`
+against a real second node, `salt.wheel`, and a hub restart in the middle
+of a run. It has been run on FreeBSD only.
 
 ## 6. Everything else not started
 
@@ -1526,11 +1534,48 @@ and a lifecycle with `accept`, `reject`, and `delete` but no way to
 withdraw an acceptance from an orchestration is missing the one an
 incident needs.
 
+**Orchestration followed**, which is the other half of phase 3's exit
+criterion. `halite-hub orch run <sls>` compiles an orchestration on the
+hub and runs it, and an orchestration here *is* a state run whose
+modules act on the fleet: the compiler and the runner are the node's,
+unchanged, so `require`, `onfail`, `prereq`, and ordering mean exactly
+what they mean in a highstate. Writing a second set for the hub would
+have meant two implementations of the requisites that have to agree.
+
+Built: `salt.state`, `salt.sls`, `salt.highstate`, `salt.function`,
+`salt.runner`, `salt.wheel`, and `salt.wait_for_event`. Each step is
+authorized twice — once as the orchestration, again as the job it
+dispatches. A run is a first-class record kept on disk with its own jid,
+every step in the order it ran, and the per-node returns; `orch show`
+prints it and `orch resume <jid> --from <step>` picks it up, carrying
+the earlier steps forward as they finished. Salt cannot resume, and SPEC
+19.1 names that as the reason a long deployment orchestration is usable
+here and not there.
+
+What is **not** built in orchestration:
+
+- **`salt.parallel`** and the per-step `parallel`. This build runs a low
+  state in one order, one step at a time; see 4.4.
+- **`queue`.** A step asking to be held on the hub's durable queue is
+  refused by name rather than run immediately, and the queue runner is
+  still pending (SPEC 19.4).
+- **`state.pause` and `state.resume`**, which hold a *running*
+  orchestration. Resuming a finished one works; pausing a live one does
+  not exist.
+- **`salt.wheel` as a separate namespace.** SPEC 19.3 lists wheel apart
+  from the runners; this build has one hub-function namespace, and a
+  `salt.wheel` step reaches the same registry a `salt.runner` step does.
+- **A pillar of the hub's own.** An orchestration template sees exactly
+  the `pillar` the caller passed and nothing else. There is no
+  hub-as-a-node pillar compilation, and SPEC 25.5's restricted `salt`
+  dispatcher is not built either, so an orchestration template has none
+  rather than one that has not been audited against that list.
+
 The rest of phases 3 through 6 does not exist: no beacons, no scheduler,
-no reactors, no orchestration, no mine over the wire, no API, no OIDC or
-LDAP, no webhooks, no returners, no bridge protocol, no gitfs, no s3fs,
-no agentless mode, no relays, no FIPS artifact set, no detached job
-signing, no signed state trees, and no backtracking regex engine.
+no reactors, no mine, no API, no OIDC or LDAP, no webhooks, no
+returners, no bridge protocol, no gitfs, no s3fs, no agentless mode, no
+relays, no FIPS artifact set, no detached job signing, no signed state
+trees, and no backtracking regex engine.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.

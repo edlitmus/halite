@@ -77,7 +77,7 @@ Delivery follows the phases in SPEC section 32.
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
-| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Started**: the runners of SPEC 19.2 are built; the rest is not |
+| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Started**: runners and orchestration are built; beacons, the scheduler, reactors, and the mine are not |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
@@ -111,9 +111,17 @@ phase 3. `halite-hub runner` is the old `salt-run`, granted by a role's
 to ask the hub a question and permission to run a command on every node
 are different permissions.
 
+Orchestration followed. `halite-hub orch run <sls>` compiles an
+orchestration on the hub and drives it across the fleet, using the same
+state compiler and runner a node uses — so `require` and `onfail` mean
+what they mean in a highstate, and a rollback step is expressible. A run
+is kept as a record with its own jid and a step-by-step timeline, and
+`orch resume <jid> --from <step>` picks a failed deployment up where it
+stopped, which Salt cannot do.
+
 What is not built is what SPEC puts in later phases: reactors, the
-scheduler, beacons, orchestration, and the mine are the rest of phase 3;
-the API is phase 4; gitfs, agentless mode, and Windows are phase 5.
+scheduler, beacons, and the mine are the rest of phase 3; the API is
+phase 4; gitfs, agentless mode, and Windows are phase 5.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

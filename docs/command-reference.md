@@ -287,6 +287,80 @@ orchestration reads unchanged.
 A runner that ran and failed exits 1 and prints its error; only a
 refusal, an unknown name, or a malformed call is a transport failure.
 
+## Orchestration
+
+`halite-hub orch run <sls>` is the old `salt-run state.orchestrate`. The
+SLS syntax is Salt's, and so is the meaning: an orchestration here is a
+state run whose modules act on the fleet, compiled and executed by the
+same compiler and runner a node uses. `require`, `onfail`, `prereq`, and
+ordering mean exactly what they mean in a highstate.
+
+```yaml
+{% set version = pillar['version'] %}
+
+drain_lb:
+  salt.function:
+    - name: lb.drain
+    - tgt: 'lb*.prod'
+
+deploy_web:
+  salt.state:
+    - tgt: 'web*.prod'
+    - sls:
+      - webserver.deploy
+    - pillar:
+        version: {{ version }}
+    - batch: 20%
+    - require:
+      - salt: drain_lb
+
+rollback:
+  salt.state:
+    - tgt: 'web*.prod'
+    - sls:
+      - webserver.rollback
+    - onfail:
+      - salt: deploy_web
+```
+
+An orchestration template sees the `pillar` the caller passed and
+nothing else — `--pillar '{"version":"1.2"}'` — because the hub is not a
+node and has no pillar of its own.
+
+| Salt | halite | Status |
+|---|---|---|
+| `salt-run state.orchestrate <sls>` | `halite-hub orch run <sls>` | works |
+| `salt-run state.orch <sls>` | `halite-hub orch run <sls>` | works |
+| `salt-run state.orchestrate_show_sls <sls>` | `halite-hub orch lint <sls>` | works |
+| `salt.state`, `salt.sls`, `salt.highstate` | same | works |
+| `salt.function` | same | works |
+| `salt.runner`, `salt.wheel` | same, against one hub-function namespace | works |
+| `salt.wait_for_event` | same | works |
+| `fail_minions` | `tolerate_failures`, old name accepted | works |
+| `batch`, `subset`, `batch_safe_limit` per step | same | works |
+| `timeout` per step | same, the per-state option of SPEC 11.7 | works |
+| `require`, `onfail`, `onchanges`, `prereq` between steps | same | works |
+| no equivalent | `halite-hub orch show <jid>` | works |
+| no equivalent | `halite-hub orch list` | works |
+| no equivalent | `halite-hub orch resume <jid> --from <step>` | works |
+| `salt.parallel`, `parallel` per step | refused by name | phase 3 |
+| `queue` per step | refused by name | phase 3 |
+| `salt-run state.pause` / `state.resume` | hold a running orchestration | phase 3 |
+
+Every step is authorized twice: once as the orchestration, and again as
+the job it dispatches. Permission to run an orchestration is not
+permission to run whatever it happens to name.
+
+`--test` sends state steps out with `test` set, because a state honours
+test mode by contract (SPEC 11.6). It does not dispatch an execution
+function at all: `salt.function` runs whatever it names, and finding out
+what a test run would do by running it is how a test run becomes a
+deployment.
+
+`orch run` exits 0 when every step succeeded and 1 when one failed — and
+prints the timeline either way, because the next command is
+`orch resume --from <step>` and it needs the step's name.
+
 ## Targeting
 
 The compound grammar is the same. On the command line it belongs to the
