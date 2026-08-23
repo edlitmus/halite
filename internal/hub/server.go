@@ -56,6 +56,9 @@ type Server struct {
 	// HashType is the digest the file server publishes, sha256 by
 	// default.
 	HashType string
+	// Pillar is what this hub needs to compile a node's pillar, or nil
+	// for a hub that compiles none.
+	Pillar *PillarOptions
 
 	jobClock job.Clock
 }
@@ -120,6 +123,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+transport.PathJobs, s.operator(s.submit))
 	mux.HandleFunc("GET "+transport.PathJob+"{jid}", s.operator(s.jobStatus))
 	mux.HandleFunc("GET "+transport.PathFiles+"{path...}", s.authenticated(s.files))
+	mux.HandleFunc("POST "+transport.PathPillar, s.authenticated(s.pillarFor))
 	// An unrouted path under /v1/ is a version skew or a scan, and
 	// either way the answer is the same shape as every other failure.
 	mux.HandleFunc("/", s.notFound)

@@ -33,6 +33,7 @@ func runCall(args *cli.Args) int {
 	}
 
 	n := setup(args)
+	n.useHubIfConfigured(args)
 	p := n.compilePillar()
 	ctx := n.context(p)
 
@@ -62,6 +63,7 @@ func runState(args *cli.Args) int {
 
 func runStateFunction(args *cli.Args, fn string, rest []string) int {
 	n := setup(args)
+	n.useHubIfConfigured(args)
 	p := n.compilePillar()
 	compiler := n.stateCompiler(p, newJobID())
 
@@ -317,6 +319,7 @@ func traverseAll(m *value.Map, keys []string) *value.Map {
 // runPillar is `halite-node pillar items|item|get <key>`.
 func runPillar(args *cli.Args) int {
 	n := setup(args)
+	n.useHubIfConfigured(args)
 	p := n.compilePillar()
 	sub := "items"
 	if len(args.Positional) > 0 {

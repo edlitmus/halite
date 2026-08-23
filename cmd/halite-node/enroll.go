@@ -297,6 +297,7 @@ func runConnect(args *cli.Args) int {
 	// serves; SPEC section 13.
 	if !args.Bool("local", false) {
 		n.useHubTree(client)
+		n.useHubPillar(client)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -404,6 +405,75 @@ func (n *node) useHubTree(client *transport.Client) {
 	n.files = remote
 	n.log.Info("compiling against the hub's tree",
 		"env", n.env, "files", len(m.Files), "cache", cacheDir)
+}
+
+// useHubIfConfigured points a one-shot command at the hub, the way
+// `salt-call` uses its master unless told `--local`. // lexicon:allow
+//
+// A node with no hub, one told `--local`, or one that has not enrolled
+// works from its own roots exactly as before. A hub that cannot be
+// reached is a warning and a local compilation rather than a failure:
+// `pillar items` during an outage should still answer.
+func (n *node) useHubIfConfigured(args *cli.Args) {
+	if args.Bool("local", false) {
+		return
+	}
+	if args.Flag("hub", n.cfg.String("hub", "")) == "" {
+		return
+	}
+	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.String("pki_dir", config.DefaultPKIDir))}
+	if !files.Exists(pki.NodeCertFile) || !files.Exists(pki.CACertFile) {
+		return
+	}
+	client, _ := n.hubClient(args)
+	n.useHubTree(client)
+	n.useHubPillar(client)
+}
+
+// useHubPillar points pillar compilation at the hub.
+//
+// A hub that compiles no pillar leaves the node on its own roots: an
+// estate migrating one piece at a time should not lose its pillar the
+// moment it enrols.
+func (n *node) useHubPillar(client *transport.Client) {
+	grains, err := value.EncodeJSON(n.grains, 0)
+	if err != nil {
+		n.log.Warn("could not encode grains for the hub", "error", err.Error())
+		return
+	}
+	probe, err := client.Pillar(context.Background(), transport.PillarRequest{
+		NodeID: n.nodeID, Env: n.pillarEnv, Grains: grains,
+	})
+	if err != nil {
+		n.log.Warn("the hub is not compiling pillar; this node will compile its own",
+			"error", err.Error())
+		return
+	}
+	n.log.Info("pillar comes from the hub", "env", probe.Env, "sls", len(probe.SLS))
+
+	n.hubPillar = func(env string) (*value.Map, error) {
+		// Asked again for every run rather than cached: pillar is
+		// where an operator changes a value expecting the next
+		// highstate to use it, and a cache would mean it does not.
+		res, err := client.Pillar(context.Background(), transport.PillarRequest{
+			NodeID: n.nodeID, Env: env, Grains: grains,
+		})
+		if err != nil {
+			return nil, err
+		}
+		decoded, err := value.DecodeJSON(res.Pillar)
+		if err != nil {
+			return nil, fmt.Errorf("the pillar the hub sent is not readable: %w", err)
+		}
+		m, ok := decoded.(*value.Map)
+		if !ok {
+			return nil, fmt.Errorf("the pillar the hub sent is not a mapping")
+		}
+		// Every value in it may be a secret, so the redactor learns
+		// them all before anything can print one.
+		n.secrets.AddTree(m)
+		return m, nil
+	}
 }
 
 // acceptJob turns a stream message into a job and queues it, or

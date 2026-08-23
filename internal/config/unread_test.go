@@ -39,15 +39,10 @@ var unreadKeys = map[string]string{
 
 	// Read today, and not yet acted on. Each is a live gap rather than a
 	// phase boundary, and DIVERGENCE says so.
-	"log_level_file": "SPEC 26.1's per-sink level; the file sink takes the global one",
-	"regex_engine":   "re2 is the only engine, so the setting has one value",
-	"node_id_source": "the resolution order of SPEC 7.2 is implemented; naming one source is not",
-	"policy":         "phase 2: RBAC is a hub concern",
-	// Read through rootsFrom, which takes the key as an argument rather
-	// than as a literal beside the accessor. The check is deliberately
-	// strict; an exception with a reason is better than a looser rule
-	// that lets a real one through.
-	"pillar_roots":            "read through rootsFrom, which takes the key as an argument",
+	"log_level_file":          "SPEC 26.1's per-sink level; the file sink takes the global one",
+	"regex_engine":            "re2 is the only engine, so the setting has one value",
+	"node_id_source":          "the resolution order of SPEC 7.2 is implemented; naming one source is not",
+	"policy":                  "phase 2: RBAC is a hub concern",
 	"extension_trust_keys":    "phase 5: bridged extensions",
 	"grains_refresh_interval": "phase 2: a long-running node re-collects; a one-shot run does not",
 	"legacy_acl":              "phase 2: RBAC is a hub concern",
@@ -65,7 +60,6 @@ var unreadKeys = map[string]string{
 	"mine_interval":           "phase 3: the mine",
 	"returner":                "phase 4: returners",
 	"startup_states":          "phase 2: a node with a hub applies at startup",
-	"ext_pillar":              "phase 2: external pillar is a hub concern",
 	"gitfs_env_allowlist":     "phase 5: gitfs",
 	"gitfs_env_denylist":      "phase 5: gitfs",
 	"job_cache":               "phase 2: there is no job cache",

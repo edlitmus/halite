@@ -165,6 +165,24 @@ type JobStatus struct {
 	Returns []json.RawMessage `json:"returns,omitempty"`
 }
 
+// PillarRequest is POST /v1/pillar: a node asking for its own pillar.
+//
+// The grains go up because the top file targets on them; the identity
+// does not, because the certificate carries it.
+type PillarRequest struct {
+	NodeID string          `json:"node_id,omitempty"`
+	Env    string          `json:"env,omitempty"`
+	Grains json.RawMessage `json:"grains,omitempty"`
+}
+
+// PillarResponse is the compiled pillar, already encoded.
+type PillarResponse struct {
+	NodeID string          `json:"node_id"`
+	Env    string          `json:"env"`
+	SLS    []string        `json:"sls,omitempty"`
+	Pillar json.RawMessage `json:"pillar"`
+}
+
 // Error is the shape of every failure the control plane returns, so
 // that a node can tell a refusal from a network fault without parsing
 // prose.

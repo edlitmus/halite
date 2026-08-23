@@ -1323,7 +1323,9 @@ reported as unanswered with exit code 3, a function that does not exist
 returned as a failure rather than a crash, a node certificate refused at
 `/v1/jobs`, and a highstate compiled from a tree that exists only on the
 hub -- including a `salt://` source fetched, verified against the
-published digest, and cached -- then edited on the hub and reconverged.
+published digest, and cached -- then edited on the hub and reconverged,
+and a per-node pillar compiled on the hub and used in a template, with
+each node receiving only its own.
 
 What it does not: more than two nodes, more than one hub, a network that
 is not loopback, a hub restart with nodes connected, a certificate
@@ -1358,11 +1360,19 @@ fleet converges to it. A node compiles against the hub's tree, caches
 what it fetched, and asks conditionally afterwards, so a redeployed tree
 with identical contents costs a round trip and no transfer.
 
+Hub-side pillar followed that. A node posts its grains to `/v1/pillar`
+and the hub compiles that node's pillar and nothing else -- which is
+the point of moving the compilation: the node holds no other node's
+secrets and cannot ask for them, because the identity comes from the
+certificate. `pillar items`, `call`, and `state apply` on an enrolled
+node go through the hub unless `--local` says otherwise, the way
+`salt-call` uses its master. <!-- lexicon:allow -->
+
 What is **not** built, in phase 2:
 
-- **Hub-side pillar**, `/v1/pillar`. Pillar is compiled on the node from
-  the node's own `pillar_roots`. This is the largest gap left: an estate
-  whose pillar is centralised cannot centralise it here yet.
+- **External pillar** (SPEC 12.7). `ext_pillar` is read only to warn
+  that the sources it names contribute nothing, and `ext_pillar_fail`
+  is read by nothing at all.
 - **`file_ignore_regex`.** `file_ignore_glob` hides paths; the regex
   form is declared and read by nothing.
 - **gitfs and s3fs.** `fileserver_backend` accepts only `roots`, and

@@ -169,6 +169,10 @@ type node struct {
 	// line has no queue and nothing to post a refusal to.
 	executor *executor
 	refusals chan *job.Return
+	// hubPillar asks the hub to compile this node's pillar. Nil for a
+	// node working from its own roots, which is what `--local` and a
+	// node with no hub do.
+	hubPillar func(env string) (*value.Map, error)
 }
 
 // setup loads configuration, resolves the identity, and collects grains.
@@ -426,6 +430,12 @@ func (n *node) gpgOptions() render.GPGOptions {
 
 // compilePillar assembles this node's pillar from the local roots.
 func (n *node) compilePillarOrErr() (*value.Map, error) {
+	// A node with a hub gets its pillar from the hub: SPEC 12.1 puts
+	// the compilation there so that the node holds none of it and
+	// cannot read another node's.
+	if n.hubPillar != nil {
+		return n.hubPillar(n.pillarEnv)
+	}
 	strategy, _ := value.ParseStrategy(n.cfg.String("pillar_source_merging_strategy", "smart"))
 	c := &pillar.Compiler{
 		Loader: n.pillars,

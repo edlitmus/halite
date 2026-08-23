@@ -165,8 +165,7 @@ was reached — and the units carry `RestartPreventExitStatus=1` so that
 stops the unit and leaves the reason in the journal.
 
 The agent runs the jobs that arrive on that stream, and compiles them
-against the tree the hub serves. Pillar is still compiled on the node
-from the node's own `pillar_roots`.
+against the tree and the pillar the hub serves.
 
 Set `file_roots` on the hub and the fleet follows it:
 
@@ -175,7 +174,15 @@ Set `file_roots` on the hub and the fleet follows it:
 file_roots:
   base:
     - /srv/halite/states
+pillar_roots:
+  base:
+    - /srv/halite/pillar
 ```
+
+Each node receives its own pillar and no other node's: the hub compiles
+it against the grains that node reported, and the identity comes from
+the certificate rather than from the request. A node cannot ask for
+somebody else's.
 
 A node fetches what it needs, verifies each file against the digest the
 hub published before moving it into place, and caches it under

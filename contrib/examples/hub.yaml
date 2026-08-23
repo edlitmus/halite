@@ -1,10 +1,10 @@
 # halite-hub.
 #
 # `halite-hub serve` runs the control plane: enrollment, the key
-# lifecycle, the subscribe stream, remote execution, and the file
-# server. Hub-side pillar and RBAC are the rest of phase 2, so the
-# settings for those are read and validated and nothing acts on them
-# yet.
+# lifecycle, the subscribe stream, remote execution, the file server,
+# and pillar. RBAC, batching, and the event bus are the rest of phase 2,
+# so the settings for those are read and validated and nothing acts on
+# them yet.
 
 # The one TCP port of SPEC section 6.1. There is no plaintext mode.
 listen: :4510

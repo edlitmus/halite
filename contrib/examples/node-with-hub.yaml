@@ -2,9 +2,9 @@
 #
 # `halite-node enroll` asks for a certificate, `halite-node renew`
 # replaces it, and `halite-node connect` holds the stream open, runs the
-# jobs that arrive on it, and compiles them against the tree the hub
-# serves. Pillar is still compiled here from pillar_roots: hub-side
-# pillar is the rest of phase 2.
+# jobs that arrive on it, and compiles them against the tree and the
+# pillar the hub serves. `--local` works from this node's own roots
+# instead.
 hub: hub.example.com
 hub_port: 4510
 

@@ -145,6 +145,11 @@ contents.
 The `crypt` renderer of SPEC section 12.5, which is halite's own, is not
 built yet. Until it is, an encrypted tree stays on gpg.
 
+With a hub, the decryption happens on the hub, where the pillar is
+compiled — so `gpg_home` belongs in `hub.yaml` and the private key
+lives on the hub, not on every node. That is the arrangement Salt has
+and the one worth keeping.
+
 ## Every command, side by side
 
 [The command reference](command-reference.md) is the table this section
@@ -176,13 +181,13 @@ with the reason.
 
 The larger absences today:
 
-- **The hub's file server.** The hub enrols nodes, targets them, sends
-  jobs, and records the returns. What it does not do yet is serve the
-  state tree, so a hub-driven `state.apply` compiles against the copy on
-  the node. Phase 2 of SPEC section 32.
 - **RBAC.** An operator certificate is required to submit a job, and any
   valid one may run anything; `policy.yaml` is read by nothing yet.
-  Phase 2.
+  Phase 2 of SPEC section 32.
+- **Batching** — `--batch`, `--subset`, `--batch-wait` — and the event
+  bus. Phase 2.
+- **External pillar.** `ext_pillar` warns that the sources it names
+  contribute nothing. Phase 2.
 - **Beacons, reactors, orchestration, the mine over the wire.** Phase 3.
 - **The API.** Phase 4.
 - **Windows and macOS modules.** Phase 5. The code cross-compiles; none

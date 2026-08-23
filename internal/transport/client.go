@@ -413,3 +413,12 @@ func (c *Client) get(ctx context.Context, path, etag string) ([]byte, string, bo
 	}
 	return payload, res.Header.Get("X-Halite-Hash"), false, nil
 }
+
+// Pillar asks the hub to compile this node's pillar.
+func (c *Client) Pillar(ctx context.Context, req PillarRequest) (*PillarResponse, error) {
+	var res PillarResponse
+	if _, err := c.post(ctx, PathPillar, req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}

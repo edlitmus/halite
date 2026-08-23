@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/keystore"
+	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -57,8 +58,16 @@ func newLab(t *testing.T) *lab {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The hub logs into the test's own output. Without this a handler
+	// that says "its log says why" says it into nothing, and
+	// diagnosing a failing test means adding the logger first.
+	logger, err := hlog.New(hlog.Options{Level: hlog.Debug, Format: hlog.Console, Stderr: testWriter{t}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	denied := transport.NewDenylist()
 	srv := &Server{
+		Log: logger,
 		Authority: &keystore.Authority{
 			Store:    store,
 			CA:       ca,
@@ -89,6 +98,15 @@ func newLab(t *testing.T) *lab {
 		denied: denied,
 		url:    "https://" + net.JoinHostPort("localhost", port(t, ln.Addr().String())),
 	}
+}
+
+// testWriter sends the hub's log to the test's output, where it is
+// shown only for a test that fails.
+type testWriter struct{ t *testing.T }
+
+func (w testWriter) Write(p []byte) (int, error) {
+	w.t.Logf("hub: %s", strings.TrimRight(string(p), "\n"))
+	return len(p), nil
 }
 
 func port(t *testing.T, addr string) string {

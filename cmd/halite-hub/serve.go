@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/fileserver"
@@ -21,8 +22,11 @@ import (
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/redact"
+	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/target"
+	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/transport"
+	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
 )
 
@@ -198,6 +202,42 @@ func runServe(args *cli.Args) int {
 		}
 	}
 
+	// Hub-side pillar. Without pillar_roots the hub compiles none and
+	// says so to a node that asks, rather than answering with an empty
+	// pillar that looks like a successful compilation of nothing.
+	var pillarOpts *hub.PillarOptions
+	if roots := h.cfg.Roots("pillar_roots"); len(roots) > 0 {
+		if err := checkRootsAreNotTheHubsOwn(h, roots); err != nil {
+			cli.Fatalf("%v", err)
+		}
+		strategy, ok := value.ParseStrategy(h.cfg.String("pillar_source_merging_strategy", "smart"))
+		if !ok {
+			cli.Fatalf("pillar_source_merging_strategy %q is not a strategy; try smart, recurse, aggregate, or overwrite",
+				h.cfg.String("pillar_source_merging_strategy", ""))
+		}
+		undefined := template.Strict
+		if h.cfg.String("undefined", "strict") == "permissive" {
+			undefined = template.Permissive
+		}
+		pillarOpts = &hub.PillarOptions{
+			Roots:            fileserver.NewRoots(roots),
+			TrustedGrains:    h.cfg.StringSlice("pillar_trusted_grains"),
+			Strategy:         strategy,
+			MergeLists:       h.cfg.Bool("pillar_merge_lists", false),
+			Undefined:        undefined,
+			GPG:              gpgOptionsFor(h.cfg),
+			Renderer:         strings.Split(h.cfg.String("renderer", "jinja|yaml"), "|"),
+			YAMLBool11:       h.cfg.OptionalBool("yaml_bool_11"),
+			Nondeterministic: h.cfg.String("random_seed", "deterministic") == "nondeterministic",
+			Registry:         builtin.New().Exec,
+			ConfigValues:     h.cfg.Redacted(),
+		}
+		if ext := h.cfg.StringSlice("ext_pillar"); len(ext) > 0 {
+			h.log.Warn("external pillar is not built; these sources contribute nothing",
+				"sources", strings.Join(ext, ","), "section", "12.7")
+		}
+	}
+
 	server := &hub.Server{
 		Authority:    h.auth,
 		Log:          h.log,
@@ -207,6 +247,7 @@ func runServe(args *cli.Args) int {
 		Nodegroups:   groups,
 		Files:        files,
 		HashType:     h.cfg.String("hash_type", "sha256"),
+		Pillar:       pillarOpts,
 	}
 
 	ln, err := hub.Listen(listen, pair, h.auth.CA.Cert, h.denied)
@@ -241,6 +282,16 @@ func runServe(args *cli.Args) int {
 	}
 	h.log.Info("the hub stopped")
 	return 0
+}
+
+// gpgOptionsFor is SPEC 12.6's renderer settings, which the hub needs
+// because an encrypted pillar file is decrypted where it is compiled.
+func gpgOptionsFor(cfg *config.Config) render.GPGOptions {
+	return render.GPGOptions{
+		Binary:  cfg.String("gpg_binary", ""),
+		Home:    cfg.String("gpg_home", ""),
+		Timeout: cfg.Duration("gpg_timeout", 30*time.Second),
+	}
 }
 
 // checkRootsAreNotTheHubsOwn refuses a file root that holds the hub's

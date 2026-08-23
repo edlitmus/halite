@@ -89,12 +89,32 @@ The hub serves the state tree, and a node compiles against it. Set
 | `cp.cache_file` | happens automatically; the cache is under `cache_dir` | works |
 | gitfs, s3fs | `fileserver_backend` accepts only `roots` | phase 5 |
 
-Pillar is still compiled on the node from the node's own
-`pillar_roots`: hub-side pillar is the rest of phase 2.
-
 `serve` refuses to start if a file root holds the hub's own `state_dir`,
 `cache_dir`, or `pki_dir` — that arrangement serves the job cache, and
 so every return in the estate, to every enrolled node.
+
+## Pillar
+
+The hub compiles each node's pillar and sends that node only its own.
+Set `pillar_roots` on the hub.
+
+| Salt | halite | Status |
+|---|---|---|
+| `salt-call pillar.items` | `halite-node pillar items` | works |
+| `salt-call --local pillar.items` | `halite-node pillar items --local` | works |
+| `salt '*' pillar.items` | `halite-hub run '*' pillar.items` | works |
+| `#!yaml|gpg` in a pillar file | works, decrypted on the hub | works |
+| `ext_pillar` | not built; the setting warns that it does nothing | phase 2 |
+
+An enrolled node's `pillar items`, `call`, and `state apply` go through
+the hub unless `--local` says otherwise, which is what `salt-call` does. <!-- lexicon:allow -->
+A hub that cannot be reached is a warning and a local compilation, not
+a failure.
+
+Targeting a pillar top file on a grain still needs the grain in
+`pillar_trusted_grains`, and moving the compilation to the hub does not
+change that: the grains still come from the node. An unvetted grain in
+a pillar top is refused by name rather than quietly matching nothing.
 
 ## Enrollment and the key lifecycle
 
