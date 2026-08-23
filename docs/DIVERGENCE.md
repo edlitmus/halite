@@ -1387,7 +1387,10 @@ a configured reactor matching an event a node fired, running both a
 in the job cache under it, `reactor.list` and `reactor.test` reporting
 the plan and the policy decision without dispatching, a `dedupe_window`
 collapsing two identical events into one reaction, and a hub restart
-resuming the reactor from its recorded offset; a runner declared and not built naming its phase; an
+resuming the reactor from its recorded offset; the `filechanges` and
+`diskusage` beacons running on a real node, firing on a real change to a
+watched file, reaching the hub's bus, and the reactor acting on one --
+the whole automation loop, end to end; a runner declared and not built naming its phase; an
 unknown name listing its module's runners; and the two-stage
 authorization — an operator holding `runners: ['*']` and nothing else
 calls `manage.status` and is refused `saltutil.refresh_grains` because
@@ -1402,7 +1405,11 @@ against a real second node, `salt.wheel`, and a hub restart in the middle
 of a run. On the reactor side it does not cover a `caller` reaction, a
 burst large enough to overflow the queue, the rate limiter, `debounce`,
 a causality chain long enough to be broken, or an event arriving while
-the hub was down. It has been run on FreeBSD only.
+the hub was down. On the beacon side it does not cover `load`,
+`memusage`, `service`, `cert_info`, or `status` against real thresholds,
+`delay`, `disable_during_state_run` during an actual state run, or a
+beacon left running long enough to exercise the coalescing window. It
+has been run on FreeBSD only.
 
 ## 6. Everything else not started
 
@@ -1623,11 +1630,46 @@ What is **not** built in the reactor:
   reactor names the chain when it first sees the event. A node that
   wants to join an existing chain cannot say so.
 
-The rest of phases 3 through 6 does not exist: no beacons, no scheduler,
-no mine, no API, no OIDC or LDAP, no webhooks, no returners, no bridge
-protocol, no gitfs, no s3fs, no agentless mode, no relays, no FIPS
-artifact set, no detached job signing, no signed state trees, and no
-backtracking regex engine.
+**Beacons followed**, which closes the loop: a file changes on a node,
+the beacon fires, the hub's reactor acts. A beacon here is a function
+over the node's own execution modules rather than a second reader of the
+system, so it is portable wherever its module is and cannot disagree
+with the state that acts on the same fact.
+
+Built: `diskusage`, `load`, `memusage`, `service`, `filechanges`,
+`cert_info`, and `status`. The controls of SPEC 16.3 are all there — a
+token bucket per instance, coalescing with a count, a bounded queue that
+reports what it dropped, and `disable_during_state_run`.
+
+What is **not** built in beacons:
+
+- **`inotify` and `fanotify`.** Both need raw syscalls through
+  `golang.org/x/sys`, which SPEC 4.2 records as an open question and
+  which this build does not admit. `filechanges` polls on digest and
+  metadata, which is the portable answer SPEC 16.2 names for exactly
+  this case; it is slower, and a change that is reverted between two
+  polls is one it never sees.
+- **Seventeen of SPEC 16.2's inventory**: `swapusage`, `cpuusage`,
+  `network_info`, `network_settings`, `proc`, `ps`, `pkg`, `journald`,
+  `log`, `wtmp`, `btmp`, `sh`, and the four platform notifiers. Each is
+  registered and answers with when it arrives, so a configuration
+  naming one is refused with a reason rather than skipped.
+- **Runtime management.** `beacons.list` answers from the registry and
+  the configuration. The nine that change a running node's watchers —
+  `add`, `modify`, `delete`, `enable`, `disable`, `enable_beacon`,
+  `disable_beacon`, `save`, `reset` — need a handle on the running
+  engine and somewhere to write the change down, and they say so rather
+  than reporting a change nobody made.
+- **The default interval.** Salt polls every second by default; this
+  build polls every minute unless the beacon says otherwise. Reading the
+  filesystem once a second for a threshold that moves in hours is a cost
+  with no benefit, and every example in SPEC 16.1 names an interval.
+
+The rest of phases 3 through 6 does not exist: no scheduler, no mine, no
+API, no OIDC or LDAP, no webhooks, no returners, no bridge protocol, no
+gitfs, no s3fs, no agentless mode, no relays, no FIPS artifact set, no
+detached job signing, no signed state trees, and no backtracking regex
+engine.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.

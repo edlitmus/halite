@@ -287,6 +287,70 @@ orchestration reads unchanged.
 A runner that ran and failed exits 1 and prints its error; only a
 refusal, an unknown name, or a malformed call is a transport failure.
 
+## Beacons
+
+`beacons:` in the node configuration starts the watchers. What they see
+goes to the hub's bus, where a reactor can act on it. The schema is
+Salt's, including the list-of-single-key-mappings form.
+
+```yaml
+beacons:
+  diskusage:
+    - /: 85%
+    - /var: 90%
+    - interval: 60
+  service:
+    - services:
+        nginx:
+          onchangeonly: True
+      disable_during_state_run: True
+    - interval: 5
+  filechanges:
+    - files:
+        - /etc/nginx/nginx.conf
+    - interval: 10
+    - onchangeonly: True
+```
+
+A beacon fires under `halite/node/<node_id>/<beacon>/<what>`, so a
+reactor can watch one filesystem rather than all of them. A path becomes
+the tag's tail with its leading slash removed; the root filesystem is
+`root`, because a tag that ends at the beacon's own name cannot be
+reached by `diskusage/**`.
+
+| Salt | halite | Status |
+|---|---|---|
+| `beacons:` in the minion config | `beacons:` in the node config | works | <!-- lexicon:allow -->
+| `diskusage` | same | works |
+| `load` | same | works |
+| `memusage` | same | works |
+| `service` | same | works |
+| `cert_info` | same | works |
+| `status` | same | works |
+| no portable file watcher | `filechanges`, polling on digest and metadata | works |
+| `interval`, `onchangeonly`, `delay`, `emitatstartup` | same | works |
+| `disable_during_state_run` | same | works |
+| no equivalent | `rate_limit`, `coalesce_window`, `queue_depth` per beacon | works |
+| `salt-call beacons.list` | `halite-node call beacons.list` | works |
+| no equivalent | `halite-node call beacons.list available=True` | works |
+| `beacons.add`, `modify`, `delete`, `enable`, `disable`, `save`, `reset` | same | not built |
+| `inotify`, `fanotify` | `filechanges` polls instead | needs `golang.org/x/sys` |
+| `watchdirs`, `eventlog` | same | phase 5, Windows |
+| `fsevents` | same | phase 5, macOS |
+| `swapusage`, `cpuusage`, `network_info`, `proc`, `ps`, `log`, `wtmp`, `btmp` | same | not built |
+
+A beacon that this build does not have, or that is declared and not
+built, stops the node rather than being skipped: a watcher that is
+configured and does not run is indistinguishable from a quiet machine.
+
+The controls exist because beacon events are the classic self-inflicted
+denial of service — a file that changes in a loop fires a beacon that
+fires a reactor that changes the file. Each instance has a token bucket,
+identical events inside `coalesce_window` become one carrying a
+`_count`, the queue is bounded and reports what it dropped, and
+`disable_during_state_run` stops a state run from triggering itself. The
+hub breaks a causality chain longer than `max_causality_depth`.
+
 ## Reactors
 
 `reactor:` in the hub configuration maps an event tag glob to the

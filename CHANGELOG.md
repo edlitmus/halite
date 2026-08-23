@@ -155,6 +155,35 @@ contract; it does not dispatch an execution function at all, because
 finding out what a test run would do by running it is how a test run
 becomes a deployment.
 
+### Beacons, and the loop closes
+
+`beacons:` on a node starts the watchers of SPEC section 16, and what
+they see goes to the hub's bus where the reactor is waiting. A file
+edited by hand, and the estate does something about it.
+
+A beacon is a function over the node's own execution modules rather than
+a second reader of the system: `diskusage` asks `disk.usage`, `service`
+asks `service.status`. It is portable wherever its module is, and a
+beacon and the state that manages the same thing cannot disagree about
+what the thing is.
+
+Seven are built — diskusage, load, memusage, service, filechanges,
+cert_info, status — and the other seventeen names in the inventory say
+when they arrive. A configuration naming one that is not built stops the
+node rather than leaving the watcher silently absent, which is the worst
+available outcome for a watcher.
+
+The controls are the design rather than a refinement, because beacon
+events are the classic self-inflicted denial of service: a token bucket
+per instance, identical events collapsed into one carrying a count, a
+bounded queue that reports what it dropped, and
+`disable_during_state_run`, which is how a state run is stopped from
+firing the beacon that triggers the state run.
+
+`inotify` is not built: it needs raw syscalls through a module SPEC 4.2
+leaves as an open question. `filechanges` polls on digest and metadata,
+which is what the specification names for platforms without a notifier.
+
 ### Reactors, authorized and unserialized
 
 `reactor:` maps an event tag glob to the reaction SLS the hub runs when
