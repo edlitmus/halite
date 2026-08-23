@@ -457,3 +457,12 @@ func TestManageVersionsDoesNotReportAMatchedFleetAsBehind(t *testing.T) {
 		t.Errorf("a node on the hub's own build was reported as %v", behind)
 	}
 }
+
+// runnerRequest builds a runner call with keyword arguments, which is
+// what most of them take.
+func runnerRequest(fun string, kwargs map[string]any) transport.RunnerRequest {
+	return transport.RunnerRequest{Fun: fun, Kwarg: kwargs}
+}
+
+// jobIDOf is the identifier as the job cache holds it.
+func jobIDOf(s string) job.ID { return job.ID(s) }

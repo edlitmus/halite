@@ -21,10 +21,20 @@ import (
 // not record that the job started would be worse than one that does not
 // record it.
 func (s *Server) emit(tag string, node string, data map[string]any) {
+	s.emitCorrelated(tag, node, "", data)
+}
+
+// emitCorrelated is the same with the causality chain named.
+//
+// A chain is how "what did this cause" gets an answer, and how a
+// reactor tells a loop from a busy estate: an event, the job a reaction
+// dispatched for it, and the events that job produced all carry the
+// same identifier. SPEC 17.1 and 16.3.
+func (s *Server) emitCorrelated(tag, node, correlation string, data map[string]any) {
 	if s.Events == nil {
 		return
 	}
-	e := &eventbus.Event{Tag: tag, Node: node, Stamp: s.now(), Data: data}
+	e := &eventbus.Event{Tag: tag, Node: node, Stamp: s.now(), Data: data, Correlation: correlation}
 	if _, err := s.Events.Append(e); err != nil {
 		s.warn("could not record an event", "tag", tag, "error", err.Error())
 		return

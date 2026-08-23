@@ -73,6 +73,10 @@ type Job struct {
 	// the audit record. It is never the value of a field in a request
 	// body.
 	Submitter string `json:"submitter,omitempty"`
+	// Correlation is the causality chain this job belongs to. It is
+	// carried into every event the job produces, so that "what did this
+	// cause" has an answer. SPEC 17.1.
+	Correlation string `json:"correlation,omitempty"`
 	// Target and TargetKind are what the operator typed, kept so that
 	// `jobs show` can say what was asked for and not only who answered.
 	Target     string `json:"target,omitempty"`

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/job"
-	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
@@ -99,6 +98,7 @@ func NewRunners() *Runners {
 	r := &Runners{fns: map[string]RunnerFunc{}, pending: map[string]string{}, sigs: signature.NewRegistry()}
 	registerJobsRunner(r)
 	registerStateRunner(r)
+	registerReactorRunner(r)
 	registerManageRunner(r)
 	registerKeyRunner(r)
 	registerNodegroupsRunner(r)
@@ -229,13 +229,8 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 	// SPEC 23.5: the decision is logged either way, with the rule that
 	// matched. `Runner: true` is what makes the policy read `runners:`
 	// rather than `functions:`.
-	decision := s.Policy.Authorize(policy.Request{
-		Principal: call.Principal,
-		Fun:       call.Fun,
-		Arg:       call.Arg,
-		Kwarg:     call.Kwarg,
-		Runner:    true,
-	})
+	decision := s.Policy.Authorize(
+		policyRequestFor(call.Principal, call.Fun, "", call.Arg, call.Kwarg, true))
 	if !decision.Allowed {
 		s.warn("runner refused by policy",
 			"principal", call.Principal, "fun", call.Fun, "reason", decision.Reason)

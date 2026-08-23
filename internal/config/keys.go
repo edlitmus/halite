@@ -112,6 +112,10 @@ var Keys = []Key{
 	{"schedule", nodeOnly, "", "Scheduled jobs.", "20.1"},
 	{"beacons", nodeOnly, "", "Beacon configuration.", "16.1"},
 	{"reactor", hubOnly, "", "Event tag globs to reaction SLS.", "18.1"},
+	{"reactor_workers", hubOnly, "2 x NumCPU", "Reactor worker pool size.", "18.2"},
+	{"reactor_queue_depth", hubOnly, "10000", "Reactor queue depth. On overflow the oldest are dropped and the count is reported.", "18.2"},
+	{"reactor_timeout", hubOnly, "60s", "How long one reaction may take to render and dispatch.", "18.2"},
+	{"max_causality_depth", hubOnly, "5", "How long a reactor causality chain may grow before it is broken.", "16.3"},
 	{"returner", nodeOnly, "local", "Default returner.", "20.3"},
 	{"nodegroups", hubOnly, "", "Named compound target expressions.", "8.1"},
 

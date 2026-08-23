@@ -195,6 +195,15 @@ func runServe(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
+	// SPEC 18.1's reactor. A configuration that will not parse stops
+	// the hub rather than starting one with a reactor that reacts to
+	// nothing, which is indistinguishable from a quiet estate.
+	reactorRaw, _ := h.cfg.Get("reactor")
+	reactors, err := hub.ParseReactors(reactorRaw)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
 	// The tree this hub serves. SPEC 13.5's two hiding settings and the
 	// symlink policy live on it, and they were all three declared and
 	// read by nothing until there was a file server to read them.
@@ -278,6 +287,7 @@ func runServe(args *cli.Args) int {
 		Jobs:           jobs,
 		Nodes:          nodes,
 		Orch:           orchestrations,
+		Reactors:       reactors,
 		Nodegroups:     groups,
 		Files:          files,
 		HashType:       h.cfg.String("hash_type", "sha256"),
@@ -316,6 +326,26 @@ func runServe(args *cli.Args) int {
 	// The operator command line is a separate process, so the running
 	// hub follows the key store rather than being told.
 	go server.Reconcile(ctx, 2*time.Second)
+	if len(reactors) > 0 {
+		reactor := &hub.Reactor{
+			Server:     server,
+			Entries:    reactors,
+			Workers:    int(h.cfg.Int("reactor_workers", 0)),
+			QueueDepth: int(h.cfg.Int("reactor_queue_depth", 0)),
+			MaxDepth:   int(h.cfg.Int("max_causality_depth", 0)),
+			Timeout:    h.cfg.Duration("reactor_timeout", 0),
+			// Where it had read to. SPEC 17.2 makes a reactor restart
+			// lossless, and it is lossless because this file exists.
+			OffsetFile: filepath.Join(h.cfg.String("state_dir", config.DefaultStateDir), "reactor.offset"),
+		}
+		h.log.Info("reactor started",
+			"entries", len(reactors), "tags", strings.Join(hub.ReactorTags(reactors), ","))
+		go func() {
+			if err := reactor.Run(ctx); err != nil {
+				h.log.Error("the reactor stopped", "error", err.Error())
+			}
+		}()
+	}
 	go maintain(ctx, h, server, jobs, bus)
 
 	if err := server.Serve(ctx, ln); err != nil {

@@ -386,13 +386,8 @@ func (c *RunnerContext) dispatch(sub Submission) (*job.Job, error) {
 // dispatching on the strength of the outer grant alone would turn the
 // narrower permission into the wider one.
 func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) {
-	decision := s.Policy.Authorize(policy.Request{
-		Principal: principal,
-		Target:    sub.Target,
-		Fun:       sub.Fun,
-		Arg:       sub.Arg,
-		Kwarg:     sub.Kwarg,
-	})
+	decision := s.Policy.Authorize(
+		policyRequestFor(principal, sub.Fun, sub.Target, sub.Arg, sub.Kwarg, false))
 	if !decision.Allowed {
 		s.warn("a job dispatched on a principal's behalf was refused by policy",
 			"principal", principal, "target", sub.Target, "fun", sub.Fun,
@@ -402,6 +397,19 @@ func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) 
 	}
 	sub.Submitter = principal
 	return s.Dispatch(sub)
+}
+
+// policyRequestFor builds one authorization question, so that asking it
+// and answering it use the same shape.
+func policyRequestFor(principal, fun, target string, arg []string, kwarg map[string]any, runner bool) policy.Request {
+	return policy.Request{
+		Principal: principal,
+		Target:    target,
+		Fun:       fun,
+		Arg:       arg,
+		Kwarg:     kwarg,
+		Runner:    runner,
+	}
 }
 
 func (c *RunnerContext) needAuthority() error {

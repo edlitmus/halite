@@ -43,7 +43,6 @@ var unreadKeys = map[string]string{
 	"extension_trust_keys": "phase 5: bridged extensions",
 	"legacy_acl":           "phase 2: RBAC is a hub concern",
 	"parallel_jobs":        "phase 2: there is one job at a time",
-	"reactor":              "phase 3: the automation loop",
 	"socket_dir":           "phase 2: there are no sockets",
 	"quiesce":              "phase 2: there are no jobs to refuse",
 	"quiesce_allowlist":    "phase 2: there are no jobs to refuse",

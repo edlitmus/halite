@@ -70,6 +70,11 @@ type Server struct {
 	// EventTagCompat additionally emits every event under its `salt/`
 	// equivalent, per SPEC 17.1.
 	EventTagCompat bool
+	// Reactors is the configured reactor of SPEC 18.1. The engine that
+	// consumes them is started by `serve`; the list is here so that
+	// `reactor.test` and `reactor.list` can read it without one.
+	Reactors []ReactorEntry
+
 	// Orch keeps the orchestration records of SPEC 19.1. Nil for a hub
 	// that keeps none, which reports that rather than losing a run
 	// quietly.

@@ -63,7 +63,15 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		s.info("return recorded",
 			"jid", string(ret.JID), "node_id", nodeID, "fun", ret.Fun,
 			"success", ret.Success, "retcode", ret.RetCode, "duration_ms", ret.DurationMS)
-		s.emit(tagJobRet(string(ret.JID), nodeID), nodeID, map[string]any{
+		// The chain the job belongs to travels with its returns, so a
+		// reactor watching a state result can tell what caused the run
+		// it is looking at. A job the hub no longer has a record of
+		// carries none, which is the honest answer.
+		chain := ""
+		if j, err := s.Jobs.Get(ret.JID); err == nil {
+			chain = j.Correlation
+		}
+		s.emitCorrelated(tagJobRet(string(ret.JID), nodeID), nodeID, chain, map[string]any{
 			"jid": string(ret.JID), "fun": ret.Fun,
 			"success": ret.Success, "retcode": ret.RetCode, "duration_ms": ret.DurationMS,
 		})
@@ -74,7 +82,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 			if ret.Success {
 				result = "ok"
 			}
-			s.emit(tagState(string(ret.JID), nodeID, result), nodeID, map[string]any{
+			s.emitCorrelated(tagState(string(ret.JID), nodeID, result), nodeID, chain, map[string]any{
 				"jid": string(ret.JID), "retcode": ret.RetCode,
 			})
 		}

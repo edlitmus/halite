@@ -158,6 +158,7 @@ Read by the hub.
 | `log_format` | `json` | 26.1 | json or console. |
 | `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
 | `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
+| `max_causality_depth` | `5` | 16.3 | How long a reactor causality chain may grow before it is broken. |
 | `metrics_listen` | — | 26.2 | Prometheus exposition address; empty disables it. |
 | `node_data_cache` | `true` | 28.3 | Keep per-node grains, pillar, and mine on the hub. |
 | `nodegroups` | — | 8.1 | Named compound target expressions. |
@@ -170,6 +171,9 @@ Read by the hub.
 | `policy` | `<config root>/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
 | `random_seed` | `deterministic` | 10.2.4 | deterministic or nondeterministic template randomness. |
 | `reactor` | — | 18.1 | Event tag globs to reaction SLS. |
+| `reactor_queue_depth` | `10000` | 18.2 | Reactor queue depth. On overflow the oldest are dropped and the count is reported. |
+| `reactor_timeout` | `60s` | 18.2 | How long one reaction may take to render and dispatch. |
+| `reactor_workers` | `2 x NumCPU` | 18.2 | Reactor worker pool size. |
 | `regex_engine` | `re2` | 10.4 | re2 only until the backtracking engine of SPEC section 10.4 ships. |
 | `relay_upstream` | — | 5.3 | The hub this relay reports to. |
 | `relay_upstream_port` | `4510` | 5.3 | The upstream hub's port. |

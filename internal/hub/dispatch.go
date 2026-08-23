@@ -35,6 +35,12 @@ type Submission struct {
 	// Submitter is the authenticated principal. The handler fills this
 	// in from the certificate; a request body cannot set it.
 	Submitter string
+	// Correlation is the causality chain this job belongs to, carried
+	// into the events it produces. A reaction sets it to the chain of
+	// the event it reacted to, which is what makes a beacon that fires
+	// a reaction that changes the file the beacon watches detectable
+	// rather than merely slow. SPEC 16.3.
+	Correlation string
 }
 
 // errJobExpired is what `jobs resume` says about a job whose window
@@ -109,22 +115,23 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 		}
 	}
 	j := &job.Job{
-		JID:        s.clock().Next(),
-		Fun:        sub.Fun,
-		Arg:        sub.Arg,
-		Kwarg:      sub.Kwarg,
-		Env:        sub.Env,
-		Nonce:      nonce,
-		Created:    now,
-		Expires:    now.Add(ttl),
-		Submitter:  sub.Submitter,
-		Target:     sub.Target,
-		TargetKind: kind.String(),
-		Nodes:      matched,
-		Offline:    sub.Offline,
-		State:      job.Dispatched,
-		Test:       sub.Test,
-		Batch:      batch,
+		JID:         s.clock().Next(),
+		Fun:         sub.Fun,
+		Arg:         sub.Arg,
+		Kwarg:       sub.Kwarg,
+		Env:         sub.Env,
+		Nonce:       nonce,
+		Created:     now,
+		Expires:     now.Add(ttl),
+		Submitter:   sub.Submitter,
+		Correlation: sub.Correlation,
+		Target:      sub.Target,
+		TargetKind:  kind.String(),
+		Nodes:       matched,
+		Offline:     sub.Offline,
+		State:       job.Dispatched,
+		Test:        sub.Test,
+		Batch:       batch,
 	}
 
 	if s.Jobs != nil {
@@ -132,7 +139,7 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 			return nil, err
 		}
 	}
-	s.emit(tagJobNew(string(j.JID)), "", map[string]any{
+	s.emitCorrelated(tagJobNew(string(j.JID)), "", j.Correlation, map[string]any{
 		"jid": string(j.JID), "fun": j.Fun, "arg": j.Arg,
 		"tgt": j.Target, "tgt_type": j.TargetKind,
 		"nodes": j.Nodes, "submitter": j.Submitter, "test": j.Test,
