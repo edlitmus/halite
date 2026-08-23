@@ -98,6 +98,7 @@ type Runners struct {
 func NewRunners() *Runners {
 	r := &Runners{fns: map[string]RunnerFunc{}, pending: map[string]string{}, sigs: signature.NewRegistry()}
 	registerJobsRunner(r)
+	registerStateRunner(r)
 	registerManageRunner(r)
 	registerKeyRunner(r)
 	registerNodegroupsRunner(r)
@@ -281,11 +282,15 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 		Args:      bound,
 	})
 	out.Duration = s.now().Sub(started)
+	// The value and the error both, when a runner produced both. An
+	// orchestration that failed is the case: the run happened, its
+	// timeline is the answer, and the failure is what the caller's exit
+	// status has to reflect. Dropping the value on error would leave an
+	// operator told to look at a timeline they were not given.
+	out.Return = ret
 	if err != nil {
 		out.Success = false
 		out.Err = err.Error()
-	} else {
-		out.Return = ret
 	}
 
 	s.emit(tagRunRet(string(jid)), "", map[string]any{
@@ -345,7 +350,7 @@ func (s *Server) recordRunnerReturn(out *RunnerOutcome, started time.Time) {
 	if err != nil {
 		encoded = []byte(`null`)
 	}
-	if !out.Success {
+	if !out.Success && out.Return == nil {
 		encoded, _ = json.Marshal(out.Err)
 	}
 	retcode := 0

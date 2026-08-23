@@ -31,6 +31,7 @@ Usage:
   halite-hub keys <subcommand>   enrollment and the key lifecycle
   halite-hub run <target> <fun>  run a function across the fleet
   halite-hub runner <fun>        run a function on the hub itself
+  halite-hub orch <subcommand>   orchestration, which runs on the hub
   halite-hub jobs <subcommand>   the job cache
   halite-hub policy <show|test>  the RBAC policy, and what it decides
   halite-hub event <listen|tags> the event bus
@@ -39,8 +40,8 @@ Usage:
   halite-hub version             print the build identity
 
 Still to come (SPEC section 32):
-  orch and the rest of the automation loop in phase 3; files in phase 3;
-  ssh with agentless mode in phase 5
+  beacons, the scheduler, reactors, and the mine in phase 3; files in
+  phase 3; ssh with agentless mode in phase 5
 
 Common flags:
   --help               describe the program without running a command
@@ -79,6 +80,13 @@ run flags:
 runner flags:
   --as <name>          which operator certificate to present
   --hub <address>      the hub to reach, default localhost
+
+orch flags:
+  --env <name>         the environment to compile the orchestration from
+  --pillar <json>      pillar overrides the run compiles with
+  --from <step>        which step orch resume picks up at
+  --limit <n>          how many runs orch list shows
+  --test               report what each step would do without dispatching
 
 jobs flags:
   --limit <n>          how many jobs to list, default 20
@@ -144,8 +152,7 @@ func main() {
 	case "runner":
 		os.Exit(runRunner(args))
 	case "orch":
-		cli.Fatalf("`orch` is orchestration, which arrives in phase 3 (SPEC section 32). " +
-			"`halite-hub runner list` says which runners this build ships.")
+		os.Exit(runOrch(args))
 	case "files":
 		cli.Fatalf("`files` is the hub-side file push, which arrives in phase 3 (SPEC section 32). " +
 			"A node fetches from `salt://` today; this is the push in the other direction.")

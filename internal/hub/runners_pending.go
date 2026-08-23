@@ -13,20 +13,11 @@ func registerPendingRunners(r *Runners) {
 		return RunnerModule{Sig: runnerSig(module, function, doc, "19.2"), Pending: when}
 	}
 
-	const orchestration = "phase 3, with orchestration (SPEC section 19.1)"
 	const mine = "phase 3, with the mine (SPEC section 19.5)"
 	const queues = "phase 3, with the durable work queue (SPEC section 19.4)"
 	const notify = "phase 4, with the API and its integrations (SPEC section 32)"
 
 	r.Add(
-		pending("state", "orchestrate", "Run an orchestration SLS on the hub.", orchestration),
-		pending("state", "orch", "Run an orchestration SLS on the hub.", orchestration),
-		pending("state", "orchestrate_show_sls", "Render an orchestration SLS without running it.", orchestration),
-		pending("state", "single", "Run one state against the hub itself.", orchestration),
-		pending("state", "event", "Fire an event from inside an orchestration.", orchestration),
-		pending("state", "pause", "Hold an orchestration at its next step.", orchestration),
-		pending("state", "resume", "Let a held orchestration continue.", orchestration),
-
 		pending("mine", "get", "Read what nodes have published to the mine.", mine),
 		pending("mine", "update", "Ask nodes to refresh their mine entries.", mine),
 		pending("mine", "flush", "Drop every mine entry for a node.", mine),

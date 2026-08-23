@@ -64,17 +64,20 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 	}
 	// The subcommands named in the usage but not built must say which
 	// phase they arrive in, rather than fail as typos.
-	for _, sub := range []string{"orch", "files", "ssh"} {
+	for _, sub := range []string{"files", "ssh"} {
 		got := run(t, sub)
 		if got.code == 0 || !strings.Contains(got.stderr, "phase") {
 			t.Errorf("%s = %+v", sub, got)
 		}
 	}
-	// `runner` is built. Bare, it describes itself and exits non-zero,
-	// because a runner call with no function is a mistake, not a
-	// request for nothing.
+	// `runner` and `orch` are built. Bare, each describes itself and
+	// exits non-zero, because a call with no function or subcommand is
+	// a mistake, not a request for nothing.
 	if got := run(t, "runner"); got.code != 2 || !strings.Contains(got.stderr, "module.function") {
 		t.Errorf("runner = %+v", got)
+	}
+	if got := run(t, "orch"); got.code != 2 || !strings.Contains(got.stderr, "orch run") {
+		t.Errorf("orch = %+v", got)
 	}
 }
 
@@ -299,7 +302,7 @@ func TestRunnerListShowsBuiltAndPendingAlike(t *testing.T) {
 	if got.code != 0 {
 		t.Fatalf("runner list = %+v", got)
 	}
-	for _, want := range []string{"manage.up", "jobs.lookup_jid", "state.orchestrate"} {
+	for _, want := range []string{"manage.up", "jobs.lookup_jid", "state.orchestrate", "mine.get"} {
 		if !strings.Contains(got.stdout, want) {
 			t.Errorf("runner list does not mention %s", want)
 		}
@@ -312,9 +315,9 @@ func TestRunnerListShowsBuiltAndPendingAlike(t *testing.T) {
 	if doc.code != 0 || !strings.Contains(doc.stdout, "manage.status") {
 		t.Errorf("runner doc = %+v", doc)
 	}
-	pending := run(t, "runner", "doc", "state.orchestrate")
+	pending := run(t, "runner", "doc", "mine.get")
 	if pending.code != 0 || !strings.Contains(pending.stdout, "phase 3") {
-		t.Errorf("runner doc state.orchestrate = %+v", pending)
+		t.Errorf("runner doc mine.get = %+v", pending)
 	}
 	if bad := run(t, "runner", "nosuchrunner"); bad.code == 0 {
 		t.Errorf("a runner name with no module was accepted: %+v", bad)

@@ -34,6 +34,10 @@ type Context struct {
 	NodeID string
 	Env    string
 	JobID  string
+	// StateID is the state's ID as written, for a module that has to
+	// name itself -- an orchestration step recording which step it was.
+	// Empty outside a state run.
+	StateID string
 
 	// Test marks a run that must change nothing. Every function that
 	// mutates the system checks it.

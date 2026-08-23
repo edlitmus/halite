@@ -70,6 +70,12 @@ type Server struct {
 	// EventTagCompat additionally emits every event under its `salt/`
 	// equivalent, per SPEC 17.1.
 	EventTagCompat bool
+	// Orch keeps the orchestration records of SPEC 19.1. Nil for a hub
+	// that keeps none, which reports that rather than losing a run
+	// quietly.
+	Orch     *OrchStore
+	orchOnce sync.Once
+
 	// Runners is the runner registry of SPEC 19.2, built on first use.
 	Runners     *Runners
 	runnersOnce sync.Once

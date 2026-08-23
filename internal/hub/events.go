@@ -59,6 +59,9 @@ func tagEnroll(node, state string) string { return "halite/node/" + node + "/enr
 func tagKey(node, action string) string   { return "halite/key/" + node + "/" + action }
 func tagRunNew(jid string) string         { return "halite/run/" + jid + "/new" }
 func tagRunRet(jid string) string         { return "halite/run/" + jid + "/ret" }
+func tagOrchNew(jid string) string        { return "halite/run/" + jid + "/orch/new" }
+func tagOrchRet(jid string) string        { return "halite/run/" + jid + "/orch/ret" }
+func tagOrchStep(jid, step string) string { return "halite/run/" + jid + "/orch/step/" + step }
 func tagState(jid, node, result string) string {
 	return "halite/state/" + jid + "/" + node + "/" + result
 }

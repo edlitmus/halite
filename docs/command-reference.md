@@ -214,7 +214,7 @@ startup rather than treating the absence as permission.
 | `salt '*' saltutil.sync_grains` | pushed automatically on `grains_refresh_interval` | works |
 | `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 5 |
 
-| `salt-run state.orchestrate` | `halite-hub orch` | phase 3 |
+| `salt-run state.orchestrate` | `halite-hub orch run <sls>` | works |
 | `salt-api` | `halite-api serve` | phase 4 |
 
 `run` exits 0 when every node succeeded, 1 when one failed, and 3 when a
@@ -271,7 +271,7 @@ answer from the binary, so they work when the hub does not.
 | `salt-run event.send <tag>` | `halite-hub runner event.send <tag>` | works |
 | `salt-run survey.hash <jid>` | `halite-hub runner survey.hash <jid>` | works |
 | `salt-run saltutil.refresh_pillar` | `halite-hub runner saltutil.refresh_pillar` | works |
-| `salt-run state.orchestrate` | `halite-hub runner state.orchestrate` | phase 3 |
+| `salt-run state.orchestrate <sls>` | `halite-hub orch run <sls>` | works |
 | `salt-run mine.get` | `halite-hub runner mine.get` | phase 3 |
 | `salt-run queue.process_queue` | `halite-hub runner queue.process_queue` | phase 3 |
 | `salt-run net.find` | `halite-hub runner net.find` | phase 3 |

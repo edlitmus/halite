@@ -99,6 +99,14 @@ type Runner struct {
 	FailHard bool
 	// Progress is called before each chunk runs, for a live display.
 	Progress func(chunk *state.Chunk, index, total int)
+	// Seed presents chunks that already ran, by chunk ID, with the
+	// result to show a requisite that points back at one. A seeded
+	// chunk is not executed again.
+	//
+	// It is what resuming a run needs: one that picks up at step four
+	// must see steps one to three as they finished, or every requisite
+	// pointing back at them refuses and the resumed run does nothing.
+	Seed map[string]states.Result
 	// Now is the clock, overridable for a test.
 	Now func() time.Time
 	// Sleep is how a retry waits, overridable for a test.
@@ -134,6 +142,16 @@ func (r *Runner) Run(chunks []*state.Chunk) *RunResult {
 			sr.Skipped = true
 			sr.Result = states.False(fmt.Sprintf(
 				"This state was not attempted: the run was aborted by failhard on %s.", out.AbortedBy))
+			out.Results = append(out.Results, sr)
+			continue
+		}
+
+		if seeded, already := r.Seed[ch.ID]; already {
+			// Skipped, because it was not run *in this run*, and a
+			// resumed run that reported step one as freshly succeeded
+			// would be claiming work it did not do.
+			sr.Skipped = true
+			sr.Result = seeded
 			out.Results = append(out.Results, sr)
 			continue
 		}
@@ -381,10 +399,12 @@ func (r *Runner) evalCondition(ch *state.Chunk, cond any) (bool, error) {
 // chunkContext is the module context with the chunk's per-state execution
 // options bound to it.
 func (r *Runner) chunkContext(ch *state.Chunk) *exec.Context {
-	if ch.Opts.RunAs == "" && ch.Opts.Umask == "" {
-		return r.Ctx
-	}
+	// Always a copy, never the shared context. A module that writes to
+	// the one it is given would otherwise change it for every state
+	// after it -- which is how a `--test` job once put a node into test
+	// mode permanently.
 	c := *r.Ctx
+	c.StateID = ch.ID
 	c.RunAs = ch.Opts.RunAs
 	c.Umask = ch.Opts.Umask
 	return &c

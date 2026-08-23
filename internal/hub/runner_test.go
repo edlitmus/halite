@@ -287,12 +287,12 @@ func TestAPendingRunnerSaysWhenItArrives(t *testing.T) {
 	l := newLab(t).withJobs(t)
 	op := l.operator(t, "ed")
 
-	res := call(t, op, "state.orchestrate")
+	res := call(t, op, "mine.get")
 	if res.Success {
-		t.Fatal("orchestration is not built and reported success")
+		t.Fatal("the mine is not built and reported success")
 	}
 	if !strings.Contains(res.Error, "phase 3") {
-		t.Errorf("state.orchestrate should name its phase: %s", res.Error)
+		t.Errorf("mine.get should name its phase: %s", res.Error)
 	}
 }
 

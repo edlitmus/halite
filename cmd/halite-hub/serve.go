@@ -181,6 +181,15 @@ func runServe(args *cli.Args) int {
 	}
 	nodes.StaleAfter = h.cfg.Duration("grain_stale_after", time.Hour)
 
+	// SPEC 19.1 keeps an orchestration as a first-class object with its
+	// own timeline, which is what makes `orch show` and `orch resume`
+	// possible. It is durable state, beside the job cache.
+	orchestrations, err := hub.OpenOrchStore(
+		filepath.Join(h.cfg.String("state_dir", config.DefaultStateDir), "orch"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
 	groups, err := nodegroupsFrom(h.cfg)
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -268,6 +277,7 @@ func runServe(args *cli.Args) int {
 		PingInterval:   h.cfg.Duration("hub_alive_interval", 30*time.Second),
 		Jobs:           jobs,
 		Nodes:          nodes,
+		Orch:           orchestrations,
 		Nodegroups:     groups,
 		Files:          files,
 		HashType:       h.cfg.String("hash_type", "sha256"),

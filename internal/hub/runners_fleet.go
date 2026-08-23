@@ -373,22 +373,35 @@ func registerSaltutilRunner(r *Runners) {
 // strength of the runner grant alone would turn the narrower permission
 // into the wider one.
 func (c *RunnerContext) dispatch(sub Submission) (*job.Job, error) {
-	decision := c.Server.Policy.Authorize(policy.Request{
-		Principal: c.Principal,
+	return c.Server.DispatchAs(c.Principal, sub)
+}
+
+// DispatchAs sends a fleet job on a principal's behalf, authorizing it
+// as a fleet job first.
+//
+// This is the escalation SPEC 18.3 describes, met one layer earlier. A
+// `runners:` grant says the principal may call `saltutil.refresh_pillar`
+// on the hub, and an orchestration grant says they may run one. Neither
+// says they may run a function against every node in the estate, and
+// dispatching on the strength of the outer grant alone would turn the
+// narrower permission into the wider one.
+func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) {
+	decision := s.Policy.Authorize(policy.Request{
+		Principal: principal,
 		Target:    sub.Target,
 		Fun:       sub.Fun,
 		Arg:       sub.Arg,
 		Kwarg:     sub.Kwarg,
 	})
 	if !decision.Allowed {
-		c.Server.warn("runner's job refused by policy",
-			"principal", c.Principal, "target", sub.Target, "fun", sub.Fun,
+		s.warn("a job dispatched on a principal's behalf was refused by policy",
+			"principal", principal, "target", sub.Target, "fun", sub.Fun,
 			"reason", decision.Reason)
-		return nil, fmt.Errorf("%s may call this runner but not %s against %q: %s",
-			c.Principal, sub.Fun, sub.Target, decision.Reason)
+		return nil, fmt.Errorf("%s may ask for this but not %s against %q: %s",
+			principal, sub.Fun, sub.Target, decision.Reason)
 	}
-	sub.Submitter = c.Principal
-	return c.Server.Dispatch(sub)
+	sub.Submitter = principal
+	return s.Dispatch(sub)
 }
 
 func (c *RunnerContext) needAuthority() error {
