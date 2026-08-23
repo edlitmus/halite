@@ -125,6 +125,15 @@ type Signature struct {
 	// Privileges names what the function needs, such as "root".
 	Privileges []string
 
+	// AnyKwargs accepts keyword arguments the signature does not name,
+	// instead of refusing them.
+	//
+	// It exists for a function that is declared and not built: its real
+	// argument list is the one it will have, and refusing an argument
+	// with "is not a parameter of this function" tells a caller the
+	// wrong thing about a function whose actual answer is "not yet".
+	AnyKwargs bool
+
 	// ArbitraryCode marks a function that can run whatever the caller
 	// asks. These are never granted by a wildcard in the RBAC policy;
 	// granting them requires naming them. SPEC section 23.5.
@@ -273,6 +282,14 @@ func (s Signature) Bind(args []any, kwargs *value.Map) (*value.Map, []error) {
 			name := value.KeyString(e.Key)
 			p, ok := s.Param(name)
 			if !ok {
+				if s.AnyKwargs {
+					// A function that has not been written yet has no
+					// argument list to check against, and refusing one
+					// would answer a question the caller did not ask.
+					out.Set(name, e.Val)
+					used[name] = true
+					continue
+				}
 				errs = append(errs, &ArgError{
 					Function: s.Name(), Param: name,
 					Msg: "is not a parameter of this function",

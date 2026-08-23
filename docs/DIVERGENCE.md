@@ -206,7 +206,7 @@ the *protocol*.
 
 ## 2. Module coverage
 
-The build ships **43 execution modules / 219 functions** and **20 state
+The build ships **44 execution modules / 231 functions** and **20 state
 modules / 56 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -269,7 +269,7 @@ different reason is given.
 | `pkgrepo` | not implemented | 0 | |
 | `ps` | not implemented | 0 | process enumeration is per-platform; FreeBSD needs `kvm` or `sysctl kern.proc` |
 | `reboot` | not implemented | 0 | |
-| `schedule` | not implemented | 0 | phase 3 |
+| `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
 | `selinux` | not implemented | 0 | Linux only; no host to verify on |
 | `shadow` | not implemented | 0 | |
 | `state` | not implemented | 0 | reachable as `halite-node state`, not as a callable module function |

@@ -68,6 +68,7 @@ func New() *Registries {
 	registerZFS(r)
 	registerSys(r)
 	registerBeacons(r)
+	registerSchedule(r)
 	return r
 }
 

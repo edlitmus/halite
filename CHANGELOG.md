@@ -236,9 +236,9 @@ Both corpora are enforced in both directions — an unrecorded disagreement
 fails, and so does a recorded one that has been fixed — so neither can
 quietly go stale.
 
-### 43 execution modules, 20 state modules
+### 44 execution modules, 20 state modules
 
-219 execution functions and 56 state functions, against a specification
+231 execution functions and 56 state functions, against a specification
 naming roughly 90 modules and 46. Every one is listed, with its
 parameters, in [docs/modules.md](docs/modules.md); every gap is listed in
 [docs/DIVERGENCE.md](docs/DIVERGENCE.md).

@@ -108,6 +108,7 @@ Read by the node agent.
 | `template_lstrip_blocks` | `false` | 10.2.1 | Jinja lstrip_blocks. |
 | `template_trim_blocks` | `false` | 10.2.1 | Jinja trim_blocks. |
 | `test` | `false` | 11.6 | Run every state in test mode by default. |
+| `timezone` | `<the node's local zone>` | 20.1 | The time zone schedules evaluate in, as an IANA name. Each job may override it. |
 | `top_file_merging_strategy` | `merge` | 11.2 | merge, same, or merge_all. |
 | `tracing` | `off` | 26.3 | off or otlp. |
 | `undefined` | `strict` | 10.2.6 | strict or permissive name resolution in templates. |

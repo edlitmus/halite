@@ -110,6 +110,7 @@ var Keys = []Key{
 	{"mine_functions", nodeOnly, "", "What this node publishes to the mine.", "19.5"},
 	{"mine_interval", nodeOnly, "60", "Mine publication interval in minutes.", "19.5"},
 	{"schedule", nodeOnly, "", "Scheduled jobs.", "20.1"},
+	{"timezone", nodeOnly, "<the node's local zone>", "The time zone schedules evaluate in, as an IANA name. Each job may override it.", "20.1"},
 	{"beacons", nodeOnly, "", "Beacon configuration.", "16.1"},
 	{"reactor", hubOnly, "", "Event tag globs to reaction SLS.", "18.1"},
 	{"reactor_workers", hubOnly, "2 x NumCPU", "Reactor worker pool size.", "18.2"},

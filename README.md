@@ -144,8 +144,8 @@ had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
-this build ships 43 execution modules and 20 state modules against a
-specification naming roughly 90 and 46 — 219 execution functions across 43
+this build ships 44 execution modules and 20 state modules against a
+specification naming roughly 90 and 46 — 231 execution functions across 44
 modules and 56 state functions across 20. FreeBSD is the platform it is
 verified on; `make test-linux` runs the suite as Linux binaries under this
 host's compat layer, which covers the platform-neutral code and the

@@ -324,6 +324,7 @@ func runConnect(args *cli.Args) int {
 	go n.postReturns(ctx, args, returns)
 	go n.refreshGrains(ctx, args)
 	n.startBeacons(ctx)
+	n.startSchedule(ctx)
 
 	backoff := time.Second
 	const maxBackoff = time.Minute
@@ -619,6 +620,14 @@ func (n *node) postReturns(ctx context.Context, args *cli.Args, returns <-chan *
 				return
 			}
 			if ctx.Err() != nil {
+				return
+			}
+			if transport.Permanent(err) {
+				// The hub understood and said no. Retrying a refusal
+				// is how a node spends its evening arguing with a hub
+				// that has already answered.
+				n.log.Warn("the hub refused a return",
+					"jid", string(ret.JID), "error", err.Error())
 				return
 			}
 			n.log.Warn("could not post a return", "jid", string(ret.JID), "error", err.Error())

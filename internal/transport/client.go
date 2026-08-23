@@ -153,10 +153,47 @@ func marshal(v any) ([]byte, error) {
 
 func decodeError(path string, payload []byte, status int) error {
 	var e Error
+	msg := fmt.Sprintf("the hub answered %d", status)
+	code := ""
 	if err := json.Unmarshal(payload, &e); err == nil && e.Error != "" {
-		return fmt.Errorf("%s: %s", path, e.Error)
+		msg, code = e.Error, e.Code
 	}
-	return fmt.Errorf("%s: the hub answered %d", path, status)
+	if permanentStatus(status) {
+		return &RefusedError{Path: path, Status: status, Code: code, Msg: msg}
+	}
+	return fmt.Errorf("%s: %s", path, msg)
+}
+
+// RefusedError is an answer that will not change on a retry: the hub
+// understood the request and said no.
+//
+// Typed, because a caller that cannot tell a refusal from a fault
+// retries the refusal. A node posting the return of a job the hub has
+// no record of did exactly that, five times with backoff, for every
+// scheduled run.
+type RefusedError struct {
+	Path   string
+	Status int
+	Code   string
+	Msg    string
+}
+
+func (e *RefusedError) Error() string { return e.Path + ": " + e.Msg }
+
+// permanentStatus reports whether a status means "not on a retry
+// either". Timeout and too-many-requests are the two that do not.
+func permanentStatus(status int) bool {
+	switch status {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return false
+	}
+	return status >= 400 && status < 500
+}
+
+// Permanent reports whether retrying an error is pointless.
+func Permanent(err error) bool {
+	var refused *RefusedError
+	return errors.As(err, &refused)
 }
 
 // Health asks the one endpoint that needs no certificate.

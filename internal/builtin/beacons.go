@@ -22,8 +22,9 @@ func registerBeacons(r *Registries) {
 		return exec.Module{
 			Sig: signature.Signature{
 				Module: "beacons", Function: function, Doc: doc,
-				TestMode: signature.TestNotApplicable,
-				Section:  "16.1",
+				AnyKwargs: true,
+				TestMode:  signature.TestNotApplicable,
+				Section:   "16.1",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return nil, fmt.Errorf(

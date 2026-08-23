@@ -411,8 +411,9 @@ func registerSaltutil(r *Registries) {
 		return exec.Module{
 			Sig: signature.Signature{
 				Module: module, Function: function, Doc: doc,
-				TestMode: signature.TestNotApplicable,
-				Section:  "24.5",
+				AnyKwargs: true,
+				TestMode:  signature.TestNotApplicable,
+				Section:   "24.5",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return nil, fmt.Errorf(
