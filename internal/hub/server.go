@@ -76,6 +76,24 @@ type Server struct {
 	Policy *policy.Policy
 
 	jobClock job.Clock
+	// background counts the work the hub starts outside a request --
+	// queued delivery to a node that has just connected. Serve waits
+	// for it, because a hub that reports it has stopped while a
+	// goroutine is still writing a job record has not stopped.
+	background sync.WaitGroup
+}
+
+// goBackground runs work that outlives the request that started it,
+// under the hub's own accounting.
+//
+// A bare `go` here is how a job record gets written after the hub is
+// gone: nothing waits for it, so nothing can know it finished.
+func (s *Server) goBackground(work func()) {
+	s.background.Add(1)
+	go func() {
+		defer s.background.Done()
+		work()
+	}()
 }
 
 // clock assigns job identifiers that do not collide.

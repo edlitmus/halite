@@ -76,7 +76,7 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 	// Anything this node missed while it was away, per SPEC 9.5's
 	// `queue` policy. After the stream is open, so a delivery has
 	// somewhere to go.
-	go s.deliverQueued(nodeID)
+	s.goBackground(func() { s.deliverQueued(nodeID) })
 
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)

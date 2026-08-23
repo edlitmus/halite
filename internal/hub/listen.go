@@ -48,6 +48,14 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 		_ = srv.Shutdown(shutdown)
 	}()
 	err := srv.Serve(ln)
+
+	// The work the hub started for itself is not a request and is not
+	// drained by Shutdown. A queued job being delivered to a node that
+	// has just connected is written after the handler that started it
+	// returned, and without this the hub reports it has stopped while
+	// that write is still going into the job cache.
+	s.background.Wait()
+
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
