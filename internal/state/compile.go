@@ -543,6 +543,19 @@ func (c *Compiler) validate(chunks []*Chunk, out *Compiled) {
 			out.Diags.Add(ch.Pos, ch.SLS, ch.ID, "%v", err)
 		}
 
+		// `parallel: True` is parsed and nothing reads it: this build
+		// runs a low state in one order, one chunk at a time. Salt runs
+		// the state in a separate process, so a tree that uses it to
+		// overlap two slow states gets neither the overlap nor a word
+		// about it. Warning rather than refusing, because sequential
+		// execution of a parallel state is correct, only slower.
+		if ch.Opts.Parallel {
+			out.Diags.Warn(ch.Pos, ch.SLS, ch.ID,
+				"%s: `parallel: True` is accepted and this build runs every state in "+
+					"order, one at a time; the state runs, and it does not overlap "+
+					"with its neighbours", ch.Func())
+		}
+
 		// An argument this build accepts and does not act on is a
 		// warning at the line that wrote it, so that a tree carrying one
 		// compiles and its author still finds out.

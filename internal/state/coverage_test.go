@@ -846,3 +846,40 @@ a:
 		}
 	}
 }
+
+// `parallel: True` was parsed into the low state and read by nothing, so
+// a tree using it to overlap two slow states got neither the overlap nor
+// a word about it. That is the accept-but-ignore defect, in the option
+// parser rather than in a module signature.
+func TestParallelIsAcceptedAndSaysSo(t *testing.T) {
+	compiled := compile(t, map[string]string{"base|web": `
+a:
+  test.nop:
+    - parallel: True
+`}, "web")
+	if err := compiled.Err(); err != nil {
+		t.Fatalf("`parallel` should not stop compilation: %v", err)
+	}
+	if len(compiled.Low) != 1 || !compiled.Low[0].Opts.Parallel {
+		t.Fatalf("the option was not parsed: %+v", compiled.Low)
+	}
+
+	var warned bool
+	for _, d := range compiled.Diags.Warnings() {
+		if strings.Contains(d.Msg, "parallel") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("no warning was reported: %v", compiled.Diags.Warnings())
+	}
+
+	// A state that does not ask for it says nothing.
+	quiet := compile(t, map[string]string{
+		"base|web": "a:\n  test.nop: []\n"}, "web")
+	for _, d := range quiet.Diags {
+		if strings.Contains(d.Msg, "parallel") {
+			t.Errorf("a state that did not ask for it warned: %v", d.Msg)
+		}
+	}
+}

@@ -615,6 +615,21 @@ platform it applies to.
 
 ---
 
+
+### 4.4 `parallel: True` runs in order
+
+SPEC section 11.7 lists `parallel` among the per-state options, and Salt
+runs such a state in a separate process so that two slow states overlap.
+This build parses the option into the low state and runs every chunk in
+one order, one at a time.
+
+It was read by nothing and said nothing, which is the accept-but-ignore
+defect: a tree using it to overlap two slow states got neither the
+overlap nor a word about it. The compiler now warns at the line that
+wrote it. Warning rather than refusing, because running a parallel state
+in order is correct, only slower — and refusing would stop a tree Salt
+runs.
+
 ## 5. Test coverage against SPEC 31
 
 ### 5.1 Branch coverage
