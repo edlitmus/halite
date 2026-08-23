@@ -287,6 +287,64 @@ orchestration reads unchanged.
 A runner that ran and failed exits 1 and prints its error; only a
 refusal, an unknown name, or a malformed call is a transport failure.
 
+## The scheduler
+
+`schedule:` on a node runs jobs on a clock, with no hub involved. That
+is how a node keeps itself converged, and it matters most exactly when
+the hub cannot be reached.
+
+```yaml
+schedule:
+  nightly_highstate:
+    function: state.apply
+    cron: '17 3 * * *'
+    splay: 900
+    maxrunning: 1
+    return_job: True
+  collect_inventory:
+    every: 15m
+    function: grains.items
+    return_job: False
+    run_on_start: True
+```
+
+| Salt | halite | Status |
+|---|---|---|
+| `schedule:` in the minion config | `schedule:` in the node config | works | <!-- lexicon:allow -->
+| `cron: '17 3 * * *'` | same | works |
+| `@hourly`, `@daily`, `@weekly`, `@monthly`, `@yearly`, `@reboot` | same | works |
+| `seconds`, `minutes`, `hours`, `days` | same, and they add up | works |
+| `every: 15m` | same | works |
+| `when`, `once`, `once_fmt` | same; `once_fmt` is Python's strftime | works |
+| `after`, `until` | same | works |
+| `range` with `invert` | same | works |
+| `skip_during_range`, `skip_explicit` | same | works |
+| `splay`, as an integer or a start/end range | same | works |
+| `maxrunning`, `return_job`, `run_on_start`, `enabled`, `offset`, `metadata` | same | works |
+| no equivalent | `catchup: true` runs a missed job once on start | works |
+| `timezone: <IANA name>` | same, from Go's embedded database | works |
+| `salt-call schedule.list` | `halite-node call schedule.list` | works |
+| no equivalent | `halite-node call schedule.show_next_fire_time name=…` | works |
+| `schedule.add`, `modify`, `delete`, `enable`, `disable`, `enable_job`, `disable_job`, `run_job`, `save`, `reload` | same | not built |
+| `L`, `W`, `#`, `?`, a seconds field in cron | refused by name | by design |
+| `jid_include` | accepted and means nothing here | by design |
+
+Two cron behaviours are worth stating because they surprise people:
+
+**Both day fields restricted means either.** `0 0 1 * mon` runs on the
+first of the month *and* on every Monday. That is what every cron does,
+and a crontab moved here has to keep meaning what it meant.
+
+**Daylight saving.** Schedules evaluate on the wall clock. An hour that
+repeats runs a job in it once, not twice. An hour that is skipped runs a
+job in it once, at the transition. SPEC 20.1 specifies both because they
+are where missed runs come from.
+
+A scheduled job's return goes to the `local` returner: append-only
+NDJSON at `<state_dir>/returns.ndjson`. Sending it to the hub's job
+cache is `local_cache`, which is not built — the hub refuses a return
+for a job it never dispatched, and that refusal is correct.
+
 ## Beacons
 
 `beacons:` in the node configuration starts the watchers. What they see

@@ -1390,7 +1390,9 @@ collapsing two identical events into one reaction, and a hub restart
 resuming the reactor from its recorded offset; the `filechanges` and
 `diskusage` beacons running on a real node, firing on a real change to a
 watched file, reaching the hub's bus, and the reactor acting on one --
-the whole automation loop, end to end; a runner declared and not built naming its phase; an
+the whole automation loop, end to end; a schedule running `test.ping`
+every five seconds and a `cron` job reporting its next fire time, with
+the returns landing in the node's own NDJSON log; a runner declared and not built naming its phase; an
 unknown name listing its module's runners; and the two-stage
 authorization — an operator holding `runners: ['*']` and nothing else
 calls `manage.status` and is refused `saltutil.refresh_grains` because
@@ -1408,8 +1410,11 @@ a causality chain long enough to be broken, or an event arriving while
 the hub was down. On the beacon side it does not cover `load`,
 `memusage`, `service`, `cert_info`, or `status` against real thresholds,
 `delay`, `disable_during_state_run` during an actual state run, or a
-beacon left running long enough to exercise the coalescing window. It
-has been run on FreeBSD only.
+beacon left running long enough to exercise the coalescing window. On
+the scheduler side it does not cover a `cron` job actually firing, a
+daylight-saving transition on a real node, `catchup` after a real
+outage, `maxrunning` under a job that overruns, or `splay`. It has been
+run on FreeBSD only.
 
 ## 6. Everything else not started
 
@@ -1665,11 +1670,47 @@ What is **not** built in beacons:
   filesystem once a second for a threshold that moves in hours is a cost
   with no benefit, and every example in SPEC 16.1 names an interval.
 
-The rest of phases 3 through 6 does not exist: no scheduler, no mine, no
-API, no OIDC or LDAP, no webhooks, no returners, no bridge protocol, no
-gitfs, no s3fs, no agentless mode, no relays, no FIPS artifact set, no
-detached job signing, no signed state trees, and no backtracking regex
-engine.
+**The scheduler followed.** `schedule:` runs jobs on a clock with no hub
+involved, which is how a node keeps itself converged during a hub
+outage. The cron parser is written directly — five fields, ranges,
+steps, lists, names, the `@` shorthands, and standard cron's rule that
+both day fields restricted means either matches. `L`, `W`, `#`, `?`,
+and a seconds field are refused by name.
+
+Time handling follows SPEC 20.1 exactly, because it is where missed runs
+come from: the walk is over wall-clock fields rather than absolute time,
+so a repeated hour runs a job once and a skipped hour runs it once at
+the transition. The transition instant is computed rather than read off
+the result, because Go resolves a nonexistent local time to one side of
+the gap without documenting which.
+
+What is **not** built in the scheduler:
+
+- **Runtime management.** `schedule.list` and `show_next_fire_time`
+  answer from the configuration. The ten that change a running node's
+  schedule — `add`, `modify`, `delete`, `enable`, `disable`,
+  `enable_job`, `disable_job`, `run_job`, `save`, `reload` — need a
+  handle on the running engine and somewhere to write the change down,
+  and they say so.
+- **`/etc/halite/schedule.d/` and pillar-delivered schedules.** SPEC
+  20.1 names three sources; the node configuration is the one that
+  works.
+- **A node's own reactor** (SPEC 20.2). A beacon on a node reaches the
+  hub's reactor; there is no local bus and no local reaction, so
+  self-healing still needs the hub.
+- **Returners** (SPEC 20.3). `local` is built, which is the default:
+  append-only NDJSON on the node, and it is where a scheduled job's
+  return goes. `local_cache` is not — the hub refuses a return for a job
+  it never dispatched — and neither are `syslog`, `file`, `webhook`, or
+  `smtp`. A `returner:` naming any of them is refused at startup rather
+  than accepted and written nowhere.
+- **`jid_include`.** Accepted and means nothing here: every job this
+  scheduler runs is recorded under a jid either way.
+
+The rest of phases 3 through 6 does not exist: no mine, no API, no OIDC
+or LDAP, no webhooks, no bridge protocol, no gitfs, no s3fs, no
+agentless mode, no relays, no FIPS artifact set, no detached job
+signing, no signed state trees, and no backtracking regex engine.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.

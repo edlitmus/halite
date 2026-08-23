@@ -155,6 +155,34 @@ contract; it does not dispatch an execution function at all, because
 finding out what a test run would do by running it is how a test run
 becomes a deployment.
 
+### A scheduler that gets the clock right
+
+`schedule:` runs jobs on a node with no hub involved, which is how a
+node keeps itself converged and matters most exactly when the hub cannot
+be reached.
+
+The cron parser is written directly. It implements standard cron's
+surprising rule — both day fields restricted means *either* matches — so
+a crontab moved here keeps meaning what it meant, and it refuses `L`,
+`W`, `#`, `?`, and a seconds field by name, because a `0 0 L * *` that
+quietly runs on the first of the month is worse than one that will not
+load.
+
+Time handling is where missed runs come from, and SPEC 20.1 spells it
+out. Schedules evaluate on the wall clock out of Go's embedded time zone
+database, so the node needs no tzdata package. An hour that repeats runs
+a job in it once rather than twice. An hour that is skipped runs it once
+at the transition — computed, because Go resolves a nonexistent local
+time to one side of the gap without saying which.
+
+`splay` comes from crypto/rand: a fleet whose splay is predictable has
+arrival times anyone who knows the schedule can predict.
+
+A scheduled job's return goes to the `local` returner — append-only
+NDJSON on the node — which is what SPEC 20.3 makes the default. Sending
+it to the hub is `local_cache`, and the hub refuses a return for a job
+it never dispatched.
+
 ### Beacons, and the loop closes
 
 `beacons:` on a node starts the watchers of SPEC section 16, and what

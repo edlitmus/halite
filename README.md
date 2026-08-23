@@ -77,7 +77,7 @@ Delivery follows the phases in SPEC section 32.
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
-| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Started**: runners, orchestration, reactors, and beacons are built; the scheduler and the mine are not |
+| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Started**: runners, orchestration, reactors, beacons, and the scheduler are built; the mine is not |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
@@ -132,9 +132,15 @@ edited by hand, and the estate does something about it. A beacon is a
 function over the node's own execution modules, so it works wherever
 they do and cannot disagree with the state that manages the same thing.
 
-What is not built is what SPEC puts in later phases: the scheduler and
-the mine are the rest of phase 3; the API is phase 4; gitfs, agentless
-mode, and Windows are phase 5.
+The scheduler followed, so a node runs jobs on a clock with no hub
+involved — which is what keeps it converged during a hub outage. The
+cron parser is written directly, refuses the extensions it does not
+implement by name rather than misreading them, and handles both
+daylight-saving transitions the way SPEC 20.1 specifies.
+
+What is not built is what SPEC puts in later phases: the mine is the
+rest of phase 3; the API is phase 4; gitfs, agentless mode, and Windows
+are phase 5.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
