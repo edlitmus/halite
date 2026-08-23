@@ -104,6 +104,7 @@ nothing and an incident can be reconstructed afterwards.
 | `salt-run state.event` | `halite-hub event listen` | works |
 | `salt-run state.event tagmatch='salt/job/*'` | `halite-hub event listen --tag 'halite/job/**'` | works |
 | `salt-call event.send tag data` | `halite-node event send <tag> '{"k":"v"}'` | works |
+| `event.send` from a state or a job | `halite-hub run '*' event.send tag=… data='{"k":"v"}'` | works |
 | no equivalent | `halite-hub event listen --from earliest` (replay) | works |
 | no equivalent | `halite-hub event tags` | works |
 | `salt-api` event stream | SSE and WebSocket at `/v1/events` | phase 4 |

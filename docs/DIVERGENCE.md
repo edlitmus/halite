@@ -1343,6 +1343,9 @@ real listener with a real CA, and running it still found one defect:
 | Found by running it | What it was |
 |---|---|
 | `manage.versions` reported a matched fleet as mismatched | The hub compared `version.Version` against the string a node reports, which is `version.String()` — the same build, with the commit appended. Every node in an estate running the hub's own build was listed as behind it. |
+| Every structured argument reached the hub as a position record | The operator's command line parses `data='{"a":1}'` into the ordered model, and the transport marshals its bodies with `encoding/json`, which sees the model's unexported entries and its one exported field: what arrived was `{"Pos":{"File":"","Line":0,"Col":0}}`. This is the same defect the state return had, in the other direction, and it had been there since `run` landed — `run '*' state.apply pillar='{"a":1}'` included. `value.Map` marshals as its mapping now, which fixes it everywhere the standard encoder is reached rather than at each call site. |
+| A 64-bit integer in a job argument or an event came back changed | `9007199254740993` came back as `...992` at three decoders: the node's job stream, the hub's event ingest, and every read off the event log. SPEC 6.4 says it must not. They decode with `UseNumber` now and lift the result into the model. One test asserted the float64 behaviour and was holding it in place. |
+| `event.send` and `pillar.refresh` failed on every node | Both were registered as stubs saying they needed the hub, "which arrives in phase 2", for as long as phase 2 had been finished. The `saltutil.refresh_pillar` runner dispatched `pillar.refresh` to nodes that could only refuse it. An audit now reads the stubs out of the source and fails on any naming a delivered phase. |
 
 What the lab run establishes: `manage.status`, `up`, `versions`, and
 `list_state` against a connected node and against nothing; `key.list`
@@ -1353,8 +1356,10 @@ the runner's own call recorded in the same cache; `cache.grains` and
 hub's tree; `event.send` and `event.replay` round-tripping through the
 durable bus with the principal taken from the certificate;
 `nodegroups.expand` refusing a name that is not defined;
-`saltutil.refresh_grains` dispatching a real job to a real node;
-`error.error`; a runner declared and not built naming its phase; an
+`saltutil.refresh_grains` and `saltutil.refresh_pillar` dispatching real
+jobs to a real node; `event.send` called as a module on the node, with a
+payload holding a nested mapping and a 64-bit integer, arriving on the
+hub's log unchanged; `error.error`; a runner declared and not built naming its phase; an
 unknown name listing its module's runners; and the two-stage
 authorization — an operator holding `runners: ['*']` and nothing else
 calls `manage.status` and is refused `saltutil.refresh_grains` because

@@ -82,6 +82,22 @@ convergence. [DIVERGENCE 5.11](docs/DIVERGENCE.md) says what that
 established, what it did not, and the defects it found that the tests had
 not.
 
+### Values keep their type across the wire
+
+An ordered mapping is a mapping wherever it goes, and a 64-bit integer
+is still that integer when it arrives. Neither was true: the standard
+JSON encoder cannot see the ordered model, so every structured argument
+an operator typed reached the hub as a position record —
+`run '*' state.apply pillar='{"a":1}'` among them — and three decoders
+turned every number in a payload into a float64, which SPEC 6.4 says
+they must not.
+
+`event.send` and `pillar.refresh` work on a node with a hub. Both had
+been registered as stubs telling the caller they needed a phase that was
+already delivered, so a tree using either failed on every node. An audit
+now reads the stubs out of the source and fails on any that names a
+phase that has landed.
+
 ### Functions that run on the hub
 
 `halite-hub runner <module.function>` is the old `salt-run`, and the
