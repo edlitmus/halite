@@ -598,13 +598,18 @@ environ.items()
 
 #### `event.send`
 
-Fire an event onto the hub's bus.
+Fire an event onto the hub's bus. The hub namespaces the tag under this node, so a node cannot forge one that looks like the hub's own.
 
 ```
-event.send()
+event.send(tag: string, data: map)
 ```
 
-*SPEC section 24.5*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `tag` | string | *required* | The tag, under this node's namespace. |
+| `data` | map | — | The payload. |
+
+*SPEC section 17.3*
 
 ### `file`
 
@@ -1773,13 +1778,13 @@ pillar.raw()
 
 #### `pillar.refresh`
 
-Ask the hub to recompile this node's pillar.
+Recompile this node's pillar, from the hub or from the local roots, and report how many top-level keys it produced. The run in progress keeps the pillar it started with; the next one uses the rebuilt version.
 
 ```
 pillar.refresh()
 ```
 
-*SPEC section 24.5*
+*SPEC section 12.8*
 
 ### `pip`
 
@@ -2158,13 +2163,13 @@ saltutil.refresh_grains()
 
 #### `saltutil.refresh_pillar`
 
-Ask the hub to recompile this node's pillar.
+Recompile this node's pillar, from the hub or from the local roots, and report how many top-level keys it produced. The run in progress keeps the pillar it started with; the next one uses the rebuilt version.
 
 ```
 saltutil.refresh_pillar()
 ```
 
-*SPEC section 24.5*
+*SPEC section 12.8*
 
 #### `saltutil.sync_all`
 

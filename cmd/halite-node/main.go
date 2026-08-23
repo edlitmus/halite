@@ -174,6 +174,10 @@ type node struct {
 	// node working from its own roots, which is what `--local` and a
 	// node with no hub do.
 	hubPillar func(env string) (*value.Map, error)
+	// events forwards an event to the hub's bus. Nil for a node with
+	// no hub, and `event.send` says so rather than reporting a success
+	// nobody received.
+	events exec.EventSender
 }
 
 // setup loads configuration, resolves the identity, and collects grains.
@@ -444,7 +448,7 @@ func (n *node) compilePillarOrErr() (*value.Map, error) {
 			// `salt['pillar.get']` inside a pillar file sees the pillar
 			// built so far, so the dispatcher is built per render.
 			NewSalt: func(partial *value.Map) template.Dispatcher {
-				return exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.context(partial)}
+				return exec.TemplateDispatcher{Registry: n.registry.Exec, Context: n.pillarContext(partial)}
 			},
 			Env:           n.pillarEnv,
 			NodeID:        n.nodeID,
@@ -491,6 +495,17 @@ func (n *node) context(p *value.Map) *exec.Context {
 	return n.contextFor(p, newJobID())
 }
 
+// pillarContext is the context a pillar file renders under.
+//
+// It is the run context with `pillar.refresh` taken away: the hook
+// recompiles the pillar, and a pillar template that reached it would
+// recompile the pillar it is in the middle of compiling.
+func (n *node) pillarContext(partial *value.Map) *exec.Context {
+	c := n.context(partial)
+	c.RecompilePillar = nil
+	return c
+}
+
 // contextFor is the same with the identifier supplied, so that a job
 // driven from a hub carries the hub's jid all the way down: a module
 // that logs one, and the return that is filed under it, name the same
@@ -507,7 +522,12 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 		Test:     n.test,
 		Files:    n.files,
 		Dispatch: dispatcher{n.registry.Exec},
+		Events:   n.events,
 		Runner:   &exec.OSRunner{},
+		// `pillar.refresh` rebuilds through the same path a run uses,
+		// so a node on a hub asks the hub and a local one recompiles
+		// its roots, without the module knowing which it is.
+		RecompilePillar: n.compilePillarOrErr,
 		Log: func(level, msg string) {
 			// A module names its own level, so the threshold is the
 			// logger's rather than a hard-coded pair.

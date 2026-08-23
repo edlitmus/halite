@@ -19,6 +19,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/job"
+	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
@@ -299,6 +300,7 @@ func runConnect(args *cli.Args) int {
 	if !args.Bool("local", false) {
 		n.useHubTree(client)
 		n.useHubPillar(client)
+		n.useHubEvents(client)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -478,6 +480,39 @@ func (n *node) useHubIfConfigured(args *cli.Args) {
 	client, _ := n.hubClient(args)
 	n.useHubTree(client)
 	n.useHubPillar(client)
+	n.useHubEvents(client)
+}
+
+// useHubEvents lets a module on this node put a record on the hub's
+// bus, which is what `event.send` is.
+func (n *node) useHubEvents(client *transport.Client) {
+	n.events = hubEvents{client: client, log: n.log}
+}
+
+// hubEvents forwards an event to the hub.
+type hubEvents struct {
+	client *transport.Client
+	log    *hlog.Logger
+}
+
+func (h hubEvents) Send(tag string, data map[string]any) error {
+	var encoded json.RawMessage
+	if len(data) > 0 {
+		raw, err := value.EncodeJSON(data, 0)
+		if err != nil {
+			return fmt.Errorf("the event payload will not encode: %w", err)
+		}
+		encoded = raw
+	}
+	res, err := h.client.SendEvent(context.Background(), transport.EventRequest{
+		Tag:  tag,
+		Data: encoded,
+	})
+	if err != nil {
+		return err
+	}
+	h.log.Debug("event sent", "tag", res.Tag, "offset", res.Offset)
+	return nil
 }
 
 // useHubPillar points pillar compilation at the hub.

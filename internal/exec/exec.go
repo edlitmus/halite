@@ -48,6 +48,18 @@ type Context struct {
 	// reaches the execution module that does the work.
 	Dispatch Dispatcher
 
+	// Events puts a record on the bus. Nil on a node with no hub, and
+	// `event.send` says so rather than reporting a success nobody
+	// received.
+	Events EventSender
+
+	// RecompilePillar rebuilds this node's pillar from wherever it comes
+	// from -- the hub, or the local roots -- and backs `pillar.refresh`.
+	//
+	// Nil inside a pillar render, where it would recurse, and in a
+	// context that has no pillar to rebuild.
+	RecompilePillar func() (*value.Map, error)
+
 	// Log receives a line from a module. Nil discards.
 	Log func(level, msg string)
 
@@ -78,6 +90,18 @@ type FileFetcher interface {
 	Hash(env, uri string) (algorithm, digest string, err error)
 	// Exists reports whether a managed URI resolves.
 	Exists(env, uri string) bool
+}
+
+// EventSender puts an event on the bus a node is attached to.
+//
+// An interface rather than the transport client, because the node has
+// one and a test has to be able to see what a module fired without
+// standing a hub up to receive it.
+type EventSender interface {
+	// Send fires one event. The hub namespaces the tag under the node
+	// that sent it, so the tag given here is the suffix and never the
+	// whole thing. SPEC section 17.3.
+	Send(tag string, data map[string]any) error
 }
 
 // Dispatcher calls a module function by name.

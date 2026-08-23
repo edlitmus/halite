@@ -437,16 +437,101 @@ func registerSaltutil(r *Registries) {
 				return true, nil
 			},
 		},
-		notYet("saltutil", "refresh_pillar", "Ask the hub to recompile this node's pillar.", "phase 2"),
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "saltutil", Function: "refresh_pillar",
+				Doc:      refreshPillarDoc,
+				TestMode: signature.TestNotApplicable,
+				Section:  "12.8",
+			},
+			Fn: refreshPillar,
+		},
 		notYet("saltutil", "sync_all", "Fetch the signed, pinned extension bundles this node is entitled to.", "phase 4"),
 		notYet("saltutil", "sync_modules", "Fetch the module extensions this node is entitled to.", "phase 4"),
 		notYet("saltutil", "sync_states", "Fetch the state extensions this node is entitled to.", "phase 4"),
 		notYet("mine", "get", "Read another node's published mine data.", "phase 3"),
 		notYet("mine", "send", "Publish mine data for other nodes to read.", "phase 3"),
-		notYet("event", "send", "Fire an event onto the hub's bus.", "phase 2"),
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "event", Function: "send",
+				Doc: "Fire an event onto the hub's bus. The hub namespaces the tag " +
+					"under this node, so a node cannot forge one that looks like the " +
+					"hub's own.",
+				TestMode: signature.TestNotApplicable,
+				Section:  "17.3",
+				Params: []signature.Param{
+					req("tag", signature.String, "The tag, under this node's namespace."),
+					opt("data", signature.Map, nil, "The payload."),
+				},
+			},
+			Fn: sendEvent,
+		},
 	)
 
 	// pillar.refresh is the new name; the old one is aliased, as SPEC
 	// section 12.8 requires.
-	r.Exec.Add(notYet("pillar", "refresh", "Ask the hub to recompile this node's pillar.", "phase 2"))
+	r.Exec.Add(exec.Module{
+		Sig: signature.Signature{
+			Module: "pillar", Function: "refresh",
+			Doc:      refreshPillarDoc,
+			TestMode: signature.TestNotApplicable,
+			Section:  "12.8",
+		},
+		Fn: refreshPillar,
+	})
+}
+
+// refreshPillarDoc is one sentence for two names, so the pair cannot
+// drift into describing different behaviour.
+const refreshPillarDoc = "Recompile this node's pillar, from the hub or from the local " +
+	"roots, and report how many top-level keys it produced. The run in progress keeps " +
+	"the pillar it started with; the next one uses the rebuilt version."
+
+// refreshPillar backs `pillar.refresh` and `saltutil.refresh_pillar`.
+//
+// It rebuilds rather than invalidating a cache, because there is no
+// cache: a node asks the hub on every run, precisely so that an
+// operator who changes a value sees the next highstate use it. What the
+// function is therefore *for* is finding out now whether the pillar
+// still compiles, rather than at the start of the next state run.
+func refreshPillar(c *exec.Context, args *value.Map) (any, error) {
+	if c.RecompilePillar == nil {
+		return nil, fmt.Errorf("this context has no pillar to rebuild")
+	}
+	p, err := c.RecompilePillar()
+	if err != nil {
+		return nil, err
+	}
+	out := value.NewMap(2)
+	out.Set("refreshed", true)
+	out.Set("keys", int64(p.Len()))
+	return out, nil
+}
+
+// sendEvent backs `event.send`.
+func sendEvent(c *exec.Context, args *value.Map) (any, error) {
+	if c.Events == nil {
+		return nil, fmt.Errorf(
+			"this node has no hub to send an event to; `event.send` needs an enrolled node")
+	}
+	tag, _ := args.Get("tag")
+	name := value.KeyString(tag)
+	if name == "" {
+		return nil, fmt.Errorf("an event needs a tag")
+	}
+
+	data := map[string]any{}
+	if raw, ok := args.Get("data"); ok && raw != nil {
+		m, ok := raw.(*value.Map)
+		if !ok {
+			return nil, fmt.Errorf("the data argument is a mapping, not %s", value.TypeName(raw))
+		}
+		for _, e := range m.Entries() {
+			data[value.KeyString(e.Key)] = e.Val
+		}
+	}
+	if err := c.Events.Send(name, data); err != nil {
+		return nil, err
+	}
+	return true, nil
 }
