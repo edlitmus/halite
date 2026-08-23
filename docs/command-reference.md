@@ -287,6 +287,75 @@ orchestration reads unchanged.
 A runner that ran and failed exits 1 and prints its error; only a
 refusal, an unknown name, or a malformed call is a transport failure.
 
+## Reactors
+
+`reactor:` in the hub configuration maps an event tag glob to the
+reaction SLS the hub runs when a matching event arrives. The SLS syntax
+is Salt's, and so are the four reaction types.
+
+```yaml
+reactor:
+  - 'halite/node/*/start':
+      - /srv/reactor/start.sls
+  - tag: 'halite/beacon/**'
+    sls:
+      - /srv/reactor/beacon.sls
+    principal: 'reactor:beacons'
+    debounce: 5s
+    dedupe_window: 30s
+    dedupe_key: 'path'
+    rate_limit: 600/m
+```
+
+The first form is Salt's and an existing configuration uses it. The
+second carries the SPEC 18.2 controls and the principal, which the first
+has nowhere to put.
+
+```yaml
+# /srv/reactor/beacon.sls
+{% set node = data['id'] %}
+
+restart_nginx:
+  local.service.restart:
+    - tgt: {{ node }}
+    - arg:
+      - nginx
+
+record_it:
+  runner.event.send:
+    - args:
+        tag: halite/audit/nginx_restarted
+        data:
+          node: {{ node }}
+```
+
+| Salt | halite | Status |
+|---|---|---|
+| `reactor:` in the master config | `reactor:` in the hub config | works | <!-- lexicon:allow -->
+| `local.<function>` | same | works |
+| `runner.<function>` | same | works |
+| `wheel.<function>` | same, against one hub-function namespace | works |
+| `caller.<function>` | same, on the node that fired the event | works |
+| `salt-run reactor.list` | `halite-hub runner reactor.list` | works |
+| no equivalent | `halite-hub runner reactor.test --tag … --data …` | works |
+| the reactor runs with full master privilege | each entry names a `principal`, denied by default | works | <!-- lexicon:allow -->
+| single-threaded and serialized | worker pool, bounded queue, ordering by causality chain | works |
+| no equivalent | `debounce`, `dedupe_window`, `rate_limit` per glob | works |
+| a reaction that fails is silent | `halite/reactor/error` on the bus | works |
+| no equivalent | `max_causality_depth` breaks a beacon-reactor loop | works |
+| a lossy bus, so a restart loses events | the reactor records its offset and resumes | works |
+
+The template context is `data`, `tag`, and `id`. `salt` is absent: SPEC
+25.5 restricts the hub's dispatcher to a named safe set, and this build
+gives a reaction none rather than one that has not been audited against
+that list.
+
+A reaction is authorized as its principal, so nothing runs until a
+policy binds that principal and says what it may do. `reactor.test`
+prints the decision alongside the plan, because "it renders" and "it is
+permitted" are different questions and the second is the one that fails
+at three in the morning.
+
 ## Orchestration
 
 `halite-hub orch run <sls>` is the old `salt-run state.orchestrate`. The

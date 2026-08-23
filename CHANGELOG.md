@@ -155,6 +155,33 @@ contract; it does not dispatch an execution function at all, because
 finding out what a test run would do by running it is how a test run
 becomes a deployment.
 
+### Reactors, authorized and unserialized
+
+`reactor:` maps an event tag glob to the reaction SLS the hub runs when
+a matching event arrives. The four reaction types and the SLS syntax are
+Salt's, so an existing reaction translates unchanged. Two things are
+not.
+
+A reaction runs as a named principal and is authorized by the policy
+exactly like a human caller. Salt's reactor runs with the control
+plane's full privilege, so a node that can fire the right event can
+cause arbitrary fleet-wide execution; an entry here that names no
+principal gets a restricted default bound to nothing, and stays refused
+until someone writes what it may do.
+
+And it does not serialize. Salt's reactor is single-threaded, so a burst
+becomes a backlog and the backlog becomes an outage — the most common
+scaling failure in a Salt estate. This is a worker pool with same-chain
+events hashed to a fixed worker, a bounded queue that drops the oldest
+and reports the count rather than blocking the bus reader, and per-glob
+debounce, deduplication, and rate limiting. A reaction that fails to
+render or dispatch says so on the bus; Salt fails that silently, and the
+event does not come again.
+
+`runner reactor.test` renders what a tag would fire and prints what it
+would dispatch — including what the policy would decide — without
+dispatching any.
+
 ### The dialects, held to their own specifications
 
 The **YAML 1.1 subset** parser of SPEC section 10.1, with ordered

@@ -1381,7 +1381,13 @@ from a templated SLS with `require` between the steps, run in test mode
 and then for real, reaching a real node and a hub runner; a failing
 orchestration whose `onfail` rollback ran; `orch list`, `orch show`, and
 `orch resume --from` carrying a failed step forward and completing;
-`salt.wait_for_event` blocking until an event fired by a node arrived; a runner declared and not built naming its phase; an
+`salt.wait_for_event` blocking until an event fired by a node arrived;
+a configured reactor matching an event a node fired, running both a
+`runner` and a `local` reaction as its own principal and recording both
+in the job cache under it, `reactor.list` and `reactor.test` reporting
+the plan and the policy decision without dispatching, a `dedupe_window`
+collapsing two identical events into one reaction, and a hub restart
+resuming the reactor from its recorded offset; a runner declared and not built naming its phase; an
 unknown name listing its module's runners; and the two-stage
 authorization — an operator holding `runners: ['*']` and nothing else
 calls `manage.status` and is refused `saltutil.refresh_grains` because
@@ -1393,7 +1399,10 @@ event, `jobs.prune` against a cache old enough to prune, `key.accept`,
 than through `halite-hub keys`, every runner registered as pending, and
 on the orchestration side `batch` and `subset` on a step, `tolerate_failures`
 against a real second node, `salt.wheel`, and a hub restart in the middle
-of a run. It has been run on FreeBSD only.
+of a run. On the reactor side it does not cover a `caller` reaction, a
+burst large enough to overflow the queue, the rate limiter, `debounce`,
+a causality chain long enough to be broken, or an event arriving while
+the hub was down. It has been run on FreeBSD only.
 
 ## 6. Everything else not started
 
@@ -1571,11 +1580,54 @@ What is **not** built in orchestration:
   dispatcher is not built either, so an orchestration template has none
   rather than one that has not been audited against that list.
 
+**Reactors followed**, which completes the output side of the automation
+loop. `reactor:` maps a tag glob to reaction SLS; the four reaction
+types and the SLS syntax are Salt's, so an existing reaction translates
+unchanged. Two things are not Salt's:
+
+- **A reaction is authorized.** Each entry names a `principal` and is
+  subject to the RBAC policy exactly like a human caller. Salt's reactor
+  runs with the control plane's full privilege, so a node that can fire
+  the right event can cause arbitrary fleet-wide execution. An entry
+  that names no principal gets a restricted default which is bound to
+  nothing, so it is refused until someone writes what it may do. A
+  `caller` reaction runs on the node that fired the event and nowhere
+  else.
+- **It does not serialize.** Salt's reactor is single-threaded, so a
+  burst becomes a backlog and the backlog becomes an outage; SPEC 18.2
+  calls this the most common scaling failure in a Salt estate. Here it
+  is a worker pool with same-chain events hashed to a fixed worker, a
+  bounded queue that drops the oldest and reports the count rather than
+  blocking the bus reader, and per-glob `debounce`, `dedupe_window`, and
+  `rate_limit`. A reaction that fails to render or dispatch emits
+  `halite/reactor/error`; Salt fails that silently and the event does
+  not come again.
+
+Every event the reactor acts on belongs to a causality chain, carried
+into the jobs a reaction dispatches and into the events those produce,
+so the beacon-fires-reactor-changes-the-file loop of SPEC 16.3 is
+countable and is broken at `max_causality_depth`.
+
+What is **not** built in the reactor:
+
+- **A node's own reactor.** SPEC 18.1's `caller` type exists and runs on
+  the node that fired the event, dispatched from the hub. A reactor
+  configured on a node, reacting to its own local bus without the hub,
+  is not built — there is no node-side bus yet (SPEC 17.3).
+- **`salt` in a reaction template.** SPEC 25.5 restricts the hub's
+  dispatcher to a named safe set, and this build gives a reaction none
+  rather than one that has not been audited against that list. `data`,
+  `tag`, and `id` are bound; `grains` and `pillar` are bound empty.
+- **Correlation from a node-fired event.** A chain that begins with
+  `event.send` on a node carries no identifier of its own, so the
+  reactor names the chain when it first sees the event. A node that
+  wants to join an existing chain cannot say so.
+
 The rest of phases 3 through 6 does not exist: no beacons, no scheduler,
-no reactors, no mine, no API, no OIDC or LDAP, no webhooks, no
-returners, no bridge protocol, no gitfs, no s3fs, no agentless mode, no
-relays, no FIPS artifact set, no detached job signing, no signed state
-trees, and no backtracking regex engine.
+no mine, no API, no OIDC or LDAP, no webhooks, no returners, no bridge
+protocol, no gitfs, no s3fs, no agentless mode, no relays, no FIPS
+artifact set, no detached job signing, no signed state trees, and no
+backtracking regex engine.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.

@@ -77,7 +77,7 @@ Delivery follows the phases in SPEC section 32.
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
-| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Started**: runners and orchestration are built; beacons, the scheduler, reactors, and the mine are not |
+| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Started**: runners, orchestration, and reactors are built; beacons, the scheduler, and the mine are not |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
@@ -119,9 +119,16 @@ is kept as a record with its own jid and a step-by-step timeline, and
 `orch resume <jid> --from <step>` picks a failed deployment up where it
 stopped, which Salt cannot do.
 
-What is not built is what SPEC puts in later phases: reactors, the
-scheduler, beacons, and the mine are the rest of phase 3; the API is
-phase 4; gitfs, agentless mode, and Windows are phase 5.
+Reactors came with it, which completes the output side of the automation
+loop: a tag glob maps to a reaction SLS, and the hub runs what an event
+means. A reaction is authorized as a named principal like any other
+caller — Salt's runs with full control-plane privilege — and the engine
+is a worker pool with a bounded queue rather than the single thread
+whose backlog is the most common scaling failure in a Salt estate.
+
+What is not built is what SPEC puts in later phases: the scheduler,
+beacons, and the mine are the rest of phase 3; the API is phase 4;
+gitfs, agentless mode, and Windows are phase 5.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
