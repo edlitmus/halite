@@ -67,6 +67,7 @@ func New() *Registries {
 	registerPkgMore(r)
 	registerZFS(r)
 	registerSys(r)
+	registerBeacons(r)
 	return r
 }
 

@@ -49,7 +49,6 @@ var unreadKeys = map[string]string{
 	"accept_relays":        "phase 5: relays",
 	"relay_upstream":       "phase 5: relays",
 	"relay_upstream_port":  "phase 5: relays",
-	"beacons":              "phase 3: the automation loop",
 	"schedule":             "phase 3: the scheduler",
 	"mine_functions":       "phase 3: the mine",
 	"mine_interval":        "phase 3: the mine",

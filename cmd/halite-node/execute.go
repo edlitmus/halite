@@ -178,6 +178,12 @@ func stateFunction(fun string) (string, bool) {
 
 // runStateJob compiles and, for the applying forms, runs.
 func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
+	// A beacon with `disable_during_state_run` is suppressed for as
+	// long as this lasts, which is what stops a state run from firing
+	// the beacon that triggers the state run. SPEC 16.3.
+	n.enterStateRun()
+	defer n.leaveStateRun()
+
 	p, err := n.compilePillarOrErr()
 	if err != nil {
 		return outcome{}, err

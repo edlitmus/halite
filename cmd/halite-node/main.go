@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/edlitmus/halite/internal/builtin"
@@ -178,6 +179,13 @@ type node struct {
 	// no hub, and `event.send` says so rather than reporting a success
 	// nobody received.
 	events exec.EventSender
+	// statesRunning counts the state runs in progress, which is what
+	// `disable_during_state_run` reads. SPEC 16.3.
+	//
+	// A pointer, because a job runs against a shallow copy of the node
+	// and the two have to agree about whether a state run is in
+	// progress -- and because a lock may not be copied at all.
+	statesRunning *atomic.Int64
 }
 
 // setup loads configuration, resolves the identity, and collects grains.
@@ -211,15 +219,16 @@ func setup(args *cli.Args) *node {
 	}
 
 	n := &node{
-		cfg:      cfg,
-		log:      logger,
-		secrets:  secrets,
-		registry: builtin.New(),
-		env:      args.Flag("env", cfg.String("env", "base")),
-		test:     args.Bool("test", cfg.Bool("test", false)),
-		format:   format,
-		indent:   int(parseInt(args.Flag("indent", "0"))),
-		undef:    template.Strict,
+		statesRunning: new(atomic.Int64),
+		cfg:           cfg,
+		log:           logger,
+		secrets:       secrets,
+		registry:      builtin.New(),
+		env:           args.Flag("env", cfg.String("env", "base")),
+		test:          args.Bool("test", cfg.Bool("test", false)),
+		format:        format,
+		indent:        int(parseInt(args.Flag("indent", "0"))),
+		undef:         template.Strict,
 	}
 	if args.Bool("permissive", false) || cfg.String("undefined", "strict") == "permissive" {
 		n.undef = template.Permissive

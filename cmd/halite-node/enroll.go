@@ -323,6 +323,7 @@ func runConnect(args *cli.Args) int {
 	go exec.Run(ctx.Done())
 	go n.postReturns(ctx, args, returns)
 	go n.refreshGrains(ctx, args)
+	n.startBeacons(ctx)
 
 	backoff := time.Second
 	const maxBackoff = time.Minute

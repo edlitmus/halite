@@ -206,7 +206,7 @@ the *protocol*.
 
 ## 2. Module coverage
 
-The build ships **42 execution modules / 209 functions** and **20 state
+The build ships **43 execution modules / 219 functions** and **20 state
 modules / 56 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -256,7 +256,7 @@ different reason is given.
 | `at` | not implemented | 0 | |
 | `acl` | not implemented | 0 | POSIX ACL reading needs `acl_get_file`, which is cgo on FreeBSD; needs the `getfacl` binary path instead |
 | `apparmor` | not implemented | 0 | Linux only; no host to verify on |
-| `beacons` | not implemented | 0 | phase 3 |
+| `beacons` | implemented | 10 | `list` answers from the registry and the configuration; the nine that change a running node's watchers name the phase they arrive in |
 | `blockdev` | not implemented | 0 | |
 | `data` | not implemented | 0 | |
 | `firewall` | not implemented | 0 | |
