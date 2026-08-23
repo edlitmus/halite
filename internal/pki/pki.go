@@ -24,6 +24,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"math/big"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -48,8 +49,11 @@ func NodeIDFromCert(cert *x509.Certificate) (string, error) {
 			continue
 		}
 		id := strings.TrimPrefix(u.Path, "/")
-		if id == "" {
-			return "", fmt.Errorf("the certificate's %s URI names no node", URIScheme)
+		// Validated on the way out as well as on the way in: this is
+		// the value a hub uses to name a file and to answer "who is
+		// asking", and it arrives from the network.
+		if err := ValidateNodeID(id); err != nil {
+			return "", fmt.Errorf("the certificate's %s URI names no usable node: %w", URIScheme, err)
 		}
 		return id, nil
 	}
@@ -165,16 +169,92 @@ func DecodeCSR(data []byte) (*x509.CertificateRequest, error) {
 	return csr, nil
 }
 
+// ValidateNodeID accepts the identities a node may enrol under.
+//
+// The identity ends up in three places that each have their own idea of
+// what a byte means -- a URI path, a certificate subject, and a file
+// name in the hub's key store -- so it is restricted once, here, to what
+// is unambiguous in all three: a hostname's alphabet, with underscores,
+// which is what a node ID has been in practice.
+//
+// This is stricter than Salt, whose minion ID is any string at all and // lexicon:allow
+// whose key store has had path traversal reported against it more than
+// once.
+func ValidateNodeID(nodeID string) error {
+	if nodeID == "" {
+		return fmt.Errorf("a node identity cannot be empty")
+	}
+	// 253 is the maximum length of a DNS name, and a node ID is a
+	// hostname almost every time.
+	if len(nodeID) > 253 {
+		return fmt.Errorf("the node identity is %d bytes; the maximum is 253", len(nodeID))
+	}
+	if strings.HasPrefix(nodeID, "-") || strings.HasPrefix(nodeID, ".") {
+		return fmt.Errorf("the node identity %q may not start with %q", nodeID, nodeID[:1])
+	}
+	if strings.Contains(nodeID, "..") {
+		return fmt.Errorf("the node identity %q may not contain %q", nodeID, "..")
+	}
+	for _, r := range nodeID {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '.' || r == '-' || r == '_':
+		default:
+			return fmt.Errorf("the node identity %q contains %q; letters, digits, and .-_ are allowed", nodeID, string(r))
+		}
+	}
+	return nil
+}
+
 // NewNodeCSR builds a certificate request for a node identity.
 func NewNodeCSR(key crypto.Signer, nodeID string) ([]byte, error) {
-	if nodeID == "" {
-		return nil, fmt.Errorf("a certificate request needs a node identity")
+	if err := ValidateNodeID(nodeID); err != nil {
+		return nil, err
 	}
 	tmpl := &x509.CertificateRequest{
 		Subject: pkix.Name{CommonName: nodeID},
 		URIs:    []*url.URL{NodeURI(nodeID)},
 	}
 	return x509.CreateCertificateRequest(rand.Reader, tmpl, key)
+}
+
+// splitNames sorts what an operator wrote into the two kinds of subject
+// alternative name a TLS client checks.
+func splitNames(names []string) ([]string, []net.IP) {
+	var dns []string
+	var ips []net.IP
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if ip := net.ParseIP(name); ip != nil {
+			ips = append(ips, ip)
+			continue
+		}
+		dns = append(dns, name)
+	}
+	return dns, ips
+}
+
+// NodeIDFromCSR reads the identity a request asks for.
+//
+// The hub is not obliged to grant it -- IssueNode takes the identity
+// from the hub's own decision -- but a request has to say who it thinks
+// it is, and for the default enrollment mode that claim is what an
+// operator compares out of band.
+func NodeIDFromCSR(csr *x509.CertificateRequest) (string, error) {
+	for _, u := range csr.URIs {
+		if u.Scheme != URIScheme || u.Host != "node" {
+			continue
+		}
+		id := strings.TrimPrefix(u.Path, "/")
+		if err := ValidateNodeID(id); err != nil {
+			return "", fmt.Errorf("the request's %s URI names no usable node: %w", URIScheme, err)
+		}
+		return id, nil
+	}
+	return "", fmt.Errorf("the request carries no %s://node/<id> URI, which is where the identity lives", URIScheme)
 }
 
 // CA is an enrollment authority.
@@ -263,10 +343,16 @@ func (ca *CA) IssueHub(key crypto.Signer, names []string, lifetime time.Duration
 		return nil, err
 	}
 	now := ca.now()
+	// An address is an IP SAN and a name is a DNS SAN, and putting an
+	// address in the DNS list produces a certificate that verifies for
+	// nothing: `cannot validate certificate for 127.0.0.1 because it
+	// doesn't contain any IP SANs` is what a node saw.
+	dns, ips := splitNames(names)
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: "halite hub"},
-		DNSNames:     names,
+		DNSNames:     dns,
+		IPAddresses:  ips,
 		NotBefore:    now.Add(-time.Minute),
 		NotAfter:     now.Add(lifetime),
 		KeyUsage:     x509.KeyUsageDigitalSignature,

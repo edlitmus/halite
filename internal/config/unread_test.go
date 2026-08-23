@@ -22,12 +22,11 @@ import (
 // The list is enforced in both directions. A key that starts being read
 // must come off it, because a stale entry here hides the next real one.
 var unreadKeys = map[string]string{
-	// Phase 2: the transport, the hub, and the job cache.
-	"state_dir":                   "phase 2: nothing durable is written yet",
+	// Phase 2, still: what the transport carries rather than the
+	// transport itself. Enrollment, the key store, and the subscribe
+	// stream are built, so their settings have come off this list.
 	"tracing":                     "phase 2: no spans are emitted yet",
 	"metrics_listen":              "phase 2: no metrics endpoint yet",
-	"certificate_lifetime":        "phase 2: no certificates are issued yet",
-	"key_algorithm":               "phase 2: no keys are generated yet",
 	"event_tag_compat":            "phase 2: no events are emitted yet",
 	"ext_pillar_fail":             "phase 2: external pillar is a hub concern",
 	"file_ignore_glob":            "phase 2: the file server is a hub concern",
@@ -45,32 +44,24 @@ var unreadKeys = map[string]string{
 
 	// Read today, and not yet acted on. Each is a live gap rather than a
 	// phase boundary, and DIVERGENCE says so.
-	"log_level_file":  "SPEC 26.1's per-sink level; the file sink takes the global one",
-	"regex_engine":    "re2 is the only engine, so the setting has one value",
-	"node_id_source":  "the resolution order of SPEC 7.2 is implemented; naming one source is not",
-	"node_id_caching": "phase 2: there is no enrollment to pin an identity at",
-	"config_file":     "set by the loader, and read by the loader that set it",
-	"hash_type":       "phase 2: the file server compares digests; nothing here does",
-	"hub":             "phase 2: nothing dials a hub yet",
-	"listen":          "phase 2: there is nothing to listen on",
-	"policy":          "phase 2: RBAC is a hub concern",
+	"log_level_file": "SPEC 26.1's per-sink level; the file sink takes the global one",
+	"regex_engine":   "re2 is the only engine, so the setting has one value",
+	"node_id_source": "the resolution order of SPEC 7.2 is implemented; naming one source is not",
+	"hash_type":      "phase 2: the file server compares digests; nothing here does",
+	"policy":         "phase 2: RBAC is a hub concern",
 	// These two are read through rootsFrom, which takes the key as an
 	// argument rather than as a literal beside the accessor. The check
 	// is deliberately strict; an exception with a reason is better than
 	// a looser rule that lets a real one through.
 	"file_roots":              "read through rootsFrom, which takes the key as an argument",
 	"pillar_roots":            "read through rootsFrom, which takes the key as an argument",
-	"enrollment_mode":         "phase 2: there is no enrollment",
 	"extension_trust_keys":    "phase 5: bridged extensions",
 	"grains_refresh_interval": "phase 2: a long-running node re-collects; a one-shot run does not",
-	"hub_alive_interval":      "phase 2: nothing dials a hub yet",
-	"hub_port":                "phase 2: nothing dials a hub yet",
 	"job_queue_depth":         "phase 2: there is no job queue",
 	"legacy_acl":              "phase 2: RBAC is a hub concern",
 	"parallel_jobs":           "phase 2: there is one job at a time",
 	"reactor":                 "phase 3: the automation loop",
 	"cache_dir":               "phase 2: nothing is cached on the node yet",
-	"pki_dir":                 "phase 2: there is no key material",
 	"socket_dir":              "phase 2: there are no sockets",
 	"nodegroups":              "phase 2: targeting over the wire",
 	"quiesce":                 "phase 2: there are no jobs to refuse",
@@ -90,8 +81,6 @@ var unreadKeys = map[string]string{
 	"gitfs_env_denylist":      "phase 5: gitfs",
 	"job_cache":               "phase 2: there is no job cache",
 	"node_data_cache":         "phase 2: the hub caches node data",
-	"hub_fingerprint":         "phase 2: nothing dials a hub yet",
-	"hub_tries":               "phase 2: nothing dials a hub yet",
 	"hub_type":                "phase 2: nothing dials a hub yet",
 }
 

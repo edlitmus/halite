@@ -397,6 +397,13 @@ func matchScalarOrList(v any, pred func(string) bool) bool {
 	}
 }
 
+// MatchGlob reports whether a node ID matches a glob, by the same rule
+// the fleet is targeted with.
+//
+// Exported so that a bootstrap token's node scope and a job's target
+// cannot come to disagree about what `web*.example` means.
+func MatchGlob(pattern, nodeID string) bool { return globMatch(pattern, nodeID) }
+
 // globMatch is path.Match with a whole-string requirement, which is what
 // Salt's glob targeting does.
 func globMatch(pattern, s string) bool {

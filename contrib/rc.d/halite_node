@@ -11,13 +11,14 @@
 #   halite_node_enable (bool):   Set to "NO" by default.
 #   halite_node_config (str):    Configuration file.
 #                                Default /usr/local/etc/halite/node.yaml
-#   halite_node_flags (str):     Extra arguments to `halite-node serve`.
+#   halite_node_flags (str):     Extra arguments to `halite-node connect`.
 #   halite_node_user (str):      Account to run as. Default root, because a
 #                                node applies state to the whole system; set
 #                                it to something else only if you know every
 #                                state in your tree can run unprivileged.
 #
-# `serve` connects to a hub, which arrives in phase 2 of SPEC section 32.
+# `connect` holds the subscribe stream open to the hub. Running the jobs
+# that arrive on it is the rest of phase 2 of SPEC section 32.
 # Until then this script starts a process that exits immediately saying so,
 # and a node is driven with `halite-node state apply --local` — see
 # halite_highstate for running that on a schedule.
@@ -40,7 +41,7 @@ logfile="/var/log/halite/node.log"
 
 command="/usr/sbin/daemon"
 command_args="-c -f -p ${pidfile} -o ${logfile} \
-	/usr/local/bin/halite-node serve --config ${halite_node_config} ${halite_node_flags}"
+	/usr/local/bin/halite-node connect --config ${halite_node_config} ${halite_node_flags}"
 
 required_files="${halite_node_config}"
 start_precmd="halite_node_prestart"

@@ -139,15 +139,94 @@ For a periodic run, cron is the honest answer on FreeBSD:
 
 ### The daemons
 
-`halite-node serve`, `halite-hub serve`, and `halite-api serve` need the
-transport, which is phase 2 of SPEC section 32 for the first two and
-phase 4 for the third. Their unit files and rc.d scripts are in
-`contrib/`, written for when the phases land.
+`halite-hub serve` and `halite-node connect` run. `halite-api serve`
+needs phase 4 and exits saying so. Unit files and rc.d scripts for all
+three are in `contrib/`.
 
-Enabling one today starts a process that exits saying which phase it
-needs. The systemd units carry `RestartPreventExitStatus=1` so that this
-stops the unit and leaves the message in the journal, rather than a
-restart loop that fills the log and says nothing.
+```sh
+sudo systemctl enable --now halite-hub      # the control plane
+sudo systemctl enable --now halite-node     # the agent, once enrolled
+```
+
+```sh
+sudo sysrc halite_hub_enable=YES && sudo service halite_hub start
+sudo sysrc halite_node_enable=YES && sudo service halite_node start
+```
+
+The hub creates its enrollment CA under `pki_dir` on first run and logs
+the fingerprint. That directory has to be writable by the account the
+hub runs as; the systemd unit grants exactly it with `ReadWritePaths`
+and nothing else under `/etc`.
+
+`halite-node connect` reconnects on its own with backoff, so an
+unreachable hub is not a unit failure. It exits 1 for the two things a
+restart cannot fix — this node's enrollment was revoked, or `hub_tries`
+was reached — and the units carry `RestartPreventExitStatus=1` so that
+stops the unit and leaves the reason in the journal.
+
+What the agent does **not** do yet is run a job that arrives from the
+hub. That is the rest of phase 2. A job on the stream is logged and
+refused, which is why `halite-highstate.service` and its timer are still
+how a node is driven.
+
+## Enrolling a node
+
+The hub issues, an operator decides, and the node's private key never
+leaves it. SPEC section 7.
+
+```sh
+# on the hub
+halite-hub keys fingerprint            # the CA digest, to deliver out of band
+
+# on the node
+halite-node enroll --hub hub.example --ca-file /path/to/ca.crt \
+    --hub-fingerprint 'ab:cd:...'
+# prints this node's fingerprint and exits 2: the request is pending
+
+# on the hub, after comparing the two fingerprints by another route
+halite-hub keys list
+halite-hub keys accept web1.example
+
+# on the node
+halite-node enroll                     # collects the certificate
+```
+
+Exit 2 from `enroll` means pending, which is neither success nor
+failure; `--wait` blocks until an operator decides instead.
+
+For an autoscaling group, a bootstrap token issues without an operator.
+It has a mandatory lifetime of at most a day, a node-ID scope, a source
+CIDR, and a record of what it admitted — none of which Salt's
+`auto_accept` has, which is why there is no equivalent of that here.
+
+```sh
+halite-hub keys token create --ttl 1h --nodes 'web*.example' --cidr 10.0.0.0/8
+halite-node enroll --token '<secret>' --ca-file ca.crt
+```
+
+The secret is printed once. The hub keeps only a SHA-256 digest of it.
+
+### Renewal and revocation
+
+A certificate lasts 90 days and is renewed at half of that, with a new
+key, and no operator:
+
+```sh
+halite-node renew
+```
+
+Revocation takes effect at the next handshake and on every request over
+a connection that is already open, so it does not wait for a CRL to
+propagate:
+
+```sh
+halite-hub keys revoke web1.example --reason "decommissioned"
+halite-hub keys export-crl --out /var/db/halite/halite.crl
+```
+
+`keys revoke` run beside a hub that is already serving reaches it within
+a couple of seconds: the record on disk is the decision, and the running
+hub follows it.
 
 ## Logging
 

@@ -34,6 +34,16 @@ func Fingerprint(publicKeyDER []byte) string {
 	return b.String()
 }
 
+// FingerprintKey is the same digest taken from a public key directly,
+// for a node that wants to print what it is about to ask for.
+func FingerprintKey(pub any) (string, error) {
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return "", err
+	}
+	return Fingerprint(der), nil
+}
+
 // FingerprintCSR is the fingerprint an operator compares before
 // accepting a request.
 func FingerprintCSR(csr *x509.CertificateRequest) (string, error) {
@@ -53,6 +63,26 @@ func FingerprintCert(cert *x509.Certificate) (string, error) {
 		return "", err
 	}
 	return Fingerprint(der), nil
+}
+
+// FingerprintEqual compares two fingerprints written by different
+// hands.
+//
+// `halite-hub keys fingerprint` prints colon-separated pairs, which is
+// what reads aloud; a configuration file, a ticket, or a script may
+// carry the same digest as bare hex or with a `sha256:` prefix, because
+// that is how every other tool spells it. Refusing one of those
+// spellings would mean a node that will not enrol and a fingerprint
+// that looks right.
+func FingerprintEqual(a, b string) bool {
+	return normalizeFingerprint(a) == normalizeFingerprint(b)
+}
+
+func normalizeFingerprint(s string) string {
+	s = strings.TrimSpace(strings.ToLower(s))
+	s = strings.TrimPrefix(s, "sha256:")
+	s = strings.TrimPrefix(s, "sha-256:")
+	return strings.NewReplacer(":", "", " ", "", "-", "").Replace(s)
 }
 
 // SerialString renders a certificate serial the way the CRL and the

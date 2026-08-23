@@ -9,7 +9,9 @@ package buildpolicy
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -155,6 +157,20 @@ func scanFile(path, rel string) ([]Finding, error) {
 	}
 	defer f.Close()
 
+	// An extensionless file is scanned so that the Makefile and the
+	// rc.d scripts are covered, which also means a compiled binary
+	// left in the tree is opened. `go build ./cmd/halite-hub` writes
+	// one into the working directory, and scanning it produced half a
+	// megabyte of machine code quoted back as policy violations. A NUL
+	// byte is not source.
+	binary, err := looksBinary(f)
+	if err != nil {
+		return nil, err
+	}
+	if binary {
+		return nil, nil
+	}
+
 	var findings []Finding
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
@@ -172,6 +188,20 @@ func scanFile(path, rel string) ([]Finding, error) {
 		}
 	}
 	return findings, sc.Err()
+}
+
+// looksBinary reports whether a file's first block contains a NUL, and
+// rewinds either way.
+func looksBinary(f *os.File) (bool, error) {
+	head := make([]byte, 8192)
+	n, err := f.Read(head)
+	if err != nil && err != io.EOF {
+		return false, err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return false, err
+	}
+	return bytes.IndexByte(head[:n], 0) >= 0, nil
 }
 
 // lexiconAllowMarker lets one line name a prohibited term where quoting

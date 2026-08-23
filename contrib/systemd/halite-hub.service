@@ -6,17 +6,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# `serve` arrives in phase 2 of SPEC section 32. Until then the hub is a
-# command-line tool: `halite-hub migrate` and `halite-hub lint`.
 ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
-# `serve` exits 1 while its phase has not landed. Restarting on that would
-# be a loop that fills the journal and tells the operator nothing, so exit
-# 1 stops the unit and leaves the message in the log where it can be read.
-# Once the phase lands, a genuine failure exits with something else.
-RestartPreventExitStatus=1
 
 # The hub serves files, compiles pillar, and holds the enrollment CA. It
 # changes nothing about the host it runs on, so unlike the node it can
@@ -29,6 +22,11 @@ StateDirectoryMode=0700
 LogsDirectory=halite
 RuntimeDirectory=halite
 ProtectSystem=strict
+# The enrollment CA and the hub's serving certificate live in the
+# configuration root, which ProtectSystem=strict makes read-only. `serve`
+# creates them on first run, so that one directory is writable and
+# nothing else under /etc is.
+ReadWritePaths=/etc/halite/pki
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

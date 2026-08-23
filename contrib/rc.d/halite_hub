@@ -14,9 +14,9 @@
 #                              serves files and compiles pillar, and needs
 #                              no privilege beyond reading its own tree.
 #
-# `serve` arrives in phase 2 of SPEC section 32. Until then the hub is a
-# command-line tool: `halite-hub migrate` audits an existing Salt tree and
-# `halite-hub lint` renders and parses without executing.
+# `serve` runs the control plane: enrollment, the key lifecycle, and the
+# subscribe stream. It creates the enrollment CA under pki_dir on first
+# run, so that directory must be writable by halite_hub_user.
 
 . /etc/rc.subr
 

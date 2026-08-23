@@ -8,17 +8,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# `serve` connects to a hub, which arrives in phase 2 of SPEC section 32.
-# Until then it exits immediately saying so, and a node is driven by
-# halite-highstate.service, which works today.
-ExecStart=/usr/local/bin/halite-node serve --config /etc/halite/node.yaml
+# `connect` holds the subscribe stream open to the hub. It reconnects on
+# its own, with backoff, so an unreachable hub is not a unit failure.
+# Running the jobs that arrive on that stream is the rest of phase 2;
+# until then a node is driven by halite-highstate.service.
+ExecStart=/usr/local/bin/halite-node connect --config /etc/halite/node.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
-# `serve` exits 1 while its phase has not landed. Restarting on that would
-# be a loop that fills the journal and tells the operator nothing, so exit
-# 1 stops the unit and leaves the message in the log where it can be read.
-# Once the phase lands, a genuine failure exits with something else.
+# `connect` exits 1 for the two things a restart cannot fix: this node's
+# enrollment was revoked, or hub_tries was reached. Restarting on either
+# would be a loop that fills the journal and tells the operator nothing.
 RestartPreventExitStatus=1
 
 # A node applies state to the whole system, so it runs as root. Nearly

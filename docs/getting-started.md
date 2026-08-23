@@ -5,11 +5,16 @@ files describing how a machine should be, works out what is different,
 and changes only that. This page takes you from nothing to a converged
 machine.
 
-Everything here works today. halite's hub — the part that drives a fleet
-from one place — is phase 2 of the delivery plan in SPEC section 32, so
-for now a node manages itself from a local tree, which is the mode Salt
-calls masterless. It is the mode worth starting in either way: the tree
-is the same tree a hub would serve, and you can watch it work.
+Everything here works today. A node manages itself from a local tree,
+which is the mode Salt calls masterless, and it is the mode worth
+starting in either way: the tree is the same tree a hub would serve, and
+you can watch it work.
+
+A hub exists and a fleet can be enrolled against it — `halite-hub serve`
+and `halite-node enroll` are in [Operations](operations.md#enrolling-a-node)
+— but *driving* a highstate from the hub is the rest of phase 2 of SPEC
+section 32 and is not built. So: enrol now if you want the identity in
+place, and drive from the node.
 
 ## Install
 

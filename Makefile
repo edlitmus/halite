@@ -61,8 +61,14 @@ release:
 		env $(RELEASE_ENV) go build $(BUILDFLAGS) -o bin/$$b ./cmd/$$b || exit 1; \
 	done
 
+# -count=1 disables the test cache deliberately. Several of the audits
+# here read the whole tree rather than their own package -- the
+# declared-and-unread sweep, the documentation audit, the specification
+# audit, the command matrix -- and the cache does not notice a file that
+# did not exist when the result was recorded. It cached a pass over
+# thirteen settings that had just started being read.
 test:
-	@env $(DEV_ENV) go test ./...
+	@env $(DEV_ENV) go test -count=1 ./...
 
 # The correctness core is held to a higher bar than the rest of the tree,
 # because the YAML parser, the template engine, the state compiler, and the
@@ -79,7 +85,7 @@ cover:
 # CGO_ENABLED=0 for every other target, and -race with it off fails
 # outright rather than quietly running without the detector.
 race:
-	@env CGO_ENABLED=1 go test -race ./...
+	@env CGO_ENABLED=1 go test -count=1 -race ./...
 
 # Run the test suite as Linux binaries.
 #

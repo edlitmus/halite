@@ -51,7 +51,13 @@ func newFixture(t *testing.T, handler http.Handler) *fixture {
 	return &fixture{ca: ca, url: "https://" + ln.Addr().String(), denied: denied}
 }
 
-func (f *fixture) enrolledClient(t *testing.T, nodeID string) (*http.Client, string) {
+// enrolledPair issues to a node and returns the material, so a test can
+// build as many clients from it as it needs. Two clients, rather than
+// one with its connection pool emptied: CloseIdleConnections is not a
+// synchronous guarantee that the next request handshakes again, and a
+// test of the handshake that sometimes reuses a connection is a test
+// that sometimes passes.
+func (f *fixture) enrolledPair(t *testing.T, nodeID string) (tls.Certificate, string) {
 	t.Helper()
 	key, _ := pki.GenerateKey(pki.ECDSAP256)
 	csrDER, _ := pki.NewNodeCSR(key, nodeID)
@@ -69,10 +75,20 @@ func (f *fixture) enrolledClient(t *testing.T, nodeID string) (*http.Client, str
 	if err != nil {
 		t.Fatal(err)
 	}
+	return pair, pki.SerialString(cert)
+}
+
+func (f *fixture) clientFor(pair tls.Certificate) *http.Client {
 	return &http.Client{Transport: &http.Transport{
 		TLSClientConfig:   ClientConfig(pair, f.ca.Cert, "localhost"),
 		ForceAttemptHTTP2: true,
-	}}, pki.SerialString(cert)
+	}}
+}
+
+func (f *fixture) enrolledClient(t *testing.T, nodeID string) (*http.Client, string) {
+	t.Helper()
+	pair, serial := f.enrolledPair(t, nodeID)
+	return f.clientFor(pair), serial
 }
 
 // echoIdentity answers with the node ID the peer certificate carries, or
@@ -120,18 +136,18 @@ func TestMutualAuthenticationCarriesTheIdentity(t *testing.T) {
 // peer is trusted to have fetched.
 func TestRevocationIsRefusedAtTheHandshake(t *testing.T) {
 	f := newFixture(t, http.HandlerFunc(echoIdentity))
-	client, serial := f.enrolledClient(t, "web1.example")
+	pair, serial := f.enrolledPair(t, "web1.example")
 
-	if _, err := client.Get(f.url); err != nil {
+	if _, err := f.clientFor(pair).Get(f.url); err != nil {
 		t.Fatalf("the certificate should work before it is revoked: %v", err)
 	}
 	f.denied.Revoke(serial, "operator revoked it")
 
-	// A new connection, since the established one is already
-	// authenticated: revocation stops the next handshake, and SPEC 7.4
-	// pushes a control message down any live stream for the rest.
-	client.CloseIdleConnections()
-	_, err := client.Get(f.url)
+	// A fresh client, so this is a fresh handshake. An established
+	// connection is already authenticated and outlives the revocation;
+	// SPEC 7.4 pushes a control message down any live stream for that,
+	// and the hub checks every request as well.
+	_, err := f.clientFor(pair).Get(f.url)
 	if err == nil {
 		t.Fatal("a revoked certificate should not complete a handshake")
 	}

@@ -1,6 +1,7 @@
 package log
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -169,5 +170,32 @@ func TestSecretsAreScrubbedAtTheSink(t *testing.T) {
 	// The diagnostic is still a diagnostic.
 	if !strings.Contains(out.String(), "mysql -p") {
 		t.Errorf("the message was mangled:\n%s", out.String())
+	}
+}
+
+// The console format leaves out what is the same on every line and
+// keeps what is not. `node_id` is both, depending on which program is
+// writing: a node carries its own on every record, and a hub says which
+// node each record is about.
+func TestConsoleKeepsACallSiteFieldItWouldElideAsAFixedOne(t *testing.T) {
+	var buf bytes.Buffer
+	logger, err := New(Options{Level: Info, Format: Console, Stderr: &buf})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hub := logger.With("component", "hub")
+	hub.Info("node connected", "node_id", "web1.example")
+	if !strings.Contains(buf.String(), "node_id=web1.example") {
+		t.Errorf("the hub's line does not say which node: %q", buf.String())
+	}
+	if strings.Contains(buf.String(), "component=hub") {
+		t.Errorf("a field carried on every line should not be repeated: %q", buf.String())
+	}
+
+	buf.Reset()
+	node := logger.With("component", "node").With("node_id", "web1.example")
+	node.Info("applying")
+	if strings.Contains(buf.String(), "node_id=") {
+		t.Errorf("a node repeats its own identity on every line: %q", buf.String())
 	}
 }

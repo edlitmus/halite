@@ -1,17 +1,23 @@
 # halite-node reporting to a hub.
 #
-# The transport arrives in phase 2 of SPEC section 32, so `halite-node
-# serve` says so rather than failing obscurely. The settings are read and
-# validated today, which is what makes this file worth keeping now: a
-# configuration written against it will not need rewriting when the
-# transport lands.
+# `halite-node enroll` asks for a certificate, `halite-node renew`
+# replaces it, and `halite-node connect` holds the stream open. Running
+# a job that arrives on that stream is the rest of phase 2 and is not
+# built: a job is logged and refused rather than run.
 hub: hub.example.com
 hub_port: 4510
 
 # Checked at enrollment against the hub's CA. Without it, the first
 # connection trusts whatever answers, which is the one moment an attacker
 # gets to insert themselves.
+#
+# `halite-hub keys fingerprint` on the hub prints this. It is accepted
+# as colon-separated pairs, as bare hex, or with a sha256: prefix.
 hub_fingerprint: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+# Where this node keeps its key. The private key is generated here and
+# never leaves: the hub holds nothing that can impersonate a node.
+pki_dir: /usr/local/etc/halite/pki
 
 # static uses the first hub that answers; failover rotates through a list.
 hub_type: static

@@ -64,7 +64,7 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 	}
 	// The phase 2 subcommands are named in the usage and must say why
 	// rather than fail as typos.
-	for _, sub := range []string{"serve", "run", "keys", "jobs"} {
+	for _, sub := range []string{"run", "jobs", "files", "ssh"} {
 		got := run(t, sub)
 		if got.code == 0 || !strings.Contains(got.stderr, "phase 2") {
 			t.Errorf("%s = %+v", sub, got)
@@ -163,8 +163,13 @@ func TestCommandMatrixIsTrue(t *testing.T) {
 		status := cells[2]
 
 		args := []string{command[1]}
-		if command[1] == "migrate" || command[1] == "lint" {
+		switch command[1] {
+		case "migrate", "lint":
 			args = append(args, tree)
+		case "serve":
+			// Asked what it is rather than run: this one opens a
+			// listener and creates an enrollment CA.
+			args = append(args, "--help")
 		}
 		got := run(t, args...)
 		output := got.stdout + got.stderr

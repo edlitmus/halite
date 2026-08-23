@@ -1,3 +1,6 @@
 bin/
 dist/
 cover.out
+/halite-hub
+/halite-node
+/halite-api

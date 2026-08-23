@@ -178,3 +178,61 @@ func TestKeyAlgorithmNames(t *testing.T) {
 		t.Error("an algorithm this build does not issue should be refused by name")
 	}
 }
+
+// An address is an IP SAN and a name is a DNS SAN. Issuing a
+// certificate that put "127.0.0.1" in the DNS list produced one that
+// verified for nothing, and the tests did not see it because they all
+// dialled by name.
+func TestAHubCertificateCoversAddressesAndNames(t *testing.T) {
+	ca, err := NewCA(ECDSAP256, "test CA", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := GenerateKey(ECDSAP256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := ca.IssueHub(key, []string{"hub.example", "127.0.0.1", "::1", "localhost"}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"hub.example", "localhost", "127.0.0.1", "::1"} {
+		if err := cert.VerifyHostname(name); err != nil {
+			t.Errorf("the hub certificate does not cover %s: %v", name, err)
+		}
+	}
+	if err := cert.VerifyHostname("elsewhere.example"); err == nil {
+		t.Error("the hub certificate covers a name it was not issued for")
+	}
+	if len(cert.IPAddresses) != 2 {
+		t.Errorf("%d IP SANs, want 2", len(cert.IPAddresses))
+	}
+}
+
+// An operator copies a fingerprint from wherever it is written down.
+// `keys fingerprint` prints colon-separated pairs; a configuration file
+// or a ticket may carry bare hex or a `sha256:` prefix, and all three
+// are the same digest.
+func TestAFingerprintIsRecognisedInEverySpelling(t *testing.T) {
+	ca, err := NewCA(ECDSAP256, "test CA", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spaced, err := FingerprintCert(ca.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare := strings.ReplaceAll(spaced, ":", "")
+	for _, spelling := range []string{spaced, bare, "sha256:" + bare, strings.ToUpper(spaced), " " + spaced + "\n"} {
+		if !FingerprintEqual(spelling, spaced) {
+			t.Errorf("%q was not recognised as the same fingerprint", spelling)
+		}
+	}
+	if FingerprintEqual(spaced, strings.Replace(bare, "a", "b", 1)) {
+		t.Error("two different digests compared equal")
+	}
+}

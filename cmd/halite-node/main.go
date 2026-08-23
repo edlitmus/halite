@@ -2,9 +2,11 @@
 // replaces three of Salt's entry points in one binary: the agent, the
 // local caller, and the proxy. SPEC section 2.2.
 //
-// This build carries the phase 1 surface: everything a node can do about
-// its own tree without a hub. `serve` and `event` arrive with the
-// transport in phase 2 and say so rather than failing obscurely.
+// This build carries the phase 1 surface -- everything a node can do
+// about its own tree without a hub -- and the transport of phase 2:
+// enrollment, renewal, and the subscribe stream. Running a job that
+// arrives on that stream is the next piece and says so rather than
+// pretending.
 package main
 
 import (
@@ -40,9 +42,23 @@ Usage:
   halite-node pillar <items|item|get> [key]      read this node's pillar
   halite-node lint <path>                        render and parse without executing
   halite-node version                            print the build identity
-  halite-node serve                              connect to a hub (phase 2)
+  halite-node enroll                             ask a hub for a certificate
+  halite-node renew                              replace this node's certificate
+  halite-node connect                            hold the stream open to the hub
+
+enroll and connect flags:
+  --hub <address>      the hub to dial, default from the hub setting
+  --ca-file <path>     the hub CA to pin, for a node enrolling for the first time
+  --hub-fingerprint <fp>  the CA digest this node expects, checked before enrolling
+  --token <secret>     a bootstrap token, for the token mode of SPEC 7.3
+  --wait               keep asking until an operator accepts the request
+  --pki-dir <dir>      key material, default ` + config.DefaultPKIDir + `
+  --force              enrol again from a new key, moving the old one aside
+  --key-algorithm <a>  ecdsa-p256 (default) or ecdsa-p384
+  --server-name <name> the name to verify in the hub's certificate
 
 Common flags:
+  --help               describe the program without running a command
   --local              work from local roots rather than through a hub
   --config <path>      configuration file, default <root>/node.yaml
   --root <dir>         configuration root, default ` + config.DefaultRoot + `
@@ -82,6 +98,13 @@ func main() {
 		cli.Fatalf("%v", err)
 	}
 
+	// `--help` after any subcommand describes the program rather than
+	// running it: `enroll --help` must not enrol.
+	if args.Bool("help", false) {
+		fmt.Print(usage)
+		os.Exit(0)
+	}
+
 	switch sub {
 	case "version", "--version", "-v":
 		fmt.Println("halite-node " + version.String())
@@ -97,9 +120,15 @@ func main() {
 		os.Exit(runPillar(args))
 	case "lint":
 		os.Exit(runLint(args))
-	case "serve", "event":
-		cli.Fatalf("`%s` needs the transport, which arrives in phase 2 (SPEC section 32). "+
-			"Everything a node can do about its own tree works today with --local.", sub)
+	case "enroll":
+		os.Exit(runEnroll(args))
+	case "renew":
+		os.Exit(runRenew(args))
+	case "connect", "serve":
+		os.Exit(runConnect(args))
+	case "event":
+		cli.Fatalf("`%s` needs the event bus, which is the rest of phase 2 (SPEC section 32). "+
+			"`enroll`, `renew`, and `connect` work today.", sub)
 	default:
 		fmt.Fprintf(os.Stderr, "halite-node: unknown subcommand %q\n\n%s", sub, usage)
 		os.Exit(2)

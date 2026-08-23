@@ -176,8 +176,11 @@ with the reason.
 
 The larger absences today:
 
-- **The hub.** Driving a fleet from one place is phase 2 of SPEC section
-  32. A node manages its own tree now, which is Salt's masterless mode.
+- **Driving a fleet from the hub.** The hub itself exists: it issues
+  certificates, holds the key lifecycle, and nodes connect to it. What
+  it cannot do yet is send a job, which is the rest of phase 2 of SPEC
+  section 32. A node manages its own tree now, which is Salt's
+  masterless mode.
 - **Beacons, reactors, orchestration, the mine over the wire.** Phase 3.
 - **The API.** Phase 4.
 - **Windows and macOS modules.** Phase 5. The code cross-compiles; none

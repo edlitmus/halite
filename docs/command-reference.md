@@ -75,9 +75,38 @@ and without needing a node. See [Migrating from Salt](migrating-from-salt.md).
 | default nested output | `--out nested`, the default | works |
 | `--out-indent=2` | `--indent 2` | works |
 
+## Enrollment and the key lifecycle
+
+This works. A hub issues, an operator decides, and a node holds a
+certificate it generated the key for. SPEC section 7.
+
+| Salt | halite | Status |
+|---|---|---|
+| `salt-master` (the daemon) | `halite-hub serve` | works | <!-- lexicon:allow -->
+| `salt-key -L` | `halite-hub keys list` | works |
+| `salt-key -f web1` | `halite-hub keys fingerprint web1` | works |
+| `salt-key -p web1` | `halite-hub keys show web1` | works |
+| `salt-key -a web1` | `halite-hub keys accept web1` | works |
+| `salt-key -A` | `halite-hub keys accept --all` | works |
+| `salt-key -r web1` | `halite-hub keys reject web1 --reason "not ours"` | works |
+| `salt-key -d web1` | `halite-hub keys delete web1` | works |
+| no equivalent | `halite-hub keys revoke web1 --reason "decommissioned"` | works |
+| no equivalent | `halite-hub keys export-crl` | works |
+| `auto_accept: True` | `halite-hub keys token create --ttl 1h --nodes 'web*'` | works |
+| no equivalent | `halite-hub keys token list` | works |
+| no equivalent | `halite-hub keys token revoke <id>` | works |
+| the minion generates a key on first start | `halite-node enroll` | works | <!-- lexicon:allow -->
+| no equivalent | `halite-node renew` | works |
+| `salt-minion` (the daemon) | `halite-node connect` | connects; jobs are phase 2 | <!-- lexicon:allow -->
+
+There is deliberately no `auto_accept`. A bootstrap token is the
+automatic path, and unlike `auto_accept` it has a mandatory lifetime of
+at most a day, a node-ID scope, a source CIDR, and a record of what it
+admitted. SPEC section 7.3.
+
 ## Driving a fleet
 
-None of this works yet: the transport is phase 2. Each command says so
+None of this works yet: it is the rest of phase 2. Each command says so
 rather than failing obscurely.
 
 | Salt | halite | Status |
@@ -86,8 +115,6 @@ rather than failing obscurely.
 | `salt -G 'os:FreeBSD' state.apply` | `halite-hub run -G 'os:FreeBSD' state.apply` | phase 2 |
 | `salt-run jobs.list_jobs` | `halite-hub jobs list` | phase 2 |
 | `salt-run manage.up` | `halite-hub runner manage.up` | phase 2 |
-| `salt-key -L` | `halite-hub keys list` | phase 2 |
-| `salt-key -a web1` | `halite-hub keys accept web1` | phase 2 |
 | `salt-cp '*' file /tmp/file` | `halite-hub files push` | phase 2 |
 | `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 2 |
 | `salt-call event.send` | `halite-node event send` | phase 2 |

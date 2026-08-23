@@ -2,9 +2,10 @@
 // compiler, and the full operator command line, in one binary. SPEC
 // section 2.2.
 //
-// This build carries the phase 0 surface: the tools that audit a tree
-// before a hub exists. `serve`, `run`, `keys`, and the rest arrive with
-// the transport in phase 2 and say so rather than failing obscurely.
+// This build carries the control plane of SPEC section 6 -- `serve` and
+// `keys` -- and the tools that audit a tree before a hub exists. `run`,
+// `runner`, and the rest are the remainder of phase 2 and say so rather
+// than failing obscurely.
 package main
 
 import (
@@ -26,17 +27,27 @@ import (
 var usage = `halite-hub — the central service and the operator command line
 
 Usage:
+  halite-hub serve               run the control plane
+  halite-hub keys <subcommand>   enrollment and the key lifecycle
   halite-hub migrate <tree>      audit an existing Salt tree and report
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
 
-Available with the transport, in phase 2 (SPEC section 32):
-  serve, run, runner, orch, keys, files, ssh, event, jobs
+Still to come in phase 2 (SPEC section 32):
+  run, runner, orch, files, ssh, event, jobs
 
 Common flags:
+  --help               describe the program without running a command
   --config <path>      configuration file, default <root>/hub.yaml
   --root <dir>         configuration root, default ` + config.DefaultRoot + `
   --out <format>       summary (default) or json
+
+serve flags:
+  --listen <addr>      listen address, default :4510
+  --pki-dir <dir>      key material, default ` + config.DefaultPKIDir + `
+  --names <a,b>        names to issue the hub's certificate for
+  --log-level <level>  error, warn, info (default), debug, or trace
+  --log-fmt <format>   json (default) or console
 
 migrate flags:
   --pillar-root <dir>  audit a separate pillar tree with pillar rules
@@ -57,6 +68,14 @@ func main() {
 		cli.Fatalf("%v", err)
 	}
 
+	// `--help` after any subcommand describes the program rather than
+	// running it. A command that starts a listener or reaches for key
+	// material needs a way to be asked what it is without doing it.
+	if args.Bool("help", false) {
+		fmt.Print(usage)
+		os.Exit(0)
+	}
+
 	switch os.Args[1] {
 	case "version", "--version", "-v":
 		fmt.Println("halite-hub " + version.String())
@@ -66,9 +85,13 @@ func main() {
 		os.Exit(runMigrate(args))
 	case "lint":
 		os.Exit(runLint(args))
-	case "serve", "run", "runner", "orch", "keys", "files", "ssh", "event", "jobs":
-		cli.Fatalf("`%s` needs the transport, which arrives in phase 2 (SPEC section 32). "+
-			"`migrate` and `lint` work today and are the tools for measuring a tree before then.", os.Args[1])
+	case "serve":
+		os.Exit(runServe(args))
+	case "keys":
+		os.Exit(runKeys(args))
+	case "run", "runner", "orch", "files", "ssh", "event", "jobs":
+		cli.Fatalf("`%s` is the rest of phase 2 (SPEC section 32) and is not built yet. "+
+			"`serve` and `keys` run the control plane today; `migrate` and `lint` measure a tree.", os.Args[1])
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub: unknown subcommand %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)

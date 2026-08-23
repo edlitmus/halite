@@ -185,6 +185,23 @@ packet capture of the ServerHello; it is still in the ClientHello.
 `transport.Negotiated` is the selected name, and it is a constant so the
 two cannot be confused at a call site.
 
+The contract a peer has to meet is therefore: **offer `halite/1`, and
+offer `h2` or `http/1.1` as well**. halite's own client offers
+`halite/1,h2` and gets HTTP/2. Anything probing `/v1/health` by hand
+needs the same:
+
+```sh
+printf 'GET /v1/health HTTP/1.1\r\nHost: hub\r\nConnection: close\r\n\r\n' |
+  openssl s_client -connect hub:4510 -alpn halite/1,http/1.1 -CAfile ca.crt -quiet
+```
+
+A client that offers neither -- `curl` with its defaults, a browser, a
+load balancer's HTTPS check -- is refused at the handshake with `no
+application protocol`. That is the gate working, and it is worth knowing
+before a health check is pointed at the port: `/v1/health` is reachable
+without a *certificate*, which is what SPEC 6.2 says, and not without
+the *protocol*.
+
 ---
 
 ## 2. Module coverage
@@ -1257,21 +1274,75 @@ Still open, from the same tree:
 
 ---
 
+### 5.11 What the transport lab run covers
+
+The unit tests for `internal/hub` stand up a real listener, a real CA,
+and a real client, so they are not mocks. They still missed two things
+that a hub and two node processes on one machine found in ten minutes,
+and both were the same shape: **a connection outlives the handshake that
+authenticated it.**
+
+| Found by running it | What it was |
+|---|---|
+| A revoked node reconnected and was served | The node's HTTP/2 connection was still open, so `Subscribe` reused it and no second ClientHello reached `VerifyPeerCertificate`. The tests called `Reset()` before checking, which drops the pooled connection -- so they tested only the path that was already safe. Revocation is now checked per request as well as per handshake. |
+| A renewed node kept streaming on the superseded certificate | Renewal revokes the old serial. The stream opened with it stayed up, authenticated by a serial the hub had just denied. The hub now ends that stream with a `reload`, and the node reconnects and reads the certificate it has just been issued. |
+
+Two smaller ones came from the same run: the hub's serving certificate
+put `127.0.0.1` in the DNS names rather than the IP names, so a node
+configured with `hub: 127.0.0.1` could not verify it at all -- every
+test dialled by name; and the hub read `log_fmt`, which is not a
+setting, so the loader warned on every start.
+
+What the lab run establishes: manual enrollment with an out-of-band
+fingerprint comparison, token enrollment within a node-ID glob and a
+source CIDR, single-use enforcement, acceptance and rejection,
+revocation from a *separate process* reaching a running hub and the
+connected node, renewal with a fresh key while connected, and a signed
+CRL that OpenSSL parses.
+
+What it does not: more than two nodes, more than one hub, a network that
+is not loopback, a hub restart with nodes connected, a certificate
+actually reaching expiry, clock skew between hub and node, and any of
+phase 2's remaining endpoints, which do not exist. It has been run on
+FreeBSD only.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
 
-Phases 2 through 6 of SPEC 32 are untouched. That means: no transport, no
-enrollment CA, no hub, no targeting over a network, no job cache, no RBAC, no
-event bus, no beacons, no scheduler, no reactors, no orchestration, no
-runners, no mine over the wire, no API, no OIDC or LDAP, no webhooks, no
-returners, no bridge protocol, no gitfs, no s3fs, no agentless mode, no
-relays, no FIPS artifact set, no detached job signing, no signed state trees,
-and no backtracking regex engine.
+Phase 2 is under way. What is built is the identity half of it: the
+enrollment CA of SPEC section 7, the mutual-TLS transport of section
+6.1, and three of section 6.2's endpoints -- `/v1/health`, `/v1/enroll`
+with its renewal, and `/v1/subscribe`. `halite-hub serve` runs, `keys`
+manages the lifecycle, and `halite-node enroll`, `renew`, and `connect`
+are the node's side of it. A hub and two nodes have been run against
+each other; see 5.11.
 
-`halite-hub` and `halite-api` exist as binaries that parse arguments and
-report that their phase has not landed, which is deliberate: the alternative
-is a binary that appears to work.
+What is **not** built, in phase 2: job delivery and execution, the
+return path, targeting over the wire, the job cache, the file server,
+hub-side pillar, the grains and mine endpoints, the event bus, and RBAC.
+A job arriving on the subscribe stream is logged and refused by the
+node, deliberately, because refusing is honest and pretending is not.
+
+Nothing of phases 3 through 6 exists: no beacons, no scheduler, no
+reactors, no orchestration, no runners, no mine over the wire, no API,
+no OIDC or LDAP, no webhooks, no returners, no bridge protocol, no
+gitfs, no s3fs, no agentless mode, no relays, no FIPS artifact set, no
+detached job signing, no signed state trees, and no backtracking regex
+engine.
+
+Two named pieces of section 7 are also absent:
+
+- **`attested` enrollment** (SPEC 7.3). `manual` and `token` are built.
+  `enrollment_mode: attested` is refused by name rather than accepted
+  and ignored.
+- **`keys rotate-ca`** (SPEC 7.5). There is one CA generation. Creating
+  a second one in the same directory is refused, so the failure mode is
+  a message rather than an estate that has to enrol again.
+
+`halite-api` still exists as a binary that parses arguments and reports
+that its phase has not landed, which is deliberate: the alternative is a
+binary that appears to work.
 
 ### 6.2 Build and release
 

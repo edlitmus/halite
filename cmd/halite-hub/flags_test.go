@@ -35,7 +35,10 @@ func TestEveryFlagIsDocumentedAndParsed(t *testing.T) {
 	}
 
 	documented := map[string]bool{}
-	for _, f := range regexp.MustCompile(`(?m)^\s+(--[a-z-]+)`).FindAllStringSubmatch(usage, -1) {
+	// Both usage texts: `keys` has its own, and its flags are
+	// documented there rather than repeated in the main one.
+	for _, f := range regexp.MustCompile(`(?m)^\s+(--[a-z-]+)`).
+		FindAllStringSubmatch(usage+"\n"+keysUsage, -1) {
 		documented[f[1]] = true
 	}
 	parsed := map[string]bool{}

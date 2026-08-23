@@ -1,8 +1,31 @@
 # halite-hub.
 #
-# `halite-hub serve` arrives with the transport in phase 2 of SPEC
-# section 32. `halite-hub migrate` and `halite-hub lint` work today and
-# read this file for the tree layout and the compatibility settings.
+# `halite-hub serve` runs the control plane: enrollment, the key
+# lifecycle, and the subscribe stream. Job delivery and the file server
+# are the rest of phase 2 and are not built, so the settings for them
+# are read and validated and nothing acts on them yet.
+
+# The one TCP port of SPEC section 6.1. There is no plaintext mode.
+listen: :4510
+
+# The enrollment CA and the hub's own serving certificate. `serve`
+# creates the CA on first run and says so.
+pki_dir: /usr/local/etc/halite/pki
+# The key store lives under here, in keys/. Losing it means the fleet
+# enrols again, so it is durable state and not cache.
+state_dir: /var/db/halite
+
+# manual, token, or attested. There is deliberately no auto_accept:
+# `halite-hub keys token create --ttl 1h` is the automatic path, and
+# unlike auto_accept it expires, is scoped, and records what it let in.
+# SPEC section 7.3.
+enrollment_mode: manual
+
+# Issued certificates last this long; a node renews at half of it.
+certificate_lifetime: 2160h
+# ecdsa-p256 by default. ecdsa-p384 for a longer key.
+key_algorithm: ecdsa-p256
+
 file_roots:
   base:
     - /srv/halite/states

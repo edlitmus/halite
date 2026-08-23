@@ -204,7 +204,7 @@ func (l *Logger) Log(level Level, msg string, kv ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.form == Console {
-		fmt.Fprintln(l.out, consoleLine(rec))
+		fmt.Fprintln(l.out, consoleLine(rec, l.fields))
 		return
 	}
 	line, err := json.Marshal(rec)
@@ -212,7 +212,7 @@ func (l *Logger) Log(level Level, msg string, kv ...any) {
 		// A record that will not marshal still has to reach the
 		// operator; losing it silently is the failure this whole
 		// package is here to avoid.
-		fmt.Fprintln(l.out, consoleLine(rec))
+		fmt.Fprintln(l.out, consoleLine(rec, l.fields))
 		return
 	}
 	fmt.Fprintln(l.out, string(line))
@@ -225,13 +225,23 @@ func (l *Logger) Debug(msg string, kv ...any) { l.Log(Debug, msg, kv...) }
 
 // consoleLine renders a record for a person: the message first, because
 // that is what they are reading for, and the rest after it.
-func consoleLine(rec map[string]any) string {
+//
+// A field the logger carries on every line is left out, because it is
+// the same on every line: a node's own `node_id` and `component` are
+// context, not news. A field of the same name that came from the call
+// site is kept -- on the hub, `node_id` is which node, and eliding it
+// there made every enrollment line say that something happened to
+// somebody.
+func consoleLine(rec map[string]any, fixed map[string]any) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %v", rec["level"], rec["msg"])
 	keys := make([]string, 0, len(rec))
 	for k := range rec {
 		switch k {
-		case "ts", "level", "msg", "component", "node_id":
+		case "ts", "level", "msg":
+			continue
+		}
+		if v, ok := fixed[k]; ok && fmt.Sprint(v) == fmt.Sprint(rec[k]) {
 			continue
 		}
 		keys = append(keys, k)

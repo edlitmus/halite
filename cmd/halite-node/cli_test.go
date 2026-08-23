@@ -103,7 +103,7 @@ func TestUnknownSubcommandIsUsageNotSuccess(t *testing.T) {
 }
 
 func TestPhaseTwoSubcommandsSayWhy(t *testing.T) {
-	for _, sub := range []string{"serve", "event"} {
+	for _, sub := range []string{"event"} {
 		got := run(t, sub)
 		if got.code != 1 {
 			t.Errorf("%s exit = %d, want 1", sub, got.code)
@@ -360,6 +360,12 @@ func TestCommandMatrixIsTrue(t *testing.T) {
 		args := []string{command[1]}
 		if len(command) > 2 && !strings.HasPrefix(command[2], "-") {
 			args = append(args, command[2])
+		}
+		switch command[1] {
+		case "enroll", "renew", "connect":
+			// Asked what they are rather than run: these three reach
+			// for a hub and for key material.
+			args = append(args, "--help")
 		}
 		got := run(t, append(args, flags...)...)
 		output := got.stdout + got.stderr
