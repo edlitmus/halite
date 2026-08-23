@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -38,6 +39,28 @@ type Roots struct {
 	FollowSymlinks bool
 	// IgnoreGlobs hides matching paths from listing and from fetching.
 	IgnoreGlobs []string
+	// IgnoreRegexes does the same with RE2 patterns, for the shapes a
+	// glob cannot express. SPEC 13.5 requires both, and both apply to
+	// every backend.
+	IgnoreRegexes []*regexp.Regexp
+}
+
+// SetIgnoreRegexes compiles the patterns, reporting the one that is
+// wrong rather than silently hiding nothing.
+//
+// A file server that quietly ignores a malformed hide rule serves the
+// files it was told to hide, which is the failure that matters here.
+func (r *Roots) SetIgnoreRegexes(patterns []string) error {
+	var compiled []*regexp.Regexp
+	for _, pattern := range patterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return fmt.Errorf("file_ignore_regex %q: %w", pattern, err)
+		}
+		compiled = append(compiled, re)
+	}
+	r.IgnoreRegexes = compiled
+	return nil
 }
 
 // NewRoots builds a file server over the given roots.
@@ -156,6 +179,12 @@ func (r *Roots) ignored(clean string) bool {
 			return true
 		}
 		if ok, err := path.Match(g, path.Base(clean)); err == nil && ok {
+			return true
+		}
+	}
+	rel := strings.TrimPrefix(clean, "/")
+	for _, re := range r.IgnoreRegexes {
+		if re.MatchString(rel) {
 			return true
 		}
 	}

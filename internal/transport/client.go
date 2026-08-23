@@ -490,3 +490,41 @@ func (c *Client) FollowEvents(ctx context.Context, tags []string, from string, f
 	}
 	return scanner.Err()
 }
+
+// KillJob stops a job that has not finished.
+func (c *Client) KillJob(ctx context.Context, jid string) (*KillResponse, error) {
+	var res KillResponse
+	if _, err := c.post(ctx, PathJob+jid+"/kill", struct{}{}, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// PushGrains sends a refreshed fact set to the hub.
+func (c *Client) PushGrains(ctx context.Context, req GrainsRequest) error {
+	client, err := c.client()
+	if err != nil {
+		return err
+	}
+	raw, err := marshal(req)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout())
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, c.url(PathGrains), bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	res, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("%s: %w", PathGrains, err)
+	}
+	defer res.Body.Close()
+	payload, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.StatusCode >= 400 {
+		return decodeError(PathGrains, payload, res.StatusCode)
+	}
+	return nil
+}

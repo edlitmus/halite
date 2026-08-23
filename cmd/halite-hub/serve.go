@@ -197,6 +197,9 @@ func runServe(args *cli.Args) int {
 		files = fileserver.NewRoots(roots)
 		files.FollowSymlinks = h.cfg.Bool("fileserver_follow_symlinks", false)
 		files.IgnoreGlobs = h.cfg.StringSlice("file_ignore_glob")
+		if err := files.SetIgnoreRegexes(h.cfg.StringSlice("file_ignore_regex")); err != nil {
+			cli.Fatalf("%v", err)
+		}
 		if backends := h.cfg.StringSlice("fileserver_backend"); len(backends) > 0 {
 			for _, b := range backends {
 				if b != "roots" {

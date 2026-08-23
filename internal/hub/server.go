@@ -138,6 +138,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+transport.PathJobs, s.operator(s.submit))
 	mux.HandleFunc("GET "+transport.PathJob+"{jid}", s.operator(s.jobStatus))
 	mux.HandleFunc("POST "+transport.PathJob+"{jid}/resume", s.operator(s.resume))
+	mux.HandleFunc("POST "+transport.PathJob+"{jid}/kill", s.operator(s.kill))
+	mux.HandleFunc("PUT "+transport.PathGrains, s.authenticated(s.grainsPush))
 	mux.HandleFunc("GET "+transport.PathFiles+"{path...}", s.authenticated(s.files))
 	mux.HandleFunc("POST "+transport.PathPillar, s.authenticated(s.pillarFor))
 	mux.HandleFunc("POST "+transport.PathEvent, s.authenticated(s.events))

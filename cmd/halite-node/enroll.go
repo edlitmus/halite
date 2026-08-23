@@ -17,6 +17,7 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/transport"
@@ -319,6 +320,7 @@ func runConnect(args *cli.Args) int {
 	n.executor = exec
 	go exec.Run(ctx.Done())
 	go n.postReturns(ctx, args, returns)
+	go n.refreshGrains(ctx, args)
 
 	backoff := time.Second
 	const maxBackoff = time.Minute
@@ -369,6 +371,54 @@ func runConnect(args *cli.Args) int {
 	}
 	n.log.Info("stopped")
 	return 0
+}
+
+// refreshGrains re-collects this node's facts on the configured
+// interval and pushes them.
+//
+// Without it the hub's idea of a node is as old as its last
+// connection, and a node that has been up for a month is targeted on
+// month-old facts. SPEC 8.3's `grain_stale_after` annotates that
+// hazard; this is what stops it arising.
+func (n *node) refreshGrains(ctx context.Context, args *cli.Args) {
+	interval := n.cfg.Duration("grains_refresh_interval", 30*time.Minute)
+	if interval <= 0 {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		root := args.Flag("root", config.DefaultRoot)
+		fresh, warnings := grains.Collect(grains.Options{
+			NodeID:     n.nodeID,
+			StaticFile: root + "/grains",
+			GrainsDir:  root + "/grains.d",
+			Extra:      n.cfg.Map("grains"),
+			Cloud:      n.cfg.Bool("cloud_grains", false),
+		})
+		for _, w := range warnings {
+			n.log.Warn(w.String(), "component", "grains")
+		}
+		n.grains = fresh
+		encoded, err := value.EncodeJSON(fresh, 0)
+		if err != nil {
+			n.log.Warn("could not encode refreshed grains", "error", err.Error())
+			continue
+		}
+		client, _ := n.hubClient(args)
+		if err := client.PushGrains(ctx, transport.GrainsRequest{
+			Grains: encoded, Version: version.String(),
+		}); err != nil && ctx.Err() == nil {
+			n.log.Warn("could not push refreshed grains", "error", err.Error())
+			continue
+		}
+		n.log.Debug("pushed refreshed grains", "keys", fresh.Len())
+	}
 }
 
 // grainsJSON encodes the node's facts through the ordered model's own
@@ -577,6 +627,16 @@ func (n *node) handle(msg transport.Message) error {
 		return errRevoked
 	case transport.MsgReload:
 		n.log.Info("the hub asked this node to reconnect", "reason", msg.Reason)
+	case transport.MsgKill:
+		// A job the executor has not started yet is dropped. One
+		// already running finishes: a state run interrupted halfway
+		// leaves a machine in neither state, which is worse than
+		// finishing something an operator changed their mind about.
+		if n.executor != nil {
+			dropped := n.executor.Cancel(job.ID(msg.JID))
+			n.log.Warn("a job was cancelled by the hub",
+				"jid", msg.JID, "reason", msg.Reason, "dropped", dropped)
+		}
 	case transport.MsgJob:
 		n.acceptJob(msg)
 	default:

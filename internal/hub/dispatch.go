@@ -100,6 +100,13 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 	ttl := sub.TTL
 	if ttl <= 0 {
 		ttl = job.DefaultTTL
+		if sub.Offline == job.Queue {
+			// SPEC 9.5: a queued job waits for a machine that is off,
+			// so fifteen minutes is too short; "until someone
+			// notices" is the hazard, so an hour is the default and
+			// --ttl raises it deliberately.
+			ttl = QueuedTTL
+		}
 	}
 	j := &job.Job{
 		JID:        s.clock().Next(),
@@ -150,6 +157,17 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 		// handler that called Dispatch is still reading this one.
 		go s.runBatches(s.batchContext(), cloneJob(j), msg)
 		return j, nil
+	}
+
+	// SPEC 9.5's `queue`: the nodes that were not connected are spooled
+	// for their next appearance rather than reported unresponsive.
+	if sub.Offline == job.Queue && len(absent) > 0 {
+		j.Queued = append([]string(nil), absent...)
+		if s.Jobs != nil {
+			if err := s.Jobs.Put(j); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	delivered := s.deliver(j, msg, matched)

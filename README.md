@@ -76,7 +76,7 @@ Delivery follows the phases in SPEC section 32.
 |---|---|---|
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
-| 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **In progress**: enrollment, the transport, remote execution, targeting, the job cache, the file server, hub-side pillar, and RBAC are built; batching and the event bus are not |
+| 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | Not started |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
@@ -97,13 +97,20 @@ returns. A highstate has been driven from a hub across two nodes and run
 again to convergence.
 
 An operator edits the tree on the hub and the fleet converges to it,
-which is the exit criterion SPEC section 32 names for this phase.
-Pillar is compiled on the hub too, per node, so a node holds no other
-node's secrets and cannot ask for them, and every submission is
-authorized against a policy that denies by default. `--batch` is
-hub-side, so closing the terminal does not abandon a half-applied
-estate, and the event bus is a durable log a subscriber resumes from
-rather than Salt's in-memory one.
+which is the exit criterion SPEC section 32 names for phase 2. Pillar
+is compiled on the hub too, per node, so a node holds no other node's
+secrets and cannot ask for them, and every submission is authorized
+against a policy that denies by default. `--batch` is hub-side, so
+closing the terminal does not abandon a half-applied estate, and the
+event bus is a durable log a subscriber resumes from rather than Salt's
+in-memory one.
+
+What is not built is what SPEC puts in later phases: reactors, the
+scheduler, beacons, orchestration, runners, and the mine are phase 3;
+the API is phase 4; gitfs, agentless mode, and Windows are phase 5.
+[DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
+the two things inside phase 2 that are still absent — `halite-hub
+files`, and external pillar.
 [DIVERGENCE 5.11](docs/DIVERGENCE.md) says what the lab run
 established, what it did not, and the defects it found that the tests
 had not.

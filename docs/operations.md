@@ -310,7 +310,30 @@ halite-hub jobs list
 halite-hub jobs show <jid>
 halite-hub jobs missing <jid>       # who was sent it and has not answered
 halite-hub jobs prune               # retention runs hourly; this is now
+halite-hub jobs kill <jid>          # stop what has not happened yet
+halite-hub jobs export <jid>        # the job, every return, and who never answered
 ```
+
+`jobs kill` stops a job reaching the nodes it has not reached, unspools
+anything queued, and tells the nodes that have it. A node already
+applying a state finishes it: a state run interrupted halfway leaves a
+machine in neither the old state nor the new one, which is worse than
+finishing something you changed your mind about. The command says so.
+
+### A node that is switched off
+
+```sh
+halite-hub run '*' state.apply --offline queue    # wait for it to come back
+halite-hub run '*' state.apply --offline require  # or refuse to run at all
+```
+
+The default reports it as unresponsive and sends it nothing. `queue`
+spools the job for its next connection, bounded by the job's expiry —
+an hour by default rather than fifteen minutes, because it is waiting
+for a machine that is off. A node that comes back after the expiry does
+**not** run a stale instruction, and the hub records that it did not,
+because a node returning to find that nothing happened and no reason
+why is the failure this bounds.
 
 The cache is bounded by `job_cache_retention` and `job_cache_max_size`,
 whichever binds first, and the hub enforces both. Salt's `local_cache` <!-- lexicon:allow -->

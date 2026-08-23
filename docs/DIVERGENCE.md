@@ -1360,7 +1360,18 @@ fleet converges to it. A node compiles against the hub's tree, caches
 what it fetched, and asks conditionally afterwards, so a redeployed tree
 with identical contents costs a round trip and no transfer.
 
-Batching and the event bus followed.
+Batching and the event bus followed, and with them the last four of
+phase 2's stated contents. Every item SPEC section 32 lists for the
+phase — transport, enrollment CA, targeting, remote execution, job
+cache, file server `roots`, hub-side pillar compilation, RBAC, the
+event bus — is built.
+
+The named sub-features that were accepted and did nothing are done too:
+the `queue` offline policy spools for a node that is off and refuses a
+job that expired while it waited, `jobs kill` stops what has not
+happened yet and says plainly that a node already running a state
+finishes it, `/v1/grains` takes the refresh a node pushes on its
+interval, and `file_ignore_regex` hides what it says it hides.
 
 Batching is hub-side, which is the point: in Salt `--batch` lives in the
 CLI, so closing the terminal abandons the run with half the estate
@@ -1409,11 +1420,10 @@ What is **not** built, in phase 2:
   form is declared and read by nothing.
 - **gitfs and s3fs.** `fileserver_backend` accepts only `roots`, and
   says so at startup rather than silently serving nothing.
-- **`/v1/grains` and `/v1/mine`.** A node reports its grains when it
-  connects and there is no refresh push; the mine is phase 3.
-- **The `queue` offline policy** (SPEC 9.5), which is accepted and
-  behaves as `skip`.
-- **`halite-hub runner`, `files`, and `ssh`**, and `jobs kill|export`.
+- **`halite-hub files`** (`salt-cp`). The file server serves; pushing a
+  file the other way is not built.
+- **`/v1/mine`**, which is phase 3 along with runners, orchestration,
+  beacons, and the scheduler.
 - **The event bus's tag-prefix index** (SPEC 17.2). A subscriber's
   globs are matched while reading rather than looked up, so a narrow
   glob over a long log reads the whole log. It is correct and it is

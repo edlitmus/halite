@@ -228,6 +228,70 @@ func (s *Server) resume(w http.ResponseWriter, r *http.Request, principal string
 	})
 }
 
+// kill is POST /v1/jobs/{jid}/kill: stop a job that is still going.
+//
+// What can be stopped is what has not happened yet: a node already
+// running a state cannot be interrupted mid-write, and pretending
+// otherwise would be worse than saying so. A queued job is unspooled, a
+// batch stops advancing, and the nodes that have it are told.
+func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) {
+	rest := strings.TrimPrefix(r.URL.Path, transport.PathJob)
+	id := job.ID(strings.TrimSuffix(rest, "/kill"))
+	if !id.Valid() {
+		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed,
+			fmt.Errorf("%q is not a job identifier", id))
+		return
+	}
+	if s.Jobs == nil {
+		transport.WriteError(w, http.StatusServiceUnavailable, transport.CodeInternal,
+			errors.New("this hub has no job cache"))
+		return
+	}
+	j, err := s.Jobs.Get(id)
+	if errors.Is(err, job.ErrNoJob) {
+		transport.WriteError(w, http.StatusNotFound, transport.CodeRefused, err)
+		return
+	}
+	if err != nil {
+		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
+		return
+	}
+	decision := s.Policy.Authorize(policy.Request{
+		Principal: principal, Target: j.Target, Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg,
+	})
+	if !decision.Allowed {
+		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
+			fmt.Errorf("%s", decision.Reason))
+		return
+	}
+
+	res := transport.KillResponse{JID: string(id), Unqueued: append([]string(nil), j.Queued...)}
+	// Expiring it is what stops the batch goroutine from advancing and
+	// what makes every node refuse it: the check is already there in
+	// the replay guard, and one mechanism is better than two.
+	j.Queued = nil
+	j.Expires = s.now().Add(-time.Second)
+	j.State = job.Aborted
+	if err := s.Jobs.Put(j); err != nil {
+		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
+		return
+	}
+	for _, node := range j.Delivered {
+		if s.fleet().Send(node, transport.Message{
+			T: transport.MsgKill, JID: string(id), Reason: "cancelled by " + principal,
+		}) {
+			res.Told = append(res.Told, node)
+		}
+	}
+	s.warn("job killed", "jid", string(id), "principal", principal,
+		"told", res.Told, "unqueued", res.Unqueued)
+	s.emit("halite/job/"+string(id)+"/kill", "", map[string]any{
+		"jid": string(id), "principal": principal,
+		"told": res.Told, "unqueued": res.Unqueued,
+	})
+	transport.WriteJSON(w, http.StatusOK, res)
+}
+
 // jobStatus is GET /v1/jobs/{jid}: what has come back so far.
 func (s *Server) jobStatus(w http.ResponseWriter, r *http.Request, principal string) {
 	id := job.ID(strings.TrimPrefix(r.URL.Path, transport.PathJob))

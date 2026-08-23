@@ -347,7 +347,11 @@ func TestAWildcardDoesNotGrantAShell(t *testing.T) {
 
 func waitForReturns(t *testing.T, op *transport.Client, jid string, want int) *transport.JobStatus {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	// Generous, because `go test ./...` runs packages in parallel and a
+	// deadline tight enough to pass on an idle machine is a test that
+	// fails when the machine is busy. Nothing here waits for the
+	// deadline in the ordinary case.
+	deadline := time.Now().Add(30 * time.Second)
 	for {
 		status, err := op.JobStatus(context.Background(), jid)
 		if err != nil {

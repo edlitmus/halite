@@ -207,6 +207,10 @@ startup rather than treating the absence as permission.
 | `salt-run jobs.active` | `halite-hub jobs active` | works |
 | `salt-run manage.up` | `halite-hub runner manage.up` | phase 2 |
 | `salt-cp '*' file /tmp/file` | `halite-hub files push` | phase 2 |
+| `salt-run jobs.kill <jid>` | `halite-hub jobs kill <jid>` | works |
+| no equivalent | `halite-hub jobs export <jid>` | works |
+| `salt '*' --queue state.apply` | `halite-hub run '*' state.apply --offline queue` | works |
+| `salt '*' saltutil.sync_grains` | pushed automatically on `grains_refresh_interval` | works |
 | `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 2 |
 
 | `salt-run state.orchestrate` | `halite-hub orch` | phase 3 |

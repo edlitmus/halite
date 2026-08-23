@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -20,6 +21,8 @@ var jobsUsage = `halite-hub jobs — the job cache (SPEC section 9.4)
   jobs missing <jid>           the nodes that were sent it and have not answered
   jobs active                  jobs the hub has not finished delivering
   jobs resume <jid>            pick up a batch the hub was part way through
+  jobs kill <jid>              stop a job that has not finished
+  jobs export <jid>            the job and its returns as one JSON document
   jobs prune                   enforce retention now rather than on the hour
 
 jobs flags:
@@ -199,6 +202,53 @@ func runJobs(args *cli.Args) int {
 			return 0
 		}
 		fmt.Printf("resuming %s: %d node(s) to go\n", res.JID, len(res.Remaining))
+		return 0
+
+	case "kill":
+		if len(rest) == 0 {
+			cli.Fatalf("kill needs a jid")
+		}
+		client := operatorClient(args)
+		res, err := client.KillJob(context.Background(), rest[0])
+		if err != nil {
+			cli.Fatalf("%v", err)
+		}
+		// What can be stopped is what has not happened yet. A node
+		// already applying a state is not interrupted, and saying so
+		// is better than implying otherwise.
+		fmt.Printf("killed %s\n", res.JID)
+		if len(res.Told) > 0 {
+			fmt.Printf("  told: %s\n", strings.Join(res.Told, ", "))
+		}
+		if len(res.Unqueued) > 0 {
+			fmt.Printf("  never sent: %s\n", strings.Join(res.Unqueued, ", "))
+		}
+		fmt.Println("  a node already running the job finishes what it started")
+		return 0
+
+	case "export":
+		if len(rest) == 0 {
+			cli.Fatalf("export needs a jid")
+		}
+		id := job.ID(rest[0])
+		j, err := cache.Get(id)
+		if err != nil {
+			cli.Fatalf("%v", err)
+		}
+		returns, err := cache.Returns(id)
+		if err != nil {
+			cli.Fatalf("%v", err)
+		}
+		missing, _ := cache.Missing(id)
+		// One document, so that an incident record is one file: the
+		// job as submitted, every return, and who never answered.
+		out, err := json.MarshalIndent(map[string]any{
+			"job": j, "returns": returns, "missing": missing,
+		}, "", "  ")
+		if err != nil {
+			cli.Fatalf("%v", err)
+		}
+		fmt.Println(string(out))
 		return 0
 
 	case "prune":

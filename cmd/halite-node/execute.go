@@ -300,3 +300,37 @@ func refusalReturn(n *node, j *job.Job, err error) *job.Return {
 		Schema:      job.ReturnSchema,
 	}
 }
+
+// Cancel drops a job from the queue if it has not started.
+//
+// One already running is left alone: a state run interrupted halfway
+// leaves a machine in neither the old state nor the new one, which is
+// worse than finishing something an operator changed their mind about.
+// The hub's `jobs kill` says so in its output.
+func (e *executor) Cancel(id job.ID) bool {
+	dropped := false
+	// Drained and refilled, because a channel has no other way to
+	// remove one item. The executor is the only reader, and a job that
+	// arrives during the swap goes to the back rather than being lost.
+	var kept []*job.Job
+	for {
+		select {
+		case j := <-e.queue:
+			if j.JID == id {
+				dropped = true
+				continue
+			}
+			kept = append(kept, j)
+			continue
+		default:
+		}
+		break
+	}
+	for _, j := range kept {
+		select {
+		case e.queue <- j:
+		default:
+		}
+	}
+	return dropped
+}

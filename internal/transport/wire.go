@@ -110,6 +110,11 @@ const (
 	MsgReload  = "reload"
 	MsgQuiesce = "quiesce"
 	MsgDrain   = "drain"
+	// MsgKill cancels a job a node has been given but has not
+	// finished. SPEC 6.2 does not name it; without it `jobs kill` can
+	// stop a job reaching the nodes it has not reached and can do
+	// nothing about the ones it has, which is half a command.
+	MsgKill = "kill"
 )
 
 // SubscribeRequest is the body a node opens the stream with: its
@@ -165,6 +170,25 @@ type SubmitResponse struct {
 	// Absent lists matched nodes that were not connected, by name. A
 	// count would send an operator looking for which.
 	Absent []string `json:"absent,omitempty"`
+}
+
+// GrainsRequest is PUT /v1/grains: a node pushing a refreshed fact
+// set, per SPEC 6.2. The identity is the certificate's.
+type GrainsRequest struct {
+	Grains json.RawMessage `json:"grains"`
+	// Version is the node's build, so a hub can say what it is talking
+	// to without asking.
+	Version string `json:"version,omitempty"`
+}
+
+// KillResponse says what a kill reached.
+type KillResponse struct {
+	JID string `json:"jid"`
+	// Told is the nodes that were sent the cancellation.
+	Told []string `json:"told,omitempty"`
+	// Unqueued is the nodes that had not received the job yet and now
+	// never will.
+	Unqueued []string `json:"unqueued,omitempty"`
 }
 
 // ResumeResponse is the answer to POST /v1/jobs/{jid}/resume.

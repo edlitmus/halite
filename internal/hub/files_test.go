@@ -161,3 +161,48 @@ func TestTheTreeNeedsACertificate(t *testing.T) {
 		t.Fatal("a peer with no certificate read the tree")
 	}
 }
+
+// SPEC 13.5: both hide settings apply to every backend, and a
+// malformed one is reported rather than quietly hiding nothing — a
+// file server that ignores a bad hide rule serves what it was told to
+// hide.
+func TestTheHideSettingsApplyToListingAndToFetching(t *testing.T) {
+	l := newLab(t).withFiles(t, map[string]string{
+		"web.sls":            "x\n",
+		"secrets/token.txt":  "hunter2\n",
+		"web/nginx.conf.bak": "old\n",
+	})
+	l.server.Files.IgnoreGlobs = []string{"*.bak"}
+	if err := l.server.Files.SetIgnoreRegexes([]string{`^secrets/`}); err != nil {
+		t.Fatal(err)
+	}
+	node := l.enrolled(t, "web1.example")
+
+	raw, err := node.FileManifest(context.Background(), "base", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listing := string(raw)
+	if strings.Contains(listing, "token.txt") {
+		t.Errorf("file_ignore_regex did not hide a path from the listing: %s", listing)
+	}
+	if strings.Contains(listing, ".bak") {
+		t.Errorf("file_ignore_glob did not hide a path from the listing: %s", listing)
+	}
+	if !strings.Contains(listing, "web.sls") {
+		t.Errorf("the listing hid everything: %s", listing)
+	}
+
+	// Hidden from fetching too, not only from the listing.
+	for _, hidden := range []string{"secrets/token.txt", "web/nginx.conf.bak"} {
+		body, _, _, err := node.FetchFile(context.Background(), "base", hidden, "")
+		if err == nil {
+			t.Errorf("%s was served (%d bytes)", hidden, len(body))
+		}
+	}
+
+	// A pattern that will not compile is refused by name.
+	if err := l.server.Files.SetIgnoreRegexes([]string{"([unclosed"}); err == nil {
+		t.Error("a malformed file_ignore_regex was accepted")
+	}
+}

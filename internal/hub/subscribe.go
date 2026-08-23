@@ -73,6 +73,11 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
+	// Anything this node missed while it was away, per SPEC 9.5's
+	// `queue` policy. After the stream is open, so a delivery has
+	// somewhere to go.
+	go s.deliverQueued(nodeID)
+
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	write := func(msg transport.Message) error {

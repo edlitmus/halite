@@ -92,10 +92,40 @@ type Job struct {
 	// its own record, it survives the operator going home, and
 	// `halite-hub jobs resume` picks it up.
 	Batch Batch `json:"batch,omitempty"`
-	// Delivered is who the job has actually been written to, which
+	// Delivered is who the hub has attempted delivery to, which
 	// differs from Nodes while a batch is in flight. It is the record
 	// that makes resuming possible.
+	//
+	// An attempt, not an arrival: a node that was not connected when
+	// its slice went out is still counted, or the batch would retry it
+	// for ever and never advance. Who actually received it is the set
+	// that returns, and Queued below is who is still owed one.
 	Delivered []string `json:"delivered,omitempty"`
+	// Queued is the spool of SPEC 9.5's `queue` policy: nodes that
+	// were matched, were not connected, and are to be given the job
+	// when they next appear -- if it has not expired by then.
+	Queued []string `json:"queued,omitempty"`
+}
+
+// IsQueuedFor reports whether a node is owed this job.
+func (j *Job) IsQueuedFor(nodeID string) bool {
+	for _, id := range j.Queued {
+		if id == nodeID {
+			return true
+		}
+	}
+	return false
+}
+
+// Dequeue removes a node from the spool.
+func (j *Job) Dequeue(nodeID string) {
+	out := j.Queued[:0]
+	for _, id := range j.Queued {
+		if id != nodeID {
+			out = append(out, id)
+		}
+	}
+	j.Queued = out
 }
 
 // Batch is the batching policy of SPEC 9.3.

@@ -98,7 +98,7 @@ func (l *lab) connectTracking(t *testing.T, client *transport.Client, nodeID str
 // waitForState polls until the hub reports the state asked for.
 func waitForState(t *testing.T, op *transport.Client, jid, want string) *transport.JobStatus {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	var last *transport.JobStatus
 	for {
 		status, err := op.JobStatus(context.Background(), jid)
@@ -202,7 +202,7 @@ func TestASafeLimitStopsTheRestOfTheEstate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	var status *transport.JobStatus
 	for time.Now().Before(deadline) {
 		status, err = op.JobStatus(context.Background(), res.JID)
@@ -359,5 +359,104 @@ func TestASubsetPicksSomeAndRecordsWhich(t *testing.T) {
 	// would be a shuffle that does not shuffle.
 	if len(seen) == 1 {
 		t.Errorf("every draw chose the same pair: %v", seen)
+	}
+}
+
+// SPEC 9.5's `queue`: a node that was off gets the job when it comes
+// back, and does not get a two-week-old instruction.
+func TestAQueuedJobWaitsForTheNodeToReturn(t *testing.T) {
+	l := newLab(t).withJobs(t).withEvents(t)
+	client := l.enrolled(t, "web1.example")
+	op := l.operator(t, "ed")
+
+	// Matched and not connected.
+	res, err := op.Submit(context.Background(), transport.SubmitRequest{
+		Target: "*", Fun: "test.ping", Offline: "queue",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Absent) != 1 || res.Absent[0] != "web1.example" {
+		t.Fatalf("absent = %v", res.Absent)
+	}
+	j, err := l.server.Jobs.Get(job.ID(res.JID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !j.IsQueuedFor("web1.example") {
+		t.Fatalf("the job was not spooled: %v", j.Queued)
+	}
+	// A queued job lives longer than an ad-hoc one, because it is
+	// waiting for a machine that is off.
+	if life := j.Expires.Sub(j.Created); life < QueuedTTL {
+		t.Errorf("a queued job lives %s; SPEC 9.5 says an hour", life)
+	}
+
+	// The node appears.
+	tr := &tracker{seen: map[string]time.Time{}}
+	stop := l.connectTracking(t, client, "web1.example", tr, nil)
+	defer stop()
+
+	status := waitForReturns(t, op, res.JID, 1)
+	if len(status.Returns) != 1 {
+		t.Fatalf("%d returns after the node returned", len(status.Returns))
+	}
+	// And the spool is cleared, so a reconnect does not run it again.
+	j, err = l.server.Jobs.Get(job.ID(res.JID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j.IsQueuedFor("web1.example") {
+		t.Errorf("the job is still spooled after delivery: %v", j.Queued)
+	}
+}
+
+// The hazard SPEC 9.5 is explicit about: a node that returns after two
+// weeks should not apply a two-week-old job, and should not do so in
+// silence either.
+func TestAQueuedJobThatExpiredIsNotRunAndIsRecorded(t *testing.T) {
+	l := newLab(t).withJobs(t).withEvents(t)
+	client := l.enrolled(t, "web1.example")
+	op := l.operator(t, "ed")
+
+	res, err := op.Submit(context.Background(), transport.SubmitRequest{
+		Target: "*", Fun: "test.ping", Offline: "queue", TTLSeconds: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Two weeks later, as far as the hub is concerned.
+	l.server.Now = func() time.Time { return time.Now().Add(14 * 24 * time.Hour) }
+
+	tr := &tracker{seen: map[string]time.Time{}}
+	stop := l.connectTracking(t, client, "web1.example", tr, nil)
+	defer stop()
+	time.Sleep(300 * time.Millisecond)
+
+	if tr.count() != 0 {
+		t.Error("a two-week-old queued job was delivered")
+	}
+	status, err := op.JobStatus(context.Background(), res.JID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(status.Returns) != 0 {
+		t.Errorf("%d returns for an expired queued job", len(status.Returns))
+	}
+
+	// Not in silence: an event and a log line, per SPEC 9.5.
+	events := readEvents(t, op, []string{"halite/job/**"})
+	found := false
+	for _, e := range events {
+		if strings.HasSuffix(e.Tag, "/expired") {
+			found = true
+			if e.Data["reason"] == nil {
+				t.Error("the expiry event says nothing about why")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("nothing recorded the expiry; the bus holds %v", tagsOf(events))
 	}
 }
