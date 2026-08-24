@@ -253,3 +253,40 @@ func tagsOf(events []eventbus.Event) []string {
 	}
 	return out
 }
+
+// SPEC 17.1 puts a beacon event under `halite/beacon/<node_id>/`, and
+// SPEC 16.5's own reactor example matches on that tag. They arrived
+// under `halite/node/<node_id>/` instead, so a reactor written from the
+// specification matched nothing and said nothing about it.
+func TestABeaconEventLandsUnderTheBeaconNamespace(t *testing.T) {
+	cases := []struct{ sent, want string }{
+		{"beacon/diskusage/var", "halite/beacon/web1.example/diskusage/var"},
+		{"beacon/diskusage/overflow", "halite/beacon/web1.example/diskusage/overflow"},
+		// The node's id is added here and never read from the request,
+		// so a node that spells the whole tag out still lands under
+		// its own: what it sent is the beacon name, not the node.
+		{"halite/beacon/db1.example/x", "halite/beacon/web1.example/db1.example/x"},
+		// Everything that is not a beacon keeps the node namespace.
+		{"diskusage/var", "halite/node/web1.example/diskusage/var"},
+		{"deploy/finished", "halite/node/web1.example/deploy/finished"},
+		// `beacon/` alone names no beacon, so it is not the
+		// namespace's root but an ordinary node event.
+		{"beacon/", "halite/node/web1.example/beacon/"},
+	}
+	for _, c := range cases {
+		got, err := nodeEventTag("web1.example", c.sent)
+		if err != nil {
+			t.Errorf("%q: %v", c.sent, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%q became %q, want %q", c.sent, got, c.want)
+		}
+	}
+
+	// Traversal is refused rather than resolved, by the bus's own tag
+	// check, so neither namespace can be walked out of.
+	if _, err := nodeEventTag("web1.example", "beacon/../db1.example/x"); err == nil {
+		t.Error("a beacon tag walked out of its namespace")
+	}
+}

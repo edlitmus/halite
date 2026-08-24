@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/eventbus"
@@ -140,22 +141,35 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, nodeID string) {
 
 // nodeEventTag namespaces what a node sends.
 //
-// A node may write under `halite/node/<its own id>/...` and nowhere
-// else. Anything it asks for is placed there: a node that sends
-// `deploy/finished` gets `halite/node/web1.example/deploy/finished`, and
-// one that sends `halite/job/…/ret/…` gets its own copy of that string
-// under its own prefix rather than a forgery of the hub's.
+// A node may write under its own id and nowhere else. Anything it asks
+// for is placed there: a node that sends `deploy/finished` gets
+// `halite/node/web1.example/deploy/finished`, and one that sends
+// `halite/job/…/ret/…` gets its own copy of that string under its own
+// prefix rather than a forgery of the hub's.
+//
+// A beacon event goes under `halite/beacon/<node_id>/...` instead,
+// which is the tag SPEC 17.1 names for one. The node id still comes
+// from the certificate and not from the request, so this is a second
+// namespace a node may write in rather than a way out of the first.
 func nodeEventTag(nodeID, asked string) (string, error) {
 	if asked == "" {
 		return "", errors.New("an event needs a tag")
 	}
+	rest := trimTagPrefix(asked)
 	prefix := "halite/node/" + nodeID + "/"
-	tag := prefix + trimTagPrefix(asked)
+	if after, ok := strings.CutPrefix(rest, beaconTagPrefix); ok && after != "" {
+		prefix, rest = "halite/beacon/"+nodeID+"/", after
+	}
+	tag := prefix + rest
 	if err := eventbus.ValidTag(tag); err != nil {
 		return "", err
 	}
 	return tag, nil
 }
+
+// beaconTagPrefix is what a node marks a beacon event with, so the hub
+// can put it where SPEC 17.1 says it goes.
+const beaconTagPrefix = "beacon/"
 
 // trimTagPrefix removes a leading slash and a `halite/` the sender
 // added, so that a tag is not doubled up.

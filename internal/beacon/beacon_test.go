@@ -186,7 +186,11 @@ func TestABeaconFiresUnderItsOwnName(t *testing.T) {
 	go e.Run(ctx)
 
 	waitFor(t, rec, 1, 3*time.Second)
-	if got := rec.tags()[0]; got != "diskusage/var" {
+	// The prefix is what tells the hub this is a beacon event, so it
+	// lands under `halite/beacon/<node_id>/` and not the node's general
+	// namespace. SPEC 17.1 names that tag, and SPEC 16.5's own reactor
+	// example matches on it.
+	if got := rec.tags()[0]; got != TagPrefix+"diskusage/var" {
 		t.Errorf("the beacon fired under %q", got)
 	}
 }
@@ -308,7 +312,7 @@ func TestABeaconThatFailsFiresAnError(t *testing.T) {
 	go e.Run(ctx)
 
 	waitFor(t, rec, 1, 3*time.Second)
-	if got := rec.tags()[0]; got != "diskusage/error" {
+	if got := rec.tags()[0]; got != TagPrefix+"diskusage/error" {
 		t.Errorf("a failing beacon fired %q", got)
 	}
 }

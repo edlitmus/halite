@@ -290,9 +290,9 @@ func (e *Engine) offer(in *Instance, ev Event) {
 		e.logf("debug", "a beacon event was rate limited", "beacon", in.Name)
 		return
 	}
-	tag := in.Name
+	tag := TagPrefix + in.Name
 	if ev.Suffix != "" {
-		tag = in.Name + "/" + ev.Suffix
+		tag += "/" + ev.Suffix
 	}
 	dropped := e.queue.push(queued{
 		tag:    tag,
@@ -304,7 +304,7 @@ func (e *Engine) offer(in *Instance, ev Event) {
 	if dropped > 0 {
 		e.logf("warn", "the beacon queue overflowed", "beacon", in.Name, "dropped", dropped)
 		// Loss is reported, never silent. SPEC 16.3.
-		_ = e.Send(in.Name+"/overflow", map[string]any{"dropped": int64(dropped)})
+		_ = e.Send(TagPrefix+in.Name+"/overflow", map[string]any{"dropped": int64(dropped)})
 	}
 }
 

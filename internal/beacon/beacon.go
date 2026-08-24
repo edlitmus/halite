@@ -23,6 +23,12 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
+// TagPrefix marks an event as a beacon's, so that whatever carries it
+// can place it under `halite/beacon/<node_id>/`, the tag SPEC 17.1
+// names. The node id is added by the hub from the certificate, never by
+// the node, so this marks the kind of event and not who sent it.
+const TagPrefix = "beacon/"
+
 // Event is one beacon firing.
 type Event struct {
 	// Suffix is appended to `halite/beacon/<node>/<beacon>/`, so a
