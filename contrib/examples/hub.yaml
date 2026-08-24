@@ -82,5 +82,15 @@ event_tag_compat: false
 # SPEC 26.2.
 metrics: true
 
+# Ship the whole event stream to a returner, which SPEC 20.3 calls the
+# recommended path to a SIEM. It resumes from a bus offset, so a
+# receiver that was unreachable for an hour catches up rather than
+# leaving an hour-shaped hole in the audit trail.
+#
+# event_return: syslog
+# event_return_tags: 'halite/job/**,halite/state/**'
+# returner_syslog_address: siem.example:6514
+# returner_syslog_tls: true
+
 log_level: info
 log_format: json

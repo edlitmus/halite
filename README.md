@@ -183,8 +183,14 @@ exists before you need it. No client library: the text format is
 documented and stable, and a dependency in a control plane's supply
 chain needs a better reason than saving a hundred lines.
 
-What is not built is the rest of phase 4 — OIDC, LDAP, returners, and
-the bridge protocol — and phase 5: gitfs, agentless mode, and Windows.
+Returners followed, all six SPEC 20.3 marks Full. The webhook one is
+signed, retried, and spooled: a receiver that goes down for an hour gets
+the backlog when it comes back, in order, rather than losing exactly the
+returns from the incident. `event_return` ships the whole bus to a SIEM
+the same way, resuming from an offset.
+
+What is not built is the rest of phase 4 — OIDC, LDAP, and the bridge
+protocol — and phase 5: gitfs, agentless mode, and Windows.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

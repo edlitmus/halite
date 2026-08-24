@@ -1448,6 +1448,9 @@ webhook delivered end to end onto the bus.
 | The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
 | Beacon events were in the wrong namespace | SPEC 17.1 puts a beacon under `halite/beacon/<node_id>/<beacon>/` and SPEC 18.1's own reactor example matches on it; they were arriving under `halite/node/<node_id>/`. A reactor written from the specification matched nothing and said nothing about it. Found while adding the metric that counts them. |
 | Two expositions concatenated are not one exposition | Both components expose `halite_build_info`, and the text format allows one `# HELP` per metric name in a document. A scraper rejects the whole body for the duplicate, so the failure arrives as "no metrics at all" rather than as one duplicated family. They are merged now. |
+| A node whose pillar did not compile answered nothing | Every exec function compiled pillar first and failed the job when that failed, so one unreadable file in the pillar tree meant no `test.ping`, no `grains.items`, no `service.status` — at exactly the moment somebody was trying to find out what was wrong with the node. The error travels on the execution context now and surfaces at the functions that read pillar. Found by running a node against a real tree whose pillar this process had no GPG key for. |
+| The webhook returner had no way to trust an internal CA | It verifies TLS, correctly, and refused a receiver holding a certificate from the estate's own CA. The only ways out were a public certificate or skipping verification, and the second is not on offer for a connection carrying whatever a job printed. |
+| A diagnostic about a secret file redacted the file's name | `returner_webhook_secret_file` matched the redactor's "secret" rule, so "the secret at ********** is mode 644" was the message. The path is not the secret; the contents are. A key ending `_file` is exempt now. |
 | No WebSocket upgrade could ever succeed | The access-log wrapper did not pass through `http.Hijacker`, so `/v1/ws/events` answered "this connection cannot be upgraded" for every caller. The endpoint's own tests called the handler directly and stayed green. A test now dials the assembled server and speaks the protocol. |
 
 The event stream was watched over both transports while a job ran, and
@@ -1467,7 +1470,17 @@ stopped, which answered 200 with the service's own numbers and the
 reason as a comment. The merged body was checked to have no metric name
 declared twice and every series line under a declaration.
 
-It does not cover a Prometheus server actually scraping it, an OIDC or
+The returners were run against real receivers: a TLS webhook sink that
+verified every HMAC signature with its own implementation, and a TCP
+syslog receiver. Twenty-three returns arrived across a receiver outage
+— none lost, none duplicated, and in order — with the spool filling
+while the receiver was down and draining ahead of new returns when it
+came back. `event_return` shipped 170 events to a file returner,
+rotated at the configured bound, and resumed from its offset across a
+hub restart without re-shipping what had gone.
+
+It does not cover a Prometheus server actually scraping it, an SMTP
+returner against a real mail server, syslog over TLS, an OIDC or
 LDAP login, `mtls` hook authentication,
 `Last-Event-ID` resumption after a real disconnection, a token expiring
 mid-stream, a second operator with a narrower policy watching the same
@@ -1907,13 +1920,32 @@ names is written by something outside the program, so an estate with a
 thousand distinct functions would otherwise turn one family into a
 thousand series.
 
+**Returners are built**, all six SPEC 20.3 marks Full: `local` and
+`file` (append-only NDJSON, the second with rotation), `local_cache`,
+`syslog` (RFC 5424 written directly, because `log/syslog` speaks the
+older RFC 3164 and does not exist on Windows), `webhook`, and `smtp`.
+The seventeen marked Bridged are refused by name as bridged rather than
+as typos.
+
+The webhook returner is where SPEC 20.3 asks for three things together
+— HMAC-SHA-256 body signing, retry with backoff, and a durable spool —
+and the third is what makes the other two worth having. Without it the
+returns lost are exactly the ones from the incident that took the
+receiver down. The backlog goes out ahead of new returns so the order
+survives; a 4xx is not retried, because a request the receiver will
+never accept would otherwise fill a disk; and a full spool refuses
+rather than making room.
+
+`event_return` ships the whole bus, resuming from an offset, and a
+delivery failure does not advance it.
+
 What is **not** built in the API:
 
 - **OIDC and LDAP** (SPEC 23.4, 23.3). A login naming another backend
   is refused by name rather than quietly authenticated against local
   accounts.
-- **Returners** (SPEC 20.3), and **the bridge protocol and its sandbox**
-  (SPEC section 24).
+- **The bridge protocol and its sandbox** (SPEC section 24), and with it
+  the seventeen returners SPEC 20.3 marks Bridged.
 - **Node-side metrics.** A node has no exposition endpoint, so what only
   it knows is counted nowhere: a beacon event its own queue dropped, a
   local state run's duration, and the scheduler's `maxrunning` skips.

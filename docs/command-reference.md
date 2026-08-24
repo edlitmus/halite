@@ -425,10 +425,76 @@ file is refused, with the fix in the message.
 `schedule.run_job` runs arbitrary code, so a wildcard in the RBAC policy
 never grants it: the role has to name it. SPEC 23.5.
 
-A scheduled job's return goes to the `local` returner: append-only
-NDJSON at `<state_dir>/returns.ndjson`. Sending it to the hub's job
-cache is `local_cache`, which is not built — the hub refuses a return
-for a job it never dispatched, and that refusal is correct.
+A scheduled job's return goes to whatever `returner:` names, which
+defaults to `local`. See below.
+
+## Returners
+
+`returner:` in the node configuration says where a return goes. SPEC
+20.3 marks six as Full and this build has all six:
+
+| Returner | halite | Status |
+|---|---|---|
+| `local` | append-only NDJSON at `<state_dir>/returns.ndjson` | works |
+| `local_cache` | the hub's job cache | works |
+| `file` | NDJSON at `returner_file`, with rotation | works |
+| `syslog` | RFC 5424, local socket or TCP, optionally over TLS | works |
+| `webhook` | HTTPS POST, signed, retried, spooled | works |
+| `smtp` | one mail per return | works |
+| `mysql`, `postgres`, `redis`, `elasticsearch`, `splunk`, `slack`, `kafka`, `sqs`, and the rest | bridged; SPEC section 24 | not built |
+
+A bridged destination is refused by name rather than reported as a typo:
+`returner: postgres` says it runs behind the bridge, and `returner:
+pstgres` says it is not a returner. Those are different problems.
+
+The webhook returner is the one worth reading about:
+
+```yaml
+returner: webhook
+returner_webhook_url: https://ci.example/halite/returns
+returner_webhook_secret_file: /usr/local/etc/halite/returner.secret
+returner_webhook_ca_file: /usr/local/etc/halite/internal-ca.pem
+returner_webhook_attempts: 5
+returner_spool_max_size: 268435456
+```
+
+The signature is HMAC-SHA-256 over the timestamp and the raw body
+together, in `X-Halite-Signature` with `X-Halite-Timestamp` — the same
+construction the API's webhook ingress verifies, so an estate that has
+written one verifier has written both.
+
+A delivery that fails is retried with backoff and then spooled to disk.
+The backlog goes out ahead of new returns, so the receiver sees them in
+the order they happened. A 4xx is not retried: the receiver understood
+and refused, and retrying forever fills a disk with a request nobody
+will accept. A full spool refuses rather than making room, because a
+spool that silently discards is the failure it exists to prevent.
+
+The url must be `https://`. A return carries whatever the job printed,
+and `returner_webhook_ca_file` is there so an internal CA works without
+anyone reaching for a way to skip verification.
+
+### Shipping the event stream
+
+`event_return:` on the **hub** sends the whole bus to a returner, which
+SPEC 20.3 calls the recommended path to a SIEM:
+
+```yaml
+event_return: syslog
+event_return_tags: 'halite/job/**,halite/state/**'
+returner_syslog_address: siem.example:6514
+returner_syslog_tls: true
+returner_syslog_ca_file: /usr/local/etc/halite/siem-ca.pem
+```
+
+It resumes from a bus offset, so a receiver that was unreachable for an
+hour catches up rather than leaving an hour-shaped hole. A delivery
+failure does not advance the offset. `event_return_from: earliest` ships
+the backlog on a first run; the default is `latest`, because shipping a
+month of history into a SIEM on first boot is a bill and an alert storm.
+
+`local_cache` is refused here: it would be the bus writing into the
+cache of the hub that owns the bus.
 
 ## Beacons
 

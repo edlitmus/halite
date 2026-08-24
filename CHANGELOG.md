@@ -290,6 +290,39 @@ What a node alone knows is counted nowhere yet, because a node has no
 exposition endpoint: a beacon event its own queue dropped, a local state
 run's duration, the scheduler's `maxrunning` skips.
 
+### Returns go somewhere durable
+
+The six returners SPEC 20.3 marks Full: `local` and `file` (append-only
+NDJSON, the second with rotation), `local_cache`, `syslog`, `webhook`,
+and `smtp`. The seventeen it marks Bridged are named as bridged rather
+than omitted — an operator who writes `returner: postgres` has made a
+reasonable request, and "postgres is not a returner" would be a lie.
+
+The webhook returner is the one SPEC 20.3 describes in three parts, and
+the third is what makes the other two worth having: HMAC-SHA-256 over
+the timestamp and the raw body, retry with bounded backoff, and a
+durable spool. Without the spool the returns lost are exactly the ones
+from the incident that took the receiver down. The backlog goes out
+ahead of new returns so the order survives; a 4xx is not retried,
+because a request the receiver will never accept would otherwise fill a
+disk; and a full spool refuses rather than making room, because a spool
+that silently discards is the failure it exists to prevent.
+
+`event_return` ships the whole event stream, which SPEC 20.3 calls the
+recommended path to a SIEM. It resumes from a bus offset, so a receiver
+that was unreachable for an hour catches up rather than leaving an
+hour-shaped hole in the audit trail, and a delivery failure does not
+advance the offset.
+
+Syslog is RFC 5424 written directly rather than through `log/syslog`,
+which speaks the older RFC 3164 and does not exist on Windows — a
+tier-1 platform in SPEC 27.1.
+
+TLS is required wherever a return leaves the machine. The webhook
+returner refuses an `http://` url and takes a CA file so an internal
+receiver works without anyone reaching for a way to skip verification;
+SMTP refuses to send credentials without STARTTLS.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -521,7 +554,7 @@ reproducible-build verification, which needs a second builder.
 ### What is not built
 
 The rest of phase 4, and phases 5 and 6. No OIDC or LDAP, no
-returners, no bridge protocol, no gitfs, no s3fs, no
+bridge protocol, no gitfs, no s3fs, no
 agentless mode, no relays, no FIPS artifact set, no detached job
 signing, no signed state trees, and no backtracking regex engine.
 
