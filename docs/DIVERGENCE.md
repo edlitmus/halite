@@ -1394,7 +1394,10 @@ watched file, reaching the hub's bus, and the reactor acting on one --
 the whole automation loop, end to end; `halite-api serve` against the
 real hub, with a login issuing a usable token, introspection reporting
 it, logout killing it, the security headers on every response, and the
-token appearing nowhere in the service's log; a schedule running `test.ping`
+token appearing nowhere in the service's log; a synchronous run and an
+asynchronous submission through the API reaching a real node, the job
+recording `on_behalf_of` beside the service's own certificate, and
+`/v1/nodes` and `/v1/keys` answering from the real estate; a schedule running `test.ping`
 every five seconds and a `cron` job reporting its next fire time, with
 the returns landing in the node's own NDJSON log; a beacon and a job
 added to a running node, disabled, run out of turn, saved, and still

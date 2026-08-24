@@ -155,6 +155,33 @@ contract; it does not dispatch an execution function at all, because
 finding out what a test run would do by running it is how a test run
 becomes a deployment.
 
+### The fleet, over HTTP
+
+`/v1/run`, `/v1/jobs`, `/v1/nodes`, `/v1/keys`, `/v1/orch`, and
+`/v1/pillar/{id}`, with Salt's netapi client types preserved so an
+existing CI job posts the shape it always did.
+
+Every request is authorized twice, against the same policy file. The
+operator behind the token is authorized at the API — without that,
+logging in would hand out the service's whole authority. The service
+then forwards under its own certificate and the hub authorizes that,
+which is what makes it a client rather than a component: compromising it
+yields one grant, not the control plane.
+
+The roles a token was issued with are what decide. A role granted after
+the token was handed out does not widen it, and one taken away is a
+reason to revoke rather than a change that applies mid-session.
+
+A job records both identities: the certificate the hub authorized, and
+the operator it was submitted for. The second is recorded and never
+trusted — the hub reads identity from the connection and nothing from
+the body — but "who really asked for this" now has an answer that is not
+a service account.
+
+Reading a node's pillar needs the role to name it. A wildcard never
+carries it, because a role written to let someone restart a service
+should not read the estate's secrets.
+
 ### An API that knows who is asking
 
 `halite-api serve` runs. It is a client of the hub, not a component of

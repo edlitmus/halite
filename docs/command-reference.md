@@ -681,7 +681,19 @@ token_idle: 4h
 | `eauth: pam` | local accounts, PBKDF2-HMAC-SHA-512 | works |
 | no equivalent | TOTP second factor, RFC 6238 | works |
 | `eauth: ldap`, `eauth: oidc` | same | phase 4 |
-| `POST /run`, `POST /minions`, `GET /jobs` | the execution endpoints | phase 4 |
+| `POST /run` | `POST /v1/run`, synchronous | works |
+| `POST /minions` | `POST /v1/jobs`, asynchronous | works | <!-- lexicon:allow -->
+| `GET /jobs`, `GET /jobs/{jid}` | same under `/v1/` | works |
+| no equivalent | `DELETE /v1/jobs/{jid}`, killing it | works |
+| `GET /minions` | `GET /v1/nodes`, with grains and connection state | works | <!-- lexicon:allow -->
+| `GET /minions/{id}` | `GET /v1/nodes/{id}` | works | <!-- lexicon:allow -->
+| `POST /minions` for one | `POST /v1/nodes/{id}/state` | works | <!-- lexicon:allow -->
+| `GET /keys`, `POST /keys` | same under `/v1/`, subject to RBAC | works |
+| no equivalent | `POST /v1/orch`, `GET /v1/orch/{jid}` | works |
+| no equivalent | `GET /v1/pillar/{id}`, behind a named permission | works |
+| `client: local`, `local_async`, `local_batch` | same | works |
+| `client: runner`, `runner_async`, `wheel`, `wheel_async` | same, one hub namespace | works |
+| `client: ssh` | same | phase 5 |
 | `GET /events` | SSE, and a WebSocket at `/v1/ws/events` | phase 4 |
 | `POST /hook/{path}` | webhook ingress, always authenticated | phase 4 |
 
@@ -702,6 +714,39 @@ argument — an argument reaches the process table and the shell history.
 Every login failure gives one message however it failed. Which of the
 three it was is in the log: the difference between "no such account" and
 "wrong password" is the difference between a guess and a confirmed name.
+
+Every request is authorized twice. The operator behind the token is
+authorized at the API, against the same policy file the hub uses;
+without that, logging in would hand out the service's whole authority.
+The service then forwards under its own certificate and the hub
+authorizes that. An estate that grants the API less than the sum of its
+operators gets exactly that, which is a control rather than an accident:
+
+```yaml
+roles:
+  api-service:
+    - target: '*'
+      functions: ['test.ping', 'state.apply']
+    - runners: ['jobs.*', 'manage.*', 'pillar.show_pillar']
+bindings:
+  - principal: 'cert:CN=api'
+    roles: ['api-service']
+```
+
+The roles a token was *issued* with are what decide, so a role granted
+after the token was handed out does not widen it, and one taken away is
+a reason to revoke rather than a change that applies mid-session.
+
+A job submitted through the API records both identities: `submitter` is
+the service's certificate, which is what the hub authorized, and
+`on_behalf_of` is the operator, which is recorded and never trusted. The
+hub reads identity from the connection and nothing from the body.
+
+`GET /v1/pillar/{id}` needs the role to name `pillar.show_pillar`
+literally. Reading one node's compiled pillar is reading its secrets,
+and a role written to let someone restart a service must not carry it
+because the list said `*`. SPEC 22.1 calls this a distinct
+high-privilege permission and it is enforced as one.
 
 ## Targeting
 
