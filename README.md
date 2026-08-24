@@ -77,7 +77,7 @@ Delivery follows the phases in SPEC section 32.
 | 0. Foundations | YAML parser, template engine, ordered model, module signatures, configuration and compatibility shim, migration report, build policy | **Done** |
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
-| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Contents built**: runners, orchestration, reactors, beacons, the scheduler, and the mine. Runtime management of beacons and schedules is not |
+| 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
@@ -144,10 +144,15 @@ learns its backend list. Reading it is the peer interface, and it is
 deny-by-default in the same RBAC policy everything else uses rather than
 in a separate dialect.
 
+A running node's watchers and schedule can be changed without restarting
+it, which is the point: a beacon that can only be changed by a restart
+is one nobody changes during the incident that made them want to.
+Changes live in memory until `save` writes them to the node's own file
+under `beacons.d` or `schedule.d`, beside — never over — what a package
+manager put there.
+
 What is not built is what SPEC puts in later phases: the API is phase 4;
-gitfs, agentless mode, and Windows are phase 5. Inside phase 3, the
-runtime management of beacons and schedules — `beacons.add`,
-`schedule.add`, and their neighbours — is still to come.
+gitfs, agentless mode, and Windows are phase 5.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

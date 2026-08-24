@@ -387,7 +387,13 @@ schedule:
 | `timezone: <IANA name>` | same, from Go's embedded database | works |
 | `salt-call schedule.list` | `halite-node call schedule.list` | works |
 | no equivalent | `halite-node call schedule.show_next_fire_time name=…` | works |
-| `schedule.add`, `modify`, `delete`, `enable`, `disable`, `enable_job`, `disable_job`, `run_job`, `save`, `reload` | same | not built |
+| `schedule.add`, `modify`, `delete` | same | works |
+| `schedule.enable`, `disable` | same, holding the whole schedule | works |
+| `schedule.enable_job`, `disable_job` | same, holding one | works |
+| `schedule.run_job` | same, out of turn and without splay | works |
+| `schedule.save`, `reload` | same | works |
+| `/etc/halite/schedule.d/` | same | works |
+| schedules through pillar | same | not built |
 | `L`, `W`, `#`, `?`, a seconds field in cron | refused by name | by design |
 | `jid_include` | accepted and means nothing here | by design |
 
@@ -401,6 +407,21 @@ and a crontab moved here has to keep meaning what it meant.
 repeats runs a job in it once, not twice. An hour that is skipped runs a
 job in it once, at the transition. SPEC 20.1 specifies both because they
 are where missed runs come from.
+
+A change made at runtime lives only in memory until `save` writes it to
+`schedule.d/99-runtime.yaml` — a file of the node's own, numbered last
+so it beats the files it was made against, and never over what a package
+manager put there. `reload` re-reads the directory and discards runtime
+changes that were never saved. `beacons.save` does the same for
+`beacons.d/`.
+
+A fragment in either directory is a mapping of names to definitions with
+no `beacons:` or `schedule:` above them, because the directory already
+says what they are. One written in the shape of the main configuration
+file is refused, with the fix in the message.
+
+`schedule.run_job` runs arbitrary code, so a wildcard in the RBAC policy
+never grants it: the role has to name it. SPEC 23.5.
 
 A scheduled job's return goes to the `local` returner: append-only
 NDJSON at `<state_dir>/returns.ndjson`. Sending it to the hub's job
@@ -453,7 +474,12 @@ reached by `diskusage/**`.
 | no equivalent | `rate_limit`, `coalesce_window`, `queue_depth` per beacon | works |
 | `salt-call beacons.list` | `halite-node call beacons.list` | works |
 | no equivalent | `halite-node call beacons.list available=True` | works |
-| `beacons.add`, `modify`, `delete`, `enable`, `disable`, `save`, `reset` | same | not built |
+| `beacons.add`, `modify`, `delete` | same | works |
+| `beacons.enable`, `disable` | same, holding every beacon | works |
+| `beacons.enable_beacon`, `disable_beacon` | same, holding one | works |
+| `beacons.save`, `reset` | same | works |
+| `/etc/halite/beacons.d/` | same | works |
+| beacons through pillar | same | not built |
 | `inotify`, `fanotify` | `filechanges` polls instead | needs `golang.org/x/sys` |
 | `watchdirs`, `eventlog` | same | phase 5, Windows |
 | `fsevents` | same | phase 5, macOS |
@@ -462,6 +488,16 @@ reached by `diskusage/**`.
 A beacon that this build does not have, or that is declared and not
 built, stops the node rather than being skipped: a watcher that is
 configured and does not run is indistinguishable from a quiet machine.
+
+A beacon key that is not an identifier — `1m`, or a path like `/var` —
+cannot be typed as a keyword argument, so `beacons.add` takes the
+configuration as JSON instead:
+
+```
+halite-hub run '*' beacons.add name=load beacon_data='{"1m": [">", 2.0], "interval": 5}'
+```
+
+Simple keys can be typed inline: `beacons.add name=diskusage interval=60`.
 
 The controls exist because beacon events are the classic self-inflicted
 denial of service — a file that changes in a loop fires a beacon that

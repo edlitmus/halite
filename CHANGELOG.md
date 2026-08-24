@@ -155,6 +155,26 @@ contract; it does not dispatch an execution function at all, because
 finding out what a test run would do by running it is how a test run
 becomes a deployment.
 
+### A running node can be changed without restarting it
+
+The nineteen management functions of SPEC 16.1 and 20.1 act on the
+running engines. A watcher or a schedule that can only be changed by
+restarting the node is one nobody changes during an incident, which is
+when the reason to change it usually arrives.
+
+Disabling holds without forgetting, so enabling afterwards restores
+exactly what was there. Modifying keeps what the change did not mention:
+a beacon turned off during an incident stays off when someone fixes its
+threshold, and a job keeps its last run so an interval does not restart
+every time it is adjusted. `schedule.run_job` runs one job now, out of
+its turn and without splay, and leaves the schedule alone.
+
+A change lives in memory until `save` writes it to a file of the node's
+own under `beacons.d` or `schedule.d` — numbered last, so a runtime
+change beats the file it was made against, and never over what a package
+manager put there. What it writes parses back into the same beacons and
+jobs, and a person can edit it.
+
 ### The mine
 
 `mine_functions` on a node computes values and publishes them; a state

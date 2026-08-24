@@ -1393,7 +1393,10 @@ resuming the reactor from its recorded offset; the `filechanges` and
 watched file, reaching the hub's bus, and the reactor acting on one --
 the whole automation loop, end to end; a schedule running `test.ping`
 every five seconds and a `cron` job reporting its next fire time, with
-the returns landing in the node's own NDJSON log; a node publishing two
+the returns landing in the node's own NDJSON log; a beacon and a job
+added to a running node, disabled, run out of turn, saved, and still
+there after a restart with the disabled state intact, and a fragment
+written in the wrong shape refused by name; a node publishing two
 mine functions on its interval and another read of them refused by the
 policy for the function it was not granted; a node started before its
 hub falling back to its own roots and then re-attaching once the hub
@@ -1666,12 +1669,9 @@ What is **not** built in beacons:
   `log`, `wtmp`, `btmp`, `sh`, and the four platform notifiers. Each is
   registered and answers with when it arrives, so a configuration
   naming one is refused with a reason rather than skipped.
-- **Runtime management.** `beacons.list` answers from the registry and
-  the configuration. The nine that change a running node's watchers —
-  `add`, `modify`, `delete`, `enable`, `disable`, `enable_beacon`,
-  `disable_beacon`, `save`, `reset` — need a handle on the running
-  engine and somewhere to write the change down, and they say so rather
-  than reporting a change nobody made.
+- **Beacons through pillar.** SPEC 16.1 names three sources: the
+  configuration file, `beacons.d`, and pillar. The first two work; a
+  beacon delivered through pillar does not.
 - **The default interval.** Salt polls every second by default; this
   build polls every minute unless the beacon says otherwise. Reading the
   filesystem once a second for a threshold that moves in hours is a cost
@@ -1693,15 +1693,9 @@ the gap without documenting which.
 
 What is **not** built in the scheduler:
 
-- **Runtime management.** `schedule.list` and `show_next_fire_time`
-  answer from the configuration. The ten that change a running node's
-  schedule — `add`, `modify`, `delete`, `enable`, `disable`,
-  `enable_job`, `disable_job`, `run_job`, `save`, `reload` — need a
-  handle on the running engine and somewhere to write the change down,
-  and they say so.
-- **`/etc/halite/schedule.d/` and pillar-delivered schedules.** SPEC
-  20.1 names three sources; the node configuration is the one that
-  works.
+- **Schedules through pillar.** SPEC 20.1 names three sources: the
+  configuration file, `schedule.d`, and pillar. The first two work; a
+  job delivered through pillar does not.
 - **A node's own reactor** (SPEC 20.2). A beacon on a node reaches the
   hub's reactor; there is no local bus and no local reaction, so
   self-healing still needs the hub.
@@ -1737,6 +1731,35 @@ What is **not** built in the mine:
 - **`mine_interval` finer than a minute.** Salt's unit is minutes and
   this reads it the same way, so a node cannot publish more often than
   that without `mine.send`.
+
+**The runtime management of both followed.** The nineteen functions of
+SPEC 16.1 and 20.1 act on the running engines: a watcher or a schedule
+that can only be changed by restarting the node is one nobody changes
+during an incident, which is when the reason to change it usually
+arrives.
+
+Both engines reconcile against their configured set on every pass rather
+than starting a goroutine per entry at boot, which is what lets an entry
+added later take effect. Disabling holds without forgetting, so enabling
+restores exactly what was there. Modifying keeps what the change did not
+mention — a beacon turned off stays off when its threshold is fixed, and
+a job keeps its last run so an interval does not restart because someone
+adjusted it.
+
+`save` writes to `beacons.d/99-runtime.yaml` and
+`schedule.d/99-runtime.yaml`: a file of the node's own, numbered last so
+a runtime change beats the file it was made against, and never over what
+a package manager put there. What it writes parses back into the same
+beacons and jobs.
+
+One shape is refused deliberately. A fragment in either directory is a
+mapping of names to definitions with no `beacons:` or `schedule:` above
+them, because the directory already says what they are. Written in the
+shape of the main configuration file it produces a beacon called
+`beacons`, and the node then complains about a name nobody typed — so it
+is refused per fragment, with the fix in the message. Per fragment
+rather than after the merge: mixed with an unwrapped file, a wrapper
+would otherwise slip through.
 
 The rest of phases 4 through 6 does not exist: no API, no OIDC or LDAP,
 no webhooks, no bridge protocol, no gitfs, no s3fs, no agentless mode,
