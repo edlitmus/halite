@@ -117,7 +117,7 @@ func newLab(t *testing.T) *lab {
 		// hold that port on the other stack. It did: one run met
 		// memcached. The name is exercised deliberately by the test
 		// below rather than by accident in every test.
-		url: "https://" + net.JoinHostPort("127.0.0.1", port(t, ln.Addr().String())),
+		url:    "https://" + net.JoinHostPort("127.0.0.1", port(t, ln.Addr().String())),
 		cancel: cancel,
 		ln:     ln,
 		served: done,

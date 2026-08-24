@@ -64,6 +64,13 @@ type Request struct {
 	// Runner marks a runner call rather than a fleet job, which is
 	// granted by `runners:` rather than by `functions:`.
 	Runner bool
+	// NeverWildcard requires the function to be named in the role
+	// rather than matched by a pattern, for the distinct
+	// high-privilege permissions of SPEC 22.1. Reading one node's
+	// compiled pillar is reading its secrets, and a role written to let
+	// someone restart a service should not carry it because the list
+	// said `*`.
+	NeverWildcard bool
 }
 
 // Decision is the outcome, and why. SPEC 23.5: every decision is
@@ -255,13 +262,27 @@ func matchPrincipal(pattern, principal string) bool {
 	return err == nil && ok
 }
 
-// Authorize decides one request. Deny by default: a request must match
-// at least one rule entirely.
+// Authorize decides one request, resolving the principal's roles from
+// the bindings. Deny by default: a request must match at least one rule
+// entirely.
 func (p *Policy) Authorize(req Request) Decision {
 	if p == nil {
 		return Decision{Reason: "this hub has no policy, so nothing is authorized"}
 	}
-	roles := p.RolesFor(req.Principal)
+	return p.AuthorizeAs(req, p.RolesFor(req.Principal))
+}
+
+// AuthorizeAs decides one request against a role set given rather than
+// resolved.
+//
+// It is what a token needs: SPEC 23.6 freezes the roles at issue, so a
+// role added to the principal afterwards must not widen a token already
+// in someone's hands, and one taken away is a reason to revoke rather
+// than a change that quietly applies mid-session.
+func (p *Policy) AuthorizeAs(req Request, roles []string) Decision {
+	if p == nil {
+		return Decision{Reason: "there is no policy, so nothing is authorized"}
+	}
 	if len(roles) == 0 {
 		return Decision{Reason: fmt.Sprintf("%s is bound to no role in %s", req.Principal, p.Path)}
 	}
@@ -276,12 +297,20 @@ func (p *Policy) Authorize(req Request) Decision {
 				if !matchAny(rule.Runners, req.Fun) {
 					continue
 				}
+				// A distinct high-privilege permission has to be
+				// named, not matched. SPEC 22.1.
+				if req.NeverWildcard && !namedExactly(rule.Runners, req.Fun) {
+					best = Decision{Reason: fmt.Sprintf(
+						"%s is never granted by a wildcard; name it in the role (SPEC 22.1)",
+						req.Fun)}
+					continue
+				}
 			} else {
 				if !targetCovered(rule.Target, req.Target) {
 					continue
 				}
-				if !p.functionGranted(rule, req.Fun) {
-					if p.ArbitraryCode[req.Fun] && matchAny(rule.Functions, "*") {
+				if !p.functionGranted(rule, req.Fun) || (req.NeverWildcard && !namedExactly(rule.Functions, req.Fun)) {
+					if (p.ArbitraryCode[req.Fun] || req.NeverWildcard) && matchAny(rule.Functions, "*") {
 						best = Decision{Reason: fmt.Sprintf(
 							"%s runs arbitrary code and is never granted by a wildcard; name it in the role's functions (SPEC 23.5)",
 							req.Fun)}
@@ -316,6 +345,17 @@ func (p *Policy) functionGranted(rule Rule, fun string) bool {
 			continue
 		}
 		return true
+	}
+	return false
+}
+
+// namedExactly reports whether a function appears literally in a
+// rule's list, rather than being matched by a pattern in it.
+func namedExactly(patterns []string, fun string) bool {
+	for _, p := range patterns {
+		if p == fun {
+			return true
+		}
 	}
 	return false
 }

@@ -62,23 +62,32 @@ func registerCacheRunner(r *Runners) {
 	r.Add(
 		RunnerModule{
 			Sig: runnerSig("cache", "grains",
-				"The grains this hub last received from a node.", "19.2",
-				runnerArg("node", signature.String, "The node identifier."),
+				"The grains this hub last received from a node, or from every node "+
+					"when none is named.", "19.2",
+				runnerOpt("node", signature.String, "", "One node, or every node."),
 			),
 			Fn: func(c *RunnerContext) (any, error) {
-				data, err := c.Server.nodes().Get(c.arg("node"))
+				if node := c.arg("node"); node != "" {
+					return c.Server.cachedNode(node)
+				}
+				// Every node in one answer, because the alternative is
+				// a round trip per node and an estate is not small.
+				known, err := c.Server.nodes().Known()
 				if err != nil {
 					return nil, err
 				}
-				out := value.NewMap(3)
-				grains, err := value.DecodeJSON(data.Grains)
-				if err != nil {
-					return nil, fmt.Errorf("the cached grains for %s will not decode: %w", data.NodeID, err)
-				}
-				out.Set("grains", grains)
-				out.Set("last_seen", data.LastSeen.UTC().Format(time.RFC3339))
-				if data.Version != "" {
-					out.Set("version", data.Version)
+				out := value.NewMap(len(known))
+				for _, id := range known {
+					entry, err := c.Server.cachedNode(id)
+					if err != nil {
+						// One unreadable record must not hide the
+						// rest, and must not be silently dropped
+						// either.
+						c.Server.warn("skipping a node whose cached data is unreadable",
+							"node_id", id, "error", err.Error())
+						continue
+					}
+					out.Set(id, entry)
 				}
 				return out, nil
 			},
@@ -334,6 +343,25 @@ func registerEventRunner(r *Runners) {
 			},
 		},
 	)
+}
+
+// cachedNode is what the hub holds about one node.
+func (s *Server) cachedNode(id string) (*value.Map, error) {
+	data, err := s.nodes().Get(id)
+	if err != nil {
+		return nil, err
+	}
+	out := value.NewMap(3)
+	grains, err := value.DecodeJSON(data.Grains)
+	if err != nil {
+		return nil, fmt.Errorf("the cached grains for %s will not decode: %w", data.NodeID, err)
+	}
+	out.Set("grains", grains)
+	out.Set("last_seen", data.LastSeen.UTC().Format(time.RFC3339))
+	if data.Version != "" {
+		out.Set("version", data.Version)
+	}
+	return out, nil
 }
 
 // ---- shared helpers ----

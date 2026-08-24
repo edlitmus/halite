@@ -154,6 +154,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		Offline:    offline,
 		TTL:        time.Duration(req.TTLSeconds) * time.Second,
 		Submitter:  principal,
+		OnBehalfOf: req.OnBehalfOf,
 		BatchSpec:  req.Batch,
 		Subset:     req.Subset,
 		Batch: job.Batch{

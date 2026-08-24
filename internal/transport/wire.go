@@ -147,6 +147,15 @@ type SubmitRequest struct {
 	Env        string         `json:"env,omitempty"`
 	Test       bool           `json:"test,omitempty"`
 	Offline    string         `json:"offline,omitempty"`
+	// OnBehalfOf is who asked the submitter to submit this, for the
+	// audit record. The API fills it in with the operator it
+	// authenticated.
+	//
+	// Recorded, never trusted: the hub authorizes the certificate on
+	// the connection and nothing else. A body that could name its own
+	// principal would be a body that could name any principal, which
+	// is the whole reason identity comes from the certificate.
+	OnBehalfOf string `json:"on_behalf_of,omitempty"`
 	// TTLSeconds bounds how long the job may be run, per SPEC 6.3.
 	TTLSeconds int `json:"ttl_seconds,omitempty"`
 

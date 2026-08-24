@@ -86,6 +86,16 @@ const (
 	PathLogout  = "/v1/logout"
 	PathToken   = "/v1/token"
 	PathSchema  = "/v1/schema"
+	PathRun     = "/v1/run"
+	PathJobs    = "/v1/jobs"
+	PathJob     = "/v1/jobs/"
+	PathNodes   = "/v1/nodes"
+	PathNode    = "/v1/nodes/"
+	PathKeys    = "/v1/keys"
+	PathKey     = "/v1/keys/"
+	PathOrch    = "/v1/orch"
+	PathOrchJob = "/v1/orch/"
+	PathPillar  = "/v1/pillar/"
 	PathHealthz = "/v1/healthz"
 	PathReadyz  = "/v1/readyz"
 )
@@ -103,6 +113,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+PathLogout, s.authenticated(s.logout))
 	mux.HandleFunc("GET "+PathToken, s.authenticated(s.introspect))
 	mux.HandleFunc("GET "+PathSchema, s.authenticated(s.schema))
+
+	// The execution surface of SPEC 22.1. Every one of them authorizes
+	// the operator behind the token here and is authorized again as
+	// this service's own certificate at the hub.
+	mux.HandleFunc("POST "+PathRun, s.authenticated(s.run))
+	mux.HandleFunc("POST "+PathJobs, s.authenticated(s.submit))
+	mux.HandleFunc("GET "+PathJobs, s.authenticated(s.jobList))
+	mux.HandleFunc("GET "+PathJob+"{jid}", s.authenticated(s.jobDetail))
+	mux.HandleFunc("DELETE "+PathJob+"{jid}", s.authenticated(s.jobDetail))
+	mux.HandleFunc("GET "+PathNodes, s.authenticated(s.nodeList))
+	mux.HandleFunc("GET "+PathNode+"{id}", s.authenticated(s.nodeDetail))
+	mux.HandleFunc("POST "+PathNode+"{id}/state", s.authenticated(s.nodeDetail))
+	mux.HandleFunc("GET "+PathKeys, s.authenticated(s.keys))
+	mux.HandleFunc("POST "+PathKeys, s.authenticated(s.keys))
+	mux.HandleFunc("DELETE "+PathKey+"{id}", s.authenticated(s.keys))
+	mux.HandleFunc("POST "+PathOrch, s.authenticated(s.orchestrate))
+	mux.HandleFunc("GET "+PathOrchJob+"{jid}", s.authenticated(s.orchDetail))
+	mux.HandleFunc("GET "+PathPillar+"{id}", s.authenticated(s.pillar))
 
 	// An unrouted path is a version skew or a scan, and says so without
 	// listing what does exist.

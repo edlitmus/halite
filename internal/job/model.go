@@ -73,6 +73,12 @@ type Job struct {
 	// the audit record. It is never the value of a field in a request
 	// body.
 	Submitter string `json:"submitter,omitempty"`
+	// OnBehalfOf is who asked the submitter to submit this: the
+	// operator the API authenticated, when a job came through it.
+	// Recorded for the audit and never used to authorize, so that
+	// "who really asked for this" has an answer without becoming a
+	// way to claim to be someone else.
+	OnBehalfOf string `json:"on_behalf_of,omitempty"`
 	// Correlation is the causality chain this job belongs to. It is
 	// carried into every event the job produces, so that "what did this
 	// cause" has an answer. SPEC 17.1.

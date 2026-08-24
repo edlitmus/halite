@@ -35,6 +35,9 @@ type Submission struct {
 	// Submitter is the authenticated principal. The handler fills this
 	// in from the certificate; a request body cannot set it.
 	Submitter string
+	// OnBehalfOf is who asked the submitter to submit it, recorded for
+	// the audit and never used to authorize.
+	OnBehalfOf string
 	// Correlation is the causality chain this job belongs to, carried
 	// into the events it produces. A reaction sets it to the chain of
 	// the event it reacted to, which is what makes a beacon that fires
@@ -124,6 +127,7 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 		Created:     now,
 		Expires:     now.Add(ttl),
 		Submitter:   sub.Submitter,
+		OnBehalfOf:  sub.OnBehalfOf,
 		Correlation: sub.Correlation,
 		Target:      sub.Target,
 		TargetKind:  kind.String(),

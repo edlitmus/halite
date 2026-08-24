@@ -352,6 +352,9 @@ func jobSummary(j *job.Job) *value.Map {
 	if j.Submitter != "" {
 		out.Set("submitter", j.Submitter)
 	}
+	if j.OnBehalfOf != "" {
+		out.Set("on_behalf_of", j.OnBehalfOf)
+	}
 	out.Set("created", j.Created.UTC().Format("2006-01-02T15:04:05.000000Z"))
 	if j.State != "" {
 		out.Set("state", string(j.State))
