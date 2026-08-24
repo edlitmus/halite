@@ -155,6 +155,32 @@ contract; it does not dispatch an execution function at all, because
 finding out what a test run would do by running it is how a test run
 becomes a deployment.
 
+### An API that knows who is asking
+
+`halite-api serve` runs. It is a client of the hub, not a component of
+it: it holds its own operator certificate, and its worst case is bounded
+by the policy that certificate is bound to. In Salt the API process
+loads the control plane's configuration and calls into its internals, so
+a flaw in the API is a flaw in the control plane. <!-- lexicon:allow -->
+
+Local accounts are PBKDF2-HMAC-SHA-512 through the standard library.
+Each hash carries its own cost, so the floor can be raised without
+invalidating what is already stored — and a hash below the floor is
+refused rather than quietly re-hashed, because accepting it silently is
+how it stays. TOTP is there for a second factor.
+
+A login that fails says one thing however it failed, and an account that
+does not exist is verified anyway so the answer does not come back
+faster for a name nobody has. Which of the three it was is in the log:
+the difference between "no such account" and "wrong password" is the
+difference between a guess and a confirmed name.
+
+A token is 256 bits from crypto/rand stored as a SHA-256 digest, so a
+token file that is read is not a set of working credentials. Both
+expiries, an optional source network, roles frozen at issue, and
+revocation individually or by principal. The secret is returned once and
+appears in no log, no event, no error, and no URL.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the

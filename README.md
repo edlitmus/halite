@@ -78,7 +78,7 @@ Delivery follows the phases in SPEC section 32.
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
-| 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | Not started |
+| 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Started**: the API's authentication spine is built; the execution endpoints, events, webhooks, OIDC, and LDAP are not |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
 
@@ -151,8 +151,16 @@ Changes live in memory until `save` writes them to the node's own file
 under `beacons.d` or `schedule.d`, beside — never over — what a package
 manager put there.
 
-What is not built is what SPEC puts in later phases: the API is phase 4;
-gitfs, agentless mode, and Windows are phase 5.
+Phase 4 has started with the part everything else in it stands on:
+`halite-api serve` knows who is asking. It is a client of the hub rather
+than a component of it, so compromising it yields one certificate
+bounded by one policy rather than the control plane. Local accounts are
+PBKDF2-HMAC-SHA-512, tokens are 256 bits stored as a digest, and every
+login failure gives the same answer however it failed.
+
+What is not built is the rest of phase 4 — the execution endpoints, the
+event stream, webhooks, OIDC, and LDAP — and phase 5: gitfs, agentless
+mode, and Windows.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

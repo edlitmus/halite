@@ -215,7 +215,7 @@ startup rather than treating the absence as permission.
 | `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 5 |
 
 | `salt-run state.orchestrate` | `halite-hub orch run <sls>` | works |
-| `salt-api` | `halite-api serve` | phase 4 |
+| `salt-api` | `halite-api serve` | works |
 
 `run` exits 0 when every node succeeded, 1 when one failed, and 3 when a
 node was sent the job and did not answer — because "it said no" and "it
@@ -649,6 +649,59 @@ deployment.
 `orch run` exits 0 when every step succeeded and 1 when one failed — and
 prints the timeline either way, because the next command is
 `orch resume --from <step>` and it needs the step's name.
+
+## The HTTP API
+
+`halite-api serve` is the old `salt-api`. It is a client of the hub, not
+a component of it: it holds its own operator certificate, and its worst
+case is bounded by the policy that certificate is bound to. In Salt the
+API process loads the control plane's configuration and calls into its
+internals, so a flaw in the API is a flaw in the control plane. <!-- lexicon:allow -->
+
+```yaml
+# api.yaml
+listen: 127.0.0.1:4511
+hub: hub.example
+tls_cert: /etc/halite/pki/api.crt
+tls_key: /etc/halite/pki/api.key
+api_operator: api
+accounts: /etc/halite/accounts.yaml
+token_lifetime: 12h
+token_idle: 4h
+```
+
+| Salt | halite | Status |
+|---|---|---|
+| `salt-api` | `halite-api serve` | works |
+| `POST /login` | `POST /v1/login` | works |
+| no equivalent | `POST /v1/logout`, revoking the presented token | works |
+| `GET /token` | `GET /v1/token`, introspecting the presented token | works |
+| no equivalent | `GET /v1/schema`, the module signatures | works |
+| no equivalent | `GET /v1/healthz`, `GET /v1/readyz` | works |
+| `eauth: pam` | local accounts, PBKDF2-HMAC-SHA-512 | works |
+| no equivalent | TOTP second factor, RFC 6238 | works |
+| `eauth: ldap`, `eauth: oidc` | same | phase 4 |
+| `POST /run`, `POST /minions`, `GET /jobs` | the execution endpoints | phase 4 |
+| `GET /events` | SSE, and a WebSocket at `/v1/ws/events` | phase 4 |
+| `POST /hook/{path}` | webhook ingress, always authenticated | phase 4 |
+
+A token is 256 bits from `crypto/rand`, stored as a SHA-256 digest, with
+an absolute expiry, an idle expiry, the roles frozen at issue, and an
+optional source network. It is returned once, at login, and never
+appears in a log, an event, an error, or a URL — so it goes in the
+`Authorization: Bearer` header and nowhere else.
+
+`halite-api token list|show|revoke|prune` is the operator's side of it.
+`revoke --principal <name>` withdraws every token an identity holds,
+which is what disabling an account means for the tokens already issued.
+
+`halite-api account hash` produces the verifier to paste into the
+account file. The password is read from standard input, never from an
+argument — an argument reaches the process table and the shell history.
+
+Every login failure gives one message however it failed. Which of the
+three it was is in the log: the difference between "no such account" and
+"wrong password" is the difference between a guess and a confirmed name.
 
 ## Targeting
 

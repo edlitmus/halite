@@ -1391,7 +1391,10 @@ collapsing two identical events into one reaction, and a hub restart
 resuming the reactor from its recorded offset; the `filechanges` and
 `diskusage` beacons running on a real node, firing on a real change to a
 watched file, reaching the hub's bus, and the reactor acting on one --
-the whole automation loop, end to end; a schedule running `test.ping`
+the whole automation loop, end to end; `halite-api serve` against the
+real hub, with a login issuing a usable token, introspection reporting
+it, logout killing it, the security headers on every response, and the
+token appearing nowhere in the service's log; a schedule running `test.ping`
 every five seconds and a `cron` job reporting its next fire time, with
 the returns landing in the node's own NDJSON log; a beacon and a job
 added to a running node, disabled, run out of turn, saved, and still
@@ -1760,6 +1763,39 @@ shape of the main configuration file it produces a beacon called
 is refused per fragment, with the fix in the message. Per fragment
 rather than after the merge: mixed with an unwrapped file, a wrapper
 would otherwise slip through.
+
+### 6.1a Phase 4, started
+
+**The API's authentication spine is built.** `halite-api serve` runs,
+holding its own operator certificate as a client of the hub: login,
+logout, token introspection, the module schema, and health, with the
+transport hardening of SPEC 22.3 on every response.
+
+Local accounts are PBKDF2-HMAC-SHA-512 through the standard library,
+each hash carrying its own cost so the floor can be raised without
+invalidating what is stored. A hash below the floor is refused rather
+than accepted and re-hashed on the next login: an operator has to know
+it is there. TOTP is built, RFC 6238, one step either side.
+
+Tokens are 256 bits from `crypto/rand` stored as a SHA-256 digest, with
+both expiries, an optional source network, roles frozen at issue, and
+revocation individually or by principal.
+
+What is **not** built in the API:
+
+- **The execution endpoints.** `/v1/run`, `/v1/jobs`, `/v1/nodes`,
+  `/v1/orch`, `/v1/keys`, and `/v1/pillar` are the next increment. The
+  service authenticates today and does nothing with the authority yet.
+- **The event stream.** `/v1/events` as SSE and `/v1/ws/events` as a
+  WebSocket, both filtered by the caller's policy.
+- **Webhook ingress.** `/v1/hook/{path}`, which SPEC 22.2 requires to
+  be authenticated by construction — there is to be no configuration
+  key that produces an unauthenticated hook.
+- **OIDC and LDAP** (SPEC 23.4, 23.3). A login naming another backend
+  is refused by name rather than quietly authenticated against local
+  accounts.
+- **`/v1/metrics`.** SPEC 22.1 puts Prometheus exposition here,
+  authenticated by default; SPEC 26.2 defines what it exposes.
 
 The rest of phases 4 through 6 does not exist: no API, no OIDC or LDAP,
 no webhooks, no bridge protocol, no gitfs, no s3fs, no agentless mode,
