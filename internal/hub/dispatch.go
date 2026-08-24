@@ -166,7 +166,8 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 			"matched", len(matched), "batch", j.Batch.Size, "submitter", j.Submitter)
 		// Its own copy: the batch goroutine mutates Delivered, and the
 		// handler that called Dispatch is still reading this one.
-		go s.runBatches(s.batchContext(), cloneJob(j), msg)
+		copied, ctx := cloneJob(j), s.batchContext()
+		s.goBackground(func() { s.runBatches(ctx, copied, msg) })
 		return j, nil
 	}
 

@@ -220,8 +220,11 @@ func (s *Server) Resume(ctx context.Context, id job.ID) (*job.Job, error) {
 		return nil, err
 	}
 	// The goroutine gets its own copy, because it mutates Delivered
-	// while the caller is still reading what it returned.
-	go s.runBatches(ctx, cloneJob(j), messageFor(j))
+	// while the caller is still reading what it returned. It is counted
+	// as the hub's own work: a bare `go` here writes job records after
+	// Serve has returned, so a hub that reports it has stopped has not.
+	copied, msg := cloneJob(j), messageFor(j)
+	s.goBackground(func() { s.runBatches(ctx, copied, msg) })
 	return j, nil
 }
 
