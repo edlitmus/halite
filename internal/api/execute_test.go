@@ -26,7 +26,9 @@ type stubHub struct {
 	// runnerFails makes the hub refuse, as it would for a grant this
 	// service does not have.
 	runnerFails string
-	server      *httptest.Server
+	// eventLines is what the hub's event stream answers with.
+	eventLines []string
+	server     *httptest.Server
 }
 
 type stubCall struct {
@@ -51,6 +53,14 @@ func newStubHub(t *testing.T) *stubHub {
 			writeJSON(w, http.StatusAccepted, transport.SubmitResponse{
 				JID: "20260824T101500.000000", Nodes: []string{"web1.example"},
 			})
+		case transport.PathEvents:
+			// The hub's own stream: NDJSON, one event per line. The
+			// stub sends what it was given and ends, which is enough
+			// for a reader to be tested without a bus.
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			for _, line := range h.eventLines {
+				fmt.Fprintln(w, line)
+			}
 		case transport.PathRunners:
 			if h.runnerFails != "" {
 				writeJSON(w, http.StatusForbidden,

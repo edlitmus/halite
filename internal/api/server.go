@@ -9,8 +9,10 @@
 package api
 
 import (
+	"bufio"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -38,6 +40,9 @@ type Server struct {
 	// Hub is how this service reaches the control plane, holding its
 	// own operator certificate.
 	Hub *transport.Client
+	// Hooks is the webhook ingress of SPEC 22.2. Nil is no hooks, and
+	// an unconfigured path is a 404 like any other.
+	Hooks *Hooks
 	// Signatures back `/v1/schema`, so a client can discover what a
 	// function takes without reading the documentation.
 	Signatures *signature.Registry
@@ -96,6 +101,9 @@ const (
 	PathOrch    = "/v1/orch"
 	PathOrchJob = "/v1/orch/"
 	PathPillar  = "/v1/pillar/"
+	PathEvents  = "/v1/events"
+	PathWSEvent = "/v1/ws/events"
+	PathHook    = "/v1/hook/"
 	PathHealthz = "/v1/healthz"
 	PathReadyz  = "/v1/readyz"
 )
@@ -131,6 +139,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+PathOrch, s.authenticated(s.orchestrate))
 	mux.HandleFunc("GET "+PathOrchJob+"{jid}", s.authenticated(s.orchDetail))
 	mux.HandleFunc("GET "+PathPillar+"{id}", s.authenticated(s.pillar))
+
+	// The event stream, both ways of taking it, filtered by the
+	// caller's policy so that nobody subscribes to events about nodes
+	// they may not see. SPEC 17.4.
+	mux.HandleFunc("GET "+PathEvents, s.authenticated(s.eventStream))
+	mux.HandleFunc("GET "+PathWSEvent, s.authenticated(s.wsEventStream))
+
+	// Webhook ingress authenticates per path rather than by a token,
+	// because the caller is an external system with a shared secret
+	// rather than an operator with a session. SPEC 22.2.
+	mux.HandleFunc("POST "+PathHook+"{path...}", s.hook)
 
 	// An unrouted path is a version skew or a scan, and says so without
 	// listing what does exist.
@@ -209,6 +228,27 @@ func (w *recorder) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Hijack lets the WebSocket endpoint take the connection.
+//
+// Without this the wrapper hides the hijacker the server actually
+// provides, and every upgrade is refused with "this connection cannot be
+// upgraded" — a middleware that only meant to count status codes
+// silently removing an endpoint.
+func (w *recorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijacker, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("this connection cannot be hijacked")
+	}
+	conn, buffered, err := hijacker.Hijack()
+	if err == nil {
+		// The handshake writes its own status line past this wrapper,
+		// so the access log is told what it was.
+		w.wrote = true
+		w.status = http.StatusSwitchingProtocols
+	}
+	return conn, buffered, err
 }
 
 // namePrincipal records who a request turned out to be, for the log.

@@ -203,6 +203,7 @@ Read by the API service.
 | `config_file` | — | 27.3 | The primary configuration file, set by the loader. |
 | `env` | `base` | 13.1 | The default environment. saltenv is a permanent alias. |
 | `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
+| `hooks` | — | 22.2 | Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook. |
 | `hub` | — | 5.1 | The hub to dial. A node and the API dial the hub; the hub never dials either. |
 | `listen` | `:4510` | 6.1 | Listen address. |
 | `log_file` | — | 26.1 | Log file; empty logs to stderr or the journal. |

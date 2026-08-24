@@ -47,8 +47,22 @@ func runServe(args *cli.Args) int {
 	loaded := loadPolicy(s, args)
 	hub := hubClient(s, args)
 
+	// Named literally rather than through a helper, so the
+	// declared-and-unread audit can see that something reads it: a key
+	// nothing reads is a promise the configuration file makes and the
+	// program does not keep.
+	rawHooks, _ := s.cfg.Get("hooks")
+	hooks, err := api.ParseHooks(rawHooks)
+	if err != nil {
+		// A hook configuration that will not parse stops the service
+		// rather than starting one that serves some of the hooks and
+		// 404s the rest.
+		cli.Fatalf("%v", err)
+	}
+
 	server := &api.Server{
 		Accounts:      accounts,
+		Hooks:         api.NewHooks(hooks),
 		Tokens:        tokens,
 		Policy:        loaded,
 		Hub:           hub,
@@ -70,6 +84,7 @@ func runServe(args *cli.Args) int {
 		"address", ln.Addr().String(),
 		"version", version.String(),
 		"accounts", len(accounts.Names()),
+		"hooks", len(hooks),
 		"hub", hub.HubURL,
 		"tokens", tokens.Dir())
 

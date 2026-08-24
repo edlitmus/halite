@@ -349,6 +349,50 @@ func (p *Policy) functionGranted(rule Rule, fun string) bool {
 	return false
 }
 
+// VisibleNode reports whether a role set may see events about a node.
+//
+// SPEC 17.4 filters the event stream by the caller's policy so that a
+// caller cannot subscribe to events about nodes it may not see. The
+// test is target coverage and nothing narrower: a role that may run
+// anything against `web*` may watch `web1.example`, whatever the
+// function in the event happens to be. Making it depend on the function
+// would mean an operator could act on a node and not see the result.
+func (p *Policy) VisibleNode(roles []string, node string) bool {
+	if p == nil {
+		return false
+	}
+	for _, role := range roles {
+		for _, rule := range p.Roles[role] {
+			// A rule that grants only runners names no target and
+			// says nothing about which nodes may be watched.
+			if rule.Target == "" {
+				continue
+			}
+			if targetCovered(rule.Target, node) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// HasAnyRule reports whether a role set grants anything at all.
+//
+// It is what an event with no node is filtered by: a job's, a key's, or
+// the reactor's own events are not about a node, so target coverage has
+// nothing to compare. Someone bound to no rule sees none of them.
+func (p *Policy) HasAnyRule(roles []string) bool {
+	if p == nil {
+		return false
+	}
+	for _, role := range roles {
+		if len(p.Roles[role]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // namedExactly reports whether a function appears literally in a
 // rule's list, rather than being matched by a pattern in it.
 func namedExactly(patterns []string, fun string) bool {
