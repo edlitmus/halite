@@ -32,6 +32,8 @@ var (
 	hubOnly  = []Role{Hub}
 	nodeHub  = []Role{Node, Hub}
 	hubAPI   = []Role{Hub, API}
+	apiOnly  = []Role{API}
+	nodeAPI  = []Role{Node, API}
 )
 
 // Keys is the recognised configuration surface. It grows with each
@@ -44,7 +46,7 @@ var Keys = []Key{
 	{"node_id_caching", nodeOnly, "true", "Pin the resolved node ID at first enrollment.", "7.2"},
 	{"node_id_lowercase", nodeOnly, "false", "Lowercase the resolved node ID.", "7.2"},
 	{"node_id_remove_domain", nodeOnly, "false", "Strip the domain from a resolved FQDN.", "7.2"},
-	{"hub", nodeOnly, "", "The hub to dial. The node dials the hub; the hub never dials the node.", "5.1"},
+	{"hub", nodeAPI, "", "The hub to dial. A node and the API dial the hub; the hub never dials either.", "5.1"},
 	{"hub_port", nodeOnly, "4510", "The hub's TCP port.", "6.1"},
 	{"hub_fingerprint", nodeOnly, "", "Expected fingerprint of the hub's CA, checked at enrollment.", "7.3"},
 	{"hub_alive_interval", nodeOnly, "30s", "Ping interval on the subscribe stream.", "6.2"},
@@ -125,6 +127,16 @@ var Keys = []Key{
 	{"job_cache_retention", hubOnly, "720h", "Job cache retention by age.", "9.4"},
 	{"job_cache_max_size", hubOnly, "10GiB", "Job cache retention by total size.", "9.4"},
 	{"policy", hubAPI, DefaultPolicy, "The RBAC policy file. Deny by default.", "23.5"},
+
+	// The HTTP API.
+	{"accounts", apiOnly, "<config root>/accounts.yaml", "The local account file for break-glass and automation identities.", "23.2"},
+	{"token_lifetime", apiOnly, "12h", "How long a token issued at login is good for.", "23.6"},
+	{"token_idle", apiOnly, "4h", "How long a token may go unused before it stops.", "23.6"},
+	{"token_retention", apiOnly, "720h", "How long an expired token's record is kept for the audit.", "23.6"},
+	{"max_body", apiOnly, "64MiB", "The largest request body this service will read.", "22.3"},
+	{"tls_cert", apiOnly, "", "The certificate this service presents to its own clients.", "22.3"},
+	{"tls_key", apiOnly, "", "Its key.", "22.3"},
+	{"api_operator", apiOnly, "api", "Which operator certificate this service presents to the hub.", "22"},
 	{"legacy_acl", hubOnly, "", "Salt ACL keys the shim preserved for review rather than translating.", "28.3"},
 	{"quiesce", nodeOnly, "false", "Refuse jobs other than the allowlist. Salt calls this blackout.", "2.1"},
 	{"quiesce_allowlist", nodeOnly, "", "Functions still permitted while quiesced.", "2.1"},

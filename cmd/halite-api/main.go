@@ -7,8 +7,9 @@
 // is a client with a scoped identity, and its worst case is bounded by its
 // RBAC policy. SPEC section 5.2.
 //
-// The service itself arrives in phase 4 (SPEC section 32), together with
-// the transport it is a client of.
+// This build serves the authentication spine of SPEC section 22: login,
+// logout, token introspection, the module schema, and health. The
+// execution endpoints follow in the rest of phase 4.
 package main
 
 import (
@@ -16,16 +17,48 @@ import (
 	"os"
 
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/version"
 )
 
-const usage = `halite-api — the HTTP API service
+var usage = `halite-api — the HTTP API service
 
 Usage:
-  halite-api version    print the build identity
+  halite-api serve              run the HTTP API
+  halite-api token <subcommand> issued tokens: list, show, revoke, prune
+  halite-api account <sub>      local accounts: hash, list
+  halite-api version            print the build identity
 
-Available in phase 4 (SPEC section 32):
-  serve, token, policy
+Still to come in phase 4 (SPEC section 32):
+  the execution endpoints, the event stream, webhooks, OIDC, LDAP,
+  returners, and the bridge protocol; the policy is the hub's
+
+Common flags:
+  --help               describe the program without running a command
+  --config <path>      configuration file, default <root>/api.yaml
+  --root <dir>         configuration root, default ` + config.DefaultRoot + `
+  --out <format>       nested (default), json, yaml, or txt
+
+serve flags:
+  --listen <addr>      listen address, default :4511
+  --tls-cert <path>    the certificate this service presents
+  --tls-key <path>     its key
+  --hub <address>      the hub this service is a client of
+  --pki-dir <dir>      key material, default ` + config.DefaultPKIDir + `
+  --as <name>          which operator certificate to present to the hub
+  --cert <path>        an operator certificate, instead of --as
+  --key <path>         its key
+  --server-name <name> the name to verify in the hub's certificate
+  --accounts <path>    the local account file
+  --policy <path>      the RBAC policy file
+  --log-level <level>  error, warn, info (default), debug, or trace
+  --log-fmt <format>   json (default) or console
+
+token flags:
+  --limit <n>          how many tokens to list, default 20
+
+account flags:
+  --iterations <n>     PBKDF2 cost for a new hash
 `
 
 func main() {
@@ -33,13 +66,32 @@ func main() {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
+	args, err := cli.Parse(os.Args[2:])
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	// `--help` after any subcommand describes the program rather than
+	// running it. A command that opens a listener needs a way to be
+	// asked what it is without doing it.
+	if args.Bool("help", false) {
+		fmt.Print(usage)
+		os.Exit(0)
+	}
+
 	switch os.Args[1] {
 	case "version", "--version", "-v":
 		fmt.Println("halite-api " + version.String())
 	case "help", "--help", "-h":
 		fmt.Print(usage)
-	case "serve", "token", "policy":
-		cli.Fatalf("`%s` arrives in phase 4, with the transport it is a client of (SPEC section 32).", os.Args[1])
+	case "serve":
+		os.Exit(runServe(args))
+	case "token":
+		os.Exit(runToken(args))
+	case "account":
+		os.Exit(runAccount(args))
+	case "policy":
+		cli.Fatalf("the policy is the hub's; `halite-hub policy show` and " +
+			"`halite-hub policy test` read the same file this service does.")
 	default:
 		fmt.Fprintf(os.Stderr, "halite-api: unknown subcommand %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)

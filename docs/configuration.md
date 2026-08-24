@@ -65,7 +65,7 @@ Read by the node agent.
 | `grains` | — | 14.2 | Static grains merged last, so they can override. |
 | `grains_refresh_interval` | `30m` | 8.3 | How often grains are re-collected. |
 | `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
-| `hub` | — | 5.1 | The hub to dial. The node dials the hub; the hub never dials the node. |
+| `hub` | — | 5.1 | The hub to dial. A node and the API dial the hub; the hub never dials either. |
 | `hub_alive_interval` | `30s` | 6.2 | Ping interval on the subscribe stream. |
 | `hub_fingerprint` | — | 7.3 | Expected fingerprint of the hub's CA, checked at enrollment. |
 | `hub_port` | `4510` | 6.1 | The hub's TCP port. |
@@ -197,19 +197,28 @@ Read by the API service.
 
 | Setting | Default | SPEC | Meaning |
 |---|---|---|---|
+| `accounts` | `<config root>/accounts.yaml` | 23.2 | The local account file for break-glass and automation identities. |
+| `api_operator` | `api` | 22 | Which operator certificate this service presents to the hub. |
 | `cache_dir` | `<cache dir>` | 27.3 | Discardable cache. |
 | `config_file` | — | 27.3 | The primary configuration file, set by the loader. |
 | `env` | `base` | 13.1 | The default environment. saltenv is a permanent alias. |
 | `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
+| `hub` | — | 5.1 | The hub to dial. A node and the API dial the hub; the hub never dials either. |
 | `listen` | `:4510` | 6.1 | Listen address. |
 | `log_file` | — | 26.1 | Log file; empty logs to stderr or the journal. |
 | `log_format` | `json` | 26.1 | json or console. |
 | `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
 | `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
+| `max_body` | `64MiB` | 22.3 | The largest request body this service will read. |
 | `metrics_listen` | — | 26.2 | Prometheus exposition address; empty disables it. |
 | `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
 | `policy` | `<config root>/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
 | `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
 | `state_dir` | `<state dir>` | 27.3 | Durable state: job cache, events, evidence. |
+| `tls_cert` | — | 22.3 | The certificate this service presents to its own clients. |
+| `tls_key` | — | 22.3 | Its key. |
+| `token_idle` | `4h` | 23.6 | How long a token may go unused before it stops. |
+| `token_lifetime` | `12h` | 23.6 | How long a token issued at login is good for. |
+| `token_retention` | `720h` | 23.6 | How long an expired token's record is kept for the audit. |
 | `tracing` | `off` | 26.3 | off or otlp. |
 
