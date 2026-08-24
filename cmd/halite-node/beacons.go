@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/edlitmus/halite/internal/beacon"
 	"github.com/edlitmus/halite/internal/cli"
@@ -47,7 +48,10 @@ func (n *node) startBeacons(ctx context.Context) {
 			// started with is reading a node that no longer exists.
 			return n.context(n.compilePillarOrNothing())
 		},
-		Send:         n.events.Send,
+		// Through the node rather than the sender it holds now: the
+		// client is rebuilt on every reconnect, and a captured method
+		// value would keep firing at the one this node started with.
+		Send:         n.sendEvent,
 		StateRunning: n.stateRunning,
 		Now:          nil,
 		Log: func(level, msg string, kv ...any) {
@@ -80,6 +84,15 @@ func (n *node) compilePillarOrNothing() *value.Map {
 		return value.NewMap(0)
 	}
 	return p
+}
+
+// sendEvent puts an event on the hub's bus through whichever sender
+// this node is attached to now.
+func (n *node) sendEvent(tag string, data map[string]any) error {
+	if n.events == nil {
+		return fmt.Errorf("this node has no hub to send an event to")
+	}
+	return n.events.Send(tag, data)
 }
 
 // stateRunning reports whether a state run is in progress, which is

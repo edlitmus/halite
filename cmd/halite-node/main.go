@@ -182,6 +182,10 @@ type node struct {
 	// mine publishes to and reads from the mine on the hub. Nil for a
 	// node with no hub, where there is nothing to publish to.
 	mine exec.MineAccess
+	// hubTree records that this node is compiling against the hub's
+	// tree, so a reconnect does not probe the file server again for a
+	// tree it already has.
+	hubTree bool
 	// statesRunning counts the state runs in progress, which is what
 	// `disable_during_state_run` reads. SPEC 16.3.
 	//

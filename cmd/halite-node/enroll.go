@@ -297,12 +297,7 @@ func runConnect(args *cli.Args) int {
 	// The hub's tree replaces the node's own, unless --local says
 	// otherwise. A node with a hub should be applying the tree the hub
 	// serves; SPEC section 13.
-	if !args.Bool("local", false) {
-		n.useHubTree(client)
-		n.useHubPillar(client)
-		n.useHubEvents(client)
-		n.useHubMine(client)
-	}
+	n.attachToHub(args, client)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -339,6 +334,9 @@ func runConnect(args *cli.Args) int {
 		// this process was running takes effect: the certificate is
 		// read from disk here, not once at startup.
 		client, _ = n.hubClient(args)
+		// Attached again on every attempt, not once at startup. See
+		// attachToHub.
+		n.attachToHub(args, client)
 		n.log.Info("connecting", "hub", client.HubURL)
 		err := client.Subscribe(ctx, transport.SubscribeRequest{
 			NodeID:  n.nodeID,
@@ -438,6 +436,37 @@ func grainsJSON(n *node) json.RawMessage {
 	return raw
 }
 
+// attachToHub points this node at the hub's tree, pillar, bus, and
+// mine.
+//
+// Called on every connection attempt rather than once at startup, which
+// is what it used to be. A node that starts before its hub is listening
+// falls back to its own roots, and then stayed there for the life of
+// the process -- managing itself from whatever local tree it happened
+// to have, long after the hub came up and it reconnected successfully.
+// In an estate where a hub and its nodes reboot together, that is the
+// node most likely to win the race, and the only sign of it is one
+// warning at startup.
+//
+// The bus and the mine are simply re-pointed at the current client,
+// because the client is rebuilt on every reconnect and the old one
+// holds a certificate that may since have been renewed. The tree and
+// the pillar each cost a probe, so they are attempted only while they
+// are not attached.
+func (n *node) attachToHub(args *cli.Args, client *transport.Client) {
+	if args.Bool("local", false) {
+		return
+	}
+	n.useHubEvents(client)
+	n.useHubMine(client)
+	if !n.hubTree {
+		n.useHubTree(client)
+	}
+	if n.hubPillar == nil {
+		n.useHubPillar(client)
+	}
+}
+
 // useHubTree points the node at the file server rather than at its own
 // directories.
 //
@@ -459,6 +488,7 @@ func (n *node) useHubTree(client *transport.Client) {
 	}
 	remote.Environments = []string{n.env}
 	n.files = remote
+	n.hubTree = true
 	n.log.Info("compiling against the hub's tree",
 		"env", n.env, "files", len(m.Files), "cache", cacheDir)
 }
