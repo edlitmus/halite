@@ -9,7 +9,8 @@ before `3aec717` is where that history lives if it is ever wanted.
 
 Nothing here is released yet. Phases 0, 1, and 2 of the delivery plan in
 SPEC section 32 are complete: a node that manages its own tree, and a
-fleet driven from a hub. Phase 3 has started. Versions resume at 1.0.0
+fleet driven from a hub. Phase 3 is complete and phase 4 is under way.
+Versions resume at 1.0.0
 when SPEC section 32's phase 6 exit criteria are met.
 
 ## Unreleased
@@ -207,6 +208,46 @@ token file that is read is not a set of working credentials. Both
 expiries, an optional source network, roles frozen at issue, and
 revocation individually or by principal. The secret is returned once and
 appears in no log, no event, no error, and no URL.
+
+### The bus, out and in
+
+`GET /v1/events` streams the event bus as SSE. The `id:` of each message
+is the bus offset, so a client that reconnects with `Last-Event-ID`
+resumes at the event after the last one it saw rather than at "now" — a
+stream that silently restarts at the present is the difference between
+an audit trail and a sample. `GET /v1/ws/events` carries the same events
+over a WebSocket, hand-rolled against the standard library because SPEC
+4.2 allows no third-party code: masked client frames required,
+fragments reassembled, a length claim refused before anything is
+allocated for it, and a ping every thirty seconds so an intermediary
+does not close a quiet stream.
+
+Both transports share one filter rather than implementing it twice. A
+tag naming a node reaches only a caller whose policy targets that node;
+an event about no node in particular reaches any caller the policy
+grants something; a principal bound to nothing sees nothing. Two
+authorization paths over the same events would be two chances to leak,
+and the one that leaks is the one nobody tested.
+
+`POST /v1/hook/{path}` takes deliveries the other way. It is
+authenticated by construction: there is no setting that produces an
+unauthenticated hook, and one configured without a credential is refused
+when the file loads rather than served. HMAC-SHA-256 over the timestamp
+and the raw bytes together, a replay window, a nonce cache, a
+content-type allowlist, and a body limit.
+
+A delivery becomes an event under `halite/hook/<path>` carrying the
+principal it authenticated as, so a reaction decides on that identity
+and never on the payload — which was written by whoever sent it. The
+hook's principal is an ordinary RBAC identity with an ordinary binding,
+so a hook that may cause a deployment says so in the policy file.
+
+The nonce is recorded once the delivery has landed on the bus, not when
+the signature verifies. Recording it earlier is strictly safer against a
+replay and costs more than it saves: a delivery that fails downstream is
+one the sender will retry carrying the same signature, and refusing that
+as a replay turns a transient fault into the lost event a webhook exists
+to prevent.
 
 ### A running node can be changed without restarting it
 
@@ -408,8 +449,8 @@ compares it with the registries. Example configurations live in
 for and fails on any warning.
 
 Service files for FreeBSD `rc.d` and systemd are in `contrib/`. The
-periodic-highstate ones and the `halite-hub` and `halite-node` daemons
-work today; `halite-api` waits on phase 4.
+periodic-highstate ones, the `halite-hub` and `halite-node` daemons, and
+`halite-api` all work today.
 
 ### The tests the specification asks for
 
@@ -438,18 +479,20 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-The rest of phase 3, and phases 4 through 6. No beacons, no scheduler, no
-reactors, no orchestration, no mine, no API, no OIDC or LDAP, no
-webhooks, no returners, no bridge protocol, no gitfs, no s3fs, no
-agentless mode, no relays, no FIPS artifact set, no detached job signing,
-and no backtracking regex engine.
+The rest of phase 4, and phases 5 and 6. No OIDC or LDAP, no
+`/v1/metrics`, no returners, no bridge protocol, no gitfs, no s3fs, no
+agentless mode, no relays, no FIPS artifact set, no detached job
+signing, no signed state trees, and no backtracking regex engine.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
-in the other direction from `salt-cp`, and external pillar.
+in the other direction from `salt-cp`, and external pillar. Phase 3's
+gaps are listed in [DIVERGENCE 6.1](docs/DIVERGENCE.md): beacons and
+schedules delivered through pillar, node-initiated execution on another
+node, `inotify`, most of the beacon inventory, and a node's own local
+reactor.
 
-`halite-api` exists as a program that parses arguments and reports which
-phase it needs, which is deliberate: the alternative is a program that
-appears to work.
+A subcommand whose phase has not landed reports that by name, which is
+deliberate: the alternative is a program that appears to work.
 
 FreeBSD is the platform this is verified on. `make test-linux`
 cross-compiles the suite and runs it under this host's Linux compat

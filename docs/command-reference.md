@@ -107,7 +107,7 @@ nothing and an incident can be reconstructed afterwards.
 | `event.send` from a state or a job | `halite-hub run '*' event.send tag=… data='{"k":"v"}'` | works |
 | no equivalent | `halite-hub event listen --from earliest` (replay) | works |
 | no equivalent | `halite-hub event tags` | works |
-| `salt-api` event stream | SSE and WebSocket at `/v1/events` | phase 4 |
+| `salt-api` event stream | SSE and WebSocket at `/v1/events` | works |
 
 A node's events are namespaced under `halite/node/<node_id>/`
 regardless of the tag it asks for. Salt's reactor runs with the control
@@ -694,8 +694,8 @@ token_idle: 4h
 | `client: local`, `local_async`, `local_batch` | same | works |
 | `client: runner`, `runner_async`, `wheel`, `wheel_async` | same, one hub namespace | works |
 | `client: ssh` | same | phase 5 |
-| `GET /events` | SSE, and a WebSocket at `/v1/ws/events` | phase 4 |
-| `POST /hook/{path}` | webhook ingress, always authenticated | phase 4 |
+| `GET /events` | SSE, and a WebSocket at `/v1/ws/events` | works |
+| `POST /hook/{path}` | webhook ingress, always authenticated | works |
 
 A token is 256 bits from `crypto/rand`, stored as a SHA-256 digest, with
 an absolute expiry, an idle expiry, the roles frozen at issue, and an
@@ -741,6 +741,59 @@ A job submitted through the API records both identities: `submitter` is
 the service's certificate, which is what the hub authorized, and
 `on_behalf_of` is the operator, which is recorded and never trusted. The
 hub reads identity from the connection and nothing from the body.
+
+The event stream is one stream with two transports. `GET /v1/events` is
+SSE whose `id:` is the bus offset, so a client that reconnects with
+`Last-Event-ID` resumes where it stopped rather than at "now" — the
+difference between an audit trail and a sample of one.
+`GET /v1/ws/events` carries the same events over a WebSocket for a
+client that would rather have one; it is pinged every thirty seconds so
+an intermediary does not close a quiet stream.
+
+Both take repeated `tag=` globs, and `from=latest|earliest|<offset>`.
+Both apply the same filter: a tag naming a node reaches only a caller
+whose policy targets that node, an event about no node in particular
+reaches any caller the policy grants something, and a principal bound to
+nothing sees nothing. Watching the bus needs `event.listen` in the
+role's `runners:` list.
+
+```
+curl -N -H "Authorization: Bearer $TOKEN" \
+  'https://api.example:4511/v1/events?tag=halite/job/**&from=latest'
+```
+
+A webhook is configured, never improvised — there is no setting that
+produces an unauthenticated hook, and one with no credential is refused
+when the configuration loads rather than served:
+
+```yaml
+hooks:
+  deploy:
+    auth: hmac
+    secret_file: /usr/local/etc/halite/hooks/deploy.secret
+    principal: 'hook:deploy'
+    content_types: ['application/json']
+    replay_window: 5m
+```
+
+The signature is HMAC-SHA-256 over the timestamp and the raw bytes
+together, sent as `X-Halite-Signature` with `X-Halite-Timestamp`. A
+delivery outside the replay window is refused, and one whose nonce has
+already been accepted is refused. `auth: token` and `auth: mtls` are the
+other two modes.
+
+A delivery becomes an event under `halite/hook/<path>` carrying
+`_principal`, the identity the delivery authenticated as, so a reaction
+authorizes on that and never on the payload — the payload is written by
+whoever sent it. The `principal` a hook names is an ordinary RBAC
+identity: it gets a binding in the policy file like any other, and a
+hook that may cause a deployment says so there.
+
+The nonce is recorded once the delivery has landed on the bus, not when
+the signature verifies. A delivery that fails downstream is one the
+sender will retry with the same signature, and refusing that as a replay
+would turn a transient fault into the lost event a webhook exists to
+prevent.
 
 `GET /v1/pillar/{id}` needs the role to name `pillar.show_pillar`
 literally. Reading one node's compiled pillar is reading its secrets,

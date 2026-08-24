@@ -1432,11 +1432,50 @@ side it does not cover a second node reading a first one's data — both
 halves ran on the one node — nor `allow_tgt` refusing a real reader, nor
 `mine.send` for a single value. It has been run on FreeBSD only.
 
+### 5.13 What the API lab run covers
+
+A hub, a node, and `halite-api serve` as three processes on one machine,
+the API holding its own operator certificate and a local account behind
+a token. It covers login, an execution call through both authorizations,
+the job endpoints, `/v1/nodes`, both event transports, and a signed
+webhook delivered end to end onto the bus.
+
+| Found by running it | What it was |
+|---|---|
+| `/v1/nodes` failed on an estate-wide question | It asks the hub `cache.grains`, whose signature required a `node`. There was no way to ask for the whole estate, which is the only thing that endpoint asks for. |
+| A runner grant ignored `NeverWildcard` | `/v1/pillar/{id}` must not be satisfied by a wildcard grant — reading one node's pillar is reading its secrets. The check was written on the fleet-function branch only, so the runner branch let a `runners: ['*']` role through. |
+| A webhook delivery that failed downstream could never be retried | The replay nonce was recorded when the signature verified. A transient hub failure therefore consumed the delivery: the sender's retry carried the same signature and was refused as a replay. Recording moved to after the delivery lands. |
+| The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
+| No WebSocket upgrade could ever succeed | The access-log wrapper did not pass through `http.Hijacker`, so `/v1/ws/events` answered "this connection cannot be upgraded" for every caller. The endpoint's own tests called the handler directly and stayed green. A test now dials the assembled server and speaks the protocol. |
+
+The event stream was watched over both transports while a job ran, and
+delivered `halite/job/<jid>/new` and `.../ret/<node>` with the bus
+offset as the SSE `id:`. The WebSocket path was exercised with a
+hand-rolled RFC 6455 client: the handshake, the accept key, masked
+client frames, the thirty-second heartbeat answered with a pong, and a
+close handshake completing with 1001. A signed hook delivery was
+accepted and reached the bus carrying `cert:CN=api` as its principal; a
+replay of it was refused, and a tampered body was refused.
+
+It does not cover an OIDC or LDAP login, `mtls` hook authentication,
+`Last-Event-ID` resumption after a real disconnection, a token expiring
+mid-stream, a second operator with a narrower policy watching the same
+stream, a hub restart underneath an open stream, `/v1/nodes/{id}/state`
+against a node that fails, or `/v1/orch`. The two-stage authorization
+was seen to refuse — the API's own certificate lacked `event.send`
+until its role was granted it — but only for that one function. It has
+been run on FreeBSD only.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
 
-Phase 2 is under way. What is built is the identity half of it: the
+Phases 0 through 3 are complete and phase 4 is under way; 6.1a says
+where it stands. What follows is the record of how each phase landed,
+in the order it did.
+
+Phase 2 began with the identity half of it: the
 enrollment CA of SPEC section 7, the mutual-TLS transport of section
 6.1, and three of section 6.2's endpoints -- `/v1/health`, `/v1/enroll`
 with its renewal, and `/v1/subscribe`. `halite-hub serve` runs, `keys`
@@ -1784,26 +1823,65 @@ Tokens are 256 bits from `crypto/rand` stored as a SHA-256 digest, with
 both expiries, an optional source network, roles frozen at issue, and
 revocation individually or by principal.
 
+**The execution endpoints are built.** `/v1/run`, `/v1/jobs`,
+`/v1/jobs/{jid}`, `/v1/nodes`, `/v1/nodes/{id}`,
+`/v1/nodes/{id}/state`, `/v1/keys`, `/v1/orch`, and `/v1/pillar/{id}`.
+Every one of them is authorized **twice**: the operator behind the token
+at the API, against the token's frozen roles, and the API's own
+certificate at the hub. A job carries `on_behalf_of` beside `submitter`,
+recorded and never trusted — the hub decides on the certificate in front
+of it, not on a name in a payload.
+
+**The event stream is built**, as one stream with two transports.
+`GET /v1/events` is SSE whose `id:` is the bus offset, so a
+`Last-Event-ID` on reconnection resumes where the connection dropped
+rather than at "now". `GET /v1/ws/events` carries the same events over a
+WebSocket, hand-rolled against the standard library because SPEC 4.2
+allows no third-party code: masked client frames required, fragment
+reassembly, a length claim refused before anything is allocated for it,
+and a ping every thirty seconds so an intermediary does not close a
+quiet stream.
+
+Both transports share one filter. A tag naming a node reaches only a
+caller whose policy targets that node; an event about no node in
+particular — a job, a reactor error — reaches any caller the policy
+grants something, and a principal bound to nothing sees no events at
+all. The filter is shared rather than written twice on purpose: two
+authorization paths over the same events are two chances to leak, and
+the one that leaks is the one nobody tested.
+
+**Webhook ingress is built.** `POST /v1/hook/{path}` is authenticated by
+construction, as SPEC 22.2 requires: there is no configuration that
+produces an unauthenticated hook, and a hook with no credential
+configured is refused at load rather than served. HMAC-SHA-256 over the
+timestamp and the raw bytes, a replay window, a nonce cache, a
+content-type allowlist, and a body limit. A delivery becomes an event
+under `halite/hook/<path>` carrying the principal it authenticated as,
+so a reaction authorizes on that and never on the payload.
+
+The nonce is recorded once the delivery has landed on the bus, not when
+the signature verifies. Recording it earlier is strictly safer against a
+replay and costs more than it saves: a delivery that fails downstream is
+one the sender will retry carrying the same signature, and refusing that
+as a replay turns a transient fault into the lost event a webhook exists
+to prevent.
+
 What is **not** built in the API:
 
-- **The execution endpoints.** `/v1/run`, `/v1/jobs`, `/v1/nodes`,
-  `/v1/orch`, `/v1/keys`, and `/v1/pillar` are the next increment. The
-  service authenticates today and does nothing with the authority yet.
-- **The event stream.** `/v1/events` as SSE and `/v1/ws/events` as a
-  WebSocket, both filtered by the caller's policy.
-- **Webhook ingress.** `/v1/hook/{path}`, which SPEC 22.2 requires to
-  be authenticated by construction — there is to be no configuration
-  key that produces an unauthenticated hook.
 - **OIDC and LDAP** (SPEC 23.4, 23.3). A login naming another backend
   is refused by name rather than quietly authenticated against local
   accounts.
 - **`/v1/metrics`.** SPEC 22.1 puts Prometheus exposition here,
   authenticated by default; SPEC 26.2 defines what it exposes.
+- **Returners** (SPEC 20.3), and **the bridge protocol and its sandbox**
+  (SPEC section 24).
+- **`mtls` hook authentication.** The mode is implemented and refused
+  when no client certificate is presented, but it has never been
+  exercised against a real sender.
 
-The rest of phases 4 through 6 does not exist: no API, no OIDC or LDAP,
-no webhooks, no bridge protocol, no gitfs, no s3fs, no agentless mode,
-no relays, no FIPS artifact set, no detached job signing, no signed
-state trees, and no backtracking regex engine.
+The rest of phases 5 and 6 does not exist: no gitfs, no s3fs, no
+agentless mode, no relays, no FIPS artifact set, no detached job
+signing, no signed state trees, and no backtracking regex engine.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.
@@ -1817,8 +1895,8 @@ Two named pieces of section 7 are also absent:
   a second one in the same directory is refused, so the failure mode is
   a message rather than an estate that has to enrol again.
 
-`halite-api` still exists as a binary that parses arguments and reports
-that its phase has not landed, which is deliberate: the alternative is a
+A subcommand whose phase has not landed still reports that by name
+rather than failing obscurely, which is deliberate: the alternative is a
 binary that appears to work.
 
 ### 6.2 Build and release

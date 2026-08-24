@@ -164,9 +164,19 @@ API, and the API's own certificate at the hub — against the same policy
 file, so an estate can grant the service less than the sum of its
 operators and have that mean something.
 
-What is not built is the rest of phase 4 — the event stream, webhooks,
-OIDC, LDAP, returners, and the bridge protocol — and phase 5: gitfs,
-agentless mode, and Windows.
+The bus followed, in both directions. `/v1/events` streams it as SSE
+whose `id:` is the bus offset, so a client that reconnects resumes where
+it stopped rather than at "now"; `/v1/ws/events` is the same events over
+a WebSocket. Both apply one filter, so a caller sees only events about
+nodes its policy targets. `/v1/hook/{path}` takes deliveries the other
+way, signed, and there is no configuration that produces an
+unauthenticated hook — a delivery becomes an event carrying the identity
+it authenticated as, so a reaction decides on that and never on the
+payload.
+
+What is not built is the rest of phase 4 — OIDC, LDAP, `/v1/metrics`,
+returners, and the bridge protocol — and phase 5: gitfs, agentless mode,
+and Windows.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
@@ -263,7 +273,8 @@ would do. Neither writes anything.
 
 `contrib/rc.d/` and `contrib/systemd/` hold service definitions for
 FreeBSD and systemd. The periodic-highstate ones and the `halite-hub` and
-`halite-node` daemons work today; `halite-api` waits on phase 4. See
+`halite-node` daemons work today, and `halite-api` serves the fleet over
+HTTP. See
 [Operations](docs/operations.md).
 
 ## Layout
