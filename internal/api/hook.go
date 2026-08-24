@@ -232,21 +232,25 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !s.hooks().allow(cfg, s.now()) {
+		s.m().hookDeliveries.With(path, "rate_limited").Inc()
 		writeError(w, http.StatusTooManyRequests, "too many deliveries to this hook")
 		return
 	}
 	if err := checkContentType(cfg, r.Header.Get("Content-Type")); err != nil {
+		s.m().hookDeliveries.With(path, "wrong_content_type").Inc()
 		writeError(w, http.StatusUnsupportedMediaType, err.Error())
 		return
 	}
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, cfg.MaxBody))
 	if err != nil {
+		s.m().hookDeliveries.With(path, "too_large").Inc()
 		writeError(w, http.StatusRequestEntityTooLarge, "the body is larger than this hook accepts")
 		return
 	}
 	nonce, err := s.authenticateHook(cfg, r, body)
 	if err != nil {
+		s.m().hookDeliveries.With(path, "unauthenticated").Inc()
 		s.warn("hook delivery refused",
 			"hook", path, "remote", remoteHost(r), "error", err.Error())
 		writeError(w, http.StatusUnauthorized, err.Error())
@@ -277,10 +281,12 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 		Kwarg: map[string]any{"tag": tag, "data": payload},
 	})
 	if err != nil {
+		s.m().hookDeliveries.With(path, "hub_unreachable").Inc()
 		s.hubError(w, "putting the delivery on the bus", err)
 		return
 	}
 	if !res.Success {
+		s.m().hookDeliveries.With(path, "hub_refused").Inc()
 		writeError(w, http.StatusBadGateway, res.Error)
 		return
 	}
@@ -296,6 +302,7 @@ func (s *Server) hook(w http.ResponseWriter, r *http.Request) {
 	if nonce != "" {
 		s.hooks().remember(nonce, s.now())
 	}
+	s.m().hookDeliveries.With(path, "delivered").Inc()
 	s.info("hook delivered", "hook", path, "principal", cfg.Principal, "tag", tag)
 	writeJSON(w, http.StatusAccepted, map[string]any{"tag": tag})
 }

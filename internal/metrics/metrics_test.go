@@ -257,3 +257,70 @@ func TestConcurrentObservationsAreNotLost(t *testing.T) {
 		t.Errorf("histogram observations were lost:\n%s", out)
 	}
 }
+
+// The text format allows one HELP and one TYPE per metric name in a
+// document. Two components that both expose `halite_build_info` — which
+// is what its `component` label is for — produce two of each when their
+// expositions are concatenated, and a scraper rejects the whole body.
+func TestMergingTwoExpositionsDeclaresEachFamilyOnce(t *testing.T) {
+	api := "# HELP halite_build_info Build identity.\n" +
+		"# TYPE halite_build_info gauge\n" +
+		`halite_build_info{component="api"} 1` + "\n" +
+		"# HELP halite_api_requests_total Requests.\n" +
+		"# TYPE halite_api_requests_total counter\n" +
+		`halite_api_requests_total{route="/v1/run"} 3` + "\n"
+	hub := "# HELP halite_build_info Build identity.\n" +
+		"# TYPE halite_build_info gauge\n" +
+		`halite_build_info{component="hub"} 1` + "\n" +
+		"# HELP halite_hub_nodes_connected Nodes.\n" +
+		"# TYPE halite_hub_nodes_connected gauge\n" +
+		"halite_hub_nodes_connected 4\n"
+
+	out := Merge(api, hub)
+	if got := strings.Count(out, "# HELP halite_build_info"); got != 1 {
+		t.Errorf("halite_build_info is declared %d times:\n%s", got, out)
+	}
+	if got := strings.Count(out, "# TYPE halite_build_info"); got != 1 {
+		t.Errorf("halite_build_info has %d type lines:\n%s", got, out)
+	}
+	for _, want := range []string{
+		`halite_build_info{component="api"} 1`,
+		`halite_build_info{component="hub"} 1`,
+		"halite_hub_nodes_connected 4",
+		`halite_api_requests_total{route="/v1/run"} 3`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the merge lost %q:\n%s", want, out)
+		}
+	}
+	// Every series line still sits under its own declaration.
+	if strings.Index(out, "# TYPE halite_api_requests_total") >
+		strings.Index(out, `halite_api_requests_total{route="/v1/run"} 3`) {
+		t.Errorf("a series is above its declaration:\n%s", out)
+	}
+}
+
+// A comment explaining that a component's metrics are absent is the most
+// important line in the body when it is there.
+func TestMergingKeepsAnExplanatoryComment(t *testing.T) {
+	out := Merge("# HELP halite_x A.\n# TYPE halite_x gauge\nhalite_x 1\n",
+		"# the hub's metrics are absent: connection refused\n")
+	if !strings.Contains(out, "# the hub's metrics are absent") {
+		t.Errorf("the comment was dropped:\n%s", out)
+	}
+	if !strings.Contains(out, "halite_x 1") {
+		t.Errorf("the metric was dropped:\n%s", out)
+	}
+}
+
+func TestMergingIsStable(t *testing.T) {
+	a := "# HELP halite_z Z.\n# TYPE halite_z counter\nhalite_z 1\n"
+	b := "# HELP halite_a A.\n# TYPE halite_a counter\nhalite_a 2\n"
+	first := Merge(a, b)
+	if second := Merge(a, b); first != second {
+		t.Errorf("two merges differ:\n%s\n---\n%s", first, second)
+	}
+	if strings.Index(first, "halite_a") > strings.Index(first, "halite_z") {
+		t.Errorf("families are not in name order:\n%s", first)
+	}
+}

@@ -62,6 +62,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		ok = false
 	}
 	if !ok {
+		s.m().authAttempts.With("local", "refused").Inc()
 		// One message for every failure. Which of the three it was is
 		// in the log and not in the answer, because the difference
 		// between "no such account" and "wrong password" is the
@@ -84,6 +85,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "the token could not be issued")
 		return
 	}
+	s.m().authAttempts.With("local", "accepted").Inc()
 	namePrincipal(w, token.Principal)
 	s.info("login", "principal", token.Principal, "token_id", token.ID,
 		"remote", remoteHost(r), "roles", strings.Join(token.Roles, ","))

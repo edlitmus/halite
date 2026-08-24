@@ -79,6 +79,9 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, token *apit
 		return
 	}
 
+	s.m().streams.With("sse").Add(1)
+	defer s.m().streams.With("sse").Add(-1)
+
 	tags := tagFilter(r)
 	from := r.URL.Query().Get("from")
 	// A reconnecting client sends the offset it last saw, which is

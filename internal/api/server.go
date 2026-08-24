@@ -16,12 +16,15 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/account"
 	"github.com/edlitmus/halite/internal/apitoken"
 	"github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/transport"
@@ -57,6 +60,13 @@ type Server struct {
 	// TokenLifetime and TokenIdle are what a login is given.
 	TokenLifetime time.Duration
 	TokenIdle     time.Duration
+
+	// Metrics is the registry this service exposes at /v1/metrics,
+	// alongside the hub's. Nil records nothing.
+	Metrics *metrics.Registry
+
+	metrics   *apiMetrics
+	metricsMu sync.Mutex
 }
 
 func (s *Server) now() time.Time {
@@ -104,6 +114,7 @@ const (
 	PathEvents  = "/v1/events"
 	PathWSEvent = "/v1/ws/events"
 	PathHook    = "/v1/hook/"
+	PathMetrics = "/v1/metrics"
 	PathHealthz = "/v1/healthz"
 	PathReadyz  = "/v1/readyz"
 )
@@ -121,6 +132,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+PathLogout, s.authenticated(s.logout))
 	mux.HandleFunc("GET "+PathToken, s.authenticated(s.introspect))
 	mux.HandleFunc("GET "+PathSchema, s.authenticated(s.schema))
+	mux.HandleFunc("GET "+PathMetrics, s.authenticated(s.metricsExposition))
 
 	// The execution surface of SPEC 22.1. Every one of them authorizes
 	// the operator behind the token here and is authorized again as
@@ -189,14 +201,42 @@ func (s *Server) logged(next http.Handler) http.Handler {
 		// The principal is whatever the handler resolved, which is
 		// empty for an unauthenticated request and is the point of
 		// logging it either way.
+		elapsed := s.now().Sub(started)
 		s.info("api request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"principal", rec.principal,
 			"status", rec.status,
 			"remote", remoteHost(r),
-			"duration_ms", s.now().Sub(started).Milliseconds())
+			"duration_ms", elapsed.Milliseconds())
+
+		// Counted by route rather than by path: `/v1/jobs/{jid}` is
+		// one route and a series per job identifier is exactly the
+		// unbounded label a metrics endpoint dies of.
+		m := s.m()
+		route := routeOf(r)
+		m.requests.With(route, strconv.Itoa(rec.status)).Inc()
+		if elapsed >= 0 {
+			m.requestDuration.With(route).Observe(elapsed.Seconds())
+		}
 	})
+}
+
+// routeOf names the route a request matched, with the variable segments
+// removed.
+func routeOf(r *http.Request) string {
+	path := r.URL.Path
+	for _, prefix := range []string{PathJob, PathNode, PathKey, PathOrchJob, PathPillar, PathHook} {
+		if rest, ok := strings.CutPrefix(path, prefix); ok {
+			// `/v1/nodes/{id}/state` keeps its tail, because applying
+			// state to a node and reading one are different routes.
+			if _, tail, found := strings.Cut(rest, "/"); found && tail != "" {
+				return prefix + "{id}/" + tail
+			}
+			return prefix + "{id}"
+		}
+	}
+	return path
 }
 
 // recorder captures what a handler answered, for the access log.

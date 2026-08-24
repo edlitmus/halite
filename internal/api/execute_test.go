@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -28,7 +29,11 @@ type stubHub struct {
 	runnerFails string
 	// eventLines is what the hub's event stream answers with.
 	eventLines []string
-	server     *httptest.Server
+	// metricsBody is the hub's exposition; metricsFails makes the hub
+	// refuse the scrape instead.
+	metricsBody  string
+	metricsFails string
+	server       *httptest.Server
 }
 
 type stubCall struct {
@@ -53,6 +58,14 @@ func newStubHub(t *testing.T) *stubHub {
 			writeJSON(w, http.StatusAccepted, transport.SubmitResponse{
 				JID: "20260824T101500.000000", Nodes: []string{"web1.example"},
 			})
+		case transport.PathMetrics:
+			if h.metricsFails != "" {
+				writeJSON(w, http.StatusForbidden,
+					transport.Error{Error: h.metricsFails, Code: transport.CodeRefused})
+				return
+			}
+			w.Header().Set("Content-Type", metrics.ContentType)
+			fmt.Fprint(w, h.metricsBody)
 		case transport.PathEvents:
 			// The hub's own stream: NDJSON, one event per line. The
 			// stub sends what it was given and ends, which is enough
@@ -124,6 +137,7 @@ func executeLab(t *testing.T, policySrc string) (*lab, *stubHub) {
 	l := newLab(t)
 	hub := newStubHub(t)
 	l.server.Hub = hub.client()
+	l.server.Metrics = metrics.NewRegistry()
 	if policySrc != "" {
 		loaded, _, err := policy.Load([]byte(policySrc), "policy.yaml")
 		if err != nil {

@@ -20,6 +20,7 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	hlog "github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/transport"
@@ -71,6 +72,7 @@ func runServe(args *cli.Args) int {
 		MaxBody:       s.cfg.Int("max_body", 64<<20),
 		TokenLifetime: s.cfg.Duration("token_lifetime", 12*time.Hour),
 		TokenIdle:     s.cfg.Duration("token_idle", 4*time.Hour),
+		Metrics:       metricsRegistry(s.cfg),
 	}
 
 	pair := servingCertificate(s, args)
@@ -264,4 +266,15 @@ func pruneTokens(ctx context.Context, s *service, tokens *apitoken.Store) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// metricsRegistry answers with a registry unless the operator turned
+// metrics off. On by default, for the reason SPEC 26.2 gives: a
+// backpressure design is auditable only if the counters are there
+// before anyone needs them.
+func metricsRegistry(cfg *config.Config) *metrics.Registry {
+	if !cfg.Bool("metrics", true) {
+		return nil
+	}
+	return metrics.NewRegistry()
 }

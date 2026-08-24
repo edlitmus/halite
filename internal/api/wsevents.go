@@ -28,6 +28,9 @@ func (s *Server) wsEventStream(w http.ResponseWriter, r *http.Request, token *ap
 	}
 	defer conn.Close(websocket.CloseGoingAway, "")
 
+	s.m().streams.With("websocket").Add(1)
+	defer s.m().streams.With("websocket").Add(-1)
+
 	tags := tagFilter(r)
 	from := r.URL.Query().Get("from")
 	if from == "" {
