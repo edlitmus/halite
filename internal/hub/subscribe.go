@@ -55,6 +55,13 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 	st := s.fleet().attach(nodeID, now)
 	defer s.fleet().detach(st)
 
+	s.m().nodeConnects.Inc()
+	// Why a stream ended is the useful half: a node that went away and
+	// one the hub cut off are different incidents, and a stream that
+	// ended because the write failed is a third.
+	reason := "client_gone"
+	defer func() { s.m().nodeDisconnects.With(reason).Inc() }()
+
 	s.info("node connected", "node_id", nodeID, "version", req.Version, "grains_bytes", len(req.Grains))
 	s.emit(tagNodeStart(nodeID), nodeID, map[string]any{"version": req.Version})
 	s.emit("halite/presence/change", nodeID, map[string]any{
@@ -97,12 +104,15 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 		case <-r.Context().Done():
 			return
 		case <-st.done:
+			reason = "hub_closed"
 			return
 		case msg := <-st.out:
 			if err := write(msg); err != nil {
+				reason = "write_failed"
 				return
 			}
 			if msg.Final {
+				reason = "final_message"
 				return
 			}
 		case <-ticker.C:
@@ -111,6 +121,7 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 			// and how the hub learns the connection is gone: a write
 			// to a vanished peer is what fails.
 			if err := write(transport.Message{T: transport.MsgPing, Seq: seq}); err != nil {
+				reason = "ping_failed"
 				return
 			}
 		}

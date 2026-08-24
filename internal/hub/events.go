@@ -32,13 +32,16 @@ func (s *Server) emit(tag string, node string, data map[string]any) {
 // same identifier. SPEC 17.1 and 16.3.
 func (s *Server) emitCorrelated(tag, node, correlation string, data map[string]any) {
 	if s.Events == nil {
+		s.m().eventsDropped.With("no_bus").Inc()
 		return
 	}
 	e := &eventbus.Event{Tag: tag, Node: node, Stamp: s.now(), Data: data, Correlation: correlation}
 	if _, err := s.Events.Append(e); err != nil {
 		s.warn("could not record an event", "tag", tag, "error", err.Error())
+		s.m().eventsDropped.With("append_failed").Inc()
 		return
 	}
+	s.m().eventsPublished.With(tagPrefix(tag)).Inc()
 	s.emitSaltCompat(e)
 }
 
@@ -125,9 +128,12 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, nodeID string) {
 		Data:        data,
 	})
 	if err != nil {
+		s.m().eventsDropped.With("append_failed").Inc()
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
+	s.m().eventsPublished.With(tagPrefix(tag)).Inc()
+	s.countBeaconEvent(tag)
 	s.info("event from a node", "node_id", nodeID, "tag", tag)
 	transport.WriteJSON(w, http.StatusAccepted, transport.EventResponse{Tag: tag, Offset: offset})
 }

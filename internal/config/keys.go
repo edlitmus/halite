@@ -152,7 +152,6 @@ var Keys = []Key{
 	{"log_level_file", all, "", "Level for the file sink, defaulting to log_level.", "26.1"},
 	{"log_file", all, "", "Log file; empty logs to stderr or the journal.", "26.1"},
 	{"log_format", all, "json", "json or console.", "26.1"},
-	{"metrics_listen", hubAPI, "", "Prometheus exposition address; empty disables it.", "26.2"},
 	{"tracing", all, "off", "off or otlp.", "26.3"},
 
 	// Node execution.
@@ -166,6 +165,7 @@ var Keys = []Key{
 	{"cmd_default_shell", nodeOnly, "false", "Run cmd.run through a shell by default, as Salt does.", "15.2"},
 	{"legacy_arg_parse", nodeHub, "false", "Restore Salt's YAML coercion of command line arguments.", "9.2"},
 	{"event_tag_compat", hubOnly, "false", "Additionally emit every event under its salt/ equivalent.", "17.1"},
+	{"metrics", hubAPI, "true", "Record and expose Prometheus metrics at /v1/metrics.", "26.2"},
 	{"event_retention", hubOnly, "720h", "How long the event bus keeps a record.", "17.2"},
 	{"event_max_size", hubOnly, "4294967296", "Ceiling on the whole event bus, whichever binds first.", "17.2"},
 

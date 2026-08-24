@@ -20,6 +20,7 @@ import (
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/target"
@@ -96,6 +97,11 @@ type Server struct {
 	// missing as well as when it is empty.
 	Policy *policy.Policy
 
+	// Metrics is the registry this hub exposes at /v1/metrics. A hub
+	// without one is instrumented and records nothing, which is what
+	// every test wants and what SPEC 26.2 allows an operator to choose.
+	Metrics *metrics.Registry
+
 	jobClock job.Clock
 	// background counts the work the hub starts outside a request --
 	// queued delivery to a node that has just connected. Serve waits
@@ -104,6 +110,10 @@ type Server struct {
 	background sync.WaitGroup
 	// requests counts the handlers running, for the same reason.
 	requests inflight
+
+	// metrics is the declared families, nil on a hub with no registry.
+	metrics   *hubMetrics
+	metricsMu sync.Mutex
 }
 
 // goBackground runs work that outlives the request that started it,
@@ -188,6 +198,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT "+transport.PathMine, s.authenticated(s.minePublish))
 	mux.HandleFunc("POST "+transport.PathMineGet, s.authenticated(s.mineFetch))
 	mux.HandleFunc("GET "+transport.PathEvents, s.operator(s.eventStream))
+	mux.HandleFunc("GET "+transport.PathMetrics, s.operator(s.metricsExposition))
 	// An unrouted path under /v1/ is a version skew or a scan, and
 	// either way the answer is the same shape as every other failure.
 	mux.HandleFunc("/", s.notFound)

@@ -21,9 +21,14 @@ import (
 // endpoints that need them. A constant that names a limit nothing
 // applies reads like an assurance and is not one.
 const (
-	MaxRequestBody    = 64 << 20
-	MaxSubscribeLine  = 1 << 20
-	MaxGrainsPayload  = 1 << 20
+	MaxRequestBody   = 64 << 20
+	MaxSubscribeLine = 1 << 20
+	MaxGrainsPayload = 1 << 20
+	// MaxMetricsBody bounds a scrape. A registry is bounded at 512
+	// series per family, so this is generous; it is here because a
+	// client reading an unbounded body from a peer is a client that
+	// can be made to run out of memory by that peer.
+	MaxMetricsBody    = 8 << 20
 	HandshakeTimeout  = 10 * time.Second
 	IdleStreamTimeout = 90 * time.Second
 )
@@ -46,6 +51,7 @@ const (
 	PathGrains      = "/v1/grains"
 	PathJobs        = "/v1/jobs"
 	PathEvents      = "/v1/events"
+	PathMetrics     = "/v1/metrics"
 	PathJob         = "/v1/jobs/"
 	PathMine        = "/v1/mine"
 	PathMineGet     = "/v1/mine/get"

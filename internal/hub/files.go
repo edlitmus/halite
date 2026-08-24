@@ -22,6 +22,13 @@ import (
 // path, and having one implementation of the check means there is one
 // place for it to be right.
 func (s *Server) files(w http.ResponseWriter, r *http.Request, nodeID string) {
+	// Wrapped for the whole handler, so a refusal is counted with the
+	// code it was refused with: a metric that counts only what was
+	// served answers the wrong half of "is the file server healthy".
+	counted := &countingWriter{ResponseWriter: w, status: http.StatusOK}
+	defer func() { s.countFileRequest(counted) }()
+	w = counted
+
 	if s.Files == nil {
 		transport.WriteError(w, http.StatusServiceUnavailable, transport.CodeInternal,
 			errors.New("this hub serves no files; set file_roots"))

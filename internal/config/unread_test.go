@@ -26,7 +26,6 @@ var unreadKeys = map[string]string{
 	// transport itself. Enrollment, the key store, and the subscribe
 	// stream are built, so their settings have come off this list.
 	"tracing":                     "phase 2: no spans are emitted yet",
-	"metrics_listen":              "phase 2: no metrics endpoint yet",
 	"ext_pillar_fail":             "phase 2: external pillar is a hub concern",
 	"gitfs_base":                  "phase 5: gitfs",
 	"gitfs_verify_signatures":     "phase 5: gitfs",

@@ -279,6 +279,7 @@ func (s *Server) mineFetch(w http.ResponseWriter, r *http.Request, nodeID string
 	principal := "node:" + nodeID
 	decision := s.Policy.Authorize(
 		policyRequestFor(principal, req.Function, req.Target, nil, nil, false))
+	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("mine read refused by policy",
 			"principal", principal, "target", req.Target, "fun", req.Function,

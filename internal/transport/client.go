@@ -624,3 +624,32 @@ func (c *Client) PushGrains(ctx context.Context, req GrainsRequest) error {
 	}
 	return nil
 }
+
+// Metrics reads the hub's Prometheus exposition.
+//
+// The body is text rather than JSON, so it is returned as it came: a
+// caller that merges two expositions must not have this one reformatted
+// on the way through.
+func (c *Client) Metrics(ctx context.Context) (string, error) {
+	client, err := c.client()
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(PathMetrics), nil)
+	if err != nil {
+		return "", err
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	payload, err := io.ReadAll(io.LimitReader(res.Body, MaxMetricsBody))
+	if err != nil {
+		return "", err
+	}
+	if res.StatusCode != http.StatusOK {
+		return "", decodeError(PathMetrics, payload, res.StatusCode)
+	}
+	return string(payload), nil
+}

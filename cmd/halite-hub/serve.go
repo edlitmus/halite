@@ -23,6 +23,7 @@ import (
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
 	hlog "github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/redact"
@@ -303,6 +304,7 @@ func runServe(args *cli.Args) int {
 		Policy:         loaded,
 		Events:         bus,
 		EventTagCompat: h.cfg.Bool("event_tag_compat", false),
+		Metrics:        metricsRegistry(h.cfg),
 	}
 
 	ln, err := hub.Listen(listen, pair, h.auth.CA.Cert, h.denied)
@@ -622,4 +624,17 @@ func serverNames(args *cli.Args, listen string) []string {
 		add(host)
 	}
 	return names
+}
+
+// metricsRegistry answers with a registry unless the operator turned
+// metrics off.
+//
+// On by default: SPEC 26.2's rule is that every bounded queue and every
+// drop path has a counter, and a default that has to be switched on is
+// one that is off in the estate where it was needed.
+func metricsRegistry(cfg *config.Config) *metrics.Registry {
+	if !cfg.Bool("metrics", true) {
+		return nil
+	}
+	return metrics.NewRegistry()
 }

@@ -60,6 +60,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		return
 	}
 	if fresh {
+		s.countReturn(&ret)
 		s.info("return recorded",
 			"jid", string(ret.JID), "node_id", nodeID, "fun", ret.Fun,
 			"success", ret.Success, "retcode", ret.RetCode, "duration_ms", ret.DurationMS)
@@ -132,6 +133,7 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		Arg:       req.Arg,
 		Kwarg:     req.Kwarg,
 	})
+	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("job refused by policy",
 			"principal", principal, "target", req.Target, "fun", req.Fun,
@@ -216,6 +218,7 @@ func (s *Server) resume(w http.ResponseWriter, r *http.Request, principal string
 		Arg:       existing.Arg,
 		Kwarg:     existing.Kwarg,
 	})
+	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("resume refused by policy",
 			"principal", principal, "jid", string(id), "reason", decision.Reason)
@@ -268,6 +271,7 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 	decision := s.Policy.Authorize(policy.Request{
 		Principal: principal, Target: j.Target, Fun: j.Fun, Arg: j.Arg, Kwarg: j.Kwarg,
 	})
+	s.countDecision(decision)
 	if !decision.Allowed {
 		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
 			fmt.Errorf("%s", decision.Reason))

@@ -77,8 +77,11 @@ func (s *Server) pillarFor(w http.ResponseWriter, r *http.Request, nodeID string
 		env = "base"
 	}
 
+	started := s.now()
 	compiled, err := s.compilePillar(nodeID, env, grains)
+	observeSeconds(s.m().pillarCompile, s.now().Sub(started))
 	if err != nil {
+		s.m().pillarFailure.Inc()
 		// The reason goes to the hub's log with the node named. The
 		// node is told that its pillar did not compile, and not what
 		// is in the file that failed: SPEC 12.7 is explicit that a

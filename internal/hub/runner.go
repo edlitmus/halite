@@ -232,6 +232,7 @@ func (s *Server) CallRunner(ctx context.Context, call RunnerCall) (*RunnerOutcom
 	// rather than `functions:`.
 	decision := s.Policy.Authorize(
 		policyRequestFor(call.Principal, call.Fun, "", call.Arg, call.Kwarg, true))
+	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("runner refused by policy",
 			"principal", call.Principal, "fun", call.Fun, "reason", decision.Reason)

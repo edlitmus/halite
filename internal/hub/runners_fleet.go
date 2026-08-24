@@ -388,6 +388,7 @@ func (c *RunnerContext) dispatch(sub Submission) (*job.Job, error) {
 func (s *Server) DispatchAs(principal string, sub Submission) (*job.Job, error) {
 	decision := s.Policy.Authorize(
 		policyRequestFor(principal, sub.Fun, sub.Target, sub.Arg, sub.Kwarg, false))
+	s.countDecision(decision)
 	if !decision.Allowed {
 		s.warn("a job dispatched on a principal's behalf was refused by policy",
 			"principal", principal, "target", sub.Target, "fun", sub.Fun,

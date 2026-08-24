@@ -118,6 +118,11 @@ func (r *Reactor) Run(ctx context.Context) error {
 		return nil
 	}
 	r.start(ctx)
+	// Declared here rather than with the hub's other families, because
+	// the reactor is what holds the queues and a gauge read off
+	// something that does not exist yet would read zero for ever.
+	r.Server.Metrics.GaugeFunc("halite_reactor_queue_depth",
+		"Events waiting in the reactor's worker queues.", r.queuedEvents)
 
 	from := r.readOffset()
 	tags := ReactorTags(r.Entries)
@@ -236,6 +241,7 @@ func (r *Reactor) enqueue(entry ReactorEntry, e *eventbus.Event) {
 	}
 	w := r.workers[hashIndex(key, len(r.workers))]
 	if dropped := w.queue.push(reactorJob{entry: entry, event: e}); dropped > 0 {
+		r.Server.m().reactorDropped.Add(float64(dropped))
 		r.Server.warn("the reactor queue overflowed", "dropped", dropped, "tag", e.Tag)
 		r.Server.emit("halite/reactor/overflow", "", map[string]any{
 			"dropped": int64(dropped), "tag": e.Tag, "reactor": entry.Tag,
@@ -406,6 +412,11 @@ func (r *Reactor) react(ctx context.Context, j reactorJob) {
 	ctx, cancel := context.WithTimeout(ctx, r.timeout())
 	defer cancel()
 
+	started := r.now()
+	defer func() {
+		observeSeconds(r.Server.m().reactorDuration.With(tagPrefix(j.event.Tag)), r.now().Sub(started))
+	}()
+
 	var all []ReactionResult
 	for _, file := range j.entry.SLS {
 		doc, err := r.Server.renderReaction(file, j.event)
@@ -426,6 +437,7 @@ func (r *Reactor) react(ctx context.Context, j reactorJob) {
 					"kind", res.Reaction.Kind, "fun", res.Reaction.Fun, "jid", res.JID)
 				continue
 			}
+			r.Server.m().reactorFailures.With("dispatch").Inc()
 			r.Server.warn("a reaction did not dispatch",
 				"tag", j.event.Tag, "reaction", res.Reaction.ID, "error", res.Error)
 			r.Server.emitCorrelated("halite/reactor/error", j.event.Node, correlationOf(j.event),
@@ -447,6 +459,7 @@ func (r *Reactor) react(ctx context.Context, j reactorJob) {
 // caused something and did not is invisible there, and the event does
 // not come again.
 func (r *Reactor) reportError(j reactorJob, file string, err error) {
+	r.Server.m().reactorFailures.With("prepare").Inc()
 	r.Server.warn("a reaction could not be prepared",
 		"tag", j.event.Tag, "file", file, "error", err.Error())
 	r.Server.emitCorrelated("halite/reactor/error", j.event.Node, correlationOf(j.event),
@@ -541,6 +554,21 @@ func (q *boundedQueue) pop(ctx context.Context) (reactorJob, bool) {
 }
 
 // Len reports the queue depth, for a metric and for a test.
+// queuedEvents is every worker's queue, summed — what is waiting, as
+// against queueDepth, which is what the queues hold at most. SPEC 26.2
+// asks for it because a bounded queue whose occupancy nobody can see is
+// a drop nobody predicted.
+func (r *Reactor) queuedEvents() float64 {
+	r.mu.Lock()
+	workers := append([]*reactorWorker(nil), r.workers...)
+	r.mu.Unlock()
+	total := 0
+	for _, w := range workers {
+		total += w.queue.Len()
+	}
+	return float64(total)
+}
+
 func (q *boundedQueue) Len() int {
 	q.mu.Lock()
 	defer q.mu.Unlock()

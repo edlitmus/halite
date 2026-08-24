@@ -35,6 +35,7 @@ Usage:
   halite-hub jobs <subcommand>   the job cache
   halite-hub policy <show|test>  the RBAC policy, and what it decides
   halite-hub event <listen|tags> the event bus
+  halite-hub metrics             the Prometheus exposition
   halite-hub migrate <tree>      audit an existing Salt tree and report
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
@@ -96,6 +97,11 @@ policy flags:
   --runner             evaluate the function as a runner rather than a job
   --kwarg <k=v>        an argument to include, repeatable as a comma list
 
+metrics flags:
+  --filter <substring> only families whose name contains this
+  --as <name>          which operator certificate to present
+  --hub <address>      the hub to reach, default localhost
+
 event flags:
   --tag <glob>         a tag to follow, repeatable as a comma list
   --from <position>    latest (default), earliest, or an offset
@@ -151,6 +157,8 @@ func main() {
 		os.Exit(runEvent(args))
 	case "runner":
 		os.Exit(runRunner(args))
+	case "metrics":
+		os.Exit(runMetrics(args))
 	case "orch":
 		os.Exit(runOrch(args))
 	case "files":

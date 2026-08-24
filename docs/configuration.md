@@ -160,7 +160,7 @@ Read by the hub.
 | `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
 | `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
 | `max_causality_depth` | `5` | 16.3 | How long a reactor causality chain may grow before it is broken. |
-| `metrics_listen` | — | 26.2 | Prometheus exposition address; empty disables it. |
+| `metrics` | `true` | 26.2 | Record and expose Prometheus metrics at /v1/metrics. |
 | `node_data_cache` | `true` | 28.3 | Keep per-node grains, pillar, and mine on the hub. |
 | `nodegroups` | — | 8.1 | Named compound target expressions. |
 | `pillar_merge_lists` | `false` | 12.3 | Concatenate lists when merging pillar sources. |
@@ -211,7 +211,7 @@ Read by the API service.
 | `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
 | `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
 | `max_body` | `64MiB` | 22.3 | The largest request body this service will read. |
-| `metrics_listen` | — | 26.2 | Prometheus exposition address; empty disables it. |
+| `metrics` | `true` | 26.2 | Record and expose Prometheus metrics at /v1/metrics. |
 | `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
 | `policy` | `<config root>/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
 | `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |

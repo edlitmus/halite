@@ -51,16 +51,10 @@ func (f *family) writeTo(b *strings.Builder) {
 	}
 	f.mu.Unlock()
 
-	if read == nil && len(samples) == 0 {
-		// A family that has never been observed is written anyway when
-		// it has no labels, because a counter that is absent and one
-		// that is zero read very differently on a dashboard. A labelled
-		// family has no series to write yet, so it is skipped.
-		if len(f.labels) > 0 {
-			return
-		}
-	}
-
+	// The declaration is written even for a family nothing has observed
+	// yet. SPEC 26.2's rule is that every bounded queue and every drop
+	// path has a counter, and a rule like that is auditable only if a
+	// scraper can see the counter exists before anything has dropped.
 	b.WriteString("# HELP " + f.name + " " + escapeHelp(f.help) + "\n")
 	b.WriteString("# TYPE " + f.name + " " + f.kind.String() + "\n")
 
@@ -69,7 +63,12 @@ func (f *family) writeTo(b *strings.Builder) {
 		return
 	}
 	if len(samples) == 0 {
-		b.WriteString(f.name + " 0\n")
+		// An unlabelled family reads as zero; a labelled one has no
+		// series to name yet, and inventing a label value would be
+		// inventing an observation.
+		if len(f.labels) == 0 {
+			b.WriteString(f.name + " 0\n")
+		}
 		return
 	}
 
