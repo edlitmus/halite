@@ -98,7 +98,30 @@ Read by the node agent.
 | `regex_engine` | `re2` | 10.4 | re2 only until the backtracking engine of SPEC section 10.4 ships. |
 | `renderer` | `jinja|yaml` | 10 | The default renderer pipeline. |
 | `require_job_signature` | `false` | 25.6 | Refuse a job without a valid detached operator signature. |
-| `returner` | `local` | 20.3 | Default returner. |
+| `returner` | `local` | 20.3 | Default returner: local, local_cache, file, syslog, webhook, or smtp. |
+| `returner_file` | — | 20.3 | Path for the file returner; empty is <state_dir>/returns.ndjson. |
+| `returner_file_keep` | `5` | 20.3 | How many rotated copies to keep. |
+| `returner_file_max_size` | `0` | 20.3 | Rotate the file returner past this many bytes; 0 never rotates. |
+| `returner_smtp_address` | — | 20.3 | host:port of the mail server. |
+| `returner_smtp_from` | — | 20.3 | Envelope sender. |
+| `returner_smtp_password` | — | 20.3 | SMTP password; refused without tls. |
+| `returner_smtp_subject` | — | 20.3 | Fixed subject; empty describes the return. |
+| `returner_smtp_tls` | `true` | 20.3 | Require STARTTLS. |
+| `returner_smtp_to` | — | 20.3 | Recipients, comma-separated. |
+| `returner_smtp_username` | — | 20.3 | SMTP account; refused without tls. |
+| `returner_spool_max_size` | `268435456` | 20.3 | Bytes of undelivered returns to hold before refusing. |
+| `returner_syslog_address` | — | 20.3 | host:port for syslog; empty uses the local socket. |
+| `returner_syslog_ca_file` | — | 20.3 | CA to verify the syslog receiver against. |
+| `returner_syslog_facility` | `daemon` | 20.3 | The syslog facility. |
+| `returner_syslog_network` | `tcp` | 20.3 | tcp or udp, for a syslog address. |
+| `returner_syslog_tag` | `halite` | 20.3 | The RFC 5424 app-name. |
+| `returner_syslog_tls` | `false` | 20.3 | Wrap the syslog connection in TLS. |
+| `returner_timeout` | `30s` | 20.3 | How long one delivery may take. |
+| `returner_webhook_attempts` | `5` | 20.3 | Delivery attempts before a return is spooled. |
+| `returner_webhook_ca_file` | — | 20.3 | CA to verify the webhook receiver against. |
+| `returner_webhook_secret` | — | 20.3 | HMAC-SHA-256 signing secret; prefer the file form. |
+| `returner_webhook_secret_file` | — | 20.3 | File holding the signing secret, mode 600. |
+| `returner_webhook_url` | — | 20.3 | https:// endpoint for the webhook returner. |
 | `schedule` | — | 20.1 | Scheduled jobs. |
 | `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
 | `startup_states` | — | 20.1 | What to run when the node starts: highstate, sls, or top. |
@@ -130,6 +153,10 @@ Read by the hub.
 | `env_denylist` | — | 28.3 | Environments a run may not use. |
 | `event_max_size` | `4294967296` | 17.2 | Ceiling on the whole event bus, whichever binds first. |
 | `event_retention` | `720h` | 17.2 | How long the event bus keeps a record. |
+| `event_return` | — | 20.3 | Ship the whole event stream to this returner. |
+| `event_return_batch` | `200` | 20.3 | Events read from the bus per shipment. |
+| `event_return_from` | `latest` | 20.3 | Where to start on a first run: latest, earliest, or an offset. |
+| `event_return_tags` | — | 20.3 | Tag globs to ship, comma-separated; empty ships everything. |
 | `event_tag_compat` | `false` | 17.1 | Additionally emit every event under its salt/ equivalent. |
 | `ext_pillar` | — | 12.7 | External pillar sources. |
 | `ext_pillar_fail` | `hard` | 12.7 | hard or ignore. A partial pillar is worse than no pillar. |
@@ -179,6 +206,29 @@ Read by the hub.
 | `relay_upstream` | — | 5.3 | The hub this relay reports to. |
 | `relay_upstream_port` | `4510` | 5.3 | The upstream hub's port. |
 | `renderer` | `jinja|yaml` | 10 | The default renderer pipeline. |
+| `returner_file` | — | 20.3 | Path for the file returner; empty is <state_dir>/returns.ndjson. |
+| `returner_file_keep` | `5` | 20.3 | How many rotated copies to keep. |
+| `returner_file_max_size` | `0` | 20.3 | Rotate the file returner past this many bytes; 0 never rotates. |
+| `returner_smtp_address` | — | 20.3 | host:port of the mail server. |
+| `returner_smtp_from` | — | 20.3 | Envelope sender. |
+| `returner_smtp_password` | — | 20.3 | SMTP password; refused without tls. |
+| `returner_smtp_subject` | — | 20.3 | Fixed subject; empty describes the return. |
+| `returner_smtp_tls` | `true` | 20.3 | Require STARTTLS. |
+| `returner_smtp_to` | — | 20.3 | Recipients, comma-separated. |
+| `returner_smtp_username` | — | 20.3 | SMTP account; refused without tls. |
+| `returner_spool_max_size` | `268435456` | 20.3 | Bytes of undelivered returns to hold before refusing. |
+| `returner_syslog_address` | — | 20.3 | host:port for syslog; empty uses the local socket. |
+| `returner_syslog_ca_file` | — | 20.3 | CA to verify the syslog receiver against. |
+| `returner_syslog_facility` | `daemon` | 20.3 | The syslog facility. |
+| `returner_syslog_network` | `tcp` | 20.3 | tcp or udp, for a syslog address. |
+| `returner_syslog_tag` | `halite` | 20.3 | The RFC 5424 app-name. |
+| `returner_syslog_tls` | `false` | 20.3 | Wrap the syslog connection in TLS. |
+| `returner_timeout` | `30s` | 20.3 | How long one delivery may take. |
+| `returner_webhook_attempts` | `5` | 20.3 | Delivery attempts before a return is spooled. |
+| `returner_webhook_ca_file` | — | 20.3 | CA to verify the webhook receiver against. |
+| `returner_webhook_secret` | — | 20.3 | HMAC-SHA-256 signing secret; prefer the file form. |
+| `returner_webhook_secret_file` | — | 20.3 | File holding the signing secret, mode 600. |
+| `returner_webhook_url` | — | 20.3 | https:// endpoint for the webhook returner. |
 | `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
 | `state_allowlist` | — | 28.3 | SLS names a state run may include. |
 | `state_denylist` | — | 28.3 | SLS names a state run may not include. |

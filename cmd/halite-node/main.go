@@ -30,6 +30,7 @@ import (
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
+	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
@@ -182,6 +183,10 @@ type node struct {
 	// mine publishes to and reads from the mine on the hub. Nil for a
 	// node with no hub, where there is nothing to publish to.
 	mine exec.MineAccess
+	// returns is the configured returner of SPEC 20.3, built once at
+	// startup so a misconfiguration stops the node rather than being
+	// discovered by the first scheduled job that had somewhere to go.
+	returns returner.Returner
 	// hubTree records that this node is compiling against the hub's
 	// tree, so a reconnect does not probe the file server again for a
 	// tree it already has.

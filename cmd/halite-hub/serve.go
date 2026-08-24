@@ -28,6 +28,7 @@ import (
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
+	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/template"
@@ -356,6 +357,16 @@ func runServe(args *cli.Args) int {
 			}
 		}()
 	}
+	if shipper := h.eventReturner(server); shipper != nil {
+		defer shipper.Returner.Close()
+		h.log.Info("shipping the event stream to a returner",
+			"returner", shipper.Returner.Name(), "tags", strings.Join(shipper.Tags, ","))
+		go func() {
+			if err := shipper.Run(ctx); err != nil {
+				h.log.Error("the event returner stopped", "error", err.Error())
+			}
+		}()
+	}
 	go maintain(ctx, h, server, jobs, bus)
 
 	if err := server.Serve(ctx, ln); err != nil {
@@ -637,4 +648,102 @@ func metricsRegistry(cfg *config.Config) *metrics.Registry {
 		return nil
 	}
 	return metrics.NewRegistry()
+}
+
+// eventReturner builds the `event_return` shipper of SPEC 20.3, or nil
+// when none is configured.
+//
+// A returner that cannot carry events is refused here rather than at
+// the first event: an estate that configured `event_return` is relying
+// on the audit trail arriving somewhere, and finding out at the first
+// event means finding out from its absence.
+func (h *hubContext) eventReturner(server *hub.Server) *hub.EventReturn {
+	name := h.cfg.String("event_return", "")
+	if name == "" {
+		return nil
+	}
+	// Checked before anything is built, so a returner that cannot carry
+	// events is refused by name rather than by being sent one.
+	if err := returner.CheckEventReturn(name); err != nil {
+		cli.Fatalf("event_return: %v", err)
+	}
+	stateDir := h.cfg.String("state_dir", config.DefaultStateDir)
+	built, err := returner.New(name, returner.Options{
+		StateDir: stateDir,
+		NodeID:   h.cfg.String("id", ""),
+		Timeout:  h.cfg.Duration("returner_timeout", 30*time.Second),
+		Log: func(level, msg string, kv ...any) {
+			if level == "warn" {
+				h.log.Warn(msg, kv...)
+				return
+			}
+			h.log.Info(msg, kv...)
+		},
+
+		Path:      h.cfg.String("returner_file", ""),
+		MaxBytes:  h.cfg.Int("returner_file_max_size", 0),
+		KeepFiles: int(h.cfg.Int("returner_file_keep", 5)),
+
+		SyslogAddress:  h.cfg.String("returner_syslog_address", ""),
+		SyslogNetwork:  h.cfg.String("returner_syslog_network", "tcp"),
+		SyslogTag:      h.cfg.String("returner_syslog_tag", "halite"),
+		SyslogFacility: h.cfg.String("returner_syslog_facility", "daemon"),
+		SyslogTLS:      h.cfg.Bool("returner_syslog_tls", false),
+		SyslogCAFile:   h.cfg.String("returner_syslog_ca_file", ""),
+
+		URL:         h.cfg.String("returner_webhook_url", ""),
+		CAFile:      h.cfg.String("returner_webhook_ca_file", ""),
+		Secret:      hubReturnerSecret(h),
+		MaxAttempts: int(h.cfg.Int("returner_webhook_attempts", 5)),
+		SpoolDir:    filepath.Join(stateDir, "event-return-spool"),
+		SpoolMax:    h.cfg.Int("returner_spool_max_size", 256<<20),
+
+		SMTPAddress:  h.cfg.String("returner_smtp_address", ""),
+		SMTPFrom:     h.cfg.String("returner_smtp_from", ""),
+		SMTPTo:       splitList(h.cfg.String("returner_smtp_to", "")),
+		SMTPSubject:  h.cfg.String("returner_smtp_subject", ""),
+		SMTPUsername: h.cfg.String("returner_smtp_username", ""),
+		SMTPPassword: h.cfg.String("returner_smtp_password", ""),
+		SMTPTLS:      h.cfg.Bool("returner_smtp_tls", true),
+	})
+	if err != nil {
+		cli.Fatalf("event_return: %v", err)
+	}
+	return &hub.EventReturn{
+		Server:     server,
+		Returner:   built,
+		Tags:       splitList(h.cfg.String("event_return_tags", "")),
+		OffsetFile: filepath.Join(stateDir, "event-return.offset"),
+		From:       h.cfg.String("event_return_from", ""),
+		Batch:      int(h.cfg.Int("event_return_batch", 200)),
+	}
+}
+
+// hubReturnerSecret reads the webhook signing secret, preferring the
+// file: a secret in the configuration is a secret in whatever
+// distributes the configuration.
+func hubReturnerSecret(h *hubContext) string {
+	if path := h.cfg.String("returner_webhook_secret_file", ""); path != "" {
+		secret, err := config.ReadSecretFile(path)
+		if err != nil {
+			cli.Fatalf("event_return: %v", err)
+		}
+		return secret
+	}
+	return h.cfg.String("returner_webhook_secret", "")
+}
+
+// splitList reads a comma-separated setting.
+func splitList(v string) []string {
+	if strings.TrimSpace(v) == "" {
+		return nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

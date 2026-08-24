@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -84,6 +85,8 @@ func TestAScheduledReturnGoesToTheNodesOwnLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := &node{cfg: cfg}
+	n.openReturner(nil)
+	defer n.returns.Close()
 
 	ret := &job.Return{
 		JID: job.ID("20260823T101500.000000"), NodeID: "web1.example",
@@ -91,7 +94,7 @@ func TestAScheduledReturnGoesToTheNodesOwnLog(t *testing.T) {
 		Return: json.RawMessage(`true`),
 	}
 	for i := 0; i < 2; i++ {
-		if err := n.writeLocalReturn(ret); err != nil {
+		if err := n.returns.Return(context.Background(), ret); err != nil {
 			t.Fatal(err)
 		}
 	}

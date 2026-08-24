@@ -244,3 +244,68 @@ func TestKeyTableCoversTheShimTargets(t *testing.T) {
 		}
 	}
 }
+
+// A key that names a location holds a path, and the path is not the
+// secret. Redacting it turns "the secret at /etc/halite/deploy.secret is
+// mode 644" into a diagnostic with the one fact an operator needed taken
+// out of it — which is how this was found.
+func TestAKeyNamingAFileIsNotItselfSecret(t *testing.T) {
+	secret := []string{
+		"password", "smtp_passwd", "returner_webhook_secret",
+		"api_token", "key_data", "private_key", "shared_secret",
+		"gpg_passphrase", "priv", "priv_passwd",
+	}
+	notSecret := []string{
+		"returner_webhook_secret_file", "secret_file", "token_file",
+		"password_file", "private_key_path", "tls_cert", "state_dir",
+	}
+	for _, key := range secret {
+		if !IsSecretKey(key) {
+			t.Errorf("%s is not treated as secret", key)
+		}
+	}
+	for _, key := range notSecret {
+		if IsSecretKey(key) {
+			t.Errorf("%s is redacted, and it names a path", key)
+		}
+	}
+}
+
+// The contents still are, wherever they are read.
+func TestASecretFilesContentsAreRefusedWhenReadable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "deploy.secret")
+	if err := os.WriteFile(path, []byte("s3cret\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := ReadSecretFile(path)
+	if err == nil {
+		t.Fatal("a world-readable signing key was accepted")
+	}
+	// The path is in the message, because the fix is one chmod and the
+	// operator has to know which file.
+	if !strings.Contains(err.Error(), path) {
+		t.Errorf("the error does not name the file: %v", err)
+	}
+
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ReadSecretFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The trailing newline an editor adds is removed: a secret that
+	// works when pasted and fails when read from a file is a diagnosis
+	// nobody enjoys.
+	if got != "s3cret" {
+		t.Errorf("read %q", got)
+	}
+
+	if err := os.WriteFile(path, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadSecretFile(path); err == nil {
+		t.Error("an empty secret file was accepted")
+	}
+}

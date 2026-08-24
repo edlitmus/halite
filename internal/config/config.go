@@ -371,6 +371,13 @@ func redact(m *value.Map) *value.Map {
 func IsSecretKey(key string) bool { return isSecretKey(key) }
 
 func isSecretKey(key string) bool {
+	// A key that names a location holds a path, and the path is not the
+	// secret — the file's contents are. Redacting it turns "the secret
+	// at /etc/halite/deploy.secret is mode 644" into a diagnostic with
+	// the one fact an operator needed taken out of it.
+	if strings.HasSuffix(key, "_file") || strings.HasSuffix(key, "_path") {
+		return false
+	}
 	for _, part := range secretKeyParts {
 		if strings.Contains(key, part) {
 			return true
@@ -449,4 +456,36 @@ func refuseWrapper(file string, fragment *value.Map, kind string) error {
 		"%s: a fragment here is a mapping of names to definitions with no `%s:` above "+
 			"them -- the directory already says what they are. Remove the one line and "+
 			"outdent the rest", file, kind)
+}
+
+// ReadSecretFile reads a shared secret out of a file.
+//
+// The trailing newline an editor adds is removed, because a secret that
+// works when pasted and fails when read from a file is a diagnosis
+// nobody enjoys. Empty is an error: a file that exists and holds
+// nothing is a deployment that half worked, and treating it as "no
+// secret configured" is how an unauthenticated path appears.
+//
+// A file others can read is refused. This is a signing key: with it,
+// anyone on the machine can forge a signed delivery from this node, and
+// starting anyway would mean the one check that would have caught it
+// passed silently. The fix is one chmod and the message says so.
+func ReadSecretFile(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("reading the secret at %s: %w", path, err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("the secret at %s is mode %o and is readable by others; "+
+			"chmod 600 it", path, info.Mode().Perm())
+	}
+	raw, err := os.ReadFile(filepath.Clean(path))
+	if err != nil {
+		return "", fmt.Errorf("reading the secret at %s: %w", path, err)
+	}
+	secret := strings.TrimRight(string(raw), "\r\n")
+	if secret == "" {
+		return "", fmt.Errorf("the secret at %s is empty", path)
+	}
+	return secret, nil
 }

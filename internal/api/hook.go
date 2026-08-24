@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -130,6 +131,12 @@ func ParseHooks(v any) ([]*Hook, error) {
 				hook.Auth = value.KeyString(f.Val)
 			case "secret":
 				hook.Secret = value.KeyString(f.Val)
+			case "secret_file":
+				secret, err := config.ReadSecretFile(value.KeyString(f.Val))
+				if err != nil {
+					return nil, fmt.Errorf("hook %s: %w", path, err)
+				}
+				hook.Secret = secret
 			case "signature_header":
 				hook.SignatureHeader = value.KeyString(f.Val)
 			case "timestamp_header":

@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -33,7 +31,7 @@ func (n *node) startSchedule(ctx context.Context) {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	n.checkReturner()
+	n.openReturner(nil)
 	jobs, err := schedule.Parse(raw, loc)
 	if err != nil {
 		// A schedule that will not parse stops the node rather than
@@ -157,52 +155,20 @@ func (n *node) runScheduled(ctx context.Context, r schedule.Run) error {
 
 	ret := n.executeJob(j)
 	if r.Job.ReturnJob {
-		// The `local` returner of SPEC 20.3: append-only NDJSON on the
-		// node. Not the hub's job cache -- that is `local_cache`, and
-		// the hub refuses a return for a job it never dispatched, which
-		// is the right refusal and the wrong destination for this.
-		if err := n.writeLocalReturn(ret); err != nil {
+		// Wherever `returner:` says. The default is `local`, which is
+		// append-only NDJSON on the node -- not the hub's job cache,
+		// because the hub refuses a return for a job it never
+		// dispatched, and that is the right refusal.
+		if err := n.returns.Return(context.Background(), ret); err != nil {
 			n.log.Warn("could not record a scheduled job's return",
-				"job", r.Job.Name, "jid", string(j.JID), "error", err.Error())
+				"job", r.Job.Name, "jid", string(j.JID),
+				"returner", n.returns.Name(), "error", err.Error())
 		}
 	}
 	if !ret.Success {
 		return errScheduledFailure
 	}
 	return nil
-}
-
-// writeLocalReturn appends one return to the node's own log.
-//
-// Append-only and one JSON object per line, so a truncated write is a
-// line that will not parse rather than a file that will not.
-func (n *node) writeLocalReturn(ret *job.Return) error {
-	path := filepath.Join(n.cfg.String("state_dir", config.DefaultStateDir), "returns.ndjson")
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	raw, err := json.Marshal(ret)
-	if err != nil {
-		return err
-	}
-	f, err := os.OpenFile(filepath.Clean(path), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = f.Write(append(raw, '\n'))
-	return err
-}
-
-// checkReturner refuses a returner this build does not have, rather
-// than accepting the name and writing nowhere.
-func (n *node) checkReturner() {
-	switch name := n.cfg.String("returner", "local"); name {
-	case "local":
-	default:
-		cli.Fatalf("`returner: %s` is not built; this build has `local`, the "+
-			"append-only NDJSON of SPEC section 20.3, and the rest arrive in phase 4", name)
-	}
 }
 
 var errScheduledFailure = errString("the scheduled job reported a failure")
