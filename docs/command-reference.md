@@ -287,6 +287,68 @@ orchestration reads unchanged.
 A runner that ran and failed exits 1 and prints its error; only a
 refusal, an unknown name, or a malformed call is a transport failure.
 
+## The mine
+
+`mine_functions` on a node computes values and publishes them; a state
+on another node reads them. That is how a load balancer's configuration
+learns its backend list.
+
+```yaml
+mine_interval: 60
+mine_functions:
+  network.ip_addrs:
+    - eth0
+  backend:
+    mine_function: grains.get
+    key: roles
+    allow_tgt: 'lb*'
+```
+
+The store is on the hub. A node publishes under the identity on its
+certificate and no other, which is what makes the answer worth
+believing, and it never talks to another node directly — SPEC 5.1 has
+nodes connect outward only.
+
+| Salt | halite | Status |
+|---|---|---|
+| `mine_functions`, `mine_interval` | same | works |
+| `mine.send` | same | works |
+| `mine.update` | same, and it replaces | works |
+| `mine.get` | same, authorized as a `node:` principal | works |
+| `mine.delete`, `mine.flush`, `mine.valid` | same | works |
+| `allow_tgt` | same, decided by the publisher | works |
+| `salt-run mine.get` | `halite-hub runner mine.get '<tgt>' <fun>` | works |
+| `salt-run mine.update` | `halite-hub runner mine.update` | works |
+| `salt-run mine.flush`, `mine.delete`, `mine.valid` | same | works |
+| `salt-run cache.mine` | `halite-hub runner cache.mine <node>` | works |
+| `peer`, `peer_run` in the master config | the RBAC policy, deny by default | works | <!-- lexicon:allow -->
+| a node publishing on another node's behalf | refused; the certificate decides | by design |
+| `publish.publish`, `publish.runner` | node-initiated execution on other nodes | not built |
+
+Reading the mine is the peer interface, and it is deny-by-default in the
+one policy rather than in a separate configuration dialect:
+
+```yaml
+roles:
+  backends-may-be-read:
+    - target: 'web*'
+      functions: ['backend']
+bindings:
+  - principal: 'node:lb1.example'
+    roles: ['backends-may-be-read']
+```
+
+That grant reads `backend` from `web*` and nothing else — not
+`credentials` from `web*`, and not `backend` from `*`.
+
+`allow_tgt` is the publisher's own restriction and a second gate rather
+than the only one: a node publishing something sensitive decides who may
+see it without trusting every reader's policy to be right. An operator
+is not restricted by it, having already been through the policy.
+
+A full publication replaces, so a function taken out of
+`mine_functions` stops being served rather than lingering.
+
 ## The scheduler
 
 `schedule:` on a node runs jobs on a clock, with no hub involved. That

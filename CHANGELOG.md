@@ -155,6 +155,25 @@ contract; it does not dispatch an execution function at all, because
 finding out what a test run would do by running it is how a test run
 becomes a deployment.
 
+### The mine
+
+`mine_functions` on a node computes values and publishes them; a state
+on another node reads them. That is how a load balancer's configuration
+learns its backend list, and the backends are what said it.
+
+The store is on the hub rather than passed between nodes: a node asking
+another node directly would be a second authorization surface and a
+connection in the wrong direction. A node publishes under the identity
+on its certificate and no other, which is what makes the answer worth
+believing.
+
+Reading is the peer interface, and it is deny-by-default in the one RBAC
+policy rather than in Salt's separate `peer` dialect. A grant names the
+functions and the targets and nothing wider. `allow_tgt` sits on top of
+that as the publisher's own restriction — a node publishing something
+sensitive decides who may see it without trusting every reader's policy
+to be right.
+
 ### A scheduler that gets the clock right
 
 `schedule:` runs jobs on a node with no hub involved, which is how a

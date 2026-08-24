@@ -1362,6 +1362,7 @@ real listener with a real CA, and running it still found one defect:
 | A 64-bit integer in a job argument or an event came back changed | `9007199254740993` came back as `...992` at three decoders: the node's job stream, the hub's event ingest, and every read off the event log. SPEC 6.4 says it must not. They decode with `UseNumber` now and lift the result into the model. One test asserted the float64 behaviour and was holding it in place. |
 | A tag glob mixing `*` and `**` matched nothing | Everything before the `**` was compared as a plain string, so `halite/node/*/deploy/**` looked for a node literally called `*`. A filter that matches nothing and says nothing is the worst shape one can have. It matches segment by segment now, and `halite/**/ret/*` works too, which the prefix comparison could not express. |
 | A step's `timeout` was two timeouts that disagreed | SPEC 19.1 lists `timeout` among a step's options and SPEC 11.7 lists it among every state's, and they are the same option: the state runner strips it and bounds the step's context with it. The step module was waiting on its own default of five minutes while the context expired underneath it, so a step written with `timeout: 10s` waited its ten seconds and then reported that the run had been stopped. The module reads the deadline off the context now. |
+| A node that started before its hub never re-attached to it | It falls back to its own file roots and pillar, correctly — an outage should not stop a node managing itself. It then stayed there for the life of the process, taking jobs and running highstates compiled from whatever local tree it happened to have, long after the hub was up. The only sign was one warning at startup. In an estate where a hub and its nodes reboot together, the node most likely to win that race is every node. Attachment is now attempted on every connection. |
 | `event.send` and `pillar.refresh` failed on every node | Both were registered as stubs saying they needed the hub, "which arrives in phase 2", for as long as phase 2 had been finished. The `saltutil.refresh_pillar` runner dispatched `pillar.refresh` to nodes that could only refuse it. An audit now reads the stubs out of the source and fails on any naming a delivered phase. |
 
 What the lab run establishes: `manage.status`, `up`, `versions`, and
@@ -1392,7 +1393,11 @@ resuming the reactor from its recorded offset; the `filechanges` and
 watched file, reaching the hub's bus, and the reactor acting on one --
 the whole automation loop, end to end; a schedule running `test.ping`
 every five seconds and a `cron` job reporting its next fire time, with
-the returns landing in the node's own NDJSON log; a runner declared and not built naming its phase; an
+the returns landing in the node's own NDJSON log; a node publishing two
+mine functions on its interval and another read of them refused by the
+policy for the function it was not granted; a node started before its
+hub falling back to its own roots and then re-attaching once the hub
+appeared; a runner declared and not built naming its phase; an
 unknown name listing its module's runners; and the two-stage
 authorization — an operator holding `runners: ['*']` and nothing else
 calls `manage.status` and is refused `saltutil.refresh_grains` because
@@ -1413,8 +1418,10 @@ the hub was down. On the beacon side it does not cover `load`,
 beacon left running long enough to exercise the coalescing window. On
 the scheduler side it does not cover a `cron` job actually firing, a
 daylight-saving transition on a real node, `catchup` after a real
-outage, `maxrunning` under a job that overruns, or `splay`. It has been
-run on FreeBSD only.
+outage, `maxrunning` under a job that overruns, or `splay`. On the mine
+side it does not cover a second node reading a first one's data — both
+halves ran on the one node — nor `allow_tgt` refusing a real reader, nor
+`mine.send` for a single value. It has been run on FreeBSD only.
 
 ## 6. Everything else not started
 
@@ -1707,10 +1714,34 @@ What is **not** built in the scheduler:
 - **`jid_include`.** Accepted and means nothing here: every job this
   scheduler runs is recorded under a jid either way.
 
-The rest of phases 3 through 6 does not exist: no mine, no API, no OIDC
-or LDAP, no webhooks, no bridge protocol, no gitfs, no s3fs, no
-agentless mode, no relays, no FIPS artifact set, no detached job
-signing, no signed state trees, and no backtracking regex engine.
+**The mine followed**, which completes the contents SPEC section 32
+lists for phase 3. `mine_functions` publishes; another node's state
+reads. The store is on the hub, because a node asking another node
+directly would be a second authorization surface and a connection in the
+wrong direction (SPEC 5.1).
+
+Reading is the peer interface, expressed in the one RBAC policy rather
+than in Salt's separate `peer` dialect: the caller is a `node:`
+principal, and a grant names the functions and the targets and nothing
+wider. `allow_tgt` is the publisher's own restriction on top of that —
+a node publishing something sensitive decides who may see it without
+trusting every reader's policy to be right.
+
+What is **not** built in the mine:
+
+- **Node-initiated execution on other nodes.** SPEC 19.5's peer
+  interface covers reading the mine, which works, and `publish.publish`
+  and `publish.runner` — a node causing a job to run elsewhere — which
+  are not built. The RBAC shape they would use is the one the mine
+  already uses.
+- **`mine_interval` finer than a minute.** Salt's unit is minutes and
+  this reads it the same way, so a node cannot publish more often than
+  that without `mine.send`.
+
+The rest of phases 4 through 6 does not exist: no API, no OIDC or LDAP,
+no webhooks, no bridge protocol, no gitfs, no s3fs, no agentless mode,
+no relays, no FIPS artifact set, no detached job signing, no signed
+state trees, and no backtracking regex engine.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.
