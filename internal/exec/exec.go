@@ -52,6 +52,11 @@ type Context struct {
 	// reaches the execution module that does the work.
 	Dispatch Dispatcher
 
+	// Mine publishes to and reads from the mine of SPEC 19.5. Nil on a
+	// node with no hub, where there is nothing to publish to and
+	// nobody to read from.
+	Mine MineAccess
+
 	// Events puts a record on the bus. Nil on a node with no hub, and
 	// `event.send` says so rather than reporting a success nobody
 	// received.
@@ -94,6 +99,28 @@ type FileFetcher interface {
 	Hash(env, uri string) (algorithm, digest string, err error)
 	// Exists reports whether a managed URI resolves.
 	Exists(env, uri string) bool
+}
+
+// MineAccess is what a module may do with the mine.
+//
+// An interface rather than the transport client, so that a test can see
+// what a module published without standing a hub up to receive it.
+type MineAccess interface {
+	// Publish sends what this node has computed. Replace drops
+	// anything published before, which is what a full refresh means.
+	Publish(functions map[string]MineValue, replace bool) error
+	// Fetch reads what the matched nodes published for one function.
+	// The hub authorizes the caller as a `node:` principal.
+	Fetch(tgt, tgtType, function string) (*value.Map, error)
+}
+
+// MineValue is one function's published data.
+type MineValue struct {
+	Data any
+	// AllowTgt restricts which nodes may read it, decided by the node
+	// that publishes rather than by the one that reads.
+	AllowTgt     string
+	AllowTgtType string
 }
 
 // EventSender puts an event on the bus a node is attached to.

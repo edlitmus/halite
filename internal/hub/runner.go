@@ -99,6 +99,7 @@ func NewRunners() *Runners {
 	registerJobsRunner(r)
 	registerStateRunner(r)
 	registerReactorRunner(r)
+	registerMineRunner(r)
 	registerManageRunner(r)
 	registerKeyRunner(r)
 	registerNodegroupsRunner(r)

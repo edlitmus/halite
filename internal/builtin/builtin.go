@@ -69,6 +69,7 @@ func New() *Registries {
 	registerSys(r)
 	registerBeacons(r)
 	registerSchedule(r)
+	registerMine(r)
 	return r
 }
 

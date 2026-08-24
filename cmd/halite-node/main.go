@@ -179,6 +179,9 @@ type node struct {
 	// no hub, and `event.send` says so rather than reporting a success
 	// nobody received.
 	events exec.EventSender
+	// mine publishes to and reads from the mine on the hub. Nil for a
+	// node with no hub, where there is nothing to publish to.
+	mine exec.MineAccess
 	// statesRunning counts the state runs in progress, which is what
 	// `disable_during_state_run` reads. SPEC 16.3.
 	//
@@ -532,6 +535,7 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 		Files:    n.files,
 		Dispatch: dispatcher{n.registry.Exec},
 		Events:   n.events,
+		Mine:     n.mine,
 		Runner:   &exec.OSRunner{},
 		// `pillar.refresh` rebuilds through the same path a run uses,
 		// so a node on a hub asks the hub and a local one recompiles

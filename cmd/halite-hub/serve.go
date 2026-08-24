@@ -181,6 +181,13 @@ func runServe(args *cli.Args) int {
 	}
 	nodes.StaleAfter = h.cfg.Duration("grain_stale_after", time.Hour)
 
+	// SPEC 19.5's mine: what nodes publish for other nodes to read.
+	mineStore, err := hub.OpenMineStore(
+		filepath.Join(h.cfg.String("state_dir", config.DefaultStateDir), "mine"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
 	// SPEC 19.1 keeps an orchestration as a first-class object with its
 	// own timeline, which is what makes `orch show` and `orch resume`
 	// possible. It is durable state, beside the job cache.
@@ -287,6 +294,7 @@ func runServe(args *cli.Args) int {
 		Jobs:           jobs,
 		Nodes:          nodes,
 		Orch:           orchestrations,
+		Mine:           mineStore,
 		Reactors:       reactors,
 		Nodegroups:     groups,
 		Files:          files,

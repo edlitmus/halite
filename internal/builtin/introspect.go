@@ -450,8 +450,6 @@ func registerSaltutil(r *Registries) {
 		notYet("saltutil", "sync_all", "Fetch the signed, pinned extension bundles this node is entitled to.", "phase 4"),
 		notYet("saltutil", "sync_modules", "Fetch the module extensions this node is entitled to.", "phase 4"),
 		notYet("saltutil", "sync_states", "Fetch the state extensions this node is entitled to.", "phase 4"),
-		notYet("mine", "get", "Read another node's published mine data.", "phase 3"),
-		notYet("mine", "send", "Publish mine data for other nodes to read.", "phase 3"),
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "event", Function: "send",

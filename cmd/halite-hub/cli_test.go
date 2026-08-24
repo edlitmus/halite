@@ -302,7 +302,7 @@ func TestRunnerListShowsBuiltAndPendingAlike(t *testing.T) {
 	if got.code != 0 {
 		t.Fatalf("runner list = %+v", got)
 	}
-	for _, want := range []string{"manage.up", "jobs.lookup_jid", "state.orchestrate", "mine.get"} {
+	for _, want := range []string{"manage.up", "jobs.lookup_jid", "state.orchestrate", "queue.insert"} {
 		if !strings.Contains(got.stdout, want) {
 			t.Errorf("runner list does not mention %s", want)
 		}
@@ -315,9 +315,9 @@ func TestRunnerListShowsBuiltAndPendingAlike(t *testing.T) {
 	if doc.code != 0 || !strings.Contains(doc.stdout, "manage.status") {
 		t.Errorf("runner doc = %+v", doc)
 	}
-	pending := run(t, "runner", "doc", "mine.get")
+	pending := run(t, "runner", "doc", "queue.insert")
 	if pending.code != 0 || !strings.Contains(pending.stdout, "phase 3") {
-		t.Errorf("runner doc mine.get = %+v", pending)
+		t.Errorf("runner doc queue.insert = %+v", pending)
 	}
 	if bad := run(t, "runner", "nosuchrunner"); bad.code == 0 {
 		t.Errorf("a runner name with no module was accepted: %+v", bad)

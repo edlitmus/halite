@@ -48,6 +48,7 @@ const (
 	PathEvents      = "/v1/events"
 	PathJob         = "/v1/jobs/"
 	PathMine        = "/v1/mine"
+	PathMineGet     = "/v1/mine/get"
 	PathRunners     = "/v1/runners"
 )
 
@@ -202,6 +203,50 @@ type RunnerResponse struct {
 	Return     json.RawMessage `json:"return,omitempty"`
 	Error      string          `json:"error,omitempty"`
 	DurationMS int64           `json:"duration_ms,omitempty"`
+}
+
+// MinePublished is one function's data as a node publishes it.
+type MinePublished struct {
+	// Data is already-encoded JSON, so that the ordered model and a
+	// 64-bit integer both survive the journey. SPEC 6.4.
+	Data json.RawMessage `json:"data"`
+	// AllowTgt restricts which nodes may read this entry. The
+	// publisher decides, which is the point: a node publishing
+	// something sensitive says who may see it, rather than trusting
+	// every reader's policy to be right.
+	AllowTgt     string `json:"allow_tgt,omitempty"`
+	AllowTgtType string `json:"allow_tgt_type,omitempty"`
+}
+
+// MineRequest is PUT /v1/mine: a node publishing what it computed.
+//
+// The identity is the certificate's. A node publishes its own data and
+// no other node's, which is what makes the mine worth believing.
+type MineRequest struct {
+	Functions map[string]MinePublished `json:"functions"`
+	// Replace drops anything this node published before, which is what
+	// a full `mine.update` means; without it the named functions are
+	// merged, which is what `mine.send` of one value means.
+	Replace bool `json:"replace,omitempty"`
+}
+
+// MineResponse acknowledges a publication.
+type MineResponse struct {
+	NodeID string `json:"node_id"`
+}
+
+// MineGetRequest is POST /v1/mine/get: one node reading what others
+// published. It is the peer interface of SPEC 19.5, and the caller is
+// a `node:` principal in the RBAC policy.
+type MineGetRequest struct {
+	Target     string `json:"target"`
+	TargetKind string `json:"target_kind,omitempty"`
+	Function   string `json:"function"`
+}
+
+// MineGetResponse is what the matched nodes published, by node.
+type MineGetResponse struct {
+	Data map[string]json.RawMessage `json:"data"`
 }
 
 // GrainsRequest is PUT /v1/grains: a node pushing a refreshed fact

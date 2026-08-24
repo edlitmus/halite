@@ -70,6 +70,12 @@ type Server struct {
 	// EventTagCompat additionally emits every event under its `salt/`
 	// equivalent, per SPEC 17.1.
 	EventTagCompat bool
+	// Mine is what nodes have published, per SPEC 19.5. Nil for a hub
+	// that keeps none, which says so rather than answering with an
+	// empty set that looks like a fleet with nothing to say.
+	Mine     *MineStore
+	mineOnce sync.Once
+
 	// Reactors is the configured reactor of SPEC 18.1. The engine that
 	// consumes them is started by `serve`; the list is here so that
 	// `reactor.test` and `reactor.list` can read it without one.
@@ -179,6 +185,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+transport.PathFiles+"{path...}", s.authenticated(s.files))
 	mux.HandleFunc("POST "+transport.PathPillar, s.authenticated(s.pillarFor))
 	mux.HandleFunc("POST "+transport.PathEvent, s.authenticated(s.events))
+	mux.HandleFunc("PUT "+transport.PathMine, s.authenticated(s.minePublish))
+	mux.HandleFunc("POST "+transport.PathMineGet, s.authenticated(s.mineFetch))
 	mux.HandleFunc("GET "+transport.PathEvents, s.operator(s.eventStream))
 	// An unrouted path under /v1/ is a version skew or a scan, and
 	// either way the answer is the same shape as every other failure.

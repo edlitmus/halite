@@ -98,8 +98,8 @@ func registerCacheRunner(r *Runners) {
 		},
 		RunnerModule{
 			Sig: runnerSig("cache", "clear_all",
-				"Forget every node's cached grains. Pillar and mine are not "+
-					"cached on this hub, so this clears what there is.", "19.2"),
+				"Forget every node's cached grains. The mine is cleared with "+
+					"`cache.clear_mine`, which names the node.", "19.2"),
 			Fn: func(c *RunnerContext) (any, error) {
 				known, err := c.Server.nodes().Known()
 				if err != nil {
@@ -120,16 +120,39 @@ func registerCacheRunner(r *Runners) {
 			Pending: "the phase that gives the hub a compiled-pillar cache; `pillar.show_pillar` compiles it now (SPEC section 12.8)",
 		},
 		RunnerModule{
-			Sig:     runnerSig("cache", "mine", "One node's published mine data.", "19.2"),
-			Pending: "phase 3, with the mine (SPEC section 19.5)",
+			Sig: runnerSig("cache", "mine", "One node's published mine data.", "19.2",
+				runnerArg("node", signature.String, "The node identifier."),
+			),
+			Fn: func(c *RunnerContext) (any, error) {
+				data, err := c.Server.mine().Get(c.arg("node"))
+				if err != nil {
+					return nil, err
+				}
+				out := value.NewMap(len(data.Functions))
+				for _, name := range sortedMineKeys(data.Functions) {
+					decoded, err := value.DecodeJSON(data.Functions[name].Data)
+					if err != nil {
+						decoded = string(data.Functions[name].Data)
+					}
+					out.Set(name, decoded)
+				}
+				return out, nil
+			},
 		},
 		RunnerModule{
 			Sig:     runnerSig("cache", "clear_pillar", "Drop cached pillar.", "19.2"),
 			Pending: "the phase that gives the hub a compiled-pillar cache (SPEC section 12.8)",
 		},
 		RunnerModule{
-			Sig:     runnerSig("cache", "clear_mine", "Drop published mine data.", "19.2"),
-			Pending: "phase 3, with the mine (SPEC section 19.5)",
+			Sig: runnerSig("cache", "clear_mine", "Drop one node's published mine data.", "19.2",
+				runnerArg("node", signature.String, "The node identifier."),
+			),
+			Fn: func(c *RunnerContext) (any, error) {
+				if err := c.Server.mine().Delete(c.arg("node"), ""); err != nil {
+					return nil, err
+				}
+				return true, nil
+			},
 		},
 	)
 }

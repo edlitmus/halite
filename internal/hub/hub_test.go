@@ -110,7 +110,14 @@ func newLab(t *testing.T) *lab {
 		files:  files,
 		ca:     ca,
 		denied: denied,
-		url:    "https://" + net.JoinHostPort("localhost", port(t, ln.Addr().String())),
+		// The address the listener actually took, not the name it
+		// answers to. The port is ephemeral and reserved on 127.0.0.1
+		// alone, so dialling `localhost` -- which resolves to ::1
+		// first on many systems -- can reach whatever else happens to
+		// hold that port on the other stack. It did: one run met
+		// memcached. The name is exercised deliberately by the test
+		// below rather than by accident in every test.
+		url: "https://" + net.JoinHostPort("127.0.0.1", port(t, ln.Addr().String())),
 		cancel: cancel,
 		ln:     ln,
 		served: done,
@@ -179,15 +186,17 @@ func (l *lab) enrolled(t *testing.T, nodeID string) *transport.Client {
 	return client
 }
 
-// The lab dials by name, so a certificate that covered no address
-// looked fine here for as long as nothing dialled one. A node given a
-// hub as `hub: 127.0.0.1` dials an address.
+// The lab dials by address, so a certificate that covered no name would
+// look fine here for as long as nothing dialled one -- and the reverse
+// gap is what this found originally: the hub's certificate put
+// 127.0.0.1 in the DNS names rather than the IP names, so a node
+// configured with `hub: 127.0.0.1` could not verify it at all.
 func TestTheHubIsReachableByAddressAsWellAsByName(t *testing.T) {
 	l := newLab(t)
 	client, _ := l.node(t)
-	client.HubURL = strings.Replace(l.url, "localhost", "127.0.0.1", 1)
+	client.HubURL = strings.Replace(l.url, "127.0.0.1", "localhost", 1)
 	if _, err := client.Health(context.Background()); err != nil {
-		t.Fatalf("dialling the hub by address: %v", err)
+		t.Fatalf("dialling the hub by name: %v", err)
 	}
 }
 

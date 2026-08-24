@@ -301,6 +301,7 @@ func runConnect(args *cli.Args) int {
 		n.useHubTree(client)
 		n.useHubPillar(client)
 		n.useHubEvents(client)
+		n.useHubMine(client)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -325,6 +326,7 @@ func runConnect(args *cli.Args) int {
 	go n.refreshGrains(ctx, args)
 	n.startBeacons(ctx)
 	n.startSchedule(ctx)
+	n.startMine(ctx)
 
 	backoff := time.Second
 	const maxBackoff = time.Minute
@@ -483,6 +485,7 @@ func (n *node) useHubIfConfigured(args *cli.Args) {
 	n.useHubTree(client)
 	n.useHubPillar(client)
 	n.useHubEvents(client)
+	n.useHubMine(client)
 }
 
 // useHubEvents lets a module on this node put a record on the hub's

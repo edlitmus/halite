@@ -272,7 +272,7 @@ answer from the binary, so they work when the hub does not.
 | `salt-run survey.hash <jid>` | `halite-hub runner survey.hash <jid>` | works |
 | `salt-run saltutil.refresh_pillar` | `halite-hub runner saltutil.refresh_pillar` | works |
 | `salt-run state.orchestrate <sls>` | `halite-hub orch run <sls>` | works |
-| `salt-run mine.get` | `halite-hub runner mine.get` | phase 3 |
+| `salt-run mine.get` | `halite-hub runner mine.get` | works |
 | `salt-run queue.process_queue` | `halite-hub runner queue.process_queue` | phase 3 |
 | `salt-run net.find` | `halite-hub runner net.find` | phase 3 |
 | `salt-run fileserver.update` | `halite-hub runner fileserver.update` | phase 5 |

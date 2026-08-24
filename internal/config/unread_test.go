@@ -49,8 +49,6 @@ var unreadKeys = map[string]string{
 	"accept_relays":        "phase 5: relays",
 	"relay_upstream":       "phase 5: relays",
 	"relay_upstream_port":  "phase 5: relays",
-	"mine_functions":       "phase 3: the mine",
-	"mine_interval":        "phase 3: the mine",
 	"startup_states":       "phase 2: a node with a hub applies at startup",
 	"gitfs_env_allowlist":  "phase 5: gitfs",
 	"gitfs_env_denylist":   "phase 5: gitfs",

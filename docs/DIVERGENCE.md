@@ -206,7 +206,7 @@ the *protocol*.
 
 ## 2. Module coverage
 
-The build ships **44 execution modules / 231 functions** and **20 state
+The build ships **44 execution modules / 235 functions** and **20 state
 modules / 56 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -237,7 +237,7 @@ different reason is given.
 | `group` | implemented | 1 | |
 | `hashutil` | implemented | 9 | |
 | `hosts` | implemented | 3 | |
-| `mine` | implemented | 2 | local only until the hub exists |
+| `mine` | implemented | 6 | the store is on the hub; a node publishes its own and reads others' through the RBAC policy |
 | `mount` | implemented | 1 | read-only; `mount`/`umount`/`fstab` not written |
 | `network` | implemented | 5 | |
 | `pillar` | implemented | 5 | |

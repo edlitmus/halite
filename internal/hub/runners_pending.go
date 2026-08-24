@@ -18,12 +18,6 @@ func registerPendingRunners(r *Runners) {
 	const notify = "phase 4, with the API and its integrations (SPEC section 32)"
 
 	r.Add(
-		pending("mine", "get", "Read what nodes have published to the mine.", mine),
-		pending("mine", "update", "Ask nodes to refresh their mine entries.", mine),
-		pending("mine", "flush", "Drop every mine entry for a node.", mine),
-		pending("mine", "delete", "Drop one mine function's entry for a node.", mine),
-		pending("mine", "valid", "The mine functions a node is configured to publish.", mine),
-
 		pending("queue", "insert", "Add an item to a durable hub queue.", queues),
 		pending("queue", "delete", "Remove an item from a queue.", queues),
 		pending("queue", "list_queues", "The queues this hub holds.", queues),

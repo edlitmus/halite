@@ -381,6 +381,48 @@ func (c *Client) Runner(ctx context.Context, req RunnerRequest) (*RunnerResponse
 	return &res, nil
 }
 
+// PublishMine sends what this node has computed, per SPEC 19.5.
+//
+// PUT, because a node is replacing its own entry rather than adding to
+// a collection: the same reasoning that makes `/v1/grains` a PUT.
+func (c *Client) PublishMine(ctx context.Context, req MineRequest) error {
+	client, err := c.client()
+	if err != nil {
+		return err
+	}
+	raw, err := marshal(req)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout())
+	defer cancel()
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, c.url(PathMine), bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	res, err := client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("%s: %w", PathMine, err)
+	}
+	defer res.Body.Close()
+	payload, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.StatusCode >= 400 {
+		return decodeError(PathMine, payload, res.StatusCode)
+	}
+	return nil
+}
+
+// FetchMine reads what other nodes published. The hub authorizes the
+// caller as a `node:` principal.
+func (c *Client) FetchMine(ctx context.Context, req MineGetRequest) (*MineGetResponse, error) {
+	var res MineGetResponse
+	if _, err := c.post(ctx, PathMineGet, req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
 // JobStatus reads what has come back for a job so far.
 func (c *Client) JobStatus(ctx context.Context, jid string) (*JobStatus, error) {
 	client, err := c.client()

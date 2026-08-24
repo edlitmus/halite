@@ -287,12 +287,12 @@ func TestAPendingRunnerSaysWhenItArrives(t *testing.T) {
 	l := newLab(t).withJobs(t)
 	op := l.operator(t, "ed")
 
-	res := call(t, op, "mine.get")
+	res := call(t, op, "queue.insert")
 	if res.Success {
-		t.Fatal("the mine is not built and reported success")
+		t.Fatal("the durable queue is not built and reported success")
 	}
 	if !strings.Contains(res.Error, "phase 3") {
-		t.Errorf("mine.get should name its phase: %s", res.Error)
+		t.Errorf("queue.insert should name its phase: %s", res.Error)
 	}
 }
 
