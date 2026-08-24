@@ -165,7 +165,11 @@ func TestCommandMatrixIsTrue(t *testing.T) {
 		if len(cells) < 3 {
 			continue
 		}
-		command := strings.Fields(strings.Trim(cells[1], "`"))
+		// Only what is inside the first pair of backticks. Trimming
+		// the cell instead let trailing prose — "`halite-hub metrics`
+		// (the hub's own exposition)" — become part of the command, so
+		// the row was checked against a subcommand nobody had written.
+		command := strings.Fields(backticked(cells[1]))
 		if len(command) < 2 || command[0] != "halite-hub" {
 			continue
 		}
@@ -322,4 +326,18 @@ func TestRunnerListShowsBuiltAndPendingAlike(t *testing.T) {
 	if bad := run(t, "runner", "nosuchrunner"); bad.code == 0 {
 		t.Errorf("a runner name with no module was accepted: %+v", bad)
 	}
+}
+
+// backticked returns the text inside the first pair of backticks, or
+// the whole cell when there is no pair.
+func backticked(cell string) string {
+	_, rest, found := strings.Cut(cell, "`")
+	if !found {
+		return cell
+	}
+	inside, _, found := strings.Cut(rest, "`")
+	if !found {
+		return cell
+	}
+	return inside
 }

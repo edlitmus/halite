@@ -249,6 +249,47 @@ one the sender will retry carrying the same signature, and refusing that
 as a replay turns a transient fault into the lost event a webhook exists
 to prevent.
 
+### Metrics, on both components
+
+Prometheus text exposition, written directly. SPEC 26.2 says the format
+is documented and stable and needs no client library; SPEC 4.2 says a
+dependency in the supply chain of a control plane needs a better reason
+than saving a hundred lines of formatting.
+
+`GET /v1/metrics` on the API is the estate's scrape target, and it is
+the only part of the control plane a scraper can reach — the hub speaks
+its own ALPN protocol over mutual TLS. It answers with both expositions,
+its own and the hub's, fetched under its own certificate and merged.
+Merged, not concatenated: both components expose `halite_build_info`,
+which is what its `component` label is for, and the format allows one
+`# HELP` per metric name in a document. Concatenating them produces a
+body a scraper rejects entirely, so the failure arrives as "no metrics
+at all" rather than as one duplicated family.
+
+A hub that cannot be reached does not fail the scrape. The reason comes
+back as a comment, which a scraper ignores and a person reading the body
+sees, and the service's own numbers survive — one of which counts how
+often this happens.
+
+The hub has the same endpoint behind its ordinary operator certificate,
+granted as the runner `metrics.show`, and `halite-hub metrics` to read
+it. An unauthenticated scrape endpoint on a control plane tells anyone
+who asks how many nodes it has, what the estate runs, and when a
+deployment went out.
+
+Two decisions the format does not require. A family is declared before
+anything has been observed, so that SPEC 26.2's rule — every bounded
+queue and every drop path has a counter — can be checked by a scraper
+rather than by reading the source. And a family holds at most 512
+series, the excess counted under `__overflow__`: every label the
+specification names is written by something outside the program, and an
+estate with a thousand distinct states would otherwise turn one family
+into a thousand series.
+
+What a node alone knows is counted nowhere yet, because a node has no
+exposition endpoint: a beacon event its own queue dropped, a local state
+run's duration, the scheduler's `maxrunning` skips.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -480,7 +521,7 @@ reproducible-build verification, which needs a second builder.
 ### What is not built
 
 The rest of phase 4, and phases 5 and 6. No OIDC or LDAP, no
-`/v1/metrics`, no returners, no bridge protocol, no gitfs, no s3fs, no
+returners, no bridge protocol, no gitfs, no s3fs, no
 agentless mode, no relays, no FIPS artifact set, no detached job
 signing, no signed state trees, and no backtracking regex engine.
 

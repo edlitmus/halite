@@ -510,6 +510,80 @@ halite-node state apply --local --out json | jq '.[] | select(.result == false)'
 The JSON shape is SPEC section 11.8 and does not change without a
 version bump, so a dashboard built on it keeps working.
 
+## Metrics
+
+Every component records Prometheus metrics and exposes them at
+`/v1/metrics`. On by default; `metrics: false` turns the recording off.
+
+**Point the scraper at `halite-api`.** It is the only part of the
+control plane a scraper can reach — the hub speaks its own ALPN protocol
+over mutual TLS — and it answers with both expositions, its own and the
+hub's, merged into one document:
+
+```yaml
+scrape_configs:
+  - job_name: halite
+    scheme: https
+    authorization:
+      credentials_file: /etc/prometheus/halite.token
+    static_configs:
+      - targets: ['api.example:4511']
+```
+
+The token needs `metrics.show` in its role's `runners:` list, and the
+API's own certificate needs it at the hub, like every other request:
+
+```yaml
+roles:
+  scraper:
+    - runners: ['metrics.show']
+bindings:
+  - principal: 'local:prometheus'
+    roles: ['scraper']
+```
+
+Issue it a token with a long life and no idle expiry, since a scraper
+does not log in.
+
+If the hub cannot be reached, the scrape still succeeds: the API's own
+numbers come back and the reason appears as a comment, which the scraper
+ignores. `halite_api_hub_scrape_failures_total` is the one to alert on —
+it counts in the scrape that failed, not the one after.
+
+To read the hub's own numbers directly, from the hub:
+
+```sh
+halite-hub metrics --as ed
+halite-hub metrics --as ed --filter reactor
+```
+
+`--filter` keeps the `# HELP` and `# TYPE` lines, which is what `grep`
+loses and what says whether a counter exists at all.
+
+### What to alert on
+
+| Metric | Why |
+|---|---|
+| `halite_events_dropped_total` | The bus lost something. It should be zero. |
+| `halite_reactor_dropped_total` | The reactor's queue overflowed; reactions did not run. |
+| `halite_reactor_queue_depth` | Rising means the workers are behind. |
+| `halite_jobs_missing_returns` | Nodes a dispatched job has not heard from. |
+| `halite_authz_decisions_total{result="denied"}` | A rate, not a total: a rise is either a misconfigured role or someone trying. |
+| `halite_auth_attempts_total{result="refused"}` | The same, at the login. |
+| `halite_pillar_failures_total` | A node is getting no pillar, which SPEC 12.7 prefers to a partial one. |
+| `halite_api_hub_scrape_failures_total` | The API cannot reach the hub. |
+
+Every bounded queue and every drop path has a counter — SPEC 26.2 makes
+that a rule, because it is what turns a backpressure design into
+something that can be audited. A family is declared in the exposition
+before anything has been observed, so you can see the counter exists
+before it fires.
+
+A family holds at most 512 series. Past that, observations are counted
+under `__overflow__` rather than dropped or allowed to grow without
+bound: an estate with a thousand distinct functions would otherwise turn
+`halite_jobs_dispatched_total` into a thousand series.
+
 ## Before you apply anything
 
 ```sh

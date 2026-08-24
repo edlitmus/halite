@@ -255,7 +255,7 @@ func tagsOf(events []eventbus.Event) []string {
 }
 
 // SPEC 17.1 puts a beacon event under `halite/beacon/<node_id>/`, and
-// SPEC 16.5's own reactor example matches on that tag. They arrived
+// SPEC 18.1's own reactor example matches on that tag. They arrived
 // under `halite/node/<node_id>/` instead, so a reactor written from the
 // specification matched nothing and said nothing about it.
 func TestABeaconEventLandsUnderTheBeaconNamespace(t *testing.T) {

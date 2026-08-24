@@ -1446,6 +1446,8 @@ webhook delivered end to end onto the bus.
 | A runner grant ignored `NeverWildcard` | `/v1/pillar/{id}` must not be satisfied by a wildcard grant — reading one node's pillar is reading its secrets. The check was written on the fleet-function branch only, so the runner branch let a `runners: ['*']` role through. |
 | A webhook delivery that failed downstream could never be retried | The replay nonce was recorded when the signature verified. A transient hub failure therefore consumed the delivery: the sender's retry carried the same signature and was refused as a replay. Recording moved to after the delivery lands. |
 | The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
+| Beacon events were in the wrong namespace | SPEC 17.1 puts a beacon under `halite/beacon/<node_id>/<beacon>/` and SPEC 18.1's own reactor example matches on it; they were arriving under `halite/node/<node_id>/`. A reactor written from the specification matched nothing and said nothing about it. Found while adding the metric that counts them. |
+| Two expositions concatenated are not one exposition | Both components expose `halite_build_info`, and the text format allows one `# HELP` per metric name in a document. A scraper rejects the whole body for the duplicate, so the failure arrives as "no metrics at all" rather than as one duplicated family. They are merged now. |
 | No WebSocket upgrade could ever succeed | The access-log wrapper did not pass through `http.Hijacker`, so `/v1/ws/events` answered "this connection cannot be upgraded" for every caller. The endpoint's own tests called the handler directly and stayed green. A test now dials the assembled server and speaks the protocol. |
 
 The event stream was watched over both transports while a job ran, and
@@ -1457,7 +1459,16 @@ close handshake completing with 1001. A signed hook delivery was
 accepted and reached the bus carrying `cert:CN=api` as its principal; a
 replay of it was refused, and a tampered body was refused.
 
-It does not cover an OIDC or LDAP login, `mtls` hook authentication,
+The metrics were read from a live hub and a live API: a job's dispatch,
+duration, and return; the states inside a state run; pillar compilations;
+file server requests by status code; beacon events by beacon; a refused
+authorization counted as a denial; and a scrape taken with the hub
+stopped, which answered 200 with the service's own numbers and the
+reason as a comment. The merged body was checked to have no metric name
+declared twice and every series line under a declaration.
+
+It does not cover a Prometheus server actually scraping it, an OIDC or
+LDAP login, `mtls` hook authentication,
 `Last-Event-ID` resumption after a real disconnection, a token expiring
 mid-stream, a second operator with a narrower policy watching the same
 stream, a hub restart underneath an open stream, `/v1/nodes/{id}/state`
@@ -1866,15 +1877,50 @@ one the sender will retry carrying the same signature, and refusing that
 as a replay turns a transient fault into the lost event a webhook exists
 to prevent.
 
+**Metrics are built**, on both components. `internal/metrics` writes
+Prometheus text exposition directly, because SPEC 26.2 says the format
+is documented and stable and needs no client library, and SPEC 4.2 says
+a dependency in a control plane's supply chain needs a better reason
+than saving a hundred lines of formatting.
+
+`GET /v1/metrics` on the API is the estate's scrape target and is
+authenticated by default, as SPEC 22.1 requires. It answers with both
+expositions — its own and the hub's, fetched under its own certificate
+and *merged*, because the text format allows one `# HELP` per metric
+name and both components expose `halite_build_info`. A hub that cannot
+be reached does not fail the scrape: the reason comes back as a comment
+and the service's own numbers survive, one of which counts how often
+that happens.
+
+The hub has the same endpoint behind its ordinary operator certificate,
+granted as the runner `metrics.show`, plus `halite-hub metrics` to read
+it — the hub speaks its own ALPN protocol, so no scraper can reach it
+directly. An unauthenticated scrape endpoint on a control plane tells
+anyone who asks how many nodes it has and when a deployment went out.
+
+Two decisions the format does not require. A family is declared before
+anything has been observed, so SPEC 26.2's rule — every bounded queue
+and every drop path has a counter — can be checked by a scraper rather
+than by reading the source. And a family holds at most 512 series, with
+the excess counted under `__overflow__`: every label the specification
+names is written by something outside the program, so an estate with a
+thousand distinct functions would otherwise turn one family into a
+thousand series.
+
 What is **not** built in the API:
 
 - **OIDC and LDAP** (SPEC 23.4, 23.3). A login naming another backend
   is refused by name rather than quietly authenticated against local
   accounts.
-- **`/v1/metrics`.** SPEC 22.1 puts Prometheus exposition here,
-  authenticated by default; SPEC 26.2 defines what it exposes.
 - **Returners** (SPEC 20.3), and **the bridge protocol and its sandbox**
   (SPEC section 24).
+- **Node-side metrics.** A node has no exposition endpoint, so what only
+  it knows is counted nowhere: a beacon event its own queue dropped, a
+  local state run's duration, and the scheduler's `maxrunning` skips.
+  The hub counts what reaches it, which is most of SPEC 26.2's state and
+  beacon families but not the drops.
+- **Tracing** (SPEC 26.3) and **`doctor`** (SPEC 26.4), the other two
+  parts of section 26.
 - **`mtls` hook authentication.** The mode is implemented and refused
   when no client certificate is presented, but it has never been
   exercised against a real sender.

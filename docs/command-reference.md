@@ -107,7 +107,9 @@ nothing and an incident can be reconstructed afterwards.
 | `event.send` from a state or a job | `halite-hub run '*' event.send tag=… data='{"k":"v"}'` | works |
 | no equivalent | `halite-hub event listen --from earliest` (replay) | works |
 | no equivalent | `halite-hub event tags` | works |
+| no equivalent | `halite-hub metrics` (the hub's own exposition) | works |
 | `salt-api` event stream | SSE and WebSocket at `/v1/events` | works |
+| no equivalent | Prometheus metrics at `/v1/metrics` | works |
 
 A node's events are namespaced under `halite/node/<node_id>/`
 regardless of the tag it asks for. Salt's reactor runs with the control
@@ -696,6 +698,7 @@ token_idle: 4h
 | `client: ssh` | same | phase 5 |
 | `GET /events` | SSE, and a WebSocket at `/v1/ws/events` | works |
 | `POST /hook/{path}` | webhook ingress, always authenticated | works |
+| no equivalent | `GET /v1/metrics`, this service's and the hub's | works |
 
 A token is 256 bits from `crypto/rand`, stored as a SHA-256 digest, with
 an absolute expiry, an idle expiry, the roles frozen at issue, and an
