@@ -289,7 +289,11 @@ func desiredContents(c *exec.Context, args *value.Map) (data []byte, from string
 	}
 
 	if key := states.Str(args, "contents_pillar", ""); key != "" {
-		v, ok := value.Traverse(c.Pillar, key, ":")
+		pillar, err := c.PillarOrErr()
+		if err != nil {
+			return nil, "", err
+		}
+		v, ok := value.Traverse(pillar, key, ":")
 		if !ok {
 			return nil, "", fmt.Errorf("contents_pillar names %q, which is not in this node's pillar", key)
 		}

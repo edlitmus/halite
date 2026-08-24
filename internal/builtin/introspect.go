@@ -193,7 +193,7 @@ func registerPillarModule(r *Registries) {
 				TestMode: signature.TestNotApplicable,
 				Section:  "12",
 			},
-			Fn: func(c *exec.Context, args *value.Map) (any, error) { return c.Pillar, nil },
+			Fn: func(c *exec.Context, args *value.Map) (any, error) { return c.PillarOrErr() },
 		},
 		exec.Module{
 			Sig: signature.Signature{
@@ -202,7 +202,7 @@ func registerPillarModule(r *Registries) {
 				TestMode: signature.TestNotApplicable,
 				Section:  "12",
 			},
-			Fn: func(c *exec.Context, args *value.Map) (any, error) { return c.Pillar, nil },
+			Fn: func(c *exec.Context, args *value.Map) (any, error) { return c.PillarOrErr() },
 		},
 		exec.Module{
 			Sig: signature.Signature{
@@ -218,7 +218,11 @@ func registerPillarModule(r *Registries) {
 				Section:  "12",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				got := traverseArg(c.Pillar, args)
+				pillar, err := c.PillarOrErr()
+				if err != nil {
+					return nil, err
+				}
+				got := traverseArg(pillar, args)
 				if !states.Bool(args, "merge", false) {
 					return got, nil
 				}
@@ -239,7 +243,11 @@ func registerPillarModule(r *Registries) {
 				Section:  "12",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return toAnyList(c.Pillar.SortedKeys()), nil
+				pillar, err := c.PillarOrErr()
+				if err != nil {
+					return nil, err
+				}
+				return toAnyList(pillar.SortedKeys()), nil
 			},
 		},
 	)
@@ -275,10 +283,14 @@ func registerConfigModule(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				key := states.Str(args, "key", "")
+				pillar, err := c.PillarOrErr()
+				if err != nil {
+					return nil, err
+				}
 				// Pillar first, then grains, then configuration: the same
 				// order Salt searches, so a tree that overrides a
 				// configuration value in pillar keeps working.
-				for _, src := range []*value.Map{c.Pillar, c.Grains, c.Config} {
+				for _, src := range []*value.Map{pillar, c.Grains, c.Config} {
 					if v, ok := value.Traverse(src, key, ":"); ok {
 						return v, nil
 					}

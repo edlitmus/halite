@@ -27,7 +27,19 @@ type Context struct {
 	Ctx context.Context
 
 	Grains *value.Map
+	// Pillar is this node's compiled pillar. Read it through
+	// PillarOrErr, never directly: when the tree did not compile it is
+	// empty, and the reason is in PillarErr.
 	Pillar *value.Map
+	// PillarErr is why Pillar is empty, when it is.
+	//
+	// A node whose pillar does not compile can still be asked whether
+	// it is alive, what its grains are, and whether a service is
+	// running -- none of which read pillar. Failing every function
+	// because one file in the pillar tree has a bad GPG block means the
+	// node goes silent exactly when somebody is trying to find out what
+	// is wrong with it.
+	PillarErr error
 	// Config is the effective configuration, redacted.
 	Config *value.Map
 
@@ -671,4 +683,19 @@ func (c *Context) Which(name string) string {
 		return ""
 	}
 	return p
+}
+
+// PillarOrErr is this node's pillar, or why there is none.
+//
+// Every function that reads pillar goes through this, so that a pillar
+// that did not compile is an error at the function that needed it and
+// not at every function on the node.
+func (c *Context) PillarOrErr() (*value.Map, error) {
+	if c.PillarErr != nil {
+		return nil, c.PillarErr
+	}
+	if c.Pillar == nil {
+		return value.NewMap(0), nil
+	}
+	return c.Pillar, nil
 }

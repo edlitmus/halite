@@ -49,6 +49,13 @@ func renderSourceTemplate(c *exec.Context, args *value.Map, src []byte, from str
 		return nil, fmt.Errorf("template: %q is not an engine this build has; only jinja is supported. SPEC section 10", engine)
 	}
 
+	// A template may read pillar, so a pillar that did not compile is
+	// an error here rather than a template that renders with nothing
+	// where the values should be.
+	pillar, err := c.PillarOrErr()
+	if err != nil {
+		return nil, err
+	}
 	opts := render.Options{
 		File:      from,
 		Env:       c.Env,
@@ -56,7 +63,7 @@ func renderSourceTemplate(c *exec.Context, args *value.Map, src []byte, from str
 		NodeID:    c.NodeID,
 		JobID:     c.JobID,
 		Grains:    c.Grains,
-		Pillar:    c.Pillar,
+		Pillar:    pillar,
 		Config:    c.Config,
 		Extra:     templateExtras(args),
 	}

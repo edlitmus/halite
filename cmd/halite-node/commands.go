@@ -34,8 +34,18 @@ func runCall(args *cli.Args) int {
 
 	n := setup(args)
 	n.useHubIfConfigured(args)
-	p := n.compilePillar()
+	// A pillar that will not compile does not end the invocation here.
+	// `halite-node call test.ping` is what an operator types when they
+	// think a node is broken, and refusing to answer it because the
+	// pillar tree is the broken thing is the least useful moment to go
+	// silent. The error travels on the context and surfaces at the
+	// functions that read pillar.
+	p, pillarErr := n.compilePillarOrErr()
+	if pillarErr != nil {
+		p = value.NewMap(0)
+	}
 	ctx := n.context(p)
+	ctx.PillarErr = pillarErr
 
 	positional := make([]any, len(rest))
 	for i, a := range rest {

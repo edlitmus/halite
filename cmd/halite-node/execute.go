@@ -136,9 +136,19 @@ func (n *node) runFunction(j *job.Job) (outcome, error) {
 	if fn, ok := stateFunction(j.Fun); ok {
 		return n.runStateJob(j, fn)
 	}
-	p, err := n.compilePillarOrErr()
-	if err != nil {
-		return outcome{}, err
+	// A pillar that does not compile no longer fails every function.
+	//
+	// It used to: a node whose pillar tree had one bad GPG block could
+	// not answer `test.ping`, report its grains, or say whether a
+	// service was running — it went silent exactly when somebody was
+	// trying to find out what was wrong with it. The error travels on
+	// the context instead and surfaces at the functions that read
+	// pillar, which is where it means something.
+	p, pillarErr := n.compilePillarOrErr()
+	if pillarErr != nil {
+		n.log.Warn("this node's pillar did not compile; functions that read it will fail",
+			"jid", string(j.JID), "fun", j.Fun, "error", pillarErr.Error())
+		p = value.NewMap(0)
 	}
 	positional := make([]any, len(j.Arg))
 	for i, a := range j.Arg {
@@ -154,7 +164,9 @@ func (n *node) runFunction(j *job.Job) (outcome, error) {
 		// a json.Number, and a module must see neither.
 		kwargs.Set(k, value.FromJSON(v))
 	}
-	out, err := n.registry.Exec.CallPositional(n.contextFor(p, string(j.JID)), j.Fun, positional, kwargs)
+	ctx := n.contextFor(p, string(j.JID))
+	ctx.PillarErr = pillarErr
+	out, err := n.registry.Exec.CallPositional(ctx, j.Fun, positional, kwargs)
 	if err != nil {
 		return outcome{}, err
 	}
