@@ -291,8 +291,11 @@ func TestAPendingRunnerSaysWhenItArrives(t *testing.T) {
 	if res.Success {
 		t.Fatal("the durable queue is not built and reported success")
 	}
-	if !strings.Contains(res.Error, "phase 3") {
-		t.Errorf("queue.insert should name its phase: %s", res.Error)
+	// It says what it is waiting for, not just that it is waiting. The
+	// phase it once named has come and gone without it, which is why
+	// the message names the subsystem instead.
+	if !strings.Contains(res.Error, "durable work queue") {
+		t.Errorf("queue.insert should say what it needs: %s", res.Error)
 	}
 }
 

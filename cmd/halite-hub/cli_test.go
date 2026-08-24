@@ -62,11 +62,14 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 	if got := run(t, "nosuchthing"); got.code != 2 || !strings.Contains(got.stderr, "unknown subcommand") {
 		t.Errorf("unknown subcommand = %+v", got)
 	}
-	// The subcommands named in the usage but not built must say which
-	// phase they arrive in, rather than fail as typos.
+	// The subcommands named in the usage but not built must say so,
+	// rather than fail as typos. Either a phase they are waiting for or
+	// a plain "not built": a feature whose phase came and went without
+	// it is not in a later phase.
 	for _, sub := range []string{"files", "ssh"} {
 		got := run(t, sub)
-		if got.code == 0 || !strings.Contains(got.stderr, "phase") {
+		if got.code == 0 ||
+			(!strings.Contains(got.stderr, "phase") && !strings.Contains(got.stderr, "not built")) {
 			t.Errorf("%s = %+v", sub, got)
 		}
 	}
@@ -205,16 +208,20 @@ func TestCommandMatrixIsTrue(t *testing.T) {
 				t.Errorf("the matrix presents `%s` as working: %s",
 					strings.Join(command, " "), strings.TrimSpace(output))
 			}
-		case strings.HasPrefix(status, "phase"):
+		case strings.HasPrefix(status, "phase"), status == "not built":
 			phased++
-			// The binary must know the name and say which phase, rather
-			// than reporting it as a typo.
+			// The binary must know the name and say why it does not
+			// work, rather than reporting it as a typo.
 			if strings.Contains(output, "unknown subcommand") {
-				t.Errorf("the matrix promises `%s` in %s, and the binary has never heard of it",
+				t.Errorf("the matrix promises `%s` (%s), and the binary has never heard of it",
 					strings.Join(command, " "), status)
 			}
-			if !strings.Contains(output, "phase") {
-				t.Errorf("`%s` should say which phase it arrives in: %s",
+			// "not built" is a status in its own right. A feature whose
+			// phase has come and gone without it is not in a later
+			// phase, and saying it is would be a promise nobody made.
+			said := strings.ToLower(output)
+			if !strings.Contains(said, "phase") && !strings.Contains(said, "not built") {
+				t.Errorf("`%s` should say why it does not work: %s",
 					strings.Join(command, " "), strings.TrimSpace(output))
 			}
 		}
@@ -320,8 +327,12 @@ func TestRunnerListShowsBuiltAndPendingAlike(t *testing.T) {
 		t.Errorf("runner doc = %+v", doc)
 	}
 	pending := run(t, "runner", "doc", "queue.insert")
-	if pending.code != 0 || !strings.Contains(pending.stdout, "phase 3") {
+	if pending.code != 0 || !strings.Contains(pending.stdout, "Not built yet") {
 		t.Errorf("runner doc queue.insert = %+v", pending)
+	}
+	// And it says what it is waiting for, not just that it is waiting.
+	if !strings.Contains(pending.stdout, "durable work queue") {
+		t.Errorf("runner doc queue.insert says nothing useful: %+v", pending)
 	}
 	if bad := run(t, "runner", "nosuchrunner"); bad.code == 0 {
 		t.Errorf("a runner name with no module was accepted: %+v", bad)

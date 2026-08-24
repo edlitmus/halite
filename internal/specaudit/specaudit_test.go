@@ -522,3 +522,71 @@ func TestNoBuiltRunnerIsStillMarkedPending(t *testing.T) {
 		}
 	}
 }
+
+// DeliveredPhases are the SPEC section 32 phases this build has
+// finished. It is the single place that says so, because the claim
+// appears in stub messages, usage text, and documentation, and three
+// copies of it drift.
+var DeliveredPhases = []string{"phase 0", "phase 1", "phase 2", "phase 3"}
+
+// TestNothingClaimsADeliveredPhase reads the whole tree for a message
+// that tells an operator to wait for a phase that has already landed.
+//
+// This has happened twice. `event.send` and `pillar.refresh` told every
+// node they needed the hub, "which arrives in phase 2", for as long as
+// phase 2 had been finished; three runners said "phase 3, with the
+// reactor" after the reactor shipped. Both are worse than a missing
+// feature: they are a working feature that reports itself as absent, and
+// nobody reads the source of a message that sounds authoritative.
+//
+// The earlier version of this audit read one file and knew about three
+// phases, which is why the second occurrence got through.
+func TestNothingClaimsADeliveredPhase(t *testing.T) {
+	root := filepath.Join("..", "..")
+	// A phase named inside a string literal is a claim to an operator.
+	// A phase in a comment is a note to whoever is reading the code.
+	claim := regexp.MustCompile(`"[^"]*\b(phase [0-9])\b[^"]*"`)
+
+	checked, problems := 0, 0
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "bin", "testdata":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		src, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		checked++
+		for i, line := range strings.Split(string(src), "\n") {
+			for _, m := range claim.FindAllStringSubmatch(line, -1) {
+				for _, delivered := range DeliveredPhases {
+					if m[1] != delivered {
+						continue
+					}
+					rel, _ := filepath.Rel(root, path)
+					t.Errorf("%s:%d says %q, which is delivered: %s",
+						rel, i+1, delivered, strings.TrimSpace(line))
+					problems++
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checked == 0 {
+		t.Fatal("no source was read; this audit has stopped checking")
+	}
+	t.Logf("read %d files, %d problems", checked, problems)
+}

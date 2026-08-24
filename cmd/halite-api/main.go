@@ -7,9 +7,11 @@
 // is a client with a scoped identity, and its worst case is bounded by its
 // RBAC policy. SPEC section 5.2.
 //
-// This build serves the authentication spine of SPEC section 22: login,
-// logout, token introspection, the module schema, and health. The
-// execution endpoints follow in the rest of phase 4.
+// This build serves most of SPEC section 22: login, logout, token
+// introspection, the module schema, health, the execution endpoints, the
+// event stream as SSE and as a WebSocket, signed webhook ingress, and
+// the Prometheus exposition. OIDC, LDAP, returners, and the bridge
+// protocol are the rest of phase 4.
 package main
 
 import (
@@ -30,8 +32,7 @@ Usage:
   halite-api version            print the build identity
 
 Still to come in phase 4 (SPEC section 32):
-  the execution endpoints, the event stream, webhooks, OIDC, LDAP,
-  returners, and the bridge protocol; the policy is the hub's
+  OIDC, LDAP, returners, and the bridge protocol
 
 Common flags:
   --help               describe the program without running a command

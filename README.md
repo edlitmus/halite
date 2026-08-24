@@ -188,9 +188,9 @@ the bridge protocol — and phase 5: gitfs, agentless mode, and Windows.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
-[DIVERGENCE 5.11](docs/DIVERGENCE.md) says what the lab run
-established, what it did not, and the defects it found that the tests
-had not.
+DIVERGENCE [5.11](docs/DIVERGENCE.md), 5.12, and 5.13 say what the lab
+runs established — the transport, the runners, and the API — what they
+did not, and the defects each found that the tests had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:

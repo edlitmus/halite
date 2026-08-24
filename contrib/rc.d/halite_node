@@ -17,11 +17,12 @@
 #                                it to something else only if you know every
 #                                state in your tree can run unprivileged.
 #
-# `connect` holds the subscribe stream open to the hub. Running the jobs
-# that arrive on it is the rest of phase 2 of SPEC section 32.
-# Until then this script starts a process that exits immediately saying so,
-# and a node is driven with `halite-node state apply --local` — see
-# halite_highstate for running that on a schedule.
+# `connect` holds the subscribe stream open to the hub, runs the jobs
+# that arrive on it, and carries this node's beacons and schedule. It
+# reconnects on its own, with backoff, so an unreachable hub is not a
+# failure. A node with no hub is driven by `halite-node state apply
+# --local` instead — see halite_highstate for running that on a
+# schedule.
 
 . /etc/rc.subr
 

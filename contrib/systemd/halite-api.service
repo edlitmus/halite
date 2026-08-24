@@ -6,7 +6,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-# `serve` arrives in phase 4 of SPEC section 32.
+# `serve` runs the HTTP API: login and tokens, the execution endpoints,
+# the event stream, webhook ingress, and the Prometheus exposition. It is
+# a client of the hub holding its own operator certificate.
 ExecStart=/usr/local/bin/halite-api serve --config /etc/halite/api.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure

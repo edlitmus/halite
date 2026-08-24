@@ -84,7 +84,7 @@ The hub serves the state tree, and a node compiles against it. Set
 | Salt | halite | Status |
 |---|---|---|
 | `salt://web/nginx.conf` in a state | works unchanged | works |
-| `salt-run fileserver.file_list` | `halite-hub run '*' cp.list_master` | phase 2 |
+| `salt-run fileserver.file_list` | `halite-hub runner fileserver.file_list` | works |
 | the master serves `file_roots` | the hub serves `file_roots` | works | <!-- lexicon:allow -->
 | `cp.cache_file` | happens automatically; the cache is under `cache_dir` | works |
 | gitfs, s3fs | `fileserver_backend` accepts only `roots` | phase 5 |
@@ -128,7 +128,7 @@ Set `pillar_roots` on the hub.
 | `salt-call --local pillar.items` | `halite-node pillar items --local` | works |
 | `salt '*' pillar.items` | `halite-hub run '*' pillar.items` | works |
 | `#!yaml|gpg` in a pillar file | works, decrypted on the hub | works |
-| `ext_pillar` | not built; the setting warns that it does nothing | phase 2 |
+| `ext_pillar` | not built; the setting warns that it does nothing | not built |
 
 An enrolled node's `pillar items`, `call`, and `state apply` go through
 the hub unless `--local` says otherwise, which is what `salt-call` does. <!-- lexicon:allow -->
@@ -209,7 +209,7 @@ startup rather than treating the absence as permission.
 | no equivalent | `halite-hub jobs resume <jid>` | works |
 | `salt-run jobs.active` | `halite-hub jobs active` | works |
 | `salt-run manage.up` | `halite-hub runner manage.up` | works |
-| `salt-cp '*' file /tmp/file` | `halite-hub files push` | phase 3 |
+| `salt-cp '*' file /tmp/file` | `halite-hub files push` | not built |
 | `salt-run jobs.kill <jid>` | `halite-hub jobs kill <jid>` | works |
 | no equivalent | `halite-hub jobs export <jid>` | works |
 | `salt '*' --queue state.apply` | `halite-hub run '*' state.apply --offline queue` | works |
@@ -275,8 +275,8 @@ answer from the binary, so they work when the hub does not.
 | `salt-run saltutil.refresh_pillar` | `halite-hub runner saltutil.refresh_pillar` | works |
 | `salt-run state.orchestrate <sls>` | `halite-hub orch run <sls>` | works |
 | `salt-run mine.get` | `halite-hub runner mine.get` | works |
-| `salt-run queue.process_queue` | `halite-hub runner queue.process_queue` | phase 3 |
-| `salt-run net.find` | `halite-hub runner net.find` | phase 3 |
+| `salt-run queue.process_queue` | `halite-hub runner queue.process_queue` | not built |
+| `salt-run net.find` | `halite-hub runner net.find` | not built |
 | `salt-run fileserver.update` | `halite-hub runner fileserver.update` | phase 5 |
 | `salt-run manage.bootstrap` | `halite-hub runner manage.bootstrap` | phase 5 |
 
@@ -634,9 +634,9 @@ node and has no pillar of its own.
 | no equivalent | `halite-hub orch show <jid>` | works |
 | no equivalent | `halite-hub orch list` | works |
 | no equivalent | `halite-hub orch resume <jid> --from <step>` | works |
-| `salt.parallel`, `parallel` per step | refused by name | phase 3 |
-| `queue` per step | refused by name | phase 3 |
-| `salt-run state.pause` / `state.resume` | hold a running orchestration | phase 3 |
+| `salt.parallel`, `parallel` per step | refused by name | not built |
+| `queue` per step | refused by name | not built |
+| `salt-run state.pause` / `state.resume` | hold a running orchestration | not built |
 
 Every step is authorized twice: once as the orchestration, and again as
 the job it dispatches. Permission to run an orchestration is not

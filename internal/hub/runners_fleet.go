@@ -134,7 +134,7 @@ func registerManageRunner(r *Runners) {
 			Sig: runnerSig("manage", "safe_accept",
 				"Accept a pending key only after the node confirms its own "+
 					"fingerprint over an already-trusted channel.", "19.2"),
-			Pending: "phase 3, with the node-side key module",
+			Pending: "it needs a node-side key module to confirm the fingerprint (SPEC section 7.3)",
 		},
 		RunnerModule{
 			Sig: runnerSig("manage", "bootstrap",
@@ -256,12 +256,12 @@ func registerKeyRunner(r *Runners) {
 		RunnerModule{
 			Sig: runnerSig("key", "gen_signature",
 				"Produce the hub's key signature for a node to pin before enrolling.", "19.2"),
-			Pending: "phase 3, with the hub fingerprint pinning of SPEC section 7.3",
+			Pending: "the pinning it would produce exists as --hub-fingerprint (SPEC section 7.3)",
 		},
 		RunnerModule{
 			Sig: runnerSig("key", "token",
 				"Mint a bootstrap enrollment token.", "19.2"),
-			Pending: "phase 4, with the API's token handling (SPEC section 23.6)",
+			Pending: "`halite-hub keys token create` mints one today; the runner does not (SPEC section 7.3)",
 		},
 	)
 }

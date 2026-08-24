@@ -142,7 +142,7 @@ func runnerDoc(args *cli.Args) int {
 	}
 	fmt.Print(sig.Describe())
 	if when, pending := reg.Pending(name); pending {
-		fmt.Printf("\nNot built yet: it arrives in %s.\n", when)
+		fmt.Printf("\nNot built yet: %s.\n", when)
 	}
 	return 0
 }

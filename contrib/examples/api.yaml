@@ -1,6 +1,10 @@
 # halite-api.
 #
-# The service arrives in phase 4 of SPEC section 32. The settings are
-# read and validated today.
+# Prometheus exposition at /v1/metrics, authenticated like every other
+# endpoint. This service is the estate's scrape target: it answers with
+# the hub's metrics merged into its own, because the hub speaks its own
+# protocol over mutual TLS and no scraper can reach it. SPEC 26.2.
+metrics: true
+
 log_level: info
 log_format: json

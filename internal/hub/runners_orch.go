@@ -149,17 +149,17 @@ func registerStateRunner(r *Runners) {
 		RunnerModule{
 			Sig: runnerSig("state", "event",
 				"Fire an event from inside an orchestration.", "19.2"),
-			Pending: "phase 3, with the reactor; `event.send` fires one today (SPEC section 19.2)",
+			Pending: "`event.send` fires an event today; firing one from inside a step does not (SPEC section 19.2)",
 		},
 		RunnerModule{
 			Sig: runnerSig("state", "pause",
 				"Hold a running orchestration at its next step.", "19.2"),
-			Pending: "phase 3, with the reactor and the orchestration queue (SPEC section 19.2)",
+			Pending: "it needs the durable work queue of SPEC section 19.4",
 		},
 		RunnerModule{
 			Sig: runnerSig("state", "resume",
 				"Let a held orchestration continue.", "19.2"),
-			Pending: "phase 3, with the reactor and the orchestration queue (SPEC section 19.2)",
+			Pending: "it needs the durable work queue of SPEC section 19.4",
 		},
 	)
 }

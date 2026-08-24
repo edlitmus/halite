@@ -13,8 +13,11 @@ func registerPendingRunners(r *Runners) {
 		return RunnerModule{Sig: runnerSig(module, function, doc, "19.2"), Pending: when}
 	}
 
-	const mine = "phase 3, with the mine (SPEC section 19.5)"
-	const queues = "phase 3, with the durable work queue (SPEC section 19.4)"
+	// The mine is built; these three read from it and are not. Naming
+	// the subsystem rather than a phase is what keeps the message true
+	// once the phase lands and the function still does not exist.
+	const mine = "the mine it would read is built; this reader is not (SPEC section 19.5)"
+	const queues = "it needs the durable work queue of SPEC section 19.4"
 	const notify = "phase 4, with the API and its integrations (SPEC section 32)"
 
 	r.Add(

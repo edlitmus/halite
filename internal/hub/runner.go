@@ -130,7 +130,7 @@ func (r *Runners) Add(mods ...RunnerModule) {
 			r.pending[name] = phase
 			fn = func(*RunnerContext) (any, error) {
 				return nil, fmt.Errorf(
-					"the %s runner is declared and not built yet: it arrives in %s", name, phase)
+					"the %s runner is declared and not built yet: %s", name, phase)
 			}
 		}
 		if fn == nil {
@@ -148,7 +148,7 @@ func (r *Runners) Signatures() *signature.Registry { return r.sigs }
 // Has reports whether a runner is registered, built or pending.
 func (r *Runners) Has(name string) bool { _, ok := r.fns[name]; return ok }
 
-// Pending reports the phase a declared-but-unbuilt runner arrives in.
+// Pending reports why a declared-but-unbuilt runner is not built.
 func (r *Runners) Pending(name string) (string, bool) {
 	phase, ok := r.pending[name]
 	return phase, ok

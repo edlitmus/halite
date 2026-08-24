@@ -120,10 +120,17 @@ and the journal sink.
 
 ## Running it on a schedule
 
-halite's own scheduler is phase 3 of SPEC section 32. Until it lands, the
-machine's own scheduler does the job, and there is an argument for
-leaving it there permanently: it is one less thing in the agent that can
-go wrong, and every operator already knows how to read it.
+halite has its own scheduler — `schedule:` in the node configuration,
+managed at runtime with `halite-node call schedule.add`, and supporting
+`cron`, `when`, `every`, `splay`, `maxrunning`, and `catchup`. [The
+command reference](command-reference.md#the-scheduler) covers it.
+
+The machine's own scheduler still does the job perfectly well, and there
+is a real argument for leaving it there: it is one less thing in the
+agent that can go wrong, and every operator already knows how to read a
+crontab. Use the built-in one when you want the schedule to travel with
+the node, to be changed without restarting it, or to catch up after an
+outage.
 
 ### systemd
 
@@ -179,9 +186,8 @@ For a periodic run, cron is the honest answer on FreeBSD:
 
 ### The daemons
 
-`halite-hub serve` and `halite-node connect` run. `halite-api serve`
-needs phase 4 and exits saying so. Unit files and rc.d scripts for all
-three are in `contrib/`.
+`halite-hub serve`, `halite-node connect`, and `halite-api serve` all
+run. Unit files and rc.d scripts for the three are in `contrib/`.
 
 ```sh
 sudo systemctl enable --now halite-hub      # the control plane

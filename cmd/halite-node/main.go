@@ -2,11 +2,11 @@
 // replaces three of Salt's entry points in one binary: the agent, the
 // local caller, and the proxy. SPEC section 2.2.
 //
-// This build carries the phase 1 surface -- everything a node can do
-// about its own tree without a hub -- and the transport of phase 2:
-// enrollment, renewal, and the subscribe stream. Running a job that
-// arrives on that stream is the next piece and says so rather than
-// pretending.
+// This build carries everything a node does about its own tree without a
+// hub, and everything it does with one: enrollment, renewal, the
+// subscribe stream, running the jobs that arrive on it, hub-compiled
+// pillar, the file server as a source, beacons, the scheduler, and the
+// mine.
 package main
 
 import (

@@ -10,11 +10,11 @@ which is the mode Salt calls masterless, and it is the mode worth
 starting in either way: the tree is the same tree a hub would serve, and
 you can watch it work.
 
-A hub also works: `halite-hub serve`, `halite-node enroll`, and
-`halite-hub run '*' state.apply` are in
-[Operations](operations.md#enrolling-a-node). What the hub cannot do yet
-is serve the tree, so each node needs its own copy — which is what this
-page sets up anyway.
+A hub also works, and serves the tree: `halite-hub serve`,
+`halite-node enroll`, and `halite-hub run '*' state.apply` are in
+[Operations](operations.md#enrolling-a-node). An enrolled node compiles
+against the hub's tree and pillar, so the copy this page puts on the
+machine is the one you would later move to the hub.
 
 ## Install
 

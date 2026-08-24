@@ -3,9 +3,10 @@
 // section 2.2.
 //
 // This build carries the control plane of SPEC section 6, the fleet
-// commands of section 9, the runners of section 19.2, and the tools that
-// audit a tree before a hub exists. `orch`, `files`, and `ssh` are later
-// phases and say so rather than failing obscurely.
+// commands of section 9, the runners of section 19.2, orchestration,
+// reactors, the mine, metrics, and the tools that audit a tree before a
+// hub exists. `files` and `ssh` are not built and say so rather than
+// failing obscurely.
 package main
 
 import (
@@ -41,8 +42,8 @@ Usage:
   halite-hub version             print the build identity
 
 Still to come (SPEC section 32):
-  beacons, the scheduler, reactors, and the mine in phase 3; files in
-  phase 3; ssh with agentless mode in phase 5
+  files, the push in the other direction from salt-cp; ssh with agentless
+  mode in phase 5
 
 Common flags:
   --help               describe the program without running a command
@@ -162,7 +163,7 @@ func main() {
 	case "orch":
 		os.Exit(runOrch(args))
 	case "files":
-		cli.Fatalf("`files` is the hub-side file push, which arrives in phase 3 (SPEC section 32). " +
+		cli.Fatalf("`files` is the hub-side file push, which is not built (SPEC section 32). " +
 			"A node fetches from `salt://` today; this is the push in the other direction.")
 	case "ssh":
 		cli.Fatalf("`ssh` is agentless mode, which arrives in phase 5 (SPEC section 21).")

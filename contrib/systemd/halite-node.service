@@ -10,8 +10,9 @@ Wants=network-online.target
 Type=simple
 # `connect` holds the subscribe stream open to the hub. It reconnects on
 # its own, with backoff, so an unreachable hub is not a unit failure.
-# Running the jobs that arrive on that stream is the rest of phase 2;
-# until then a node is driven by halite-highstate.service.
+# It runs the jobs that arrive on that stream and carries this node's
+# beacons and schedule. A node with no hub is driven by
+# halite-highstate.service instead.
 ExecStart=/usr/local/bin/halite-node connect --config /etc/halite/node.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure

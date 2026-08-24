@@ -236,8 +236,8 @@ func (o *orchRunner) callFunction(c *exec.Context, args *value.Map) (states.Resu
 func (o *orchRunner) submission(c *exec.Context, args *value.Map, fun string) (Submission, states.Result, bool) {
 	if raw, ok := args.Get("queue"); ok && raw != nil && value.Truthy(raw) {
 		return Submission{}, states.False(
-			"`queue` holds a step on the hub's durable queue, which arrives in phase 3 " +
-				"with the queue runner (SPEC section 19.4)."), true
+			"`queue` holds a step on the hub's durable queue, which is not built; " +
+				"it arrives with the queue runner (SPEC section 19.4)."), true
 	}
 	env := states.Str(args, "saltenv", "")
 	if env == "" {

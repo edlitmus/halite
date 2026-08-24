@@ -12,7 +12,9 @@
 #   halite_api_flags (str):    Extra arguments to `halite-api serve`.
 #   halite_api_user (str):     Account to run as. Default halite.
 #
-# `serve` arrives in phase 4 of SPEC section 32.
+# `serve` runs the HTTP API: login and tokens, the execution endpoints,
+# the event stream, webhook ingress, and the Prometheus exposition. It is
+# a client of the hub holding its own operator certificate.
 
 . /etc/rc.subr
 

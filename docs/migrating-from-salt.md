@@ -181,12 +181,16 @@ with the reason.
 
 The larger absences today:
 
-- **Batching** — `--batch`, `--subset`, `--batch-wait` — and the event
-  bus. Phase 2.
 - **External pillar.** `ext_pillar` warns that the sources it names
-  contribute nothing. Phase 2.
-- **Beacons, reactors, orchestration, the mine over the wire.** Phase 3.
-- **The API.** Phase 4.
+  contribute nothing, and `ext_pillar_fail` is read by nothing at all.
+- **`halite-hub files`**, the push in the other direction from `salt-cp`.
+  The file server serves; pushing a file to a node is not built.
+- **gitfs and s3fs.** `fileserver_backend` accepts only `roots`, and
+  says so at startup rather than silently serving nothing. Phase 5.
+- **OIDC and LDAP** for the API. A login naming another backend is
+  refused by name rather than quietly authenticated against local
+  accounts. Returners and the bridge protocol are the rest of phase 4.
+- **Agentless mode** (`salt-ssh`) and **relays**. Phase 5.
 - **Windows and macOS modules.** Phase 5. The code cross-compiles; none
   of it has been run.
 - **`publisher_acl` and friends.** halite has one authorization file

@@ -2,9 +2,6 @@ package builtin
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -117,33 +114,6 @@ func TestPillarRefreshReportsAPillarThatWillNotCompile(t *testing.T) {
 	if _, err := r.Exec.Call(c, "pillar.refresh", value.NewMap(0)); err == nil {
 		t.Fatal("a pillar that will not compile was reported as refreshed")
 	}
-}
-
-// No stub may still claim it needs a phase that has been delivered.
-//
-// A stub outlives the phase it names, and the message an operator then
-// gets is simply false: `pillar.refresh` told every caller it needed
-// phase 2 for as long as phase 2 had been finished.
-//
-// Read from the source rather than by calling every function, because
-// calling a module blind to see what it says would run it.
-func TestNoStubClaimsADeliveredPhase(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("introspect.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := regexp.MustCompile(`notYet\(([^)]*)\)`).FindAllStringSubmatch(string(src), -1)
-	if len(calls) == 0 {
-		t.Fatal("no stubs were found; this audit has stopped checking")
-	}
-	for _, m := range calls {
-		for _, delivered := range []string{"phase 0", "phase 1", "phase 2"} {
-			if strings.Contains(m[1], delivered) {
-				t.Errorf("a stub says it needs %s, which is delivered: notYet(%s)", delivered, m[1])
-			}
-		}
-	}
-	t.Logf("checked %d stubs", len(calls))
 }
 
 var _ exec.EventSender = (*recordingEvents)(nil)

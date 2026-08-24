@@ -2,10 +2,9 @@
 #
 # `halite-hub serve` runs the control plane: enrollment, the key
 # lifecycle, the subscribe stream, remote execution, the file server,
-# pillar, RBAC, batching, and the event bus. The mine, the grain refresh
-# push, and `runner`/`files`/`ssh` are the rest of phase 2, so the
-# settings for those are read and validated and nothing acts on them
-# yet.
+# pillar, RBAC, batching, the event bus, runners, orchestration, the
+# reactor, the mine, and metrics. `files` (the push in the other
+# direction from salt-cp) and `ssh` are not built, and say so.
 
 # The one TCP port of SPEC section 6.1. There is no plaintext mode.
 listen: :4510
@@ -77,6 +76,11 @@ event_max_size: 4294967296
 # Additionally emit each event under its salt/ spelling, for a consumer
 # that cannot be changed at the same time as the estate.
 event_tag_compat: false
+
+# Prometheus exposition at /v1/metrics, behind an operator certificate
+# and the runner grant `metrics.show`. `halite-hub metrics` reads it.
+# SPEC 26.2.
+metrics: true
 
 log_level: info
 log_format: json
