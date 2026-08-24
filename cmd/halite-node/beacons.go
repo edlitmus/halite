@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"path/filepath"
+
 	"github.com/edlitmus/halite/internal/beacon"
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/exec"
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/value"
@@ -18,8 +21,11 @@ import (
 // hub's bus, and a beacon on a node with nowhere to send is a poll loop
 // that reads the disk and discards the answer.
 func (n *node) startBeacons(ctx context.Context) {
-	raw, ok := n.cfg.Get("beacons")
-	if !ok || raw == nil {
+	raw, err := n.beaconConfig()
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	if raw == nil {
 		return
 	}
 	instances, err := beacon.Parse(raw)
@@ -42,6 +48,7 @@ func (n *node) startBeacons(ctx context.Context) {
 	engine := &beacon.Engine{
 		Registry:  beacon.New(),
 		Instances: instances,
+		Tick:      n.cfg.Duration("beacon_tick", 0),
 		Context: func() *exec.Context {
 			// A fresh context each poll: grains and pillar move, and a
 			// beacon polling for a week against the set this process
@@ -63,12 +70,50 @@ func (n *node) startBeacons(ctx context.Context) {
 	for _, in := range instances {
 		names = append(names, in.Name)
 	}
+	// Checked here rather than inside the loop, so a beacon this build
+	// does not have stops the node at startup the way a configuration
+	// that will not parse does. It used to be discovered by the
+	// goroutine, which logged and left the node running with no
+	// watchers at all.
+	if err := engine.Check(); err != nil {
+		cli.Fatalf("%v", err)
+	}
+	n.beacons = engine
 	n.log.Info("beacons started", "beacons", names)
 	go func() {
 		if err := engine.Run(ctx); err != nil {
 			n.log.Error("the beacons stopped", "error", err.Error())
 		}
 	}()
+}
+
+// beaconConfig is `beacons` from the node configuration, merged with
+// every fragment in `beacons.d`.
+//
+// SPEC 16.1 names three sources: the configuration file, that
+// directory, and pillar. The directory is also where the node writes
+// its own runtime changes, in a file of its own, so that `beacons.save`
+// never has to edit what a package manager put there.
+func (n *node) beaconConfig() (any, error) {
+	base, _ := n.cfg.Get("beacons")
+	dropIns, files, err := config.LoadDefinitions(n.beaconDir(), "beacons")
+	if err != nil {
+		return nil, err
+	}
+	if dropIns == nil {
+		return base, nil
+	}
+	if len(files) > 0 {
+		n.log.Info("beacon fragments read", "files", files)
+	}
+	if base == nil {
+		return dropIns, nil
+	}
+	return value.Merge(base, dropIns, value.MergeOpts{}), nil
+}
+
+func (n *node) beaconDir() string {
+	return filepath.Join(n.root, "beacons.d")
 }
 
 // compilePillarOrNothing gives a beacon the pillar if it is available

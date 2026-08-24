@@ -58,64 +58,81 @@ archive.list(path: path)
 Add a beacon to a running node.
 
 ```
-beacons.add()
+beacons.add(name: string, beacon_data: map)
 ```
 
-*SPEC section 16.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The beacon. |
+| `beacon_data` | map | — | The beacon's configuration. |
+
+*changes the system · honours `--test` · SPEC section 16.1*
 
 #### `beacons.delete`
 
 Remove a beacon from a running node.
 
 ```
-beacons.delete()
+beacons.delete(name: string)
 ```
 
-*SPEC section 16.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The beacon. |
+
+*changes the system · honours `--test` · SPEC section 16.1*
 
 #### `beacons.disable`
 
-Disable beacons on a running node.
+Hold every beacon on this node without forgetting any.
 
 ```
 beacons.disable()
 ```
 
-*SPEC section 16.1*
+*changes the system · honours `--test` · SPEC section 16.1*
 
 #### `beacons.disable_beacon`
 
-Disable one beacon on a running node.
+Hold one beacon.
 
 ```
-beacons.disable_beacon()
+beacons.disable_beacon(name: string)
 ```
 
-*SPEC section 16.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The beacon. |
+
+*changes the system · honours `--test` · SPEC section 16.1*
 
 #### `beacons.enable`
 
-Enable beacons on a running node.
+Let every beacon on this node fire again.
 
 ```
 beacons.enable()
 ```
 
-*SPEC section 16.1*
+*changes the system · honours `--test` · SPEC section 16.1*
 
 #### `beacons.enable_beacon`
 
-Enable one beacon on a running node.
+Let one beacon fire again.
 
 ```
-beacons.enable_beacon()
+beacons.enable_beacon(name: string)
 ```
 
-*SPEC section 16.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The beacon. |
+
+*changes the system · honours `--test` · SPEC section 16.1*
 
 #### `beacons.list`
 
-The beacons this node is configured to run, and what each is set to. With `available`, the beacons this build ships instead.
+The beacons this node is running, and what each is set to. With `available`, the beacons this build ships instead.
 
 ```
 beacons.list(available: bool = false)
@@ -132,30 +149,35 @@ beacons.list(available: bool = false)
 Change a running node's beacon.
 
 ```
-beacons.modify()
+beacons.modify(name: string, beacon_data: map)
 ```
 
-*SPEC section 16.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The beacon. |
+| `beacon_data` | map | — | The beacon's configuration. |
+
+*changes the system · honours `--test` · SPEC section 16.1*
 
 #### `beacons.reset`
 
-Drop every beacon from a running node.
+Remove every beacon from a running node.
 
 ```
 beacons.reset()
 ```
 
-*SPEC section 16.1*
+*changes the system · honours `--test` · SPEC section 16.1*
 
 #### `beacons.save`
 
-Write the running beacon configuration to disk.
+Write the running beacon configuration to disk, so it survives a restart. It is written to a file of the node's own under beacons.d, never over what a package manager put there.
 
 ```
 beacons.save()
 ```
 
-*SPEC section 16.1*
+*changes the system · honours `--test` · SPEC section 16.1*
 
 ### `cargo`
 
@@ -2372,64 +2394,81 @@ saltutil.sync_states()
 Add a job to a running node's schedule.
 
 ```
-schedule.add()
+schedule.add(name: string, job: map)
 ```
 
-*SPEC section 20.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The scheduled job. |
+| `job` | map | — | The job definition. |
+
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.delete`
 
 Remove a job from a running node's schedule.
 
 ```
-schedule.delete()
+schedule.delete(name: string)
 ```
 
-*SPEC section 20.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The scheduled job. |
+
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.disable`
 
-Disable the schedule on a running node.
+Hold the whole schedule without forgetting any job.
 
 ```
 schedule.disable()
 ```
 
-*SPEC section 20.1*
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.disable_job`
 
-Disable one scheduled job on a running node.
+Hold one scheduled job.
 
 ```
-schedule.disable_job()
+schedule.disable_job(name: string)
 ```
 
-*SPEC section 20.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The scheduled job. |
+
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.enable`
 
-Enable the schedule on a running node.
+Let the schedule run again.
 
 ```
 schedule.enable()
 ```
 
-*SPEC section 20.1*
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.enable_job`
 
-Enable one scheduled job on a running node.
+Let one scheduled job run again.
 
 ```
-schedule.enable_job()
+schedule.enable_job(name: string)
 ```
 
-*SPEC section 20.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The scheduled job. |
+
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.list`
 
-The jobs this node is configured to run, with the next time each would fire.
+The jobs this node runs, with the next time each would fire.
 
 ```
 schedule.list()
@@ -2442,40 +2481,49 @@ schedule.list()
 Change a running node's scheduled job.
 
 ```
-schedule.modify()
+schedule.modify(name: string, job: map)
 ```
 
-*SPEC section 20.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The scheduled job. |
+| `job` | map | — | The job definition. |
+
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.reload`
 
-Re-read the schedule from disk.
+Re-read the schedule from disk, discarding runtime changes that were never saved.
 
 ```
 schedule.reload()
 ```
 
-*SPEC section 20.1*
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.run_job`
 
-Run one scheduled job now, out of its turn.
+Run one scheduled job now, out of its turn and without splay. When it next runs on its own is not disturbed.
 
 ```
-schedule.run_job()
+schedule.run_job(name: string)
 ```
 
-*SPEC section 20.1*
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | *required* | The scheduled job. |
+
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 20.1*
 
 #### `schedule.save`
 
-Write the running schedule to disk.
+Write the running schedule to disk, so it survives a restart. It is written to a file of the node's own under schedule.d, never over what a package manager put there.
 
 ```
 schedule.save()
 ```
 
-*SPEC section 20.1*
+*changes the system · honours `--test` · SPEC section 20.1*
 
 #### `schedule.show_next_fire_time`
 

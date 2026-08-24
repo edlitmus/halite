@@ -38,8 +38,18 @@ type Engine struct {
 	// due sooner. Zero takes a second.
 	Wake time.Duration
 
+	// Location is the time zone a job added at runtime is read in,
+	// when it names none of its own.
+	Location *time.Location
+
 	mu      sync.Mutex
 	running map[string]int
+	// due is when each job next fires, kept on the engine so that a job
+	// added or changed while it runs takes effect without a restart.
+	due map[string]time.Time
+	// paused is `schedule.disable`: every job held without any of them
+	// being forgotten.
+	paused bool
 }
 
 func (e *Engine) now() time.Time {
@@ -89,11 +99,16 @@ func (e *Engine) Run(ctx context.Context) error {
 	if e.Execute == nil {
 		return fmt.Errorf("a scheduler needs somewhere to send its jobs")
 	}
+	e.mu.Lock()
 	e.running = map[string]int{}
+	if e.due == nil {
+		e.due = map[string]time.Time{}
+	}
+	jobs := append([]*Job(nil), e.Jobs...)
+	e.mu.Unlock()
 
 	now := e.now()
-	due := map[string]time.Time{}
-	for _, job := range e.Jobs {
+	for _, job := range jobs {
 		if !job.Enabled {
 			continue
 		}
@@ -113,7 +128,7 @@ func (e *Engine) Run(ctx context.Context) error {
 			}
 		}
 		if next, ok := job.Next(now); ok {
-			due[job.Name] = next
+			e.setDue(job.Name, next)
 		}
 	}
 
@@ -125,22 +140,56 @@ func (e *Engine) Run(ctx context.Context) error {
 			return nil
 		case <-ticker.C:
 		}
+		e.runDue(ctx)
+	}
+}
 
-		now = e.now()
-		for _, job := range e.Jobs {
-			at, scheduled := due[job.Name]
-			if !scheduled || now.Before(at) {
-				continue
-			}
-			e.start(ctx, Run{Job: job, Fire: at})
-			job.LastRun = now
-			if next, ok := job.Next(now); ok {
-				due[job.Name] = next
-			} else {
-				delete(due, job.Name)
-			}
+// runDue starts every job whose time has come.
+//
+// The job set is read under the lock on each pass rather than captured
+// once, because `schedule.add` and its neighbours are meant to take
+// effect without restarting the node.
+func (e *Engine) runDue(ctx context.Context) {
+	now := e.now()
+
+	e.mu.Lock()
+	if e.paused {
+		e.mu.Unlock()
+		return
+	}
+	type pending struct {
+		job *Job
+		at  time.Time
+	}
+	var ready []pending
+	for _, job := range e.Jobs {
+		at, scheduled := e.due[job.Name]
+		if !scheduled || now.Before(at) || !job.Enabled {
+			continue
+		}
+		ready = append(ready, pending{job: job, at: at})
+		job.LastRun = now
+		if next, ok := job.Next(now); ok {
+			e.due[job.Name] = next
+		} else {
+			delete(e.due, job.Name)
 		}
 	}
+	e.mu.Unlock()
+
+	for _, p := range ready {
+		e.start(ctx, Run{Job: p.job, Fire: p.at})
+	}
+}
+
+// setDue records when a job next fires.
+func (e *Engine) setDue(name string, at time.Time) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.due == nil {
+		e.due = map[string]time.Time{}
+	}
+	e.due[name] = at
 }
 
 // start runs one job, unless too many of it are already running.

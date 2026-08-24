@@ -186,6 +186,14 @@ type node struct {
 	// tree, so a reconnect does not probe the file server again for a
 	// tree it already has.
 	hubTree bool
+	// beacons and schedule are the running engines, which the
+	// management functions of SPEC 16.1 and 20.1 act on. Nil on a
+	// one-shot command line, where there is nothing running to change.
+	beacons  exec.BeaconControl
+	schedule exec.ScheduleControl
+	// reloadSchedule re-reads the schedule from disk. Set with the
+	// engine.
+	reloadSchedule func() error
 	// statesRunning counts the state runs in progress, which is what
 	// `disable_during_state_run` reads. SPEC 16.3.
 	//
@@ -528,19 +536,23 @@ func (n *node) pillarContext(partial *value.Map) *exec.Context {
 // job.
 func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 	return &exec.Context{
-		Ctx:      context.Background(),
-		Grains:   n.grains,
-		Pillar:   p,
-		Config:   n.cfg.Redacted(),
-		NodeID:   n.nodeID,
-		Env:      n.env,
-		JobID:    jobID,
-		Test:     n.test,
-		Files:    n.files,
-		Dispatch: dispatcher{n.registry.Exec},
-		Events:   n.events,
-		Mine:     n.mine,
-		Runner:   &exec.OSRunner{},
+		Ctx:          context.Background(),
+		Grains:       n.grains,
+		Pillar:       p,
+		Config:       n.cfg.Redacted(),
+		NodeID:       n.nodeID,
+		Env:          n.env,
+		JobID:        jobID,
+		Test:         n.test,
+		Files:        n.files,
+		Dispatch:     dispatcher{n.registry.Exec},
+		Events:       n.events,
+		Mine:         n.mine,
+		Beacons:      n.beacons,
+		Schedule:     n.schedule,
+		SaveConfig:   n.saveRuntimeConfig,
+		ReloadConfig: n.reloadRuntimeConfig,
+		Runner:       &exec.OSRunner{},
 		// `pillar.refresh` rebuilds through the same path a run uses,
 		// so a node on a hub asks the hub and a local one recompiles
 		// its roots, without the module knowing which it is.

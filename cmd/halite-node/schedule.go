@@ -22,8 +22,11 @@ import (
 // keeps itself converged, and the case where that matters most is the
 // one where the hub cannot be reached.
 func (n *node) startSchedule(ctx context.Context) {
-	raw, ok := n.cfg.Get("schedule")
-	if !ok || raw == nil {
+	raw, err := n.scheduleConfig()
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	if raw == nil {
 		return
 	}
 	loc, err := n.scheduleLocation()
@@ -43,8 +46,9 @@ func (n *node) startSchedule(ctx context.Context) {
 	}
 
 	engine := &schedule.Engine{
-		Jobs:    jobs,
-		Execute: n.runScheduled,
+		Jobs:     jobs,
+		Location: loc,
+		Execute:  n.runScheduled,
 		Log: func(level, msg string, kv ...any) {
 			lv, _ := hlog.ParseLevel(level)
 			n.log.Log(lv, msg, append([]any{"component", "schedule"}, kv...)...)
@@ -54,12 +58,60 @@ func (n *node) startSchedule(ctx context.Context) {
 	for _, j := range jobs {
 		names = append(names, j.Name)
 	}
+	n.schedule = engine
+	// `schedule.reload` re-reads the files and replaces the running
+	// set, which is how a runtime change made and not saved is
+	// discarded deliberately.
+	n.reloadSchedule = func() error {
+		raw, err := n.scheduleConfig()
+		if err != nil {
+			return err
+		}
+		loc, err := n.scheduleLocation()
+		if err != nil {
+			return err
+		}
+		reloaded, err := schedule.Parse(raw, loc)
+		if err != nil {
+			return err
+		}
+		engine.Replace(reloaded)
+		return nil
+	}
 	n.log.Info("schedule started", "jobs", names)
 	go func() {
 		if err := engine.Run(ctx); err != nil {
 			n.log.Error("the schedule stopped", "error", err.Error())
 		}
 	}()
+}
+
+// scheduleConfig is `schedule` from the node configuration, merged with
+// every fragment in `schedule.d`.
+//
+// SPEC 20.1 names three sources: the configuration file, that
+// directory, and pillar. The directory is also where the node writes
+// its own runtime changes.
+func (n *node) scheduleConfig() (any, error) {
+	base, _ := n.cfg.Get("schedule")
+	dropIns, files, err := config.LoadDefinitions(n.scheduleDir(), "schedule")
+	if err != nil {
+		return nil, err
+	}
+	if dropIns == nil {
+		return base, nil
+	}
+	if len(files) > 0 {
+		n.log.Info("schedule fragments read", "files", files)
+	}
+	if base == nil {
+		return dropIns, nil
+	}
+	return value.Merge(base, dropIns, value.MergeOpts{}), nil
+}
+
+func (n *node) scheduleDir() string {
+	return filepath.Join(n.root, "schedule.d")
 }
 
 // scheduleLocation is the time zone schedules evaluate in.

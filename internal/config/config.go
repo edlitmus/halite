@@ -379,3 +379,74 @@ func isSecretKey(key string) bool {
 	// `priv` alone is how Salt spells a private key path in a roster.
 	return key == "priv" || key == "priv_passwd"
 }
+
+// LoadDefinitions reads every fragment in a directory and deep-merges
+// them in lexical order, returning nil for a directory that is not
+// there.
+//
+// It exists for the directories SPEC names beside the main
+// configuration: `beacons.d` in section 16.1 and `schedule.d` in
+// section 20.1. Each fragment is a mapping of names to definitions —
+// the directory already says what kind they are — and they merge, so an
+// operator can drop one beacon into one file without restating the
+// rest, and a node can write its own runtime changes into a file of its
+// own without touching what a package manager put there.
+//
+// A fragment that wraps its definitions in the kind's own name is
+// refused rather than read as a definition called `beacons`. That is
+// the shape of the main configuration file and it is an easy thing to
+// write here by habit; read literally it produces a beacon with an
+// impossible name, and the node said so in a way nobody could act on.
+func LoadDefinitions(dir, kind string) (*value.Map, []string, error) {
+	files, err := dropInFiles(dir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(files) == 0 {
+		return nil, nil, nil
+	}
+
+	merged := value.NewMap(0)
+	var read []string
+	for _, f := range files {
+		v, err := loadFile(f, false)
+		if err != nil {
+			return nil, nil, err
+		}
+		if v == nil {
+			continue
+		}
+		fragment := v
+		// Checked per fragment rather than on the merged result: a
+		// wrapped file mixed with an unwrapped one merges into
+		// something with several keys, and the wrapper would then slip
+		// through as a definition with an impossible name.
+		if err := refuseWrapper(f, fragment, kind); err != nil {
+			return nil, nil, err
+		}
+		out := value.Merge(merged, fragment, value.MergeOpts{})
+		m, ok := out.(*value.Map)
+		if !ok {
+			return nil, nil, fmt.Errorf("%s: a fragment is a mapping of names to definitions", f)
+		}
+		merged = m
+		read = append(read, f)
+	}
+	return merged, read, nil
+}
+
+// refuseWrapper catches a fragment written in the shape of the main
+// configuration file.
+func refuseWrapper(file string, fragment *value.Map, kind string) error {
+	raw, wrapped := fragment.Get(kind)
+	if !wrapped {
+		return nil
+	}
+	if _, isMap := raw.(*value.Map); !isMap {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s: a fragment here is a mapping of names to definitions with no `%s:` above "+
+			"them -- the directory already says what they are. Remove the one line and "+
+			"outdent the rest", file, kind)
+}

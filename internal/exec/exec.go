@@ -52,6 +52,23 @@ type Context struct {
 	// reaches the execution module that does the work.
 	Dispatch Dispatcher
 
+	// Beacons manages the watchers running on this node, and Schedule
+	// the jobs. Nil where the node is not running them, which is what
+	// a one-shot command line is.
+	Beacons  BeaconControl
+	Schedule ScheduleControl
+
+	// SaveConfig writes a subsystem's running configuration to disk, so
+	// that a change made at runtime survives a restart. The kind is
+	// `beacons` or `schedule`, and the returned path is what was
+	// written. Nil where there is nowhere to write.
+	SaveConfig func(kind string, config *value.Map) (path string, err error)
+
+	// ReloadConfig re-reads a subsystem's configuration from disk,
+	// discarding runtime changes that were never saved. Nil where
+	// there is nothing to re-read.
+	ReloadConfig func(kind string) error
+
 	// Mine publishes to and reads from the mine of SPEC 19.5. Nil on a
 	// node with no hub, where there is nothing to publish to and
 	// nobody to read from.
@@ -99,6 +116,38 @@ type FileFetcher interface {
 	Hash(env, uri string) (algorithm, digest string, err error)
 	// Exists reports whether a managed URI resolves.
 	Exists(env, uri string) bool
+}
+
+// BeaconControl is the runtime management of SPEC 16.1.
+//
+// The types are the model's rather than the beacon package's, because
+// that package imports this one and the dependency cannot run both
+// ways. It costs nothing: a beacon's configuration is a mapping either
+// side of the boundary.
+type BeaconControl interface {
+	List() *value.Map
+	Add(name string, config *value.Map) error
+	Modify(name string, config *value.Map) error
+	Delete(name string) error
+	// SetEnabled turns one beacon on or off; an empty name is all of
+	// them, held without being forgotten.
+	SetEnabled(name string, on bool) error
+	Reset() error
+	// Snapshot is the running configuration in the shape a file uses.
+	Snapshot() *value.Map
+}
+
+// ScheduleControl is the runtime management of SPEC 20.1.
+type ScheduleControl interface {
+	List() *value.Map
+	Add(name string, definition *value.Map) error
+	Modify(name string, definition *value.Map) error
+	Delete(name string) error
+	SetEnabled(name string, on bool) error
+	// RunJob runs one job now, out of its turn.
+	RunJob(ctx context.Context, name string) error
+	Snapshot() *value.Map
+	NextFireTime(name string) (time.Time, bool, error)
 }
 
 // MineAccess is what a module may do with the mine.

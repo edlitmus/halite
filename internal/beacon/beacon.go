@@ -135,11 +135,55 @@ type Instance struct {
 	holding map[string]time.Time
 	// started records that the first poll has happened.
 	started bool
+	// saidEnabled records that the configuration stated the enabled
+	// state, so that modifying a beacon which says nothing about it
+	// leaves it as it was.
+	saidEnabled bool
 
 	// bucketMu, tokens, and filled are the rate limiter.
 	bucketMu sync.Mutex
 	tokens   float64
 	filled   time.Time
+
+	// polledAt is when this beacon last ran, and polling marks it in
+	// flight so a slow beacon delays its own next turn and nothing
+	// else.
+	polledAt time.Time
+	polling  bool
+}
+
+// due reports whether this beacon's interval has elapsed.
+func (in *Instance) due(now time.Time) bool {
+	in.bucketMu.Lock()
+	defer in.bucketMu.Unlock()
+	if in.polledAt.IsZero() {
+		return true
+	}
+	return now.Sub(in.polledAt) >= in.interval()
+}
+
+// claim marks the beacon in flight, or reports that it already is.
+func (in *Instance) claim() bool {
+	in.bucketMu.Lock()
+	defer in.bucketMu.Unlock()
+	if in.polling {
+		return false
+	}
+	in.polling = true
+	return true
+}
+
+func (in *Instance) release() {
+	in.bucketMu.Lock()
+	defer in.bucketMu.Unlock()
+	in.polling = false
+}
+
+// markPolled records the time a poll started.
+func (in *Instance) markPolled(now time.Time) {
+	in.bucketMu.Lock()
+	defer in.bucketMu.Unlock()
+	in.polledAt = now
 }
 
 // The defaults of SPEC 16.3.
@@ -315,8 +359,10 @@ func applyControl(in *Instance, key string, v any) error {
 		in.DisableDuringStateRun = value.Truthy(v)
 	case "disabled":
 		in.Disabled = value.Truthy(v)
+		in.saidEnabled = true
 	case "enabled":
 		in.Disabled = !value.Truthy(v)
+		in.saidEnabled = true
 	case "rate_limit":
 		n, err := asFloat(v)
 		if err != nil {

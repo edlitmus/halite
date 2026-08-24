@@ -37,8 +37,15 @@ type Engine struct {
 	// Now is the clock, for the tests.
 	Now func() time.Time
 
+	// Tick is how often the loop looks for due beacons. Zero takes a
+	// quarter second.
+	Tick time.Duration
+
 	queue *coalescingQueue
 	mu    sync.Mutex
+	// paused is `beacons.disable`: every beacon held without any of
+	// them being forgotten.
+	paused bool
 }
 
 func (e *Engine) now() time.Time {
@@ -59,33 +66,100 @@ func (e *Engine) stateRunning() bool {
 }
 
 // Run polls until the context ends.
+//
+// One scheduler loop rather than a goroutine per beacon, because the
+// configured set changes while it runs: `beacons.add` and its
+// neighbours are meant to take effect without restarting the node, and
+// a goroutine started per instance at boot cannot be told about one
+// that arrives later. Each due poll is still dispatched into its own
+// goroutine, so a slow beacon delays itself and nothing else.
 func (e *Engine) Run(ctx context.Context) error {
 	if e.Registry == nil || e.Send == nil || e.Context == nil {
 		return fmt.Errorf("a beacon engine needs a registry, a context, and somewhere to send")
 	}
-	live, err := e.check()
-	if err != nil {
+	if err := e.check(); err != nil {
 		return err
 	}
-	if len(live) == 0 {
-		return nil
-	}
 
-	e.queue = newCoalescingQueue(totalDepth(live))
+	e.queue = newCoalescingQueue(e.totalDepth())
 	go e.queue.wake(ctx, 50*time.Millisecond)
 	go e.forward(ctx)
 
-	var wg sync.WaitGroup
-	for _, in := range live {
-		wg.Add(1)
+	ticker := time.NewTicker(e.tick())
+	defer ticker.Stop()
+	for {
+		e.pollDue()
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+// tick is how often the loop looks for work. A beacon's interval is
+// honoured to within this, which is why it is short.
+func (e *Engine) tick() time.Duration {
+	if e.Tick > 0 {
+		return e.Tick
+	}
+	return 250 * time.Millisecond
+}
+
+// pollDue runs every beacon whose interval has elapsed.
+func (e *Engine) pollDue() {
+	now := e.now()
+	for _, in := range e.live() {
+		if !in.due(now) {
+			continue
+		}
+		if !in.claim() {
+			// The previous poll of this beacon has not finished. Its
+			// own turn is what it delays, which is the honest
+			// behaviour for a watcher that cannot keep up.
+			continue
+		}
 		go func(in *Instance) {
-			defer wg.Done()
-			e.poll(ctx, in)
+			defer in.release()
+			e.once(in)
 		}(in)
 	}
-	wg.Wait()
-	return nil
 }
+
+// live is the enabled instances, copied so the loop does not hold the
+// lock while it polls.
+func (e *Engine) live() []*Instance {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]*Instance, 0, len(e.Instances))
+	for _, in := range e.Instances {
+		if in.Disabled || e.paused {
+			continue
+		}
+		if mod, ok := e.Registry.Lookup(in.Name); !ok || mod.Pending != "" {
+			continue
+		}
+		out = append(out, in)
+	}
+	return out
+}
+
+func (e *Engine) totalDepth() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	total := 0
+	for _, in := range e.Instances {
+		total += in.queueDepth()
+	}
+	if total < DefaultQueueDepth {
+		total = DefaultQueueDepth
+	}
+	return total
+}
+
+// Check refuses a configuration this build cannot run, which is what a
+// caller does before starting the engine.
+func (e *Engine) Check() error { return e.check() }
 
 // check refuses a configuration that names a beacon this build does not
 // have, and reports the ones that are declared and not built.
@@ -93,53 +167,40 @@ func (e *Engine) Run(ctx context.Context) error {
 // Refusing rather than skipping: a beacon that is configured and never
 // runs is indistinguishable from a quiet estate, which is the worst
 // available outcome for a watcher.
-func (e *Engine) check() ([]*Instance, error) {
-	var live []*Instance
+func (e *Engine) check() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	for _, in := range e.Instances {
-		mod, ok := e.Registry.Lookup(in.Name)
-		if !ok {
-			return nil, fmt.Errorf("%s is not a beacon this build has; `beacons.list --available` says which are", in.Name)
-		}
-		if mod.Pending != "" {
-			return nil, fmt.Errorf("the %s beacon is declared and not built yet: it arrives in %s",
-				in.Name, mod.Pending)
-		}
-		if err := checkPlatform(mod); err != nil {
-			return nil, err
+		if err := e.checkOne(in); err != nil {
+			return err
 		}
 		if in.Disabled {
 			e.logf("info", "beacon disabled by configuration", "beacon", in.Name)
-			continue
-		}
-		live = append(live, in)
-	}
-	return live, nil
-}
-
-func totalDepth(live []*Instance) int {
-	total := 0
-	for _, in := range live {
-		total += in.queueDepth()
-	}
-	return total
-}
-
-// poll runs one beacon on its interval.
-func (e *Engine) poll(ctx context.Context, in *Instance) {
-	ticker := time.NewTicker(in.interval())
-	defer ticker.Stop()
-	for {
-		e.once(in)
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
 		}
 	}
+	return nil
+}
+
+// checkOne is the same question about one instance, which is what
+// `beacons.add` asks before accepting a change.
+func (e *Engine) checkOne(in *Instance) error {
+	mod, ok := e.Registry.Lookup(in.Name)
+	if !ok {
+		return fmt.Errorf("%s is not a beacon this build has; `beacons.list available=True` says which are", in.Name)
+	}
+	if mod.Pending != "" {
+		return fmt.Errorf("the %s beacon is declared and not built yet: it arrives in %s",
+			in.Name, mod.Pending)
+	}
+	return checkPlatform(mod)
 }
 
 // once is one poll of one beacon, with the SPEC 16.3 controls applied.
 func (e *Engine) once(in *Instance) {
+	// Marked before the guard, so a beacon suppressed by a state run
+	// does not poll the instant the run ends and then again on its
+	// own interval.
+	in.markPolled(e.now())
 	if in.DisableDuringStateRun && e.stateRunning() {
 		return
 	}
