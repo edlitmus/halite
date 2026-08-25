@@ -12,6 +12,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -115,6 +116,8 @@ migrate flags:
   --fail-on <level>    exit non-zero at blocking (default), review, or note
   --cmd-default-shell  audit as though the nodes will set cmd_default_shell,
                        which is the transition of SPEC section 15.2
+  --bridge-skeleton <dir>  write a Go bridge skeleton for each custom Python
+                       module found, one command per module (SPEC 24.6)
 `
 
 func main() {
@@ -226,6 +229,17 @@ func runMigrate(args *cli.Args) int {
 		}
 	}
 
+	// SPEC 24.6: the report detects a formula's `_modules/` and friends,
+	// and this writes the bridge skeletons. Separate from the report on
+	// purpose — `migrate` produces a report and does not rewrite a
+	// tree, and writing Go files somewhere the operator did not ask for
+	// would be the same kind of surprise.
+	if dir := args.Flag("bridge-skeleton", ""); dir != "" && dir != "true" {
+		if err := writeSkeletons(rep, dir); err != nil {
+			cli.Fatalf("%v", err)
+		}
+	}
+
 	counts := rep.Count()
 	// An unrecognised level used to fall through to blocking, so
 	// `--fail-on reveiw` audited less than it was asked to and said
@@ -325,4 +339,41 @@ func gpgTimeout(cfg *config.Config) time.Duration {
 		return 30 * time.Second
 	}
 	return d
+}
+
+// writeSkeletons generates a bridge for every custom Python module the
+// audit found.
+//
+// One command per module, each a directory with a main.go, because that
+// is what `go build` takes and what an operator will put in a bundle. A
+// file that already exists is not overwritten: the second run of a
+// migration should not discard the work done after the first.
+func writeSkeletons(rep *migrate.Report, dir string) error {
+	skeletons := migrate.Skeletons(rep.PyModules, rep.PyKinds)
+	if len(skeletons) == 0 {
+		fmt.Printf("no custom Python modules to generate a bridge for\n")
+		return nil
+	}
+	written, kept := 0, 0
+	for _, skeleton := range skeletons {
+		path := filepath.Join(dir, filepath.FromSlash(skeleton.Path))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			return err
+		}
+		if _, err := os.Stat(path); err == nil {
+			fmt.Printf("%s exists; leaving it alone\n", path)
+			kept++
+			continue
+		}
+		if err := os.WriteFile(path, []byte(skeleton.Source), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("%s (%s, %d function(s) from %s)\n",
+			path, skeleton.Kind, len(skeleton.Module.Functions), skeleton.Module.File)
+		written++
+	}
+	fmt.Printf("\n%d skeleton(s) written, %d left alone. Each is a starting point: every\n"+
+		"function returns an error until it is written, so a bridge that was\n"+
+		"generated and forgotten fails loudly rather than answering nothing.\n", written, kept)
+	return nil
 }

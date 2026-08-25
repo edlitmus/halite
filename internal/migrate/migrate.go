@@ -110,6 +110,13 @@ type Report struct {
 	Modules map[string]int
 	// CustomModules lists the Python extension directories found.
 	CustomModules []string
+	// PyModules is what each custom Python file declares, with the
+	// extension kind its directory maps to. SPEC 24.6 asks the report
+	// to carry the signatures, because a list of names and parameters
+	// is what turns "port this formula" into a bounded job.
+	PyModules []PyModule
+	// PyKinds maps a Python file to its extension kind.
+	PyKinds map[string]string
 	// DefaultShell records that the audit assumed cmd_default_shell, so
 	// the report can say the tree depends on it.
 	DefaultShell bool
@@ -241,21 +248,69 @@ func auditCustomModuleDir(rep *Report, root, path, rel string) {
 	if err != nil {
 		return
 	}
-	kind := filepath.Base(path)
+	dir := filepath.Base(path)
+	extKind, portable := KindForDir(dir)
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".py" {
 			continue
 		}
+		file := filepath.ToSlash(filepath.Join(rel, e.Name()))
+
+		// The signatures, which is what SPEC 24.6 asks the report to
+		// carry: a list of function names and their parameters is what
+		// turns "port this formula" from an unbounded problem into a
+		// bounded one.
+		src, readErr := os.ReadFile(filepath.Join(path, e.Name()))
+		var module PyModule
+		if readErr == nil {
+			module = ReadPyModule(file, src)
+			rep.PyModules = append(rep.PyModules, module)
+			if portable {
+				if rep.PyKinds == nil {
+					rep.PyKinds = map[string]string{}
+				}
+				rep.PyKinds[file] = extKind
+			}
+		}
+
+		action := "Port it to a signed, pinned, out-of-process bridged extension. " +
+			"`migrate --bridge-skeleton <dir>` generates a starting point. SPEC sections 24 and 24.6."
+		if !portable {
+			// `_utils` is a Python import target rather than an
+			// extension point, and generating a bridge for it would be
+			// a file nobody could use.
+			action = fmt.Sprintf("%s is not an extension point; whatever imports it has to carry "+
+				"what it does. SPEC section 24.6.", dir)
+		}
+		msg := fmt.Sprintf("a Python %s cannot be loaded; halite has no in-process plugin loading",
+			strings.TrimPrefix(dir, "_"))
+		if len(module.Functions) > 0 {
+			msg += fmt.Sprintf(" (%d function(s): %s)",
+				len(module.Functions), functionNames(module))
+		}
 		rep.Findings = append(rep.Findings, Finding{
 			Category: CatCustomModule,
 			Severity: Blocking,
-			File:     filepath.ToSlash(filepath.Join(rel, e.Name())),
-			Subject:  kind,
-			Msg: fmt.Sprintf("a Python %s cannot be loaded; halite has no in-process plugin loading",
-				strings.TrimPrefix(kind, "_")),
-			Action: "Port it to a signed, pinned, out-of-process bridged extension. SPEC sections 24 and 24.6.",
+			File:     file,
+			Subject:  dir,
+			Msg:      msg,
+			Action:   action,
 		})
 	}
+}
+
+// functionNames lists what a Python module exposes, bounded so a module
+// with sixty functions does not produce a sixty-name line.
+func functionNames(module PyModule) string {
+	const most = 8
+	names := make([]string, 0, len(module.Functions))
+	for _, fn := range module.Functions {
+		names = append(names, fn.Name)
+	}
+	if len(names) <= most {
+		return strings.Join(names, ", ")
+	}
+	return fmt.Sprintf("%s and %d more", strings.Join(names[:most], ", "), len(names)-most)
 }
 
 // auditSLS checks one file. It renders and parses without executing, which
