@@ -535,6 +535,52 @@ Endpoints and the STS host are built from a partition value rather than
 hardcoded to `aws`: one built for the commercial partition is wrong in
 GovCloud and in China.
 
+### A machine with no agent can still be driven
+
+`halite-hub ssh`, SPEC section 21, replacing `salt-ssh`. It is simpler
+than the original for one reason: it has a static binary to push. Salt
+ships a Python "thin" tarball and then has to find or bootstrap a
+compatible Python on the target, which is where most `salt-ssh` failures
+come from.
+
+The connection is the system `ssh` binary rather than a linked library.
+That is what makes an estate's `ssh_config`, `ProxyJump`,
+`ProxyCommand`, certificate authentication, agent policy, and
+`known_hosts` handling work without any of it being written again here —
+and it means `paramiko`, the largest dependency in `salt-ssh` and the
+source of its most persistent bugs, is not replaced by anything.
+
+The binary is pushed once, verified by digest after transfer, and cached
+under `<thin_dir>/<digest>`, so a second run skips the transfer. It
+takes its cached name only after verifying, so a concurrent run never
+finds a half-written binary, and a target with no digest tool at all is
+a refusal rather than an unverified executable.
+
+Pillar and the state tree are compiled on the hub and sent with the job.
+A target therefore holds no tree, no pillar, and no other target's
+secrets — the same property an enrolled node has. It uses what the hub
+sent and only that: a local fallback would compile against whatever a
+previous configuration system left on the machine.
+
+ssh hands its command to the target's *login* shell, and a login shell
+is not always POSIX. Every setup script goes over stdin to `sh -s`,
+where no quoting is involved at all; the one command that cannot — the
+job invocation, whose stdin carries the job — takes values that are
+validated rather than escaped, because the POSIX escape for a quote does
+not survive every shell.
+
+The return is framed, because a login banner, a motd, a sudo lecture,
+and a `.bashrc` that echoes something all arrive on the same stream.
+
+Rosters are `flat`, `sshconfig`, `cache`, and `ansible` — the last
+because many estates have an inventory already, and asking them to write
+the same list of machines again to try this is asking them not to try
+it. Targeting is the ordinary grammar against the roster's grains.
+
+SPEC 21.3's limitations are stated rather than worked around: with no
+persistent connection there are no beacons, no scheduler, no mine, no
+presence, and no node-initiated events for an agentless target.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -765,9 +811,9 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-The rest of phase 5, and phase 6. No agentless mode, no relays, no
-Windows or macOS parity, no FIPS artifact set, no detached job signing,
-no signed state trees, and no backtracking regex engine.
+The rest of phase 5, and phase 6. No relays, no Windows or macOS parity,
+no FIPS artifact set, no detached job signing, no signed state trees,
+and no backtracking regex engine.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
 in the other direction from `salt-cp`, and external pillar. Phase 3's

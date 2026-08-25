@@ -1448,6 +1448,8 @@ webhook delivered end to end onto the bus.
 | The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
 | Beacon events were in the wrong namespace | SPEC 17.1 puts a beacon under `halite/beacon/<node_id>/<beacon>/` and SPEC 18.1's own reactor example matches on it; they were arriving under `halite/node/<node_id>/`. A reactor written from the specification matched nothing and said nothing about it. Found while adding the metric that counts them. |
 | Two expositions concatenated are not one exposition | Both components expose `halite_build_info`, and the text format allows one `# HELP` per metric name in a document. A scraper rejects the whole body for the duplicate, so the failure arrives as "no metrics at all" rather than as one duplicated family. They are merged now. |
+| An agentless target compiled its own pillar | The hub sends pillar inline and the target fell back to a local tree when none arrived — so the first run against a machine that used to run Salt compiled the *old estate's* pillar, half of it encrypted to keys the process did not have. It uses what the hub sent and only that now, an empty pillar included. |
+| The target's login shell is not always POSIX | ssh hands its command to the login shell. Against a target running `fish`, a script containing `if ... then ... fi` was a syntax error before `/bin/sh` was reached, and the POSIX `'\''` idiom for an embedded quote did not survive it either. Setup scripts go over stdin to `sh -s` now, where no quoting is involved; the one command that cannot takes validated values rather than escaped ones. |
 | `git archive` emits a header the extractor called a file | The extractor refuses anything that is not a regular file or a directory, which is right — and `git archive` writes a `pax_global_header` first, carrying the commit id. Every ref failed to materialise. Found on the first run against real git, which is the only place it could have been found. |
 | Configuring an extension returner deadlocked the node | A returner that is an extension arrives through `saltutil.sync_returners`, which needs a running node — and the node refused to start because its configured returner was not there. A node that will not boot cannot be sent the thing it is waiting for. A returner name this build does not have is no longer fatal; it fails every return with the reason instead, which is said once at startup. |
 | Warming an extension probed it with an empty function name | The first cut read "no such function" as proof the handshake had happened. That held until an extension parsed its arguments before looking at the function name, and then failed with "unexpected end of JSON input" — a message about nothing the operator had done. `Pool.Warm` already completed the handshake without calling anything. |
@@ -1522,6 +1524,16 @@ answering with the version it already had. A second bundle, of kind
 `returner`, was synchronized and used as the node's returner — the
 scheduled job's returns were filed by an extension in a sandboxed
 process.
+
+Agentless mode was run against a real `sshd` on a loopback port with its
+own host key and authorized_keys, so none of the operator's ssh state was
+touched: the binary was pushed and verified, a second run skipped the
+transfer in under a second, roster grains reached the target and were
+targeted on, a state run applied from an inline tree, `--test` changed
+nothing, `--clean` removed the cache, and an unsafe `thin_dir` was
+refused by name. It does not cover a target on another platform, a
+target reached through a jump host, sudo against a real sudoers policy,
+or the `cache` and `ansible` rosters against real inputs.
 
 s3fs was run against an S3 that verifies SigV4 with its own
 implementation: the hub listed a bucket, mapped two prefixes to two
@@ -2189,6 +2201,27 @@ writing outside the tree, and bounds file count and total size. `git
 archive` produces none of those; this unpacks an archive built from a
 repository the hub did not write.
 
+**Agentless mode is built**, SPEC section 21. `halite-hub ssh` pushes a
+static `halite-node`, verified by digest after transfer and cached at
+`<thin_dir>/<digest>`, and runs the job through a one-shot mode that
+reads it on stdin and writes a framed return. The connection is the
+system `ssh` binary, so an estate's `ssh_config`, `ProxyJump`,
+certificate authentication, and `known_hosts` handling all work without
+being reimplemented — and `paramiko`, the largest dependency in
+`salt-ssh`, is not replaced by anything.
+
+Pillar and the state tree are compiled on the hub and sent inline, so a
+target holds no tree and no other target's secrets. The target uses what
+the hub sent and only that.
+
+Rosters: `flat`, `sshconfig`, `cache`, and `ansible`. Targeting is the
+grammar of SPEC section 8 against the roster's grains, so an agentless
+estate is targeted exactly as an enrolled one.
+
+SPEC 21.3's limitations are inherent rather than gaps: no persistent
+connection means no beacons, no scheduler, no mine, no presence, and no
+node-initiated events for an agentless target.
+
 **The S3 file server is built**, SPEC 13.4, with SigV4 written directly
 rather than by importing the AWS SDK — hundreds of packages to satisfy
 one signing algorithm. Credentials resolve in the specified order:
@@ -2207,7 +2240,11 @@ preserves.
 
 What is **not** built in phase 5:
 
-- **Agentless mode** (SPEC section 21), `halite-hub ssh`.
+- **The reverse tunnel** of SPEC 21.1. Pillar and tree go inline, and a
+  tree larger than 4 MiB is refused rather than transferred on every run
+  against every target.
+- **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
+  refused by name.
 - **Relays** and the **FIPS artifact set**.
 - **Windows and macOS parity.** The code cross-compiles and none of it
   has been run there.

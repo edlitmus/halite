@@ -241,8 +241,17 @@ get it. Credentials resolve through the environment, the container
 endpoint, and the instance metadata service — IMDSv2 only, with no
 fallback to the version any process on the instance can call.
 
-What is not built is the rest of phase 5 — agentless mode, relays, and
-Windows and macOS parity — and phase 6.
+Agentless mode followed. `halite-hub ssh` replaces `salt-ssh` and is
+simpler for one reason: it pushes a static binary, where Salt ships a
+Python tarball and then has to find a compatible Python on the target.
+The connection is the system `ssh`, so an estate's `ssh_config`, jump
+hosts, certificate authentication, and `known_hosts` all work without
+being reimplemented. Pillar and the tree are compiled on the hub and
+sent with the job, so a target holds no tree and no other target's
+secrets.
+
+What is not built is the rest of phase 5 — relays, the FIPS artifact
+set, and Windows and macOS parity — and phase 6.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

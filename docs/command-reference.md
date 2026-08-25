@@ -489,6 +489,81 @@ The url must be `https://`. A return carries whatever the job printed,
 and `returner_webhook_ca_file` is there so an internal CA works without
 anyone reaching for a way to skip verification.
 
+## Machines with no agent
+
+`halite-hub ssh` replaces `salt-ssh`. It is simpler than the original
+for one reason: it pushes a static binary. Salt ships a Python "thin"
+tarball and then has to find or bootstrap a compatible Python on the
+target, which is where most `salt-ssh` failures come from.
+
+```sh
+halite-hub ssh '*' test.ping
+halite-hub ssh 'role:edge' state.apply -G
+halite-hub ssh '*' test.ping --clean
+```
+
+The roster is `<root>/roster` by default:
+
+```yaml
+web1.example:
+  host: 10.0.0.4
+  port: 2222
+  user: deploy
+  priv: /home/ed/.ssh/estate
+  sudo: true
+  identities_only: true
+  proxy_jump: bastion.example
+  grains:
+    role: edge
+db1.example: 10.0.0.9
+lonely.example:
+```
+
+A bare string is the host; a target with nothing under it connects by
+its own name. A misspelt field is refused — `sudo_usr` would leave the
+run as root.
+
+`--roster` also reads `sshconfig` (your `~/.ssh/config`, skipping
+wildcard patterns), `cache` (the nodes the hub has heard from, with
+their reported grains), and `ansible` (an inventory in either its INI or
+YAML form, because many estates have one already). `scan`, `cloud`, and
+`terraform` are named as not built rather than reported as typos.
+
+Targeting is the same grammar the fleet uses, against the roster's names
+and the grains it attached — `-G 'os:FreeBSD'` works here exactly as it
+does on an enrolled node.
+
+### What it does on the target
+
+The connection is the system `ssh` binary, so your `ssh_config`,
+`ProxyJump`, `ProxyCommand`, certificate authentication, agent policy,
+and `known_hosts` all work; none of it is reimplemented.
+
+A static `halite-node` is pushed once, verified by digest **after**
+transfer, and cached at `<thin_dir>/<digest>`. A second run skips the
+transfer. `--clean` removes it before and after.
+
+Pillar and the state tree are compiled on the hub and sent with the job,
+so a target holds no tree, no pillar, and no other target's secrets. The
+target uses what the hub sent and only that — never a local tree that a
+previous configuration system left behind.
+
+Values that reach the target's command line are validated rather than
+escaped: ssh hands its command to the *login* shell, which is not always
+POSIX, and the escape for an embedded quote does not survive every one.
+A `thin_dir` with a space in it is refused, with the reason.
+
+### What agentless mode does not have
+
+SPEC 21.3 states it plainly and it is inherent to the model, not a gap
+in this build: there is no persistent connection, so beacons, the
+scheduler, the mine, presence, and node-initiated events do not exist
+for an agentless target. A reactor can act on one but cannot be
+triggered by one.
+
+SPEC 21.1's reverse tunnel is not built, so a tree larger than 4 MiB is
+refused rather than transferred on every run against every target.
+
 ## Serving the tree from git
 
 `fileserver_backend` takes `git` alongside `roots`. Salt's `gitfs` name
