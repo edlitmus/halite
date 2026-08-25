@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -226,14 +228,7 @@ func (n *node) warmExtension(loaded *extension.Loaded) error {
 	ctx, cancel := context.WithTimeout(context.Background(),
 		n.cfg.Duration("extension_timeout", 60*time.Second))
 	defer cancel()
-	_, err := loaded.Call(ctx, "", nil, nil, nil)
-	if err != nil && strings.Contains(err.Error(), "no function") {
-		// The probe reached the extension and it answered that it has
-		// no function by that name, which is the answer that proves the
-		// handshake happened. Anything else is a real failure.
-		return nil
-	}
-	return err
+	return loaded.Start(ctx)
 }
 
 // callContextFor is what an extension is told about the run.
@@ -344,3 +339,56 @@ func (s *remoteExtensionSource) List(prefix string) ([]extension.SourceFile, err
 func (s *remoteExtensionSource) Fetch(path string) ([]byte, error) {
 	return s.remote.Read(s.env, path)
 }
+
+// bridgedReturner finds a returner that runs as an extension.
+//
+// SPEC 20.3's seventeen Bridged destinations are extensions of kind
+// `returner`. Asked for by name, so that `returner: postgres` finds the
+// `postgres` extension without the operator having to know it is one.
+func (n *node) bridgedReturner(name string) (returner.Returner, error) {
+	if n.extensions == nil {
+		return nil, nil
+	}
+	loaded, ok := n.extensions.Get(name)
+	if !ok {
+		return nil, nil
+	}
+	if kind := loaded.Bundle.Manifest.Kind; kind != "returner" {
+		// A name that matches an extension of the wrong kind is a
+		// mistake worth naming: silently falling through to "not a
+		// returner" would send the operator looking for a missing
+		// extension that is installed.
+		return nil, fmt.Errorf("the %s extension is a %s extension, not a returner", name, kind)
+	}
+	// Warmed so its declared functions are known, which is what tells
+	// the adapter whether it can carry the event stream.
+	if err := n.warmExtension(loaded); err != nil {
+		// Not fatal, for the same reason a missing extension is not: a
+		// node that will not start cannot be sent the thing that fixes
+		// it. Every return fails with this reason instead.
+		return nil, fmt.Errorf("the %s returner extension could not be started: %v: %w",
+			name, err, errExtensionNotReady)
+	}
+	var provides []string
+	for _, sig := range loaded.Functions {
+		provides = append(provides, sig.Name())
+	}
+	return returner.FromExtension(name, &extensionReturner{loaded: loaded}, provides), nil
+}
+
+// extensionReturner adapts a loaded extension to what the returner
+// package needs, so that package does not depend on the extension
+// machinery.
+type extensionReturner struct{ loaded *extension.Loaded }
+
+func (e *extensionReturner) Name() string { return e.loaded.Bundle.Manifest.Name }
+
+func (e *extensionReturner) Call(ctx context.Context, function string, args, kwargs any) (json.RawMessage, error) {
+	_, fn, _ := strings.Cut(function, ".")
+	return e.loaded.Call(ctx, fn, args, kwargs, nil)
+}
+
+// errExtensionNotReady marks a returner extension that is installed and
+// could not be started, which is a reason to fail returns rather than a
+// reason to refuse to boot.
+var errExtensionNotReady = errString("the returner extension is not ready")

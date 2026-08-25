@@ -113,6 +113,19 @@ func (r *Runtime) Close() {
 	}
 }
 
+// Start brings the extension up and completes the handshake, so its
+// declared functions are known without calling one.
+//
+// The first cut probed with an empty function name and read the
+// "no such function" answer as success. That worked until an extension
+// parsed its arguments before looking at the function name, and then
+// failed with "unexpected end of JSON input" — a message about nothing
+// the operator had done.
+func (l *Loaded) Start(ctx context.Context) error {
+	_, err := l.ensure(ctx)
+	return err
+}
+
 // Call invokes a function in an extension.
 func (l *Loaded) Call(ctx context.Context, function string, args, kwargs any, callCtx *bridge.CallContext) (json.RawMessage, error) {
 	pool, err := l.ensure(ctx)

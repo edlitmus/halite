@@ -44,6 +44,14 @@ type Returner interface {
 // not the event stream.
 var ErrNoEvents = fmt.Errorf("this returner does not carry the event stream")
 
+// ErrNotBuiltIn marks a returner name this build does not implement,
+// which may be an extension that has not arrived yet.
+//
+// The caller decides what that means. On a node it is not fatal —
+// an extension arrives through `saltutil.sync_returners`, which needs a
+// running node, so refusing to start would deadlock.
+var ErrNotBuiltIn = fmt.Errorf("no returner by that name is built in or loaded")
+
 // Options is everything a returner might be configured with.
 //
 // One struct rather than a map: a misspelt key in a map is a setting
@@ -87,6 +95,12 @@ type Options struct {
 	SMTPUsername string
 	SMTPPassword string
 	SMTPTLS      bool
+
+	// Bridged looks up a returner that runs as an extension, for the
+	// seventeen destinations SPEC 20.3 marks Bridged. Nil on a node
+	// with no extensions, where those names are reported as needing
+	// one rather than as typos.
+	Bridged func(name string) (Returner, error)
 
 	// Post files a return with the hub, for `local_cache`. Nil on a
 	// node with no hub, which is what makes that returner refuse at
@@ -157,8 +171,11 @@ func CheckEventReturn(name string) error {
 		return fmt.Errorf("%s carries returns but not the event stream; SPEC 20.3 supports it for %s",
 			name, strings.Join(EventReturners(), ", "))
 	}
-	if reason, bridged := Bridged[name]; bridged {
-		return fmt.Errorf("the %s returner %s", name, reason)
+	if _, bridged := BridgedNames[name]; bridged {
+		// A bridged returner may carry events; whether it does is
+		// something only the extension knows, so this cannot refuse it
+		// here. The check happens when the extension is asked.
+		return nil
 	}
 	return fmt.Errorf("%q is not a returner; this build has %s", name, strings.Join(Names(), ", "))
 }
@@ -174,11 +191,29 @@ func New(name string, opts Options) (Returner, error) {
 	if ok {
 		return e.build(opts)
 	}
-	if reason, bridged := Bridged[name]; bridged {
-		return nil, fmt.Errorf("the %s returner %s", name, reason)
+	// A bridged destination runs as an extension. Asked for by name, so
+	// that `returner: postgres` finds the `postgres` extension without
+	// the operator having to know it is one.
+	if opts.Bridged != nil {
+		built, err := opts.Bridged(name)
+		if err != nil {
+			return nil, err
+		}
+		if built != nil {
+			return built, nil
+		}
 	}
-	return nil, fmt.Errorf("%q is not a returner; this build has %s",
-		name, strings.Join(Names(), ", "))
+	// Anything else is a name this build does not have. It may be an
+	// extension that has not been synchronized yet, and only the
+	// caller knows whether to treat that as fatal — so the error says
+	// which case it is and `ErrNotBuiltIn` lets it be told apart.
+	if _, bridged := BridgedNames[name]; bridged {
+		return nil, fmt.Errorf("the %s returner runs as an extension of kind `returner` "+
+			"(SPEC section 20.3), and no extension named %q is loaded: %w", name, name, ErrNotBuiltIn)
+	}
+	return nil, fmt.Errorf("%q is not a returner this build has (%s) "+
+		"and no extension of kind `returner` by that name is loaded: %w",
+		name, strings.Join(Names(), ", "), ErrNotBuiltIn)
 }
 
 // Names is every returner this build implements, in order.
@@ -191,27 +226,17 @@ func Names() []string {
 	return out
 }
 
-// Bridged are the destinations SPEC 20.3 puts behind the bridge of
-// section 24, with why. Named rather than omitted: an operator who
-// writes `returner: postgres` has made a reasonable request, and
-// "postgres is not a returner" would be a lie.
-var Bridged = map[string]string{
-	"mysql":         "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"postgres":      "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"sqlite":        "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"redis":         "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"elasticsearch": "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"influxdb":      "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"mongo":         "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"carbon":        "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"splunk":        "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"sentry":        "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"slack":         "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"pagerduty":     "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"kafka":         "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"sqs":           "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"sns":           "runs out of process behind the bridge of SPEC section 24, which is not built",
-	"cloudwatch":    "runs out of process behind the bridge of SPEC section 24, which is not built",
+// BridgedNames are the destinations SPEC 20.3 marks Bridged: each needs
+// a database or a vendor client, and a control plane does not link one.
+//
+// Named rather than omitted. An operator who writes `returner: postgres`
+// has made a reasonable request, and "postgres is not a returner" would
+// be a lie — the answer is that it is an extension.
+var BridgedNames = map[string]bool{
+	"mysql": true, "postgres": true, "sqlite": true, "redis": true,
+	"elasticsearch": true, "influxdb": true, "mongo": true, "carbon": true,
+	"splunk": true, "sentry": true, "slack": true, "pagerduty": true,
+	"kafka": true, "sqs": true, "sns": true, "cloudwatch": true,
 }
 
 // EventReturners is every returner `event_return` may name, in order.

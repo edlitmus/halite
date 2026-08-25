@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -47,8 +48,8 @@ func TestABridgedReturnerIsNamedAsBridged(t *testing.T) {
 	if err == nil {
 		t.Fatal("postgres was accepted")
 	}
-	if !strings.Contains(err.Error(), "bridge") {
-		t.Errorf("the error does not say it is bridged: %v", err)
+	if !strings.Contains(err.Error(), "extension") {
+		t.Errorf("the error does not say it is an extension: %v", err)
 	}
 	if strings.Contains(err.Error(), "is not a returner") {
 		t.Errorf("a bridged destination is reported as a typo: %v", err)
@@ -468,9 +469,15 @@ func TestEventReturnSaysWhichProblemItIs(t *testing.T) {
 	if err := CheckEventReturn("file"); err != nil {
 		t.Errorf("file was refused: %v", err)
 	}
+	// A bridged returner may or may not carry events, and only the
+	// extension knows: `event_return: postgres` is not refused here,
+	// it is refused when the extension is asked and turns out not to
+	// provide `returner.event`.
+	if err := CheckEventReturn("postgres"); err != nil {
+		t.Errorf("a bridged returner was refused before the extension was asked: %v", err)
+	}
 	cases := []struct{ name, want string }{
 		{"local_cache", "carries returns but not the event stream"},
-		{"postgres", "bridge"},
 		{"pstgres", "is not a returner"},
 	}
 	for _, c := range cases {
@@ -482,5 +489,141 @@ func TestEventReturnSaysWhichProblemItIs(t *testing.T) {
 		if !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want it to mention %q", c.name, err, c.want)
 		}
+	}
+}
+
+// stubExtension stands in for a returner extension.
+type stubExtension struct {
+	name   string
+	calls  []string
+	fails  bool
+	sawRet map[string]any
+}
+
+func (s *stubExtension) Name() string { return s.name }
+
+func (s *stubExtension) Call(ctx context.Context, function string, args, kwargs any) (json.RawMessage, error) {
+	s.calls = append(s.calls, function)
+	if s.fails {
+		return nil, fmt.Errorf("the database is down")
+	}
+	if m, ok := kwargs.(map[string]any); ok {
+		if ret, ok := m["return"].(map[string]any); ok {
+			s.sawRet = ret
+		}
+	}
+	return json.RawMessage(`true`), nil
+}
+
+// The seventeen destinations SPEC 20.3 marks Bridged are extensions,
+// and `returner: postgres` should find one without the operator having
+// to know that.
+func TestABridgedReturnerIsFoundByName(t *testing.T) {
+	ext := &stubExtension{name: "postgres"}
+	built, err := New("postgres", Options{
+		Bridged: func(name string) (Returner, error) {
+			if name != "postgres" {
+				return nil, nil
+			}
+			return FromExtension(name, ext, []string{FunctionReturn}), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built.Name() != "postgres" {
+		t.Errorf("it is named %q", built.Name())
+	}
+	if err := built.Return(context.Background(), aReturn("20260825T1", "web1", true)); err != nil {
+		t.Fatal(err)
+	}
+	if len(ext.calls) != 1 || ext.calls[0] != FunctionReturn {
+		t.Errorf("it called %v", ext.calls)
+	}
+	// The return goes over as SPEC 11.8's schema, which is what a
+	// dashboard already parses.
+	if ext.sawRet["jid"] != "20260825T1" || ext.sawRet["fun"] != "test.ping" {
+		t.Errorf("the extension saw %v", ext.sawRet)
+	}
+
+	// An extension that does not provide `returner.event` says so
+	// rather than dropping the event stream.
+	if err := built.Event(context.Background(), &eventbus.Event{Tag: "halite/x"}); err == nil {
+		t.Error("a returner extension with no event function accepted an event")
+	}
+}
+
+// A node with no extensions reports a bridged name as needing one,
+// rather than as a typo.
+func TestABridgedNameWithNoExtensionSaysWhatIsMissing(t *testing.T) {
+	_, err := New("kafka", Options{})
+	if err == nil {
+		t.Fatal("kafka was accepted with no extension")
+	}
+	for _, want := range []string{"extension", "kafka"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not mention %q: %v", want, err)
+		}
+	}
+}
+
+// A failure in the extension is a failure of the return, named so an
+// operator knows which returner it was.
+func TestAFailingBridgedReturnerNamesItself(t *testing.T) {
+	ext := &stubExtension{name: "redis", fails: true}
+	built := FromExtension("redis", ext, []string{FunctionReturn})
+	err := built.Return(context.Background(), aReturn("20260825T1", "web1", true))
+	if err == nil {
+		t.Fatal("a failing extension reported success")
+	}
+	if !strings.Contains(err.Error(), "redis") {
+		t.Errorf("the failure does not name the returner: %v", err)
+	}
+}
+
+// A returner that is an extension arrives through
+// `saltutil.sync_returners`, which needs a running node. A node that
+// refused to start could never be sent the thing it is waiting for.
+func TestAnExtensionReturnerThatHasNotArrivedIsTellableApart(t *testing.T) {
+	_, err := New("filedb", Options{})
+	if err == nil {
+		t.Fatal("an unknown returner was accepted")
+	}
+	if !errors.Is(err, ErrNotBuiltIn) {
+		t.Errorf("the error is not marked as a name this build does not have: %v", err)
+	}
+	// And a real misconfiguration is not.
+	_, err = New("webhook", Options{URL: "http://example.com/x", Secret: "s", StateDir: t.TempDir()})
+	if err == nil {
+		t.Fatal("an http webhook url was accepted")
+	}
+	if errors.Is(err, ErrNotBuiltIn) {
+		t.Errorf("a misconfigured built-in was reported as a missing extension: %v", err)
+	}
+}
+
+// Every return fails with the reason rather than going somewhere else.
+// Falling back to `local` would put the estate's returns in a file
+// nobody is watching while the configuration says they are in a
+// database.
+func TestAnUnavailableReturnerFailsRatherThanRedirecting(t *testing.T) {
+	r := Unavailable("filedb", errors.New("no extension named filedb is loaded"))
+	if !IsUnavailable(r) {
+		t.Error("it is not recognisable as a placeholder")
+	}
+	if r.Name() != "filedb" {
+		t.Errorf("it is named %q", r.Name())
+	}
+	err := r.Return(context.Background(), aReturn("20260825T1", "web1", true))
+	if err == nil {
+		t.Fatal("an unavailable returner reported success")
+	}
+	for _, want := range []string{"filedb", "not available", "no extension"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the failure does not mention %q: %v", want, err)
+		}
+	}
+	if err := r.Event(context.Background(), &eventbus.Event{Tag: "halite/x"}); err == nil {
+		t.Error("an unavailable returner accepted an event")
 	}
 }

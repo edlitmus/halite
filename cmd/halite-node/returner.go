@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ func (n *node) openReturner(post func(context.Context, *job.Return) error) {
 		StateDir: stateDir,
 		NodeID:   n.nodeID,
 		Post:     post,
+		Bridged:  n.bridgedReturner,
 		Timeout:  n.cfg.Duration("returner_timeout", 30*time.Second),
 		Log: func(level, msg string, kv ...any) {
 			if n.log == nil {
@@ -68,10 +70,30 @@ func (n *node) openReturner(post func(context.Context, *job.Return) error) {
 	}
 
 	built, err := returner.New(name, opts)
-	if err != nil {
+	switch {
+	case err == nil:
+		n.returns = built
+	case errors.Is(err, returner.ErrNotBuiltIn), errors.Is(err, errExtensionNotReady):
+		// Not fatal, and this is the deadlock it avoids: a returner
+		// that is an extension arrives through
+		// `saltutil.sync_returners`, which needs a running node. A node
+		// that refused to start could never be sent the thing it is
+		// waiting for.
+		//
+		// Every return fails with the reason rather than going
+		// somewhere else. Falling back to `local` would put the
+		// estate's returns in a file nobody is watching while the
+		// configuration says they are in a database.
+		if n.log != nil {
+			n.log.Warn("the configured returner is not available; returns will fail until it is",
+				"returner", name, "error", err.Error())
+		}
+		n.returns = returner.Unavailable(name, err)
+	default:
+		// A misconfiguration the operator can fix by reading: a bad
+		// address, a missing secret, an http:// webhook url.
 		cli.Fatalf("returner: %v", err)
 	}
-	n.returns = built
 }
 
 // returnerSecret reads the webhook signing secret from a file when one
