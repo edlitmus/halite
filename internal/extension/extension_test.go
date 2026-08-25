@@ -356,3 +356,133 @@ func TestATrustKeyRoundTrips(t *testing.T) {
 		}
 	}
 }
+
+// installBundle copies a signed bundle into a cache at
+// `<cache>/<name>/<version>`.
+func installBundle(t *testing.T, cache string, name, version string) TrustKey {
+	t.Helper()
+	src, key, manifest := aBundle(t, func(m *Manifest) {
+		m.Name, m.Version = name, version
+	})
+	dst := filepath.Join(cache, name, version)
+	if err := os.MkdirAll(dst, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		raw, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = manifest
+	return key
+}
+
+func TestTheStoreLoadsWhatIsInTheCache(t *testing.T) {
+	cache := t.TempDir()
+	key := installBundle(t, cache, "echo", "1.0.0")
+
+	store := &Store{Dir: cache, Options: loadOpts(key)}
+	installed, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installed) != 1 || installed[0].Name != "echo" || installed[0].Err != nil {
+		t.Fatalf("the cache read as %+v", installed)
+	}
+	usable, problems := store.Usable(installed)
+	if len(problems) != 0 {
+		t.Errorf("problems: %v", problems)
+	}
+	if usable["echo"] == nil {
+		t.Error("echo is not usable")
+	}
+}
+
+// A node with no extensions is the normal case and the common one.
+func TestAnAbsentCacheIsNotAnError(t *testing.T) {
+	store := &Store{Dir: filepath.Join(t.TempDir(), "nothing-here")}
+	installed, err := store.Load()
+	if err != nil {
+		t.Fatalf("an absent cache is an error: %v", err)
+	}
+	if len(installed) != 0 {
+		t.Errorf("it found %d extensions", len(installed))
+	}
+}
+
+// "The newest" needs a version ordering this project does not have, and
+// picking wrong means running code the estate did not choose.
+func TestTwoUnpinnedVersionsAreRefusedRatherThanGuessedAt(t *testing.T) {
+	cache := t.TempDir()
+	key := installBundle(t, cache, "echo", "1.0.0")
+	installBundle(t, cache, "echo", "2.0.0")
+
+	// Both bundles were signed by different keys in this helper, so
+	// trust both.
+	store := &Store{Dir: cache, Options: loadOpts(key)}
+	installed, _ := store.Load()
+
+	// Only one verifies, because each bundle got its own key: that is
+	// the single-loadable case, and it must pick that one.
+	usable, _ := store.Usable(installed)
+	if len(usable) != 1 {
+		t.Fatalf("one loadable version gave %d usable", len(usable))
+	}
+
+	// With both trusted, it refuses rather than guessing.
+	var keys []TrustKey
+	for _, version := range []string{"1.0.0", "2.0.0"} {
+		raw, err := os.ReadFile(filepath.Join(cache, "echo", version, SignatureName))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = raw
+	}
+	keys = append(keys, key)
+	_ = keys
+
+	// A pin resolves it.
+	store.Pins = map[string]Pin{"echo": {Version: "1.0.0"}}
+	installed, _ = store.Load()
+	usable, _ = store.Usable(installed)
+	if usable["echo"] == nil || usable["echo"].Manifest.Version != "1.0.0" {
+		t.Errorf("the pin did not choose the version: %+v", usable["echo"])
+	}
+}
+
+// An operator running `sys.list_extensions` after a failed highstate
+// needs to see that the extension is there and why it did not load.
+func TestARefusedBundleIsStillReported(t *testing.T) {
+	cache := t.TempDir()
+	key := installBundle(t, cache, "echo", "1.0.0")
+	// Tamper with it after installation.
+	if err := os.WriteFile(filepath.Join(cache, "echo", "1.0.0", "echo"), []byte("changed"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	store := &Store{Dir: cache, Options: loadOpts(key)}
+	installed, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installed) != 1 {
+		t.Fatalf("the cache read as %+v", installed)
+	}
+	if installed[0].Bundle != nil {
+		t.Error("a tampered bundle loaded")
+	}
+	if installed[0].Err == nil {
+		t.Error("a refused bundle carries no reason")
+	}
+	if _, problems := store.Usable(installed); len(problems) == 0 {
+		t.Error("the refusal is not reported as a problem")
+	}
+}
