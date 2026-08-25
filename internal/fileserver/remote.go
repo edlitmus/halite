@@ -331,3 +331,28 @@ func (r *Remote) ForEnv(env string) *Remote {
 	r.Environments = append(r.Environments, env)
 	return r
 }
+
+// ListPrefix returns the paths under a prefix, with the digests the hub
+// published.
+//
+// For extension synchronization, which needs to know what is in `_ext/`
+// before it can fetch it — every other consumer here asks for a path it
+// already knows the name of.
+func (r *Remote) ListPrefix(env, prefix string) ([]Entry, error) {
+	raw, err := r.Client.FileManifest(context.Background(), env, prefix)
+	if err != nil {
+		return nil, err
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return nil, fmt.Errorf("the hub's listing of %s is not readable: %w", prefix, err)
+	}
+	if manifest.Truncated {
+		// A truncated listing would make synchronization fetch part of
+		// a bundle and verify the part, which fails in a way that
+		// blames the publisher.
+		return nil, fmt.Errorf("the hub's listing of %s was truncated at %d entries",
+			prefix, len(manifest.Files))
+	}
+	return manifest.Files, nil
+}

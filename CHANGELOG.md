@@ -590,7 +590,7 @@ quietly go stale.
 
 ### 44 execution modules, 20 state modules
 
-236 execution functions and 56 state functions, against a specification
+240 execution functions and 56 state functions, against a specification
 naming roughly 90 modules and 46. Every one is listed, with its
 parameters, in [docs/modules.md](docs/modules.md); every gap is listed in
 [docs/DIVERGENCE.md](docs/DIVERGENCE.md).

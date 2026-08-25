@@ -206,7 +206,7 @@ the *protocol*.
 
 ## 2. Module coverage
 
-The build ships **44 execution modules / 236 functions** and **20 state
+The build ships **44 execution modules / 240 functions** and **20 state
 modules / 56 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -243,7 +243,7 @@ different reason is given.
 | `pillar` | implemented | 5 | |
 | `pkg` | implemented | 18 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
 | `random` | implemented | 3 | `crypto/rand` |
-| `saltutil` | implemented | 5 | stubs that name the phase that will implement them |
+| `saltutil` | implemented | 9 | |
 | `service` | implemented | 16 | FreeBSD rc provider only; see 2.5 |
 | `ssh_auth` | implemented | 1 | registered as `ssh.auth_keys` |
 | `status` | implemented | 4 | |

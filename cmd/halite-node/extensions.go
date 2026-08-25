@@ -12,6 +12,7 @@ import (
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/extension"
+	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -254,4 +255,92 @@ func (n *node) describeExtensions() []map[string]any {
 		}
 	}
 	return out
+}
+
+// syncExtensions fetches the bundles this node is entitled to.
+//
+// SPEC 24.5: it fetches and does not load. What is running does not
+// change until the node next starts, and the answer says which bundles
+// arrived so an operator knows a restart will pick something up.
+func (n *node) syncExtensions(kinds []string) (any, error) {
+	source, err := n.extensionSource()
+	if err != nil {
+		return nil, err
+	}
+	syncer := &extension.Syncer{
+		Source:  source,
+		Dir:     n.extensionDir(),
+		Options: n.extensionLoadOptions(),
+		Pins:    n.extensionPins(),
+		Kinds:   kinds,
+	}
+	report, err := syncer.Sync()
+	if err != nil {
+		return nil, err
+	}
+
+	changes := make([]any, 0, len(report.Changes))
+	for _, change := range report.Changes {
+		entry := value.NewMap(5)
+		entry.Set("name", change.Name)
+		entry.Set("version", change.Version)
+		entry.Set("status", change.Status)
+		if change.Reason != "" {
+			entry.Set("reason", change.Reason)
+		}
+		if change.Root != "" {
+			entry.Set("root", change.Root)
+		}
+		changes = append(changes, entry)
+		if change.Status == "refused" {
+			n.log.Warn("an extension bundle was refused",
+				"extension", change.Name, "version", change.Version, "reason", change.Reason)
+		}
+	}
+	out := value.NewMap(3)
+	out.Set("extensions", changes)
+	out.Set("changed", report.Changed())
+	// Said plainly, because the difference from Salt's `sync_all` is
+	// the point of the section and an operator who assumes the old
+	// meaning will wonder why nothing happened.
+	if report.Changed() {
+		out.Set("note", "fetched, not loaded: restart the node to run the new bundles")
+	}
+	return out, nil
+}
+
+// extensionSource is the hub's file server, which is the only place
+// SPEC 24.4 delivers bundles from.
+func (n *node) extensionSource() (extension.Source, error) {
+	remote, ok := n.files.(*fileserver.Remote)
+	if !ok {
+		return nil, errNoExtensionSource
+	}
+	return &remoteExtensionSource{remote: remote, env: n.env}, nil
+}
+
+var errNoExtensionSource = errString(
+	"extensions are delivered by the hub's file server, and this node is working from its own tree")
+
+// remoteExtensionSource adapts the hub's file server to what
+// synchronization needs.
+type remoteExtensionSource struct {
+	remote *fileserver.Remote
+	env    string
+}
+
+func (s *remoteExtensionSource) List(prefix string) ([]extension.SourceFile, error) {
+	entries, err := s.remote.ListPrefix(s.env, prefix)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]extension.SourceFile, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, extension.SourceFile{Path: e.Path, Digest: e.Hash})
+	}
+	return out, nil
+}
+
+func (s *remoteExtensionSource) Fetch(path string) ([]byte, error) {
+	return s.remote.Read(s.env, path)
 }

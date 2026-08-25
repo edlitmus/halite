@@ -91,6 +91,15 @@ type Context struct {
 	// received.
 	Events EventSender
 
+	// SyncExtensions fetches the signed bundles this node is entitled to
+	// from the file server, for `saltutil.sync_all` and its per-kind
+	// variants. Nil where there is nothing to sync from.
+	//
+	// It fetches and does not load, which is SPEC 24.5's stated
+	// behavioural difference from Salt: synchronization no longer means
+	// "the agent will now execute new code from the file server".
+	SyncExtensions func(kinds []string) (any, error)
+
 	// Extensions reports the signed bridges this node has loaded, for
 	// `sys.list_extensions`. Nil on a node with none, and on the hub,
 	// where the answer is that there are none rather than an error.

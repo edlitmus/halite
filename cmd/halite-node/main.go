@@ -574,6 +574,7 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 		// its roots, without the module knowing which it is.
 		RecompilePillar: n.compilePillarOrErr,
 		Extensions:      n.describeExtensions,
+		SyncExtensions:  n.syncExtensions,
 		Log: func(level, msg string) {
 			// A module names its own level, so the threshold is the
 			// logger's rather than a hard-coded pair.

@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -419,20 +420,6 @@ func registerModuleState(r *Registries) {
 // saltutil. The name is retained by SPEC section 2.3, because it is
 // accurate and carries no baggage.
 func registerSaltutil(r *Registries) {
-	notYet := func(module, function, doc, phase string) exec.Module {
-		return exec.Module{
-			Sig: signature.Signature{
-				Module: module, Function: function, Doc: doc,
-				AnyKwargs: true,
-				TestMode:  signature.TestNotApplicable,
-				Section:   "24.5",
-			},
-			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return nil, fmt.Errorf(
-					"%s.%s needs the hub, which arrives in %s (SPEC section 32)", module, function, phase)
-			},
-		}
-	}
 
 	r.Exec.Add(
 		exec.Module{
@@ -459,9 +446,20 @@ func registerSaltutil(r *Registries) {
 			},
 			Fn: refreshPillar,
 		},
-		notYet("saltutil", "sync_all", "Fetch the signed, pinned extension bundles this node is entitled to.", "phase 4"),
-		notYet("saltutil", "sync_modules", "Fetch the module extensions this node is entitled to.", "phase 4"),
-		notYet("saltutil", "sync_states", "Fetch the state extensions this node is entitled to.", "phase 4"),
+		syncExtensions("sync_all", nil,
+			"Fetch the signed, pinned extension bundles this node is entitled to."),
+		syncExtensions("sync_modules", []string{"module"},
+			"Fetch the module extensions this node is entitled to."),
+		syncExtensions("sync_states", []string{"state"},
+			"Fetch the state extensions this node is entitled to."),
+		syncExtensions("sync_grains", []string{"grain"},
+			"Fetch the grain extensions this node is entitled to."),
+		syncExtensions("sync_beacons", []string{"beacon"},
+			"Fetch the beacon extensions this node is entitled to."),
+		syncExtensions("sync_returners", []string{"returner"},
+			"Fetch the returner extensions this node is entitled to."),
+		syncExtensions("sync_renderers", []string{"renderer"},
+			"Fetch the renderer extensions this node is entitled to."),
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "event", Function: "send",
@@ -545,4 +543,29 @@ func sendEvent(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	return true, nil
+}
+
+// syncExtensions builds one `saltutil.sync_*` function.
+//
+// SPEC 24.5 keeps the Salt names and states the behavioural difference
+// plainly: synchronization no longer means "the agent will now execute
+// new code from the file server", it means "the agent has fetched
+// signed, pinned bundles". What runs does not change until the node
+// next loads them, and the answer says so.
+func syncExtensions(function string, kinds []string, doc string) exec.Module {
+	return exec.Module{
+		Sig: signature.Signature{
+			Module: "saltutil", Function: function,
+			Doc:      doc + " It fetches and does not load: what is running does not change until the node restarts.",
+			Mutates:  true,
+			TestMode: signature.TestNotApplicable,
+			Section:  "24.5",
+		},
+		Fn: func(c *exec.Context, args *value.Map) (any, error) {
+			if c.SyncExtensions == nil {
+				return nil, errors.New("this node has no file server to synchronize extensions from")
+			}
+			return c.SyncExtensions(kinds)
+		},
+	}
 }
