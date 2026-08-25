@@ -1448,6 +1448,7 @@ webhook delivered end to end onto the bus.
 | The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
 | Beacon events were in the wrong namespace | SPEC 17.1 puts a beacon under `halite/beacon/<node_id>/<beacon>/` and SPEC 18.1's own reactor example matches on it; they were arriving under `halite/node/<node_id>/`. A reactor written from the specification matched nothing and said nothing about it. Found while adding the metric that counts them. |
 | Two expositions concatenated are not one exposition | Both components expose `halite_build_info`, and the text format allows one `# HELP` per metric name in a document. A scraper rejects the whole body for the duplicate, so the failure arrives as "no metrics at all" rather than as one duplicated family. They are merged now. |
+| A login failure was logged as "unreachable" when it was a blank password | The classification was a boolean over "did the directory answer", so the commonest failure of all — somebody submitting the form with the password field empty, which this client refuses without asking the directory — read as an outage. An estate alerting on outages would have been alerted every time. It is a named reason now. |
 | The OIDC provider had no way to trust an internal CA | An identity provider behind an estate's own CA is the common case, and the only ways to reach one were a public certificate or skipping verification — on the service that decides who an operator is. The same omission the webhook returner had, found the same way. |
 | A node whose pillar did not compile answered nothing | Every exec function compiled pillar first and failed the job when that failed, so one unreadable file in the pillar tree meant no `test.ping`, no `grains.items`, no `service.status` — at exactly the moment somebody was trying to find out what was wrong with the node. The error travels on the execution context now and surfaces at the functions that read pillar. Found by running a node against a real tree whose pillar this process had no GPG key for. |
 | The webhook returner had no way to trust an internal CA | It verifies TLS, correctly, and refused a receiver holding a certificate from the estate's own CA. The only ways out were a public certificate or skipping verification, and the second is not on offer for a connection carrying whatever a job printed. |
@@ -1489,10 +1490,21 @@ generic, except for the unmapped-groups case, which names the groups on
 purpose. The auth metrics separated accepted, refused, and unmapped by
 method.
 
+LDAP was checked against an implementation this one did not write:
+`ldapsearch`, the OpenLDAP client, binds over LDAPS to this package's
+test directory, sends a compound filter, and parses the responses — so
+both halves of the BER are validated by a real peer rather than only by
+each other. An operator then logged in through `/v1/login` with
+`eauth: ldap` against that directory and the token drove the fleet, with
+a wrong password, an unknown user, an empty password, and an injected
+filter all refused with one message and told apart in the log.
+
 It does not cover a Prometheus server actually scraping it, a real
-identity provider (Keycloak, Entra, Okta) rather than a conforming
-stand-in, the client-credentials grant against one, an SMTP returner
-against a real mail server, syslog over TLS, an LDAP login, `mtls` hook authentication,
+directory (OpenLDAP's slapd, Active Directory) rather than this
+package's own test server, StartTLS against one, a real identity
+provider (Keycloak, Entra, Okta) rather than a conforming stand-in, the
+client-credentials grant against one, an SMTP returner against a real
+mail server, syslog over TLS, `mtls` hook authentication,
 `Last-Event-ID` resumption after a real disconnection, a token expiring
 mid-stream, a second operator with a narrower policy watching the same
 stream, a hub restart underneath an open stream, `/v1/nodes/{id}/state`
@@ -1975,12 +1987,33 @@ authorization model. An operator whose groups all map to nothing is told
 which groups they had. A session never outlives the assertion it was
 made on.
 
+**LDAP is built**, the narrow surface SPEC 23.3 specifies: the six
+operations it names, simple bind over LDAPS or StartTLS, no referral
+chasing, and no plaintext mode at all. Written against `encoding/asn1`
+through `asn1.RawValue`, which gives the application and context tag
+control LDAP needs while leaving length encoding — the classic place to
+get BER wrong — to the standard library.
+
+Anonymous bind is refused in both directions. The service account is
+required, and an empty operator password is refused before the directory
+is asked: RFC 4513 makes an empty password an anonymous bind, which a
+directory answers success to, so passing one through authenticates
+anybody who leaves the field blank.
+
+The username never becomes part of a DN. It goes into a filter, escaped
+per RFC 4515, and the filter is parsed into BER rather than concatenated
+as text. A filter matching two entries is refused rather than binding as
+whichever the directory listed first.
+
+Groups come from `memberOf`, a group search, or both, with nested groups
+followed to a configured depth for Active Directory and a cycle
+terminating rather than hanging.
+
 What is **not** built in the API:
 
-- **LDAP** (SPEC 23.3). `eauth: ldap` is refused by name rather than
-  quietly authenticated against local accounts. It needs a bind-only
-  LDAP client written against `encoding/asn1`, which is the largest
-  single piece left in phase 4.
+- **The bridge protocol and its sandbox** (SPEC section 24), which is
+  the last piece of phase 4 and brings the seventeen bridged returners
+  and the extension model with it.
 - **The bridge protocol and its sandbox** (SPEC section 24), and with it
   the seventeen returners SPEC 20.3 marks Bridged.
 - **Node-side metrics.** A node has no exposition endpoint, so what only

@@ -750,7 +750,7 @@ token_idle: 4h
 | no equivalent | TOTP second factor, RFC 6238 | works |
 | `eauth: oidc` | `POST /v1/login/oidc`, Authorization Code with PKCE | works |
 | no equivalent | `POST /v1/login/oidc/token`, a token you already hold | works |
-| `eauth: ldap` | same | not built |
+| `eauth: ldap` | same, bind-only over LDAPS or StartTLS | works |
 | `POST /run` | `POST /v1/run`, synchronous | works |
 | `POST /minions` | `POST /v1/jobs`, asynchronous | works | <!-- lexicon:allow -->
 | `GET /jobs`, `GET /jobs/{jid}` | same under `/v1/` | works |
@@ -812,6 +812,68 @@ A job submitted through the API records both identities: `submitter` is
 the service's certificate, which is what the hub authorized, and
 `on_behalf_of` is the operator, which is recorded and never trusted. The
 hub reads identity from the connection and nothing from the body.
+
+### Logging in through a directory
+
+`eauth: ldap` on `/v1/login`, because unlike OIDC it is a username and a
+password — the request shape Salt's clients already send.
+
+```yaml
+ldap_address: dir.example:636
+ldap_tls: ldaps
+ldap_ca_file: /usr/local/etc/halite/internal-ca.pem
+ldap_bind_dn: cn=halite,ou=services,dc=example,dc=com
+ldap_bind_password_file: /usr/local/etc/halite/ldap.secret
+ldap_user_base_dn: ou=people,dc=example,dc=com
+ldap_user_filter: '(uid=%s)'
+ldap_member_of_attribute: memberOf
+ldap_role_map:
+  platform: [operator]
+  sre-oncall: [operator, responder]
+```
+
+`%s` is replaced with the username, escaped per RFC 4515. It is never
+put into a DN: the directory's DN syntax is not something a login form
+should be able to write.
+
+For a directory that does not publish `memberOf`, search for the groups
+instead — or configure both, and the results are merged:
+
+```yaml
+ldap_group_base_dn: ou=groups,dc=example,dc=com
+ldap_group_filter: '(member=%s)'
+ldap_group_attribute: cn
+ldap_nested_depth: 3
+```
+
+`ldap_nested_depth` follows a group's own memberships, which Active
+Directory needs. Zero, the default, is one level. A membership cycle
+terminates rather than hanging.
+
+There is no plaintext mode. `ldap_tls` is `ldaps` or `starttls`, and a
+StartTLS the directory refuses ends the login rather than continuing in
+the clear. Anonymous bind is refused in both directions: the service
+account is required, and an empty password is refused before the
+directory is asked — RFC 4513 makes an empty password an anonymous bind,
+which a directory answers success to.
+
+Referrals are not chased. Following one means authenticating against a
+server the estate did not configure.
+
+The principal is `ldap:<username>`, or `ldap:<attribute>` when
+`ldap_principal_attribute` names one:
+
+```yaml
+bindings:
+  - principal: 'ldap:ed'
+    roles: ['operator']
+```
+
+Every failure gives the operator one message. Which it was — invalid
+credentials, no such user, a malformed request, the directory refusing,
+the directory unreachable — is the `reason` field in the log. Alert on
+`directory_unreachable`; a blank password field is `malformed_request`
+and is not an outage.
 
 ### Logging in through an identity provider
 

@@ -1,5 +1,21 @@
 # halite-api.
 #
+# The estate's directory, SPEC 23.3. Reached through /v1/login with
+# `eauth: ldap`, because unlike OIDC it is a username and a password.
+#
+# There is no plaintext mode: ldap_tls is `ldaps` or `starttls`. The
+# username goes into the filter escaped and never into a DN.
+#
+# ldap_address: dir.example:636
+# ldap_tls: ldaps
+# ldap_ca_file: /usr/local/etc/halite/internal-ca.pem
+# ldap_bind_dn: cn=halite,ou=services,dc=example,dc=com
+# ldap_bind_password_file: /usr/local/etc/halite/ldap.secret
+# ldap_user_base_dn: ou=people,dc=example,dc=com
+# ldap_user_filter: '(uid=%s)'
+# ldap_role_map:
+#   platform: [operator]
+
 # The identity provider of SPEC 23.4, the recommended way to
 # authenticate an operator. Empty leaves it off and local accounts are
 # the only way in.

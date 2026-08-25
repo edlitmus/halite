@@ -195,8 +195,16 @@ writing it here: `none` and every `HS*` are absent, closing the
 algorithm confusion attack. Groups map to roles through a table the
 estate writes, and a group with no entry grants nothing.
 
-What is not built is the rest of phase 4 — LDAP and the bridge protocol
-— and phase 5: gitfs, agentless mode, and Windows.
+LDAP followed, the narrow surface SPEC 23.3 specifies: bind-only, over
+LDAPS or StartTLS, with no plaintext mode and no referral chasing. The
+username goes into an escaped filter and never into a DN, and a filter
+matching two entries is refused rather than binding as whichever came
+first. Checked against `ldapsearch` — a real OpenLDAP client binds to
+this build's test directory and parses its responses, so both halves of
+the BER are validated by something this project did not write.
+
+What is not built is the bridge protocol, the last of phase 4, and
+phase 5: gitfs, agentless mode, and Windows.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

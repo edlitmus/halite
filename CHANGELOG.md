@@ -358,6 +358,46 @@ authorization model — and an operator whose groups all map to nothing is
 told which groups they had, because that is actionable where "access
 denied" is not. A session never outlives the assertion it was made on.
 
+### An operator logs in against the estate's directory
+
+A bind-only LDAP client, written against `encoding/asn1` as SPEC 23.3
+asks. The surface is the six operations it names, and every LDAP feature
+left out is one that cannot go wrong here. Referrals are not chased:
+following one means authenticating against a server the estate did not
+configure.
+
+There is no plaintext mode. A simple bind puts an operator's password on
+the wire, and a client that can be configured without TLS will be, on
+the day somebody is debugging something. A StartTLS the directory
+refuses ends the login rather than continuing in the clear.
+
+Anonymous bind is refused in both directions. The service account is
+required, and an empty operator password is refused before the directory
+is asked — RFC 4513 makes an empty password an anonymous bind, which a
+directory answers success to, so a client that passes one through
+authenticates anybody who leaves the password field blank.
+
+The username never becomes part of a DN. It goes into a filter, escaped
+per RFC 4515, and the filter is parsed into BER rather than concatenated
+as text: `*)(objectClass=*` in `(uid=%s)` would otherwise turn a lookup
+for one account into a match for every account. A filter that matches
+two entries is refused, because binding as whichever the directory
+listed first authenticates one operator as another.
+
+Groups come from `memberOf`, from a group search with `member` matching,
+or both, with nested groups followed to a configured depth for Active
+Directory and a membership cycle terminating rather than hanging.
+
+Every failure gives the operator one message, and the log says which it
+was. Not as a boolean: "was the directory reachable" gets the commonest
+case wrong, because a blank password field is refused here without the
+directory being asked and is not an outage.
+
+Checked against `ldapsearch`. A real OpenLDAP client binds over LDAPS to
+this build's test directory, sends a compound filter, and parses the
+responses, so both halves of the BER are validated by an implementation
+this project did not write.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -588,7 +628,7 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-The rest of phase 4, and phases 5 and 6. No LDAP, no bridge protocol, no gitfs, no s3fs, no
+The rest of phase 4, and phases 5 and 6. No bridge protocol, no gitfs, no s3fs, no
 agentless mode, no relays, no FIPS artifact set, no detached job
 signing, no signed state trees, and no backtracking regex engine.
 
