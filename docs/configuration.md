@@ -249,6 +249,8 @@ Read by the hub.
 | `returner_webhook_secret` | — | 20.3 | HMAC-SHA-256 signing secret; prefer the file form. |
 | `returner_webhook_secret_file` | — | 20.3 | File holding the signing secret, mode 600. |
 | `returner_webhook_url` | — | 20.3 | https:// endpoint for the webhook returner. |
+| `roster` | `flat` | 21.2 | Agentless roster backend: flat, sshconfig, cache, or ansible. |
+| `roster_file` | — | 21.2 | The roster; empty is <root>/roster. |
 | `s3_access_key_id` | — | 13.4 | Access key; prefer a role or the environment. |
 | `s3_buckets` | — | 13.4 | S3 buckets the file server serves. |
 | `s3_cache_dir` | — | 13.4 | Where fetched objects live; empty is <cache_dir>/s3fs. |
@@ -265,7 +267,12 @@ Read by the hub.
 | `s3_secret_access_key_file` | — | 13.4 | File holding the secret key, mode 600. |
 | `s3_update_interval` | `5m` | 13.4 | How often the hub lists; 0 lists only on demand. |
 | `s3_web_identity_token_file` | — | 13.4 | IRSA token file; with s3_role_arn it needs no other credential. |
+| `scp_command` | `scp` | 21.1 | The copier used to push the binary. |
 | `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
+| `ssh_binary` | — | 21.1 | The halite-node binary agentless mode pushes. |
+| `ssh_command` | `ssh` | 21.1 | The ssh binary to connect with. |
+| `ssh_options` | — | 21.1 | Extra -o settings passed to ssh and scp. |
+| `ssh_timeout` | `5m` | 21.1 | How long one agentless target may take. |
 | `state_allowlist` | — | 28.3 | SLS names a state run may include. |
 | `state_denylist` | — | 28.3 | SLS names a state run may not include. |
 | `state_dir` | `<state dir>` | 27.3 | Durable state: job cache, events, evidence. |

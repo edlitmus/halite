@@ -38,13 +38,13 @@ Usage:
   halite-hub policy <show|test>  the RBAC policy, and what it decides
   halite-hub event <listen|tags> the event bus
   halite-hub metrics             the Prometheus exposition
+  halite-hub ssh <target> <fun>  run on a machine with no agent
   halite-hub migrate <tree>      audit an existing Salt tree and report
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
 
 Still to come (SPEC section 32):
-  files, the push in the other direction from salt-cp; ssh with agentless
-  mode in phase 5
+  files, the push in the other direction from salt-cp
 
 Common flags:
   --help               describe the program without running a command
@@ -98,6 +98,13 @@ jobs flags:
 policy flags:
   --runner             evaluate the function as a runner rather than a job
   --kwarg <k=v>        an argument to include, repeatable as a comma list
+
+ssh flags:
+  --roster <backend>   flat (default), sshconfig, cache, or ansible
+  --roster-file <path> the roster file
+  --thin <path>        the halite-node binary to push
+  --clean              remove the cached binary before and after
+  --ssh-concurrency <n>  how many targets at once, default 8
 
 metrics flags:
   --filter <substring> only families whose name contains this
@@ -169,7 +176,7 @@ func main() {
 		cli.Fatalf("`files` is the hub-side file push, which is not built (SPEC section 32). " +
 			"A node fetches from `salt://` today; this is the push in the other direction.")
 	case "ssh":
-		cli.Fatalf("`ssh` is agentless mode, which arrives in phase 5 (SPEC section 21).")
+		os.Exit(runSSH(args))
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub: unknown subcommand %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)

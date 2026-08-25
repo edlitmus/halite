@@ -66,13 +66,19 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 	// rather than fail as typos. Either a phase they are waiting for or
 	// a plain "not built": a feature whose phase came and went without
 	// it is not in a later phase.
-	for _, sub := range []string{"files", "ssh"} {
+	for _, sub := range []string{"files"} {
 		got := run(t, sub)
 		if got.code == 0 ||
 			(!strings.Contains(got.stderr, "phase") && !strings.Contains(got.stderr, "not built")) {
 			t.Errorf("%s = %+v", sub, got)
 		}
 	}
+	// `ssh` is built now. Bare, it describes itself and exits non-zero,
+	// because a call with no target and no function is a mistake.
+	if got := run(t, "ssh"); got.code == 0 || !strings.Contains(got.stderr, "no agent") {
+		t.Errorf("ssh = %+v", got)
+	}
+
 	// `runner` and `orch` are built. Bare, each describes itself and
 	// exits non-zero, because a call with no function or subcommand is
 	// a mistake, not a request for nothing.
@@ -186,6 +192,10 @@ func TestCommandMatrixIsTrue(t *testing.T) {
 			// Asked what they are rather than run: one opens a
 			// listener and creates an enrollment CA, and the other
 			// dispatches a job to the fleet.
+			args = append(args, "--help")
+		case "ssh":
+			// Asked what it is rather than run: it would reach for a
+			// roster and open ssh connections to whatever is in it.
 			args = append(args, "--help")
 		case "runner":
 			// `runner doc` reads the inventory out of this binary

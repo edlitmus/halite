@@ -216,7 +216,7 @@ startup rather than treating the absence as permission.
 | no equivalent | `halite-hub jobs export <jid>` | works |
 | `salt '*' --queue state.apply` | `halite-hub run '*' state.apply --offline queue` | works |
 | `salt '*' saltutil.sync_grains` | pushed automatically on `grains_refresh_interval` | works |
-| `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | phase 5 |
+| `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | works |
 
 | `salt-run state.orchestrate` | `halite-hub orch run <sls>` | works |
 | `salt-api` | `halite-api serve` | works |

@@ -25,11 +25,11 @@ var unreadKeys = map[string]string{
 	// Phase 2, still: what the transport carries rather than the
 	// transport itself. Enrollment, the key store, and the subscribe
 	// stream are built, so their settings have come off this list.
-	"tracing":                 "phase 2: no spans are emitted yet",
-	"ext_pillar_fail":         "phase 2: external pillar is a hub concern",
-	"job_signer_keys":         "phase 6: detached job signing",
-	"require_job_signature":   "phase 6: detached job signing",
-	"pillar_cache_disk":       "phase 2: the node caches pillar from a hub",
+	"tracing":               "phase 2: no spans are emitted yet",
+	"ext_pillar_fail":       "phase 2: external pillar is a hub concern",
+	"job_signer_keys":       "phase 6: detached job signing",
+	"require_job_signature": "phase 6: detached job signing",
+	"pillar_cache_disk":     "phase 2: the node caches pillar from a hub",
 
 	// Read today, and not yet acted on. Each is a live gap rather than a
 	// phase boundary, and DIVERGENCE says so.

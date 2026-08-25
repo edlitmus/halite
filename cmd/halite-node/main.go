@@ -133,6 +133,11 @@ func main() {
 		os.Exit(runRenew(args))
 	case "connect", "serve":
 		os.Exit(runConnect(args))
+	case "oneshot":
+		// The mode `halite-hub ssh` invokes on a target after pushing
+		// this binary. Not in the usage text: a person has no reason to
+		// run it, and it reads a job on stdin.
+		os.Exit(runOneshot(args))
 	case "event":
 		os.Exit(runEvent(args))
 	default:
