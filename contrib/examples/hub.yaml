@@ -104,6 +104,23 @@ metrics: true
 # gitfs_verify_signatures: true
 # gitfs_keyring: /usr/local/etc/halite/gitfs-keyring
 
+# The S3 file server, SPEC 13.4. SigV4 is signed in-house; there is no
+# AWS SDK.
+#
+# The first path segment after the prefix is the environment, so
+# states/base/top.sls serves top.sls in `base`. Prefer a role to a key,
+# and the file form to the inline one.
+#
+# fileserver_backend:
+#   - roots
+#   - s3
+# s3_buckets:
+#   - name: estate
+#     prefix: states/
+# s3_region: eu-west-1
+# s3_role_arn: arn:aws:iam::123456789012:role/halite
+# s3_update_interval: 5m
+
 # Ship the whole event stream to a returner, which SPEC 20.3 calls the
 # recommended path to a SIEM. It resumes from a bus offset, so a
 # receiver that was unreachable for an hour catches up rather than

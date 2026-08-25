@@ -1523,6 +1523,12 @@ answering with the version it already had. A second bundle, of kind
 scheduled job's returns were filed by an extension in a sandboxed
 process.
 
+s3fs was run against an S3 that verifies SigV4 with its own
+implementation: the hub listed a bucket, mapped two prefixes to two
+environments, fetched the objects, and applied a highstate served out of
+S3 to a real node. Every request the hub made verified; the only refusal
+the server logged was a `curl` sent without a signature.
+
 gitfs was run against a real repository through a real hub: two branches
 became two environments, a highstate served out of a git branch applied
 to a node, a push was picked up both on the update interval and on
@@ -1641,8 +1647,8 @@ What is **not** built, in phase 2:
   is read by nothing at all.
 - **`file_ignore_regex`.** `file_ignore_glob` hides paths; the regex
   form is declared and read by nothing.
-- **s3fs.** `fileserver_backend` accepts `roots` and `git`, and warns
-  about anything else at startup rather than silently serving nothing.
+`fileserver_backend` accepts `roots`, `git`, and `s3`, and warns about
+  anything else at startup rather than silently serving nothing.
 - **`halite-hub files`** (`salt-cp`). The file server serves; pushing a
   file the other way is not built.
 - **`/v1/mine`**, which is phase 3 along with orchestration, beacons,
@@ -1685,9 +1691,11 @@ subsystem this design does not have:
 - **`pillar.clear_cache`, `cache.pillar`, `cache.clear_pillar`.** The
   hub compiles pillar on every request and caches none, so there is
   nothing to clear. `pillar.show_pillar` compiles it on demand.
-- **`fileserver.update`, `clear_cache`, `lock`, `clear_lock`,
-  `versions`.** The `roots` backend reads the filesystem and has
-  nothing to fetch or lock. They arrive with gitfs and s3fs in phase 5.
+- **`fileserver.clear_cache`, `lock`, `clear_lock`, `versions`.**
+  `fileserver.update` is built and fetches both git and s3; the rest
+  have no counterpart here. There is no update lock because the hub
+  rebuilds the whole search path in one step rather than mutating it,
+  and a cache that is verified on every read is not one to clear.
 - **`fileserver.symlink_list`.** The roots backend resolves symbolic
   links and does not list them.
 
@@ -2131,7 +2139,7 @@ Nothing. Phase 4 is complete.
   when no client certificate is presented, but it has never been
   exercised against a real sender.
 
-The rest of phases 5 and 6 does not exist: no gitfs, no s3fs, no
+The rest of phases 5 and 6 does not exist: no
 agentless mode, no relays, no FIPS artifact set, no detached job
 signing, no signed state trees, and no backtracking regex engine.
 
@@ -2181,9 +2189,24 @@ writing outside the tree, and bounds file count and total size. `git
 archive` produces none of those; this unpacks an archive built from a
 repository the hub did not write.
 
+**The S3 file server is built**, SPEC 13.4, with SigV4 written directly
+rather than by importing the AWS SDK — hundreds of packages to satisfy
+one signing algorithm. Credentials resolve in the specified order:
+explicit configuration, the environment, the container credential
+endpoint, then the instance metadata service, with IMDSv2 only and no
+fallback to v1. IRSA is tried first when configured, because a pod with
+a web identity token has it instead of the node's role. Endpoints and
+the STS host are built from a partition value rather than hardcoded to
+`aws`.
+
+The signing is checked against AWS's published derivation of the signing
+key for its documented example credentials, and in the lab against an S3
+that recomputes the signature with its own implementation — because "our
+implementation agrees with itself" is exactly the property a signing bug
+preserves.
+
 What is **not** built in phase 5:
 
-- **s3fs** (SPEC 13.4), which needs the in-house SigV4 signer.
 - **Agentless mode** (SPEC section 21), `halite-hub ssh`.
 - **Relays** and the **FIPS artifact set**.
 - **Windows and macOS parity.** The code cross-compiles and none of it

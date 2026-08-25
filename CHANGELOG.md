@@ -501,6 +501,40 @@ the other failure.
 `insecure: true`. A state tree fetched over an unauthenticated transport
 is whatever the network says it is.
 
+### The state tree can come from S3
+
+SPEC 13.4's S3 backend, with SigV4 signing written directly. The whole
+of what is needed is a canonical request, a string to sign, a key
+derived over four HMAC-SHA-256 rounds, and an Authorization header;
+importing the AWS SDK would add hundreds of packages to satisfy it.
+
+A signing algorithm's failure mode is a signature that does not verify,
+so an implementation agreeing with itself proves nothing. This one is
+checked against AWS's published derivation of the signing key for its
+documented example credentials, and against an S3 that recomputes the
+signature with its own implementation.
+
+The details that are easy to get wrong: the path is not re-encoded,
+because a key holding a literal `%2F` and a key holding `/` are
+different objects; a space in a query value is `%20` and never the `+`
+that Go's `QueryEscape` produces; every header is signed, because one
+left out is one a proxy can add; and the session token is set before the
+canonical headers are built, because a token added after signing can be
+stripped in flight.
+
+Credentials resolve in SPEC 13.4's order — configuration, environment,
+container endpoint, instance metadata — with **IMDSv2 only**. IMDSv1 is
+a plain GET on a link-local address that any process on the instance can
+make, including a server-side request forgery in an application running
+there, and falling back when v2 refuses would give the hardening away
+for a convenience nobody asked for. IRSA is tried first when configured,
+because a pod holding a web identity token has it instead of the node's
+role.
+
+Endpoints and the STS host are built from a partition value rather than
+hardcoded to `aws`: one built for the commercial partition is wrong in
+GovCloud and in China.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -731,9 +765,9 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-The rest of phase 5, and phase 6. No s3fs, no agentless mode, no relays,
-no Windows or macOS parity, no FIPS artifact set, no detached job
-signing, no signed state trees, and no backtracking regex engine.
+The rest of phase 5, and phase 6. No agentless mode, no relays, no
+Windows or macOS parity, no FIPS artifact set, no detached job signing,
+no signed state trees, and no backtracking regex engine.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
 in the other direction from `salt-cp`, and external pillar. Phase 3's

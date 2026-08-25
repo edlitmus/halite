@@ -89,7 +89,7 @@ The hub serves the state tree, and a node compiles against it. Set
 | the master serves `file_roots` | the hub serves `file_roots` | works | <!-- lexicon:allow -->
 | `cp.cache_file` | happens automatically; the cache is under `cache_dir` | works |
 | gitfs | `fileserver_backend: [roots, git]` | works |
-| s3fs | `fileserver_backend` does not accept `s3` yet | not built |
+| s3fs | `fileserver_backend: [roots, s3]`, SigV4 in-house | works |
 
 `serve` refuses to start if a file root holds the hub's own `state_dir`,
 `cache_dir`, or `pki_dir` — that arrangement serves the job cache, and
@@ -527,6 +527,50 @@ the `roots` backend's code.
 
 `halite-hub runner fileserver.update` fetches on demand and reports what
 each ref resolved to, including the refs it refused.
+
+## Serving the tree from S3
+
+```yaml
+fileserver_backend:
+  - roots
+  - s3
+s3_buckets:
+  - name: estate
+    prefix: states/
+s3_region: eu-west-1
+s3_update_interval: 5m
+```
+
+The first path segment after the prefix is the environment, which is how
+Salt's s3fs lays a bucket out — `states/base/top.sls` serves `top.sls`
+in `base`. A bucket that is one environment sets `env:` on it instead.
+
+Credentials resolve in order: what the configuration names, the
+environment, the container credential endpoint (ECS and Fargate), then
+the instance metadata service. Prefer a role to a key; prefer
+`s3_secret_access_key_file` to `s3_secret_access_key`.
+
+```yaml
+s3_role_arn: arn:aws:iam::123456789012:role/halite
+s3_web_identity_token_file: /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+```
+
+With both set, that is IRSA and no other credential is needed. IRSA is
+tried first, because a pod holding a web identity token has it *instead*
+of the node's instance role.
+
+**IMDSv2 only.** IMDSv1 is a plain GET on a link-local address that any
+process on the instance can make — including a server-side request
+forgery in an application running there. If the token exchange is
+refused, credentials are not retrieved; there is no fallback.
+
+`s3_partition` is `aws`, `aws-us-gov`, or `aws-cn`, and endpoints are
+built from it rather than hardcoded. `s3_endpoint` and `s3_path_style`
+point at an S3-compatible service; the endpoint must be `https://`.
+
+The signing is written here rather than imported: SigV4 is a canonical
+request, a string to sign, four HMAC rounds, and a header, and the AWS
+SDK would be hundreds of packages to get it.
 
 ### Requiring a signature
 

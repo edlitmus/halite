@@ -234,8 +234,15 @@ system's git patching cadence. A branch is an environment. With
 `gitfs_verify_signatures` on, a ref whose tip is not signed by a key the
 estate trusts is not served — not logged and served anyway.
 
-What is not built is the rest of phase 5 — s3fs, agentless mode, relays,
-and Windows and macOS parity — and phase 6.
+S3 followed, with SigV4 written here rather than imported: the whole of
+what is needed is a canonical request, a string to sign, four HMAC
+rounds, and a header, and the AWS SDK would be hundreds of packages to
+get it. Credentials resolve through the environment, the container
+endpoint, and the instance metadata service — IMDSv2 only, with no
+fallback to the version any process on the instance can call.
+
+What is not built is the rest of phase 5 — agentless mode, relays, and
+Windows and macOS parity — and phase 6.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
