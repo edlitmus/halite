@@ -225,8 +225,17 @@ that carries custom Python: it reads the modules and writes a Go bridge
 per module with the signatures filled in. The porting job stays, and it
 becomes a bounded one.
 
-**That completes phase 4.** What is not built is phase 5 — gitfs, s3fs,
-agentless mode, relays, and Windows and macOS parity — and phase 6.
+**That completes phase 4.**
+
+Phase 5 has started with the git file server. `fileserver_backend: [roots,
+git]` serves a state tree out of a repository, through the system `git`
+binary rather than a linked library, so the estate gets its operating
+system's git patching cadence. A branch is an environment. With
+`gitfs_verify_signatures` on, a ref whose tip is not signed by a key the
+estate trusts is not served — not logged and served anyway.
+
+What is not built is the rest of phase 5 — s3fs, agentless mode, relays,
+and Windows and macOS parity — and phase 6.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

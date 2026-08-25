@@ -1448,6 +1448,7 @@ webhook delivered end to end onto the bus.
 | The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
 | Beacon events were in the wrong namespace | SPEC 17.1 puts a beacon under `halite/beacon/<node_id>/<beacon>/` and SPEC 18.1's own reactor example matches on it; they were arriving under `halite/node/<node_id>/`. A reactor written from the specification matched nothing and said nothing about it. Found while adding the metric that counts them. |
 | Two expositions concatenated are not one exposition | Both components expose `halite_build_info`, and the text format allows one `# HELP` per metric name in a document. A scraper rejects the whole body for the duplicate, so the failure arrives as "no metrics at all" rather than as one duplicated family. They are merged now. |
+| `git archive` emits a header the extractor called a file | The extractor refuses anything that is not a regular file or a directory, which is right — and `git archive` writes a `pax_global_header` first, carrying the commit id. Every ref failed to materialise. Found on the first run against real git, which is the only place it could have been found. |
 | Configuring an extension returner deadlocked the node | A returner that is an extension arrives through `saltutil.sync_returners`, which needs a running node — and the node refused to start because its configured returner was not there. A node that will not boot cannot be sent the thing it is waiting for. A returner name this build does not have is no longer fatal; it fails every return with the reason instead, which is said once at startup. |
 | Warming an extension probed it with an empty function name | The first cut read "no such function" as proof the handshake had happened. That held until an extension parsed its arguments before looking at the function name, and then failed with "unexpected end of JSON input" — a message about nothing the operator had done. `Pool.Warm` already completed the handshake without calling anything. |
 | An extension's working directory was never created | Go reports that as `fork/exec <executable>: no such file or directory`, naming a file that is present and correct. Whoever read it would have gone looking at the executable, its permissions, and its architecture, and found nothing wrong with any of them. |
@@ -1521,6 +1522,21 @@ answering with the version it already had. A second bundle, of kind
 `returner`, was synchronized and used as the node's returner — the
 scheduled job's returns were filed by an extension in a sandboxed
 process.
+
+gitfs was run against a real repository through a real hub: two branches
+became two environments, a highstate served out of a git branch applied
+to a node, a push was picked up both on the update interval and on
+demand through `fileserver.update`, and with
+`gitfs_verify_signatures: true` against an unsigned repository both refs
+were refused, no git environment was served, and the hub went on serving
+its local roots. The signed-and-served half is covered by a unit test
+against real GnuPG and real `git verify-commit` rather than in the lab.
+
+One thing the lab taught that was not a defect: a `top.sls` on a branch
+declares which environment it contributes to, and a branch whose top
+file says `base:` contributes to `base` however the branch is named.
+Salt merges top files across environments and so does this; an hour went
+into concluding that the code was right and the test tree was wrong.
 
 It does not cover a Prometheus server actually scraping it, a real
 directory (OpenLDAP's slapd, Active Directory) rather than this
@@ -1625,8 +1641,8 @@ What is **not** built, in phase 2:
   is read by nothing at all.
 - **`file_ignore_regex`.** `file_ignore_glob` hides paths; the regex
   form is declared and read by nothing.
-- **gitfs and s3fs.** `fileserver_backend` accepts only `roots`, and
-  says so at startup rather than silently serving nothing.
+- **s3fs.** `fileserver_backend` accepts `roots` and `git`, and warns
+  about anything else at startup rather than silently serving nothing.
 - **`halite-hub files`** (`salt-cp`). The file server serves; pushing a
   file the other way is not built.
 - **`/v1/mine`**, which is phase 3 along with orchestration, beacons,
@@ -2134,6 +2150,46 @@ Two named pieces of section 7 are also absent:
 A subcommand whose phase has not landed still reports that by name
 rather than failing obscurely, which is deliberate: the alternative is a
 binary that appears to work.
+
+### 6.1b Phase 5, started
+
+**The git file server is built**, SPEC 13.3. It invokes the system `git`
+binary rather than linking pygit2 or libgit2 — together a large C
+dependency with its own CVE history — so an estate gets its operating
+system's git patching cadence.
+
+The shape carries the weight: a bare mirror is fetched and verified, and
+the served ref is materialised into a directory that becomes a `roots`
+search path. The manifest, hashing, ignore globs, conditional requests,
+and ranges are the existing code. A gitfs that served blobs through its
+own path would be a second implementation of file serving, and the
+second one is the one with the traversal bug in it.
+
+`gitfs_verify_signatures` is a control rather than a log line: a ref
+whose tip is not signed by a key in `gitfs_keyring` is not served.
+Verification with no keyring is refused, because checking against the
+hub user's own GnuPG home would pass for whatever that user happens to
+trust.
+
+A remote that fails, and a remote whose refs are all refused, both leave
+the last tree that verified in place — a network blip or a withdrawn
+signing key must not take the estate's state tree away. A branch deleted
+upstream does stop being served.
+
+The archive extractor refuses symlinks, device nodes, and anything
+writing outside the tree, and bounds file count and total size. `git
+archive` produces none of those; this unpacks an archive built from a
+repository the hub did not write.
+
+What is **not** built in phase 5:
+
+- **s3fs** (SPEC 13.4), which needs the in-house SigV4 signer.
+- **Agentless mode** (SPEC section 21), `halite-hub ssh`.
+- **Relays** and the **FIPS artifact set**.
+- **Windows and macOS parity.** The code cross-compiles and none of it
+  has been run there.
+- **`minionfs`/`nodefs`**, which SPEC 13.2 marks a subset and disables
+  by default.
 
 ### 6.2 Build and release
 

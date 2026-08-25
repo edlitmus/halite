@@ -88,7 +88,8 @@ The hub serves the state tree, and a node compiles against it. Set
 | `salt-run fileserver.file_list` | `halite-hub runner fileserver.file_list` | works |
 | the master serves `file_roots` | the hub serves `file_roots` | works | <!-- lexicon:allow -->
 | `cp.cache_file` | happens automatically; the cache is under `cache_dir` | works |
-| gitfs, s3fs | `fileserver_backend` accepts only `roots` | phase 5 |
+| gitfs | `fileserver_backend: [roots, git]` | works |
+| s3fs | `fileserver_backend` does not accept `s3` yet | not built |
 
 `serve` refuses to start if a file root holds the hub's own `state_dir`,
 `cache_dir`, or `pki_dir` — that arrangement serves the job cache, and
@@ -487,6 +488,71 @@ spool that silently discards is the failure it exists to prevent.
 The url must be `https://`. A return carries whatever the job printed,
 and `returner_webhook_ca_file` is there so an internal CA works without
 anyone reaching for a way to skip verification.
+
+## Serving the tree from git
+
+`fileserver_backend` takes `git` alongside `roots`. Salt's `gitfs` name
+works too.
+
+```yaml
+fileserver_backend:
+  - roots
+  - git
+gitfs_remotes:
+  - url: https://git.example/estate/salt.git
+    name: estate
+    root: states
+gitfs_base: main
+gitfs_update_interval: 5m
+```
+
+A branch becomes an environment: `gitfs_base` names the one that becomes
+`base`, and every other branch keeps its own name with the characters an
+environment cannot hold replaced — `feature/thing` becomes
+`feature-thing`, because an environment name reaches a directory and a
+URL path.
+
+Tags are not environments unless you ask (`gitfs_ref_types: [branches,
+tags]`). Every tag becoming one turns a release history into a file
+server.
+
+Roots come first. A directory in `file_roots` shadows a repository for
+the same path, which is the order `fileserver_backend` lists them in.
+
+It is the system `git` binary, not a linked library — so the estate gets
+its operating system's git patching cadence rather than this project's.
+A bare mirror lives under `gitfs_cache_dir`; the ref that is served is
+materialised into a directory, and everything else about serving it is
+the `roots` backend's code.
+
+`halite-hub runner fileserver.update` fetches on demand and reports what
+each ref resolved to, including the refs it refused.
+
+### Requiring a signature
+
+```yaml
+gitfs_verify_signatures: true
+gitfs_keyring: /usr/local/etc/halite/gitfs-keyring
+```
+
+A ref whose tip commit or tag does not carry a signature from a key in
+that keyring is **not served**. Not logged and served anyway — the point
+of the check is that the tree does not reach the fleet.
+
+The keyring is required when verification is on. Checking against the
+hub user's own GnuPG home would pass for whatever that user happens to
+trust, which is not a decision anybody made.
+
+A repository that goes unreachable does not empty the file server, and
+neither does one whose refs are all refused: the last tree that verified
+stays. A branch deleted upstream does stop being served.
+
+`git://` and `http://` remotes are refused. A state tree fetched over an
+unauthenticated transport is whatever the network says it is; set
+`insecure: true` on the remote to accept that deliberately.
+
+Credentials go in the environment or a git credential helper, never in
+the URL — SPEC 13.3 — because a command line is in the process table.
 
 ### Shipping the event stream
 

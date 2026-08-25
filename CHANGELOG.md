@@ -465,6 +465,42 @@ being unbounded. Every generated function returns an error, so a bridge
 that was generated and forgotten fails loudly rather than answering
 nothing and looking as though it worked.
 
+### The state tree can come from git
+
+SPEC 13.3's git file server, through the system `git` binary. That
+replaces pygit2 and libgit2 — together a large C dependency with its own
+CVE history — and means an estate gets its operating system's git
+patching cadence rather than this project's.
+
+A bare mirror is fetched and verified; the ref that is served is
+materialised into a directory that becomes a `roots` search path. The
+manifest, the hashing, the ignore globs, the conditional requests and
+ranges are all the existing code. A gitfs that served blobs through its
+own path would be a second implementation of file serving, and the
+second one is the one with the traversal bug in it.
+
+A branch becomes an environment. Tags do not unless the estate asks:
+every tag becoming one turns a release history into a file server.
+Roots come first, so a local directory still shadows a repository for
+the same path.
+
+`gitfs_verify_signatures` is a control rather than a log line. A ref
+whose tip commit or tag is not signed by a key in `gitfs_keyring` is not
+served. Verification with no keyring is refused, because checking
+against the hub user's own GnuPG home would pass for whatever that user
+happens to trust — which is not a decision anybody made.
+
+A repository that goes unreachable does not empty the file server, and
+neither does one whose refs are all refused: the last tree that verified
+stays, because a network blip or a withdrawn signing key must not take
+the estate's state tree away. A branch deleted upstream does stop being
+served, because an estate that keeps applying a tree nobody maintains is
+the other failure.
+
+`git://` and `http://` remotes are refused unless the remote says
+`insecure: true`. A state tree fetched over an unauthenticated transport
+is whatever the network says it is.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -695,9 +731,9 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-Phases 5 and 6. No gitfs, no s3fs, no agentless mode, no relays, no
-Windows or macOS parity, no FIPS artifact set, no detached job signing,
-no signed state trees, and no backtracking regex engine.
+The rest of phase 5, and phase 6. No s3fs, no agentless mode, no relays,
+no Windows or macOS parity, no FIPS artifact set, no detached job
+signing, no signed state trees, and no backtracking regex engine.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
 in the other direction from `salt-cp`, and external pillar. Phase 3's

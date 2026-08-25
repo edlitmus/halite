@@ -82,6 +82,28 @@ event_tag_compat: false
 # SPEC 26.2.
 metrics: true
 
+# The git file server, SPEC 13.3. Through the system `git` binary, so
+# the estate gets its operating system's git patching cadence.
+#
+# A branch becomes an environment; gitfs_base names the one that becomes
+# `base`. Roots come first, so a local directory shadows a repository
+# for the same path.
+#
+# With gitfs_verify_signatures on, a ref whose tip is not signed by a
+# key in gitfs_keyring is not served — not logged and served anyway.
+#
+# fileserver_backend:
+#   - roots
+#   - git
+# gitfs_remotes:
+#   - url: https://git.example/estate/salt.git
+#     name: estate
+#     root: states
+# gitfs_base: main
+# gitfs_update_interval: 5m
+# gitfs_verify_signatures: true
+# gitfs_keyring: /usr/local/etc/halite/gitfs-keyring
+
 # Ship the whole event stream to a returner, which SPEC 20.3 calls the
 # recommended path to a SIEM. It resumes from a bus offset, so a
 # receiver that was unreachable for an hour catches up rather than
