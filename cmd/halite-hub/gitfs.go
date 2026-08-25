@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/gitfs"
+	"github.com/edlitmus/halite/internal/s3fs"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -136,26 +139,85 @@ func stringsFrom(v any) []string {
 	return nil
 }
 
-// updateGitfs fetches and republishes the served roots.
+// fetchingBackends are the file server backends that go and get
+// something, as against `roots`, which reads the filesystem.
+type fetchingBackends struct {
+	git *gitfs.Backend
+	s3  *s3fs.Backend
+	// local is the configured `file_roots`, captured once. They go
+	// first in the search path.
+	local map[string][]string
+	files *fileserver.Roots
+}
+
+func (f *fetchingBackends) any() bool { return f != nil && (f.git != nil || f.s3 != nil) }
+
+// update fetches every backend and rebuilds the file server's search
+// path.
 //
-// The file server's whole search path is rebuilt rather than added to,
-// because a branch that has gone away must stop being served. The
-// configured `file_roots` go first, so a local directory still shadows
-// a repository for the same path — which is the order
+// Rebuilt wholesale rather than added to, because a branch or a prefix
+// that has gone away must stop being served: an update that only added
+// would keep serving an environment nobody has any more.
+//
+// The configured `file_roots` go first, so a local directory still
+// shadows a fetched tree for the same path — the order
 // `fileserver_backend` lists them in and the order an operator expects.
-func updateGitfs(ctx context.Context, backend *gitfs.Backend, files *fileserver.Roots, local map[string][]string) error {
-	if backend == nil || files == nil {
+func (f *fetchingBackends) update(ctx context.Context) error {
+	if f == nil || f.files == nil {
 		return nil
 	}
-	err := backend.Update(ctx)
+	var problems []string
+	if f.git != nil {
+		if err := f.git.Update(ctx); err != nil {
+			problems = append(problems, "git: "+err.Error())
+		}
+	}
+	if f.s3 != nil {
+		if err := f.s3.Update(ctx); err != nil {
+			problems = append(problems, "s3: "+err.Error())
+		}
+	}
 
-	combined := make(map[string][]string, len(local))
-	for env, dirs := range local {
+	combined := make(map[string][]string, len(f.local))
+	for env, dirs := range f.local {
 		combined[env] = append([]string(nil), dirs...)
 	}
-	for env, dirs := range backend.Roots() {
-		combined[env] = append(combined[env], dirs...)
+	if f.git != nil {
+		for env, dirs := range f.git.Roots() {
+			combined[env] = append(combined[env], dirs...)
+		}
 	}
-	files.SetDirs(combined)
-	return err
+	if f.s3 != nil {
+		for env, dirs := range f.s3.Roots() {
+			combined[env] = append(combined[env], dirs...)
+		}
+	}
+	f.files.SetDirs(combined)
+
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+// describe is what `fileserver.update` answers with.
+func (f *fetchingBackends) describe() map[string]any {
+	out := map[string]any{}
+	if f.git != nil {
+		out["git"] = f.git.Describe()
+	}
+	if f.s3 != nil {
+		out["s3"] = f.s3.Describe()
+	}
+	envs := map[string]bool{}
+	for env := range f.files.SnapshotDirs() {
+		envs[env] = true
+	}
+	list := make([]string, 0, len(envs))
+	for env := range envs {
+		list = append(list, env)
+	}
+	sort.Strings(list)
+	out["environments"] = list
+	return out
 }

@@ -237,11 +237,13 @@ func runServe(args *cli.Args) int {
 		}
 	}
 
-	// The git backend of SPEC 13.3. Built before the listener opens, so
-	// a bad remote or a missing keyring stops the hub where the
-	// operator who wrote it is looking.
+	// The fetching backends of SPEC 13.3 and 13.4. Built before the
+	// listener opens, so a bad remote, a missing keyring, or a
+	// plaintext endpoint stops the hub where the operator who wrote it
+	// is looking.
 	gitBackend := h.gitBackend()
-	if gitBackend != nil && files == nil {
+	s3Backend := h.s3Backend()
+	if (gitBackend != nil || s3Backend != nil) && files == nil {
 		// gitfs supplies the roots itself, so a hub serving only git
 		// needs a file server even with no `file_roots`.
 		files = fileserver.NewRoots(map[string][]string{})
@@ -255,20 +257,30 @@ func runServe(args *cli.Args) int {
 	if files != nil {
 		localRoots = files.SnapshotDirs()
 	}
-	if gitBackend != nil {
+	fetching := &fetchingBackends{git: gitBackend, s3: s3Backend, local: localRoots, files: files}
+	if fetching.any() {
 		// The first fetch happens before the hub answers, so a node
 		// asking in the first second gets the tree rather than an empty
 		// environment. A failure is a warning: a hub that will not
 		// start because a repository is unreachable is a hub that
 		// cannot serve the local roots it also has.
-		// The signal context does not exist yet, and git's own timeout
-		// bounds the fetch.
-		if err := updateGitfs(context.Background(), gitBackend, files, localRoots); err != nil {
-			h.log.Warn("the git file server could not be updated at startup", "error", err.Error())
+		//
+		// The signal context does not exist yet, and each backend
+		// bounds its own requests.
+		if err := fetching.update(context.Background()); err != nil {
+			h.log.Warn("a fetching file server backend could not be updated at startup",
+				"error", err.Error())
 		}
-		h.log.Info("git file server", "remotes", len(h.cfg.StringSlice("gitfs_remotes")),
-			"environments", strings.Join(gitBackend.Envs(), ","),
-			"verify_signatures", h.cfg.Bool("gitfs_verify_signatures", false))
+		if gitBackend != nil {
+			h.log.Info("git file server", "remotes", len(h.cfg.StringSlice("gitfs_remotes")),
+				"environments", strings.Join(gitBackend.Envs(), ","),
+				"verify_signatures", h.cfg.Bool("gitfs_verify_signatures", false))
+		}
+		if s3Backend != nil {
+			h.log.Info("s3 file server", "buckets", len(h.cfg.StringSlice("s3_buckets")),
+				"environments", strings.Join(s3Backend.Envs(), ","),
+				"partition", h.cfg.String("s3_partition", "aws"))
+		}
 	}
 
 	// Hub-side pillar. Without pillar_roots the hub compiles none and
@@ -341,17 +353,14 @@ func runServe(args *cli.Args) int {
 		EventTagCompat: h.cfg.Bool("event_tag_compat", false),
 		Metrics:        metricsRegistry(h.cfg),
 	}
-	if gitBackend != nil {
+	if fetching.any() {
 		server.UpdateFileServer = func(ctx context.Context) (any, error) {
-			err := updateGitfs(ctx, gitBackend, files, localRoots)
+			err := fetching.update(ctx)
 			// The state is returned whether or not the update
 			// succeeded: an operator running this after a push wants to
-			// see which refs resolved and which were refused, and an
-			// error alone says neither.
-			out := map[string]any{
-				"remotes":      gitBackend.Describe(),
-				"environments": gitBackend.Envs(),
-			}
+			// see what resolved and what was refused, and an error
+			// alone says neither.
+			out := fetching.describe()
 			if err != nil {
 				out["error"] = err.Error()
 			}
@@ -418,8 +427,11 @@ func runServe(args *cli.Args) int {
 			}
 		}()
 	}
-	if gitBackend != nil {
-		if interval := h.cfg.Duration("gitfs_update_interval", 5*time.Minute); interval > 0 {
+	if fetching.any() {
+		// One ticker for both backends, at the shorter of the two
+		// intervals: two tickers rebuilding the same search path would
+		// race to publish it.
+		if interval := fetchInterval(h); interval > 0 {
 			go func() {
 				ticker := time.NewTicker(interval)
 				defer ticker.Stop()
@@ -428,8 +440,9 @@ func runServe(args *cli.Args) int {
 					case <-ctx.Done():
 						return
 					case <-ticker.C:
-						if err := updateGitfs(ctx, gitBackend, files, localRoots); err != nil {
-							h.log.Warn("the git file server could not be updated", "error", err.Error())
+						if err := fetching.update(ctx); err != nil {
+							h.log.Warn("a fetching file server backend could not be updated",
+								"error", err.Error())
 						}
 					}
 				}
@@ -815,4 +828,23 @@ func splitList(v string) []string {
 		}
 	}
 	return out
+}
+
+// fetchInterval is how often the fetching backends are refreshed.
+//
+// The shorter of the two configured intervals, because they share one
+// ticker: two tickers rebuilding the same search path would race to
+// publish it, and the loser's view would win at random.
+func fetchInterval(h *hubContext) time.Duration {
+	git := h.cfg.Duration("gitfs_update_interval", 5*time.Minute)
+	s3 := h.cfg.Duration("s3_update_interval", 5*time.Minute)
+	switch {
+	case git <= 0:
+		return s3
+	case s3 <= 0:
+		return git
+	case s3 < git:
+		return s3
+	}
+	return git
 }

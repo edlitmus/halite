@@ -249,6 +249,22 @@ Read by the hub.
 | `returner_webhook_secret` | — | 20.3 | HMAC-SHA-256 signing secret; prefer the file form. |
 | `returner_webhook_secret_file` | — | 20.3 | File holding the signing secret, mode 600. |
 | `returner_webhook_url` | — | 20.3 | https:// endpoint for the webhook returner. |
+| `s3_access_key_id` | — | 13.4 | Access key; prefer a role or the environment. |
+| `s3_buckets` | — | 13.4 | S3 buckets the file server serves. |
+| `s3_cache_dir` | — | 13.4 | Where fetched objects live; empty is <cache_dir>/s3fs. |
+| `s3_dualstack` | `false` | 13.4 | Use the IPv6-capable endpoints. |
+| `s3_endpoint` | — | 13.4 | Custom endpoint, for an S3-compatible service. |
+| `s3_env_allowlist` | — | 13.4 | Environments the file server exposes. |
+| `s3_env_denylist` | — | 13.4 | Environments the file server refuses to expose. |
+| `s3_partition` | `aws` | 13.4 | aws, aws-us-gov, or aws-cn. Endpoints are built from it. |
+| `s3_path_style` | `false` | 13.4 | Address the bucket in the path rather than the host. |
+| `s3_region` | `us-east-1` | 13.4 | Default region for buckets that name none. |
+| `s3_role_arn` | — | 13.4 | Role to assume after the base credentials resolve. |
+| `s3_role_session` | `halite` | 13.4 | Session name for the assumed role. |
+| `s3_secret_access_key` | — | 13.4 | Secret key; prefer the file form. |
+| `s3_secret_access_key_file` | — | 13.4 | File holding the secret key, mode 600. |
+| `s3_update_interval` | `5m` | 13.4 | How often the hub lists; 0 lists only on demand. |
+| `s3_web_identity_token_file` | — | 13.4 | IRSA token file; with s3_role_arn it needs no other credential. |
 | `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
 | `state_allowlist` | — | 28.3 | SLS names a state run may include. |
 | `state_denylist` | — | 28.3 | SLS names a state run may not include. |
