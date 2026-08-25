@@ -262,6 +262,18 @@ Read by the API service.
 | `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
 | `max_body` | `64MiB` | 22.3 | The largest request body this service will read. |
 | `metrics` | `true` | 26.2 | Record and expose Prometheus metrics at /v1/metrics. |
+| `oidc_audience` | — | 23.4 | Audience the tokens must carry; empty takes the client id. |
+| `oidc_ca_file` | — | 23.4 | CA to verify the identity provider against. |
+| `oidc_client_id` | — | 23.4 | This service's client id at the provider. |
+| `oidc_client_secret` | — | 23.4 | Client secret; prefer the file form. |
+| `oidc_client_secret_file` | — | 23.4 | File holding the client secret, mode 600. |
+| `oidc_groups_claim` | `groups` | 23.4 | Colon-delimited path to the claim holding an operator's groups. |
+| `oidc_issuer` | — | 23.4 | OpenID Connect issuer URL; empty disables OIDC. |
+| `oidc_principal_claim` | `sub` | 23.4 | Which claim names the operator. |
+| `oidc_redirect_url` | — | 23.4 | Where the provider sends an operator back to. |
+| `oidc_role_map` | — | 23.4 | Maps a provider group to roles in the policy. |
+| `oidc_scopes` | — | 23.4 | Extra scopes to request, comma-separated; openid is always sent. |
+| `oidc_skew` | `60s` | 23.4 | Clock difference tolerated on a token's exp and nbf. |
 | `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
 | `policy` | `<config root>/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
 | `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |

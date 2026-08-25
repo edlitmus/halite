@@ -44,9 +44,21 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Eauth != "" && req.Eauth != "local" {
+	switch req.Eauth {
+	case "", "local":
+	case "oidc":
+		// Named rather than silently handled here: the OIDC flow is not
+		// a username and a password, and answering this request with a
+		// token would mean this endpoint had authenticated somebody it
+		// never verified.
 		writeError(w, http.StatusBadRequest,
-			"this build authenticates against `local` accounts; OIDC and LDAP arrive later in phase 4")
+			"OIDC does not use this endpoint; POST /v1/login/oidc to start one, "+
+				"or /v1/login/oidc/token with a token you already hold")
+		return
+	default:
+		writeError(w, http.StatusBadRequest,
+			"this build authenticates against `local` accounts and `oidc`; "+
+				"LDAP is not built (SPEC section 23.3)")
 		return
 	}
 

@@ -25,6 +25,7 @@ import (
 	"github.com/edlitmus/halite/internal/apitoken"
 	"github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/metrics"
+	"github.com/edlitmus/halite/internal/oidc"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/transport"
@@ -46,6 +47,9 @@ type Server struct {
 	// Hooks is the webhook ingress of SPEC 22.2. Nil is no hooks, and
 	// an unconfigured path is a 404 like any other.
 	Hooks *Hooks
+	// OIDC is the identity provider of SPEC 23.4. Nil is no provider,
+	// and a login naming one is refused by name.
+	OIDC *oidc.Provider
 	// Signatures back `/v1/schema`, so a client can discover what a
 	// function takes without reading the documentation.
 	Signatures *signature.Registry
@@ -67,6 +71,9 @@ type Server struct {
 
 	metrics   *apiMetrics
 	metricsMu sync.Mutex
+
+	pendingAuths *pendingAuth
+	pendingOnce  sync.Once
 }
 
 func (s *Server) now() time.Time {
@@ -97,26 +104,31 @@ func (s *Server) warn(msg string, kv ...any) {
 
 // The endpoints of SPEC 22.1 this build serves.
 const (
-	PathLogin   = "/v1/login"
-	PathLogout  = "/v1/logout"
-	PathToken   = "/v1/token"
-	PathSchema  = "/v1/schema"
-	PathRun     = "/v1/run"
-	PathJobs    = "/v1/jobs"
-	PathJob     = "/v1/jobs/"
-	PathNodes   = "/v1/nodes"
-	PathNode    = "/v1/nodes/"
-	PathKeys    = "/v1/keys"
-	PathKey     = "/v1/keys/"
-	PathOrch    = "/v1/orch"
-	PathOrchJob = "/v1/orch/"
-	PathPillar  = "/v1/pillar/"
-	PathEvents  = "/v1/events"
-	PathWSEvent = "/v1/ws/events"
-	PathHook    = "/v1/hook/"
-	PathMetrics = "/v1/metrics"
-	PathHealthz = "/v1/healthz"
-	PathReadyz  = "/v1/readyz"
+	PathLogin = "/v1/login"
+	// The interactive OIDC flow: start, come back, or present a token
+	// the caller already holds.
+	PathLoginOIDC      = "/v1/login/oidc"
+	PathLoginOIDCBack  = "/v1/login/oidc/callback"
+	PathLoginOIDCToken = "/v1/login/oidc/token"
+	PathLogout         = "/v1/logout"
+	PathToken          = "/v1/token"
+	PathSchema         = "/v1/schema"
+	PathRun            = "/v1/run"
+	PathJobs           = "/v1/jobs"
+	PathJob            = "/v1/jobs/"
+	PathNodes          = "/v1/nodes"
+	PathNode           = "/v1/nodes/"
+	PathKeys           = "/v1/keys"
+	PathKey            = "/v1/keys/"
+	PathOrch           = "/v1/orch"
+	PathOrchJob        = "/v1/orch/"
+	PathPillar         = "/v1/pillar/"
+	PathEvents         = "/v1/events"
+	PathWSEvent        = "/v1/ws/events"
+	PathHook           = "/v1/hook/"
+	PathMetrics        = "/v1/metrics"
+	PathHealthz        = "/v1/healthz"
+	PathReadyz         = "/v1/readyz"
 )
 
 // Handler routes the API.
@@ -129,6 +141,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+PathReadyz, s.readyz)
 
 	mux.HandleFunc("POST "+PathLogin, s.login)
+	// The OIDC path of SPEC 23.4, unauthenticated for the same reason
+	// `/v1/login` is: it is how somebody with no token gets one.
+	mux.HandleFunc("POST "+PathLoginOIDC, s.oidcStart)
+	mux.HandleFunc("POST "+PathLoginOIDCBack, s.oidcCallback)
+	mux.HandleFunc("POST "+PathLoginOIDCToken, s.oidcToken)
 	mux.HandleFunc("POST "+PathLogout, s.authenticated(s.logout))
 	mux.HandleFunc("GET "+PathToken, s.authenticated(s.introspect))
 	mux.HandleFunc("GET "+PathSchema, s.authenticated(s.schema))
