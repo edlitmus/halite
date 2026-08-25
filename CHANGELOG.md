@@ -323,6 +323,41 @@ returner refuses an `http://` url and takes a CA file so an internal
 receiver works without anyone reaching for a way to skip verification;
 SMTP refuses to send credentials without STARTTLS.
 
+### An operator logs in through the estate's identity provider
+
+SPEC 23.4's two paths: Authorization Code with PKCE for a person, and a
+token presented directly for automation that has no browser.
+
+Written against `crypto/rsa`, `crypto/ecdsa`, and `encoding/json`
+because SPEC 4.2 allows no third-party code — and because a JWT library
+is a place where the accepted algorithm list is somebody else's default.
+Here it is ours: the nine SPEC 23.4 names, with `none` absent and every
+`HS*` absent. That closes the algorithm confusion attack, where a token
+is signed with the provider's own public key as an HMAC secret and a
+verifier that trusts the header's `alg` accepts it. The algorithm's key
+type is checked against the key that was found, so a header claiming
+RSA cannot be verified against an EC key.
+
+Issuer, audience, expiry, not-before, and nonce are all verified. A
+token with no `exp` is refused: one that never expires is a password
+with a longer name. Clock skew is capped at five minutes however it is
+configured, because it is an allowance for drift rather than a grace
+period.
+
+The key set respects the provider's `Cache-Control`, bounded at five
+minutes and a day, and an unknown `kid` causes one rate-limited refresh.
+A rotation is therefore invisible here, and a stream of invented key
+identifiers is not a way to make this service hammer the provider on
+somebody else's behalf. A token with no `kid` verifies against a set of
+one and is refused against a set of several: trying each key and
+accepting if any verifies turns key rotation into an attack surface.
+
+Groups map to roles through a table the estate writes. A group with no
+entry grants nothing — the provider's directory is not this estate's
+authorization model — and an operator whose groups all map to nothing is
+told which groups they had, because that is actionable where "access
+denied" is not. A session never outlives the assertion it was made on.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -553,8 +588,7 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-The rest of phase 4, and phases 5 and 6. No OIDC or LDAP, no
-bridge protocol, no gitfs, no s3fs, no
+The rest of phase 4, and phases 5 and 6. No LDAP, no bridge protocol, no gitfs, no s3fs, no
 agentless mode, no relays, no FIPS artifact set, no detached job
 signing, no signed state trees, and no backtracking regex engine.
 

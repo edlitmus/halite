@@ -748,7 +748,9 @@ token_idle: 4h
 | no equivalent | `GET /v1/healthz`, `GET /v1/readyz` | works |
 | `eauth: pam` | local accounts, PBKDF2-HMAC-SHA-512 | works |
 | no equivalent | TOTP second factor, RFC 6238 | works |
-| `eauth: ldap`, `eauth: oidc` | same | phase 4 |
+| `eauth: oidc` | `POST /v1/login/oidc`, Authorization Code with PKCE | works |
+| no equivalent | `POST /v1/login/oidc/token`, a token you already hold | works |
+| `eauth: ldap` | same | not built |
 | `POST /run` | `POST /v1/run`, synchronous | works |
 | `POST /minions` | `POST /v1/jobs`, asynchronous | works | <!-- lexicon:allow -->
 | `GET /jobs`, `GET /jobs/{jid}` | same under `/v1/` | works |
@@ -810,6 +812,74 @@ A job submitted through the API records both identities: `submitter` is
 the service's certificate, which is what the hub authorized, and
 `on_behalf_of` is the operator, which is recorded and never trusted. The
 hub reads identity from the connection and nothing from the body.
+
+### Logging in through an identity provider
+
+SPEC 23.4 calls this the modern path. Configure it on the API:
+
+```yaml
+oidc_issuer: https://idp.example/realms/estate
+oidc_client_id: halite
+oidc_client_secret_file: /usr/local/etc/halite/oidc.secret
+oidc_redirect_url: https://api.example:4511/v1/login/oidc/callback
+oidc_ca_file: /usr/local/etc/halite/internal-ca.pem
+oidc_groups_claim: groups
+oidc_principal_claim: sub
+oidc_role_map:
+  platform-team: [operator]
+  sre-oncall: [operator, responder]
+```
+
+`oidc_groups_claim` is a colon-delimited path because providers
+disagree: `groups` for Okta and Entra, `resource_access:halite:roles`
+for Keycloak. `oidc_principal_claim` defaults to `sub`, which is stable
+and opaque; `email` and `preferred_username` are readable and can be
+reassigned to somebody else, which is why they are not the default.
+
+A group with no entry in `oidc_role_map` grants nothing. That is
+deliberate — the provider's directory is not this estate's authorization
+model — and an estate that sets an issuer with no map is refused at
+startup rather than letting every operator discover it one at a time.
+
+The interactive flow is three requests:
+
+```sh
+# 1. start; send the operator to the url that comes back
+curl -sk -X POST https://api.example:4511/v1/login/oidc -d '{}'
+
+# 2. they come back to the redirect with ?code=…&state=…
+# 3. finish
+curl -sk -X POST https://api.example:4511/v1/login/oidc/callback \
+  -d '{"code":"...","state":"..."}'
+```
+
+A pending login lives ten minutes and a `state` is good once, so an
+authorization response replayed a second time finds nothing waiting.
+
+A CI job has no browser and presents a token it already holds:
+
+```sh
+curl -sk -X POST https://api.example:4511/v1/login/oidc/token \
+  -d "{\"token\":\"$ID_TOKEN\"}"
+```
+
+Either way the answer is one of this service's own tokens, with the
+mapped roles frozen into it. The session never outlives the assertion:
+a provider that expires a token in ten minutes has said how long it
+trusts the operator, and this service does not extend that.
+
+The principal is `oidc:<claim>`, which the RBAC policy binds like any
+other:
+
+```yaml
+bindings:
+  - principal: 'oidc:8a7f-…'
+    roles: ['operator']
+```
+
+Accepted signing algorithms are the nine SPEC 23.4 names — `RS*`, `PS*`,
+`ES*`. `none` is refused and so is every `HS*`, which closes the
+algorithm confusion attack. A token without an `exp` is refused.
 
 The event stream is one stream with two transports. `GET /v1/events` is
 SSE whose `id:` is the bus offset, so a client that reconnects with

@@ -1448,6 +1448,7 @@ webhook delivered end to end onto the bus.
 | The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
 | Beacon events were in the wrong namespace | SPEC 17.1 puts a beacon under `halite/beacon/<node_id>/<beacon>/` and SPEC 18.1's own reactor example matches on it; they were arriving under `halite/node/<node_id>/`. A reactor written from the specification matched nothing and said nothing about it. Found while adding the metric that counts them. |
 | Two expositions concatenated are not one exposition | Both components expose `halite_build_info`, and the text format allows one `# HELP` per metric name in a document. A scraper rejects the whole body for the duplicate, so the failure arrives as "no metrics at all" rather than as one duplicated family. They are merged now. |
+| The OIDC provider had no way to trust an internal CA | An identity provider behind an estate's own CA is the common case, and the only ways to reach one were a public certificate or skipping verification — on the service that decides who an operator is. The same omission the webhook returner had, found the same way. |
 | A node whose pillar did not compile answered nothing | Every exec function compiled pillar first and failed the job when that failed, so one unreadable file in the pillar tree meant no `test.ping`, no `grains.items`, no `service.status` — at exactly the moment somebody was trying to find out what was wrong with the node. The error travels on the execution context now and surfaces at the functions that read pillar. Found by running a node against a real tree whose pillar this process had no GPG key for. |
 | The webhook returner had no way to trust an internal CA | It verifies TLS, correctly, and refused a receiver holding a certificate from the estate's own CA. The only ways out were a public certificate or skipping verification, and the second is not on offer for a connection carrying whatever a job printed. |
 | A diagnostic about a secret file redacted the file's name | `returner_webhook_secret_file` matched the redactor's "secret" rule, so "the secret at ********** is mode 644" was the message. The path is not the secret; the contents are. A key ending `_file` is exempt now. |
@@ -1479,9 +1480,19 @@ came back. `event_return` shipped 170 events to a file returner,
 rotated at the configured bound, and resumed from its offset across a
 hub restart without re-shipping what had gone.
 
-It does not cover a Prometheus server actually scraping it, an SMTP
-returner against a real mail server, syslog over TLS, an OIDC or
-LDAP login, `mtls` hook authentication,
+OIDC was run against a provider process that verifies PKCE for real:
+the interactive flow completed end to end and its token drove the fleet,
+and four negative paths were refused — a verifier the provider never
+saw, a token minted for another login, a replayed `state`, and groups
+that map to no role. The reason stayed in the log and the answer stayed
+generic, except for the unmapped-groups case, which names the groups on
+purpose. The auth metrics separated accepted, refused, and unmapped by
+method.
+
+It does not cover a Prometheus server actually scraping it, a real
+identity provider (Keycloak, Entra, Okta) rather than a conforming
+stand-in, the client-credentials grant against one, an SMTP returner
+against a real mail server, syslog over TLS, an LDAP login, `mtls` hook authentication,
 `Last-Event-ID` resumption after a real disconnection, a token expiring
 mid-stream, a second operator with a narrower policy watching the same
 stream, a hub restart underneath an open stream, `/v1/nodes/{id}/state`
@@ -1939,11 +1950,37 @@ rather than making room.
 `event_return` ships the whole bus, resuming from an offset, and a
 delivery failure does not advance it.
 
+**OIDC is built**, both paths of SPEC 23.4: Authorization Code with
+PKCE for an interactive operator, and a token presented directly for
+automation with no browser.
+
+The accepted algorithm list is this package's own rather than a
+library's default, which is the point of writing it here: the nine
+SPEC 23.4 names, with `none` and every `HS*` absent. That closes the
+algorithm confusion attack, where a token is signed with the provider's
+public key as an HMAC secret and a verifier that trusts the header's
+`alg` accepts it. The algorithm's key type is checked against the key
+that was found, so a header claiming RSA cannot verify against an EC
+key, and a token with no `exp` is refused because one that never expires
+is a password with a longer name.
+
+The key set respects `Cache-Control: max-age` bounded at five minutes
+and a day, and an unknown `kid` causes one rate-limited refresh — a
+rotation is invisible, and a stream of invented key identifiers is not a
+way to make this service hammer the provider on somebody's behalf.
+
+Groups map to roles through a table the estate writes, and a group with
+no entry grants nothing: the provider's directory is not this estate's
+authorization model. An operator whose groups all map to nothing is told
+which groups they had. A session never outlives the assertion it was
+made on.
+
 What is **not** built in the API:
 
-- **OIDC and LDAP** (SPEC 23.4, 23.3). A login naming another backend
-  is refused by name rather than quietly authenticated against local
-  accounts.
+- **LDAP** (SPEC 23.3). `eauth: ldap` is refused by name rather than
+  quietly authenticated against local accounts. It needs a bind-only
+  LDAP client written against `encoding/asn1`, which is the largest
+  single piece left in phase 4.
 - **The bridge protocol and its sandbox** (SPEC section 24), and with it
   the seventeen returners SPEC 20.3 marks Bridged.
 - **Node-side metrics.** A node has no exposition endpoint, so what only

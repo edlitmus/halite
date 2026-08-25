@@ -1,5 +1,23 @@
 # halite-api.
 #
+# The identity provider of SPEC 23.4, the recommended way to
+# authenticate an operator. Empty leaves it off and local accounts are
+# the only way in.
+#
+# A group with no entry in oidc_role_map grants nothing: the provider's
+# directory is not this estate's authorization model. Setting an issuer
+# with no map is refused at startup rather than letting every operator
+# discover it one at a time.
+#
+# oidc_issuer: https://idp.example/realms/estate
+# oidc_client_id: halite
+# oidc_client_secret_file: /usr/local/etc/halite/oidc.secret
+# oidc_redirect_url: https://api.example:4511/v1/login/oidc/callback
+# oidc_ca_file: /usr/local/etc/halite/internal-ca.pem
+# oidc_groups_claim: groups
+# oidc_role_map:
+#   platform-team: [operator]
+
 # Prometheus exposition at /v1/metrics, authenticated like every other
 # endpoint. This service is the estate's scrape target: it answers with
 # the hub's metrics merged into its own, because the hub speaks its own

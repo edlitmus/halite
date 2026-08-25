@@ -189,8 +189,14 @@ the backlog when it comes back, in order, rather than losing exactly the
 returns from the incident. `event_return` ships the whole bus to a SIEM
 the same way, resuming from an offset.
 
-What is not built is the rest of phase 4 — OIDC, LDAP, and the bridge
-protocol — and phase 5: gitfs, agentless mode, and Windows.
+OIDC followed, both paths of SPEC 23.4. The accepted algorithm list is
+this build's own rather than a library's default, which is the point of
+writing it here: `none` and every `HS*` are absent, closing the
+algorithm confusion attack. Groups map to roles through a table the
+estate writes, and a group with no entry grants nothing.
+
+What is not built is the rest of phase 4 — LDAP and the bridge protocol
+— and phase 5: gitfs, agentless mode, and Windows.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
