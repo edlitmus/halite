@@ -398,6 +398,48 @@ this build's test directory, sends a compound filter, and parses the
 responses, so both halves of the BER are validated by an implementation
 this project did not write.
 
+### Extensions run out of process, signed and pinned
+
+SPEC 24.1 names the problem: Salt's extensibility is a Python file
+dropped in `_modules/` on the file server, which the agent imports and
+runs in process, as root, with no signature requirement. That is a code
+distribution channel, and it is load-bearing, so it needed replacing
+rather than removing.
+
+An extension is a separate executable speaking length-prefixed JSON over
+stdio. Length-prefixed rather than newline-delimited, because a frame
+boundary must not depend on an extension never emitting a newline inside
+a string. Concurrency is a process pool, so an extension never has to be
+thread-safe. A hung one is killed and replaced, so it cannot hang the
+agent. A protocol violation kills the process rather than failing the
+call: an extension that sent something unreadable has lost its place in
+the stream, and its next frame answers a question nobody asked.
+
+A bundle is signed with Ed25519 over a Merkle root of its contents and
+verified on every load, not once at fetch — the cache is a directory on
+a managed node. Verification runs in both directions: a listed file
+whose digest is wrong is tampering, and an unlisted file that is present
+is one nobody signed, sitting somewhere the extension can load from. The
+root covers paths as well as contents, so a bundle cannot swap which
+file is the executable without changing what it is signed as, and the
+signed message carries a domain separator so a bundle signature can
+never be replayed as a signature over anything else.
+
+It is pinned by version and digest. The version is a label the publisher
+controls; the digest is not.
+
+`sys.list_extensions` reports what actually confines an extension on the
+machine in front of you — the process boundary, the dropped identity,
+the resource limits — and names what does not: Landlock, seccomp,
+`pledge`, `unveil`, and Windows job objects are SPEC 24.3 and are not
+built. An operator should not have to read the specification to find out
+which rows of its table are real here.
+
+An extension's functions are marked `arbitrary_code`, so a wildcard in
+the RBAC policy never grants one. A name that collides with a built-in
+is refused rather than overriding it: in Salt, a file on the file server
+can change what `service.running` does.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -628,9 +670,10 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-The rest of phase 4, and phases 5 and 6. No bridge protocol, no gitfs, no s3fs, no
-agentless mode, no relays, no FIPS artifact set, no detached job
-signing, no signed state trees, and no backtracking regex engine.
+Phases 5 and 6, and extension synchronization: a bundle is put in the
+cache by other means rather than fetched from `_ext/`. No gitfs, no
+s3fs, no agentless mode, no relays, no FIPS artifact set, no detached
+job signing, no signed state trees, and no backtracking regex engine.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
 in the other direction from `salt-cp`, and external pillar. Phase 3's

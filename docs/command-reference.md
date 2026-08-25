@@ -1002,6 +1002,95 @@ and a role written to let someone restart a service must not carry it
 because the list said `*`. SPEC 22.1 calls this a distinct
 high-privilege permission and it is enforced as one.
 
+## Extensions
+
+Salt's extensibility is a Python file dropped in `_modules/` on the file
+server, which the agent imports and runs in process, as root, with no
+signature requirement. SPEC 24.1 calls that a code distribution channel.
+An extension here is a separate signed executable.
+
+| Salt | halite | Status |
+|---|---|---|
+| `_modules/`, `_states/` on the file server | a signed extension bundle | works |
+| the agent imports it in process | a separate process, sandboxed | works |
+| no signature requirement | Ed25519 over a Merkle root, verified every load | works |
+| whatever the file server serves | pinned by version and digest | works |
+| no equivalent | `sys.list_extensions` | works |
+| `saltutil.sync_all` | fetch bundles from `_ext/` | not built |
+
+### What an extension is
+
+An executable speaking length-prefixed JSON over stdio. The host sends
+`hello` and `call`; the extension answers `hello_ok` and `result`, and
+may send `log`, `progress`, and `event` frames in between.
+
+Concurrency is a process pool, so an extension never has to be
+thread-safe. A hung one is killed — SIGTERM, then SIGKILL, then a fresh
+process — so it cannot hang the agent. A protocol violation kills the
+process rather than failing the call: an extension that sent something
+unreadable has lost its place in the stream.
+
+### Trusting one
+
+```yaml
+extension_dir: /var/db/halite/ext
+extension_trust_keys:
+  - 'release AAAAC3NzaC1lZDI1NTE5AAAAI...'
+extension_require_signature: true
+extension_pins:
+  vault:
+    version: 2.1.0
+    root: 2215bdf9125187586535be3e253c9ff4640f7f4a5e6e0b8ac8088b7a8f8332fc
+```
+
+Both halves of the pin matter. The version is a label the publisher
+controls; the digest is not.
+
+`extension_require_signature: false` permits an *absent* signature for
+development and warns on every load. A signature that is present and
+wrong is refused whatever the setting says — that is tampering or a key
+rotation nobody finished, and neither is a development convenience.
+
+Verification happens on every load, not once at fetch, and it runs in
+both directions: a listed file whose digest is wrong is tampering, and
+an unlisted file that is present is one nobody signed, sitting in a
+directory the extension can load from.
+
+### What confines one
+
+```yaml
+extension_user: _halite_ext
+extension_group: _halite_ext
+extension_timeout: 60s
+extension_pool_size: 4
+```
+
+`sys.list_extensions` reports what is *actually* enforced on the machine
+in front of you, rather than what SPEC 24.3's table hopes for across
+five operating systems. On this build that is the process boundary, a
+dropped identity, a process group so a kill takes the children too, and
+resource limits — with Landlock, seccomp, `pledge`, `unveil`, and
+Windows job objects named as not built.
+
+The resource limits are carried in the environment and applied by the
+child, because `setrlimit` applies to the calling process. They hold for
+an extension built against this protocol and not for an arbitrary one,
+and the description says so.
+
+`RLIMIT_AS` is available and off by default. It bounds *virtual* address
+space, and a garbage-collected runtime reserves far more of that than it
+commits: a Go extension under a 512 MiB limit — which reads as generous
+— dies with "out of memory" after about 160 MiB.
+
+Nothing is granted that was not declared in the signed manifest. An
+extension declaring `network` gets it; one declaring `root` is not
+dropped to another account. A declaration this build does not understand
+is refused rather than ignored.
+
+An extension's functions are marked `arbitrary_code`, so a wildcard in
+the RBAC policy never grants one — the role has to name it. A name that
+collides with a built-in is refused rather than overriding it.
+
 ## Targeting
 
 The compound grammar is the same. On the command line it belongs to the

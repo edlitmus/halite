@@ -60,3 +60,20 @@ returner: local
 # returner_webhook_url: https://ci.example/halite/returns
 # returner_webhook_secret_file: /usr/local/etc/halite/returner.secret
 # returner_webhook_ca_file: /usr/local/etc/halite/internal-ca.pem
+
+# Extensions, SPEC section 24. An extension is a separate signed
+# executable, not code loaded into this process.
+#
+# Both halves of the pin matter: the version is a label the publisher
+# controls, and the digest is not. `extension_require_signature: false`
+# permits an *absent* signature for development and warns on every load;
+# a signature that is present and wrong is refused whatever it says.
+#
+# extension_trust_keys:
+#   - 'release <base64 ed25519 public key>'
+# extension_require_signature: true
+# extension_pins:
+#   vault:
+#     version: 2.1.0
+#     root: <64 hex characters, from sys.list_extensions>
+# extension_user: _halite_ext

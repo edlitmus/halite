@@ -1448,6 +1448,8 @@ webhook delivered end to end onto the bus.
 | The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
 | Beacon events were in the wrong namespace | SPEC 17.1 puts a beacon under `halite/beacon/<node_id>/<beacon>/` and SPEC 18.1's own reactor example matches on it; they were arriving under `halite/node/<node_id>/`. A reactor written from the specification matched nothing and said nothing about it. Found while adding the metric that counts them. |
 | Two expositions concatenated are not one exposition | Both components expose `halite_build_info`, and the text format allows one `# HELP` per metric name in a document. A scraper rejects the whole body for the duplicate, so the failure arrives as "no metrics at all" rather than as one duplicated family. They are merged now. |
+| An extension's working directory was never created | Go reports that as `fork/exec <executable>: no such file or directory`, naming a file that is present and correct. Whoever read it would have gone looking at the executable, its permissions, and its architecture, and found nothing wrong with any of them. |
+| An extension's working directory sat inside the verified cache | At `<cache>/<name>/work`, so the store read it as a version of the extension and every load logged a refusal for it — beside three real ones, which is how an operator learns to ignore refusals. The cache holds bundles verified on every load, and a writable directory inside one is a file the manifest does not list. |
 | A login failure was logged as "unreachable" when it was a blank password | The classification was a boolean over "did the directory answer", so the commonest failure of all — somebody submitting the form with the password field empty, which this client refuses without asking the directory — read as an outage. An estate alerting on outages would have been alerted every time. It is a named reason now. |
 | The OIDC provider had no way to trust an internal CA | An identity provider behind an estate's own CA is the common case, and the only ways to reach one were a public certificate or skipping verification — on the service that decides who an operator is. The same omission the webhook returner had, found the same way. |
 | A node whose pillar did not compile answered nothing | Every exec function compiled pillar first and failed the job when that failed, so one unreadable file in the pillar tree meant no `test.ping`, no `grains.items`, no `service.status` — at exactly the moment somebody was trying to find out what was wrong with the node. The error travels on the execution context now and surfaces at the functions that read pillar. Found by running a node against a real tree whose pillar this process had no GPG key for. |
@@ -1498,6 +1500,15 @@ each other. An operator then logged in through `/v1/login` with
 `eauth: ldap` against that directory and the token drove the fleet, with
 a wrong password, an unknown user, an empty password, and an injected
 filter all refused with one message and told apart in the log.
+
+The extension model was run end to end: a Go binary was signed into a
+bundle by `tools/extbundle`, put in a node's cache, verified against a
+trust key and a version-and-digest pin, started as a sandboxed process,
+and called as `echo.say` through the ordinary module registry — with
+argument validation refusing an argument the extension had not declared.
+Three refusals were confirmed against the running node: a tampered
+executable, an unsigned extra file in the bundle, and a pin that no
+longer matches.
 
 It does not cover a Prometheus server actually scraping it, a real
 directory (OpenLDAP's slapd, Active Directory) rather than this
@@ -2009,11 +2020,58 @@ Groups come from `memberOf`, a group search, or both, with nested groups
 followed to a configured depth for Active Directory and a cycle
 terminating rather than hanging.
 
+**The extension model is built**, which is SPEC section 24 and the
+centre of the supply-chain goal. Salt's extensibility is a Python file
+dropped in `_modules/` on the file server, which the agent imports and
+runs in process, as root, with no signature requirement. SPEC 24.1 calls
+that a code distribution channel.
+
+An extension here is a separate executable speaking length-prefixed JSON
+over stdio. Length-prefixed rather than newline-delimited: a frame
+boundary must not depend on an extension never emitting a newline inside
+a string. Concurrency is a process pool, so an extension never has to be
+thread-safe; a hung one is killed and replaced, so it cannot hang the
+agent; a protocol violation kills the process rather than failing the
+call, because an extension that sent something unreadable has lost its
+place in the stream.
+
+A bundle is signed with Ed25519 over a Merkle root of its contents, and
+verified on **every load** rather than once at fetch — the cache is a
+directory on a managed node. Verification runs both ways: a listed file
+whose digest is wrong is tampering, and an unlisted file that is present
+is one nobody signed, in a directory the extension can load from. The
+root covers paths as well as contents, so a bundle cannot swap which
+file is the executable without changing what it is signed as. The signed
+message carries a domain separator, so a bundle signature can never be
+replayed as a signature over anything else this project signs.
+
+`Sandbox.Describe`, which `sys.list_extensions` shows, says what is
+actually enforced on the machine in front of the operator rather than
+what SPEC 24.3's table hopes for across five operating systems. Built:
+the process boundary, a dropped identity, a process group so a kill
+takes the children, and resource limits. Not built and named as such:
+Landlock, seccomp-bpf, `pledge`, `unveil`, and Windows job objects. The
+resource limits are applied by the child rather than the host, because
+`setrlimit` applies to the calling process — so they hold for an
+extension built against this protocol and not for an arbitrary one, and
+the description says that too.
+
+`RLIMIT_AS` is available and off by default: it bounds virtual address
+space, and a garbage-collected runtime reserves far more of that than it
+commits. A Go extension under a 512 MiB limit dies after about 160 MiB,
+measured on this build's own test extension.
+
 What is **not** built in the API:
 
-- **The bridge protocol and its sandbox** (SPEC section 24), which is
-  the last piece of phase 4 and brings the seventeen bridged returners
-  and the extension model with it.
+- **Extension synchronization** (SPEC 24.5). `saltutil.sync_all` does
+  not yet fetch bundles from `_ext/` on the file server; a bundle is put
+  in the cache by other means and loaded from there. The verification,
+  the pinning, and the running are built; the delivery is not.
+- **The bridged returners** (SPEC 20.3's seventeen), which are
+  extensions of kind `returner` and need the returner side of the
+  bridge wired to `internal/returner`.
+- **The migration tool's bridge skeleton** (SPEC 24.6), which detects a
+  formula carrying `_modules/` and generates a Go skeleton for it.
 - **The bridge protocol and its sandbox** (SPEC section 24), and with it
   the seventeen returners SPEC 20.3 marks Bridged.
 - **Node-side metrics.** A node has no exposition endpoint, so what only

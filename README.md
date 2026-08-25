@@ -203,8 +203,19 @@ first. Checked against `ldapsearch` — a real OpenLDAP client binds to
 this build's test directory and parses its responses, so both halves of
 the BER are validated by something this project did not write.
 
-What is not built is the bridge protocol, the last of phase 4, and
-phase 5: gitfs, agentless mode, and Windows.
+The extension model closed phase 4, and it is the centre of the
+supply-chain goal. Salt's extensibility is a Python file dropped in
+`_modules/` on the file server, which the agent imports and runs in
+process, as root, with no signature requirement. Here an extension is a
+separate executable speaking JSON over stdio: signed with Ed25519 over a
+Merkle root, pinned by version and digest, verified on every load,
+started as a sandboxed process, and killed if it hangs.
+`sys.list_extensions` reports what actually confines it on the machine
+in front of you, and names what does not.
+
+What is not built is extension synchronization — a bundle is put in the
+cache by other means rather than fetched from `_ext/` — and phase 5:
+gitfs, agentless mode, and Windows.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
