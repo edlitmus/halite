@@ -1448,6 +1448,8 @@ webhook delivered end to end onto the bus.
 | The payload reached the hub in a shape it refuses | The delivery was handed to `event.send` as a JSON string, and that runner declares `data` as a mapping, so every real delivery was refused — while the test passed, because a stub hub accepts either. The body is now carried as what it parsed to, and the test asserts the shape rather than the substring. |
 | Beacon events were in the wrong namespace | SPEC 17.1 puts a beacon under `halite/beacon/<node_id>/<beacon>/` and SPEC 18.1's own reactor example matches on it; they were arriving under `halite/node/<node_id>/`. A reactor written from the specification matched nothing and said nothing about it. Found while adding the metric that counts them. |
 | Two expositions concatenated are not one exposition | Both components expose `halite_build_info`, and the text format allows one `# HELP` per metric name in a document. A scraper rejects the whole body for the duplicate, so the failure arrives as "no metrics at all" rather than as one duplicated family. They are merged now. |
+| Configuring an extension returner deadlocked the node | A returner that is an extension arrives through `saltutil.sync_returners`, which needs a running node — and the node refused to start because its configured returner was not there. A node that will not boot cannot be sent the thing it is waiting for. A returner name this build does not have is no longer fatal; it fails every return with the reason instead, which is said once at startup. |
+| Warming an extension probed it with an empty function name | The first cut read "no such function" as proof the handshake had happened. That held until an extension parsed its arguments before looking at the function name, and then failed with "unexpected end of JSON input" — a message about nothing the operator had done. `Pool.Warm` already completed the handshake without calling anything. |
 | An extension's working directory was never created | Go reports that as `fork/exec <executable>: no such file or directory`, naming a file that is present and correct. Whoever read it would have gone looking at the executable, its permissions, and its architecture, and found nothing wrong with any of them. |
 | An extension's working directory sat inside the verified cache | At `<cache>/<name>/work`, so the store read it as a version of the extension and every load logged a refusal for it — beside three real ones, which is how an operator learns to ignore refusals. The cache holds bundles verified on every load, and a writable directory inside one is a file the manifest does not list. |
 | A login failure was logged as "unreachable" when it was a blank password | The classification was a boolean over "did the directory answer", so the commonest failure of all — somebody submitting the form with the password field empty, which this client refuses without asking the directory — read as an outage. An estate alerting on outages would have been alerted every time. It is a named reason now. |
@@ -1509,6 +1511,16 @@ argument validation refusing an argument the extension had not declared.
 Three refusals were confirmed against the running node: a tampered
 executable, an unsigned extra file in the bundle, and a pin that no
 longer matches.
+
+Synchronization was then run through the hub's own file server: a bundle
+published under `_ext/`, fetched by `saltutil.sync_all`, verified,
+pinned, and cached. A second synchronization reported it unchanged and
+downloaded nothing. The publisher then swapped the executable without
+re-signing; the synchronization refused it and the node went on
+answering with the version it already had. A second bundle, of kind
+`returner`, was synchronized and used as the node's returner — the
+scheduled job's returns were filed by an extension in a sandboxed
+process.
 
 It does not cover a Prometheus server actually scraping it, a real
 directory (OpenLDAP's slapd, Active Directory) rather than this
@@ -2061,17 +2073,26 @@ space, and a garbage-collected runtime reserves far more of that than it
 commits. A Go extension under a 512 MiB limit dies after about 160 MiB,
 measured on this build's own test extension.
 
+**Synchronization is built**, as SPEC 24.5's mapping of
+`saltutil.sync_all` and six per-kind variants. It fetches and does not
+load — the behavioural difference the specification states plainly — and
+the answer says so when anything arrived. A bundle is verified in a
+staging directory and moved into the cache only if it verifies, so a
+node running a good version does not lose it because somebody published
+a bad one. A bundle published at one path and signed as another is
+refused, and an extension pinned to a different version is not fetched
+at all.
+
+**The bridged returners are built.** SPEC 20.3's seventeen are
+extensions of kind `returner`, found by name, so `returner: postgres`
+does not require the operator to know it is one.
+
 What is **not** built in the API:
 
-- **Extension synchronization** (SPEC 24.5). `saltutil.sync_all` does
-  not yet fetch bundles from `_ext/` on the file server; a bundle is put
-  in the cache by other means and loaded from there. The verification,
-  the pinning, and the running are built; the delivery is not.
-- **The bridged returners** (SPEC 20.3's seventeen), which are
-  extensions of kind `returner` and need the returner side of the
-  bridge wired to `internal/returner`.
 - **The migration tool's bridge skeleton** (SPEC 24.6), which detects a
-  formula carrying `_modules/` and generates a Go skeleton for it.
+  formula carrying `_modules/` and generates a Go skeleton with the
+  function signatures filled in. The detection exists in the migration
+  report; the generation does not.
 - **The bridge protocol and its sandbox** (SPEC section 24), and with it
   the seventeen returners SPEC 20.3 marks Bridged.
 - **Node-side metrics.** A node has no exposition endpoint, so what only

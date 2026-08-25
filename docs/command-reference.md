@@ -441,11 +441,24 @@ defaults to `local`. See below.
 | `syslog` | RFC 5424, local socket or TCP, optionally over TLS | works |
 | `webhook` | HTTPS POST, signed, retried, spooled | works |
 | `smtp` | one mail per return | works |
-| `mysql`, `postgres`, `redis`, `elasticsearch`, `splunk`, `slack`, `kafka`, `sqs`, and the rest | bridged; SPEC section 24 | not built |
+| `mysql`, `postgres`, `redis`, `elasticsearch`, `splunk`, `slack`, `kafka`, `sqs`, and the rest | extensions of kind `returner` | works |
 
-A bridged destination is refused by name rather than reported as a typo:
-`returner: postgres` says it runs behind the bridge, and `returner:
-pstgres` says it is not a returner. Those are different problems.
+The seventeen bridged destinations are extensions of kind `returner`.
+`returner: postgres` finds the `postgres` extension by name, so you do
+not have to know it is one. Each needs a database driver or a vendor
+client, which is why they are not linked in.
+
+A returner name this build does not have is **not** fatal at startup.
+It becomes a returner that fails every return with the reason, said once
+when the node starts. That is deliberate: a returner extension arrives
+through `saltutil.sync_returners`, which needs a running node, so a node
+that refused to start could never be sent the thing it is waiting for.
+It does not fall back to `local` either — that would put the estate's
+returns in a file nobody is watching while the configuration says they
+are in a database.
+
+A genuine misconfiguration — an `http://` webhook url, a missing secret
+— is still fatal, because you can fix that by reading.
 
 The webhook returner is the one worth reading about:
 
@@ -1016,7 +1029,7 @@ An extension here is a separate signed executable.
 | no signature requirement | Ed25519 over a Merkle root, verified every load | works |
 | whatever the file server serves | pinned by version and digest | works |
 | no equivalent | `sys.list_extensions` | works |
-| `saltutil.sync_all` | fetch bundles from `_ext/` | not built |
+| `saltutil.sync_all` | fetch signed bundles from `_ext/` | works |
 
 ### What an extension is
 
@@ -1029,6 +1042,33 @@ thread-safe. A hung one is killed — SIGTERM, then SIGKILL, then a fresh
 process — so it cannot hang the agent. A protocol violation kills the
 process rather than failing the call: an extension that sent something
 unreadable has lost its place in the stream.
+
+### Fetching one
+
+Bundles are published on the file server under `_ext/<name>/<version>/`
+and fetched with `saltutil.sync_all`, or one of the per-kind variants:
+`sync_modules`, `sync_states`, `sync_grains`, `sync_beacons`,
+`sync_returners`, `sync_renderers`.
+
+```sh
+halite-hub run '*' saltutil.sync_all
+```
+
+**Synchronizing fetches; it does not load.** That is the behavioural
+difference SPEC 24.5 states plainly, and it is the point of the section:
+in Salt, `saltutil.sync_all` means "the agent will now execute new code
+from the file server". Here it means "the agent has fetched signed,
+pinned bundles", and what is running does not change until the node
+restarts. The answer says so when anything arrived.
+
+A bundle is fetched into a staging directory and verified there, and
+moved into the cache only if it verifies. One that fails is left out
+entirely rather than replacing what is there — a node running a good
+version must not lose it because somebody published a bad one.
+
+A bundle published at one path and signed as another is refused: trusting
+the path would let a bundle be installed under a name it was not signed
+for. An extension pinned to a different version is not fetched at all.
 
 ### Trusting one
 

@@ -213,9 +213,15 @@ started as a sandboxed process, and killed if it hangs.
 `sys.list_extensions` reports what actually confines it on the machine
 in front of you, and names what does not.
 
-What is not built is extension synchronization — a bundle is put in the
-cache by other means rather than fetched from `_ext/` — and phase 5:
-gitfs, agentless mode, and Windows.
+Bundles are delivered by the file server under `_ext/` and fetched with
+`saltutil.sync_all`, which keeps Salt's name and states the difference:
+synchronizing fetches, it does not load. What is running does not change
+until the node restarts. SPEC 20.3's seventeen bridged returners —
+postgres, redis, kafka — are extensions of kind `returner`, found by
+name.
+
+That closes phase 4. What is not built is SPEC 24.6's bridge-skeleton
+generator, and phase 5: gitfs, agentless mode, and Windows.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

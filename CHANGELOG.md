@@ -440,6 +440,22 @@ the RBAC policy never grants one. A name that collides with a built-in
 is refused rather than overriding it: in Salt, a file on the file server
 can change what `service.running` does.
 
+Bundles are delivered by the file server under `_ext/` and fetched with
+`saltutil.sync_all`, whose Salt name is kept and whose meaning is
+stated: synchronizing fetches, it does not load, and what is running
+does not change until the node restarts. A bundle is verified in a
+staging directory and moved into the cache only if it verifies, so a
+node running a good version does not lose it because somebody published
+a bad one.
+
+SPEC 20.3's seventeen bridged returners — postgres, redis, kafka, and
+the rest, each needing a driver a control plane does not link — are
+extensions of kind `returner`, found by name. Configuring one no longer
+deadlocks the node: a returner extension arrives through
+`saltutil.sync_returners`, which needs a running node, so a name this
+build does not have fails every return with the reason rather than
+stopping the node from starting.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -670,8 +686,7 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-Phases 5 and 6, and extension synchronization: a bundle is put in the
-cache by other means rather than fetched from `_ext/`. No gitfs, no
+Phases 5 and 6, and SPEC 24.6's bridge-skeleton generator. No gitfs, no
 s3fs, no agentless mode, no relays, no FIPS artifact set, no detached
 job signing, no signed state trees, and no backtracking regex engine.
 
