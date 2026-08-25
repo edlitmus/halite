@@ -208,3 +208,39 @@ func TestAnUndeclarableNeedIsRefusedAtLoad(t *testing.T) {
 		t.Fatal("an extension declaring something unenforceable was loaded")
 	}
 }
+
+// The working directory has to exist before the process starts.
+//
+// Without this the failure is `fork/exec <executable>: no such file or
+// directory`, which names the executable — a file that is present and
+// correct — and sends whoever reads it entirely the wrong way. Found by
+// running a node against a signed bundle in the lab.
+func TestTheWorkingDirectoryIsCreated(t *testing.T) {
+	cache := t.TempDir()
+	key := installReal(t, cache)
+	store := &Store{Dir: cache, Options: LoadOptions{
+		TrustKeys: []TrustKey{key}, RequireSignature: true,
+	}}
+	installed, _ := store.Load()
+	usable, _ := store.Usable(installed)
+
+	// A directory that does not exist and is several levels deep.
+	work := filepath.Join(t.TempDir(), "ext", "echo", "work")
+	rt := &Runtime{
+		WorkDirFor: func(string) string { return work },
+		Timeout:    20 * time.Second,
+	}
+	defer rt.Close()
+	if err := rt.Add(usable["echo"]); err != nil {
+		t.Fatal(err)
+	}
+	loaded, _ := rt.Get("echo")
+
+	if _, err := loaded.Call(context.Background(), "say", nil,
+		map[string]any{"message": "hi"}, nil); err != nil {
+		t.Fatalf("the extension could not start: %v", err)
+	}
+	if info, err := os.Stat(work); err != nil || !info.IsDir() {
+		t.Errorf("the working directory was not created: %v", err)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"sync"
@@ -166,6 +167,16 @@ func (l *Loaded) ensure(ctx context.Context) (*bridge.Pool, error) {
 			return
 		}
 		name := l.name
+		// The working directory has to exist before the process starts.
+		// Without this the failure is `fork/exec <executable>: no such
+		// file or directory` — which names the executable, exists, and
+		// sends whoever reads it to entirely the wrong place.
+		if dir := l.rt.workDir(name); dir != "" {
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				l.poolErr = fmt.Errorf("the working directory for %s: %w", name, err)
+				return
+			}
+		}
 		opts := bridge.Options{
 			Path:    exe,
 			Kind:    l.Bundle.Manifest.Kind,

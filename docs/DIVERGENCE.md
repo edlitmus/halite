@@ -206,7 +206,7 @@ the *protocol*.
 
 ## 2. Module coverage
 
-The build ships **44 execution modules / 235 functions** and **20 state
+The build ships **44 execution modules / 236 functions** and **20 state
 modules / 56 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -247,7 +247,7 @@ different reason is given.
 | `service` | implemented | 16 | FreeBSD rc provider only; see 2.5 |
 | `ssh_auth` | implemented | 1 | registered as `ssh.auth_keys` |
 | `status` | implemented | 4 | |
-| `sys` | implemented | 8 | |
+| `sys` | implemented | 9 | |
 | `sysctl` | implemented | 3 | |
 | `sysrc` | implemented | 3 | FreeBSD; SPEC lists it as core |
 | `test` | implemented | 5 | |

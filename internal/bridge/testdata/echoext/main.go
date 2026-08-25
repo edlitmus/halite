@@ -25,7 +25,8 @@ func main() {
 		Kind:     "module",
 		Declares: declaresFromEnv(),
 		Functions: []json.RawMessage{
-			json.RawMessage(`{"module":"echo","function":"say","doc":"Return what it was given."}`),
+			json.RawMessage(`{"module":"echo","function":"say","doc":"Return what it was given.",` +
+				`"params":[{"name":"message","type":"string","required":true,"doc":"What to say back."}]}`),
 		},
 		Handler: handle,
 	}

@@ -1,6 +1,8 @@
 package builtin
 
 import (
+	"sort"
+
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -23,6 +25,33 @@ func registerSys(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return toAnyList(r.Exec.Signatures().Modules()), nil
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "sys", Function: "list_extensions",
+				Doc:      "List the signed extensions this node has loaded, and what confines each.",
+				TestMode: signature.TestNotApplicable,
+				Section:  "24.4",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				// A node with no extensions answers with an empty list
+				// rather than an error: "none" is the normal case and
+				// the common one, and an error would make a check for
+				// "is anything unsigned here" fail on every ordinary
+				// node.
+				if c.Extensions == nil {
+					return []any{}, nil
+				}
+				out := make([]any, 0)
+				for _, described := range c.Extensions() {
+					entry := value.NewMap(len(described))
+					for _, key := range sortedKeys(described) {
+						entry.Set(key, described[key])
+					}
+					out = append(out, entry)
+				}
+				return out, nil
 			},
 		},
 		exec.Module{
@@ -171,5 +200,16 @@ func toAnyList(ss []string) []any {
 	for i, s := range ss {
 		out[i] = s
 	}
+	return out
+}
+
+// sortedKeys keeps `sys.list_extensions` rendering the same way twice,
+// which matters because an operator compares two nodes' output.
+func sortedKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
 	return out
 }

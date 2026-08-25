@@ -91,6 +91,14 @@ type Context struct {
 	// received.
 	Events EventSender
 
+	// Extensions reports the signed bridges this node has loaded, for
+	// `sys.list_extensions`. Nil on a node with none, and on the hub,
+	// where the answer is that there are none rather than an error.
+	//
+	// A function rather than the runtime itself, so that this package
+	// does not depend on the extension machinery to describe it.
+	Extensions func() []map[string]any
+
 	// RecompilePillar rebuilds this node's pillar from wherever it comes
 	// from -- the hub, or the local roots -- and backs `pillar.refresh`.
 	//

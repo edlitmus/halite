@@ -486,3 +486,36 @@ func TestARefusedBundleIsStillReported(t *testing.T) {
 		t.Error("the refusal is not reported as a problem")
 	}
 }
+
+// A directory that is not a bundle must not be read as a version of the
+// extension.
+//
+// It was: the node put each extension's writable working directory at
+// `<cache>/<name>/work`, so every load reported a refusal for a
+// "version" called `work` that had no manifest. Found in the lab, where
+// the spurious refusal appeared beside three real ones and would have
+// taught an operator to ignore them.
+func TestADirectoryWithNoManifestIsReportedAsWhatItIs(t *testing.T) {
+	cache := t.TempDir()
+	key := installBundle(t, cache, "echo", "1.0.0")
+	if err := os.MkdirAll(filepath.Join(cache, "echo", "work"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	store := &Store{Dir: cache, Options: loadOpts(key)}
+	installed, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(installed) != 2 {
+		t.Fatalf("the cache read as %d entries", len(installed))
+	}
+	// The real bundle still loads, and is the one that is usable.
+	usable, _ := store.Usable(installed)
+	if usable["echo"] == nil {
+		t.Error("a stray directory beside a bundle made the bundle unusable")
+	}
+	if usable["echo"].Manifest.Version != "1.0.0" {
+		t.Errorf("it picked %s", usable["echo"].Manifest.Version)
+	}
+}

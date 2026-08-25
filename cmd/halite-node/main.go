@@ -23,6 +23,7 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/job"
@@ -187,6 +188,9 @@ type node struct {
 	// startup so a misconfiguration stops the node rather than being
 	// discovered by the first scheduled job that had somewhere to go.
 	returns returner.Returner
+	// extensions are the signed bridges of SPEC section 24. Nil on a
+	// node with none, which is the normal case.
+	extensions *extension.Runtime
 	// hubTree records that this node is compiling against the hub's
 	// tree, so a reconnect does not probe the file server again for a
 	// tree it already has.
@@ -269,6 +273,13 @@ func setup(args *cli.Args) *node {
 	if err := checkEnvPermitted(cfg, n.pillarEnv); err != nil {
 		cli.Fatalf("%v", err)
 	}
+
+	// The signed extensions of SPEC section 24, loaded before anything
+	// can call one. A failure here is a warning: an extension that does
+	// not verify must not run, and must not stop the node either — a
+	// node that refuses to start cannot be sent the highstate that
+	// would fix it.
+	n.openExtensions()
 
 	n.nodeID = resolveNodeID(args, cfg)
 	// SPEC 26.1 puts the identity on every record. It cannot go on at
@@ -562,6 +573,7 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 		// so a node on a hub asks the hub and a local one recompiles
 		// its roots, without the module knowing which it is.
 		RecompilePillar: n.compilePillarOrErr,
+		Extensions:      n.describeExtensions,
 		Log: func(level, msg string) {
 			// A module names its own level, so the threshold is the
 			// logger's rather than a hard-coded pair.

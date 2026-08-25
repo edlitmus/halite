@@ -55,8 +55,14 @@ Read by the node agent.
 | `env` | `base` | 13.1 | The default environment. saltenv is a permanent alias. |
 | `env_allowlist` | — | 28.3 | Environments a run may use. |
 | `env_denylist` | — | 28.3 | Environments a run may not use. |
-| `extension_require_signature` | `true` | 24.4 | Refuse an unsigned extension. |
-| `extension_trust_keys` | — | 24.4 | Keys whose signed extension bundles this node accepts. |
+| `extension_dir` | — | 24.4 | Extension cache; empty is <state_dir>/ext. |
+| `extension_group` | — | 24.3 | Its group. |
+| `extension_pins` | — | 24.4 | Fixes each extension by version and Merkle root. |
+| `extension_pool_size` | `4` | 24.2 | Processes one extension may have. |
+| `extension_require_signature` | `true` | 24.4 | Refuse an unsigned extension. False is for development and warns on every load. |
+| `extension_timeout` | `60s` | 24.2 | How long one extension call may take. |
+| `extension_trust_keys` | — | 24.4 | Keys whose signed extension bundles this node accepts, as `<name> <base64>`. |
+| `extension_user` | — | 24.3 | Account an extension drops to unless it declares root. |
 | `failhard` | `false` | 11.4 | Abort a state run on the first failure. |
 | `file_roots` | — | 13.1 | Environment to an ordered list of state directories. |
 | `gpg_binary` | `gpg` | 12.6 | The gpg binary the gpg renderer drives. |
@@ -160,6 +166,14 @@ Read by the hub.
 | `event_tag_compat` | `false` | 17.1 | Additionally emit every event under its salt/ equivalent. |
 | `ext_pillar` | — | 12.7 | External pillar sources. |
 | `ext_pillar_fail` | `hard` | 12.7 | hard or ignore. A partial pillar is worse than no pillar. |
+| `extension_dir` | — | 24.4 | Extension cache; empty is <state_dir>/ext. |
+| `extension_group` | — | 24.3 | Its group. |
+| `extension_pins` | — | 24.4 | Fixes each extension by version and Merkle root. |
+| `extension_pool_size` | `4` | 24.2 | Processes one extension may have. |
+| `extension_require_signature` | `true` | 24.4 | Refuse an unsigned extension. False is for development and warns on every load. |
+| `extension_timeout` | `60s` | 24.2 | How long one extension call may take. |
+| `extension_trust_keys` | — | 24.4 | Keys whose signed extension bundles this node accepts, as `<name> <base64>`. |
+| `extension_user` | — | 24.3 | Account an extension drops to unless it declares root. |
 | `failhard` | `false` | 11.4 | Abort a state run on the first failure. |
 | `file_ignore_glob` | — | 13.5 | Paths the file server hides. |
 | `file_ignore_regex` | — | 13.5 | Paths the file server hides. |
