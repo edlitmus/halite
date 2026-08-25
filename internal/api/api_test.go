@@ -338,11 +338,22 @@ func TestASmuggledSecondValueIsRefused(t *testing.T) {
 func TestAnUnknownAuthBackendIsRefusedByName(t *testing.T) {
 	l := newLab(t)
 	res, body := l.post(t, PathLogin,
-		`{"username":"ed","password":"hunter2","eauth":"ldap"}`, "")
+		`{"username":"ed","password":"hunter2","eauth":"kerberos"}`, "")
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("an unknown backend answered %d", res.StatusCode)
 	}
 	if !strings.Contains(body, "local") {
+		t.Errorf("the refusal says %q", body)
+	}
+
+	// A backend this build has, on a service that is not configured for
+	// it, says that rather than falling through to local accounts.
+	res, body = l.post(t, PathLogin,
+		`{"username":"ed","password":"hunter2","eauth":"ldap"}`, "")
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("`eauth: ldap` with no directory answered %d", res.StatusCode)
+	}
+	if !strings.Contains(body, "not configured with a directory") {
 		t.Errorf("the refusal says %q", body)
 	}
 }

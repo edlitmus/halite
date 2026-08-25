@@ -23,6 +23,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/account"
 	"github.com/edlitmus/halite/internal/apitoken"
+	"github.com/edlitmus/halite/internal/ldap"
 	"github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/oidc"
@@ -50,6 +51,10 @@ type Server struct {
 	// OIDC is the identity provider of SPEC 23.4. Nil is no provider,
 	// and a login naming one is refused by name.
 	OIDC *oidc.Provider
+	// LDAP is the directory of SPEC 23.3, reached through `/v1/login`
+	// with `eauth: ldap` because unlike OIDC it is a username and a
+	// password. Nil is no directory.
+	LDAP *ldap.Client
 	// Signatures back `/v1/schema`, so a client can discover what a
 	// function takes without reading the documentation.
 	Signatures *signature.Registry

@@ -74,6 +74,7 @@ func runServe(args *cli.Args) int {
 		TokenIdle:     s.cfg.Duration("token_idle", 4*time.Hour),
 		Metrics:       metricsRegistry(s.cfg),
 		OIDC:          s.oidcProvider(),
+		LDAP:          s.ldapClient(),
 	}
 
 	pair := servingCertificate(s, args)

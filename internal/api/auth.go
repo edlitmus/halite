@@ -46,6 +46,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 	switch req.Eauth {
 	case "", "local":
+	case "ldap":
+		if s.LDAP == nil {
+			writeError(w, http.StatusBadRequest, "this service is not configured with a directory")
+			return
+		}
+		s.ldapLogin(w, r, req)
+		return
 	case "oidc":
 		// Named rather than silently handled here: the OIDC flow is not
 		// a username and a password, and answering this request with a
@@ -57,8 +64,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		writeError(w, http.StatusBadRequest,
-			"this build authenticates against `local` accounts and `oidc`; "+
-				"LDAP is not built (SPEC section 23.3)")
+			"this build authenticates against `local`, `ldap`, and `oidc`")
 		return
 	}
 

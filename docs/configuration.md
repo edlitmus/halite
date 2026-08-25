@@ -255,6 +255,23 @@ Read by the API service.
 | `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
 | `hooks` | — | 22.2 | Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook. |
 | `hub` | — | 5.1 | The hub to dial. A node and the API dial the hub; the hub never dials either. |
+| `ldap_address` | — | 23.3 | Directory host:port; empty disables LDAP. |
+| `ldap_bind_dn` | — | 23.3 | Service account this client searches with. |
+| `ldap_bind_password` | — | 23.3 | Its password; prefer the file form. |
+| `ldap_bind_password_file` | — | 23.3 | File holding the bind password, mode 600. |
+| `ldap_ca_file` | — | 23.3 | CA to verify the directory against. |
+| `ldap_group_attribute` | `cn` | 23.3 | Attribute on a group entry holding its name. |
+| `ldap_group_base_dn` | — | 23.3 | Where groups are searched for. |
+| `ldap_group_filter` | — | 23.3 | Group search; %s is the escaped user DN. |
+| `ldap_member_of_attribute` | `memberOf` | 23.3 | Attribute on a user entry listing their groups. |
+| `ldap_nested_depth` | `0` | 23.3 | How far to follow a group's own memberships. |
+| `ldap_principal_attribute` | — | 23.3 | Attribute naming the operator; empty uses the username. |
+| `ldap_role_map` | — | 23.3 | Maps a directory group to roles in the policy. |
+| `ldap_server_name` | — | 23.3 | Name to verify in the directory's certificate. |
+| `ldap_timeout` | `10s` | 23.3 | How long one directory operation may take. |
+| `ldap_tls` | `ldaps` | 23.3 | ldaps or starttls. There is no plaintext mode. |
+| `ldap_user_base_dn` | — | 23.3 | Where operators are looked for. |
+| `ldap_user_filter` | `(uid=%s)` | 23.3 | How they are looked for; %s is the escaped username. |
 | `listen` | `:4510` | 6.1 | Listen address. |
 | `log_file` | — | 26.1 | Log file; empty logs to stderr or the journal. |
 | `log_format` | `json` | 26.1 | json or console. |

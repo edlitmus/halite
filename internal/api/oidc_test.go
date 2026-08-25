@@ -280,9 +280,9 @@ func TestEauthOIDCIsSentToTheRightEndpoint(t *testing.T) {
 	if !strings.Contains(body, PathLoginOIDC) {
 		t.Errorf("the answer does not say where to go: %s", body)
 	}
-	res, body = l.post(t, PathLogin, `{"username":"ed","password":"hunter2","eauth":"ldap"}`, "")
-	if res.StatusCode != http.StatusBadRequest || !strings.Contains(body, "LDAP is not built") {
-		t.Errorf("eauth: ldap answered %d: %s", res.StatusCode, body)
+	res, body = l.post(t, PathLogin, `{"username":"ed","password":"hunter2","eauth":"kerberos"}`, "")
+	if res.StatusCode != http.StatusBadRequest || !strings.Contains(body, "`local`") {
+		t.Errorf("an unknown backend answered %d: %s", res.StatusCode, body)
 	}
 }
 

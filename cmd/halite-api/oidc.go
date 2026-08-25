@@ -7,7 +7,6 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/oidc"
-	"github.com/edlitmus/halite/internal/value"
 )
 
 // oidcProvider builds the identity provider of SPEC 23.4, or nil when
@@ -31,7 +30,7 @@ func (s *service) oidcProvider() *oidc.Provider {
 		Scopes:         splitList(s.cfg.String("oidc_scopes", "")),
 		GroupsClaim:    s.cfg.String("oidc_groups_claim", "groups"),
 		PrincipalClaim: s.cfg.String("oidc_principal_claim", "sub"),
-		RoleMap:        oidcRoleMap(s),
+		RoleMap:        oidcRoleMapOrFatal(s),
 		Skew:           s.cfg.Duration("oidc_skew", 60*time.Second),
 		CAFile:         s.cfg.String("oidc_ca_file", ""),
 	})
@@ -55,45 +54,6 @@ func oidcSecret(s *service) string {
 	return s.cfg.String("oidc_client_secret", "")
 }
 
-// oidcRoleMap reads `oidc_role_map`, a mapping of provider group to
-// roles in the policy.
-//
-// A group that is not here grants nothing, so an empty map with an
-// issuer configured means nobody can log in — which is refused at
-// startup rather than discovered by the first operator who tries.
-func oidcRoleMap(s *service) map[string][]string {
-	raw, ok := s.cfg.Get("oidc_role_map")
-	if !ok || raw == nil {
-		cli.Fatalf("oidc: `oidc_issuer` is set and `oidc_role_map` is not; " +
-			"a group with no mapping grants nothing, so nobody could log in")
-	}
-	m, ok := raw.(*value.Map)
-	if !ok {
-		cli.Fatalf("oidc: `oidc_role_map` is a mapping of group to roles, not %s", value.TypeName(raw))
-	}
-	out := map[string][]string{}
-	for _, e := range m.Entries() {
-		group := value.KeyString(e.Key)
-		switch v := e.Val.(type) {
-		case string:
-			out[group] = []string{v}
-		case []any:
-			for _, item := range v {
-				if role := value.KeyString(item); role != "" {
-					out[group] = append(out[group], role)
-				}
-			}
-		default:
-			cli.Fatalf("oidc: `oidc_role_map`: %s maps to %s, and a group maps to a role or a list of them",
-				group, value.TypeName(e.Val))
-		}
-	}
-	if len(out) == 0 {
-		cli.Fatalf("oidc: `oidc_role_map` is empty; a group with no mapping grants nothing")
-	}
-	return out
-}
-
 // splitList reads a comma-separated setting.
 func splitList(v string) []string {
 	if strings.TrimSpace(v) == "" {
@@ -107,4 +67,17 @@ func splitList(v string) []string {
 		}
 	}
 	return out
+}
+
+// oidcRoleMapOrFatal reads `oidc_role_map` and refuses an empty one.
+//
+// An issuer with no map means nobody can log in, which is refused at
+// startup rather than discovered by the first operator who tries.
+func oidcRoleMapOrFatal(s *service) map[string][]string {
+	table := roleMap(s.cfg.Get("oidc_role_map"))
+	if len(table) == 0 {
+		cli.Fatalf("oidc: `oidc_issuer` is set and `oidc_role_map` is not; " +
+			"a group with no mapping grants nothing, so nobody could log in")
+	}
+	return table
 }
