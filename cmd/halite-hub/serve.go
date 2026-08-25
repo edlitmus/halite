@@ -227,14 +227,48 @@ func runServe(args *cli.Args) int {
 		if err := files.SetIgnoreRegexes(h.cfg.StringSlice("file_ignore_regex")); err != nil {
 			cli.Fatalf("%v", err)
 		}
-		if backends := h.cfg.StringSlice("fileserver_backend"); len(backends) > 0 {
-			for _, b := range backends {
-				if b != "roots" {
-					h.log.Warn("this build serves only the roots backend",
-						"configured", b, "section", "13.2")
-				}
+		for _, b := range h.cfg.StringSlice("fileserver_backend") {
+			switch b {
+			case "roots", "git", "gitfs":
+			default:
+				h.log.Warn("this build serves the roots and git backends",
+					"configured", b, "section", "13.2")
 			}
 		}
+	}
+
+	// The git backend of SPEC 13.3. Built before the listener opens, so
+	// a bad remote or a missing keyring stops the hub where the
+	// operator who wrote it is looking.
+	gitBackend := h.gitBackend()
+	if gitBackend != nil && files == nil {
+		// gitfs supplies the roots itself, so a hub serving only git
+		// needs a file server even with no `file_roots`.
+		files = fileserver.NewRoots(map[string][]string{})
+		files.FollowSymlinks = h.cfg.Bool("fileserver_follow_symlinks", false)
+		files.IgnoreGlobs = h.cfg.StringSlice("file_ignore_glob")
+		if err := files.SetIgnoreRegexes(h.cfg.StringSlice("file_ignore_regex")); err != nil {
+			cli.Fatalf("%v", err)
+		}
+	}
+	localRoots := map[string][]string{}
+	if files != nil {
+		localRoots = files.SnapshotDirs()
+	}
+	if gitBackend != nil {
+		// The first fetch happens before the hub answers, so a node
+		// asking in the first second gets the tree rather than an empty
+		// environment. A failure is a warning: a hub that will not
+		// start because a repository is unreachable is a hub that
+		// cannot serve the local roots it also has.
+		// The signal context does not exist yet, and git's own timeout
+		// bounds the fetch.
+		if err := updateGitfs(context.Background(), gitBackend, files, localRoots); err != nil {
+			h.log.Warn("the git file server could not be updated at startup", "error", err.Error())
+		}
+		h.log.Info("git file server", "remotes", len(h.cfg.StringSlice("gitfs_remotes")),
+			"environments", strings.Join(gitBackend.Envs(), ","),
+			"verify_signatures", h.cfg.Bool("gitfs_verify_signatures", false))
 	}
 
 	// Hub-side pillar. Without pillar_roots the hub compiles none and
@@ -307,6 +341,23 @@ func runServe(args *cli.Args) int {
 		EventTagCompat: h.cfg.Bool("event_tag_compat", false),
 		Metrics:        metricsRegistry(h.cfg),
 	}
+	if gitBackend != nil {
+		server.UpdateFileServer = func(ctx context.Context) (any, error) {
+			err := updateGitfs(ctx, gitBackend, files, localRoots)
+			// The state is returned whether or not the update
+			// succeeded: an operator running this after a push wants to
+			// see which refs resolved and which were refused, and an
+			// error alone says neither.
+			out := map[string]any{
+				"remotes":      gitBackend.Describe(),
+				"environments": gitBackend.Envs(),
+			}
+			if err != nil {
+				out["error"] = err.Error()
+			}
+			return out, nil
+		}
+	}
 
 	ln, err := hub.Listen(listen, pair, h.auth.CA.Cert, h.denied)
 	if err != nil {
@@ -366,6 +417,24 @@ func runServe(args *cli.Args) int {
 				h.log.Error("the event returner stopped", "error", err.Error())
 			}
 		}()
+	}
+	if gitBackend != nil {
+		if interval := h.cfg.Duration("gitfs_update_interval", 5*time.Minute); interval > 0 {
+			go func() {
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						if err := updateGitfs(ctx, gitBackend, files, localRoots); err != nil {
+							h.log.Warn("the git file server could not be updated", "error", err.Error())
+						}
+					}
+				}
+			}()
+		}
 	}
 	go maintain(ctx, h, server, jobs, bus)
 

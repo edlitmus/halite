@@ -19,6 +19,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/template"
@@ -32,7 +33,13 @@ var ErrOutsideRoot = errors.New("path resolves outside the configured root")
 // list of directories, searched in order with the first match winning.
 type Roots struct {
 	// Dirs maps an environment to its ordered search path.
+	//
+	// Read through `dirsFor`, never directly, because a backend that
+	// fetches — gitfs — replaces it while handlers are serving.
 	Dirs map[string][]string
+	// mu guards Dirs. Zero-valued and unused by a file server whose
+	// roots never change, which is every one that serves only `roots`.
+	mu sync.RWMutex
 	// FollowSymlinks permits a symlink inside a served tree to be
 	// followed. A symlink pointing outside the root is refused whatever
 	// this says.
@@ -71,6 +78,8 @@ func NewRoots(dirs map[string][]string) *Roots {
 // Envs lists the environments, with the default first and the rest sorted,
 // so that compilation order is stable.
 func (r *Roots) Envs() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]string, 0, len(r.Dirs))
 	for env := range r.Dirs {
 		out = append(out, env)
@@ -91,7 +100,7 @@ func (r *Roots) Envs() []string {
 // The returned path is guaranteed to be inside the root it was found in,
 // with symlinks resolved.
 func (r *Roots) Resolve(env, rel string) (string, error) {
-	dirs, ok := r.Dirs[env]
+	dirs, ok := r.dirsFor(env)
 	if !ok {
 		return "", fmt.Errorf("environment %q has no roots configured", env)
 	}
@@ -314,7 +323,7 @@ func IsManagedURI(uri string) bool {
 // List walks an environment's roots and returns every file path, relative
 // and slash-separated, sorted and de-duplicated.
 func (r *Roots) List(env string) ([]string, error) {
-	dirs, ok := r.Dirs[env]
+	dirs, ok := r.dirsFor(env)
 	if !ok {
 		return nil, fmt.Errorf("environment %q has no roots configured", env)
 	}
@@ -356,4 +365,34 @@ func (r *Roots) List(env string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// dirsFor is the search path for an environment.
+func (r *Roots) dirsFor(env string) ([]string, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	dirs, ok := r.Dirs[env]
+	return dirs, ok
+}
+
+// SetDirs replaces the whole search path.
+//
+// Wholesale rather than merged, because a branch that has gone away
+// must stop being served: an update that only added would keep serving
+// an environment nobody has any more.
+func (r *Roots) SetDirs(dirs map[string][]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Dirs = dirs
+}
+
+// SnapshotDirs is the current search path, copied.
+func (r *Roots) SnapshotDirs() map[string][]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string][]string, len(r.Dirs))
+	for env, list := range r.Dirs {
+		out[env] = append([]string(nil), list...)
+	}
+	return out
 }

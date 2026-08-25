@@ -97,6 +97,11 @@ type Server struct {
 	// missing as well as when it is empty.
 	Policy *policy.Policy
 
+	// UpdateFileServer refreshes a fetching backend — gitfs — and
+	// answers with what each remote resolved to. Nil on a hub serving
+	// only `roots`, which has nothing to fetch.
+	UpdateFileServer func(ctx context.Context) (any, error)
+
 	// Metrics is the registry this hub exposes at /v1/metrics. A hub
 	// without one is instrumented and records nothing, which is what
 	// every test wants and what SPEC 26.2 allows an operator to choose.

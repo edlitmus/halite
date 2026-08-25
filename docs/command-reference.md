@@ -278,7 +278,7 @@ answer from the binary, so they work when the hub does not.
 | `salt-run mine.get` | `halite-hub runner mine.get` | works |
 | `salt-run queue.process_queue` | `halite-hub runner queue.process_queue` | not built |
 | `salt-run net.find` | `halite-hub runner net.find` | not built |
-| `salt-run fileserver.update` | `halite-hub runner fileserver.update` | phase 5 |
+| `salt-run fileserver.update` | `halite-hub runner fileserver.update` | works |
 | `salt-run manage.bootstrap` | `halite-hub runner manage.bootstrap` | phase 5 |
 
 Salt separates `manage.present`, `manage.alived`, and `manage.up`

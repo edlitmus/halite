@@ -2,6 +2,7 @@ package hub
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
@@ -220,8 +221,18 @@ func registerFileserverRunner(r *Runners) {
 				"it resolves links today and does not list them (SPEC section 13.5)",
 		},
 		RunnerModule{
-			Sig:     runnerSig("fileserver", "update", "Refresh a remote backend.", "19.2"),
-			Pending: "phase 5, with gitfs and s3fs; the roots backend reads the filesystem and has nothing to fetch (SPEC section 13.2)",
+			Sig: runnerSig("fileserver", "update",
+				"Fetch every remote file server backend and report what each ref resolved to.", "19.2"),
+			Fn: func(c *RunnerContext) (any, error) {
+				if c.Server.UpdateFileServer == nil {
+					// A hub serving only `roots` reads the filesystem
+					// and has nothing to fetch. Said plainly rather
+					// than reported as a success that did nothing.
+					return nil, errors.New("this hub serves only the roots backend, which reads " +
+						"the filesystem and has nothing to fetch")
+				}
+				return c.Server.UpdateFileServer(c.Ctx)
+			},
 		},
 		RunnerModule{
 			Sig:     runnerSig("fileserver", "clear_cache", "Drop a remote backend's cache.", "19.2"),

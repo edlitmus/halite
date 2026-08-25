@@ -27,8 +27,6 @@ var unreadKeys = map[string]string{
 	// stream are built, so their settings have come off this list.
 	"tracing":                 "phase 2: no spans are emitted yet",
 	"ext_pillar_fail":         "phase 2: external pillar is a hub concern",
-	"gitfs_base":              "phase 5: gitfs",
-	"gitfs_verify_signatures": "phase 5: gitfs",
 	"job_signer_keys":         "phase 6: detached job signing",
 	"require_job_signature":   "phase 6: detached job signing",
 	"pillar_cache_disk":       "phase 2: the node caches pillar from a hub",
@@ -47,8 +45,6 @@ var unreadKeys = map[string]string{
 	"relay_upstream":      "phase 5: relays",
 	"relay_upstream_port": "phase 5: relays",
 	"startup_states":      "phase 2: a node with a hub applies at startup",
-	"gitfs_env_allowlist": "phase 5: gitfs",
-	"gitfs_env_denylist":  "phase 5: gitfs",
 	"job_cache":           "phase 2: there is no job cache",
 	"node_data_cache":     "phase 2: the hub caches node data",
 	"hub_type":            "phase 2: nothing dials a hub yet",

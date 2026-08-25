@@ -181,8 +181,14 @@ Read by the hub.
 | `fileserver_backend` | `roots` | 13.2 | Ordered list of file server backends. |
 | `fileserver_follow_symlinks` | `false` | 13.5 | Follow symlinks inside a served root. Never outside it. |
 | `gitfs_base` | `main` | 13.3 | The branch that becomes the base environment. |
+| `gitfs_cache_dir` | — | 13.3 | Where mirrors live; empty is <cache_dir>/gitfs. |
 | `gitfs_env_allowlist` | — | 13.3 | Git refs the file server exposes as environments. |
 | `gitfs_env_denylist` | — | 13.3 | Git refs the file server refuses to expose. |
+| `gitfs_keyring` | — | 13.3 | GnuPG home holding the keys a signed ref must be signed by. |
+| `gitfs_ref_types` | `branches` | 13.3 | What becomes an environment: branches, tags, or both. |
+| `gitfs_remotes` | — | 13.3 | Git repositories the file server serves. |
+| `gitfs_root` | — | 13.3 | Subdirectory inside each repository to serve. |
+| `gitfs_update_interval` | `5m` | 13.3 | How often the hub fetches; 0 fetches only on demand. |
 | `gitfs_verify_signatures` | `false` | 13.3 | Serve a ref only if its tip carries a trusted signature. |
 | `gpg_binary` | `gpg` | 12.6 | The gpg binary the gpg renderer drives. |
 | `gpg_home` | — | 12.6 | GNUPGHOME for the gpg renderer. Empty uses the environment's. |
