@@ -193,6 +193,10 @@ The larger absences today:
 - **Agentless mode** (`salt-ssh`) and **relays**. Phase 5.
 - **Windows and macOS modules.** Phase 5. The code cross-compiles; none
   of it has been run.
+- **`_modules/` and friends.** A formula carrying custom Python is not
+  portable without conversion. `migrate --bridge-skeleton <dir>`
+  generates a Go bridge for each one, with the signatures filled in from
+  the source, which makes the job bounded rather than removing it.
 - **`publisher_acl` and friends.** halite has one authorization file
   with one grammar (SPEC 23.5), not five overlapping mechanisms. The
   shape is different enough that an existing Salt ACL is rewritten

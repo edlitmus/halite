@@ -220,8 +220,13 @@ until the node restarts. SPEC 20.3's seventeen bridged returners —
 postgres, redis, kafka — are extensions of kind `returner`, found by
 name.
 
-That closes phase 4. What is not built is SPEC 24.6's bridge-skeleton
-generator, and phase 5: gitfs, agentless mode, and Windows.
+`halite-hub migrate --bridge-skeleton` closes the loop for a formula
+that carries custom Python: it reads the modules and writes a Go bridge
+per module with the signatures filled in. The porting job stays, and it
+becomes a bounded one.
+
+**That completes phase 4.** What is not built is phase 5 — gitfs, s3fs,
+agentless mode, relays, and Windows and macOS parity — and phase 6.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

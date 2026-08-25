@@ -57,6 +57,7 @@ mixing them up is why `grains item a b c` used to answer about `a`.
 | no equivalent | `halite-hub migrate /srv/salt --salt-config /etc/salt/master` | works | <!-- lexicon:allow -->
 | no equivalent | `halite-hub migrate /srv/salt --fail-on review` | works |
 | no equivalent | `halite-hub migrate /srv/salt --cmd-default-shell` | works |
+| no equivalent | `halite-hub migrate /srv/salt --bridge-skeleton ./bridges` | works |
 | `salt-call --local state.show_sls web` (to find errors) | `halite-node lint /srv/salt/web.sls` | works |
 | no equivalent | `halite-hub lint /srv/salt/web.sls` | works |
 
@@ -1025,11 +1026,38 @@ An extension here is a separate signed executable.
 | Salt | halite | Status |
 |---|---|---|
 | `_modules/`, `_states/` on the file server | a signed extension bundle | works |
+| no equivalent | `migrate --bridge-skeleton` generates one from the Python | works |
 | the agent imports it in process | a separate process, sandboxed | works |
 | no signature requirement | Ed25519 over a Merkle root, verified every load | works |
 | whatever the file server serves | pinned by version and digest | works |
 | no equivalent | `sys.list_extensions` | works |
 | `saltutil.sync_all` | fetch signed bundles from `_ext/` | works |
+
+### Porting a formula that carries one
+
+A community formula with `_modules/` or `_states/` is not portable
+without conversion, and there is no way around that. What the migration
+tool does is make the job bounded:
+
+```sh
+halite-hub migrate /srv/salt --bridge-skeleton ./bridges
+```
+
+It writes one Go command per Python module, with the function names,
+parameters, and defaults filled in from the source. `__virtualname__` is
+honoured — that is the name a state calls the module by, so it is the
+name the bridge answers to — and `_private` functions and `__virtual__`
+are skipped, as Salt's own loader does.
+
+Every generated function returns an error until it is written. A bridge
+that was generated and forgotten fails loudly rather than answering
+nothing and looking as though it worked. A file that already exists is
+never overwritten, so a second migration does not discard the work done
+after the first.
+
+`_utils/` and the other Python import targets get no skeleton: they are
+not extension points, and whatever imported them has to carry what they
+did.
 
 ### What an extension is
 

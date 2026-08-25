@@ -9,8 +9,9 @@ before `3aec717` is where that history lives if it is ever wanted.
 
 Nothing here is released yet. Phases 0, 1, and 2 of the delivery plan in
 SPEC section 32 are complete: a node that manages its own tree, and a
-fleet driven from a hub. Phase 3 is complete and phase 4 is under way.
-Versions resume at 1.0.0
+fleet driven from a hub. Phases 3 and 4 are complete too — the runners,
+orchestration, reactors, beacons, the scheduler, the mine, the API, and
+the extension model. Versions resume at 1.0.0
 when SPEC section 32's phase 6 exit criteria are met.
 
 ## Unreleased
@@ -456,6 +457,14 @@ deadlocks the node: a returner extension arrives through
 build does not have fails every return with the reason rather than
 stopping the node from starting.
 
+For a formula that carries custom Python, `halite-hub migrate
+--bridge-skeleton <dir>` writes one Go command per module with the
+function names, parameters, and defaults read from the source. The
+porting job does not go away — SPEC 24.6 says so plainly — but it stops
+being unbounded. Every generated function returns an error, so a bridge
+that was generated and forgotten fails loudly rather than answering
+nothing and looking as though it worked.
+
 ### A running node can be changed without restarting it
 
 The nineteen management functions of SPEC 16.1 and 20.1 act on the
@@ -686,9 +695,9 @@ reproducible-build verification, which needs a second builder.
 
 ### What is not built
 
-Phases 5 and 6, and SPEC 24.6's bridge-skeleton generator. No gitfs, no
-s3fs, no agentless mode, no relays, no FIPS artifact set, no detached
-job signing, no signed state trees, and no backtracking regex engine.
+Phases 5 and 6. No gitfs, no s3fs, no agentless mode, no relays, no
+Windows or macOS parity, no FIPS artifact set, no detached job signing,
+no signed state trees, and no backtracking regex engine.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
 in the other direction from `salt-cp`, and external pillar. Phase 3's

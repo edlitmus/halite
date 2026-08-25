@@ -2087,12 +2087,21 @@ at all.
 extensions of kind `returner`, found by name, so `returner: postgres`
 does not require the operator to know it is one.
 
+**The bridge skeleton generator is built**, which is SPEC 24.6 and the
+last piece of phase 4. `migrate --bridge-skeleton <dir>` reads a
+formula's Python modules and writes one Go command per module with the
+signatures filled in. It honours `__virtualname__`, skips `_private`
+functions and `__virtual__` as Salt's loader does, and handles the
+shapes real formulas use — multi-line signatures, list defaults holding
+commas, both docstring quote styles, `*args` and `**kwargs`. Every
+generated function returns an error, so a bridge that was generated and
+forgotten fails loudly. A test parses the output as Go, which is what
+caught the signature JSON being emitted inside a raw string literal: a
+docstring containing a backtick produced code that would not build.
+
 What is **not** built in the API:
 
-- **The migration tool's bridge skeleton** (SPEC 24.6), which detects a
-  formula carrying `_modules/` and generates a Go skeleton with the
-  function signatures filled in. The detection exists in the migration
-  report; the generation does not.
+Nothing. Phase 4 is complete.
 - **The bridge protocol and its sandbox** (SPEC section 24), and with it
   the seventeen returners SPEC 20.3 marks Bridged.
 - **Node-side metrics.** A node has no exposition endpoint, so what only
