@@ -94,6 +94,7 @@ Read by the node agent.
 | `parallel_jobs` | `false` | 9.6 | Allow jobs to run alongside one another by default. |
 | `pillar_cache_disk` | `false` | 12.8 | Cache pillar on the node's disk, encrypted at rest. |
 | `pillar_merge_lists` | `false` | 12.3 | Concatenate lists when merging pillar sources. |
+| `pillar_roots` | — | 12.2 | Environment to an ordered list of pillar directories. |
 | `pillar_source_merging_strategy` | `smart` | 12.3 | smart, recurse, aggregate, or overwrite. |
 | `pillar_trusted_grains` | — | 12.4 | Grains a node may use to target pillar. Custom grains are excluded by default. |
 | `pillarenv` | — | 12.2 | The pillar environment, defaulting to env. |

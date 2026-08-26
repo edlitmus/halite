@@ -7,8 +7,10 @@
 #   Linux                        /etc/halite/node.yaml
 #
 # Every setting below has a default; a file that sets none of them is
-# valid. A key halite does not recognise is an error at startup rather
-# than a line that quietly does nothing, so a typo is found immediately.
+# valid. A key halite does not recognise is reported at startup rather
+# than quietly doing nothing, so a typo is found immediately:
+#
+#   configuration key "pillar_rots" is not recognised and was ignored
 
 # Where the tree lives. The configuration root is searched for `state`
 # and `pillar` directories before these, so a tree symlinked beside this

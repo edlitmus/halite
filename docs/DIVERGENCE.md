@@ -655,6 +655,39 @@ functions declare a restriction; the Linux binary answers
 | macOS | yes | no | no |
 | Windows | yes | no | no |
 
+### 4.0 Where each platform keeps its files
+
+SPEC 27.3 states the layout in Linux FHS terms and 27.5 puts Windows
+configuration under `%PROGRAMDATA%`. The BSD and Windows conventions are
+both departures from the literal text, for the same reason: a file no
+administrator on that platform would think to look for is a file that is
+effectively missing.
+
+| Platform | Configuration | Durable state | Sockets |
+|---|---|---|---|
+| Linux | `/etc/halite` | `/var/lib/halite` | `/run/halite` |
+| FreeBSD and the other BSDs | `/usr/local/etc/halite` | `/var/db/halite` | `/var/run/halite` |
+| macOS | `/etc/halite` | `/var/lib/halite` | `/run/halite` |
+| Windows | `%PROGRAMDATA%\Halite` | `%PROGRAMDATA%\Halite\lib` | `%PROGRAMDATA%\Halite\run` |
+
+Windows had no case at all until 2026-08-26. It fell through to the FHS
+branch, and `filepath.Join("/etc", "halite")` is `\etc\halite` there —
+so a Windows node would have kept its configuration, its enrollment key,
+and its cache in three directories off the root of whichever drive the
+process happened to start in, none of them the one the `.msi` is
+specified to create. Nothing caught it because the test asserting the
+default asserted `/etc/halite` for every platform that was not a BSD.
+
+The layout is now computed from the target rather than from
+`runtime.GOOS` alone, so all four platforms are checked from one host —
+`RootFor`, `VarPathFor`, `RunPathFor` — and the table in
+`getting-started.md` is checked against them. That is a check on the
+paths, not on the platform: it says the code and the documentation agree
+about Windows, not that halite works there.
+
+macOS takes the Linux paths deliberately. Homebrew's prefix is not fixed,
+so `/etc` is the honest default rather than a guess at one.
+
 ### 4.1 What the Linux runs did establish
 
 The development host is FreeBSD with the Linux compat layer, linprocfs, and

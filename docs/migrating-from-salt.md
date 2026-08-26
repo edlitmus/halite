@@ -185,14 +185,10 @@ The larger absences today:
   contribute nothing, and `ext_pillar_fail` is read by nothing at all.
 - **`halite-hub files`**, the push in the other direction from `salt-cp`.
   The file server serves; pushing a file to a node is not built.
-- **gitfs and s3fs.** `fileserver_backend` accepts only `roots`, and
-  says so at startup rather than silently serving nothing. Phase 5.
-- **OIDC and LDAP** for the API. A login naming another backend is
-  refused by name rather than quietly authenticated against local
-  accounts. Returners and the bridge protocol are the rest of phase 4.
-- **Agentless mode** (`salt-ssh`) and **relays**. Phase 5.
-- **Windows and macOS modules.** Phase 5. The code cross-compiles; none
-  of it has been run.
+- **Windows and macOS modules.** Phase 5, and the only platform work
+  left. The code cross-compiles for both and has been run on neither, so
+  `pkg`, `service`, and the Windows event log are unexercised rather
+  than known good. DIVERGENCE 4 is the platform matrix.
 - **`_modules/` and friends.** A formula carrying custom Python is not
   portable without conversion. `migrate --bridge-skeleton <dir>`
   generates a Go bridge for each one, with the signatures filled in from

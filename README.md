@@ -250,14 +250,33 @@ being reimplemented. Pillar and the tree are compiled on the hub and
 sent with the job, so a target holds no tree and no other target's
 secrets.
 
+Relays followed. A hub with `relay: true` serves its own segment and
+appears to its upstream as one connected client, so a site behind a slow
+or intermittent link is administered locally and still reachable from the
+centre. Two things Salt's syndic does not do: returns are spooled
+durably through an upstream outage and drained oldest-first when it
+returns, and event forwarding is chosen by tag glob rather than being
+all or nothing.
+
+Then the FIPS artifact set. `make fips` builds against the certified Go
+Cryptographic Module and refuses to ship a binary whose own `version`
+output does not name the module — `GOFIPS140` is an environment
+variable, and a build that loses it produces a working binary with the
+right filename and the wrong cryptography. In FIPS mode Ed25519 is
+refused by name, key exchange is P-256 or P-384, and TOTP is refused
+because RFC 6238 is HMAC-SHA-1; that last one fails closed, so a
+password alone is never enough on an account that asked for two factors.
+
 What is not built is the rest of phase 5 — Windows and macOS parity —
-and phase 6.
+and phase 6. The code cross-compiles for both and has been run on
+neither.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
-DIVERGENCE [5.11](docs/DIVERGENCE.md), 5.12, and 5.13 say what the lab
-runs established — the transport, the runners, and the API — what they
-did not, and the defects each found that the tests had not.
+DIVERGENCE [5.11](docs/DIVERGENCE.md) through 5.15 say what the lab runs
+established — the transport, the runners, the API, relays, and the FIPS
+build — what they did not, and the defects each found that the tests
+had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:

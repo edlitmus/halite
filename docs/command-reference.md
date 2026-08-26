@@ -962,7 +962,7 @@ token_idle: 4h
 | no equivalent | `GET /v1/pillar/{id}`, behind a named permission | works |
 | `client: local`, `local_async`, `local_batch` | same | works |
 | `client: runner`, `runner_async`, `wheel`, `wheel_async` | same, one hub namespace | works |
-| `client: ssh` | same | phase 5 |
+| `client: ssh` | not exposed by the API | `halite-hub ssh` is built; the API has no route to it |
 | `GET /events` | SSE, and a WebSocket at `/v1/ws/events` | works |
 | `POST /hook/{path}` | webhook ingress, always authenticated | works |
 | no equivalent | `GET /v1/metrics`, this service's and the hub's | works |

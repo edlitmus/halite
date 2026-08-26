@@ -39,6 +39,35 @@ There is nothing else to install. No Python, no interpreter, no library:
 `go list -m all` returns only this module, and the build asserts that on
 every run.
 
+### Other platforms
+
+`make cross` builds every target into `dist/`, named
+`halite-node-<os>-<arch>`, and needs no toolchain for the target:
+
+```sh
+make cross
+ls dist/halite-node-*
+```
+
+Where each platform keeps its files, which is where halite looks unless
+a `--config` says otherwise:
+
+| Platform | Configuration | State | Cache |
+|---|---|---|---|
+| Linux | `/etc/halite` | `/var/lib/halite` | `/var/cache/halite` |
+| FreeBSD and the other BSDs | `/usr/local/etc/halite` | `/var/db/halite` | `/var/cache/halite` |
+| macOS | `/etc/halite` | `/var/lib/halite` | `/var/cache/halite` |
+| Windows | `%PROGRAMDATA%\Halite` | `%PROGRAMDATA%\Halite\lib` | `%PROGRAMDATA%\Halite\cache` |
+
+macOS takes the Linux paths deliberately: Homebrew's prefix is not fixed,
+so `/etc` is the honest default rather than a guess at one.
+
+Read [DIVERGENCE 4](DIVERGENCE.md) before trusting a run on Windows or
+macOS. The code cross-compiles for both and has not been run on either,
+so the modules that matter there — `pkg`, `service`, the Windows event
+log — are unexercised rather than known good. Linux and FreeBSD are the
+platforms this build has been run on.
+
 ## The first tree
 
 A tree has two halves. **States** describe how the machine should be.
@@ -153,8 +182,12 @@ sudo halite-node state apply --local
 ```
 
 Every setting is in the [configuration reference](configuration.md). A
-key halite does not recognise is an error at startup, not a line that
-quietly does nothing.
+key halite does not recognise is reported at startup rather than quietly
+doing nothing:
+
+```
+configuration key "pillar_rots" is not recognised and was ignored
+```
 
 Fuller examples, one per shape of deployment, are in
 [`contrib/examples/`](../contrib/examples/): a masterless node, a node
