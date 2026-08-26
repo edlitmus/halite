@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/fips"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
 )
@@ -245,8 +246,41 @@ func (a *Account) Verify(password string) bool {
 	return subtle.ConstantTimeCompare(got, v.key) == 1
 }
 
+// LockedOut names the accounts that require a second factor this build
+// cannot check.
+//
+// A FIPS build has no TOTP, and an account configured with one cannot
+// log in. That is the right refusal and the wrong thing to discover at
+// a login prompt, so the service says it at startup instead.
+func (f *File) LockedOut() []string {
+	if f == nil || TOTPAvailable() {
+		return nil
+	}
+	var out []string
+	for name, a := range f.Accounts {
+		if a.NeedsSecondFactor() {
+			out = append(out, name)
+		}
+	}
+	sortStrings(out)
+	return out
+}
+
 // NeedsSecondFactor reports whether this account requires a TOTP code.
+//
+// Still true when TOTP is unavailable. The account requires a second
+// factor that this build cannot check, which locks it out — the safe
+// direction, and the one an operator has to be told about before the
+// first login rather than at it. See File.LockedOut.
 func (a *Account) NeedsSecondFactor() bool { return a != nil && a.TOTP != "" }
+
+// TOTPAvailable reports whether this build can check a TOTP code.
+//
+// SPEC 27.4: SHA-1 is unavailable in FIPS mode, and RFC 6238 is defined
+// on HMAC-SHA-1, so the path is disabled rather than reimplemented on
+// another hash — a TOTP that agreed with no authenticator app would be
+// worse than one that is absent.
+func TOTPAvailable() bool { return !fips.Restricted() }
 
 // VerifyTOTP checks a time-based one-time code, per RFC 6238.
 //
@@ -255,6 +289,18 @@ func (a *Account) NeedsSecondFactor() bool { return a != nil && a.TOTP != "" }
 // code into a minute-and-a-half one.
 func (a *Account) VerifyTOTP(code string, now time.Time) bool {
 	if a == nil || a.TOTP == "" {
+		return false
+	}
+	if !TOTPAvailable() {
+		// Refused, not downgraded. RFC 6238 is HMAC-SHA-1 and SPEC 27.4
+		// disables the path in FIPS mode; under GODEBUG=fips140=only
+		// the module panics rather than returning an error, so without
+		// this the second factor crashes the login handler instead of
+		// failing it.
+		//
+		// It must fail closed. Reporting that the account no longer
+		// needs a second factor would let a password alone through on
+		// exactly the accounts that asked for two.
 		return false
 	}
 	secret, err := decodeBase32(a.TOTP)

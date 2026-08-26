@@ -30,13 +30,24 @@ load_rc_config $name
 : ${halite_hub_config="/usr/local/etc/halite/hub.yaml"}
 : ${halite_hub_flags=""}
 : ${halite_hub_user="halite"}
+# The FIPS deployment of SPEC 27.4. Setting halite_hub_fips="YES" in
+# rc.conf runs the -fips artifact with FIPS mode stated rather than
+# inherited, so a GODEBUG in the environment cannot quietly turn it off.
+: ${halite_hub_fips="NO"}
+if checkyesno halite_hub_fips; then
+	: ${halite_hub_program="/usr/local/bin/halite-hub-fips"}
+	: ${halite_hub_env="GODEBUG=fips140=on"}
+else
+	: ${halite_hub_program="/usr/local/bin/halite-hub"}
+	: ${halite_hub_env=""}
+fi
 
 pidfile="/var/run/${name}.pid"
 logfile="/var/log/halite/hub.log"
 
 command="/usr/sbin/daemon"
 command_args="-c -f -p ${pidfile} -u ${halite_hub_user} -o ${logfile} \
-	/usr/local/bin/halite-hub serve --config ${halite_hub_config} ${halite_hub_flags}"
+	${halite_hub_env:+env ${halite_hub_env}} ${halite_hub_program} serve --config ${halite_hub_config} ${halite_hub_flags}"
 
 required_files="${halite_hub_config}"
 start_precmd="halite_hub_prestart"

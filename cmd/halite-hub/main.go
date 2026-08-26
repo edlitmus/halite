@@ -153,7 +153,7 @@ func main() {
 
 	switch os.Args[1] {
 	case "version", "--version", "-v":
-		fmt.Println("halite-hub " + version.String())
+		fmt.Println(version.Full("halite-hub"))
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	case "migrate":

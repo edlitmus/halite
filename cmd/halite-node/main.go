@@ -114,7 +114,7 @@ func main() {
 
 	switch sub {
 	case "version", "--version", "-v":
-		fmt.Println("halite-node " + version.String())
+		fmt.Println(version.Full("halite-node"))
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	case "call":

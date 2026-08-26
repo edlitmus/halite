@@ -183,6 +183,7 @@ func collectSecurity(g *value.Map) {
 	// FIPS artifact is a separate fact, and the distinction matters in an
 	// estate that has both. SPEC section 14.1.
 	g.Set("fips_mode", firstLineOf("/proc/sys/crypto/fips_enabled") == "1")
+	collectFIPSBuild(g)
 
 	selinux := value.MapOf("enabled", false, "enforced", "Disabled")
 	if _, err := os.Stat("/sys/fs/selinux"); err == nil {

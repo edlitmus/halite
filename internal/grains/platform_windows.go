@@ -52,6 +52,7 @@ func collectMemory(g *value.Map) {
 
 func collectSecurity(g *value.Map) {
 	g.Set("fips_mode", false)
+	collectFIPSBuild(g)
 	g.Set("selinux", value.MapOf("enabled", false, "enforced", "Disabled"))
 	g.Set("apparmor", false)
 	g.Set("secure_boot", false)

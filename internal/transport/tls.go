@@ -20,6 +20,7 @@ import (
 	"slices"
 	"sync"
 
+	"github.com/edlitmus/halite/internal/fips"
 	"github.com/edlitmus/halite/internal/pki"
 )
 
@@ -114,6 +115,27 @@ func ServerConfig(cert tls.Certificate, ca *x509.Certificate, denied *Denylist) 
 		VerifyPeerCertificate: verifyNotRevoked(denied),
 	}
 	cfg.GetConfigForClient = requireProtocol
+	return approvedCurves(cfg)
+}
+
+// approvedCurves restricts key exchange to P-256 and P-384 in FIPS mode,
+// per SPEC 26.1 and 27.4.
+//
+// Applied here rather than left to the module. GODEBUG=fips140=on, which
+// SPEC 27.4 has the service unit set, routes approved algorithms through
+// the module without rejecting the rest — X25519 stays reachable under
+// it. Setting the preference explicitly makes the restriction a property
+// of this build rather than of a setting somebody can leave off.
+//
+// TLS 1.3 cipher suites are not part of this: Go selects them itself and
+// ignores tls.Config.CipherSuites for 1.3. The two SPEC 26.1 names are
+// two of the three Go offers, and the module drops the third in FIPS
+// mode. DIVERGENCE 1.10 records that this half is the module's to
+// enforce and not this build's.
+func approvedCurves(cfg *tls.Config) *tls.Config {
+	if fips.Restricted() {
+		cfg.CurvePreferences = []tls.CurveID{tls.CurveP256, tls.CurveP384}
+	}
 	return cfg
 }
 
@@ -134,14 +156,14 @@ func requireProtocol(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 func ClientConfig(cert tls.Certificate, ca *x509.Certificate, serverName string) *tls.Config {
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	return &tls.Config{
+	return approvedCurves(&tls.Config{
 		MinVersion:   tls.VersionTLS13,
 		MaxVersion:   tls.VersionTLS13,
 		NextProtos:   []string{ALPN, Negotiated},
 		Certificates: []tls.Certificate{cert},
 		RootCAs:      pool,
 		ServerName:   serverName,
-	}
+	})
 }
 
 // EnrollConfig is the configuration a node uses before it has a
@@ -153,13 +175,13 @@ func ClientConfig(cert tls.Certificate, ca *x509.Certificate, serverName string)
 func EnrollConfig(ca *x509.Certificate, serverName string) *tls.Config {
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
-	return &tls.Config{
+	return approvedCurves(&tls.Config{
 		MinVersion: tls.VersionTLS13,
 		MaxVersion: tls.VersionTLS13,
 		NextProtos: []string{ALPN, Negotiated},
 		RootCAs:    pool,
 		ServerName: serverName,
-	}
+	})
 }
 
 // verifyNotRevoked rejects a peer whose serial is on the denylist, at

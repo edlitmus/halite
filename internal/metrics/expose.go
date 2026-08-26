@@ -165,5 +165,5 @@ func (r *Registry) BuildInfo(component string) {
 	g := r.Gauge("halite_build_info",
 		"Build identity; the value is always 1 and the labels carry the information.",
 		"component", "version", "commit", "go_version", "fips")
-	g.With(component, version.Version, version.Commit, runtime.Version(), version.FIPS).Set(1)
+	g.With(component, version.Version, version.Commit, runtime.Version(), strconv.FormatBool(version.FIPS())).Set(1)
 }

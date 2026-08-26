@@ -84,6 +84,15 @@ func runServe(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
+	if locked := accounts.LockedOut(); len(locked) > 0 {
+		// Before the first login rather than at it: these accounts are
+		// configured with a TOTP this build cannot check, so they are
+		// refused however correct the password is.
+		s.log.Warn("these accounts require a second factor this build cannot check "+
+			"and cannot log in; TOTP is HMAC-SHA-1 and this process is in FIPS mode (SPEC 27.4)",
+			"accounts", locked)
+	}
+
 	s.log.Info("api listening",
 		"address", ln.Addr().String(),
 		"version", version.String(),

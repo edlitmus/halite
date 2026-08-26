@@ -168,6 +168,7 @@ func collectSecurity(g *value.Map) {
 	// grain reports false rather than being absent, so a template that
 	// reads it does not have to guard for the platform.
 	g.Set("fips_mode", false)
+	collectFIPSBuild(g)
 	g.Set("selinux", value.MapOf("enabled", false, "enforced", "Disabled"))
 	g.Set("apparmor", false)
 	g.Set("secure_boot", false)

@@ -39,10 +39,22 @@ BUILDFLAGS = -trimpath -buildvcs=true -ldflags="$(LDFLAGS)"
 RELEASE_ENV = CGO_ENABLED=0 GOFLAGS=-mod=vendor GOPROXY=off SOURCE_DATE_EPOCH=$(SOURCE_DATE_EPOCH)
 DEV_ENV     = CGO_ENABLED=0
 
+# The FIPS artifact set of SPEC 27.4. GOFIPS140 routes all cryptography
+# through the Go Cryptographic Module and freezes it at the certified
+# version, which is what an assessment is assessing; the version is not
+# a preference and is not raised without one.
+#
+# The certified module is a source of truth in its own right: `go build`
+# refuses a version the toolchain does not carry, so a typo here is a
+# build failure rather than a non-FIPS binary named -fips.
+FIPS_MODULE ?= v1.0.0
+FIPS_ENV     = $(RELEASE_ENV) GOFIPS140=$(FIPS_MODULE)
+
 TARGETS = linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
 	darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-.PHONY: all build test race vet cover check release cross clean tidy vendor policy fmt
+.PHONY: all build test race vet cover check release cross clean tidy vendor policy fmt \
+	fips fips-cross fips-verify fips-test
 
 all: build
 
@@ -200,13 +212,70 @@ repro:
 	done
 
 # What to run before calling a change done.
-check: fmt vet test race policy
+#
+# fips-test is in here rather than left to CI: the FIPS artifacts are a
+# shipped deliverable, and a restriction that only holds in the build
+# nobody runs locally is a restriction that breaks on the tag.
+check: fmt vet test race policy fips-test
 
 tidy:
 	go mod tidy
 
 vendor:
 	go mod vendor
+
+# fips builds the parallel artifact set for this machine.
+fips:
+	@mkdir -p bin
+	@for b in $(BINARIES); do \
+		echo "building bin/$$b-fips (module $(FIPS_MODULE))"; \
+		env $(FIPS_ENV) go build $(BUILDFLAGS) -o bin/$$b-fips ./cmd/$$b || exit 1; \
+	done
+	@$(MAKE) fips-verify
+
+# fips-verify refuses to ship an artifact that is not what its name says.
+#
+# A -fips binary that was built without GOFIPS140 is the failure this
+# whole target exists to prevent: it looks right, it runs, and it is not
+# using the certified module. The binary is asked rather than the build
+# log, because the binary is what gets shipped.
+fips-verify:
+	@for b in $(BINARIES); do \
+		out=`./bin/$$b-fips version 2>&1` || exit 1; \
+		echo "$$out" | grep -q "fips $(FIPS_MODULE)" || { \
+			echo "bin/$$b-fips does not report module $(FIPS_MODULE):" >&2; \
+			echo "$$out" >&2; exit 1; }; \
+		echo "$$out" | grep -q "self-tests passed" || { \
+			echo "bin/$$b-fips does not report passing self-tests" >&2; exit 1; }; \
+	done
+	@echo "fips artifacts report module $(FIPS_MODULE) and passing self-tests"
+
+# fips-test runs the whole suite as a FIPS artifact.
+#
+# SPEC section 32 makes "the FIPS build passes its self-tests" a phase 5
+# exit criterion, and the self-tests are the floor rather than the
+# check: what matters is that the tree still behaves when every
+# primitive routes through the certified module. Running it found three
+# tests that assumed SHA-1 and Ed25519 were always available, which is
+# the same assumption a caller would have made.
+fips-test:
+	env $(FIPS_ENV) go test -count=1 ./...
+
+# fips-cross is the release set. Only the tier 1 platforms of SPEC 27.1
+# get one: the module is what is certified, and shipping a -fips binary
+# for a platform nobody assessed would be a claim rather than a fact.
+FIPS_TARGETS = linux/amd64 linux/arm64
+
+fips-cross:
+	@mkdir -p dist
+	@for t in $(FIPS_TARGETS); do \
+		os=$${t%/*}; arch=$${t#*/}; \
+		for b in $(BINARIES); do \
+			echo "building dist/$$b-fips-$$os-$$arch"; \
+			env $(FIPS_ENV) GOOS=$$os GOARCH=$$arch \
+				go build $(BUILDFLAGS) -o dist/$$b-fips-$$os-$$arch ./cmd/$$b || exit 1; \
+		done; \
+	done
 
 cross:
 	@mkdir -p dist

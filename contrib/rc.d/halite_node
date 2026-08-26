@@ -36,13 +36,24 @@ load_rc_config $name
 : ${halite_node_config="/usr/local/etc/halite/node.yaml"}
 : ${halite_node_flags=""}
 : ${halite_node_user="root"}
+# The FIPS deployment of SPEC 27.4. Setting halite_node_fips="YES" in
+# rc.conf runs the -fips artifact with FIPS mode stated rather than
+# inherited, so a GODEBUG in the environment cannot quietly turn it off.
+: ${halite_node_fips="NO"}
+if checkyesno halite_node_fips; then
+	: ${halite_node_program="/usr/local/bin/halite-node-fips"}
+	: ${halite_node_env="GODEBUG=fips140=on"}
+else
+	: ${halite_node_program="/usr/local/bin/halite-node"}
+	: ${halite_node_env=""}
+fi
 
 pidfile="/var/run/${name}.pid"
 logfile="/var/log/halite/node.log"
 
 command="/usr/sbin/daemon"
 command_args="-c -f -p ${pidfile} -o ${logfile} \
-	/usr/local/bin/halite-node connect --config ${halite_node_config} ${halite_node_flags}"
+	${halite_node_env:+env ${halite_node_env}} ${halite_node_program} connect --config ${halite_node_config} ${halite_node_flags}"
 
 required_files="${halite_node_config}"
 start_precmd="halite_node_prestart"

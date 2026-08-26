@@ -17,6 +17,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/fips"
 	"time"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -95,6 +97,13 @@ func parseKeySpec(algorithm string, bits int64, curve string) (keySpec, error) {
 			return k, err
 		}
 	case "ed25519":
+		// SPEC 27.4: Ed25519 is not approved under FIPS 140-3. Refused
+		// by name rather than left to fail somewhere inside the module,
+		// so the operator is told which setting to change.
+		if fips.Restricted() {
+			return k, fmt.Errorf("ed25519 is not approved under FIPS 140-3 and this process " +
+				"is in FIPS mode; use algorithm: ec with curve p256 or p384 (SPEC 27.4)")
+		}
 	default:
 		return k, fmt.Errorf("unknown key algorithm %q; halite generates rsa, ec, and ed25519 keys", algorithm)
 	}

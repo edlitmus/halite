@@ -172,6 +172,23 @@ func TestTOTPAcceptsTheCurrentStepAndItsNeighbours(t *testing.T) {
 		t.Fatal("an account with a secret does not need a second factor")
 	}
 	now := time.Unix(59, 0)
+	if !TOTPAvailable() {
+		// A FIPS build has no HMAC-SHA-1, so the second factor cannot
+		// be checked. What matters is the direction of the failure:
+		// every code is refused and the account still declares that it
+		// needs one. The other way round would let a password alone
+		// through on exactly the accounts that asked for two.
+		if a.VerifyTOTP("000000", now) {
+			t.Error("a code was accepted with no way to check it")
+		}
+		if !a.NeedsSecondFactor() {
+			t.Error("an account was silently downgraded to one factor")
+		}
+		if len((&File{Accounts: map[string]*Account{"ed": a}}).LockedOut()) != 1 {
+			t.Error("an account that cannot log in is not reported as locked out")
+		}
+		return
+	}
 
 	secret, err := decodeBase32(a.TOTP)
 	if err != nil {
@@ -201,6 +218,9 @@ func TestTOTPAcceptsTheCurrentStepAndItsNeighbours(t *testing.T) {
 // The secret is read the way an authenticator app shows it: unpadded,
 // and often in spaced groups.
 func TestASpacedTOTPSecretIsRead(t *testing.T) {
+	if !TOTPAvailable() {
+		t.Skip("this build cannot check a TOTP code; SPEC 27.4")
+	}
 	plain := &Account{TOTP: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"}
 	spaced := &Account{TOTP: "gezd gnbv gy3t qojq gezd gnbv gy3t qojq"}
 	now := time.Unix(1234567890, 0)

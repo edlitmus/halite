@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/fips"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -76,6 +77,19 @@ func TestEveryAlgorithmRoundTrips(t *testing.T) {
 		value.MapOf("algorithm", "ec", "curve", "p384"),
 		value.MapOf("algorithm", "ed25519"),
 	} {
+		algorithm, _ := args.Get("algorithm")
+		if algorithm == "ed25519" && fips.Restricted() {
+			// SPEC 27.4: not approved, and refused by name rather than
+			// left to fail inside the module. The refusal is the
+			// assertion, and it has to name the setting to change.
+			_, err := r.Exec.Call(newCtx(false), "x509.create_private_key", args)
+			if err == nil {
+				t.Error("ed25519 was generated in FIPS mode")
+			} else if !strings.Contains(err.Error(), "not approved under FIPS 140-3") {
+				t.Errorf("ed25519 was refused for the wrong reason: %v", err)
+			}
+			continue
+		}
 		out := x509Call(t, r, "x509.create_private_key", args)
 		pemText, ok := out.(string)
 		if !ok || !strings.Contains(pemText, "BEGIN PRIVATE KEY") {
