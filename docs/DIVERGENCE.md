@@ -241,6 +241,64 @@ returns for what it claims. It cannot claim a node connected to the
 upstream itself; that check is explicit, because silently shadowing a
 real node would be the worst version of this.
 
+### 1.10 `GODEBUG=fips140=on` does not enforce, so this build does
+
+SPEC 27.4 has the service unit run with `GODEBUG=fips140=on` and then
+describes what holds "in FIPS mode": approved cipher suites and P-256 or
+P-384 key exchange, no Ed25519, no SHA-1 and therefore no TOTP.
+
+Those are the semantics of `fips140=only`, not of `on`. Measured on the
+toolchain this is built with: `on` routes approved algorithms through
+the module and leaves the rest reachable — HMAC-SHA-1 computes a digest
+quite happily — while `only` rejects them, by panicking rather than by
+returning an error. `crypto/fips140.Enforced()` reports false under `on`
+and true under `only`.
+
+The restrictions are therefore applied by this build rather than assumed
+from the setting. `internal/fips.Restricted()` is keyed on FIPS mode
+being on at all, and the Ed25519 refusal, the TOTP refusal, and the
+curve preference are halite's own. The service unit still sets `on`, as
+the specification says, because the value it adds is different from
+enforcement: it states the mode rather than inheriting it, so a
+`GODEBUG=fips140=off` in the environment cannot quietly turn a FIPS
+deployment into a non-FIPS one.
+
+One half is left to the module. TLS 1.3 cipher suites are not
+configurable in Go — `tls.Config.CipherSuites` is ignored for 1.3 — so
+the exclusion of `TLS_CHACHA20_POLY1305_SHA256` is the module's doing
+and not this build's. The two suites SPEC 26.1 names are what a FIPS hub
+negotiates; 5.15 records that measured against a foreign client.
+
+That `only` panics rather than erroring is why the TOTP refusal is
+load-bearing rather than cosmetic: without it, a login against an
+account with a second factor takes down the handler.
+
+### 1.11 The FIPS grain is a pair, not one grain
+
+SPEC 27.4 says the `fips_mode` grain "reports both the host's kernel
+FIPS state and the binary's own mode". They are reported as separate
+grains here: `fips_mode` stays the boolean it was — the host kernel —
+and `fips_build`, `fips_enabled`, and `fips_module` carry the process's
+own state.
+
+`fips_mode` is in SPEC 12.4's default `pillar_trusted_grains` and is
+what trees target on and templates branch on. Turning it into a map
+would make `{% if grains.fips_mode %}` true on every host in the estate,
+including every host where it is false today — a silent inversion in
+whichever trees already use it, found at apply time.
+
+The pair is what makes the mismatch SPEC asks `doctor` to warn about
+visible at all: a FIPS kernel running a non-FIPS binary, or the reverse,
+is a deployment mistake neither fact finds alone. `doctor` itself is not
+built, so nothing warns yet; the grains are there for a tree to assert
+on in the meantime.
+
+None of the four is evidence to an assessor. They are grains, which is
+to say a node's own account of itself, and a node that is lying about
+its cryptography is a node that can lie about this too. What the grains
+are good for is inventory — finding the hosts that need attention — and
+the artifact's own `version` output is what says what a binary is.
+
 ---
 
 ## 2. Module coverage
@@ -1638,6 +1696,41 @@ between relays, or the depth cap being reached in practice. It has been
 run on FreeBSD only, with one relay, one subordinate, and one upstream.
 
 
+### 5.15 What the FIPS lab run covers
+
+A hub and a node built with `GOFIPS140=v1.0.0` and run with
+`GODEBUG=fips140=on`, enrolled against each other and driven through a
+job, plus the whole test suite built the same way. The key exchange was
+measured from outside with OpenSSL 3.5.6 rather than from the
+configuration this build sets, because a restriction asserted against
+one's own `tls.Config` is a restriction asserted against oneself.
+
+| Group offered | FIPS hub | Ordinary hub |
+|---|---|---|
+| X25519 | refused at the handshake | `X25519, 253 bits` |
+| P-256 | `ECDH, prime256v1, 256 bits` | same |
+| P-384 | `ECDH, secp384r1, 384 bits` | same |
+
+Both hubs negotiated `TLS_AES_128_GCM_SHA256`, which is one of the two
+SPEC 26.1 names. The restriction is conditional on FIPS mode rather than
+a blanket change: the ordinary hub still takes X25519.
+
+| Found by running it | What it was |
+|---|---|
+| `GODEBUG=fips140=on` enforces nothing | The setting SPEC 27.4 names routes approved algorithms through the module and leaves the rest reachable; HMAC-SHA-1 computed a digest under it. Everything the specification describes as holding "in FIPS mode" is `only`'s behaviour. 1.10 records what this build does instead. |
+| A TOTP login would have panicked, not failed | Under `fips140=only` the module panics on HMAC-SHA-1 rather than returning an error, so an account with a second factor took the login handler down instead of being refused. |
+| The suite assumed SHA-1 and Ed25519 were always there | Three tests failed as a FIPS build — two TOTP, one key generation — which is the same assumption any caller would have made. `make check` now runs the suite both ways so the assumption cannot come back. |
+| A `-fips` binary need not be one | `GOFIPS140` is an environment variable, and a build that lost it produces a working binary with the right filename and the wrong cryptography. `make fips` asks the artifact what module it carries and refuses to ship one that answers wrong. |
+
+What it does not cover: a FIPS build on Linux, which is the only
+platform the artifact set ships for — this was run on FreeBSD. Nor an
+actual FIPS-enabled kernel, so the `fips_mode` grain was false against a
+`fips_build` of true throughout and the matching case was never seen. No
+assessment has been done, and none of this is a claim of validation: it
+is the Go Cryptographic Module doing the cryptography, and what is
+certified is that module.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -2319,6 +2412,19 @@ forwards its job returns and keeps its beacon chatter local. 5.14
 records what running it found, and 1.8 and 1.9 record what a relay
 deliberately does not forward and what the upstream trusts it for.
 
+**The FIPS artifact set is built**, SPEC 27.4. `make fips` produces
+`-fips` binaries against the certified Go Cryptographic Module, and
+refuses to ship one whose own `version` output does not name the module
+and report its self-tests. `make fips-cross` is the release set, for the
+tier 1 platforms only. `make check` runs the whole suite both ways.
+
+In FIPS mode Ed25519 is refused by name, TOTP is refused and the
+accounts it locks out are named at startup, and key exchange is P-256 or
+P-384. 1.10 records why those are this build's doing rather than the
+`GODEBUG` setting's, 1.11 why the grain is a pair, and 5.15 what running
+it established. `doctor`, which SPEC 27.4 gives the mismatch warning to,
+is not built.
+
 What is **not** built in phase 5:
 
 - **The reverse tunnel** of SPEC 21.1. Pillar and tree go inline, and a
@@ -2326,7 +2432,6 @@ What is **not** built in phase 5:
   against every target.
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
-- **The FIPS artifact set.**
 - **Windows and macOS parity.** The code cross-compiles and none of it
   has been run there.
 - **`minionfs`/`nodefs`**, which SPEC 13.2 marks a subset and disables

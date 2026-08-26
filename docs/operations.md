@@ -459,6 +459,64 @@ halite-hub keys export-crl --out /var/db/halite/halite.crl
 a couple of seconds: the record on disk is the decision, and the running
 hub follows it.
 
+## FIPS builds
+
+`make fips` produces a parallel set of binaries — `halite-hub-fips`,
+`halite-node-fips`, `halite-api-fips` — built against the certified Go
+Cryptographic Module (SPEC 27.4). `make fips-cross` is the release set,
+built for Linux amd64 and arm64 only.
+
+Ask a binary what it is rather than trusting its filename:
+
+```sh
+halite-node-fips version
+# halite-node v1.0.0+abc123def456 (fips v1.0.0)
+# fips mode on, module v1.0.0, self-tests passed
+```
+
+A binary that does not print a module version is not a FIPS artifact,
+whatever it is called. `make fips` checks this itself and refuses to
+finish otherwise.
+
+Deploy with the mode stated by the service rather than inherited from
+the environment. On systemd, the drop-ins in `contrib/systemd/fips/`
+override the two lines that differ:
+
+```sh
+install -d /etc/systemd/system/halite-node.service.d
+install -m 0644 contrib/systemd/fips/halite-node.service.d/fips.conf \
+    /etc/systemd/system/halite-node.service.d/
+systemctl daemon-reload && systemctl restart halite-node
+```
+
+On FreeBSD, set `halite_node_fips="YES"` in `rc.conf`.
+
+Three things change in FIPS mode, and each is refused rather than
+silently substituted:
+
+| Behaviour | What to do instead |
+|---|---|
+| `x509.create_private_key` refuses `algorithm: ed25519` | Use `ec` with `p256` or `p384` |
+| TLS key exchange is P-256 or P-384; X25519 is refused | Nothing — both ends of a halite connection agree |
+| TOTP cannot be checked, so accounts with a second factor cannot log in | `halite-api` names them at startup; remove the `totp` field or run those operators on a non-FIPS API |
+
+That last one is the one that surprises people. RFC 6238 is defined on
+HMAC-SHA-1, so a FIPS build has no way to check a code. It fails closed:
+the account still declares that it needs a second factor and every code
+is refused, rather than the password alone being accepted. Read the
+startup log before cutting an API over.
+
+Check what a running estate actually has:
+
+```sh
+halite-hub run '*' grains.item fips_mode fips_build fips_module
+```
+
+`fips_mode` is the host kernel's state and `fips_build` is the binary's
+own, so a `True`/`False` pair either way is a mismatch worth chasing.
+Both are grains — a node's account of itself — so treat them as
+inventory rather than as evidence.
+
 ## Relays
 
 A relay is a hub that serves its own nodes and presents itself upstream

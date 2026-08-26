@@ -844,11 +844,53 @@ behind it, and relayed returns tagged with the relay instead of the node
 DIVERGENCE 1.8 and 1.9 record what a relay deliberately does not
 forward, and what the upstream is trusting it for.
 
+### A FIPS artifact set, and what it refuses
+
+`make fips` builds `halite-hub-fips`, `halite-node-fips`, and
+`halite-api-fips` against the certified Go Cryptographic Module of SPEC
+27.4, and `make fips-cross` is the release set for the tier 1 platforms.
+The build asks each artifact what module it carries and refuses to
+finish if the answer is wrong — `GOFIPS140` is an environment variable,
+and a build that loses it produces a working binary with the right name
+and the wrong cryptography.
+
+What a binary is, is read from the module at runtime rather than stamped
+at link time, so `version` reports what the process is doing rather than
+what its builder intended:
+
+```
+halite-node v1.0.0+abc123def456 (fips v1.0.0)
+fips mode on, module v1.0.0, self-tests passed
+```
+
+In FIPS mode Ed25519 is refused by name, TLS key exchange is P-256 or
+P-384, and TOTP is refused because RFC 6238 is HMAC-SHA-1. The TOTP
+refusal fails closed — the account still declares it needs a second
+factor, so a password alone is never enough — and `halite-api` names the
+accounts it locks out at startup rather than leaving it to be found at a
+login prompt.
+
+`make check` now runs the whole suite twice, once as an ordinary build
+and once as a FIPS one. Running it that way the first time found three
+tests that assumed SHA-1 and Ed25519 were always available, which is the
+assumption any caller would have made.
+
+[DIVERGENCE 5.15](docs/DIVERGENCE.md) records what the lab established,
+including the key exchange measured from outside with OpenSSL rather
+than read back from the configuration this build sets. 1.10 records the
+substantive divergence: `GODEBUG=fips140=on`, which SPEC 27.4 has the
+service unit set, does not enforce anything — HMAC-SHA-1 computes
+happily under it — so the restrictions are this build's own rather than
+the setting's. Under `fips140=only` the module panics instead of
+returning an error, which is why the TOTP refusal is load-bearing: an
+unguarded second factor took the login handler down.
+
 ### What is not built
 
-The rest of phase 5, and phase 6. No Windows or macOS parity, no FIPS
-artifact set, no detached job signing, no signed state trees, and no
-backtracking regex engine.
+The rest of phase 5, and phase 6. No Windows or macOS parity, no
+detached job signing, no signed state trees, and no backtracking regex
+engine. `doctor`, which SPEC 27.4 gives the FIPS mismatch warning to, is
+not built either.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
 in the other direction from `salt-cp`, and external pillar. Phase 3's
