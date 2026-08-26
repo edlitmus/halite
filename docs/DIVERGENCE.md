@@ -202,6 +202,45 @@ before a health check is pointed at the port: `/v1/health` is reachable
 without a *certificate*, which is what SPEC 6.2 says, and not without
 the *protocol*.
 
+### 1.8 A relay does not forward what it was asked to do itself
+
+SPEC 5.3 says a relay serves its own nodes and presents itself upstream
+as one client. It does not say what happens to a job submitted to the
+relay directly, and the two readings behave very differently.
+
+This build keeps such a job local. The relay records every job it
+forwards down with its own identity as the submitter, and forwards a
+return upstream only for those. A job an operator submits to the relay
+runs on its subordinates and is filed in the relay's cache alone.
+
+The alternative — announcing locally-submitted jobs upstream so the
+whole estate is visible from one place — was not taken, because the
+upstream cannot then distinguish a job it authorized from one a relay's
+own policy authorized, and its job cache stops being a record of what it
+dispatched. The cost is real and worth stating: an operator upstream
+cannot see a job run from a relay's own command line. The relay's `jobs
+list` is where those live.
+
+The behaviour is not cosmetic. A return for a job the upstream never
+dispatched is refused as an unknown jid, and before this rule such
+returns sat at the head of the spool being retried for ever.
+
+### 1.9 A relayed node has no key on the upstream
+
+The relay issues its subordinates' certificates, so the upstream holds
+no key for them and cannot verify one. What it holds instead is the
+relay's assertion, bounded by policy: a hub accepts subordinates only
+from a certificate its policy grants `relay.proxy`, and refuses a return
+naming a node that relay has not claimed.
+
+This is what makes the arrangement worth having — a segment behind a
+relay is administered by that relay — and it is also the trust that has
+to be understood before one is deployed. A compromised relay can claim
+any node id its upstream does not already hold directly, and file
+returns for what it claims. It cannot claim a node connected to the
+upstream itself; that check is explicit, because silently shadowing a
+real node would be the worst version of this.
+
 ---
 
 ## 2. Module coverage
@@ -1571,12 +1610,40 @@ until its role was granted it — but only for that one function. It has
 been run on FreeBSD only.
 
 
+### 5.14 What the relay lab run covers
+
+An upstream hub, a relay, and a node as three processes on one machine.
+The relay enrolled with the upstream as an ordinary node and was granted
+`relay.proxy` there; the node enrolled with the relay and has no key on
+the upstream at all. It covers a job submitted upstream reaching the
+node through the relay's stream, the return filed upstream and
+attributed to the node, `manage.up` upstream reporting the relayed node,
+a return spooled through a real upstream outage and drained when it came
+back, and event forwarding filtered by tag glob.
+
+| Found by running it | What it was |
+|---|---|
+| The relay panicked before it connected | `Server.Fleet` is created lazily on the first node connection, and the relay reads it at startup to report its subordinates upstream — a nil dereference on every relay that started before a node arrived, which is every relay. The lazy constructor also replaced a fleet a caller had already set, so the field's own documentation was false the moment anything touched it. |
+| A relayed node was unreachable by any job | Targeting resolves against the keystore, and a relayed node has no key on the upstream and never will — the relay issued it. `Connected` reported the node as up while `resolve` matched nothing, so a job aimed at it came back as if the machine were absent. Targeting reads the accepted keys and the relays' subordinates now. |
+| Every return through the relay was refused | The relay forwards a job down but never recorded it, so the node's return arrived at a hub with no such jid. The node logged that its return was refused, the relay logged an unknown job, and the operator upstream waited out the timeout on a job that had run and succeeded. |
+| Reconnecting discarded the whole spool | The upstream refuses a return from a relay that does not own the node it names, and the drain ran concurrently with the subscription — so on every reconnection the spool was refused as impersonation before the upstream had recorded who the relay proxies for. The relay announces its subordinates first and drains after, and a refusal now costs an entry several attempts rather than its life. |
+| A refused entry blocked the spool for ever | The first cut stopped the drain at the first failure and logged nothing, so one entry the upstream would never accept held every later return behind it and said so nowhere. |
+| Relayed returns were tagged with the relay | Attribution came from the certificate the return arrived on rather than the node that ran the job. Upstream, every return behind a relay was `halite/job/<jid>/ret/relay1.example`; a reactor watching for its own node never fired, and a whole segment looked like one machine. |
+
+What it does not cover: a relay two deep, a relay whose upstream is
+itself a relay, more than one relay on one upstream, a relay restarting
+under an open subordinate connection, a spool that reaches its size
+limit, pillar compiled upstream and forwarded down, a subordinate moving
+between relays, or the depth cap being reached in practice. It has been
+run on FreeBSD only, with one relay, one subordinate, and one upstream.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
 
-Phases 0 through 3 are complete and phase 4 is under way; 6.1a says
-where it stands. What follows is the record of how each phase landed,
+Phases 0 through 4 are complete and phase 5 is under way; 6.1a and 6.1b
+say where each landed. What follows is the record of how each phase landed,
 in the order it did.
 
 Phase 2 began with the identity half of it: the
@@ -1912,7 +1979,7 @@ is refused per fragment, with the fix in the message. Per fragment
 rather than after the merge: mixed with an unwrapped file, a wrapper
 would otherwise slip through.
 
-### 6.1a Phase 4, started
+### 6.1a Phase 4, delivered
 
 **The API's authentication spine is built.** `halite-api serve` runs,
 holding its own operator certificate as a client of the hub: login,
@@ -2151,9 +2218,9 @@ Nothing. Phase 4 is complete.
   when no client certificate is presented, but it has never been
   exercised against a real sender.
 
-The rest of phases 5 and 6 does not exist: no
-agentless mode, no relays, no FIPS artifact set, no detached job
-signing, no signed state trees, and no backtracking regex engine.
+The rest of phases 5 and 6 does not exist: no FIPS artifact set, no
+Windows or macOS parity, no detached job signing, no signed state trees,
+and no backtracking regex engine.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.
@@ -2238,6 +2305,20 @@ that recomputes the signature with its own implementation — because "our
 implementation agrees with itself" is exactly the property a signing bug
 preserves.
 
+**Relays are built**, SPEC 5.3. A hub with `relay: true` serves its own
+segment and appears to its upstream as one connected client; the
+upstream holds no key for the nodes behind it, only the relay's
+assertion, accepted from a certificate its policy grants `relay.proxy`.
+Depth is capped at two.
+
+Two things the syndic does not do. Returns are spooled durably through
+an upstream outage and drained oldest-first when it returns, so the
+outage delays returns rather than losing them; and event forwarding is
+chosen by tag glob rather than being all or nothing, so a busy segment
+forwards its job returns and keeps its beacon chatter local. 5.14
+records what running it found, and 1.8 and 1.9 record what a relay
+deliberately does not forward and what the upstream trusts it for.
+
 What is **not** built in phase 5:
 
 - **The reverse tunnel** of SPEC 21.1. Pillar and tree go inline, and a
@@ -2245,7 +2326,7 @@ What is **not** built in phase 5:
   against every target.
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
-- **Relays** and the **FIPS artifact set**.
+- **The FIPS artifact set.**
 - **Windows and macOS parity.** The code cross-compiles and none of it
   has been run there.
 - **`minionfs`/`nodefs`**, which SPEC 13.2 marks a subset and disables

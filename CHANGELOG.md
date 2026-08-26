@@ -809,11 +809,46 @@ does, which needs the containerised harness; the integration, scale,
 upgrade, and chaos suites, which need the hub; `govulncheck`; and
 reproducible-build verification, which needs a second builder.
 
+### A relay serves a segment and answers upstream as one client
+
+`relay: true` makes a hub a relay of SPEC 5.3. It serves its own nodes —
+issues their certificates, dispatches to them, files their returns — and
+presents itself to its upstream as a single connected client. Nodes
+behind it enrol with it, not with the upstream, and the upstream holds
+no key for them: what it holds is the relay's assertion, accepted only
+from a certificate its policy grants `relay.proxy`, and refused for any
+node that relay has not claimed or that is connected to the upstream
+directly.
+
+From upstream the segment is ordinary. `manage.up` lists the relayed
+nodes, targeting matches them, a job goes down the relay's stream naming
+the node it is for, and the return is filed against the node that ran
+it. Depth is capped at two, because unbounded nesting is how a syndic
+estate becomes undebuggable.
+
+Two things the syndic does not do. Returns are spooled durably while the
+upstream is unreachable and drained oldest-first when it returns, so an
+outage delays returns rather than losing them; and event forwarding is
+by tag glob — `relay_event_tags` — so a busy segment can send its job
+returns upstream and keep its beacon chatter local. Empty forwards
+nothing, which is the default.
+
+Verified as three processes on one machine, and
+[DIVERGENCE 5.14](docs/DIVERGENCE.md) records the six defects that
+found, all of which the tests had passed: a relay that panicked before
+it connected, relayed nodes that no job could target, returns refused
+because the relay never recorded the job it forwarded, a spool discarded
+wholesale on every reconnection, one refused entry blocking every return
+behind it, and relayed returns tagged with the relay instead of the node
+— which made a reactor upstream watching for its own node fire never.
+DIVERGENCE 1.8 and 1.9 record what a relay deliberately does not
+forward, and what the upstream is trusting it for.
+
 ### What is not built
 
-The rest of phase 5, and phase 6. No relays, no Windows or macOS parity,
-no FIPS artifact set, no detached job signing, no signed state trees,
-and no backtracking regex engine.
+The rest of phase 5, and phase 6. No Windows or macOS parity, no FIPS
+artifact set, no detached job signing, no signed state trees, and no
+backtracking regex engine.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
 in the other direction from `salt-cp`, and external pillar. Phase 3's

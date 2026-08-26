@@ -223,6 +223,14 @@ Read by the hub.
 | `reactor_timeout` | `60s` | 18.2 | How long one reaction may take to render and dispatch. |
 | `reactor_workers` | `2 x NumCPU` | 18.2 | Reactor worker pool size. |
 | `regex_engine` | `re2` | 10.4 | re2 only until the backtracking engine of SPEC section 10.4 ships. |
+| `relay` | `false` | 5.3 | Run as a relay: serve nodes and proxy them to an upstream hub. |
+| `relay_event_tags` | — | 5.3 | Tag globs whose events are forwarded upstream; empty forwards none. |
+| `relay_max_depth` | `2` | 5.3 | How many relays a connection may be behind. |
+| `relay_pki_dir` | — | 5.3 | Key material this relay enrolled with its upstream. |
+| `relay_server_name` | — | 5.3 | Name to verify in the upstream's certificate. |
+| `relay_spool_dir` | — | 5.3 | Where returns wait during an upstream outage; empty is <state_dir>/relay-spool. |
+| `relay_spool_max_size` | `536870912` | 5.3 | Bytes of undelivered returns to hold before refusing. |
+| `relay_timeout` | `60s` | 5.3 | How long one upstream request may take. |
 | `relay_upstream` | — | 5.3 | The hub this relay reports to. |
 | `relay_upstream_port` | `4510` | 5.3 | The upstream hub's port. |
 | `renderer` | `jinja|yaml` | 10 | The default renderer pipeline. |

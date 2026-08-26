@@ -459,6 +459,67 @@ halite-hub keys export-crl --out /var/db/halite/halite.crl
 a couple of seconds: the record on disk is the decision, and the running
 hub follows it.
 
+## Relays
+
+A relay is a hub that serves its own nodes and presents itself upstream
+as a single client (SPEC 5.3). Use one for a segment that cannot reach
+the main hub directly, or one whose returns must survive the link
+between them going down.
+
+The relay enrols with its upstream as an ordinary node, so set it up in
+that order:
+
+```sh
+# On the upstream hub: accept relays, and grant this one the right.
+accept_relays: true          # in the hub configuration
+
+# In the policy, for the relay's node certificate:
+#   - principals: ['node:relay1.example']
+#     runners: ['relay.proxy']
+
+# On the relay: enrol with the upstream, then run as a relay.
+halite-node enroll --config /usr/local/etc/halite/relay-upstream.yaml \
+    --ca-file /var/db/halite/upstream-ca.crt
+halite-hub keys accept relay1.example    # on the upstream
+```
+
+The relay's own hub configuration then names the upstream:
+
+```yaml
+node_id: relay1.example
+relay: true
+relay_upstream: hub.example
+relay_pki_dir: /var/db/halite/relay-pki      # what it enrolled with
+relay_spool_dir: /var/db/halite/relay-spool  # returns during an outage
+relay_event_tags:
+    - halite/job/**                          # empty forwards nothing
+```
+
+Nodes behind the relay enrol with the relay, not with the upstream, and
+their keys are accepted there. The upstream never holds a key for them —
+`keys list` upstream shows the relay alone — but `manage.up` and
+targeting see them, and a job submitted upstream reaches them through
+the relay's stream.
+
+Two things are worth knowing before deploying one. A job submitted to
+the relay's own command line stays local and does not appear in the
+upstream's job cache; run it upstream if it should. And the upstream
+trusts the relay's word about which nodes it proxies for, bounded by the
+`relay.proxy` grant — see DIVERGENCE 1.8 and 1.9 for what that does and
+does not buy.
+
+While the upstream is unreachable the relay keeps serving its segment
+and spools returns to `relay_spool_dir`, draining them oldest-first when
+the link comes back. Watch it with:
+
+```sh
+halite-hub metrics | grep relay      # on the relay
+```
+
+A spool that is not shrinking after the upstream returns means the
+returns are being refused rather than lost; the relay's log says which
+jid and why.
+
 ## The event bus
 
 Everything the hub does lands on a durable log — `halite/job/<jid>/new`,

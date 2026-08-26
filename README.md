@@ -78,8 +78,8 @@ Delivery follows the phases in SPEC section 32.
 | 1. Local state and pillar | Standalone `halite-node`: state compiler with all requisites, pillar, core modules, grains, `--local`, test-mode conformance harness | **Done** |
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
-| 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Started**: authentication and the execution endpoints are built; events, webhooks, OIDC, LDAP, returners, and the bridge protocol are not |
-| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | Not started |
+| 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Done**: authentication, the execution and event endpoints, webhooks, OIDC, LDAP, returners, and the bridge protocol with its extension model |
+| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, and relays are built; the FIPS artifact set and Windows and macOS parity are not |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
 
 A node manages its own tree today — Salt's masterless mode — and that is
@@ -250,8 +250,8 @@ being reimplemented. Pillar and the tree are compiled on the hub and
 sent with the job, so a target holds no tree and no other target's
 secrets.
 
-What is not built is the rest of phase 5 — relays, the FIPS artifact
-set, and Windows and macOS parity — and phase 6.
+What is not built is the rest of phase 5 — the FIPS artifact set, and
+Windows and macOS parity — and phase 6.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

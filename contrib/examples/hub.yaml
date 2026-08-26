@@ -131,5 +131,28 @@ metrics: true
 # returner_syslog_address: siem.example:6514
 # returner_syslog_tls: true
 
+# A relay serves its own nodes and presents itself upstream as one
+# client (SPEC 5.3). Use one for a segment that cannot reach the main
+# hub, or one whose returns must survive the link between them.
+#
+# The relay enrols with its upstream as an ordinary node first, and the
+# upstream's policy must grant its node certificate `relay.proxy`.
+# Nodes behind it enrol with the relay; the upstream holds no key for
+# them. See docs/operations.md, and DIVERGENCE 1.8 and 1.9 for what a
+# relay deliberately does not forward.
+#
+# relay: true
+# relay_upstream: hub.example
+# relay_pki_dir: /var/db/halite/relay-pki
+# relay_spool_dir: /var/db/halite/relay-spool
+# relay_spool_max_size: 536870912
+# Forwarded events are chosen by tag glob; empty forwards nothing.
+# relay_event_tags:
+#   - halite/job/**
+
+# On the hub the relays report to, rather than on the relay itself:
+#
+# accept_relays: true
+
 log_level: info
 log_format: json
