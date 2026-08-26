@@ -653,3 +653,36 @@ func (c *Client) Metrics(ctx context.Context) (string, error) {
 	}
 	return string(payload), nil
 }
+
+// RelayUpdate tells an upstream hub that a relay's fleet changed.
+//
+// Sent on a change rather than on a timer: a hub that learns about a
+// new node a minute late is a hub that silently left it out of every
+// job in that minute, and reported nothing, because it did not know the
+// node was there.
+func (c *Client) RelayUpdate(ctx context.Context, req RelayUpdate) error {
+	client, err := c.client()
+	if err != nil {
+		return err
+	}
+	raw, err := marshal(req)
+	if err != nil {
+		return err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.url(PathRelay), bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	res, err := client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	payload, _ := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+	if res.StatusCode != http.StatusOK {
+		return decodeError(PathRelay, payload, res.StatusCode)
+	}
+	return nil
+}

@@ -52,6 +52,7 @@ const (
 	PathJobs        = "/v1/jobs"
 	PathEvents      = "/v1/events"
 	PathMetrics     = "/v1/metrics"
+	PathRelay       = "/v1/relay"
 	PathJob         = "/v1/jobs/"
 	PathMine        = "/v1/mine"
 	PathMineGet     = "/v1/mine/get"
@@ -104,6 +105,10 @@ type Message struct {
 	// Event.
 	Tag  string         `json:"tag,omitempty"`
 	Data map[string]any `json:"data,omitempty"`
+	// Node names which subordinate a relayed message is for. Empty on
+	// a message to a directly connected node, which is every message
+	// an ordinary node ever sees.
+	Node string `json:"node,omitempty"`
 	// Revoke, quiesce, drain.
 	Reason string `json:"reason,omitempty"`
 	Final  bool   `json:"final,omitempty"`
@@ -125,6 +130,10 @@ const (
 	MsgKill = "kill"
 )
 
+// MaxRelayDepth is how many relays a connection may be behind by
+// default. SPEC 5.3 names 2 and makes it a configured maximum.
+const MaxRelayDepth = 2
+
 // SubscribeRequest is the body a node opens the stream with: its
 // initial state, per SPEC 6.2.
 type SubscribeRequest struct {
@@ -138,6 +147,42 @@ type SubscribeRequest struct {
 	// Version is the node's build, so a hub can say what it is talking
 	// to without asking.
 	Version string `json:"version,omitempty"`
+
+	// Relay marks a connection that proxies for other nodes rather
+	// than being one. SPEC 5.3: a relay "presents itself upstream as a
+	// single client", so the upstream hub sees one connection and
+	// dispatches through it for every subordinate.
+	Relay bool `json:"relay,omitempty"`
+	// Subordinates are the nodes reachable through this relay, with
+	// the grains each reported, so that targeting upstream works on a
+	// relayed node exactly as on a directly connected one.
+	Subordinates []Subordinate `json:"subordinates,omitempty"`
+	// Depth is how many relays this connection is already behind.
+	// SPEC 5.3 caps it, because unbounded nesting is how syndic
+	// estates become undebuggable.
+	Depth int `json:"depth,omitempty"`
+}
+
+// Subordinate is one node behind a relay.
+type Subordinate struct {
+	NodeID string `json:"node_id"`
+	// Grains is what the node reported, carried verbatim for the
+	// reason SubscribeRequest.Grains is.
+	Grains  json.RawMessage `json:"grains,omitempty"`
+	Version string          `json:"version,omitempty"`
+}
+
+// RelayUpdate is a relay telling its upstream that its fleet changed,
+// at POST /v1/relay.
+//
+// Sent when a subordinate connects or disconnects rather than on a
+// timer: a hub that learns about a new node a minute late is a hub that
+// silently missed it from a job in that minute.
+type RelayUpdate struct {
+	Subordinates []Subordinate `json:"subordinates"`
+	// Left names nodes that have gone, so the upstream stops
+	// dispatching to them rather than reporting them unresponsive.
+	Left []string `json:"left,omitempty"`
 }
 
 // SubmitRequest is an operator asking for a job, at POST /v1/jobs.

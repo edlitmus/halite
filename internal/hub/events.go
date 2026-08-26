@@ -43,6 +43,7 @@ func (s *Server) emitCorrelated(tag, node, correlation string, data map[string]a
 		return
 	}
 	s.m().eventsPublished.With(tagPrefix(tag)).Inc()
+	s.forward(e)
 	s.emitSaltCompat(e)
 }
 
@@ -121,19 +122,21 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, nodeID string) {
 			data[k] = value.FromJSON(v)
 		}
 	}
-	offset, err := s.Events.Append(&eventbus.Event{
+	fromNode := &eventbus.Event{
 		Tag:         tag,
 		Node:        nodeID,
 		Stamp:       s.now(),
 		Correlation: req.Correlation,
 		Data:        data,
-	})
+	}
+	offset, err := s.Events.Append(fromNode)
 	if err != nil {
 		s.m().eventsDropped.With("append_failed").Inc()
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
 	s.m().eventsPublished.With(tagPrefix(tag)).Inc()
+	s.forward(fromNode)
 	s.countBeaconEvent(tag)
 	s.info("event from a node", "node_id", nodeID, "tag", tag)
 	transport.WriteJSON(w, http.StatusAccepted, transport.EventResponse{Tag: tag, Offset: offset})
@@ -262,4 +265,18 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, principal s
 			}
 		}
 	}
+}
+
+// forward hands an event to a relay, which sends on the ones its tag
+// globs name.
+//
+// In the background: an event is recorded whether or not it is
+// forwarded, and a slow upstream must not slow down the bus that every
+// reactor reads from.
+func (s *Server) forward(e *eventbus.Event) {
+	if s.OnEvent == nil {
+		return
+	}
+	copied := *e
+	s.goBackground(func() { s.OnEvent(&copied) })
 }

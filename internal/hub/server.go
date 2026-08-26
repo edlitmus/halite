@@ -102,6 +102,26 @@ type Server struct {
 	// only `roots`, which has nothing to fetch.
 	UpdateFileServer func(ctx context.Context) (any, error)
 
+	// OnReturn is called with every fresh return this hub files.
+	//
+	// It exists for a relay: a hub serving a segment records the
+	// return locally and forwards it upstream, and forwarding from
+	// here rather than from the handler means a return reaches the
+	// upstream by exactly the path it reached the local job cache.
+	OnReturn func(ret *job.Return)
+
+	// OnEvent is called with every event this hub appends, for a relay
+	// to forward the ones its tag globs name.
+	OnEvent func(e *eventbus.Event)
+
+	// AcceptRelays permits a relay to connect. Off by default: an
+	// estate that has not decided to run relays should not acquire one
+	// because somebody set a flag on a hub in a branch office.
+	AcceptRelays bool
+	// MaxRelayDepth caps how many relays a connection may be behind.
+	// Zero takes SPEC 5.3's default of two.
+	MaxRelayDepth int
+
 	// Metrics is the registry this hub exposes at /v1/metrics. A hub
 	// without one is instrumented and records nothing, which is what
 	// every test wants and what SPEC 26.2 allows an operator to choose.
@@ -197,6 +217,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+transport.PathJob+"{jid}/resume", s.operator(s.resume))
 	mux.HandleFunc("POST "+transport.PathJob+"{jid}/kill", s.operator(s.kill))
 	mux.HandleFunc("PUT "+transport.PathGrains, s.authenticated(s.grainsPush))
+	mux.HandleFunc("POST "+transport.PathRelay, s.authenticated(s.relayUpdate))
 	mux.HandleFunc("GET "+transport.PathFiles+"{path...}", s.authenticated(s.files))
 	mux.HandleFunc("POST "+transport.PathPillar, s.authenticated(s.pillarFor))
 	mux.HandleFunc("POST "+transport.PathEvent, s.authenticated(s.events))

@@ -33,21 +33,18 @@ var unreadKeys = map[string]string{
 
 	// Read today, and not yet acted on. Each is a live gap rather than a
 	// phase boundary, and DIVERGENCE says so.
-	"log_level_file":      "SPEC 26.1's per-sink level; the file sink takes the global one",
-	"regex_engine":        "re2 is the only engine, so the setting has one value",
-	"node_id_source":      "the resolution order of SPEC 7.2 is implemented; naming one source is not",
-	"legacy_acl":          "phase 2: RBAC is a hub concern",
-	"parallel_jobs":       "phase 2: there is one job at a time",
-	"socket_dir":          "phase 2: there are no sockets",
-	"quiesce":             "phase 2: there are no jobs to refuse",
-	"quiesce_allowlist":   "phase 2: there are no jobs to refuse",
-	"accept_relays":       "phase 5: relays",
-	"relay_upstream":      "phase 5: relays",
-	"relay_upstream_port": "phase 5: relays",
-	"startup_states":      "phase 2: a node with a hub applies at startup",
-	"job_cache":           "phase 2: there is no job cache",
-	"node_data_cache":     "phase 2: the hub caches node data",
-	"hub_type":            "phase 2: nothing dials a hub yet",
+	"log_level_file":    "SPEC 26.1's per-sink level; the file sink takes the global one",
+	"regex_engine":      "re2 is the only engine, so the setting has one value",
+	"node_id_source":    "the resolution order of SPEC 7.2 is implemented; naming one source is not",
+	"legacy_acl":        "phase 2: RBAC is a hub concern",
+	"parallel_jobs":     "phase 2: there is one job at a time",
+	"socket_dir":        "phase 2: there are no sockets",
+	"quiesce":           "phase 2: there are no jobs to refuse",
+	"quiesce_allowlist": "phase 2: there are no jobs to refuse",
+	"startup_states":    "phase 2: a node with a hub applies at startup",
+	"job_cache":         "phase 2: there is no job cache",
+	"node_data_cache":   "phase 2: the hub caches node data",
+	"hub_type":          "phase 2: nothing dials a hub yet",
 }
 
 func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {

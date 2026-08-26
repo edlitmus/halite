@@ -352,6 +352,8 @@ func runServe(args *cli.Args) int {
 		Events:         bus,
 		EventTagCompat: h.cfg.Bool("event_tag_compat", false),
 		Metrics:        metricsRegistry(h.cfg),
+		AcceptRelays:   h.cfg.Bool("accept_relays", false),
+		MaxRelayDepth:  int(h.cfg.Int("relay_max_depth", transport.MaxRelayDepth)),
 	}
 	if fetching.any() {
 		server.UpdateFileServer = func(ctx context.Context) (any, error) {
@@ -448,6 +450,16 @@ func runServe(args *cli.Args) int {
 				}
 			}()
 		}
+	}
+	// SPEC 5.3: a relay serves its own nodes and presents itself
+	// upstream as a single client.
+	if r := startRelay(ctx, h, args, server); r != nil {
+		defer func() {
+			if spooled := r.Spooled(); spooled > 0 {
+				h.log.Warn("this relay is stopping with returns still spooled",
+					"returns", spooled)
+			}
+		}()
 	}
 	go maintain(ctx, h, server, jobs, bus)
 

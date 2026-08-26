@@ -436,20 +436,10 @@ func (c *RunnerContext) keyRecord(node string) (*keystore.Record, error) {
 
 // acceptedNodes is the estate: every node whose key is accepted and
 // current.
+// acceptedNodes is what the fleet runners report on: the nodes this hub
+// accepted, plus the ones its relays vouch for.
 func (c *RunnerContext) acceptedNodes() ([]string, error) {
-	records, err := c.keys()
-	if err != nil {
-		return nil, err
-	}
-	now := c.Server.now()
-	var out []string
-	for _, rec := range records {
-		if rec.Status(now) == keystore.Accepted {
-			out = append(out, rec.NodeID)
-		}
-	}
-	sort.Strings(out)
-	return out, nil
+	return c.Server.targetableNodes()
 }
 
 func (c *RunnerContext) connectedNodes() ([]any, error) {

@@ -54,6 +54,12 @@ Common flags:
 
 serve flags:
   --listen <addr>      listen address, default :4510
+  --relay              serve nodes and proxy them to an upstream hub (SPEC 5.3)
+  --upstream <address> the hub this relay presents itself to
+  --upstream-pki-dir <dir>  the key material this relay enrolled upstream with
+  --upstream-cert <path>    its certificate, instead of --upstream-pki-dir
+  --upstream-key <path>     its key
+  --upstream-server-name <name>  the name to verify in the upstream's certificate
   --pki-dir <dir>      key material, default ` + config.DefaultPKIDir + `
   --names <a,b>        names to issue the hub's certificate for
   --log-level <level>  error, warn, info (default), debug, or trace

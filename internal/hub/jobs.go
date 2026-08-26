@@ -24,11 +24,25 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		return
 	}
 	if ret.NodeID != "" && ret.NodeID != nodeID {
-		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
-			fmt.Errorf("the certificate says %s and the return says %s", nodeID, ret.NodeID))
-		return
+		// A relay files returns for the nodes it proxies for, and for
+		// nobody else. Without that second half a relay could file a
+		// return for any node in the estate — which is a job that
+		// looks like it succeeded on a machine it never reached.
+		if !s.relayMayReturn(nodeID, ret.NodeID) {
+			transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
+				fmt.Errorf("the certificate says %s and the return says %s", nodeID, ret.NodeID))
+			return
+		}
 	}
-	ret.NodeID = nodeID
+	if ret.NodeID == "" {
+		ret.NodeID = nodeID
+	}
+	// Attribution is the node that ran the job, not the certificate the
+	// return arrived on. The two differ behind a relay, and using the
+	// certificate tagged every relayed return with the relay's own id:
+	// a reactor watching halite/job/<jid>/ret/web1.example never fired,
+	// because upstream every one of them said ret/relay1.example.
+	ran := ret.NodeID
 	if ret.Schema == "" {
 		ret.Schema = job.ReturnSchema
 	}
@@ -51,7 +65,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		// A node returning against a job this hub never dispatched is
 		// either a replay or a node talking to the wrong hub. Both are
 		// worth a line in the log.
-		s.warn("a return arrived for an unknown job", "node_id", nodeID, "jid", string(ret.JID))
+		s.warn("a return arrived for an unknown job", "node_id", ran, "jid", string(ret.JID))
 		transport.WriteError(w, http.StatusNotFound, transport.CodeRefused, err)
 		return
 	}
@@ -61,8 +75,16 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 	}
 	if fresh {
 		s.countReturn(&ret)
+		if s.OnReturn != nil {
+			// A relay forwards it upstream. In the background, because
+			// the node is waiting on this response and an upstream
+			// that is slow must not make every subordinate's return
+			// slow too.
+			forwarded := ret
+			s.goBackground(func() { s.OnReturn(&forwarded) })
+		}
 		s.info("return recorded",
-			"jid", string(ret.JID), "node_id", nodeID, "fun", ret.Fun,
+			"jid", string(ret.JID), "node_id", ran, "fun", ret.Fun,
 			"success", ret.Success, "retcode", ret.RetCode, "duration_ms", ret.DurationMS)
 		// The chain the job belongs to travels with its returns, so a
 		// reactor watching a state result can tell what caused the run
@@ -72,7 +94,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 		if j, err := s.Jobs.Get(ret.JID); err == nil {
 			chain = j.Correlation
 		}
-		s.emitCorrelated(tagJobRet(string(ret.JID), nodeID), nodeID, chain, map[string]any{
+		s.emitCorrelated(tagJobRet(string(ret.JID), ran), ran, chain, map[string]any{
 			"jid": string(ret.JID), "fun": ret.Fun,
 			"success": ret.Success, "retcode": ret.RetCode, "duration_ms": ret.DurationMS,
 		})
@@ -83,7 +105,7 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 			if ret.Success {
 				result = "ok"
 			}
-			s.emitCorrelated(tagState(string(ret.JID), nodeID, result), nodeID, chain, map[string]any{
+			s.emitCorrelated(tagState(string(ret.JID), ran, result), ran, chain, map[string]any{
 				"jid": string(ret.JID), "retcode": ret.RetCode,
 			})
 		}

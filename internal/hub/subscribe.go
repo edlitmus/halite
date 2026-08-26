@@ -52,6 +52,16 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 		}
 	}
 
+	// A relay presents itself upstream as a single client and names the
+	// nodes behind it. SPEC 5.3.
+	if req.Relay {
+		if err := s.acceptRelay(nodeID, req); err != nil {
+			transport.WriteError(w, http.StatusForbidden, transport.CodeRefused, err)
+			return
+		}
+		defer s.fleet().dropRelay(nodeID)
+	}
+
 	st := s.fleet().attach(nodeID, now)
 	defer s.fleet().detach(st)
 
@@ -129,7 +139,16 @@ func (s *Server) subscribe(w http.ResponseWriter, r *http.Request, nodeID string
 }
 
 func (s *Server) fleet() *Fleet {
-	s.fleetOnce.Do(func() { s.Fleet = newFleet() })
+	// A caller that set one keeps it. The first cut replaced it
+	// unconditionally, so the field's own documentation — "a caller may
+	// set one to share it" — was false the moment anything touched the
+	// fleet, and a relay holding a reference to the shared one watched
+	// a fleet nothing connected to.
+	s.fleetOnce.Do(func() {
+		if s.Fleet == nil {
+			s.Fleet = newFleet()
+		}
+	})
 	return s.Fleet
 }
 

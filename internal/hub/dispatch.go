@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/job"
-	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -202,27 +201,23 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 // Only accepted nodes are considered: a pending or rejected request is
 // not part of the estate, and a revoked one is deliberately out of it.
 func (s *Server) resolve(matcher *target.Matcher) ([]string, error) {
-	records, err := s.Authority.Store.List()
+	ids, err := s.targetableNodes()
 	if err != nil {
 		return nil, err
 	}
-	now := s.now()
 	var matched []string
-	for _, rec := range records {
-		if rec.Status(now) != keystore.Accepted {
-			continue
-		}
-		node, err := s.nodes().Matchable(rec.NodeID)
+	for _, id := range ids {
+		node, err := s.nodes().Matchable(id)
 		if err != nil {
 			// A node whose cached grains will not decode must not take
 			// the whole job down with it, and must not be silently
 			// dropped either.
 			s.warn("skipping a node whose cached data is unreadable",
-				"node_id", rec.NodeID, "error", err.Error())
+				"node_id", id, "error", err.Error())
 			continue
 		}
 		if matcher.Match(node) {
-			matched = append(matched, rec.NodeID)
+			matched = append(matched, id)
 		}
 	}
 	sort.Strings(matched)

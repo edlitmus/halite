@@ -16,6 +16,11 @@ import (
 type Fleet struct {
 	mu      sync.Mutex
 	streams map[string]*stream
+	// via maps a subordinate node to the relay whose stream reaches
+	// it. SPEC 5.3: a relay presents itself upstream as a single
+	// client, so a job for a node behind one is written to the relay's
+	// stream and the relay dispatches it onward.
+	via map[string]string
 }
 
 // stream is one node's outbound queue.
@@ -59,7 +64,23 @@ func (st *stream) close() {
 // without bound is not visible until it is fatal.
 const queueDepth = 64
 
-func newFleet() *Fleet { return &Fleet{streams: map[string]*stream{}} }
+func newFleet() *Fleet {
+	return &Fleet{streams: map[string]*stream{}, via: map[string]string{}}
+}
+
+// LiveFleet is this hub's fleet, created if nothing has needed it yet.
+//
+// The Fleet field is created lazily on the first connection, so a
+// caller that reads it before any node has arrived — a relay, which
+// reports its subordinates upstream at connection time — reads nil.
+func (s *Server) LiveFleet() *Fleet { return s.fleet() }
+
+// NewFleet answers with an empty one.
+//
+// Exported so a caller that needs the fleet before the hub has served
+// anything — a relay, which reports its subordinates upstream at
+// connection time — can create it and hand the same one to the server.
+func NewFleet() *Fleet { return newFleet() }
 
 func (f *Fleet) attach(nodeID string, now time.Time) *stream {
 	st := &stream{
@@ -88,11 +109,66 @@ func (f *Fleet) detach(st *stream) {
 	st.close()
 }
 
+// Relay records that a set of nodes is reachable through one
+// connection.
+//
+// Replaced wholesale for that relay rather than merged, because a
+// subordinate that has gone must stop being dispatched to: an update
+// that only added would keep sending jobs to a node the relay can no
+// longer reach, and report it unresponsive rather than absent.
+func (f *Fleet) Relay(relayID string, subordinates []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for node, via := range f.via {
+		if via == relayID {
+			delete(f.via, node)
+		}
+	}
+	for _, node := range subordinates {
+		// A relay may not claim a node that is connected directly.
+		// Otherwise a relay could take over delivery for any node in
+		// the estate by naming it, which is a job going somewhere the
+		// operator did not intend.
+		if _, direct := f.streams[node]; direct {
+			continue
+		}
+		f.via[node] = relayID
+	}
+}
+
+// RelayFor answers with the relay a node is reached through, if any.
+func (f *Fleet) RelayFor(nodeID string) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	via, ok := f.via[nodeID]
+	return via, ok
+}
+
+// dropRelay forgets the subordinates of a relay that has gone.
+func (f *Fleet) dropRelay(relayID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for node, via := range f.via {
+		if via == relayID {
+			delete(f.via, node)
+		}
+	}
+}
+
 // Send offers a message to one node. It reports false if the node is
 // not connected or is too far behind to take it.
 func (f *Fleet) Send(nodeID string, msg transport.Message) bool {
 	f.mu.Lock()
 	st, ok := f.streams[nodeID]
+	if !ok {
+		// Not connected directly. A relay may still reach it, and the
+		// message goes down the relay's stream naming the node it is
+		// for.
+		if via, relayed := f.via[nodeID]; relayed {
+			st, ok = f.streams[via]
+			msg.Node = nodeID
+		}
+	}
 	f.mu.Unlock()
 	if !ok {
 		return false
@@ -182,12 +258,37 @@ func (f *Fleet) LastPong(nodeID string) time.Time {
 }
 
 // Connected lists the nodes with a live stream, and since when.
+// Relayed is every node reachable through a relay, with the relay.
+func (f *Fleet) Relayed() map[string]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[string]string, len(f.via))
+	for node, via := range f.via {
+		out[node] = via
+	}
+	return out
+}
+
+// Connected is every node a job can reach: directly connected ones, and
+// the subordinates of connected relays.
+//
+// A relayed node is connected in the sense that matters — a job for it
+// will be delivered — and reporting it otherwise would make
+// `manage.up` on a relayed estate answer with the relays alone.
 func (f *Fleet) Connected() map[string]time.Time {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	out := make(map[string]time.Time, len(f.streams))
+	out := make(map[string]time.Time, len(f.streams)+len(f.via))
 	for id, st := range f.streams {
 		out[id] = st.since
+	}
+	for node, via := range f.via {
+		if st, ok := f.streams[via]; ok {
+			// Since the relay connected: the hub does not know when
+			// the subordinate did, and inventing a time would be worse
+			// than the relay's own.
+			out[node] = st.since
+		}
 	}
 	return out
 }

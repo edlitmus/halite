@@ -199,3 +199,12 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	}
 	return os.Rename(name, path)
 }
+
+// NodeData is what the hub recorded about one node.
+//
+// Exported for a relay, which reports its subordinates' grains upstream
+// so that targeting works on a relayed node exactly as on a directly
+// connected one.
+func (s *Server) NodeData(nodeID string) (*NodeData, error) {
+	return s.nodes().Get(nodeID)
+}
