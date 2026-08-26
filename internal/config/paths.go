@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -18,11 +19,30 @@ import (
 // The specification's paths are the Linux ones. These are the same
 // layout expressed in the local convention.
 
+// windowsRoot is where SPEC 27.3 puts configuration on Windows:
+// %PROGRAMDATA%\Halite, which is the location the .msi registers and the
+// only one an administrator would think to look in.
+//
+// Without this the FHS paths were used literally there — filepath.Join
+// turns "/etc/halite" into "\etc\halite" — so a Windows node kept its
+// configuration, its keys, and its cache in three directories off the
+// root of whichever drive the process started on.
+func windowsRoot() string {
+	if dir := os.Getenv("PROGRAMDATA"); dir != "" {
+		return filepath.Join(dir, "Halite")
+	}
+	// PROGRAMDATA is set on every supported Windows, but a service
+	// started with a scrubbed environment is not worth crashing over.
+	return filepath.Join(`C:\ProgramData`, "Halite")
+}
+
 // isBSD reports whether this platform uses the /usr/local hierarchy for
 // ports and packages. macOS is excluded: Homebrew's prefix is not fixed,
 // so /etc is the honest default there.
-func isBSD() bool {
-	switch runtime.GOOS {
+func isBSD() bool { return isBSDFor(runtime.GOOS) }
+
+func isBSDFor(goos string) bool {
+	switch goos {
 	case "freebsd", "openbsd", "netbsd", "dragonfly":
 		return true
 	}
@@ -30,15 +50,31 @@ func isBSD() bool {
 }
 
 // prefix is where packaged configuration lives.
-func prefix() string {
-	if isBSD() {
+func prefix() string { return prefixFor(runtime.GOOS) }
+
+func prefixFor(goos string) string {
+	if isBSDFor(goos) {
 		return "/usr/local/etc"
 	}
 	return "/etc"
 }
 
 // DefaultRoot is where packaged configuration lives. SPEC section 27.3.
-var DefaultRoot = filepath.Join(prefix(), "halite")
+var DefaultRoot = RootFor(runtime.GOOS)
+
+// RootFor is the configuration root a given platform uses.
+//
+// Takes the platform rather than reading runtime.GOOS so that the whole
+// layout can be checked for every target from one host. Three of the
+// four platforms here have never had this build run on them, and a
+// layout that can only be verified by booting the platform is a layout
+// that stays unverified.
+func RootFor(goos string) string {
+	if goos == "windows" {
+		return windowsRoot()
+	}
+	return filepath.Join(prefixFor(goos), "halite")
+}
 
 // DefaultPKIDir, DefaultStateDir, DefaultCacheDir, and DefaultSocketDir
 // are the rest of 27.3's layout, in the local convention.
@@ -53,16 +89,30 @@ var (
 
 // varPath maps FHS's /var/<kind>/halite onto the local convention. A BSD
 // keeps durable state in /var/db and has no /var/lib at all.
-func varPath(kind string) string {
-	if isBSD() && kind == "lib" {
+func varPath(kind string) string { return VarPathFor(runtime.GOOS, kind) }
+
+// VarPathFor is /var/<kind>/halite in the local convention.
+func VarPathFor(goos, kind string) string {
+	if goos == "windows" {
+		// Windows has no /var. Everything lives under the one root the
+		// .msi creates and the administrator already knows about.
+		return filepath.Join(windowsRoot(), kind)
+	}
+	if isBSDFor(goos) && kind == "lib" {
 		return "/var/db/halite"
 	}
 	return filepath.Join("/var", kind, "halite")
 }
 
 // runPath is /run on Linux and /var/run on a BSD.
-func runPath() string {
-	if isBSD() {
+func runPath() string { return RunPathFor(runtime.GOOS) }
+
+// RunPathFor is where a platform keeps its runtime sockets.
+func RunPathFor(goos string) string {
+	if goos == "windows" {
+		return filepath.Join(windowsRoot(), "run")
+	}
+	if isBSDFor(goos) {
 		return "/var/run/halite"
 	}
 	return "/run/halite"

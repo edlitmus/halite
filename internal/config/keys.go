@@ -66,7 +66,7 @@ var Keys = []Key{
 
 	// State and pillar.
 	{"file_roots", nodeHub, "", "Environment to an ordered list of state directories.", "13.1"},
-	{"pillar_roots", hubOnly, "", "Environment to an ordered list of pillar directories.", "12.2"},
+	{"pillar_roots", nodeHub, "", "Environment to an ordered list of pillar directories.", "12.2"},
 	{"env", all, "base", "The default environment. saltenv is a permanent alias.", "13.1"},
 	{"pillarenv", nodeHub, "", "The pillar environment, defaulting to env.", "12.2"},
 	{"env_allowlist", nodeHub, "", "Environments a run may use.", "28.3"},

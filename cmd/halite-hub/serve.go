@@ -229,9 +229,13 @@ func runServe(args *cli.Args) int {
 		}
 		for _, b := range h.cfg.StringSlice("fileserver_backend") {
 			switch b {
-			case "roots", "git", "gitfs":
+			// The names s3fs.go and gitfs.go actually key off. This
+			// list said roots and git only, so a hub configured for s3
+			// warned that the build did not serve it and then started
+			// the s3 file server on the next line.
+			case "roots", "git", "gitfs", "s3", "s3fs":
 			default:
-				h.log.Warn("this build serves the roots and git backends",
+				h.log.Warn("this build serves the roots, git, and s3 backends",
 					"configured", b, "section", "13.2")
 			}
 		}
