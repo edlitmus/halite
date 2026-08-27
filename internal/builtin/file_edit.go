@@ -59,7 +59,11 @@ func registerFileEditExec(r *Registries) {
 				Params:   replaceParams("The file to edit."),
 				Mutates:  true,
 				TestMode: signature.TestReliable,
-				Section:  "15.2",
+				// The same reasoning as file.write: SPEC 23.5 names it, and
+				// an edit that can put any line into any file is a way
+				// to run code on the node.
+				ArbitraryCode: true,
+				Section:       "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				res, err := fileReplace(c, args)

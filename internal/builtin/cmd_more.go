@@ -39,9 +39,15 @@ func registerCmdMore(r *Registries) {
 					opt("timeout", signature.Duration, nil, "How long it may run."),
 					opt("ignore_retcode", signature.Bool, false, "Treat a non-zero exit as success."),
 				},
-				Mutates:  true,
-				TestMode: signature.TestUnreliable,
-				Section:  "15.2",
+				Mutates: true,
+				// SPEC 23.5 names cmd.shell among the functions a
+				// wildcard never grants, and it was not declaring it.
+				// A role deliberately refused cmd.run got the same
+				// power by asking for cmd.shell instead, which is the
+				// whole of the control undone by one missing field.
+				ArbitraryCode: true,
+				TestMode:      signature.TestUnreliable,
+				Section:       "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				cmd := buildShellCommand(c, args, states.Str(args, "cmd", ""))

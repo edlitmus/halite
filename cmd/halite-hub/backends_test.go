@@ -78,3 +78,32 @@ func acceptedBackendNames(t *testing.T) map[string]bool {
 	}
 	return out
 }
+
+// SPEC 23.5 names the functions a wildcard must never grant. Each is
+// named there because it is a way to run whatever the caller likes, and
+// the control is worth nothing if one of them is missing: a role
+// deliberately refused `cmd.run` simply asks for whichever one was left
+// out and gets the same thing.
+//
+// `cmd.shell`, `file.write`, and `file.replace` were all missing, so
+// `functions: ['*']` granted them. Found by writing the example policy
+// and asking `policy test` what it actually decided.
+func TestEveryFunctionSpecNamesIsNeverGrantedByAWildcard(t *testing.T) {
+	// The list is SPEC 23.5's own, written out rather than derived, so
+	// that dropping a declaration in the code cannot also drop it from
+	// what this checks against.
+	named := []string{
+		"cmd.run", "cmd.script", "cmd.shell", "module.run",
+		"file.write", "file.replace",
+	}
+	arbitrary := arbitraryCodeFunctions()
+	if len(arbitrary) == 0 {
+		t.Fatal("no function declares arbitrary_code; this check has stopped checking")
+	}
+	for _, fn := range named {
+		if !arbitrary[fn] {
+			t.Errorf("SPEC 23.5 names %s, but it does not declare arbitrary_code, "+
+				"so functions: ['*'] grants it", fn)
+		}
+	}
+}

@@ -459,7 +459,7 @@ cmd.shell(cmd: string, cwd: path = , runas: string = , umask: string = , env: ma
 | `timeout` | duration | — | How long it may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
 
-*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 15.2*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
 #### `cmd.which`
 
@@ -1150,7 +1150,7 @@ file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: l
 | `show_changes` | bool | `true` | Include a unified diff in the changes. |
 | `bufsize` | any | — | Accepted for compatibility with Salt, which uses it to size a chunked read. |
 
-*changes the system · honours `--test` · SPEC section 15.2*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.2*
 
 #### `file.rmdir`
 
@@ -1225,7 +1225,7 @@ file.write(path: path, contents: string, mode: mode = 0644)
 | `contents` | string | *required* | What to write. |
 | `mode` | mode | `0644` | The file mode, written as a quoted string. |
 
-*changes the system · honours `--test` · SPEC section 15.2*
+*changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.2*
 
 ### `gem`
 

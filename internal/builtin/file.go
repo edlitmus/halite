@@ -52,7 +52,13 @@ func registerFileExec(r *Registries) {
 					opt("mode", signature.Mode, "0644", "The file mode, written as a quoted string."),
 				},
 				Mutates: true, TestMode: signature.TestReliable,
-				Section: "15.2",
+				// SPEC 23.5 names file.write among the functions a
+				// wildcard never grants. Chosen content at a chosen
+				// path is code execution by a slower route: a cron
+				// file, an authorized_keys, a unit file, a sudoers
+				// line. The permission has to be asked for by name.
+				ArbitraryCode: true,
+				Section:       "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				path := states.Str(args, "path", "")
