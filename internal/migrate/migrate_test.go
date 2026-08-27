@@ -104,6 +104,22 @@ note:
 	return stateRoot, pillarRoot, configFile
 }
 
+// mkdirAll and writeFile are the two lines every tree-building test
+// would otherwise repeat.
+func mkdirAll(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func runAudit(t *testing.T) *Report {
 	t.Helper()
 	stateRoot, pillarRoot, cfg := writeTree(t)
@@ -649,5 +665,97 @@ converted:
 	}
 	if !strings.Contains(on.Summary(), "cmd_default_shell was assumed") {
 		t.Errorf("the summary should say the tree depends on the setting:\n%s", on.Summary())
+	}
+}
+
+// A Salt estate that keeps one repository puts its pillar in `pillar/`
+// beside its states, and `halite-hub migrate <repo>` is the first thing
+// anyone runs.
+//
+// The state walk used to recurse into it and read every pillar file as
+// a state, so a mapping of hostname to values came back as
+// "beastie.example is not a state function this build ships", marked
+// BLOCKING. A migration tool that reports work which does not exist is
+// worse than one that reports none: the next real finding is the one
+// nobody believes.
+func TestPillarBesideTheStatesIsAuditedAsPillar(t *testing.T) {
+	root := t.TempDir()
+	mkdirAll(t, filepath.Join(root, "state"))
+	mkdirAll(t, filepath.Join(root, "pillar"))
+	writeFile(t, filepath.Join(root, "state", "web.sls"), `
+nginx:
+  pkg.installed: []
+`)
+	// Plain pillar data: a mapping whose keys are hostnames, which is
+	// not a state function and must not be read as one.
+	writeFile(t, filepath.Join(root, "pillar", "samba.sls"), `
+samba:
+  beastie.example.com:
+    shares:
+      - name: main
+        path: /chunk
+`)
+
+	rep, err := Run(Options{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.PillarFiles != 1 {
+		t.Errorf("pillar files = %d, want 1; the pillar tree was not found", rep.PillarFiles)
+	}
+	if rep.SLSFiles != 1 {
+		t.Errorf("state files = %d, want 1; pillar was counted as state", rep.SLSFiles)
+	}
+	if rep.PillarRoot == "" {
+		t.Error("the report does not say where pillar was read from")
+	}
+	for _, f := range rep.Findings {
+		if f.Severity == Blocking {
+			t.Errorf("a clean tree reported a blocking finding: %s %s: %s",
+				f.File, f.Subject, f.Msg)
+		}
+	}
+}
+
+// `- match: grain` names the grain in the expression rather than with a
+// G@ sigil, and is the spelling a real Salt tree uses.
+//
+// The audit looked only for the sigil, so it called such a tree clean
+// and the first run then failed to compile pillar at all — the compiler
+// enforces SPEC 12.4 whatever the audit said. The audit has to predict
+// the refusal, or it is worse than nothing.
+func TestAPillarTopMatchingOnAnUntrustedGrainIsReported(t *testing.T) {
+	root := t.TempDir()
+	mkdirAll(t, filepath.Join(root, "state"))
+	mkdirAll(t, filepath.Join(root, "pillar"))
+	writeFile(t, filepath.Join(root, "pillar", "top.sls"), `
+base:
+  '*':
+    - common
+  'nodename:beastie.example.com':
+    - match: grain
+    - samba
+  'os_family:FreeBSD':
+    - match: grain
+    - bsd
+`)
+
+	rep, err := Run(Options{Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := findingsFor(rep, CatPillarGrain)
+	if len(found) != 1 {
+		t.Fatalf("pillar grain findings = %d, want 1: %+v", len(found), found)
+	}
+	if found[0].Subject != "nodename" {
+		t.Errorf("the finding names %q, not the untrusted grain", found[0].Subject)
+	}
+	// `os_family` is in the default allowlist and must not be reported,
+	// or the audit cries wolf on every tree that targets on the OS.
+	for _, f := range found {
+		if f.Subject == "os_family" {
+			t.Error("a trusted grain was reported as untrusted")
+		}
 	}
 }

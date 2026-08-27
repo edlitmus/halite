@@ -99,6 +99,11 @@ func (f Finding) String() string {
 // Report is the whole audit.
 type Report struct {
 	Root string
+	// PillarRoot is the tree the audit read pillar from, which may have
+	// been found rather than given. Reported, because an audit that
+	// silently decided where the pillar was is one whose findings
+	// cannot be trusted.
+	PillarRoot string
 	// Files counted by kind.
 	SLSFiles    int
 	PillarFiles int
@@ -184,11 +189,31 @@ func Run(opts Options) (*Report, error) {
 		trusted = DefaultTrustedGrains
 	}
 
-	if err := auditTree(rep, opts, opts.Root, false, trusted); err != nil {
+	// A Salt estate usually keeps its pillar beside its states, and the
+	// commonest single-repository layout puts it in `pillar/` under the
+	// one root. Found rather than required, because the audit used to
+	// walk it as part of the state tree: every pillar file was read as
+	// a state, and a mapping of hostname to values came back as
+	// "beastie.example is not a state function this build ships",
+	// marked BLOCKING. A migration tool reporting work that does not
+	// exist is worse than one reporting none.
+	pillarRoot := opts.PillarRoot
+	if pillarRoot == "" {
+		if found, ok := conventionalPillarRoot(opts.Root); ok {
+			pillarRoot = found
+		}
+	}
+	rep.PillarRoot = pillarRoot
+
+	skip := ""
+	if pillarRoot != "" && pillarRoot != opts.Root {
+		skip = pillarRoot
+	}
+	if err := auditTree(rep, opts, opts.Root, false, trusted, skip); err != nil {
 		return nil, err
 	}
-	if opts.PillarRoot != "" && opts.PillarRoot != opts.Root {
-		if err := auditTree(rep, opts, opts.PillarRoot, true, trusted); err != nil {
+	if pillarRoot != "" && pillarRoot != opts.Root {
+		if err := auditTree(rep, opts, pillarRoot, true, trusted, ""); err != nil {
 			return nil, err
 		}
 	}
@@ -206,7 +231,28 @@ func Run(opts Options) (*Report, error) {
 	return rep, nil
 }
 
-func auditTree(rep *Report, opts Options, root string, isPillar bool, trusted []string) error {
+// conventionalPillarRoot answers with <root>/pillar when it is a
+// directory holding at least one .sls, which is the layout a Salt
+// estate that keeps one repository uses.
+func conventionalPillarRoot(root string) (string, bool) {
+	candidate := filepath.Join(root, "pillar")
+	info, err := os.Stat(candidate)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+	entries, err := os.ReadDir(candidate)
+	if err != nil {
+		return "", false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && filepath.Ext(e.Name()) == ".sls" {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+func auditTree(rep *Report, opts Options, root string, isPillar bool, trusted []string, skipDir string) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -215,6 +261,9 @@ func auditTree(rep *Report, opts Options, root string, isPillar bool, trusted []
 		rel = filepath.ToSlash(rel)
 
 		if d.IsDir() {
+			if skipDir != "" && path == skipDir {
+				return filepath.SkipDir
+			}
 			base := d.Name()
 			for _, cd := range customModuleDirs {
 				if base == cd {
@@ -608,7 +657,24 @@ func auditPillarTop(rep *Report, rel, body string, trusted []string) {
 		for _, tgt := range targets.Entries() {
 			expr := value.KeyString(tgt.Key)
 			grain, isGrainTarget := grainTargetName(expr)
+			if !isGrainTarget && matchKindOf(tgt.Val) == "grain" {
+				// `- match: grain` names the grain in the expression
+				// itself rather than with a G@ sigil, and is the
+				// spelling an existing Salt tree actually uses. Looking
+				// only for the sigil meant the audit called a tree
+				// clean and the first run failed to compile pillar at
+				// all, which is the report an operator trusts least
+				// once they have seen it be wrong.
+				if name, _, ok := strings.Cut(expr, ":"); ok && name != "" {
+					grain, isGrainTarget = name, true
+				}
+			}
 			if !isGrainTarget || trustedSet[grain] {
+				continue
+			}
+			// A `node:` path is hub-authoritative and always permitted,
+			// as the compiler has it.
+			if grain == "node" || strings.HasPrefix(grain, "node:") {
 				continue
 			}
 			rep.Findings = append(rep.Findings, Finding{
@@ -619,6 +685,25 @@ func auditPillarTop(rep *Report, rel, body string, trusted []string) {
 			})
 		}
 	}
+}
+
+// matchKindOf reads `- match: <kind>` out of a top file target's body,
+// which is where a Salt tree says how the expression should be read.
+func matchKindOf(body any) string {
+	list, ok := body.([]any)
+	if !ok {
+		return ""
+	}
+	for _, item := range list {
+		m, ok := item.(*value.Map)
+		if !ok {
+			continue
+		}
+		if v, ok := m.Get("match"); ok {
+			return value.KeyString(v)
+		}
+	}
+	return ""
 }
 
 // grainTargetName extracts the grain from a `G@os_family:Debian` or a

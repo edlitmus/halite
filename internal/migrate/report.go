@@ -46,6 +46,11 @@ func (r *Report) Summary() string {
 
 	fmt.Fprintf(&b, "Migration report for %s\n", r.Root)
 	fmt.Fprintf(&b, "  %d state files, %d pillar files\n", r.SLSFiles, r.PillarFiles)
+	if r.PillarRoot != "" && r.PillarRoot != r.Root {
+		fmt.Fprintf(&b, "  pillar read from %s\n", r.PillarRoot)
+	} else if r.PillarFiles == 0 {
+		fmt.Fprintf(&b, "  no pillar tree found; pass --pillar-root if it is elsewhere\n")
+	}
 
 	b.WriteString("\nRenderer inventory\n")
 	for _, name := range sortedKeys(r.Renderers) {
