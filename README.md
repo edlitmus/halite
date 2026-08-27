@@ -51,9 +51,10 @@ convergence, and everything else rests on it.
 | [Getting started](docs/getting-started.md) | Install, a first tree, a first apply. |
 | [Writing states](docs/states.md) | Declarations, requisites, templates, pillar. |
 | [Operations](docs/operations.md) | Scheduling, service files, exit codes, logging. |
+| [Coming from Salt](docs/from-salt.md) | A step-by-step migration: audit, hub, one node, compare, cut over. |
 | [Migrating from Salt](docs/migrating-from-salt.md) | The audit tool, and what is deliberately different. |
 | [Command reference](docs/command-reference.md) | Every Salt command, and what to type instead. |
-| [Configuration reference](docs/configuration.md) | Every setting, generated from the code. |
+| [Configuration reference](docs/configuration.md) | Every setting, grouped by topic and explained, generated from the code. |
 | [Module reference](docs/modules.md) | Every function this build ships, generated from the code. |
 | [DIVERGENCE.md](docs/DIVERGENCE.md) | What is not built, what differs from the spec, and every test layer's real state. |
 
