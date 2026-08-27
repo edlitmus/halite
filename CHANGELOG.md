@@ -766,23 +766,42 @@ restores Salt's behaviour for a transition.
 ### Documentation
 
 [Getting started](docs/getting-started.md), [writing
-states](docs/states.md), [operations](docs/operations.md), [migrating
-from Salt](docs/migrating-from-salt.md), and a [command
-reference](docs/command-reference.md) giving every Salt command and what
-to type instead — plus a configuration reference and a module reference
-generated from the code and checked against it by a test.
+states](docs/states.md), [operations](docs/operations.md), [coming from
+Salt](docs/from-salt.md) as a step-by-step migration, [migrating from
+Salt](docs/migrating-from-salt.md) as the reference for what differs,
+and a [command reference](docs/command-reference.md) giving every Salt
+command and what to type instead — plus a module reference and a
+configuration reference generated from the code and checked against it
+by a test.
+
+The configuration reference explains each of the 209 settings in the
+topic it belongs to, saying which of the three programs reads it, when
+to change it, and what it interacts with. A test requires every setting
+to carry that explanation, so one cannot be added without it.
 
 The prose is checked too, as far as prose can be. A test runs every
 command the matrix presents as working and confirms that every command
 it promises in a later phase is one the binary already knows the name
 of; another reads any sentence stating how many functions ship and
-compares it with the registries. Example configurations live in
-`contrib/examples/`, and a test loads each as the program it is written
-for and fails on any warning.
+compares it with the registries.
 
-Service files for FreeBSD `rc.d` and systemd are in `contrib/`. The
-periodic-highstate ones, the `halite-hub` and `halite-node` daemons, and
-`halite-api` all work today.
+Example configurations live in `contrib/examples/`, and a test loads
+each as the program it is written for and fails on any warning —
+commented settings included, because most of what an example teaches is
+commented out and a typo in one would otherwise ship as documentation of
+a setting that does not exist. A worked `policy.yaml` and `accounts.yaml`
+go through their own parsers with the decisions their comments describe
+asserted, and the account file's hashes are proven unusable so it cannot
+quietly acquire a working login.
+
+Service files for FreeBSD `rc.d` and systemd are in `contrib/`, with
+FIPS drop-ins beside them. Three checks hold them to the tooling: no
+unit may offer a reload while `SIGHUP` terminates the process, no rc.d
+script may use the variable names `rc.subr` reserves, and one that
+supervises with `daemon(8)` must name the process it supervises. The
+rc.d family has been exercised against the real `rc.subr`; the systemd
+units have not been run at all, because this build has not been run on
+Linux as a service.
 
 ### The tests the specification asks for
 
@@ -930,6 +949,60 @@ delivered phase as the reason it was unavailable, and each now names the
 subsystem that is actually missing.
 
 [DIVERGENCE 5.17](docs/DIVERGENCE.md) has the detail.
+
+### Windows gets its own paths, and two settings stop lying
+
+Windows had no case in the filesystem layout, so it fell through to the
+FHS branch — and `filepath.Join("/etc", "halite")` is `\etc\halite`
+there. A Windows node would have kept its configuration, its enrollment
+key, and its cache off the root of whichever drive it started in, none
+of them the `%PROGRAMDATA%\Halite` that SPEC 27.3 specifies. The test
+asserting the default asserted `/etc/halite` for everything that was not
+a BSD, so it would have failed on the first Windows run. The layout is
+now computed from the target rather than from `runtime.GOOS` alone, so
+all four platforms are checked from one host.
+
+`pillar_roots` was marked hub-only while every masterless node reads it,
+which the generated reference then taught. `fileserver_backend` warned
+that this build does not serve `s3` and then started the S3 file server
+on the next line.
+
+### The migration audit reads pillar as pillar
+
+`halite-hub migrate` is the first command anyone coming from Salt runs.
+A single-repository estate keeps pillar in `pillar/` beside its states,
+and the state walk recursed into it and read every pillar file as a
+state — so a mapping of hostname to values came back as "beastie.example
+is not a state function this build ships", marked BLOCKING. Separately,
+the pillar-targeting check looked only for a `G@` sigil, so the
+`- match: grain` spelling a real Salt tree uses was invisible and the
+audit called a tree clean that the compiler refuses.
+
+Against a real estate: before, two blocking findings that did not exist
+and none of the four real ones; after, no blocking findings and the four
+that predict what a run does.
+
+### The service files do what they say
+
+Reviewed against FreeBSD's `daemon(8)` and `/etc/rc.subr` rather than by
+reading them, which found that `rc.subr` reserves `${name}_program` and
+assigns it over `command`: the FIPS switch added earlier in this series
+used that name, silently replaced `/usr/sbin/daemon` with the halite
+binary, and stopped all three services from starting at all.
+
+`stop` and `restart` had never worked on FreeBSD — daemon's `-p` records
+the child's pid and `rc.subr` matches it against `procname`, which
+defaults to `command`, so rc looked for `daemon` at a pid belonging to
+`halite-hub` and reported a running service as stopped.
+
+And `systemctl reload` was an outage: nothing handles `SIGHUP`, so Go's
+default disposition terminates the process, and all three long-running
+units advertised `ExecReload`. There is no reload; changing
+configuration is a restart.
+
+[DIVERGENCE 5.18](docs/DIVERGENCE.md) through 5.20 record all three
+sets, including what the service-file review could not establish without
+root and without a Linux host.
 
 ### What is not built
 

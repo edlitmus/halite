@@ -503,7 +503,10 @@ install -m 0644 contrib/systemd/fips/halite-node.service.d/fips.conf \
 systemctl daemon-reload && systemctl restart halite-node
 ```
 
-On FreeBSD, set `halite_node_fips="YES"` in `rc.conf`.
+On FreeBSD, set the matching knob in `rc.conf` — `halite_hub_fips`,
+`halite_node_fips`, `halite_api_fips`, or `halite_highstate_fips`. Each
+runs the `-fips` artifact with `GODEBUG=fips140=on` stated rather than
+inherited, so a `GODEBUG` already in the environment cannot turn it off.
 
 Three things change in FIPS mode, and each is refused rather than
 silently substituted:

@@ -1827,6 +1827,59 @@ is worse than a missing feature — it is a working feature reporting
 itself as absent, in a message nobody reads the source of.
 
 
+### 5.18 What auditing the docs against the code found
+
+Three defects, each surfaced by comparing a written claim with the code
+rather than by reading either alone. All three were in what a new
+operator meets first.
+
+| Found by the comparison | What it was |
+|---|---|
+| Windows had no path layout | It fell through to the FHS branch, and `filepath.Join("/etc", "halite")` is `\etc\halite` there — configuration, enrollment key, and cache off the root of whichever drive the process started in, none of them the `%PROGRAMDATA%\Halite` SPEC 27.3 specifies. The test asserting the default asserted `/etc/halite` for everything that was not a BSD, so it would have failed on the first Windows run. 4.0 has the layout. |
+| `pillar_roots` was marked hub-only | Every masterless node reads it, and the generated configuration reference taught otherwise. |
+| `fileserver_backend` refused a backend it serves | The validator accepted `roots`, `git`, and `gitfs` while s3fs enables itself on `s3` or `s3fs`, so a hub configured for S3 was warned that this build did not serve it and then started the S3 file server on the next line. |
+
+Commented settings in `contrib/examples` are now held to the same
+standard as live ones. They never reach the loader, so a typo in one
+shipped as documentation of a setting that does not exist, and most of
+what an example teaches is commented out.
+
+### 5.19 What auditing the migration tool found
+
+`halite-hub migrate` is the first command anyone coming from Salt runs,
+so a wrong answer there is expensive: it is the report that decides
+whether the tree is thought portable at all.
+
+| Found by running it on a real estate | What it was |
+|---|---|
+| Pillar was audited as state | A single-repository estate keeps pillar in `pillar/` beside its states. The state walk recursed into it and read every pillar file as a state, so a mapping of hostname to values came back as "beastie.example is not a state function this build ships", marked BLOCKING. Two blocking findings that did not exist. |
+| `- match: grain` targets were invisible | The pillar-targeting check looked only for a `G@` sigil. A Salt tree writes `'nodename:host'` with `- match: grain` in the body, so the audit called the tree clean while the compiler refuses it — the same omission 5.9 records in the compiler itself, in the audit's own copy of the rule. |
+
+Before: two blocking findings, neither real, and none of the four the
+compiler actually refuses. After: no blocking findings, and the four
+that predict what a real run does.
+
+### 5.20 What reviewing the service files against the tooling found
+
+Read against FreeBSD's `daemon(8)` and `/etc/rc.subr`, and against a
+running process for the signal, rather than by reading the files.
+
+| Found | What it was |
+|---|---|
+| `${name}_program` is reserved | `rc.subr` assigns it over `command`. A FIPS switch using that name replaced `/usr/sbin/daemon` with the halite binary, which then received daemon's own flags as arguments. All three services failed to start, and the only clue was under `rc_debug`. Introduced by the FIPS work in this same series. |
+| `${name}_user` is reserved too | `rc.subr` wraps the command in `su -m` itself, so passing `-u` to daemon as well made it drop privileges a second time as a non-root user. The pidfile also has to live somewhere that account can write, which `/var/run` is not. |
+| `stop` and `restart` never worked | daemon's `-p` records the *child's* pid, and rc.subr matches it against `procname`, which defaults to `command` — so rc looked for `daemon` at a pid belonging to `halite-hub` and reported a running service as stopped. Measured both ways: with `procname`, "running as pid 63758"; without it, "not running". |
+| `systemctl reload` was an outage | Nothing handles `SIGHUP`, so Go's default disposition terminates the process, and all three long-running units carried `ExecReload=/bin/kill -HUP $MAINPID`. Confirmed by sending it to a running hub. |
+| The API could not write its tokens | `StateDirectory=halite-api` under `ProtectSystem=strict`, while the program defaulted `state_dir` to `/var/lib/halite` — read-only. |
+
+What this did **not** establish: none of it was run as root, so
+`daemon -u`, the real `/var/run` and `/var/log` paths, and
+`limits -C daemon` are reasoned from the tooling rather than executed.
+`systemd` itself has never been run against these units at all — this
+build has not been run on Linux as a service. The exit codes each unit
+depends on were measured.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

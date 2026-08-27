@@ -1,6 +1,11 @@
 package config
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -61,4 +66,55 @@ func TestEveryGroupHasKeys(t *testing.T) {
 			t.Errorf("group %q has no introduction", g.Name)
 		}
 	}
+}
+
+// A count written into prose goes stale the first time a setting is
+// added, and nobody re-reads the sentence. Any document stating how many
+// settings there are is compared with the table.
+func TestAnyStatedSettingCountMatchesTheTable(t *testing.T) {
+	// The number as it would be written, so a document saying something
+	// else is the failure rather than a document saying nothing.
+	want := strconv.Itoa(len(Keys))
+	pattern := regexp.MustCompile(`\b(\d{2,4}) settings\b`)
+
+	root := filepath.Join("..", "..")
+	checked, found := 0, 0
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", "bin", "dist", "vendor", "testdata":
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".md" {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		checked++
+		for i, line := range strings.Split(string(body), "\n") {
+			for _, m := range pattern.FindAllStringSubmatch(line, -1) {
+				found++
+				if m[1] != want {
+					rel, _ := filepath.Rel(root, path)
+					t.Errorf("%s:%d says %s settings; the table holds %s",
+						rel, i+1, m[1], want)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if checked == 0 {
+		t.Fatal("no documents were read; this check has stopped checking")
+	}
+	t.Logf("read %d documents, %d stated counts", checked, found)
 }
