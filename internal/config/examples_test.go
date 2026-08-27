@@ -25,6 +25,9 @@ func TestExampleConfigurationsLoadCleanly(t *testing.T) {
 		if !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
 		}
+		if isPolicyExample(e.Name()) {
+			continue
+		}
 		found++
 		t.Run(e.Name(), func(t *testing.T) {
 			role, ok := roleForExample(e.Name())
@@ -45,6 +48,11 @@ func TestExampleConfigurationsLoadCleanly(t *testing.T) {
 		t.Error("there are no example configurations; this check has stopped checking anything")
 	}
 }
+
+// isPolicyExample reports whether an example is the RBAC policy rather
+// than a program's configuration. It has its own grammar and its own
+// parser, so cmd/halite-hub loads it the way the CLI does.
+func isPolicyExample(name string) bool { return name == "policy.yaml" }
 
 func roleForExample(name string) (Role, bool) {
 	switch {
@@ -83,6 +91,9 @@ func TestCommentedExampleKeysAreRealKeysForTheirProgram(t *testing.T) {
 	checked := 0
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		if isPolicyExample(e.Name()) {
 			continue
 		}
 		role, ok := roleForExample(e.Name())

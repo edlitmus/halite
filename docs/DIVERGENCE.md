@@ -1764,6 +1764,34 @@ is the Go Cryptographic Module doing the cryptography, and what is
 certified is that module.
 
 
+### 5.16 What writing the example policy found
+
+`contrib/examples/policy.yaml` is documentation that executes: it is
+loaded by the policy parser and the decisions its comments describe are
+asserted, the same way the configuration examples are loaded as the
+programs they are written for.
+
+Writing it found that three of the six functions SPEC 23.5 names as
+never granted by a wildcard were not declaring `arbitrary_code`, so
+`functions: ['*']` granted them:
+
+| Function | What a wildcard was granting |
+|---|---|
+| `cmd.shell` | A command line through a shell. A role deliberately refused `cmd.run` got the same power by asking for this instead. |
+| `file.write` | Chosen content at a chosen path — a cron file, an `authorized_keys`, a unit file, a `sudoers` line. |
+| `file.replace` | The same, by edit rather than by whole-file write. |
+
+`cmd.shell` is the one that mattered. The control reads as enforced in
+the log and in `policy show`, and the estate that carefully withheld
+`cmd.run` from a role had given it away in the same breath. Found by
+asking `policy test` what it decided rather than by reading the policy,
+which is the difference between the two.
+
+The list is now checked against SPEC 23.5's own names, written out in
+the test rather than derived from the code, so that dropping a
+declaration cannot also drop it from what the check compares against.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

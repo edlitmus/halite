@@ -885,6 +885,27 @@ the setting's. Under `fips140=only` the module panics instead of
 returning an error, which is why the TOTP refusal is load-bearing: an
 unguarded second factor took the login handler down.
 
+### A worked authorization policy, and three functions a wildcard was granting
+
+`contrib/examples/policy.yaml` is a commented policy covering the shapes
+an estate actually needs: a role scoped to a target pattern with
+argument constraints, a read-only role, a runner-only deployer, an
+administrator, a break-glass role nothing is bound to, and a relay. It
+is loaded by the policy parser in a test with the decisions its comments
+describe asserted, so it cannot teach a grant that does not exist.
+
+Writing it found that `cmd.shell`, `file.write`, and `file.replace` were
+not declaring `arbitrary_code`, so `functions: ['*']` granted all three
+— three of the six functions SPEC 23.5 names as never granted by a
+wildcard. `cmd.shell` is the one that mattered: an estate that
+deliberately withheld `cmd.run` from a role had handed over a shell
+anyway, while the log and `policy show` both reported the control as
+enforced.
+
+Found by asking `halite-hub policy test` what it decided rather than by
+reading the policy. [DIVERGENCE 5.16](docs/DIVERGENCE.md) has the
+detail, and the list is now checked against SPEC's own names.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no

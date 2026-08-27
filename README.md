@@ -64,9 +64,12 @@ working — and checks that every command it promises in a later phase is
 one the binary already knows the name of.
 
 Example configuration files are in [`contrib/examples/`](contrib/examples/),
-one per program and per shape of deployment. A test loads each as the
-program it is written for and fails on any warning, so an example cannot
-teach a setting that does not exist.
+one per program and per shape of deployment, plus a commented
+`policy.yaml` for the authorization of SPEC 23.5. A test loads each as
+the program it is written for and fails on any warning; the policy is
+loaded by the policy parser with the decisions its comments describe
+asserted. An example cannot teach a setting, or a grant, that does not
+exist.
 
 ## Status
 

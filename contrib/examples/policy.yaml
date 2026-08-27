@@ -1,0 +1,140 @@
+# halite's authorization, in one file with one grammar. SPEC section 23.5.
+#
+# Install as policy.yaml in the configuration root, or point the hub's
+# `policy` setting at it:
+#
+#   FreeBSD and the other BSDs   /usr/local/etc/halite/policy.yaml
+#   Linux                        /etc/halite/policy.yaml
+#   Windows                      %PROGRAMDATA%\Halite\policy.yaml
+#
+# This one file replaces Salt's publisher_acl, external_auth, peer,
+# peer_run, and client_acl — five overlapping mechanisms with different
+# syntaxes and different failure modes, which is why Salt authorization
+# is so often wrong in practice.
+#
+# Deny by default. An empty file grants nothing, to anybody, including
+# root at the local console. Nothing below is implied; everything is
+# named.
+#
+# Check a decision before you deploy it, rather than in production:
+#
+#   halite-hub policy show
+#   halite-hub policy test 'cert:CN=alice' 'web1.prod' state.apply
+#   halite-hub policy test 'cert:CN=ci' hub state.orchestrate --runner
+#
+# `policy test` prints the rule that matched or the reason for the
+# denial, so it belongs in CI.
+
+roles:
+
+  # A role is a list of rules. A request must match one rule *entirely*:
+  # the target and the function are authorized together, never
+  # separately. This is the precedence bug in Salt's publisher_acl and
+  # external_auth interaction, removed by construction.
+  webops:
+    - target: 'web*.prod'
+      functions:
+        - 'state.apply'
+        - 'service.*'
+        - 'pkg.installed'
+      # Argument-level constraints. Without allow_sls, "may run
+      # state.apply" means "may apply any SLS in the tree".
+      #
+      # allow_sls and allow_mods match the positional arguments, which
+      # is how SLS and orchestration names are always submitted.
+      # deny_kwargs matches keyword arguments, and matters more than it
+      # looks: passing `pillar` on the command line overrides pillar
+      # values, which is otherwise a trivial way around any
+      # authorization that depends on them.
+      args:
+        'state.apply':
+          allow_sls: ['webserver.*', 'common.*']
+          deny_kwargs: ['pillar']
+
+    # A second rule in the same role. Rules accumulate; they do not
+    # narrow each other.
+    - target: 'web*.prod'
+      functions: ['test.ping', 'grains.items']
+
+  # Reading the fleet. `state.show_*` renders without applying, which is
+  # the useful half of a read-only role.
+  readonly:
+    - target: '*'
+      functions:
+        - 'test.ping'
+        - 'test.version'
+        - 'grains.*'
+        - 'sys.*'
+        - 'state.show_*'
+
+  # Runners execute on the hub, so a runner rule names `runners` and no
+  # target. allow_mods bounds which orchestrations may be started.
+  deployer:
+    - runners: ['state.orchestrate', 'jobs.lookup']
+      args:
+        'state.orchestrate':
+          allow_mods: ['deploy.*']
+
+  # `'*'` really is everything — except the functions below, which a
+  # wildcard never grants.
+  administrator:
+    - target: '*'
+      functions: ['*']
+    - runners: ['*']
+
+  # cmd.run and its relatives run arbitrary code, so they are a distinct
+  # permission and are never granted by a wildcard. `functions: ['*']`
+  # above does not include them: they have to be named, one at a time,
+  # in a role somebody had to write deliberately.
+  #
+  # `halite-hub policy show` prints the full list for the build in front
+  # of you. file.write and file.replace are on it because chosen content
+  # at a chosen path is code execution by a slower route — a cron file,
+  # an authorized_keys, a unit file.
+  #
+  # Salt's `.*` grants everything, and everybody's Salt ACL says `.*`.
+  break_glass:
+    - target: '*'
+      functions: ['cmd.run', 'cmd.script', 'module.run', 'file.replace']
+
+  # A relay proxies for its own nodes and needs exactly one runner to do
+  # it. SPEC 5.3.
+  relay:
+    - runners: ['relay.proxy']
+
+# Bindings attach roles to an authenticated principal. The prefix says
+# which authenticator vouched for it:
+#
+#   cert:CN=<name>   an operator certificate, from `keys operator create`
+#   node:<node_id>   a node's own certificate — mine writes, relays
+#   local:<name>     a local API account from accounts.yaml
+#   ldap:<username>  an LDAP login through halite-api
+#   oidc:<name>      an OIDC login through halite-api
+#
+# A glob is allowed, so a fleet of relays or load balancers is one line.
+bindings:
+  - principal: 'cert:CN=alice'
+    roles: ['webops', 'readonly']
+
+  - principal: 'cert:CN=ci-pipeline'
+    roles: ['deployer', 'readonly']
+
+  - principal: 'local:ed'
+    roles: ['administrator']
+
+  - principal: 'node:relay*.prod'
+    roles: ['relay']
+
+  # Nothing is bound to break_glass. Add a binding when it is needed and
+  # take it away afterwards; a role nobody holds is the point of writing
+  # it down in advance.
+
+# Group membership from OIDC or LDAP does not appear here. A directory
+# group is mapped to role *names* by `oidc_role_map` or `ldap_role_map`
+# in the API's own configuration, and those roles are frozen into the
+# token when it is issued — so a role granted later does not widen a
+# token already in somebody's hands, and a role taken away is a reason
+# to revoke rather than something that quietly takes effect. SPEC 23.6.
+#
+# The role names those maps produce have to exist above, or they grant
+# nothing.

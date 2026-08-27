@@ -191,9 +191,11 @@ configuration key "pillar_rots" is not recognised and was ignored
 
 Fuller examples, one per shape of deployment, are in
 [`contrib/examples/`](../contrib/examples/): a masterless node, a node
-with a hub, the smallest file worth having, and one each for the hub and
-the API. Each is loaded by a test as the program it is written for, so
-none of them can teach a setting that does not exist.
+with a hub, the smallest file worth having, one each for the hub and the
+API, and a commented `policy.yaml` for the RBAC of SPEC 23.5. Each is
+loaded by a test as the program it is written for — the policy through
+the policy parser, with the decisions its comments describe asserted —
+so none of them can teach a setting or a grant that does not exist.
 
 ## Pillar: what differs between machines
 
