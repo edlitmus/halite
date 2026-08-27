@@ -213,6 +213,20 @@ stops the unit and leaves the reason in the journal.
 The agent runs the jobs that arrive on that stream, and compiles them
 against the tree and the pillar the hub serves.
 
+There is no reload. Nothing handles `SIGHUP`, so the signal terminates
+the process, and the units deliberately carry no `ExecReload` — the
+directive was there once and turned `systemctl reload` into an outage.
+Changing configuration is a restart:
+
+```sh
+sudo systemctl restart halite-hub
+sudo service halite_hub restart
+```
+
+Two things a revocation does not need a restart for: `keys revoke` on a
+running hub takes effect within a couple of seconds, and a node whose
+certificate was revoked exits on its own.
+
 Set `file_roots` on the hub and the fleet follows it:
 
 ```yaml

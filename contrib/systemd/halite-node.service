@@ -14,7 +14,11 @@ Type=simple
 # beacons and schedule. A node with no hub is driven by
 # halite-highstate.service instead.
 ExecStart=/usr/local/bin/halite-node connect --config /etc/halite/node.yaml
-ExecReload=/bin/kill -HUP $MAINPID
+# No ExecReload. Nothing here handles SIGHUP, so Go's default disposition
+# applies and the signal terminates the process: `systemctl reload`
+# stopped the service and dropped every connected node's stream. Without
+# the directive systemd reports that reload is unsupported instead.
+# Changing configuration is a restart.
 Restart=on-failure
 RestartSec=5s
 # `connect` exits 1 for the two things a restart cannot fix: this node's

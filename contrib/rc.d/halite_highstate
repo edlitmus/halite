@@ -6,9 +6,11 @@
 #
 # Apply halite's highstate once, from local roots.
 #
-# This is the part of halite that works today: a node compiles and applies
-# its own tree with no hub at all. Run it from cron for a periodic
-# convergence, or by hand after changing the tree:
+# A node compiles and applies its own tree with no hub at all — Salt's
+# masterless mode. A node that has a hub is driven by halite_node
+# instead, and carries its schedule in its own configuration. Run this
+# from cron for a periodic convergence, or by hand after changing the
+# tree:
 #
 #   service halite_highstate onestart
 #
@@ -18,6 +20,9 @@
 #   halite_highstate_config (str):  Configuration file.
 #   halite_highstate_flags (str):   Extra arguments. `--test` makes the run
 #                                   predict without changing anything.
+#   halite_highstate_fips (bool):   Run the -fips artifact of SPEC 27.4,
+#                                   with FIPS mode stated rather than
+#                                   inherited. Default "NO".
 #
 # The exit code follows SPEC section 11.8: 0 when something changed, 2 when
 # the node was already converged, and non-zero-and-not-2 when a state
@@ -35,6 +40,14 @@ load_rc_config $name
 : ${halite_highstate_enable="NO"}
 : ${halite_highstate_config="/usr/local/etc/halite/node.yaml"}
 : ${halite_highstate_flags=""}
+: ${halite_highstate_fips="NO"}
+if checkyesno halite_highstate_fips; then
+	: ${halite_highstate_binary="/usr/local/bin/halite-node-fips"}
+	: ${halite_highstate_env="GODEBUG=fips140=on"}
+else
+	: ${halite_highstate_binary="/usr/local/bin/halite-node"}
+	: ${halite_highstate_env=""}
+fi
 
 required_files="${halite_highstate_config}"
 start_cmd="halite_highstate_start"
@@ -42,9 +55,16 @@ stop_cmd=":"
 
 halite_highstate_start()
 {
-	install -d -m 0750 /var/log/halite || return 1
+	# Only when it is missing. An existing directory is left exactly as
+	# it is: a site that gave it to another account or put it on its own
+	# filesystem meant to, and `install -d -m` on an existing one resets
+	# the mode underneath them.
+	if [ ! -d /var/log/halite ]; then
+		install -d -m 0750 /var/log/halite || return 1
+	fi
 	echo "Applying halite highstate."
-	/usr/local/bin/halite-node state apply --local \
+	${halite_highstate_env:+env ${halite_highstate_env}} \
+		"${halite_highstate_binary}" state apply --local \
 		--config "${halite_highstate_config}" ${halite_highstate_flags} \
 		>> /var/log/halite/highstate.log 2>&1
 	rc=$?

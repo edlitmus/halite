@@ -29,5 +29,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=halite-highstate
 
-[Install]
-WantedBy=multi-user.target
+# No [Install] section. This unit is driven by halite-highstate.timer,
+# which has its own, and the timer's OnBootSec covers converging at boot.
+# With one here, `systemctl enable halite-highstate` would appear to work
+# and give a single run at boot rather than the periodic one the operator
+# meant to enable.

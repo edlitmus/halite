@@ -10,23 +10,31 @@ Type=simple
 # the event stream, webhook ingress, and the Prometheus exposition. It is
 # a client of the hub holding its own operator certificate.
 ExecStart=/usr/local/bin/halite-api serve --config /etc/halite/api.yaml
-ExecReload=/bin/kill -HUP $MAINPID
+# No ExecReload. Nothing here handles SIGHUP, so Go's default disposition
+# applies and the signal terminates the process: `systemctl reload`
+# stopped the service and dropped every connected node's stream. Without
+# the directive systemd reports that reload is unsupported instead.
+# Changing configuration is a restart.
 Restart=on-failure
 RestartSec=5s
-# `serve` exits 1 while its phase has not landed. Restarting on that would
-# be a loop that fills the journal and tells the operator nothing, so exit
-# 1 stops the unit and leaves the message in the log where it can be read.
-# Once the phase lands, a genuine failure exits with something else.
+# `serve` exits 1 for the things a restart cannot fix: no operator
+# certificate, no serving certificate, a hooks block that will not parse.
+# Restarting on those is a loop that fills the journal and tells the
+# operator nothing, so exit 1 stops the unit and leaves the message where
+# it can be read.
 RestartPreventExitStatus=1
 
 # The API talks to the hub and to HTTP clients and touches nothing else,
 # so it takes the same sandbox as the hub.
 User=halite
 Group=halite
+# /var/lib/halite-api, which api.yaml has to name as `state_dir` — the
+# token store goes there. ProtectSystem=strict makes everything else
+# read-only, so a service using the built-in default of /var/lib/halite
+# could not write its tokens at all. contrib/examples/api.yaml sets it.
 StateDirectory=halite-api
 StateDirectoryMode=0700
 LogsDirectory=halite
-RuntimeDirectory=halite-api
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes

@@ -7,7 +7,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/halite-hub serve --config /etc/halite/hub.yaml
-ExecReload=/bin/kill -HUP $MAINPID
+# No ExecReload. Nothing here handles SIGHUP, so Go's default disposition
+# applies and the signal terminates the process: `systemctl reload`
+# stopped the service and dropped every connected node's stream. Without
+# the directive systemd reports that reload is unsupported instead.
+# Changing configuration is a restart.
 Restart=on-failure
 RestartSec=5s
 
@@ -17,10 +21,13 @@ RestartSec=5s
 User=halite
 Group=halite
 DynamicUser=no
+# /var/lib/halite and /var/log/halite, which are what the hub uses by
+# default on Linux, so hub.yaml needs to name neither. No
+# RuntimeDirectory: `socket_dir` is read by nothing today, so it would
+# create a directory that stays empty.
 StateDirectory=halite
 StateDirectoryMode=0700
 LogsDirectory=halite
-RuntimeDirectory=halite
 ProtectSystem=strict
 # The enrollment CA and the hub's serving certificate live in the
 # configuration root, which ProtectSystem=strict makes read-only. `serve`

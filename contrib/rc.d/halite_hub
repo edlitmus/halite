@@ -33,21 +33,31 @@ load_rc_config $name
 # The FIPS deployment of SPEC 27.4. Setting halite_hub_fips="YES" in
 # rc.conf runs the -fips artifact with FIPS mode stated rather than
 # inherited, so a GODEBUG in the environment cannot quietly turn it off.
+#
+# Named _binary and not _program: rc.subr reserves `${name}_program` and
+# uses it to replace `command`, so calling it that silently bypassed
+# daemon(8) and ran the binary with daemon's own flags as arguments.
 : ${halite_hub_fips="NO"}
 if checkyesno halite_hub_fips; then
-	: ${halite_hub_program="/usr/local/bin/halite-hub-fips"}
+	: ${halite_hub_binary="/usr/local/bin/halite-hub-fips"}
 	: ${halite_hub_env="GODEBUG=fips140=on"}
 else
-	: ${halite_hub_program="/usr/local/bin/halite-hub"}
+	: ${halite_hub_binary="/usr/local/bin/halite-hub"}
 	: ${halite_hub_env=""}
 fi
 
-pidfile="/var/run/${name}.pid"
+pidfile="/var/run/halite/${name}.pid"
+# The pid in that file is the program's, not daemon(8)'s: `-p` records the
+# child. rc.subr matches the pidfile's process against `procname`, which
+# defaults to `command` — so without this it looked for `daemon` at a pid
+# belonging to halite-hub , found nothing, and reported the
+# service as not running. `stop` and `restart` then did nothing at all.
+procname="${halite_hub_binary}"
 logfile="/var/log/halite/hub.log"
 
 command="/usr/sbin/daemon"
-command_args="-c -f -p ${pidfile} -u ${halite_hub_user} -o ${logfile} \
-	${halite_hub_env:+env ${halite_hub_env}} ${halite_hub_program} serve --config ${halite_hub_config} ${halite_hub_flags}"
+command_args="-c -f -p ${pidfile} -o ${logfile} \
+	${halite_hub_env:+env ${halite_hub_env}} ${halite_hub_binary} serve --config ${halite_hub_config} ${halite_hub_flags}"
 
 required_files="${halite_hub_config}"
 start_precmd="halite_hub_prestart"
@@ -60,6 +70,13 @@ halite_hub_prestart()
 	# over that would be this script second-guessing the operator.
 	if [ ! -d /var/log/halite ]; then
 		install -d -o "${halite_hub_user}" -m 0750 /var/log/halite || return 1
+	fi
+	# And a directory for the pidfile that the account can write. This
+	# runs as root; by the time daemon(8) runs, rc.subr has already
+	# dropped to halite_hub_user, so /var/run itself is not writable to
+	# it and the pidfile never appeared.
+	if [ ! -d /var/run/halite ]; then
+		install -d -o "${halite_hub_user}" -m 0755 /var/run/halite || return 1
 	fi
 	return 0
 }
