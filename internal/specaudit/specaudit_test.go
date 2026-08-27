@@ -527,7 +527,7 @@ func TestNoBuiltRunnerIsStillMarkedPending(t *testing.T) {
 // finished. It is the single place that says so, because the claim
 // appears in stub messages, usage text, and documentation, and three
 // copies of it drift.
-var DeliveredPhases = []string{"phase 0", "phase 1", "phase 2", "phase 3"}
+var DeliveredPhases = []string{"phase 0", "phase 1", "phase 2", "phase 3", "phase 4"}
 
 // TestNothingClaimsADeliveredPhase reads the whole tree for a message
 // that tells an operator to wait for a phase that has already landed.

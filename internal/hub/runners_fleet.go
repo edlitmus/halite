@@ -356,7 +356,11 @@ func registerSaltutilRunner(r *Runners) {
 		RunnerModule{
 			Sig: runnerSig("saltutil", "sync_all",
 				"Distribute the extension bundles the matched nodes are entitled to.", "19.2"),
-			Pending: "phase 4, with the extension model (SPEC section 24.5)",
+			// The node-side `saltutil.sync_all` is built and is what
+			// actually fetches a bundle. What is missing is the hub
+			// pushing it to a matched set from here.
+			Pending: "the hub-side push is not built; run `saltutil.sync_all` on the nodes " +
+				"themselves, which is (SPEC section 24.5)",
 		},
 	)
 }

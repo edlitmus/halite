@@ -31,9 +31,6 @@ Usage:
   halite-api account <sub>      local accounts: hash, list
   halite-api version            print the build identity
 
-Still to come in phase 4 (SPEC section 32):
-  OIDC, LDAP, returners, and the bridge protocol
-
 Common flags:
   --help               describe the program without running a command
   --config <path>      configuration file, default <root>/api.yaml

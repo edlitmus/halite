@@ -40,7 +40,9 @@ func orchStates(o *orchRunner) *states.Registry {
 			{Name: "queue", Type: signature.Any,
 				Doc: "Hold the step on the hub's durable queue. Not built; see SPEC section 19.4."},
 			{Name: "ret", Type: signature.String,
-				Ineffective: "returners are phase 4 (SPEC section 20.3); the return is in the job cache either way"},
+				Ineffective: "an orchestration step does not route its return through a returner; " +
+					"configure `returner` on the hub for that (SPEC section 20.3). " +
+					"The return is in the job cache either way"},
 		}
 		return append(base, extra...)
 	}

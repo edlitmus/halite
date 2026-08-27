@@ -18,7 +18,8 @@ func registerPendingRunners(r *Runners) {
 	// once the phase lands and the function still does not exist.
 	const mine = "the mine it would read is built; this reader is not (SPEC section 19.5)"
 	const queues = "it needs the durable work queue of SPEC section 19.4"
-	const notify = "phase 4, with the API and its integrations (SPEC section 32)"
+	const notify = "the hub has no outbound notification runner; the smtp, syslog, and " +
+		"webhook returners send from the return path instead (SPEC section 20.3)"
 
 	r.Add(
 		pending("queue", "insert", "Add an item to a durable hub queue.", queues),
