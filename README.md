@@ -65,11 +65,13 @@ one the binary already knows the name of.
 
 Example configuration files are in [`contrib/examples/`](contrib/examples/),
 one per program and per shape of deployment, plus a commented
-`policy.yaml` for the authorization of SPEC 23.5. A test loads each as
-the program it is written for and fails on any warning; the policy is
-loaded by the policy parser with the decisions its comments describe
-asserted. An example cannot teach a setting, or a grant, that does not
-exist.
+`policy.yaml` for the authorization of SPEC 23.5 and an `accounts.yaml`
+for the local accounts of SPEC 23.2. A test loads each as the program it
+is written for and fails on any warning; the policy and the accounts go
+through their own parsers with the decisions their comments describe
+asserted. An example cannot teach a setting, a grant, or an account that
+does not exist — and the example account hashes are proven unusable, so
+the file cannot quietly acquire a working login.
 
 ## Status
 

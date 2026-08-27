@@ -1,0 +1,94 @@
+# Local accounts for halite-api. SPEC section 23.2.
+#
+# Install as accounts.yaml in the configuration root, or point the API's
+# `accounts` setting at it:
+#
+#   FreeBSD and the other BSDs   /usr/local/etc/halite/accounts.yaml
+#   Linux                        /etc/halite/accounts.yaml
+#   Windows                      %PROGRAMDATA%\Halite\accounts.yaml
+#
+# These are for break-glass and for automation identities, not the
+# primary operator path. An estate with OIDC or LDAP should have very
+# few of them, and an estate with neither should still prefer operator
+# certificates for the hub. This file is the way in when the identity
+# provider is the thing that is down.
+#
+# It holds password verifiers. Give it mode 0600 and an owner the API
+# runs as, keep it out of the state tree, and keep it out of git — the
+# hashes below are useless (see the warning at the bottom), but yours
+# will not be.
+#
+# ---------------------------------------------------------------------
+# THE HASHES IN THIS FILE CANNOT BE LOGGED INTO. Each was generated from
+# 32 random bytes that were never recorded, so no password matches them.
+# They are here so the file parses, not so it works. Replace every one:
+#
+#   halite-api account hash            # prompts, echo off, prints only the hash
+#   halite-api account hash < secret   # or from a pipe, for provisioning
+#
+# The password is read from standard input and never from an argument,
+# which would reach the process table and the shell history.
+# ---------------------------------------------------------------------
+
+accounts:
+
+  # An operator. `roles` names roles from policy.yaml; a role that does
+  # not exist there grants nothing, silently, so check with
+  # `halite-hub policy show`.
+  #
+  # An account's roles are the union of this list and anything
+  # policy.yaml binds to `local:<name>`. Either place works; using both
+  # for one person is how a grant ends up somewhere nobody looks.
+  ed:
+    hash: 'pbkdf2-sha512$600000$PgBf09mcJaqKEb+PG10JeA$pVfW3tjVWH5HbsbZhT34VugvF5WSz55B/p6pOvo4o1xwZvYypxYjdzd2eUPBcYyNzFA8TXZwk4n6Kywf4KmG4A'
+    roles:
+      - administrator
+
+  # An automation identity. No second factor, because nothing is there
+  # to type one, which is exactly why its roles should be narrow: this
+  # account is a password in a CI secret store, and it can do only what
+  # `deployer` and `readonly` allow.
+  ci-deploy:
+    hash: 'pbkdf2-sha512$600000$/dlCS7UsWa7WpE91ZaaGFA$pTdM2NI47s+75YPDlAodnXPkrIAVdn4yNYAWo7lKQk9Vf13sy7iIFLu1hJtEbRTVQjFvLKjGGSFFneE2jpJqfg'
+    roles:
+      - deployer
+      - readonly
+
+  # A second factor, RFC 6238, one 30-second step either side. The
+  # secret is base32, as an authenticator app shows it, and may carry
+  # spaces and lower case.
+  #
+  # Generate a new one per operator and never reuse this: a TOTP secret
+  # is symmetric, so anybody who has read this file has this one.
+  #
+  # A FIPS build cannot check a TOTP code — RFC 6238 is HMAC-SHA-1 —
+  # and refuses the login rather than accepting the password alone.
+  # `halite-api serve` names the accounts that locks out at startup.
+  # SPEC 27.4, and DIVERGENCE 1.10.
+  oncall:
+    hash: 'pbkdf2-sha512$600000$8EuaDA0h4vm06rpSVMDSuw$XtENe+pZ6dVxCAe14Zu1u60P+Nr0+UCCVhRIB6wg6CIro0JCffIh1ne2WEm7ID5qgXLF5t1FmVToKQLv6e1zhg'
+    totp: 'SXFLHLAFCR44FKTHMOQG7FB5L654R3I4'
+    roles:
+      - break_glass
+
+  # `disabled: true` refuses every login while keeping the record, so an
+  # audit can still say who this was and what they could do. Prefer it
+  # to deleting the entry when somebody leaves.
+  #
+  # Write it as `true` or `false`. This file rejects YAML 1.1's `yes`
+  # and `no` rather than guessing, because `disabled: no` is a line
+  # whose meaning nobody should have to look up.
+  backup-agent:
+    hash: 'pbkdf2-sha512$600000$5PObCbfjG5y6EiirFgeuYw$0ovVLVq55I2ae30Dr9EDODmxzdyFXApWjh9IIS4g9sll+lcqga11oyc5Dea8qWQ+TnYNDwBxPjHRy1b1X3ZSPg'
+    disabled: true
+    roles:
+      - readonly
+
+# Hashes are PBKDF2-HMAC-SHA-512, and the cost is stored per record so
+# it can be raised without invalidating what is already here. This build
+# writes 600000 iterations and refuses anything below 210000 — refuses,
+# rather than accepting it and re-hashing on the next login, because a
+# record below the floor is one somebody has to know about.
+#
+# There is no `disabled` on the file as a whole and no wildcard account.
+# Everything here is one named person or one named machine.

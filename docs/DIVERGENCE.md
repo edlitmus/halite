@@ -1791,6 +1791,41 @@ The list is now checked against SPEC 23.5's own names, written out in
 the test rather than derived from the code, so that dropping a
 declaration cannot also drop it from what the check compares against.
 
+### 5.17 What writing the example account file found
+
+`contrib/examples/accounts.yaml` is loaded by the account parser in a
+test, with its claims asserted: which accounts carry a second factor,
+which is disabled, and that every role it names exists in the example
+policy — a role that does not grants nothing, silently.
+
+Its password hashes were generated from 32 random bytes that were never
+recorded, so nothing matches them. Two tests keep it that way. One tries
+a short list of guessable passwords against each account, because an
+example account file is exactly the thing somebody copies into
+production intact. The other pins the digest of each shipped hash, which
+costs no PBKDF2 and catches a replacement whether the new password is
+guessable or not. Both were confirmed to fail against a hash of
+`password` substituted into the file.
+
+Writing it also found `halite-api`'s usage text still offering "Still to
+come in phase 4: OIDC, LDAP, returners, and the bridge protocol", all
+four of which ship. The audit that exists for exactly this —
+`TestNothingClaimsADeliveredPhase` — had never been told phase 4 was
+delivered. Adding it surfaced three more messages naming a phase that
+had landed:
+
+| Message | What was actually missing |
+|---|---|
+| An orchestration step's `ret` was "ineffective, returners are phase 4" | Returners ship. An orchestration step does not route its return through one. |
+| The `saltutil.sync_all` runner was "phase 4, with the extension model" | The extension model ships, and the node-side `saltutil.sync_all` with it. The hub-side push is what is missing. |
+| `smtp.send`, `slack.post`, and `http.query` were "phase 4, with the API" | The API ships. The hub has no outbound notification runner; the returners send from the return path instead. |
+
+Each now names the subsystem rather than a phase, which is what the file
+holding the third one already said to do: a message naming a phase goes
+stale when the phase lands and the function still does not exist, and it
+is worse than a missing feature — it is a working feature reporting
+itself as absent, in a message nobody reads the source of.
+
 
 ## 6. Everything else not started
 

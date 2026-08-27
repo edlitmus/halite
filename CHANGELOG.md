@@ -906,6 +906,31 @@ Found by asking `halite-hub policy test` what it decided rather than by
 reading the policy. [DIVERGENCE 5.16](docs/DIVERGENCE.md) has the
 detail, and the list is now checked against SPEC's own names.
 
+### A worked account file, and four messages naming a phase that had landed
+
+`contrib/examples/accounts.yaml` covers the shapes a local account file
+needs: an operator, an automation identity with no second factor and
+narrow roles, an account with TOTP, and a disabled one kept for the
+audit. It is loaded by the account parser in a test with its claims
+asserted, including that every role it names exists in the example
+policy.
+
+Its hashes cannot be logged into — each was made from 32 random bytes
+that were never recorded — and two tests keep it that way: one tries
+guessable passwords, the other pins the digest of every shipped hash so
+a replacement fails whether the new password is guessable or not.
+
+Writing it found `halite-api` still telling operators that OIDC, LDAP,
+returners, and the bridge protocol were "still to come in phase 4". All
+four ship. `TestNothingClaimsADeliveredPhase` exists to catch precisely
+this and had never been told phase 4 was delivered; adding it surfaced
+three more — an orchestration step's `ret`, the `saltutil.sync_all`
+runner, and the `smtp`, `slack`, and `http` runners. Each named a
+delivered phase as the reason it was unavailable, and each now names the
+subsystem that is actually missing.
+
+[DIVERGENCE 5.17](docs/DIVERGENCE.md) has the detail.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no

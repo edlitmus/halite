@@ -25,7 +25,7 @@ func TestExampleConfigurationsLoadCleanly(t *testing.T) {
 		if !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
 		}
-		if isPolicyExample(e.Name()) {
+		if notAConfiguration(e.Name()) {
 			continue
 		}
 		found++
@@ -49,10 +49,21 @@ func TestExampleConfigurationsLoadCleanly(t *testing.T) {
 	}
 }
 
-// isPolicyExample reports whether an example is the RBAC policy rather
-// than a program's configuration. It has its own grammar and its own
-// parser, so cmd/halite-hub loads it the way the CLI does.
-func isPolicyExample(name string) bool { return name == "policy.yaml" }
+// notAConfiguration reports whether an example is one of the files with
+// its own grammar and its own parser rather than a program's
+// configuration: the RBAC policy, and the local account file.
+//
+// Each is loaded by the command that owns it, with the claims its
+// comments make asserted — see cmd/halite-hub and cmd/halite-api. They
+// are excluded here rather than skipped silently so that adding a third
+// such file has to be a decision.
+func notAConfiguration(name string) bool {
+	switch name {
+	case "policy.yaml", "accounts.yaml":
+		return true
+	}
+	return false
+}
 
 func roleForExample(name string) (Role, bool) {
 	switch {
@@ -93,7 +104,7 @@ func TestCommentedExampleKeysAreRealKeysForTheirProgram(t *testing.T) {
 		if !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
 		}
-		if isPolicyExample(e.Name()) {
+		if notAConfiguration(e.Name()) {
 			continue
 		}
 		role, ok := roleForExample(e.Name())

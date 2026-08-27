@@ -192,10 +192,16 @@ configuration key "pillar_rots" is not recognised and was ignored
 Fuller examples, one per shape of deployment, are in
 [`contrib/examples/`](../contrib/examples/): a masterless node, a node
 with a hub, the smallest file worth having, one each for the hub and the
-API, and a commented `policy.yaml` for the RBAC of SPEC 23.5. Each is
-loaded by a test as the program it is written for — the policy through
-the policy parser, with the decisions its comments describe asserted —
-so none of them can teach a setting or a grant that does not exist.
+API, a commented `policy.yaml` for the RBAC of SPEC 23.5, and an
+`accounts.yaml` for the local accounts of SPEC 23.2. Each is loaded by a
+test as the program it is written for — the policy and the accounts
+through their own parsers, with the decisions their comments describe
+asserted — so none of them can teach a setting, a grant, or an account
+that does not exist.
+
+The account example's password hashes cannot be logged into: each was
+made from random bytes that were never recorded. A test proves it, so
+the file cannot quietly acquire a working account.
 
 ## Pillar: what differs between machines
 
