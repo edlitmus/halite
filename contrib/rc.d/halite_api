@@ -76,6 +76,23 @@ halite_api_prestart()
 	if [ ! -d /var/run/halite ]; then
 		install -d -o "${halite_api_user}" -m 0755 /var/run/halite || return 1
 	fi
+
+	# The log file itself, created here as root and owned by the account
+	# rather than left to daemon(8). A log directory surviving an earlier
+	# install is usually root-owned, and this script deliberately leaves
+	# an existing one alone — so daemon, already dropped to
+	# halite_api_user, could not create the file inside it and failed
+	# with `open: Permission denied`, naming no file at all.
+	#
+	# Created only when missing, so a restart never truncates the log,
+	# and given to the account either way. Taking ownership of the file
+	# this service writes is not the same as reaching into the
+	# operator's directory, which is left exactly as it is.
+	if [ ! -f "${logfile}" ]; then
+		install -o "${halite_api_user}" -m 0640 /dev/null "${logfile}" || return 1
+	else
+		chown "${halite_api_user}" "${logfile}" || return 1
+	fi
 	return 0
 }
 
