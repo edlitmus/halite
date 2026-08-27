@@ -73,45 +73,100 @@ that lives beside the configuration needs no roots set at all.
 		fmt.Fprintf(&b, "| `%s` | `%s` | `%s` |\n", t.Token, t.Linux, t.BSD)
 	}
 	b.WriteString("\n")
+	b.WriteString(`## Which program reads what
 
-	roles := []struct {
-		role  config.Role
-		title string
-		intro string
-	}{
-		{config.Node, "halite-node", "Read by the node agent."},
-		{config.Hub, "halite-hub", "Read by the hub."},
-		{config.API, "halite-api", "Read by the API service."},
-	}
-	for _, r := range roles {
+Three programs read configuration, and most settings belong to one of
+them. A key in the wrong file is reported at startup rather than
+ignored, so this table is also the answer to "why did it say that".
+
+| | Reads |
+|---|---|
+| ` + "`halite-node`" + ` | the agent on a managed machine, and the whole of a masterless run |
+| ` + "`halite-hub`" + ` | the control plane: the fleet, the file server, pillar, the bus |
+| ` + "`halite-api`" + ` | the HTTP service, which is a *client* of the hub and holds its own operator certificate |
+
+A setting read by more than one is marked in each section below. Where a
+node and a hub both read one — ` + "`file_roots`" + `, the renderer settings, the
+pillar merge strategies — they mean the same thing in both places: the
+hub uses it to compile for the fleet, and the node uses it when it
+compiles for itself.
+
+`)
+
+	for _, g := range config.Groups {
 		var keys []config.Key
 		for _, k := range config.Keys {
-			for _, kr := range k.Roles {
-				if kr == r.role {
-					keys = append(keys, k)
-					break
-				}
+			if config.KeyDocs[k.Name].Group == g.Name {
+				keys = append(keys, k)
 			}
 		}
 		if len(keys) == 0 {
 			continue
 		}
 		sort.Slice(keys, func(i, j int) bool { return keys[i].Name < keys[j].Name })
-		fmt.Fprintf(&b, "## %s\n\n%s\n\n", r.title, r.intro)
-		b.WriteString("| Setting | Default | SPEC | Meaning |\n|---|---|---|---|\n")
+
+		fmt.Fprintf(&b, "## %s\n\n%s\n\n", g.Name, strings.TrimSpace(g.Intro))
 		for _, k := range keys {
 			def := config.PortablePath(k.Default)
 			if def == "" {
-				def = "—"
+				def = "no default"
 			} else {
 				def = "`" + def + "`"
 			}
-			fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n",
-				k.Name, def, k.Section, escapePipes(k.Doc))
+			fmt.Fprintf(&b, "### `%s`\n\n", k.Name)
+			fmt.Fprintf(&b, "*%s · %s · SPEC section %s*\n\n",
+				readBy(k), def, k.Section)
+			fmt.Fprintf(&b, "%s\n\n%s\n\n", k.Doc, config.KeyDocs[k.Name].Detail)
 		}
-		b.WriteString("\n")
 	}
+
+	b.WriteString(`## Index
+
+Every setting, and which programs read it.
+
+| Setting | Programs | Default | Group |
+|---|---|---|---|
+`)
+	indexed := append([]config.Key(nil), config.Keys...)
+	sort.Slice(indexed, func(i, j int) bool { return indexed[i].Name < indexed[j].Name })
+	for _, k := range indexed {
+		def := config.PortablePath(k.Default)
+		if def == "" {
+			def = "—"
+		} else {
+			def = "`" + def + "`"
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s |\n",
+			k.Name, readBy(k), def, config.KeyDocs[k.Name].Group)
+	}
+	b.WriteString("\n")
+
 	return b.String()
+}
+
+// readBy names the programs that read a setting, in a fixed order so
+// that two generated documents are the same document.
+func readBy(k config.Key) string {
+	var out []string
+	for _, r := range []struct {
+		role config.Role
+		name string
+	}{
+		{config.Node, "halite-node"},
+		{config.Hub, "halite-hub"},
+		{config.API, "halite-api"},
+	} {
+		for _, kr := range k.Roles {
+			if kr == r.role {
+				out = append(out, "`"+r.name+"`")
+				break
+			}
+		}
+	}
+	if len(out) == 3 {
+		return "all three programs"
+	}
+	return strings.Join(out, ", ")
 }
 
 // ModuleReference renders every module function a build ships.

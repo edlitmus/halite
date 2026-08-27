@@ -41,316 +41,2026 @@ that lives beside the configuration needs no roots set at all.
 | `<socket dir>` | `/run/halite` | `/var/run/halite` |
 | `<log dir>` | `/var/log/halite` | `/var/log/halite` |
 
-## halite-node
+## Which program reads what
 
-Read by the node agent.
+Three programs read configuration, and most settings belong to one of
+them. A key in the wrong file is reported at startup rather than
+ignored, so this table is also the answer to "why did it say that".
 
-| Setting | Default | SPEC | Meaning |
+| | Reads |
+|---|---|
+| `halite-node` | the agent on a managed machine, and the whole of a masterless run |
+| `halite-hub` | the control plane: the fleet, the file server, pillar, the bus |
+| `halite-api` | the HTTP service, which is a *client* of the hub and holds its own operator certificate |
+
+A setting read by more than one is marked in each section below. Where a
+node and a hub both read one — `file_roots`, the renderer settings, the
+pillar merge strategies — they mean the same thing in both places: the
+hub uses it to compile for the fleet, and the node uses it when it
+compiles for itself.
+
+## Identity and connection
+
+Who a program is and what it talks to. A node dials the hub
+and the hub never dials a node, so these are the settings that decide
+whether anything talks at all.
+
+### `hub`
+
+*`halite-node`, `halite-api` · no default · SPEC section 5.1*
+
+The hub to dial. A node and the API dial the hub; the hub never dials either.
+
+Written as a host, `host:port`, or a URL. Because the connection is always outbound from the node, a node behind NAT needs no inbound rule and no port forwarded. Salt's `master` is accepted as an alias. <!-- lexicon:allow -->
+
+### `hub_alive_interval`
+
+*`halite-node` · `30s` · SPEC section 6.2*
+
+Ping interval on the subscribe stream.
+
+How often the hub pings down the open stream. It is what detects a connection that has stopped carrying traffic without closing, which is the common failure behind a firewall with an idle timeout.
+
+### `hub_fingerprint`
+
+*`halite-node` · no default · SPEC section 7.3*
+
+Expected fingerprint of the hub's CA, checked at enrollment.
+
+The digest of the hub's CA certificate, compared before a node will enrol. This is the out-of-band step that makes first contact safe: without it a node takes whatever CA answers. Print it on the hub with `halite-hub keys fingerprint`, named with no node.
+
+### `hub_port`
+
+*`halite-node` · `4510` · SPEC section 6.1*
+
+The hub's TCP port.
+
+Only read when `hub` names no port. One port carries everything — jobs, returns, files, events — because SPEC 6.1 has a single mutual-TLS listener rather than Salt's separate publish and return ports.
+
+### `hub_tries`
+
+*`halite-node` · `0` · SPEC section 6.2*
+
+Reconnect attempts before giving up; 0 means retry forever.
+
+0 means retry for ever, which is what a managed node should do. A finite count is for a one-shot container that should exit rather than sit reconnecting.
+
+### `hub_type`
+
+*`halite-node` · `static` · SPEC section 6.2*
+
+static or failover, selecting how a list of hubs is used.
+
+`static` uses the first hub in the list; `failover` tries each in turn. Salt's `master_type` with the same meanings.
+
+### `listen`
+
+*`halite-hub`, `halite-api` · `:4510` · SPEC section 6.1*
+
+Listen address.
+
+The address the hub or the API binds. Bind to a specific address rather than every interface when the machine has a management network; there is no plaintext mode to fall back to, so this is the whole of the exposure.
+
+### `node_id`
+
+*`halite-node` · no default · SPEC section 7.2*
+
+This node's identity. Resolution order is in SPEC section 7.2.
+
+The name this node is known by everywhere: in targeting, in its certificate, in the job cache, and in every event it raises. Set it explicitly on anything whose hostname might change. Salt calls this `id`, and the same value is what `keys accept` names.
+
+### `node_id_caching`
+
+*`halite-node` · `true` · SPEC section 7.2*
+
+Pin the resolved node ID at first enrollment.
+
+On by default: the name resolved at first enrollment is written down and reused, so a DHCP lease or a cloud rename cannot silently turn one node into two. Turn it off only for an image that is meant to re-identify on every boot.
+
+### `node_id_lowercase`
+
+*`halite-node` · `false` · SPEC section 7.2*
+
+Lowercase the resolved node ID.
+
+For estates whose hostnames vary in case. Targeting is case-sensitive, so `WEB1` and `web1` are two different nodes without this.
+
+### `node_id_remove_domain`
+
+*`halite-node` · `false` · SPEC section 7.2*
+
+Strip the domain from a resolved FQDN.
+
+Turns `web1.prod.example.com` into `web1`. Convenient and lossy: two machines in different domains can then collide, and the collision looks like one node reconnecting.
+
+### `node_id_source`
+
+*`halite-node` · `auto` · SPEC section 7.2*
+
+Where the node ID comes from: auto, config, env, file, cloud, fqdn, hostname.
+
+`auto` tries each source in the order SPEC 7.2 gives and takes the first that answers. Pin it to one — `config`, `fqdn`, `cloud` — when a machine has several plausible names and you want to know which one it will pick before it picks.
+
+## Filesystem layout
+
+Where each program keeps its files. The defaults follow the
+platform, so most estates set none of these; a packager or an operator
+splitting state across filesystems sets all of them.
+
+### `cache_dir`
+
+*all three programs · `<cache dir>` · SPEC section 27.3*
+
+Discardable cache.
+
+Everything here can be deleted at any time and will be refetched — the cached tree, gitfs mirrors, s3 objects. It is the first thing to point at a larger filesystem.
+
+### `config_file`
+
+*all three programs · no default · SPEC section 27.3*
+
+The primary configuration file, set by the loader.
+
+Set by the loader to whatever file it actually read, so a program can report its own configuration path. Not something to set by hand.
+
+### `hash_type`
+
+*all three programs · `sha256` · SPEC section 13.5*
+
+sha256, sha384, sha512, or sha3-256.
+
+The digest used for file server manifests and change detection. `sha256` unless an estate has a reason; the weaker options are not offered.
+
+### `pki_dir`
+
+*all three programs · `<config root>/pki` · SPEC section 27.3*
+
+Key material.
+
+Certificates and private keys. Mode matters: the node's key is 0600 and the directory 0700. On the hub this also holds the enrollment CA, which is the most valuable thing in the estate.
+
+### `socket_dir`
+
+*all three programs · `<socket dir>` · SPEC section 27.3*
+
+Sockets and PID files.
+
+Unix sockets and PID files. On a system with a tmpfs `/run` this is cleared on boot, which is correct.
+
+### `state_dir`
+
+*all three programs · `<state dir>` · SPEC section 27.3*
+
+Durable state: job cache, events, evidence.
+
+Everything here is durable and losing it loses history: the job cache, the event bus, the key store, a relay's spool. Back it up; do not put it on tmpfs.
+
+## Enrollment and certificates
+
+How a node gets the certificate it authenticates with, and
+how long it lasts. There is no auto-accept in any of them.
+
+### `certificate_lifetime`
+
+*`halite-hub` · `2160h` · SPEC section 7.4*
+
+Issued certificate lifetime; renewal happens at half of it.
+
+A node renews at half of this, so a shorter lifetime means more renewals and a smaller window for a stolen key. Renewal is automatic and needs no operator, so this can be short.
+
+### `enrollment_mode`
+
+*`halite-hub` · `manual` · SPEC section 7.3*
+
+manual, token, or attested. There is no auto_accept.
+
+`manual` holds every request until an operator compares the fingerprint and accepts it. `token` admits a node presenting a bootstrap token, for provisioning at scale. `attested` is named and refused; it is not built. There is deliberately no equivalent of Salt's `auto_accept`, which is how estates end up trusting whatever asked.
+
+### `key_algorithm`
+
+*`halite-hub` · `ecdsa-p256` · SPEC section 7.1*
+
+ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or ed25519 in non-FIPS builds.
+
+ECDSA P-256 is the default because one certificate profile then works everywhere, FIPS hosts included. `ed25519` is the better algorithm and is not FIPS-approved, so a FIPS build refuses it by name.
+
+## The tree: states and pillar
+
+Where the state tree and the pillar tree live, which
+environment a run uses, and how sources merge. On a hub these serve the
+fleet; on a node they are what a masterless run reads.
+
+### `env`
+
+*all three programs · `base` · SPEC section 13.1*
+
+The default environment. saltenv is a permanent alias.
+
+The environment a run uses when nothing names one. `saltenv` is a permanent alias, not a deprecation. With gitfs, an environment is a branch.
+
+### `env_allowlist`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 28.3*
+
+Environments a run may use.
+
+Environments a run may name. Empty permits any. Set it when environments come from git branches and anyone can push one.
+
+### `env_denylist`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 28.3*
+
+Environments a run may not use.
+
+The other direction, applied after the allowlist.
+
+### `ext_pillar`
+
+*`halite-hub` · no default · SPEC section 12.7*
+
+External pillar sources.
+
+Named and not built. The setting warns at startup that the sources it lists contribute nothing, rather than silently compiling pillar without them.
+
+### `ext_pillar_fail`
+
+*`halite-hub` · `hard` · SPEC section 12.7*
+
+hard or ignore. A partial pillar is worse than no pillar.
+
+`hard` fails the whole compilation when an external source fails, which is the right default: a pillar missing the half that holds the credentials is worse than no pillar, because the run proceeds with it.
+
+### `file_roots`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 13.1*
+
+Environment to an ordered list of state directories.
+
+A mapping of environment to an ordered list of directories, searched in order, first match winning. On a hub this is what the fleet fetches; on a node it is what a `--local` run reads. The configuration root is probed for a `state` directory first, so a tree beside the configuration file needs no setting at all.
+
+### `pillar_cache_disk`
+
+*`halite-node` · `false` · SPEC section 12.8*
+
+Cache pillar on the node's disk, encrypted at rest.
+
+Keeps compiled pillar on the node so a run survives a hub outage. It is encrypted at rest because pillar is where the secrets are; it is still a copy of them on that disk.
+
+### `pillar_merge_lists`
+
+*`halite-node`, `halite-hub` · `false` · SPEC section 12.3*
+
+Concatenate lists when merging pillar sources.
+
+Whether lists concatenate rather than replace when pillar sources merge. Off by default, matching Salt.
+
+### `pillar_roots`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 12.2*
+
+Environment to an ordered list of pillar directories.
+
+The same shape as `file_roots`, for pillar. Read by the hub when it compiles pillar for the fleet, and by a node compiling its own in masterless mode — so a masterless node sets both.
+
+### `pillar_source_merging_strategy`
+
+*`halite-node`, `halite-hub` · `smart` · SPEC section 12.3*
+
+smart, recurse, aggregate, or overwrite.
+
+How two pillar files setting the same key are reconciled. `smart` is Salt's default behaviour, `recurse` merges mappings deeply, `aggregate` combines lists and mappings, `overwrite` takes the last. Changing this changes what every node's pillar contains, so change it in test first.
+
+### `pillar_trusted_grains`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 12.4*
+
+Grains a node may use to target pillar. Custom grains are excluded by default.
+
+The allowlist of grains a pillar top file may target on. A node controls its own grains, so a node that can name an arbitrary grain in pillar targeting can ask for another node's secrets. Custom grains are excluded by default and adding one is a deliberate act.
+
+### `pillarenv`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 12.2*
+
+The pillar environment, defaulting to env.
+
+Lets pillar come from a different environment than states. Leaving it unset — pillar following `env` — is what most estates want; setting it is how a test environment reads production pillar by accident.
+
+### `top_file_merging_strategy`
+
+*`halite-node`, `halite-hub` · `merge` · SPEC section 11.2*
+
+merge, same, or merge_all.
+
+How several environments' top files combine. `merge` takes all of them, `same` requires each environment to describe only itself, `merge_all` merges without regard to which environment declared what. A branch's own `top.sls` declares its environment; the branch name does not.
+
+## State runs
+
+What a state run is allowed to touch and how it behaves when
+something fails.
+
+### `failhard`
+
+*`halite-node`, `halite-hub` · `false` · SPEC section 11.4*
+
+Abort a state run on the first failure.
+
+Stops the whole run at the first failure rather than continuing to the states that did not depend on it. Per-state `failhard` overrides this.
+
+### `startup_states`
+
+*`halite-node` · no default · SPEC section 20.1*
+
+What to run when the node starts: highstate, sls, or top.
+
+What a node runs when it starts: `highstate`, or `sls`/`top` with the names to run. Off by default. Turning it on means a reboot converges the machine, which is usually what you want and is occasionally a surprise at 3am.
+
+### `state_allowlist`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 28.3*
+
+SLS names a state run may include.
+
+SLS names a run may include, as globs. Empty permits any. This is the control that keeps an operator with `state.apply` from applying anything in the tree, and it is enforced beside the policy's own `allow_sls`.
+
+### `state_denylist`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 28.3*
+
+SLS names a state run may not include.
+
+Applied after the allowlist, for carving one dangerous SLS out of a permitted set.
+
+### `test`
+
+*`halite-node`, `halite-hub` · `false` · SPEC section 11.6*
+
+Run every state in test mode by default.
+
+Makes every run a dry run unless something explicitly asks for a real one. Useful while a tree is being written; dangerous to leave on, because a converged-looking estate is not converging.
+
+## Rendering and templates
+
+The renderer pipeline and the template engine's dialect.
+These are the settings that decide whether a tree written for Salt
+renders the same way here.
+
+### `gpg_binary`
+
+*`halite-node`, `halite-hub` · `gpg` · SPEC section 12.6*
+
+The gpg binary the gpg renderer drives.
+
+The `gpg` executable the gpg renderer drives. Named rather than linked, so the estate gets its operating system's gpg patching.
+
+### `gpg_home`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 12.6*
+
+GNUPGHOME for the gpg renderer. Empty uses the environment's.
+
+`GNUPGHOME` for decryption. Set it explicitly for a service account: relying on the environment's means the key that gets used depends on who started the process.
+
+### `gpg_timeout`
+
+*`halite-node`, `halite-hub` · `30s` · SPEC section 12.6*
+
+How long one decryption may take.
+
+Bounds one decryption. A gpg waiting on a pinentry that will never come is the failure this catches.
+
+### `random_seed`
+
+*`halite-node`, `halite-hub` · `deterministic` · SPEC section 10.2.4*
+
+deterministic or nondeterministic template randomness.
+
+`deterministic` seeds template randomness per node and per template, so a highstate rendered twice is byte-identical and `--test` means something. `nondeterministic` restores Salt's behaviour, where a random value differs on every render and every run reports changes.
+
+### `regex_engine`
+
+*`halite-node`, `halite-hub` · `re2` · SPEC section 10.4*
+
+re2 only until the backtracking engine of SPEC section 10.4 ships.
+
+`re2` is the only engine until the backtracking one of SPEC 10.4 ships. A pattern re2 cannot compile — a backreference, a lookaround — is refused by name rather than silently not matching.
+
+### `renderer`
+
+*`halite-node`, `halite-hub` · `jinja|yaml` · SPEC section 10*
+
+The default renderer pipeline.
+
+The pipeline each SLS goes through, as `jinja|yaml`. A per-file shebang overrides it. Add `gpg` — `jinja|yaml|gpg` — to decrypt pillar values in place.
+
+### `template_lstrip_blocks`
+
+*`halite-node`, `halite-hub` · `false` · SPEC section 10.2.1*
+
+Jinja lstrip_blocks.
+
+Jinja's `lstrip_blocks`, with the same caution.
+
+### `template_trim_blocks`
+
+*`halite-node`, `halite-hub` · `false` · SPEC section 10.2.1*
+
+Jinja trim_blocks.
+
+Jinja's `trim_blocks`. Matches whatever the tree was written against; changing it changes whitespace in every rendered file.
+
+### `undefined`
+
+*`halite-node`, `halite-hub` · `strict` · SPEC section 10.2.6*
+
+strict or permissive name resolution in templates.
+
+`strict` makes an undefined name an error; `permissive` renders it as empty, which is Jinja's default and is how a typo in a pillar key becomes a state that quietly does nothing. Prefer strict.
+
+### `yaml_bool_11`
+
+*`halite-node`, `halite-hub` · `true` · SPEC section 10.1.3*
+
+Resolve yes, no, on, off, y, and n as booleans, as PyYAML does.
+
+Resolves `yes`, `no`, `on`, `off`, `y`, and `n` as booleans, as PyYAML does. Off by default because YAML 1.2 does not, and a Norwegian country code of `no` should stay a string. Turn it on for a tree written against Salt that depends on the old behaviour.
+
+## The file server
+
+What the hub serves under salt:// and what it refuses to
+serve.
+
+### `file_ignore_glob`
+
+*`halite-hub` · no default · SPEC section 13.5*
+
+Paths the file server hides.
+
+The same, as globs, which is usually the readable form.
+
+### `file_ignore_regex`
+
+*`halite-hub` · no default · SPEC section 13.5*
+
+Paths the file server hides.
+
+Paths the server hides, as regular expressions. Use it for the `.git` directory and for editor droppings, not as a security control: a path that must not be served should not be in the tree.
+
+### `fileserver_backend`
+
+*`halite-hub` · `roots` · SPEC section 13.2*
+
+Ordered list of file server backends.
+
+An ordered list, searched in order: `roots`, `git`/`gitfs`, `s3`/`s3fs`. First match wins, so `roots` first lets a local file override what the repository serves.
+
+### `fileserver_follow_symlinks`
+
+*`halite-hub` · `false` · SPEC section 13.5*
+
+Follow symlinks inside a served root. Never outside it.
+
+Follows symlinks inside a served root. Never outside one — a link pointing out of the tree is refused whatever this says, because otherwise `salt://` reads the whole filesystem.
+
+## The git file server
+
+Serving a state tree straight out of a git repository, where
+a branch is an environment.
+
+### `gitfs_base`
+
+*`halite-hub` · `main` · SPEC section 13.3*
+
+The branch that becomes the base environment.
+
+The branch that becomes the `base` environment: `main`, or whatever the repository calls its default branch.
+
+### `gitfs_cache_dir`
+
+*`halite-hub` · no default · SPEC section 13.3*
+
+Where mirrors live; empty is <cache_dir>/gitfs.
+
+Where the bare mirrors and the materialised trees live. Discardable; deleting it costs a refetch.
+
+### `gitfs_env_allowlist`
+
+*`halite-hub` · no default · SPEC section 13.3*
+
+Git refs the file server exposes as environments.
+
+Which refs become environments. Set it when anyone can push a branch, or every feature branch becomes an environment the fleet can be pointed at.
+
+### `gitfs_env_denylist`
+
+*`halite-hub` · no default · SPEC section 13.3*
+
+Git refs the file server refuses to expose.
+
+Applied after the allowlist.
+
+### `gitfs_keyring`
+
+*`halite-hub` · no default · SPEC section 13.3*
+
+GnuPG home holding the keys a signed ref must be signed by.
+
+The GnuPG home holding the keys a signed ref must be signed by. Verification with no keyring is refused rather than falling back to the hub user's own keyring, which would trust whatever that user happens to trust.
+
+### `gitfs_ref_types`
+
+*`halite-hub` · `branches` · SPEC section 13.3*
+
+What becomes an environment: branches, tags, or both.
+
+Whether branches, tags, or both become environments. Tags are immutable, which makes them the honest choice for a release; branches are what most estates use.
+
+### `gitfs_remotes`
+
+*`halite-hub` · no default · SPEC section 13.3*
+
+Git repositories the file server serves.
+
+The repositories to serve. Each may be a URL or a mapping carrying its own root, base branch, and credentials. Cloned as a bare mirror and fetched on an interval.
+
+### `gitfs_root`
+
+*`halite-hub` · no default · SPEC section 13.3*
+
+Subdirectory inside each repository to serve.
+
+A subdirectory inside each repository to serve as the tree root, for a repository that holds the states under `salt/` alongside other things.
+
+### `gitfs_update_interval`
+
+*`halite-hub` · `5m` · SPEC section 13.3*
+
+How often the hub fetches; 0 fetches only on demand.
+
+How often the hub fetches. 0 fetches only when something asks, which is right for a repository that is pushed rarely and wrong for one an operator expects to poll.
+
+### `gitfs_verify_signatures`
+
+*`halite-hub` · `false` · SPEC section 13.3*
+
+Serve a ref only if its tip carries a trusted signature.
+
+A control rather than a log line: a ref whose tip is not signed by a key in the keyring is not served at all, rather than served with a warning. This is what makes the tree's provenance a property of the estate rather than of the repository host.
+
+## The S3 file server
+
+Serving a state tree out of S3 or an S3-compatible service,
+with the request signing done in-house.
+
+### `s3_access_key_id`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+Access key; prefer a role or the environment.
+
+A static key. Prefer a role, an instance profile, or the environment: a key in a configuration file is a key in a backup, in a config management tree, and eventually in a git history.
+
+### `s3_buckets`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+S3 buckets the file server serves.
+
+The buckets to serve, as names or as mappings carrying a prefix, a region, and an environment. A prefix is how one bucket holds several environments.
+
+### `s3_cache_dir`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+Where fetched objects live; empty is <cache_dir>/s3fs.
+
+Where fetched objects live. Discardable.
+
+### `s3_dualstack`
+
+*`halite-hub` · `false` · SPEC section 13.4*
+
+Use the IPv6-capable endpoints.
+
+Uses the IPv6-capable endpoints.
+
+### `s3_endpoint`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+Custom endpoint, for an S3-compatible service.
+
+For MinIO, Ceph, or another S3-compatible service. Setting it replaces the derived endpoint entirely.
+
+### `s3_env_allowlist`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+Environments the file server exposes.
+
+Which environments the bucket layout exposes.
+
+### `s3_env_denylist`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+Environments the file server refuses to expose.
+
+Applied after the allowlist.
+
+### `s3_partition`
+
+*`halite-hub` · `aws` · SPEC section 13.4*
+
+aws, aws-us-gov, or aws-cn. Endpoints are built from it.
+
+`aws`, `aws-us-gov`, or `aws-cn`. The endpoint hostname and the signing scope both come from this, so a GovCloud estate sets it and nothing else changes.
+
+### `s3_path_style`
+
+*`halite-hub` · `false` · SPEC section 13.4*
+
+Address the bucket in the path rather than the host.
+
+Addresses the bucket in the path rather than the hostname. Most S3-compatible services need this; real S3 does not.
+
+### `s3_region`
+
+*`halite-hub` · `us-east-1` · SPEC section 13.4*
+
+Default region for buckets that name none.
+
+Used for any bucket that names none. Endpoints are derived from it and the partition rather than configured.
+
+### `s3_role_arn`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+Role to assume after the base credentials resolve.
+
+A role to assume once the base credentials resolve, so the long-lived credential is only ever allowed to assume, and the credential that reads the bucket is short-lived.
+
+### `s3_role_session`
+
+*`halite-hub` · `halite` · SPEC section 13.4*
+
+Session name for the assumed role.
+
+The session name the assumed role is recorded under, which is what appears in CloudTrail. Name it after the hub.
+
+### `s3_secret_access_key`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+Secret key; prefer the file form.
+
+The secret half. Prefer `s3_secret_access_key_file`, which keeps it out of the file everything else reads.
+
+### `s3_secret_access_key_file`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+File holding the secret key, mode 600.
+
+A file holding the secret, required to be mode 600. This is the form to use when a static credential is unavoidable.
+
+### `s3_update_interval`
+
+*`halite-hub` · `5m` · SPEC section 13.4*
+
+How often the hub lists; 0 lists only on demand.
+
+How often the hub lists the buckets. 0 lists only on demand.
+
+### `s3_web_identity_token_file`
+
+*`halite-hub` · no default · SPEC section 13.4*
+
+IRSA token file; with s3_role_arn it needs no other credential.
+
+The projected token an EKS service account gets. With `s3_role_arn` it needs no other credential at all, which is the arrangement to prefer everywhere it is available.
+
+## Relays
+
+A hub that serves its own segment and reports to an upstream
+hub as a single client.
+
+### `accept_relays`
+
+*`halite-hub` · `false` · SPEC section 5.3*
+
+Accept connections from relays as well as nodes.
+
+Set on the hub relays report to, not on the relay. Off by default: a hub does not accept a relay's word about which nodes it proxies for unless it has been told to.
+
+### `relay`
+
+*`halite-hub` · `false` · SPEC section 5.3*
+
+Run as a relay: serve nodes and proxy them to an upstream hub.
+
+Makes this hub a relay: it serves its own nodes and presents itself to an upstream hub as one connected client. Use one for a segment that cannot reach the main hub, or one whose returns must survive the link between them.
+
+### `relay_event_tags`
+
+*`halite-hub` · no default · SPEC section 5.3*
+
+Tag globs whose events are forwarded upstream; empty forwards none.
+
+Tag globs whose events are forwarded upstream. Empty forwards nothing, which is the safe default: forwarding everything is what floods a hub, and is why the syndic's all-or-nothing is worth replacing. `halite/job/**` is a reasonable start.
+
+### `relay_max_depth`
+
+*`halite-hub` · `2` · SPEC section 5.3*
+
+How many relays a connection may be behind.
+
+How many relays a connection may already be behind. Capped at 2, because unbounded nesting is how a syndic estate becomes undebuggable.
+
+### `relay_pki_dir`
+
+*`halite-hub` · no default · SPEC section 5.3*
+
+Key material this relay enrolled with its upstream.
+
+The key material this relay enrolled with upstream, which is separate from the CA it issues its own nodes' certificates from. Two identities in two directories: a relay is a client above and an authority below.
+
+### `relay_server_name`
+
+*`halite-hub` · no default · SPEC section 5.3*
+
+Name to verify in the upstream's certificate.
+
+The name to verify in the upstream's certificate, when the address dialled is not the name the certificate carries.
+
+### `relay_spool_dir`
+
+*`halite-hub` · no default · SPEC section 5.3*
+
+Where returns wait during an upstream outage; empty is <state_dir>/relay-spool.
+
+Where returns wait while the upstream is unreachable, drained oldest-first when it comes back. This is the durability that the syndic it replaces does not have: an outage delays returns rather than losing them.
+
+### `relay_spool_max_size`
+
+*`halite-hub` · `536870912` · SPEC section 5.3*
+
+Bytes of undelivered returns to hold before refusing.
+
+The ceiling on undelivered returns. Past it the relay refuses a new return rather than dropping the oldest, because the oldest is the one most likely to be the answer somebody is waiting for.
+
+### `relay_timeout`
+
+*`halite-hub` · `60s` · SPEC section 5.3*
+
+How long one upstream request may take.
+
+Bounds one upstream request.
+
+### `relay_upstream`
+
+*`halite-hub` · no default · SPEC section 5.3*
+
+The hub this relay reports to.
+
+The hub this relay reports to. The relay enrols with it as an ordinary node first, and the upstream's policy must grant that node certificate the `relay.proxy` runner.
+
+### `relay_upstream_port`
+
+*`halite-hub` · `4510` · SPEC section 5.3*
+
+The upstream hub's port.
+
+Only read when `relay_upstream` names no port.
+
+## Agentless mode
+
+Running against a machine with no agent, over the system
+ssh.
+
+### `roster`
+
+*`halite-hub` · `flat` · SPEC section 21.2*
+
+Agentless roster backend: flat, sshconfig, cache, or ansible.
+
+Where the list of agentless targets comes from: `flat` reads a file, `sshconfig` reads the operator's own ssh config, `cache` uses nodes the hub already knows. `scan`, `cloud`, and `terraform` are named and refused.
+
+### `roster_file`
+
+*`halite-hub` · no default · SPEC section 21.2*
+
+The roster; empty is <root>/roster.
+
+The roster for the `flat` backend.
+
+### `scp_command`
+
+*`halite-hub` · `scp` · SPEC section 21.1*
+
+The copier used to push the binary.
+
+The copier used to push the binary.
+
+### `ssh_binary`
+
+*`halite-hub` · no default · SPEC section 21.1*
+
+The halite-node binary agentless mode pushes.
+
+The halite-node binary pushed to the target and verified by digest before it runs. It is static and needs nothing on the far side — no Python, which is the whole difference from salt-ssh.
+
+### `ssh_command`
+
+*`halite-hub` · `ssh` · SPEC section 21.1*
+
+The ssh binary to connect with.
+
+The ssh binary to connect with. The system one, so the estate's `ssh_config`, jump hosts, certificate authentication, and `known_hosts` all work without being reimplemented.
+
+### `ssh_options`
+
+*`halite-hub` · no default · SPEC section 21.1*
+
+Extra -o settings passed to ssh and scp.
+
+Extra `-o` settings passed to both ssh and scp, for anything the estate's config does not already carry.
+
+### `ssh_timeout`
+
+*`halite-hub` · `5m` · SPEC section 21.1*
+
+How long one agentless target may take.
+
+Bounds one target, so a machine that accepts a connection and then stops answering does not hold the run open.
+
+## Grains and the mine
+
+Facts a node reports about itself, and what it publishes for
+other nodes to read.
+
+### `cloud_grains`
+
+*`halite-node` · `false` · SPEC section 14.1*
+
+Collect cloud metadata grains. Opt-in, because it costs a round trip.
+
+Collects instance metadata from the cloud provider. Opt-in because it costs a round trip to a link-local address at every collection, which on a machine that is not in a cloud is a timeout.
+
+### `grain_stale_after`
+
+*`halite-hub` · `1h` · SPEC section 8.3*
+
+When cached grains are annotated as stale during targeting.
+
+Read by the hub, not the node: when cached grains are old enough to be annotated as stale during targeting, so a match against a node that has not reported in a week says so.
+
+### `grains`
+
+*`halite-node` · no default · SPEC section 14.2*
+
+Static grains merged last, so they can override.
+
+Static grains set in the configuration file, merged last so they override collected ones. This is where an estate puts `role` and `datacentre` — facts about a machine that the machine cannot work out for itself.
+
+### `grains_refresh_interval`
+
+*`halite-node` · `30m` · SPEC section 8.3*
+
+How often grains are re-collected.
+
+How often grains are re-collected and re-pushed. A machine whose facts change — a disk added, an address moved — is stale to targeting until this fires or `saltutil.refresh_grains` is run.
+
+### `mine_functions`
+
+*`halite-node` · no default · SPEC section 19.5*
+
+What this node publishes to the mine.
+
+What this node publishes for other nodes to read — addresses, versions, whatever a template on another machine needs. This is how a load balancer's tree learns its backends without an operator listing them.
+
+### `mine_interval`
+
+*`halite-node` · `60` · SPEC section 19.5*
+
+Mine publication interval in minutes.
+
+Publication interval, in minutes, matching Salt's units.
+
+## Scheduling and beacons
+
+Work a node starts on its own: the scheduler that replaces
+cron, and the beacons that turn a local condition into an event.
+
+### `beacons`
+
+*`halite-node` · no default · SPEC section 16.1*
+
+Beacon configuration.
+
+Local conditions that become events on the hub's bus: a file changed, a service died, a disk filled. A beacon on its own does nothing; it is the reactor that turns the event into a job.
+
+### `schedule`
+
+*`halite-node` · no default · SPEC section 20.1*
+
+Scheduled jobs.
+
+Jobs the node starts on its own. This is what replaces the cron entry running `salt-call state.apply` on every machine: the schedule travels with the configuration, the run is recorded in the job cache like any other, and `maxrunning` stops two from overlapping.
+
+### `timezone`
+
+*`halite-node` · `<the node's local zone>` · SPEC section 20.1*
+
+The time zone schedules evaluate in, as an IANA name. Each job may override it.
+
+The IANA zone schedules are evaluated in. Set it explicitly on a fleet that spans zones, or `0 3 * * *` means a different moment on every machine. Each job may override it.
+
+## Reactors
+
+Turning an event into a job, on the hub.
+
+### `max_causality_depth`
+
+*`halite-hub` · `5` · SPEC section 16.3*
+
+How long a reactor causality chain may grow before it is broken.
+
+How long a chain of cause and effect may grow before it is broken. This is the loop-breaker: a reaction that raises an event that matches its own trigger would otherwise run for ever.
+
+### `reactor`
+
+*`halite-hub` · no default · SPEC section 18.1*
+
+Event tag globs to reaction SLS.
+
+A mapping of event tag glob to the reaction SLS that runs when it matches. The pairing with beacons is the automation loop: something happens on a node, the hub notices, the hub acts.
+
+### `reactor_queue_depth`
+
+*`halite-hub` · `10000` · SPEC section 18.2*
+
+Reactor queue depth. On overflow the oldest are dropped and the count is reported.
+
+How many events may wait. On overflow the oldest are dropped and the count is reported rather than the drop being silent, because a reactor that quietly stopped reacting is indistinguishable from one with nothing to do.
+
+### `reactor_timeout`
+
+*`halite-hub` · `60s` · SPEC section 18.2*
+
+How long one reaction may take to render and dispatch.
+
+Bounds one reaction's render and dispatch.
+
+### `reactor_workers`
+
+*`halite-hub` · `2 x NumCPU` · SPEC section 18.2*
+
+Reactor worker pool size.
+
+How many reactions may render and dispatch at once. Too few and a burst queues; too many and a burst becomes a thundering herd against the fleet.
+
+## Extensions
+
+Functions written in another language, delivered as signed
+bundles and run out of process.
+
+### `extension_dir`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 24.4*
+
+Extension cache; empty is <state_dir>/ext.
+
+Where verified extension bundles are cached. Nothing else should live in it; a writable directory inside it is a file the manifest does not list, and the store reports it as an unverified version.
+
+### `extension_group`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 24.3*
+
+Its group.
+
+Its group.
+
+### `extension_pins`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 24.4*
+
+Fixes each extension by version and Merkle root.
+
+Fixes each extension at a version and a Merkle root, so a bundle that changed underneath the estate fails to load rather than loading. This is the setting that makes an extension supply chain auditable.
+
+### `extension_pool_size`
+
+*`halite-node`, `halite-hub` · `4` · SPEC section 24.2*
+
+Processes one extension may have.
+
+How many processes one extension may have. A pool avoids paying process startup on every call; too large a pool on a small node is memory that the state run needed.
+
+### `extension_require_signature`
+
+*`halite-node`, `halite-hub` · `true` · SPEC section 24.4*
+
+Refuse an unsigned extension. False is for development and warns on every load.
+
+On by default. False permits an unsigned bundle for development and warns on every load, so a development setting cannot quietly become the production one.
+
+### `extension_timeout`
+
+*`halite-node`, `halite-hub` · `60s` · SPEC section 24.2*
+
+How long one extension call may take.
+
+Bounds one call into an extension. The process is killed with SIGTERM and then SIGKILL, so a wedged extension costs one job rather than the node.
+
+### `extension_trust_keys`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 24.4*
+
+Keys whose signed extension bundles this node accepts, as `<name> <base64>`.
+
+The keys whose signed bundles this node accepts, as `<name> <base64>`. An extension is code, so this is the same decision as trusting a package repository.
+
+### `extension_user`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 24.3*
+
+Account an extension drops to unless it declares root.
+
+The account an extension drops to unless its manifest declares it needs root. Set it to something with no privileges of its own.
+
+## Returners
+
+Where a job's answer goes besides the job cache.
+
+### `event_return`
+
+*`halite-hub` · no default · SPEC section 20.3*
+
+Ship the whole event stream to this returner.
+
+Ships the whole event stream to a returner, which SPEC 20.3 calls the recommended path to a SIEM. It resumes from a bus offset, so a receiver that was unreachable for an hour catches up rather than leaving an hour-shaped hole in the audit trail.
+
+### `event_return_batch`
+
+*`halite-hub` · `200` · SPEC section 20.3*
+
+Events read from the bus per shipment.
+
+Events read from the bus per shipment.
+
+### `event_return_from`
+
+*`halite-hub` · `latest` · SPEC section 20.3*
+
+Where to start on a first run: latest, earliest, or an offset.
+
+Where to start on a first run: `latest`, `earliest`, or an explicit offset. `earliest` on a hub with months of history ships months of history.
+
+### `event_return_tags`
+
+*`halite-hub` · no default · SPEC section 20.3*
+
+Tag globs to ship, comma-separated; empty ships everything.
+
+Tag globs to ship, comma-separated. Empty ships everything, which is usually more than a SIEM wants to be charged for.
+
+### `returner`
+
+*`halite-node` · `local` · SPEC section 20.3*
+
+Default returner: local, local_cache, file, syslog, webhook, or smtp.
+
+Where a node sends its answers besides the hub: `local`, `local_cache`, `file`, `syslog`, `webhook`, or `smtp`. A returner named here that this build does not have is not fatal — it fails every return with the reason instead, because a node that will not start cannot be sent the extension that would provide it.
+
+### `returner_file`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+Path for the file returner; empty is <state_dir>/returns.ndjson.
+
+The path the file returner appends to, as NDJSON.
+
+### `returner_file_keep`
+
+*`halite-node`, `halite-hub` · `5` · SPEC section 20.3*
+
+How many rotated copies to keep.
+
+How many rotated copies survive.
+
+### `returner_file_max_size`
+
+*`halite-node`, `halite-hub` · `0` · SPEC section 20.3*
+
+Rotate the file returner past this many bytes; 0 never rotates.
+
+Rotates past this many bytes; 0 never rotates, which fills a disk.
+
+### `returner_smtp_address`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+host:port of the mail server.
+
+`host:port` of the mail server.
+
+### `returner_smtp_from`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+Envelope sender.
+
+The envelope sender.
+
+### `returner_smtp_password`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+SMTP password; refused without tls.
+
+The same, and the same refusal.
+
+### `returner_smtp_subject`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+Fixed subject; empty describes the return.
+
+A fixed subject, or empty to describe the return.
+
+### `returner_smtp_tls`
+
+*`halite-node`, `halite-hub` · `true` · SPEC section 20.3*
+
+Require STARTTLS.
+
+Requires STARTTLS.
+
+### `returner_smtp_to`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+Recipients, comma-separated.
+
+Recipients, comma-separated.
+
+### `returner_smtp_username`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+SMTP account; refused without tls.
+
+Refused without `returner_smtp_tls`, because a password on a plaintext SMTP connection is a password on the wire.
+
+### `returner_spool_max_size`
+
+*`halite-node`, `halite-hub` · `268435456` · SPEC section 20.3*
+
+Bytes of undelivered returns to hold before refusing.
+
+The ceiling on undelivered returns held on disk.
+
+### `returner_syslog_address`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+host:port for syslog; empty uses the local socket.
+
+`host:port`, or empty for the local socket.
+
+### `returner_syslog_ca_file`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+CA to verify the syslog receiver against.
+
+The CA to verify the receiver against. An internal CA is the common case, and this is how it is trusted without disabling verification.
+
+### `returner_syslog_facility`
+
+*`halite-node`, `halite-hub` · `daemon` · SPEC section 20.3*
+
+The syslog facility.
+
+The syslog facility.
+
+### `returner_syslog_network`
+
+*`halite-node`, `halite-hub` · `tcp` · SPEC section 20.3*
+
+tcp or udp, for a syslog address.
+
+`tcp` or `udp`. UDP drops silently under load, which for an audit trail is the wrong trade.
+
+### `returner_syslog_tag`
+
+*`halite-node`, `halite-hub` · `halite` · SPEC section 20.3*
+
+The RFC 5424 app-name.
+
+The RFC 5424 app-name the receiver filters on.
+
+### `returner_syslog_tls`
+
+*`halite-node`, `halite-hub` · `false` · SPEC section 20.3*
+
+Wrap the syslog connection in TLS.
+
+Wraps the connection in TLS. Syslog over the network without it is the estate's job history in plaintext.
+
+### `returner_timeout`
+
+*`halite-node`, `halite-hub` · `30s` · SPEC section 20.3*
+
+How long one delivery may take.
+
+Bounds one delivery.
+
+### `returner_webhook_attempts`
+
+*`halite-node`, `halite-hub` · `5` · SPEC section 20.3*
+
+Delivery attempts before a return is spooled.
+
+Delivery attempts before the return is spooled instead. The nonce is recorded after the delivery lands, not when the signature verifies, so a retry after a transient failure is not refused as a replay.
+
+### `returner_webhook_ca_file`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+CA to verify the webhook receiver against.
+
+The CA to verify the receiver against, for an endpoint behind an estate's own CA.
+
+### `returner_webhook_secret`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+HMAC-SHA-256 signing secret; prefer the file form.
+
+The HMAC-SHA-256 signing secret, so the receiver can tell a real delivery from anything else that found the URL. Prefer the file form.
+
+### `returner_webhook_secret_file`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+File holding the signing secret, mode 600.
+
+A file holding the secret, mode 600.
+
+### `returner_webhook_url`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 20.3*
+
+https:// endpoint for the webhook returner.
+
+An `https://` endpoint. There is no plaintext form.
+
+## Targeting and the job cache
+
+Naming sets of nodes, and how long the record of a job is
+kept.
+
+### `job_cache`
+
+*`halite-hub` · `local` · SPEC section 9.4*
+
+Job cache backend.
+
+The backend holding job records and returns.
+
+### `job_cache_max_size`
+
+*`halite-hub` · `10GiB` · SPEC section 9.4*
+
+Job cache retention by total size.
+
+Retention by total size, whichever binds first.
+
+### `job_cache_retention`
+
+*`halite-hub` · `720h` · SPEC section 9.4*
+
+Job cache retention by age.
+
+How long a job's record is kept. This is the estate's audit trail of what ran and what answered, so keep it longer than the time it takes to notice a problem.
+
+### `node_data_cache`
+
+*`halite-hub` · `true` · SPEC section 28.3*
+
+Keep per-node grains, pillar, and mine on the hub.
+
+Keeps each node's grains, pillar, and mine on the hub. Targeting on grains needs it: without it the hub has nothing to match against but the node's name.
+
+### `nodegroups`
+
+*`halite-hub` · no default · SPEC section 8.1*
+
+Named compound target expressions.
+
+Named compound expressions, so `halite-hub run webservers state.apply` means whatever the estate decided it means. A name is easier to review in a policy than the expression it stands for.
+
+## Authorization
+
+Who may ask for what. Deny by default, in one file.
+
+### `accounts`
+
+*`halite-api` · `<config root>/accounts.yaml` · SPEC section 23.2*
+
+The local account file for break-glass and automation identities.
+
+Local accounts for break-glass and automation identities, not the primary operator path. An absent file is an empty set rather than an error, so an estate on OIDC alone needs none.
+
+### `legacy_acl`
+
+*`halite-hub` · no default · SPEC section 28.3*
+
+Salt ACL keys the shim preserved for review rather than translating.
+
+Salt ACL keys the migration shim preserved verbatim for review rather than translating, because translating them silently would produce an authorization file nobody had read. Convert them into `policy` and delete this.
+
+### `policy`
+
+*`halite-hub`, `halite-api` · `<config root>/policy.yaml` · SPEC section 23.5*
+
+The RBAC policy file. Deny by default.
+
+The RBAC file, deny by default. One file with one grammar, replacing Salt's `publisher_acl`, `external_auth`, `peer`, `peer_run`, and `client_acl`. Read by both the hub and the API, and `halite-hub policy test` evaluates a request against it without running anything.
+
+## The API service
+
+Settings only halite-api reads: what it listens on, how long
+a token lives, and what it accepts from outside.
+
+### `api_operator`
+
+*`halite-api` · `api` · SPEC section 22*
+
+Which operator certificate this service presents to the hub.
+
+Which operator certificate the service presents to the hub. The API is a client of the hub, deliberately, so compromising it yields one certificate bounded by one policy rather than the control plane. Grant it less than the sum of its operators and it gets exactly that.
+
+### `hooks`
+
+*`halite-api` · no default · SPEC section 22.2*
+
+Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook.
+
+Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook, and a hook configuration that will not parse stops the service rather than serving some of them.
+
+### `max_body`
+
+*`halite-api` · `64MiB` · SPEC section 22.3*
+
+The largest request body this service will read.
+
+The largest request body the service will read, so a client cannot make it run out of memory.
+
+### `metrics`
+
+*`halite-hub`, `halite-api` · `true` · SPEC section 26.2*
+
+Record and expose Prometheus metrics at /v1/metrics.
+
+Records and exposes Prometheus metrics at `/v1/metrics`. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them.
+
+### `tls_cert`
+
+*`halite-api` · no default · SPEC section 22.3*
+
+The certificate this service presents to its own clients.
+
+The certificate the API presents to its own clients — browsers and scripts — which is a different certificate from the operator one it presents to the hub.
+
+### `tls_key`
+
+*`halite-api` · no default · SPEC section 22.3*
+
+Its key.
+
+Its key.
+
+### `token_idle`
+
+*`halite-api` · `4h` · SPEC section 23.6*
+
+How long a token may go unused before it stops.
+
+How long a token may go unused before it stops, independently of its lifetime.
+
+### `token_lifetime`
+
+*`halite-api` · `12h` · SPEC section 23.6*
+
+How long a token issued at login is good for.
+
+How long a token issued at login is good for. The roles are frozen into it at issue, so a role granted later does not widen a token already in someone's hands — which also means a role taken away is a reason to revoke rather than something that takes effect on its own.
+
+### `token_retention`
+
+*`halite-api` · `720h` · SPEC section 23.6*
+
+How long an expired token's record is kept for the audit.
+
+How long an expired token's record is kept for the audit. Pruned on an interval rather than at every read.
+
+## LDAP and Active Directory
+
+Authenticating operators against a directory.
+
+### `ldap_address`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Directory host:port; empty disables LDAP.
+
+`host:port` of the directory. Empty disables LDAP entirely; a login naming it is then refused by name rather than falling through to local accounts.
+
+### `ldap_bind_dn`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Service account this client searches with.
+
+The service account this client searches with. It needs to read users and groups and nothing else.
+
+### `ldap_bind_password`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Its password; prefer the file form.
+
+Its password. Prefer the file form.
+
+### `ldap_bind_password_file`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+File holding the bind password, mode 600.
+
+A file holding the bind password, mode 600.
+
+### `ldap_ca_file`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+CA to verify the directory against.
+
+The CA to verify the directory against. An internal CA is the common case for a directory, and this is how it is trusted without disabling verification.
+
+### `ldap_group_attribute`
+
+*`halite-api` · `cn` · SPEC section 23.3*
+
+Attribute on a group entry holding its name.
+
+The attribute on a group entry holding the name that `ldap_role_map` matches.
+
+### `ldap_group_base_dn`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Where groups are searched for.
+
+Where groups are searched for, when the directory has no `memberOf`.
+
+### `ldap_group_filter`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Group search; %s is the escaped user DN.
+
+The group search; `%s` is the escaped user DN.
+
+### `ldap_member_of_attribute`
+
+*`halite-api` · `memberOf` · SPEC section 23.3*
+
+Attribute on a user entry listing their groups.
+
+The attribute on a user entry listing their groups — `memberOf` in Active Directory. Faster than searching groups, when the directory maintains it.
+
+### `ldap_nested_depth`
+
+*`halite-api` · `0` · SPEC section 23.3*
+
+How far to follow a group's own memberships.
+
+How far to follow a group's own memberships. Nested groups are how an estate's real structure is usually expressed, and unbounded following is how one lookup becomes hundreds.
+
+### `ldap_principal_attribute`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Attribute naming the operator; empty uses the username.
+
+The attribute naming the operator in the audit trail. Empty uses the username they typed.
+
+### `ldap_role_map`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Maps a directory group to roles in the policy.
+
+Maps a directory group to role names in the policy. The roles have to exist there or they grant nothing; group membership never appears in the policy as a principal.
+
+### `ldap_server_name`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Name to verify in the directory's certificate.
+
+The name to verify in the directory's certificate when it differs from the address dialled.
+
+### `ldap_timeout`
+
+*`halite-api` · `10s` · SPEC section 23.3*
+
+How long one directory operation may take.
+
+Bounds one directory operation, so a directory that stops answering fails a login rather than hanging it.
+
+### `ldap_tls`
+
+*`halite-api` · `ldaps` · SPEC section 23.3*
+
+ldaps or starttls. There is no plaintext mode.
+
+`ldaps` or `starttls`. There is no plaintext mode: a bind is a password on the wire.
+
+### `ldap_user_base_dn`
+
+*`halite-api` · no default · SPEC section 23.3*
+
+Where operators are looked for.
+
+The subtree operators are looked for in.
+
+### `ldap_user_filter`
+
+*`halite-api` · `(uid=%s)` · SPEC section 23.3*
+
+How they are looked for; %s is the escaped username.
+
+How they are looked for; `%s` is the username, escaped by this client rather than interpolated raw, so a username containing filter syntax cannot rewrite the query.
+
+## OpenID Connect
+
+Authenticating operators against an identity provider.
+
+### `oidc_audience`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+Audience the tokens must carry; empty takes the client id.
+
+The audience tokens must carry. Empty takes the client id, which is what most providers issue.
+
+### `oidc_ca_file`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+CA to verify the identity provider against.
+
+The CA to verify the provider against, for a provider inside the estate.
+
+### `oidc_client_id`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+This service's client id at the provider.
+
+This service's client id at the provider.
+
+### `oidc_client_secret`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+Client secret; prefer the file form.
+
+The client secret. Prefer the file form.
+
+### `oidc_client_secret_file`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+File holding the client secret, mode 600.
+
+A file holding the client secret, mode 600.
+
+### `oidc_groups_claim`
+
+*`halite-api` · `groups` · SPEC section 23.4*
+
+Colon-delimited path to the claim holding an operator's groups.
+
+A colon-delimited path to the claim holding an operator's groups, because providers nest it differently.
+
+### `oidc_issuer`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+OpenID Connect issuer URL; empty disables OIDC.
+
+The provider's issuer URL. Empty disables OIDC, and a login naming it is refused by name.
+
+### `oidc_principal_claim`
+
+*`halite-api` · `sub` · SPEC section 23.4*
+
+Which claim names the operator.
+
+Which claim names the operator in the audit trail. Prefer an immutable one over an email address, which people change.
+
+### `oidc_redirect_url`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+Where the provider sends an operator back to.
+
+Where the provider sends an operator back to, and it has to match what is registered at the provider exactly.
+
+### `oidc_role_map`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+Maps a provider group to roles in the policy.
+
+Maps a provider group to role names in the policy, the same way the LDAP one does.
+
+### `oidc_scopes`
+
+*`halite-api` · no default · SPEC section 23.4*
+
+Extra scopes to request, comma-separated; openid is always sent.
+
+Extra scopes, comma-separated. `openid` is always sent; a groups claim usually needs one more.
+
+### `oidc_skew`
+
+*`halite-api` · `60s` · SPEC section 23.4*
+
+Clock difference tolerated on a token's exp and nbf.
+
+How much clock difference is tolerated on a token's `exp` and `nbf`. Small, and not a substitute for NTP.
+
+## The event bus
+
+How much of the estate's history the hub keeps.
+
+### `event_max_size`
+
+*`halite-hub` · `4294967296` · SPEC section 17.2*
+
+Ceiling on the whole event bus, whichever binds first.
+
+A ceiling on the whole bus, whichever binds first.
+
+### `event_retention`
+
+*`halite-hub` · `720h` · SPEC section 17.2*
+
+How long the event bus keeps a record.
+
+How long the bus keeps a record. Reactors read from it, `event listen` reads from it, and an event returner resumes from an offset in it, so this is also how long a receiver may be down without losing anything.
+
+### `event_tag_compat`
+
+*`halite-hub` · `false` · SPEC section 17.1*
+
+Additionally emit every event under its salt/ equivalent.
+
+Additionally emits every event under its `salt/` equivalent, so a reactor or a consumer written against Salt's tags keeps matching during a migration. Doubles the volume; turn it off once nothing needs it.
+
+## Node execution controls
+
+What a node will and will not run, and how much of it at
+once.
+
+### `cmd_default_shell`
+
+*`halite-node` · `false` · SPEC section 15.2*
+
+Run cmd.run through a shell by default, as Salt does.
+
+Runs `cmd.run` through a shell by default, as Salt does. Off here, because an argument vector cannot be reinterpreted by anything; turn it on for a tree that depends on shell syntax it never quoted.
+
+### `job_queue_depth`
+
+*`halite-node` · `100` · SPEC section 9.6*
+
+How many jobs may wait before the node refuses more.
+
+How many jobs may wait before the node refuses more. Refusing is the honest answer: the alternative is a queue that grows until the node dies with a backlog nobody can see.
+
+### `job_signer_keys`
+
+*`halite-node` · no default · SPEC section 25.6*
+
+Public keys whose detached job signatures this node accepts.
+
+The public keys whose detached job signatures this node would accept.
+
+### `legacy_arg_parse`
+
+*`halite-node`, `halite-hub` · `false` · SPEC section 9.2*
+
+Restore Salt's YAML coercion of command line arguments.
+
+Restores Salt's YAML coercion of command line arguments, where `1.10` becomes a number and a version string is corrupted. On for a tree that relies on the coercion; off is correct.
+
+### `parallel_jobs`
+
+*`halite-node` · `false` · SPEC section 9.6*
+
+Allow jobs to run alongside one another by default.
+
+Lets jobs run alongside one another by default. Off by default, because two state runs converging the same machine at once is how a machine ends up in neither state.
+
+### `quiesce`
+
+*`halite-node` · `false` · SPEC section 2.1*
+
+Refuse jobs other than the allowlist. Salt calls this blackout.
+
+Refuses every job but the allowlist, so a machine can be taken out of automation without being taken off the network. Salt calls this blackout.
+
+### `quiesce_allowlist`
+
+*`halite-node` · no default · SPEC section 2.1*
+
+Functions still permitted while quiesced.
+
+What is still permitted while quiesced. Keep `test.ping` and the grains readers in it, or a quiesced node looks like a dead one.
+
+### `require_job_signature`
+
+*`halite-node` · `false` · SPEC section 25.6*
+
+Refuse a job without a valid detached operator signature.
+
+Refuses a job without a valid detached operator signature. Not built; the setting is named and refused rather than accepted and ignored.
+
+## Logging and diagnostics
+
+What each program says about itself.
+
+### `log_file`
+
+*all three programs · no default · SPEC section 26.1*
+
+Log file; empty logs to stderr or the journal.
+
+Empty logs to stderr, which under a service manager means the journal. Set it when there is no journal to log to.
+
+### `log_format`
+
+*all three programs · `json` · SPEC section 26.1*
+
+json or console.
+
+`json` for anything that ships logs, `console` for a person reading them.
+
+### `log_level`
+
+*all three programs · `info` · SPEC section 26.1*
+
+error, warn, info, debug, or trace.
+
+`error`, `warn`, `info`, `debug`, or `trace`. `info` records what happened; `debug` records why.
+
+### `log_level_file`
+
+*all three programs · no default · SPEC section 26.1*
+
+Level for the file sink, defaulting to log_level.
+
+A separate level for the file sink, so an estate can keep `info` on the console and `debug` on disk.
+
+### `tracing`
+
+*all three programs · `off` · SPEC section 26.3*
+
+off or otlp.
+
+`off` or `otlp`. Named and refused; distributed tracing is SPEC 26.3 and is not built.
+
+## Index
+
+Every setting, and which programs read it.
+
+| Setting | Programs | Default | Group |
 |---|---|---|---|
-| `beacons` | — | 16.1 | Beacon configuration. |
-| `cache_dir` | `<cache dir>` | 27.3 | Discardable cache. |
-| `cloud_grains` | `false` | 14.1 | Collect cloud metadata grains. Opt-in, because it costs a round trip. |
-| `cmd_default_shell` | `false` | 15.2 | Run cmd.run through a shell by default, as Salt does. |
-| `config_file` | — | 27.3 | The primary configuration file, set by the loader. |
-| `env` | `base` | 13.1 | The default environment. saltenv is a permanent alias. |
-| `env_allowlist` | — | 28.3 | Environments a run may use. |
-| `env_denylist` | — | 28.3 | Environments a run may not use. |
-| `extension_dir` | — | 24.4 | Extension cache; empty is <state_dir>/ext. |
-| `extension_group` | — | 24.3 | Its group. |
-| `extension_pins` | — | 24.4 | Fixes each extension by version and Merkle root. |
-| `extension_pool_size` | `4` | 24.2 | Processes one extension may have. |
-| `extension_require_signature` | `true` | 24.4 | Refuse an unsigned extension. False is for development and warns on every load. |
-| `extension_timeout` | `60s` | 24.2 | How long one extension call may take. |
-| `extension_trust_keys` | — | 24.4 | Keys whose signed extension bundles this node accepts, as `<name> <base64>`. |
-| `extension_user` | — | 24.3 | Account an extension drops to unless it declares root. |
-| `failhard` | `false` | 11.4 | Abort a state run on the first failure. |
-| `file_roots` | — | 13.1 | Environment to an ordered list of state directories. |
-| `gpg_binary` | `gpg` | 12.6 | The gpg binary the gpg renderer drives. |
-| `gpg_home` | — | 12.6 | GNUPGHOME for the gpg renderer. Empty uses the environment's. |
-| `gpg_timeout` | `30s` | 12.6 | How long one decryption may take. |
-| `grains` | — | 14.2 | Static grains merged last, so they can override. |
-| `grains_refresh_interval` | `30m` | 8.3 | How often grains are re-collected. |
-| `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
-| `hub` | — | 5.1 | The hub to dial. A node and the API dial the hub; the hub never dials either. |
-| `hub_alive_interval` | `30s` | 6.2 | Ping interval on the subscribe stream. |
-| `hub_fingerprint` | — | 7.3 | Expected fingerprint of the hub's CA, checked at enrollment. |
-| `hub_port` | `4510` | 6.1 | The hub's TCP port. |
-| `hub_tries` | `0` | 6.2 | Reconnect attempts before giving up; 0 means retry forever. |
-| `hub_type` | `static` | 6.2 | static or failover, selecting how a list of hubs is used. |
-| `job_queue_depth` | `100` | 9.6 | How many jobs may wait before the node refuses more. |
-| `job_signer_keys` | — | 25.6 | Public keys whose detached job signatures this node accepts. |
-| `legacy_arg_parse` | `false` | 9.2 | Restore Salt's YAML coercion of command line arguments. |
-| `log_file` | — | 26.1 | Log file; empty logs to stderr or the journal. |
-| `log_format` | `json` | 26.1 | json or console. |
-| `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
-| `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
-| `mine_functions` | — | 19.5 | What this node publishes to the mine. |
-| `mine_interval` | `60` | 19.5 | Mine publication interval in minutes. |
-| `node_id` | — | 7.2 | This node's identity. Resolution order is in SPEC section 7.2. |
-| `node_id_caching` | `true` | 7.2 | Pin the resolved node ID at first enrollment. |
-| `node_id_lowercase` | `false` | 7.2 | Lowercase the resolved node ID. |
-| `node_id_remove_domain` | `false` | 7.2 | Strip the domain from a resolved FQDN. |
-| `node_id_source` | `auto` | 7.2 | Where the node ID comes from: auto, config, env, file, cloud, fqdn, hostname. |
-| `parallel_jobs` | `false` | 9.6 | Allow jobs to run alongside one another by default. |
-| `pillar_cache_disk` | `false` | 12.8 | Cache pillar on the node's disk, encrypted at rest. |
-| `pillar_merge_lists` | `false` | 12.3 | Concatenate lists when merging pillar sources. |
-| `pillar_roots` | — | 12.2 | Environment to an ordered list of pillar directories. |
-| `pillar_source_merging_strategy` | `smart` | 12.3 | smart, recurse, aggregate, or overwrite. |
-| `pillar_trusted_grains` | — | 12.4 | Grains a node may use to target pillar. Custom grains are excluded by default. |
-| `pillarenv` | — | 12.2 | The pillar environment, defaulting to env. |
-| `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
-| `quiesce` | `false` | 2.1 | Refuse jobs other than the allowlist. Salt calls this blackout. |
-| `quiesce_allowlist` | — | 2.1 | Functions still permitted while quiesced. |
-| `random_seed` | `deterministic` | 10.2.4 | deterministic or nondeterministic template randomness. |
-| `regex_engine` | `re2` | 10.4 | re2 only until the backtracking engine of SPEC section 10.4 ships. |
-| `renderer` | `jinja|yaml` | 10 | The default renderer pipeline. |
-| `require_job_signature` | `false` | 25.6 | Refuse a job without a valid detached operator signature. |
-| `returner` | `local` | 20.3 | Default returner: local, local_cache, file, syslog, webhook, or smtp. |
-| `returner_file` | — | 20.3 | Path for the file returner; empty is <state_dir>/returns.ndjson. |
-| `returner_file_keep` | `5` | 20.3 | How many rotated copies to keep. |
-| `returner_file_max_size` | `0` | 20.3 | Rotate the file returner past this many bytes; 0 never rotates. |
-| `returner_smtp_address` | — | 20.3 | host:port of the mail server. |
-| `returner_smtp_from` | — | 20.3 | Envelope sender. |
-| `returner_smtp_password` | — | 20.3 | SMTP password; refused without tls. |
-| `returner_smtp_subject` | — | 20.3 | Fixed subject; empty describes the return. |
-| `returner_smtp_tls` | `true` | 20.3 | Require STARTTLS. |
-| `returner_smtp_to` | — | 20.3 | Recipients, comma-separated. |
-| `returner_smtp_username` | — | 20.3 | SMTP account; refused without tls. |
-| `returner_spool_max_size` | `268435456` | 20.3 | Bytes of undelivered returns to hold before refusing. |
-| `returner_syslog_address` | — | 20.3 | host:port for syslog; empty uses the local socket. |
-| `returner_syslog_ca_file` | — | 20.3 | CA to verify the syslog receiver against. |
-| `returner_syslog_facility` | `daemon` | 20.3 | The syslog facility. |
-| `returner_syslog_network` | `tcp` | 20.3 | tcp or udp, for a syslog address. |
-| `returner_syslog_tag` | `halite` | 20.3 | The RFC 5424 app-name. |
-| `returner_syslog_tls` | `false` | 20.3 | Wrap the syslog connection in TLS. |
-| `returner_timeout` | `30s` | 20.3 | How long one delivery may take. |
-| `returner_webhook_attempts` | `5` | 20.3 | Delivery attempts before a return is spooled. |
-| `returner_webhook_ca_file` | — | 20.3 | CA to verify the webhook receiver against. |
-| `returner_webhook_secret` | — | 20.3 | HMAC-SHA-256 signing secret; prefer the file form. |
-| `returner_webhook_secret_file` | — | 20.3 | File holding the signing secret, mode 600. |
-| `returner_webhook_url` | — | 20.3 | https:// endpoint for the webhook returner. |
-| `schedule` | — | 20.1 | Scheduled jobs. |
-| `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
-| `startup_states` | — | 20.1 | What to run when the node starts: highstate, sls, or top. |
-| `state_allowlist` | — | 28.3 | SLS names a state run may include. |
-| `state_denylist` | — | 28.3 | SLS names a state run may not include. |
-| `state_dir` | `<state dir>` | 27.3 | Durable state: job cache, events, evidence. |
-| `template_lstrip_blocks` | `false` | 10.2.1 | Jinja lstrip_blocks. |
-| `template_trim_blocks` | `false` | 10.2.1 | Jinja trim_blocks. |
-| `test` | `false` | 11.6 | Run every state in test mode by default. |
-| `timezone` | `<the node's local zone>` | 20.1 | The time zone schedules evaluate in, as an IANA name. Each job may override it. |
-| `top_file_merging_strategy` | `merge` | 11.2 | merge, same, or merge_all. |
-| `tracing` | `off` | 26.3 | off or otlp. |
-| `undefined` | `strict` | 10.2.6 | strict or permissive name resolution in templates. |
-| `yaml_bool_11` | `true` | 10.1.3 | Resolve yes, no, on, off, y, and n as booleans, as PyYAML does. |
-
-## halite-hub
-
-Read by the hub.
-
-| Setting | Default | SPEC | Meaning |
-|---|---|---|---|
-| `accept_relays` | `false` | 5.3 | Accept connections from relays as well as nodes. |
-| `cache_dir` | `<cache dir>` | 27.3 | Discardable cache. |
-| `certificate_lifetime` | `2160h` | 7.4 | Issued certificate lifetime; renewal happens at half of it. |
-| `config_file` | — | 27.3 | The primary configuration file, set by the loader. |
-| `enrollment_mode` | `manual` | 7.3 | manual, token, or attested. There is no auto_accept. |
-| `env` | `base` | 13.1 | The default environment. saltenv is a permanent alias. |
-| `env_allowlist` | — | 28.3 | Environments a run may use. |
-| `env_denylist` | — | 28.3 | Environments a run may not use. |
-| `event_max_size` | `4294967296` | 17.2 | Ceiling on the whole event bus, whichever binds first. |
-| `event_retention` | `720h` | 17.2 | How long the event bus keeps a record. |
-| `event_return` | — | 20.3 | Ship the whole event stream to this returner. |
-| `event_return_batch` | `200` | 20.3 | Events read from the bus per shipment. |
-| `event_return_from` | `latest` | 20.3 | Where to start on a first run: latest, earliest, or an offset. |
-| `event_return_tags` | — | 20.3 | Tag globs to ship, comma-separated; empty ships everything. |
-| `event_tag_compat` | `false` | 17.1 | Additionally emit every event under its salt/ equivalent. |
-| `ext_pillar` | — | 12.7 | External pillar sources. |
-| `ext_pillar_fail` | `hard` | 12.7 | hard or ignore. A partial pillar is worse than no pillar. |
-| `extension_dir` | — | 24.4 | Extension cache; empty is <state_dir>/ext. |
-| `extension_group` | — | 24.3 | Its group. |
-| `extension_pins` | — | 24.4 | Fixes each extension by version and Merkle root. |
-| `extension_pool_size` | `4` | 24.2 | Processes one extension may have. |
-| `extension_require_signature` | `true` | 24.4 | Refuse an unsigned extension. False is for development and warns on every load. |
-| `extension_timeout` | `60s` | 24.2 | How long one extension call may take. |
-| `extension_trust_keys` | — | 24.4 | Keys whose signed extension bundles this node accepts, as `<name> <base64>`. |
-| `extension_user` | — | 24.3 | Account an extension drops to unless it declares root. |
-| `failhard` | `false` | 11.4 | Abort a state run on the first failure. |
-| `file_ignore_glob` | — | 13.5 | Paths the file server hides. |
-| `file_ignore_regex` | — | 13.5 | Paths the file server hides. |
-| `file_roots` | — | 13.1 | Environment to an ordered list of state directories. |
-| `fileserver_backend` | `roots` | 13.2 | Ordered list of file server backends. |
-| `fileserver_follow_symlinks` | `false` | 13.5 | Follow symlinks inside a served root. Never outside it. |
-| `gitfs_base` | `main` | 13.3 | The branch that becomes the base environment. |
-| `gitfs_cache_dir` | — | 13.3 | Where mirrors live; empty is <cache_dir>/gitfs. |
-| `gitfs_env_allowlist` | — | 13.3 | Git refs the file server exposes as environments. |
-| `gitfs_env_denylist` | — | 13.3 | Git refs the file server refuses to expose. |
-| `gitfs_keyring` | — | 13.3 | GnuPG home holding the keys a signed ref must be signed by. |
-| `gitfs_ref_types` | `branches` | 13.3 | What becomes an environment: branches, tags, or both. |
-| `gitfs_remotes` | — | 13.3 | Git repositories the file server serves. |
-| `gitfs_root` | — | 13.3 | Subdirectory inside each repository to serve. |
-| `gitfs_update_interval` | `5m` | 13.3 | How often the hub fetches; 0 fetches only on demand. |
-| `gitfs_verify_signatures` | `false` | 13.3 | Serve a ref only if its tip carries a trusted signature. |
-| `gpg_binary` | `gpg` | 12.6 | The gpg binary the gpg renderer drives. |
-| `gpg_home` | — | 12.6 | GNUPGHOME for the gpg renderer. Empty uses the environment's. |
-| `gpg_timeout` | `30s` | 12.6 | How long one decryption may take. |
-| `grain_stale_after` | `1h` | 8.3 | When cached grains are annotated as stale during targeting. |
-| `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
-| `job_cache` | `local` | 9.4 | Job cache backend. |
-| `job_cache_max_size` | `10GiB` | 9.4 | Job cache retention by total size. |
-| `job_cache_retention` | `720h` | 9.4 | Job cache retention by age. |
-| `key_algorithm` | `ecdsa-p256` | 7.1 | ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or ed25519 in non-FIPS builds. |
-| `legacy_acl` | — | 28.3 | Salt ACL keys the shim preserved for review rather than translating. |
-| `legacy_arg_parse` | `false` | 9.2 | Restore Salt's YAML coercion of command line arguments. |
-| `listen` | `:4510` | 6.1 | Listen address. |
-| `log_file` | — | 26.1 | Log file; empty logs to stderr or the journal. |
-| `log_format` | `json` | 26.1 | json or console. |
-| `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
-| `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
-| `max_causality_depth` | `5` | 16.3 | How long a reactor causality chain may grow before it is broken. |
-| `metrics` | `true` | 26.2 | Record and expose Prometheus metrics at /v1/metrics. |
-| `node_data_cache` | `true` | 28.3 | Keep per-node grains, pillar, and mine on the hub. |
-| `nodegroups` | — | 8.1 | Named compound target expressions. |
-| `pillar_merge_lists` | `false` | 12.3 | Concatenate lists when merging pillar sources. |
-| `pillar_roots` | — | 12.2 | Environment to an ordered list of pillar directories. |
-| `pillar_source_merging_strategy` | `smart` | 12.3 | smart, recurse, aggregate, or overwrite. |
-| `pillar_trusted_grains` | — | 12.4 | Grains a node may use to target pillar. Custom grains are excluded by default. |
-| `pillarenv` | — | 12.2 | The pillar environment, defaulting to env. |
-| `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
-| `policy` | `<config root>/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
-| `random_seed` | `deterministic` | 10.2.4 | deterministic or nondeterministic template randomness. |
-| `reactor` | — | 18.1 | Event tag globs to reaction SLS. |
-| `reactor_queue_depth` | `10000` | 18.2 | Reactor queue depth. On overflow the oldest are dropped and the count is reported. |
-| `reactor_timeout` | `60s` | 18.2 | How long one reaction may take to render and dispatch. |
-| `reactor_workers` | `2 x NumCPU` | 18.2 | Reactor worker pool size. |
-| `regex_engine` | `re2` | 10.4 | re2 only until the backtracking engine of SPEC section 10.4 ships. |
-| `relay` | `false` | 5.3 | Run as a relay: serve nodes and proxy them to an upstream hub. |
-| `relay_event_tags` | — | 5.3 | Tag globs whose events are forwarded upstream; empty forwards none. |
-| `relay_max_depth` | `2` | 5.3 | How many relays a connection may be behind. |
-| `relay_pki_dir` | — | 5.3 | Key material this relay enrolled with its upstream. |
-| `relay_server_name` | — | 5.3 | Name to verify in the upstream's certificate. |
-| `relay_spool_dir` | — | 5.3 | Where returns wait during an upstream outage; empty is <state_dir>/relay-spool. |
-| `relay_spool_max_size` | `536870912` | 5.3 | Bytes of undelivered returns to hold before refusing. |
-| `relay_timeout` | `60s` | 5.3 | How long one upstream request may take. |
-| `relay_upstream` | — | 5.3 | The hub this relay reports to. |
-| `relay_upstream_port` | `4510` | 5.3 | The upstream hub's port. |
-| `renderer` | `jinja|yaml` | 10 | The default renderer pipeline. |
-| `returner_file` | — | 20.3 | Path for the file returner; empty is <state_dir>/returns.ndjson. |
-| `returner_file_keep` | `5` | 20.3 | How many rotated copies to keep. |
-| `returner_file_max_size` | `0` | 20.3 | Rotate the file returner past this many bytes; 0 never rotates. |
-| `returner_smtp_address` | — | 20.3 | host:port of the mail server. |
-| `returner_smtp_from` | — | 20.3 | Envelope sender. |
-| `returner_smtp_password` | — | 20.3 | SMTP password; refused without tls. |
-| `returner_smtp_subject` | — | 20.3 | Fixed subject; empty describes the return. |
-| `returner_smtp_tls` | `true` | 20.3 | Require STARTTLS. |
-| `returner_smtp_to` | — | 20.3 | Recipients, comma-separated. |
-| `returner_smtp_username` | — | 20.3 | SMTP account; refused without tls. |
-| `returner_spool_max_size` | `268435456` | 20.3 | Bytes of undelivered returns to hold before refusing. |
-| `returner_syslog_address` | — | 20.3 | host:port for syslog; empty uses the local socket. |
-| `returner_syslog_ca_file` | — | 20.3 | CA to verify the syslog receiver against. |
-| `returner_syslog_facility` | `daemon` | 20.3 | The syslog facility. |
-| `returner_syslog_network` | `tcp` | 20.3 | tcp or udp, for a syslog address. |
-| `returner_syslog_tag` | `halite` | 20.3 | The RFC 5424 app-name. |
-| `returner_syslog_tls` | `false` | 20.3 | Wrap the syslog connection in TLS. |
-| `returner_timeout` | `30s` | 20.3 | How long one delivery may take. |
-| `returner_webhook_attempts` | `5` | 20.3 | Delivery attempts before a return is spooled. |
-| `returner_webhook_ca_file` | — | 20.3 | CA to verify the webhook receiver against. |
-| `returner_webhook_secret` | — | 20.3 | HMAC-SHA-256 signing secret; prefer the file form. |
-| `returner_webhook_secret_file` | — | 20.3 | File holding the signing secret, mode 600. |
-| `returner_webhook_url` | — | 20.3 | https:// endpoint for the webhook returner. |
-| `roster` | `flat` | 21.2 | Agentless roster backend: flat, sshconfig, cache, or ansible. |
-| `roster_file` | — | 21.2 | The roster; empty is <root>/roster. |
-| `s3_access_key_id` | — | 13.4 | Access key; prefer a role or the environment. |
-| `s3_buckets` | — | 13.4 | S3 buckets the file server serves. |
-| `s3_cache_dir` | — | 13.4 | Where fetched objects live; empty is <cache_dir>/s3fs. |
-| `s3_dualstack` | `false` | 13.4 | Use the IPv6-capable endpoints. |
-| `s3_endpoint` | — | 13.4 | Custom endpoint, for an S3-compatible service. |
-| `s3_env_allowlist` | — | 13.4 | Environments the file server exposes. |
-| `s3_env_denylist` | — | 13.4 | Environments the file server refuses to expose. |
-| `s3_partition` | `aws` | 13.4 | aws, aws-us-gov, or aws-cn. Endpoints are built from it. |
-| `s3_path_style` | `false` | 13.4 | Address the bucket in the path rather than the host. |
-| `s3_region` | `us-east-1` | 13.4 | Default region for buckets that name none. |
-| `s3_role_arn` | — | 13.4 | Role to assume after the base credentials resolve. |
-| `s3_role_session` | `halite` | 13.4 | Session name for the assumed role. |
-| `s3_secret_access_key` | — | 13.4 | Secret key; prefer the file form. |
-| `s3_secret_access_key_file` | — | 13.4 | File holding the secret key, mode 600. |
-| `s3_update_interval` | `5m` | 13.4 | How often the hub lists; 0 lists only on demand. |
-| `s3_web_identity_token_file` | — | 13.4 | IRSA token file; with s3_role_arn it needs no other credential. |
-| `scp_command` | `scp` | 21.1 | The copier used to push the binary. |
-| `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
-| `ssh_binary` | — | 21.1 | The halite-node binary agentless mode pushes. |
-| `ssh_command` | `ssh` | 21.1 | The ssh binary to connect with. |
-| `ssh_options` | — | 21.1 | Extra -o settings passed to ssh and scp. |
-| `ssh_timeout` | `5m` | 21.1 | How long one agentless target may take. |
-| `state_allowlist` | — | 28.3 | SLS names a state run may include. |
-| `state_denylist` | — | 28.3 | SLS names a state run may not include. |
-| `state_dir` | `<state dir>` | 27.3 | Durable state: job cache, events, evidence. |
-| `template_lstrip_blocks` | `false` | 10.2.1 | Jinja lstrip_blocks. |
-| `template_trim_blocks` | `false` | 10.2.1 | Jinja trim_blocks. |
-| `test` | `false` | 11.6 | Run every state in test mode by default. |
-| `top_file_merging_strategy` | `merge` | 11.2 | merge, same, or merge_all. |
-| `tracing` | `off` | 26.3 | off or otlp. |
-| `undefined` | `strict` | 10.2.6 | strict or permissive name resolution in templates. |
-| `yaml_bool_11` | `true` | 10.1.3 | Resolve yes, no, on, off, y, and n as booleans, as PyYAML does. |
-
-## halite-api
-
-Read by the API service.
-
-| Setting | Default | SPEC | Meaning |
-|---|---|---|---|
-| `accounts` | `<config root>/accounts.yaml` | 23.2 | The local account file for break-glass and automation identities. |
-| `api_operator` | `api` | 22 | Which operator certificate this service presents to the hub. |
-| `cache_dir` | `<cache dir>` | 27.3 | Discardable cache. |
-| `config_file` | — | 27.3 | The primary configuration file, set by the loader. |
-| `env` | `base` | 13.1 | The default environment. saltenv is a permanent alias. |
-| `hash_type` | `sha256` | 13.5 | sha256, sha384, sha512, or sha3-256. |
-| `hooks` | — | 22.2 | Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook. |
-| `hub` | — | 5.1 | The hub to dial. A node and the API dial the hub; the hub never dials either. |
-| `ldap_address` | — | 23.3 | Directory host:port; empty disables LDAP. |
-| `ldap_bind_dn` | — | 23.3 | Service account this client searches with. |
-| `ldap_bind_password` | — | 23.3 | Its password; prefer the file form. |
-| `ldap_bind_password_file` | — | 23.3 | File holding the bind password, mode 600. |
-| `ldap_ca_file` | — | 23.3 | CA to verify the directory against. |
-| `ldap_group_attribute` | `cn` | 23.3 | Attribute on a group entry holding its name. |
-| `ldap_group_base_dn` | — | 23.3 | Where groups are searched for. |
-| `ldap_group_filter` | — | 23.3 | Group search; %s is the escaped user DN. |
-| `ldap_member_of_attribute` | `memberOf` | 23.3 | Attribute on a user entry listing their groups. |
-| `ldap_nested_depth` | `0` | 23.3 | How far to follow a group's own memberships. |
-| `ldap_principal_attribute` | — | 23.3 | Attribute naming the operator; empty uses the username. |
-| `ldap_role_map` | — | 23.3 | Maps a directory group to roles in the policy. |
-| `ldap_server_name` | — | 23.3 | Name to verify in the directory's certificate. |
-| `ldap_timeout` | `10s` | 23.3 | How long one directory operation may take. |
-| `ldap_tls` | `ldaps` | 23.3 | ldaps or starttls. There is no plaintext mode. |
-| `ldap_user_base_dn` | — | 23.3 | Where operators are looked for. |
-| `ldap_user_filter` | `(uid=%s)` | 23.3 | How they are looked for; %s is the escaped username. |
-| `listen` | `:4510` | 6.1 | Listen address. |
-| `log_file` | — | 26.1 | Log file; empty logs to stderr or the journal. |
-| `log_format` | `json` | 26.1 | json or console. |
-| `log_level` | `info` | 26.1 | error, warn, info, debug, or trace. |
-| `log_level_file` | — | 26.1 | Level for the file sink, defaulting to log_level. |
-| `max_body` | `64MiB` | 22.3 | The largest request body this service will read. |
-| `metrics` | `true` | 26.2 | Record and expose Prometheus metrics at /v1/metrics. |
-| `oidc_audience` | — | 23.4 | Audience the tokens must carry; empty takes the client id. |
-| `oidc_ca_file` | — | 23.4 | CA to verify the identity provider against. |
-| `oidc_client_id` | — | 23.4 | This service's client id at the provider. |
-| `oidc_client_secret` | — | 23.4 | Client secret; prefer the file form. |
-| `oidc_client_secret_file` | — | 23.4 | File holding the client secret, mode 600. |
-| `oidc_groups_claim` | `groups` | 23.4 | Colon-delimited path to the claim holding an operator's groups. |
-| `oidc_issuer` | — | 23.4 | OpenID Connect issuer URL; empty disables OIDC. |
-| `oidc_principal_claim` | `sub` | 23.4 | Which claim names the operator. |
-| `oidc_redirect_url` | — | 23.4 | Where the provider sends an operator back to. |
-| `oidc_role_map` | — | 23.4 | Maps a provider group to roles in the policy. |
-| `oidc_scopes` | — | 23.4 | Extra scopes to request, comma-separated; openid is always sent. |
-| `oidc_skew` | `60s` | 23.4 | Clock difference tolerated on a token's exp and nbf. |
-| `pki_dir` | `<config root>/pki` | 27.3 | Key material. |
-| `policy` | `<config root>/policy.yaml` | 23.5 | The RBAC policy file. Deny by default. |
-| `socket_dir` | `<socket dir>` | 27.3 | Sockets and PID files. |
-| `state_dir` | `<state dir>` | 27.3 | Durable state: job cache, events, evidence. |
-| `tls_cert` | — | 22.3 | The certificate this service presents to its own clients. |
-| `tls_key` | — | 22.3 | Its key. |
-| `token_idle` | `4h` | 23.6 | How long a token may go unused before it stops. |
-| `token_lifetime` | `12h` | 23.6 | How long a token issued at login is good for. |
-| `token_retention` | `720h` | 23.6 | How long an expired token's record is kept for the audit. |
-| `tracing` | `off` | 26.3 | off or otlp. |
+| `accept_relays` | `halite-hub` | `false` | Relays |
+| `accounts` | `halite-api` | `<config root>/accounts.yaml` | Authorization |
+| `api_operator` | `halite-api` | `api` | The API service |
+| `beacons` | `halite-node` | — | Scheduling and beacons |
+| `cache_dir` | all three programs | `<cache dir>` | Filesystem layout |
+| `certificate_lifetime` | `halite-hub` | `2160h` | Enrollment and certificates |
+| `cloud_grains` | `halite-node` | `false` | Grains and the mine |
+| `cmd_default_shell` | `halite-node` | `false` | Node execution controls |
+| `config_file` | all three programs | — | Filesystem layout |
+| `enrollment_mode` | `halite-hub` | `manual` | Enrollment and certificates |
+| `env` | all three programs | `base` | The tree: states and pillar |
+| `env_allowlist` | `halite-node`, `halite-hub` | — | The tree: states and pillar |
+| `env_denylist` | `halite-node`, `halite-hub` | — | The tree: states and pillar |
+| `event_max_size` | `halite-hub` | `4294967296` | The event bus |
+| `event_retention` | `halite-hub` | `720h` | The event bus |
+| `event_return` | `halite-hub` | — | Returners |
+| `event_return_batch` | `halite-hub` | `200` | Returners |
+| `event_return_from` | `halite-hub` | `latest` | Returners |
+| `event_return_tags` | `halite-hub` | — | Returners |
+| `event_tag_compat` | `halite-hub` | `false` | The event bus |
+| `ext_pillar` | `halite-hub` | — | The tree: states and pillar |
+| `ext_pillar_fail` | `halite-hub` | `hard` | The tree: states and pillar |
+| `extension_dir` | `halite-node`, `halite-hub` | — | Extensions |
+| `extension_group` | `halite-node`, `halite-hub` | — | Extensions |
+| `extension_pins` | `halite-node`, `halite-hub` | — | Extensions |
+| `extension_pool_size` | `halite-node`, `halite-hub` | `4` | Extensions |
+| `extension_require_signature` | `halite-node`, `halite-hub` | `true` | Extensions |
+| `extension_timeout` | `halite-node`, `halite-hub` | `60s` | Extensions |
+| `extension_trust_keys` | `halite-node`, `halite-hub` | — | Extensions |
+| `extension_user` | `halite-node`, `halite-hub` | — | Extensions |
+| `failhard` | `halite-node`, `halite-hub` | `false` | State runs |
+| `file_ignore_glob` | `halite-hub` | — | The file server |
+| `file_ignore_regex` | `halite-hub` | — | The file server |
+| `file_roots` | `halite-node`, `halite-hub` | — | The tree: states and pillar |
+| `fileserver_backend` | `halite-hub` | `roots` | The file server |
+| `fileserver_follow_symlinks` | `halite-hub` | `false` | The file server |
+| `gitfs_base` | `halite-hub` | `main` | The git file server |
+| `gitfs_cache_dir` | `halite-hub` | — | The git file server |
+| `gitfs_env_allowlist` | `halite-hub` | — | The git file server |
+| `gitfs_env_denylist` | `halite-hub` | — | The git file server |
+| `gitfs_keyring` | `halite-hub` | — | The git file server |
+| `gitfs_ref_types` | `halite-hub` | `branches` | The git file server |
+| `gitfs_remotes` | `halite-hub` | — | The git file server |
+| `gitfs_root` | `halite-hub` | — | The git file server |
+| `gitfs_update_interval` | `halite-hub` | `5m` | The git file server |
+| `gitfs_verify_signatures` | `halite-hub` | `false` | The git file server |
+| `gpg_binary` | `halite-node`, `halite-hub` | `gpg` | Rendering and templates |
+| `gpg_home` | `halite-node`, `halite-hub` | — | Rendering and templates |
+| `gpg_timeout` | `halite-node`, `halite-hub` | `30s` | Rendering and templates |
+| `grain_stale_after` | `halite-hub` | `1h` | Grains and the mine |
+| `grains` | `halite-node` | — | Grains and the mine |
+| `grains_refresh_interval` | `halite-node` | `30m` | Grains and the mine |
+| `hash_type` | all three programs | `sha256` | Filesystem layout |
+| `hooks` | `halite-api` | — | The API service |
+| `hub` | `halite-node`, `halite-api` | — | Identity and connection |
+| `hub_alive_interval` | `halite-node` | `30s` | Identity and connection |
+| `hub_fingerprint` | `halite-node` | — | Identity and connection |
+| `hub_port` | `halite-node` | `4510` | Identity and connection |
+| `hub_tries` | `halite-node` | `0` | Identity and connection |
+| `hub_type` | `halite-node` | `static` | Identity and connection |
+| `job_cache` | `halite-hub` | `local` | Targeting and the job cache |
+| `job_cache_max_size` | `halite-hub` | `10GiB` | Targeting and the job cache |
+| `job_cache_retention` | `halite-hub` | `720h` | Targeting and the job cache |
+| `job_queue_depth` | `halite-node` | `100` | Node execution controls |
+| `job_signer_keys` | `halite-node` | — | Node execution controls |
+| `key_algorithm` | `halite-hub` | `ecdsa-p256` | Enrollment and certificates |
+| `ldap_address` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_bind_dn` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_bind_password` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_bind_password_file` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_ca_file` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_group_attribute` | `halite-api` | `cn` | LDAP and Active Directory |
+| `ldap_group_base_dn` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_group_filter` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_member_of_attribute` | `halite-api` | `memberOf` | LDAP and Active Directory |
+| `ldap_nested_depth` | `halite-api` | `0` | LDAP and Active Directory |
+| `ldap_principal_attribute` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_role_map` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_server_name` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_timeout` | `halite-api` | `10s` | LDAP and Active Directory |
+| `ldap_tls` | `halite-api` | `ldaps` | LDAP and Active Directory |
+| `ldap_user_base_dn` | `halite-api` | — | LDAP and Active Directory |
+| `ldap_user_filter` | `halite-api` | `(uid=%s)` | LDAP and Active Directory |
+| `legacy_acl` | `halite-hub` | — | Authorization |
+| `legacy_arg_parse` | `halite-node`, `halite-hub` | `false` | Node execution controls |
+| `listen` | `halite-hub`, `halite-api` | `:4510` | Identity and connection |
+| `log_file` | all three programs | — | Logging and diagnostics |
+| `log_format` | all three programs | `json` | Logging and diagnostics |
+| `log_level` | all three programs | `info` | Logging and diagnostics |
+| `log_level_file` | all three programs | — | Logging and diagnostics |
+| `max_body` | `halite-api` | `64MiB` | The API service |
+| `max_causality_depth` | `halite-hub` | `5` | Reactors |
+| `metrics` | `halite-hub`, `halite-api` | `true` | The API service |
+| `mine_functions` | `halite-node` | — | Grains and the mine |
+| `mine_interval` | `halite-node` | `60` | Grains and the mine |
+| `node_data_cache` | `halite-hub` | `true` | Targeting and the job cache |
+| `node_id` | `halite-node` | — | Identity and connection |
+| `node_id_caching` | `halite-node` | `true` | Identity and connection |
+| `node_id_lowercase` | `halite-node` | `false` | Identity and connection |
+| `node_id_remove_domain` | `halite-node` | `false` | Identity and connection |
+| `node_id_source` | `halite-node` | `auto` | Identity and connection |
+| `nodegroups` | `halite-hub` | — | Targeting and the job cache |
+| `oidc_audience` | `halite-api` | — | OpenID Connect |
+| `oidc_ca_file` | `halite-api` | — | OpenID Connect |
+| `oidc_client_id` | `halite-api` | — | OpenID Connect |
+| `oidc_client_secret` | `halite-api` | — | OpenID Connect |
+| `oidc_client_secret_file` | `halite-api` | — | OpenID Connect |
+| `oidc_groups_claim` | `halite-api` | `groups` | OpenID Connect |
+| `oidc_issuer` | `halite-api` | — | OpenID Connect |
+| `oidc_principal_claim` | `halite-api` | `sub` | OpenID Connect |
+| `oidc_redirect_url` | `halite-api` | — | OpenID Connect |
+| `oidc_role_map` | `halite-api` | — | OpenID Connect |
+| `oidc_scopes` | `halite-api` | — | OpenID Connect |
+| `oidc_skew` | `halite-api` | `60s` | OpenID Connect |
+| `parallel_jobs` | `halite-node` | `false` | Node execution controls |
+| `pillar_cache_disk` | `halite-node` | `false` | The tree: states and pillar |
+| `pillar_merge_lists` | `halite-node`, `halite-hub` | `false` | The tree: states and pillar |
+| `pillar_roots` | `halite-node`, `halite-hub` | — | The tree: states and pillar |
+| `pillar_source_merging_strategy` | `halite-node`, `halite-hub` | `smart` | The tree: states and pillar |
+| `pillar_trusted_grains` | `halite-node`, `halite-hub` | — | The tree: states and pillar |
+| `pillarenv` | `halite-node`, `halite-hub` | — | The tree: states and pillar |
+| `pki_dir` | all three programs | `<config root>/pki` | Filesystem layout |
+| `policy` | `halite-hub`, `halite-api` | `<config root>/policy.yaml` | Authorization |
+| `quiesce` | `halite-node` | `false` | Node execution controls |
+| `quiesce_allowlist` | `halite-node` | — | Node execution controls |
+| `random_seed` | `halite-node`, `halite-hub` | `deterministic` | Rendering and templates |
+| `reactor` | `halite-hub` | — | Reactors |
+| `reactor_queue_depth` | `halite-hub` | `10000` | Reactors |
+| `reactor_timeout` | `halite-hub` | `60s` | Reactors |
+| `reactor_workers` | `halite-hub` | `2 x NumCPU` | Reactors |
+| `regex_engine` | `halite-node`, `halite-hub` | `re2` | Rendering and templates |
+| `relay` | `halite-hub` | `false` | Relays |
+| `relay_event_tags` | `halite-hub` | — | Relays |
+| `relay_max_depth` | `halite-hub` | `2` | Relays |
+| `relay_pki_dir` | `halite-hub` | — | Relays |
+| `relay_server_name` | `halite-hub` | — | Relays |
+| `relay_spool_dir` | `halite-hub` | — | Relays |
+| `relay_spool_max_size` | `halite-hub` | `536870912` | Relays |
+| `relay_timeout` | `halite-hub` | `60s` | Relays |
+| `relay_upstream` | `halite-hub` | — | Relays |
+| `relay_upstream_port` | `halite-hub` | `4510` | Relays |
+| `renderer` | `halite-node`, `halite-hub` | `jinja|yaml` | Rendering and templates |
+| `require_job_signature` | `halite-node` | `false` | Node execution controls |
+| `returner` | `halite-node` | `local` | Returners |
+| `returner_file` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_file_keep` | `halite-node`, `halite-hub` | `5` | Returners |
+| `returner_file_max_size` | `halite-node`, `halite-hub` | `0` | Returners |
+| `returner_smtp_address` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_smtp_from` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_smtp_password` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_smtp_subject` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_smtp_tls` | `halite-node`, `halite-hub` | `true` | Returners |
+| `returner_smtp_to` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_smtp_username` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_spool_max_size` | `halite-node`, `halite-hub` | `268435456` | Returners |
+| `returner_syslog_address` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_syslog_ca_file` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_syslog_facility` | `halite-node`, `halite-hub` | `daemon` | Returners |
+| `returner_syslog_network` | `halite-node`, `halite-hub` | `tcp` | Returners |
+| `returner_syslog_tag` | `halite-node`, `halite-hub` | `halite` | Returners |
+| `returner_syslog_tls` | `halite-node`, `halite-hub` | `false` | Returners |
+| `returner_timeout` | `halite-node`, `halite-hub` | `30s` | Returners |
+| `returner_webhook_attempts` | `halite-node`, `halite-hub` | `5` | Returners |
+| `returner_webhook_ca_file` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_webhook_secret` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_webhook_secret_file` | `halite-node`, `halite-hub` | — | Returners |
+| `returner_webhook_url` | `halite-node`, `halite-hub` | — | Returners |
+| `roster` | `halite-hub` | `flat` | Agentless mode |
+| `roster_file` | `halite-hub` | — | Agentless mode |
+| `s3_access_key_id` | `halite-hub` | — | The S3 file server |
+| `s3_buckets` | `halite-hub` | — | The S3 file server |
+| `s3_cache_dir` | `halite-hub` | — | The S3 file server |
+| `s3_dualstack` | `halite-hub` | `false` | The S3 file server |
+| `s3_endpoint` | `halite-hub` | — | The S3 file server |
+| `s3_env_allowlist` | `halite-hub` | — | The S3 file server |
+| `s3_env_denylist` | `halite-hub` | — | The S3 file server |
+| `s3_partition` | `halite-hub` | `aws` | The S3 file server |
+| `s3_path_style` | `halite-hub` | `false` | The S3 file server |
+| `s3_region` | `halite-hub` | `us-east-1` | The S3 file server |
+| `s3_role_arn` | `halite-hub` | — | The S3 file server |
+| `s3_role_session` | `halite-hub` | `halite` | The S3 file server |
+| `s3_secret_access_key` | `halite-hub` | — | The S3 file server |
+| `s3_secret_access_key_file` | `halite-hub` | — | The S3 file server |
+| `s3_update_interval` | `halite-hub` | `5m` | The S3 file server |
+| `s3_web_identity_token_file` | `halite-hub` | — | The S3 file server |
+| `schedule` | `halite-node` | — | Scheduling and beacons |
+| `scp_command` | `halite-hub` | `scp` | Agentless mode |
+| `socket_dir` | all three programs | `<socket dir>` | Filesystem layout |
+| `ssh_binary` | `halite-hub` | — | Agentless mode |
+| `ssh_command` | `halite-hub` | `ssh` | Agentless mode |
+| `ssh_options` | `halite-hub` | — | Agentless mode |
+| `ssh_timeout` | `halite-hub` | `5m` | Agentless mode |
+| `startup_states` | `halite-node` | — | State runs |
+| `state_allowlist` | `halite-node`, `halite-hub` | — | State runs |
+| `state_denylist` | `halite-node`, `halite-hub` | — | State runs |
+| `state_dir` | all three programs | `<state dir>` | Filesystem layout |
+| `template_lstrip_blocks` | `halite-node`, `halite-hub` | `false` | Rendering and templates |
+| `template_trim_blocks` | `halite-node`, `halite-hub` | `false` | Rendering and templates |
+| `test` | `halite-node`, `halite-hub` | `false` | State runs |
+| `timezone` | `halite-node` | `<the node's local zone>` | Scheduling and beacons |
+| `tls_cert` | `halite-api` | — | The API service |
+| `tls_key` | `halite-api` | — | The API service |
+| `token_idle` | `halite-api` | `4h` | The API service |
+| `token_lifetime` | `halite-api` | `12h` | The API service |
+| `token_retention` | `halite-api` | `720h` | The API service |
+| `top_file_merging_strategy` | `halite-node`, `halite-hub` | `merge` | The tree: states and pillar |
+| `tracing` | all three programs | `off` | Logging and diagnostics |
+| `undefined` | `halite-node`, `halite-hub` | `strict` | Rendering and templates |
+| `yaml_bool_11` | `halite-node`, `halite-hub` | `true` | Rendering and templates |
 
