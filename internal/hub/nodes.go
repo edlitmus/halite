@@ -56,6 +56,20 @@ func OpenNodeCache(dir string) (*NodeCache, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the node cache: %w", err)
 	}
+	// MkdirAll is satisfied by a directory that already exists, whoever
+	// owns it. A cache left behind by a hand-run as root is then opened
+	// without complaint by a hub running as its service account, which
+	// can read nothing in it — and the symptom is every target matching
+	// no node, because a node whose cached data cannot be read is
+	// skipped. Checked here so it is one message at startup rather than
+	// a puzzle at the first job.
+	probe := filepath.Join(dir, ".writable")
+	if err := os.WriteFile(probe, nil, 0o600); err != nil {
+		return nil, fmt.Errorf("the node cache at %s is not usable by this process: %w", dir, err)
+	}
+	if err := os.Remove(probe); err != nil {
+		return nil, fmt.Errorf("the node cache at %s is not usable by this process: %w", dir, err)
+	}
 	return &NodeCache{dir: dir}, nil
 }
 

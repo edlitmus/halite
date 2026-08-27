@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/policy"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -318,4 +320,50 @@ func TestARelayedReturnIsTaggedWithTheNodeThatRanIt(t *testing.T) {
 		}
 	}
 	t.Errorf("no event is tagged %q; the bus holds %v", want, tags)
+}
+
+// "no node matched" reads as a wrong target, and sends an operator to
+// fix one that was right.
+//
+// A node whose cached data cannot be read is skipped by resolve. When
+// every candidate is skipped — which is what a cache directory the hub
+// cannot read looks like — the honest answer names the nodes and the
+// reason rather than reporting an empty match.
+func TestATargetThatSkippedEveryNodeSaysSoRatherThanMatchingNothing(t *testing.T) {
+	dir := t.TempDir()
+	store, err := keystore.Open(dir + "/keys")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(&keystore.Record{
+		NodeID: "web1.example", State: keystore.Accepted,
+		Fingerprint: "aa", NotAfter: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := OpenNodeCache(dir + "/nodes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cached data that will not decode, which is what an older build's
+	// shape or an unreadable file both come to here.
+	if err := os.WriteFile(dir+"/nodes/web1.example.json", []byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{Authority: &keystore.Authority{Store: store}, Nodes: cache}
+	matcher, err := target.Compile(target.Glob, "*", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.resolve(matcher)
+	if err == nil {
+		t.Fatal("a target that could consider no node reported an empty match")
+	}
+	if !strings.Contains(err.Error(), "web1.example") {
+		t.Errorf("the failure does not name the node: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cannot read") {
+		t.Errorf("the failure does not say why: %v", err)
+	}
 }

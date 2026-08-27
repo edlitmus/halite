@@ -1859,7 +1859,39 @@ Before: two blocking findings, neither real, and none of the four the
 compiler actually refuses. After: no blocking findings, and the four
 that predict what a real run does.
 
-### 5.20 What reviewing the service files against the tooling found
+### 5.20 What a directory left owned by root cost twice
+
+Two failures on the same host, both from a directory created by a
+hand-run as root and then used by a service account.
+
+The log directory made `service halite_hub start` fail with
+`daemon: open: Permission denied`, naming no file. rc.subr drops to the
+service account before daemon(8) runs, and the prestart created the
+directory only when it was missing — deliberately, to leave an
+operator's arrangement alone, which is exactly the case where the file
+inside it then cannot be made. The prestart now creates the log file
+itself, as root, owned by the account.
+
+The node cache made every target match nothing. `MkdirAll` is satisfied
+by a directory that already exists, whoever owns it, so the hub opened a
+root-owned cache without complaint and could read nothing in it — and a
+node whose cached data cannot be read is skipped during targeting. The
+operator saw `no node matched "*"` immediately after `keys list` showed
+the node accepted, which reads as a wrong target and sends them to fix
+one that was right. The reason was a warning in a log the operator was
+not reading.
+
+Both halves are now refused where they can be seen: opening a node cache
+this process cannot write fails at startup and names the directory, and
+a target that could consider no node at all reports the nodes and the
+reason rather than an empty match.
+
+The general shape is worth keeping: `MkdirAll` and `[ -d ]` both answer
+"does it exist", and neither answers "can this process use it". For a
+service that changes account between a hand-run and a service start,
+those are different questions.
+
+### 5.21 What reviewing the service files against the tooling found
 
 Read against FreeBSD's `daemon(8)` and `/etc/rc.subr`, and against a
 running process for the signal, rather than by reading the files.

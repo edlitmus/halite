@@ -1000,9 +1000,30 @@ default disposition terminates the process, and all three long-running
 units advertised `ExecReload`. There is no reload; changing
 configuration is a restart.
 
-[DIVERGENCE 5.18](docs/DIVERGENCE.md) through 5.20 record all three
-sets, including what the service-file review could not establish without
-root and without a Linux host.
+[DIVERGENCE 5.18](docs/DIVERGENCE.md) through 5.21 record all of these,
+including what the service-file review could not establish without root
+and without a Linux host.
+
+### A directory owned by root no longer breaks things quietly
+
+Running a hub by hand as root and then starting it as a service leaves
+directories the service account cannot use, and both places that
+happened failed in ways that pointed somewhere else.
+
+`MkdirAll` is satisfied by a directory that already exists, whoever owns
+it, so the hub opened a root-owned node cache without complaint and
+could read nothing in it. A node whose cached data cannot be read is
+skipped during targeting, so every target matched nothing —
+`no node matched "*"` immediately after `keys list` showed the node
+accepted. Opening a node cache this process cannot write is now a
+startup failure that names the directory, and a target that could
+consider no node at all reports which nodes and why rather than
+returning an empty match.
+
+The rc.d prestart had the same shape: it created the log directory only
+when missing, so an existing root-owned one left daemon(8) — already
+dropped to the service account — unable to create the log file, and its
+message names no file at all.
 
 ### What is not built
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/job"
@@ -205,20 +206,36 @@ func (s *Server) resolve(matcher *target.Matcher) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var matched []string
+	var matched, skipped []string
+	var why error
 	for _, id := range ids {
 		node, err := s.nodes().Matchable(id)
 		if err != nil {
-			// A node whose cached grains will not decode must not take
-			// the whole job down with it, and must not be silently
-			// dropped either.
+			// A node whose cached data will not read must not take the
+			// whole job down with it, and must not be silently dropped
+			// either.
 			s.warn("skipping a node whose cached data is unreadable",
 				"node_id", id, "error", err.Error())
+			skipped = append(skipped, id)
+			why = err
 			continue
 		}
 		if matcher.Match(node) {
 			matched = append(matched, id)
 		}
+	}
+	if len(matched) == 0 && len(skipped) > 0 {
+		// Every candidate was skipped, so the honest answer is not "no
+		// node matched" — that reads as a wrong target and sends the
+		// operator to fix one that was right. It happens for the whole
+		// fleet at once when the hub cannot read its node cache at all,
+		// which is what a cache directory left owned by root after a
+		// hand-run as root looks like.
+		sort.Strings(skipped)
+		return nil, fmt.Errorf(
+			"%d accepted node(s) could not be considered because the hub cannot read "+
+				"what it has cached about them (%s): %w",
+			len(skipped), strings.Join(skipped, ", "), why)
 	}
 	sort.Strings(matched)
 	return matched, nil
