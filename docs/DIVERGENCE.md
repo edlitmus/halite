@@ -299,6 +299,57 @@ its cryptography is a node that can lie about this too. What the grains
 are good for is inventory — finding the hosts that need attention — and
 the artifact's own `version` output is what says what a binary is.
 
+### 1.12 First contact is a pinned fingerprint, and nothing else is optional
+
+SPEC 7.3 describes a CA delivered to the node by one route and a
+fingerprint delivered by another, the fingerprint existing "so that a CA
+file substituted in transit is caught here rather than never". It does
+not say the CA cannot come from the hub itself.
+
+This build takes the fingerprint as the whole of the trust decision. A
+node with no pinned CA fetches one from the hub and accepts it only if
+it matches, so the operator distributes one short string rather than a
+string and a file. `hub_ca_file` and `--ca-file` still take a CA
+delivered by another route, and neither removes the fingerprint
+requirement: a CA the node has not already pinned is one it is being
+asked to start trusting, however it arrived. Only a CA already written
+into `pki_dir` is exempt, because it was checked when it was written —
+which is why `connect` and `renew` need no fingerprint.
+
+`hub_fingerprint` was optional. That was the weaker position and it read
+as the safer one: a node could be given a CA file and check nothing at
+all, trusting whatever route the file took, and nothing said so. There
+is now no mode that skips the check, because the guarantee *is* the
+check — a missing fingerprint is not a looser one, it is none.
+
+The fetch is the only place in the build that sets
+`InsecureSkipVerify`, and it does more than the default verifier rather
+than less. Inside the handshake it finds a certificate in the presented
+chain whose fingerprint matches the pin, then verifies the hub's own
+certificate against a pool holding that certificate alone. A chain that
+fails either step fails the connection, so no caller can forget to check
+afterwards.
+
+Both steps carry weight. The CA is public — `/v1/enroll` returns it and
+every enrolled node holds a copy — so an attacker can put the real CA in
+a chain beside their own certificate. Matching the fingerprint somewhere
+in the chain is therefore not evidence of anything; without verifying
+the leaf against the matched CA the node would pin the right CA and
+still be talking to the wrong hub. `TestAForeignLeafBesideTheRealCAIsRefused`
+is that exact scenario, and it fails when the verification is removed.
+
+What this rests on, stated plainly: SHA-256 preimage resistance, and the
+operator delivering the fingerprint by a route the attacker does not
+control. The second is the assumption worth being deliberate about — it
+is the same one SPEC 7.3 already makes, and the same one an SSH host key
+fingerprint makes.
+
+What has not been established: none of this has been run against a
+hostile network, only against a hostile chain assembled in a test. The
+hub now sends its CA to any client that completes a TLS handshake with
+it, which is a certificate it already returned at enrollment, but is a
+larger unauthenticated surface than before by one certificate.
+
 ---
 
 ## 2. Module coverage

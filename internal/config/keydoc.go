@@ -134,11 +134,11 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"hub_ca_file": {
 		Group:  "Identity and connection",
-		Detail: "The hub's `ca.crt`, copied from its `pki_dir`. A node needs the CA itself to enrol; `hub_fingerprint` checks the one it has and does not fetch one, so a node configured with only a fingerprint cannot enrol. Once enrollment succeeds the CA is written into this node's own `pki_dir` and this setting is no longer read. `--ca-file` overrides it.",
+		Detail: "A CA delivered by your own route rather than fetched from the hub. Optional: a node with only `hub_fingerprint` fetches the certificate and checks it against that. Supplying one here does not remove the need for the fingerprint, because a CA this node has not already pinned is one it is being asked to start trusting. Once enrollment succeeds the CA is written into this node's own `pki_dir` and this setting is no longer read. `--ca-file` overrides it.",
 	},
 	"hub_fingerprint": {
 		Group:  "Identity and connection",
-		Detail: "The digest of the hub's CA certificate, compared before a node will enrol. This is the out-of-band step that makes first contact safe: without it a node takes whatever CA answers. Print it on the hub with `halite-hub keys fingerprint`, named with no node.",
+		Detail: "Required to enrol. The node fetches the hub's CA and trusts it only if it matches this, so the fingerprint is the whole of the trust decision at first contact — there is no mode that skips it. Deliver it by a route separate from the network the node enrols over; print it on the hub with `halite-hub keys fingerprint`, named with no node. A node that has already pinned a CA does not read this again, which is why `connect` and `renew` need none.",
 	},
 	"hub_alive_interval": {
 		Group:  "Identity and connection",

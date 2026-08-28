@@ -419,19 +419,18 @@ a full queue is refused out loud rather than held in memory.
 The hub issues, an operator decides, and the node's private key never
 leaves it. SPEC section 7.
 
-A node needs two things from the hub, by two different routes: the CA
-certificate itself, and its fingerprint to check that certificate
-against. `hub_fingerprint` alone will not do — it verifies a CA the node
-already has, it does not fetch one.
+A node needs one thing from the hub by a route an attacker cannot
+tamper with: the fingerprint of its CA. The CA certificate itself is
+public, and the node fetches it from the hub and checks it against that
+fingerprint — so the fingerprint is the whole of the trust decision, and
+enrolling without one is refused.
 
 ```sh
 # on the hub
 halite-hub keys fingerprint            # the CA digest, to deliver out of band
-cat <pki_dir>/ca.crt                   # the certificate itself, to copy over
 
 # on the node
-halite-node enroll --hub hub.example --ca-file /path/to/ca.crt \
-    --hub-fingerprint 'ab:cd:...'
+halite-node enroll --hub hub.example --hub-fingerprint 'ab:cd:...'
 # prints this node's fingerprint and exits 2: the request is pending
 
 # on the hub, after comparing the two fingerprints by another route
@@ -445,17 +444,42 @@ halite-node enroll                     # collects the certificate
 Exit 2 from `enroll` means pending, which is neither success nor
 failure; `--wait` blocks until an operator decides instead.
 
-Both can live in `node.yaml` instead of on the command line, which is
-what a provisioning tool should write:
+Which is one line in `node.yaml` beside the hub, and all a provisioning
+tool has to write:
 
 ```yaml
 hub: hub.example
-hub_ca_file: /var/db/halite/hub-ca.crt
 hub_fingerprint: 'ab:cd:...'
 ```
 
-`--ca-file` overrides `hub_ca_file`. Once enrollment succeeds the CA is
-written into this node's own `pki_dir` and neither is read again.
+`hub_ca_file` still takes a CA you deliver yourself, and `--ca-file`
+overrides it — but the fingerprint is required either way, because a CA
+this node has not already pinned is one it is being asked to start
+trusting. Only a CA already in `pki_dir` is exempt: it was checked when
+it was written, which is why `connect` and `renew` on an enrolled node
+need no fingerprint at all.
+
+### Why fetching the CA is safe
+
+The node dials the hub with certificate verification disabled, then does
+something stricter than the default in its place: it looks through the
+chain the hub presented for a certificate matching the pinned
+fingerprint, and verifies the hub's own certificate against **that one
+alone**. If either step fails, the handshake fails — so there is no
+connection left over to accidentally keep using.
+
+An attacker in the middle would have to present a certificate whose
+SHA-256 matches the pinned fingerprint, which is a preimage. What they
+cannot do instead is put the real CA in the chain beside their own
+certificate: the CA is public, so they can send it, but their
+certificate then does not chain to it and the handshake is refused.
+There is a test for exactly that, and it fails if the verification step
+is removed.
+
+This is the only place in the build that disables certificate
+verification, and it is why `hub_fingerprint` has no optional mode. The
+guarantee is the fingerprint, so a missing one is not a weaker check but
+no check at all.
 
 ### Enrolling from the service
 

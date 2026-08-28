@@ -49,8 +49,24 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 
 	// The CA is pinned at enrollment and read from disk afterwards. A
 	// node with no CA on disk is enrolling for the first time, and
-	// --ca-file is how the operator delivers it.
+	// either the operator delivers one or this node fetches it and
+	// checks it against the pinned fingerprint.
 	caFile := args.Flag("ca-file", n.cfg.String("hub_ca_file", ""))
+	want := args.Flag("hub-fingerprint", n.cfg.String("hub_fingerprint", ""))
+	pinned := files.Exists(pki.CACertFile)
+
+	// A CA this node has not already pinned is a CA it is being asked
+	// to start trusting, and that decision needs the out-of-band
+	// fingerprint whatever route the certificate arrived by. Only a CA
+	// already on disk is exempt: it was checked when it was written.
+	if !pinned && want == "" {
+		cli.Fatalf("this node needs `hub_fingerprint` to enrol. Take it from "+
+			"`halite-hub keys fingerprint` on the hub and set it in %s, or pass "+
+			"--hub-fingerprint. It is what proves the CA is the right one, so there "+
+			"is no enrolling without it",
+			n.cfg.String("config_file", "the configuration"))
+	}
+
 	switch {
 	case caFile != "":
 		raw, err := os.ReadFile(caFile)
@@ -62,31 +78,33 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 			cli.Fatalf("%s: %v", caFile, err)
 		}
 		client.CA = cert
-	case files.Exists(pki.CACertFile):
+	case pinned:
 		cert, err := files.ReadCert(pki.CACertFile)
 		if err != nil {
 			cli.Fatalf("%v", err)
 		}
 		client.CA = cert
 	default:
-		// Naming the file to fetch, not the command that prints the
-		// digest. The message used to say "the certificate from
-		// `halite-hub keys fingerprint`", and that command prints a
-		// fingerprint — there is no certificate to be had from it, so
-		// the instruction could not be followed as written.
-		cli.Fatalf("this node has not pinned a hub CA. Copy %s from the hub — it is "+
-			"%s there — and either pass --ca-file, set `hub_ca_file` in %s, or put it "+
-			"at %s. `hub_fingerprint` alone is not enough: it checks a CA this node "+
-			"has, it does not fetch one",
-			pki.CACertFile, "<hub pki_dir>/"+pki.CACertFile,
-			n.cfg.String("config_file", "the configuration"),
-			files.Path(pki.CACertFile))
+		// No CA anywhere, and a fingerprint to check one against. The
+		// hub presents its CA in the chain it serves; the fingerprint
+		// decides whether to believe it, inside the handshake.
+		cert, err := transport.FetchCA(context.Background(), client.HubURL, want,
+			n.cfg.Duration("hub_timeout", 30*time.Second))
+		if err != nil {
+			cli.Fatalf("%v", err)
+		}
+		n.log.Info("fetched the hub CA and matched the pinned fingerprint",
+			"hub", client.HubURL)
+		client.CA = cert
 	}
 
 	// SPEC 7.3: the node checks the CA it was handed against a
 	// fingerprint delivered by another route, so that a CA file
-	// substituted in transit is caught here rather than never.
-	if want := args.Flag("hub-fingerprint", n.cfg.String("hub_fingerprint", "")); want != "" {
+	// substituted in transit is caught here rather than never. The
+	// fetched case has already been checked inside the handshake;
+	// checking it again costs nothing and keeps the guarantee in one
+	// readable place.
+	if want != "" {
 		got, err := pki.FingerprintCert(client.CA)
 		if err != nil {
 			cli.Fatalf("%v", err)

@@ -1040,20 +1040,38 @@ providers, and the hub's `git`, `gpg`, and `ssh` all resolve binaries the
 same way. The hub reads it for exactly those. Left empty the old
 behaviour stands.
 
-### `hub_ca_file`, and a refusal that names the file to copy
+### A node enrols with a fingerprint and nothing else
 
-A node needs two things from the hub by two routes: the CA certificate,
-and the fingerprint to check it against. Only the fingerprint could be
-written in `node.yaml` — the certificate came from `--ca-file` and
-nowhere else, which every other outbound TLS client in this build has a
-setting for.
+A new node needs one thing from the hub, by a route an attacker cannot
+tamper with: the fingerprint of its CA. It fetches the certificate from
+the hub and trusts it only if it matches, so there is no file to
+distribute — one line in `node.yaml` beside the hub address.
 
-The refusal was worse than the omission. It said to pass "the
-certificate from `halite-hub keys fingerprint`", and that command prints
-a fingerprint. There is no certificate to be had from it, so an operator
-following the instruction exactly could not succeed. It now names
-`ca.crt`, says where it is on the hub, gives all three ways to supply
-it, and says plainly that a fingerprint is not a substitute for it.
+`hub_fingerprint` is now **required** to enrol. It was optional, so a
+node could take a CA on the strength of however it arrived and check
+nothing; and the refusal for a node without a CA told the operator to
+pass "the certificate from `halite-hub keys fingerprint`", which prints
+a fingerprint — there was no certificate to be had from it, so the
+instruction could not be followed as written. Only a CA already pinned
+in `pki_dir` is exempt, which is why `connect` and `renew` on an
+enrolled node need no fingerprint.
+
+The fetch is the one place in the build that disables certificate
+verification, and it replaces the default check with a stricter one
+inside the handshake: find a certificate in the presented chain matching
+the pinned fingerprint, then verify the hub's own certificate against
+that one alone. Both steps are load-bearing. The CA is public, so an
+attacker can put the real one in a chain beside their own certificate —
+without the second step the node would pin the right CA and still be
+talking to the wrong hub. There is a test for exactly that case, and it
+fails when the verification is removed.
+
+The hub now presents its CA in the chain it serves, so there is
+something to check. It was already returned by `/v1/enroll` and held by
+every enrolled node; the private key stays where it was.
+
+`hub_ca_file` remains for a CA you deliver yourself, and does not remove
+the need for the fingerprint.
 
 ### What is not built
 

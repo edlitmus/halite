@@ -829,16 +829,16 @@ func TestExecPathIsWhatAStateSearches(t *testing.T) {
 	}
 }
 
-// A node needs the CA itself to enrol, and every other outbound TLS
-// client in this build takes one from configuration — the syslog and
-// webhook returners, LDAP, OIDC. The node's own enrollment, which is the
-// one that matters most, took it only from a flag.
+// Enrolling means starting to trust a CA, and that decision rests on a
+// fingerprint delivered by another route. It is required whenever the
+// node does not already hold a pinned CA — whatever route the
+// certificate itself arrives by.
 //
-// The refusal also told the operator to pass "the certificate from
-// `halite-hub keys fingerprint`", and that command prints a fingerprint.
-// There is no certificate to be had from it, so the instruction could
-// not be followed as written.
-func TestEnrollNamesWhatToCopyAndReadsItFromConfiguration(t *testing.T) {
+// The refusal used to point at "the certificate from `halite-hub keys
+// fingerprint`", and that command prints a fingerprint. There was no
+// certificate to be had from it, so the instruction could not be
+// followed as written.
+func TestEnrollingWithoutAFingerprintIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	empty := t.TempDir()
 
@@ -851,20 +851,40 @@ func TestEnrollNamesWhatToCopyAndReadsItFromConfiguration(t *testing.T) {
 
 	got := run(t, "enroll", "--config", cfg, "--root", empty)
 	if got.code == 0 {
-		t.Fatal("enrolling with no CA anywhere succeeded")
+		t.Fatal("enrolling with no fingerprint succeeded")
 	}
 	out := got.stdout + got.stderr
-	if strings.Contains(out, "keys fingerprint") {
-		t.Error("the refusal still points at the command that prints a digest, not a certificate")
+	if strings.Contains(out, "keys fingerprint` on the hub prints the certificate") {
+		t.Error("the refusal still points at the command that prints a digest as a source of a certificate")
 	}
-	for _, want := range []string{"ca.crt", "hub_ca_file", "--ca-file"} {
+	for _, want := range []string{"hub_fingerprint", "--hub-fingerprint", "keys fingerprint"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("the refusal does not mention %q: %s", want, out)
+			t.Errorf("the refusal does not mention %q:\n%s", want, out)
 		}
 	}
-	// And it says plainly that a fingerprint is not a substitute, which
-	// is the assumption that produced the report.
-	if !strings.Contains(out, "hub_fingerprint") {
-		t.Errorf("the refusal does not say a fingerprint is not enough: %s", out)
+}
+
+// With a fingerprint and no CA anywhere, the node fetches one and checks
+// it — so an unreachable hub fails at the fetch rather than telling the
+// operator to go and copy a file.
+func TestEnrollingWithAFingerprintFetchesRatherThanAskingForAFile(t *testing.T) {
+	dir := t.TempDir()
+	empty := t.TempDir()
+
+	cfg := filepath.Join(dir, "node.yaml")
+	body := "node_id: probe.example\nhub: 127.0.0.1:1\n" +
+		"hub_fingerprint: '" + strings.Repeat("ab", 32) + "'\n" +
+		"pki_dir: " + filepath.Join(dir, "pki") + "\n"
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := run(t, "enroll", "--config", cfg, "--root", empty)
+	if got.code == 0 {
+		t.Fatal("enrolling against a hub that is not there succeeded")
+	}
+	out := got.stdout + got.stderr
+	if !strings.Contains(out, "fetching the hub CA") {
+		t.Errorf("the node did not try to fetch the CA:\n%s", out)
 	}
 }

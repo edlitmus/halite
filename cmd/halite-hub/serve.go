@@ -685,7 +685,7 @@ func servingCertificate(h *hubContext, args *cli.Args, listen string) (tls.Certi
 			return tls.Certificate{}, err
 		}
 		if time.Now().Before(cert.NotAfter) {
-			return h.files.KeyPair(pki.HubCertFile, pki.HubKeyFile)
+			return h.withCA(h.files.KeyPair(pki.HubCertFile, pki.HubKeyFile))
 		}
 		h.log.Warn("the hub's certificate has expired; issuing another",
 			"not_after", cert.NotAfter.UTC().Format(time.RFC3339))
@@ -710,7 +710,26 @@ func servingCertificate(h *hubContext, args *cli.Args, listen string) (tls.Certi
 		return tls.Certificate{}, err
 	}
 	h.log.Info("issued the hub's serving certificate", "names", strings.Join(names, ","))
-	return h.files.KeyPair(pki.HubCertFile, pki.HubKeyFile)
+	return h.withCA(h.files.KeyPair(pki.HubCertFile, pki.HubKeyFile))
+}
+
+// withCA appends the enrollment CA to the chain the hub presents.
+//
+// A client that already holds the CA ignores it, as TLS clients ignore
+// any anchor they were sent. A node enrolling for the first time has
+// only a pinned fingerprint, and this is what it checks that fingerprint
+// against — so the CA has to be on the wire for there to be anything to
+// check. It is a public certificate: `/v1/enroll` already returns it,
+// and every enrolled node holds a copy. The private key stays here.
+func (h *hubContext) withCA(pair tls.Certificate, err error) (tls.Certificate, error) {
+	if err != nil {
+		return pair, err
+	}
+	if h.auth == nil || h.auth.CA == nil || h.auth.CA.Cert == nil {
+		return pair, nil
+	}
+	pair.Certificate = append(pair.Certificate, h.auth.CA.Cert.Raw)
+	return pair, nil
 }
 
 // serverNames is what a node may dial this hub by. A name missing from

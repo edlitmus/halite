@@ -8,20 +8,20 @@
 hub: hub.example.com
 hub_port: 4510
 
-# Checked at enrollment against the hub's CA. Without it, the first
-# connection trusts whatever answers, which is the one moment an attacker
-# gets to insert themselves.
+# Required to enrol. The node fetches the hub's CA certificate and trusts
+# it only if it matches this, so the fingerprint is the whole of the
+# trust decision at first contact — there is no mode that skips it, and
+# nothing else has to be copied to a new node.
 #
-# `halite-hub keys fingerprint` on the hub prints this. It is accepted
-# as colon-separated pairs, as bare hex, or with a sha256: prefix.
+# Deliver it by a route separate from the network the node enrols over.
+# `halite-hub keys fingerprint` on the hub prints it. It is accepted as
+# colon-separated pairs, as bare hex, or with a sha256: prefix.
 hub_fingerprint: sha256:0000000000000000000000000000000000000000000000000000000000000000
 
-# The CA certificate itself, which is a separate thing from the
-# fingerprint above and arrives by a different route: copy `ca.crt` from
-# the hub's own pki_dir. The fingerprint checks this file; it cannot
-# stand in for it, and a node configured with only a fingerprint cannot
-# enrol. `--ca-file` overrides this, and once enrollment succeeds the CA
-# is written into pki_dir below and neither is read again.
+# A CA delivered by your own route instead of the one the node would
+# fetch. Optional, and it does not remove the need for the fingerprint:
+# a CA this node has not already pinned is one it is being asked to
+# start trusting, whichever way it arrived.
 #
 # hub_ca_file: /var/db/halite/hub-ca.crt
 

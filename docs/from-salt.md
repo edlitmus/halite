@@ -208,6 +208,11 @@ hub: hub.example.com
 hub_fingerprint: '6d:1f:8d:...'   # from Step 1
 ```
 
+The fingerprint is all a new node needs: it fetches the hub's CA and
+trusts it only if it matches, so there is no certificate to distribute.
+It is also required — enrolling without one is refused, because the
+fingerprint is the whole of the trust decision at first contact.
+
 Enrol. The node asks; the hub holds the request until you accept it:
 
 ```sh
