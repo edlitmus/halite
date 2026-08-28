@@ -110,6 +110,7 @@ commonest migration failure is a directory it cannot use.
 
 ```sh
 pw useradd halite -c "halite service account" -d /nonexistent -s /usr/sbin/nologin
+make build
 sudo make install
 ```
 

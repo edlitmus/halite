@@ -41,12 +41,26 @@ every run.
 
 ### Installing
 
-`make install`, as root, puts the binaries, the service files, and the
-directories in place for the platform it is run on:
+Build as yourself, install as root:
 
 ```sh
+make build
 sudo make install
 ```
+
+`make install` does not build, so that the build never runs as root. A
+root build leaves root-owned binaries in `bin/` and a root-owned Go
+build cache, both of which get in the way of the next ordinary build.
+Depending on how `sudo` is set up it may also trip git's
+dubious-ownership check on a work tree owned by someone else, which
+surfaces as `error obtaining VCS status: exit status 128` and mentions
+neither git nor `sudo`.
+
+The target says which binary is missing if you have not built, and warns
+if what is in `bin/` is older than the source.
+
+It puts the binaries, the service files, and the directories in place
+for the platform it is run on:
 
 | | FreeBSD and the other BSDs | Linux |
 |---|---|---|

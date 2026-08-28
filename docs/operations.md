@@ -905,10 +905,13 @@ pw useradd halite -c "halite service account" -d /nonexistent -s /usr/sbin/nolog
 # Linux
 useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin halite
 
+make build
 sudo make install
 ```
 
-`make install` creates every directory below owned by that account, for
+`make install` does not build, so the build never runs as root and
+leaves no root-owned binaries in `bin/`. It creates every directory
+below owned by that account, for
 the platform it runs on, and says so rather than continuing quietly if
 the account is missing or a `chown` does not take. [Getting
 started](getting-started.md#installing) has the paths it uses and how to

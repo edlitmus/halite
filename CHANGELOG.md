@@ -1130,6 +1130,13 @@ A test holds the Makefile's paths to the ones the binaries actually
 read, since a Makefile installing where the binary does not look
 produces a service that starts and finds nothing.
 
+It does not build. Building as root leaves root-owned binaries in `bin/`
+and a root-owned Go build cache, both of which obstruct the next
+ordinary build, and depending on how `sudo` is set up it can trip git's
+dubious-ownership check on a work tree owned by someone else. Build as
+yourself, install as root; the target names the missing binary if you
+have not, and warns when `bin/` is older than the source.
+
 `make install-service` reinstalls only the service files, and
 `make install-fips` adds the SPEC 27.4 artifacts beside the ordinary
 ones.

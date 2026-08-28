@@ -320,7 +320,24 @@ HALITE_USER ?= halite
 # first use, because a directory created by running a command as root is
 # one the service account cannot use afterwards — and the symptoms name
 # neither the directory nor the account. See DIVERGENCE 5.20.
-install: build
+# Deliberately does not depend on `build`, so that the build never runs
+# as root: that leaves root-owned binaries in bin/ and a root-owned Go
+# build cache, both of which obstruct the next ordinary build. Depending
+# on how sudo is set up it can also trip git's dubious-ownership check on
+# a work tree owned by someone else, which surfaces as `error obtaining
+# VCS status: exit status 128` and names neither git nor sudo. Build as
+# yourself, install as root.
+install:
+	@for b in $(BINARIES); do \
+		test -x bin/$$b || { \
+			echo "bin/$$b is missing. Run 'make build' as yourself first:" >&2; \
+			echo "  install does not build, so that the build never runs as root." >&2; \
+			exit 1; }; \
+	done
+	@ref=""; for b in $(BINARIES); do ref=bin/$$b; break; done; \
+	if [ -n "`find . -name '*.go' -newer $$ref -print 2>/dev/null | head -1`" ]; then \
+		echo "  ! bin/ is older than the source; 'make build' first if that is not deliberate" >&2; \
+	fi
 	@for d in "$(BINDIR)" "$(CONFDIR)" "$(SERVICEDIR)"; do \
 		p=`dirname "$$d"`; \
 		{ test -w "$$d" 2>/dev/null || test -w "$$p"; } || { \
@@ -384,7 +401,12 @@ install-service:
 # install-fips is the parallel artifact set of SPEC 27.4, for a host that
 # is deploying it. The drop-ins are not installed automatically: on
 # systemd they change what the unit runs, which is a decision.
-install-fips: fips
+install-fips:
+	@for b in $(BINARIES); do \
+		test -x bin/$$b-fips || { \
+			echo "bin/$$b-fips is missing. Run 'make fips' as yourself first." >&2; \
+			exit 1; }; \
+	done
 	@{ test -w "$(BINDIR)" 2>/dev/null || test -w `dirname "$(BINDIR)"`; } || { \
 		echo "cannot write $(BINDIR) — run as root, or set BINDIR" >&2; exit 1; }
 	@for b in $(BINARIES); do \
