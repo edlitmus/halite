@@ -701,7 +701,7 @@ functions declare a restriction; the Linux binary answers
 | Platform | Compiles | Unit tests run | Verified against a real system |
 |---|---|---|---|
 | FreeBSD amd64 | yes | yes | yes — grains, highstate, drift reconvergence, requisites |
-| Linux amd64 | yes | yes, under emulation — 19 of 21 packages | partly — grains only |
+| Linux amd64 | yes | yes, under emulation — 19 of 21 packages | yes — a node enrolled with a hub, highstate applied, under systemd (Ubuntu; see 4.5) |
 | Linux arm64 | yes | no | no |
 | macOS | yes | no | no |
 | Windows | yes | no | no |
@@ -810,6 +810,41 @@ overlap nor a word about it. The compiler now warns at the line that
 wrote it. Warning rather than refusing, because running a parallel state
 in order is correct, only slower — and refusing would stop a tree Salt
 runs.
+
+### 4.5 What a real Linux node established
+
+On 2026-08-28 an Ubuntu host enrolled with this estate's hub and applied
+a highstate through it with no errors. It runs from the shipped systemd
+units.
+
+That is the first time several things have been exercised anywhere:
+
+- **The Linux node path end to end.** Enrollment, the subscribe stream,
+  the hub's file server, hub-compiled pillar, a state run, and its
+  return filed in the job cache — on a machine that is not the
+  development host and not the compat layer.
+- **A package provider on a real Linux userland.** 4.2 records that the
+  compat layer has no `apt` and no `dpkg`, so provider selection there
+  chose nothing. On Ubuntu it chose, and a highstate that installs
+  packages converged.
+- **The systemd units.** They had never been run at all — every claim
+  about them until now was read off the file. `ExecStart`, the sandbox
+  settings, and `RestartPreventExitStatus=1` hold up under an actual
+  service manager.
+
+What it does not establish, and 4.2 still stands for the rest:
+
+- One distribution. Ubuntu chooses `apt`; the `dnf`, `zypper`, and `apk`
+  providers remain unexercised, and `os_family` branching in a tree is
+  the commonest thing to get wrong across them.
+- One architecture. Linux arm64 still compiles and nothing more.
+- The node only. The hub and the API have not been run on Linux, so
+  their units, their sandboxes, and `StateDirectory=halite-api` are
+  still only read rather than run.
+- One run. Nothing here says what a restart, a revocation, a certificate
+  renewal, or a week of scheduled highstates does on that host.
+- Not FIPS. The `-fips` artifacts ship for Linux and have been run
+  nowhere.
 
 ## 5. Test coverage against SPEC 31
 
@@ -1958,9 +1993,13 @@ running process for the signal, rather than by reading the files.
 What this did **not** establish: none of it was run as root, so
 `daemon -u`, the real `/var/run` and `/var/log` paths, and
 `limits -C daemon` are reasoned from the tooling rather than executed.
-`systemd` itself has never been run against these units at all — this
-build has not been run on Linux as a service. The exit codes each unit
-depends on were measured.
+The exit codes each unit depends on were measured.
+
+The systemd side was read rather than run when this was written. It has
+since been run: an Ubuntu node has used `halite-node.service` to enrol
+and apply a highstate, which is 4.5. The hub and API units remain
+unexercised, so `ProtectSystem=strict`, the `ReadWritePaths` for the
+enrollment CA, and `StateDirectory=halite-api` are still only read.
 
 ### 5.22 What the second node found
 

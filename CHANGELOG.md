@@ -799,9 +799,9 @@ FIPS drop-ins beside them. Three checks hold them to the tooling: no
 unit may offer a reload while `SIGHUP` terminates the process, no rc.d
 script may use the variable names `rc.subr` reserves, and one that
 supervises with `daemon(8)` must name the process it supervises. The
-rc.d family has been exercised against the real `rc.subr`; the systemd
-units have not been run at all, because this build has not been run on
-Linux as a service.
+rc.d family has been exercised against the real `rc.subr`, and
+`halite-node.service` by an Ubuntu node that enrols and applies a
+highstate under it. The hub and API units have not been run.
 
 ### The tests the specification asks for
 
@@ -1140,6 +1140,22 @@ have not, and warns when `bin/` is older than the source.
 `make install-service` reinstalls only the service files, and
 `make install-fips` adds the SPEC 27.4 artifacts beside the ordinary
 ones.
+
+### Linux runs a node for real
+
+An Ubuntu host enrolled with a hub and applied a highstate through it,
+from the shipped systemd unit. Three things were exercised for the first
+time anywhere: the Linux node path end to end — enrollment, the
+subscribe stream, the file server, hub-compiled pillar, a state run, and
+its return in the job cache; a package provider on a real Linux
+userland, where the compat layer this project develops on has no `apt`
+at all and so chose nothing; and the systemd units, every claim about
+which until now had been read off the file.
+
+The platform matrix in [DIVERGENCE 4](docs/DIVERGENCE.md) says Linux
+amd64 rather than "grains only" now, and 4.5 says what one Ubuntu host
+does and does not settle — one distribution, one architecture, the node
+and not the hub or the API, and one run rather than a week of them.
 
 ### What is not built
 
