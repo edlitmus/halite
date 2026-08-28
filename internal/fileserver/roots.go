@@ -130,17 +130,33 @@ func (r *Roots) Resolve(env, rel string) (string, error) {
 	return "", lastErr
 }
 
-// containedPath joins a root and a cleaned relative path and confirms the
-// result is inside the root after symlink resolution.
-func containedPath(root, cleanRel string, followSymlinks bool) (string, error) {
-	absRoot, err := filepath.Abs(root)
+// realRoot is a configured root as an absolute path with a symlink
+// resolved once.
+//
+// A root that is itself a symlink is ordinary: an estate that keeps its
+// tree elsewhere and links it into the configuration root has one. Both
+// serving a file and listing the tree have to resolve it, and they did
+// not — containedPath resolved it and List did not, so a hub configured
+// this way served any file asked for by name while reporting an empty
+// tree. A node then compiled nothing and said no top file was found,
+// which is true and says nothing about why.
+func realRoot(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
 	if err != nil {
 		return "", err
 	}
-	// A root that is itself a symlink is resolved once, so that the
-	// containment comparison is between two real paths.
-	if resolved, err := filepath.EvalSymlinks(absRoot); err == nil {
-		absRoot = resolved
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved, nil
+	}
+	return abs, nil
+}
+
+// containedPath joins a root and a cleaned relative path and confirms the
+// result is inside the root after symlink resolution.
+func containedPath(root, cleanRel string, followSymlinks bool) (string, error) {
+	absRoot, err := realRoot(root)
+	if err != nil {
+		return "", err
 	}
 
 	joined := filepath.Join(absRoot, filepath.FromSlash(cleanRel))
@@ -330,7 +346,7 @@ func (r *Roots) List(env string) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string
 	for _, dir := range dirs {
-		absRoot, err := filepath.Abs(dir)
+		absRoot, err := realRoot(dir)
 		if err != nil {
 			return nil, err
 		}

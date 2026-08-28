@@ -1073,6 +1073,20 @@ every enrolled node; the private key stays where it was.
 `hub_ca_file` remains for a CA you deliver yourself, and does not remove
 the need for the fingerprint.
 
+### A file root that is a symlink serves its tree
+
+An estate that keeps its tree elsewhere and links it into the
+configuration root — `file_roots` pointing at a symlink — was served an
+empty tree. Reading a named file resolved the link; listing the tree did
+not, because `filepath.WalkDir` does not follow symlinks and so visited
+the link itself and stopped.
+
+The two paths disagreeing is what made it hard to place: the hub
+answered every file request correctly and reported nothing in the tree,
+so a node compiled nothing and said `no top file was found in any
+environment`, which is true and explains none of it. Both paths now
+resolve the root through one helper.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no

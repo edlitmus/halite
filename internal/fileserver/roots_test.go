@@ -394,3 +394,52 @@ func TestHashAlgorithms(t *testing.T) {
 		t.Error("hashing a missing file should be an error")
 	}
 }
+
+// A root that is itself a symlink is ordinary: an estate that keeps its
+// tree elsewhere and links it into the configuration root has one.
+//
+// Serving a named file resolved it and listing the tree did not, so such
+// a hub answered every file request correctly while reporting an empty
+// tree — and a node compiled nothing and said "no top file was found in
+// any environment", which is true and explains nothing. filepath.WalkDir
+// does not follow symlinks, so the walk visited the link itself and
+// stopped.
+func TestATreeReachedThroughASymlinkedRootIsListed(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(filepath.Join(real, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"top.sls":   "base:\n  '*':\n    - c\n",
+		"c.sls":     "x:\n  test.nop: []\n",
+		"sub/d.sls": "y:\n  test.nop: []\n",
+	} {
+		if err := os.WriteFile(filepath.Join(real, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(base, "linked")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("this platform cannot make a symlink: %v", err)
+	}
+
+	r := NewRoots(map[string][]string{"base": {link}})
+	got, err := r.List("base")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"top.sls": true, "c.sls": true, "sub/d.sls": true}
+	for _, name := range got {
+		delete(want, name)
+	}
+	if len(want) != 0 {
+		t.Errorf("listing through a symlinked root missed %v; it returned %v", want, got)
+	}
+
+	// And reading one still works, which it always did — the two paths
+	// disagreeing is what made the failure so hard to place.
+	if _, err := r.Resolve("base", "top.sls"); err != nil {
+		t.Errorf("the file could not be resolved through the symlinked root: %v", err)
+	}
+}
