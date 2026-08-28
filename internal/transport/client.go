@@ -161,7 +161,37 @@ func decodeError(path string, payload []byte, status int) error {
 	if permanentStatus(status) {
 		return &RefusedError{Path: path, Status: status, Code: code, Msg: msg}
 	}
-	return fmt.Errorf("%s: %s", path, msg)
+	// Typed but not refused: a 5xx is worth retrying, and its code still
+	// has to reach the caller. A node distinguishing "this hub compiles
+	// no pillar" from "this hub's pillar did not compile" cannot do it
+	// on the wording, which is the whole reason codes exist.
+	return &StatusError{Path: path, Status: status, Code: code, Msg: msg}
+}
+
+// StatusError is a failure the hub reported that may not repeat. It
+// carries the stable code so a caller can act on the kind of failure
+// rather than on its wording.
+type StatusError struct {
+	Path   string
+	Status int
+	Code   string
+	Msg    string
+}
+
+func (e *StatusError) Error() string { return e.Path + ": " + e.Msg }
+
+// CodeOf answers with the stable code the hub attached to a failure, or
+// an empty string when it attached none.
+func CodeOf(err error) string {
+	var refused *RefusedError
+	if errors.As(err, &refused) {
+		return refused.Code
+	}
+	var status *StatusError
+	if errors.As(err, &status) {
+		return status.Code
+	}
+	return ""
 }
 
 // RefusedError is an answer that will not change on a retry: the hub

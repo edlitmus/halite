@@ -55,7 +55,7 @@ func (s *Server) pillarFor(w http.ResponseWriter, r *http.Request, nodeID string
 		return
 	}
 	if s.Pillar == nil || s.Pillar.Roots == nil {
-		transport.WriteError(w, http.StatusServiceUnavailable, transport.CodeInternal,
+		transport.WriteError(w, http.StatusServiceUnavailable, transport.CodeNoPillar,
 			errors.New("this hub compiles no pillar; set pillar_roots"))
 		return
 	}

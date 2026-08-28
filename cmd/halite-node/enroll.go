@@ -594,8 +594,26 @@ func (n *node) useHubPillar(client *transport.Client) {
 		NodeID: n.nodeID, Env: n.pillarEnv, Grains: grains,
 	})
 	if err != nil {
-		n.log.Warn("the hub is not compiling pillar; this node will compile its own",
+		if transport.CodeOf(err) == transport.CodeNoPillar {
+			// The hub does not do pillar. Falling back to this node's
+			// own roots is the point: an estate migrating one piece at
+			// a time should not lose its pillar the moment it enrols.
+			n.log.Warn("the hub compiles no pillar; this node will compile its own",
+				"error", err.Error())
+			return
+		}
+		// The hub does do pillar, and this node's did not compile.
+		// Falling back here would substitute an empty local pillar for
+		// the real one and let every state that reads pillar render
+		// against nothing — a file written with no users in it, an
+		// authorized_keys with no keys, reported as a successful
+		// convergence. The error is carried instead, so `test.ping`
+		// still answers and anything reading pillar fails saying why.
+		n.log.Error("the hub could not compile this node's pillar; "+
+			"pillar is unavailable and states that read it will fail",
 			"error", err.Error())
+		failure := err
+		n.hubPillar = func(string) (*value.Map, error) { return nil, failure }
 		return
 	}
 	n.log.Info("pillar comes from the hub", "env", probe.Env, "sls", len(probe.SLS))

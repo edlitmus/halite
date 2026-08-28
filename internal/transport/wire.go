@@ -393,7 +393,11 @@ type Error struct {
 
 // The error codes a node acts on.
 const (
-	CodePending   = "pending"
+	CodePending = "pending"
+	// CodeNoPillar is a hub saying it compiles no pillar at all, as
+	// distinct from one whose pillar failed to compile. A node may fall
+	// back to its own roots for the first and must not for the second.
+	CodeNoPillar  = "no_pillar"
 	CodeRefused   = "refused"
 	CodeMalformed = "malformed"
 	CodeInternal  = "internal"

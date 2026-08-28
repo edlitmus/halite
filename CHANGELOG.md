@@ -1087,6 +1087,28 @@ so a node compiled nothing and said `no top file was found in any
 environment`, which is true and explains none of it. Both paths now
 resolve the root through one helper.
 
+### A hub whose pillar is broken no longer becomes an empty one
+
+A node whose hub could not compile its pillar fell back to compiling its
+own. The intent was for a hub that does no pillar at all — an estate
+migrating one piece at a time should not lose its pillar the moment a
+node enrols — but the node could not tell that case from a hub whose
+pillar had simply failed, and treated both the same.
+
+The consequence was quiet and bad. With no local pillar tree the
+fallback produced an empty one, every state that reads pillar rendered
+against nothing, and the run reported success: a file written with no
+users in it, an `authorized_keys` with no keys, recorded as a
+convergence. Reproduced end to end, and it wrote `admins=NONE` with
+`Result: True`.
+
+The hub already distinguished the two — 503 for "compiles no pillar",
+500 for "did not compile" — but a 5xx dropped its code before the node
+saw it, so the two could only be told apart by their wording. Server
+failures now carry their code, `no_pillar` names the first case, and
+only that case falls back. The other carries the error, so `test.ping`
+still answers and anything reading pillar fails saying why.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no
