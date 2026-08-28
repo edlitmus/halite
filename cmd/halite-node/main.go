@@ -329,7 +329,15 @@ func resolveNodeID(args *cli.Args, cfg *config.Config) string {
 	if id := os.Getenv("HALITE_NODE_ID"); id != "" {
 		return id
 	}
-	if b, err := os.ReadFile(filepath.Join(config.DefaultRoot, "node_id")); err == nil {
+	// The same root pinNodeID writes to. Reading the packaged default
+	// while writing under --root meant a node on any other root never
+	// read back its own pin, so the identity it fixed at enrollment was
+	// re-derived from the hostname on every run — which is the drift
+	// SPEC 7.2 pins against. It also read another installation's file,
+	// which is how a test on a machine that had enrolled for real
+	// started resolving that machine's identity.
+	root := args.Flag("root", config.DefaultRoot)
+	if b, err := os.ReadFile(filepath.Join(root, "node_id")); err == nil {
 		if id := strings.TrimSpace(string(b)); id != "" {
 			return id
 		}

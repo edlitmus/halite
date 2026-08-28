@@ -729,3 +729,44 @@ func TestPillarEnvAndRenderer(t *testing.T) {
 		t.Errorf("the failure should come from the JSON parser: %q", got.stderr)
 	}
 }
+
+// The identity pinned at enrollment has to be read back from the root it
+// was written to.
+//
+// pinNodeID writes under --root and the resolver read the packaged
+// default, so a node on any other root never saw its own pin: the
+// identity it fixed at enrollment was re-derived from the hostname on
+// every run, which is the drift SPEC 7.2 pins against. It also read
+// whatever another installation had pinned on the same machine, which is
+// how TestNodeIDModifiers began failing on a host that had enrolled for
+// real.
+func TestAPinnedNodeIDIsReadFromTheRootItWasWrittenTo(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "node_id"),
+		[]byte("pinned.example\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(t.TempDir(), "node.yaml")
+	if err := os.WriteFile(cfgPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	flags := tree(t, nil)
+	args := append([]string{"grains", "get", "id", "--out", "json"}, flags...)
+	args = append(args, "--config", cfgPath, "--root", root)
+	got := run(t, args...)
+	if got.code != 0 {
+		t.Fatalf("%+v", got)
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(got.stdout), &m); err != nil {
+		t.Fatalf("%v: %s", err, got.stdout)
+	}
+	for _, v := range m {
+		if v != "pinned.example" {
+			t.Errorf("the pinned identity under --root was not used: got %q", v)
+		}
+		return
+	}
+	t.Fatal("no identity was resolved")
+}
