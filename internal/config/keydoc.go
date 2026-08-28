@@ -132,6 +132,10 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "Identity and connection",
 		Detail: "Only read when `hub` names no port. One port carries everything — jobs, returns, files, events — because SPEC 6.1 has a single mutual-TLS listener rather than Salt's separate publish and return ports.",
 	},
+	"hub_ca_file": {
+		Group:  "Identity and connection",
+		Detail: "The hub's `ca.crt`, copied from its `pki_dir`. A node needs the CA itself to enrol; `hub_fingerprint` checks the one it has and does not fetch one, so a node configured with only a fingerprint cannot enrol. Once enrollment succeeds the CA is written into this node's own `pki_dir` and this setting is no longer read. `--ca-file` overrides it.",
+	},
 	"hub_fingerprint": {
 		Group:  "Identity and connection",
 		Detail: "The digest of the hub's CA certificate, compared before a node will enrol. This is the out-of-band step that makes first contact safe: without it a node takes whatever CA answers. Print it on the hub with `halite-hub keys fingerprint`, named with no node.",

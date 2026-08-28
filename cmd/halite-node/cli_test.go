@@ -828,3 +828,43 @@ func TestExecPathIsWhatAStateSearches(t *testing.T) {
 		t.Errorf("the state did not run the probe:\n%s", got.stdout)
 	}
 }
+
+// A node needs the CA itself to enrol, and every other outbound TLS
+// client in this build takes one from configuration — the syslog and
+// webhook returners, LDAP, OIDC. The node's own enrollment, which is the
+// one that matters most, took it only from a flag.
+//
+// The refusal also told the operator to pass "the certificate from
+// `halite-hub keys fingerprint`", and that command prints a fingerprint.
+// There is no certificate to be had from it, so the instruction could
+// not be followed as written.
+func TestEnrollNamesWhatToCopyAndReadsItFromConfiguration(t *testing.T) {
+	dir := t.TempDir()
+	empty := t.TempDir()
+
+	cfg := filepath.Join(dir, "node.yaml")
+	body := "node_id: probe.example\nhub: 127.0.0.1:1\npki_dir: " +
+		filepath.Join(dir, "pki") + "\n"
+	if err := os.WriteFile(cfg, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := run(t, "enroll", "--config", cfg, "--root", empty)
+	if got.code == 0 {
+		t.Fatal("enrolling with no CA anywhere succeeded")
+	}
+	out := got.stdout + got.stderr
+	if strings.Contains(out, "keys fingerprint") {
+		t.Error("the refusal still points at the command that prints a digest, not a certificate")
+	}
+	for _, want := range []string{"ca.crt", "hub_ca_file", "--ca-file"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the refusal does not mention %q: %s", want, out)
+		}
+	}
+	// And it says plainly that a fingerprint is not a substitute, which
+	// is the assumption that produced the report.
+	if !strings.Contains(out, "hub_fingerprint") {
+		t.Errorf("the refusal does not say a fingerprint is not enough: %s", out)
+	}
+}

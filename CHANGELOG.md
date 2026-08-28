@@ -774,7 +774,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 210 settings in the
+The configuration reference explains each of the 211 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.
@@ -1039,6 +1039,21 @@ the program as well as to what it spawns, so `cmd.run`, the package
 providers, and the hub's `git`, `gpg`, and `ssh` all resolve binaries the
 same way. The hub reads it for exactly those. Left empty the old
 behaviour stands.
+
+### `hub_ca_file`, and a refusal that names the file to copy
+
+A node needs two things from the hub by two routes: the CA certificate,
+and the fingerprint to check it against. Only the fingerprint could be
+written in `node.yaml` — the certificate came from `--ca-file` and
+nowhere else, which every other outbound TLS client in this build has a
+setting for.
+
+The refusal was worse than the omission. It said to pass "the
+certificate from `halite-hub keys fingerprint`", and that command prints
+a fingerprint. There is no certificate to be had from it, so an operator
+following the instruction exactly could not succeed. It now names
+`ca.crt`, says where it is on the hub, gives all three ways to supply
+it, and says plainly that a fingerprint is not a substitute for it.
 
 ### What is not built
 

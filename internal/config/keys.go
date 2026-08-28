@@ -49,6 +49,7 @@ var Keys = []Key{
 	{"hub", nodeAPI, "", "The hub to dial. A node and the API dial the hub; the hub never dials either.", "5.1"},
 	{"hub_port", nodeOnly, "4510", "The hub's TCP port.", "6.1"},
 	{"hub_fingerprint", nodeOnly, "", "Expected fingerprint of the hub's CA, checked at enrollment.", "7.3"},
+	{"hub_ca_file", nodeOnly, "", "The hub CA to pin at enrollment. --ca-file overrides it.", "7.3"},
 	{"hub_alive_interval", nodeOnly, "30s", "Ping interval on the subscribe stream.", "6.2"},
 	{"hub_tries", nodeOnly, "0", "Reconnect attempts before giving up; 0 means retry forever.", "6.2"},
 	{"hub_type", nodeOnly, "static", "static or failover, selecting how a list of hubs is used.", "6.2"},

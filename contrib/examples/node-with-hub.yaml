@@ -16,6 +16,15 @@ hub_port: 4510
 # as colon-separated pairs, as bare hex, or with a sha256: prefix.
 hub_fingerprint: sha256:0000000000000000000000000000000000000000000000000000000000000000
 
+# The CA certificate itself, which is a separate thing from the
+# fingerprint above and arrives by a different route: copy `ca.crt` from
+# the hub's own pki_dir. The fingerprint checks this file; it cannot
+# stand in for it, and a node configured with only a fingerprint cannot
+# enrol. `--ca-file` overrides this, and once enrollment succeeds the CA
+# is written into pki_dir below and neither is read again.
+#
+# hub_ca_file: /var/db/halite/hub-ca.crt
+
 # Where this node keeps its key. The private key is generated here and
 # never leaves: the hub holds nothing that can impersonate a node.
 pki_dir: /usr/local/etc/halite/pki

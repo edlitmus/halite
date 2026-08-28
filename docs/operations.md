@@ -419,9 +419,15 @@ a full queue is refused out loud rather than held in memory.
 The hub issues, an operator decides, and the node's private key never
 leaves it. SPEC section 7.
 
+A node needs two things from the hub, by two different routes: the CA
+certificate itself, and its fingerprint to check that certificate
+against. `hub_fingerprint` alone will not do — it verifies a CA the node
+already has, it does not fetch one.
+
 ```sh
 # on the hub
 halite-hub keys fingerprint            # the CA digest, to deliver out of band
+cat <pki_dir>/ca.crt                   # the certificate itself, to copy over
 
 # on the node
 halite-node enroll --hub hub.example --ca-file /path/to/ca.crt \
@@ -438,6 +444,18 @@ halite-node enroll                     # collects the certificate
 
 Exit 2 from `enroll` means pending, which is neither success nor
 failure; `--wait` blocks until an operator decides instead.
+
+Both can live in `node.yaml` instead of on the command line, which is
+what a provisioning tool should write:
+
+```yaml
+hub: hub.example
+hub_ca_file: /var/db/halite/hub-ca.crt
+hub_fingerprint: 'ab:cd:...'
+```
+
+`--ca-file` overrides `hub_ca_file`. Once enrollment succeeds the CA is
+written into this node's own `pki_dir` and neither is read again.
 
 ### Enrolling from the service
 

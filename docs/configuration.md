@@ -81,6 +81,14 @@ Ping interval on the subscribe stream.
 
 How often the hub pings down the open stream. It is what detects a connection that has stopped carrying traffic without closing, which is the common failure behind a firewall with an idle timeout.
 
+### `hub_ca_file`
+
+*`halite-node` · no default · SPEC section 7.3*
+
+The hub CA to pin at enrollment. --ca-file overrides it.
+
+The hub's `ca.crt`, copied from its `pki_dir`. A node needs the CA itself to enrol; `hub_fingerprint` checks the one it has and does not fetch one, so a node configured with only a fingerprint cannot enrol. Once enrollment succeeds the CA is written into this node's own `pki_dir` and this setting is no longer read. `--ca-file` overrides it.
+
 ### `hub_fingerprint`
 
 *`halite-node` · no default · SPEC section 7.3*
@@ -1919,6 +1927,7 @@ Every setting, and which programs read it.
 | `hooks` | `halite-api` | — | The API service |
 | `hub` | `halite-node`, `halite-api` | — | Identity and connection |
 | `hub_alive_interval` | `halite-node` | `30s` | Identity and connection |
+| `hub_ca_file` | `halite-node` | — | Identity and connection |
 | `hub_fingerprint` | `halite-node` | — | Identity and connection |
 | `hub_port` | `halite-node` | `4510` | Identity and connection |
 | `hub_tries` | `halite-node` | `0` | Identity and connection |

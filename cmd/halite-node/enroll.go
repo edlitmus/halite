@@ -50,7 +50,7 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 	// The CA is pinned at enrollment and read from disk afterwards. A
 	// node with no CA on disk is enrolling for the first time, and
 	// --ca-file is how the operator delivers it.
-	caFile := args.Flag("ca-file", "")
+	caFile := args.Flag("ca-file", n.cfg.String("hub_ca_file", ""))
 	switch {
 	case caFile != "":
 		raw, err := os.ReadFile(caFile)
@@ -69,7 +69,18 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 		}
 		client.CA = cert
 	default:
-		cli.Fatalf("this node has not pinned a hub CA; pass --ca-file with the certificate from `halite-hub keys fingerprint`")
+		// Naming the file to fetch, not the command that prints the
+		// digest. The message used to say "the certificate from
+		// `halite-hub keys fingerprint`", and that command prints a
+		// fingerprint — there is no certificate to be had from it, so
+		// the instruction could not be followed as written.
+		cli.Fatalf("this node has not pinned a hub CA. Copy %s from the hub — it is "+
+			"%s there — and either pass --ca-file, set `hub_ca_file` in %s, or put it "+
+			"at %s. `hub_fingerprint` alone is not enough: it checks a CA this node "+
+			"has, it does not fetch one",
+			pki.CACertFile, "<hub pki_dir>/"+pki.CACertFile,
+			n.cfg.String("config_file", "the configuration"),
+			files.Path(pki.CACertFile))
 	}
 
 	// SPEC 7.3: the node checks the CA it was handed against a
