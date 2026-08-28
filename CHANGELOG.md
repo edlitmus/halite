@@ -774,7 +774,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 209 settings in the
+The configuration reference explains each of the 210 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.
@@ -1024,6 +1024,21 @@ The rc.d prestart had the same shape: it created the log directory only
 when missing, so an existing root-owned one left daemon(8) — already
 dropped to the service account — unable to create the log file, and its
 message names no file at all.
+
+### `exec_path`: the search path a state actually gets
+
+SPEC 25.4 asks that a spawned process receive an explicit `PATH`, and it
+was receiving whatever started the program instead. rc.d, systemd, and
+an operator's shell each hand over a different one, so a state that
+resolves its binary when run by hand fails under the service — and says
+only `executable file not found in $PATH`, which names neither the path
+nor the reason it differs.
+
+`exec_path` names it. It replaces rather than extends, and applies to
+the program as well as to what it spawns, so `cmd.run`, the package
+providers, and the hub's `git`, `gpg`, and `ssh` all resolve binaries the
+same way. The hub reads it for exactly those. Left empty the old
+behaviour stands.
 
 ### What is not built
 

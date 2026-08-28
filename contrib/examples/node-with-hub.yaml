@@ -77,3 +77,11 @@ returner: local
 #     version: 2.1.0
 #     root: <64 hex characters, from sys.list_extensions>
 # extension_user: _halite_ext
+
+# The search path this node and everything it runs uses. Left empty it is
+# whatever started the process, which differs between rc.d, systemd, and
+# an operator's shell — so a state that finds its binary by hand can fail
+# under the service. Naming it here makes it the same either way, which is
+# what SPEC 25.4 asks for. It replaces rather than extends.
+#
+# exec_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

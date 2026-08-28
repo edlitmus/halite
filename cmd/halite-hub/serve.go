@@ -72,6 +72,15 @@ func openHub(args *cli.Args, create bool) *hubContext {
 		logger.Warn(w, "component", "config")
 	}
 
+	// The hub spawns processes too — git for gitfs, gpg for the
+	// renderer, ssh and scp for agentless mode — and finds them on the
+	// PATH its service manager happened to hand it. SPEC 25.4.
+	if p := cfg.String("exec_path", ""); p != "" {
+		if err := os.Setenv("PATH", p); err != nil {
+			cli.Fatalf("could not set the execution path: %v", err)
+		}
+	}
+
 	files := pki.Files{Dir: args.Flag("pki-dir", cfg.String("pki_dir", config.DefaultPKIDir))}
 	alg, err := pki.ParseKeyAlgorithm(cfg.String("key_algorithm", string(pki.ECDSAP256)))
 	if err != nil {

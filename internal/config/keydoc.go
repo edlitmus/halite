@@ -912,6 +912,10 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "Extensions",
 		Detail: "On by default. False permits an unsigned bundle for development and warns on every load, so a development setting cannot quietly become the production one.",
 	},
+	"exec_path": {
+		Group:  "Node execution controls",
+		Detail: "SPEC 25.4 asks that a spawned process get an explicit PATH, and without this it gets whatever started the program — rc.d, systemd, and an operator's shell each hand over a different one, so a state that works when you run it by hand fails under the service. Set to the whole search path, colon-separated; it replaces rather than extends. It applies to the program itself as well as to what it spawns, so `cmd.run`, the package providers, and the hub's git, gpg, and ssh all resolve binaries the same way. Empty inherits the environment's, falling back to a built-in list when there is none.",
+	},
 	"cmd_default_shell": {
 		Group:  "Node execution controls",
 		Detail: "Runs `cmd.run` through a shell by default, as Salt does. Off here, because an argument vector cannot be reinterpreted by anything; turn it on for a tree that depends on shell syntax it never quoted.",

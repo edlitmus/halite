@@ -770,3 +770,61 @@ func TestAPinnedNodeIDIsReadFromTheRootItWasWrittenTo(t *testing.T) {
 	}
 	t.Fatal("no identity was resolved")
 }
+
+// SPEC 25.4 asks that a spawned process get an explicit PATH.
+//
+// Without one it gets whatever started the program, and rc.d, systemd,
+// and an operator's shell each hand over a different search path — so a
+// state that finds its binary when run by hand fails under the service,
+// for a reason nothing in the failure mentions.
+func TestExecPathIsWhatAStateSearches(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A name nothing else on the machine could resolve, so a pass
+	// cannot come from the ambient PATH.
+	probe := filepath.Join(bin, "halite-exec-path-probe")
+	if err := os.WriteFile(probe, []byte("#!/bin/sh\necho probe-ran\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	stateRoot := t.TempDir()
+	for name, body := range map[string]string{
+		"top.sls": "base:\n  '*':\n    - p\n",
+		"p.sls":   "probe:\n  cmd.run:\n    - name: halite-exec-path-probe\n",
+	} {
+		if err := os.WriteFile(filepath.Join(stateRoot, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	empty := t.TempDir()
+
+	apply := func(config string) result {
+		t.Helper()
+		return run(t, "state", "apply", "--local",
+			"--file-root", stateRoot, "--pillar-root", empty, "--root", empty,
+			"--config", config)
+	}
+
+	without := filepath.Join(dir, "without.yaml")
+	if err := os.WriteFile(without, []byte("{}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := apply(without); got.code == 0 {
+		t.Errorf("the probe resolved with no exec_path set; the test proves nothing:\n%s", got.stdout)
+	}
+
+	with := filepath.Join(dir, "with.yaml")
+	if err := os.WriteFile(with, []byte("exec_path: "+bin+":/usr/bin:/bin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := apply(with)
+	if got.code != 0 {
+		t.Fatalf("the probe did not resolve with exec_path set:\n%s", got.stdout)
+	}
+	if !strings.Contains(got.stdout, "probe-ran") {
+		t.Errorf("the state did not run the probe:\n%s", got.stdout)
+	}
+}

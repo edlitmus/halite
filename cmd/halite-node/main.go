@@ -242,6 +242,21 @@ func setup(args *cli.Args) *node {
 		logger.Warn(w, "component", "config")
 	}
 
+	// SPEC 25.4 asks that a spawned process get an explicit PATH. Applied
+	// to this process, because everything a state runs inherits it and
+	// exec.CleanEnv reads it back — so one setting covers cmd.run, the
+	// package providers, git, gpg, and the parent's own lookups of those
+	// binaries, rather than each of them growing its own.
+	//
+	// Without it the search path is whatever started the program: rc.d,
+	// systemd, and an operator's shell all hand over different ones, so
+	// a state that finds a binary by hand fails under the service.
+	if p := cfg.String("exec_path", ""); p != "" {
+		if err := os.Setenv("PATH", p); err != nil {
+			cli.Fatalf("could not set the execution path: %v", err)
+		}
+	}
+
 	format, err := cli.ParseFormat(args.Flag("out", cfg.String("output", "nested")))
 	if err != nil {
 		cli.Fatalf("%v", err)

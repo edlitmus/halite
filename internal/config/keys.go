@@ -232,6 +232,7 @@ var Keys = []Key{
 	{"job_signer_keys", nodeOnly, "", "Public keys whose detached job signatures this node accepts.", "25.6"},
 	{"extension_trust_keys", nodeHub, "", "Keys whose signed extension bundles this node accepts, as `<name> <base64>`.", "24.4"},
 	{"extension_require_signature", nodeHub, "true", "Refuse an unsigned extension. False is for development and warns on every load.", "24.4"},
+	{"exec_path", nodeHub, "", "PATH for this program and every process it spawns. Empty inherits the environment's.", "25.4"},
 	{"cmd_default_shell", nodeOnly, "false", "Run cmd.run through a shell by default, as Salt does.", "15.2"},
 	{"legacy_arg_parse", nodeHub, "false", "Restore Salt's YAML coercion of command line arguments.", "9.2"},
 	{"event_tag_compat", hubOnly, "false", "Additionally emit every event under its salt/ equivalent.", "17.1"},

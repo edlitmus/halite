@@ -916,6 +916,37 @@ supplementary group set, rather than `su -c`, which would start a shell
 and read that account's profile — changing the environment out from under
 the command.
 
+### Setting the search path
+
+`PATH` is the one a state most often needs changed. Left alone it is
+whatever started the program, and rc.d, systemd, and an operator's shell
+each hand over a different one — so a state that finds its binary when
+you run `halite-node state apply` by hand fails under the service, and
+the failure says only `executable file not found in $PATH`.
+
+`exec_path` makes it explicit, which is what SPEC 25.4 asks for:
+
+```yaml
+# node.yaml
+exec_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+```
+
+It replaces rather than extends, so name the whole path. It applies to
+the program as well as to what it spawns, so `cmd.run`, the package
+providers, and the hub's `git`, `gpg`, and `ssh` all resolve binaries the
+same way — the hub reads it too, for exactly those.
+
+Check what a node will actually search:
+
+```sh
+halite-node call cmd.run printenv PATH
+```
+
+Left empty, the environment's `PATH` is used, and a built-in list when
+there is none. That is the old behaviour and it still works; it is just
+not reproducible between one way of starting the node and another.
+
+
 ## Backups
 
 There are none yet. Salt's `backup:` option, which keeps a copy of a file

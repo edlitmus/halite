@@ -436,12 +436,22 @@ type OSRunner struct {
 	DefaultEnv []string
 }
 
+// FallbackPath is the search path a spawned process gets when nothing
+// else says what it should be.
+//
+// SPEC 25.4 asks for an explicit PATH, and a process started by a
+// service manager inherits whatever that manager happened to set —
+// which differs between rc.d, systemd, and an operator's shell. The
+// `exec_path` setting makes it explicit; this is the last resort when
+// neither it nor the environment names one.
+const FallbackPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 // CleanEnv is the environment a spawned process receives unless a module
 // says otherwise.
 func CleanEnv() []string {
 	path := os.Getenv("PATH")
 	if path == "" {
-		path = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+		path = FallbackPath
 	}
 	return []string{
 		"PATH=" + path,

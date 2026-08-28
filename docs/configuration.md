@@ -1748,6 +1748,14 @@ Run cmd.run through a shell by default, as Salt does.
 
 Runs `cmd.run` through a shell by default, as Salt does. Off here, because an argument vector cannot be reinterpreted by anything; turn it on for a tree that depends on shell syntax it never quoted.
 
+### `exec_path`
+
+*`halite-node`, `halite-hub` · no default · SPEC section 25.4*
+
+PATH for this program and every process it spawns. Empty inherits the environment's.
+
+SPEC 25.4 asks that a spawned process get an explicit PATH, and without this it gets whatever started the program — rc.d, systemd, and an operator's shell each hand over a different one, so a state that works when you run it by hand fails under the service. Set to the whole search path, colon-separated; it replaces rather than extends. It applies to the program itself as well as to what it spawns, so `cmd.run`, the package providers, and the hub's git, gpg, and ssh all resolve binaries the same way. Empty inherits the environment's, falling back to a built-in list when there is none.
+
 ### `job_queue_depth`
 
 *`halite-node` · `100` · SPEC section 9.6*
@@ -1874,6 +1882,7 @@ Every setting, and which programs read it.
 | `event_return_from` | `halite-hub` | `latest` | Returners |
 | `event_return_tags` | `halite-hub` | — | Returners |
 | `event_tag_compat` | `halite-hub` | `false` | The event bus |
+| `exec_path` | `halite-node`, `halite-hub` | — | Node execution controls |
 | `ext_pillar` | `halite-hub` | — | The tree: states and pillar |
 | `ext_pillar_fail` | `halite-hub` | `hard` | The tree: states and pillar |
 | `extension_dir` | `halite-node`, `halite-hub` | — | Extensions |
