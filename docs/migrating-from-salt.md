@@ -150,6 +150,13 @@ compiled — so `gpg_home` belongs in `hub.yaml` and the private key
 lives on the hub, not on every node. That is the arrangement Salt has
 and the one worth keeping.
 
+One thing that does need an edit, whatever the shim reads: the hub runs
+as an unprivileged account and Salt decrypted as root. A keyring at
+`/usr/local/etc/salt/gpgkeys` that root owned is one the hub cannot
+read, and the failure is `gpg: public key decryption failed: No secret
+key` against every encrypted value. Give the hub a keyring of its own,
+owned by the account it runs as.
+
 ## Every command, side by side
 
 [The command reference](command-reference.md) is the table this section

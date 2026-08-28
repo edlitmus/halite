@@ -101,10 +101,31 @@ produces, and both are worth understanding rather than silencing:
 The hub does not use Salt's ports and does not read Salt's
 configuration. It can run on the same machine.
 
+One difference to settle before anything else: **the Salt daemon you are
+replacing runs as root and the hub does not.** <!-- lexicon:allow -->
+The hub runs as an unprivileged account, because it serves files and
+compiles pillar and needs no more than that. Every directory Salt could
+read by being root, the hub reads by being given access — and the
+commonest migration failure is a directory it cannot use.
+
 ```sh
+pw useradd halite -c "halite service account" -d /nonexistent -s /usr/sbin/nologin
+
 sudo install -m 0755 bin/halite-hub /usr/local/bin/
-sudo mkdir -p /usr/local/etc/halite
+sudo install -d -o halite -g halite -m 0700 /usr/local/etc/halite/pki
+sudo install -d -o halite -g halite -m 0700 /var/db/halite
+sudo install -d -o halite -g halite -m 0700 /var/cache/halite
+sudo install -d -o halite -g halite -m 0750 /var/log/halite
 ```
+
+Make those directories before you run anything, and resist running
+`halite-hub` by hand as root first. It creates whatever is missing as
+root, and the service then cannot use it — with symptoms that name
+neither the directory nor the account. `daemon: open: Permission denied`
+and a service that will not start is one; a hub that starts and then
+matches no node against any target is another. The
+[operations guide](operations.md#accounts-and-permissions) has the full
+table and a `find` that reports anything owned by the wrong account.
 
 `<config root>/hub.yaml`:
 
@@ -190,6 +211,45 @@ translate it by hand yet — `halite-hub migrate --salt-config
 /etc/salt/master` reports what was there, and the keys it could not <!-- lexicon:allow -->
 translate are preserved under `legacy_acl` for you to read rather than
 silently converted.
+
+### If your pillar is encrypted
+
+A `#!yaml|gpg` pillar file works unchanged, and Salt's `gpg_keydir` is
+read as `gpg_home` through the compatibility shim. Decryption happens on
+the hub, where pillar is compiled, so the setting belongs in `hub.yaml`
+and the private key stays on the hub.
+
+The part that catches people is the account. Salt decrypted as root and
+read its keyring at `/usr/local/etc/salt/gpgkeys` by owning it; the hub
+runs as `halite` and does not. Give it a keyring of its own rather than
+opening Salt's:
+
+```sh
+sudo install -d -o halite -g halite -m 0700 /usr/local/etc/halite/gpgkeys
+sudo cp /usr/local/etc/salt/gpgkeys/* /usr/local/etc/halite/gpgkeys/
+sudo chown halite:halite /usr/local/etc/halite/gpgkeys/*
+```
+
+```yaml
+# hub.yaml
+gpg_home: /usr/local/etc/halite/gpgkeys
+```
+
+That private key now decrypts your whole pillar and is readable by the
+service account, which is worth being deliberate about — it is the same
+exposure Salt had as root, moved to a smaller account.
+
+Check it before you point a node at it:
+
+```sh
+halite-hub runner pillar.show_pillar node=web1.example --as <operator>
+```
+
+Every value that will not decrypt is reported by the pillar key it sits
+at, never by its contents. A hub that cannot decrypt fails the whole
+compilation rather than serving a pillar with the secrets missing — and
+a node whose hub cannot compile pillar refuses to render states that
+read it, rather than rendering them against nothing.
 
 ## Step 3: one node, alongside the agent already on it
 
@@ -359,8 +419,10 @@ happen on one machine.
 
 ## What will be different
 
-Four things bite in practice, and all four are in the Step 0 report.
-[migrating-from-salt.md](migrating-from-salt.md) covers them in full:
+Four things about the tree bite in practice, and all four are in the
+Step 0 report; the fifth is about the estate rather than the tree, so
+the audit cannot see it. [migrating-from-salt.md](migrating-from-salt.md)
+covers them in full:
 
 1. **`cmd.run` does not use a shell.** Pipes, redirections, and `&&`
    need `shell: true` or splitting into `name` and `args`.
@@ -373,6 +435,13 @@ Four things bite in practice, and all four are in the Step 0 report.
    unless you set `yaml_bool_11: true`. A tree that says `enabled: no`
    and means `false` needs that setting, and it is worth grepping for
    before you turn it on.
+5. **The hub runs unprivileged.** Salt's daemon ran as root and read
+   whatever it liked. <!-- lexicon:allow --> Every directory the hub
+   touches — its PKI, its state, its cache, its GPG keyring — has to be
+   readable by the account it runs as, and the symptoms of one that is
+   not name neither the directory nor the account. This is the one the
+   Step 0 audit cannot see, because it is about the estate rather than
+   the tree.
 
 And two that are better rather than different:
 

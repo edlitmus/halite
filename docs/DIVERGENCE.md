@@ -1962,6 +1962,36 @@ What this did **not** establish: none of it was run as root, so
 build has not been run on Linux as a service. The exit codes each unit
 depends on were measured.
 
+### 5.22 What the second node found
+
+A second machine enrolled against the estate's own hub on 2026-08-28,
+against a real Salt tree with encrypted pillar. Six defects, none of
+which the tests could see, and every one of them reported a symptom
+pointing somewhere other than its cause.
+
+| The operator saw | What it was |
+|---|---|
+| `daemon: open: Permission denied`, no file named | The log directory survived an earlier install and was root-owned. rc.subr drops to the service account before daemon(8) runs, and the prestart created the directory only when missing — the case where the file inside it then cannot be made. |
+| `no node matched "*"`, a line after `keys list` showed it accepted | `MkdirAll` is satisfied by an existing directory whoever owns it, so the hub opened a root-owned node cache and could read nothing in it. A node whose cached data cannot be read is skipped during targeting. |
+| A correct fingerprint reported as not matching | The hub was running a build older than the node and served only its own certificate, so there was no CA in the chain to match. Reported as a fingerprint mismatch, which sent the operator to check the one thing that was right. |
+| `no top file was found in any environment` | `file_roots` pointed at a symlink. Reading a named file resolved it and listing the tree did not, so the hub answered every file request correctly and reported an empty tree. |
+| `{}` from `pillar items`, and a highstate that wrote the wrong file and reported success | The hub could not decrypt pillar — its keyring belonged to root and it runs as `halite` — and the node fell back to compiling its own, which with no local tree is empty. Every state reading pillar rendered against nothing. |
+| An enrollment that could not be completed as instructed | The refusal named `halite-hub keys fingerprint` as the source of a certificate, and that command prints a fingerprint. |
+
+Four of the six are the same shape: two paths that had to agree about a
+fact and did not — the writer against the reader, the lister against the
+fetcher, the producer of a status against its consumer. Each was fixed
+by giving both sides one helper rather than by correcting one side.
+
+The fifth is the one worth keeping in mind. A hub that cannot compile
+pillar is not a hub that has none, and treating them alike turned a
+broken secret store into an empty one silently: `admins=NONE` written to
+disk and recorded as `Result: True`. In an estate that is an
+`authorized_keys` with no keys. It was found by pulling on `{}` rather
+than by anything failing.
+
+What this did not establish: the estate is two FreeBSD machines. Nothing
+here was run on Linux, and the systemd units remain unexercised.
 
 ## 6. Everything else not started
 
