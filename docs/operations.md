@@ -439,6 +439,49 @@ halite-node enroll                     # collects the certificate
 Exit 2 from `enroll` means pending, which is neither success nor
 failure; `--wait` blocks until an operator decides instead.
 
+### Enrolling from the service
+
+On FreeBSD the rc.d script does the first two steps for you. `service
+halite_node start` enrols if this node holds no certificate, and refuses
+to start until it does — because `connect` cannot run without one, and
+says so into the log rather than to whoever ran the command:
+
+```
+# service halite_node start
+node        web1.example
+fingerprint ab:cd:...
+hub         https://hub.example:4510
+
+the request is waiting for an operator to accept it.
+on the hub: halite-hub keys accept web1.example
+run this again, or pass --wait, once it has been accepted.
+halite_node is not enrolled yet; accept it on the hub and start again
+```
+
+Accept it on the hub, run `service halite_node start` again, and it
+collects the certificate and starts.
+
+A node that already holds one skips straight through without touching
+the network, so a reboot while the hub is down still starts the agent.
+The knobs, all optional:
+
+```sh
+sysrc halite_node_ca_file=/var/db/halite/hub-ca.crt   # first enrollment only
+sysrc halite_node_token='<secret>'                    # for token enrollment
+sysrc halite_node_enroll=NO                           # provision certificates yourself
+```
+
+`halite_node_ca_file` is unnecessary once `hub_fingerprint` is set in
+`node.yaml` and the CA is on disk. Enrollment runs as
+`halite_node_user`, not as root, because it writes this node's private
+key and key material owned by the wrong account is a node that cannot
+read its own identity.
+
+There is no equivalent in the systemd units. `ExecStartPre=` could carry
+it, and has not been tried on a Linux host, so it is not shipped as
+though it had been.
+
+
 For an autoscaling group, a bootstrap token issues without an operator.
 It has a mandatory lifetime of at most a day, a node-ID scope, a source
 CIDR, and a record of what it admitted — none of which Salt's
@@ -754,6 +797,102 @@ halite-node call sys.doc name=file.managed --local
 `sys.doc` is the same information as the [module
 reference](modules.md), read from the binary rather than from a file, so
 it cannot be out of date with the build you are running.
+
+## Accounts and permissions
+
+The hub and the API run as an unprivileged account. A node runs as root,
+because it applies state to the whole machine.
+
+Every failure this section exists to prevent has the same shape: a
+directory created by running a command **by hand as root**, then used by
+a service running as `halite`. Neither `mkdir -p` nor `[ -d ]` answers
+"can this process use it" — they answer "does it exist" — so the service
+starts and fails later, somewhere that does not name the directory.
+
+### What each program needs
+
+`<config root>` is `/usr/local/etc/halite` on a BSD, `/etc/halite` on
+Linux, `%PROGRAMDATA%\Halite` on Windows. `<state dir>` is
+`/var/db/halite` on a BSD and `/var/lib/halite` elsewhere.
+
+**`halite-hub`**, as `halite`:
+
+| Setting | Path | Needs |
+|---|---|---|
+| `pki_dir` | `<config root>/pki` | **read/write**, 0700 — it creates the enrollment CA here on first run, and its own serving certificate |
+| `state_dir` | `<state dir>` | **read/write**, 0700 — keys, the job cache, the event bus, the mine, orchestration |
+| `cache_dir` | `<cache dir>` | **read/write**, 0700 — cached node data, gitfs mirrors, s3 objects |
+| `policy` | `<config root>/policy.yaml` | read |
+| `file_roots`, `pillar_roots` | wherever the tree is | read |
+| — | `<log dir>` | write, for the rc.d log file |
+
+**`halite-node`**, as `root`:
+
+| Setting | Path | Needs |
+|---|---|---|
+| `pki_dir` | `<config root>/pki` | **read/write**, 0700 — this node's private key lives here |
+| `state_dir` | `<state dir>` | **read/write** — extensions, returner spools |
+| `cache_dir` | `<cache dir>` | **read/write** — the tree it fetched from the hub |
+
+**`halite-api`**, as `halite`:
+
+| Setting | Path | Needs |
+|---|---|---|
+| `state_dir` | its own, **not** the hub's | **read/write**, 0700 — the token store |
+| `pki_dir` | `<config root>/pki` | read — its own operator certificate and the CA |
+| `accounts`, `policy` | `<config root>/` | read |
+| `tls_cert`, `tls_key` | wherever they are | read |
+
+Give the API a `state_dir` of its own. The systemd unit runs it with
+`StateDirectory=halite-api` and `ProtectSystem=strict`, which makes
+everything else read-only, so a service left on the built-in default
+could not write a token at all.
+
+### Setting it up
+
+On FreeBSD:
+
+```sh
+pw useradd halite -c "halite service account" -d /nonexistent -s /usr/sbin/nologin
+
+install -d -o halite -g halite -m 0700 /usr/local/etc/halite/pki
+install -d -o halite -g halite -m 0700 /var/db/halite
+install -d -o halite -g halite -m 0700 /var/cache/halite
+install -d -o halite -g halite -m 0750 /var/log/halite
+```
+
+On Linux the account is `useradd --system` and the state directory is
+`/var/lib/halite`; the systemd units create the state, cache, and log
+directories themselves with `StateDirectory=`, `LogsDirectory=`, and the
+right owner, so only `pki_dir` needs doing by hand.
+
+### Checking it
+
+```sh
+find /usr/local/etc/halite/pki /var/db/halite /var/cache/halite \
+     /var/log/halite ! -user halite -print
+```
+
+Anything that prints is a directory the hub cannot use. The usual cause
+is a `halite-hub` or `halite-node` run by hand as root before the
+service was enabled, which creates whatever was missing owned by root.
+Give the tree back to the account that runs the service — recursively,
+because the files inside it are root's too.
+
+### What it looks like when it is wrong
+
+Two failures worth recognising, because neither names the directory:
+
+| Symptom | Cause |
+|---|---|
+| `daemon: open: Permission denied`, and the service does not start | The log directory is not writable by the account. rc.subr drops to it before `daemon` runs. |
+| `no node matched "*"` immediately after `keys list` shows the node accepted | The hub cannot read `<cache dir>/nodes`, so every node is skipped during targeting. |
+
+The second is refused at startup now — a hub whose node cache it cannot
+write says so and stops, rather than starting and matching nothing. The
+first is handled by the rc.d script creating the log file itself. Both
+are worth knowing anyway, because an estate that upgrades meets them on
+the directories it already has.
 
 ## The file modes halite writes
 

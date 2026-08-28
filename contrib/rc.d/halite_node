@@ -16,6 +16,18 @@
 #                                node applies state to the whole system; set
 #                                it to something else only if you know every
 #                                state in your tree can run unprivileged.
+#   halite_node_enroll (bool):   Ask the hub for a certificate before
+#                                connecting, if this node has none. Default
+#                                "YES". A node that already holds one skips
+#                                straight through without touching the
+#                                network, so this costs nothing on a reboot
+#                                with the hub down.
+#   halite_node_ca_file (str):   The hub CA to pin, for the first enrollment
+#                                only. Unnecessary once `hub_fingerprint` is
+#                                set in the configuration, or once the CA is
+#                                on disk.
+#   halite_node_token (str):     A bootstrap token, for the token enrollment
+#                                mode of SPEC 7.3.
 #
 # `connect` holds the subscribe stream open to the hub, runs the jobs
 # that arrive on it, and carries this node's beacons and schedule. It
@@ -43,6 +55,9 @@ load_rc_config $name
 # Named _binary and not _program: rc.subr reserves `${name}_program` and
 # uses it to replace `command`, so calling it that silently bypassed
 # daemon(8) and ran the binary with daemon's own flags as arguments.
+: ${halite_node_enroll="YES"}
+: ${halite_node_ca_file=""}
+: ${halite_node_token=""}
 : ${halite_node_fips="NO"}
 if checkyesno halite_node_fips; then
 	: ${halite_node_binary="/usr/local/bin/halite-node-fips"}
@@ -101,7 +116,54 @@ halite_node_prestart()
 	else
 		chown "${halite_node_user}" "${logfile}" || return 1
 	fi
+	halite_node_enrol || return 1
 	return 0
+}
+
+# halite_node_enrol asks the hub for a certificate when this node has
+# none, so that a first boot is one command rather than two.
+#
+# `connect` refuses to start without a certificate — "this node is not
+# enrolled" — and it says so into the log rather than to whoever ran
+# `service halite_node start`. Enrolling here puts the answer, and the
+# `keys accept` line that resolves it, on their terminal.
+#
+# Runs as halite_node_user, not as root: enrollment writes this node's
+# private key, and key material owned by the wrong account is a node
+# that cannot read its own identity.
+halite_node_enrol()
+{
+	checkyesno halite_node_enroll || return 0
+
+	_flags="--config ${halite_node_config}"
+	[ -n "${halite_node_ca_file}" ] && _flags="${_flags} --ca-file ${halite_node_ca_file}"
+	[ -n "${halite_node_token}" ] && _flags="${_flags} --token ${halite_node_token}"
+
+	if [ "${halite_node_user}" = "root" ]; then
+		"${halite_node_binary}" enroll ${_flags}
+	else
+		su -m "${halite_node_user}" -c \
+			"sh -c '\"${halite_node_binary}\" enroll ${_flags}'"
+	fi
+	_rc=$?
+
+	case ${_rc} in
+	0)
+		# Enrolled already, or enrolled just now.
+		return 0
+		;;
+	2)
+		# Waiting for an operator. Nothing is wrong and nothing has
+		# finished, and starting a node that cannot talk would hide
+		# both. `enroll` has already printed the `keys accept` line.
+		warn "halite_node is not enrolled yet; accept it on the hub and start again"
+		return 1
+		;;
+	*)
+		warn "halite_node could not enrol (exit ${_rc}); not starting"
+		return 1
+		;;
+	esac
 }
 
 run_rc_command "$1"
