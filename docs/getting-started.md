@@ -39,6 +39,52 @@ There is nothing else to install. No Python, no interpreter, no library:
 `go list -m all` returns only this module, and the build asserts that on
 every run.
 
+### Installing
+
+`make install`, as root, puts the binaries, the service files, and the
+directories in place for the platform it is run on:
+
+```sh
+sudo make install
+```
+
+| | FreeBSD and the other BSDs | Linux |
+|---|---|---|
+| binaries | `/usr/local/bin` | `/usr/local/bin` |
+| configuration | `/usr/local/etc/halite` | `/etc/halite` |
+| durable state | `/var/db/halite` | `/var/lib/halite` |
+| service files | `/usr/local/etc/rc.d` | `/etc/systemd/system` |
+
+The binaries go to the same place on both because that is the path
+written into the rc.d scripts and the systemd units.
+
+It writes **no configuration** — a target that overwrote `hub.yaml`
+would be one nobody could run twice — and starts nothing. Copy an
+example from `contrib/examples/` and enable the service yourself.
+
+The directories are created owned by the account the hub and the API run
+as, which is the point of doing it here: a directory created by running
+a command as root is one the service account cannot use afterwards, and
+the symptoms name neither the directory nor the account. If the account
+does not exist the target says so and names the command to create it,
+rather than leaving root-owned directories behind quietly. If a `chown`
+fails it stops, because `install` reports that on standard error and
+still exits zero.
+
+Every path is overridable, which is what makes it testable without root:
+
+```sh
+make install BINDIR=/tmp/stage/bin CONFDIR=/tmp/stage/etc/halite \
+    STATEDIR=/tmp/stage/db CACHEDIR=/tmp/stage/cache \
+    LOGDIR=/tmp/stage/log SERVICEDIR=/tmp/stage/rc.d
+```
+
+`make install-service` reinstalls only the rc.d scripts or the systemd
+units, which is what to run after pulling a fix to them.
+`make install-fips` adds the `-fips` artifacts of SPEC 27.4 beside the
+ordinary ones; it does not install the systemd drop-ins, because those
+change what a unit runs.
+
 ### Other platforms
 
 `make cross` builds every target into `dist/`, named

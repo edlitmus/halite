@@ -110,17 +110,16 @@ commonest migration failure is a directory it cannot use.
 
 ```sh
 pw useradd halite -c "halite service account" -d /nonexistent -s /usr/sbin/nologin
-
-sudo install -m 0755 bin/halite-hub /usr/local/bin/
-sudo install -d -o halite -g halite -m 0700 /usr/local/etc/halite/pki
-sudo install -d -o halite -g halite -m 0700 /var/db/halite
-sudo install -d -o halite -g halite -m 0700 /var/cache/halite
-sudo install -d -o halite -g halite -m 0750 /var/log/halite
+sudo make install
 ```
 
-Make those directories before you run anything, and resist running
-`halite-hub` by hand as root first. It creates whatever is missing as
-root, and the service then cannot use it — with symptoms that name
+`make install` puts the binaries, the service files, and those
+directories in place for the platform it runs on, owned by that account.
+Create the account first: it says so if you have not, rather than
+leaving root-owned directories behind quietly.
+
+Resist running `halite-hub` by hand as root before that. It creates
+whatever is missing as root, and the service then cannot use it — with symptoms that name
 neither the directory nor the account. `daemon: open: Permission denied`
 and a service that will not start is one; a hub that starts and then
 matches no node against any target is another. The

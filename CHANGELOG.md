@@ -1109,6 +1109,31 @@ failures now carry their code, `no_pillar` names the first case, and
 only that case falls back. The other carries the error, so `test.ping`
 still answers and anything reading pillar fails saying why.
 
+### `make install`
+
+Puts the binaries, the service files, and the directories in place for
+the platform it is run on: `/usr/local/etc/halite` and rc.d on a BSD,
+`/etc/halite` and systemd elsewhere. The binaries go to
+`/usr/local/bin` on both, because that is the path written into the
+service files.
+
+It writes no configuration and starts nothing. The directories are
+created owned by the account the hub and the API run as, which is the
+whole point of doing it in one place: a directory created by running a
+command as root is one the service account cannot use afterwards, and
+the symptoms name neither. If the account is missing it says so and
+names the command to create it; if a `chown` does not take it stops,
+because `install` reports that on standard error and still exits zero.
+
+Every path is overridable, so the target can be exercised without root.
+A test holds the Makefile's paths to the ones the binaries actually
+read, since a Makefile installing where the binary does not look
+produces a service that starts and finds nothing.
+
+`make install-service` reinstalls only the service files, and
+`make install-fips` adds the SPEC 27.4 artifacts beside the ordinary
+ones.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no

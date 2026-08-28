@@ -897,21 +897,36 @@ could not write a token at all.
 
 ### Setting it up
 
-On FreeBSD:
+Create the account, then let the build do the rest:
 
 ```sh
+# FreeBSD
 pw useradd halite -c "halite service account" -d /nonexistent -s /usr/sbin/nologin
+# Linux
+useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin halite
 
+sudo make install
+```
+
+`make install` creates every directory below owned by that account, for
+the platform it runs on, and says so rather than continuing quietly if
+the account is missing or a `chown` does not take. [Getting
+started](getting-started.md#installing) has the paths it uses and how to
+override them.
+
+By hand, on FreeBSD:
+
+```sh
 install -d -o halite -g halite -m 0700 /usr/local/etc/halite/pki
 install -d -o halite -g halite -m 0700 /var/db/halite
 install -d -o halite -g halite -m 0700 /var/cache/halite
 install -d -o halite -g halite -m 0750 /var/log/halite
 ```
 
-On Linux the account is `useradd --system` and the state directory is
-`/var/lib/halite`; the systemd units create the state, cache, and log
-directories themselves with `StateDirectory=`, `LogsDirectory=`, and the
-right owner, so only `pki_dir` needs doing by hand.
+On Linux the state directory is `/var/lib/halite`, and the systemd units
+create the state, cache, and log directories themselves with
+`StateDirectory=`, `LogsDirectory=`, and the right owner — so only
+`pki_dir` needs doing by hand there.
 
 ### Checking it
 

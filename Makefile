@@ -289,5 +289,110 @@ cross:
 		done; \
 	done
 
+# Installation. The paths follow the platform the way the binaries do,
+# and internal/config's TestTheMakefileInstallsWhereTheBinariesLook holds
+# the two to each other — a Makefile that installed somewhere the binary
+# does not look would produce a service that starts and reads nothing.
+#
+# Computed in shell rather than with a conditional: BSD make spells those
+# `.if` and GNU make spells them `ifeq`, and no file can carry both.
+INSTALL_OS != uname -s
+
+# BINDIR is /usr/local/bin on every platform, because that is the path
+# written into the rc.d scripts and the systemd units. Moving it means
+# editing those too.
+BINDIR    ?= /usr/local/bin
+CONFDIR   != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /usr/local/etc/halite ;; *) echo /etc/halite ;; esac
+STATEDIR  != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /var/db/halite ;; *) echo /var/lib/halite ;; esac
+SERVICEDIR != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /usr/local/etc/rc.d ;; *) echo /etc/systemd/system ;; esac
+CACHEDIR  ?= /var/cache/halite
+LOGDIR    ?= /var/log/halite
+
+# The account the hub and the API run as. A node runs as root, and root
+# can write what this account owns, so one owner serves both.
+HALITE_USER ?= halite
+
+# install puts the binaries, the service files, and the directories in
+# place. It writes no configuration: a `make install` that overwrote
+# hub.yaml would be one nobody could run twice.
+#
+# Directories are created owned by HALITE_USER here rather than left to
+# first use, because a directory created by running a command as root is
+# one the service account cannot use afterwards — and the symptoms name
+# neither the directory nor the account. See DIVERGENCE 5.20.
+install: build
+	@for d in "$(BINDIR)" "$(CONFDIR)" "$(SERVICEDIR)"; do \
+		p=`dirname "$$d"`; \
+		{ test -w "$$d" 2>/dev/null || test -w "$$p"; } || { \
+			echo "cannot write $$d — run make install as root, or point BINDIR," >&2; \
+			echo "CONFDIR, STATEDIR, CACHEDIR, LOGDIR and SERVICEDIR somewhere writable" >&2; \
+			exit 1; }; \
+	done
+	@echo "installing for $(INSTALL_OS)"
+	@for b in $(BINARIES); do \
+		echo "  $(BINDIR)/$$b"; \
+		install -m 0755 bin/$$b $(BINDIR)/$$b || exit 1; \
+	done
+	@if id $(HALITE_USER) >/dev/null 2>&1; then \
+		owner="-o $(HALITE_USER)"; \
+	else \
+		owner=""; \
+		echo "  ! the $(HALITE_USER) account does not exist; directories are left owned by root" >&2; \
+		echo "  ! the hub and the API cannot use them until it does. Create it, then run this again:" >&2; \
+		case "$(INSTALL_OS)" in \
+		FreeBSD|OpenBSD|NetBSD|DragonFly) \
+			echo "      pw useradd $(HALITE_USER) -d /nonexistent -s /usr/sbin/nologin" >&2 ;; \
+		*) echo "      useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin $(HALITE_USER)" >&2 ;; \
+		esac; \
+	fi; \
+	for d in "$(CONFDIR) 0755" "$(CONFDIR)/pki 0700" "$(STATEDIR) 0700" "$(CACHEDIR) 0700" "$(LOGDIR) 0750"; do \
+		set -- $$d; \
+		echo "  $$1"; \
+		install -d $$owner -m $$2 $$1 || exit 1; \
+		if [ -n "$$owner" ] && [ -z "`find $$1 -maxdepth 0 -user $(HALITE_USER) 2>/dev/null`" ]; then \
+			echo "  ! $$1 is not owned by $(HALITE_USER) and install did not say so" >&2; \
+			echo "  ! the hub and the API cannot use it; run this as root" >&2; \
+			exit 1; \
+		fi; \
+	done
+	@$(MAKE) install-service
+	@echo
+	@echo "installed. Nothing was started and no configuration was written."
+	@echo "  configuration  $(CONFDIR)/{hub,node,api}.yaml — contrib/examples has one of each"
+	@echo "  service files  $(SERVICEDIR)"
+
+# install-service puts the platform's own service files in place. They
+# are overwritten: picking up a fix to them is the reason to run this.
+install-service:
+	@p=`dirname "$(SERVICEDIR)"`; \
+	{ test -w "$(SERVICEDIR)" 2>/dev/null || test -w "$$p"; } || { \
+		echo "cannot write $(SERVICEDIR) — run as root, or set SERVICEDIR" >&2; exit 1; }
+	@case "$(INSTALL_OS)" in \
+	FreeBSD|OpenBSD|NetBSD|DragonFly) \
+		for f in contrib/rc.d/*; do \
+			echo "  $(SERVICEDIR)/`basename $$f`"; \
+			install -m 0555 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
+		done ;; \
+	*) \
+		for f in contrib/systemd/*.service contrib/systemd/*.timer; do \
+			echo "  $(SERVICEDIR)/`basename $$f`"; \
+			install -m 0644 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
+		done; \
+		echo "  run systemctl daemon-reload before enabling anything" ;; \
+	esac
+
+# install-fips is the parallel artifact set of SPEC 27.4, for a host that
+# is deploying it. The drop-ins are not installed automatically: on
+# systemd they change what the unit runs, which is a decision.
+install-fips: fips
+	@{ test -w "$(BINDIR)" 2>/dev/null || test -w `dirname "$(BINDIR)"`; } || { \
+		echo "cannot write $(BINDIR) — run as root, or set BINDIR" >&2; exit 1; }
+	@for b in $(BINARIES); do \
+		echo "  $(BINDIR)/$$b-fips"; \
+		install -m 0755 bin/$$b-fips $(BINDIR)/$$b-fips || exit 1; \
+	done
+	@echo "installed. contrib/systemd/fips/ holds the drop-ins; on a BSD set"
+	@echo "  halite_hub_fips=YES (and _node, _api, _highstate) in rc.conf"
+
 clean:
 	rm -rf bin dist cover.out

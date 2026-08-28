@@ -132,3 +132,60 @@ func TestNoUnitOffersAReloadThatWouldKillTheService(t *testing.T) {
 		}
 	}
 }
+
+// The Makefile installs where the binaries look.
+//
+// Two places that have to agree about the same platform layout: the code
+// computes it, and `make install` writes to it. A Makefile installing
+// somewhere the binary does not read produces a service that starts and
+// finds nothing — the failure names neither, which is the shape this
+// project keeps meeting.
+func TestTheMakefileInstallsWhereTheBinariesLook(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Each is `NAME != case ... BSDs) echo <bsd> ;; *) echo <other> ;;`.
+	pattern := regexp.MustCompile(
+		`(?m)^(CONFDIR|STATEDIR)\s*!=.*DragonFly\)\s*echo\s+(\S+)\s*;;\s*\*\)\s*echo\s+(\S+)\s*;;`)
+	matches := pattern.FindAllStringSubmatch(string(body), -1)
+	if len(matches) != 2 {
+		t.Fatalf("read %d platform paths from the Makefile, want 2; the recipe has changed shape",
+			len(matches))
+	}
+
+	for _, m := range matches {
+		name, bsd, other := m[1], m[2], m[3]
+		var wantBSD, wantOther string
+		switch name {
+		case "CONFDIR":
+			wantBSD, wantOther = RootFor("freebsd"), RootFor("linux")
+		case "STATEDIR":
+			wantBSD, wantOther = VarPathFor("freebsd", "lib"), VarPathFor("linux", "lib")
+		}
+		if bsd != wantBSD {
+			t.Errorf("the Makefile installs %s to %s on a BSD; the binaries read %s",
+				name, bsd, wantBSD)
+		}
+		if other != wantOther {
+			t.Errorf("the Makefile installs %s to %s elsewhere; the binaries read %s",
+				name, other, wantOther)
+		}
+	}
+
+	// And the service files name the binary the Makefile installs, which
+	// is one path on every platform for exactly that reason: moving it
+	// would leave every unit pointing at nothing.
+	if !strings.Contains(string(body), "BINDIR    ?= /usr/local/bin") {
+		t.Error("BINDIR is no longer /usr/local/bin; the rc.d scripts and systemd units name that path")
+	}
+	for path, unit := range readServiceFiles(t) {
+		if !strings.Contains(unit, "ExecStart=") && !strings.Contains(unit, "_binary=") {
+			continue
+		}
+		if !strings.Contains(unit, "/usr/local/bin/halite") {
+			t.Errorf("%s does not name a binary under /usr/local/bin, where make install puts them", path)
+		}
+	}
+}
