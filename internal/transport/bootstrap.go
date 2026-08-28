@@ -123,7 +123,20 @@ func matchPinned(rawCerts [][]byte, fingerprint string) (ca, leaf *x509.Certific
 			return cert, leaf, nil
 		}
 	}
+	if len(rawCerts) == 1 {
+		// The hub sent its own certificate and nothing else, so there
+		// was never a CA here to match. Saying "check the fingerprint"
+		// sends an operator to verify the one thing that was already
+		// right; a hub older than this node does not serve its CA at
+		// all, and that is the likely reason.
+		return nil, nil, fmt.Errorf(
+			"the hub presented only its own certificate and no CA, so there is nothing " +
+				"for this node's pinned fingerprint to match. A hub older than this node " +
+				"does not serve its CA: upgrade the hub, or give this node the certificate " +
+				"directly with `hub_ca_file`")
+	}
 	return nil, nil, fmt.Errorf(
-		"no certificate the hub presented matches the fingerprint this node pinned (%s); "+
-			"check `hub_fingerprint` against `halite-hub keys fingerprint` on the hub", fingerprint)
+		"the hub presented %d certificates and none matches the fingerprint this node "+
+			"pinned (%s); check `hub_fingerprint` against `halite-hub keys fingerprint` "+
+			"on the hub", len(rawCerts), fingerprint)
 }

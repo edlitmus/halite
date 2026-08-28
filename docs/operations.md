@@ -481,6 +481,11 @@ verification, and it is why `hub_fingerprint` has no optional mode. The
 guarantee is the fingerprint, so a missing one is not a weaker check but
 no check at all.
 
+A hub built before this served only its own certificate, so a newer node
+enrolling against an older hub finds no CA in the chain to match. That is
+reported as what it is rather than as a fingerprint mismatch — upgrade
+the hub, or give the node the certificate directly with `hub_ca_file`.
+
 ### Enrolling from the service
 
 On FreeBSD the rc.d script does the first two steps for you. `service

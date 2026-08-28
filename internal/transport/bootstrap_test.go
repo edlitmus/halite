@@ -180,3 +180,63 @@ func TestAChainWithoutThePinnedCAIsRefused(t *testing.T) {
 		t.Fatal("a chain with an entirely different CA was accepted")
 	}
 }
+
+// A hub older than the node serves only its own certificate, so there
+// is no CA in the chain for the pin to match.
+//
+// That is not a fingerprint mismatch and must not be reported as one:
+// the first operator to meet it had the right fingerprint and was sent
+// to check it against the hub, which told them nothing because nothing
+// was wrong with it.
+func TestAHubThatServesNoCASaysSoRatherThanBlamingTheFingerprint(t *testing.T) {
+	ca, err := pki.NewCA(pki.ECDSAP256, "halite enrollment CA", 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := pki.GenerateKey(pki.ECDSAP256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := ca.IssueHub(key, []string{"localhost", "127.0.0.1"}, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			// The leaf alone, which is what a hub built before the CA
+			// was added to the chain presents.
+			tc := tls.Server(c, &tls.Config{
+				MinVersion:   tls.VersionTLS13,
+				NextProtos:   []string{ALPN, Negotiated},
+				Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}},
+			})
+			_ = tc.Handshake()
+			_ = tc.Close()
+		}
+	}()
+
+	want, err := pki.FingerprintCert(ca.Cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = FetchCA(context.Background(), "https://"+ln.Addr().String(), want, 5*time.Second)
+	if err == nil {
+		t.Fatal("a chain with no CA in it was accepted")
+	}
+	if !strings.Contains(err.Error(), "no CA") {
+		t.Errorf("the refusal does not say the hub served no CA: %v", err)
+	}
+	if strings.Contains(err.Error(), "check `hub_fingerprint`") {
+		t.Errorf("the refusal blames the fingerprint, which is not what is wrong: %v", err)
+	}
+}
