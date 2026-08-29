@@ -721,7 +721,7 @@ functions declare a restriction; the Linux binary answers
 | FreeBSD amd64 | yes | yes | yes — grains, highstate, drift reconvergence, requisites |
 | Linux amd64 | yes | yes, under emulation — 19 of 21 packages | yes — a node enrolled with a hub, highstate applied, under systemd (Ubuntu; see 4.5) |
 | Linux arm64 | yes | no | no |
-| macOS | yes | no | no |
+| macOS | yes, since 2026-08-29 | no | no |
 | Windows | yes | no | no |
 
 ### 4.0 Where each platform keeps its files
@@ -828,6 +828,29 @@ overlap nor a word about it. The compiler now warns at the line that
 wrote it. Warning rather than refusing, because running a parallel state
 in order is correct, only slower — and refusing would stop a tree Salt
 runs.
+
+### 4.4a macOS did not compile at all
+
+The matrix said macOS compiled from the beginning. It did not, and
+nothing noticed until somebody ran `make` on one: the width of
+`syscall.Rlimit`'s fields was declared by build tag, and macOS was
+grouped with the BSDs. It is right about nearly everything and wrong
+about that — `int64` on FreeBSD and NetBSD, `uint64` on Linux, macOS,
+and OpenBSD — so `internal/bridge` failed to build and took the whole
+tree with it.
+
+The type is no longer declared anywhere. The field is taken by pointer
+and the compiler supplies its width, which removes the class rather than
+the instance.
+
+`make build` compiles for the host alone, so a cross-platform break is
+invisible to it, and `make cross` is a release step nobody runs while
+working. `make build-all` compiles every shipped target and is part of
+`make check` now, which is what should have been true before the claim
+"macOS: compiles" was written down.
+
+OpenBSD still does not build — `syscall.RLIMIT_AS` does not exist there
+— and is not in the shipped target list, so nothing claims it does.
 
 ### 4.5 What a real Linux node established
 

@@ -30,7 +30,9 @@ func Confine() {
 		if err != nil {
 			return
 		}
-		limit := syscall.Rlimit{Cur: rlimitValue(value), Max: rlimitValue(value)}
+		var limit syscall.Rlimit
+		setRlimit(&limit.Cur, value)
+		setRlimit(&limit.Max, value)
 		// A failure is ignored on purpose. An unprivileged process
 		// cannot raise a limit, and refusing to start because the host
 		// asked for a bound this process already has is worse than
@@ -50,6 +52,13 @@ func Confine() {
 // the difference `Sandbox.Describe` spells out.
 func NetworkDenied() bool { return os.Getenv("HALITE_EXT_NETWORK") == "deny" }
 
-// rlimitValue converts to whatever width this platform's Rlimit uses:
-// int64 on the BSDs, uint64 on Linux.
-func rlimitValue(v uint64) rlimType { return rlimType(v) }
+// setRlimit writes a limit into a syscall.Rlimit field of whatever width
+// the platform gave it.
+//
+// The width is not the same everywhere — int64 on FreeBSD and NetBSD,
+// uint64 on Linux, macOS, and OpenBSD — and it used to be declared by
+// build tag. That grouped macOS with the BSDs, which is right about
+// nearly everything and wrong about this, so the tree did not compile
+// there at all. Taking the field by pointer lets the compiler supply the
+// type, and there is nothing left to get wrong.
+func setRlimit[T int64 | uint64](field *T, v uint64) { *field = T(v) }

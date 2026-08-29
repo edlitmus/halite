@@ -1157,6 +1157,23 @@ amd64 rather than "grains only" now, and 4.5 says what one Ubuntu host
 does and does not settle — one distribution, one architecture, the node
 and not the hub or the API, and one run rather than a week of them.
 
+### macOS compiles
+
+It never did. The width of `syscall.Rlimit`'s fields was declared by
+build tag with macOS grouped among the BSDs — `int64` there, `uint64` on
+Linux, macOS, and OpenBSD — so `internal/bridge` failed to build and
+took the tree with it. The platform matrix has claimed "macOS: compiles"
+the whole time, and nothing checked it until somebody ran `make` on one.
+
+The type is not declared anywhere now. The Rlimit field is taken by
+pointer and the compiler supplies its width, which removes the class of
+mistake rather than this instance of it.
+
+`make build-all` compiles every shipped target and is part of
+`make check`. `make build` builds for the host alone, and `make cross`
+is a release step nobody runs while working, so a break on another
+platform was invisible between the two.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no

@@ -211,12 +211,28 @@ repro:
 		fi; \
 	done
 
+# build-all compiles every shipped target, which `build` does not: it
+# builds for this host alone, so a platform-specific type or a missing
+# constant on another one is invisible until somebody there runs make.
+#
+# macOS was grouped with the BSDs for the width of syscall.Rlimit — right
+# about nearly everything and wrong about that — and the tree did not
+# compile there at all. Nothing caught it, because nothing compiled for
+# macOS until an operator did.
+build-all:
+	@for t in $(TARGETS); do \
+		os=$${t%/*}; arch=$${t#*/}; \
+		printf "  %-16s " "$$t"; \
+		env $(DEV_ENV) GOOS=$$os GOARCH=$$arch go build ./... || exit 1; \
+		echo ok; \
+	done
+
 # What to run before calling a change done.
 #
 # fips-test is in here rather than left to CI: the FIPS artifacts are a
 # shipped deliverable, and a restriction that only holds in the build
 # nobody runs locally is a restriction that breaks on the tag.
-check: fmt vet test race policy fips-test
+check: fmt vet build-all test race policy fips-test
 
 tidy:
 	go mod tidy
