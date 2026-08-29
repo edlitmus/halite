@@ -767,13 +767,22 @@ run, self-signed is enough:
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
     -keyout /usr/local/etc/halite/pki/api.key \
     -out /usr/local/etc/halite/pki/api.crt \
-    -days 365 -subj '/CN=api.example' \
-    -addext 'subjectAltName=DNS:api.example,IP:10.0.0.5'
+    -days 365 -subj "/CN=$(hostname)" \
+    -addext "subjectAltName=DNS:$(hostname),DNS:localhost,IP:127.0.0.1"
 ```
 
-The names in `subjectAltName` are what a client verifies, so put every
-name and address the API will be reached by in there — a certificate
-with only a `CN` is refused by every current client.
+The names in `subjectAltName` are what a client verifies, and **only**
+those: the `CN` is ignored by every current client. Put every name and
+address the API will be reached by in there. `localhost` and `127.0.0.1`
+are in the command above because they are what you will reach it by
+while testing, and a certificate that omits them fails verification with
+no useful message — under `curl -s`, with no message at all.
+
+Add the external name too, if a scraper reaches it by one:
+
+```sh
+-addext "subjectAltName=DNS:$(hostname),DNS:api.example,DNS:localhost,IP:127.0.0.1,IP:10.0.0.5"
+```
 
 ```yaml
 # api.yaml

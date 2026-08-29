@@ -117,13 +117,28 @@ expiry — `token_lifetime` and `token_idle` in `api.yaml` govern both.
 Log in once and keep the token:
 
 ```sh
-curl -s --cacert /etc/ssl/halite-api.crt \
-  -X POST https://api.example:4511/v1/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"prometheus","password":"…"}' |
-  jq -r .token > /etc/prometheus/halite.token
-chmod 600 /etc/prometheus/halite.token
+token=$(curl -sS --fail-with-body \
+    --cacert /etc/prometheus/halite-api-ca.crt \
+    -X POST https://api.example:4511/v1/login \
+    -H 'Content-Type: application/json' \
+    -d '{"username":"prometheus","password":"…"}' | jq -r '.token // empty')
+
+test -n "$token" || { echo "login failed" >&2; exit 1; }
+( umask 077; printf '%s\n' "$token" > /etc/prometheus/halite.token )
 ```
+
+Written in three steps on purpose. The obvious one-liner —
+`curl -s … | jq -r .token > token` — writes an empty file when the
+connection fails and the word `null` when the login is refused, and says
+nothing either way: `-s` silences curl's error and the redirection has
+already truncated the file by the time `jq` sees there is nothing to
+extract. The form above leaves no file at all unless there is a token in
+it.
+
+The host in the URL has to be one the certificate covers. Connecting to
+`https://localhost:4511` with a certificate whose names are
+`api.example` and an address fails verification, and with `-s` that
+failure is invisible.
 
 ### 4. Point Prometheus at it
 
@@ -149,7 +164,7 @@ scrape_configs:
 Confirm it by hand before trusting the scraper:
 
 ```sh
-curl -s --cacert /etc/prometheus/halite-api-ca.crt \
+curl -sS --fail-with-body --cacert /etc/prometheus/halite-api-ca.crt \
   -H "Authorization: Bearer $(cat /etc/prometheus/halite.token)" \
   https://api.example:4511/v1/metrics | head
 ```
