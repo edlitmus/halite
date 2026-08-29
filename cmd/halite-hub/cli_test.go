@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/cli"
 )
 
 // See cmd/halite-node/cli_test.go: the CLI is tested by re-executing this
@@ -361,4 +363,131 @@ func backticked(cell string) string {
 		return cell
 	}
 	return inside
+}
+
+// Salt writes a grain match as `-G 'os:FreeBSD' test.ping`, and the
+// argument parser gives a single-letter flag the next token as its
+// value — so the target arrives in the flag, not in the positionals.
+//
+// `run` read those flags with args.Bool, which returns the default for
+// a value like "os:FreeBSD". Both the target and the kind were lost, and
+// the operator was told the command needed a target they had just given.
+func TestAMatcherFlagCarriesTheTarget(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		argv       []string
+		wantKind   string
+		wantTarget string
+		wantFun    string
+	}{
+		{"short grain", []string{"-G", "os:FreeBSD", "test.ping"}, "G", "os:FreeBSD", "test.ping"},
+		{"long grain", []string{"--grain", "os:FreeBSD", "test.ping"}, "grain", "os:FreeBSD", "test.ping"},
+		{"list", []string{"-L", "a.example,b.example", "test.ping"}, "L", "a.example,b.example", "test.ping"},
+		{"plain glob", []string{"*", "test.ping"}, "", "*", "test.ping"},
+		{"glob with a kind flag before it", []string{"-E", "web.*", "test.ping"}, "E", "web.*", "test.ping"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			args, err := cli.Parse(c.argv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kind, target, fun, _, err := resolveTarget(args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind != c.wantKind {
+				t.Errorf("kind = %q, want %q", kind, c.wantKind)
+			}
+			if target != c.wantTarget {
+				t.Errorf("target = %q, want %q", target, c.wantTarget)
+			}
+			if fun != c.wantFun {
+				t.Errorf("function = %q, want %q", fun, c.wantFun)
+			}
+		})
+	}
+}
+
+// splitCommand splits a documented command line, honouring the single
+// quotes the matrix uses around a target expression.
+func splitCommand(s string) []string {
+	var out []string
+	var cur strings.Builder
+	quoted := false
+	for _, r := range s {
+		switch {
+		case r == '\'':
+			quoted = !quoted
+		case r == ' ' && !quoted:
+			if cur.Len() > 0 {
+				out = append(out, cur.String())
+				cur.Reset()
+			}
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	if cur.Len() > 0 {
+		out = append(out, cur.String())
+	}
+	return out
+}
+
+// TestCommandMatrixTargetsParse closes the half of TestCommandMatrixIsTrue
+// that `--help` cannot reach.
+//
+// That test asks `run` and `ssh` what they are rather than running them,
+// which is right — one dispatches to a fleet and the other opens ssh
+// connections — but it means the flags in a row are never read. The
+// matrix promised `halite-hub run -G 'os:FreeBSD' state.apply` worked
+// while the target was being swallowed by the flag, and said so for
+// months.
+//
+// Parsing is the part that can be checked without doing anything: a row
+// has to yield a target and a function.
+func TestCommandMatrixTargetsParse(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "command-reference.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	for _, row := range strings.Split(string(data), "\n") {
+		cells := matrixRow(row)
+		if len(cells) < 3 || !strings.Contains(cells[2], "works") {
+			continue
+		}
+		text := backticked(cells[1])
+		// A row written with an ellipsis is an illustration of one flag
+		// rather than a whole command, and has no target to find.
+		if strings.Contains(text, "…") || strings.Contains(text, "...") {
+			continue
+		}
+		command := splitCommand(text)
+		if len(command) < 3 || command[0] != "halite-hub" {
+			continue
+		}
+		if command[1] != "run" && command[1] != "ssh" {
+			continue
+		}
+		args, err := cli.Parse(command[2:])
+		if err != nil {
+			t.Errorf("%s does not parse: %v", backticked(cells[1]), err)
+			continue
+		}
+		_, target, fun, _, err := resolveTarget(args)
+		if err != nil {
+			t.Errorf("the matrix says %q works, and it yields no target: %v",
+				backticked(cells[1]), err)
+			continue
+		}
+		checked++
+		if target == "" || fun == "" {
+			t.Errorf("%s yields target %q and function %q",
+				backticked(cells[1]), target, fun)
+		}
+	}
+	if checked == 0 {
+		t.Error("no run or ssh rows were checked; this check has stopped checking")
+	}
+	t.Logf("checked %d documented target forms", checked)
 }

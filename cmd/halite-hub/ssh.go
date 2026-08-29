@@ -31,15 +31,17 @@ const oneshotProtocol = 1
 // pushes: one static binary, rather than a Python tarball that then has
 // to find a compatible Python on the target.
 func runSSH(args *cli.Args) int {
-	if len(args.Positional) < 2 {
+	// The same reading `run` uses, so the two cannot disagree about
+	// where a matcher flag puts the target. `-G 'os:FreeBSD'` carries
+	// it, and reading the flag as a boolean lost it here too.
+	kind, expression, fun, rest, err := resolveTarget(args)
+	if err != nil {
 		fmt.Fprint(os.Stderr, sshUsage)
 		return 2
 	}
-	expression, fun := args.Positional[0], args.Positional[1]
-	rest := args.Positional[2:]
 
 	h := openHub(args, false)
-	targets, err := sshTargets(h, args, expression)
+	targets, err := sshTargets(h, args, kind, expression)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -99,7 +101,7 @@ func runSSH(args *cli.Args) int {
 }
 
 // sshTargets resolves the roster and matches the expression against it.
-func sshTargets(h *hubContext, args *cli.Args, expression string) ([]roster.Target, error) {
+func sshTargets(h *hubContext, args *cli.Args, kind, expression string) ([]roster.Target, error) {
 	backend := args.Flag("roster", h.cfg.String("roster", "flat"))
 	if err := roster.CheckBackend(backend); err != nil {
 		return nil, err
@@ -133,7 +135,7 @@ func sshTargets(h *hubContext, args *cli.Args, expression string) ([]roster.Targ
 	// The targeting grammar of SPEC section 8, against the roster's
 	// names and the grains it attached — so `-G 'os:FreeBSD'` works on
 	// an agentless estate exactly as it does on an enrolled one.
-	matcher, err := sshMatcher(args, expression)
+	matcher, err := sshMatcher(kind, expression)
 	if err != nil {
 		return nil, err
 	}
@@ -152,20 +154,14 @@ func sshTargets(h *hubContext, args *cli.Args, expression string) ([]roster.Targ
 // and the grains it attached — so `-G 'os:FreeBSD'` works on an
 // agentless estate exactly as it does on an enrolled one, without a
 // second implementation of matching.
-func sshMatcher(args *cli.Args, expression string) (func(roster.Target) bool, error) {
+func sshMatcher(flag, expression string) (func(roster.Target) bool, error) {
 	kind := target.Glob
-	for _, flag := range []string{"L", "E", "G", "P", "I", "J", "S", "N", "C",
-		"list", "pcre", "grain", "grain_pcre", "pillar", "pillar_pcre", "ipcidr",
-		"nodegroup", "compound"} {
-		if !args.Bool(flag, false) {
-			continue
-		}
+	if flag != "" {
 		parsed, ok := target.KindFromFlag(flag)
 		if !ok {
 			return nil, fmt.Errorf("-%s is not a target kind", flag)
 		}
 		kind = parsed
-		break
 	}
 	matcher, err := target.Compile(kind, expression, nil)
 	if err != nil {

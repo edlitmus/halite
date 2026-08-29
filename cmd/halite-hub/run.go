@@ -118,20 +118,9 @@ func portOf(listen string) string {
 // runRun is `halite-hub run '<target>' <function> [args...]`, the old
 // `salt` command.
 func runRun(args *cli.Args) int {
-	if len(args.Positional) < 2 {
-		cli.Fatalf("run needs a target and a function: halite-hub run '*' test.ping")
-	}
-	target := args.Positional[0]
-	fun := args.Positional[1]
-	rest := args.Positional[2:]
-
-	kind := ""
-	for _, flag := range []string{"L", "E", "G", "P", "I", "J", "S", "N", "C",
-		"list", "pcre", "grain", "grain_pcre", "pillar", "pillar_pcre", "ipcidr", "nodegroup", "compound"} {
-		if args.Bool(flag, false) {
-			kind = flag
-			break
-		}
+	kind, target, fun, rest, err := resolveTarget(args)
+	if err != nil {
+		cli.Fatalf("%v", err)
 	}
 
 	kwargs := map[string]any{}
@@ -379,4 +368,60 @@ func loadPair(certPath, keyPath string) (tls.Certificate, error) {
 		return tls.Certificate{}, fmt.Errorf("%s and %s do not go together: %w", certPath, keyPath, err)
 	}
 	return pair, nil
+}
+
+// resolveTarget reads the target, its kind, and the function from a
+// `run` command line.
+//
+// A matcher flag carries the target, the way Salt writes it:
+// `-G 'os:FreeBSD' test.ping`. The argument parser gives a single-letter
+// flag the next token as its value, so the target arrives in the flag
+// rather than in the positionals — and reading those flags as booleans,
+// which this did, lost both the target and the kind and told the
+// operator the command needed a target they had just given.
+func resolveTarget(args *cli.Args) (kind, target, fun string, rest []string, err error) {
+	for _, flag := range matcherFlags {
+		v, given := args.Flags[flag]
+		if !given {
+			continue
+		}
+		kind = flag
+		// `-G 'os:FreeBSD'` carries the target; a bare `-G` before a
+		// positional one does not.
+		if v != "" && !isBoolWord(v) {
+			target = v
+		}
+		break
+	}
+
+	positional := args.Positional
+	if target == "" {
+		if len(positional) < 2 {
+			return "", "", "", nil, fmt.Errorf(
+				"run needs a target and a function: halite-hub run '*' test.ping, " +
+					"or halite-hub run -G 'os:FreeBSD' test.ping")
+		}
+		target = positional[0]
+		positional = positional[1:]
+	}
+	if len(positional) < 1 {
+		return "", "", "", nil, fmt.Errorf(
+			"run needs a function: halite-hub run -G 'os:FreeBSD' test.ping")
+	}
+	return kind, target, positional[0], positional[1:], nil
+}
+
+// matcherFlags are Salt's target selectors, long and short.
+var matcherFlags = []string{"L", "E", "G", "P", "I", "J", "S", "N", "C",
+	"list", "pcre", "grain", "grain_pcre", "pillar", "pillar_pcre",
+	"ipcidr", "nodegroup", "compound"}
+
+// isBoolWord reports whether a flag's value is one of the words that
+// means the flag was written as a switch rather than given a target.
+func isBoolWord(v string) bool {
+	switch strings.ToLower(v) {
+	case "true", "yes", "1", "on", "false", "no", "0", "off":
+		return true
+	}
+	return false
 }
