@@ -51,6 +51,7 @@ convergence, and everything else rests on it.
 | [Getting started](docs/getting-started.md) | Install, a first tree, a first apply. |
 | [Writing states](docs/states.md) | Declarations, requisites, templates, pillar. |
 | [Operations](docs/operations.md) | Scheduling, service files, exit codes, logging. |
+| [Metrics](docs/metrics.md) | Pointing Prometheus at it, every family, and what to alert on. |
 | [Coming from Salt](docs/from-salt.md) | A step-by-step migration: audit, hub, one node, compare, cut over. |
 | [Migrating from Salt](docs/migrating-from-salt.md) | The audit tool, and what is deliberately different. |
 | [Command reference](docs/command-reference.md) | Every Salt command, and what to type instead. |

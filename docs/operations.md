@@ -747,183 +747,18 @@ version bump, so a dashboard built on it keeps working.
 Every component records Prometheus metrics and exposes them at
 `/v1/metrics`. On by default; `metrics: false` turns the recording off.
 
-**Point the scraper at `halite-api`.** It is the only part of the
-control plane a scraper can reach, and it answers with both expositions,
-its own and the hub's, merged into one document.
-
-The hub cannot be scraped directly, by curl or by Prometheus or by
-anything else that does not speak halite's own ALPN identifier. Trying
-it looks like this, with or without a client certificate:
-
-```
-$ curl https://hub.example:4510/v1/metrics
-curl: (35) TLS connect error: error:0A000438:SSL routines::tlsv1 alert internal error
-```
-
-That is the ALPN gate of [DIVERGENCE 1.7](DIVERGENCE.md), not a
-certificate problem, and TLS 1.3 has no way to say so in the alert.
-
-Scrape the API instead:
-
-```yaml
-scrape_configs:
-  - job_name: halite
-    scheme: https
-    authorization:
-      credentials_file: /etc/prometheus/halite.token
-    static_configs:
-      - targets: ['api.example:4511']
-```
-
-The token needs `metrics.show` in its role's `runners:` list, and the
-API's own certificate needs it at the hub, like every other request:
-
-```yaml
-roles:
-  scraper:
-    - runners: ['metrics.show']
-bindings:
-  - principal: 'local:prometheus'
-    roles: ['scraper']
-```
-
-Issue it a token with a long life and no idle expiry, since a scraper
-does not log in.
-
-If the hub cannot be reached, the scrape still succeeds: the API's own
-numbers come back and the reason appears as a comment, which the scraper
-ignores. `halite_api_hub_scrape_failures_total` is the one to alert on —
-it counts in the scrape that failed, not the one after.
-
-To read the hub's own numbers directly, from the hub:
+Point the scraper at `halite-api` on 4511, not at the hub: the API
+answers with both expositions merged, and the hub speaks its own ALPN
+identifier that no ordinary client can send. Reading them by hand:
 
 ```sh
 halite-hub metrics --as ed
 halite-hub metrics --as ed --filter reactor
 ```
 
-`--filter` keeps the `# HELP` and `# TYPE` lines, which is what `grep`
-loses and what says whether a counter exists at all.
-
-### What is exposed
-
-All families are prefixed `halite_`. The hub carries most; `halite_api_*`
-are the API's own. **A node exposes none** — it has no listener to expose
-them on, and what it does shows up on the hub as jobs, returns, and
-events.
-
-| Family | Type | Labels | What it says |
-|---|---|---|---|
-| `halite_build_info` | gauge | `component` `version` `commit` `go_version` `fips` | Always 1. What is deployed, per component. |
-| `halite_hub_nodes_connected` | gauge | — | Nodes holding an open subscribe stream, relayed ones included. |
-| `halite_hub_node_connect_total` | counter | — | Connections accepted. A rising rate against a flat gauge is a node reconnecting in a loop. |
-| `halite_hub_node_disconnect_total` | counter | `reason` | The other half, and why. |
-| `halite_hub_keys_accepted` | gauge | — | Nodes holding an issued certificate. |
-| `halite_hub_keys_pending` | gauge | — | Enrollment requests waiting for an operator. |
-| `halite_jobs_dispatched_total` | counter | `fun` | Jobs sent, by function. |
-| `halite_job_returns_total` | counter | `result` | Returns filed, by outcome. |
-| `halite_job_duration_seconds` | histogram | `fun` | How long jobs take. |
-| `halite_jobs_missing_returns` | gauge | — | Nodes a dispatched job has not heard from. |
-| `halite_jobs_expired_total` | counter | — | Jobs whose TTL passed before every node answered. |
-| `halite_state_states_total` | counter | `result` | Individual states applied, by outcome. |
-| `halite_state_changes_total` | counter | — | States that changed something rather than converging. |
-| `halite_pillar_compile_duration_seconds` | histogram | — | How long the hub takes to compile one node's pillar. |
-| `halite_pillar_failures_total` | counter | — | Compilations that failed, so a node got no pillar. |
-| `halite_fileserver_requests_total` | counter | `backend` `code` | Tree fetches. |
-| `halite_fileserver_bytes_total` | counter | — | Bytes served. |
-| `halite_events_published_total` | counter | `tag_prefix` | Events reaching the bus. |
-| `halite_events_dropped_total` | counter | `reason` | Events that did not. Should be zero. |
-| `halite_reactor_duration_seconds` | histogram | `tag_prefix` | Render and dispatch time for one reaction. |
-| `halite_reactor_dropped_total` | counter | — | Reactions the queue could not hold. |
-| `halite_reactor_failures_total` | counter | `reason` | Reactions that failed. |
-| `halite_beacon_events_total` | counter | `beacon` | Beacon events received from nodes. |
-| `halite_authz_decisions_total` | counter | `result` | Every policy decision, allowed and denied. |
-| `halite_auth_attempts_total` | counter | `method` `result` | Logins at the API, by backend. |
-| `halite_api_requests_total` | counter | `route` `code` | API requests. |
-| `halite_api_request_duration_seconds` | histogram | `route` | How long they take. |
-| `halite_api_event_streams` | gauge | `transport` | Event streams open, SSE and WebSocket. |
-| `halite_api_hook_deliveries_total` | counter | `path` `result` | Webhook deliveries received. |
-| `halite_api_hub_scrape_failures_total` | counter | — | Times the API could not read the hub's exposition. |
-
-A family is declared before anything has been observed, so a counter
-that has never fired is still in the exposition at zero. That is
-deliberate: an alert on a metric that does not exist never fires, and
-absence looks the same as quiet.
-
-#### Families that appear only when the feature is running
-
-These are registered by the subsystem that owns them, because a gauge
-reading a queue that does not exist would read zero for ever:
-
-| Family | Type | Labels | Appears when |
-|---|---|---|---|
-| `halite_reactor_queue_depth` | gauge | — | `reactor:` has entries and the reactor is running |
-| `halite_relay_subordinates` | gauge | — | `relay: true` |
-| `halite_relay_upstream_connected` | gauge | — | `relay: true` |
-| `halite_relay_spool_entries` | gauge | — | `relay: true` |
-| `halite_relay_spool_dropped_total` | gauge | — | `relay: true` |
-| `halite_relay_returns_forwarded_total` | counter | `result` | `relay: true` |
-| `halite_relay_events_forwarded_total` | counter | — | `relay: true` |
-
-An alert written against one of these on a hub that is not a relay will
-never fire, and not because nothing is wrong.
-
-#### What SPEC 26.2 names and this build does not have
-
-Eleven of the thirty-two families in the specification's table are not
-registered. An alert written from SPEC rather than from this list will
-sit silent for ever:
-
-`halite_state_run_duration_seconds`, `halite_state_compile_duration_seconds`,
-`halite_pillar_cache_hits_total`, `halite_pillar_ext_failures_total`,
-`halite_gitfs_fetch_duration_seconds`, `halite_gitfs_signature_failures_total`,
-`halite_event_subscriber_lag_seconds`, `halite_beacon_dropped_total`,
-`halite_ext_invocations_total`, `halite_ext_duration_seconds`,
-`halite_ext_timeouts_total`.
-
-`halite_pillar_ext_failures_total` waits on external pillar, which is not
-built at all. The rest are subsystems that exist and are not yet
-counted. [DIVERGENCE 5.23](DIVERGENCE.md) records it.
-
-### The series cap
-
-A family holds at most 512 series. Past that, further label values are
-counted together under `__overflow__` rather than dropped, so the total
-stays right and the overflow is visible:
-
-```
-halite_jobs_dispatched_total{fun="__overflow__"} 1483
-```
-
-Seeing it means a label is taking unbounded values — most likely `fun`
-on an estate running hundreds of distinct functions. The number is still
-correct; the breakdown is not. There is no setting for it: an exposition
-that can grow without limit is a way to run the scraper out of memory
-from the estate being scraped.
-
-### What to alert on
-
-| Metric | Why |
-|---|---|
-| `halite_events_dropped_total` | The bus lost something. It should be zero. |
-| `halite_reactor_dropped_total` | The reactor's queue overflowed; reactions did not run. |
-| `halite_reactor_queue_depth` | Rising means the workers are behind. |
-| `halite_jobs_missing_returns` | Nodes a dispatched job has not heard from. |
-| `halite_authz_decisions_total{result="denied"}` | A rate, not a total: a rise is either a misconfigured role or someone trying. |
-| `halite_auth_attempts_total{result="refused"}` | The same, at the login. |
-| `halite_pillar_failures_total` | A node is getting no pillar, which SPEC 12.7 prefers to a partial one. |
-| `halite_api_hub_scrape_failures_total` | The API cannot reach the hub. |
-
-Every bounded queue and every drop path has a counter — SPEC 26.2 makes
-that a rule, because it is what turns a backpressure design into
-something that can be audited. A family is declared in the exposition
-before anything has been observed, so you can see the counter exists
-before it fires.
-
-A family holds at most 512 series. Past that, observations are counted
-under `__overflow__` rather than dropped or allowed to grow without
-bound: an estate with a thousand distinct functions would otherwise turn
-`halite_jobs_dispatched_total` into a thousand series.
+[metrics.md](metrics.md) is the whole of it — the scraper configuration
+end to end, every family with its labels and meaning, the alerting
+rules, and what the specification names that this build does not have.
 
 ## Before you apply anything
 

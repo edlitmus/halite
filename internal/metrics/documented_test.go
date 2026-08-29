@@ -60,22 +60,23 @@ func registeredFamilies(t *testing.T) map[string]bool {
 func TestEveryDocumentedMetricExists(t *testing.T) {
 	registered := registeredFamilies(t)
 
-	body, err := os.ReadFile(filepath.Join("..", "..", "docs", "operations.md"))
+	body, err := os.ReadFile(filepath.Join("..", "..", "docs", "metrics.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(body)
+	rest := string(body)
 
-	// Only the metrics section: elsewhere `halite_hub_fips` and friends
-	// are rc.conf variables, which share the prefix and are not metrics.
-	from := strings.Index(text, "## Metrics")
-	if from < 0 {
-		t.Fatal("operations.md has no metrics section; this check is reading nothing")
+	// Not the section whose whole purpose is naming what is absent.
+	const absent = "### What SPEC 26.2 names and this build does not have"
+	cut := strings.Index(rest, absent)
+	if cut < 0 {
+		t.Fatal("metrics.md no longer names what is missing; this check is reading the wrong file")
 	}
-	rest := text[from+len("## Metrics"):]
-	if to := strings.Index(rest, "\n## "); to > 0 {
-		rest = rest[:to]
+	end := strings.Index(rest[cut:], "## The series cap")
+	if end < 0 {
+		t.Fatal("the absent-metrics section has no end; this check cannot skip it")
 	}
+	rest = rest[:cut] + rest[cut+end:]
 	// And not the subsection whose whole purpose is naming what is
 	// absent.
 	if cut := strings.Index(rest, "#### What SPEC 26.2 names and this build does not have"); cut >= 0 {
@@ -91,8 +92,8 @@ func TestEveryDocumentedMetricExists(t *testing.T) {
 		for _, m := range named.FindAllStringSubmatch(line, -1) {
 			checked++
 			if !registered[m[1]] {
-				t.Errorf("the metrics section names %s (line %d of the section), "+
-					"which this build never registers", m[1], i+1)
+				t.Errorf("docs/metrics.md:%d names %s, which this build never registers",
+					i+1, m[1])
 			}
 		}
 	}
