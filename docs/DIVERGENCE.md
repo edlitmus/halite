@@ -721,7 +721,7 @@ functions declare a restriction; the Linux binary answers
 | FreeBSD amd64 | yes | yes | yes — grains, highstate, drift reconvergence, requisites |
 | Linux amd64 | yes | yes, under emulation — 19 of 21 packages | yes — a node enrolled with a hub, highstate applied, under systemd (Ubuntu; see 4.5) |
 | Linux arm64 | yes | no | no |
-| macOS | yes, since 2026-08-29 | no | no |
+| macOS | yes, since 2026-08-29, and built natively on one | no | no |
 | Windows | yes | no | no |
 
 ### 4.0 Where each platform keeps its files
@@ -848,6 +848,11 @@ invisible to it, and `make cross` is a release step nobody runs while
 working. `make build-all` compiles every shipped target and is part of
 `make check` now, which is what should have been true before the claim
 "macOS: compiles" was written down.
+
+The fix was cross-compiled here and then built natively on a Mac, which
+is the difference between the claim the matrix used to make and one
+worth writing down. Nothing has been *run* there: `pkg`, `service`, and
+everything under `mac_*` are as unexercised as they were.
 
 OpenBSD still does not build — `syscall.RLIMIT_AS` does not exist there
 — and is not in the shipped target list, so nothing claims it does.
