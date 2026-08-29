@@ -61,17 +61,53 @@ of the exposition disappear.
 
 ### 2. The scraper needs an account and the same grant
 
+A scraper is a machine identity, which is what local accounts are for —
+OIDC and LDAP are the operator path and there is nobody to log in here.
+Generate a password, keep it where the token will be generated from, and
+hash it:
+
+```sh
+head -c 32 /dev/urandom | base64 > /etc/prometheus/halite.password
+chmod 600 /etc/prometheus/halite.password
+halite-api account hash < /etc/prometheus/halite.password
+```
+
+`account hash` reads the password from standard input rather than from
+an argument, which would reach the process table and the shell history.
+It prints the verifier and never the password.
+
+Put that in the account file — `<config root>/accounts.yaml` unless
+`accounts` in `api.yaml` says otherwise:
+
 ```yaml
+accounts:
+  prometheus:
+    hash: 'pbkdf2-sha512$600000$NjtK87YzEN8VZnUqJr0…'
+    roles:
+      - scraper
+```
+
+The `roles` here and a binding in `policy.yaml` are two routes to the
+same thing, and an account gets the union of both. One or the other is
+enough:
+
+```yaml
+# policy.yaml, if you would rather keep the grants in one file
 bindings:
   - principal: 'local:prometheus'
     roles: ['scraper']
 ```
 
-Then an account for it in `accounts.yaml`, with a password generated
-from bytes nobody keeps:
+The file holds password verifiers, so give it mode 0600 and the account
+`halite-api` runs as.
+[`contrib/examples/accounts.yaml`](../contrib/examples/accounts.yaml)
+is a worked one with every field, and
+[configuration.md](configuration.md) has the `accounts` setting.
+
+Check it before going further:
 
 ```sh
-halite-api account hash < /dev/urandom_or_your_secret_store
+halite-api account list
 ```
 
 ### 3. Issue it a token
