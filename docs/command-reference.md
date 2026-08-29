@@ -190,12 +190,39 @@ startup rather than treating the absence as permission.
 |---|---|---|
 | `salt '*' test.ping` | `halite-hub run '*' test.ping` | works |
 | `salt -G 'os:FreeBSD' state.apply` | `halite-hub run -G 'os:FreeBSD' state.apply` | works |
+| `salt -G 'os:FreeBSD' cmd.run 'checkrestart'` | `halite-hub run -G 'os:FreeBSD' cmd.run checkrestart` | works, once the role names `cmd.run` |
+| `salt '*' cmd.run 'uname -s'` | `halite-hub run '*' cmd.run uname args='["-s"]'` | works |
 | `salt '*' state.apply test=True` | `halite-hub run '*' state.apply --test` | works |
 | `salt --async '*' state.apply` | `halite-hub run --async '*' state.apply` | works |
 | `salt --timeout=60 '*' test.ping` | `halite-hub run --timeout 60s '*' test.ping` | works |
 | `salt-run jobs.list_jobs` | `halite-hub jobs list` | works |
 | `salt-run jobs.lookup_jid <jid>` | `halite-hub jobs lookup <jid>` | works |
 | `salt-run jobs.print_job <jid>` | `halite-hub jobs show <jid>` | works |
+
+`cmd.run` across the fleet needs the policy to name it. `functions: ['*']`
+does not include it, or `cmd.script`, `cmd.shell`, `module.run`,
+`file.write`, or `file.replace` — they run arbitrary code, and a wildcard
+never grants them. The refusal says so:
+
+```
+denied: cmd.run runs arbitrary code and is never granted by a wildcard;
+name it in the role's functions (SPEC 23.5)
+```
+
+Give it its own role rather than adding it to an existing one, so that a
+shell on the fleet is a line somebody wrote on purpose:
+
+```yaml
+roles:
+  shell:
+    - target: '*'
+      functions: ['cmd.run']
+```
+
+And `cmd.run` takes a program, not a shell line: `args=` carries the
+arguments, `shell=true` is there when a pipe or a redirection is really
+wanted, and `cmd_default_shell: true` restores Salt's reading everywhere
+during a migration.
 | no equivalent | `halite-hub jobs missing <jid>` | works |
 | no equivalent | `halite-hub jobs prune` | works |
 | no equivalent | `halite-hub keys operator create <name>` | works |
