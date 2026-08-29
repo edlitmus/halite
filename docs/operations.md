@@ -1061,6 +1061,7 @@ Two failures worth recognising, because neither names the directory:
 |---|---|
 | `daemon: open: Permission denied`, and the service does not start | The log directory is not writable by the account. rc.subr drops to it before `daemon` runs. |
 | `no node matched "*"` immediately after `keys list` shows the node accepted | The hub cannot read `<cache dir>/nodes`, so every node is skipped during targeting. |
+| `/v1/enroll: reading the record for <node>: permission denied`, on a node whose key you just accepted | A key record written by root into a store owned by the service account. `keys accept` now hands the record to whoever owns the store, but a record written before that is still root's. |
 
 The second is refused at startup now — a hub whose node cache it cannot
 write says so and stops, rather than starting and matching nothing. The

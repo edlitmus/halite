@@ -250,5 +250,10 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
+	// Before the rename, so the record is never briefly readable by the
+	// wrong account and never left owned by the wrong one.
+	if err := inheritOwner(name, filepath.Dir(path)); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
 	return os.Rename(name, path)
 }
