@@ -748,9 +748,22 @@ Every component records Prometheus metrics and exposes them at
 `/v1/metrics`. On by default; `metrics: false` turns the recording off.
 
 **Point the scraper at `halite-api`.** It is the only part of the
-control plane a scraper can reach — the hub speaks its own ALPN protocol
-over mutual TLS — and it answers with both expositions, its own and the
-hub's, merged into one document:
+control plane a scraper can reach, and it answers with both expositions,
+its own and the hub's, merged into one document.
+
+The hub cannot be scraped directly, by curl or by Prometheus or by
+anything else that does not speak halite's own ALPN identifier. Trying
+it looks like this, with or without a client certificate:
+
+```
+$ curl https://hub.example:4510/v1/metrics
+curl: (35) TLS connect error: error:0A000438:SSL routines::tlsv1 alert internal error
+```
+
+That is the ALPN gate of [DIVERGENCE 1.7](DIVERGENCE.md), not a
+certificate problem, and TLS 1.3 has no way to say so in the alert.
+
+Scrape the API instead:
 
 ```yaml
 scrape_configs:

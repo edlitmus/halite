@@ -195,12 +195,30 @@ printf 'GET /v1/health HTTP/1.1\r\nHost: hub\r\nConnection: close\r\n\r\n' |
   openssl s_client -connect hub:4510 -alpn halite/1,http/1.1 -CAfile ca.crt -quiet
 ```
 
-A client that offers neither -- `curl` with its defaults, a browser, a
-load balancer's HTTPS check -- is refused at the handshake with `no
-application protocol`. That is the gate working, and it is worth knowing
-before a health check is pointed at the port: `/v1/health` is reachable
-without a *certificate*, which is what SPEC 6.2 says, and not without
-the *protocol*.
+A client that does not offer `halite/1` -- `curl` with its defaults, a
+browser, a load balancer's HTTPS check, Prometheus -- is refused at the
+handshake. Measured against the running hub, the alert depends on what
+was offered:
+
+| What the client offers | What it gets |
+|---|---|
+| nothing, or `h2` alone | `tlsv1 alert internal error` |
+| `halite/1` alone | `no application protocol` |
+| `halite/1` and `h2` | connects, and `h2` is selected |
+
+`internal error` is the one an operator meets, and it says nothing about
+ALPN, certificates, or halite. It is what `requireProtocol` returning an
+error from `GetConfigForClient` becomes on the wire: TLS 1.3 has no way
+to carry a reason, so there is no better alert to send. This entry said
+`no application protocol` until 2026-08-29, which is the answer for an
+offer no real client makes, and would have sent anyone debugging the
+common case looking in the wrong place.
+
+That is the gate working, and it is worth knowing before a health check
+or a scraper is pointed at the port: `/v1/health` is reachable without a
+*certificate*, which is what SPEC 6.2 says, and not without the
+*protocol*. A scraper reaches the hub's metrics through `halite-api`,
+whose listener is ordinary TLS; operations.md says how.
 
 ### 1.8 A relay does not forward what it was asked to do itself
 
