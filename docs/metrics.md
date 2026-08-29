@@ -138,7 +138,9 @@ scrape_configs:
       credentials_file: /etc/prometheus/halite.token
     tls_config:
       # The certificate halite-api presents, which is its own and not
-      # the enrollment CA.
+      # the enrollment CA — see "The API's serving certificate" in
+      # operations.md for where it comes from. For a self-signed one,
+      # this is that same file.
       ca_file: /etc/prometheus/halite-api-ca.crt
     static_configs:
       - targets: ['api.example:4511']

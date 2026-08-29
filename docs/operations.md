@@ -742,6 +742,54 @@ halite-node state apply --local --out json | jq '.[] | select(.result == false)'
 The JSON shape is SPEC section 11.8 and does not change without a
 version bump, so a dashboard built on it keeps working.
 
+## The API's serving certificate
+
+`halite-api serve` will not start without one:
+
+```
+this service needs a serving certificate; set `tls_cert` and `tls_key`,
+or pass --tls-cert and --tls-key
+```
+
+**It does not come from the enrollment CA, and there is no command that
+issues one.** That is deliberate. The API serves ordinary HTTPS clients
+— browsers, `curl`, a Prometheus scraper — and those already trust some
+set of certificate authorities. Issuing its certificate from the
+enrollment CA would mean teaching every one of them to trust the
+authority that also issues node identities, which is a much larger thing
+to trust than a web server needs.
+
+So it comes from wherever the rest of your HTTPS certificates come from:
+an internal CA, ACME, or the estate's own tooling. For a lab, or a first
+run, self-signed is enough:
+
+```sh
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+    -keyout /usr/local/etc/halite/pki/api.key \
+    -out /usr/local/etc/halite/pki/api.crt \
+    -days 365 -subj '/CN=api.example' \
+    -addext 'subjectAltName=DNS:api.example,IP:10.0.0.5'
+```
+
+The names in `subjectAltName` are what a client verifies, so put every
+name and address the API will be reached by in there — a certificate
+with only a `CN` is refused by every current client.
+
+```yaml
+# api.yaml
+tls_cert: /usr/local/etc/halite/pki/api.crt
+tls_key: /usr/local/etc/halite/pki/api.key
+```
+
+Give the key mode 0600 and the account the API runs as. A scraper or any
+other client then needs that certificate — or the CA that signed it — as
+its `ca_file`; for a self-signed one they are the same file.
+
+halite can manage this itself once it is running: `x509.create_certificate`
+and `x509.private_key_managed` are in the [module
+reference](modules.md), so the API's own certificate can be a state in
+the tree like anything else, renewed on a schedule.
+
 ## Metrics
 
 Every component records Prometheus metrics and exposes them at
@@ -840,6 +888,12 @@ everything else read-only, so a service left on the built-in default
 could not write a token at all.
 
 ### Setting it up
+
+Worked configuration files for all three programs, plus a policy and an
+account file, are in
+[`contrib/examples/`](../contrib/examples/). Each is loaded by a test as
+the program it is written for, so none of them can teach a setting that
+does not exist.
 
 Create the account, then let the build do the rest:
 
