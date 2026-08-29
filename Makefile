@@ -124,6 +124,10 @@ race:
 # the systemd service provider. The compat layer has no Linux package
 # manager and no init, so provider selection correctly reaches for the
 # FreeBSD binaries that are there. Those wait on a real Linux host.
+#
+# builtin, docsaudit and gitfs fail here and are expected to: each is the
+# emulator rather than the code, and DIVERGENCE 4.1 says which test and
+# why. A fourth package failing is a finding.
 test-linux:
 	@set -e; \
 	tmp=$$(mktemp -d); trap "rm -rf $$tmp" EXIT; \
@@ -140,7 +144,7 @@ test-linux:
 		fi; \
 	done; \
 	echo "linux: $$pass package(s) passed, $$fail failed:$$failed"; \
-	echo "(builtin and docsaudit are expected to fail here; see the Makefile comment)"
+	echo "(builtin, docsaudit and gitfs are expected to fail here; see DIVERGENCE 4.1)"
 
 # Fuzzing, SPEC section 31. Go runs one target per invocation, so each is
 # named. FUZZTIME is per target; the default is a short smoke run, and a

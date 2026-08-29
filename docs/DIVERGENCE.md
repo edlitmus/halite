@@ -711,15 +711,23 @@ by `service -l`, `available sshd` true, and masking refused by name.
 
 ## 4. Platform coverage
 
-A module restricted to a platform now refuses on any other by name,
-rather than reaching the module and reporting a missing binary. Twelve
-functions declare a restriction; the Linux binary answers
-`sysrc.get runs on freebsd, and this node is linux`.
+A module restricted to a platform refuses on any other by name, rather
+than reaching the module and reporting a missing binary: the Linux
+binary answers `sysrc.get runs on freebsd, and this node is linux`.
+Checked on 2026-08-29 by running the Linux build, which is also what
+makes `builtin/TestSysrcPresent` fail there — the refusal working, and
+the test not expecting it.
+
+Three numbers in this section were stale when audited on that date: the
+packages passing under emulation, the grain key count, and the number of
+restricted functions. What is written down now is the property in each
+case, because a count in prose goes stale the first time the thing is
+added to and nobody re-reads the sentence.
 
 | Platform | Compiles | Unit tests run | Verified against a real system |
 |---|---|---|---|
 | FreeBSD amd64 | yes | yes | yes — grains, highstate, drift reconvergence, requisites |
-| Linux amd64 | yes | yes, under emulation — 19 of 21 packages | yes — a node enrolled with a hub, highstate applied, under systemd (Ubuntu; see 4.5) |
+| Linux amd64 | yes | yes, under emulation — all but three packages, named in 4.1 | yes — a node enrolled with a hub, highstate applied, under systemd (Ubuntu; see 4.5) |
 | Linux arm64 | yes | no | no |
 | macOS | yes, since 2026-08-29, and built natively on one | no | no |
 | Windows | yes | no | no |
@@ -761,22 +769,38 @@ so `/etc` is the honest default rather than a guess at one.
 
 The development host is FreeBSD with the Linux compat layer, linprocfs, and
 linsysfs, so it executes Linux ELF binaries directly. `make test-linux`
-cross-compiles the test binaries and runs them there: 23 of 25 packages pass, the CLI
-tests among them. The two failures are the emulator rather than the code:
+cross-compiles the test binaries and runs them there: every package but
+three passes, the CLI tests among them. A count is not given because the
+last two written down here were both stale — the package list grows and
+nobody re-reads the sentence. Which three, and why each is the emulator
+rather than the code:
 
 - `builtin/TestFileAccess` — the compat layer resolves a symlink's absolute
   target against the FreeBSD root, so a stat through the link fails while a
   stat of the same path string succeeds. Reduced to a nine-line Go program
   that reproduces it with no halite involved.
+- `builtin/TestSysrcPresent` — the restriction working, and the test not
+  knowing it: the module answers `sysrc.present runs on freebsd, and this
+  node is linux`, which is the behaviour the top of this section
+  describes. The test asserts the FreeBSD path.
+- `builtin/TestCurrentHashSaysWhenItCannotRead` — expects a refusal about
+  privilege and gets one about absence, because the compat layer has no
+  `/etc/shadow` at all.
 - `docsaudit` — shells out to the Go toolchain, which a cross-executed
   binary cannot reach.
+- `gitfs` — shells out to `git`, and the native binary sees a different
+  `/tmp` than the emulated one that created the repository. The same path
+  resolution as `TestFileAccess`, one process further out.
 
 Grain collection was the sharpest edge and is no longer theoretical. The
 Linux grain code reads `/proc` and `/sys` where the FreeBSD code reads
 sysctl — a separate implementation, previously never executed. Run here it
-returns the same 63 keys the FreeBSD collector returns, no key unique to
-either side, and every hardware fact agrees between them: the same CPU
-model, the same 12 cores, the same 130902 MB. `os` comes back `Rocky` and
+returns the same key set the FreeBSD collector returns, with no key
+unique to either side, and every hardware fact agrees between them: the
+same CPU model, the same core count, the same memory. Re-checked on
+2026-08-29 after the FIPS grains were added — the count had moved from
+63 to 66 and the sentence still said 63, so what is recorded now is the
+property rather than the number. `os` comes back `Rocky` and
 `os_family` `RedHat`, from the userland actually installed.
 
 ### 4.2 What it did not establish
