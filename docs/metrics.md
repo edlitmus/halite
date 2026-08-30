@@ -112,8 +112,22 @@ halite-api account list
 
 ### 3. Issue it a token
 
-A scraper does not log in, so give the token a long life and no idle
-expiry — `token_lifetime` and `token_idle` in `api.yaml` govern both.
+A scraper cannot log in again when its token runs out, so the defaults
+are wrong for one. `token_lifetime` is 12h: a token minted in the
+afternoon is dead by the next morning, and the scrape starts failing
+overnight with nothing to say why. Set it in `api.yaml` before minting:
+
+```yaml
+# api.yaml — a scraper's token has to outlive a working day
+token_lifetime: 8760h
+```
+
+`token_idle` is 4h and cannot be turned off: zero means the default
+rather than "no idle expiry", and only a negative value disables it.
+That is harmless for a scraper, which uses the token every scrape
+interval and never goes idle, but it does mean a token parked for an
+afternoon stops working.
+
 Log in once and keep the token:
 
 ```sh
@@ -161,17 +175,73 @@ scrape_configs:
       - targets: ['api.example:4511']
 ```
 
-Confirm it by hand before trusting the scraper:
+Both files have to be readable **by the account Prometheus runs as**,
+which is not the one halite runs as. Do not point either setting inside
+halite's own directories:
+
+```
+/usr/local/etc/halite/pki   drwxr--r--   halite:wheel
+```
+
+That directory has no execute bit for anyone but `halite`, so nothing
+else can open a file inside it however permissive the file itself looks.
+A `ca_file` under `pki/` fails for the scraper even though `root` and
+the operator can both read it perfectly well. Give Prometheus its own
+copies:
 
 ```sh
-curl -sS --fail-with-body --cacert /etc/prometheus/halite-api-ca.crt \
-  -H "Authorization: Bearer $(cat /etc/prometheus/halite.token)" \
+install -o root -g wheel -m 0644 \
+    /usr/local/etc/halite/pki/api.crt \
+    /usr/local/etc/prometheus/halite-api-ca.crt
+install -o prometheus -g prometheus -m 0600 \
+    /dev/null /usr/local/etc/prometheus/halite.token
+```
+
+and check it as that account rather than as yourself:
+
+```sh
+su -m prometheus -c 'cat /usr/local/etc/prometheus/halite.token'
+```
+
+The serving certificate is `api.crt`, not `ca.crt`. The enrollment CA
+signs node identities and does not sign this, so pointing `ca_file` at
+it fails verification even once the permissions are right.
+
+**A permission failure here produces no target at all**, which is worse
+than a failing one. Prometheus cannot build the scrape pool, so there is
+nothing to be down: `up{job="halite"}` is empty rather than 0, the
+target is missing from `/api/v1/targets`, and every alert in this
+document is silent because they all match on a series that was never
+created. The only evidence is a log line, every scrape interval:
+
+```
+level=error component="scrape manager" msg="error creating new scrape pool"
+err="error creating HTTP client: unable to read CA cert: ...: permission denied"
+scrape_pool=halite
+```
+
+So `absent(up{job="halite"})` belongs in the rules below alongside
+anything watching `up` itself — see [Alerting](#alerting).
+
+Validate the file before restarting; `promtool` checks that both files
+exist and are readable, which catches this:
+
+```sh
+promtool check config /usr/local/etc/prometheus.yml
+```
+
+Then confirm the endpoint by hand:
+
+```sh
+curl -sS --fail-with-body --cacert /usr/local/etc/prometheus/halite-api-ca.crt \
+  -H "Authorization: Bearer $(cat /usr/local/etc/prometheus/halite.token)" \
   https://api.example:4511/v1/metrics | head
 ```
 
-The Prometheus configuration above has not been run against a live
-Prometheus; the endpoint, the token, and both grants have been, with
-`curl` standing in for the scraper.
+The stanza above is accepted by `promtool check config`. The endpoint,
+the token, and both grants have been exercised with `curl` standing in
+for the scraper; the paths shown are FreeBSD's, and a Linux host puts
+the same files under `/etc/prometheus/`.
 
 ## What is exposed
 
@@ -292,14 +362,33 @@ question:
 
 ## Alerting
 
-The rules below are illustrative — they have not been loaded into a live
-Prometheus — but every metric in them exists in this build, which is
-checked by a test.
+Every metric in the rules below exists in this build, which is checked
+by a test, and the block is accepted by `promtool check rules`. They
+have not been evaluated against live data, so the thresholds are a
+starting point rather than tuned figures.
 
 ```yaml
 groups:
   - name: halite
     rules:
+      # First, that the scrape exists at all. A scrape pool that fails
+      # to build — an unreadable ca_file or token — registers no target,
+      # so `up` is absent rather than 0 and every other rule here goes
+      # quiet without firing. This is the only rule that catches that.
+      - alert: HaliteScrapeMissing
+        expr: absent(up{job="halite"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "No halite target exists; check prometheus.yml and the log"
+
+      - alert: HaliteScrapeDown
+        expr: up{job="halite"} == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "halite-api is not answering the scrape"
+
       # Nothing should ever be dropped. Both of these are bounded
       # queues whose overflow SPEC 26.2 requires be counted.
       - alert: HaliteEventsDropped
