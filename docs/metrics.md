@@ -54,10 +54,43 @@ bindings:
     roles: ['scraper']
 ```
 
-`cert:CN=api` is whatever `api_operator` names in `api.yaml`. A role
-with `runners: ['metrics.show']` and nothing else is enough — this was
-checked by giving the API a role without it and watching the hub's half
-of the exposition disappear.
+`cert:CN=api` is whatever `api_operator` names in `api.yaml`, which
+defaults to `api`. A role with `runners: ['metrics.show']` and nothing
+else is enough — this was checked by giving the API a role without it
+and watching the hub's half of the exposition disappear.
+
+Check the binding before restarting anything. `policy test` reads the
+file rather than asking the running hub, so it answers for an edit that
+is not live yet:
+
+```sh
+halite-hub policy test 'cert:CN=api' '*' metrics.show --runner
+```
+
+```
+allowed by role "scraper" rule 0
+```
+
+`--runner` is not optional here. `metrics.show` is a runner, and without
+the flag the same command is evaluated as a job against a target and
+comes back denied — a denial that says nothing about the binding you
+meant to test.
+
+A principal with no binding at all says so plainly, which is the shape
+this mistake usually takes:
+
+```
+denied: cert:CN=api is bound to no role in /usr/local/etc/halite/policy.yaml
+```
+
+The hub reads the policy once at startup and has no SIGHUP handler, so
+an edit needs `service halite_hub restart` before it takes effect.
+
+**A missing grant here does not fail the scrape.** Prometheus keeps
+reporting `up == 1`, and the exposition simply arrives without any
+`halite_hub_*` family in it — the API serves its own and drops the half
+it could not read. `halite_api_hub_scrape_failures_total` is the signal,
+and the [alerting rules](#alerting) below watch it for exactly this.
 
 ### 2. The scraper needs an account and the same grant
 
