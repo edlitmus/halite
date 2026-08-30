@@ -54,6 +54,8 @@ serve flags:
 
 token flags:
   --limit <n>          how many tokens to list, default 20
+  --principal <name>   revoke every token this principal holds, instead
+                       of naming one token
 
 account flags:
   --iterations <n>     PBKDF2 cost for a new hash
@@ -75,6 +77,7 @@ func main() {
 		fmt.Print(usage)
 		os.Exit(0)
 	}
+	cli.RejectUnknownFlags(args, "halite-api "+os.Args[1], usage)
 
 	switch os.Args[1] {
 	case "version", "--version", "-v":

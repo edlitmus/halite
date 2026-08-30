@@ -111,6 +111,7 @@ func main() {
 		fmt.Print(usage)
 		os.Exit(0)
 	}
+	cli.RejectUnknownFlags(args, "halite-node "+sub, usage)
 
 	switch sub {
 	case "version", "--version", "-v":

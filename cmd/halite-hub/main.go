@@ -133,6 +133,19 @@ migrate flags:
                        module found, one command per module (SPEC 24.6)
 `
 
+// subUsage names the text that documents each subcommand's own flags,
+// so an unknown flag is judged against the command actually asked for
+// rather than against everything the program can do.
+var subUsage = map[string][]string{
+	"keys":   {keysUsage},
+	"jobs":   {jobsUsage},
+	"policy": {policyUsage},
+	"event":  {eventUsage},
+	"runner": {runnerUsage},
+	"orch":   {orchUsage},
+	"ssh":    {sshUsage},
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
@@ -150,6 +163,8 @@ func main() {
 		fmt.Print(usage)
 		os.Exit(0)
 	}
+	cli.RejectUnknownFlags(args, "halite-hub "+os.Args[1],
+		append([]string{usage}, subUsage[os.Args[1]]...)...)
 
 	switch os.Args[1] {
 	case "version", "--version", "-v":

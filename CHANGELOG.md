@@ -1174,6 +1174,24 @@ mistake rather than this instance of it.
 is a release step nobody runs while working, so a break on another
 platform was invisible between the two.
 
+### An unknown flag is refused rather than ignored
+
+Every flag the three programs did not recognise was accepted and
+dropped. `halite-hub policy test --policy other.yaml` read as a request
+to evaluate that file and evaluated the configured one instead, exiting
+0 — so a policy check written that way in CI passes while checking
+nothing. Any misspelling behaved the same way, silently doing something
+other than what was asked.
+
+The flags a command takes are now read out of the usage text that
+documents them, so the help and the check cannot drift apart: a flag is
+accepted because it is described. An unknown one is refused, with the
+nearest documented flag offered when the name is close enough to be a
+typo. A test parses each command's source and holds every flag it reads
+to being documented somewhere, which is what keeps the two in step — it
+found `halite-api token revoke --principal`, a working feature named in
+no usage text, which the check would otherwise have made unusable.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no
