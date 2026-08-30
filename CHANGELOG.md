@@ -1192,6 +1192,21 @@ to being documented somewhere, which is what keeps the two in step — it
 found `halite-api token revoke --principal`, a working feature named in
 no usage text, which the check would otherwise have made unusable.
 
+### A Grafana dashboard to start from
+
+`contrib/examples/grafana-dashboard.json` imports into Grafana over the
+metrics halite already exposes: fleet health, jobs, states, pillar,
+events and reactions, the file server, authentication and policy, the
+API's own service metrics, and a collapsed row for relays. It asks only
+for a data source, and two variables pick the job name and which
+halite-api to read.
+
+A test parses it and holds every query to naming a family this build
+registers. A panel written against a metric that does not exist draws an
+empty graph rather than an error, which is indistinguishable from a
+fleet with nothing happening in it — the same failure the documented
+alerts have, checked the same way.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no

@@ -393,6 +393,45 @@ question:
 - **`halite_hub_keys_pending`.** Enrollment requests nobody has decided
   on. On a manual-enrollment estate this should return to zero.
 
+## A dashboard to start from
+
+[`contrib/examples/grafana-dashboard.json`](../contrib/examples/grafana-dashboard.json)
+is an importable Grafana dashboard over these families. In Grafana:
+**Dashboards → New → Import → Upload JSON file**, then pick the
+Prometheus that scrapes halite-api.
+
+It asks for one thing on import, the data source. Two variables at the
+top pick what you are looking at:
+
+| Variable | What it is |
+|---|---|
+| `job` | the scrape job name in `prometheus.yml`, `halite` unless you renamed it |
+| `instance` | which `halite-api` to read, when more than one is scraped |
+
+The rows follow the sections above: fleet health, jobs, states, pillar,
+events and reactions, the file server, authentication and policy, the
+API's own service metrics, and a collapsed row for relays. Every panel
+carries a description saying what a reading means — hover the title.
+
+Two panels are worth knowing about before you need them:
+
+- **Scrape** reads `up`, and is empty rather than 0 when the scrape pool
+  failed to build. An empty stat there means the whole dashboard is
+  showing nothing for a reason that has nothing to do with halite.
+- **Hub scrape failures** is the one that says the dashboard is lying to
+  you: while it climbs, every `halite_hub_*` panel is empty because the
+  API could not read the hub's half, not because the fleet is idle.
+
+The relay row is collapsed because those families exist only on a hub
+running with `relay: true`. An empty panel there on an ordinary hub is
+correct.
+
+Every query in it names a family this build registers, which is checked
+by a test — a panel written against a metric that does not exist draws
+an empty graph rather than an error, which looks exactly like a fleet
+with nothing happening in it. The thresholds and the panel choices have
+not been tuned against a large estate; they are a starting point.
+
 ## Alerting
 
 Every metric in the rules below exists in this build, which is checked
