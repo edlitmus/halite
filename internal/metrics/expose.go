@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -67,6 +68,15 @@ func (f *family) writeTo(b *strings.Builder) {
 		// series to name yet, and inventing a label value would be
 		// inventing an observation.
 		if len(f.labels) == 0 {
+			// A histogram reads as zero through its buckets. Writing a
+			// bare `name 0` under `# TYPE ... histogram` is not a
+			// histogram at all: Prometheus discards the series, so a
+			// family declared precisely so it could be seen before its
+			// first observation was the one family that could not be.
+			if f.kind == histogramKind {
+				f.writeHistogram(b, &sample{counts: make([]atomic.Uint64, len(f.buckets))})
+				return
+			}
 			b.WriteString(f.name + " 0\n")
 		}
 		return

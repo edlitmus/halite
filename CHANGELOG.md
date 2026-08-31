@@ -1207,6 +1207,19 @@ empty graph rather than an error, which is indistinguishable from a
 fleet with nothing happening in it — the same failure the documented
 alerts have, checked the same way.
 
+### A histogram nothing has observed reads as a histogram
+
+An unlabelled family is exposed at zero before its first observation, so
+that a scraper can see the counter exists rather than having to wait for
+the thing it counts. A histogram took that path too and wrote a bare
+`halite_pillar_compile_duration_seconds 0` under a `# TYPE ...
+histogram` declaration, which is what a counter writes: the series a
+histogram has are `_bucket`, `_sum` and `_count`. On a hub that had not
+yet compiled pillar, nothing could query it and `histogram_quantile`
+had no buckets to read. It now writes every bucket at zero.
+
+`promtool check metrics` accepts the old line, so a test pins the shape.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no
