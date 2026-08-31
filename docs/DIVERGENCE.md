@@ -2271,6 +2271,95 @@ hub that is not a relay, and the rest are labelled families with no
 events yet — a labelled family has no series until its first event, so
 an empty panel is not evidence that nothing is happening.
 
+### 5.26 What a large third-party Salt tree found
+
+`halite migrate` was run against a shared Salt estate far larger than
+the homelab this build has been developed against: 133 state files, 65
+pillar files, 198 rendered, with orchestration and reactor trees. It is
+the first tree exercised here that was written by people who had never
+heard of halite, which is the only kind that finds what the author's own
+habits hide.
+
+**The audit's own bug came first.** Twenty-three of its 233 blocking
+findings were wrong: an orchestration SLS is a state file by every
+syntactic measure, and the audit judged every declaration against the
+node-side state registry, which does not hold the `salt.*` steps or a
+reaction and never will — they run on the hub. `salt.state` (10),
+`salt.function` (6), `runner.state.orchestrate` (6) and
+`local.saltutil.sync_grains` were reported as gaps against a build that
+ships every one of them. That is worse than a missed finding: it sends
+an operator to rewrite something that already works, and it inflates the
+estimate that decides whether the migration is worth starting. The
+orchestration and runner registries are consulted now, and such a
+declaration is reported for review with the context it needs rather than
+as a gap — nothing in a file says which of the three kinds it is, and
+Salt does not mark them either.
+
+What the tree found that is real, with the reference count it carried:
+
+**The template engine, and the only hard parse failure in 198 files.**
+`{% break %}` at one call site. Salt enables three Jinja extensions —
+`do`, `with_`, and `loopcontrols` — and this build has the first two.
+`break` and `continue` are the third. Confirmed against the Salt on this
+host: `salt/utils/templates.py` adds `jinja2.ext.loopcontrols`, and a
+Jinja environment without it rejects the tag exactly as halite does.
+
+**State functions missing from modules this build ships.** `grains.present`
+(11) is the largest single gap in the tree: the grains *execution*
+functions are all here and there is no grains state, so a tree that sets
+a grain declaratively has nowhere to put it. Then `file.recurse` (4),
+`pkgrepo.managed` and `pkgrepo.absent` (5), `test.show_notification` (4),
+`pkg.purged` (3), `file.serialize` (2), and one reference each to
+`file.rename`, `file.get_user`, `grains.absent`, `schedule.absent`,
+`mount.mounted`, `shadow.gen_password` and `event.send`.
+
+**A reactor incompatibility.** `saltutil.runner` (6) is Salt's other way
+of calling a runner from a reaction; this build accepts only
+`runner.<function>`. Also absent: `state.apply` and `grains.set` as
+execution functions, both called from reactions.
+
+**Modules SPEC never planned for.** `alternatives` (3),
+`docker_container` and `docker_image` (2), `rabbitmq_policy`,
+`rabbitmq_user` and `rabbitmq_vhost` (3), `kmod` (1), `macpackage` (1).
+These are not gaps against SPEC — nothing promised them — but they are
+migration blockers for a tree that uses them, and a reader deciding
+whether to move needs them counted somewhere.
+
+**Arguments Salt has and this build rejects.** Checked by introspecting
+the Salt installed on this host rather than by reading its
+documentation, which separates a gap here from a tree that was already
+broken:
+
+| Function | Arguments |
+|---|---|
+| `user.present` | `mindays`, `maxdays`, `inactdays`, `unique`, `optional_groups`, `enforce_password` |
+| `archive.extracted` | `user`, `group`, `archive_format`, `options`, `skip_verify` |
+| `group.present` | `system`, `members` |
+| `file.managed` | `skip_verify`, `keep_source` |
+| `file.replace` | `ignore_if_missing` |
+| `pkg.installed` | `allow_updates` |
+| `git.latest` | `fetch_tags` |
+
+The `user.present` row is a coherent feature rather than seven
+oversights: this build manages an account and not the shadow ageing
+policy attached to it.
+
+**A semantic difference worth deciding rather than fixing.**
+`module.run` was reported for `user`, `cwd` and `rev`. Salt takes those
+through `**kwargs` and hands them to the execution function being run,
+so the state has no fixed parameter list; this build validates against
+one. Strict validation is right for every other state and wrong for this
+one, because pass-through is what `module.run` is. Nothing is decided
+here.
+
+**What was the tree's own problem, and not this build's.** 58 duplicate
+mapping keys, which SPEC 10.1.2 makes an error and Salt's loader
+silently resolves; 12 pillar files targeting the `roles` grain, which a
+node controls and SPEC 12.4 does not trust by default; 11 Python
+extension directories, which is the bridged-extension path of SPEC 24.6
+working as intended; and one `service.xk`, a typo the audit caught
+statically that Salt would have found at run time.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
