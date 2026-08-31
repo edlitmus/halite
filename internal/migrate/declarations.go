@@ -100,6 +100,12 @@ func checkStateFunction(rep *Report, opts Options, rel string, source []string, 
 
 	sig, ok := opts.StateRegistry.Lookup(name)
 	if !ok {
+		// An orchestration step or a reaction is not a node state and is
+		// not a gap either; it is the same syntax in a different kind of
+		// file, which nothing here can tell apart.
+		if classifyNonState(rep, opts, rel, id, name, pos) {
+			return
+		}
 		module, _, _ := strings.Cut(name, ".")
 		rep.Findings = append(rep.Findings, Finding{
 			Category: CatState, Severity: Blocking, File: rel, Line: pos.Line, Col: pos.Col,

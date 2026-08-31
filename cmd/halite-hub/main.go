@@ -19,6 +19,7 @@ import (
 	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/migrate"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
@@ -237,7 +238,12 @@ func runMigrate(args *cli.Args) int {
 		// build that can answer it is this one.
 		Registry:      registries.Exec.Signatures(),
 		StateRegistry: registries.States.Signatures(),
-		DefaultShell:  args.Bool("cmd-default-shell", false),
+		// So that an orchestration or a reactor file is not judged
+		// against the node-side states, which do not hold `salt.state`
+		// or a reaction and never will.
+		OrchRegistry:   hub.OrchSignatures(),
+		RunnerRegistry: hub.NewRunners().Signatures(),
+		DefaultShell:   args.Bool("cmd-default-shell", false),
 	})
 	if err != nil {
 		cli.Fatalf("%v", err)

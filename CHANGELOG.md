@@ -1220,6 +1220,26 @@ had no buckets to read. It now writes every bucket at zero.
 
 `promtool check metrics` accepts the old line, so a test pins the shape.
 
+### `migrate` stops calling orchestration a gap
+
+An orchestration SLS is a state file by every syntactic measure, and the
+audit judged every declaration against the node-side state registry —
+which does not hold the `salt.*` steps or a reaction, because those run
+on the hub. Against a large third-party tree that produced twenty-three
+blocking findings for `salt.state`, `salt.function`,
+`runner.state.orchestrate` and `local.saltutil.sync_grains`, every one
+of which this build ships. Worse than a missed finding: it sends an
+operator to rewrite what already works and inflates the estimate that
+decides whether to start.
+
+The orchestration and runner registries are consulted now. Such a
+declaration is reported for review, saying which kind of file it belongs
+in and naming what the build has, rather than as a gap; a reaction
+calling something genuinely absent still blocks and says what is
+missing. Nothing in a file marks which of the three kinds it is — Salt
+does not mark them either — so the reader, who knows, is told what they
+are looking at instead of being guessed at.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no

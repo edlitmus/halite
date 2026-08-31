@@ -148,6 +148,14 @@ type Options struct {
 	// registry skips the declaration audit rather than reporting every
 	// state as unknown.
 	StateRegistry *signature.Registry
+	// OrchRegistry is the orchestration step set, and RunnerRegistry the
+	// hub runners. Both are consulted only when a declaration is not a
+	// node-side state, to tell an orchestration or a reaction apart from
+	// a gap: an orchestration SLS is a state file by every syntactic
+	// measure, and judging one against the node registry reported
+	// `salt.state` as missing from a build that ships it.
+	OrchRegistry   *signature.Registry
+	RunnerRegistry *signature.Registry
 	// DefaultShell says the nodes applying this tree will set
 	// `cmd_default_shell`, which is the transition of SPEC 15.2. With it
 	// the shell lines a tree carries are not work to do; without it they

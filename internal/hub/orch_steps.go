@@ -436,3 +436,16 @@ func tolerated(args *value.Map) []string {
 	old := states.Strings(args, "fail_minions") // lexicon:allow
 	return append(out, old...)
 }
+
+// OrchSignatures is the orchestration step set, for callers that need to
+// know what a step may be named without running one.
+//
+// `halite migrate` judged every declaration in a tree against the
+// node-side state registry, which does not hold these: an orchestration
+// SLS using `salt.state` — correct, and what SPEC 19.1 keeps Salt's
+// syntax for — was reported as a blocking gap against a step this build
+// ships. The registry is built with no runner behind it because only the
+// signatures are wanted; the step functions are never called.
+func OrchSignatures() *signature.Registry {
+	return orchStates(nil).Signatures()
+}
