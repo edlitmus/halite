@@ -4,3 +4,7 @@ cover.out
 /halite-hub
 /halite-node
 /halite-api
+
+# migrate reports: they quote a real tree's file paths and service names,
+# which belong to whoever owns that estate and not in this repository.
+complex-tree.txt
