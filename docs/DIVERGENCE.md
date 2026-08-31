@@ -44,7 +44,7 @@ spellings are recognised exactly as written.
 loader is in the migration path.
 
 **Where:** `internal/yaml/scalar.go`, `bool11`. Pinned by
-`TestSingleLetterBooleansStayStrings`.
+`TestSingleLetterYNStayStrings`.
 
 ### 1.2 Include cycles are a warning, not an error
 
@@ -925,64 +925,123 @@ the targeting matcher to **branch coverage above 90%**. Go's tooling measures
 statement coverage, not branch coverage, so the numbers below are not the
 same metric and are, in general, more forgiving than the bar asked for.
 
-These figures are a snapshot taken with `make cover` at the commit that
-introduced this file. Unlike the module tables above, they are not machine
-checked, because measuring coverage requires running the suite that would be
-doing the checking.
+These figures were re-measured with `make cover` on 2026-08-30, against
+the whole tree as it stands. Unlike the module tables above they are not
+machine checked, because measuring coverage requires running the suite
+that would be doing the checking — so they are a snapshot, and the date
+is part of the claim.
 
 | Package | Statement coverage | SPEC 31 bar |
 |---|---|---|
 | `internal/regexcompat` | 100.0% | — |
-| `internal/yaml` | 96.2% | >90% branch — met on statements, unmeasured on branches |
-| `internal/cli` | 93.4% | — |
-| `internal/target` | 92.8% | >90% branch — met on statements, unmeasured on branches |
-| `internal/state` | 90.7% | >90% branch — met on statements, unmeasured on branches |
-| `internal/buildpolicy` | 90.7% | — |
-| `internal/fileserver` | 89.4% | — |
-| `internal/value` | 89.1% | — |
-| `internal/states` | 85.9% | — |
-| `internal/pillar` | 84.7% | — |
-| `internal/render` | 83.7% | — |
-| `internal/runner` | 83.3% | — |
-| `internal/template` | 81.9% | **>90% branch — not met** |
-| `internal/exec` | 81.4% | — |
-| `internal/signature` | 80.9% | — |
-| `internal/config` | 77.8% | — |
-| `internal/grains` | 75.3% | — |
-| `internal/migrate` | 69.4% | — |
-| `cmd/halite-api` | 66.7% | — |
-| `cmd/halite-node` | 54.5% | — |
-| `cmd/halite-hub` | 49.2% | — |
-| `internal/builtin` | 44.8% | — |
+| `internal/metrics` | 96.9% | — |
+| `internal/yaml` | 96.3% | >90% branch — met on statements, unmeasured on branches |
+| `internal/redact` | 95.5% | — |
+| `internal/state` | 90.1% | >90% branch — met on statements, unmeasured on branches |
+| `internal/value` | 89.9% | — |
+| `internal/target` | 89.2% | **>90% branch — not met** |
+| `internal/log` | 89.0% | — |
+| `internal/buildpolicy` | 87.9% | — |
+| `internal/cli` | 86.2% | — |
+| `internal/render` | 86.2% | — |
+| `internal/pillar` | 85.5% | — |
+| `internal/states` | 85.2% | — |
+| `internal/template` | 82.0% | **>90% branch — not met** |
+| `internal/config` | 79.8% | — |
+| `internal/eventbus` | 79.8% | — |
+| `internal/signature` | 79.5% | — |
+| `internal/migrate` | 79.2% | — |
+| `internal/apitoken` | 78.9% | — |
+| `internal/extension` | 78.9% | — |
+| `internal/ldap` | 78.7% | — |
+| `internal/oidc` | 78.7% | — |
+| `internal/policy` | 78.0% | — |
+| `internal/s3fs` | 77.8% | — |
+| `internal/job` | 76.9% | — |
+| `internal/grains` | 75.5% | — |
+| `internal/exec` | 75.1% | — |
+| `internal/gitfs` | 75.1% | — |
+| `internal/account` | 74.6% | — |
+| `internal/schedule` | 73.3% | — |
+| `internal/runner` | 69.4% | — |
+| `internal/roster` | 69.2% | — |
+| `internal/websocket` | 69.0% | — |
+| `internal/keystore` | 67.2% | — |
+| `internal/hub` | 66.1% | — |
+| `internal/api` | 65.7% | — |
+| `internal/returner` | 65.5% | — |
+| `internal/bridge` | 59.2% | — |
+| `internal/beacon` | 56.0% | — |
+| `internal/awsauth` | 48.4% | — |
+| `internal/fips` | 47.4% | — |
+| `internal/builtin` | 43.1% | — |
+| `internal/fileserver` | 41.8% | — |
+| `internal/pki` | 34.6% | — |
+| `internal/relay` | 31.8% | — |
+| `cmd/halite-node` | 29.5% | — |
+| `internal/transport` | 20.5% | — |
+| `internal/sshexec` | 17.4% | — |
+| `cmd/halite-api` | 11.8% | — |
+| `cmd/halite-hub` | 10.9% | — |
 | `internal/specaudit`, `internal/docsaudit` | n/a | they test documents, not code |
 | `internal/version` | 0% | — |
 
-Whole tree: 71.5%.
+Whole tree: 62.5%.
 
-`internal/template` is the one correctness-core package still short of the
-bar on either metric. It is also the largest: roughly 130 filters, the
-expression grammar, inheritance, and macros. Closing it is a matter of
-volume rather than difficulty.
+**It was 71.5% when this table was first written, and the fall is the
+finding.** Nothing was deleted and no test was removed: phases 4 and 5
+added the API, the relay, gitfs, s3fs, the agentless path, the extension
+bridge and the schedulers, and the suite did not grow with them. A
+percentage that drops while the tests all pass is the only signal that
+says so, which is why the number is kept here rather than quietly
+re-measured.
 
-`internal/builtin` at 44.8% is structurally limited rather than neglected: a
-large share of its statements need root, a package manager with a writable
-database, or a service manager with services to stop. Raising it honestly
-means the containerised integration suite of SPEC 31, which is phase 5 work.
+Two of SPEC 31's four correctness-core packages are now short of the
+bar, where the first measurement had one:
 
-The three `cmd` packages were 0% until this pass, on the reasoning that they
-are argument dispatch over tested libraries and are covered by hand and by
-the lab run. That reasoning was wrong, and testing them showed it within the
-hour: `grains item a b c` resolved only `a`, `--fail-on` took a misspelled
-level as the default and audited less than it was asked to, and the usage
-text advertised a `grains setval` that had never existed. All three are the
-same shape — a CLI that accepts input it does not honour — and none was
-reachable from a library test, because the defect was in the dispatch.
+- `internal/template` at 82.0%, roughly where it was. It is the largest
+  of the four — about 130 filters, the expression grammar, inheritance
+  and macros — and closing it is volume rather than difficulty.
+- `internal/target` at 89.2%, **down from 92.8% and now below the bar it
+  used to meet.** The matcher grew compound targeting, the `-G`/`-E`/`-L`
+  forms and the roster paths without matching tests. This is a
+  regression against SPEC 31 rather than a gap never closed, and it is
+  the more urgent of the two for that reason.
 
-They are tested now by re-executing the test binary as the command, so the
-tests need no toolchain at run time and pass under the Linux run in section
-4.1. What is still uncovered there is what needs a hub: the phase 2 and
-phase 4 subcommands are stubs that report the phase, and that report is the
-only behaviour they have to test.
+`internal/relay` at 31.8%, `internal/transport` at 20.5% and
+`internal/sshexec` at 17.4% are the largest untested surfaces added
+since. All three are exercised by the lab runs of 5.11 and 5.14 rather
+than by unit tests, which is why the defects those runs found — the nil
+`Fleet`, the untargetable relayed node, the discarded spool — were not
+reachable from the suite.
+
+`internal/builtin` at 43.1% is structurally limited rather than
+neglected: a large share of its statements need root, a package manager
+with a writable database, or a service manager with services to stop.
+Raising it honestly means the containerised integration suite of SPEC
+31, which is phase 5 work.
+
+The three `cmd` packages tell the sharpest version of the story. They
+were 0% until the pass described below, then 49–67%, and are now
+10.9–29.5% — not because tests were lost, but because `serve` grew
+relays and FIPS, `run` grew batching and targeting flags, `ssh` and
+`orch` and the API's `token` and `account` subcommands arrived, and none
+of it was tested. The reasoning that first put them at 0% was that they
+are argument dispatch over tested libraries, covered by hand and by the
+lab run. That was wrong, and testing them showed it within the hour:
+`grains item a b c` resolved only `a`, `--fail-on` took a misspelled
+level as the default and audited less than it was asked to, and the
+usage text advertised a `grains setval` that had never existed.
+
+It was wrong again on 2026-08-30, in the same packages and the same
+shape: every unknown flag was accepted and dropped, so
+`policy test --policy other.yaml` evaluated the configured file and
+exited 0. Twice is the argument against the reasoning, not against the
+instance — see 5.24.
+
+They are tested by re-executing the test binary as the command, so the
+tests need no toolchain at run time and pass under the Linux run in
+section 4.1. What is still uncovered is what needs a hub.
 
 ### 5.2 The fourteen test layers
 
@@ -1405,66 +1464,6 @@ null to null, and `a: b: c` became a nested mapping, where YAML puts a
 block collection on the following lines and PyYAML refuses all four.
 Closing it also closed three of the lenient gaps in 5.4.
 
-### 5.10 What the declared-and-unread sweep found
-
-Three defects in a row were one setting each that nothing acted on:
-`cmd_default_shell` applied where it should not have been, a per-state
-`timeout` parsed and dropped, and the `salt` dispatcher plumbed and never
-populated. Rather than wait for the fourth, `internal/config`'s
-`TestEveryDeclaredKeyIsReadOrRecorded` requires every key to be passed to
-a configuration accessor somewhere, or listed with the reason it is not,
-enforced in both directions.
-
-Thirteen were live: `yaml_bool_11`, `random_seed`, `legacy_arg_parse`,
-`template_trim_blocks`, `template_lstrip_blocks`, `env_allowlist`,
-`env_denylist`, `node_id_lowercase`, `node_id_remove_domain`,
-`log_level`, `log_format`, `log_file`, `pillarenv`, and `renderer` —
-four of them named in SPEC as the switch a tree throws during a
-migration, one an access control that did not control, and three the
-whole of the logging configuration.
-
-The same sweep one level down, over the 167 parameter names the module
-registry declares, found exactly one: `hash_type` on `file.managed`. The
-module layer was in better shape than the configuration layer, which is
-worth knowing.
-
-A level down again, over the fields of a signature rather than its
-parameters, found two read by nothing at all. `Platforms` documents
-itself as "restricts the function; empty means every platform" and
-restricted nothing, so a `sysrc` call on Linux reached the module and
-reported a missing binary — true, and about the wrong thing. Twelve
-functions declare it. `Privileges` is declared by twenty-nine, all of
-them mutating and all of them naming `root`; refusing up front would be
-correct and would also refuse a `--test` run, which is the run an
-operator makes precisely because they are not ready to be root, so it
-explains a failure instead. Two fields, two different right answers,
-which is why "enforce what is declared" is not one change.
-
-The last surface is the command line. A flag in the usage that nothing
-parses, or one parsed and never documented, is the same defect where an
-operator meets it first. Both directions are checked in both programs.
-That found `--root` on the hub, parsed and undocumented, and something
-worse: `--config` named the program's own configuration in
-`halite-hub lint` and "a Salt file to translate" in `halite-hub
-migrate`. One flag, two meanings, one program, and pointing it at
-hub.yaml asked the audit to translate that as Salt without saying so.
-The migrate one is `--salt-config`.
-
-Counting the whole sweep: thirteen settings, one module parameter, two
-signature fields, and two flags. The pattern in all of them is the same
-and is worth stating once — something was written down, and writing it
-down was mistaken for doing it.
-
-Two things the sweep taught about sweeps. The first version counted a
-key mentioned in a *test* as read; the second counted a module parameter
-of the same name. Both are the shape of a check that passes for the
-wrong reason, which is worse than no check, because the list of
-exceptions grows and nobody looks again. And the strict version turned
-two correct reads into false positives — `file_roots` and `pillar_roots`
-go through a helper that takes the key as an argument — which is
-recorded as an exception with its reason rather than fixed by loosening
-the rule.
-
 ### 5.9 What a real Salt tree found
 
 The corpus in 5.7 is written for the gate: it covers constructs, not
@@ -1574,6 +1573,66 @@ Still open, from the same tree:
   0700, and the failure names the pillar key rather than the contents.
 
 ---
+
+### 5.10 What the declared-and-unread sweep found
+
+Three defects in a row were one setting each that nothing acted on:
+`cmd_default_shell` applied where it should not have been, a per-state
+`timeout` parsed and dropped, and the `salt` dispatcher plumbed and never
+populated. Rather than wait for the fourth, `internal/config`'s
+`TestEveryDeclaredKeyIsReadOrRecorded` requires every key to be passed to
+a configuration accessor somewhere, or listed with the reason it is not,
+enforced in both directions.
+
+Thirteen were live: `yaml_bool_11`, `random_seed`, `legacy_arg_parse`,
+`template_trim_blocks`, `template_lstrip_blocks`, `env_allowlist`,
+`env_denylist`, `node_id_lowercase`, `node_id_remove_domain`,
+`log_level`, `log_format`, `log_file`, `pillarenv`, and `renderer` —
+four of them named in SPEC as the switch a tree throws during a
+migration, one an access control that did not control, and three the
+whole of the logging configuration.
+
+The same sweep one level down, over the 167 parameter names the module
+registry declares, found exactly one: `hash_type` on `file.managed`. The
+module layer was in better shape than the configuration layer, which is
+worth knowing.
+
+A level down again, over the fields of a signature rather than its
+parameters, found two read by nothing at all. `Platforms` documents
+itself as "restricts the function; empty means every platform" and
+restricted nothing, so a `sysrc` call on Linux reached the module and
+reported a missing binary — true, and about the wrong thing. Twelve
+functions declare it. `Privileges` is declared by twenty-nine, all of
+them mutating and all of them naming `root`; refusing up front would be
+correct and would also refuse a `--test` run, which is the run an
+operator makes precisely because they are not ready to be root, so it
+explains a failure instead. Two fields, two different right answers,
+which is why "enforce what is declared" is not one change.
+
+The last surface is the command line. A flag in the usage that nothing
+parses, or one parsed and never documented, is the same defect where an
+operator meets it first. Both directions are checked in both programs.
+That found `--root` on the hub, parsed and undocumented, and something
+worse: `--config` named the program's own configuration in
+`halite-hub lint` and "a Salt file to translate" in `halite-hub
+migrate`. One flag, two meanings, one program, and pointing it at
+hub.yaml asked the audit to translate that as Salt without saying so.
+The migrate one is `--salt-config`.
+
+Counting the whole sweep: thirteen settings, one module parameter, two
+signature fields, and two flags. The pattern in all of them is the same
+and is worth stating once — something was written down, and writing it
+down was mistaken for doing it.
+
+Two things the sweep taught about sweeps. The first version counted a
+key mentioned in a *test* as read; the second counted a module parameter
+of the same name. Both are the shape of a check that passes for the
+wrong reason, which is worse than no check, because the list of
+exceptions grows and nobody looks again. And the strict version turned
+two correct reads into false positives — `file_roots` and `pillar_roots`
+go through a helper that takes the key as an argument — which is
+recorded as an exception with its reason rather than fixed by loosening
+the rule.
 
 ### 5.11 What the transport lab run covers
 
@@ -2131,6 +2190,86 @@ were healthy.
 
 The operations guide lists what is registered, and names these eleven so
 that a reader writing alerts has both halves.
+
+### 5.24 What a real Prometheus scraper found
+
+Standing up an external Prometheus against this estate on 2026-08-29 and
+2026-08-30 found four faults, none of which any test could see, and the
+first of them hid the other three.
+
+- **The scrape had never run once.** `ca_file` pointed inside
+  `/usr/local/etc/halite/pki`, which is `drwxr--r--` and owned by the
+  `halite` account. Without the execute bit nothing else can open a file
+  in it however permissive the file itself is, so Prometheus could not
+  build the scrape pool. It logged one line per interval and nothing
+  else noticed.
+- **A failed scrape pool registers no target.** `up{job="halite"}` was
+  *absent* rather than 0, so every alert in the metrics guide matched a
+  series that was never created and stayed silent. This is the same
+  shape as 5.23: a rule written against something that does not exist
+  does not fail, it goes quiet, and quiet is what it would do if the
+  estate were healthy. `absent(up{...})` is now in the documented rules
+  and in the dashboard.
+- **`ca_file` was the enrollment CA.** The API's serving certificate is
+  its own and self-signed; `pki/ca.crt` signs node identities and does
+  not sign it. The two are one directory apart and the guide had not
+  said which.
+- **`token_lifetime` defaults to 12h**, so a scraper's token dies
+  overnight and the scrape starts failing with nothing to say why. The
+  guide said "give it a long life" without saying the default was too
+  short. `token_idle` cannot be turned off at all: zero means the 4h
+  default rather than "never", and only a negative value disables it.
+
+Separately, the API's own grant was missing and produced the quietest
+failure of the set. `halite-api` merges its own exposition with the
+hub's, and reads the hub's as an ordinary client — so `cert:CN=api`
+needs `metrics.show` at the hub, which is a different principal from the
+scraper's own account on a different hop. Without it the scrape
+succeeds, `up` stays 1, and every `halite_hub_*` family is simply
+missing. `halite_api_hub_scrape_failures_total` counted 92 before anyone
+looked at it.
+
+Nothing here was a code defect. All five were documentation that named
+the right settings without saying what they had to contain, or grants
+the guide prescribed and nobody had applied — which is the failure mode
+5.18 was written about, found again in a feature documented after it.
+
+### 5.25 What writing the Grafana dashboard found
+
+The example dashboard of `contrib/examples/grafana-dashboard.json` was
+written against the exposition and then checked against the live estate,
+which found one real defect and one mistake of my own worth recording.
+
+The defect: a histogram nothing had observed was exposed as
+`halite_pillar_compile_duration_seconds 0` under a
+`# TYPE ... histogram` declaration. An unlabelled family is written at
+zero before its first observation so a scraper can see it exists, and
+histograms took that same path — but a bare family name is what a
+counter writes. A histogram's series are `_bucket`, `_sum` and `_count`,
+so on a hub that had not yet compiled pillar there was nothing to query
+and `histogram_quantile` had no buckets to read. `promtool check
+metrics` accepts the old line, so a test pins the shape rather than
+leaving it to the linter.
+
+The mistake: the script that decided which panels were empty queried
+each metric by its bare family name, so every histogram came back
+absent, and the pillar panel was reported empty when its `_bucket`
+series was present all along. The defect above is real; the symptom
+first attributed to it was not. A check written minutes earlier is not
+ground truth, and a negative result that confirms a theory already in
+hand is the one most worth testing.
+
+A test now parses the dashboard and holds every query — panels,
+collapsed rows and template variables — to naming a family this build
+registers, because a panel querying a metric that does not exist draws
+an empty graph rather than failing. Descriptions are deliberately not
+scanned: several name a family in prose to explain what goes missing
+when a grant is absent.
+
+Of 28 panels, 16 have data on this estate. Five are relay families on a
+hub that is not a relay, and the rest are labelled families with no
+events yet — a labelled family has no series until its first event, so
+an empty panel is not evidence that nothing is happening.
 
 ## 6. Everything else not started
 
