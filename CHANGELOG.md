@@ -1240,6 +1240,13 @@ missing. Nothing in a file marks which of the three kinds it is — Salt
 does not mark them either — so the reader, who knows, is told what they
 are looking at instead of being guessed at.
 
+### A migrate report says which build produced it
+
+Two copies of a report sat side by side, one from before a fix to the
+audit and one from after, and nothing in either said which was which.
+Establishing that the second was stale took longer than the fix had. The
+header now carries the build, on the line under the tree it audited.
+
 ### What is not built
 
 The rest of phase 5, and phase 6. No Windows or macOS parity, no

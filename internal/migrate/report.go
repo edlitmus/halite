@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/value"
+	"github.com/edlitmus/halite/internal/version"
 )
 
 // Counts summarises the findings by category and severity, which is the
@@ -45,6 +46,12 @@ func (r *Report) Summary() string {
 	counts := r.Count()
 
 	fmt.Fprintf(&b, "Migration report for %s\n", r.Root)
+	// Which build asked the questions. A report is read long after it is
+	// produced and often beside an older copy of itself, and without this
+	// there is no way to tell one from the other: a run whose findings
+	// had already been fixed was indistinguishable from a stale file, and
+	// working out which cost an afternoon.
+	fmt.Fprintf(&b, "  by %s\n", version.Full("halite-hub"))
 	fmt.Fprintf(&b, "  %d state files, %d pillar files\n", r.SLSFiles, r.PillarFiles)
 	if r.PillarRoot != "" && r.PillarRoot != r.Root {
 		fmt.Fprintf(&b, "  pillar read from %s\n", r.PillarRoot)

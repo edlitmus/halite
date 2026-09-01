@@ -176,3 +176,33 @@ copy_it:
 		}
 	}
 }
+
+// A report says which build produced it.
+//
+// Two copies of a report sat side by side, one from before a fix to the
+// audit and one from after, and nothing in either said which was which.
+// The findings looked identical because the stale one was stale, and
+// establishing that took longer than the fix had.
+//
+// The version is not asserted, only its presence: a test binary carries
+// no commit stamp, so `version.Full` here is not what a released build
+// prints, and pinning the string would test the harness rather than the
+// report.
+func TestAReportSaysWhichBuildProducedIt(t *testing.T) {
+	root := writeSLSTree(t, map[string]string{
+		"base/app.sls": "noop:\n  test.nop: []\n",
+	})
+	summary := auditSLSTree(t, root).Summary()
+
+	lines := strings.Split(summary, "\n")
+	if len(lines) < 2 {
+		t.Fatal("the report has no header")
+	}
+	if !strings.HasPrefix(lines[1], "  by halite-hub ") {
+		t.Errorf("the second line does not name the build that produced the "+
+			"report, so two copies cannot be told apart: %q", lines[1])
+	}
+	if strings.TrimSpace(strings.TrimPrefix(lines[1], "  by halite-hub")) == "" {
+		t.Error("the build stamp is empty")
+	}
+}
