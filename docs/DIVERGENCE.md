@@ -2280,6 +2280,12 @@ the first tree exercised here that was written by people who had never
 heard of halite, which is the only kind that finds what the author's own
 habits hide.
 
+The counts below are one run, on 2026-08-31, against one checkout. A
+second run two days later saw 129 state files and 64 pillar files and
+different totals, because the estate is somebody's working tree and
+moves. They are the shape of what a tree like this carries, not a
+measurement that reproduces.
+
 **The audit's own bug came first.** Twenty-three of its 233 blocking
 findings were wrong: an orchestration SLS is a state file by every
 syntactic measure, and the audit judged every declaration against the
@@ -2294,6 +2300,20 @@ orchestration and runner registries are consulted now, and such a
 declaration is reported for review with the context it needs rather than
 as a gap — nothing in a file says which of the three kinds it is, and
 Salt does not mark them either.
+
+Confirmed against the estate rather than against a fixture: the fixed
+build reclassified exactly those 23 and left every real gap blocking,
+taking the blocking count from 233 to 205. A reaction calling something
+this build genuinely lacks still blocks and now names it —
+`local.state.apply is a reaction calling an execution function on the
+matched nodes, and state.apply is not an execution function this build
+ships` — rather than calling the reaction itself wrong.
+
+Two runs of the fixed audit were needed to establish that, because the
+first was made by a binary that predated it and nothing in a report said
+which build had produced it. That is fixed too: the header names the
+build under the tree it audited. A checkout with no tags stamps the
+commit alone, which still answers the question.
 
 What the tree found that is real, with the reference count it carried:
 
