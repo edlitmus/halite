@@ -119,7 +119,7 @@ Reconnect attempts before giving up; 0 means retry forever.
 
 static or failover, selecting how a list of hubs is used.
 
-`static` uses the first hub in the list; `failover` tries each in turn. Salt's `master_type` with the same meanings.
+`static` uses the first hub in the list; `failover` tries each in turn. Salt's `master_type` with the same meanings. <!-- lexicon:allow -->
 
 ### `listen`
 

@@ -503,8 +503,8 @@ func TestEnvironmentControls(t *testing.T) {
 	}
 }
 
-// TestNodeIDModifiers covers Salt's `minion_id_lowercase` and
-// `minion_id_remove_domain`, which the compatibility shim translates
+// TestNodeIDModifiers covers Salt's `minion_id_lowercase` and lexicon:allow
+// `minion_id_remove_domain`, which the compatibility shim translates lexicon:allow
 // into keys nothing read — so a Salt configuration carrying them
 // produced a different identity under halite, and an identity is what
 // pillar and targeting are keyed by.

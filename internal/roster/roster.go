@@ -45,7 +45,7 @@ type Target struct {
 	// ThinDir is where the pushed binary is cached on the target.
 	ThinDir string
 	// NodeOpts are configuration settings the pushed binary runs with.
-	// Salt spells this `minion_opts`, and that spelling is read.
+	// Salt spells this `minion_opts`, and that spelling is read. lexicon:allow
 	NodeOpts *value.Map
 	// SetPath is prepended to PATH on the target.
 	SetPath string

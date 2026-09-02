@@ -368,8 +368,8 @@ func resolveNodeID(args *cli.Args, cfg *config.Config) string {
 	return applyNodeIDModifiers(cfg, host)
 }
 
-// applyNodeIDModifiers is Salt's `minion_id_lowercase` and
-// `minion_id_remove_domain`, which the compatibility shim translates and
+// applyNodeIDModifiers is Salt's `minion_id_lowercase` and lexicon:allow
+// `minion_id_remove_domain`, which the compatibility shim translates and lexicon:allow
 // nothing read. `remove_domain` takes true, meaning any domain, or a
 // domain to strip if the identity ends in it.
 func applyNodeIDModifiers(cfg *config.Config, id string) string {

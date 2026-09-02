@@ -14,16 +14,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
+	"unicode"
 )
 
 // Term is a prohibited word and what to use instead.
 type Term struct {
 	Prohibited string
 	Required   string
-	// Pattern matches the term as a whole word, case-insensitively.
-	Pattern *regexp.Regexp
 }
 
 // Terms is the table from SPEC section 2.3.
@@ -43,12 +41,76 @@ func buildTerms() []Term {
 	}
 	out := make([]Term, 0, len(raw))
 	for _, r := range raw {
-		// A word boundary keeps `mastered` from matching while still
-		// catching `master_port`, `MasterKey`, and `salt-master`.
-		pat := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(r.prohibited) + `\b`)
-		out = append(out, Term{Prohibited: r.prohibited, Required: r.required, Pattern: pat})
+		out = append(out, Term{Prohibited: r.prohibited, Required: r.required})
 	}
 	return out
+}
+
+// MatchString reports whether the text uses the term as a word.
+//
+// A word here is what an identifier or a filename makes of one: the term
+// separated by punctuation, standing alone, or as a component of a
+// CamelCase name. It is permitted only inside a longer lowercase word,
+// where it is a different word — `mastered`, `masterless`, `dominion`.
+//
+// This was a regular expression, `\bmaster\b`, whose comment claimed to
+// catch `master_port` and `MasterKey`. It caught the first and neither
+// `MasterKey` nor `halite_master`: an underscore is a word character, so
+// the boundary the pattern needs is not there, and a capital letter is
+// not a boundary at all. RE2 has no lookaround to express "not inside a
+// longer lowercase word" in one pass, and a matcher that says what it
+// means reads better than the alternation that would.
+func (t Term) MatchString(s string) bool {
+	term := []rune(strings.ToLower(t.Prohibited))
+	text := []rune(s)
+	lower := []rune(strings.ToLower(s))
+
+	for i := 0; i+len(term) <= len(lower); i++ {
+		if !runesEqual(lower[i:i+len(term)], term) {
+			continue
+		}
+		if startsWord(text, i) && endsWord(text, i+len(term)) {
+			return true
+		}
+	}
+	return false
+}
+
+func runesEqual(a, b []rune) bool {
+	for i := range b {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// startsWord reports whether the term at i begins a word: the start of
+// the text, after anything that is not a letter or a digit, or at the
+// capital of a CamelCase component.
+func startsWord(text []rune, i int) bool {
+	if i == 0 {
+		return true
+	}
+	prev := text[i-1]
+	if !unicode.IsLetter(prev) && !unicode.IsNumber(prev) {
+		return true
+	}
+	return unicode.IsUpper(text[i]) && !unicode.IsUpper(prev)
+}
+
+// endsWord reports whether the term ending at i ends a word: the end of
+// the text, before anything that is not a letter or a digit, or before
+// the capital that begins the next CamelCase component.
+func endsWord(text []rune, i int) bool {
+	if i == len(text) {
+		return true
+	}
+	next := text[i]
+	if !unicode.IsLetter(next) && !unicode.IsNumber(next) {
+		return true
+	}
+	return unicode.IsUpper(next)
 }
 
 // Finding is one prohibited term in one place.
@@ -82,12 +144,18 @@ var ExemptPaths = []string{
 	// them and to prove the scanner still matches.
 	"internal/buildpolicy/lexicon.go",
 	"internal/buildpolicy/policy_test.go",
+	"internal/buildpolicy/lexicon_terms_test.go",
 	// Vendored allowlist code is not ours to reword.
 	"vendor/",
 	".git/",
 	// Build output is not source.
 	"bin/",
 	"dist/",
+	// A developer's editor and agent configuration is not the project's
+	// vocabulary. It is untracked, ships in nothing, and quotes whatever
+	// commands that developer has run — including the old names of files
+	// this project has since renamed.
+	".claude/",
 }
 
 // IsExempt reports whether a repository-relative path is outside the
@@ -182,7 +250,7 @@ func scanFile(path, rel string) ([]Finding, error) {
 			continue
 		}
 		for _, term := range Terms {
-			if term.Pattern.MatchString(text) {
+			if term.MatchString(text) {
 				findings = append(findings, Finding{File: rel, Line: line, Term: term, Text: text})
 			}
 		}

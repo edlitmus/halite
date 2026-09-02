@@ -150,7 +150,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"hub_type": {
 		Group:  "Identity and connection",
-		Detail: "`static` uses the first hub in the list; `failover` tries each in turn. Salt's `master_type` with the same meanings.",
+		Detail: "`static` uses the first hub in the list; `failover` tries each in turn. Salt's `master_type` with the same meanings. <!-- lexicon:allow -->",
 	},
 	"listen": {
 		Group:  "Identity and connection",

@@ -119,7 +119,7 @@ func targetFrom(id string, raw any, file string) (Target, []string, error) {
 				target.Timeout = d
 			case "thin_dir":
 				target.ThinDir = value.KeyString(e.Val)
-			case "node_opts", "minion_opts":
+			case "node_opts", "minion_opts": // lexicon:allow
 				opts, ok := e.Val.(*value.Map)
 				if !ok {
 					return Target{}, nil, fmt.Errorf("%s: %s: %s is a mapping, not %s",
