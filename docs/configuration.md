@@ -240,7 +240,7 @@ A node renews at half of this, so a shorter lifetime means more renewals and a s
 
 *`halite-hub` · `manual` · SPEC section 7.3*
 
-manual, token, or attested. There is no auto_accept.
+manual or token. `attested` is named and refused; it is not built. There is no auto_accept.
 
 `manual` holds every request until an operator compares the fingerprint and accepts it. `token` admits a node presenting a bootstrap token, for provisioning at scale. `attested` is named and refused; it is not built. There is deliberately no equivalent of Salt's `auto_accept`, which is how estates end up trusting whatever asked.
 

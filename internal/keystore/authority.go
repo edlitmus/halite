@@ -33,17 +33,30 @@ const (
 // ParseMode reads a configured enrollment mode.
 func ParseMode(s string) (Mode, error) {
 	switch Mode(s) {
-	case ModeManual, ModeToken, ModeAttested:
+	case ModeManual, ModeToken:
 		return Mode(s), nil
 	case "":
 		return ModeManual, nil
+	case ModeAttested:
+		// Refused rather than accepted, because accepting it would be a
+		// lie of exactly the kind this mode exists to prevent. There is
+		// no attestation verification in this build — no instance
+		// identity document, no TPM, no metadata service — so a hub
+		// configured this way took every request through the manual
+		// path while the operator believed a machine identity was being
+		// checked. Failing safe is not the same as doing what was
+		// asked.
+		return "", fmt.Errorf("enrollment mode %q is not built: this build verifies no "+
+			"attestation of any kind, so it would hold every request for an operator "+
+			"while appearing not to. Use %q, or %q with a bootstrap token",
+			ModeAttested, ModeManual, ModeToken)
 	}
 	// Named explicitly, because an operator migrating from Salt will
 	// look for this setting and there is deliberately not one.
 	if s == "auto" || s == "auto_accept" {
-		return "", fmt.Errorf("there is no automatic acceptance mode; use %q or %q, both of which are accountable", ModeToken, ModeAttested)
+		return "", fmt.Errorf("there is no automatic acceptance mode; use %q, which is accountable", ModeToken)
 	}
-	return "", fmt.Errorf("%q is not an enrollment mode; use %q, %q, or %q", s, ModeManual, ModeToken, ModeAttested)
+	return "", fmt.Errorf("%q is not an enrollment mode; use %q or %q", s, ModeManual, ModeToken)
 }
 
 // Revoker is the handshake-time denylist of SPEC 7.4, as the authority

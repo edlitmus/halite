@@ -3,6 +3,7 @@ package keystore
 import (
 	"crypto"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -230,10 +231,25 @@ func TestThereIsNoAutoAcceptMode(t *testing.T) {
 	if _, err := ParseMode("auto_accept"); err == nil {
 		t.Fatal("auto_accept should not name a mode")
 	}
-	for _, name := range []string{"manual", "token", "attested"} {
+	for _, name := range []string{"manual", "token"} {
 		if _, err := ParseMode(name); err != nil {
 			t.Errorf("%s: %v", name, err)
 		}
+	}
+
+	// `attested` was accepted, and there is no attestation verification
+	// anywhere in this build — no instance identity document, no TPM, no
+	// metadata service. The automatic branch fires only for a token, so
+	// a hub configured this way sent every request to the manual queue
+	// while its operator believed a machine identity was being checked.
+	// Failing safe is not the same as doing what was asked, and the
+	// documentation said the mode was refused.
+	err := errorFrom(ParseMode("attested"))
+	if err == nil {
+		t.Fatal("attested should be refused while nothing verifies an attestation")
+	}
+	if !strings.Contains(err.Error(), "not built") {
+		t.Errorf("the refusal should say the mode is not built, got: %v", err)
 	}
 	if m, err := ParseMode(""); err != nil || m != ModeManual {
 		t.Errorf("the default should be manual, got %q %v", m, err)
@@ -342,3 +358,6 @@ func TestTheStoreRefusesAnIdentityThatIsAPath(t *testing.T) {
 		}
 	}
 }
+
+// errorFrom keeps a two-value call readable in a one-value assertion.
+func errorFrom(_ Mode, err error) error { return err }

@@ -61,7 +61,7 @@ var Keys = []Key{
 	{"config_file", all, "", "The primary configuration file, set by the loader.", "27.3"},
 
 	// Enrollment.
-	{"enrollment_mode", hubOnly, "manual", "manual, token, or attested. There is no auto_accept.", "7.3"},
+	{"enrollment_mode", hubOnly, "manual", "manual or token. `attested` is named and refused; it is not built. There is no auto_accept.", "7.3"},
 	{"certificate_lifetime", hubOnly, "2160h", "Issued certificate lifetime; renewal happens at half of it.", "7.4"},
 	{"key_algorithm", hubOnly, "ecdsa-p256", "ecdsa-p256, ecdsa-p384, rsa-3072, rsa-4096, or ed25519 in non-FIPS builds.", "7.1"},
 
