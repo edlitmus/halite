@@ -2396,6 +2396,23 @@ one. Strict validation is right for every other state and wrong for this
 one, because pass-through is what `module.run` is. Nothing is decided
 here.
 
+**The report can now say what strict undefined costs.** SPEC 28.5 asks
+for "every name that would fail under strict undefined, with file and
+line", and the category was declared and never emitted — so the one
+question an estate needs answered before SPEC 33 question 4 can be
+decided had no data behind it. It is decided statically: rendering would
+need the estate's pillar and grains, and would report every pillar value
+as undefined, while a name no scope binds and no context supplies fails
+whatever the data holds. It blocks, because strict is the default this
+build renders with, and the finding names `permissive: true` as the
+transition.
+
+Two things it has to know to avoid reporting a tree that is fine: what
+the renderer puts in the context, read from the renderer rather than
+listed; and that a reactor SLS is a `.sls` like any other, so `data` and
+`tag` count as defined everywhere. That second one is the orchestration
+problem again — nothing in a file says which of the three kinds it is.
+
 **What was the tree's own problem, and not this build's.** 58 duplicate
 mapping keys, which SPEC 10.1.2 makes an error and Salt's loader
 silently resolves; 12 pillar files targeting the `roles` grain, which a
