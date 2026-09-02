@@ -472,7 +472,7 @@ defaults to `local`. See below.
 | `smtp` | one mail per return | works |
 | `mysql`, `postgres`, `redis`, `elasticsearch`, `splunk`, `slack`, `kafka`, `sqs`, and the rest | extensions of kind `returner` | works |
 
-The seventeen bridged destinations are extensions of kind `returner`.
+The sixteen bridged destinations are extensions of kind `returner`.
 `returner: postgres` finds the `postgres` extension by name, so you do
 not have to know it is one. Each needs a database driver or a vendor
 client, which is why they are not linked in.

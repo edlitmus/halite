@@ -515,7 +515,7 @@ func (s *stubExtension) Call(ctx context.Context, function string, args, kwargs 
 	return json.RawMessage(`true`), nil
 }
 
-// The seventeen destinations SPEC 20.3 marks Bridged are extensions,
+// The sixteen destinations SPEC 20.3 marks Bridged are extensions,
 // and `returner: postgres` should find one without the operator having
 // to know that.
 func TestABridgedReturnerIsFoundByName(t *testing.T) {

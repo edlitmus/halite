@@ -11,7 +11,7 @@ import (
 
 // Extension is a returner that runs out of process.
 //
-// SPEC 20.3 marks seventeen destinations Bridged — `postgres`, `redis`,
+// SPEC 20.3 marks sixteen destinations Bridged — `postgres`, `redis`,
 // `elasticsearch`, `kafka`, and the rest — because each needs a
 // database driver, and a control plane does not link one. They are
 // extensions of kind `returner`, and this is the adapter that makes one

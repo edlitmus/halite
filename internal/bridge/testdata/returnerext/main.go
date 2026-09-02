@@ -1,7 +1,7 @@
 // Command returnerext is a returner extension used by the tests and the
 // lab.
 //
-// It stands in for the seventeen destinations SPEC 20.3 marks Bridged —
+// It stands in for the sixteen destinations SPEC 20.3 marks Bridged —
 // postgres, redis, kafka — each of which needs a driver a control plane
 // does not link. What it does instead is append to a file, which is
 // provable without a database.

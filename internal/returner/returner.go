@@ -1,7 +1,7 @@
 // Package returner sends a job return, or an event, somewhere durable.
 //
 // SPEC 20.3 names six returners this build implements in-process and
-// seventeen more that belong out of process behind the bridge of SPEC
+// sixteen more that belong out of process behind the bridge of SPEC
 // section 24 — a database driver is a dependency, and a control plane
 // does not link one.
 //
@@ -97,7 +97,7 @@ type Options struct {
 	SMTPTLS      bool
 
 	// Bridged looks up a returner that runs as an extension, for the
-	// seventeen destinations SPEC 20.3 marks Bridged. Nil on a node
+	// sixteen destinations SPEC 20.3 marks Bridged. Nil on a node
 	// with no extensions, where those names are reported as needing
 	// one rather than as typos.
 	Bridged func(name string) (Returner, error)

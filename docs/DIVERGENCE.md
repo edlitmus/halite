@@ -9,10 +9,17 @@ registries an actual build ships, and fails if a module is neither
 implemented nor recorded here, or if a gap recorded here has since been
 filled. A stale entry below is a test failure, not a documentation problem.
 
-**Status as of this writing:** SPEC section 32 phases 0 and 1 are complete.
-Phases 2 through 6 have not been started. The development and verification
-host is FreeBSD 15.1 on amd64, and that is the only platform on which any of
-this has been run.
+**Status as of this writing:** SPEC section 32 phases 0 through 4 are
+complete and phase 5 is part built — gitfs, s3fs, the agentless path,
+relays and the FIPS artifact set are in; Windows and macOS parity is not
+started. Phase 6 has not started.
+
+The development host is FreeBSD 15.1 on amd64, and most of what follows
+was verified there. It is no longer the only platform anything has run
+on: a real Ubuntu node enrolled with this estate's hub and applied a
+highstate through it (4.5), and the tree builds natively on macOS
+without having been run there (4.4a). Section 4 is the authority on
+which claim rests on what.
 
 ---
 
@@ -1055,7 +1062,7 @@ limit stated rather than the question left open.
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 34 disagree by design, 37 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 157 of 198 agree, 26 are outside the subset, 15 are gaps — see 5.5. |
-| Differential against Salt | **partial.** `internal/saltdiff` compiles eight trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
+| Differential against Salt | **partial.** `internal/saltdiff` compiles ten trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
@@ -1379,7 +1386,7 @@ used two `file.directory` arguments this build did not have.
 `make check` runs it against whichever `salt-call` is on PATH. It has
 been run against Salt 3006.25 and 3008.2.
 
-Compared, over nine trees:
+Compared, over ten trees:
 
 - the low state: the chunk sequence first, then each chunk's arguments
 - the pillar, with its merge across two files
@@ -2466,8 +2473,10 @@ What is **not** built, in phase 2:
 - **External pillar** (SPEC 12.7). `ext_pillar` is read only to warn
   that the sources it names contribute nothing, and `ext_pillar_fail`
   is read by nothing at all.
-- **`file_ignore_regex`.** `file_ignore_glob` hides paths; the regex
-  form is declared and read by nothing.
+- ~~**`file_ignore_regex`.**~~ Built. Both forms hide paths from
+  listing and from fetching, and a pattern that does not compile is
+  fatal at startup rather than a rule that silently hides nothing —
+  `internal/fileserver/roots.go`.
 `fileserver_backend` accepts `roots`, `git`, and `s3`, and warns about
   anything else at startup rather than silently serving nothing.
 - **`halite-hub files`** (`salt-cp`). The file server serves; pushing a
@@ -2481,10 +2490,12 @@ What is **not** built, in phase 2:
 - **Tokens** (SPEC 23.6). An operator authenticates with a certificate;
   there is no token issuance, which is what `halite-api` needs and
   which is phase 4.
-- **The RBAC principals that are not certificates.** The grammar
-  accepts `oidc:` and `node:` principals and matches them, and nothing
-  produces one: OIDC is phase 4, and the node peer policy of SPEC 19.5
-  is not built.
+- **The RBAC principals that are not certificates.** OIDC is phase 4
+  and is now built. The `node:` principal is produced and enforced on
+  the read half of SPEC 19.5's peer interface: a node asking the mine
+  for another node's data is authorized against the policy,
+  deny-by-default, in `internal/hub/mine.go`. The execute half —
+  `publish.*`, one node running a job on another — is not built.
 - **Return chunking.** A return is one request; the 16 MiB paginating
   path of SPEC 6.5 is not built.
 
@@ -2815,7 +2826,7 @@ thousand series.
 `file` (append-only NDJSON, the second with rotation), `local_cache`,
 `syslog` (RFC 5424 written directly, because `log/syslog` speaks the
 older RFC 3164 and does not exist on Windows), `webhook`, and `smtp`.
-The seventeen marked Bridged are refused by name as bridged rather than
+The sixteen marked Bridged are refused by name as bridged rather than
 as typos.
 
 The webhook returner is where SPEC 20.3 asks for three things together
@@ -2928,7 +2939,7 @@ a bad one. A bundle published at one path and signed as another is
 refused, and an extension pinned to a different version is not fetched
 at all.
 
-**The bridged returners are built.** SPEC 20.3's seventeen are
+**The bridged returners are built.** SPEC 20.3's sixteen are
 extensions of kind `returner`, found by name, so `returner: postgres`
 does not require the operator to know it is one.
 
@@ -2946,9 +2957,6 @@ docstring containing a backtick produced code that would not build.
 
 What is **not** built in the API:
 
-Nothing. Phase 4 is complete.
-- **The bridge protocol and its sandbox** (SPEC section 24), and with it
-  the seventeen returners SPEC 20.3 marks Bridged.
 - **Node-side metrics.** A node has no exposition endpoint, so what only
   it knows is counted nowhere: a beacon event its own queue dropped, a
   local state run's duration, and the scheduler's `maxrunning` skips.
@@ -2960,9 +2968,11 @@ Nothing. Phase 4 is complete.
   when no client certificate is presented, but it has never been
   exercised against a real sender.
 
-The rest of phases 5 and 6 does not exist: no FIPS artifact set, no
-Windows or macOS parity, no detached job signing, no signed state trees,
-and no backtracking regex engine.
+Phase 5 is part built — gitfs, s3fs, the agentless path, relays and the
+FIPS artifact set are in, and 6.1b says what each covers. What is
+absent from 5 and 6: Windows and macOS parity, detached job signing,
+signed state trees, the render sandbox, node-side evidence, and the
+backtracking regex engine.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.
@@ -3100,7 +3110,9 @@ What is **not** built in phase 5:
 ### 6.3 The compatibility shim and the migration tool
 
 The migration report of SPEC 28 runs and exits non-zero on blocking findings.
-It has been run against synthetic trees only — never against a real Salt tree
+It has been run against a real estate tree of 129 state files and 64
+pillar files (5.26), and against a smaller real tree (5.9), as well as
+against synthetic ones. What it has not been run against is a Salt tree
 of any size, which is phase 0's stated exit criterion. That criterion is
 therefore **not** met in substance, only in mechanism.
 
