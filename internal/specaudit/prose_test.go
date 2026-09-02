@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/config"
 )
 
 // proseFiles are the documents a reader plans from. Their tables are
@@ -97,4 +99,44 @@ func splitSentences(text string) []string {
 
 func collapse(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// TestNoWaiverCitesADeliveredPhase holds the unread-key waivers to the
+// phase list.
+//
+// Twelve settings were waived as "phase 2: there is no job cache" and
+// the like, on a build where phase 2 had shipped. Nothing noticed,
+// because the reasons lived in a test file that only asserted a key was
+// accounted for — not that the account was still true. An excuse keyed
+// to a phase expires when the phase lands, and this is what says so.
+//
+// The waivers are read from the package rather than from a test file so
+// that one place says why a key is unread.
+func TestNoWaiverCitesADeliveredPhase(t *testing.T) {
+	phase := regexp.MustCompile(`(?i)\bphase ([0-9])\b`)
+
+	waivers := map[string]string{}
+	for name, effect := range config.InertKeys {
+		waivers[name] = effect
+	}
+	for name, reason := range config.UnreadKeys {
+		waivers[name] = reason
+	}
+	if len(waivers) == 0 {
+		t.Fatal("no waivers were found; this audit has stopped checking")
+	}
+
+	for name, reason := range waivers {
+		for _, m := range phase.FindAllStringSubmatch(reason, -1) {
+			named := "phase " + m[1]
+			for _, delivered := range DeliveredPhases {
+				if named != delivered {
+					continue
+				}
+				t.Errorf("the waiver for %q blames %s, which is delivered: %q",
+					name, delivered, reason)
+			}
+		}
+	}
+	t.Logf("checked %d waivers", len(waivers))
 }
