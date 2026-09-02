@@ -9,6 +9,12 @@ type parser struct {
 	i    int
 	file string
 	opts Options
+	// loops counts the for-loops enclosing the statement being parsed,
+	// so that `break` outside one is refused where Jinja refuses it:
+	// while reading the template, not when the branch happens to run.
+	// A macro body starts at zero, because a macro called from a loop is
+	// not lexically inside it and Jinja does not let it break out.
+	loops int
 }
 
 // parseTemplate turns a token stream into a body of statements.
@@ -169,6 +175,8 @@ func (p *parser) parseStatement() (Node, error) {
 		return p.parseBlock(start)
 	case "filter":
 		return p.parseFilter(start)
+	case "break", "continue":
+		return p.parseLoopControl(start, nameTok.val)
 	case "do":
 		return p.parseDo(start)
 	case "with":
@@ -257,7 +265,9 @@ func (p *parser) parseFor(start Pos) (Node, error) {
 		return nil, err
 	}
 
+	p.loops++
 	body, end, err := p.parseBody([]string{"else", "endfor"})
+	p.loops--
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +361,12 @@ func (p *parser) parseMacro(start Pos) (Node, error) {
 	if _, err := p.expect(tokTagEnd, ""); err != nil {
 		return nil, err
 	}
+	// A macro is a separate lexical scope for this purpose: Jinja
+	// refuses a break in one even when the call is inside a loop.
+	saved := p.loops
+	p.loops = 0
 	body, _, err := p.parseBody([]string{"endmacro"})
+	p.loops = saved
 	if err != nil {
 		return nil, err
 	}
@@ -633,4 +648,18 @@ func (p *parser) parseAutoescape(start Pos) (Node, error) {
 		return nil, err
 	}
 	return &AutoescapeNode{baseNode{start}, body}, p.endTag()
+}
+
+// parseLoopControl reads `{% break %}` or `{% continue %}`.
+func (p *parser) parseLoopControl(start Pos, name string) (Node, error) {
+	if p.loops == 0 {
+		return nil, errorf(start, "the %s tag is only meaningful inside a for loop", name)
+	}
+	if _, err := p.expect(tokTagEnd, ""); err != nil {
+		return nil, err
+	}
+	if name == "break" {
+		return &BreakNode{baseNode: baseNode{start}}, nil
+	}
+	return &ContinueNode{baseNode: baseNode{start}}, nil
 }

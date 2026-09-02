@@ -293,6 +293,12 @@ func (r *renderer) renderNode(n Node) error {
 		}
 		return r.renderNodes(t.Else)
 
+	case *BreakNode:
+		return errBreak
+
+	case *ContinueNode:
+		return errContinue
+
 	case *ForNode:
 		return r.renderFor(t)
 
@@ -407,13 +413,10 @@ func (r *renderer) renderFor(t *ForNode) error {
 			items = filtered
 		}
 
-		if len(items) == 0 {
-			return r.renderNodes(t.Else)
-		}
-
 		saved := r.scope
 		defer func() { r.scope = saved }()
 
+		completed := false
 		loop := &LoopInfo{Length: len(items), Items: items, Depth0: depth}
 		if t.Recursive {
 			loop.recurse = func(inner any) (string, error) {
@@ -437,8 +440,25 @@ func (r *renderer) renderFor(t *ForNode) error {
 				return err
 			}
 			if err := r.renderNodes(t.Body); err != nil {
+				if errors.Is(err, errContinue) {
+					continue
+				}
+				if errors.Is(err, errBreak) {
+					break
+				}
 				return err
 			}
+			completed = true
+		}
+
+		// The else branch runs when no iteration reached the end of the
+		// body — an empty iterable, but also a loop whose every pass
+		// broke or continued out. That is Jinja's behaviour with the
+		// loopcontrols extension loaded, measured rather than assumed:
+		// breaking on the first item runs the else, and breaking on the
+		// second does not.
+		if !completed {
+			return r.renderNodes(t.Else)
 		}
 		return nil
 	}
@@ -481,6 +501,12 @@ func (r *renderer) renderForRecursive(t *ForNode, iterable any, depth int) error
 			return err
 		}
 		if err := r.renderNodes(t.Body); err != nil {
+			if errors.Is(err, errContinue) {
+				continue
+			}
+			if errors.Is(err, errBreak) {
+				break
+			}
 			return err
 		}
 	}
@@ -1192,3 +1218,17 @@ func (r *renderer) evalCallArgs(t *CallExpr) ([]any, map[string]any, error) {
 	}
 	return args, kwargs, nil
 }
+
+// errBreak and errContinue carry `{% break %}` and `{% continue %}` out
+// of whatever nesting they were written in and up to the loop that owns
+// them.
+//
+// Signalled as errors because that is the one path every statement
+// already propagates: a break inside an `if` inside a `filter` block
+// reaches the loop without each of those having to know about it. The
+// parser refuses either tag outside a loop, so neither can escape to a
+// caller as an error nobody catches.
+var (
+	errBreak    = errors.New("break")
+	errContinue = errors.New("continue")
+)

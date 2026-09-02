@@ -159,6 +159,15 @@ type DoNode struct {
 	Expr Expr
 }
 
+// BreakNode is `{% break %}` and ContinueNode is `{% continue %}`, the
+// two statements Jinja's loopcontrols extension adds. Salt enables that
+// extension, so a tree that loops may use them and this build could not
+// parse one.
+type BreakNode struct{ baseNode }
+
+// ContinueNode ends the current iteration and starts the next.
+type ContinueNode struct{ baseNode }
+
 // WithNode is `{% with a = 1 %}`, a scope that ends at endwith.
 type WithNode struct {
 	baseNode
