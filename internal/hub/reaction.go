@@ -90,9 +90,9 @@ func (s *Server) renderReaction(path string, e *eventbus.Event) (*value.Map, err
 		// and the event that triggered it will not come again.
 		Undefined: template.Strict,
 		Extra: map[string]any{
-			"data": data,
-			"tag":  e.Tag,
-			"id":   e.Node,
+			ReactionData: data,
+			ReactionTag:  e.Tag,
+			"id":         e.Node,
 		},
 	})
 	for _, w := range res.Warnings {
@@ -341,3 +341,22 @@ func correlationOf(e *eventbus.Event) string {
 // reactionTimeout is SPEC 18.2's per-reaction bound on rendering and
 // dispatch. The job a reaction dispatches has its own.
 const reactionTimeout = 60 * time.Second
+
+// The names a reaction template is given beyond the ordinary render
+// context. `id` is in that context already.
+//
+// Exported because a reactor SLS is a `.sls` like any other and nothing
+// in the file says which it is, so the migration audit cannot tell them
+// apart and would report every use of `data` or `tag` in one as an
+// undefined name. Two lists would drift, and each name missing from the
+// audit's copy becomes a finding against a tree that is fine.
+const (
+	ReactionData = "data"
+	ReactionTag  = "tag"
+)
+
+// ReactionContextNames is what a reaction template may read without
+// defining it.
+func ReactionContextNames() []string {
+	return []string{ReactionData, ReactionTag}
+}

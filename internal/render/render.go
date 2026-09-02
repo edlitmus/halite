@@ -13,6 +13,7 @@ package render
 import (
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/template"
@@ -408,6 +409,27 @@ func buildContext(opts Options) map[string]any {
 		ctx[k] = v
 	}
 	return ctx
+}
+
+// ContextNames is every name a template is given without defining it.
+//
+// Exported so that the migration audit can tell a name the renderer
+// supplies from one nothing defines. Two lists would drift, and each
+// name missing from the audit's copy becomes a finding against a tree
+// that is fine.
+//
+// `salt` is included although it is conditional: a tree that calls
+// `salt['x.y']` is not making a mistake because this particular audit
+// has no dispatcher wired up. Options.Extra is not, being whatever the
+// caller adds.
+func ContextNames() []string {
+	names := make([]string, 0, 24)
+	for name := range buildContext(Options{}) {
+		names = append(names, name)
+	}
+	names = append(names, "salt")
+	sort.Strings(names)
+	return names
 }
 
 func parseYAML(src string, opts Options, rendered *template.Result, res *Result) (any, error) {

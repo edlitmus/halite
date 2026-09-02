@@ -436,6 +436,7 @@ func auditTemplate(rep *Report, opts Options, rel, body string) {
 	walkExprs(tpl.Body, func(e template.Expr) {
 		auditExpr(rep, opts, rel, e)
 	})
+	auditUndefined(rep, rel, tpl)
 }
 
 // auditExpr records module usage and unsupported regex constructs.
