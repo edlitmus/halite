@@ -326,6 +326,14 @@ func runServe(args *cli.Args) int {
 			Registry:         builtin.New().Exec,
 			ConfigValues:     h.cfg.Redacted(),
 		}
+		// A setting that parses and does nothing is indistinguishable
+		// from one that works, until the thing it was meant to change
+		// does not change. SPEC 4.1 accepts the key; saying so is what
+		// stops acceptance reading as agreement.
+		for _, w := range h.cfg.InertWarnings() {
+			h.log.Warn("this setting is accepted and does nothing",
+				"setting", w.Setting, "effect", w.Effect, "section", w.Section)
+		}
 		if ext := h.cfg.StringSlice("ext_pillar"); len(ext) > 0 {
 			h.log.Warn("external pillar is not built; these sources contribute nothing",
 				"sources", strings.Join(ext, ","), "section", "12.7")

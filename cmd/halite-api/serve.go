@@ -153,6 +153,15 @@ func setup(args *cli.Args) *service {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	// A setting that parses and does nothing is indistinguishable from
+	// one that works, until the thing it was meant to change does not
+	// change. SPEC 4.1 accepts the key; saying so is what stops
+	// acceptance reading as agreement.
+	for _, w := range cfg.InertWarnings() {
+		logger.Warn("this setting is accepted and does nothing",
+			"setting", w.Setting, "effect", w.Effect, "section", w.Section)
+	}
+
 	return &service{cfg: cfg, log: logger, root: root}
 }
 

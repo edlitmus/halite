@@ -308,6 +308,15 @@ func setup(args *cli.Args) *node {
 	// resolving it.
 	n.log = n.log.With("node_id", n.nodeID)
 
+	// A setting that parses and does nothing is indistinguishable from
+	// one that works, until the thing it was meant to change does not
+	// change. SPEC 4.1 accepts the key; saying so is what stops
+	// acceptance reading as agreement.
+	for _, w := range cfg.InertWarnings() {
+		n.log.Warn("this setting is accepted and does nothing",
+			"setting", w.Setting, "effect", w.Effect, "section", w.Section)
+	}
+
 	g, warnings := grains.Collect(grains.Options{
 		NodeID:     n.nodeID,
 		StaticFile: root + "/grains",

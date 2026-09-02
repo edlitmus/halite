@@ -21,30 +21,21 @@ import (
 //
 // The list is enforced in both directions. A key that starts being read
 // must come off it, because a stale entry here hides the next real one.
-var unreadKeys = map[string]string{
-	// Phase 2, still: what the transport carries rather than the
-	// transport itself. Enrollment, the key store, and the subscribe
-	// stream are built, so their settings have come off this list.
-	"tracing":               "phase 2: no spans are emitted yet",
-	"ext_pillar_fail":       "phase 2: external pillar is a hub concern",
-	"job_signer_keys":       "phase 6: detached job signing",
-	"require_job_signature": "phase 6: detached job signing",
-	"pillar_cache_disk":     "phase 2: the node caches pillar from a hub",
-
-	// Read today, and not yet acted on. Each is a live gap rather than a
-	// phase boundary, and DIVERGENCE says so.
-	"log_level_file":    "SPEC 26.1's per-sink level; the file sink takes the global one",
-	"regex_engine":      "re2 is the only engine, so the setting has one value",
-	"node_id_source":    "the resolution order of SPEC 7.2 is implemented; naming one source is not",
-	"legacy_acl":        "phase 2: RBAC is a hub concern",
-	"parallel_jobs":     "phase 2: there is one job at a time",
-	"socket_dir":        "phase 2: there are no sockets",
-	"quiesce":           "phase 2: there are no jobs to refuse",
-	"quiesce_allowlist": "phase 2: there are no jobs to refuse",
-	"startup_states":    "phase 2: a node with a hub applies at startup",
-	"job_cache":         "phase 2: there is no job cache",
-	"node_data_cache":   "phase 2: the hub caches node data",
-	"hub_type":          "phase 2: nothing dials a hub yet",
+// waiverFor answers why a declared key is unread, and whether anything
+// accounts for it at all.
+//
+// Two maps, both in the package rather than in this test: InertKeys are
+// requests the services refuse out loud at startup, UnreadKeys are the
+// rest. They used to be one map here, and its reasons cited phases —
+// "phase 2: there is no job cache" on a build where phase 2 had
+// shipped. An expired excuse in a test file is invisible, which is why
+// the guard that reads them now lives beside the phase list.
+func waiverFor(name string) (string, bool) {
+	if effect, ok := InertKeys[name]; ok {
+		return "inert: " + effect, true
+	}
+	reason, ok := UnreadKeys[name]
+	return reason, ok
 }
 
 func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
@@ -86,7 +77,7 @@ func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
 	var unread []string
 	for _, k := range Keys {
 		mentioned := readSomewhere(text, k.Name)
-		reason, recorded := unreadKeys[k.Name]
+		reason, recorded := waiverFor(k.Name)
 		switch {
 		case mentioned && recorded:
 			t.Errorf("%q is read now, and is still recorded as unread (%q). Remove its row: "+
@@ -98,12 +89,12 @@ func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
 	sort.Strings(unread)
 	for _, k := range unread {
 		t.Errorf("%q is declared, documented, and read by nothing. Either act on it or "+
-			"add it to unreadKeys with the reason.", k)
+			"add it to InertKeys if a service should warn about it, or to UnreadKeys with the reason.", k)
 	}
 
-	for name := range unreadKeys {
+	for name := range allWaivers() {
 		if _, ok := keyIndex[name]; !ok {
-			t.Errorf("unreadKeys names %q, which is not a declared setting", name)
+			t.Errorf("a waiver names %q, which is not a declared setting", name)
 		}
 	}
 }
@@ -126,4 +117,17 @@ func readSomewhere(text, key string) bool {
 		}
 	}
 	return false
+}
+
+// allWaivers is both maps, for the check that no waiver names a setting
+// the table does not declare.
+func allWaivers() map[string]string {
+	out := make(map[string]string, len(InertKeys)+len(UnreadKeys))
+	for k, v := range InertKeys {
+		out[k] = v
+	}
+	for k, v := range UnreadKeys {
+		out[k] = v
+	}
+	return out
 }
