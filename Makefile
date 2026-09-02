@@ -164,7 +164,21 @@ vet:
 	@env $(DEV_ENV) go vet ./...
 
 fmt:
-	@gofmt -l -w cmd internal
+	@gofmt -l -w cmd internal tools
+
+# fmt-check reports rather than rewrites, which is what a gate needs.
+#
+# `check` used to begin with `fmt`, so it could never fail on formatting:
+# it reformatted the tree and carried on, and in CI that is a stage that
+# reports nothing it did not first make true.
+fmt-check:
+	@out=`gofmt -l cmd internal tools`; \
+	if [ -n "$$out" ]; then \
+		echo "these files are not gofmt'd:"; \
+		echo "$$out" | sed 's/^/  /'; \
+		echo "run \`make fmt\`"; \
+		exit 1; \
+	fi
 
 # policy runs the specification's own build rules: the lexicon of section
 # 2.3, the dependency allowlist of section 4.2, and the import checks of
@@ -236,7 +250,7 @@ build-all:
 # fips-test is in here rather than left to CI: the FIPS artifacts are a
 # shipped deliverable, and a restriction that only holds in the build
 # nobody runs locally is a restriction that breaks on the tag.
-check: fmt vet build-all test race policy fips-test
+check: fmt-check vet build-all test race policy fips-test
 
 tidy:
 	go mod tidy
