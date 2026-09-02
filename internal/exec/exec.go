@@ -342,6 +342,17 @@ type UnknownFunctionError struct {
 }
 
 func (e *UnknownFunctionError) Error() string {
+	// A module the specification names is a different answer from one
+	// nobody has heard of. Without this, `aptpkg.install` on a Debian
+	// node reads as a typo, and an operator goes looking for the
+	// spelling rather than for the gap.
+	if module, _, ok := strings.Cut(e.Name, "."); ok {
+		if p, pending := PendingPlatform(module); pending {
+			return fmt.Sprintf("%q is not built: SPEC section 15.3 names the %s module "+
+				"among the %s platform modules, and this build does not have it (%s)",
+				e.Name, module, p.Platform, p.When)
+		}
+	}
 	if len(e.Known) == 0 {
 		return fmt.Sprintf("%q is not a function this build ships; see the tier table in SPEC section 15", e.Name)
 	}
