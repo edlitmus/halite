@@ -519,8 +519,25 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-2 of 62 present. This is the largest single gap and it is a direct
-consequence of having one host to develop on.
+2 of 65 present — the rows below total 63 absent. This is the largest
+single gap and it is a direct consequence of having one host to develop
+on.
+
+The 63 are declared as pending rather than simply missing. A name absent
+from the registry makes "not written yet" and "you have mistyped it" the
+same message, and the second sends an operator looking for a spelling
+error that is not there:
+
+```
+$ halite-node call aptpkg.install nginx
+halite: "aptpkg.install" is not built: SPEC section 15.3 names the aptpkg
+module among the debian platform modules, and this build does not have it
+(phase 5, with the Debian and Ubuntu platform work)
+```
+
+A test holds that table to SPEC 15.3 in both directions, so a module
+that arrives cannot stay listed as pending and one added to the
+specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
