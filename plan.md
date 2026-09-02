@@ -9,8 +9,10 @@ through `sys.list_*`, the conformance suites were run, and each named feature
 was traced to the line that implements or refuses it. Where this document and
 the ledger disagree, section 1 says so and the code is cited.
 
-**Date of measurement:** 2026-09-02, against `5a569b3`, on darwin/arm64 with
-Go 1.27.1.
+**Date of measurement:** 2026-09-02, against `57b0d39` plus an uncommitted
+`go.mod` edit, on darwin/arm64 with Go 1.27.1. Section 2.1 was re-measured
+after the `go.mod` fix by running `make check` and then each stage it does not
+reach.
 
 ---
 
@@ -64,25 +66,60 @@ reasons in `internal/config/unread_test.go`, keyed off the existing
 
 ## 2. Broken or silently inert today
 
-### 2.1 `make check` fails (hours)
+### 2.1 `make check` fails on three tests (hours)
 
-- **`go vet ./...` exits 1.** `internal/fips/fips.go:62` calls
-  `fips140.Enforced`, added in Go 1.26, while `go.mod` declares `go 1.25.12`.
-  The build succeeds because the `toolchain` directive pulls 1.26.6, but the
-  language-version gate rejects it, and `internal/fips` fails to build under
-  test. Bump the `go` directive to 1.26. This also blocks `make check`, which
-  depends on `vet`.
+**Fixed.** The `go` directive is now `1.26.6`, so `go vet ./...` exits 0 and
+`internal/fips` builds and passes. That was the only failure blocking a whole
+stage.
+
+**What `make check` does now.** It clears `fmt`, `vet` and `build-all` — the
+latter green on all eight target platforms — then halts at `test` on **three
+failing tests in two packages**. Because `check` is a serial dependency chain
+(`fmt vet build-all test race policy fips-test`), those three tests stop it
+before `race`, `policy` and `fips-test` ever run, so I ran each separately:
+
+| Stage | Result |
+|---|---|
+| `fmt`, `vet`, `build-all` | Pass (8/8 platforms) |
+| `test` | **Fails** — 3 tests, 2 packages |
+| `race` | **Fails** — the same 3 tests, and **zero data races** across the tree |
+| `policy` | **Fails** — the lexicon test, which is one of the same 3 |
+| `fips-test` | **Fails** — the same 3, with **no FIPS-specific failures** |
+
+So the whole of `make check` is gated on three tests, and nothing else is
+hiding behind them. That is a better position than the stage list suggests: the
+race detector is clean over every package, and the FIPS suite has no failure of
+its own.
+
+The three:
+
 - **`TestLexiconPolicy` fails on a file that is not part of the project.**
   `internal/buildpolicy`'s scan walks the whole tree; `ExemptPaths`
   (`internal/buildpolicy/lexicon.go:70-91`) skips `vendor/`, `.git/`, `bin/`
   and `dist/` but not `.claude/`, so a developer's git-ignored editor config
-  fails the project's own build gate. Add `.claude/`, or skip git-ignored
-  paths generally.
+  fails the project's own build gate. Add `.claude/`, or skip git-ignored paths
+  generally. This one also fails `make policy` on its own.
 - **Two darwin-only failures in `internal/builtin`**
   (`pkg_more_test.go:131`, `user_password_test.go:68`): both assert error text
   that no darwin branch produces. They are the macOS gap surfacing as red
   tests, and they will stay red until item 4.3 lands. Either skip them by
   platform with a reason, or fix the messages.
+
+**Two things about `check` itself, worth fixing before it becomes CI (§5.5):**
+
+- **The `go.mod` fix dropped the `toolchain` directive**, which SPEC 4.3
+  requires by name: "pinned Go toolchain version in `go.mod` via the
+  `toolchain` directive". The `go 1.26.6` line still sets a floor, but the
+  explicit pin the reproducibility control asks for is gone, and **nothing in
+  the tree checks for it** — no test, no Makefile assertion. Restore the
+  directive and add an assertion in `internal/buildpolicy`, which is where the
+  other SPEC 4.2/4.3 build rules already live. A reproducibility control that
+  one edit can silently remove is not a control.
+- **`check` begins by rewriting the tree.** `fmt` is `gofmt -l -w cmd internal`
+  (`Makefile:166-167`), so `check` can never fail on formatting — in CI it
+  would reformat and pass, reporting nothing. CI needs the `-l`-only form,
+  failing when the list is non-empty. (The tree is in fact already formatted:
+  the run above changed nothing.)
 
 ### 2.2 Eleven config keys are accepted and do nothing (days)
 
@@ -402,9 +439,14 @@ has never been run.
   which is why the three failures in item 2.1 are sitting in a clean tree.
 - **Reproducibility is one builder, not two.** `make repro` builds twice on one
   machine from two paths — its own comment is honest about the difference. SPEC
-  4.3 requires two independent builders to agree.
+  4.3 requires two independent builders to agree. Note the `toolchain` pin that
+  the same control depends on is currently absent and unguarded (§2.1).
 - Toolchain provenance (fetch by digest from an internal mirror) is not
   implemented.
+- **`make check` is not yet CI-shaped.** Its first stage rewrites the tree
+  instead of failing, and its serial chain means one red test masks four later
+  stages (§2.1). Both need fixing before a pipeline is built on it, or CI will
+  report a narrower result than it appears to.
 
 Standing up CI is the highest-leverage item in this section: it is what keeps
 everything else in this document from drifting again.
@@ -487,8 +529,10 @@ Sequenced by value per unit of work, and by what unblocks what.
 
 **Now — days, mostly mechanical**
 
-1. Fix `go.mod`'s language version, the lexicon scan's exempt list, and the two
-   darwin tests, so `make check` passes again (§2.1).
+1. Fix the lexicon scan's exempt list and the two darwin tests — the only three
+   failures left in `make check`. Restore the `toolchain` directive and assert
+   it in `internal/buildpolicy`, and make `fmt` report rather than rewrite
+   (§2.1).
 2. Correct the nine ledger claims and extend the drift guards to Markdown prose
    and waiver reasons (§1).
 3. Warn on the eleven inert config keys, and refuse `attested` by name
