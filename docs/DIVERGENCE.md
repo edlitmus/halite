@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **44 execution modules / 240 functions** and **20 state
-modules / 56 functions**.
+The build ships **44 execution modules / 240 functions** and **21 state
+modules / 58 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`

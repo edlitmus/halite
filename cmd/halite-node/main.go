@@ -605,6 +605,7 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 		Beacons:      n.beacons,
 		Schedule:     n.schedule,
 		SaveConfig:   n.saveRuntimeConfig,
+		LoadConfig:   n.loadRuntimeConfig,
 		ReloadConfig: n.reloadRuntimeConfig,
 		Runner:       &exec.OSRunner{},
 		// `pillar.refresh` rebuilds through the same path a run uses,

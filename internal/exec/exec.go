@@ -81,6 +81,12 @@ type Context struct {
 	// there is nothing to re-read.
 	ReloadConfig func(kind string) error
 
+	// LoadConfig reads back what SaveConfig last wrote for a kind, so
+	// that a change to one setting does not discard the others sharing
+	// the file. An absent file is an empty mapping and not an error.
+	// Nil where there is nothing to read.
+	LoadConfig func(kind string) (*value.Map, error)
+
 	// Mine publishes to and reads from the mine of SPEC 19.5. Nil on a
 	// node with no hub, where there is nothing to publish to and
 	// nobody to read from.
