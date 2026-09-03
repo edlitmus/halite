@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // A reader must never see a half-written file, and must never stop a
@@ -108,5 +110,33 @@ func TestAFailedWriteNamesTheCallersPath(t *testing.T) {
 	}
 	if !bytes.Contains([]byte(err.Error()), []byte(path)) {
 		t.Errorf("the error does not name %s: %v", path, err)
+	}
+}
+
+// A mode that denies group and other means the file is private, and on
+// Windows a mode alone does not make it so. Checked here rather than in
+// internal/winsec because this is where every caller states the intent:
+// the enrollment key, the shared secret, the job cache and the return
+// log all reach the platform through this one function.
+func TestAPrivateModeIsHonouredOnThisPlatform(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(dir, "key")
+	if err := Write(private, []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if others, err := fileperm.Others(private); err != nil {
+		t.Fatal(err)
+	} else if len(others) != 0 {
+		t.Errorf("a file written 0600 can be read by %v", others)
+	}
+
+	// And a mode that does not ask for privacy is left alone, so a
+	// state that means a file to be world-readable gets one.
+	shared := filepath.Join(dir, "motd")
+	if err := Write(shared, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.ReadFile(shared); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/eventbus"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 )
 
@@ -103,6 +104,15 @@ func (r *fileReturner) open() error {
 	f, err := os.OpenFile(filepath.Clean(r.opts.Path),
 		os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.FileMode(r.opts.Mode))
 	if err != nil {
+		return err
+	}
+	// The mode passed to OpenFile is the whole answer on unix and no
+	// answer at all on Windows, where a return log carrying whatever the
+	// estate's jobs returned was left readable by every account on the
+	// machine. Stated again through internal/fileperm, which knows what
+	// the mode was asking for on each platform.
+	if err := fileperm.ApplyFile(f, os.FileMode(r.opts.Mode)); err != nil {
+		f.Close()
 		return err
 	}
 	info, err := f.Stat()

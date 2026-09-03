@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // run invokes git and returns its standard output.

@@ -2,12 +2,13 @@ package extension
 
 import (
 	"fmt"
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // ExtPrefix is where bundles live on the file server, as SPEC 24.4

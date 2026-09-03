@@ -105,11 +105,3 @@ func Read(path string) ([]byte, error) {
 	}
 	return out, nil
 }
-
-// chmodTemp sets the mode the finished file will have.
-//
-// On Windows a mode is only the read-only attribute: it says nothing
-// about who may read the file. Confidentiality here is the DACL, which
-// the file inherits from its directory. A caller that needs a file kept
-// from other accounts has to say so explicitly.
-func chmodTemp(f *os.File, mode os.FileMode) error { return f.Chmod(mode) }

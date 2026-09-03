@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -222,7 +223,10 @@ func tempScript(body string, mode os.FileMode) (path string, cleanup func(), err
 	}
 	name := f.Name()
 	cleanup = func() { os.Remove(name) }
-	if err := f.Chmod(mode); err != nil {
+	// fileperm rather than Chmod: on Windows a mode does not decide who
+	// can read a file, and a script carrying a credential was left
+	// readable by every account for the length of the run.
+	if err := fileperm.ApplyFile(f, mode); err != nil {
 		f.Close()
 		cleanup()
 		return "", func() {}, err

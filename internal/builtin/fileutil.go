@@ -5,13 +5,14 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"hash"
 	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // writeAtomic writes a file the only way a configuration management system

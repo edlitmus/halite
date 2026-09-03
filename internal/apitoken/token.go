@@ -15,13 +15,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"net"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // Token is one issued token, as it is stored.

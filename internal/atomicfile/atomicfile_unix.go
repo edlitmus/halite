@@ -12,8 +12,3 @@ func Rename(oldpath, newpath string) error { return os.Rename(oldpath, newpath) 
 // open file descriptor pointing at the old inode, so the read returns a
 // whole version of the file either way.
 func Read(path string) ([]byte, error) { return os.ReadFile(path) }
-
-// chmodTemp sets the mode the finished file will have. Doing it before
-// the rename rather than after means the file is never briefly readable
-// by somebody it should not be.
-func chmodTemp(f *os.File, mode os.FileMode) error { return f.Chmod(mode) }

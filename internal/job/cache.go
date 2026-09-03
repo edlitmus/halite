@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // Cache is the job cache of SPEC 9.4: a local store under the state

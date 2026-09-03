@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -20,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/pki"
 )
 

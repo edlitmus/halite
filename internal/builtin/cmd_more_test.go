@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -104,12 +105,15 @@ func TestTempScriptIsPrivate(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	info, err := os.Stat(path)
+	// Asked in the platform's own terms. This read the mode, which on
+	// Windows is synthesised from the read-only attribute: it reported
+	// 0666 for a script that nothing was protecting.
+	others, err := fileperm.Others(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o700 {
-		t.Errorf("mode = %04o, want 0700", perm)
+	if len(others) != 0 {
+		t.Errorf("the script can be read by %v", others)
 	}
 	cleanup()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
