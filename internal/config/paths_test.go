@@ -121,13 +121,20 @@ func TestServiceFilesAgreeWithTheDefaultRoot(t *testing.T) {
 
 // windowsRoot's env handling is testable everywhere, which matters
 // because the platform it is for is the one this build has never run on.
-// The separator differs off Windows; what is checked here is that
-// PROGRAMDATA is honoured and that a scrubbed environment still yields a
-// usable absolute path rather than "Halite" on its own.
+// The separator no longer differs off Windows: a Windows path is built
+// with a backslash on every host, so this asserts the exact string
+// rather than whatever the host's filepath.Join would have produced.
 func TestWindowsRootFollowsProgramData(t *testing.T) {
-	t.Setenv("PROGRAMDATA", filepath.Join("D:", "Data"))
-	if got, want := windowsRoot(), filepath.Join("D:", "Data", "Halite"); got != want {
+	t.Setenv("PROGRAMDATA", `D:\Data`)
+	if got, want := windowsRoot(), `D:\Data\Halite`; got != want {
 		t.Errorf("windowsRoot() = %q, want %q", got, want)
+	}
+
+	// A bare drive keeps its root separator rather than naming that
+	// drive's working directory.
+	t.Setenv("PROGRAMDATA", "D:")
+	if got, want := windowsRoot(), `D:\Halite`; got != want {
+		t.Errorf("windowsRoot() with a bare drive = %q, want %q", got, want)
 	}
 
 	t.Setenv("PROGRAMDATA", "")
@@ -184,6 +191,66 @@ func TestTheDocumentedPlatformTableMatchesTheCode(t *testing.T) {
 		}
 		if strings.Contains(line, "/etc/") || strings.Contains(line, "/var/") {
 			t.Errorf("the Windows row carries a unix path: %s", line)
+		}
+	}
+}
+
+// A path that is one of the defaults renders as its token, and one under
+// a default renders as that token plus the rest.
+//
+// On Windows every default directory is a child of the configuration
+// root, so a scan that took the first prefix match rendered the cache
+// directory as `<config root>\cache` and docs/configuration.md generated
+// there did not match the committed one. The separator in the remainder
+// is normalised for the same reason: the token stands for a path on
+// every platform, so what follows it must not name one.
+func TestAPortablePathPrefersTheLongestMatchAndOneSeparator(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{DefaultRoot, "<config root>"},
+		{DefaultCacheDir, "<cache dir>"},
+		{DefaultStateDir, "<state dir>"},
+		{DefaultPKIDir, "<config root>/pki"},
+		{DefaultPolicy, "<config root>/policy.yaml"},
+		{filepath.Join(DefaultCacheDir, "files", "base"), "<cache dir>/files/base"},
+		{filepath.Join("elsewhere", "entirely"), filepath.Join("elsewhere", "entirely")},
+	}
+	for _, c := range cases {
+		if got := PortablePath(c.in); got != c.want {
+			t.Errorf("PortablePath(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// Every platform's layout is computed from the target, so all four can
+// be checked from one host. filepath.Join takes the separator from the
+// machine it runs on, which made this test vacuous on Windows: it
+// asserted \etc\halite and got it.
+func TestALayoutIsInItsOwnPlatformsConvention(t *testing.T) {
+	cases := []struct{ goos, root, lib, run string }{
+		{"linux", "/etc/halite", "/var/lib/halite", "/run/halite"},
+		{"darwin", "/etc/halite", "/var/lib/halite", "/run/halite"},
+		{"freebsd", "/usr/local/etc/halite", "/var/db/halite", "/var/run/halite"},
+	}
+	for _, c := range cases {
+		if got := RootFor(c.goos); got != c.root {
+			t.Errorf("RootFor(%q) = %q, want %q", c.goos, got, c.root)
+		}
+		if got := VarPathFor(c.goos, "lib"); got != c.lib {
+			t.Errorf("VarPathFor(%q, lib) = %q, want %q", c.goos, got, c.lib)
+		}
+		if got := RunPathFor(c.goos); got != c.run {
+			t.Errorf("RunPathFor(%q) = %q, want %q", c.goos, got, c.run)
+		}
+	}
+
+	t.Setenv("PROGRAMDATA", `C:\ProgramData`)
+	for _, c := range []struct{ got, want string }{
+		{RootFor("windows"), `C:\ProgramData\Halite`},
+		{VarPathFor("windows", "lib"), `C:\ProgramData\Halite\lib`},
+		{RunPathFor("windows"), `C:\ProgramData\Halite\run`},
+	} {
+		if c.got != c.want {
+			t.Errorf("the Windows layout gave %q, want %q", c.got, c.want)
 		}
 	}
 }
