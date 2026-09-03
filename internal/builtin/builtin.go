@@ -63,6 +63,7 @@ func New() *Registries {
 	registerFileEditAsExec(r)
 	registerFileTreeCopy(r)
 	registerSmallGaps(r)
+	registerFileSerialize(r)
 	registerPkgVersion(r)
 	registerFileMore(r)
 	registerServiceMore(r)
