@@ -43,6 +43,9 @@ var hashLocations = map[string]passwordFile{
 // A missing account is not an error here: the caller is deciding whether
 // to set a password on an account it may be about to create.
 func currentHash(name string) (hash string, found bool, err error) {
+	if runtime.GOOS == "darwin" {
+		return currentHashDarwin(name)
+	}
 	loc, ok := hashLocations[runtime.GOOS]
 	if !ok {
 		return "", false, fmt.Errorf("this build does not know where %s keeps password hashes", runtime.GOOS)
@@ -72,6 +75,28 @@ func currentHash(name string) (hash string, found bool, err error) {
 		return "", false, err
 	}
 	return "", false, nil
+}
+
+// currentHashDarwin is the macOS half of currentHash.
+//
+// macOS keeps no crypt-style shadow file to read a line out of: a
+// password hash lives in Open Directory, in the per-user ShadowHashData
+// attribute, as a SALTED-SHA512-PBKDF2 dictionary inside a binary plist.
+// Reading it — and the plaintext-based dscl/sysadminctl calls that write
+// one — is real, separate work for the mac_shadow module of SPEC section
+// 15.3, not yet built.
+//
+// dscl will not tell this apart from a missing attribute: querying
+// ShadowHashData unprivileged answers "No such key" with exit 0 either
+// way, the same as it would for an account that genuinely has none. So
+// the permission check has to happen before asking, by euid, rather than
+// from dscl's answer — confirmed against a real `dscl -plist . -read`
+// call on this host.
+func currentHashDarwin(name string) (string, bool, error) {
+	if os.Geteuid() != 0 {
+		return "", false, fmt.Errorf("reading a macOS account's password hash needs root, and so does setting one")
+	}
+	return "", false, fmt.Errorf("this build does not yet read a macOS account's password hash (mac_shadow, SPEC 15.3)")
 }
 
 // passwordCommand builds the command that writes a hash, with the hash on

@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -318,4 +319,208 @@ func (apkProvider) LatestVersion(c *exec.Context, name string) (string, error) {
 func (apkProvider) RefreshDB(c *exec.Context) error {
 	_, err := c.Run(exec.Command{Argv: []string{"apk", "update", "--no-progress"}})
 	return err
+}
+
+// brewEnv is the environment every Homebrew invocation gets: no
+// auto-update on every command (that belongs to refresh_db alone), no
+// post-install cleanup pass, and no interactive hints, so a state run gets
+// only the output of the thing it asked for.
+//
+// Unlike every other provider here, brew refuses outright to run without
+// $HOME set ("Error: $HOME must be set to run brew"), which CleanEnv does
+// not carry — this was found by running the provider against a real
+// Homebrew, not read off documentation.
+func brewEnv() []string {
+	env := append(exec.CleanEnv(),
+		"HOMEBREW_NO_AUTO_UPDATE=1",
+		"HOMEBREW_NO_INSTALL_CLEANUP=1",
+		"HOMEBREW_NO_ENV_HINTS=1",
+	)
+	if home := os.Getenv("HOME"); home != "" {
+		env = append(env, "HOME="+home)
+	}
+	return env
+}
+
+// brewProvider is macOS's Homebrew, named mac_brew_pkg to match the module
+// Salt trees already call by that name. SPEC section 15.2, 15.3.
+type brewProvider struct{}
+
+func (brewProvider) Name() string { return "mac_brew_pkg" }
+
+func (brewProvider) Available(c *exec.Context) bool { return c.Which("brew") != "" }
+
+func (brewProvider) ListPkgs(c *exec.Context) (*value.Map, error) {
+	res, err := c.Run(exec.Command{Argv: []string{"brew", "list", "--versions"}, Env: brewEnv()})
+	if err != nil {
+		return nil, err
+	}
+	out := value.NewMap(256)
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		// Homebrew can have more than one version of a formula on disk at
+		// once, listed oldest first; only one is ever linked as current,
+		// and the last field is that newest one.
+		out.Set(fields[0], fields[len(fields)-1])
+	}
+	return out, nil
+}
+
+func (brewProvider) Install(c *exec.Context, names []string, versions map[string]string, refresh bool) error {
+	if refresh {
+		if _, err := c.Run(exec.Command{Argv: []string{"brew", "update", "--quiet"}, Env: brewEnv()}); err != nil {
+			return fmt.Errorf("brew update: %w", err)
+		}
+	}
+	// Homebrew has no apt/dnf-style "name=version" pin at install time; a
+	// version request is satisfied by installing by name and is enforced
+	// afterward with brew.hold, the way pkgng's lock does.
+	argv := append([]string{"brew", "install", "--quiet"}, names...)
+	_, err := c.Run(exec.Command{Argv: argv, Env: brewEnv()})
+	return err
+}
+
+func (brewProvider) Remove(c *exec.Context, names []string, purge bool) error {
+	argv := []string{"brew", "uninstall", "--quiet"}
+	if purge {
+		// Homebrew's uninstall already removes a formula's Cellar
+		// entirely; --force additionally takes every installed version
+		// rather than just the linked one, which is the closest analogue
+		// this package manager has to purge.
+		argv = append(argv, "--force")
+	}
+	argv = append(argv, names...)
+	_, err := c.Run(exec.Command{Argv: argv, Env: brewEnv()})
+	return err
+}
+
+func (brewProvider) LatestVersion(c *exec.Context, name string) (string, error) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"brew", "info", "--json=v2", name},
+		Env:            brewEnv(),
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	if res.Code != 0 {
+		return "", nil
+	}
+	f, err := firstBrewFormula(res.Stdout)
+	if err != nil || f == nil {
+		return "", err
+	}
+	versions, ok := mustMap(f, "versions")
+	if !ok {
+		return "", nil
+	}
+	stable, _ := versions.Get("stable")
+	return value.KeyString(stable), nil
+}
+
+func (brewProvider) RefreshDB(c *exec.Context) error {
+	_, err := c.Run(exec.Command{Argv: []string{"brew", "update", "--quiet"}, Env: brewEnv()})
+	return err
+}
+
+// firstBrewFormula decodes a `brew info --json=v2` response and returns
+// its first formula, or nil when the name matched none.
+func firstBrewFormula(stdout string) (*value.Map, error) {
+	v, err := value.DecodeJSON([]byte(stdout))
+	if err != nil {
+		return nil, err
+	}
+	m, ok := v.(*value.Map)
+	if !ok {
+		return nil, nil
+	}
+	formulae, ok := m.Get("formulae")
+	if !ok {
+		return nil, nil
+	}
+	list, ok := formulae.([]any)
+	if !ok || len(list) == 0 {
+		return nil, nil
+	}
+	f, _ := list[0].(*value.Map)
+	return f, nil
+}
+
+// ---- mac_brew_pkg: hold, upgrade, and the optional interfaces it can
+// actually answer. FileList, OwnerOf, and ListRepos have no clean
+// Homebrew analogue and are left unimplemented, the same as for every
+// provider but pkgng. ----
+
+func (brewProvider) Hold(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"brew", "pin", name}, Env: brewEnv()})
+	return err
+}
+
+func (brewProvider) Unhold(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"brew", "unpin", name}, Env: brewEnv()})
+	return err
+}
+
+func (brewProvider) ListHolds(c *exec.Context) ([]string, error) {
+	res, err := c.Run(exec.Command{
+		Argv: []string{"brew", "list", "--pinned"}, Env: brewEnv(), IgnoreExitCode: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sortedLines(res.Stdout), nil
+}
+
+func (p brewProvider) Upgrade(c *exec.Context, refresh bool) (*value.Map, error) {
+	before, err := p.ListPkgs(c)
+	if err != nil {
+		return nil, err
+	}
+	if refresh {
+		if _, err := c.Run(exec.Command{Argv: []string{"brew", "update", "--quiet"}, Env: brewEnv()}); err != nil {
+			return nil, fmt.Errorf("brew update: %w", err)
+		}
+	}
+	if _, err := c.Run(exec.Command{Argv: []string{"brew", "upgrade", "--quiet"}, Env: brewEnv()}); err != nil {
+		return nil, err
+	}
+	return pkgDelta(c, p, before)
+}
+
+func (brewProvider) ListUpgrades(c *exec.Context, refresh bool) (*value.Map, error) {
+	if refresh {
+		if _, err := c.Run(exec.Command{Argv: []string{"brew", "update", "--quiet"}, Env: brewEnv()}); err != nil {
+			return nil, fmt.Errorf("brew update: %w", err)
+		}
+	}
+	res, err := c.Run(exec.Command{
+		Argv: []string{"brew", "outdated", "--json=v2"}, Env: brewEnv(), IgnoreExitCode: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	v, err := value.DecodeJSON([]byte(res.Stdout))
+	if err != nil {
+		return nil, err
+	}
+	m, ok := v.(*value.Map)
+	if !ok {
+		return value.NewMap(0), nil
+	}
+	formulae, _ := m.Get("formulae")
+	list, _ := formulae.([]any)
+	out := value.NewMap(len(list))
+	for _, item := range list {
+		f, ok := item.(*value.Map)
+		if !ok {
+			continue
+		}
+		name, _ := f.Get("name")
+		current, _ := f.Get("current_version")
+		out.Set(value.KeyString(name), value.KeyString(current))
+	}
+	return out, nil
 }
