@@ -582,10 +582,39 @@ func (launchdProvider) Status(c *exec.Context, name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return res.Code == 0, nil
+	if res.Code != 0 {
+		return false, nil
+	}
+	// Querying one label prints its job dump rather than the tabular
+	// listing, and that dump carries a "PID" key only while the job is
+	// actually running — a job that is loaded but idle (OnDemand, not
+	// currently triggered) is found with exit 0 and no PID key at all, so
+	// the exit code alone says "known to launchd", not "running".
+	// Verified against real launchd output on this host.
+	return strings.Contains(res.Stdout, `"PID" =`), nil
 }
 
 func (launchdProvider) Enabled(c *exec.Context, name string) (bool, error) {
+	// launchctl keeps a persistent enable/disable override store,
+	// independent of whether the job is currently loaded; a label named
+	// there as disabled will not start at boot even if it is loaded right
+	// now. A label absent from the store carries no override, and the
+	// best answer this build has for it is whether launchd knows the job
+	// at all, since there is no plist RunAtLoad reader here.
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"launchctl", "print-disabled", "system"},
+		IgnoreExitCode: true,
+	})
+	if err == nil && res.Code == 0 {
+		quoted := `"` + name + `"`
+		for _, ln := range strings.Split(res.Stdout, "\n") {
+			ln = strings.TrimSpace(ln)
+			if !strings.HasPrefix(ln, quoted) {
+				continue
+			}
+			return strings.HasSuffix(ln, "=> enabled"), nil
+		}
+	}
 	return launchdProvider{}.Status(c, name)
 }
 
