@@ -380,7 +380,7 @@ larger unauthenticated surface than before by one certificate.
 ## 2. Module coverage
 
 The build ships **44 execution modules / 246 functions** and **21 state
-modules / 60 functions**.
+modules / 61 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -462,7 +462,7 @@ different reason is given.
 | `archive` | implemented | 1 | |
 | `cmd` | implemented | 3 | `script` takes its source as the state's name, as Salt's does |
 | `cron` | implemented | 2 | |
-| `file` | implemented | 13 | |
+| `file` | implemented | 14 | |
 | `git` | implemented | 1 | |
 | `group` | implemented | 2 | |
 | `host` | implemented | 2 | |

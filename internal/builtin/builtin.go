@@ -61,6 +61,7 @@ func New() *Registries {
 	registerX509States(r)
 	registerGrainsStates(r)
 	registerFileEditAsExec(r)
+	registerFileTreeCopy(r)
 	registerPkgVersion(r)
 	registerFileMore(r)
 	registerServiceMore(r)

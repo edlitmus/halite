@@ -356,3 +356,19 @@ func (r *Remote) ListPrefix(env, prefix string) ([]Entry, error) {
 	}
 	return manifest.Files, nil
 }
+
+// ListUnder implements exec.FileLister against a hub.
+//
+// The same trimming as the local fetcher, so a state laying files out
+// under a destination sees the same relative paths whether the tree came
+// from this node's roots or from the hub. A recursive copy that placed
+// files differently depending on where the tree lived would be worse
+// than one that did not work.
+func (r *Remote) ListUnder(env, prefix string) ([]string, error) {
+	target := EnvFromURI(prefix, env)
+	m, err := r.ManifestFor(target, StripScheme(prefix))
+	if err != nil {
+		return nil, err
+	}
+	return relativeTo(StripScheme(prefix), m), nil
+}

@@ -154,10 +154,11 @@ notify:
 // function this build lacks still blocks.
 func TestARealStateGapStillBlocks(t *testing.T) {
 	root := writeSLSTree(t, map[string]string{
-		"base/app.sls": `copy_it:
-  file.recurse:
-    - name: /srv/app
-    - source: salt://app/files
+		"base/app.sls": `write_it:
+  file.serialize:
+    - name: /etc/app.json
+    - dataset:
+        a: 1
 
 publish_it:
   pkgrepo.managed:
@@ -165,7 +166,7 @@ publish_it:
 `,
 	})
 	rep := auditSLSTree(t, root)
-	for _, name := range []string{"file.recurse", "pkgrepo.managed"} {
+	for _, name := range []string{"file.serialize", "pkgrepo.managed"} {
 		f, ok := findingFor(rep, name)
 		if !ok {
 			t.Fatalf("%s produced no finding", name)

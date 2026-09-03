@@ -153,6 +153,18 @@ type FileFetcher interface {
 	Exists(env, uri string) bool
 }
 
+// FileLister is a FileFetcher that can enumerate a subtree, which
+// `file.recurse` needs and a single-file fetch cannot answer.
+//
+// Optional, because a fetcher that serves one file at a time is still a
+// useful fetcher; a state that needs a listing asks for this and says so
+// when it does not get one.
+type FileLister interface {
+	// ListUnder returns the URIs below a `salt://` prefix, relative to
+	// that prefix, in order.
+	ListUnder(env, prefix string) ([]string, error)
+}
+
 // BeaconControl is the runtime management of SPEC 16.1.
 //
 // The types are the model's rather than the beacon package's, because

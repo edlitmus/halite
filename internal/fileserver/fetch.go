@@ -2,6 +2,8 @@ package fileserver
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
 )
@@ -59,3 +61,31 @@ func (f *Fetcher) Exists(env, uri string) bool {
 
 // compile-time check that the adapter satisfies what a module expects.
 var _ exec.FileFetcher = (*Fetcher)(nil)
+
+// ListUnder implements exec.FileLister over a local tree.
+func (f *Fetcher) ListUnder(env, prefix string) ([]string, error) {
+	target := EnvFromURI(prefix, env)
+	m, err := f.Roots.Manifest(target, StripScheme(prefix), f.HashType)
+	if err != nil {
+		return nil, err
+	}
+	return relativeTo(StripScheme(prefix), m), nil
+}
+
+// relativeTo trims the prefix from a manifest's entries, so a caller
+// gets the paths as they will be laid out under a destination rather
+// than as they sit in the tree.
+func relativeTo(prefix string, m *Manifest) []string {
+	prefix = strings.Trim(prefix, "/")
+	out := make([]string, 0, len(m.Files))
+	for _, e := range m.Files {
+		rel := strings.TrimPrefix(strings.Trim(e.Path, "/"), prefix)
+		rel = strings.TrimPrefix(rel, "/")
+		if rel == "" {
+			continue
+		}
+		out = append(out, rel)
+	}
+	sort.Strings(out)
+	return out
+}
