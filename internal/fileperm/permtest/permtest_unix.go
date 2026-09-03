@@ -39,3 +39,20 @@ func AllowWrite(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 }
+
+// DenyRead makes a file this process cannot read.
+func DenyRead(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Chmod(path, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+}
+
+// AllowRead undoes DenyRead.
+func AllowRead(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}

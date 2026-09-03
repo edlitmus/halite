@@ -164,6 +164,11 @@ func langCtx(t *testing.T, test bool, listing string) *exec.Context {
 			"npm ls --json --depth=0 --global": {Stdout: listing},
 		},
 	}
+	// The tools are declared present rather than looked up, so this
+	// really does exercise the state logic without either of them.
+	// Left to PATH, the test failed on a machine with no npm and passed
+	// on one that had it, neither for a reason it stated.
+	c.Lookup = func(name string) string { return "/usr/bin/" + name }
 	return c
 }
 

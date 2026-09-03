@@ -88,7 +88,7 @@ func registerFileMore(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
-				if err := os.Chmod(path, mode); err != nil {
+				if err := applyMode(path, mode); err != nil {
 					return nil, err
 				}
 				return path, nil
@@ -428,7 +428,7 @@ func makeDirs(args *value.Map) (any, error) {
 	// MkdirAll applies the mode only to directories it creates, and the
 	// umask takes a bite out of that. The leaf gets the mode the caller
 	// asked for either way.
-	if err := os.Chmod(path, mode); err != nil {
+	if err := applyMode(path, mode); err != nil {
 		return nil, err
 	}
 	return path, nil

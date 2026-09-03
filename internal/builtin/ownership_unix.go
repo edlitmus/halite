@@ -17,7 +17,7 @@ import (
 )
 
 // addOwnership fills the uid, gid, user, and group fields of file.stats.
-func addOwnership(m *value.Map, info os.FileInfo) {
+func addOwnership(m *value.Map, path string, info os.FileInfo) {
 	st, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
 		return

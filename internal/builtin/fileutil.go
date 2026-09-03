@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/states"
 )
 
 // writeAtomic writes a file the only way a configuration management system
@@ -157,3 +158,14 @@ func splitKeepEmpty(s string) []string {
 // dirOf is filepath.Dir, named locally so the editing helpers do not each
 // need the import.
 func dirOf(p string) string { return filepath.Dir(p) }
+
+// withWarnings attaches warnings to a result.
+//
+// A state that cannot carry out part of what it was asked has to say so
+// somewhere. Reporting it as a change is wrong — the change would be
+// reported again on every run, and never applied — and dropping it is
+// worse. SPEC 11.6 gives a result a Warnings field for exactly this.
+func withWarnings(r states.Result, warnings []string) states.Result {
+	r.Warnings = append(r.Warnings, warnings...)
+	return r
+}

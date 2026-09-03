@@ -117,3 +117,41 @@ func AllowWrite(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 }
+
+// DenyRead makes a file this process cannot read.
+//
+// A deny entry for the calling user: a chmod to 0000 returns nil here
+// and changes nothing, so a test using one asserted a refusal that never
+// came and passed against a file it could read perfectly well.
+func DenyRead(t *testing.T, path string) {
+	t.Helper()
+	user, err := currentUserSID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
+		AccessPermissions: windows.GENERIC_READ | windows.GENERIC_ALL,
+		AccessMode:        windows.DENY_ACCESS,
+		Inheritance:       windows.NO_INHERITANCE,
+		Trustee: windows.TRUSTEE{
+			TrusteeForm:  windows.TRUSTEE_IS_SID,
+			TrusteeType:  windows.TRUSTEE_IS_USER,
+			TrusteeValue: windows.TrusteeValueFromSID(user),
+		},
+	}}, currentDACL(t, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setDACL(path, acl); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = winsec.Restrict(path) })
+}
+
+// AllowRead undoes DenyRead.
+func AllowRead(t *testing.T, path string) {
+	t.Helper()
+	if err := winsec.Restrict(path); err != nil {
+		t.Fatal(err)
+	}
+}

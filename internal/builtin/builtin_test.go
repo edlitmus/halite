@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -152,9 +153,16 @@ func TestFileManagedCreatesWithModeAndContents(t *testing.T) {
 	if string(b) != "worker_processes 4;\n" {
 		t.Errorf("contents = %q", b)
 	}
-	info, _ := os.Stat(path)
-	if formatMode(info.Mode()) != "0644" {
-		t.Errorf("mode = %s", formatMode(info.Mode()))
+	// The mode is checked where a mode is what decides permissions.
+	// Windows has none: os.Stat synthesises 0666 for anything writable,
+	// so this assertion read 0666 and said nothing about the file. What
+	// the state does with a mode there is covered by
+	// TestAModeThatCannotBeCarriedOutIsSaidSoOnceAndConverges.
+	if runtime.GOOS != "windows" {
+		info, _ := os.Stat(path)
+		if formatMode(info.Mode()) != "0644" {
+			t.Errorf("mode = %s", formatMode(info.Mode()))
+		}
 	}
 }
 

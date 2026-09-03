@@ -170,9 +170,16 @@ func planRecurse(c *exec.Context, root string, f recurseFlags, args *value.Map) 
 			if d.IsDir() {
 				want, have = dirMode, haveDirMode
 			}
-			if have && info.Mode().Perm() != want.Perm() {
-				t.mode, t.setMode = want, true
-				t.from, t.to = formatMode(info.Mode()), formatMode(want)
+			// Asked of the platform rather than compared as a number,
+			// for the reason plannedMode gives: a mode is no answer at
+			// all on Windows, and comparing one there put every path
+			// under the directory in the plan on every run.
+			if have {
+				differs, _, _ := plannedMode(path, info, want)
+				if differs {
+					t.mode, t.setMode = want, true
+					t.from, t.to = formatMode(info.Mode()), formatMode(want)
+				}
 			}
 		}
 		if wantUser != "" || wantGroup != "" {
@@ -205,7 +212,7 @@ func applyRecurse(targets []recurseTarget, args *value.Map, f recurseFlags) erro
 	}
 	for _, t := range targets {
 		if t.setMode {
-			if err := os.Chmod(t.path, t.mode); err != nil {
+			if err := applyMode(t.path, t.mode); err != nil {
 				return err
 			}
 		}

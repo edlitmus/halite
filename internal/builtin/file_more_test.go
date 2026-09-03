@@ -3,9 +3,11 @@ package builtin
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/fileperm/permtest"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -27,10 +29,7 @@ func TestFileModeAndOwnership(t *testing.T) {
 	}
 
 	fileCall(t, r, "file.chmod", value.MapOf("path", path, "mode", "0600"))
-	info, _ := os.Stat(path)
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("mode = %04o", info.Mode().Perm())
-	}
+	assertMode(t, path, 0o600)
 
 	// A mode given as an integer is the YAML parser having read an
 	// unquoted 0644 as octal, and accepting it silently is how a file
@@ -51,9 +50,8 @@ func TestFileDirectories(t *testing.T) {
 	if err != nil || !info.IsDir() {
 		t.Fatalf("mkdir did not create the directory: %v", err)
 	}
-	if info.Mode().Perm() != 0o750 {
-		t.Errorf("mode = %04o; the umask should not decide the leaf's mode", info.Mode().Perm())
-	}
+	// The umask must not decide the leaf's mode.
+	assertMode(t, deep, 0o750)
 
 	// makedirs creates a path's *parents*, not the path. Creating the
 	// path itself as a directory is how a later write fails with "is a
@@ -252,20 +250,26 @@ func TestFileGrepAndFind(t *testing.T) {
 	}
 }
 
+// These build a path in the node's own convention, as Salt's do: the
+// function runs on the node, and a Windows node wants a Windows path.
+// The expectations are therefore written with the host's separator
+// rather than a slash, which is what made this read `join =
+// \etc\nginx\nginx.conf` there and call it a failure.
 func TestFilePathArithmetic(t *testing.T) {
 	r := New()
-	if got := fileCall(t, r, "file.join", value.MapOf("parts", []any{"/etc", "nginx", "nginx.conf"})); got != "/etc/nginx/nginx.conf" {
+	sep := string(os.PathSeparator)
+	if got := fileCall(t, r, "file.join", value.MapOf("parts", []any{"/etc", "nginx", "nginx.conf"})); got != sep+"etc"+sep+"nginx"+sep+"nginx.conf" {
 		t.Errorf("join = %v", got)
 	}
 	// Joining cleans, which is the point of having it rather than a
 	// template concatenating strings.
-	if got := fileCall(t, r, "file.join", value.MapOf("parts", []any{"/etc/", "/nginx", "../nginx.conf"})); got != "/etc/nginx.conf" {
+	if got := fileCall(t, r, "file.join", value.MapOf("parts", []any{"/etc/", "/nginx", "../nginx.conf"})); got != sep+"etc"+sep+"nginx.conf" {
 		t.Errorf("join = %v", got)
 	}
 	if got := fileCall(t, r, "file.basename", value.MapOf("path", "/etc/nginx/nginx.conf")); got != "nginx.conf" {
 		t.Errorf("basename = %v", got)
 	}
-	if got := fileCall(t, r, "file.dirname", value.MapOf("path", "/etc/nginx/nginx.conf")); got != "/etc/nginx" {
+	if got := fileCall(t, r, "file.dirname", value.MapOf("path", "/etc/nginx/nginx.conf")); got != sep+"etc"+sep+"nginx" {
 		t.Errorf("dirname = %v", got)
 	}
 }
@@ -346,6 +350,14 @@ func TestFileManagedRendersItsSource(t *testing.T) {
 }
 
 func TestFileDirectoryRecurse(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Every mode this exercises — 0750, 0640, 0755 — is one
+		// Windows cannot express, so there is nothing here to
+		// propagate and no change to predict. What recurse does mean
+		// on that platform is covered by
+		// TestRecursingAPrivateModeReachesEveryPath.
+		t.Skip("mode propagation needs a platform with modes")
+	}
 	r := New()
 	root := t.TempDir()
 	deep := filepath.Join(root, "sub", "deeper")
@@ -405,13 +417,7 @@ func TestFileDirectoryRecurse(t *testing.T) {
 		filepath.Join(root, "top.txt"):  0o640,
 		filepath.Join(deep, "leaf.txt"): 0o640,
 	} {
-		info, err := os.Stat(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if info.Mode().Perm() != want {
-			t.Errorf("%s is %04o, want %04o", filepath.Base(path), info.Mode().Perm(), want)
-		}
+		assertMode(t, path, want)
 	}
 
 	// A second run converges.
@@ -461,9 +467,9 @@ func TestFileManagedRefusesAnUnreadableFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("real contents\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(path, 0o000); err != nil {
-		t.Fatal(err)
-	}
+	// Made unreadable the way the platform does it: a chmod to 0000
+	// returns nil on Windows and changes nothing.
+	permtest.DenyRead(t, path)
 
 	// The error from the read was discarded, so an unreadable file
 	// compared as empty: the state said the contents differed, showed a
@@ -482,7 +488,7 @@ func TestFileManagedRefusesAnUnreadableFile(t *testing.T) {
 	}
 
 	// The file is untouched, and readable again for the cleanup.
-	os.Chmod(path, 0o600)
+	permtest.AllowRead(t, path)
 	if data, _ := os.ReadFile(path); string(data) != "real contents\n" {
 		t.Errorf("the file was written: %q", data)
 	}

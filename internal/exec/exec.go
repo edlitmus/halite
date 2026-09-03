@@ -129,6 +129,16 @@ type Context struct {
 	// is what makes the platform modules testable off their platform.
 	Runner CommandRunner
 
+	// Lookup resolves a program name to a path, and is what Which reads.
+	// Nil searches PATH.
+	//
+	// It is here for the same reason Runner is: a module that asks
+	// whether a program exists before running it is not testable off a
+	// machine that has that program, and a test that scripts the
+	// program's output while its presence is decided by the host is a
+	// test that passes for a reason it does not state.
+	Lookup func(name string) string
+
 	// RunAs and Umask are the per-state options of SPEC section 11.7,
 	// applied to every command the state runs. They live on the context
 	// rather than being threaded through each module's arguments, because
@@ -755,6 +765,14 @@ func (c *Context) RunArgv(argv ...string) (Result, error) {
 
 // Which reports the path of a program, or the empty string.
 func (c *Context) Which(name string) string {
+	// Lookup, where a caller supplied one, so that a test can say which
+	// programs the node has. Runner already lets a test say what a
+	// command returns, and without this the two do not agree: a test
+	// that scripts `npm ls` still fails on a machine with no npm, and
+	// passes on one that has it for reasons nothing in the test states.
+	if c.Lookup != nil {
+		return c.Lookup(name)
+	}
 	p, err := exec.LookPath(name)
 	if err != nil {
 		return ""

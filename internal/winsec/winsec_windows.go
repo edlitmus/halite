@@ -180,3 +180,19 @@ func describe(sid *windows.SID) string {
 	}
 	return domain + `\` + account
 }
+
+// Owner names the account that owns a path, in the form an
+// administrator reads: `DOMAIN\account`, or the SID's string form for
+// one that does not resolve.
+//
+// A Windows file has an owner, and halite was reporting that it had
+// none: addOwnership did nothing off unix, so `file.stats` returned no
+// `user` field and `file.get_user` answered "has no owner this platform
+// reports" for every file on the platform.
+func Owner(path string) (string, error) {
+	sid, err := owner(path)
+	if err != nil {
+		return "", err
+	}
+	return describe(sid), nil
+}

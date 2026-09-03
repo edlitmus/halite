@@ -625,13 +625,7 @@ func TestSSHAuthPresentAndAbsent(t *testing.T) {
 	}
 	// sshd refuses a group-writable file, so the mode is not left to the
 	// umask.
-	info, err := os.Stat(keys)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("mode = %s, want 0600", formatMode(info.Mode()))
-	}
+	assertMode(t, keys, 0o600)
 
 	if second := run(t, r, "ssh_auth.present", value.MapOf(
 		"name", blob, "enc", "ssh-ed25519", "comment", "ops@laptop", "config", keys), false); second.HasChanges() {

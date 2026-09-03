@@ -171,7 +171,7 @@ func fileStats(path string) (*value.Map, error) {
 		"mode", formatMode(info.Mode()),
 		"mtime", info.ModTime().Unix(),
 	)
-	addOwnership(m, info)
+	addOwnership(m, path, info)
 	return m, nil
 }
 
@@ -411,15 +411,27 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	// Mode.
 	modeStr := states.Str(args, "mode", "")
 	var wantMode os.FileMode
+	var modeWarnings []string
 	modeDiffers := false
 	if modeStr != "" {
 		wantMode, err = parseMode(modeStr)
 		if err != nil {
 			return states.False(fmt.Sprintf("The mode for %s is invalid: %v", path, err)), nil
 		}
-		if exists && info.Mode().Perm() != wantMode.Perm() {
-			modeDiffers = true
-			changes.Set("mode", states.Change(formatMode(info.Mode()), formatMode(wantMode)))
+		if exists {
+			// Asked of the platform rather than compared as a number.
+			// A mode is the whole answer on unix and no answer at all
+			// on Windows, where comparing os.Stat's synthesised 0666
+			// against the requested mode meant the state reported a
+			// change on every run and never converged.
+			differs, change, warning := plannedMode(path, info, wantMode)
+			if warning != "" {
+				modeWarnings = append(modeWarnings, warning)
+			}
+			if differs {
+				modeDiffers = true
+				changes.Set("mode", change)
+			}
 		}
 		if !exists {
 			modeDiffers = true
@@ -436,11 +448,11 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if !contentsDiffer && !modeDiffers && !ownerDiffers {
-		return states.True(fmt.Sprintf("%s is already in the requested state.", path)), nil
+		return withWarnings(states.True(fmt.Sprintf("%s is already in the requested state.", path)), modeWarnings), nil
 	}
 
 	if c.Test {
-		return states.WouldChange(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source, true), changes), nil
+		return withWarnings(states.WouldChange(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source, true), changes), modeWarnings), nil
 	}
 
 	if states.Bool(args, "makedirs", false) {
@@ -472,7 +484,7 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 			return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
 		}
 	} else if modeDiffers {
-		if err := os.Chmod(path, wantMode); err != nil {
+		if err := applyMode(path, wantMode); err != nil {
 			return states.False(fmt.Sprintf("The mode of %s could not be set: %v", path, err)), nil
 		}
 	}
@@ -483,7 +495,7 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 		}
 	}
 
-	return states.Changed(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source, false), changes), nil
+	return withWarnings(states.Changed(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source, false), changes), modeWarnings), nil
 }
 
 // describeFileChange builds the comment SPEC section 11.6 requires.
@@ -583,6 +595,7 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	modeStr := states.Str(args, "mode", "")
 	var wantMode os.FileMode = 0o755
+	var modeWarnings []string
 	modeDiffers := false
 	if modeStr != "" {
 		var err error
@@ -590,9 +603,15 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 		if err != nil {
 			return states.False(fmt.Sprintf("The mode for %s is invalid: %v", path, err)), nil
 		}
-		if exists && info.Mode().Perm() != wantMode.Perm() {
-			modeDiffers = true
-			changes.Set("mode", states.Change(formatMode(info.Mode()), formatMode(wantMode)))
+		if exists {
+			differs, change, warning := plannedMode(path, info, wantMode)
+			if warning != "" {
+				modeWarnings = append(modeWarnings, warning)
+			}
+			if differs {
+				modeDiffers = true
+				changes.Set("mode", change)
+			}
 		}
 	}
 
@@ -621,10 +640,10 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	if exists && !modeDiffers && !ownerDiffers && len(below) == 0 {
 		if recurse.any {
-			return states.True(fmt.Sprintf(
-				"%s and everything under it already have the requested mode and ownership.", path)), nil
+			return withWarnings(states.True(fmt.Sprintf(
+				"%s and everything under it already have the requested mode and ownership.", path)), modeWarnings), nil
 		}
-		return states.True(fmt.Sprintf("%s already exists with the requested mode and ownership.", path)), nil
+		return withWarnings(states.True(fmt.Sprintf("%s already exists with the requested mode and ownership.", path)), modeWarnings), nil
 	}
 	if !exists {
 		changes.Set("directory", states.Change(nil, "created"))
@@ -639,10 +658,10 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 			verb = "created"
 		}
 		if len(below) > 0 {
-			return states.WouldChange(fmt.Sprintf(
-				"The directory %s would be %s, and %d path(s) under it.", path, verb, len(below)), changes), nil
+			return withWarnings(states.WouldChange(fmt.Sprintf(
+				"The directory %s would be %s, and %d path(s) under it.", path, verb, len(below)), changes), modeWarnings), nil
 		}
-		return states.WouldChange(fmt.Sprintf("The directory %s would be %s.", path, verb), changes), nil
+		return withWarnings(states.WouldChange(fmt.Sprintf("The directory %s would be %s.", path, verb), changes), modeWarnings), nil
 	}
 
 	if !exists {
@@ -662,7 +681,7 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 			return states.False(fmt.Sprintf("%s could not be created: %v", path, err)), nil
 		}
 	} else if modeDiffers {
-		if err := os.Chmod(path, wantMode); err != nil {
+		if err := applyMode(path, wantMode); err != nil {
 			return states.False(fmt.Sprintf("The mode of %s could not be set: %v", path, err)), nil
 		}
 	}
@@ -680,10 +699,10 @@ func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {
 		if err := applyRecurse(below, args, recurse); err != nil {
 			return states.False(fmt.Sprintf("%s: recursing under %s failed: %v", path, path, err)), nil
 		}
-		return states.Changed(fmt.Sprintf(
-			"The directory %s was %s, and %d path(s) under it.", path, verb, len(below)), changes), nil
+		return withWarnings(states.Changed(fmt.Sprintf(
+			"The directory %s was %s, and %d path(s) under it.", path, verb, len(below)), changes), modeWarnings), nil
 	}
-	return states.Changed(fmt.Sprintf("The directory %s was %s.", path, verb), changes), nil
+	return withWarnings(states.Changed(fmt.Sprintf("The directory %s was %s.", path, verb), changes), modeWarnings), nil
 }
 
 func fileAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
@@ -718,7 +737,13 @@ func fileSymlink(c *exec.Context, args *value.Map) (states.Result, error) {
 		if err != nil {
 			return states.False(fmt.Sprintf("The link %s could not be read: %v", path, err)), nil
 		}
-		if current == target {
+		// Compared in the platform's own spelling. Windows stores a
+		// link's target with backslashes whatever was passed to
+		// CreateSymbolicLink, so a state written `target: /etc/hosts`
+		// read back `\etc\hosts`, reported a change, recreated the link,
+		// and reported the same change on the next run. The state never
+		// converged, and the change it printed was the same path twice.
+		if filepath.Clean(current) == filepath.Clean(filepath.FromSlash(target)) {
 			return states.True(fmt.Sprintf("The link %s already points at %s.", path, target)), nil
 		}
 		changes := value.MapOf("target", states.Change(current, target))
