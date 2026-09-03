@@ -99,6 +99,27 @@ func registerTest(r *Registries) {
 		},
 		states.Module{
 			Sig: signature.Signature{
+				Module: "test", Function: "show_notification",
+				Doc: "Succeed and put a message in the run's output. " +
+					"Changes nothing.",
+				Params: []signature.Param{
+					nameParam("Ignored."),
+					req("text", signature.String, "The message to show."),
+				},
+				TestMode: signature.TestNotApplicable,
+				Section:  "15.5",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (states.Result, error) {
+				text := states.Str(args, "text", "")
+				if text == "" {
+					return states.False("test.show_notification needs `text`, " +
+						"which is the whole of what it does."), nil
+				}
+				return states.True(text), nil
+			},
+		},
+		states.Module{
+			Sig: signature.Signature{
 				Module: "test", Function: "succeed_without_changes",
 				Doc:      "Succeed and report no changes.",
 				Params:   []signature.Param{nameParam("Ignored.")},

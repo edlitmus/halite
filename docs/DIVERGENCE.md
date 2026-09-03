@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **44 execution modules / 240 functions** and **21 state
-modules / 58 functions**.
+The build ships **44 execution modules / 246 functions** and **21 state
+modules / 60 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -404,7 +404,7 @@ different reason is given.
 | `dnsutil` | implemented | 2 | |
 | `environ` | implemented | 3 | |
 | `event` | implemented | 1 | local only until the hub exists |
-| `file` | implemented | 32 | |
+| `file` | implemented | 38 | |
 | `git` | implemented | 5 | through the system `git` binary |
 | `grains` | implemented | 6 | |
 | `group` | implemented | 1 | |
@@ -467,12 +467,12 @@ different reason is given.
 | `group` | implemented | 2 | |
 | `host` | implemented | 2 | |
 | `module` | implemented | 2 | |
-| `pkg` | implemented | 3 | |
+| `pkg` | implemented | 4 | |
 | `service` | implemented | 4 | |
 | `ssh_auth` | implemented | 2 | |
 | `sysctl` | implemented | 1 | |
 | `sysrc` | implemented | 3 | not in SPEC 15.5; FreeBSD's equivalent of the `hostname`/`service`-enable states. `managed` is Salt's name and `present` is this build's, and they are the same function |
-| `test` | implemented | 5 | |
+| `test` | implemented | 6 | |
 | `user` | implemented | 2 | |
 | `zfs` | implemented | 2 | `filesystem_present`, `absent`; no `zpool` state |
 | `acl` | not implemented | 0 | see 2.1 |

@@ -220,6 +220,22 @@ func registerPkg(r *Registries) {
 		},
 		states.Module{
 			Sig: signature.Signature{
+				Module: "pkg", Function: "purged",
+				Doc: "Ensure packages are not installed, and take their " +
+					"configuration with them.",
+				Params: []signature.Param{
+					nameParam("The package. Defaults to the state ID."),
+					opt("pkgs", signature.List, nil, "Several packages."),
+				},
+				Mutates:    true,
+				TestMode:   signature.TestReliable,
+				Privileges: []string{"root"},
+				Section:    "15.5",
+			},
+			Fn: pkgPurged,
+		},
+		states.Module{
+			Sig: signature.Signature{
 				Module: "pkg", Function: "latest",
 				Doc:        "Ensure packages are at their newest available version.",
 				Params:     installedParams,
@@ -358,13 +374,31 @@ func versionSatisfies(installed, want string) bool {
 }
 
 func pkgRemoved(c *exec.Context, args *value.Map) (states.Result, error) {
+	return pkgRemoveOrPurge(c, args, false)
+}
+
+// pkgPurged is pkg.removed that also takes the configuration with it.
+//
+// The provider interface has carried a `purge` flag since it was
+// written; only the state was missing, so a tree that purged had to be
+// rewritten to merely remove — which leaves the configuration behind and
+// is a different outcome, not a smaller one.
+func pkgPurged(c *exec.Context, args *value.Map) (states.Result, error) {
+	return pkgRemoveOrPurge(c, args, true)
+}
+
+func pkgRemoveOrPurge(c *exec.Context, args *value.Map, purge bool) (states.Result, error) {
+	verbed := "removed"
+	if purge {
+		verbed = "purged"
+	}
 	p, err := pickPkgProvider(c)
 	if err != nil {
 		return states.False(fmt.Sprintf("No package provider is available: %v", err)), nil
 	}
 	names, _ := packageSpecs(args)
 	if len(names) == 0 {
-		return states.False("This state names no packages to remove."), nil
+		return states.False(fmt.Sprintf("This state names no packages to be %s.", verbed)), nil
 	}
 
 	installed, err := p.ListPkgs(c)
@@ -385,13 +419,13 @@ func pkgRemoved(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 	if c.Test {
 		return states.WouldChange(
-			fmt.Sprintf("The following packages would be removed: %s.", states.SortedNames(present)), changes), nil
+			fmt.Sprintf("The following packages would be %s: %s.", verbed, states.SortedNames(present)), changes), nil
 	}
-	if err := p.Remove(c, present, false); err != nil {
-		return states.False(fmt.Sprintf("The packages could not be removed: %v", err)), nil
+	if err := p.Remove(c, present, purge); err != nil {
+		return states.False(fmt.Sprintf("The packages could not be %s: %v", verbed, err)), nil
 	}
 	return states.Changed(
-		fmt.Sprintf("The following packages were removed: %s.", states.SortedNames(present)), changes), nil
+		fmt.Sprintf("The following packages were %s: %s.", verbed, states.SortedNames(present)), changes), nil
 }
 
 func pkgLatest(c *exec.Context, args *value.Map) (states.Result, error) {
