@@ -166,10 +166,44 @@ func TestTimeoutStopsALongCommand(t *testing.T) {
 		Timeout: 200 * time.Millisecond,
 	})
 	if err == nil {
-		t.Error("the timeout did not fire")
+		t.Fatal("the timeout did not fire")
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Errorf("the timeout took %v to fire", elapsed)
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("the error should name the timeout rather than say only 'signal: killed': %v", err)
+	}
+}
+
+// A shell that backgrounds a child and a slow foreground command: killing
+// only the direct child leaves the grandchild to finish and to hold the
+// output pipe open, which is what made the timeout above wait 30 seconds
+// on this platform before the process-group kill went in.
+func TestTimeoutKillsAForkedChildToo(t *testing.T) {
+	if _, err := os.Stat("/bin/sh"); err != nil {
+		t.Skip("no /bin/sh")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "survived")
+	r := &OSRunner{}
+
+	start := time.Now()
+	_, err := r.Run(context.Background(), Command{
+		Argv:    []string{"/bin/sh", "-c", "(sleep 2; touch " + marker + ") & sleep 30"},
+		Timeout: 200 * time.Millisecond,
+	})
+	if err == nil {
+		t.Fatal("the timeout did not fire")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("Wait blocked for %v after the timeout; the grandchild kept the pipe open", elapsed)
+	}
+	// Past the backgrounded child's own sleep: if it were merely orphaned
+	// rather than killed, the marker would exist by now.
+	time.Sleep(3 * time.Second)
+	if _, err := os.Stat(marker); err == nil {
+		t.Error("a backgrounded child outlived the timeout: the process group was not killed")
 	}
 }
 

@@ -950,6 +950,18 @@ each return what the matching `apt-mark`/`dpkg-query`/`apt-get` call does.
 `pkg.hold` reaches `apt-mark hold` and fails only on the privilege check,
 as it should for an unprivileged run.
 
+That host also surfaced a defect the compat layer could not: a `Command`
+with a `Timeout` that fired waited the runaway out instead of killing it.
+`os/exec` signals only the direct child, and Linux's `/bin/sh` (dash)
+forks for `sh -c`, so the shell died while the program it spawned kept
+running and kept the stdout pipe open, blocking `Wait` until the program
+finished on its own. FreeBSD's `/bin/sh` execs in that case, so the
+development host never saw it. `OSRunner.Run` now starts every child in
+its own process group and kills the group on a timeout, with a bounded
+`WaitDelay` as the backstop; the error names the timeout rather than
+reporting only `signal: killed`. `internal/exec` covers both the simple
+and the forked-grandchild case.
+
 What it does not establish, and 4.2 still stands for the rest:
 
 - One distribution. Ubuntu chooses `apt`; the `dnf`, `zypper`, and `apk`
