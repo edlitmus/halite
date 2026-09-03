@@ -38,6 +38,40 @@ func TestGoModPinsTheToolchain(t *testing.T) {
 
 }
 
+// TestGoModFloorMatchesTheSpec holds the `go` directive to the version
+// SPEC 4.1 names.
+//
+// SPEC said "Go 1.25 or later" while go.mod required 1.26. Both were
+// true and they did not agree, which is the drift this package exists to
+// catch — a reader planning from the specification would have built with
+// a toolchain the module refuses.
+func TestGoModFloorMatchesTheSpec(t *testing.T) {
+	root := repoRoot(t)
+	mod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inMod := regexp.MustCompile(`(?m)^go (1\.\d+)`).FindStringSubmatch(string(mod))
+	if inMod == nil {
+		t.Fatal("go.mod has no `go` directive")
+	}
+	inSpec := regexp.MustCompile(`\*\*Go (1\.\d+) or later\.\*\*`).FindStringSubmatch(string(spec))
+	if inSpec == nil {
+		t.Fatal("SPEC 4.1 no longer states a Go version; this check is reading the wrong file")
+	}
+	if inMod[1] != inSpec[1] {
+		t.Errorf("go.mod requires Go %s and SPEC 4.1 says %s or later. Both can be "+
+			"true and they still disagree: somebody planning from the "+
+			"specification builds with a toolchain the module refuses.",
+			inMod[1], inSpec[1])
+	}
+}
+
 func firstLines(s string, n int) string {
 	lines := strings.SplitN(s, "\n", n+1)
 	if len(lines) > n {

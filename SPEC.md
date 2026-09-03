@@ -4,7 +4,7 @@
 - Date: 2026-08-19
 - Owner: ed.silva
 - Applies to: a replacement for SaltStack (Salt) in Everbridge estates
-- Language: Go 1.25 or later, standard library only, with a closed dependency allowlist
+- Language: Go 1.26 or later, standard library only, with a closed dependency allowlist
 
 ## 1. Purpose
 
@@ -150,7 +150,7 @@ build rather than raising a warning.
 
 ### 4.1 Language selection
 
-**Go 1.25 or later.**
+**Go 1.26 or later.**
 
 | Requirement | Go | Rust | Zig |
 |---|---|---|---|
