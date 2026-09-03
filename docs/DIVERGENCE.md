@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **44 execution modules / 246 functions** and **21 state
-modules / 61 functions**.
+The build ships **44 execution modules / 249 functions** and **23 state
+modules / 63 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -404,9 +404,9 @@ different reason is given.
 | `dnsutil` | implemented | 2 | |
 | `environ` | implemented | 3 | |
 | `event` | implemented | 1 | local only until the hub exists |
-| `file` | implemented | 38 | |
+| `file` | implemented | 40 | |
 | `git` | implemented | 5 | through the system `git` binary |
-| `grains` | implemented | 6 | |
+| `grains` | implemented | 7 | |
 | `group` | implemented | 1 | |
 | `hashutil` | implemented | 9 | |
 | `hosts` | implemented | 3 | |
@@ -496,7 +496,7 @@ different reason is given.
 | `pkgrepo` | not implemented | 0 | |
 | `pro` | not implemented | 0 | Ubuntu only |
 | `reboot` | not implemented | 0 | |
-| `schedule` | not implemented | 0 | phase 3 |
+| `schedule` | implemented | 1 | `absent`; the runtime control is in the execution module |
 | `selinux` | not implemented | 0 | Linux only |
 | `ssh_known_hosts` | not implemented | 0 | |
 | `sudo` | not implemented | 0 | |
