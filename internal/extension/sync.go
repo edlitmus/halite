@@ -2,6 +2,7 @@ package extension
 
 import (
 	"fmt"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"os"
 	"path"
 	"path/filepath"
@@ -277,13 +278,13 @@ func install(staging, target string) error {
 	if _, err := os.Stat(target); err == nil {
 		previous = target + ".replacing"
 		_ = os.RemoveAll(previous)
-		if err := os.Rename(target, previous); err != nil {
+		if err := atomicfile.Rename(target, previous); err != nil {
 			return err
 		}
 	}
-	if err := os.Rename(staging, target); err != nil {
+	if err := atomicfile.Rename(staging, target); err != nil {
 		if previous != "" {
-			_ = os.Rename(previous, target)
+			_ = atomicfile.Rename(previous, target)
 		}
 		return err
 	}

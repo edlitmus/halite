@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"os"
 	"path/filepath"
 	"sync"
@@ -133,11 +134,11 @@ func (r *fileReturner) rotate() error {
 		if _, err := os.Stat(newer); err != nil {
 			continue
 		}
-		if err := os.Rename(newer, older); err != nil {
+		if err := atomicfile.Rename(newer, older); err != nil {
 			return err
 		}
 	}
-	if err := os.Rename(r.opts.Path, r.opts.Path+".1"); err != nil {
+	if err := atomicfile.Rename(r.opts.Path, r.opts.Path+".1"); err != nil {
 		return err
 	}
 	// The one past the last kept copy is removed rather than left to

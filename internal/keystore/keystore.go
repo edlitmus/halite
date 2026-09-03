@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -255,5 +256,5 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := inheritOwner(name, filepath.Dir(path)); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
-	return os.Rename(name, path)
+	return atomicfile.Rename(name, path)
 }

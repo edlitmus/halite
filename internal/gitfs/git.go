@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -231,7 +232,7 @@ func (o *Options) materialise(ctx context.Context, mirror, target string, remote
 	if err := extractTar(archive, staging); err != nil {
 		return fmt.Errorf("unpacking %s at %s: %w", remote.label(), ref.Name, err)
 	}
-	if err := os.Rename(staging, target); err != nil {
+	if err := atomicfile.Rename(staging, target); err != nil {
 		return err
 	}
 	return nil

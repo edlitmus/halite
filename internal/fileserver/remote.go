@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"hash"
 	"os"
 	"path/filepath"
@@ -284,32 +285,14 @@ func digestOf(data []byte, algorithm string) (string, error) {
 }
 
 // writeAtomic writes through a temporary file in the same directory.
+//
+// The idiom is one package rather than six copies of it, because all six
+// were wrong on Windows in the same way: see internal/atomicfile.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return os.Rename(name, path)
+	return atomicfile.Write(path, data, mode)
 }
 
 // ForEnv returns a view of the same hub tree, which is the same value:

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -92,7 +93,7 @@ func (c *Cache) Get(id ID) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "job.json"))
+	raw, err := atomicfile.Read(filepath.Join(dir, "job.json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("%s: %w", id, ErrNoJob)
 	}
@@ -168,7 +169,7 @@ func (c *Cache) Returns(id ID) ([]*Return, error) {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 			continue
 		}
-		raw, err := os.ReadFile(filepath.Join(dir, "returns", e.Name()))
+		raw, err := atomicfile.Read(filepath.Join(dir, "returns", e.Name()))
 		if err != nil {
 			return nil, fmt.Errorf("reading the returns for %s: %w", id, err)
 		}
@@ -356,27 +357,9 @@ func dirSize(path string) (int64, error) {
 }
 
 // writeAtomic writes through a temporary file in the same directory.
+//
+// The idiom is one package rather than six copies of it, because all six
+// were wrong on Windows in the same way: see internal/atomicfile.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return os.Rename(name, path)
+	return atomicfile.Write(path, data, mode)
 }
