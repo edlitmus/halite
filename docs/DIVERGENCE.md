@@ -606,12 +606,24 @@ None of the Extended container modules (`docker`, `podman`, `kubernetes`,
 ### 2.5 Provider depth for the virtual modules
 
 `pkg` and `service` are specified as virtual modules with one provider per
-platform family. Both have exactly one provider implemented and verified:
+platform family.
 
 | Module | Providers specified | Implemented | Verified |
 |---|---|---|---|
-| `pkg` | apt, dnf, yum, zypper, apk, pacman, pkgng, brew, macpkg, winrepo, choco | pkgng (FreeBSD) | yes, on this host |
+| `pkg` | apt, dnf, yum, zypper, apk, pacman, pkgng, brew, macpkg, winrepo, choco | pkgng, apt, dnf/yum, apk | pkgng on FreeBSD; apt on Ubuntu, including every optional capability (holds, world upgrade, file ownership, repository listing) |
 | `service` | systemd, sysvinit, upstart, openrc, launchd, freebsd_rc, smf, windows | freebsd_rc | yes, on this host |
+
+The apt provider's base six functions and all four optional capabilities
+were exercised against a real dpkg database on Ubuntu 24.04:
+`pkg.list_holds`, `pkg.owner`, `pkg.file_list`, `pkg.list_upgrades`, and
+`pkg.list_repos` all return what the equivalent `apt`/`dpkg-query`
+invocation does. The dnf/yum and apk optional capabilities are written to
+the same shape and remain unexercised — no such host. dnf holding is the
+`versionlock` plugin, so it fails naming the plugin where it is absent
+rather than silently doing nothing; apk implements neither `pkgHolder` nor
+`pkgRepos`, because it has no hold in the dpkg sense and no command that
+lists its repositories, and a caller gets the "the apkpkg provider
+cannot …" refusal rather than an empty answer.
 
 `pkg.version_cmp` is implemented for all three orderings: Debian and RPM
 transcribed from dpkg and rpmvercmp, FreeBSD's asked of pkg(8). Doing the
@@ -707,9 +719,11 @@ interfaces beside the provider one rather than in it, because they are not
 universal: apk has no hold in the dpkg sense, and pkgng's idea of a
 repository is a file rather than a line in sources.list. A provider that
 cannot answer says so and names itself, rather than returning an empty
-answer that a tree would read as "there are none". Only pkgng implements
-them so far, which is what this host can verify; apt, dnf, and apk are
-recorded above as unexercised anyway.
+answer that a tree would read as "there are none". pkgng and apt implement
+all four; dnf/yum implements all four with holding routed through the
+`versionlock` plugin; apk implements upgrading and file ownership but
+neither holding nor repository listing. See 2.5 for what has been run
+against a real system and what has not.
 
 Every mutating function answers with what actually changed, by comparing
 the package list before and after, rather than with what was asked for. A
@@ -835,14 +849,17 @@ The compat layer has no Linux package manager and no init: no `apt`,
 the binary, so the Linux binary correctly reached for the FreeBSD `pkg` and
 `service` that are there and answered from them. That is the right
 behaviour and it is also why the following remain **written and never
-executed**:
+executed** under the compat layer:
 
-- the apt, dnf, and apk providers of `pkg`
+- the dnf/yum and apk providers of `pkg` — the apt provider has since
+  been run against a real dpkg database, base functions and all four
+  optional capabilities (2.5)
 - the systemd provider of `service`, and `service.masked`
 - the `useradd`/`groupadd`/`usermod` branch of `user` and `group`
 - Linux `sysctl` handling, which differs from FreeBSD's
 
-These need a real Linux host. Nothing short of one will exercise them.
+The dnf/yum and apk items need a real host of that family. Nothing short
+of one will exercise them.
 
 ### 4.3 The per-state `runas` and `umask` no-op
 
@@ -926,11 +943,31 @@ That is the first time several things have been exercised anywhere:
   settings, and `RestartPreventExitStatus=1` hold up under an actual
   service manager.
 
+Since then, on 2026-09-03, the apt provider's optional capabilities were
+run directly on an Ubuntu 24.04 workstation: `pkg.list_holds`,
+`pkg.owner`, `pkg.file_list`, `pkg.list_upgrades`, and `pkg.list_repos`
+each return what the matching `apt-mark`/`dpkg-query`/`apt-get` call does.
+`pkg.hold` reaches `apt-mark hold` and fails only on the privilege check,
+as it should for an unprivileged run.
+
+That host also surfaced a defect the compat layer could not: a `Command`
+with a `Timeout` that fired waited the runaway out instead of killing it.
+`os/exec` signals only the direct child, and Linux's `/bin/sh` (dash)
+forks for `sh -c`, so the shell died while the program it spawned kept
+running and kept the stdout pipe open, blocking `Wait` until the program
+finished on its own. FreeBSD's `/bin/sh` execs in that case, so the
+development host never saw it. `OSRunner.Run` now starts every child in
+its own process group and kills the group on a timeout, with a bounded
+`WaitDelay` as the backstop; the error names the timeout rather than
+reporting only `signal: killed`. `internal/exec` covers both the simple
+and the forked-grandchild case.
+
 What it does not establish, and 4.2 still stands for the rest:
 
 - One distribution. Ubuntu chooses `apt`; the `dnf`, `zypper`, and `apk`
   providers remain unexercised, and `os_family` branching in a tree is
-  the commonest thing to get wrong across them.
+  the commonest thing to get wrong across them. The dnf/yum and apk
+  optional capabilities added alongside apt's are written but unrun.
 - One architecture. Linux arm64 still compiles and nothing more.
 - The node only. The hub and the API have not been run on Linux, so
   their units, their sandboxes, and `StateDirectory=halite-api` are
@@ -3190,12 +3227,11 @@ changed: see 3.
 
 1. **A Linux host.** The compat layer got the platform-neutral code and
    the `/proc` grain collector run under Linux (4.1), which was the part
-   that could be got cheaply. What is left needs a real one: the apt, dnf,
-   and apk providers, the systemd provider, and `useradd`. 60 of the 62
-   platform modules of SPEC 15.3 wait behind it, and so does the other
-   half of every optional provider capability written in this pass —
-   holding, upgrading, and file ownership exist for pkgng because pkgng is
-   what this host runs.
+   that could be got cheaply. The apt provider has since been run on a
+   real Ubuntu host, base functions and all four optional capabilities
+   (2.5). What is left needs a host of another family: the dnf/yum and
+   apk providers, the systemd provider, and `useradd`. 60 of the 62
+   platform modules of SPEC 15.3 wait behind it.
 2. **More real trees** (5.9). One was pointed at halite and found ten
    defects in an hour, against a written corpus that had found four in a
    day. The written corpus covers constructs; a real tree covers what

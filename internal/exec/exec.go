@@ -591,6 +591,12 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	if cmd.Stdin != "" {
 		c.Stdin = strings.NewReader(cmd.Stdin)
 	}
+	// Start the child in its own process group so a fired Timeout can kill
+	// the whole tree, and bound how long Wait may block after that kill on
+	// a pipe some descendant left open. Without this a Timeout on a command
+	// that forks waits the runaway out instead of stopping it.
+	setProcessGroup(c)
+	c.WaitDelay = 2 * time.Second
 	if err := applyCredential(c, cmd); err != nil {
 		return Result{}, err
 	}
@@ -607,6 +613,9 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 		Duration: time.Since(start),
 	}
 	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return res, ctxRunError(cmd, cerr)
+		}
 		var ee *exec.ExitError
 		if ok := asExitError(err, &ee); ok {
 			res.Code = ee.ExitCode()
@@ -655,6 +664,19 @@ func migrationHint(cmd Command, err error) string {
 		"\n  and `args` is the list of arguments. Pass the arguments in `args`, or set" +
 		"\n  `shell: true` on this state, or `cmd_default_shell: true` for a transition." +
 		"\n  See SPEC section 15.2."
+}
+
+// ctxRunError explains a run that ended because its context did. os/exec
+// reports that as "signal: killed", which tells an operator nothing about
+// why — a deadline reads the same as a segfault.
+func ctxRunError(cmd Command, cerr error) error {
+	if cerr == context.DeadlineExceeded {
+		if cmd.Timeout > 0 {
+			return fmt.Errorf("%s timed out after %s and was killed", cmd.String(), cmd.Timeout)
+		}
+		return fmt.Errorf("%s timed out and was killed", cmd.String())
+	}
+	return fmt.Errorf("%s was cancelled", cmd.String())
 }
 
 func asExitError(err error, target **exec.ExitError) bool {

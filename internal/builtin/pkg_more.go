@@ -457,3 +457,447 @@ func mustMap(m *value.Map, key string) (*value.Map, bool) {
 	sub, ok := v.(*value.Map)
 	return sub, ok
 }
+
+// rfc822Blocks splits an apt- or dnf-style listing into blocks separated by
+// a blank line, each a map of its `key: value` lines. The key is what
+// precedes the first colon, trimmed, so a tool that pads its keys for
+// alignment (`Repo-id      : baseos`) parses the same as one that does not.
+// A value that itself contains `: ` keeps everything after the first colon.
+func rfc822Blocks(s string) []map[string]string {
+	var blocks []map[string]string
+	cur := map[string]string{}
+	flush := func() {
+		if len(cur) > 0 {
+			blocks = append(blocks, cur)
+			cur = map[string]string{}
+		}
+	}
+	for _, ln := range strings.Split(s, "\n") {
+		if strings.TrimSpace(ln) == "" {
+			flush()
+			continue
+		}
+		key, val, ok := strings.Cut(ln, ":")
+		if !ok {
+			continue
+		}
+		cur[strings.TrimSpace(key)] = strings.TrimSpace(val)
+	}
+	flush()
+	return blocks
+}
+
+// rpmShortName reduces an `rpm`/`dnf` NEVRA — `name-epoch:version-release.arch`
+// — to the bare package name, the form a hold list is compared against. It
+// strips a known architecture suffix and then the version and release, the
+// same shape as the apk parser in pkg_providers.go.
+func rpmShortName(nevra string) string {
+	s := strings.TrimSpace(nevra)
+	for _, arch := range []string{
+		".x86_64", ".noarch", ".aarch64", ".i686", ".armv7hl", ".ppc64le", ".s390x",
+	} {
+		if strings.HasSuffix(s, arch) {
+			s = strings.TrimSuffix(s, arch)
+			break
+		}
+	}
+	parts := strings.Split(s, "-")
+	if len(parts) < 3 {
+		return s
+	}
+	return strings.Join(parts[:len(parts)-2], "-")
+}
+
+// ---- apt: the optional interfaces ----
+//
+// dpkg and apt cover every one: `apt-mark` holds, `apt-get dist-upgrade`
+// upgrades the world, `dpkg-query` maps packages to files, and
+// `apt-get indextargets` is apt's own machine-readable account of its
+// configured sources.
+
+func (aptProvider) Hold(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"apt-mark", "hold", name}, Env: aptEnv()})
+	return err
+}
+
+func (aptProvider) Unhold(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"apt-mark", "unhold", name}, Env: aptEnv()})
+	return err
+}
+
+func (aptProvider) ListHolds(c *exec.Context) ([]string, error) {
+	res, err := c.Run(exec.Command{Argv: []string{"apt-mark", "showhold"}, Env: aptEnv()})
+	if err != nil {
+		return nil, err
+	}
+	return sortedLines(res.Stdout), nil
+}
+
+func (p aptProvider) Upgrade(c *exec.Context, refresh bool) (*value.Map, error) {
+	before, err := p.ListPkgs(c)
+	if err != nil {
+		return nil, err
+	}
+	if refresh {
+		if _, err := c.Run(exec.Command{Argv: []string{"apt-get", "update", "-q"}, Env: aptEnv()}); err != nil {
+			return nil, fmt.Errorf("apt-get update: %w", err)
+		}
+	}
+	argv := []string{"apt-get", "dist-upgrade", "-y", "-q",
+		"-o", "Dpkg::Options::=--force-confold",
+		"-o", "Dpkg::Options::=--force-confdef"}
+	if _, err := c.Run(exec.Command{Argv: argv, Env: aptEnv()}); err != nil {
+		return nil, err
+	}
+	return pkgDelta(c, p, before)
+}
+
+func (aptProvider) ListUpgrades(c *exec.Context, refresh bool) (*value.Map, error) {
+	if refresh {
+		if _, err := c.Run(exec.Command{Argv: []string{"apt-get", "update", "-q"}, Env: aptEnv()}); err != nil {
+			return nil, fmt.Errorf("apt-get update: %w", err)
+		}
+	}
+	// A simulated dist-upgrade needs no privilege and prints one
+	// `Inst name [oldver] (newver repo [arch])` line per upgradable package.
+	res, err := c.Run(exec.Command{
+		Argv: []string{"apt-get", "--simulate", "-q", "-o", "Debug::NoLocking=true", "dist-upgrade"},
+		Env:  aptEnv(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := value.NewMap(16)
+	for _, ln := range strings.Split(res.Stdout, "\n") {
+		fields := strings.Fields(ln)
+		if len(fields) < 4 || fields[0] != "Inst" {
+			continue
+		}
+		out.Set(fields[1], strings.TrimPrefix(fields[3], "("))
+	}
+	return out, nil
+}
+
+func (aptProvider) FileList(c *exec.Context, name string) ([]string, error) {
+	res, err := c.Run(exec.Command{Argv: []string{"dpkg-query", "-L", name}, Env: aptEnv()})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, ln := range strings.Split(res.Stdout, "\n") {
+		ln = strings.TrimSpace(ln)
+		// dpkg lists the directories it owns and a `/.` root entry beside
+		// the files; a caller asking what a package owns wants the paths.
+		if !strings.HasPrefix(ln, "/") || ln == "/." {
+			continue
+		}
+		out = append(out, ln)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (aptProvider) OwnerOf(c *exec.Context, path string) (string, error) {
+	res, err := c.Run(exec.Command{
+		Argv: []string{"dpkg-query", "-S", path}, Env: aptEnv(), IgnoreExitCode: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	if res.Code != 0 {
+		// A path no package owns is a normal answer: a tree asks this to
+		// decide whether it may manage the file.
+		return "", nil
+	}
+	// `pkg: /path`, or `pkg1, pkg2: /path` when the path is diverted; the
+	// first package named owns it.
+	pkgs, _, ok := strings.Cut(firstLine(res.Stdout), ": ")
+	if !ok {
+		return "", nil
+	}
+	first, _, _ := strings.Cut(pkgs, ",")
+	return strings.TrimSpace(first), nil
+}
+
+func (aptProvider) ListRepos(c *exec.Context) (*value.Map, error) {
+	res, err := c.Run(exec.Command{Argv: []string{"apt-get", "indextargets"}, Env: aptEnv()})
+	if err != nil {
+		return nil, err
+	}
+	type acc struct {
+		m     *value.Map
+		comps []string
+	}
+	var order []string
+	seen := map[string]*acc{}
+	for _, b := range rfc822Blocks(res.Stdout) {
+		// indextargets also carries translation, DEP-11 icon, and
+		// command-not-found targets; only the package indexes are repos.
+		if b["Created-By"] != "Packages" {
+			continue
+		}
+		uri := b["Repo-URI"]
+		if uri == "" {
+			uri = b["Base-URI"]
+		}
+		dist := b["Codename"]
+		if dist == "" {
+			dist = b["Suite"]
+		}
+		key := "deb " + uri + " " + dist
+		a := seen[key]
+		if a == nil {
+			m := value.NewMap(6)
+			m.Set("type", "deb")
+			m.Set("uri", uri)
+			m.Set("dist", dist)
+			m.Set("architecture", b["Architecture"])
+			m.Set("trusted", b["Trusted"] == "yes")
+			a = &acc{m: m}
+			seen[key] = a
+			order = append(order, key)
+		}
+		if comp := b["Component"]; comp != "" && !containsString(a.comps, comp) {
+			a.comps = append(a.comps, comp)
+		}
+	}
+	out := value.NewMap(len(order))
+	for _, key := range order {
+		a := seen[key]
+		sort.Strings(a.comps)
+		comps := make([]any, len(a.comps))
+		for i, comp := range a.comps {
+			comps[i] = comp
+		}
+		a.m.Set("comps", comps)
+		out.Set(key, a.m)
+	}
+	return out, nil
+}
+
+// ---- dnf and yum: the optional interfaces ----
+//
+// Holding is the `versionlock` plugin, which is not always installed — the
+// call fails naming it, rather than silently doing nothing. Everything else
+// is `rpm` and the manager's own `repolist`.
+
+func (p dnfProvider) Hold(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{p.binary, "versionlock", "add", name}})
+	return err
+}
+
+func (p dnfProvider) Unhold(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{p.binary, "versionlock", "delete", name}})
+	return err
+}
+
+func (p dnfProvider) ListHolds(c *exec.Context) ([]string, error) {
+	res, err := c.Run(exec.Command{
+		Argv: []string{p.binary, "versionlock", "list", "--quiet"}, IgnoreExitCode: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, ln := range strings.Split(res.Stdout, "\n") {
+		ln = strings.TrimSpace(ln)
+		if ln == "" || strings.HasPrefix(ln, "#") || strings.HasPrefix(ln, "Last metadata") {
+			continue
+		}
+		out = append(out, rpmShortName(ln))
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (p dnfProvider) Upgrade(c *exec.Context, refresh bool) (*value.Map, error) {
+	before, err := p.ListPkgs(c)
+	if err != nil {
+		return nil, err
+	}
+	argv := []string{p.binary, "upgrade", "-y", "-q"}
+	if !refresh {
+		argv = append(argv, "-C")
+	}
+	if _, err := c.Run(exec.Command{Argv: argv}); err != nil {
+		return nil, err
+	}
+	return pkgDelta(c, p, before)
+}
+
+func (p dnfProvider) ListUpgrades(c *exec.Context, refresh bool) (*value.Map, error) {
+	argv := []string{p.binary, "--quiet", "list", "--upgrades"}
+	if !refresh {
+		argv = append(argv, "-C")
+	}
+	// `list --upgrades` exits 100 when there is anything to report, which
+	// is an answer rather than a failure.
+	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+	if err != nil {
+		return nil, err
+	}
+	out := value.NewMap(16)
+	for _, ln := range strings.Split(res.Stdout, "\n") {
+		fields := strings.Fields(ln)
+		if len(fields) != 3 || !strings.Contains(fields[0], ".") {
+			continue
+		}
+		name, _, _ := strings.Cut(fields[0], ".")
+		out.Set(name, strings.TrimPrefix(fields[1], "0:"))
+	}
+	return out, nil
+}
+
+func (dnfProvider) FileList(c *exec.Context, name string) ([]string, error) {
+	res, err := c.Run(exec.Command{Argv: []string{"rpm", "-ql", name}})
+	if err != nil {
+		return nil, err
+	}
+	lines := sortedLines(res.Stdout)
+	if len(lines) == 1 && lines[0] == "(contains no files)" {
+		return nil, nil
+	}
+	return lines, nil
+}
+
+func (dnfProvider) OwnerOf(c *exec.Context, path string) (string, error) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"rpm", "-qf", "--queryformat", "%{NAME}", path},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	if res.Code != 0 {
+		return "", nil
+	}
+	return strings.TrimSpace(firstLine(res.Stdout)), nil
+}
+
+func (p dnfProvider) ListRepos(c *exec.Context) (*value.Map, error) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{p.binary, "--quiet", "repolist", "--all", "--verbose"},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := value.NewMap(8)
+	var cur *value.Map
+	for _, b := range rfc822Blocks(res.Stdout) {
+		id := b["Repo-id"]
+		if id == "" {
+			continue
+		}
+		// `-v` writes `baseos` or, on some versions, `baseos                baseos`.
+		id, _, _ = strings.Cut(id, " ")
+		cur = value.NewMap(6)
+		cur.Set("name", b["Repo-name"])
+		cur.Set("enabled", b["Repo-status"] == "enabled")
+		if v := b["Repo-baseurl"]; v != "" {
+			cur.Set("baseurl", v)
+		}
+		if v := b["Repo-metalink"]; v != "" {
+			cur.Set("metalink", v)
+		}
+		if v := b["Repo-mirrors"]; v != "" {
+			cur.Set("mirrors", v)
+		}
+		out.Set(id, cur)
+	}
+	return out, nil
+}
+
+// ---- apk: the optional interfaces ----
+//
+// apk can upgrade the world and answer what owns a file. It has no hold in
+// the dpkg sense and no command that lists its repositories, so it
+// implements neither pkgHolder nor pkgRepos — a caller asking for those
+// gets the "the apkpkg provider cannot ..." refusal, not an empty answer.
+
+func (p apkProvider) Upgrade(c *exec.Context, refresh bool) (*value.Map, error) {
+	before, err := p.ListPkgs(c)
+	if err != nil {
+		return nil, err
+	}
+	argv := []string{"apk", "upgrade", "--no-progress"}
+	if refresh {
+		argv = append(argv, "--update-cache")
+	}
+	if _, err := c.Run(exec.Command{Argv: argv}); err != nil {
+		return nil, err
+	}
+	return pkgDelta(c, p, before)
+}
+
+func (apkProvider) ListUpgrades(c *exec.Context, refresh bool) (*value.Map, error) {
+	if refresh {
+		if _, err := c.Run(exec.Command{Argv: []string{"apk", "update", "--no-progress"}}); err != nil {
+			return nil, err
+		}
+	}
+	res, err := c.Run(exec.Command{
+		Argv: []string{"apk", "version", "-l", "<"}, IgnoreExitCode: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := value.NewMap(16)
+	for _, ln := range strings.Split(res.Stdout, "\n") {
+		fields := strings.Fields(ln)
+		// `pkgname-1.0-r0 < 1.1-r0`; the header line is `Installed:`.
+		if len(fields) < 3 || fields[1] != "<" {
+			continue
+		}
+		parts := strings.Split(fields[0], "-")
+		if len(parts) < 3 {
+			continue
+		}
+		out.Set(strings.Join(parts[:len(parts)-2], "-"), fields[2])
+	}
+	return out, nil
+}
+
+func (apkProvider) FileList(c *exec.Context, name string) ([]string, error) {
+	res, err := c.Run(exec.Command{
+		Argv: []string{"apk", "info", "-L", name}, IgnoreExitCode: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, ln := range strings.Split(res.Stdout, "\n") {
+		ln = strings.TrimSpace(ln)
+		// The first line is `pkg-ver contains:`; the rest are paths with no
+		// leading slash.
+		if ln == "" || strings.HasSuffix(ln, "contains:") {
+			continue
+		}
+		out = append(out, "/"+ln)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (apkProvider) OwnerOf(c *exec.Context, path string) (string, error) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"apk", "info", "-W", strings.TrimPrefix(path, "/")},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return "", err
+	}
+	// `<path> is owned by <pkg-ver>`, or `<path> is not owned by any package`.
+	const marker = " is owned by "
+	line := firstLine(res.Stdout)
+	i := strings.Index(line, marker)
+	if i < 0 {
+		return "", nil
+	}
+	owner := strings.TrimSpace(line[i+len(marker):])
+	parts := strings.Split(owner, "-")
+	if len(parts) < 3 {
+		return owner, nil
+	}
+	return strings.Join(parts[:len(parts)-2], "-"), nil
+}
