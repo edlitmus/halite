@@ -22,11 +22,7 @@ func realCtx(t *testing.T) *exec.Context {
 
 func TestCmdScriptRunsAndCleansUp(t *testing.T) {
 	r := New()
-	dir := t.TempDir()
-	script := filepath.Join(dir, "s.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"hello $1\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	script := writeEchoScript(t, t.TempDir())
 
 	c := realCtx(t)
 	out, err := r.Exec.Call(c, "cmd.script",
@@ -53,9 +49,7 @@ func TestCmdScriptRunsAndCleansUp(t *testing.T) {
 
 func TestCmdScriptReportsAFailure(t *testing.T) {
 	r := New()
-	dir := t.TempDir()
-	script := filepath.Join(dir, "s.sh")
-	os.WriteFile(script, []byte("#!/bin/sh\necho oops >&2\nexit 3\n"), 0o644)
+	script := writeFailingScript(t, t.TempDir())
 
 	c := realCtx(t)
 	_, err := r.Exec.Call(c, "cmd.script", value.MapOf("source", script))
@@ -100,7 +94,7 @@ func TestCmdExecCode(t *testing.T) {
 // A script is written where only its owner can read it, because many
 // carry a credential and the temporary directory is world-readable.
 func TestTempScriptIsPrivate(t *testing.T) {
-	path, cleanup, err := tempScript("#!/bin/sh\necho x\n", 0o700)
+	path, cleanup, err := tempScript("#!/bin/sh\necho x\n", 0o700, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +121,7 @@ func TestCmdShellSaysItIsUsingAShell(t *testing.T) {
 	c := realCtx(t)
 	c.Log = func(level, msg string) { logged = append(logged, level+": "+msg) }
 
-	out, err := r.Exec.Call(c, "cmd.shell", value.MapOf("cmd", "echo a; echo b"))
+	out, err := r.Exec.Call(c, "cmd.shell", value.MapOf("cmd", shellLine("echo a", "echo b")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +144,8 @@ func TestCmdShellSaysItIsUsingAShell(t *testing.T) {
 func TestCmdRunBgReturnsAPid(t *testing.T) {
 	r := New()
 	c := realCtx(t)
-	out, err := r.Exec.Call(c, "cmd.run_bg", value.MapOf("name", "/bin/sh", "args", []any{"-c", "exit 0"}))
+	name, args := trueProgram()
+	out, err := r.Exec.Call(c, "cmd.run_bg", value.MapOf("name", name, "args", args))
 	if err != nil {
 		t.Fatal(err)
 	}

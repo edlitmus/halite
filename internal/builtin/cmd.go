@@ -120,8 +120,8 @@ func registerCmd(r *Registries) {
 			return nil, err
 		}
 		return value.MapOf(
-			"stdout", strings.TrimRight(res.Stdout, "\n"),
-			"stderr", strings.TrimRight(res.Stderr, "\n"),
+			"stdout", trimOutput(res.Stdout),
+			"stderr", trimOutput(res.Stderr),
 			"retcode", int64(res.Code),
 			"pid", int64(0),
 		), nil
@@ -251,8 +251,8 @@ func registerCmd(r *Registries) {
 		changes := value.MapOf(
 			"pid", int64(0),
 			"retcode", int64(res.Code),
-			"stdout", strings.TrimRight(res.Stdout, "\n"),
-			"stderr", strings.TrimRight(res.Stderr, "\n"),
+			"stdout", trimOutput(res.Stdout),
+			"stderr", trimOutput(res.Stderr),
 			"duration_ms", res.Duration.Milliseconds(),
 		)
 		_ = start
@@ -316,3 +316,12 @@ func durationOf(v any) (time.Duration, error) {
 	}
 	return 0, fmt.Errorf("%s is not a duration", value.TypeName(v))
 }
+
+// trimOutput removes the line ending a program leaves on its last line.
+//
+// Both characters, not just the newline: a program on Windows ends its
+// output "\r\n", so trimming only "\n" left a carriage return on the end
+// of every cmd.run and cmd.script return value. It reached a state's
+// changes, an `unless` comparison, and anything a template did with the
+// output — invisibly, since a stray \r does not show in a log line.
+func trimOutput(s string) string { return strings.TrimRight(s, "\r\n") }

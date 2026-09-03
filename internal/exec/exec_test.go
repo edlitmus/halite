@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,34 +17,57 @@ func TestArgvIsNotParsedByAShell(t *testing.T) {
 	// The whole point of defaulting to argv: a value that looks like shell
 	// syntax is one argument, not a second command.
 	r := &OSRunner{}
-	res, err := r.Run(context.Background(), Command{
-		Argv: []string{"/bin/echo", "a; touch /tmp/halite-should-not-exist", "$HOME", "`id`"},
-	})
+	args := []string{"a; touch /tmp/halite-should-not-exist", "$HOME", "`id`"}
+	res, err := r.Run(context.Background(), helperCommand(append([]string{"echo"}, args...)...))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := strings.TrimSpace(res.Stdout)
-	want := "a; touch /tmp/halite-should-not-exist $HOME `id`"
-	if got != want {
-		t.Errorf("stdout = %q, want %q", got, want)
+	// One line per argument, so this distinguishes "one argument with a
+	// space in it" from "two arguments" — which is the whole subject.
+	got := splitLines(res.Stdout)
+	if len(got) != len(args) {
+		t.Fatalf("the child saw %d arguments, want %d: %q", len(got), len(args), res.Stdout)
+	}
+	for i := range args {
+		if got[i] != args[i] {
+			t.Errorf("argument %d = %q, want %q", i, got[i], args[i])
+		}
 	}
 }
 
 func TestShellIsOptIn(t *testing.T) {
 	r := &OSRunner{}
-	res, err := r.Run(context.Background(), Command{Argv: []string{"echo one; echo two"}, Shell: true})
+	res, err := r.Run(context.Background(), Command{
+		Argv:  []string{"echo one" + shellSeparator + " echo two"},
+		Shell: true,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lines := strings.Fields(res.Stdout); len(lines) != 2 {
+	if lines := splitLines(res.Stdout); len(lines) != 2 {
 		t.Errorf("the shell did not run the second command: %q", res.Stdout)
 	}
+}
+
+// splitLines is the helper's output, one entry per line, with the
+// platform's line ending removed.
+func splitLines(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimRight(line, "\r"); line != "" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 // SPEC section 15.2: umask reaches the state file, so it has to reach the
 // child. The bug this covers was a silent drop, which produced a file with
 // the wrong mode and a state that reported success.
 func TestUmaskReachesTheChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a umask has no meaning on Windows; TestUmaskSaysSoWhereItHasNoMeaning covers that")
+	}
 	dir := t.TempDir()
 	target := filepath.Join(dir, "created")
 	r := &OSRunner{}
@@ -64,6 +88,9 @@ func TestUmaskReachesTheChild(t *testing.T) {
 }
 
 func TestUmaskStillPassesArgvUnparsed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a umask has no meaning on Windows; there is no rewrite to survive")
+	}
 	// The umask rewrite goes through a shell, so the argument vector has
 	// to survive it intact.
 	r := &OSRunner{}
@@ -83,6 +110,9 @@ func TestUmaskStillPassesArgvUnparsed(t *testing.T) {
 }
 
 func TestUmaskAppliesToAShellCommandToo(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a umask has no meaning on Windows")
+	}
 	dir := t.TempDir()
 	r := &OSRunner{}
 	_, err := r.Run(context.Background(), Command{
@@ -102,29 +132,57 @@ func TestUmaskAppliesToAShellCommandToo(t *testing.T) {
 	}
 }
 
+// A mask that is not a mask is refused on every platform, and the
+// refusal names the mask.
+//
+// The platform check used to come first, so on Windows `umask: abc` and
+// `umask: 022` produced the same message and it named neither the mask
+// nor what was wrong with it.
 func TestUmaskRefusesAnythingButAnOctalMask(t *testing.T) {
-	for _, bad := range []string{"0777; rm -rf /", "abc", "099", "", "  ", "77777"} {
-		cmd := Command{Argv: []string{"/bin/echo"}, Umask: bad}
-		if bad == "" {
-			// An unset umask is not an error, it is simply no umask.
-			out, err := applyUmask(cmd)
-			if err != nil || out.Shell {
-				t.Errorf("an empty umask should be a no-op, got %v %v", out, err)
-			}
+	for _, bad := range []string{"0777; rm -rf /", "abc", "099", "  ", "77777"} {
+		cmd := Command{Argv: []string{"anything"}, Umask: bad}
+		_, err := applyUmask(cmd)
+		if err == nil {
+			t.Errorf("umask %q should be refused", bad)
 			continue
 		}
-		if _, err := applyUmask(cmd); err == nil {
-			t.Errorf("umask %q should be refused", bad)
+		if !strings.Contains(err.Error(), "octal") {
+			t.Errorf("umask %q was refused for the wrong reason: %v", bad, err)
 		}
 	}
-	if _, err := applyUmask(Command{Argv: []string{"/bin/echo"}, Umask: "022"}); err != nil {
-		t.Errorf("a valid mask was refused: %v", err)
+	// An unset umask is not an error, it is simply no umask.
+	out, err := applyUmask(Command{Argv: []string{"anything"}})
+	if err != nil || out.Shell {
+		t.Errorf("an empty umask should be a no-op, got %v %v", out, err)
+	}
+}
+
+// A valid mask is carried out where a umask means something, and
+// refused for that reason where it does not.
+func TestAValidMaskIsCarriedOutOrExplained(t *testing.T) {
+	_, err := applyUmask(Command{Argv: []string{"anything"}, Umask: "022"})
+	if runtime.GOOS != "windows" {
+		if err != nil {
+			t.Errorf("a valid mask was refused: %v", err)
+		}
+		return
+	}
+	if err == nil {
+		t.Fatal("a umask was accepted on a platform that has none")
+	}
+	// Not "not supported yet": there is nothing here for a mask to
+	// mask, and the message has to point at the control that exists.
+	if strings.Contains(err.Error(), "yet") {
+		t.Errorf("the refusal implies an implementation is pending: %v", err)
+	}
+	if !strings.Contains(err.Error(), "access control list") {
+		t.Errorf("the refusal does not say what decides permissions here: %v", err)
 	}
 }
 
 func TestExitCodeIsAnErrorUnlessIgnored(t *testing.T) {
 	r := &OSRunner{}
-	cmd := Command{Argv: []string{"/bin/sh", "-c", "echo out; echo problem >&2; exit 3"}}
+	cmd := helperCommand("say-and-exit", "out", "problem", "3")
 
 	res, err := r.Run(context.Background(), cmd)
 	if err == nil {
@@ -161,10 +219,9 @@ func TestMissingProgramIsAnError(t *testing.T) {
 func TestTimeoutStopsALongCommand(t *testing.T) {
 	r := &OSRunner{}
 	start := time.Now()
-	_, err := r.Run(context.Background(), Command{
-		Argv:    []string{"/bin/sh", "-c", "sleep 30"},
-		Timeout: 200 * time.Millisecond,
-	})
+	cmd := helperCommand("sleep", "30s")
+	cmd.Timeout = 200 * time.Millisecond
+	_, err := r.Run(context.Background(), cmd)
 	if err == nil {
 		t.Fatal("the timeout did not fire")
 	}
@@ -176,45 +233,45 @@ func TestTimeoutStopsALongCommand(t *testing.T) {
 	}
 }
 
-// A shell that backgrounds a child and a slow foreground command: killing
-// only the direct child leaves the grandchild to finish and to hold the
-// output pipe open, which is what made the timeout above wait 30 seconds
-// on this platform before the process-group kill went in.
+// A child that starts a grandchild and then waits: killing only the
+// direct child leaves the grandchild to finish and to hold the output
+// pipe open, which is what made the timeout above wait 30 seconds before
+// the process-group kill went in.
+//
+// It covers the Windows job object too, which was not there at all: the
+// comment where it should have been said WaitDelay bounded a hung child,
+// and WaitDelay bounds the wait rather than the runaway. A `cmd.run`
+// that timed out left every process its command had started behind.
 func TestTimeoutKillsAForkedChildToo(t *testing.T) {
-	if _, err := os.Stat("/bin/sh"); err != nil {
-		t.Skip("no /bin/sh")
-	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, "survived")
 	r := &OSRunner{}
 
 	start := time.Now()
-	_, err := r.Run(context.Background(), Command{
-		Argv:    []string{"/bin/sh", "-c", "(sleep 2; touch " + marker + ") & sleep 30"},
-		Timeout: 200 * time.Millisecond,
-	})
+	cmd := helperCommand("spawn-then-sleep", marker)
+	cmd.Timeout = 200 * time.Millisecond
+	_, err := r.Run(context.Background(), cmd)
 	if err == nil {
 		t.Fatal("the timeout did not fire")
 	}
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatalf("Wait blocked for %v after the timeout; the grandchild kept the pipe open", elapsed)
 	}
-	// Past the backgrounded child's own sleep: if it were merely orphaned
-	// rather than killed, the marker would exist by now.
+	// Past the grandchild's own wait: if it were merely orphaned rather
+	// than killed, the marker would exist by now.
 	time.Sleep(3 * time.Second)
 	if _, err := os.Stat(marker); err == nil {
-		t.Error("a backgrounded child outlived the timeout: the process group was not killed")
+		t.Error("a grandchild outlived the timeout: the process tree was not killed")
 	}
 }
 
 func TestStdinAndDir(t *testing.T) {
 	dir := t.TempDir()
 	r := &OSRunner{}
-	res, err := r.Run(context.Background(), Command{
-		Argv:  []string{"/bin/sh", "-c", "cat; pwd"},
-		Stdin: "fed in\n",
-		Dir:   dir,
-	})
+	cmd := helperCommand("cat-then-pwd")
+	cmd.Stdin = "fed in\n"
+	cmd.Dir = dir
+	res, err := r.Run(context.Background(), cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +290,7 @@ func TestStdinAndDir(t *testing.T) {
 func TestChildGetsACleanEnvironment(t *testing.T) {
 	t.Setenv("HALITE_TEST_SECRET", "do-not-leak")
 	r := &OSRunner{}
-	res, err := r.Run(context.Background(), Command{Argv: []string{"/usr/bin/env"}})
+	res, err := r.Run(context.Background(), helperCommand("env"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,10 +306,9 @@ func TestChildGetsACleanEnvironment(t *testing.T) {
 
 func TestExplicitEnvReplacesTheCleanOne(t *testing.T) {
 	r := &OSRunner{}
-	res, err := r.Run(context.Background(), Command{
-		Argv: []string{"/usr/bin/env"},
-		Env:  []string{"ONLY=this"},
-	})
+	cmd := helperCommand("env")
+	cmd.Env = []string{"ONLY=this"}
+	res, err := r.Run(context.Background(), cmd)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +325,11 @@ func TestCleanEnvFallsBackToAnExplicitPath(t *testing.T) {
 	found := false
 	for _, e := range CleanEnv() {
 		if strings.HasPrefix(e, "PATH=") {
-			found = strings.Contains(e, "/usr/bin")
+			// A directory the platform actually keeps programs in,
+			// rather than a unix one: the fallback used to be a
+			// colon-separated list of unix paths on every platform,
+			// which is not a search path on Windows at all.
+			found = strings.Contains(e, wantOnFallbackPath)
 		}
 	}
 	if !found {
@@ -295,10 +355,9 @@ func TestCommandStringQuotesWhatNeedsIt(t *testing.T) {
 
 func TestRunAsRefusesAnUnknownAccount(t *testing.T) {
 	r := &OSRunner{}
-	_, err := r.Run(context.Background(), Command{
-		Argv:  []string{"/bin/echo"},
-		RunAs: "halite-no-such-account",
-	})
+	cmd := helperCommand("echo")
+	cmd.RunAs = "halite-no-such-account"
+	_, err := r.Run(context.Background(), cmd)
 	if err == nil {
 		t.Fatal("an unknown account should be refused rather than silently ignored")
 	}
