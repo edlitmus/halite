@@ -107,28 +107,175 @@ Repositories:
 	}
 }
 
-// A provider that cannot answer says so and names itself, rather than
-// returning nothing, which a tree would read as "there are none".
-//
-// The optional capabilities are implemented for pkgng and not yet for the
-// others, so the assertion is on the type rather than on a node that has
-// apt: this host has neither apt nor dnf to pick.
-func TestPkgOptionalCapabilitiesAreOptional(t *testing.T) {
-	if _, ok := any(pkgngProvider{}).(pkgHolder); !ok {
-		t.Error("pkgng should be able to hold; pkg lock is its hold")
-	}
-	for _, p := range []pkgProvider{aptProvider{}, dnfProvider{binary: "dnf"}, apkProvider{}} {
-		if _, ok := p.(pkgHolder); ok {
-			t.Errorf("%s claims to hold; if that is now true, remove this case", p.Name())
+// A provider that cannot answer an optional capability says so and names
+// itself, rather than returning nothing, which a tree would read as "there
+// are none". This pins which provider answers what, so a capability added
+// or dropped shows up here.
+func TestPkgOptionalCapabilities(t *testing.T) {
+	holds := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false}
+	repos := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false}
+	all := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": true}
+
+	for _, p := range []pkgProvider{
+		pkgngProvider{}, aptProvider{}, dnfProvider{binary: "dnf"}, apkProvider{},
+	} {
+		if _, ok := p.(pkgHolder); ok != holds[p.Name()] {
+			t.Errorf("%s pkgHolder = %v, want %v", p.Name(), ok, holds[p.Name()])
+		}
+		if _, ok := p.(pkgRepos); ok != repos[p.Name()] {
+			t.Errorf("%s pkgRepos = %v, want %v", p.Name(), ok, repos[p.Name()])
+		}
+		if _, ok := p.(pkgUpgrader); ok != all[p.Name()] {
+			t.Errorf("%s pkgUpgrader = %v, want %v", p.Name(), ok, all[p.Name()])
+		}
+		if _, ok := p.(pkgOwner); ok != all[p.Name()] {
+			t.Errorf("%s pkgOwner = %v, want %v", p.Name(), ok, all[p.Name()])
 		}
 	}
 
-	// And the error a caller gets names the provider rather than saying
-	// only that something went wrong.
+	// And the error a caller gets when a provider cannot answer names what
+	// could not be done rather than only that something went wrong.
 	c := newCtx(false)
 	c.Runner = &exec.RecordingRunner{}
 	if _, err := pickHolder(c); err != nil && !strings.Contains(err.Error(), "hold") {
 		t.Errorf("the error should say what could not be done: %v", err)
+	}
+}
+
+// aptCtx answers apt's queries from scripted output on a node whose grains
+// say Ubuntu, so the parsing is exercised without a package database.
+func aptCtx(t *testing.T, responses map[string]exec.Result) *exec.Context {
+	t.Helper()
+	c := newCtx(false)
+	c.Grains = value.MapOf("os", "Ubuntu", "os_family", "Debian")
+	c.Runner = &exec.RecordingRunner{Responses: responses}
+	return c
+}
+
+func TestAptListUpgradesParsesTheSimulatedRun(t *testing.T) {
+	c := aptCtx(t, map[string]exec.Result{
+		"apt-get --simulate -q -o Debug::NoLocking=true dist-upgrade": {Stdout: `
+Inst bsdutils [1:2.39.3-9ubuntu6.5] (1:2.39.3-9ubuntu6.6 Ubuntu:24.04/noble-updates [amd64]) []
+Inst coreutils [9.4-3ubuntu6.2] (9.4-3ubuntu6.3 Ubuntu:24.04/noble-updates, Ubuntu:24.04/noble-security [amd64])
+Conf bsdutils (1:2.39.3-9ubuntu6.6 Ubuntu:24.04/noble-updates [amd64])
+`},
+	})
+	got, err := aptProvider{}.ListUpgrades(c, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := got.Get("coreutils"); v != "9.4-3ubuntu6.3" {
+		t.Errorf("coreutils = %#v", v)
+	}
+	if v, _ := got.Get("bsdutils"); v != "1:2.39.3-9ubuntu6.6" {
+		t.Errorf("bsdutils = %#v", v)
+	}
+	// `Conf` lines are not a second upgrade of the same package.
+	if got.Len() != 2 {
+		t.Errorf("upgrades = %v", got.StringKeys())
+	}
+}
+
+func TestAptOwnerOf(t *testing.T) {
+	c := aptCtx(t, map[string]exec.Result{
+		"dpkg-query -S /usr/bin/ls": {Stdout: "coreutils: /usr/bin/ls\n"},
+	})
+	got, err := aptProvider{}.OwnerOf(c, "/usr/bin/ls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "coreutils" {
+		t.Errorf("owner = %q", got)
+	}
+
+	// A path no package owns is the empty string, not an error.
+	c.Runner.(*exec.RecordingRunner).Default = exec.Result{
+		Code: 1, Stderr: "dpkg-query: no path found matching pattern /etc/motd\n",
+	}
+	got, err = aptProvider{}.OwnerOf(c, "/etc/motd")
+	if err != nil || got != "" {
+		t.Errorf("unowned path: got %q, %v", got, err)
+	}
+}
+
+func TestAptListReposGroupsComponentsByURIAndSuite(t *testing.T) {
+	// Two indextargets blocks for the same repository, one per component,
+	// plus a translation target that is not a repository.
+	c := aptCtx(t, map[string]exec.Result{
+		"apt-get indextargets": {Stdout: `MetaKey: main/binary-amd64/Packages
+Created-By: Packages
+Repo-URI: http://archive.ubuntu.com/ubuntu/
+Codename: noble
+Component: main
+Architecture: amd64
+Trusted: yes
+
+MetaKey: universe/binary-amd64/Packages
+Created-By: Packages
+Repo-URI: http://archive.ubuntu.com/ubuntu/
+Codename: noble
+Component: universe
+Architecture: amd64
+Trusted: yes
+
+MetaKey: main/i18n/Translation-en
+Created-By: Translations
+Repo-URI: http://archive.ubuntu.com/ubuntu/
+Codename: noble
+Component: main
+`},
+	})
+	got, err := aptProvider{}.ListRepos(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Len() != 1 {
+		t.Fatalf("repos = %v; the translation target is not a repo and the two components are one repo", got.StringKeys())
+	}
+	repo, _ := got.Get("deb http://archive.ubuntu.com/ubuntu/ noble")
+	m := repo.(*value.Map)
+	comps, _ := m.Get("comps")
+	list := comps.([]any)
+	if len(list) != 2 || list[0] != "main" || list[1] != "universe" {
+		t.Errorf("comps = %#v", list)
+	}
+	if v, _ := m.Get("trusted"); v != true {
+		t.Errorf("trusted = %#v", v)
+	}
+}
+
+func TestDnfListHoldsStripsTheNEVRA(t *testing.T) {
+	c := pkgCtx(t, map[string]exec.Result{
+		"dnf versionlock list --quiet": {Stdout: `Last metadata expiration check: 0:12:01 ago.
+kernel-0:6.6.8-100.fc39.x86_64
+nginx-1:1.24.0-1.fc39.x86_64
+`},
+	})
+	got, err := dnfProvider{binary: "dnf"}.ListHolds(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"kernel": true, "nginx": true}
+	if len(got) != 2 {
+		t.Fatalf("holds = %v", got)
+	}
+	for _, n := range got {
+		if !want[n] {
+			t.Errorf("unexpected hold %q", n)
+		}
+	}
+}
+
+func TestApkOwnerOfStripsTheVersion(t *testing.T) {
+	c := pkgCtx(t, map[string]exec.Result{
+		"apk info -W etc/ssh/sshd_config": {Stdout: "etc/ssh/sshd_config is owned by openssh-server-9.7_p1-r4\n"},
+	})
+	got, err := apkProvider{}.OwnerOf(c, "/etc/ssh/sshd_config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "openssh-server" {
+		t.Errorf("owner = %q", got)
 	}
 }
 
