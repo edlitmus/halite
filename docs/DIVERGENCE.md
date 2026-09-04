@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **46 execution modules / 261 functions** and **25 state
-modules / 69 functions**.
+The build ships **48 execution modules / 278 functions** and **26 state
+modules / 71 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -502,7 +502,7 @@ different reason is given.
 | `sudo` | not implemented | 0 | |
 | `timezone` | not implemented | 0 | the exec side is read-only |
 | `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
-| `win_task` | not implemented | 0 | Windows only |
+| `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
 | `win_wua` | not implemented | 0 | Windows only |
 | `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run |
 | `zpool` | not implemented | 0 | the exec side reads; no state writes |
@@ -1045,33 +1045,50 @@ each item is a class of defect rather than a one-off.
   existed, so it passed or failed on what the developer happened to have
   installed. `exec.Context` grew a `Lookup` seam beside `Runner`.
 
-**Two of SPEC 15.3's Windows modules now ship.** `win_dacl` reads and
-writes an access control list, so `file`'s `user:` sets an owner instead
-of being refused, and four states declare permissions, ownership and
-inheritance. `win_service` speaks to the service control manager through
-its API rather than by parsing `sc.exe`, and it is also the `windows`
-provider SPEC 15.2 names for the virtual `service` module — which had
-none, so a node on this platform answered every service call with "no
-init system was recognised on this node".
+**Four of SPEC 15.3's eighteen Windows modules now ship.** `win_dacl`
+reads and writes an access control list, so `file`'s `user:` sets an
+owner instead of being refused, and four states declare permissions,
+ownership and inheritance. `win_service` speaks to the service control
+manager through its API rather than by parsing `sc.exe`, and it is also
+the `windows` provider SPEC 15.2 names for the virtual `service`
+module — which had none, so a node on this platform answered every
+service call with "no init system was recognised on this node".
+`win_registry` reads and writes values in either of the two registries a
+64-bit Windows keeps. `win_task` manages scheduled tasks, with states for
+them.
 
-**What is still not built.** The other sixteen modules of SPEC 15.3's
-Windows row: `win_pkg`, `win_file`, `win_task`, `win_useradd`,
-`win_groupadd`, `win_shadow`, `win_network`, `win_firewall`,
-`win_registry`, `win_disk`, `win_system`, `win_timezone`, `win_wua`,
-`win_certutil`, and the two SPEC marks bridged. There is no user or
-group provider, so `user.present` has nothing to reach here. `runas` is
-refused, because starting a process as another account needs that
-account's credentials. The restricted token of SPEC 24.3 is absent, so
-an extension is bounded but not de-privileged.
+The two later ones reached their subsystem differently, and the
+difference is the rule rather than a preference. The service control
+manager has no machine-readable output mode: `sc.exe` writes a table and
+its status words are localised, so parsing it means parsing prose — and
+that is what made the API worth the vtable work. The task scheduler does
+have one: `schtasks /query /xml` emits a published schema whose element
+names are fixed in every locale, and `/create /xml` takes it back, which
+is exactly SPEC 15.2's standard for reaching a subsystem through its
+binary. So `win_service` speaks the API and `win_task` runs the binary,
+and each is the shorter road to the same guarantee.
 
-Two smaller ones worth naming rather than discovering:
-`service.reload` is refused, because the manager's reload control is one
-almost nothing implements and silently restarting instead would be a
-bigger change than the state asked for; and `group:` on a file state is
-refused, because a Windows file has an owner and an access control list
-and no group, so mapping it onto the primary group — which nothing on
-the platform reads — would let a state pass while granting nobody
-anything.
+**What is still not built.** The other fourteen modules of SPEC 15.3's
+Windows row: `win_pkg`, `win_file`, `win_useradd`, `win_groupadd`,
+`win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`,
+`win_timezone`, `win_wua`, `win_certutil`, and the two SPEC marks
+bridged. There is no user or group provider, so `user.present` has
+nothing to reach here. `runas` is refused, because starting a process as
+another account needs that account's credentials. The restricted token
+of SPEC 24.3 is absent, so an extension is bounded but not
+de-privileged.
+
+Three smaller ones worth naming rather than discovering. `service.reload`
+is refused, because the manager's reload control is one almost nothing
+implements and silently restarting instead would be a bigger change than
+the state asked for. `group:` on a file state is refused, because a
+Windows file has an owner and an access control list and no group, so
+mapping it onto the primary group — which nothing on the platform
+reads — would let a state pass while granting nobody anything. And
+`win_registry` ships no state module, because SPEC 15.5 does not name
+one: Salt has `reg.present` and an estate migrating from it will want
+the same, so it is a decision for a person rather than a quiet addition.
+
 
 
 ## 5. Test coverage against SPEC 31
