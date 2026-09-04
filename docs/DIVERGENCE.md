@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **44 execution modules / 249 functions** and **23 state
-modules / 64 functions**.
+The build ships **50 execution modules / 283 functions** and **28 state
+modules / 76 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -434,12 +434,12 @@ different reason is given.
 | `data` | not implemented | 0 | |
 | `firewall` | not implemented | 0 | |
 | `hostname` | not implemented | 0 | |
-| `http` | not implemented | 0 | needs the address denylist of 15.2 before it is safe to ship |
+| `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `nfs` | not implemented | 0 | |
-| `pkgrepo` | not implemented | 0 | |
+| `pkgrepo` | implemented | 4 | list_repos, get_repo, mod_repo, del_repo; virtual, with providers for apt, dnf/yum and Chocolatey 
 | `ps` | not implemented | 0 | process enumeration is per-platform; FreeBSD needs `kvm` or `sysctl kern.proc` |
 | `reboot` | not implemented | 0 | |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
@@ -478,7 +478,7 @@ different reason is given.
 | `acl` | not implemented | 0 | see 2.1 |
 | `apparmor` | not implemented | 0 | |
 | `at` | not implemented | 0 | |
-| `beacon` | not implemented | 0 | phase 3 |
+| `beacon` | implemented | 2 | present and absent, both persisting to beacons.d so a declaration survives a restart 
 | `environ` | not implemented | 0 | |
 | `firewall` | not implemented | 0 | |
 | `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
@@ -493,16 +493,16 @@ different reason is given.
 | `nftables` | not implemented | 0 | Linux only |
 | `npm` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pip` | implemented | 2 | install and remove, comparing against the tool's own listing |
-| `pkgrepo` | not implemented | 0 | |
+| `pkgrepo` | implemented | 2 | managed and absent, both converging on a second run 
 | `pro` | not implemented | 0 | Ubuntu only |
 | `reboot` | not implemented | 0 | |
-| `schedule` | implemented | 1 | `absent`; the runtime control is in the execution module |
+| `schedule` | implemented | 2 | present and absent; absent now persists, which it did not before 
 | `selinux` | not implemented | 0 | Linux only |
 | `ssh_known_hosts` | not implemented | 0 | |
 | `sudo` | not implemented | 0 | |
 | `timezone` | not implemented | 0 | the exec side is read-only |
-| `win_dacl` | not implemented | 0 | Windows only |
-| `win_task` | not implemented | 0 | Windows only |
+| `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
+| `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
 | `win_wua` | not implemented | 0 | Windows only |
 | `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run |
 | `zpool` | not implemented | 0 | the exec side reads; no state writes |
@@ -610,8 +610,8 @@ platform family.
 
 | Module | Providers specified | Implemented | Verified |
 |---|---|---|---|
-| `pkg` | apt, dnf, yum, zypper, apk, pacman, pkgng, brew, macpkg, winrepo, choco | pkgng, apt, dnf/yum, apk | pkgng on FreeBSD; apt on Ubuntu, including every optional capability (holds, world upgrade, file ownership, repository listing) |
-| `service` | systemd, sysvinit, upstart, openrc, launchd, freebsd_rc, smf, windows | freebsd_rc | yes, on this host |
+| `pkg` | apt, dnf, yum, zypper, apk, pacman, pkgng, brew, macpkg, winrepo, choco | pkgng, apt, dnf/yum, apk, brew, chocolatey | pkgng on FreeBSD; apt on Ubuntu, including every optional capability (holds, world upgrade, file ownership, repository listing); chocolatey on Windows 11 |
+| `service` | systemd, sysvinit, upstart, openrc, launchd, freebsd_rc, smf, windows | freebsd_rc, systemd, sysvinit, launchd, windows | freebsd_rc on this host; windows against the real service control manager on Windows 11 |
 
 The apt provider's base six functions and all four optional capabilities
 were exercised against a real dpkg database on Ubuntu 24.04:
@@ -1045,12 +1045,50 @@ each item is a class of defect rather than a one-off.
   existed, so it passed or failed on what the developer happened to have
   installed. `exec.Context` grew a `Lookup` seam beside `Runner`.
 
-**What is still not built.** The module set of SPEC 15.3: no `win_dacl`,
-so a state setting an owner is refused rather than applied; no
-`win_service`, so the platform has no service provider; none of the
-other sixteen. `runas` is refused, because starting a process as another
-account here needs that account's credentials. The restricted token of
-SPEC 24.3 is absent, so an extension is bounded but not de-privileged.
+**Four of SPEC 15.3's eighteen Windows modules now ship.** `win_dacl`
+reads and writes an access control list, so `file`'s `user:` sets an
+owner instead of being refused, and four states declare permissions,
+ownership and inheritance. `win_service` speaks to the service control
+manager through its API rather than by parsing `sc.exe`, and it is also
+the `windows` provider SPEC 15.2 names for the virtual `service`
+module — which had none, so a node on this platform answered every
+service call with "no init system was recognised on this node".
+`win_registry` reads and writes values in either of the two registries a
+64-bit Windows keeps. `win_task` manages scheduled tasks, with states for
+them.
+
+The two later ones reached their subsystem differently, and the
+difference is the rule rather than a preference. The service control
+manager has no machine-readable output mode: `sc.exe` writes a table and
+its status words are localised, so parsing it means parsing prose — and
+that is what made the API worth the vtable work. The task scheduler does
+have one: `schtasks /query /xml` emits a published schema whose element
+names are fixed in every locale, and `/create /xml` takes it back, which
+is exactly SPEC 15.2's standard for reaching a subsystem through its
+binary. So `win_service` speaks the API and `win_task` runs the binary,
+and each is the shorter road to the same guarantee.
+
+**What is still not built.** The other fourteen modules of SPEC 15.3's
+Windows row: `win_pkg`, `win_file`, `win_useradd`, `win_groupadd`,
+`win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`,
+`win_timezone`, `win_wua`, `win_certutil`, and the two SPEC marks
+bridged. There is no user or group provider, so `user.present` has
+nothing to reach here. `runas` is refused, because starting a process as
+another account needs that account's credentials. The restricted token
+of SPEC 24.3 is absent, so an extension is bounded but not
+de-privileged.
+
+Three smaller ones worth naming rather than discovering. `service.reload`
+is refused, because the manager's reload control is one almost nothing
+implements and silently restarting instead would be a bigger change than
+the state asked for. `group:` on a file state is refused, because a
+Windows file has an owner and an access control list and no group, so
+mapping it onto the primary group — which nothing on the platform
+reads — would let a state pass while granting nobody anything. And
+`win_registry` ships no state module, because SPEC 15.5 does not name
+one: Salt has `reg.present` and an estate migrating from it will want
+the same, so it is a decision for a person rather than a quiet addition.
+
 
 
 ## 5. Test coverage against SPEC 31

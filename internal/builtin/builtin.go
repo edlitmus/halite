@@ -75,6 +75,17 @@ func New() *Registries {
 	registerBeacons(r)
 	registerSchedule(r)
 	registerMine(r)
+
+	// The Windows platform modules of SPEC sections 15.3 and 15.5.
+	registerWinDACL(r)
+	registerWinService(r)
+	registerWinRegistry(r)
+	registerWinTask(r)
+
+	// The core modules of SPEC section 15.2 that were absent.
+	registerHTTP(r)
+	registerPkgRepo(r)
+	registerWatcherStates(r)
 	return r
 }
 

@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -34,13 +35,27 @@ var serviceProviders = []serviceProvider{
 	launchdProvider{},
 }
 
+// availableServiceProviders is the cross-platform list plus whatever
+// this platform adds. A provider reached through an API rather than by
+// running a binary cannot be compiled for another platform, so it cannot
+// sit in the list above.
+func availableServiceProviders() []serviceProvider {
+	return append(platformServiceProviders(), serviceProviders...)
+}
+
 func pickServiceProvider(c *exec.Context) (serviceProvider, error) {
-	for _, p := range serviceProviders {
+	providers := availableServiceProviders()
+	for _, p := range providers {
 		if p.Available(c) {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("no init system was recognised on this node; halite ships providers for systemd, FreeBSD rc, sysvinit, and launchd")
+	names := make([]string, 0, len(providers))
+	for _, p := range providers {
+		names = append(names, p.Name())
+	}
+	return nil, fmt.Errorf("no init system was recognised on this node (%s); halite ships providers for %s",
+		runtime.GOOS, strings.Join(names, ", "))
 }
 
 func registerService(r *Registries) {
