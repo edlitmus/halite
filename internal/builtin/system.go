@@ -15,7 +15,7 @@ import (
 )
 
 // registerSystem installs the modules that report on the running system:
-// network, dnsutil, status, disk, mount, timezone, and hostname.
+// network, dnsutil, status, disk, mount, and hostname.
 //
 // Everything here reads through the standard library or through a base
 // system tool, never through an installed package: a node that has just
@@ -393,25 +393,6 @@ func registerHostnameModule(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return os.Hostname()
-			},
-		},
-		exec.Module{
-			Sig: signature.Signature{
-				Module: "timezone", Function: "get_zone",
-				Doc:      "Return this node's time zone.",
-				TestMode: signature.TestNotApplicable,
-				Section:  "15.2",
-			},
-			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				// /etc/localtime is a symlink to the zone file on every
-				// modern unix, which names the zone without a tool.
-				if target, err := os.Readlink("/etc/localtime"); err == nil {
-					if i := strings.Index(target, "zoneinfo/"); i >= 0 {
-						return target[i+len("zoneinfo/"):], nil
-					}
-				}
-				name, _ := time.Now().Zone()
-				return name, nil
 			},
 		},
 	)

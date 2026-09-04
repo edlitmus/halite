@@ -20,6 +20,16 @@ func realCtx(t *testing.T) *exec.Context {
 	return c
 }
 
+// testCtx is realCtx in test mode, for the states that have to be shown
+// changing nothing. It lives here rather than beside its first caller so
+// that a package built for a platform other than this one still has it.
+func testCtx(t *testing.T) *exec.Context {
+	t.Helper()
+	c := realCtx(t)
+	c.Test = true
+	return c
+}
+
 func TestCmdScriptRunsAndCleansUp(t *testing.T) {
 	r := New()
 	script := writeEchoScript(t, t.TempDir())

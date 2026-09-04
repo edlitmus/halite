@@ -53,7 +53,7 @@ halite-hub migrate /srv/salt --out json           # for a pipeline
 Run it before anything else. It answers "how big is this?" in seconds,
 and the answer is usually smaller than expected.
 
-## The four differences that will actually bite
+## The five differences that will actually bite
 
 ### Undefined names are an error
 
@@ -122,6 +122,23 @@ does halite. A bare `n` is the string. This is documented in
 [DIVERGENCE.md](DIVERGENCE.md) section 1.1 because SPEC.md says otherwise
 and SPEC.md is wrong.
 
+### `environ.setenv` persists
+
+Salt's `environ.setenv` sets a variable in the minion process and nothing
+else. It does not survive the minion restarting, and it does not reach
+anything the minion runs, so a state that uses it changes nothing an
+operator can observe afterwards.
+
+halite's `permanent` defaults to **true**, and the state manages the
+place the platform actually keeps the variable: `/etc/environment` on a
+unix, `HKCU\Environment` or the machine key on Windows. A tree carrying
+`environ.setenv` will therefore write a file or a registry value that
+Salt never wrote. Set `permanent: False` for Salt's behaviour.
+
+`clear_all` and `update_minion: True` are refused rather than ignored,
+each with the reason, so a tree carrying either is told once instead of
+running against a different meaning.
+
 ## Encrypted pillar
 
 A `#!yaml|gpg` pillar file works. halite drives the system `gpg` binary,
@@ -180,8 +197,8 @@ configuration file; a tree needs the same edits:
 ## What is not there
 
 halite ships a subset of Salt's roughly 400 modules, chosen by what a
-real estate applies. This build has 283 execution functions across 50
-modules and 76 state functions across 28. The [module
+real estate applies. This build has 289 execution functions across 50
+modules and 78 state functions across 30. The [module
 reference](modules.md) lists all of them and
 [DIVERGENCE.md](DIVERGENCE.md) lists what is missing, module by module,
 with the reason.

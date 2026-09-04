@@ -86,6 +86,8 @@ func New() *Registries {
 	registerHTTP(r)
 	registerPkgRepo(r)
 	registerWatcherStates(r)
+	registerTimezone(r)
+	registerEnviron(r)
 	return r
 }
 

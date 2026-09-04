@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **50 execution modules / 283 functions** and **28 state
-modules / 76 functions**.
+The build ships **50 execution modules / 289 functions** and **30 state
+modules / 78 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -402,7 +402,7 @@ different reason is given.
 | `cron` | implemented | 2 | |
 | `disk` | implemented | 1 | |
 | `dnsutil` | implemented | 2 | |
-| `environ` | implemented | 3 | |
+| `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
 | `file` | implemented | 40 | |
 | `git` | implemented | 5 | through the system `git` binary |
@@ -424,7 +424,7 @@ different reason is given.
 | `sysctl` | implemented | 3 | |
 | `sysrc` | implemented | 3 | FreeBSD; SPEC lists it as core |
 | `test` | implemented | 5 | |
-| `timezone` | implemented | 1 | read-only; `set_zone` not written |
+| `timezone` | implemented | 4 | `set_zone` writes through `timedatectl` where it runs and the zone files where it does not; the zone is named as the platform names it, and `list_zones` says which names those are |
 | `user` | implemented | 3 | reads through `os/user`, writes through `pw` or `useradd` |
 | `at` | not implemented | 0 | |
 | `acl` | not implemented | 0 | POSIX ACL reading needs `acl_get_file`, which is cgo on FreeBSD; needs the `getfacl` binary path instead |
@@ -479,7 +479,7 @@ different reason is given.
 | `apparmor` | not implemented | 0 | |
 | `at` | not implemented | 0 | |
 | `beacon` | implemented | 2 | present and absent, both persisting to beacons.d so a declaration survives a restart 
-| `environ` | not implemented | 0 | |
+| `environ` | implemented | 1 | `setenv`; `permanent` defaults to true here and to false in Salt, so a tree carrying this state writes a file or a registry value Salt never wrote; see migrating-from-salt.md |
 | `firewall` | not implemented | 0 | |
 | `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `hostname` | not implemented | 0 | |
@@ -500,7 +500,7 @@ different reason is given.
 | `selinux` | not implemented | 0 | Linux only |
 | `ssh_known_hosts` | not implemented | 0 | |
 | `sudo` | not implemented | 0 | |
-| `timezone` | not implemented | 0 | the exec side is read-only |
+| `timezone` | implemented | 1 | `system`; a zone the node does not have is refused in test mode, where the tool would never run to say so |
 | `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
 | `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
 | `win_wua` | not implemented | 0 | Windows only |
