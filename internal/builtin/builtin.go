@@ -78,6 +78,7 @@ func New() *Registries {
 
 	// The Windows platform modules of SPEC sections 15.3 and 15.5.
 	registerWinDACL(r)
+	registerWinService(r)
 	return r
 }
 

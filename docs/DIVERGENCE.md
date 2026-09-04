@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **45 execution modules / 257 functions** and **24 state
-modules / 68 functions**.
+The build ships **46 execution modules / 261 functions** and **25 state
+modules / 69 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -610,8 +610,8 @@ platform family.
 
 | Module | Providers specified | Implemented | Verified |
 |---|---|---|---|
-| `pkg` | apt, dnf, yum, zypper, apk, pacman, pkgng, brew, macpkg, winrepo, choco | pkgng, apt, dnf/yum, apk | pkgng on FreeBSD; apt on Ubuntu, including every optional capability (holds, world upgrade, file ownership, repository listing) |
-| `service` | systemd, sysvinit, upstart, openrc, launchd, freebsd_rc, smf, windows | freebsd_rc | yes, on this host |
+| `pkg` | apt, dnf, yum, zypper, apk, pacman, pkgng, brew, macpkg, winrepo, choco | pkgng, apt, dnf/yum, apk, brew, chocolatey | pkgng on FreeBSD; apt on Ubuntu, including every optional capability (holds, world upgrade, file ownership, repository listing); chocolatey on Windows 11 |
+| `service` | systemd, sysvinit, upstart, openrc, launchd, freebsd_rc, smf, windows | freebsd_rc, systemd, sysvinit, launchd, windows | freebsd_rc on this host; windows against the real service control manager on Windows 11 |
 
 The apt provider's base six functions and all four optional capabilities
 were exercised against a real dpkg database on Ubuntu 24.04:
@@ -1045,12 +1045,33 @@ each item is a class of defect rather than a one-off.
   existed, so it passed or failed on what the developer happened to have
   installed. `exec.Context` grew a `Lookup` seam beside `Runner`.
 
-**What is still not built.** The module set of SPEC 15.3: no `win_dacl`,
-so a state setting an owner is refused rather than applied; no
-`win_service`, so the platform has no service provider; none of the
-other sixteen. `runas` is refused, because starting a process as another
-account here needs that account's credentials. The restricted token of
-SPEC 24.3 is absent, so an extension is bounded but not de-privileged.
+**Two of SPEC 15.3's Windows modules now ship.** `win_dacl` reads and
+writes an access control list, so `file`'s `user:` sets an owner instead
+of being refused, and four states declare permissions, ownership and
+inheritance. `win_service` speaks to the service control manager through
+its API rather than by parsing `sc.exe`, and it is also the `windows`
+provider SPEC 15.2 names for the virtual `service` module — which had
+none, so a node on this platform answered every service call with "no
+init system was recognised on this node".
+
+**What is still not built.** The other sixteen modules of SPEC 15.3's
+Windows row: `win_pkg`, `win_file`, `win_task`, `win_useradd`,
+`win_groupadd`, `win_shadow`, `win_network`, `win_firewall`,
+`win_registry`, `win_disk`, `win_system`, `win_timezone`, `win_wua`,
+`win_certutil`, and the two SPEC marks bridged. There is no user or
+group provider, so `user.present` has nothing to reach here. `runas` is
+refused, because starting a process as another account needs that
+account's credentials. The restricted token of SPEC 24.3 is absent, so
+an extension is bounded but not de-privileged.
+
+Two smaller ones worth naming rather than discovering:
+`service.reload` is refused, because the manager's reload control is one
+almost nothing implements and silently restarting instead would be a
+bigger change than the state asked for; and `group:` on a file state is
+refused, because a Windows file has an owner and an access control list
+and no group, so mapping it onto the primary group — which nothing on
+the platform reads — would let a state pass while granting nobody
+anything.
 
 
 ## 5. Test coverage against SPEC 31
