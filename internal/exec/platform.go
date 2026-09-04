@@ -43,7 +43,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"chattr":               {Platform: "rhel", When: "phase 5, with the RHEL platform work"},
 	"zypperpkg":            {Platform: "suse", When: "phase 5, with the SUSE platform work"},
 	"win_pkg":              {Platform: "windows", When: "phase 5, with Windows parity"},
-	"win_service":          {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_file":             {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_task":             {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_useradd":          {Platform: "windows", When: "phase 5, with Windows parity"},
