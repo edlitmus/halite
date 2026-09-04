@@ -7,18 +7,21 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/winsec"
 )
 
-// Ownership on Windows is an access control list rather than a uid and
-// gid pair, and the win_dacl module of SPEC section 15.3 owns setting
-// it. Reading it is a different matter: a file here does have an owner,
-// and this reported that it had none — `file.stats` returned no `user`
-// field and `file.get_user` answered "has no owner this platform
-// reports" for every file on the platform.
+// Ownership on Windows is an owner and an access control list rather
+// than a uid and gid pair. Reading the owner has worked since the grains
+// went in; setting it was refused, because the module SPEC 15.3 puts it
+// in — win_dacl — did not exist. It does now, so a `user:` on a file
+// state does what it says.
 //
-// So the owner is read, and only the setting is refused.
+// There is still no such thing as a file's group here. `group:` is
+// refused rather than mapped onto something that resembles it: a state
+// that asked for a group and silently got an access control entry would
+// be a state whose file said one thing and whose host did another.
 
 // addOwnership fills the owner field of file.stats.
 //
@@ -33,34 +36,60 @@ func addOwnership(m *value.Map, path string, info os.FileInfo) {
 	m.Set("user", who)
 }
 
+// plannedOwnership reports what the change would be, without making it.
+//
+// A file that does not exist yet has no owner to compare against, and a
+// prediction that claimed to know what it would be would be guessing.
 func plannedOwnership(path string, exists bool, wantUser, wantGroup string) (*value.Map, bool, error) {
-	if wantUser == "" && wantGroup == "" {
+	if wantGroup != "" {
+		return nil, false, groupRefusal(wantGroup)
+	}
+	if wantUser == "" {
 		return nil, false, nil
 	}
-	return nil, false, ownershipRefusal(wantUser, wantGroup)
+	if !exists {
+		changes := value.NewMap(1)
+		changes.Set("user", states.Change("", wantUser))
+		return changes, true, nil
+	}
+	current, err := winsec.Owner(path)
+	if err != nil {
+		return nil, false, err
+	}
+	if sameAccount(current, wantUser) {
+		return nil, false, nil
+	}
+	changes := value.NewMap(1)
+	changes.Set("user", states.Change(current, wantUser))
+	return changes, true, nil
 }
 
 func applyOwnership(path, wantUser, wantGroup string) error {
-	if wantUser == "" && wantGroup == "" {
+	if wantGroup != "" {
+		return groupRefusal(wantGroup)
+	}
+	if wantUser == "" {
 		return nil
 	}
-	return ownershipRefusal(wantUser, wantGroup)
+	current, err := winsec.Owner(path)
+	if err == nil && sameAccount(current, wantUser) {
+		return nil
+	}
+	return winsec.SetOwner(path, wantUser)
 }
 
-// ownershipRefusal says what was asked for and why it cannot be done,
-// rather than naming a module the reader then has to look up. Taking
-// ownership of a file needs a privilege the node may not hold, and there
-// is no such thing as a file's group here at all.
-func ownershipRefusal(wantUser, wantGroup string) error {
-	if wantGroup != "" && wantUser == "" {
-		return fmt.Errorf(
-			"group %q: a file on Windows has an owner and an access control list, not a group; "+
-				"SPEC 15.3 puts this in win_dacl, which this build does not have", wantGroup)
-	}
+// groupRefusal says what was asked for and why this platform has no
+// answer, rather than naming a module the reader then has to look up.
+//
+// Windows records a primary group in a security descriptor, but nothing
+// on the platform reads it: it exists for POSIX interoperability and
+// setting it changes no access. Mapping `group:` onto it would let a
+// state pass while granting nobody anything.
+func groupRefusal(wantGroup string) error {
 	return fmt.Errorf(
-		"user %q: setting a file's owner on Windows needs the privilege to take ownership, "+
-			"which this build does not ask for; SPEC 15.3 puts this in win_dacl, "+
-			"which this build does not have", wantUser)
+		"group %q: a file on Windows has an owner and an access control list, not a group; "+
+			"use win_dacl.present to give a group access, or win_dacl.owner to set the owner",
+		wantGroup)
 }
 
 func legacyHash(data []byte, algorithm string) (string, error) {
