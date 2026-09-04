@@ -475,3 +475,71 @@ func signedCommit(t *testing.T, r *repo, home, message string) {
 		t.Skipf("signing a commit: %v\n%s", err, out)
 	}
 }
+
+// A remote URL is judged by what it is, and a local path is not a
+// transport at all.
+//
+// Both platforms' conventions are checked from one host, for the reason
+// the configuration layout is: "starts with a slash" is a local path on
+// unix and nothing at all on Windows, so a hub there configured with
+// `C:\srv\states` was told its own disk "is not an encrypted transport"
+// and eight gitfs tests failed on it.
+//
+// The scp-style case is the one that mattered more than the refusal. A
+// Windows path holding an `@` — an account name from a directory, say —
+// satisfied "contains @ and contains :" and was accepted as an ssh
+// remote, so a local directory would have been handed to git as a
+// network URL against a host named after a drive letter.
+func TestALocalPathIsNotATransport(t *testing.T) {
+	cases := []struct {
+		url     string
+		windows bool
+		local   bool
+	}{
+		{"/srv/states", false, true},
+		{"/srv/states", true, true},
+		{`C:\srv\states`, true, true},
+		{"C:/srv/states", true, true},
+		{`c:\srv\states`, true, true},
+		{`\srv\states`, true, true},
+		{`C:\Users\some.name@corp\states`, true, true},
+		{`C:\srv\states`, false, false},
+		// A UNC path is SMB over the network, which is the kind of
+		// transport this check exists to refuse.
+		{`\\server\share\states`, true, false},
+		{"//server/share/states", true, false},
+		{"https://git.example/x.git", true, false},
+		{"git@git.example:ops/states.git", true, false},
+		{"C:", true, false},
+		{"", true, false},
+	}
+	for _, c := range cases {
+		if got := isLocalPath(c.url, c.windows); got != c.local {
+			t.Errorf("isLocalPath(%q, windows=%v) = %v, want %v", c.url, c.windows, got, c.local)
+		}
+	}
+
+	scp := map[string]bool{
+		"git@git.example:ops/states.git": true,
+		"user@host:path":                 true,
+		`C:\Users\some.name@corp\states`: false,
+		"https://git.example/x.git":      false,
+		"/srv/states":                    false,
+	}
+	for url, want := range scp {
+		if got := isSCPStyle(url); got != want {
+			t.Errorf("isSCPStyle(%q) = %v, want %v", url, got, want)
+		}
+	}
+}
+
+// A UNC path still needs saying so out loud, since it is the one local-
+// looking form that is not local.
+func TestAUNCPathIsRefusedUnlessInsecure(t *testing.T) {
+	if err := checkURL(Remote{URL: `\\server\share\states`}); err == nil {
+		t.Error("a UNC path was accepted without insecure; SMB is a network transport")
+	}
+	if err := checkURL(Remote{URL: `\\server\share\states`, Insecure: true}); err != nil {
+		t.Errorf("insecure should accept it: %v", err)
+	}
+}
