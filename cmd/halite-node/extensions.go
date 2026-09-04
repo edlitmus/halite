@@ -66,6 +66,7 @@ func (n *node) openExtensions() {
 			}
 			n.log.Info("extension", "extension", name, "message", message)
 		},
+		Observe: n.metrics.observeExtension,
 		Event: func(name, tag string, data json.RawMessage) {
 			if n.events == nil {
 				return

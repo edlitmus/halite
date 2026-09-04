@@ -2,6 +2,7 @@ package hub
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/keystore"
+	"github.com/edlitmus/halite/internal/transport"
 
 	"github.com/edlitmus/halite/internal/metrics"
 )
@@ -45,9 +47,25 @@ type hubMetrics struct {
 	reactorDuration *metrics.Histogram
 	reactorFailures *metrics.Counter
 
-	beaconEvents *metrics.Counter
+	beaconEvents  *metrics.Counter
+	beaconDropped *metrics.Counter
 
 	authzDecisions *metrics.Counter
+
+	requests        *metrics.Counter
+	requestDuration *metrics.Histogram
+
+	enrollments *metrics.Counter
+
+	subscriberLag *metrics.Histogram
+
+	gitfsFetch      *metrics.Histogram
+	gitfsSignatures *metrics.Counter
+	gitfsRefusals   *metrics.Counter
+
+	orchRuns     *metrics.Counter
+	stateCompile *metrics.Histogram
+	stateRun     *metrics.Histogram
 }
 
 // setupMetrics declares the families. The caller holds metricsMu.
@@ -110,9 +128,51 @@ func (s *Server) setupMetrics() {
 
 		beaconEvents: r.Counter("halite_beacon_events_total",
 			"Beacon events received from nodes, by beacon.", "beacon"),
+		// The other half of the pair SPEC 26.2 names. A node's beacon
+		// queue is bounded and reports its overflow as an event, so
+		// the hub can count what was lost without the node holding a
+		// metric it has nowhere to expose.
+		beaconDropped: r.Counter("halite_beacon_dropped_total",
+			"Beacon events a node's bounded queue discarded, by beacon.", "beacon"),
 
 		authzDecisions: r.Counter("halite_authz_decisions_total",
 			"Authorization decisions, by outcome.", "result"),
+
+		// The hub's own service metrics. The API has had these since
+		// it was written and the hub had none, so "the API is slow"
+		// could not be told from "the hub the API is waiting on is
+		// slow" -- which is the first question asked and the one the
+		// exposition could not answer.
+		requests: r.Counter("halite_hub_requests_total",
+			"Requests the hub answered, by route and status code.", "route", "code"),
+		requestDuration: r.Histogram("halite_hub_request_duration_seconds",
+			"Time to answer one request, by route.", nil, "route"),
+
+		enrollments: r.Counter("halite_hub_enrollments_total",
+			"Enrollment requests, by what the hub did with one.", "result"),
+
+		subscriberLag: r.Histogram("halite_event_subscriber_lag_seconds",
+			"How old an event was when a subscriber was handed it.",
+			[]float64{0.01, 0.05, 0.25, 1, 5, 30, 120, 600}),
+
+		gitfsFetch: r.Histogram("halite_gitfs_fetch_duration_seconds",
+			"Time to fetch and materialise every git remote.", nil),
+		gitfsSignatures: r.Counter("halite_gitfs_signature_failures_total",
+			"Refs not served because their signature did not verify."),
+		gitfsRefusals: r.Counter("halite_gitfs_refusals_total",
+			"Refs not served, by why. Signature failures are counted here too.", "reason"),
+
+		orchRuns: r.Counter("halite_orch_runs_total",
+			"Orchestrations run on the hub, by outcome.", "result"),
+		stateCompile: r.Histogram("halite_state_compile_duration_seconds",
+			"Time to compile a state tree into a low state. On the hub this is orchestration.", nil),
+		// End to end, because that is all a return carries: the node
+		// reports one duration for the job, and compiling the tree
+		// happened inside it. A node writing a textfile splits the two,
+		// and the same family there is the apply alone -- so the hub's
+		// number is the larger of the two by the compile time.
+		stateRun: r.Histogram("halite_state_run_duration_seconds",
+			"Time a node spent on a state run end to end, from its return. Compiling the tree is inside it.", nil),
 	}
 	s.metrics = m
 
@@ -128,24 +188,116 @@ func (s *Server) setupMetrics() {
 		"Enrollment requests waiting for a decision.", func() float64 {
 			return float64(s.countKeys(keystore.Pending))
 		})
+	// Certificates expire, and an estate discovers that all at once
+	// when a batch issued on the same afternoon a year ago stops
+	// authenticating. `keys_accepted` does not fall until the record
+	// is removed, so it says nothing about this.
+	r.GaugeFunc("halite_hub_keys_expired",
+		"Accepted nodes whose certificate has already expired.", func() float64 {
+			return float64(s.countExpiring(0))
+		})
+	r.GaugeFunc("halite_hub_keys_expiring",
+		"Accepted nodes whose certificate expires within thirty days.", func() float64 {
+			return float64(s.countExpiring(30 * 24 * time.Hour))
+		})
+	r.GaugeFunc("halite_hub_soonest_certificate_expiry_seconds",
+		"Seconds until the first node certificate expires. Zero when none is known.",
+		func() float64 { return s.soonestNodeExpiry() })
+	r.GaugeFunc("halite_hub_ca_expiry_seconds",
+		"Seconds until the enrollment CA expires. Every node's identity is signed by it.",
+		func() float64 { return s.caExpiry() })
 }
 
 // countKeys counts the key store records in one state.
 func (s *Server) countKeys(want keystore.State) int {
-	if s.Authority == nil || s.Authority.Store == nil {
-		return 0
-	}
-	records, err := s.Authority.Store.List()
-	if err != nil {
-		return 0
-	}
 	n := 0
-	for _, rec := range records {
+	for _, rec := range s.keyRecords() {
 		if rec.State == want {
 			n++
 		}
 	}
 	return n
+}
+
+// countExpiring counts accepted records whose certificate runs out
+// within the window. A zero window counts the ones already expired.
+func (s *Server) countExpiring(within time.Duration) int {
+	return countExpiring(s.keyRecords(), s.now(), within)
+}
+
+// soonestNodeExpiry is how long the estate has before the first node
+// certificate runs out.
+func (s *Server) soonestNodeExpiry() float64 {
+	return soonestExpiry(s.keyRecords(), s.now())
+}
+
+// countExpiring is the arithmetic, apart from the store, so that the
+// boundary between "expired" and "expiring" is testable without one.
+//
+// Already expired is not "expiring": it is counted by the other gauge,
+// and adding it here would make a fixed problem look like a growing
+// one.
+func countExpiring(records []*keystore.Record, now time.Time, within time.Duration) int {
+	n := 0
+	for _, rec := range records {
+		if rec.State != keystore.Accepted || rec.NotAfter.IsZero() {
+			continue
+		}
+		expired := !rec.NotAfter.After(now)
+		if within == 0 {
+			if expired {
+				n++
+			}
+			continue
+		}
+		if !expired && !rec.NotAfter.After(now.Add(within)) {
+			n++
+		}
+	}
+	return n
+}
+
+// soonestExpiry is when the first accepted certificate runs out, in
+// seconds from now. Zero when there is none; negative when one has
+// already gone, which is the honest answer rather than a floor at zero.
+func soonestExpiry(records []*keystore.Record, now time.Time) float64 {
+	soonest := time.Time{}
+	for _, rec := range records {
+		if rec.State != keystore.Accepted || rec.NotAfter.IsZero() {
+			continue
+		}
+		if soonest.IsZero() || rec.NotAfter.Before(soonest) {
+			soonest = rec.NotAfter
+		}
+	}
+	if soonest.IsZero() {
+		return 0
+	}
+	return soonest.Sub(now).Seconds()
+}
+
+// caExpiry is how long the enrollment CA has left. A CA that expires
+// takes every node with it, and it is the one certificate nobody
+// renews on a timer.
+func (s *Server) caExpiry() float64 {
+	if s.Authority == nil || s.Authority.CA == nil || s.Authority.CA.Cert == nil {
+		return 0
+	}
+	return s.Authority.CA.Cert.NotAfter.Sub(s.now()).Seconds()
+}
+
+// keyRecords is the key store's contents, or nothing when it cannot be
+// read. A gauge that cannot answer reports zero rather than stopping
+// the scrape.
+func (s *Server) keyRecords() []*keystore.Record {
+	if s.Authority == nil || s.Authority.Store == nil {
+		return nil
+	}
+	records, err := s.Authority.Store.List()
+	if err != nil {
+		return nil
+	}
+	return records
 }
 
 // m answers with the metrics, declaring them on first use.
@@ -203,7 +355,7 @@ func observeSeconds(h *metrics.Histogram, d time.Duration) {
 // counts them without the node reporting a metric of its own. What it
 // cannot see is an event the node's own queue dropped before sending;
 // that is counted on the node, which has nowhere to expose it yet.
-func (s *Server) countBeaconEvent(tag string) {
+func (s *Server) countBeaconEvent(tag string, data map[string]any) {
 	const prefix = "halite/beacon/"
 	if !strings.HasPrefix(tag, prefix) {
 		return
@@ -216,13 +368,48 @@ func (s *Server) countBeaconEvent(tag string) {
 		return
 	}
 	beacon := rest[slash+1:]
+	suffix := ""
 	if slash := strings.IndexByte(beacon, '/'); slash >= 0 {
-		beacon = beacon[:slash]
+		beacon, suffix = beacon[:slash], beacon[slash+1:]
 	}
 	if beacon == "" {
 		return
 	}
 	s.m().beaconEvents.With(beacon).Inc()
+	if suffix == beaconOverflowSuffix {
+		s.countBeaconDrops(beacon, data)
+	}
+}
+
+// beaconOverflowSuffix is what a node tags the event it sends when its
+// bounded beacon queue discarded something. SPEC 16.3 requires the loss
+// be reported; this is the hub turning that report into a number.
+const beaconOverflowSuffix = "overflow"
+
+// countBeaconDrops reads the count out of an overflow event.
+//
+// The payload has been through JSON, so the number arrives as a float
+// whatever the node sent. A payload that does not carry one is counted
+// as a single drop rather than as none: the event exists only because
+// something was lost.
+func (s *Server) countBeaconDrops(beacon string, data map[string]any) {
+	dropped := 1.0
+	switch n := data["dropped"].(type) {
+	case float64:
+		dropped = n
+	case int64:
+		dropped = float64(n)
+	case int:
+		dropped = float64(n)
+	case json.Number:
+		if parsed, err := n.Float64(); err == nil {
+			dropped = parsed
+		}
+	}
+	if dropped <= 0 {
+		return
+	}
+	s.m().beaconDropped.With(beacon).Add(dropped)
 }
 
 // countDispatch records a job going out.
@@ -250,7 +437,16 @@ func (s *Server) countReturn(ret *job.Return) {
 	m.jobReturns.With(result).Inc()
 	m.jobsOutstanding.Add(-1)
 	if ret.DurationMS > 0 {
-		observeSeconds(m.jobDuration.With(ret.Fun), time.Duration(ret.DurationMS)*time.Millisecond)
+		took := time.Duration(ret.DurationMS) * time.Millisecond
+		observeSeconds(m.jobDuration.With(ret.Fun), took)
+		// SPEC 26.2's `halite_state_run_duration_seconds`. The node
+		// already reports how long it spent, so the hub separates state
+		// runs out of the general job timing rather than asking for a
+		// second number -- a highstate that is getting slower is not
+		// visible in a distribution shared with `test.ping`.
+		if strings.HasPrefix(ret.Fun, "state.") {
+			observeSeconds(m.stateRun, took)
+		}
 	}
 	s.countStates(ret)
 }
@@ -292,6 +488,102 @@ func (s *Server) countStates(ret *job.Return) {
 	}
 }
 
+// measured counts and times every request the hub answers.
+//
+// A wrapper around the whole mux rather than per handler, so that a
+// route added later is counted without anybody remembering to: an
+// endpoint that is missing from the exposition looks like an endpoint
+// nobody calls.
+func (s *Server) measured(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started := s.now()
+		rec := &countingWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+
+		m := s.m()
+		route := hubRoute(r.URL.Path)
+		m.requests.With(route, strconv.Itoa(rec.status)).Inc()
+		if elapsed := s.now().Sub(started); elapsed >= 0 {
+			m.requestDuration.With(route).Observe(elapsed.Seconds())
+		}
+	})
+}
+
+// hubRoute names the route a path belongs to, with the variable part
+// removed.
+//
+// A series per job identifier or per file served is the unbounded label
+// the registry's own cap exists to survive, and on the file server it
+// would be one series per file in the tree.
+func hubRoute(path string) string {
+	if rest, ok := strings.CutPrefix(path, transport.PathFiles); ok && rest != "" {
+		return transport.PathFiles + "{path}"
+	}
+	if rest, ok := strings.CutPrefix(path, transport.PathJob); ok && rest != "" {
+		// `/v1/jobs/{jid}/kill` and `/v1/jobs/{jid}` are different
+		// routes; the identifier between them is not.
+		if _, tail, found := strings.Cut(rest, "/"); found && tail != "" {
+			return transport.PathJob + "{jid}/" + tail
+		}
+		return transport.PathJob + "{jid}"
+	}
+	return path
+}
+
+// countEnrollment records what happened to an enrollment request.
+func (s *Server) countEnrollment(result string) {
+	s.m().enrollments.With(result).Inc()
+}
+
+// observeSubscriberLag records how far behind the bus a subscriber was
+// when it was handed one event.
+//
+// Measured at delivery rather than as a queue depth, because the
+// question is "is anything watching the bus keeping up", and a
+// subscriber that reconnects from an old offset answers it directly.
+// An event with no stamp, and one stamped in the future by a node whose
+// clock is wrong, are both left out rather than recorded as a negative
+// lag.
+func (s *Server) observeSubscriberLag(stamp time.Time) {
+	if stamp.IsZero() {
+		return
+	}
+	if lag := s.now().Sub(stamp); lag >= 0 {
+		s.m().subscriberLag.Observe(lag.Seconds())
+	}
+}
+
+// ObserveGitFetch records one pass over every git remote.
+//
+// Exported because the git backend is assembled by the command rather
+// than by the server: the hub owns the registry and the command owns
+// the fetch, and this is the seam between them.
+func (s *Server) ObserveGitFetch(took time.Duration, refusals map[string]int) {
+	m := s.m()
+	if took >= 0 {
+		m.gitfsFetch.Observe(took.Seconds())
+	}
+	for reason, n := range refusals {
+		m.gitfsRefusals.With(reason).Add(float64(n))
+		if reason == "signature" {
+			// SPEC 13.3 makes an unverified ref one that is not
+			// served, which is a control rather than a warning. A
+			// control needs a number behind it.
+			m.gitfsSignatures.Add(float64(n))
+		}
+	}
+}
+
+// countOrchestration records an orchestration and how long compiling it
+// took.
+func (s *Server) countOrchestration(result string, compile time.Duration) {
+	m := s.m()
+	m.orchRuns.With(result).Inc()
+	if compile >= 0 {
+		m.stateCompile.Observe(compile.Seconds())
+	}
+}
+
 // countingWriter records what a handler answered, for the file server's
 // per-code counter and its byte total.
 type countingWriter struct {
@@ -323,6 +615,27 @@ func (w *countingWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// ReadFrom is what makes the file server's sendfile survive the
+// wrapper.
+//
+// The comment above said this passed through and it did not: only Flush
+// was here. It mattered little while the wrapper was on the file server
+// alone and matters more now that every response goes through one, so
+// the claim and the code agree here rather than one of them being
+// right.
+func (w *countingWriter) ReadFrom(r io.Reader) (int64, error) {
+	w.wrote = true
+	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		n, err := rf.ReadFrom(r)
+		w.bytes += n
+		return n, err
+	}
+	// No sendfile underneath: copy through Write, which counts.
+	n, err := io.Copy(struct{ io.Writer }{w.ResponseWriter}, r)
+	w.bytes += n
+	return n, err
 }
 
 func (s *Server) countFileRequest(w *countingWriter) {

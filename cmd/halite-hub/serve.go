@@ -271,30 +271,6 @@ func runServe(args *cli.Args) int {
 		localRoots = files.SnapshotDirs()
 	}
 	fetching := &fetchingBackends{git: gitBackend, s3: s3Backend, local: localRoots, files: files}
-	if fetching.any() {
-		// The first fetch happens before the hub answers, so a node
-		// asking in the first second gets the tree rather than an empty
-		// environment. A failure is a warning: a hub that will not
-		// start because a repository is unreachable is a hub that
-		// cannot serve the local roots it also has.
-		//
-		// The signal context does not exist yet, and each backend
-		// bounds its own requests.
-		if err := fetching.update(context.Background()); err != nil {
-			h.log.Warn("a fetching file server backend could not be updated at startup",
-				"error", err.Error())
-		}
-		if gitBackend != nil {
-			h.log.Info("git file server", "remotes", len(h.cfg.StringSlice("gitfs_remotes")),
-				"environments", strings.Join(gitBackend.Envs(), ","),
-				"verify_signatures", h.cfg.Bool("gitfs_verify_signatures", false))
-		}
-		if s3Backend != nil {
-			h.log.Info("s3 file server", "buckets", len(h.cfg.StringSlice("s3_buckets")),
-				"environments", strings.Join(s3Backend.Envs(), ","),
-				"partition", h.cfg.String("s3_partition", "aws"))
-		}
-	}
 
 	// Hub-side pillar. Without pillar_roots the hub compiles none and
 	// says so to a node that asks, rather than answering with an empty
@@ -377,6 +353,34 @@ func runServe(args *cli.Args) int {
 		MaxRelayDepth:  int(h.cfg.Int("relay_max_depth", transport.MaxRelayDepth)),
 	}
 	if fetching.any() {
+		// Set before the first fetch, which is why that fetch happens
+		// here rather than where the backends were built: a hub whose
+		// signing key was withdrawn refuses every ref at startup, and
+		// counting those only from the second update onwards reports
+		// the one that matters as zero.
+		fetching.observeGit = server.ObserveGitFetch
+		// The first fetch happens before the hub answers, so a node
+		// asking in the first second gets the tree rather than an empty
+		// environment. A failure is a warning: a hub that will not
+		// start because a repository is unreachable is a hub that
+		// cannot serve the local roots it also has.
+		//
+		// The signal context does not exist yet, and each backend
+		// bounds its own requests.
+		if err := fetching.update(context.Background()); err != nil {
+			h.log.Warn("a fetching file server backend could not be updated at startup",
+				"error", err.Error())
+		}
+		if gitBackend != nil {
+			h.log.Info("git file server", "remotes", len(h.cfg.StringSlice("gitfs_remotes")),
+				"environments", strings.Join(gitBackend.Envs(), ","),
+				"verify_signatures", h.cfg.Bool("gitfs_verify_signatures", false))
+		}
+		if s3Backend != nil {
+			h.log.Info("s3 file server", "buckets", len(h.cfg.StringSlice("s3_buckets")),
+				"environments", strings.Join(s3Backend.Envs(), ","),
+				"partition", h.cfg.String("s3_partition", "aws"))
+		}
 		server.UpdateFileServer = func(ctx context.Context) (any, error) {
 			err := fetching.update(ctx)
 			// The state is returned whether or not the update

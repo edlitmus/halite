@@ -765,8 +765,16 @@ var KeyDocs = map[string]KeyDoc{
 		Detail: "Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook, and a hook configuration that will not parse stops the service rather than serving some of them.",
 	},
 	"metrics": {
-		Group:  "The API service",
-		Detail: "Records and exposes Prometheus metrics at `/v1/metrics`. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them.",
+		Group:  "Logging and diagnostics",
+		Detail: "Records Prometheus metrics. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them. The hub and the API serve them at `/v1/metrics`; a node has no listener to serve anything on, so its exposition goes to `metrics_textfile` and nowhere else.",
+	},
+	"metrics_textfile": {
+		Group:  "Logging and diagnostics",
+		Detail: "The file a node writes its exposition to, for the textfile collector node_exporter already runs on most fleets — typically `/var/lib/node_exporter/textfile_collector/halite.prom`. Empty, the default, means a node keeps no metrics at all: opening a port on every managed machine to answer a scrape is a larger change to an estate than the numbers are worth, and the collector is the way this is done without one. Written by rename, because the collector reads the file whenever it likes and a half-written exposition is one it rejects whole.",
+	},
+	"metrics_interval": {
+		Group:  "Logging and diagnostics",
+		Detail: "How often the file is rewritten. It is also rewritten as the node stops, so a shutdown does not lose up to an interval of counting.",
 	},
 	"ldap_address": {
 		Group:  "LDAP and Active Directory",

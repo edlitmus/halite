@@ -101,7 +101,9 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 	orch := &orchRunner{server: s, principal: req.Principal, env: env, jid: jid}
 	registry := orchStates(orch)
 
+	compileStarted := s.now()
 	compiled := s.compileOrchestration(req, env, jid, registry)
+	compileTook := s.now().Sub(compileStarted)
 	for _, w := range compiled.RenderWarnings {
 		s.warn(w.String(), "component", "orchestration", "jid", string(jid))
 	}
@@ -109,6 +111,10 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		s.warn(d.String(), "component", "orchestration", "jid", string(jid))
 	}
 	if err := compiled.Err(); err != nil {
+		// Counted, and timed: an orchestration that fails to compile
+		// is one nobody ran, and it is the compilation that got slower
+		// before it stopped working.
+		s.countOrchestration("compile_failed", compileTook)
 		return nil, err
 	}
 
@@ -153,6 +159,7 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		}
 	}
 	s.recordOrch(run)
+	s.countOrchestration(string(run.State), compileTook)
 	s.emit(tagOrchRet(string(jid)), "", map[string]any{
 		"jid": string(jid), "state": run.State, "steps": len(run.Steps),
 	})

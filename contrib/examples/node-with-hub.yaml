@@ -94,3 +94,15 @@ returner: local
 # what SPEC 25.4 asks for. It replaces rather than extends.
 #
 # exec_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Prometheus metrics, SPEC 26.2. A node has no listener to serve an
+# exposition on and does not get one for this, so it writes the file
+# node_exporter's textfile collector already reads. Unset, which is the
+# default, a node records nothing.
+#
+# Only the agent writes it -- `halite-node connect`. A one-shot
+# `halite-node call` starts its counters at zero, and writing those over
+# the agent's file reads as a restart to a scraper.
+#
+# metrics_textfile: /var/lib/node_exporter/textfile_collector/halite.prom
+# metrics_interval: 60s

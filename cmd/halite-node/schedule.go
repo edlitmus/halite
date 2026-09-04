@@ -152,6 +152,7 @@ func (n *node) runScheduled(ctx context.Context, r schedule.Run) error {
 	n.log.Info("running a scheduled job",
 		"job", r.Job.Name, "fun", r.Job.Function, "jid", string(j.JID),
 		"due", r.Fire.Format(time.RFC3339))
+	n.metrics.countScheduleRun(r.Job.Name)
 
 	ret := n.executeJob(j)
 	if r.Job.ReturnJob {

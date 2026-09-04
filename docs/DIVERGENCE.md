@@ -2348,35 +2348,32 @@ than by anything failing.
 
 What this did not establish: the estate is two FreeBSD machines. Nothing
 here was run on Linux, and the systemd units remain unexercised.
-### 5.23 Eleven of SPEC 26.2's metric families are not registered
+### 5.23 Two of SPEC 26.2's metric families are not registered
 
 The specification's table names thirty-two; this build registers
-twenty-one. Counted mechanically against the source, not read off the
+thirty. Counted mechanically against the source, not read off the
 table:
 
 | Not registered | Why it matters |
 |---|---|
-| `halite_state_run_duration_seconds`, `halite_state_compile_duration_seconds` | State runs are counted by outcome and not timed, so a highstate that is getting slower is invisible. |
-| `halite_pillar_cache_hits_total` | The pillar cache is not instrumented. |
+| `halite_pillar_cache_hits_total` | The pillar cache is not instrumented, because there is no pillar cache: every request compiles. The counter waits on the cache. |
 | `halite_pillar_ext_failures_total` | External pillar is not built at all, so this one waits on a feature rather than on the counter. |
-| `halite_gitfs_fetch_duration_seconds`, `halite_gitfs_signature_failures_total` | gitfs fetches and verifies signatures, and neither is counted — a ref refused for an untrusted signature is a log line and nothing else. |
-| `halite_event_subscriber_lag_seconds` | A subscriber falling behind the bus is not measurable. |
-| `halite_beacon_dropped_total` | Beacon events are counted arriving and not counted dropped, which is half of the pair SPEC 26.2's own rule asks for. |
-| `halite_ext_invocations_total`, `halite_ext_duration_seconds`, `halite_ext_timeouts_total` | The extension model ships and is entirely uninstrumented. A bridged extension timing out is a job failure with no counter behind it. |
 
 SPEC 26.2 says "every bounded queue and every drop path in this
-specification has a corresponding counter", and `halite_beacon_dropped_total`
-and the extension timeouts are drop paths without one. That rule holds
-for the reactor, the event bus, the returner spools, and the relay
-spool, which all have theirs.
+specification has a corresponding counter". That now holds: the
+reactor, the event bus, the returner spools, the relay spool, a node's
+beacon queue, a node's job queue, and a node's queue of returns waiting
+for the hub all have theirs.
 
 The gap was found while documenting the metrics rather than by anything
 failing, which is the shape of it: an alert written from the
 specification's table against a family that is not registered does not
 error. It stays silent, and silence is what it would do if the estate
-were healthy.
+were healthy. Nine of the eleven that were missing are registered now,
+and the arithmetic in this entry is held to the source by a test, so it
+cannot go stale the way it was written to.
 
-The operations guide lists what is registered, and names these eleven so
+The operations guide lists what is registered, and names these two so
 that a reader writing alerts has both halves.
 
 ### 5.24 What a real Prometheus scraper found

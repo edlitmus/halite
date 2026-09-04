@@ -45,7 +45,16 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 		}
 	}
 
-	client := &transport.Client{HubURL: url, ServerName: args.Flag("server-name", "")}
+	client := &transport.Client{
+		HubURL:     url,
+		ServerName: args.Flag("server-name", ""),
+		// Every request this node makes to the hub is timed here, on
+		// the client rather than at each call site: pillar, the file
+		// server, returns, and the mine all go through the same two
+		// functions, and instrumenting those is what makes "is the hub
+		// slow or is this node slow" answerable from the node's side.
+		Observe: n.metrics.observeHubRequest,
+	}
 
 	// The CA is pinned at enrollment and read from disk afterwards. A
 	// node with no CA on disk is enrolling for the first time, and
@@ -342,9 +351,31 @@ func runConnect(args *cli.Args) int {
 		default:
 			n.log.Error("dropping a return because the return queue is full",
 				"jid", string(ret.JID))
+			n.metrics.countDroppedReturn()
 		}
 	})
 	n.executor = exec
+	n.metrics.gauge("halite_node_job_queue_depth",
+		"Jobs waiting for the executor.",
+		func() float64 { return float64(exec.Depth()) })
+	n.metrics.gauge("halite_node_return_queue_depth",
+		"Returns waiting to be posted to the hub.",
+		func() float64 { return float64(len(returns)) })
+	metricsFailed := func(err error) {
+		// Named, and warned rather than fatal: the first write happens
+		// at startup so a directory this account cannot use is
+		// reported where the operator who set it is looking, and a node
+		// that refused to start over a metrics file would be one no
+		// highstate could reach to fix.
+		n.log.Warn("the metrics file could not be written",
+			"path", n.metrics.path, "error", err.Error())
+	}
+	go n.metrics.run(ctx, metricsFailed)
+	// Written here rather than from that goroutine, because returning
+	// from main does not wait for one: the last write has to be on the
+	// path that leaves this function or it happens only when the
+	// scheduler allows.
+	defer n.metrics.Report(metricsFailed)
 	go exec.Run(ctx.Done())
 	go n.postReturns(ctx, args, returns)
 	go n.refreshGrains(ctx, args)
@@ -367,6 +398,7 @@ func runConnect(args *cli.Args) int {
 		// attachToHub.
 		n.attachToHub(args, client)
 		n.log.Info("connecting", "hub", client.HubURL)
+		n.metrics.countConnect()
 		err := client.Subscribe(ctx, transport.SubscribeRequest{
 			NodeID:  n.nodeID,
 			Grains:  grainsJSON(n),
@@ -374,6 +406,7 @@ func runConnect(args *cli.Args) int {
 		}, func(msg transport.Message) error {
 			return n.handle(msg)
 		})
+		n.metrics.countDisconnect()
 		if ctx.Err() != nil {
 			break
 		}

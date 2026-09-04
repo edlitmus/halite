@@ -76,7 +76,6 @@ func runServe(args *cli.Args) int {
 		OIDC:          s.oidcProvider(),
 		LDAP:          s.ldapClient(),
 	}
-
 	pair := servingCertificate(s, args)
 	addr := args.Flag("listen", s.cfg.String("listen", ":4511"))
 	ln, err := api.Listen(addr, pair)

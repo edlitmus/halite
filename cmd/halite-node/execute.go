@@ -39,7 +39,8 @@ func (n *node) executeJob(j *job.Job) *job.Return {
 		Schema:      job.ReturnSchema,
 	}
 	defer func() {
-		ret.DurationMS = time.Since(started).Milliseconds()
+		took := time.Since(started)
+		ret.DurationMS = took.Milliseconds()
 		// A module that panics must produce a failed return rather than
 		// take the agent down: one bad job would otherwise stop a node
 		// answering anything at all.
@@ -47,6 +48,10 @@ func (n *node) executeJob(j *job.Job) *job.Return {
 			fail(ret, fmt.Errorf("the job panicked: %v", r))
 			n.log.Error("a job panicked", "jid", string(j.JID), "fun", j.Fun, "panic", fmt.Sprint(r))
 		}
+		// Counted last, so that a job which panicked is counted as the
+		// failure it became rather than as whatever it was before the
+		// recover ran.
+		n.metrics.countJob(ret, took)
 	}()
 
 	// The job's environment, not this invocation's. A job for `staging`
@@ -202,10 +207,14 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 	}
 	compiler := n.stateCompiler(p, string(j.JID))
 
+	compileStarted := time.Now()
 	compiled := compiler.CompileHighstate()
 	if len(j.Arg) > 0 && fn != "highstate" {
 		compiled = compiler.CompileSLS(j.Arg)
 	}
+	// Timed whether or not it succeeded: a compilation that is getting
+	// slower until it fails is the one worth seeing coming.
+	n.metrics.observeStateCompile(time.Since(compileStarted))
 	for _, w := range compiled.RenderWarnings {
 		n.log.Warn(w.String(), "component", "render", "jid", string(j.JID))
 	}
@@ -226,12 +235,14 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 		return outcome{value: names, success: true}, nil
 	}
 
+	runStarted := time.Now()
 	result := (&runner.Runner{
 		States:   n.registry.States,
 		Exec:     n.registry.Exec,
 		Ctx:      n.contextFor(p, string(j.JID)),
 		FailHard: n.cfg.Bool("failhard", false),
 	}).Run(compiled.Low)
+	n.metrics.observeStateRun(time.Since(runStarted))
 	result.Secrets = n.secrets
 
 	code := result.RetCode()
@@ -276,15 +287,23 @@ var ErrQueueFull = errors.New("this node's job queue is full")
 // Offer puts a job on the queue after the replay checks of SPEC 6.3.
 func (e *executor) Offer(j *job.Job) error {
 	if err := e.guard.Admit(j); err != nil {
+		e.node.metrics.countRefusal(err)
 		return err
 	}
 	select {
 	case e.queue <- j:
 		return nil
 	default:
+		// SPEC 26.2 asks for a counter behind every bounded queue's
+		// overflow. This is the node's, and it was a refusal with
+		// nothing counting it.
+		e.node.metrics.countRefusal(ErrQueueFull)
 		return ErrQueueFull
 	}
 }
+
+// Depth is how many jobs are waiting, for a gauge.
+func (e *executor) Depth() int { return len(e.queue) }
 
 // Run works the queue until the channel closes.
 func (e *executor) Run(done <-chan struct{}) {

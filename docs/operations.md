@@ -801,12 +801,26 @@ the tree like anything else, renewed on a schedule.
 
 ## Metrics
 
-Every component records Prometheus metrics and exposes them at
-`/v1/metrics`. On by default; `metrics: false` turns the recording off.
+Every component records Prometheus metrics. On by default;
+`metrics: false` turns the recording off.
 
-Point the scraper at `halite-api` on 4511, not at the hub: the API
-answers with both expositions merged, and the hub speaks its own ALPN
-identifier that no ordinary client can send. Reading them by hand:
+The hub and the API expose them at `/v1/metrics`. Point the scraper at
+`halite-api` on 4511, not at the hub: the API answers with both
+expositions merged, and the hub speaks its own ALPN identifier that no
+ordinary client can send.
+
+A node has no listener and does not get one for this. It writes its
+exposition to the file `metrics_textfile` names, which is the one
+node_exporter's textfile collector reads, so the scraper that already
+reaches every machine picks it up with no port opened anywhere:
+
+```yaml
+# node.yaml
+metrics_textfile: /var/lib/node_exporter/textfile_collector/halite.prom
+```
+
+Unset, which is the default, a node records nothing. Reading the hub's
+by hand:
 
 ```sh
 halite-hub metrics --as ed

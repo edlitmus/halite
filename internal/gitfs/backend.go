@@ -35,6 +35,30 @@ type RemoteState struct {
 	// Refused lists refs that were dropped, with why — a signature
 	// that did not verify, most often.
 	Refused map[string]string
+	// RefusedKind counts the same refusals by category rather than by
+	// ref, because a metric cannot carry one series per branch and an
+	// operator asking "is anything failing verification" wants the
+	// number, not the messages. The categories are `signature` and
+	// `materialise`.
+	RefusedKind map[string]int
+}
+
+// The reasons a ref is not served, as stable tokens.
+const (
+	RefusedSignature   = "signature"
+	RefusedMaterialise = "materialise"
+)
+
+// refuse records one ref that is not served, with why.
+func (r *RemoteState) refuse(ref, kind string, err error) {
+	if r.Refused == nil {
+		r.Refused = map[string]string{}
+	}
+	if r.RefusedKind == nil {
+		r.RefusedKind = map[string]int{}
+	}
+	r.Refused[ref] = err.Error()
+	r.RefusedKind[kind]++
 }
 
 // New checks the configuration and answers with a backend that has
@@ -110,14 +134,14 @@ func (b *Backend) Update(ctx context.Context) error {
 				// Not served. SPEC 13.3: a ref that fails verification
 				// is not served, which is the difference between a
 				// control and a log line.
-				result.Refused[ref.Name] = err.Error()
+				result.refuse(ref.Name, RefusedSignature, err)
 				b.opts.log("warn", "a gitfs ref is not served because its signature did not verify",
 					"remote", remote.label(), "ref", ref.Name, "error", err.Error())
 				continue
 			}
 			target := filepath.Join(b.opts.CacheDir, remote.mirrorDir(), "trees", ref.Commit)
 			if err := b.opts.materialise(ctx, mirror, target, remote, ref); err != nil {
-				result.Refused[ref.Name] = err.Error()
+				result.refuse(ref.Name, RefusedMaterialise, err)
 				b.opts.log("warn", "a gitfs ref could not be materialised",
 					"remote", remote.label(), "ref", ref.Name, "error", err.Error())
 				continue
@@ -158,6 +182,20 @@ func (b *Backend) Update(ctx context.Context) error {
 		return fmt.Errorf("some gitfs remotes served nothing: %s", strings.Join(failures, ", "))
 	}
 	return nil
+}
+
+// Refusals totals the last update's refused refs by category, across
+// every remote, for a caller keeping metrics.
+func (b *Backend) Refusals() map[string]int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := map[string]int{}
+	for _, remote := range b.state {
+		for kind, n := range remote.RefusedKind {
+			out[kind] += n
+		}
+	}
+	return out
 }
 
 // sweep removes materialised trees for commits no ref points at any
