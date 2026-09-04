@@ -160,13 +160,18 @@ func TestARealStateGapStillBlocks(t *testing.T) {
     - device: /dev/da0p1
     - fstype: ufs
 
-publish_it:
-  pkgrepo.managed:
-    - name: deb https://example/apt stable main
+trust_it:
+  ssh_known_hosts.present:
+    - name: build.example
+    - user: deploy
 `,
 	})
 	rep := auditSLSTree(t, root)
-	for _, name := range []string{"mount.mounted", "pkgrepo.managed"} {
+	// Both are still gaps. `pkgrepo.managed` used to stand here and no
+	// longer does, which is the guard working the other way: a test that
+	// asserts a gap exists has to be corrected when the gap is filled,
+	// or it starts asserting that a shipped module is missing.
+	for _, name := range []string{"mount.mounted", "ssh_known_hosts.present"} {
 		f, ok := findingFor(rep, name)
 		if !ok {
 			t.Fatalf("%s produced no finding", name)

@@ -11,7 +11,7 @@ refusal registry was counted, and each named feature was traced to the
 line that implements or refuses it. Where a claim here is a count, the
 command that produced it is one a reader can run.
 
-**Date of measurement:** 2026-09-04, against `f73badd`, on
+**Date of measurement:** 2026-09-04, against `c6a9656`, on
 windows/amd64 with Go 1.26.6. The previous revision of this document was
 written on 2026-09-02 against `57b0d39`; forty-three commits have landed
 since, and section 0 says which of its findings are now closed.
@@ -85,66 +85,76 @@ This is the largest block of work left, and it is the one that decides
 whether the estate can migrate. The registries answer:
 
 ```
-halite-node call sys.list_modules        # 48
-halite-node call sys.list_state_modules  # 26
+halite-node call sys.list_modules        # 50
+halite-node call sys.list_state_modules  # 27
 ```
 
 against SPEC 15.2's 56 core execution modules, 15.5's 47 core state
 modules, and 15.3's 65 platform modules.
 
-### 2.1 Core state modules whose execution side already ships (highest ratio)
+### 2.1 Core state modules whose execution side is partly there
 
-Five states are missing for modules that are otherwise built, so the work
-is the state wrapper and nothing else. Each is a day or less and each
-unblocks a declaration a tree already writes:
+The previous revision of this section called these "the state wrapper and
+nothing else", and that was wrong. The execution modules named here are
+registered, but what they register is the *reading* half:
 
-| State | Execution side | Note |
+```
+mount.active                                    timezone.get_zone
+environ.get  environ.has_value  environ.items   zpool.healthy  zpool.list
+```
+
+There is no `mount.mount`, no `timezone.set_zone`, no `environ.setval`.
+So each of these is a state *and* the mutating execution functions under
+it — still small, still worth doing early, but two pieces rather than
+one, and a plan that said otherwise would have had somebody discover it
+an hour in.
+
+| State | What the execution side has | What it also needs |
 |---|---|---|
-| `mount.mounted`, `mount.unmounted` | `mount` ships | one estate reference |
-| `timezone.system` | `timezone` ships | universal |
-| `environ.setenv` | `environ` ships | universal |
-| `zpool.present` | `zpool` ships | completes the pair with `zfs` |
-| `beacon.present`, `beacon.absent` | `beacons` ships | a tree cannot declare a beacon today |
+| `timezone.system` | `get_zone` | `set_zone`; `timedatectl` on Linux, `/etc/localtime` elsewhere, `tzutil` on Windows |
+| `environ.setenv` | `get`, `has_value`, `items` | `setval`, and a decision about what "permanent" means: `/etc/environment` on Linux, the registry on Windows |
+| `mount.mounted` | `active` | `mount`, `umount`, `remount`, `set_fstab` |
+| `zpool.present` | `healthy`, `list` | `create`, `destroy`, `export`, `import` — the largest of the four |
+| `beacon.present` | the `beacons` module ships whole | the state only, so this one *is* just the wrapper |
 
-`schedule.present`/`absent` is the same shape — the `schedule` exec
-module ships with 12 functions and there is no state — and the estate
-references `schedule.absent` once.
+`schedule.present`/`absent` is the same shape as `beacon`: the `schedule`
+execution module ships with 12 functions and there is no state, and the
+estate references `schedule.absent` once. Those two are the genuinely
+cheap ones.
 
 ### 2.2 Core modules missing entirely
 
-**Execution, 23 of SPEC 15.2**: `at`, `acl`, `apparmor`, `blockdev`,
-`data`, `firewall`, `hostname`, `http`, `kernelpkg`, `locale`,
-`logrotate`, `nfs`, `pkgrepo`, `ps`, `reboot`, `selinux`, `shadow`,
-`state`, `sudo`, `swap`, `system`, `tls`, `tmpfs`.
+**Execution, 21 of SPEC 15.2**: `at`, `acl`, `apparmor`, `blockdev`,
+`data`, `firewall`, `hostname`, `kernelpkg`, `locale`, `logrotate`,
+`nfs`, `ps`, `reboot`, `selinux`, `shadow`, `state`, `sudo`, `swap`,
+`system`, `tls`, `tmpfs`. `http` and `pkgrepo` have since shipped.
 
 **State, 23 of SPEC 15.5**: `acl`, `apparmor`, `at`, `beacon`,
 `environ`, `firewall`, `hostname`, `iptables`, `kernelpkg`, `locale`,
-`logrotate`, `lvm`, `mac_defaults`, `mount`, `nftables`, `pkgrepo`,
-`pro`, `reboot`, `selinux`, `ssh_known_hosts`, `sudo`, `timezone`,
-`win_wua`, `zpool`.
+`logrotate`, `lvm`, `mac_defaults`, `mount`, `nftables`, `pro`,
+`reboot`, `selinux`, `ssh_known_hosts`, `sudo`, `timezone`, `win_wua`,
+`zpool`. `pkgrepo` has since shipped.
 
 Ranked by what the estate's own tree reaches for, and by what a
-migration is blocked on:
+migration is blocked on. **`pkgrepo` and `http` are done**, and are struck
+from the ranking rather than left in it:
 
-1. **`pkgrepo`**, exec and state. Five references in the estate tree, and
-   it exists as neither. A tree that manages an apt source cannot be
-   migrated at all. Provider-shaped like `pkg`: `sources.list.d` on
-   Debian, `.repo` files on RHEL, `choco source` on Windows.
-2. **`http`**. SPEC 15.2 gives it a security contract nothing else has —
-   mandatory certificate verification, a default timeout, a maximum
-   response size, a redirect limit, and a denylist for link-local and
-   metadata addresses unless explicitly permitted. Salt's `http.query`
-   will fetch `169.254.169.254` from a templated state. Self-contained
-   and testable on any platform.
-3. **`hostname`**, exec and state. Universal, small.
-4. **`ssh_known_hosts`** state. `ssh_auth` ships; this is its pair.
-5. **`system`**, `reboot`, `ps`, `status` depth. What an operator reaches
+1. **`hostname`**, exec and state. Universal, small, and the last of the
+   ones every estate touches.
+2. **`ssh_known_hosts`** state. `ssh_auth` ships; this is its pair.
+3. **`system`**, `reboot`, `ps`, `status` depth. What an operator reaches
    for during an incident.
-6. **`selinux`**, `apparmor`, `firewall`, `iptables`, `nftables`,
+4. **`selinux`**, `apparmor`, `firewall`, `iptables`, `nftables`,
    `sudo`, `acl`. Platform-shaped and mostly Linux; see 2.3.
-7. The rest — `at`, `blockdev`, `data`, `kernelpkg`, `locale`,
+5. The rest — `at`, `blockdev`, `data`, `kernelpkg`, `locale`,
    `logrotate`, `nfs`, `swap`, `tls`, `tmpfs`, `lvm` — each small, none
    blocking.
+
+`shadow` and `state` are deliberately last. `shadow` overlaps
+`user.present`'s ageing arguments, which section 6 lists as an open
+question, and building it before that is answered would mean building it
+twice. `state` as an execution module is `state.apply` callable from a
+reaction, which the reactor already reaches another way.
 
 ### 2.3 Platform modules: 59 of 65
 
@@ -392,14 +402,18 @@ Sequenced by value per unit of work, and by what unblocks what.
 
 **Now — the estate's own blockers**
 
-1. **`pkgrepo`, exec and state.** Five estate references and it exists as
-   neither; a tree that manages an apt source cannot migrate (§2.2).
-2. **The five states whose execution side already ships** — `mount`,
-   `timezone`, `environ`, `zpool`, `beacon`, and `schedule` beside them.
-   The highest ratio of unblocked declarations to work in the document
-   (§2.1).
-3. **`http`**, with SPEC 15.2's security contract. Self-contained, and
-   the contract is the point (§2.2).
+1. ~~`pkgrepo`, exec and state~~ — **done.** Virtual, with providers for
+   apt, dnf/yum and Chocolatey. The convergence test caught the defect
+   worth knowing about: a declaration carries `gpgcheck` on every
+   platform and apt has no such concept, so the provider rather than the
+   state has to answer whether a declaration matches.
+2. ~~`http`, with SPEC 15.2's security contract~~ — **done.** The address
+   denylist is in the dialer rather than on the URL, so it survives a
+   name that resolves to the metadata service, a redirect into it, and
+   DNS rebinding.
+3. **The states in §2.1** — `beacon` and `schedule` first, since those
+   two really are just the wrapper; then `timezone`, `environ` and
+   `mount`, each of which needs its mutating execution half too.
 4. **`hostname`** and **`ssh_known_hosts`**. Small and universal.
 
 **Next — stop the drift**
