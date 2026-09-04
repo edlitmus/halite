@@ -84,6 +84,7 @@ func New() *Registries {
 
 	// The core modules of SPEC section 15.2 that were absent.
 	registerHTTP(r)
+	registerPkgRepo(r)
 	return r
 }
 

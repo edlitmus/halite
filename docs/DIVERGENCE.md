@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **49 execution modules / 279 functions** and **26 state
-modules / 71 functions**.
+The build ships **50 execution modules / 283 functions** and **27 state
+modules / 73 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -439,7 +439,7 @@ different reason is given.
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `nfs` | not implemented | 0 | |
-| `pkgrepo` | not implemented | 0 | |
+| `pkgrepo` | implemented | 4 | list_repos, get_repo, mod_repo, del_repo; virtual, with providers for apt, dnf/yum and Chocolatey 
 | `ps` | not implemented | 0 | process enumeration is per-platform; FreeBSD needs `kvm` or `sysctl kern.proc` |
 | `reboot` | not implemented | 0 | |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
@@ -493,7 +493,7 @@ different reason is given.
 | `nftables` | not implemented | 0 | Linux only |
 | `npm` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pip` | implemented | 2 | install and remove, comparing against the tool's own listing |
-| `pkgrepo` | not implemented | 0 | |
+| `pkgrepo` | implemented | 2 | managed and absent, both converging on a second run 
 | `pro` | not implemented | 0 | Ubuntu only |
 | `reboot` | not implemented | 0 | |
 | `schedule` | implemented | 1 | `absent`; the runtime control is in the execution module |
