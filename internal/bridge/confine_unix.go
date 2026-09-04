@@ -45,13 +45,6 @@ func Confine() {
 	apply("HALITE_EXT_RLIMIT_NPROC", rlimitNPROC)
 }
 
-// NetworkDenied reports whether the host declined to grant the network.
-//
-// An extension built with this package checks it and does not dial. It
-// is a declaration honoured rather than a boundary enforced, which is
-// the difference `Sandbox.Describe` spells out.
-func NetworkDenied() bool { return os.Getenv("HALITE_EXT_NETWORK") == "deny" }
-
 // setRlimit writes a limit into a syscall.Rlimit field of whatever width
 // the platform gave it.
 //

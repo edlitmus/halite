@@ -196,3 +196,49 @@ func Owner(path string) (string, error) {
 	}
 	return describe(sid), nil
 }
+
+// RestrictDir is Restrict for a directory: the same three trustees, and
+// the entries are inherited by what is created inside it.
+//
+// A directory needs the inheritance flags or the restriction stops at
+// the directory itself, and a file written into it afterwards picks up
+// whatever the parent above would have given it. That is the difference
+// between "this directory is private" and "this directory's name is
+// private", and it is the one that matters for a cache of extension
+// binaries or a key store.
+func RestrictDir(path string) error {
+	own, err := owner(path)
+	if err != nil {
+		return err
+	}
+	trustees, err := wellKnown()
+	if err != nil {
+		return err
+	}
+	trustees = append([]*windows.SID{own}, trustees...)
+
+	entries := make([]windows.EXPLICIT_ACCESS, 0, len(trustees))
+	for _, sid := range trustees {
+		entries = append(entries, windows.EXPLICIT_ACCESS{
+			AccessPermissions: fullControl,
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       windows.SUB_CONTAINERS_AND_OBJECTS_INHERIT,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
+				TrusteeValue: windows.TrusteeValueFromSID(sid),
+			},
+		})
+	}
+	acl, err := windows.ACLFromEntries(entries, nil)
+	if err != nil {
+		return fmt.Errorf("building an access control list for %s: %w", path, err)
+	}
+	err = windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, acl, nil)
+	if err != nil {
+		return fmt.Errorf("restricting %s: %w", path, err)
+	}
+	return nil
+}

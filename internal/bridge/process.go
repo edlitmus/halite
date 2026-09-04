@@ -68,6 +68,12 @@ type Process struct {
 	dead    bool
 	deadFor string
 	nextID  int
+
+	// releaseSandbox gives back whatever the platform's confinement
+	// holds. It runs once the extension is gone and not before: on
+	// Windows the handle it closes is the job object, and closing that
+	// while the extension is running is what kills it.
+	releaseSandbox func()
 }
 
 // Info is what an extension declared about itself.
@@ -101,7 +107,8 @@ func Start(ctx context.Context, opts Options) (*Process, error) {
 	if cmd.Env == nil {
 		cmd.Env = []string{}
 	}
-	if err := opts.Sandbox.apply(cmd); err != nil {
+	afterStart, releaseSandbox, err := opts.Sandbox.apply(cmd)
+	if err != nil {
 		return nil, err
 	}
 
@@ -118,10 +125,22 @@ func Start(ctx context.Context, opts Options) (*Process, error) {
 		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
+		releaseSandbox()
+		return nil, fmt.Errorf("starting %s: %w", opts.Path, err)
+	}
+	// The confinement a platform can only apply to a process that
+	// exists. A failure here is fatal: an extension that is running and
+	// not confined is worse than one that did not start.
+	if err := afterStart(); err != nil {
+		_ = cmd.Process.Kill()
+		releaseSandbox()
 		return nil, fmt.Errorf("starting %s: %w", opts.Path, err)
 	}
 
-	p := &Process{opts: opts, cmd: cmd, stdin: stdin, stdout: bufio.NewReader(stdout)}
+	p := &Process{
+		opts: opts, cmd: cmd, stdin: stdin, stdout: bufio.NewReader(stdout),
+		releaseSandbox: releaseSandbox,
+	}
 	go p.drainStderr(stderr)
 
 	if err := p.handshake(ctx); err != nil {
@@ -311,6 +330,10 @@ func (p *Process) Kill(reason string) {
 	case <-time.After(2 * time.Second):
 		_ = p.cmd.Process.Kill()
 		<-exited
+	}
+	if p.releaseSandbox != nil {
+		p.releaseSandbox()
+		p.releaseSandbox = nil
 	}
 }
 

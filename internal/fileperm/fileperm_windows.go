@@ -21,6 +21,12 @@ func Apply(path string, mode os.FileMode) error {
 	if mode&0o077 != 0 {
 		return nil
 	}
+	// A directory takes the inheriting form, or the restriction stops
+	// at the directory itself and a file written into it afterwards
+	// picks up whatever the parent above would have given it.
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return winsec.RestrictDir(path)
+	}
 	return winsec.Restrict(path)
 }
 
