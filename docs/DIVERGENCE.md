@@ -379,7 +379,7 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **48 execution modules / 278 functions** and **26 state
+The build ships **49 execution modules / 279 functions** and **26 state
 modules / 71 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -434,7 +434,7 @@ different reason is given.
 | `data` | not implemented | 0 | |
 | `firewall` | not implemented | 0 | |
 | `hostname` | not implemented | 0 | |
-| `http` | not implemented | 0 | needs the address denylist of 15.2 before it is safe to ship |
+| `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |

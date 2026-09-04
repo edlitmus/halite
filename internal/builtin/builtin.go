@@ -81,6 +81,9 @@ func New() *Registries {
 	registerWinService(r)
 	registerWinRegistry(r)
 	registerWinTask(r)
+
+	// The core modules of SPEC section 15.2 that were absent.
+	registerHTTP(r)
 	return r
 }
 
