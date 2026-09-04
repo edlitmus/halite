@@ -768,7 +768,7 @@ added to and nobody re-reads the sentence.
 | Linux amd64 | yes | yes, under emulation — all but three packages, named in 4.1 | yes — a node enrolled with a hub, highstate applied, under systemd (Ubuntu; see 4.5) |
 | Linux arm64 | yes | no | no |
 | macOS | yes, since 2026-08-29, and built natively on one | no | no |
-| Windows | yes | no | no |
+| Windows | yes | yes, natively on Windows 11 — every package, no skips | yes — grains from the registry and Win32, the file states, `cmd`, the Chocolatey provider, the job-object extension sandbox |
 
 ### 4.0 Where each platform keeps its files
 
@@ -976,6 +976,82 @@ What it does not establish, and 4.2 still stands for the rest:
   renewal, or a week of scheduled highstates does on that host.
 - Not FIPS. The `-fips` artifacts ship for Linux and have been run
   nowhere.
+
+### 4.6 What running on Windows established
+
+The suite had never been run on Windows. On the first native run it
+failed **80 tests across 12 of 55 packages**; it now passes all 55 with
+no skips. Almost none of that was test noise. What follows is what a
+platform that had only ever been cross-compiled for was hiding, because
+each item is a class of defect rather than a one-off.
+
+**Checks written in unix terms that answered the wrong question.**
+
+- A POSIX mode does not exist on Windows: `os.Stat` synthesises 0666 for
+  anything writable. So `ReadSecretFile` refused every secret file on
+  the platform and told the operator to run a chmod that changes
+  nothing — a hub or node configured with a signing secret could not
+  start. The return log, `cmd.script`'s temporary script, the enrollment
+  key and everything else written at 0600 were readable by every account
+  on the machine. Three tests asserted the mode and passed by agreeing
+  with the wrong answer; a fourth made a directory unwritable with a
+  chmod that returned nil and changed nothing, so it asserted a refusal
+  that never came. `internal/winsec` and `internal/fileperm` carry the
+  intent out with an access control list.
+- `file.managed` compared the synthesised 0666 against the mode it was
+  asked for, found them different, ran a chmod that changed nothing, and
+  found them different again next run. **No file state on Windows ever
+  converged**: every run reported a change, `state.apply` never returned
+  the exit code for a converged run, and a highstate could not tell
+  drift from noise.
+- gitfs judged a remote local if it started with a slash, so a hub
+  configured with `C:\srv\states` was told its own disk "is not an
+  encrypted transport" — and `C:\Users\some.name@corp\states` satisfied
+  the scp-style test and would have been handed to git as an ssh remote.
+- `grains.d` decided what to run by the execute bit, so every provider
+  script was parsed as YAML and the operator got a YAML error about a
+  shebang line.
+
+**Things that were absent rather than wrong.**
+
+- `/bin/sh` was the shell everywhere, so `shell: true` and every
+  `cmd.shell` failed. `cmd.script` wrote an extensionless temporary file
+  that CreateProcess will not run. The clean environment carried four
+  variables, and a Windows process without `SystemRoot` fails before
+  `main`.
+- The grains were a stub: `osrelease` empty, memory zero, every hardware
+  field an empty string.
+- There was no package provider, so `pkg.installed` answered with a list
+  of six providers, none of them for this platform.
+- The extension sandbox was the process boundary and a note saying so.
+
+**Defects on every platform that only Windows made visible.**
+
+- Six packages had their own copy of write-a-temp-file-and-rename. All
+  six are correct on unix, where rename(2) does not care who holds the
+  destination open, and all six raced on Windows, where MoveFileEx must
+  open the destination for delete with no sharing. Measured here: 12 of
+  200 replaces and 48 of 200 reads lost when one goroutine did each. The
+  hub could not record a delivery while the API served the same job.
+- `eventbus.Close` set the current segment to nil and the next append
+  reopened it, so a closed bus went on accepting events and held the
+  segment for the life of the process. Shutdown ordering was
+  unenforceable. Unix hides it: an open file can be unlinked.
+- A grain provider that timed out was killed and then waited on through
+  `cmd.Output()`, which does not return until the output pipe closes —
+  and a killed script's children hold it open. Measured at 61 seconds
+  against a 300ms timeout, on any platform.
+- A test that scripted `npm ls` output still asked the host whether npm
+  existed, so it passed or failed on what the developer happened to have
+  installed. `exec.Context` grew a `Lookup` seam beside `Runner`.
+
+**What is still not built.** The module set of SPEC 15.3: no `win_dacl`,
+so a state setting an owner is refused rather than applied; no
+`win_service`, so the platform has no service provider; none of the
+other sixteen. `runas` is refused, because starting a process as another
+account here needs that account's credentials. The restricted token of
+SPEC 24.3 is absent, so an extension is bounded but not de-privileged.
+
 
 ## 5. Test coverage against SPEC 31
 
@@ -1437,8 +1513,21 @@ used two `file.directory` arguments this build did not have.
 
 ### 5.7 What the Salt differential covers, and what it does not
 
-`make check` runs it against whichever `salt-call` is on PATH. It has
-been run against Salt 3006.25 and 3008.2.
+`make saltdiff` runs it in a container carrying Salt's own onedir
+bundle, pinned. `make check` still runs it against whichever `salt-call`
+is on PATH and skips where there is none — which is every machine this
+project is developed on, so until the container the primary correctness
+gate was green by not running.
+
+It has been run against Salt 3006.25, 3007.1 and 3008.2. Running it
+against 3007 for the first time found three things: `pillar.items`
+refuses the `unmask=True` that 3008 needs and 3006 ignores, so the gate
+could not run there at all; the `pillargrain` tree targeted
+`kernel:FreeBSD`, so anywhere but the development host it compared two
+rendering errors; and the one recorded low-state deviation named 3006
+alone when 3007 does the same thing. A deviation row now lists the
+majors it was observed under rather than one, so a version nobody has
+tried fails and makes somebody look.
 
 Compared, over ten trees:
 
@@ -3162,15 +3251,23 @@ What is **not** built in phase 5:
   against every target.
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
-- **Windows and macOS parity.** The code cross-compiles and none of it
-  has been run there.
+- **macOS parity.** The package and service providers ship; the module
+  set of SPEC 15.3 does not.
+- **Windows parity, in part.** The suite now runs natively there and
+  passes: see 4.6. What is built is the platform-neutral half — grains,
+  the file states, `cmd`, the Chocolatey provider, the extension
+  sandbox. What is not is the module set of SPEC 15.3: no `win_dacl`,
+  so a state that sets an owner is refused rather than applied, and no
+  `win_service`, so there is no service provider for the platform.
 - **`minionfs`/`nodefs`**, which SPEC 13.2 marks a subset and disables
   by default.
 
 ### 6.2 Build and release
 
-- `make release` has never been run. There is nothing to vendor, since the
-  dependency count is zero, so the vendoring step is untested.
+- `make release` has never been run. The vendoring step now has something
+  to vendor — `golang.org/x/sys`, from SPEC 4.2's allowlist, for the
+  Win32 bindings — and `go mod vendor` runs; all eight targets still
+  cross-compile from the vendored tree.
 - Cross-compilation is verified for the four target platforms; nothing beyond
   compilation is verified.
 - The Makefile is written for BSD make and uses `!=` rather than

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
 )
@@ -469,15 +470,17 @@ func refuseWrapper(file string, fragment *value.Map, kind string) error {
 // A file others can read is refused. This is a signing key: with it,
 // anyone on the machine can forge a signed delivery from this node, and
 // starting anyway would mean the one check that would have caught it
-// passed silently. The fix is one chmod and the message says so.
+// passed silently. The message says what to run, in the terms the
+// platform uses: a mode on unix, an access control list on Windows,
+// where a mode says nothing about who can read a file.
 func ReadSecretFile(path string) (string, error) {
-	info, err := os.Stat(path)
+	others, err := fileperm.Others(path)
 	if err != nil {
 		return "", fmt.Errorf("reading the secret at %s: %w", path, err)
 	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("the secret at %s is mode %o and is readable by others; "+
-			"chmod 600 it", path, info.Mode().Perm())
+	if len(others) > 0 {
+		return "", fmt.Errorf("the secret at %s can be read by %s; %s",
+			path, strings.Join(others, ", "), fileperm.Advice(path))
 	}
 	raw, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {

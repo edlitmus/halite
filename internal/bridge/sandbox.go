@@ -3,6 +3,7 @@ package bridge
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -109,33 +110,105 @@ func (s *Sandbox) Describe() []string {
 	return out
 }
 
+// limitSupport says which of SPEC 24.3's limits this platform can
+// actually enforce, and what to call the one that bounds memory.
+//
+// The platforms differ in more than "yes" and "no", so a single boolean
+// made the description wrong on one of them: setrlimit bounds virtual
+// address space, a job object bounds committed memory, and the warning
+// that belongs beside the first does not belong beside the second.
+type limitSupport struct {
+	// Memory, CPU, OpenFiles and Processes are whether that limit is
+	// enforced at all.
+	Memory    bool
+	CPU       bool
+	OpenFiles bool
+	Processes bool
+	// MemoryLabel names what the memory limit bounds.
+	MemoryLabel string
+	// MemoryUnbounded is what to say when none is set.
+	MemoryUnbounded string
+}
+
 func (s *Sandbox) describeLimits() []string {
-	var out []string
-	if !limitsSupported() {
+	sup := limitsAvailable()
+	if !sup.Memory && !sup.CPU && !sup.OpenFiles && !sup.Processes {
 		return []string{"resource limits: not enforced on this platform"}
 	}
-	if s.MemoryBytes > 0 {
-		out = append(out, fmt.Sprintf("address space %d MiB", s.MemoryBytes>>20))
-	} else {
-		out = append(out, "address space unbounded (RLIMIT_AS kills a garbage-collected runtime)")
+	var out []string
+	if sup.Memory {
+		if s.MemoryBytes > 0 {
+			out = append(out, fmt.Sprintf("%s %d MiB", sup.MemoryLabel, s.MemoryBytes>>20))
+		} else {
+			out = append(out, sup.MemoryUnbounded)
+		}
 	}
-	if s.CPUSeconds > 0 {
+	if sup.CPU && s.CPUSeconds > 0 {
 		out = append(out, fmt.Sprintf("cpu %ds", s.CPUSeconds))
 	}
-	if s.OpenFiles > 0 {
+	if sup.OpenFiles && s.OpenFiles > 0 {
 		out = append(out, fmt.Sprintf("open files %d", s.OpenFiles))
 	}
-	if s.Processes > 0 {
+	if sup.Processes && s.Processes > 0 {
 		out = append(out, fmt.Sprintf("processes %d", s.Processes))
+	}
+	// A limit that was asked for and cannot be enforced here is said so
+	// out loud. Silently dropping it is how an operator comes to believe
+	// an extension is bounded when it is not.
+	for _, unenforced := range []struct {
+		set  bool
+		name string
+	}{
+		{!sup.Memory && s.MemoryBytes > 0, "memory"},
+		{!sup.CPU && s.CPUSeconds > 0, "cpu"},
+		{!sup.OpenFiles && s.OpenFiles > 0, "open files"},
+		{!sup.Processes && s.Processes > 0, "processes"},
+	} {
+		if unenforced.set {
+			out = append(out, unenforced.name+" limit set but not enforced on this platform")
+		}
+	}
+	return out
+}
+
+// limitEnvironment carries the sandbox's decisions to a child that
+// knows how to apply them to itself.
+//
+// Platform-neutral, and it used to be in the unix file. That left an
+// extension on Windows never told the network was denied — the one part
+// of the sandbox that does not need a kernel mechanism, and the part
+// every extension built with this package honours.
+func (s *Sandbox) limitEnvironment() []string {
+	var out []string
+	if s.MemoryBytes > 0 {
+		out = append(out, "HALITE_EXT_RLIMIT_AS="+strconv.FormatUint(s.MemoryBytes, 10))
+	}
+	if s.CPUSeconds > 0 {
+		out = append(out, "HALITE_EXT_RLIMIT_CPU="+strconv.FormatUint(s.CPUSeconds, 10))
+	}
+	if s.OpenFiles > 0 {
+		out = append(out, "HALITE_EXT_RLIMIT_NOFILE="+strconv.FormatUint(s.OpenFiles, 10))
+	}
+	if s.Processes > 0 {
+		out = append(out, "HALITE_EXT_RLIMIT_NPROC="+strconv.FormatUint(s.Processes, 10))
+	}
+	if !s.Network {
+		out = append(out, "HALITE_EXT_NETWORK=deny")
 	}
 	return out
 }
 
 // apply configures the command. A nil sandbox applies nothing, which is
 // what a development build does.
-func (s *Sandbox) apply(cmd *exec.Cmd) error {
+//
+// It returns a hook to run once the child exists and one to run when it
+// is gone, because a job object can only be assigned to a process that
+// has started. On unix both are empty.
+func (s *Sandbox) apply(cmd *exec.Cmd) (afterStart func() error, cleanup func(), err error) {
+	nothing := func() {}
 	if s == nil {
-		return nil
+		return func() error { return nil }, nothing, nil
 	}
+	cmd.Env = append(cmd.Env, s.limitEnvironment()...)
 	return s.applyPlatform(cmd)
 }

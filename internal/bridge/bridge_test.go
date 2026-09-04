@@ -32,7 +32,11 @@ func echoExtension(t *testing.T) string {
 			echoErr = err
 			return
 		}
-		echoPath = filepath.Join(dir, "echoext")
+		// The name matters on a platform where what makes a file
+		// runnable is its extension: CreateProcess will not start
+		// `echoext`, and Go reports that as "executable file not
+		// found in %%PATH%%" naming an absolute path.
+		echoPath = filepath.Join(dir, exeName("echoext"))
 		build := exec.Command("go", "build", "-o", echoPath, "./testdata/echoext")
 		build.Stderr = os.Stderr
 		echoErr = build.Run()
@@ -309,8 +313,11 @@ func TestResourceLimitsReachTheExtension(t *testing.T) {
 	if err := json.Unmarshal(value, &got); err != nil {
 		t.Fatal(err)
 	}
-	if !limitsSupported() {
-		t.Skip("this platform has no setrlimit")
+	// The extension applies this one to itself, from its environment,
+	// so it needs a platform where the extension can: there is no
+	// handle-count limit in a job object and no RLIMIT_NOFILE here.
+	if !limitsAvailable().OpenFiles {
+		t.Skip("this platform has no open-file limit an extension can apply to itself")
 	}
 	if got.NoFile != "64" {
 		t.Errorf("the extension is running with an open-file limit of %s, want 64", got.NoFile)

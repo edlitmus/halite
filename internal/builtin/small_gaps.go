@@ -109,7 +109,7 @@ func fileGetUser(c *exec.Context, args *value.Map) (any, error) {
 	// where the account is not known to this machine — ordinary on a
 	// node whose accounts come from a directory it cannot reach.
 	owned := value.NewMap(4)
-	addOwnership(owned, info)
+	addOwnership(owned, path, info)
 	if name, ok := owned.Get("user"); ok {
 		return name, nil
 	}

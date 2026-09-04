@@ -2,10 +2,39 @@ package config
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
 )
+
+// A path for a named target is built with that target's separator, never
+// with the host's. filepath.Join takes its separator from the machine it
+// runs on, so RootFor("linux") answered `\etc\halite` on a Windows host
+// and the whole point of taking the target as an argument — checking
+// every platform's layout from one machine — was lost on the one host
+// where it was most needed. These two joins are explicit about which
+// convention they are in.
+
+// posixJoin joins with a forward slash whatever host it runs on.
+func posixJoin(elem ...string) string { return path.Join(elem...) }
+
+// winJoin joins with a backslash whatever host it runs on.
+func winJoin(elem ...string) string {
+	parts := make([]string, 0, len(elem))
+	for _, e := range elem {
+		if e = strings.Trim(e, `\/`); e != "" {
+			parts = append(parts, e)
+		}
+	}
+	// A bare drive letter keeps its separator: `D:\Halite`, never
+	// `D:Halite`, which names that drive's working directory rather than
+	// its root.
+	if len(parts) > 1 && len(parts[0]) == 2 && parts[0][1] == ':' {
+		return parts[0] + `\` + strings.Join(parts[1:], `\`)
+	}
+	return strings.Join(parts, `\`)
+}
 
 // SPEC 27.3 fixes the filesystem layout in Linux FHS terms, and a BSD
 // does not use those paths for anything. `/usr/local/etc` is where a
@@ -29,11 +58,11 @@ import (
 // root of whichever drive the process started on.
 func windowsRoot() string {
 	if dir := os.Getenv("PROGRAMDATA"); dir != "" {
-		return filepath.Join(dir, "Halite")
+		return winJoin(dir, "Halite")
 	}
 	// PROGRAMDATA is set on every supported Windows, but a service
 	// started with a scrubbed environment is not worth crashing over.
-	return filepath.Join(`C:\ProgramData`, "Halite")
+	return winJoin(`C:\ProgramData`, "Halite")
 }
 
 // isBSD reports whether this platform uses the /usr/local hierarchy for
@@ -73,7 +102,7 @@ func RootFor(goos string) string {
 	if goos == "windows" {
 		return windowsRoot()
 	}
-	return filepath.Join(prefixFor(goos), "halite")
+	return posixJoin(prefixFor(goos), "halite")
 }
 
 // DefaultPKIDir, DefaultStateDir, DefaultCacheDir, and DefaultSocketDir
@@ -96,12 +125,12 @@ func VarPathFor(goos, kind string) string {
 	if goos == "windows" {
 		// Windows has no /var. Everything lives under the one root the
 		// .msi creates and the administrator already knows about.
-		return filepath.Join(windowsRoot(), kind)
+		return winJoin(windowsRoot(), kind)
 	}
 	if isBSDFor(goos) && kind == "lib" {
 		return "/var/db/halite"
 	}
-	return filepath.Join("/var", kind, "halite")
+	return posixJoin("/var", kind, "halite")
 }
 
 // runPath is /run on Linux and /var/run on a BSD.
@@ -110,7 +139,7 @@ func runPath() string { return RunPathFor(runtime.GOOS) }
 // RunPathFor is where a platform keeps its runtime sockets.
 func RunPathFor(goos string) string {
 	if goos == "windows" {
-		return filepath.Join(windowsRoot(), "run")
+		return winJoin(windowsRoot(), "run")
 	}
 	if isBSDFor(goos) {
 		return "/var/run/halite"
@@ -130,16 +159,35 @@ var pathTokens = []struct{ path, token string }{
 }
 
 // PortablePath renders a default path without the platform in it.
+//
+// Exact matches are taken before prefixes, and the longest prefix wins.
+// On Windows every one of these directories is a child of the
+// configuration root, so a first-match-wins scan rendered the cache
+// directory as `<config root>\cache` and the document generated there
+// differed from the one generated anywhere else. The remainder is
+// normalised to forward slashes for the same reason: the token stands
+// for a path on every platform, so the text after it must not name one.
 func PortablePath(p string) string {
 	for _, t := range pathTokens {
 		if p == t.path {
 			return t.token
 		}
-		if strings.HasPrefix(p, t.path+"/") {
-			return t.token + p[len(t.path):]
+	}
+	best, bestToken := "", ""
+	for _, t := range pathTokens {
+		// Both separators, because these paths are the host's and the
+		// host may be Windows, where a child of the config root is
+		// spelled with a backslash.
+		if strings.HasPrefix(p, t.path+"/") || strings.HasPrefix(p, t.path+`\`) {
+			if len(t.path) > len(best) {
+				best, bestToken = t.path, t.token
+			}
 		}
 	}
-	return p
+	if best == "" {
+		return p
+	}
+	return bestToken + strings.ReplaceAll(p[len(best):], `\`, "/")
 }
 
 // PathTable describes what each token resolves to, for the documentation

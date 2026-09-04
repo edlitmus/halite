@@ -52,13 +52,9 @@ func TestPrivateKeyIsWrittenUnreadableToOthers(t *testing.T) {
 	x509Call(t, r, "x509.create_private_key",
 		value.MapOf("path", path, "algorithm", "ec", "curve", "p256"))
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("mode = %04o, want 0600; a private key must not be readable by anyone else", perm)
-	}
+	// A private key must not be readable by anyone else, asked in the
+	// platform's own terms.
+	assertMode(t, path, 0o600)
 
 	key, err := loadPrivateKey(path)
 	if err != nil {

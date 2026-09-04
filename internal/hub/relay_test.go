@@ -273,6 +273,9 @@ func TestARelayedReturnIsTaggedWithTheNodeThatRanIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Closed with the test. An open segment is invisible on unix and
+	// stops the temporary directory being removed on Windows.
+	t.Cleanup(func() { _ = bus.Close() })
 	jobs, err := job.OpenCache(dir + "/jobs")
 	if err != nil {
 		t.Fatal(err)

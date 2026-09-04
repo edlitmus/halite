@@ -24,6 +24,9 @@ type Bus struct {
 	current *os.File
 	segment int
 	written int64
+	// closed records that Close has run, so that a later Append is
+	// refused rather than silently reopening the segment.
+	closed bool
 
 	// waiters are woken when a record is appended, so a follower does
 	// not poll a file that is not changing.
@@ -156,7 +159,19 @@ func (b *Bus) Append(e *Event) (string, error) {
 	return offset, nil
 }
 
+// openCurrent opens the segment being written, unless the bus is shut.
+//
+// The closed check is the point. Close set current to nil and this
+// reopened the file on the next append, so a bus that had been closed
+// went on accepting events and holding the segment open for the life of
+// the process. Shutdown ordering was therefore unenforceable — a caller
+// could not tell whether an event after Close had been recorded — and
+// on Windows the leaked handle stopped the directory being removed,
+// which is how it was found.
 func (b *Bus) openCurrent() error {
+	if b.closed {
+		return fmt.Errorf("the event bus is closed")
+	}
 	if b.current != nil {
 		return nil
 	}
@@ -202,6 +217,7 @@ func (b *Bus) Sync() error {
 func (b *Bus) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.closed = true
 	if b.current == nil {
 		return nil
 	}

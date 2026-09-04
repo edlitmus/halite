@@ -19,7 +19,12 @@ import (
 // child in its environment and applied by it — which works for an
 // extension built with this package and does nothing for one that is
 // not, and `Describe` says so.
-func (s *Sandbox) applyPlatform(cmd *exec.Cmd) error {
+//
+// Nothing here needs the child to exist, so both hooks are empty.
+func (s *Sandbox) applyPlatform(cmd *exec.Cmd) (func() error, func(), error) {
+	nothing := func() {}
+	noHook := func() error { return nil }
+
 	attr := &syscall.SysProcAttr{
 		// Its own process group, so the kill that ends a timeout ends
 		// whatever the extension started as well. An extension that
@@ -30,35 +35,12 @@ func (s *Sandbox) applyPlatform(cmd *exec.Cmd) error {
 	if s.User != "" {
 		uid, gid, err := lookupIDs(s.User, s.Group)
 		if err != nil {
-			return err
+			return noHook, nothing, err
 		}
 		attr.Credential = &syscall.Credential{Uid: uid, Gid: gid}
 	}
 	cmd.SysProcAttr = attr
-	cmd.Env = append(cmd.Env, s.limitEnvironment()...)
-	return nil
-}
-
-// limitEnvironment carries the limits to a child that knows how to
-// apply them to itself.
-func (s *Sandbox) limitEnvironment() []string {
-	var out []string
-	if s.MemoryBytes > 0 {
-		out = append(out, "HALITE_EXT_RLIMIT_AS="+strconv.FormatUint(s.MemoryBytes, 10))
-	}
-	if s.CPUSeconds > 0 {
-		out = append(out, "HALITE_EXT_RLIMIT_CPU="+strconv.FormatUint(s.CPUSeconds, 10))
-	}
-	if s.OpenFiles > 0 {
-		out = append(out, "HALITE_EXT_RLIMIT_NOFILE="+strconv.FormatUint(s.OpenFiles, 10))
-	}
-	if s.Processes > 0 {
-		out = append(out, "HALITE_EXT_RLIMIT_NPROC="+strconv.FormatUint(s.Processes, 10))
-	}
-	if !s.Network {
-		out = append(out, "HALITE_EXT_NETWORK=deny")
-	}
-	return out
+	return noHook, nothing, nil
 }
 
 func lookupIDs(name, group string) (uint32, uint32, error) {
@@ -85,7 +67,19 @@ func lookupIDs(name, group string) (uint32, uint32, error) {
 	return uint32(uid), uint32(gid), nil
 }
 
-func limitsSupported() bool { return true }
+// limitsAvailable: setrlimit covers all four, and the child applies
+// them to itself.
+//
+// RLIMIT_AS bounds virtual address space, which a garbage-collected
+// runtime reserves far more of than it commits — so the warning belongs
+// beside the unbounded default here and nowhere else.
+func limitsAvailable() limitSupport {
+	return limitSupport{
+		Memory: true, CPU: true, OpenFiles: true, Processes: true,
+		MemoryLabel:     "address space",
+		MemoryUnbounded: "address space unbounded (RLIMIT_AS kills a garbage-collected runtime)",
+	}
+}
 
 func networkEnforcement() string {
 	// Honest rather than reassuring. Denying the network to a child

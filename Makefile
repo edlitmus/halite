@@ -452,3 +452,39 @@ install-fips:
 
 clean:
 	rm -rf bin dist cover.out
+
+# ---- SPEC section 31's differential gate ----
+#
+# The same state tree compiled by halite and by Salt, compared. SPEC 31
+# names it the primary correctness gate, on the reasoning that no amount
+# of unit testing establishes that an existing tree means the same thing
+# under a reimplementation -- only the reference implementation can say
+# that.
+#
+# It has always skipped where Salt is absent, which is every machine this
+# project is developed on, so the primary correctness gate has been green
+# by not running. `make test` still skips it, because a developer without
+# Docker should not be blocked; `make saltdiff` is how it actually runs,
+# and the container is what makes that a command rather than an
+# afternoon.
+#
+# The image carries Salt's own onedir bundle, pinned, so that the version
+# a deviation row names is the version that was run. SALT_VERSION picks
+# another: `make saltdiff SALT_VERSION=3006.9`.
+SALT_VERSION ?= 3007.1
+SALTDIFF_IMAGE ?= halite-saltdiff:$(SALT_VERSION)
+
+saltdiff-image:
+	docker build \
+		--build-arg SALT_VERSION=$(SALT_VERSION) \
+		-t $(SALTDIFF_IMAGE) contrib/docker/saltdiff
+
+# The two named volumes are the Go build and module caches. Without them
+# every run refetches the pinned toolchain, which is most of the wall
+# clock and all of the network.
+saltdiff: saltdiff-image
+	docker run --rm \
+		-v "$(CURDIR)":/src \
+		-v halite-gocache:/gocache \
+		-v halite-gomodcache:/gomodcache \
+		$(SALTDIFF_IMAGE)

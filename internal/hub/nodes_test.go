@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/fileperm/permtest"
 )
 
 // MkdirAll is satisfied by a directory that already exists, whoever owns
@@ -15,10 +17,13 @@ import (
 // in a log the operator was not reading.
 func TestOpeningAnUnusableNodeCacheFailsAtOnce(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nodes")
-	if err := os.MkdirAll(dir, 0o500); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	// Made unwritable the way the platform does it. A chmod is not that
+	// on Windows: os.Chmod(dir, 0o500) returned nil, changed nothing,
+	// and this test asserted a refusal that never came.
+	permtest.DenyWrite(t, dir)
 
 	if _, err := OpenNodeCache(dir); err == nil {
 		t.Fatal("a node cache this process cannot write was opened without complaint")
@@ -27,9 +32,7 @@ func TestOpeningAnUnusableNodeCacheFailsAtOnce(t *testing.T) {
 	}
 
 	// And a usable one still opens, leaving nothing behind.
-	if err := os.Chmod(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	permtest.AllowWrite(t, dir)
 	if _, err := OpenNodeCache(dir); err != nil {
 		t.Fatalf("a usable node cache was refused: %v", err)
 	}

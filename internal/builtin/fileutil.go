@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/states"
 )
 
 // writeAtomic writes a file the only way a configuration management system
@@ -21,43 +24,10 @@ import (
 // that the rename is within one filesystem and is therefore atomic; a
 // cross-device rename degrades to a copy, and a copy that is interrupted
 // leaves a half-written configuration file behind. SPEC section 13.5.
+//
+// internal/atomicfile holds the idiom, which six packages had a copy of.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".halite-"+filepath.Base(path)+"-*")
-	if err != nil {
-		return fmt.Errorf("creating a temporary file in %s: %w", dir, err)
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", tmpName, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("syncing %s: %w", tmpName, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing %s: %w", tmpName, err)
-	}
-	// The mode is set before the rename, so the file is never visible at
-	// its final path with the temporary file's restrictive default.
-	if mode != 0 {
-		if err := os.Chmod(tmpName, mode); err != nil {
-			return fmt.Errorf("setting the mode on %s: %w", tmpName, err)
-		}
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("renaming %s into place: %w", tmpName, err)
-	}
-	// The directory entry itself is synced, so the rename survives a
-	// power loss rather than the file existing with no name.
-	if d, err := os.Open(dir); err == nil {
-		_ = d.Sync()
-		d.Close()
-	}
-	return nil
+	return atomicfile.Write(path, data, mode)
 }
 
 // hashFile digests a file with the named algorithm.
@@ -188,3 +158,14 @@ func splitKeepEmpty(s string) []string {
 // dirOf is filepath.Dir, named locally so the editing helpers do not each
 // need the import.
 func dirOf(p string) string { return filepath.Dir(p) }
+
+// withWarnings attaches warnings to a result.
+//
+// A state that cannot carry out part of what it was asked has to say so
+// somewhere. Reporting it as a change is wrong — the change would be
+// reported again on every run, and never applied — and dropping it is
+// worse. SPEC 11.6 gives a result a Warnings field for exactly this.
+func withWarnings(r states.Result, warnings []string) states.Result {
+	r.Warnings = append(r.Warnings, warnings...)
+	return r
+}

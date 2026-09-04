@@ -36,7 +36,7 @@ func echoBinary(t *testing.T) string {
 			extErr = err
 			return
 		}
-		extPath = filepath.Join(dir, "echoext")
+		extPath = filepath.Join(dir, exeName("echoext"))
 		build := exec.Command("go", "build", "-o", extPath, "../bridge/testdata/echoext")
 		build.Stderr = os.Stderr
 		extErr = build.Run()
@@ -58,13 +58,13 @@ func installReal(t *testing.T, cache string) TrustKey {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "echoext"), binary, 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, exeName("echoext")), binary, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err := Build(dir, Manifest{
 		Name: "echo", Version: "1.0.0", Kind: "module",
 		Description: "returns what it was given",
-		Executables: map[string]string{Platform(runtime.GOOS, runtime.GOARCH): "echoext"},
+		Executables: map[string]string{Platform(runtime.GOOS, runtime.GOARCH): exeName("echoext")},
 	})
 	if err != nil {
 		t.Fatal(err)

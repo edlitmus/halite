@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/eventbus"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 )
 
@@ -80,13 +81,16 @@ func TestTheLocalReturnerAppendsOneObjectPerLine(t *testing.T) {
 		}
 	}
 	// The file a return carries is as sensitive as the estate's most
-	// sensitive job.
-	info, err := os.Stat(filepath.Join(dir, "returns.ndjson"))
+	// sensitive job. Asked in the platform's own terms: a mode is the
+	// answer on unix and is synthesised from the read-only attribute on
+	// Windows, where this assertion read 0666 for a log that no mode
+	// could have protected.
+	others, err := fileperm.Others(filepath.Join(dir, "returns.ndjson"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("the return log is mode %o", perm)
+	if len(others) != 0 {
+		t.Errorf("the return log can be read by %v", others)
 	}
 }
 

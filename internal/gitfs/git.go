@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // run invokes git and returns its standard output.
@@ -231,7 +233,7 @@ func (o *Options) materialise(ctx context.Context, mirror, target string, remote
 	if err := extractTar(archive, staging); err != nil {
 		return fmt.Errorf("unpacking %s at %s: %w", remote.label(), ref.Name, err)
 	}
-	if err := os.Rename(staging, target); err != nil {
+	if err := atomicfile.Rename(staging, target); err != nil {
 		return err
 	}
 	return nil

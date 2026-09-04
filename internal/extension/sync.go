@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // ExtPrefix is where bundles live on the file server, as SPEC 24.4
@@ -258,7 +261,13 @@ func (s *Syncer) wantsKind(kind string) bool {
 // a setuid helper along by naming it convincingly.
 func markExecutable(dir string, manifest *Manifest) error {
 	for _, rel := range manifest.Executables {
-		if err := os.Chmod(filepath.Join(dir, filepath.FromSlash(rel)), 0o700); err != nil {
+		// Through internal/fileperm rather than os.Chmod. A mode is
+		// the whole answer on unix; on Windows what makes a file
+		// runnable is its name, which the manifest check enforces,
+		// and what keeps it from other accounts is an access control
+		// list. 0700 asks for both, and this carries out whichever
+		// half the platform has.
+		if err := fileperm.Apply(filepath.Join(dir, filepath.FromSlash(rel)), 0o700); err != nil {
 			return err
 		}
 	}
@@ -277,13 +286,13 @@ func install(staging, target string) error {
 	if _, err := os.Stat(target); err == nil {
 		previous = target + ".replacing"
 		_ = os.RemoveAll(previous)
-		if err := os.Rename(target, previous); err != nil {
+		if err := atomicfile.Rename(target, previous); err != nil {
 			return err
 		}
 	}
-	if err := os.Rename(staging, target); err != nil {
+	if err := atomicfile.Rename(staging, target); err != nil {
 		if previous != "" {
-			_ = os.Rename(previous, target)
+			_ = atomicfile.Rename(previous, target)
 		}
 		return err
 	}

@@ -44,26 +44,35 @@ const nodeID = "saltdiff"
 type deviation struct {
 	tree  string
 	chunk string
-	// salt is the major version the difference was observed under, or
-	// empty for every version. The two supported majors disagree with
+	// salt lists the major versions the difference was observed under,
+	// or is empty for every version. The supported majors disagree with
 	// each other about what show_lowstate projects, so a row that did
-	// not say which one it meant would be unfalsifiable.
-	salt   string
+	// not say which ones it meant would be unfalsifiable.
+	//
+	// Observed majors rather than a range: a version that is not listed
+	// fails and makes somebody look, which is what the table is for. A
+	// row reading "before 3008" would have silently covered 3007
+	// without anyone having run it there.
+	salt   []string
 	reason string
 }
 
 const (
-	// devShowLowstate marks a place where Salt's show_lowstate is not
-	// the order it will run in. 3006 resolves the reversed requisites
-	// (`require_in` and its siblings) while executing rather than while
-	// compiling, so they are absent from what it prints; 3008 resolves
-	// them into the low state, as halite does. The runs agree; the
-	// projection does not.
-	devShowLowstate = "Salt 3006 applies the reversed requisites at run time, so show_lowstate does not carry them"
+	// devShowLowstate marks a place where Salt.s show_lowstate is not
+	// the order it will run in. 3006 and 3007 resolve the reversed
+	// requisites (`require_in` and its siblings) while executing rather
+	// than while compiling, so they are absent from what it prints;
+	// 3008 resolves them into the low state, as halite does. The runs
+	// agree; the projection does not.
+	//
+	// 3007 was added when the gate was first run in a container. The row
+	// had named 3006 alone, on the reasoning that 3008 was the other
+	// supported major — and nobody had run it against 3007.
+	devShowLowstate = "Salt 3006 and 3007 apply the reversed requisites at run time, so show_lowstate does not carry them"
 )
 
 var deviations = []deviation{
-	{"requisites", "ordering", "3006", devShowLowstate},
+	{"requisites", "ordering", []string{"3006", "3007"}, devShowLowstate},
 }
 
 // saltVersion asks salt-call what it is, so that a deviation row can name
@@ -187,10 +196,7 @@ func saltLowstate(t *testing.T, saltcall string, tree corpusTree) []map[string]a
 // saltPillar compiles a tree's pillar with Salt.
 func saltPillar(t *testing.T, saltcall string, tree corpusTree) map[string]any {
 	t.Helper()
-	// Salt 3008 redacts every string in pillar.items output, which would
-	// make the comparison assert only that both sides have the same
-	// shape of asterisks. 3006 accepts the argument and ignores it.
-	out := saltRun(t, saltcall, tree, "pillar.items", "unmask=True")
+	out := saltRun(t, saltcall, tree, "pillar.items", pillarArgs(t, saltcall)...)
 	var wrapper struct {
 		Local map[string]any `json:"local"`
 	}
@@ -504,7 +510,7 @@ func TestLowstateMatchesSalt(t *testing.T) {
 
 	recorded := map[string]string{}
 	for _, d := range deviations {
-		if d.salt != "" && !strings.HasPrefix(version, d.salt) {
+		if !d.appliesTo(version) {
 			continue
 		}
 		recorded[d.tree+" "+d.chunk] = d.reason
@@ -659,4 +665,35 @@ func warnAboutHardwareGrains(t *testing.T, saltcall string) {
 func looksLikeJSON(out []byte) bool {
 	trimmed := strings.TrimSpace(string(out))
 	return strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")
+}
+
+// pillarArgs is what `pillar.items` needs to return values rather than
+// asterisks, in the spelling this Salt understands.
+//
+// Three majors, three behaviours, and only running the gate found the
+// third. 3008 redacts every string in pillar.items output unless
+// `unmask=True` is passed, which would make the comparison assert that
+// both sides have the same shape of asterisks. 3006 accepts the argument
+// and ignores it. 3007 refuses it outright — "The following keyword
+// arguments are not valid: unmask=True" — and fails the call, so a gate
+// that always passed it could not run against 3007 at all.
+func pillarArgs(t *testing.T, saltcall string) []string {
+	t.Helper()
+	if strings.HasPrefix(saltVersion(t, saltcall), "3007") {
+		return nil
+	}
+	return []string{"unmask=True"}
+}
+
+// appliesTo reports whether a deviation row was recorded for this Salt.
+func (d deviation) appliesTo(version string) bool {
+	if len(d.salt) == 0 {
+		return true
+	}
+	for _, major := range d.salt {
+		if strings.HasPrefix(version, major) {
+			return true
+		}
+	}
+	return false
 }

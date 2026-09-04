@@ -3,7 +3,9 @@ package grains
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -138,13 +140,14 @@ func TestGrainsDirectory(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "10-static.yaml"), []byte("tier: frontend\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// An executable fragment is run and its JSON merged. This is the
+	// A runnable fragment is run and its JSON merged. This is the
 	// low-ceremony path that most Salt _grains/ modules actually needed.
-	script := filepath.Join(dir, "20-dynamic")
-	body := "#!/bin/sh\nprintf '%s' '{\"rack\": \"a12\", \"num_disks\": 4}'\n"
-	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	//
+	// Written in the platform's own form. A shell script mode 0755 is
+	// neither runnable nor YAML on Windows: the mode did nothing, the
+	// file was parsed as a document, and the operator got a YAML error
+	// about a shebang line.
+	writeProvider(t, dir, "20-dynamic", `{"rack": "a12", "num_disks": 4}`)
 
 	g := collect(t, Options{GrainsDir: dir})
 	if got, _ := g.Get("tier"); got != "frontend" {
@@ -166,12 +169,8 @@ func TestBadProviderIsSkippedNotFatal(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "10-good.yaml"), []byte("good: yes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "20-nonzero"), []byte("#!/bin/sh\nexit 3\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "30-badjson"), []byte("#!/bin/sh\necho 'not json'\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeBadProvider(t, dir, "20-nonzero")
+	writeProvider(t, dir, "30-badjson", "not json")
 	if err := os.WriteFile(filepath.Join(dir, "40-alsogood.yaml"), []byte("also_good: 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -224,5 +223,42 @@ func TestKeyValueFileParsing(t *testing.T) {
 	}
 	if len(m) != 4 {
 		t.Errorf("parsed %d keys, want 4: %v", len(m), m)
+	}
+}
+
+// SPEC 14.2 names three ways a grain provider can fail — a timeout, a
+// non-zero exit, and invalid JSON — and says each is skipped with a
+// warning rather than taking collection down. The other two had tests;
+// the timeout did not, and it is the one that costs an operator a
+// minute of every grain refresh rather than a line in a log.
+func TestASlowProviderTimesOutAndTheRestStillLand(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "10-good.yaml"), []byte("good: yes\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeSlowProvider(t, dir, "20-slow")
+
+	start := time.Now()
+	g, warnings := Collect(Options{
+		NodeID: "n", GrainsDir: dir, ProviderTimeout: 300 * time.Millisecond,
+	})
+	elapsed := time.Since(start)
+
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want one for the provider that hung", warnings)
+	}
+	if !strings.Contains(warnings[0].Msg, "timed out") {
+		t.Errorf("the warning should say it timed out: %v", warnings[0])
+	}
+	// The bound is the timeout, not the provider's own duration. Without
+	// the kill this waits the script out.
+	if elapsed > 20*time.Second {
+		t.Errorf("collection took %v; the provider was waited out rather than stopped", elapsed)
+	}
+	if got, _ := g.Get("good"); got != true {
+		t.Errorf("good = %#v; a hung provider took a good fragment with it", got)
+	}
+	if !g.Has("os") {
+		t.Error("a hung provider took the core grains down with it")
 	}
 }

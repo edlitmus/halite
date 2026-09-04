@@ -33,10 +33,26 @@ import (
 
 // resultDeviation records one state the two predict differently.
 type resultDeviation struct {
-	tree   string
-	key    string
-	salt   string
+	tree string
+	key  string
+	// salt lists the major versions the difference was observed under,
+	// or is empty for every version. Observed majors rather than a
+	// range, for the reason the low state's table gives.
+	salt   []string
 	reason string
+}
+
+// appliesTo reports whether a row was recorded for this Salt.
+func (d resultDeviation) appliesTo(version string) bool {
+	if len(d.salt) == 0 {
+		return true
+	}
+	for _, major := range d.salt {
+		if strings.HasPrefix(version, major) {
+			return true
+		}
+	}
+	return false
 }
 
 const devOnFailInTestMode = "Salt fires onfail when the target did not *succeed*, and in test " +
@@ -49,8 +65,8 @@ const devTestModeChanges = "in test mode halite reports what would change and Sa
 	"result of None tells an operator only that something was going to happen."
 
 var resultDeviations = []resultDeviation{
-	{"requisites", "cmd_|-fourth_|-echo fourth_|-run", "", devOnFailInTestMode},
-	{"basic", "cmd_|-a_script_|-salt://files/probe.sh_|-script", "", devTestModeChanges},
+	{"requisites", "cmd_|-fourth_|-echo fourth_|-run", nil, devOnFailInTestMode},
+	{"basic", "cmd_|-a_script_|-salt://files/probe.sh_|-script", nil, devTestModeChanges},
 }
 
 type prediction struct {
@@ -178,7 +194,7 @@ func TestResultsMatchSalt(t *testing.T) {
 
 	recorded := map[string]string{}
 	for _, d := range resultDeviations {
-		if d.salt != "" && !strings.HasPrefix(version, d.salt) {
+		if !d.appliesTo(version) {
 			continue
 		}
 		recorded[d.tree+" "+d.key] = d.reason

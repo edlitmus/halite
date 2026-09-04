@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -64,7 +65,15 @@ func TestCurrentHashSaysWhenItCannotRead(t *testing.T) {
 	if err == nil {
 		t.Skip("this test runs unprivileged; as root the read succeeds")
 	}
-	if !strings.Contains(err.Error(), "root") {
+	// What is needed differs by platform: root on unix, and on Windows
+	// nothing, because there is no readable hash at any privilege. Both
+	// have to say which, or the caller cannot tell "you need to be root"
+	// from "this cannot be answered here".
+	want := "root"
+	if runtime.GOOS == "windows" {
+		want = "SAM"
+	}
+	if !strings.Contains(err.Error(), want) {
 		t.Errorf("the error should say what is needed: %v", err)
 	}
 }

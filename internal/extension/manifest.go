@@ -93,6 +93,9 @@ func (m *Manifest) Check() error {
 			return fmt.Errorf("%s: the %s executable %q is not in the file list, so it is not signed",
 				m.Name, platform, rel)
 		}
+		if err := checkRunnableName(platform, rel); err != nil {
+			return fmt.Errorf("%s: %w", m.Name, err)
+		}
 	}
 	if len(m.Files) == 0 {
 		return fmt.Errorf("%s lists no files", m.Name)
@@ -197,4 +200,45 @@ func ParseManifest(raw []byte) (*Manifest, error) {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// windowsRunnable are the extensions Windows will start a file by.
+//
+// The list is fixed rather than read from PATHEXT, because this check
+// runs where the bundle is built and PATHEXT there says nothing about
+// the node that will run it. These four are the ones every Windows has
+// had; a node with a longer PATHEXT loses nothing, since a bundle that
+// passes here runs everywhere.
+var windowsRunnable = []string{".exe", ".com", ".bat", ".cmd"}
+
+// checkRunnableName refuses an executable the named platform cannot
+// start.
+//
+// Windows decides what a file is by its extension: CreateProcess will
+// not run `run`, and the error Go reports for it is
+//
+//	exec: "C:\...\run": executable file not found in %PATH%
+//
+// which names an absolute path and then says it is not on PATH. On a
+// node that reads as a bug in halite rather than as a bundle that was
+// built wrong, and it arrives at the worst moment — when a state calls
+// the extension — rather than when the bundle was published. It is
+// checkable at build time from the platform key alone, so it is checked
+// there.
+func checkRunnableName(platform, rel string) error {
+	goos, _, _ := strings.Cut(platform, "/")
+	if goos != "windows" {
+		return nil
+	}
+	lower := strings.ToLower(rel)
+	for _, ext := range windowsRunnable {
+		if strings.HasSuffix(lower, ext) {
+			return nil
+		}
+	}
+	return fmt.Errorf(
+		"the %s executable %q has no extension Windows can start; "+
+			"name it %s.exe, or one of %s",
+		platform, rel, strings.TrimSuffix(rel, path.Ext(rel)),
+		strings.Join(windowsRunnable, ", "))
 }

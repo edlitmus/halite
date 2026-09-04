@@ -21,6 +21,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // Token is one issued token, as it is stored.
@@ -391,26 +393,9 @@ func isHex(s string) bool {
 }
 
 // writeAtomic writes through a temporary file in the same directory.
+//
+// The idiom is one package rather than six copies of it, because all six
+// were wrong on Windows in the same way: see internal/atomicfile.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".halite-*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(name, mode); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
+	return atomicfile.Write(path, data, mode)
 }

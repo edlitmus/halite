@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -234,10 +235,9 @@ func checkURL(remote Remote) error {
 	case strings.HasPrefix(remote.URL, "https://"),
 		strings.HasPrefix(remote.URL, "ssh://"),
 		strings.HasPrefix(remote.URL, "file://"),
-		strings.HasPrefix(remote.URL, "/"):
+		isLocalPath(remote.URL, runtime.GOOS == "windows"):
 		return nil
-	case strings.Contains(remote.URL, "@") && strings.Contains(remote.URL, ":"):
-		// `git@host:path`, which is scp-style ssh.
+	case isSCPStyle(remote.URL):
 		return nil
 	}
 	if remote.Insecure {
@@ -246,4 +246,55 @@ func checkURL(remote Remote) error {
 	return fmt.Errorf("%s is not an encrypted transport; a state tree fetched over it is "+
 		"whatever the network says it is. Set `insecure: true` on the remote to accept that",
 		remote.URL)
+}
+
+// isLocalPath reports whether a URL is a path on this machine's own
+// filesystem, which needs no transport and so needs no encryption.
+//
+// It takes the platform rather than reading runtime.GOOS, so that both
+// conventions can be checked from one host — the same reason the
+// configuration layout does.
+//
+// The check used to be "starts with a slash", which is a local path on
+// unix and nothing at all on Windows. A hub there configured with
+// `C:\srv\states` was told its own disk "is not an encrypted transport".
+//
+// A UNC path is deliberately not local. `\\server\share` is SMB over the
+// network, which is exactly the kind of transport this function exists
+// to refuse; it needs `insecure: true` like any other.
+func isLocalPath(url string, windows bool) bool {
+	if !windows {
+		return strings.HasPrefix(url, "/")
+	}
+	if strings.HasPrefix(url, `\\`) || strings.HasPrefix(url, "//") {
+		return false
+	}
+	// A drive-relative or root-relative path: `\srv\states`.
+	if strings.HasPrefix(url, `\`) || strings.HasPrefix(url, "/") {
+		return true
+	}
+	// A drive-qualified path: `C:\srv\states`, or `C:/srv/states`,
+	// which git accepts too.
+	if len(url) >= 3 && url[1] == ':' && isDriveLetter(url[0]) {
+		return url[2] == '\\' || url[2] == '/'
+	}
+	return false
+}
+
+func isDriveLetter(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+}
+
+// isSCPStyle reports whether a URL is git's `git@host:path` form, which
+// is ssh and therefore encrypted.
+//
+// The `@` has to come before the `:`, which it does in every scp-style
+// URL and does not in a Windows path. Without that ordering,
+// `C:\Users\some.name@corp\states` was read as an ssh remote and handed
+// to git as one: a local directory would have been resolved over the
+// network, against a host named after a drive letter.
+func isSCPStyle(url string) bool {
+	at := strings.Index(url, "@")
+	colon := strings.Index(url, ":")
+	return at > 0 && colon > at
 }

@@ -41,6 +41,7 @@ var pkgProviders = []pkgProvider{
 	pkgngProvider{},
 	apkProvider{},
 	brewProvider{},
+	chocoProvider{},
 }
 
 // pickPkgProvider chooses the provider for this node.
@@ -50,7 +51,7 @@ func pickPkgProvider(c *exec.Context) (pkgProvider, error) {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("no package manager was found on this node (%s); halite ships providers for apt, dnf, yum, pkgng, apk, and mac_brew_pkg", runtime.GOOS)
+	return nil, fmt.Errorf("no package manager was found on this node (%s); halite ships providers for apt, dnf, yum, pkgng, apk, mac_brew_pkg, and chocolatey", runtime.GOOS)
 }
 
 func registerPkg(r *Registries) {

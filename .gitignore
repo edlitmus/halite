@@ -1,6 +1,12 @@
 bin/
 dist/
 cover.out
+# `go build ./some/package` with no -o writes the binary into the working
+# directory, named after the package. Two test fixtures are real programs
+# — the bridge's echo extension and the renderer's stand-in gpg — and
+# building one to check it compiles leaves a multi-megabyte binary at the
+# repository root. Both were committed once.
+*.exe
 /halite-hub
 /halite-node
 /halite-api

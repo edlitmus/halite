@@ -129,6 +129,16 @@ type Context struct {
 	// is what makes the platform modules testable off their platform.
 	Runner CommandRunner
 
+	// Lookup resolves a program name to a path, and is what Which reads.
+	// Nil searches PATH.
+	//
+	// It is here for the same reason Runner is: a module that asks
+	// whether a program exists before running it is not testable off a
+	// machine that has that program, and a test that scripts the
+	// program's output while its presence is decided by the host is a
+	// test that passes for a reason it does not state.
+	Lookup func(name string) string
+
 	// RunAs and Umask are the per-state options of SPEC section 11.7,
 	// applied to every command the state runs. They live on the context
 	// rather than being threaded through each module's arguments, because
@@ -465,31 +475,6 @@ type OSRunner struct {
 	DefaultEnv []string
 }
 
-// FallbackPath is the search path a spawned process gets when nothing
-// else says what it should be.
-//
-// SPEC 25.4 asks for an explicit PATH, and a process started by a
-// service manager inherits whatever that manager happened to set —
-// which differs between rc.d, systemd, and an operator's shell. The
-// `exec_path` setting makes it explicit; this is the last resort when
-// neither it nor the environment names one.
-const FallbackPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
-// CleanEnv is the environment a spawned process receives unless a module
-// says otherwise.
-func CleanEnv() []string {
-	path := os.Getenv("PATH")
-	if path == "" {
-		path = FallbackPath
-	}
-	return []string{
-		"PATH=" + path,
-		"LC_ALL=C",
-		"LANG=C",
-		"HALITE=1",
-	}
-}
-
 // applyUmask rewrites a command so the child runs under a given umask.
 //
 // There is no SysProcAttr field for a umask and no way to run code between
@@ -505,15 +490,28 @@ func applyUmask(cmd Command) (Command, error) {
 	if cmd.Umask == "" {
 		return cmd, nil
 	}
-	if runtime.GOOS == "windows" {
-		// The rewrite below needs a POSIX shell. Refusing is the honest
-		// answer: silently ignoring the mask is the bug this function was
-		// written to fix.
-		return cmd, fmt.Errorf("umask is not supported on this platform yet")
-	}
+	// The mask is validated before the platform is considered, so that a
+	// state carrying a bad mask is told its mask is bad on every
+	// platform. Checking the platform first made `umask: nonsense` and
+	// `umask: 022` the same error on Windows, and the error named
+	// neither the mask nor what was wrong with it.
 	mask, err := normalizeUmask(cmd.Umask)
 	if err != nil {
 		return cmd, err
+	}
+	if runtime.GOOS == "windows" {
+		// Not "not supported yet". A umask is a mask applied to the
+		// POSIX mode a process gives a file it creates, and Windows
+		// files take their permissions from the parent directory's
+		// access control list instead. There is nothing here for a mask
+		// to mask, so an implementation is not pending: the request has
+		// no meaning on this platform, and saying so points the reader
+		// at the control that does exist.
+		return cmd, fmt.Errorf(
+			"umask %s: a umask has no meaning on Windows, where a new file "+
+				"takes its permissions from the directory's access control list; "+
+				"set the permissions on the directory, or on the file after it is written",
+			mask)
 	}
 	if len(cmd.Argv) == 0 {
 		return cmd, fmt.Errorf("no command given")
@@ -575,8 +573,12 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 
 	var c *exec.Cmd
 	if cmd.Shell {
-		shell := "/bin/sh"
-		c = exec.CommandContext(ctx, shell, "-c", strings.Join(cmd.Argv, " "))
+		// The interpreter is the platform's own: /bin/sh, or whatever
+		// %ComSpec% names. This said /bin/sh everywhere, so `shell: true`
+		// and every cmd.shell failed on Windows with "file not found"
+		// naming a path that platform has never had.
+		argv := shellCommand(strings.Join(cmd.Argv, " "))
+		c = exec.CommandContext(ctx, argv[0], argv[1:]...)
 	} else {
 		c = exec.CommandContext(ctx, cmd.Argv[0], cmd.Argv[1:]...)
 	}
@@ -591,12 +593,13 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	if cmd.Stdin != "" {
 		c.Stdin = strings.NewReader(cmd.Stdin)
 	}
-	// Start the child in its own process group so a fired Timeout can kill
-	// the whole tree, and bound how long Wait may block after that kill on
-	// a pipe some descendant left open. Without this a Timeout on a command
-	// that forks waits the runaway out instead of stopping it.
-	setProcessGroup(c)
-	c.WaitDelay = 2 * time.Second
+	// Confine the child so a fired Timeout can kill the whole tree, and
+	// bound how long Wait may block after that kill on a pipe some
+	// descendant left open. Without this a Timeout on a command that
+	// forks waits the runaway out instead of stopping it.
+	afterStart, cleanup := confineTree(c)
+	defer cleanup()
+	c.WaitDelay = waitDelay
 	if err := applyCredential(c, cmd); err != nil {
 		return Result{}, err
 	}
@@ -606,7 +609,13 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	c.Stderr = &stderr
 
 	start := time.Now()
-	err = c.Run()
+	// Start and Wait rather than Run, so that a platform which can only
+	// confine a child once it exists has somewhere to do it.
+	err = c.Start()
+	if err == nil {
+		afterStart()
+		err = c.Wait()
+	}
 	res := Result{
 		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
@@ -756,6 +765,14 @@ func (c *Context) RunArgv(argv ...string) (Result, error) {
 
 // Which reports the path of a program, or the empty string.
 func (c *Context) Which(name string) string {
+	// Lookup, where a caller supplied one, so that a test can say which
+	// programs the node has. Runner already lets a test say what a
+	// command returns, and without this the two do not agree: a test
+	// that scripts `npm ls` still fails on a machine with no npm, and
+	// passes on one that has it for reasons nothing in the test states.
+	if c.Lookup != nil {
+		return c.Lookup(name)
+	}
 	p, err := exec.LookPath(name)
 	if err != nil {
 		return ""
@@ -777,3 +794,21 @@ func (c *Context) PillarOrErr() (*value.Map, error) {
 	}
 	return c.Pillar, nil
 }
+
+// CleanEnv is the environment a spawned process receives unless a module
+// says otherwise: no hub credentials, no pillar values, and an explicit
+// PATH. SPEC section 25.4.
+//
+// What "explicit" costs differs by platform. A unix process needs PATH
+// and nothing else; a Windows process cannot start without SystemRoot
+// and cannot resolve a program name without PATHEXT, so the platform
+// file passes those through by name.
+func CleanEnv() []string { return cleanEnv() }
+
+// FallbackPath is the search path a spawned process gets when nothing
+// else says what it should be, in this platform's own form.
+func FallbackPath() string { return defaultPath() }
+
+// waitDelay bounds how long Wait may block after the child has been
+// killed, for a pipe a descendant left open.
+const waitDelay = 2 * time.Second

@@ -8,15 +8,16 @@
 package grains
 
 import (
+	"context"
 	"net"
 	"os"
-	"os/exec"
 	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
 	"github.com/edlitmus/halite/internal/yaml"
@@ -346,7 +347,10 @@ func mergeGrainsDir(g *value.Map, dir string, timeout time.Duration) []Warning {
 			warnings = append(warnings, Warning{Source: path, Msg: err.Error()})
 			continue
 		}
-		if info.Mode()&0o111 != 0 {
+		// Asked of the platform. The execute bit is the answer on unix
+		// and there is no such bit on Windows, where this was false for
+		// every file and so parsed every provider script as YAML.
+		if isRunnable(path, info) {
 			m, w := runGrainProvider(path, timeout)
 			if w != nil {
 				warnings = append(warnings, *w)
@@ -366,29 +370,35 @@ func mergeGrainsDir(g *value.Map, dir string, timeout time.Duration) []Warning {
 // runaway script cannot exhaust memory during collection.
 const maxProviderOutput = 1 << 20
 
+// runGrainProvider runs one provider and reads its JSON.
+//
+// Through the command runner rather than os/exec directly. This used to
+// start the process itself, and then, on a timeout, kill it and wait for
+// cmd.Output() — which does not return until the output pipe closes, and
+// a killed script's own children keep that pipe open. A provider that
+// started anything at all was therefore waited out rather than stopped:
+// measured here at 61 seconds against a 300ms timeout. The runner has
+// killed the whole process tree since the timeout was fixed there, and
+// bounds the wait after the kill as well.
 func runGrainProvider(path string, timeout time.Duration) (*value.Map, *Warning) {
-	cmd := exec.Command(path)
-	cmd.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
-
-	done := make(chan struct{})
-	var out []byte
-	var err error
-	go func() {
-		out, err = cmd.Output()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(timeout):
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		<-done
-		return nil, &Warning{Source: path, Msg: "timed out and was skipped"}
-	}
+	argv := providerArgv(path)
+	runner := &exec.OSRunner{}
+	res, err := runner.Run(context.Background(), exec.Command{
+		Argv: argv,
+		// The same clean environment every other child gets: an
+		// explicit search path, a fixed locale, and nothing of
+		// halite's own. A grain provider must not see the hub's
+		// credentials any more than a cmd.run may.
+		Env:     exec.CleanEnv(),
+		Timeout: timeout,
+	})
 	if err != nil {
+		if strings.Contains(err.Error(), "timed out") {
+			return nil, &Warning{Source: path, Msg: "timed out and was skipped"}
+		}
 		return nil, &Warning{Source: path, Msg: "exited non-zero and was skipped: " + err.Error()}
 	}
+	out := []byte(res.Stdout)
 	if len(out) > maxProviderOutput {
 		return nil, &Warning{Source: path, Msg: "emitted more than 1 MiB and was skipped"}
 	}

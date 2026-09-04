@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"time"
 
@@ -16,6 +17,14 @@ import (
 )
 
 func main() {
+	// A child started by the `spawn` function, which exists so a test
+	// can see whether a process limit is enforced. It does nothing but
+	// stay alive long enough to be counted.
+	if len(os.Args) > 1 && os.Args[1] == "--halite-idle" {
+		time.Sleep(30 * time.Second)
+		return
+	}
+
 	// The limits the host asked for, applied to this process.
 	bridge.Confine()
 
@@ -82,6 +91,41 @@ func handle(call bridge.Call) (any, error) {
 
 	case "limits":
 		return map[string]any{"nofile": readLimit()}, nil
+
+	case "spawn":
+		// Starts children until one is refused, so a test can see
+		// whether a process limit the host set is actually enforced.
+		// Only a mechanism the host applies to the child — a job
+		// object — can hold this; nothing in this process cooperates.
+		var kwargs map[string]any
+		_ = json.Unmarshal(call.Kwargs, &kwargs)
+		want, _ := kwargs["count"].(float64)
+		started := 0
+		var procs []*exec.Cmd
+		defer func() {
+			for _, p := range procs {
+				if p.Process != nil {
+					_ = p.Process.Kill()
+					_, _ = p.Process.Wait()
+				}
+			}
+		}()
+		firstErr := ""
+		for i := 0; i < int(want); i++ {
+			self, err := os.Executable()
+			if err != nil {
+				firstErr = err.Error()
+				break
+			}
+			p := exec.Command(self, "--halite-idle")
+			if err := p.Start(); err != nil {
+				firstErr = err.Error()
+				break
+			}
+			procs = append(procs, p)
+			started++
+		}
+		return map[string]any{"started": started, "error": firstErr}, nil
 
 	case "garbage":
 		// Writes something that is not a frame, to prove the host

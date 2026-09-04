@@ -5,9 +5,9 @@ import (
 	"os"
 	osexec "os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -56,7 +56,7 @@ func registerCmdMore(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
-				return strings.TrimRight(res.Stdout, "\n"), nil
+				return trimOutput(res.Stdout), nil
 			},
 		},
 
@@ -135,7 +135,10 @@ func registerCmdMore(r *Registries) {
 				// from stdin cannot then be given stdin of its own, and
 				// because a syntax error names a file the operator can be
 				// told about.
-				path, cleanup, err := tempScript(states.Str(args, "code", ""), 0o700)
+				// No suffix: the interpreter is named, so the file is an
+				// argument to it rather than something the platform has to
+				// recognise on its own.
+				path, cleanup, err := tempScript(states.Str(args, "code", ""), os.FileMode(scriptMode()), "")
 				if err != nil {
 					return nil, err
 				}
@@ -146,7 +149,7 @@ func registerCmdMore(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
-				return strings.TrimRight(res.Stdout, "\n"), nil
+				return trimOutput(res.Stdout), nil
 			},
 		},
 
@@ -215,14 +218,19 @@ func scriptCommand(c *exec.Context, args *value.Map, argv []string) exec.Command
 // run. It goes in the system temporary directory rather than the target
 // directory, because a script is not a configuration file and leaving one
 // behind next to the files it manages is worse than a cross-device copy.
-func tempScript(body string, mode os.FileMode) (path string, cleanup func(), err error) {
-	f, err := os.CreateTemp("", "halite-script-*")
+func tempScript(body string, mode os.FileMode, suffix string) (path string, cleanup func(), err error) {
+	// The suffix matters on a platform where what runs a file is its
+	// name rather than its first line. See scriptSuffix.
+	f, err := os.CreateTemp("", "halite-script-*"+suffix)
 	if err != nil {
 		return "", func() {}, err
 	}
 	name := f.Name()
 	cleanup = func() { os.Remove(name) }
-	if err := f.Chmod(mode); err != nil {
+	// fileperm rather than Chmod: on Windows a mode does not decide who
+	// can read a file, and a script carrying a credential was left
+	// readable by every account for the length of the run.
+	if err := fileperm.ApplyFile(f, mode); err != nil {
 		f.Close()
 		cleanup()
 		return "", func() {}, err
@@ -250,7 +258,7 @@ func runScript(c *exec.Context, args *value.Map, wantOutput bool) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	path, cleanup, err := tempScript(body, 0o700)
+	path, cleanup, err := tempScript(body, os.FileMode(scriptMode()), scriptSuffix(source))
 	if err != nil {
 		return nil, err
 	}
@@ -259,6 +267,11 @@ func runScript(c *exec.Context, args *value.Map, wantOutput bool) (any, error) {
 	var argv []string
 	if shell := states.Str(args, "shell", ""); shell != "" {
 		argv = append(argv, shell)
+	} else {
+		// A kind the platform does not start on its own gets the
+		// program that does start it: a .ps1 is not an executable
+		// file, it is an argument to powershell.
+		argv = append(argv, scriptInterpreter(path)...)
 	}
 	argv = append(argv, path)
 	argv = append(argv, states.Strings(args, "args")...)
@@ -270,8 +283,8 @@ func runScript(c *exec.Context, args *value.Map, wantOutput bool) (any, error) {
 		return nil, err
 	}
 	out := value.MapOf(
-		"stdout", strings.TrimRight(res.Stdout, "\n"),
-		"stderr", strings.TrimRight(res.Stderr, "\n"),
+		"stdout", trimOutput(res.Stdout),
+		"stderr", trimOutput(res.Stderr),
 		"retcode", int64(res.Code),
 		"duration_ms", int64(res.Duration.Milliseconds()),
 	)

@@ -142,14 +142,13 @@ func TestSyncFetchesASignedBundle(t *testing.T) {
 	if len(installed) != 1 || installed[0].Err != nil {
 		t.Fatalf("the cache holds %+v", installed)
 	}
-	// The executable bit comes from the signed manifest.
-	info, err := os.Stat(filepath.Join(cache, "echo", "1.0.0", "run"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm()&0o100 == 0 {
-		t.Errorf("the executable is mode %o", info.Mode().Perm())
-	}
+	// The permissions come from the signed manifest, and 0700 asks for
+	// two things: runnable, and reachable by nobody else. Asked in the
+	// platform's own terms — an execute bit where there is one, and
+	// otherwise the access control list, since os.Stat's synthesised
+	// 0666 here answered neither question.
+	run := filepath.Join(cache, "echo", "1.0.0", "run")
+	assertBundleExecutable(t, run)
 }
 
 // A second synchronization with nothing new must not re-download.

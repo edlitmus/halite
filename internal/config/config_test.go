@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/fileperm/permtest"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -278,19 +279,23 @@ func TestASecretFilesContentsAreRefusedWhenReadable(t *testing.T) {
 	if err := os.WriteFile(path, []byte("s3cret\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Opened and closed the way the platform does it. A chmod is not
+	// that on Windows, and while this test used one it asserted a
+	// refusal that arrived for the wrong reason: os.Stat reports 0666
+	// for every writable file there, so no secret file was ever
+	// accepted and the message told the operator to run a chmod.
+	permtest.OpenToEveryone(t, path)
 	_, err := ReadSecretFile(path)
 	if err == nil {
 		t.Fatal("a world-readable signing key was accepted")
 	}
-	// The path is in the message, because the fix is one chmod and the
-	// operator has to know which file.
+	// The path is in the message, because the operator has to know
+	// which file.
 	if !strings.Contains(err.Error(), path) {
 		t.Errorf("the error does not name the file: %v", err)
 	}
 
-	if err := os.Chmod(path, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	permtest.MakePrivate(t, path)
 	got, err := ReadSecretFile(path)
 	if err != nil {
 		t.Fatal(err)

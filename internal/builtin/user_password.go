@@ -46,6 +46,9 @@ func currentHash(name string) (hash string, found bool, err error) {
 	if runtime.GOOS == "darwin" {
 		return currentHashDarwin(name)
 	}
+	if runtime.GOOS == "windows" {
+		return currentHashWindows(name)
+	}
 	loc, ok := hashLocations[runtime.GOOS]
 	if !ok {
 		return "", false, fmt.Errorf("this build does not know where %s keeps password hashes", runtime.GOOS)
@@ -97,6 +100,23 @@ func currentHashDarwin(name string) (string, bool, error) {
 		return "", false, fmt.Errorf("reading a macOS account's password hash needs root, and so does setting one")
 	}
 	return "", false, fmt.Errorf("this build does not yet read a macOS account's password hash (mac_shadow, SPEC 15.3)")
+}
+
+// currentHashWindows says why there is no hash to read.
+//
+// Windows keeps password verifiers in the SAM and exposes no documented
+// way to read one, at any privilege. That is not a gap in this build:
+// there is nothing there to read. It matters because the caller uses
+// the current hash to decide whether a password needs setting, so on
+// this platform that question cannot be answered and a password state
+// cannot be idempotent — which is what the caller has to be told,
+// rather than "this build does not know where windows keeps password
+// hashes", which reads as a missing table entry.
+func currentHashWindows(name string) (string, bool, error) {
+	return "", false, fmt.Errorf(
+		"Windows keeps password verifiers in the SAM and exposes no way to read one, " +
+			"so a password cannot be compared before it is set; SPEC 15.3 puts setting " +
+			"one in win_shadow, which this build does not have")
 }
 
 // passwordCommand builds the command that writes a hash, with the hash on

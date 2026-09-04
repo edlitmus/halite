@@ -112,12 +112,16 @@ Repositories:
 // are none". This pins which provider answers what, so a capability added
 // or dropped shows up here.
 func TestPkgOptionalCapabilities(t *testing.T) {
-	holds := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false}
-	repos := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false}
-	all := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": true}
+	holds := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false, "chocolatey": true}
+	repos := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false, "chocolatey": true}
+	upgrades := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": true, "chocolatey": true}
+	// Chocolatey has no command that maps a file to the package that
+	// installed it, so it implements neither half of pkgOwner and a
+	// caller gets the refusal that names it.
+	owners := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": true, "chocolatey": false}
 
 	for _, p := range []pkgProvider{
-		pkgngProvider{}, aptProvider{}, dnfProvider{binary: "dnf"}, apkProvider{},
+		pkgngProvider{}, aptProvider{}, dnfProvider{binary: "dnf"}, apkProvider{}, chocoProvider{},
 	} {
 		if _, ok := p.(pkgHolder); ok != holds[p.Name()] {
 			t.Errorf("%s pkgHolder = %v, want %v", p.Name(), ok, holds[p.Name()])
@@ -125,20 +129,43 @@ func TestPkgOptionalCapabilities(t *testing.T) {
 		if _, ok := p.(pkgRepos); ok != repos[p.Name()] {
 			t.Errorf("%s pkgRepos = %v, want %v", p.Name(), ok, repos[p.Name()])
 		}
-		if _, ok := p.(pkgUpgrader); ok != all[p.Name()] {
-			t.Errorf("%s pkgUpgrader = %v, want %v", p.Name(), ok, all[p.Name()])
+		if _, ok := p.(pkgUpgrader); ok != upgrades[p.Name()] {
+			t.Errorf("%s pkgUpgrader = %v, want %v", p.Name(), ok, upgrades[p.Name()])
 		}
-		if _, ok := p.(pkgOwner); ok != all[p.Name()] {
-			t.Errorf("%s pkgOwner = %v, want %v", p.Name(), ok, all[p.Name()])
+		if _, ok := p.(pkgOwner); ok != owners[p.Name()] {
+			t.Errorf("%s pkgOwner = %v, want %v", p.Name(), ok, owners[p.Name()])
 		}
 	}
 
 	// And the error a caller gets when a provider cannot answer names what
 	// could not be done rather than only that something went wrong.
+	//
+	// The node is told which package manager it has, rather than left to
+	// PATH: this asserted whatever the machine running the tests happened
+	// to have installed, so on a host with no package manager at all it
+	// failed with "no package manager was found on this node", which is a
+	// different error about a different thing.
 	c := newCtx(false)
 	c.Runner = &exec.RecordingRunner{}
-	if _, err := pickHolder(c); err != nil && !strings.Contains(err.Error(), "hold") {
-		t.Errorf("the error should say what could not be done: %v", err)
+	c.Lookup = func(name string) string {
+		if name == "apk" {
+			return "/sbin/apk"
+		}
+		return ""
+	}
+	_, err := pickHolder(c)
+	if err == nil {
+		t.Fatal("apk has no hold, and pickHolder did not say so")
+	}
+	if !strings.Contains(err.Error(), "hold") || !strings.Contains(err.Error(), "apkpkg") {
+		t.Errorf("the error should name the capability and the provider: %v", err)
+	}
+
+	// And with no package manager at all, the error is about that
+	// instead, and offers the providers this build ships.
+	c.Lookup = func(string) string { return "" }
+	if _, err := pickHolder(c); err == nil || !strings.Contains(err.Error(), "no package manager") {
+		t.Errorf("with no package manager the error should say so: %v", err)
 	}
 }
 

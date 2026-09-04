@@ -1,4 +1,4 @@
-//go:build !unix
+//go:build !unix && !windows
 
 package exec
 
@@ -7,13 +7,10 @@ import (
 	"os/exec"
 )
 
-// applyCredential is not implemented off unix. Windows uses a restricted
-// token rather than setuid, which arrives with the Windows module set in a
-// later phase; refusing loudly is better than silently running as the
-// service account.
+// applyCredential is not implemented on this platform.
 func applyCredential(c *exec.Cmd, cmd Command) error {
 	if cmd.RunAs != "" {
-		return fmt.Errorf("runas is not supported on this platform yet")
+		return fmt.Errorf("runas %q: switching accounts is not implemented on this platform", cmd.RunAs)
 	}
 	return nil
 }

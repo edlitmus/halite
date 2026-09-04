@@ -306,3 +306,44 @@ func TestATagGlobMatchesSegmentBySegment(t *testing.T) {
 		}
 	}
 }
+
+// Close is final: an append afterwards is refused rather than silently
+// reopening the segment.
+//
+// It used to reopen. Close set the current file to nil and the next
+// append opened it again, so a bus that had been closed went on
+// accepting events and held the segment open for the life of the
+// process. A caller could not tell whether an event fired during
+// shutdown had been recorded, and on Windows the leaked handle stopped
+// the directory being removed — which is how sixteen hub tests found it.
+func TestAppendingToAClosedBusIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	bus, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bus.Append(&Event{Tag: "halite/test/one"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := bus.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := bus.Append(&Event{Tag: "halite/test/two"}); err == nil {
+		t.Fatal("a closed bus accepted an event")
+	} else if !strings.Contains(err.Error(), "closed") {
+		t.Errorf("the refusal should say the bus is closed: %v", err)
+	}
+
+	// And nothing holds the directory, which is the observable half on a
+	// platform that will not remove an open file.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Errorf("the bus still holds a segment after Close: %v", err)
+	}
+
+	// Closing twice is not an error: a shutdown path that runs it from
+	// two places should not fail the second.
+	if err := bus.Close(); err != nil {
+		t.Errorf("a second Close reported %v", err)
+	}
+}

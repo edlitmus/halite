@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/pki"
 )
 
@@ -255,5 +256,5 @@ func writeAtomic(path string, data []byte, mode os.FileMode) error {
 	if err := inheritOwner(name, filepath.Dir(path)); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
-	return os.Rename(name, path)
+	return atomicfile.Rename(name, path)
 }

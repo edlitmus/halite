@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/eventbus"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 )
 
@@ -104,6 +106,15 @@ func (r *fileReturner) open() error {
 	if err != nil {
 		return err
 	}
+	// The mode passed to OpenFile is the whole answer on unix and no
+	// answer at all on Windows, where a return log carrying whatever the
+	// estate's jobs returned was left readable by every account on the
+	// machine. Stated again through internal/fileperm, which knows what
+	// the mode was asking for on each platform.
+	if err := fileperm.ApplyFile(f, os.FileMode(r.opts.Mode)); err != nil {
+		f.Close()
+		return err
+	}
 	info, err := f.Stat()
 	if err != nil {
 		f.Close()
@@ -133,11 +144,11 @@ func (r *fileReturner) rotate() error {
 		if _, err := os.Stat(newer); err != nil {
 			continue
 		}
-		if err := os.Rename(newer, older); err != nil {
+		if err := atomicfile.Rename(newer, older); err != nil {
 			return err
 		}
 	}
-	if err := os.Rename(r.opts.Path, r.opts.Path+".1"); err != nil {
+	if err := atomicfile.Rename(r.opts.Path, r.opts.Path+".1"); err != nil {
 		return err
 	}
 	// The one past the last kept copy is removed rather than left to

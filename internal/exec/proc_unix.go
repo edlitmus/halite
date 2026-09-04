@@ -7,8 +7,8 @@ import (
 	"syscall"
 )
 
-// setProcessGroup starts the child in its own process group and makes the
-// context's cancel signal that whole group, not just the direct child.
+// confineTree prepares the child so that cancelling the command kills
+// everything it started, not just the process halite spawned.
 //
 // A `cmd.run` with a Timeout that fired used to wait out the runaway
 // anyway: os/exec kills only the process it started, so the shell died
@@ -18,7 +18,10 @@ import (
 // program, and any grandchild down together, which is what a timeout is
 // for. WaitDelay in Run is the backstop for a grandchild that put itself
 // in a new group.
-func setProcessGroup(c *exec.Cmd) {
+//
+// The two returned functions are hooks the platform that needs them
+// uses; on unix everything can be arranged before the child starts.
+func confineTree(c *exec.Cmd) (afterStart func(), cleanup func()) {
 	if c.SysProcAttr == nil {
 		c.SysProcAttr = &syscall.SysProcAttr{}
 	}
@@ -33,4 +36,5 @@ func setProcessGroup(c *exec.Cmd) {
 		_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
 		return c.Process.Kill()
 	}
+	return func() {}, func() {}
 }

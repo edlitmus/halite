@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -134,11 +135,13 @@ func TestGPGRendererFailsLoudly(t *testing.T) {
 func TestGPGCiphertextGoesOnStandardInputNeverTheArgumentVector(t *testing.T) {
 	dir := t.TempDir()
 	argvFile := filepath.Join(dir, "argv")
-	stand := filepath.Join(dir, "gpg-stand-in")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argvFile + "\nexec cat\n"
-	if err := os.WriteFile(stand, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// A compiled stand-in rather than a shell script. The script was
+	// `#!/bin/sh`, which is not a program on every platform this ships
+	// to: on Windows it could not be started at all, so the one check
+	// that this ciphertext never reaches an argument vector did not run
+	// there.
+	stand := buildStandIn(t, dir)
+	t.Setenv("HALITE_STANDIN_ARGV", argvFile)
 
 	const ciphertext = pgpHeader + "\nZGVmaW5pdGVseS1zZWNyZXQ=\n-----END PGP MESSAGE-----"
 	src := "#!yaml|gpg\nk: |\n  " + strings.ReplaceAll(ciphertext, "\n", "\n  ") + "\n"
@@ -210,4 +213,24 @@ func TestDecryptedValuesAreOfferedToTheRedactor(t *testing.T) {
 	if len(offered) != 0 {
 		t.Errorf("a plain value was offered as a secret: %#v", offered)
 	}
+}
+
+// buildStandIn compiles the stand-in gpg and returns its path.
+//
+// Named with the platform's own executable suffix: Windows decides what
+// a file is by its extension, and `go build -o` writes exactly the name
+// it is given.
+func buildStandIn(t *testing.T, dir string) string {
+	t.Helper()
+	name := "gpg-stand-in"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	path := filepath.Join(dir, name)
+	build := exec.Command("go", "build", "-o", path, "./testdata/gpgstandin")
+	build.Stderr = os.Stderr
+	if err := build.Run(); err != nil {
+		t.Fatalf("building the stand-in gpg: %v", err)
+	}
+	return path
 }
