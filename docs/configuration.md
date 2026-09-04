@@ -1427,14 +1427,6 @@ The largest request body this service will read.
 
 The largest request body the service will read, so a client cannot make it run out of memory.
 
-### `metrics`
-
-*`halite-hub`, `halite-api` · `true` · SPEC section 26.2*
-
-Record and expose Prometheus metrics at /v1/metrics.
-
-Records and exposes Prometheus metrics at `/v1/metrics`. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them.
-
 ### `tls_cert`
 
 *`halite-api` · no default · SPEC section 22.3*
@@ -1856,6 +1848,30 @@ Level for the file sink, defaulting to log_level.
 
 A separate level for the file sink, so an estate can keep `info` on the console and `debug` on disk.
 
+### `metrics`
+
+*all three programs · `true` · SPEC section 26.2*
+
+Record Prometheus metrics. The hub and the API expose them at /v1/metrics; a node writes them where metrics_textfile says.
+
+Records Prometheus metrics. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them. The hub and the API serve them at `/v1/metrics`; a node has no listener to serve anything on, so its exposition goes to `metrics_textfile` and nowhere else.
+
+### `metrics_interval`
+
+*`halite-node` · `60s` · SPEC section 26.2*
+
+How often a node rewrites metrics_textfile.
+
+How often the file is rewritten. It is also rewritten as the node stops, so a shutdown does not lose up to an interval of counting.
+
+### `metrics_textfile`
+
+*`halite-node` · no default · SPEC section 26.2*
+
+Where a node writes its exposition, for node_exporter's textfile collector. Empty means a node records nothing.
+
+The file a node writes its exposition to, for the textfile collector node_exporter already runs on most fleets — typically `/var/lib/node_exporter/textfile_collector/halite.prom`. Empty, the default, means a node keeps no metrics at all: opening a port on every managed machine to answer a scrape is a larger change to an estate than the numbers are worth, and the collector is the way this is done without one. Written by rename, because the collector reads the file whenever it likes and a half-written exposition is one it rejects whole.
+
 ### `tracing`
 
 *all three programs · `off` · SPEC section 26.3*
@@ -1964,7 +1980,9 @@ Every setting, and which programs read it.
 | `log_level_file` | all three programs | — | Logging and diagnostics |
 | `max_body` | `halite-api` | `64MiB` | The API service |
 | `max_causality_depth` | `halite-hub` | `5` | Reactors |
-| `metrics` | `halite-hub`, `halite-api` | `true` | The API service |
+| `metrics` | all three programs | `true` | Logging and diagnostics |
+| `metrics_interval` | `halite-node` | `60s` | Logging and diagnostics |
+| `metrics_textfile` | `halite-node` | — | Logging and diagnostics |
 | `mine_functions` | `halite-node` | — | Grains and the mine |
 | `mine_interval` | `halite-node` | `60` | Grains and the mine |
 | `node_data_cache` | `halite-hub` | `true` | Targeting and the job cache |

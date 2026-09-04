@@ -47,6 +47,13 @@ type Options struct {
 // DefaultTimeout bounds a call that names no timeout of its own.
 const DefaultTimeout = 60 * time.Second
 
+// ErrTimeout marks a call that ran out of time, so that a caller
+// counting extension timeouts separately -- SPEC 26.2's
+// `halite_ext_timeouts_total` -- can tell one from an extension that
+// answered with a failure. Matching the message would work until
+// somebody reworded it.
+var ErrTimeout = errors.New("the extension ran out of time")
+
 // Process is one running extension.
 //
 // One call at a time. SPEC 24.2 says concurrency is by process pool
@@ -272,7 +279,7 @@ func (p *Process) Call(ctx context.Context, function string, args, kwargs any, c
 // what actually ends the read.
 func (p *Process) readWithin(ctx context.Context, timeout time.Duration) (Frame, error) {
 	if timeout <= 0 {
-		return Frame{}, errors.New("the extension ran out of time")
+		return Frame{}, ErrTimeout
 	}
 	type outcome struct {
 		frame Frame
@@ -296,7 +303,7 @@ func (p *Process) readWithin(ctx context.Context, timeout time.Duration) (Frame,
 		}
 		return got.frame, nil
 	case <-timer.C:
-		return Frame{}, fmt.Errorf("the extension did not answer within %s", timeout)
+		return Frame{}, fmt.Errorf("%w: it did not answer within %s", ErrTimeout, timeout)
 	case <-ctx.Done():
 		return Frame{}, ctx.Err()
 	}

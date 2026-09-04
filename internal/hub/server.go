@@ -229,8 +229,9 @@ func (s *Server) Handler() http.Handler {
 	// either way the answer is the same shape as every other failure.
 	mux.HandleFunc("/", s.notFound)
 	// Counted, so that stopping the hub can wait for what it is in the
-	// middle of answering.
-	return s.requests.track(mux)
+	// middle of answering, and measured, so that an operator can see
+	// which of its endpoints is slow.
+	return s.requests.track(s.measured(mux))
 }
 
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
@@ -325,6 +326,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case errors.Is(err, keystore.ErrPending):
+		s.countEnrollment("pending")
 		s.info("enrollment request is pending",
 			"node_id", res.NodeID, "fingerprint", res.Fingerprint, "from", r.RemoteAddr)
 		s.emit(tagEnroll(res.NodeID, string(keystore.Pending)), res.NodeID, map[string]any{
@@ -339,6 +341,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, keystore.ErrRefused):
 		// The detail goes in the hub's log, where an operator can see
 		// it. The node is told that it was refused.
+		s.countEnrollment("refused")
 		s.warn("enrollment refused", "from", r.RemoteAddr, "error", err.Error())
 		s.emit("halite/error/enrollment", "", map[string]any{
 			"from": r.RemoteAddr, "error": err.Error(),
@@ -346,9 +349,11 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused,
 			errors.New("enrollment refused; the hub's log says why"))
 	case err != nil:
+		s.countEnrollment("failed")
 		s.warn("enrollment failed", "from", r.RemoteAddr, "error", err.Error())
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 	default:
+		s.countEnrollment("issued")
 		s.info("enrollment issued",
 			"node_id", res.NodeID, "fingerprint", res.Fingerprint, "from", r.RemoteAddr)
 		s.emit(tagEnroll(res.NodeID, string(keystore.Accepted)), res.NodeID, map[string]any{

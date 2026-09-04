@@ -42,8 +42,45 @@ type Client struct {
 	// Timeout applies to the short request/response endpoints and not
 	// to the subscribe stream, which is meant to stay open.
 	Timeout time.Duration
+	// Observe, when set, is called once per short request with the
+	// route it took, the status the hub answered with -- zero when the
+	// request never got one -- and how long the whole exchange took.
+	//
+	// A hook rather than a metrics registry held here, because this
+	// package is what a node, the API, and the operator tools all dial
+	// the hub with, and only some of them expose metrics. The caller
+	// that does decides what the numbers are called.
+	Observe func(route string, status int, took time.Duration)
 
 	http *http.Client
+}
+
+// clientRoute collapses the variable part of a path, so that timing a
+// request per job identifier does not make a series per job.
+func clientRoute(path string) string {
+	// The whole tail here, not the first segment of it: under
+	// `/v1/files/` the tail is the file being fetched, so keeping it
+	// would be a series per file in the tree.
+	if rest, ok := strings.CutPrefix(path, PathFiles); ok && rest != "" {
+		return PathFiles + "{path}"
+	}
+	if rest, ok := strings.CutPrefix(path, PathJob); ok && rest != "" {
+		// `/v1/jobs/{jid}/kill` and `/v1/jobs/{jid}` are different
+		// routes; the identifier between them is not.
+		if _, tail, found := strings.Cut(rest, "/"); found && tail != "" {
+			return PathJob + "{jid}/" + tail
+		}
+		return PathJob + "{jid}"
+	}
+	return path
+}
+
+// observe reports one request to the hook, if there is one.
+func (c *Client) observe(path string, started time.Time, status *int) {
+	if c.Observe == nil {
+		return
+	}
+	c.Observe(clientRoute(path), *status, time.Since(started))
 }
 
 func (c *Client) serverName() (string, error) {
@@ -105,7 +142,8 @@ func (c *Client) timeout() time.Duration {
 
 // post sends a JSON body and decodes a JSON answer, turning the hub's
 // error shape back into an error.
-func (c *Client) post(ctx context.Context, path string, body, out any) (int, error) {
+func (c *Client) post(ctx context.Context, path string, body, out any) (status int, err error) {
+	defer c.observe(path, time.Now(), &status)
 	client, err := c.client()
 	if err != nil {
 		return 0, err
@@ -508,7 +546,9 @@ func (c *Client) FetchFile(ctx context.Context, env, path, etag string) (body []
 	return c.get(ctx, escaped, etag)
 }
 
-func (c *Client) get(ctx context.Context, path, etag string) ([]byte, string, bool, error) {
+func (c *Client) get(ctx context.Context, path, etag string) (body []byte, digest string, notModified bool, err error) {
+	status := 0
+	defer c.observe(path, time.Now(), &status)
 	client, err := c.client()
 	if err != nil {
 		return nil, "", false, err
@@ -528,6 +568,7 @@ func (c *Client) get(ctx context.Context, path, etag string) ([]byte, string, bo
 		return nil, "", false, fmt.Errorf("%s: %w", path, err)
 	}
 	defer res.Body.Close()
+	status = res.StatusCode
 	if res.StatusCode == http.StatusNotModified {
 		return nil, res.Header.Get("X-Halite-Hash"), true, nil
 	}
@@ -661,6 +702,8 @@ func (c *Client) PushGrains(ctx context.Context, req GrainsRequest) error {
 // caller that merges two expositions must not have this one reformatted
 // on the way through.
 func (c *Client) Metrics(ctx context.Context) (string, error) {
+	status := 0
+	defer c.observe(PathMetrics, time.Now(), &status)
 	client, err := c.client()
 	if err != nil {
 		return "", err
@@ -674,6 +717,7 @@ func (c *Client) Metrics(ctx context.Context) (string, error) {
 		return "", err
 	}
 	defer res.Body.Close()
+	status = res.StatusCode
 	payload, err := io.ReadAll(io.LimitReader(res.Body, MaxMetricsBody))
 	if err != nil {
 		return "", err

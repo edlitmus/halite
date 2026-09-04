@@ -113,6 +113,7 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, token *apit
 		}
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Tag, raw)
 		flusher.Flush()
+		s.m().streamEvents.With("sse").Inc()
 		return nil
 	})
 	if err != nil && r.Context().Err() == nil {

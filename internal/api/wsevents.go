@@ -81,7 +81,11 @@ func (s *Server) wsEventStream(w http.ResponseWriter, r *http.Request, token *ap
 		if !s.visible(token, &e) {
 			return nil
 		}
-		return conn.WriteText(raw)
+		if err := conn.WriteText(raw); err != nil {
+			return err
+		}
+		s.m().streamEvents.With("websocket").Inc()
+		return nil
 	})
 	if err != nil && ctx.Err() == nil {
 		s.warn("the websocket event stream ended",

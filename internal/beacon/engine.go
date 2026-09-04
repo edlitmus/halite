@@ -34,6 +34,16 @@ type Engine struct {
 	StateRunning func() bool
 	// Log receives a line. Nil discards.
 	Log func(level, msg string, kv ...any)
+	// Observe reports what one beacon did, for a caller keeping
+	// metrics: `fired` once per event offered, `rate_limited` for one
+	// the token bucket refused, `dropped` with the number the bounded
+	// queue discarded to make room, and `failed` for a poll that
+	// errored.
+	//
+	// SPEC 26.2 requires a counter behind every drop path, and the
+	// queue's overflow is one. It was reported as a log line and as an
+	// event, neither of which is a number an alert can watch.
+	Observe func(event, beaconName string, n int)
 	// Now is the clock, for the tests.
 	Now func() time.Time
 
@@ -58,6 +68,12 @@ func (e *Engine) now() time.Time {
 func (e *Engine) logf(level, msg string, kv ...any) {
 	if e.Log != nil {
 		e.Log(level, msg, kv...)
+	}
+}
+
+func (e *Engine) observe(event, beaconName string, n int) {
+	if e.Observe != nil {
+		e.Observe(event, beaconName, n)
 	}
 }
 
@@ -212,6 +228,7 @@ func (e *Engine) once(in *Instance) {
 	events, err := mod.Fn(e.Context(), in)
 	if err != nil {
 		e.logf("warn", "a beacon failed", "beacon", in.Name, "error", err.Error())
+		e.observe("failed", in.Name, 1)
 		// A beacon that cannot read the thing it watches is itself
 		// worth an event: silence is what a healthy system looks like,
 		// and a watcher that has stopped watching must not look like
@@ -284,10 +301,22 @@ func (e *Engine) remember(in *Instance, ev Event) {
 	in.last[ev.Suffix] = digest(ev)
 }
 
+// Depth is how many events are waiting to be sent, for a gauge.
+//
+// Zero before Run has built the queue, which is the honest answer: a
+// queue that does not exist holds nothing.
+func (e *Engine) Depth() int {
+	if e.queue == nil {
+		return 0
+	}
+	return e.queue.Len()
+}
+
 // offer applies the rate limit and puts the event on the queue.
 func (e *Engine) offer(in *Instance, ev Event) {
 	if !in.allow(e.now()) {
 		e.logf("debug", "a beacon event was rate limited", "beacon", in.Name)
+		e.observe("rate_limited", in.Name, 1)
 		return
 	}
 	tag := TagPrefix + in.Name
@@ -301,8 +330,10 @@ func (e *Engine) offer(in *Instance, ev Event) {
 		at:     e.now(),
 		window: in.coalesceWindow(),
 	})
+	e.observe("fired", in.Name, 1)
 	if dropped > 0 {
 		e.logf("warn", "the beacon queue overflowed", "beacon", in.Name, "dropped", dropped)
+		e.observe("dropped", in.Name, dropped)
 		// Loss is reported, never silent. SPEC 16.3.
 		_ = e.Send(TagPrefix+in.Name+"/overflow", map[string]any{"dropped": int64(dropped)})
 	}

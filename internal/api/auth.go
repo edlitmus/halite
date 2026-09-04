@@ -104,6 +104,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.m().authAttempts.With("local", "accepted").Inc()
+	s.m().tokensIssued.With("local").Inc()
 	namePrincipal(w, token.Principal)
 	s.info("login", "principal", token.Principal, "token_id", token.ID,
 		"remote", remoteHost(r), "roles", strings.Join(token.Roles, ","))
@@ -148,6 +149,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request, token *apitoken.
 		writeError(w, http.StatusInternalServerError, "the token could not be revoked")
 		return
 	}
+	s.m().tokensRevoked.Inc()
 	s.info("logout", "principal", token.Principal, "token_id", token.ID)
 	w.WriteHeader(http.StatusNoContent)
 }

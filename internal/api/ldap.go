@@ -61,6 +61,7 @@ func (s *Server) ldapLogin(w http.ResponseWriter, r *http.Request, req LoginRequ
 		return
 	}
 	s.m().authAttempts.With("ldap", "accepted").Inc()
+	s.m().tokensIssued.With("ldap").Inc()
 	namePrincipal(w, token.Principal)
 	s.info("login", "principal", token.Principal, "token_id", token.ID,
 		"method", "ldap", "dn", identity.DN, "remote", remoteHost(r),

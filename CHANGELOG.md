@@ -250,7 +250,7 @@ one the sender will retry carrying the same signature, and refusing that
 as a replay turns a transient fault into the lost event a webhook exists
 to prevent.
 
-### Metrics, on both components
+### Metrics, on all three components
 
 Prometheus text exposition, written directly. SPEC 26.2 says the format
 is documented and stable and needs no client library; SPEC 4.2 says a
@@ -287,9 +287,77 @@ specification names is written by something outside the program, and an
 estate with a thousand distinct states would otherwise turn one family
 into a thousand series.
 
-What a node alone knows is counted nowhere yet, because a node has no
-exposition endpoint: a beacon event its own queue dropped, a local state
-run's duration, the scheduler's `maxrunning` skips.
+A node has no listener and does not get one for this. SPEC 6.1 has it
+dial the hub and be dialled by nothing, and opening a scrape port on
+every managed machine to answer a question about the control plane is a
+larger change to an estate than the answer is worth. It writes its
+exposition to the file `metrics_textfile` names instead — the one
+node_exporter's textfile collector already reads on most fleets — so
+the scraper that reaches every machine picks the numbers up with the
+node's own `instance` label on them. Unset, which is the default, a
+node records nothing.
+
+Only the agent writes it. A one-shot `halite-node call` is a fresh
+process whose counters start at zero, and writing those over the
+agent's file would report every counter on the machine falling to
+nearly nothing each time somebody ran a command by hand — which a
+scraper reads as a restart, not as a mistake. The file is replaced by
+rename, on the interval and once more as the node stops, because the
+collector reads whenever it likes and rejects a half-written exposition
+whole.
+
+That is what closed the gap this entry used to describe. Two things a
+node knows and the hub cannot: what its bounded queues discarded, which
+never reaches the hub by definition, and where a state run's time went
+— the hub sees one duration per job, and
+`halite_state_compile_duration_seconds` against
+`halite_state_run_duration_seconds` is the tree getting slower against
+the machine getting slower, which are different problems.
+
+Twenty-one families became seventy-seven, and the count is checked
+rather than counted by hand. SPEC 26.2 names thirty-two and this build
+registered twenty-one of them; it now registers thirty, and the two
+that are left — `halite_pillar_cache_hits_total` and
+`halite_pillar_ext_failures_total` — wait on a pillar cache and on
+external pillar rather than on a counter. A test reads the
+specification's own table, counts what the source registers, and fails
+if [DIVERGENCE 5.23](docs/DIVERGENCE.md)'s arithmetic disagrees, so the
+ledger cannot claim a gap that has been filled.
+
+What arrived with them, beyond SPEC's list:
+
+- **The hub's own service metrics.** `halite_hub_requests_total` and
+  `halite_hub_request_duration_seconds`, by route. The API had these
+  from the start and the hub had none, so "the API is slow" and "the
+  hub the API is waiting on is slow" were the same graph. Both services
+  now also time their own half of the conversation with the hub, from
+  the client rather than at each call site.
+- **Certificate expiry.** `halite_hub_ca_expiry_seconds` is the one
+  number whose reaching zero takes the estate with it, and it is the
+  one certificate nothing renews on a timer.
+  `halite_hub_keys_expiring` and `halite_hub_keys_expired` are the same
+  question about the nodes, counted apart so a fixed problem does not
+  look like a growing one — `halite_hub_keys_accepted` does not fall
+  for an expired record, because the record is still there.
+- **Drop paths that had no counter.** A node's job queue, its queue of
+  returns waiting for the hub, and each beacon's queue.
+  `halite_beacon_dropped_total` is counted on both sides: the node
+  counts its own, and the hub reads the count out of the overflow event
+  the node already sends, so an estate that collects no textfiles still
+  gets the number. SPEC 26.2's rule — every bounded queue and every
+  drop path has a counter — now holds across the build.
+- **Where a request went.** `halite_event_subscriber_lag_seconds`,
+  `halite_gitfs_fetch_duration_seconds` and
+  `halite_gitfs_signature_failures_total` — a ref refused for an
+  untrusted signature was a log line and nothing an alert could watch,
+  against a control SPEC 13.3 makes the difference between serving a
+  tree and not.
+
+A route label carries the route and not the identifier in it, on all
+three: `/v1/jobs/{jid}` is one series and a job identifier is not, and
+under `/v1/files/` the whole tail is collapsed because there the tail is
+the file being fetched. Writing the test for that found the first cut
+keeping the tail, which would have been a series per file in the tree.
 
 ### Returns go somewhere durable
 
@@ -774,7 +842,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 211 settings in the
+The configuration reference explains each of the 213 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.
@@ -1195,17 +1263,43 @@ no usage text, which the check would otherwise have made unusable.
 ### A Grafana dashboard to start from
 
 `contrib/examples/grafana-dashboard.json` imports into Grafana over the
-metrics halite already exposes: fleet health, jobs, states, pillar,
-events and reactions, the file server, authentication and policy, the
-API's own service metrics, and a collapsed row for relays. It asks only
-for a data source, and two variables pick the job name and which
-halite-api to read.
+metrics halite exposes: fleet health, certificates and enrollment,
+jobs, states and orchestration, pillar, events and reactions, the file
+server, authentication and policy, the hub's own service metrics, the
+API's, and two collapsed rows for the node agents and for relays. It
+asks only for a data source. Four variables pick the job name and which
+halite-api to read, and — separately — the job that scrapes
+node_exporter and which nodes to cover, because a node's metrics do not
+arrive in the same scrape.
 
-A test parses it and holds every query to naming a family this build
-registers. A panel written against a metric that does not exist draws an
-empty graph rather than an error, which is indistinguishable from a
-fleet with nothing happening in it — the same failure the documented
-alerts have, checked the same way.
+Two panels are the ones worth having. **Where the time goes** puts how
+long the API took to answer against how long the hub took to answer the
+API: where the lines move together the hub is the slow half, and
+without the second line the only question the dashboard could answer
+was whether it was slow. **Where a state run's time goes**, in the node
+row, is the same trick one level down — compiling the tree against
+applying it.
+
+Four tests hold the file to being importable and to being about this
+build: every query names a family this build registers, every panel has
+its own identifier, no panel overlaps another or runs past the
+twenty-four columns the grid has, and every panel carries a
+description. A panel written against a metric that does not exist draws
+an empty graph rather than an error, which is indistinguishable from a
+fleet with nothing happening in it; two panels sharing an identifier
+import without complaint and misbehave afterwards, which is the worse
+of the two. A fifth check holds the node panels to the node scrape job,
+because a node family filtered by the API's job draws an empty graph on
+every estate — and it caught one, on a family that is recorded by both
+the hub and a node.
+
+The alerting rules in [metrics.md](docs/metrics.md) grew with the
+families: the CA and the node certificates, beacon events lost to a
+full queue, a git ref refused for its signature, subscribers falling
+behind the bus, an orchestration that would not compile, and three that
+read the nodes' textfiles — returns a node threw away, jobs it refused,
+and extensions that ran out of time. Twenty-two rules, all accepted by
+`promtool check rules`.
 
 ### A histogram nothing has observed reads as a histogram
 
