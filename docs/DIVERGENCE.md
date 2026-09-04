@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **44 execution modules / 249 functions** and **23 state
-modules / 64 functions**.
+The build ships **45 execution modules / 257 functions** and **24 state
+modules / 68 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -501,7 +501,7 @@ different reason is given.
 | `ssh_known_hosts` | not implemented | 0 | |
 | `sudo` | not implemented | 0 | |
 | `timezone` | not implemented | 0 | the exec side is read-only |
-| `win_dacl` | not implemented | 0 | Windows only |
+| `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
 | `win_task` | not implemented | 0 | Windows only |
 | `win_wua` | not implemented | 0 | Windows only |
 | `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run |
