@@ -784,16 +784,15 @@ func TestExecPathIsWhatAStateSearches(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A name nothing else on the machine could resolve, so a pass
-	// cannot come from the ambient PATH.
-	probe := filepath.Join(bin, "halite-exec-path-probe")
-	if err := os.WriteFile(probe, []byte("#!/bin/sh\necho probe-ran\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	// cannot come from the ambient PATH. Written in the platform's own
+	// form: a shell script mode 0755 is not a program on Windows, so
+	// this test could not have passed there whatever the setting did.
+	probeName := writeProbe(t, bin)
 
 	stateRoot := t.TempDir()
 	for name, body := range map[string]string{
 		"top.sls": "base:\n  '*':\n    - p\n",
-		"p.sls":   "probe:\n  cmd.run:\n    - name: halite-exec-path-probe\n",
+		"p.sls":   "probe:\n  cmd.run:\n    - name: " + probeName + "\n",
 	} {
 		if err := os.WriteFile(filepath.Join(stateRoot, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -817,7 +816,10 @@ func TestExecPathIsWhatAStateSearches(t *testing.T) {
 	}
 
 	with := filepath.Join(dir, "with.yaml")
-	if err := os.WriteFile(with, []byte("exec_path: "+bin+":/usr/bin:/bin\n"), 0o644); err != nil {
+	// Joined the way this platform's PATH is, and prefixed to the
+	// platform's own program directories rather than to /usr/bin.
+	path := searchPath(append([]string{bin}, systemDirs()...)...)
+	if err := os.WriteFile(with, []byte("exec_path: "+path+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	got := apply(with)
