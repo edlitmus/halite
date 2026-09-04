@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **50 execution modules / 283 functions** and **27 state
-modules / 73 functions**.
+The build ships **50 execution modules / 283 functions** and **28 state
+modules / 76 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -478,7 +478,7 @@ different reason is given.
 | `acl` | not implemented | 0 | see 2.1 |
 | `apparmor` | not implemented | 0 | |
 | `at` | not implemented | 0 | |
-| `beacon` | not implemented | 0 | phase 3 |
+| `beacon` | implemented | 2 | present and absent, both persisting to beacons.d so a declaration survives a restart 
 | `environ` | not implemented | 0 | |
 | `firewall` | not implemented | 0 | |
 | `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
@@ -496,7 +496,7 @@ different reason is given.
 | `pkgrepo` | implemented | 2 | managed and absent, both converging on a second run 
 | `pro` | not implemented | 0 | Ubuntu only |
 | `reboot` | not implemented | 0 | |
-| `schedule` | implemented | 1 | `absent`; the runtime control is in the execution module |
+| `schedule` | implemented | 2 | present and absent; absent now persists, which it did not before 
 | `selinux` | not implemented | 0 | Linux only |
 | `ssh_known_hosts` | not implemented | 0 | |
 | `sudo` | not implemented | 0 | |

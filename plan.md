@@ -115,12 +115,15 @@ an hour in.
 | `environ.setenv` | `get`, `has_value`, `items` | `setval`, and a decision about what "permanent" means: `/etc/environment` on Linux, the registry on Windows |
 | `mount.mounted` | `active` | `mount`, `umount`, `remount`, `set_fstab` |
 | `zpool.present` | `healthy`, `list` | `create`, `destroy`, `export`, `import` — the largest of the four |
-| `beacon.present` | the `beacons` module ships whole | the state only, so this one *is* just the wrapper |
+| ~~`beacon.present`~~ | the `beacons` module ships whole | **done** — the state only, so this one really was just the wrapper |
 
-`schedule.present`/`absent` is the same shape as `beacon`: the `schedule`
-execution module ships with 12 functions and there is no state, and the
-estate references `schedule.absent` once. Those two are the genuinely
-cheap ones.
+`schedule` is the same shape as `beacon`, and this section previously
+said it had no state at all. It had one: `schedule.absent`, added with
+the five small gaps a real tree reached for. What it did not have was
+`present`, and its `absent` did not write the running set back — so a job
+removed by a state came back on the next restart. Both are fixed, and
+the two states are one implementation because they are the same state
+twice.
 
 ### 2.2 Core modules missing entirely
 
@@ -411,10 +414,13 @@ Sequenced by value per unit of work, and by what unblocks what.
    denylist is in the dialer rather than on the URL, so it survives a
    name that resolves to the metadata service, a redirect into it, and
    DNS rebinding.
-3. **The states in §2.1** — `beacon` and `schedule` first, since those
-   two really are just the wrapper; then `timezone`, `environ` and
-   `mount`, each of which needs its mutating execution half too.
-4. **`hostname`** and **`ssh_known_hosts`**. Small and universal.
+3. ~~`beacon` and `schedule` states~~ — **done.** One implementation for
+   both, because they are the same state twice. `schedule.absent`
+   already existed and did not persist, so a job a state removed came
+   back on the next restart.
+4. **The rest of §2.1** — `timezone`, `environ` and `mount`, each of
+   which needs its mutating execution half as well as the state.
+5. **`hostname`** and **`ssh_known_hosts`**. Small and universal.
 
 **Next — stop the drift**
 

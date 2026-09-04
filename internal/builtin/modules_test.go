@@ -902,7 +902,20 @@ func TestStateAndExecModulesAgreeOnNames(t *testing.T) {
 	// The state-only modules, named rather than inferred, so adding one
 	// is a decision.
 	stateOnly := map[string]bool{"module": true, "archive": true, "ssh_auth": true, "host": true}
+	// And the ones whose execution counterpart is spelled differently.
+	// SPEC 15.5 names the state `beacon` and section 16 names the module
+	// `beacons`, following Salt, so the pair exists and the two names
+	// differ by a letter. Listed here rather than waived as state-only,
+	// because "there is no execution module" would be false — an
+	// operator can inspect it, under the other spelling.
+	namedDifferently := map[string]string{"beacon": "beacons"}
 	for _, m := range r.States.Modules() {
+		if alias, aliased := namedDifferently[m]; aliased {
+			if !execModules[alias] {
+				t.Errorf("the %s state module is paired with %s, which does not exist", m, alias)
+			}
+			continue
+		}
 		if stateOnly[m] || execModules[m] {
 			continue
 		}
