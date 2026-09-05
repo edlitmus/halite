@@ -765,8 +765,24 @@ var KeyDocs = map[string]KeyDoc{
 		Detail: "Webhook ingress paths. Every one declares an authentication method; there is no unauthenticated hook, and a hook configuration that will not parse stops the service rather than serving some of them.",
 	},
 	"metrics": {
-		Group:  "The API service",
-		Detail: "Records and exposes Prometheus metrics at `/v1/metrics`. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them.",
+		Group:  "Logging and diagnostics",
+		Detail: "Records Prometheus metrics and serves them at `/v1/metrics`. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them. The hub and the API serve them on the port they already listen on; a node listens for nothing until `metrics_listen` says otherwise.",
+	},
+	"metrics_listen": {
+		Group:  "Logging and diagnostics",
+		Detail: "The address `halite-node connect` serves its exposition on, typically `:4512`. Empty, the default, means the agent opens no port at all: a node dials the hub and is dialled by nothing, and a listener on every managed machine is a decision an operator makes rather than one that arrives with an upgrade. Only the agent serves it — a one-shot `halite-node call` has no port and no need of one.",
+	},
+	"metrics_tls_cert": {
+		Group:  "Logging and diagnostics",
+		Detail: "The certificate the metrics listener presents. Required whenever `metrics_listen` is set, because there is no plaintext mode: a node's exposition says which functions ran, which extensions, and when a deployment went out, which is the same argument that put the hub's behind a certificate. The node's own `node.crt` will not do — it is issued for client authentication and carries no name a scraper could verify — so this is a certificate you supply, exactly as `halite-api` takes `tls_cert`. `x509.certificate_managed` can keep it renewed from the tree.",
+	},
+	"metrics_tls_key": {
+		Group:  "Logging and diagnostics",
+		Detail: "The key for `metrics_tls_cert`, mode 600 and readable by the account the agent runs as.",
+	},
+	"metrics_client_ca": {
+		Group:  "Logging and diagnostics",
+		Detail: "When set, the listener refuses a scraper that does not present a client certificate signed by this CA. The enrollment CA at `<pki_dir>/ca.crt` is the obvious one, so a certificate from `halite-hub keys operator create prometheus` is what the scraper carries. Left empty the port is served to anyone who can reach it, which is a decision to make deliberately rather than by omission.",
 	},
 	"ldap_address": {
 		Group:  "LDAP and Active Directory",

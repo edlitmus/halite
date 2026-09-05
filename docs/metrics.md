@@ -12,10 +12,12 @@ at them, what each family means, and what is worth alerting on.
 |---|---|---|---|
 | `halite-api` | 4511 | `/v1/metrics` | a bearer token |
 | `halite-hub` | 4510 | `/v1/metrics` | an operator certificate **and** the `metrics.show` grant |
+| `halite-node` | `metrics_listen`, typically 4512 | `/v1/metrics` | a serving certificate, and optionally a client one |
 
-Both follow the `listen` setting; there is no separate metrics port and
-no way to move the path. `metrics: false` turns the recording off
-entirely, on either service.
+The hub and the API follow the `listen` setting; there is no separate
+metrics port for them and no way to move the path. A node listens on
+`metrics_listen` and nowhere else, and opens no port until that is set.
+`metrics: false` turns the recording off entirely, on any of the three.
 
 **Point the scraper at `halite-api`.** It answers with both expositions
 — its own and the hub's — merged into one document, and it is the only
@@ -31,9 +33,17 @@ curl: (35) TLS connect error: error:0A000438:SSL routines::tlsv1 alert internal 
 ```
 
 That is the ALPN gate of [DIVERGENCE 1.7](DIVERGENCE.md), not a
-certificate problem, and TLS 1.3 has no way to say so in the alert. A
-node exposes nothing at all: it has no listener to expose it on, and
-what it does appears on the hub as jobs, returns, and events.
+certificate problem, and TLS 1.3 has no way to say so in the alert.
+
+A node is different in kind. SPEC 6.1 has it dial the hub and be
+dialled by nothing, and this endpoint is the one deliberate exception —
+[DIVERGENCE 1.13](DIVERGENCE.md). It is off until `metrics_listen` says
+otherwise, it serves one path, and it takes a certificate. See
+[A node's metrics](#a-nodes-metrics) below.
+
+Most of what a node does is also visible on the hub, as jobs, returns,
+and events. What is not is the part that never reaches the hub, which
+is exactly the part worth having.
 
 ## Setting up an external scraper
 
@@ -276,43 +286,381 @@ the token, and both grants have been exercised with `curl` standing in
 for the scraper; the paths shown are FreeBSD's, and a Linux host puts
 the same files under `/etc/prometheus/`.
 
+## A node's metrics
+
+`halite-node connect` serves `/v1/metrics` on `metrics_listen`, and a
+Prometheus scrapes it like any other target. Unset, which is the
+default, a node opens no port at all: it dials the hub and is dialled
+by nothing, and a listener on every managed machine is a decision an
+operator makes rather than one that arrives with an upgrade.
+[DIVERGENCE 1.13](DIVERGENCE.md) records the exception.
+
+```yaml
+# node.yaml
+metrics_listen: ':4512'
+metrics_tls_cert: /usr/local/etc/halite/pki/metrics.crt
+metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
+```
+
+**Only the agent serves it.** A one-shot `halite-node call` or
+`state apply` is a fresh process whose counters start at zero and whose
+lifetime is a second; there is nothing for a scraper to reach and
+nothing worth reaching.
+
+### There is no plaintext mode
+
+`metrics_listen` without `metrics_tls_cert` and `metrics_tls_key`
+serves nothing, and says so in the log. A node's exposition names which
+functions ran, which extensions, and when a deployment went out. That
+is the argument that put the hub's endpoint behind a certificate and
+the API's behind a token, and it does not weaken because the subject is
+one machine.
+
+**The node's own `node.crt` will not do.** It is issued with
+`ExtKeyUsage: ClientAuth` and carries no DNS or IP name, so Go refuses
+it as a serving certificate and a scraper would have nothing to verify
+it against. This is a certificate you supply, exactly as `halite-api`
+takes `tls_cert` — and `x509.certificate_managed` can keep it renewed
+from the tree like anything else the estate manages.
+
+To refuse a scraper that presents no certificate of its own, name a CA
+it must be signed by. The enrollment CA is the obvious one, so the
+scraper carries what `halite-hub keys operator create prometheus`
+produced:
+
+```yaml
+metrics_client_ca: /usr/local/etc/halite/pki/ca.crt
+```
+
+Left empty, the port is served to anyone who can reach it. That is a
+decision to make deliberately rather than by omission.
+
+### The two certificates, and how to make them
+
+There are two, and they face opposite ways. Confusing them is the
+commonest way to get a target that will not come up.
+
+| | What it proves | Named by | Needed when |
+|---|---|---|---|
+| The node's **serving** certificate | that the scraper reached the node it meant to | `metrics_tls_cert` on the node, `ca_file` at Prometheus | always |
+| The scraper's **client** certificate | that the thing scraping is allowed to | `cert_file` at Prometheus, `metrics_client_ca` on the node | only with `metrics_client_ca` |
+
+#### The scraper's client certificate
+
+An operator certificate, which the hub already knows how to issue:
+
+```sh
+halite-hub keys operator create prometheus --lifetime 8760h
+```
+
+```
+operator  prometheus
+principal cert:CN=prometheus
+cert      /usr/local/etc/halite/pki/operator-prometheus.crt
+key       /usr/local/etc/halite/pki/operator-prometheus.key
+expires   2027-09-05T01:07:28Z
+```
+
+It carries `TLS Web Client Authentication` and is signed by the
+enrollment CA, which is why `metrics_client_ca: <pki_dir>/ca.crt` on
+the node accepts it.
+
+**Pass `--lifetime`.** The default is 720h — thirty days — and a
+scraper cannot notice its own certificate expiring. The scrape simply
+starts failing a month after you set it up, at whatever hour you
+happened to run the command. This is the same trap as `token_lifetime`
+for the API's scraper, one certificate further along.
+
+The certificate grants nothing at the hub by itself. It is a client
+certificate the node checks against a CA, not a principal the policy
+consults; a node does not read `policy.yaml`. If you would rather the
+same identity never be usable as an operator, bind it to no role and it
+can do nothing but present itself.
+
+#### The node's serving certificate, issued on the hub
+
+The simplest, and one trust root for everything. The enrollment CA's key
+is already on the hub, so issue there and copy the result out:
+
+```sh
+halite-node call x509.create_private_key \
+    path=/tmp/node1-metrics.key algorithm=ec curve=p256
+
+halite-node call x509.create_certificate \
+    private_key=/tmp/node1-metrics.key \
+    path=/tmp/node1-metrics.crt \
+    signing_cert=/usr/local/etc/halite/pki/ca.crt \
+    signing_private_key=/usr/local/etc/halite/pki/ca.key \
+    CN=node1.example \
+    days_valid=90 \
+    ext_key_usage='["serverAuth"]' \
+    subject_alt_names='["DNS:node1.example","IP:10.0.0.11"]'
+```
+
+```sh
+$ openssl x509 -in /tmp/node1-metrics.crt -noout -subject -issuer -ext extendedKeyUsage,subjectAltName
+subject=CN=node1.example
+issuer=CN=halite enrollment CA
+X509v3 Extended Key Usage:
+    TLS Web Server Authentication
+X509v3 Subject Alternative Name:
+    DNS:node1.example, IP Address:10.0.0.11
+```
+
+Then the pair goes to the node, the key mode 0600 and readable by the
+account the agent runs as, and Prometheus verifies it with the same
+`ca.crt` it already needs.
+
+**`ext_key_usage` and `subject_alt_names` are both required in
+practice.** Without `serverAuth` Go refuses the certificate for serving
+and the handshake fails with an incompatible key usage; without a SAN
+covering the address in `targets` it fails verification. Neither error
+mentions the setting that produced it. This is also why the node's own
+`node.crt` cannot be reused — it has `clientAuth` and no SAN at all.
+
+**Do not run this on the node.** It needs `ca.key`, and the enrollment
+CA signs every identity in the estate: a copy on a managed machine is a
+copy an attacker who takes that machine can mint node certificates
+with. Issue on the hub, ship the result.
+
+#### The node's serving certificate, managed by the tree
+
+For an estate that would rather not copy files around, the same two
+functions have state forms, and `days_remaining` renews before expiry.
+The signing key has to be where the state runs — on the node — so this
+takes **a separate CA for metrics and nothing else**, never the
+enrollment CA. A metrics CA that leaks signs metrics certificates; the
+enrollment CA that leaks is the estate.
+
+Make it once, on the hub or wherever you keep such things:
+
+```sh
+halite-node call x509.create_private_key \
+    path=/usr/local/etc/halite/pki/metrics-ca.key algorithm=ec curve=p256
+halite-node call x509.create_certificate \
+    private_key=/usr/local/etc/halite/pki/metrics-ca.key \
+    path=/usr/local/etc/halite/pki/metrics-ca.crt \
+    ca=true CN='halite metrics CA' days_valid=3650
+```
+
+Put its key in pillar, GPG-encrypted like any other secret, and the
+state becomes:
+
+```yaml
+# states/metrics_cert.sls
+/usr/local/etc/halite/pki/metrics.key:
+  x509.private_key_managed:
+    - algorithm: ec
+    - curve: p256
+    - mode: '0600'
+
+/usr/local/etc/halite/pki/metrics.crt:
+  x509.certificate_managed:
+    - private_key: /usr/local/etc/halite/pki/metrics.key
+    - signing_cert: {{ pillar['metrics_ca']['cert'] }}
+    - signing_private_key: {{ pillar['metrics_ca']['key'] }}
+    - CN: {{ grains['id'] }}
+    - subject_alt_names:
+        - 'DNS:{{ grains['id'] }}'
+    - ext_key_usage:
+        - serverAuth
+    - days_valid: 90
+    - days_remaining: 30
+    - mode: '0644'
+    - require:
+        - x509: /usr/local/etc/halite/pki/metrics.key
+```
+
+It converges. A second run reports the certificate already in place and
+changes nothing; a run inside the renewal window reissues and says so:
+
+```
+Comment: A certificate was written to /usr/local/etc/halite/pki/metrics.crt,
+         because it expires in under 30 days, on 2026-09-25T01:04:56Z.
+```
+
+Prometheus then verifies every node against `metrics-ca.crt` rather
+than the enrollment CA, and `metrics_client_ca` stays pointed at
+`ca.crt` — the two are different trust roots doing different jobs, and
+that is the arrangement, not a mistake.
+
+Both certificate paths were run end to end against a node and a real
+Prometheus before being written down.
+
+### Pointing Prometheus at the nodes
+
+A second scrape job, because these are different targets with different
+certificates from the one `halite-api` presents:
+
+```yaml
+  - job_name: halite-nodes
+    scheme: https
+    scrape_interval: 30s
+    metrics_path: /v1/metrics
+    tls_config:
+      ca_file: /usr/local/etc/prometheus/halite-nodes-ca.crt
+      # Only when metrics_client_ca is set on the nodes.
+      cert_file: /usr/local/etc/prometheus/scraper.crt
+      key_file: /usr/local/etc/prometheus/scraper.key
+    static_configs:
+      - targets:
+          - 'web1.example:4512'
+          - 'web2.example:4512'
+```
+
+The address in `targets` has to be one the node's certificate covers,
+the same trap as the API's — a certificate issued for the hostname and
+scraped by address fails verification, and Prometheus reports that as a
+target that is down rather than as a certificate problem. `server_name`
+in `tls_config` is the way out when the two cannot be made to agree.
+
+Every file named there has to be readable **by the account Prometheus
+runs as**, which is not the one halite runs as: see the same warning
+under [Point Prometheus at it](#4-point-prometheus-at-it) above, which
+applies here unchanged.
+
+### What is not fatal
+
+Neither a missing certificate nor an address already in use stops the
+agent. Both are warned about, naming the setting and the address, and
+the node goes on running jobs. A node that refused to start over its
+metrics certificate would be one no highstate could reach to fix the
+certificate.
+
+The consequence is that a misconfigured endpoint looks like a target
+that is down, or one that was never created — which is why
+`absent(up{job="halite-nodes"})` belongs in the rules alongside
+anything watching `up`, for the reason given under
+[Alerting](#alerting).
+
+### Two things a node knows and the hub cannot
+
+- **Drops.** A node's job queue, its queue of returns waiting for the
+  hub, and each beacon's queue are all bounded, and what they discard
+  never reaches the hub by definition. `halite_node_returns_dropped_total`
+  climbing is a node whose answers are being thrown away, and the only
+  other trace is a log line.
+- **Where the time goes.** The hub sees one duration per job.
+  `halite_state_compile_duration_seconds` and
+  `halite_state_run_duration_seconds` split that into rendering the
+  tree and applying it, which are the two halves that get slower for
+  entirely different reasons. The hub records a family of the second
+  name too, and it is the whole job rather than the apply — see
+  [What is exposed](#what-is-exposed).
+
+A node with no hub — `--local`, or a masterless estate — records the
+same families, minus the ones about a hub it does not have. It still
+needs `metrics_listen` and a certificate to serve them.
+
 ## What is exposed
 
-All families are prefixed `halite_`. The hub carries most; `halite_api_*`
-are the API's own.
+All families are prefixed `halite_`. Which process records one decides
+where you read it: the hub's and the API's arrive in the scrape of
+`halite-api`, and the node's arrive in a scrape of the nodes
+themselves, under whatever you call that job.
+
+### The hub
 
 | Family | Type | Labels | What it says |
 |---|---|---|---|
-| `halite_build_info` | gauge | `component` `version` `commit` `go_version` `fips` | Always 1. What is deployed, per component. |
+| `halite_build_info` | gauge | `component` `version` `commit` `go_version` `fips` | Always 1. What is deployed, per component. Every process exposes it. |
 | `halite_hub_nodes_connected` | gauge | — | Nodes holding an open subscribe stream, relayed ones included. |
 | `halite_hub_node_connect_total` | counter | — | Connections accepted. |
 | `halite_hub_node_disconnect_total` | counter | `reason` | The other half, and why. |
 | `halite_hub_keys_accepted` | gauge | — | Nodes holding an issued certificate. |
 | `halite_hub_keys_pending` | gauge | — | Enrollment requests waiting for an operator. |
+| `halite_hub_keys_expired` | gauge | — | Accepted nodes whose certificate has already run out. |
+| `halite_hub_keys_expiring` | gauge | — | Accepted nodes whose certificate runs out within thirty days. |
+| `halite_hub_soonest_certificate_expiry_seconds` | gauge | — | Seconds until the first node certificate expires; negative once one has. |
+| `halite_hub_ca_expiry_seconds` | gauge | — | Seconds until the enrollment CA expires. Every node's identity is signed by it. |
+| `halite_hub_enrollments_total` | counter | `result` | Enrollment requests: `issued`, `pending`, `refused`, `failed`. |
+| `halite_hub_requests_total` | counter | `route` `code` | Requests the hub answered. |
+| `halite_hub_request_duration_seconds` | histogram | `route` | How long it took to answer one. |
 | `halite_jobs_dispatched_total` | counter | `fun` | Jobs sent, by function. |
 | `halite_job_returns_total` | counter | `result` | Returns filed, by outcome. |
-| `halite_job_duration_seconds` | histogram | `fun` | How long jobs take. |
+| `halite_job_duration_seconds` | histogram | `fun` | How long jobs take, dispatch to return. |
 | `halite_jobs_missing_returns` | gauge | — | Nodes a dispatched job has not heard from. |
 | `halite_jobs_expired_total` | counter | — | Jobs whose TTL passed before every node answered. |
 | `halite_state_states_total` | counter | `result` | Individual states applied, by outcome. |
 | `halite_state_changes_total` | counter | — | States that changed something rather than converging. |
+| `halite_state_run_duration_seconds` | histogram | — | Time a node spent on a state run end to end, out of its return. Compiling the tree is inside it. |
+| `halite_state_compile_duration_seconds` | histogram | — | On the hub, time to compile an orchestration. |
+| `halite_orch_runs_total` | counter | `result` | Orchestrations, by `complete`, `failed`, or `compile_failed`. |
 | `halite_pillar_compile_duration_seconds` | histogram | — | Time to compile one node's pillar. |
 | `halite_pillar_failures_total` | counter | — | Compilations that failed, so a node got no pillar. |
 | `halite_fileserver_requests_total` | counter | `backend` `code` | Tree fetches. |
 | `halite_fileserver_bytes_total` | counter | — | Bytes served. |
 | `halite_events_published_total` | counter | `tag_prefix` | Events reaching the bus. |
 | `halite_events_dropped_total` | counter | `reason` | Events that did not. |
+| `halite_event_subscriber_lag_seconds` | histogram | — | How old an event was when a subscriber was handed it. |
 | `halite_reactor_duration_seconds` | histogram | `tag_prefix` | Render and dispatch time for one reaction. |
 | `halite_reactor_dropped_total` | counter | — | Reactions the queue could not hold. |
 | `halite_reactor_failures_total` | counter | `reason` | Reactions that failed. |
 | `halite_beacon_events_total` | counter | `beacon` | Beacon events received from nodes. |
+| `halite_beacon_dropped_total` | counter | `beacon` | Beacon events a node's bounded queue discarded, from the overflow event it sends. |
 | `halite_authz_decisions_total` | counter | `result` | Every policy decision, allowed and denied. |
-| `halite_auth_attempts_total` | counter | `method` `result` | Logins at the API, by backend. |
+
+### The API
+
+| Family | Type | Labels | What it says |
+|---|---|---|---|
+| `halite_auth_attempts_total` | counter | `method` `result` | Logins, by backend. |
 | `halite_api_requests_total` | counter | `route` `code` | API requests. |
 | `halite_api_request_duration_seconds` | histogram | `route` | How long they take. |
+| `halite_api_requests_in_flight` | gauge | `route` | Requests being answered right now. |
+| `halite_api_response_bytes_total` | counter | `route` | Bytes written to clients. |
 | `halite_api_event_streams` | gauge | `transport` | Event streams open, SSE and WebSocket. |
+| `halite_api_stream_events_total` | counter | `transport` | Events delivered on those streams. |
 | `halite_api_hook_deliveries_total` | counter | `path` `result` | Webhook deliveries received. |
+| `halite_api_hub_requests_total` | counter | `route` `code` | Requests this service made to the hub. A zero code is a request that got none. |
+| `halite_api_hub_request_duration_seconds` | histogram | `route` | How long the hub took to answer one. |
 | `halite_api_hub_scrape_failures_total` | counter | — | Times the API could not read the hub's exposition. |
+| `halite_api_tokens_issued_total` | counter | `method` | Tokens minted, by how the operator authenticated. |
+| `halite_api_tokens_revoked_total` | counter | — | Tokens revoked by a logout. |
+| `halite_api_tokens_live` | gauge | — | Tokens that exist and have not expired or been revoked. |
+
+### A node
+
+In the scrape of the nodes, not in the scrape of `halite-api`.
+
+| Family | Type | Labels | What it says |
+|---|---|---|---|
+| `halite_node_connected` | gauge | — | 1 while the subscribe stream to the hub is open. |
+| `halite_node_hub_reconnects_total` | counter | — | Times the stream was opened. The first connection counts. |
+| `halite_node_hub_requests_total` | counter | `route` `code` | Requests this node made to the hub. |
+| `halite_node_hub_request_duration_seconds` | histogram | `route` | How long the hub took to answer one. |
+| `halite_node_jobs_total` | counter | `fun` `result` | Jobs this node ran. |
+| `halite_node_job_duration_seconds` | histogram | `fun` | How long it spent on one. |
+| `halite_node_jobs_refused_total` | counter | `reason` | Jobs it would not run: `replayed`, `expired`, `malformed`, `other`. |
+| `halite_node_job_queue_depth` | gauge | — | Jobs waiting for the executor. |
+| `halite_node_return_queue_depth` | gauge | — | Returns waiting to be posted. |
+| `halite_node_returns_dropped_total` | counter | — | Returns discarded because that queue was full. |
+| `halite_node_schedule_runs_total` | counter | `name` | Scheduled jobs started, by schedule entry. |
+| `halite_state_compile_duration_seconds` | histogram | — | Time to turn the tree into a low state. |
+| `halite_state_run_duration_seconds` | histogram | — | Time to apply it, not counting the line above. |
+| `halite_ext_invocations_total` | counter | `name` `result` | Extension calls: `succeeded`, `failed`, `timed_out`. |
+| `halite_ext_duration_seconds` | histogram | `name` | How long one took. |
+| `halite_ext_timeouts_total` | counter | `name` | The ones that ran out of time, counted again on their own. |
+| `halite_beacon_events_total` | counter | `beacon` | Beacon events produced. |
+| `halite_beacon_dropped_total` | counter | `beacon` | Beacon events the bounded queue discarded. |
+| `halite_beacon_rate_limited_total` | counter | `beacon` | Beacon events the rate limit refused, which is not a loss. |
+| `halite_beacon_failures_total` | counter | `beacon` | Beacon polls that failed. |
+| `halite_beacon_queue_depth` | gauge | — | Beacon events waiting to be sent. |
+
+`halite_beacon_events_total`, `halite_beacon_dropped_total`,
+`halite_state_run_duration_seconds` and
+`halite_state_compile_duration_seconds` are recorded on both sides. That
+is deliberate, and they are not the same number. The hub's are the
+estate totalled from what nodes reported; the node's are that one
+machine, and a node nobody scrapes still contributes to the hub's.
+
+`halite_state_run_duration_seconds` differs in a second way, and it is
+worth knowing before the two are put on one graph. A return carries one
+duration for the job, so the hub's is **end to end** and compiling the
+tree is inside it. The node's is the **apply alone**, with
+`halite_state_compile_duration_seconds` beside it as the other half.
+The hub's number is therefore the larger, by roughly the compile time —
+which is the quantity the split exists to expose.
 
 Every family is declared before anything is observed, so its `# HELP`
 and `# TYPE` are in the exposition from the start. What follows them
@@ -340,24 +688,30 @@ queue that does not exist would read zero for ever:
 | Family | Appears when |
 |---|---|
 | `halite_reactor_queue_depth` | `reactor:` has entries and the reactor is running |
+| `halite_beacon_queue_depth`, `halite_node_job_queue_depth`, `halite_node_return_queue_depth` | the node is the running agent, and for the first, has beacons |
+| `halite_gitfs_fetch_duration_seconds`, `halite_gitfs_signature_failures_total`, `halite_gitfs_refusals_total` | `fileserver_backend` names `git` |
 | `halite_relay_subordinates`, `halite_relay_upstream_connected`, `halite_relay_spool_entries`, `halite_relay_spool_dropped_total`, `halite_relay_returns_forwarded_total`, `halite_relay_events_forwarded_total` | `relay: true` |
 
 An alert against one of these on a hub that is not a relay never fires,
 and not because nothing is wrong.
 
+The gitfs three are declared with the rest of the hub's families, so
+they are in the exposition of any hub with metrics on; they simply
+never move on one that serves no git remote.
+
 ### What SPEC 26.2 names and this build does not have
 
-Eleven of the specification's thirty-two families are not registered, so
+Two of the specification's thirty-two families are not registered, so
 an alert written from its table rather than from this one sits silent:
-`halite_state_run_duration_seconds`,
-`halite_state_compile_duration_seconds`,
-`halite_pillar_cache_hits_total`, `halite_pillar_ext_failures_total`,
-`halite_gitfs_fetch_duration_seconds`,
-`halite_gitfs_signature_failures_total`,
-`halite_event_subscriber_lag_seconds`, `halite_beacon_dropped_total`,
-`halite_ext_invocations_total`, `halite_ext_duration_seconds`,
-`halite_ext_timeouts_total`. [DIVERGENCE 5.23](DIVERGENCE.md) records
-why.
+`halite_pillar_cache_hits_total` and `halite_pillar_ext_failures_total`.
+[DIVERGENCE 5.23](DIVERGENCE.md) records why: there is no pillar cache
+to count hits in, and external pillar is not built at all. Both wait on
+a feature rather than on a counter.
+
+Nine that were on this list are registered now. An alert written against
+one of those before it existed did not error — it stayed silent, which
+is what it would have done if the estate were healthy, and that is the
+reason this section exists at all.
 
 ## The series cap
 
@@ -392,6 +746,14 @@ question:
   by `fun`.** Which functions are slow, and whether that is new.
 - **`halite_hub_keys_pending`.** Enrollment requests nobody has decided
   on. On a manual-enrollment estate this should return to zero.
+- **`halite_hub_ca_expiry_seconds`.** The one number whose reaching zero
+  takes the whole estate with it, and the one certificate nothing
+  renews on a timer. `halite_hub_keys_expiring` is the same question
+  about the nodes.
+- **`halite_api_request_duration_seconds` against
+  `halite_api_hub_request_duration_seconds`.** Two lines on one graph.
+  Where they move together the hub is the slow half; where only the
+  first moves, the API is.
 
 ## A dashboard to start from
 
@@ -400,20 +762,28 @@ is an importable Grafana dashboard over these families. In Grafana:
 **Dashboards → New → Import → Upload JSON file**, then pick the
 Prometheus that scrapes halite-api.
 
-It asks for one thing on import, the data source. Two variables at the
+It asks for one thing on import, the data source. Four variables at the
 top pick what you are looking at:
 
 | Variable | What it is |
 |---|---|
 | `job` | the scrape job name in `prometheus.yml`, `halite` unless you renamed it |
 | `instance` | which `halite-api` to read, when more than one is scraped |
+| `node_job` | the scrape job for the nodes themselves, `halite-nodes` in the example above |
+| `node_instance` | which nodes the node row covers |
 
-The rows follow the sections above: fleet health, jobs, states, pillar,
-events and reactions, the file server, authentication and policy, the
-API's own service metrics, and a collapsed row for relays. Every panel
+The last two exist because a node's metrics do not arrive in the same
+scrape: the nodes are their own targets with their own certificates,
+and a node panel filtered by the API's job would draw an empty graph on
+every estate — which is checked by a test.
+
+The rows: fleet health, certificates and enrollment, jobs, states and
+orchestration, pillar, events and reactions, the file server,
+authentication and policy, the hub's own service metrics, the API's,
+and two collapsed rows for the node agents and for relays. Every panel
 carries a description saying what a reading means — hover the title.
 
-Two panels are worth knowing about before you need them:
+Four panels are worth knowing about before you need them:
 
 - **Scrape** reads `up`, and is empty rather than 0 when the scrape pool
   failed to build. An empty stat there means the whole dashboard is
@@ -421,16 +791,28 @@ Two panels are worth knowing about before you need them:
 - **Hub scrape failures** is the one that says the dashboard is lying to
   you: while it climbs, every `halite_hub_*` panel is empty because the
   API could not read the hub's half, not because the fleet is idle.
+- **Where the time goes**, in the API row, is two lines: how long the
+  API took to answer and how long the hub took to answer the API. Where
+  they move together the hub is the slow half.
+- **CA expires in**, in the certificate row, is the number whose
+  reaching zero takes the estate with it.
 
-The relay row is collapsed because those families exist only on a hub
-running with `relay: true`. An empty panel there on an ordinary hub is
-correct.
+The node row is collapsed because it is empty unless some node sets
+`metrics_listen` and something scrapes it. The relay row is
+collapsed because those families exist only on a hub running with
+`relay: true`. An empty panel in either place on an estate that does
+neither is correct.
 
-Every query in it names a family this build registers, which is checked
-by a test — a panel written against a metric that does not exist draws
+Four tests hold the file to being importable and to being about this
+build: every query names a family that is registered, every panel has
+its own identifier, no panel overlaps another or runs past the
+twenty-four columns the grid has, and every panel carries a
+description. A panel written against a metric that does not exist draws
 an empty graph rather than an error, which looks exactly like a fleet
-with nothing happening in it. The thresholds and the panel choices have
-not been tuned against a large estate; they are a starting point.
+with nothing happening in it; two panels sharing an identifier import
+without complaint and misbehave afterwards. The thresholds and the
+panel choices have not been tuned against a large estate; they are a
+starting point.
 
 ## Alerting
 
@@ -524,7 +906,71 @@ groups:
       - alert: HaliteSeriesOverflow
         expr: count({__name__=~"halite_.*", fun="__overflow__"}) > 0
         labels: {severity: info}
+
+      # Certificates. An estate meets this all at once: a batch
+      # enrolled on one afternoon a year ago expires on one afternoon
+      # this year, and `halite_hub_keys_accepted` does not fall for
+      # them, because the record is still there.
+      - alert: HaliteCAExpiringSoon
+        expr: halite_hub_ca_expiry_seconds < 60 * 60 * 24 * 60
+        for: 1h
+        labels: {severity: critical}
+        annotations:
+          summary: "The enrollment CA expires in under sixty days; every node's identity is signed by it"
+
+      - alert: HaliteCertificatesExpiring
+        expr: halite_hub_keys_expiring > 0
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} node certificates expire within thirty days"
+
+      - alert: HaliteCertificatesExpired
+        expr: halite_hub_keys_expired > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} accepted nodes hold a certificate that has already expired"
+
+      # A node's beacon queue is bounded, and what it discards never
+      # reaches the hub except as the overflow event this counts.
+      - alert: HaliteBeaconEventsDropped
+        expr: increase(halite_beacon_dropped_total[10m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.beacon }} lost {{ $value }} events to a full queue on some node"
+
+      # A ref that fails verification is not served, which SPEC 13.3
+      # makes a control rather than a warning. Silence here is a tree
+      # the estate has quietly stopped applying.
+      - alert: HaliteGitSignatureFailures
+        expr: increase(halite_gitfs_signature_failures_total[15m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "A git ref is not served because its signature did not verify"
+
+      # A subscriber that is steadily behind the bus. A reconnection
+      # from an old offset is a spike and is not this.
+      - alert: HaliteSubscribersBehind
+        expr: histogram_quantile(0.95, rate(halite_event_subscriber_lag_seconds_bucket[5m])) > 120
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Event subscribers are two minutes behind the bus"
+
+      # An orchestration that never ran because its tree would not
+      # compile. Nothing was attempted anywhere, and the operator who
+      # started it may not be watching.
+      - alert: HaliteOrchestrationWillNotCompile
+        expr: increase(halite_orch_runs_total{result="compile_failed"}[15m]) > 0
+        labels: {severity: warning}
 ```
+
+Two of these read a family that only appears on a hub with the feature
+running — `halite_gitfs_signature_failures_total` needs
+`fileserver_backend` to name `git`. The families are declared either
+way, so the rule is quiet rather than absent, and quiet is correct on a
+hub with no git remote.
 
 On a relay, add its spool — an outage that is not draining is the thing
 you want to know about before the cap is reached:
@@ -536,6 +982,36 @@ you want to know about before the cap is reached:
         annotations:
           summary: "The relay is connected upstream and its spool is not draining"
 ```
+
+On an estate scraping its nodes, three more. These read the nodes'
+own job rather than the hub's, and they are the
+only place their subject appears at all — a return a node discarded
+never reached the hub to be counted there:
+
+```yaml
+      - alert: HaliteNodeReturnsDropped
+        expr: increase(halite_node_returns_dropped_total[10m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} threw away {{ $value }} job returns; its queue to the hub is full"
+
+      - alert: HaliteNodeJobsRefused
+        expr: rate(halite_node_jobs_refused_total{reason!="replayed"}[10m]) > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.instance }} is refusing jobs: {{ $labels.reason }}"
+
+      - alert: HaliteExtensionTimeouts
+        expr: increase(halite_ext_timeouts_total[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "The extension {{ $labels.name }} ran out of time on {{ $labels.instance }}"
+```
+
+`reason!="replayed"` on the middle one is deliberate: a replayed job is
+the guard of SPEC 6.3 doing its work, and a hub retrying a delivery is
+the ordinary cause. The other three reasons are not.
 
 ### What not to alert on
 

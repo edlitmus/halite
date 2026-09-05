@@ -102,3 +102,45 @@ func TestEveryDocumentedMetricExists(t *testing.T) {
 	}
 	t.Logf("checked %d documented metric references", checked)
 }
+
+// And the other direction: a family this build registers that the
+// documentation never mentions.
+//
+// TestEveryDocumentedMetricExists catches a document naming a metric
+// that is not there, which is the failure that produces a silent alert.
+// This catches the opposite one, which is quieter still: a family is
+// registered, exposed on every scrape, and named in no document, so the
+// only way to find it is to read the source or to notice an unfamiliar
+// series in Grafana. Nine families arrived in one change and the count
+// of what was documented was checked by hand; a hand is what this
+// replaces.
+//
+// The exposition itself is the list of what has to be explained. There
+// is no allowlist here on purpose: a family worth exposing to an
+// operator is worth a line saying what a reading of it means.
+func TestEveryRegisteredMetricIsDocumented(t *testing.T) {
+	registered := registeredFamilies(t)
+
+	body, err := os.ReadFile(filepath.Join("..", "..", "docs", "metrics.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Backticked, which is how a family is written, and how the check in
+	// the other direction reads them too.
+	named := regexp.MustCompile("`(halite_[a-z0-9_]+)`")
+	documented := map[string]bool{}
+	for _, m := range named.FindAllStringSubmatch(string(body), -1) {
+		documented[m[1]] = true
+	}
+
+	missing := 0
+	for name := range registered {
+		if documented[name] {
+			continue
+		}
+		missing++
+		t.Errorf("%s is registered and docs/metrics.md never names it; "+
+			"an operator meets it first as an unfamiliar series on a graph", name)
+	}
+	t.Logf("checked %d registered families, %d undocumented", len(registered), missing)
+}

@@ -209,6 +209,10 @@ type node struct {
 	// reloadSchedule re-reads the schedule from disk. Set with the
 	// engine.
 	reloadSchedule func() error
+	// metrics is what this node counts about itself, served by the agent
+	// on `metrics_listen`. Never nil; a node that records nothing gets
+	// one whose families are all nil.
+	metrics *nodeMetrics
 	// statesRunning counts the state runs in progress, which is what
 	// `disable_during_state_run` reads. SPEC 16.3.
 	//
@@ -265,6 +269,7 @@ func setup(args *cli.Args) *node {
 
 	n := &node{
 		statesRunning: new(atomic.Int64),
+		metrics:       newNodeMetrics(cfg),
 		cfg:           cfg,
 		log:           logger,
 		secrets:       secrets,

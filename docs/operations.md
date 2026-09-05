@@ -801,12 +801,38 @@ the tree like anything else, renewed on a schedule.
 
 ## Metrics
 
-Every component records Prometheus metrics and exposes them at
-`/v1/metrics`. On by default; `metrics: false` turns the recording off.
+Every component records Prometheus metrics. On by default;
+`metrics: false` turns the recording off.
 
-Point the scraper at `halite-api` on 4511, not at the hub: the API
-answers with both expositions merged, and the hub speaks its own ALPN
-identifier that no ordinary client can send. Reading them by hand:
+The hub and the API expose them at `/v1/metrics`. Point the scraper at
+`halite-api` on 4511, not at the hub: the API answers with both
+expositions merged, and the hub speaks its own ALPN identifier that no
+ordinary client can send.
+
+A node serves its own on `metrics_listen`, and opens no port until that
+is set — it dials the hub and is dialled by nothing otherwise. There is
+no plaintext mode; the certificate is one you supply, because the
+node's own `node.crt` is issued for client authentication and cannot
+serve TLS:
+
+```yaml
+# node.yaml
+metrics_listen: ':4512'
+metrics_tls_cert: /usr/local/etc/halite/pki/metrics.crt
+metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
+# and, to refuse a scraper with no certificate of its own:
+metrics_client_ca: /usr/local/etc/halite/pki/ca.crt
+```
+
+The scraper's own certificate is
+`halite-hub keys operator create prometheus --lifetime 8760h` — pass
+the lifetime, because the default is thirty days and a scraper cannot
+notice its own expiring. Making the node's serving certificate is two
+commands on the hub or a state that renews it; both are worked through
+in [metrics.md](metrics.md) under "The two certificates, and how to
+make them".
+
+Only the agent serves it. Reading the hub's by hand:
 
 ```sh
 halite-hub metrics --as ed

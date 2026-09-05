@@ -3,6 +3,7 @@ package extension
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"runtime"
@@ -35,6 +36,14 @@ type Runtime struct {
 	Log func(name, level, message string)
 	// Event forwards an extension's event frames onto the node's bus.
 	Event func(name, tag string, data json.RawMessage)
+	// Observe reports one call: which extension, how long it took, and
+	// whether it succeeded, failed, or ran out of time.
+	//
+	// SPEC 26.2 names three families over this — invocations, duration,
+	// and timeouts — and the runtime is the only place that knows all
+	// three. A hook rather than a registry, so that this package stays
+	// something a one-shot command line can use without one.
+	Observe func(name, result string, took time.Duration)
 
 	mu     sync.Mutex
 	loaded map[string]*Loaded
@@ -128,11 +137,33 @@ func (l *Loaded) Start(ctx context.Context) error {
 
 // Call invokes a function in an extension.
 func (l *Loaded) Call(ctx context.Context, function string, args, kwargs any, callCtx *bridge.CallContext) (json.RawMessage, error) {
+	started := time.Now()
 	pool, err := l.ensure(ctx)
 	if err != nil {
+		// A pool that will not start is a failed invocation, not an
+		// absent one: an extension whose process cannot be spawned
+		// would otherwise be counted nowhere at all.
+		l.observe(started, err)
 		return nil, err
 	}
-	return pool.Call(ctx, function, args, kwargs, callCtx)
+	out, err := pool.Call(ctx, function, args, kwargs, callCtx)
+	l.observe(started, err)
+	return out, err
+}
+
+// observe reports the outcome of one call.
+func (l *Loaded) observe(started time.Time, err error) {
+	if l.rt == nil || l.rt.Observe == nil {
+		return
+	}
+	result := "succeeded"
+	switch {
+	case errors.Is(err, bridge.ErrTimeout):
+		result = "timed_out"
+	case err != nil:
+		result = "failed"
+	}
+	l.rt.Observe(l.name, result, time.Since(started))
 }
 
 // Describe says what this extension is and what confines it, for

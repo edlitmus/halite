@@ -94,3 +94,35 @@ returner: local
 # what SPEC 25.4 asks for. It replaces rather than extends.
 #
 # exec_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Prometheus metrics, SPEC 26.2. A node dials the hub and is dialled by
+# nothing; this is the one deliberate exception, and it is off until you
+# set an address. Only the agent serves it -- `halite-node connect` --
+# because a one-shot `halite-node call` has counters that start at zero
+# and a lifetime of a second.
+#
+# There is no plaintext mode. A node's exposition says which functions
+# ran, which extensions, and when a deployment went out, which is the
+# same argument that put the hub's endpoint behind a certificate. The
+# node's own node.crt will not serve it: that certificate is issued for
+# client authentication and carries no name a scraper could verify, so
+# this is one you supply. `x509.certificate_managed` can keep it renewed
+# from the tree like anything else.
+#
+# metrics_listen: ':4512'
+# metrics_tls_cert: /usr/local/etc/halite/pki/metrics.crt
+# metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
+#
+# And, to refuse a scraper that presents no certificate of its own. The
+# enrollment CA is the obvious one, so the scraper carries what
+# `halite-hub keys operator create prometheus --lifetime 8760h`
+# produced. Pass the lifetime: the default is thirty days, and a scraper
+# cannot notice its own certificate expiring.
+#
+# metrics_client_ca: /usr/local/etc/halite/pki/ca.crt
+#
+# Making the serving certificate above is two commands on the hub, or a
+# state that renews it; both are written out in docs/metrics.md under
+# "The two certificates, and how to make them". The short version is
+# that it needs `serverAuth` and a SAN covering the address Prometheus
+# scrapes, and that `ca.key` must never be copied to a node to make one.

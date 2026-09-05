@@ -148,6 +148,9 @@ type fetchingBackends struct {
 	// first in the search path.
 	local map[string][]string
 	files *fileserver.Roots
+	// observeGit reports how long a git fetch took and what it refused,
+	// for the hub's registry. Nil on a hub with metrics turned off.
+	observeGit func(took time.Duration, refusals map[string]int)
 }
 
 func (f *fetchingBackends) any() bool { return f != nil && (f.git != nil || f.s3 != nil) }
@@ -168,7 +171,17 @@ func (f *fetchingBackends) update(ctx context.Context) error {
 	}
 	var problems []string
 	if f.git != nil {
-		if err := f.git.Update(ctx); err != nil {
+		started := time.Now()
+		err := f.git.Update(ctx)
+		if f.observeGit != nil {
+			// Timed whether or not it worked, and the refusals counted
+			// either way: a remote that is getting slower until it
+			// times out is the failure worth seeing before it happens,
+			// and a ref refused for an untrusted signature was a log
+			// line and nothing an alert could watch.
+			f.observeGit(time.Since(started), f.git.Refusals())
+		}
+		if err != nil {
 			problems = append(problems, "git: "+err.Error())
 		}
 	}

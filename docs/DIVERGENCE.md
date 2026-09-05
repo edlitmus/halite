@@ -377,10 +377,46 @@ larger unauthenticated surface than before by one certificate.
 
 ---
 
+### 1.13 A node listens, when an operator asks it to
+
+SPEC 6.1 has a node dial the hub and be dialled by nothing, and every
+other part of this build holds to that: there is no inbound control
+path to a node, no port to reach it on, and nothing an attacker can
+connect to.
+
+`metrics_listen` is one deliberate exception. Set, the agent serves
+`/v1/metrics` on that address and nothing else — an unrouted path gets
+a 404 rather than a description of what might be there. Unset, which is
+the default, a node opens no port at all and the divergence does not
+exist on that machine.
+
+The first cut avoided the listener entirely by writing the exposition
+to a file for node_exporter's textfile collector. That works and needs
+no port, and it was dropped because it needs node_exporter: two of the
+five machines in the estate this was tried on did not have one, the
+collector directory differs per platform, and an estate ends up
+depending on somebody else's agent to see its own control plane.
+
+The endpoint is not a second control surface. It reads, it serves one
+path, and it takes a serving certificate the operator supplies —
+there is no plaintext mode, because a node's exposition says which
+functions ran, which extensions, and when a deployment went out. That
+is the argument SPEC 26.2's own endpoints are built on, and it does not
+weaken because the subject is one machine. `metrics_client_ca` goes
+further and refuses a scraper that presents no certificate of its own.
+
+The node's own `node.crt` is deliberately not reused. It is issued with
+`ExtKeyUsage: ClientAuth` and carries no DNS or IP name, so it cannot
+serve TLS and a scraper would have nothing to verify it against. Giving
+a node a second, serving certificate would mean a new certificate type,
+names requested at enrollment and vetted by the hub, and a renewal path
+covering both — a PKI feature rather than a listener, and not one this
+change makes.
+
 ## 2. Module coverage
 
-The build ships **46 execution modules / 261 functions** and **25 state
-modules / 69 functions**.
+The build ships **50 execution modules / 305 functions** and **32 state
+modules / 82 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -402,7 +438,7 @@ different reason is given.
 | `cron` | implemented | 2 | |
 | `disk` | implemented | 1 | |
 | `dnsutil` | implemented | 2 | |
-| `environ` | implemented | 3 | |
+| `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
 | `file` | implemented | 40 | |
 | `git` | implemented | 5 | through the system `git` binary |
@@ -411,7 +447,7 @@ different reason is given.
 | `hashutil` | implemented | 9 | |
 | `hosts` | implemented | 3 | |
 | `mine` | implemented | 6 | the store is on the hub; a node publishes its own and reads others' through the RBAC policy |
-| `mount` | implemented | 1 | read-only; `mount`/`umount`/`fstab` not written |
+| `mount` | implemented | 9 | the running table comes from `/proc/self/mounts` where there is one and from parsing `mount` where there is not, and how much a declared option can be compared against it depends on which; declared for the platforms with a mount table and refused on Windows, whose mount points are drive letters and junctions rather than an fstab |
 | `network` | implemented | 5 | |
 | `pillar` | implemented | 5 | |
 | `pkg` | implemented | 18 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
@@ -424,7 +460,7 @@ different reason is given.
 | `sysctl` | implemented | 3 | |
 | `sysrc` | implemented | 3 | FreeBSD; SPEC lists it as core |
 | `test` | implemented | 5 | |
-| `timezone` | implemented | 1 | read-only; `set_zone` not written |
+| `timezone` | implemented | 4 | `set_zone` writes through `timedatectl` where it runs and the zone files where it does not; the zone is named as the platform names it, and `list_zones` says which names those are |
 | `user` | implemented | 3 | reads through `os/user`, writes through `pw` or `useradd` |
 | `at` | not implemented | 0 | |
 | `acl` | not implemented | 0 | POSIX ACL reading needs `acl_get_file`, which is cgo on FreeBSD; needs the `getfacl` binary path instead |
@@ -434,12 +470,12 @@ different reason is given.
 | `data` | not implemented | 0 | |
 | `firewall` | not implemented | 0 | |
 | `hostname` | not implemented | 0 | |
-| `http` | not implemented | 0 | needs the address denylist of 15.2 before it is safe to ship |
+| `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `nfs` | not implemented | 0 | |
-| `pkgrepo` | not implemented | 0 | |
+| `pkgrepo` | implemented | 4 | list_repos, get_repo, mod_repo, del_repo; virtual, with providers for apt, dnf/yum and Chocolatey 
 | `ps` | not implemented | 0 | process enumeration is per-platform; FreeBSD needs `kvm` or `sysctl kern.proc` |
 | `reboot` | not implemented | 0 | |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
@@ -474,12 +510,12 @@ different reason is given.
 | `sysrc` | implemented | 3 | not in SPEC 15.5; FreeBSD's equivalent of the `hostname`/`service`-enable states. `managed` is Salt's name and `present` is this build's, and they are the same function |
 | `test` | implemented | 6 | |
 | `user` | implemented | 2 | |
-| `zfs` | implemented | 2 | `filesystem_present`, `absent`; no `zpool` state |
+| `zfs` | implemented | 2 | `filesystem_present`, `absent` |
 | `acl` | not implemented | 0 | see 2.1 |
 | `apparmor` | not implemented | 0 | |
 | `at` | not implemented | 0 | |
-| `beacon` | not implemented | 0 | phase 3 |
-| `environ` | not implemented | 0 | |
+| `beacon` | implemented | 2 | present and absent, both persisting to beacons.d so a declaration survives a restart 
+| `environ` | implemented | 1 | `setenv`; `permanent` defaults to true here and to false in Salt, so a tree carrying this state writes a file or a registry value Salt never wrote; see migrating-from-salt.md |
 | `firewall` | not implemented | 0 | |
 | `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `hostname` | not implemented | 0 | |
@@ -489,23 +525,23 @@ different reason is given.
 | `logrotate` | not implemented | 0 | |
 | `lvm` | not implemented | 0 | Linux only |
 | `mac_defaults` | not implemented | 0 | macOS only |
-| `mount` | not implemented | 0 | the exec side is read-only, so the state has nothing to build on |
+| `mount` | implemented | 2 | `mounted` and `unmounted`, each managing the running mount and the table together |
 | `nftables` | not implemented | 0 | Linux only |
 | `npm` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pip` | implemented | 2 | install and remove, comparing against the tool's own listing |
-| `pkgrepo` | not implemented | 0 | |
+| `pkgrepo` | implemented | 2 | managed and absent, both converging on a second run 
 | `pro` | not implemented | 0 | Ubuntu only |
 | `reboot` | not implemented | 0 | |
-| `schedule` | implemented | 1 | `absent`; the runtime control is in the execution module |
+| `schedule` | implemented | 2 | present and absent; absent now persists, which it did not before 
 | `selinux` | not implemented | 0 | Linux only |
 | `ssh_known_hosts` | not implemented | 0 | |
 | `sudo` | not implemented | 0 | |
-| `timezone` | not implemented | 0 | the exec side is read-only |
+| `timezone` | implemented | 1 | `system`; a zone the node does not have is refused in test mode, where the tool would never run to say so |
 | `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
-| `win_task` | not implemented | 0 | Windows only |
+| `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
 | `win_wua` | not implemented | 0 | Windows only |
 | `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run |
-| `zpool` | not implemented | 0 | the exec side reads; no state writes |
+| `zpool` | implemented | 2 | `present` creates a pool that is not there and manages the properties of one that is; it does **not** reshape an existing pool, and reports a layout that does not match as a warning instead. `absent` exports by default and destroys only when told |
 
 `file.accumulated`, which SPEC 15.5 requires, is not implemented.
 
@@ -519,11 +555,13 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-2 of 65 present — the rows below total 63 absent. This is the largest
+6 of 65 present — the rows below total 59 absent. This is the largest
 single gap and it is a direct consequence of having one host to develop
-on.
+on. The four that arrived most recently are the Windows ones, and they
+arrived because a Windows host became available: the gap tracks the
+hardware, not the intent.
 
-The 63 are declared as pending rather than simply missing. A name absent
+The 59 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -546,7 +584,7 @@ specification cannot be quietly missed.
 | Debian, Ubuntu | none | `aptpkg`, `debconf`, `dpkg`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
-| Windows | none | `win_pkg`, `win_service`, `win_file`, `win_dacl`, `win_task`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_registry`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
+| Windows | `win_dacl`, `win_service`, `win_registry`, `win_task` | `win_pkg`, `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | none | `mac_brew_pkg`, `mac_service`, `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_defaults`, `mac_keychain`, `mac_assistive` |
 
 Two notes on this table:
@@ -1045,33 +1083,123 @@ each item is a class of defect rather than a one-off.
   existed, so it passed or failed on what the developer happened to have
   installed. `exec.Context` grew a `Lookup` seam beside `Runner`.
 
-**Two of SPEC 15.3's Windows modules now ship.** `win_dacl` reads and
-writes an access control list, so `file`'s `user:` sets an owner instead
-of being refused, and four states declare permissions, ownership and
-inheritance. `win_service` speaks to the service control manager through
-its API rather than by parsing `sc.exe`, and it is also the `windows`
-provider SPEC 15.2 names for the virtual `service` module — which had
-none, so a node on this platform answered every service call with "no
-init system was recognised on this node".
+**Four of SPEC 15.3's eighteen Windows modules now ship.** `win_dacl`
+reads and writes an access control list, so `file`'s `user:` sets an
+owner instead of being refused, and four states declare permissions,
+ownership and inheritance. `win_service` speaks to the service control
+manager through its API rather than by parsing `sc.exe`, and it is also
+the `windows` provider SPEC 15.2 names for the virtual `service`
+module — which had none, so a node on this platform answered every
+service call with "no init system was recognised on this node".
+`win_registry` reads and writes values in either of the two registries a
+64-bit Windows keeps. `win_task` manages scheduled tasks, with states for
+them.
 
-**What is still not built.** The other sixteen modules of SPEC 15.3's
-Windows row: `win_pkg`, `win_file`, `win_task`, `win_useradd`,
-`win_groupadd`, `win_shadow`, `win_network`, `win_firewall`,
-`win_registry`, `win_disk`, `win_system`, `win_timezone`, `win_wua`,
-`win_certutil`, and the two SPEC marks bridged. There is no user or
-group provider, so `user.present` has nothing to reach here. `runas` is
-refused, because starting a process as another account needs that
-account's credentials. The restricted token of SPEC 24.3 is absent, so
-an extension is bounded but not de-privileged.
+The two later ones reached their subsystem differently, and the
+difference is the rule rather than a preference. The service control
+manager has no machine-readable output mode: `sc.exe` writes a table and
+its status words are localised, so parsing it means parsing prose — and
+that is what made the API worth the vtable work. The task scheduler does
+have one: `schtasks /query /xml` emits a published schema whose element
+names are fixed in every locale, and `/create /xml` takes it back, which
+is exactly SPEC 15.2's standard for reaching a subsystem through its
+binary. So `win_service` speaks the API and `win_task` runs the binary,
+and each is the shorter road to the same guarantee.
 
-Two smaller ones worth naming rather than discovering:
-`service.reload` is refused, because the manager's reload control is one
-almost nothing implements and silently restarting instead would be a
-bigger change than the state asked for; and `group:` on a file state is
-refused, because a Windows file has an owner and an access control list
-and no group, so mapping it onto the primary group — which nothing on
-the platform reads — would let a state pass while granting nobody
-anything.
+**What is still not built.** The other fourteen modules of SPEC 15.3's
+Windows row: `win_pkg`, `win_file`, `win_useradd`, `win_groupadd`,
+`win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`,
+`win_timezone`, `win_wua`, `win_certutil`, and the two SPEC marks
+bridged. There is no user or group provider, so `user.present` has
+nothing to reach here. `runas` is refused, because starting a process as
+another account needs that account's credentials. The restricted token
+of SPEC 24.3 is absent, so an extension is bounded but not
+de-privileged.
+
+Three smaller ones worth naming rather than discovering. `service.reload`
+is refused, because the manager's reload control is one almost nothing
+implements and silently restarting instead would be a bigger change than
+the state asked for. `group:` on a file state is refused, because a
+Windows file has an owner and an access control list and no group, so
+mapping it onto the primary group — which nothing on the platform
+reads — would let a state pass while granting nobody anything. And
+`win_registry` ships no state module, because SPEC 15.5 does not name
+one: Salt has `reg.present` and an estate migrating from it will want
+the same, so it is a decision for a person rather than a quiet addition.
+
+
+
+### 4.7 What a node with ZFS established
+
+ZFS is a kernel module and has no userspace stand-in, so none of `zpool`
+could be verified where the rest of this project is. A container shares
+the host's kernel, and the kernels a developer machine runs — Docker
+Desktop's WSL2 kernel here, a VM kernel on macOS — carry no `zfs.ko`.
+The `zfs` and `zpool` reading functions had been verified on FreeBSD, on
+hardware; the writing half had nowhere to run.
+
+So it is run in a virtual machine with its own kernel, booted under KVM
+from an Ubuntu cloud image, against pools built on files. That is `make
+zfscheck`, and the point of making it a target rather than an afternoon
+is that the next person to touch this can repeat it in ninety seconds.
+
+**It found two defects on its first run**, both in reading `zpool list`,
+and neither of them reachable from a fixture written from memory — which
+is what the fixtures were, until this replaced them with bytes captured
+from the tool:
+
+- Scripted mode indents **every** row under the pool by exactly one tab,
+  whatever its depth. `-H` removes the header and the column padding and
+  leaves the indentation, but it does not vary it, so the tree `zpool
+  list -v` draws for a person is flat for a program. A reader that took
+  the indentation for depth found every pool empty — and `zpool.present`
+  then warned that a pool it had itself just created was "nothing".
+- The `logs`, `cache` and `spare` section headers are printed
+  **unindented and space-padded**, ignoring `-H` in the middle of an
+  otherwise tab-separated listing. A reader that took every unindented
+  row for the pool's own row swallowed the header and filed the pool's
+  log device as a third leg of the mirror above it.
+
+Both are now read the way the tool writes them: the layout is grouped by
+name rather than by depth, and the section headers open a vdev of their
+own. The fixtures in `zpool_test.go` are the real bytes.
+
+**One shape still cannot be recovered**, and it is stated rather than
+worked around: a bare device added as a stripe column beside a mirror is
+indistinguishable from another leaf of that mirror, because the depth
+that would separate them is what scripted mode drops. It reads as a
+wider mirror. This is survivable only because the layout is never used
+to act — see below — and it is one of the reasons it is not.
+
+**What the run establishes.** A pool is created from a declared layout
+and the run after it reports no change; `ashift` set at creation reads
+back as the value it was given, so a property that can only be set once
+still converges; a pool exported by `zpool.absent` and then declared
+present again is *imported* rather than created over, with its data
+intact — checked by digest, because creating a pool over the devices of
+one that already holds data is the failure this ordering exists to
+prevent; a property change is applied and then is not applied again; and
+`zpool.absent` exports by default and destroys only when told, because
+the two differ by whether the data survives.
+
+**What it does not establish.** The vdevs are files, not disks: nothing
+here exercises `ashift` against a drive that misreports its sector size,
+device naming under `/dev/disk/by-id`, or a pool whose devices move
+between controllers. Nothing exercises a degraded pool, a resilver, or a
+scrub that finds something — `zpool.healthy` is tested against pools
+that are healthy. And it runs on Linux with OpenZFS 2.2.2; FreeBSD,
+where this project's ZFS reading was originally verified, is not covered
+by the harness.
+
+**`zpool.present` does not reshape a pool that exists**, and this is the
+design rather than a gap. It creates a pool that is not there and
+manages the properties of one that is. Where the declared layout differs
+from the actual one it reports the difference as a warning and stops. A
+top-level vdev cannot be removed from most pools at all; `zpool add`
+aimed at what was meant to be a mirror turns it into a stripe with no
+undo; and the failure mode of getting either wrong is the permanent loss
+of everything on the pool. A warning an operator has to close is worth
+more than a state that closes it for them.
 
 
 ## 5. Test coverage against SPEC 31
@@ -2331,35 +2459,32 @@ than by anything failing.
 
 What this did not establish: the estate is two FreeBSD machines. Nothing
 here was run on Linux, and the systemd units remain unexercised.
-### 5.23 Eleven of SPEC 26.2's metric families are not registered
+### 5.23 Two of SPEC 26.2's metric families are not registered
 
 The specification's table names thirty-two; this build registers
-twenty-one. Counted mechanically against the source, not read off the
+thirty. Counted mechanically against the source, not read off the
 table:
 
 | Not registered | Why it matters |
 |---|---|
-| `halite_state_run_duration_seconds`, `halite_state_compile_duration_seconds` | State runs are counted by outcome and not timed, so a highstate that is getting slower is invisible. |
-| `halite_pillar_cache_hits_total` | The pillar cache is not instrumented. |
+| `halite_pillar_cache_hits_total` | The pillar cache is not instrumented, because there is no pillar cache: every request compiles. The counter waits on the cache. |
 | `halite_pillar_ext_failures_total` | External pillar is not built at all, so this one waits on a feature rather than on the counter. |
-| `halite_gitfs_fetch_duration_seconds`, `halite_gitfs_signature_failures_total` | gitfs fetches and verifies signatures, and neither is counted — a ref refused for an untrusted signature is a log line and nothing else. |
-| `halite_event_subscriber_lag_seconds` | A subscriber falling behind the bus is not measurable. |
-| `halite_beacon_dropped_total` | Beacon events are counted arriving and not counted dropped, which is half of the pair SPEC 26.2's own rule asks for. |
-| `halite_ext_invocations_total`, `halite_ext_duration_seconds`, `halite_ext_timeouts_total` | The extension model ships and is entirely uninstrumented. A bridged extension timing out is a job failure with no counter behind it. |
 
 SPEC 26.2 says "every bounded queue and every drop path in this
-specification has a corresponding counter", and `halite_beacon_dropped_total`
-and the extension timeouts are drop paths without one. That rule holds
-for the reactor, the event bus, the returner spools, and the relay
-spool, which all have theirs.
+specification has a corresponding counter". That now holds: the
+reactor, the event bus, the returner spools, the relay spool, a node's
+beacon queue, a node's job queue, and a node's queue of returns waiting
+for the hub all have theirs.
 
 The gap was found while documenting the metrics rather than by anything
 failing, which is the shape of it: an alert written from the
 specification's table against a family that is not registered does not
 error. It stays silent, and silence is what it would do if the estate
-were healthy.
+were healthy. Nine of the eleven that were missing are registered now,
+and the arithmetic in this entry is held to the source by a test, so it
+cannot go stale the way it was written to.
 
-The operations guide lists what is registered, and names these eleven so
+The operations guide lists what is registered, and names these two so
 that a reader writing alerts has both halves.
 
 ### 5.24 What a real Prometheus scraper found

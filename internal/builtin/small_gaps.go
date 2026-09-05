@@ -81,17 +81,6 @@ func registerSmallGaps(r *Registries) {
 			},
 			Fn: eventSendState,
 		},
-		states.Module{
-			Sig: signature.Signature{
-				Module: "schedule", Function: "absent",
-				Doc:      "Ensure a scheduled job is not on this node.",
-				Params:   []signature.Param{nameParam("The job. Defaults to the state ID.")},
-				Mutates:  true,
-				TestMode: signature.TestReliable,
-				Section:  "15.5",
-			},
-			Fn: scheduleAbsent,
-		},
 	)
 }
 
@@ -158,29 +147,6 @@ func eventSendState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("The event %s could not be sent: %v", tag, err)), nil
 	}
 	return states.Changed(fmt.Sprintf("The event %s was sent.", tag), changes), nil
-}
-
-func scheduleAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
-	name := states.Str(args, "name", "")
-	if name == "" {
-		return states.False("schedule.absent needs a job name."), nil
-	}
-	if c.Schedule == nil {
-		return states.False("This invocation runs no schedule, so there is no job " +
-			"to remove. `schedule.absent` needs the agent."), nil
-	}
-
-	if _, found := c.Schedule.List().Get(name); !found {
-		return states.True(fmt.Sprintf("%s is not scheduled.", name)), nil
-	}
-	changes := value.MapOf(name, states.Change("scheduled", nil))
-	if c.Test {
-		return states.WouldChange(fmt.Sprintf("%s would be unscheduled.", name), changes), nil
-	}
-	if err := c.Schedule.Delete(name); err != nil {
-		return states.False(fmt.Sprintf("%s could not be unscheduled: %v", name, err)), nil
-	}
-	return states.Changed(fmt.Sprintf("%s was unscheduled.", name), changes), nil
 }
 
 // mapArg reads an optional mapping argument.

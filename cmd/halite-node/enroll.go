@@ -45,7 +45,16 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 		}
 	}
 
-	client := &transport.Client{HubURL: url, ServerName: args.Flag("server-name", "")}
+	client := &transport.Client{
+		HubURL:     url,
+		ServerName: args.Flag("server-name", ""),
+		// Every request this node makes to the hub is timed here, on
+		// the client rather than at each call site: pillar, the file
+		// server, returns, and the mine all go through the same two
+		// functions, and instrumenting those is what makes "is the hub
+		// slow or is this node slow" answerable from the node's side.
+		Observe: n.metrics.observeHubRequest,
+	}
 
 	// The CA is pinned at enrollment and read from disk afterwards. A
 	// node with no CA on disk is enrolling for the first time, and
@@ -342,9 +351,29 @@ func runConnect(args *cli.Args) int {
 		default:
 			n.log.Error("dropping a return because the return queue is full",
 				"jid", string(ret.JID))
+			n.metrics.countDroppedReturn()
 		}
 	})
 	n.executor = exec
+	n.metrics.gauge("halite_node_job_queue_depth",
+		"Jobs waiting for the executor.",
+		func() float64 { return float64(exec.Depth()) })
+	n.metrics.gauge("halite_node_return_queue_depth",
+		"Returns waiting to be posted to the hub.",
+		func() float64 { return float64(len(returns)) })
+	metricsFailed := func(err error) {
+		// Warned rather than fatal, and named: a node that refused to
+		// start over its metrics certificate or a port already in use
+		// would be one no highstate could reach to fix either. The
+		// absence shows up at the scraper as a target that is down,
+		// which is the signal that belongs there.
+		n.log.Warn("the metrics endpoint is not serving",
+			"listen", n.metrics.listen, "error", err.Error())
+	}
+	go n.metrics.serve(ctx, metricsFailed, func(addr string) {
+		n.log.Info("metrics listening", "address", addr,
+			"client_certificate_required", n.metrics.requiresClientCert())
+	})
 	go exec.Run(ctx.Done())
 	go n.postReturns(ctx, args, returns)
 	go n.refreshGrains(ctx, args)
@@ -367,6 +396,7 @@ func runConnect(args *cli.Args) int {
 		// attachToHub.
 		n.attachToHub(args, client)
 		n.log.Info("connecting", "hub", client.HubURL)
+		n.metrics.countConnect()
 		err := client.Subscribe(ctx, transport.SubscribeRequest{
 			NodeID:  n.nodeID,
 			Grains:  grainsJSON(n),
@@ -374,6 +404,7 @@ func runConnect(args *cli.Args) int {
 		}, func(msg transport.Message) error {
 			return n.handle(msg)
 		})
+		n.metrics.countDisconnect()
 		if ctx.Err() != nil {
 			break
 		}

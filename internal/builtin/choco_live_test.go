@@ -2,7 +2,9 @@ package builtin
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -88,5 +90,67 @@ func TestChocolateyReadsARealInstallation(t *testing.T) {
 	}
 	if v, err := p.LatestVersion(c, "halite-no-such-package-9f3a"); err != nil || v != "" {
 		t.Errorf("LatestVersion of a missing package = %q, %v; want an empty string", v, err)
+	}
+}
+
+// The repository provider's read half, against the real source list.
+//
+// Read-only for the same reason as everything above it: adding a source
+// changes where the machine installs software from, and needs
+// administrator rights besides. What is checked is that the parser meets
+// the format the program actually prints — one pipe-separated record per
+// line under --limit-output, which is the machine-readable mode and the
+// only one whose shape is stable.
+func TestChocolateyReadsTheRealSourceList(t *testing.T) {
+	if os.Getenv("HALITE_CHOCO_LIVE") != "1" {
+		t.Skip("set HALITE_CHOCO_LIVE=1 to read this machine's Chocolatey sources")
+	}
+	c := &exec.Context{Ctx: context.Background(), Runner: &exec.OSRunner{}}
+	p := chocoRepoProvider{}
+	if !p.Available(c) {
+		t.Skip("no choco on this machine")
+	}
+
+	all, err := p.List(c)
+	if err != nil {
+		t.Fatalf("listing the sources: %v", err)
+	}
+	if all.Len() == 0 {
+		t.Fatal("no sources at all; a working Chocolatey has the community one")
+	}
+	for _, e := range all.Entries() {
+		m, ok := e.Val.(*value.Map)
+		if !ok {
+			t.Fatalf("%v is %#v, not a mapping", e.Key, e.Val)
+		}
+		url := repoStr(m, "baseurl", "")
+		if url == "" {
+			t.Errorf("the source %v has no url; the wrong field was read", e.Key)
+		}
+		if _, has := m.Get("enabled"); !has {
+			t.Errorf("the source %v has no enabled state", e.Key)
+		}
+	}
+
+	// And Get finds one by name, case-insensitively, because Chocolatey
+	// does not care about the case of a source name and neither should a
+	// state that names one.
+	first := fmt.Sprint(all.Entries()[0].Key)
+	got, err := p.Get(c, strings.ToUpper(first))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil {
+		t.Errorf("%q was not found when named in a different case", first)
+	}
+
+	// A source that is not there is nothing rather than an error, which
+	// is what `pkgrepo.absent` converging depends on.
+	got, err = p.Get(c, "halite-no-such-source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Errorf("a source that does not exist was found: %v", got)
 	}
 }

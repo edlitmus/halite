@@ -1427,14 +1427,6 @@ The largest request body this service will read.
 
 The largest request body the service will read, so a client cannot make it run out of memory.
 
-### `metrics`
-
-*`halite-hub`, `halite-api` · `true` · SPEC section 26.2*
-
-Record and expose Prometheus metrics at /v1/metrics.
-
-Records and exposes Prometheus metrics at `/v1/metrics`. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them.
-
 ### `tls_cert`
 
 *`halite-api` · no default · SPEC section 22.3*
@@ -1856,6 +1848,46 @@ Level for the file sink, defaulting to log_level.
 
 A separate level for the file sink, so an estate can keep `info` on the console and `debug` on disk.
 
+### `metrics`
+
+*all three programs · `true` · SPEC section 26.2*
+
+Record Prometheus metrics and expose them at /v1/metrics.
+
+Records Prometheus metrics and serves them at `/v1/metrics`. On by default, because a backpressure design is only auditable if the counters were there before anyone needed them. The hub and the API serve them on the port they already listen on; a node listens for nothing until `metrics_listen` says otherwise.
+
+### `metrics_client_ca`
+
+*`halite-node` · no default · SPEC section 26.2*
+
+A CA the scraper's client certificate must be signed by. Empty serves anyone who can reach the port.
+
+When set, the listener refuses a scraper that does not present a client certificate signed by this CA. The enrollment CA at `<pki_dir>/ca.crt` is the obvious one, so a certificate from `halite-hub keys operator create prometheus` is what the scraper carries. Left empty the port is served to anyone who can reach it, which is a decision to make deliberately rather than by omission.
+
+### `metrics_listen`
+
+*`halite-node` · no default · SPEC section 26.2*
+
+Address the agent serves /v1/metrics on, such as :4512. Empty, the default, means a node listens for nothing.
+
+The address `halite-node connect` serves its exposition on, typically `:4512`. Empty, the default, means the agent opens no port at all: a node dials the hub and is dialled by nothing, and a listener on every managed machine is a decision an operator makes rather than one that arrives with an upgrade. Only the agent serves it — a one-shot `halite-node call` has no port and no need of one.
+
+### `metrics_tls_cert`
+
+*`halite-node` · no default · SPEC section 26.2*
+
+The serving certificate for metrics_listen. Required with it; there is no plaintext mode.
+
+The certificate the metrics listener presents. Required whenever `metrics_listen` is set, because there is no plaintext mode: a node's exposition says which functions ran, which extensions, and when a deployment went out, which is the same argument that put the hub's behind a certificate. The node's own `node.crt` will not do — it is issued for client authentication and carries no name a scraper could verify — so this is a certificate you supply, exactly as `halite-api` takes `tls_cert`. `x509.certificate_managed` can keep it renewed from the tree.
+
+### `metrics_tls_key`
+
+*`halite-node` · no default · SPEC section 26.2*
+
+Its key.
+
+The key for `metrics_tls_cert`, mode 600 and readable by the account the agent runs as.
+
 ### `tracing`
 
 *all three programs · `off` · SPEC section 26.3*
@@ -1964,7 +1996,11 @@ Every setting, and which programs read it.
 | `log_level_file` | all three programs | — | Logging and diagnostics |
 | `max_body` | `halite-api` | `64MiB` | The API service |
 | `max_causality_depth` | `halite-hub` | `5` | Reactors |
-| `metrics` | `halite-hub`, `halite-api` | `true` | The API service |
+| `metrics` | all three programs | `true` | Logging and diagnostics |
+| `metrics_client_ca` | `halite-node` | — | Logging and diagnostics |
+| `metrics_listen` | `halite-node` | — | Logging and diagnostics |
+| `metrics_tls_cert` | `halite-node` | — | Logging and diagnostics |
+| `metrics_tls_key` | `halite-node` | — | Logging and diagnostics |
 | `mine_functions` | `halite-node` | — | Grains and the mine |
 | `mine_interval` | `halite-node` | `60` | Grains and the mine |
 | `node_data_cache` | `halite-hub` | `true` | Targeting and the job cache |

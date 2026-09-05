@@ -65,6 +65,7 @@ func (n *node) startBeacons(ctx context.Context) {
 			lv, _ := hlog.ParseLevel(level)
 			n.log.Log(lv, msg, append([]any{"component", "beacon"}, kv...)...)
 		},
+		Observe: n.metrics.observeBeacon,
 	}
 	names := make([]string, 0, len(instances))
 	for _, in := range instances {
@@ -79,6 +80,9 @@ func (n *node) startBeacons(ctx context.Context) {
 		cli.Fatalf("%v", err)
 	}
 	n.beacons = engine
+	n.metrics.gauge("halite_beacon_queue_depth",
+		"Beacon events waiting to be sent to the hub.",
+		func() float64 { return float64(engine.Depth()) })
 	n.log.Info("beacons started", "beacons", names)
 	go func() {
 		if err := engine.Run(ctx); err != nil {

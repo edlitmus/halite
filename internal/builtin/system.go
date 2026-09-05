@@ -15,7 +15,7 @@ import (
 )
 
 // registerSystem installs the modules that report on the running system:
-// network, dnsutil, status, disk, mount, timezone, and hostname.
+// network, dnsutil, status, disk, and hostname.
 //
 // Everything here reads through the standard library or through a base
 // system tool, never through an installed package: a node that has just
@@ -312,17 +312,6 @@ func registerDiskModule(r *Registries) {
 				return diskUsage(c)
 			},
 		},
-		exec.Module{
-			Sig: signature.Signature{
-				Module: "mount", Function: "active",
-				Doc:      "Return the mounted filesystems.",
-				TestMode: signature.TestNotApplicable,
-				Section:  "15.2",
-			},
-			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return activeMounts(c)
-			},
-		},
 	)
 }
 
@@ -359,29 +348,6 @@ func parseInt64(s string) int64 {
 	return n
 }
 
-func activeMounts(c *exec.Context) (*value.Map, error) {
-	res, err := c.Run(exec.Command{Argv: []string{"mount"}, IgnoreExitCode: true})
-	if err != nil {
-		return nil, err
-	}
-	out := value.NewMap(16)
-	for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-		// Both `dev on point (type, opts)` and `dev on point type opts`
-		// appear across platforms; the first two fields are the same.
-		fields := strings.Fields(line)
-		if len(fields) < 3 || fields[1] != "on" {
-			continue
-		}
-		device, point := fields[0], fields[2]
-		opts := ""
-		if i := strings.Index(line, "("); i >= 0 {
-			opts = strings.Trim(line[i:], "()")
-		}
-		out.Set(point, value.MapOf("device", device, "opts", opts))
-	}
-	return out, nil
-}
-
 func registerHostnameModule(r *Registries) {
 	r.Exec.Add(
 		exec.Module{
@@ -393,25 +359,6 @@ func registerHostnameModule(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return os.Hostname()
-			},
-		},
-		exec.Module{
-			Sig: signature.Signature{
-				Module: "timezone", Function: "get_zone",
-				Doc:      "Return this node's time zone.",
-				TestMode: signature.TestNotApplicable,
-				Section:  "15.2",
-			},
-			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				// /etc/localtime is a symlink to the zone file on every
-				// modern unix, which names the zone without a tool.
-				if target, err := os.Readlink("/etc/localtime"); err == nil {
-					if i := strings.Index(target, "zoneinfo/"); i >= 0 {
-						return target[i+len("zoneinfo/"):], nil
-					}
-				}
-				name, _ := time.Now().Zone()
-				return name, nil
 			},
 		},
 	)

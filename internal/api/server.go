@@ -217,6 +217,14 @@ func (s *Server) hardened(next http.Handler) http.Handler {
 func (s *Server) logged(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := s.now()
+		// The route is resolved before the handler runs so that the
+		// in-flight gauge names the same route the completed counter
+		// will: a gauge that goes up under one label and down under
+		// another leaks a series that never returns to zero.
+		route := routeOf(r)
+		s.m().requestsInFlight.With(route).Add(1)
+		defer s.m().requestsInFlight.With(route).Add(-1)
+
 		rec := &recorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 
@@ -236,11 +244,11 @@ func (s *Server) logged(next http.Handler) http.Handler {
 		// one route and a series per job identifier is exactly the
 		// unbounded label a metrics endpoint dies of.
 		m := s.m()
-		route := routeOf(r)
 		m.requests.With(route, strconv.Itoa(rec.status)).Inc()
 		if elapsed >= 0 {
 			m.requestDuration.With(route).Observe(elapsed.Seconds())
 		}
+		m.responseBytes.With(route).Add(float64(rec.bytes))
 	})
 }
 
@@ -267,6 +275,10 @@ type recorder struct {
 	status    int
 	principal string
 	wrote     bool
+	// bytes is what was written to the client, for the response-size
+	// counter. An event stream that never ends contributes as it goes,
+	// because the record is written when the handler returns.
+	bytes int64
 }
 
 func (w *recorder) WriteHeader(status int) {
@@ -282,7 +294,9 @@ func (w *recorder) Write(b []byte) (int, error) {
 	if !w.wrote {
 		w.wrote = true
 	}
-	return w.ResponseWriter.Write(b)
+	n, err := w.ResponseWriter.Write(b)
+	w.bytes += int64(n)
+	return n, err
 }
 
 // Flush lets a streaming handler through the recorder.

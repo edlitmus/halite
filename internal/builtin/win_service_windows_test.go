@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -174,11 +173,4 @@ func TestReloadIsRefusedRatherThanTurnedIntoARestart(t *testing.T) {
 	if !strings.Contains(err.Error(), "service.restart") {
 		t.Errorf("the refusal does not say what to use instead: %v", err)
 	}
-}
-
-func testCtx(t *testing.T) *exec.Context {
-	t.Helper()
-	c := realCtx(t)
-	c.Test = true
-	return c
 }

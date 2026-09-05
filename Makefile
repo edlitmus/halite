@@ -54,7 +54,8 @@ TARGETS = linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
 	darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .PHONY: all build test race vet cover check release cross clean tidy vendor policy fmt \
-	fips fips-cross fips-verify fips-test
+	fips fips-cross fips-verify fips-test \
+	saltdiff saltdiff-image zfscheck zfscheck-image
 
 all: build
 
@@ -237,11 +238,27 @@ repro:
 # about nearly everything and wrong about that — and the tree did not
 # compile there at all. Nothing caught it, because nothing compiled for
 # macOS until an operator did.
+# Compiles every shipped target, tests included.
+#
+# `go build` does not compile test files, so a test that builds on one
+# platform and not another passes this target for as long as nobody runs
+# the suite on the other one. That happened: a helper for the Windows
+# service tests was called from http_test.go, which is not
+# platform-specific at all, and internal/builtin's 197 tests stopped
+# compiling everywhere but Windows. `go test ./...` reported it as one
+# package failing to build, and every test inside it silently stopped
+# running -- which looks the same as a package that passes.
+#
+# `go vet` type-checks the test files, so it is what catches that, and
+# it is why this target runs both. The helper itself was moved in the
+# commit that added timezone, environ and mount; this is what stops the
+# next one.
 build-all:
 	@for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; \
 		printf "  %-16s " "$$t"; \
 		env $(DEV_ENV) GOOS=$$os GOARCH=$$arch go build ./... || exit 1; \
+		env $(DEV_ENV) GOOS=$$os GOARCH=$$arch go vet ./... || exit 1; \
 		echo ok; \
 	done
 
@@ -488,3 +505,33 @@ saltdiff: saltdiff-image
 		-v halite-gocache:/gocache \
 		-v halite-gomodcache:/gomodcache \
 		$(SALTDIFF_IMAGE)
+
+# `make zfscheck` runs the zpool module against a real pool.
+#
+# ZFS is a kernel module and there is no userspace stand-in, so a
+# container cannot host this: it shares the host's kernel, and the
+# kernel a developer machine runs — WSL2's, a macOS VM's — has no
+# zfs.ko. So this boots a virtual machine that has its own.
+#
+# It found two defects the first time it ran, both of them in reading
+# `zpool list`, and neither reachable from a fixture written by hand:
+# scripted mode indents every row under the pool by exactly one tab
+# whatever its depth, and prints the logs, cache and spare section
+# headers unindented and space-padded, ignoring -H altogether.
+#
+# The named volume keeps the cloud image and the built disk between
+# runs. The first run downloads about 600MB; later ones take under a
+# minute. --device /dev/kvm is what makes that true: without it qemu
+# emulates the processor and the run takes about twenty times as long,
+# which the script says out loud rather than merely being slow.
+ZFSCHECK_IMAGE ?= halite-zfscheck:24.04
+
+zfscheck-image:
+	docker build -t $(ZFSCHECK_IMAGE) contrib/vm/zfs
+
+zfscheck: zfscheck-image
+	docker run --rm --privileged \
+		$$(test -e /dev/kvm && echo --device /dev/kvm) \
+		-v "$(CURDIR)":/src \
+		-v halite-zfsvm:/vm \
+		$(ZFSCHECK_IMAGE)

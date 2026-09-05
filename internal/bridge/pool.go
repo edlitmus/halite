@@ -127,7 +127,7 @@ func (p *Pool) acquire(ctx context.Context) (*Process, error) {
 		return proc, nil
 	case <-timer.C:
 		p.forget(wait)
-		return nil, fmt.Errorf("every %s process was busy for %s", p.opts.Path, timeout)
+		return nil, fmt.Errorf("%w: every %s process was busy for %s", ErrTimeout, p.opts.Path, timeout)
 	case <-ctx.Done():
 		p.forget(wait)
 		return nil, ctx.Err()

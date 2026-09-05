@@ -365,6 +365,34 @@ func TestAnUnsignedRefIsNotServedWhenVerificationIsOn(t *testing.T) {
 	if !found {
 		t.Errorf("the refusal was not recorded: %+v", b.State())
 	}
+	// And by category, which is what a metric can carry: one series
+	// per ref would be one per branch in every repository the estate
+	// serves. SPEC 13.3 makes an unverified ref one that is not
+	// served, and a control needs a number behind it.
+	refusals := b.Refusals()
+	if refusals[RefusedSignature] != 1 {
+		t.Errorf("signature refusals counted as %v, want 1", refusals[RefusedSignature])
+	}
+	if refusals[RefusedMaterialise] != 0 {
+		t.Errorf("a signature failure was counted as %v materialise failures",
+			refusals[RefusedMaterialise])
+	}
+}
+
+// A repository that verifies refuses nothing, so the counter stays at
+// zero rather than reporting the healthy case as a problem.
+func TestAServedRepositoryRefusesNothing(t *testing.T) {
+	r := newRepo(t)
+	r.write("top.sls", "base: {}\n")
+	r.commit("initial")
+
+	b := backendFor(t, r, nil)
+	if err := b.Update(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.Refusals(); len(got) != 0 {
+		t.Errorf("a repository that was served reports refusals %v", got)
+	}
 }
 
 func TestABackendWithNoRemotesIsRefused(t *testing.T) {

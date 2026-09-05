@@ -118,8 +118,9 @@ func TestEventSendWithNoHubSaysSo(t *testing.T) {
 }
 
 func TestScheduleAbsentConvergesWhenTheJobIsGone(t *testing.T) {
-	res, err := scheduleAbsent(&exec.Context{Schedule: emptySchedule{}},
-		value.MapOf("name", "nightly"))
+	c := newCtx(false)
+	c.Schedule = emptySchedule{}
+	res, err := New().States.Call(c, "schedule.absent", value.MapOf("name", "nightly"))
 	if err != nil {
 		t.Fatal(err)
 	}

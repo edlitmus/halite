@@ -235,6 +235,7 @@ func (s *Server) issueForIdentity(w http.ResponseWriter, r *http.Request, identi
 		return
 	}
 	s.m().authAttempts.With("oidc", "accepted").Inc()
+	s.m().tokensIssued.With("oidc").Inc()
 	namePrincipal(w, token.Principal)
 	s.info("login", "principal", token.Principal, "token_id", token.ID,
 		"method", "oidc", "remote", remoteHost(r),

@@ -53,6 +53,76 @@ func TestTheExpositionCarriesBothServices(t *testing.T) {
 	}
 }
 
+// A login mints a token, and how many exist is a question the exposition
+// could not answer: an estate whose tokens are never revoked has a
+// growing store and nothing said so.
+func TestTheExpositionCountsTokens(t *testing.T) {
+	l, _ := executeLab(t, metricsPolicy)
+	token := l.login(t, "ed", "hunter2").Token
+
+	_, body := l.get(t, PathMetrics, token)
+	for _, want := range []string{
+		`halite_api_tokens_issued_total{method="local"} 1`,
+		"halite_api_tokens_live 1",
+		// Declared before anything has been revoked, so an alert on it
+		// works from the first scrape.
+		"halite_api_tokens_revoked_total 0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the exposition is missing %q:\n%s", want, section(body, "halite_api_tokens"))
+		}
+	}
+}
+
+// The API is a client of the hub, so half its latency is not its own.
+// Without this the only question the exposition could answer about a
+// slow API was that it was slow.
+func TestTheExpositionTimesTheHubItWaitsOn(t *testing.T) {
+	l, hub := executeLab(t, metricsPolicy)
+	hub.metricsBody = "# HELP halite_hub_nodes_connected Nodes.\n" +
+		"# TYPE halite_hub_nodes_connected gauge\nhalite_hub_nodes_connected 4\n"
+	token := l.login(t, "ed", "hunter2").Token
+
+	// One scrape, which is itself a request to the hub, then a second
+	// that can see the first counted.
+	l.get(t, PathMetrics, token)
+	_, body := l.get(t, PathMetrics, token)
+
+	for _, want := range []string{
+		`halite_api_hub_requests_total{route="/v1/metrics",code="200"}`,
+		`halite_api_hub_request_duration_seconds_count{route="/v1/metrics"}`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the exposition is missing %q:\n%s", want, section(body, "halite_api_hub_request"))
+		}
+	}
+}
+
+// A request that is in flight and one that finished answer different
+// questions: a wedged service is requests arriving and none finishing,
+// and the completed counter goes flat and says nothing about it.
+func TestTheExpositionDeclaresWhatIsInFlight(t *testing.T) {
+	l, _ := executeLab(t, metricsPolicy)
+	token := l.login(t, "ed", "hunter2").Token
+
+	_, body := l.get(t, PathMetrics, token)
+	if !strings.Contains(body, "# TYPE halite_api_requests_in_flight gauge") {
+		t.Errorf("the in-flight gauge is not declared:\n%s", body)
+	}
+	// The scrape is itself in flight while it renders, and it is
+	// counted under the route it will be counted under when it
+	// finishes -- a gauge that goes up under one label and down under
+	// another leaks a series that never returns to zero.
+	if !strings.Contains(body, `halite_api_requests_in_flight{route="/v1/metrics"} 1`) {
+		t.Errorf("the scrape did not count itself:\n%s",
+			section(body, "halite_api_requests_in_flight"))
+	}
+	if !strings.Contains(body, `halite_api_response_bytes_total{route="/v1/login"}`) {
+		t.Errorf("the login's response was not counted:\n%s",
+			section(body, "halite_api_response_bytes_total"))
+	}
+}
+
 // A scrape that fails entirely because the hub is unreachable loses the
 // API's own metrics too — and one of those is how often the hub is
 // unreachable.

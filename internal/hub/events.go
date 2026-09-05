@@ -137,7 +137,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request, nodeID string) {
 	}
 	s.m().eventsPublished.With(tagPrefix(tag)).Inc()
 	s.forward(fromNode)
-	s.countBeaconEvent(tag)
+	s.countBeaconEvent(tag, data)
 	s.info("event from a node", "node_id", nodeID, "tag", tag)
 	transport.WriteJSON(w, http.StatusAccepted, transport.EventResponse{Tag: tag, Offset: offset})
 }
@@ -239,6 +239,7 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, principal s
 			if err := enc.Encode(e); err != nil {
 				return
 			}
+			s.observeSubscriberLag(e.Stamp)
 		}
 		if flusher != nil {
 			flusher.Flush()
