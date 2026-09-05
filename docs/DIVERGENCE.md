@@ -1201,6 +1201,51 @@ undo; and the failure mode of getting either wrong is the permanent loss
 of everything on the pool. A warning an operator has to close is worth
 more than a state that closes it for them.
 
+### 4.8 What the race detector established
+
+`make check` runs `race`, and `race` sets `CGO_ENABLED=1` on purpose:
+the detector is unavailable with cgo off, and a target that quietly ran
+without it would report nothing it had not first made true. The cost is
+a C toolchain, and Windows — the platform 4.6 is about — has none, so
+`make check` had never completed there at all. The detector had never
+run on Linux either; 4.1's runs are unit tests under emulation.
+
+`make racecheck` closes both. It runs the `race` recipe verbatim in a
+container that has a compiler, as an unprivileged account.
+
+It found three things on its first afternoon, and only one of them is a
+race:
+
+**A data race on the hub's clock.** `Server.Now` is a func field the
+tests set, and `now()` reads it from background goroutines —
+`deliverQueued`, reached from a subscribe handler. Two tests assigned it
+on a hub that was already serving. Assigning a func field is not atomic,
+so that is a write racing a read; it is test-origin, since `Now` is nil
+in production and never written after startup, but the detector was
+right about the access. The lab now installs the clock before `Serve`
+starts and moves it through an `atomic.Int64`.
+
+**A test that asserted an ordering the hub does not promise.** A return
+is recorded in the job cache and *then* its `ret/<node>` event is
+emitted. A test that waited for the returns and read the bus in the next
+statement was reading it inside the window between those two writes. The
+window is narrow enough on Windows that it had never been lost and wide
+enough on Linux to lose about one run in eight under the detector —
+green where it was written, flaky where CI would run it. The events are
+late rather than absent, so the test waits for them now.
+
+**Two permission helpers that cannot work as root.** `permtest.DenyWrite`
+chmods a directory to 0500 and the caller asserts a refusal; root holds
+CAP_DAC_OVERRIDE and writes anyway, so the condition never existed and
+the assertion failed naming the code under test. `DenyRead` had the same
+latent problem. Both skip now, saying why. It is the failure the
+permtest package doc already describes for `os.Chmod` on Windows,
+arriving from the other direction.
+
+The general shape is 4.6's: none of the three was a defect in the
+detector's own subject, and none was reachable from the platform the
+tests were written on.
+
 
 ## 5. Test coverage against SPEC 31
 

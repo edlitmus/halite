@@ -68,22 +68,26 @@ interesting one.
 
 For a day it did not: §1.1 is what broke and why it stayed broken.
 
-And **`make check` has never completed on this Windows host, and cannot**.
-Six of its seven legs pass here — `fmt-check`, `vet`, `build-all` across
-all eight targets, `test`, `policy` and `fips-test`, all re-run for this
-revision. The seventh, `race`, sets `CGO_ENABLED=1` on purpose, and the
-race detector on windows/amd64 needs a C toolchain this machine does not
-have:
+And **`make check` had never completed on this Windows host**. Six of its
+seven legs pass here — `fmt-check`, `vet`, `build-all` across all eight
+targets, `test`, `policy` and `fips-test`, all re-run for this revision.
+The seventh, `race`, sets `CGO_ENABLED=1` on purpose, and the detector on
+windows/amd64 needs a C toolchain this machine does not have:
 
 ```
 cgo: C compiler "gcc" not found: exec: "gcc": executable file not found in %PATH%
 ```
 
-So the platform that found four defects in §1 is also the platform where
-a third of the concurrency surface goes unchecked. That is a provisioning
-item for §3.5's CI, not a code defect, and it is named here because a
-green `check` on FreeBSD and a green `check` on Windows are not the same
-statement.
+So the platform that found four defects in §1 was also the platform where
+the concurrency surface went unchecked. **`make racecheck` closes that**:
+it runs the `race` recipe verbatim in a container that has a compiler,
+as an unprivileged account. What it found on its first afternoon is
+§1.2, and DIVERGENCE 4.8 is the full account.
+
+It is deliberately not part of `check`. `check` has to work on a machine
+with no network and no Docker, which is the same machine a release is
+built on with `GOPROXY=off`; a host with a compiler should run `make
+race` directly and get the same answer faster.
 
 There is also no `make` on this host at all, which is its own note: the
 Makefile is written for BSD make, and DIVERGENCE 6.2 records that it has
@@ -152,6 +156,34 @@ Note what this does *not* fix: `halite_ext_duration_seconds` on Windows
 cannot distinguish a 10 µs call from a 400 µs one. That is the
 platform's clock rather than this build's, and it is worth knowing
 before somebody writes an alert on the low buckets.
+
+### 1.2 And three more, the first time the race detector ran
+
+The detector had never run against this tree on any platform: Windows
+has no compiler for it (§0.2) and 4.1's Linux runs are unit tests under
+emulation. `make racecheck` runs it in a container. DIVERGENCE 4.8 is
+the account; what belongs here is that it found three things and only
+one of them is a race.
+
+1. **A data race on the hub's clock.** `Server.Now` is a func field, and
+   `now()` reads it from background goroutines while two tests assigned
+   it on a hub that was already serving. Test-origin — `Now` is nil in
+   production — but a real unsynchronised access, now moved through an
+   atomic installed before `Serve` starts.
+2. **A flake that was green where it was written.** A test waited for a
+   job's returns and then read the event bus, which the hub writes
+   second; it lost about one run in eight on Linux and had never lost on
+   Windows. That is the worst shape a test can have, because CI runs on
+   Linux and the author does not.
+3. **Two permission helpers that cannot work as root**, asserting
+   refusals that CAP_DAC_OVERRIDE never delivers.
+
+Each appeared only after the one before it was fixed, which is the
+argument for running a new environment more than once before believing
+it. **The cheap platforms in §7 item 9 should be read the same way**:
+macOS and FreeBSD are not one afternoon each, they are one afternoon
+each *per layer*, and the race detector is a layer nothing had run
+anywhere.
 
 ---
 
@@ -532,11 +564,11 @@ Sequenced by value per unit of work, and by what unblocks what.
 **Now — stop the drift**
 
 1. **Stand up CI**, running `make check`, the conformance suites and
-   `make saltdiff` — **on Linux and Windows both**. Provision the
-   Windows runner with mingw-w64 and a make, or the `race` leg is lost
-   silently and the Makefile stays untested under GNU make (§0.2); a
-   runner that skips a leg without saying so is the failure mode this
-   item exists to prevent. This is first rather
+   `make saltdiff` — **on Linux and Windows both**, and `make racecheck`
+   with them. The Windows runner still needs a make of some kind, and
+   wants mingw-w64 so `race` runs there natively rather than only in the
+   container (§0.2); a runner that skips a leg without saying so is the
+   failure mode this item exists to prevent. This is first rather
    than second, and §1.1 is why. The last time it ranked second,
    `internal/builtin` did not compile on Linux for two weeks — a test
    helper in a Windows-only file, a Linux-only caller that could not see

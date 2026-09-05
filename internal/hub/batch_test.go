@@ -298,7 +298,7 @@ func TestJobsAreSettledOnceTheirWindowHasPassed(t *testing.T) {
 	}
 
 	// The clock, not a sleep: the window is the job's own.
-	l.server.Now = func() time.Time { return time.Now().Add(time.Hour) }
+	l.advance(time.Hour)
 	n, err := l.server.Settle()
 	if err != nil {
 		t.Fatal(err)
@@ -427,7 +427,7 @@ func TestAQueuedJobThatExpiredIsNotRunAndIsRecorded(t *testing.T) {
 	}
 
 	// Two weeks later, as far as the hub is concerned.
-	l.server.Now = func() time.Time { return time.Now().Add(14 * 24 * time.Hour) }
+	l.advance(14 * 24 * time.Hour)
 
 	tr := &tracker{seen: map[string]time.Time{}}
 	stop := l.connectTracking(t, client, "web1.example", tr, nil)

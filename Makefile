@@ -55,7 +55,7 @@ TARGETS = linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
 
 .PHONY: all build test race vet cover check release cross clean tidy vendor policy fmt \
 	fips fips-cross fips-verify fips-test \
-	saltdiff saltdiff-image zfscheck zfscheck-image
+	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image
 
 all: build
 
@@ -535,3 +535,36 @@ zfscheck: zfscheck-image
 		-v "$(CURDIR)":/src \
 		-v halite-zfsvm:/vm \
 		$(ZFSCHECK_IMAGE)
+
+# `make racecheck` is the `race` leg for a host that cannot run it.
+#
+# `race` sets CGO_ENABLED=1 on purpose, and the detector needs a C
+# toolchain. Windows ships none, so `make check` could not complete
+# there at all — on the platform that has found four cross-platform
+# defects so far. This runs the same recipe in a container that has a
+# compiler.
+#
+# It is not only a workaround. The detector had never run against this
+# tree on Linux either, so this is also the first time the goroutines
+# are interleaved by the scheduler the estate actually runs.
+#
+# `racecheck` is not part of `check`. `check` has to work on a machine
+# with no network and no Docker, which is the same machine a release is
+# built on with GOPROXY=off; a host with a compiler should run `make
+# race` directly and get the same answer faster.
+#
+# The two named volumes are the same Go build and module caches
+# `saltdiff` uses. Without them every run refetches the pinned
+# toolchain.
+RACECHECK_IMAGE ?= halite-race:1.25
+
+racecheck-image:
+	docker build -t $(RACECHECK_IMAGE) contrib/docker/race
+
+racecheck: racecheck-image
+	docker run --rm \
+		-v "$(CURDIR)":/src \
+		-v halite-gocache:/gocache \
+		-v halite-gomodcache:/gomodcache \
+		-w /src \
+		$(RACECHECK_IMAGE)
