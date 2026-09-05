@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,6 +34,25 @@ type lab struct {
 	cancel   context.CancelFunc
 	ln       net.Listener
 	served   chan struct{}
+
+	// skew is how far this hub's clock is ahead of the wall clock, in
+	// nanoseconds. See advance.
+	skew *atomic.Int64
+}
+
+// advance moves this hub's clock forward, for a test about a window that
+// closes. The clock rather than a sleep: the window is the job's own,
+// and waiting out a real one would put a fourteen-day test in the suite.
+//
+// Through an atomic, and installed before Serve starts, because
+// `Server.Now` is read by background goroutines — `deliverQueued`
+// reaches it through `now()` — and two tests used to assign the field on
+// a hub that was already serving. That is a write racing a read, and it
+// stayed invisible until the suite ran under the race detector on Linux;
+// see contrib/docker/race. Setting a func field is not atomic, and the
+// detector was right to say so.
+func (l *lab) advance(d time.Duration) {
+	l.skew.Store(int64(d))
 }
 
 // stop ends the hub and waits for Serve to return. It is what the
@@ -85,8 +105,13 @@ func newLab(t *testing.T) *lab {
 		t.Fatal(err)
 	}
 	denied := transport.NewDenylist()
+	// Held by pointer so the closure the server reads and the lab the
+	// test moves are the same counter. Zero until a test calls advance,
+	// which is the wall clock and what a nil Now would have given.
+	skew := new(atomic.Int64)
 	srv := &Server{
 		Log: logger,
+		Now: func() time.Time { return time.Now().Add(time.Duration(skew.Load())) },
 		Authority: &keystore.Authority{
 			Store:    store,
 			CA:       ca,
@@ -121,6 +146,7 @@ func newLab(t *testing.T) *lab {
 		cancel: cancel,
 		ln:     ln,
 		served: done,
+		skew:   skew,
 	}
 	t.Cleanup(func() { l.stop(t) })
 	return l

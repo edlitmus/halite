@@ -7,21 +7,30 @@ stands.
 **Method.** Every count below was measured against the build rather than
 read out of `docs/DIVERGENCE.md`: the module and state registries were
 interrogated through `sys.list_modules` and `sys.list_state_modules`, the
-refusal registry was counted, and each named feature was traced to the
-line that implements or refuses it. Where a claim here is a count, the
-command that produced it is one a reader can run.
+pending-platform table was counted, the metric families were counted by
+the audit that guards them, and each named feature was traced to the line
+that implements or refuses it. Where a claim here is a count, the command
+that produced it is one a reader can run.
 
-**Date of measurement:** 2026-09-04, against `c6a9656`, on
-windows/amd64 with Go 1.26.6. The previous revision of this document was
-written on 2026-09-02 against `57b0d39`; forty-three commits have landed
-since, and section 0 says which of its findings are now closed.
+**Date of measurement:** 2026-09-05, against `3aecb0f`, on
+windows/amd64 with Go 1.26.6. The previous revision was written on
+2026-09-04 against `c6a9656`; twenty-one commits have landed since, and
+section 0 says which of its findings are now closed.
+
+**A note on this file.** Nothing enforces it. `internal/specaudit`
+guards SPEC.md, `docs/DIVERGENCE.md` and README.md against the
+registries; `internal/docsaudit` guards the generated pages. This
+document is outside both, which is why the last four revisions have each
+opened by correcting the one before. Section 3.5 says what would fix
+that, and it is the same answer as for everything else here.
 
 ---
 
 ## 0. Where the project actually stands
 
 Phases 0 through 4 are complete. Phase 5 is most of the way built.
-Phase 6 has not started.
+Phase 6 has started in one place only — metrics — and that arrived
+sideways, as part of phase 5's observability rather than as phase 6 work.
 
 | Phase | State |
 |---|---|
@@ -30,33 +39,72 @@ Phase 6 has not started.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **59 of SPEC 15.3's 65 platform modules and 47 of SPEC 15's core modules remain.** |
-| 6. Hardening to 1.0 | Not started. No benchmarks, no chaos suite, no packaging, no CI, no node evidence, no detached signing. |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **59 of SPEC 15.3's 65 platform modules, 21 of SPEC 15.2's core execution modules and 18 of SPEC 15.5's core state modules remain.** |
+| 6. Hardening to 1.0 | Barely started. Metrics are nearly complete (§3.2). No benchmarks, no chaos suite, no packaging, no CI, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
 
-Its section 1 said nine ledger claims were wrong; all nine are corrected
-and the drift guards now cover Markdown prose and the waiver reasons.
-Its section 2.1 said `make check` failed on three tests; it does not.
-Sections 2.2 and 2.3 are closed — the inert keys warn at startup and
-`enrollment_mode: attested` is refused by name. Section 3.1 (`{% break
-%}`), 3.2 (the `grains` state), the `CatUndefined` row of 3.6, and most
-of 3.3 and 3.5 have landed. Section 4.1's Linux provider depth is done.
+Its section 2.1 is closed and stays closed: `timezone`, `environ`,
+`mount`, `zpool`, `beacon` and `schedule` all ship with both halves, and
+the registries confirm it — `mount.mount`, `timezone.set_zone`,
+`environ.setval` and `zpool.create` are all callable.
 
-Two of its items were overtaken by evidence rather than by work.
-Section 4.3 called Windows "the single largest remaining block of work in
-the project" and said question 9 should be answered before it was
-scheduled; it was scheduled, and section 1 below is what running it
-found. Section 5.4's container is built.
+Its section 3.2 is nearly closed, and was the largest single correction
+this revision had to make. It said eleven of thirty-two metric families
+were unregistered, that all three extension counters were among them,
+and that "the node exposes no metrics at all". Two of those three
+statements are now false: **thirty of thirty-two are registered**, the
+three extension counters among them, and a node serves `/v1/metrics` on
+`metrics_listen` when an operator asks for it.
+
+Two of its items were not closed but were mis-stated, and are corrected
+below: the state-module arithmetic in §2.2, and `file`'s function depth
+in §2.4.
+
+### 0.2 One thing the previous revision said that was not quite true
+
+It said `make check` passes. Two corrections, and the second is the
+interesting one.
+
+For a day it did not: §1.1 is what broke and why it stayed broken.
+
+And **`make check` had never completed on this Windows host**. Six of its
+seven legs pass here — `fmt-check`, `vet`, `build-all` across all eight
+targets, `test`, `policy` and `fips-test`, all re-run for this revision.
+The seventh, `race`, sets `CGO_ENABLED=1` on purpose, and the detector on
+windows/amd64 needs a C toolchain this machine does not have:
+
+```
+cgo: C compiler "gcc" not found: exec: "gcc": executable file not found in %PATH%
+```
+
+So the platform that found four defects in §1 was also the platform where
+the concurrency surface went unchecked. **`make racecheck` closes that**:
+it runs the `race` recipe verbatim in a container that has a compiler,
+as an unprivileged account. What it found on its first afternoon is
+§1.2, and DIVERGENCE 4.8 is the full account.
+
+It is deliberately not part of `check`. `check` has to work on a machine
+with no network and no Docker, which is the same machine a release is
+built on with `GOPROXY=off`; a host with a compiler should run `make
+race` directly and get the same answer faster.
+
+There is also no `make` on this host at all, so the legs above were run
+by hand with the environment each recipe sets. The Makefile is written
+for BSD make, and DIVERGENCE 6.2 recorded that it had never been run
+under GNU make; it has now, in a container — all 33 targets expand under
+GNU Make 4.4.1 and `racecheck` runs through it end to end. That says the
+file parses there, not that every target's result matches between the
+two makes.
 
 ---
 
 ## 1. What running on Windows established, and what it did not
 
 The suite had never been run on Windows. On the first native run it
-failed **80 tests across 12 of 55 packages**; it now passes all 58 with
-no skips. `docs/DIVERGENCE.md` section 4.6 is the full account. Three
-things from it belong in a plan rather than a ledger:
+failed 80 tests across 12 of 55 packages; it then passed all of them.
+`docs/DIVERGENCE.md` section 4.6 is the full account. Three things from
+it belong in a plan rather than a ledger:
 
 **Three of those failures were defects on every platform.** Six packages
 each had their own copy of write-a-temp-file-and-rename, all six racing
@@ -77,6 +125,69 @@ cost of finding out is one afternoon each.
 fourteen do not, and there is no user or group provider, so
 `user.present` has nothing to reach.
 
+### 1.1 And the fourth defect, found a day later
+
+`go test ./...` failed on Windows, deterministically — three failures
+out of three under `-count=3`, so not a flake:
+
+```
+--- FAIL: TestAnExtensionCallIsObserved (1.60s)
+    observe_test.go:101: a call was observed as taking 0s
+```
+
+The cause is the same shape as the three above: **Go's monotonic clock
+on Windows has a granularity of about 500 µs on this host**, measured
+directly, and an extension call that reuses an already-warm pooled
+process returns inside that. `time.Since` read exactly zero against an
+assertion of `took > 0`.
+
+It arrived with `dd246ff`, the metrics commit — the one piece of phase 6
+that has landed — and the suite was red for a day before anyone looked,
+because nothing runs it. That is §3.5's argument in one sentence, and it
+is the reason this entry stays in the document after the fix.
+
+There were two ways to close it, and they were not the same decision.
+The test now asserts that the observation *happened* and that its
+duration is not negative, because a zero-duration reading is a correct
+reading of a sub-tick call and a histogram bucketing it at zero is
+right. The alternative — flooring the duration where it is measured —
+would have made the counter lie slightly in exchange for an assertion
+that holds on every clock, and a metric that lies to satisfy a test is
+the wrong trade for an observability feature.
+
+Note what this does *not* fix: `halite_ext_duration_seconds` on Windows
+cannot distinguish a 10 µs call from a 400 µs one. That is the
+platform's clock rather than this build's, and it is worth knowing
+before somebody writes an alert on the low buckets.
+
+### 1.2 And three more, the first time the race detector ran
+
+The detector had never run against this tree on any platform: Windows
+has no compiler for it (§0.2) and 4.1's Linux runs are unit tests under
+emulation. `make racecheck` runs it in a container. DIVERGENCE 4.8 is
+the account; what belongs here is that it found three things and only
+one of them is a race.
+
+1. **A data race on the hub's clock.** `Server.Now` is a func field, and
+   `now()` reads it from background goroutines while two tests assigned
+   it on a hub that was already serving. Test-origin — `Now` is nil in
+   production — but a real unsynchronised access, now moved through an
+   atomic installed before `Serve` starts.
+2. **A flake that was green where it was written.** A test waited for a
+   job's returns and then read the event bus, which the hub writes
+   second; it lost about one run in eight on Linux and had never lost on
+   Windows. That is the worst shape a test can have, because CI runs on
+   Linux and the author does not.
+3. **Two permission helpers that cannot work as root**, asserting
+   refusals that CAP_DAC_OVERRIDE never delivers.
+
+Each appeared only after the one before it was fixed, which is the
+argument for running a new environment more than once before believing
+it. **The cheap platforms in §7 item 9 should be read the same way**:
+macOS and FreeBSD are not one afternoon each, they are one afternoon
+each *per layer*, and the race detector is a layer nothing had run
+anywhere.
+
 ---
 
 ## 2. Phase 5's real remainder: the module inventory
@@ -90,44 +201,26 @@ halite-node call sys.list_state_modules  # 32
 ```
 
 against SPEC 15.2's 56 core execution modules, 15.5's 47 core state
-modules, and 15.3's 65 platform modules.
+modules, and 15.3's 65 platform modules. Both counts are what a
+*Windows* build registers; the platform rows differ per target and the
+core rows do not.
 
-### 2.1 Core state modules whose execution side is partly there
+### 2.1 Closed: the five states whose execution side was half there
 
-The previous revision of this section called these "the state wrapper and
-nothing else", and that was wrong. The execution modules named here are
-registered, but what they register is the *reading* half:
+The previous two revisions of this section were each rewritten, so what
+it concluded is worth keeping in one paragraph even though the work is
+done.
 
-```
-mount.active                                    timezone.get_zone
-environ.get  environ.has_value  environ.items   zpool.healthy  zpool.list
-```
+Each of `timezone`, `environ`, `mount` and `zpool` registered only the
+*reading* half of its execution module — `mount.active`, `environ.get`,
+`timezone.get_zone`, `zpool.list` — so each was a state *and* the
+mutating execution functions under it: two pieces rather than one. All
+four are built, along with the `beacon` state, which really was just the
+wrapper, and the `schedule` states, whose existing `absent` did not write
+the running set back, so a job a state removed came back on the next
+restart.
 
-There is no `mount.mount`, no `timezone.set_zone`, no `environ.setval`.
-So each of these is a state *and* the mutating execution functions under
-it — still small, still worth doing early, but two pieces rather than
-one, and a plan that said otherwise would have had somebody discover it
-an hour in.
-
-**This section is now closed.** All five are built. The estimate of
-"still small" held for four of them and not for `zpool`, where the work
-was not the code but finding somewhere to run it: see §2.1a.
-
-| State | What the execution side has | What it also needs |
-|---|---|---|
-| ~~`timezone.system`~~ | `get_zone` | **done** — `set_zone`, `zone_compare`, `list_zones` and the state. Windows names its zones its own way and this build says so rather than shipping a CLDR table that goes stale |
-| ~~`environ.setenv`~~ | `get`, `has_value`, `items` | **done** — `setval`, `setenv`, `persisted` and the state. "Permanent" is `/etc/environment` on a unix and the environment key of the registry on Windows, and it is the *default*, because the process-only setting Salt writes changes nothing an operator can observe |
-| ~~`mount.mounted`~~ | `active` | **done** — `mount`, `umount`, `remount`, `set_fstab`, `rm_fstab`, `fstab`, `is_mounted`, `swaps`, and both states. Unix only, and declared so |
-| ~~`zpool.present`~~ | `healthy`, `list` | **done** — `exists`, `get`, `vdevs`, `create`, `destroy`, `export`, `import`, `scrub`, and `present` and `absent`. `present` creates a pool and manages its properties; it does not reshape one that exists, and says so, because a top-level vdev cannot be removed from most pools and `zpool add` aimed at a mirror makes it a stripe with no undo |
-| ~~`beacon.present`~~ | the `beacons` module ships whole | **done** — the state only, so this one really was just the wrapper |
-
-`schedule` is the same shape as `beacon`, and this section previously
-said it had no state at all. It had one: `schedule.absent`, added with
-the five small gaps a real tree reached for. What it did not have was
-`present`, and its `absent` did not write the running set back — so a job
-removed by a state came back on the next restart. Both are fixed, and
-the two states are one implementation because they are the same state
-twice.
+`zpool` is the one that cost something other than code, and §2.1a is why.
 
 ### 2.1a What `zpool` cost, and what it bought
 
@@ -151,28 +244,31 @@ list`, and neither reachable from a fixture written from memory:
   row for the pool's own row filed a pool's log device as an extra leg
   of the mirror above it.
 
-The general lesson is the one §1 already drew from Windows and §5 draws
-about CI: a fixture written from memory tests the memory. The specific
-lesson is that a kernel-backed subsystem needs a kernel, and that
-renting one for ninety seconds is cheap.
+The general lesson is the one §1 draws from Windows and §3.5 draws about
+CI: a fixture written from memory tests the memory. The specific lesson
+is that a kernel-backed subsystem needs a kernel, and that renting one
+for ninety seconds is cheap.
 
 ### 2.2 Core modules missing entirely
 
-**Execution, 21 of SPEC 15.2**: `at`, `acl`, `apparmor`, `blockdev`,
+Counted out of the ledger's own tables, which a test holds to the
+registries in both directions.
+
+**Execution, 21 of SPEC 15.2**: `acl`, `apparmor`, `at`, `blockdev`,
 `data`, `firewall`, `hostname`, `kernelpkg`, `locale`, `logrotate`,
 `nfs`, `ps`, `reboot`, `selinux`, `shadow`, `state`, `sudo`, `swap`,
-`system`, `tls`, `tmpfs`. `http` and `pkgrepo` have since shipped.
+`system`, `tls`, `tmpfs`.
 
-**State, 23 of SPEC 15.5**: `acl`, `apparmor`, `at`, `beacon`,
-`environ`, `firewall`, `hostname`, `iptables`, `kernelpkg`, `locale`,
-`logrotate`, `lvm`, `mac_defaults`, `mount`, `nftables`, `pro`,
-`reboot`, `selinux`, `ssh_known_hosts`, `sudo`, `timezone`, `win_wua`,
-`zpool`. `pkgrepo`, `beacon`, `schedule`, `timezone`, `environ`,
-`mount` and `zpool` have since shipped, which leaves 16.
+**State, 18 of SPEC 15.5**: `acl`, `apparmor`, `at`, `firewall`,
+`hostname`, `iptables`, `kernelpkg`, `locale`, `logrotate`, `lvm`,
+`mac_defaults`, `nftables`, `pro`, `reboot`, `selinux`,
+`ssh_known_hosts`, `sudo`, `win_wua`.
 
-Ranked by what the estate's own tree reaches for, and by what a
-migration is blocked on. **`pkgrepo` and `http` are done**, and are struck
-from the ranking rather than left in it:
+The previous revision said sixteen. It named the right set and
+subtracted wrong; eighteen is what the table holds.
+
+Ranked by what the estate's own tree reaches for, and by what a migration
+is blocked on:
 
 1. **`hostname`**, exec and state. Universal, small, and the last of the
    ones every estate touches.
@@ -194,15 +290,16 @@ reaction, which the reactor already reaches another way.
 ### 2.3 Platform modules: 59 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
-gets "this build does not ship it yet" rather than "unknown module".
-That is the difference between a gap and a typo, and it is already done.
+gets "this build does not ship it yet" rather than "unknown module". That
+is the difference between a gap and a typo, and it is already done. The
+six that ship are `zfs`, `zpool`, and the four Windows ones.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
 | Debian and Ubuntu | 10 | **The estate is Ubuntu.** `aptpkg`, `dpkg`, `apt_key`, `ufw`, `netplan`, `snap`, `pro`, `debconf`, `debbuild`, `apparmor`. |
 | Common Linux | 12 | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
-| macOS | 10 | The providers ship; the `mac_*` modules do not. |
 | Windows | 14 | Four ship. No user or group provider. |
+| macOS | 10 | The providers ship; the `mac_*` modules do not. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
 | FreeBSD | 5 | The development platform, still unbuilt. |
 | SUSE | 1 | `zypperpkg`. |
@@ -213,11 +310,15 @@ piece of work.
 
 ### 2.4 Function-level shortfalls inside modules that ship
 
-`file` has 32 of the ~50 SPEC 15.2 enumerates — `patch`, `sed`,
-`hardlink`, `list_backups`, `restore_backup`, `seek_read`, `seek_write`
-and the SELinux context pair are the notable absences, along with
-`file.accumulated`, which SPEC 15.5 promises by name because trees use
-it. `pkg` has 18 of 26, `service` 16 of 18, `cmd` 12 of 13.
+`file` has **40** of the ~50 SPEC 15.2 enumerates. The previous revision
+said 32 and named `hardlink` among the absences; `file.hardlink` ships.
+What is still absent is `patch`, `sed`, `list_backups`, `restore_backup`,
+`seek_read`, `seek_write` and the SELinux context pair, along with
+`file.accumulated`, which SPEC 15.5 promises by name because trees use it
+and which nothing in the tree implements.
+
+`pkg` has 18 of 26, `service` 16 of 18, `cmd` 12 of 13. Those three are
+unchanged.
 
 ### 2.5 The rest of phase 5
 
@@ -225,7 +326,9 @@ it. `pkg` has 18 of 26, `service` 16 of 18, `cmd` 12 of 13.
   over 4 MiB is refused by name.
 - The `scan`, `cloud` and `terraform` **rosters** (21.2), each refused by
   name.
-- **`minionfs`/`nodefs`** (13.2), a warning rather than a refusal.
+- **`minionfs`/`nodefs`** (13.2), a warning rather than a refusal:
+  `cmd/halite-hub/serve.go` logs "this build serves the roots, git, and
+  s3 backends" and carries on.
 - **No reference bridge ships.** SPEC 20.3 promises in-tree `postgres`
   and `sqs` as worked examples. The protocol, the sandbox, the adapter
   and the name lookup are all built, so all 16 bridged returners are
@@ -233,47 +336,59 @@ it. `pkg` has 18 of 26, `service` 16 of 18, `cmd` 12 of 13.
 
 ---
 
-## 3. Phase 6: nothing in it exists
+## 3. Phase 6: one item of it exists
 
 Grouped by what each unblocks.
 
 ### 3.1 Nothing is measured (SPEC 30)
 
-`grep "func Benchmark"` returns **zero**. Two of SPEC 30's thirteen rows
-name a benchmark as their own measurement method — highstate compile
-under 2 s, pillar compile under 500 ms cold and 5 ms cached — so those
-are cheap and can land immediately. The rest need the simulated node
-harness: 20,000 nodes per hub, 10,000-node dispatch windows, 5,000
-events/second, hub memory under 4 GiB, node memory under 40 MiB idle.
-None of the thirteen is known to be met or missed.
+`grep "func Benchmark"` over the tree returns **zero**. Two of SPEC 30's
+thirteen rows name a benchmark as their own measurement method —
+highstate compile under 2 s, pillar compile under 500 ms cold and 5 ms
+cached — so those are cheap and can land immediately. The rest need the
+simulated node harness: 20,000 nodes per hub, 10,000-node dispatch
+windows, 5,000 events/second, hub memory under 4 GiB, node memory under
+40 MiB idle. None of the thirteen is known to be met or missed.
 
-### 3.2 The observability trio (SPEC 26)
+### 3.2 The observability trio (SPEC 26): metrics are nearly done
 
-- **11 of 32 metric families are unregistered**, guarded in both
-  directions by `TestLedgerMetricGapMatchesTheBuild`. All three extension
-  counters are among them: the extension model ships entirely
-  uninstrumented, so a bridged extension timing out is a job failure with
-  no counter behind it. Watch one trap: `halite_pillar_failures_total`
-  **is** registered but is a different metric from the spec's
-  `halite_pillar_ext_failures_total{source}`, so an alert written from
-  the table silently matches nothing.
-- **The node exposes no metrics at all.** `internal/metrics` is imported
-  by `hub`, `api` and `relay` only. Everything node-local is uncounted —
-  beacon queue drops, local state run duration, scheduler `maxrunning`
-  skips — and SPEC 26.2 requires a counter on every bounded queue and
-  every drop path.
-- **Tracing (26.3) and `doctor` (26.4) do not exist.** `doctor` has one
-  passing mention in a comment. It is also where SPEC 27.4 puts the FIPS
-  grain-mismatch warning, so that warning has nowhere to live.
+This section has moved further than any other since the last revision.
+
+- **30 of SPEC 26.2's 32 metric families are registered**, held in both
+  directions by `TestLedgerMetricGapMatchesTheBuild`. The two that are
+  not are `halite_pillar_cache_hits_total`, which waits on a pillar cache
+  that does not exist, and `halite_pillar_ext_failures_total`, which
+  waits on external pillar. **Both wait on a feature, not on a
+  counter**, so no metrics work remains that is only metrics work.
+- **The node serves its own metrics.** `metrics_listen` opens
+  `/v1/metrics` and nothing else, off unless the address is set, TLS
+  only. Eighteen families come from the node, including the three
+  extension counters and the beacon queue's drop paths. It is DIVERGENCE
+  1.11 — a listener on a machine SPEC 6.1 says has none — and it is the
+  right trade, but it is a divergence and should stay named as one.
+- **One trap survives and is worth repeating.**
+  `halite_pillar_failures_total` **is** registered and is a *different*
+  metric from the spec's `halite_pillar_ext_failures_total{source}`. An
+  alert written from SPEC 26.2's table against the latter matches
+  nothing, silently, and silence is what it would do if the estate were
+  healthy.
+- **Tracing (26.3) and `doctor` (26.4) still do not exist.** `tracing` is
+  an inert key (§4). `doctor` has one passing mention in a comment. It is
+  also where SPEC 27.4 puts the FIPS grain-mismatch warning, so that
+  warning has nowhere to live.
 
 ### 3.3 The security model's unbuilt half (SPEC 25)
+
+Unchanged since the last revision, and verified again here.
 
 - **The render sandbox (25.4) does not exist.** SPEC puts all YAML
   parsing and template rendering in an unprivileged child with no
   network, because "the parser and the template engine are the largest
   and most attacker-adjacent code in the system, and they need no
   privilege at all". Both run in-process in the privileged parent. The
-  Linux seccomp allowlist and capability drop are likewise absent.
+  Linux seccomp allowlist and capability drop are likewise absent. Do not
+  mistake the bridge sandbox for this one: `internal/bridge` confines
+  *extensions*, and it is built.
 - **Node-side evidence (25.7) does not exist.** No hash-chained
   append-only record of accepted jobs, no `halite-node verify-evidence`.
   SPEC 27.3 allocates it a directory. It is the control that gives an
@@ -284,6 +399,9 @@ None of the thirteen is known to be met or missed.
 - **Signed state trees** are named in the 25.1 threat model and in phase
   6's contents. Do not mistake gitfs ref verification for it: that
   verifies a ref tip, not a tree manifest.
+- **No encryption primitives exist in the tree at all** — no AES-GCM, no
+  ECDH, no RSA-OAEP, confirmed by search. That is what §4's
+  `pillar_cache_disk` actually waits on.
 
 ### 3.4 Testing layers that do not exist (SPEC 31)
 
@@ -294,29 +412,35 @@ None of the thirteen is known to be met or missed.
   extension hang, event bus at retention limit, reactor queue overflow.
   Several are the code paths most likely to be wrong, because they are
   the ones no test reaches.
-- **The Salt differential now runs** — `make saltdiff` builds a container
+- **The Salt differential runs** — `make saltdiff` builds a container
   carrying Salt's onedir bundle, and all three comparisons pass over ten
-  trees against 3007.1. What it compares is still narrower than SPEC 31
-  asks: the low state, the pillar, and test-mode predictions, not applied
-  results. Applying a tree twice under both implementations and comparing
-  `changes` is the next step and needs the same container.
+  trees; the container defaults to 3007.1 and the ledger records runs
+  against 3006.25 and 3008.2 as well. What it compares is still narrower
+  than SPEC 31 asks: the low state, the pillar, and test-mode
+  predictions, not applied results. Applying a tree twice under both
+  implementations and comparing `changes` is the next step, and it needs
+  the same container.
 - **Coverage.** Two of SPEC 31's four correctness-core packages are below
   the 90% bar on the more forgiving statement metric: `internal/template`
   82.0% and `internal/target` 89.2% (`internal/yaml` 96.3%,
-  `internal/state` 90.1%). Branch coverage, which SPEC actually
-  requires, is unmeasured and will be lower.
+  `internal/state` 90.1%). Unchanged to the decimal since the last
+  revision. Branch coverage, which SPEC actually requires, is unmeasured
+  and will be lower.
 - **Upgrade testing** (hub at N with nodes at N−1 and N+1, cache format
   migration, certificate rotation across an upgrade) does not exist.
 - **Integration testing** across the tier 1 matrix does not exist. The
-  saltdiff image is the only container in the repository, and it is a
-  correctness harness rather than an integration one.
+  repository has two containers — the saltdiff image and the ZFS virtual
+  machine of §2.1a — and each is a correctness harness for one subsystem
+  rather than an integration matrix.
 
 ### 3.5 Packaging, release and CI (SPEC 4.3, 27.2)
 
 - **No artifact in SPEC 27.2 is built.** No nfpm config, no `.msi`, no
-  `.pkg`, no container image, no SBOM, no provenance attestation.
-  `make release` builds bare binaries into `bin/`. `contrib/` has systemd
-  units and FreeBSD rc.d scripts, and that is the whole packaging story.
+  `.pkg`, no container image for the product itself, no SBOM, no
+  provenance attestation. `make release` builds bare binaries into `bin/`
+  and has never been run. `contrib/` has systemd units, FreeBSD rc.d
+  scripts and example configuration, and that is the whole packaging
+  story.
 - **There is no CI at all** — no `.github/`, no GitLab config, no
   Jenkinsfile. SPEC 4.2 opens by saying the dependency policy "has teeth:
   CI enforces it", and 4.3 assigns CI the dependency assertion and the
@@ -328,10 +452,13 @@ None of the thirteen is known to be met or missed.
 - Toolchain provenance — fetch by digest from an internal mirror — is not
   implemented.
 
-**Standing up CI is the highest-leverage item in this document.** It is
-what keeps everything else from drifting back, and the last three
-revisions of this file each had to open by correcting claims that drifted
-because nothing enforced them.
+**Standing up CI is the highest-leverage item in this document**, and
+§1.1 is now the proof rather than the argument. The suite went red on
+2026-09-04 over a one-line assertion that cannot hold on Windows, and
+stayed red until this document was written, because the only thing that
+runs the suite is a person deciding to. The fix took one line; the day
+it went unnoticed is the cost, and it is a cost that recurs. Every
+correction in §0.1 drifted for the same reason.
 
 ---
 
@@ -344,21 +471,21 @@ gets instead, which is the honest half, and they still do nothing.
 `legacy_acl`, `pillar_cache_disk`, `ext_pillar_fail`, `tracing`.
 
 `pillar_cache_disk` deserves separate mention: it is documented as
-caching pillar "encrypted at rest" (SPEC 12.8), and **no encryption
-primitives exist in the tree at all** — no AES-GCM, no ECDH, no RSA-OAEP.
-Implementing it means writing the SPEC 25.3 encrypted-pillar stack, not
-wiring a flag.
+caching pillar "encrypted at rest" (SPEC 12.8), and no encryption
+primitives exist in the tree at all (§3.3). Implementing it means writing
+the SPEC 25.3 encrypted-pillar stack, not wiring a flag.
 
 Five more are unread with a reason: `job_signer_keys` and
-`require_job_signature` wait on phase 6; `log_level_file`,
-`regex_engine` and `node_id_source` are settings with one value.
+`require_job_signature` wait on phase 6; `log_level_file`, `regex_engine`
+and `node_id_source` are settings with one value.
 
 ---
 
 ## 5. The conformance tail
 
 Lowest priority, and all three suites pass with tables enforced in both
-directions, so nothing here is silently rotting.
+directions, so nothing here is silently rotting. Re-measured, and
+unchanged.
 
 - **YAML (SPEC 10.1):** 402 cases, 331 agree, 34 deliberate, **37 gaps**.
   The direction that matters: **20 of those gaps are documents halite
@@ -379,9 +506,9 @@ directions, so nothing here is silently rotting.
   RE2. The estate's real tree produced **zero regex findings across 193
   files**, which answers SPEC 33 question 8: the backtracking engine
   stays in phase 6 and on this evidence could be dropped. One cheap
-  defect: detection is a raw substring scan, so a construct spelling
-  inside a character class — `[(?=]` — is a false positive, and no test
-  covers it.
+  defect, still open: detection is a raw substring scan with only an
+  escape check, so a construct spelling inside a character class —
+  `[(?=]` — is a false positive, and no test covers it.
 
 ---
 
@@ -393,17 +520,18 @@ directions, so nothing here is silently rotting.
    single program name because it runs without a shell. None blocks, so
    they are all latent breakage at migration. Decide whether
    `cmd_default_shell: true` is the estate-wide setting for a period, or
-   whether 54 call sites get rewritten. **This is now a scheduling
-   decision with numbers attached and it should be taken before the
-   estate starts rewriting states.**
+   whether 54 call sites get rewritten. **This is a scheduling decision
+   with numbers attached, and it should be taken before the estate starts
+   rewriting states.**
 2. **Modules SPEC never planned for** but the estate uses:
    `alternatives` (3 references), `docker_container`/`docker_image` (2),
    `rabbitmq_policy`/`user`/`vhost` (3), `kmod` (1), `macpackage` (1).
    Amend SPEC, bridge them, or rewrite the tree.
 3. **A `win_registry` state.** SPEC 15.5 does not name one, so none
-   ships. Salt has `reg.present` and an estate migrating from it will
-   want the same; a registry value that can only be set through
-   `module.run` reports a change on every run.
+   ships — the `win_registry` *execution* module does. Salt has
+   `reg.present` and an estate migrating from it will want the same; a
+   registry value that can only be set through `module.run` reports a
+   change on every run.
 4. **Detached job signing (33.6) and node-side evidence.** Both answer
    the compromised-hub threat. Decide together, and before the API
    surface sets any harder.
@@ -425,9 +553,10 @@ directions, so nothing here is silently rotting.
    both, so this is a cost question rather than a correctness one.
 8. **Do reference bridges ship?** SPEC 20.3 promises in-tree `postgres`
    and `sqs` as worked examples, and no destination extension exists.
-9. **Strict undefined (33.4)** can now be answered: `CatUndefined` is
-   implemented, so the migration report emits the undefined-reference row
-   SPEC 28.5 requires.
+
+Question 9 of the previous revision — strict undefined (33.4) — is
+answered and struck: `CatUndefined` is implemented and the migration
+report emits the undefined-reference row SPEC 28.5 requires.
 
 ---
 
@@ -435,66 +564,55 @@ directions, so nothing here is silently rotting.
 
 Sequenced by value per unit of work, and by what unblocks what.
 
-**Now — the estate's own blockers**
+**Now — stop the drift**
 
-1. ~~`pkgrepo`, exec and state~~ — **done.** Virtual, with providers for
-   apt, dnf/yum and Chocolatey. The convergence test caught the defect
-   worth knowing about: a declaration carries `gpgcheck` on every
-   platform and apt has no such concept, so the provider rather than the
-   state has to answer whether a declaration matches.
-2. ~~`http`, with SPEC 15.2's security contract~~ — **done.** The address
-   denylist is in the dialer rather than on the URL, so it survives a
-   name that resolves to the metadata service, a redirect into it, and
-   DNS rebinding.
-3. ~~`beacon` and `schedule` states~~ — **done.** One implementation for
-   both, because they are the same state twice. `schedule.absent`
-   already existed and did not persist, so a job a state removed came
-   back on the next restart.
-4. ~~**The rest of §2.1**~~ — **done.** `timezone`, `environ` and
-   `mount` each needed its mutating execution half as well as the state,
-   which is what §2.1 said and what it cost. `zpool` closed it, and cost
-   a virtual machine rather than a container: see §2.1a.
-5. **`hostname`** and **`ssh_known_hosts`**. Small and universal.
+1. **Stand up CI**, running `make check`, the conformance suites and
+   `make saltdiff` — **on Linux and Windows both**, and `make racecheck`
+   with them. The Windows runner still needs a make of some kind, and
+   wants mingw-w64 so `race` runs there natively rather than only in the
+   container (§0.2); a runner that skips a leg without saying so is the
+   failure mode this item exists to prevent. This is first rather
+   than second, and §1.1 is why. The last time it ranked second,
+   `internal/builtin` did not compile on Linux for two weeks — a test
+   helper in a Windows-only file, a Linux-only caller that could not see
+   it — and a second test asserted a guarantee only a Windows job object
+   can give and passed for the same reason. Both were found by running
+   the suite in a container by hand, which is not a process. Then the
+   same gap let a red suite stand for a day on the platform the tests
+   were written on, over a one-line assertion that could not hold there.
 
-**Next — stop the drift**
+**Then — the estate's own blockers**
 
-5. **Stand up CI**, running `make check`, the conformance suites and
-   `make saltdiff` — **on Linux as well as Windows**. This has moved up
-   in the ranking because the cost of not having it is now measured
-   rather than guessed at. `internal/builtin` did not compile on Linux
-   at all for two weeks: a test helper had been put in a Windows-only
-   file and a Linux-only caller could not see it, so `go test
-   ./internal/builtin` failed to build on the platform the estate
-   actually runs. A second test asserted a guarantee that a unix process
-   group cannot give and only a Windows job object can, and passed
-   for the same reason — nothing had run it here. Both were found by
-   running the suite in a container by hand, which is not a process.
-   Everything above stays fixed only if something enforces it (§3.5).
-6. **The Debian and Ubuntu platform row** (§2.3). Ten modules, and the
-   estate is Ubuntu.
+2. **`hostname`** and **`ssh_known_hosts`**. Small, universal, and the
+   last of the core modules every estate touches.
+3. **The Debian and Ubuntu platform row** (§2.3). Ten modules, and the
+   estate is Ubuntu. This is the largest single block of work in the
+   document and the one the migration is actually blocked on.
 
 **Then — phase 6 foundations**
 
-7. The two SPEC 30 benchmarks that need no harness, then node-side
-   metrics and the eleven missing families (§3.1, §3.2).
-8. Get the differential to compare *applied* results, in the container it
+4. The two SPEC 30 benchmarks that need no harness (§3.1). Metrics are no
+   longer on this list; §3.2 closed.
+5. Get the differential to compare *applied* results, in the container it
    already has (§3.4).
-9. The chaos suite, starting with the paths no test reaches at all.
-10. Packaging and the two-builder reproducibility check (§3.5).
+6. The chaos suite, starting with the paths no test reaches at all.
+7. Packaging and the two-builder reproducibility check (§3.5).
+8. The render sandbox (§3.3), which is the largest unbuilt security
+   control and the one SPEC argues for most directly.
 
 **In parallel, cheap and independent**
 
-11. **Run the suite on macOS and FreeBSD.** Windows found three
-    cross-platform defects in one afternoon; there is no reason to think
-    those two hold none (§1).
+9. **Run the suite on macOS and FreeBSD.** Windows found three
+   cross-platform defects in one afternoon and a fourth the next day;
+   there is no reason to think those two hold none (§1).
 
 **Blocked on a decision**
 
-12. The `cmd.run` default, the unplanned modules, a `win_registry` state,
+10. The `cmd.run` default, the unplanned modules, a `win_registry` state,
     job signing and node evidence (§6).
 
 **Last**
 
-13. The YAML over-acceptance set, prioritising the chomping case; the six
+11. The YAML over-acceptance set, prioritising the chomping case; the six
     real template gaps; the regexcompat character-class false positive
     (§5).

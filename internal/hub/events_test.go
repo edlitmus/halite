@@ -41,6 +41,49 @@ func readEvents(t *testing.T, op *transport.Client, tags []string) []eventbus.Ev
 	return out
 }
 
+// waitForEvents reads the bus until every tag in want has fired.
+//
+// The bus is not the job cache, and the two are written in that order: a
+// return is recorded, and *then* jobs.go emits its `ret/<node>` event.
+// A test that waits for the returns and reads the bus in the next
+// statement is reading it inside the window between those two writes.
+//
+// That window is narrow enough on Windows that it had never been lost,
+// and wide enough on Linux to lose about one run in eight under the race
+// detector — the worst shape a test can have, since it is green where it
+// was written and flaky where CI runs it. Found by running the suite in
+// a container; see contrib/docker/race.
+//
+// The events are late rather than absent, so waiting is the whole fix.
+// On a timeout this returns what it has instead of failing, because the
+// caller's own message — which tag is missing, and what the bus does
+// hold — is the one worth reading.
+func waitForEvents(t *testing.T, op *transport.Client, want []string) []eventbus.Event {
+	t.Helper()
+	// The same generous deadline waitForReturns takes, for the same
+	// reason: `go test ./...` runs packages in parallel, and a bound
+	// tight enough to pass on an idle machine fails on a busy one.
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		events := readEvents(t, op, nil)
+		fired := map[string]bool{}
+		for _, e := range events {
+			fired[e.Tag] = true
+		}
+		missing := false
+		for _, tag := range want {
+			if !fired[tag] {
+				missing = true
+				break
+			}
+		}
+		if !missing || time.Now().After(deadline) {
+			return events
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // The tags of SPEC 17.1 that this build fires, fired by the things that
 // actually happen rather than by a test calling emit.
 func TestTheHubRecordsWhatHappens(t *testing.T) {
@@ -55,7 +98,16 @@ func TestTheHubRecordsWhatHappens(t *testing.T) {
 	}
 	waitForReturns(t, op, res.JID, 2)
 
-	events := readEvents(t, op, nil)
+	want := []string{
+		"halite/node/web1.example/enroll/pending",
+		"halite/node/web1.example/enroll/accepted",
+		"halite/node/web1.example/start",
+		"halite/presence/change",
+		"halite/job/" + res.JID + "/new",
+		"halite/job/" + res.JID + "/ret/web1.example",
+		"halite/job/" + res.JID + "/ret/web2.example",
+	}
+	events := waitForEvents(t, op, want)
 	byTag := map[string]int{}
 	for _, e := range events {
 		byTag[e.Tag]++
@@ -67,15 +119,6 @@ func TestTheHubRecordsWhatHappens(t *testing.T) {
 		}
 	}
 
-	want := []string{
-		"halite/node/web1.example/enroll/pending",
-		"halite/node/web1.example/enroll/accepted",
-		"halite/node/web1.example/start",
-		"halite/presence/change",
-		"halite/job/" + res.JID + "/new",
-		"halite/job/" + res.JID + "/ret/web1.example",
-		"halite/job/" + res.JID + "/ret/web2.example",
-	}
 	for _, tag := range want {
 		if byTag[tag] == 0 {
 			t.Errorf("nothing fired %s; the bus holds %v", tag, tagsOf(events))

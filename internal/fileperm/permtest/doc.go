@@ -8,6 +8,13 @@
 // permission at all. A test that cannot make the condition it is testing
 // for is not testing for it.
 //
+// The same thing arrives from the other direction as root, which holds
+// CAP_DAC_OVERRIDE: a chmod that denies access succeeds, changes the
+// mode, and denies nothing to the account that set it. DenyWrite and
+// DenyRead skip rather than pretend, naming the reason, because a
+// container is a reasonable place to run this suite and root is its
+// default account.
+//
 // Nothing outside a test imports this. Granting a file to Everyone is
 // not an operation a configuration management system should offer.
 package permtest
