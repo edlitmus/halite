@@ -631,3 +631,76 @@ func TestAnUnavailableReturnerFailsRatherThanRedirecting(t *testing.T) {
 		t.Error("an unavailable returner accepted an event")
 	}
 }
+
+// A clock too coarse to separate two returns must not reorder them.
+//
+// The spool file was named by its nanosecond timestamp alone, on the
+// reasoning that two returns cannot be spooled in the same nanosecond.
+// They can: `time.Now` is only as fine as the platform's clock, and on
+// Windows that is about half a millisecond. Three returns spooled in a
+// loop shared a timestamp, the sort fell through to the content digest,
+// and the backlog went upstream as 3, 2, 1.
+//
+// TestAnOutageSpoolsAndTheBacklogIsSentInOrder is the test that caught
+// it, and it caught it only because a Windows runner happened to be
+// slow in the right place -- on Linux its three returns land in three
+// distinct nanoseconds and it passes whatever the naming does. This one
+// freezes the clock, so the condition is the test rather than the
+// weather.
+func TestASpoolKeepsItsOrderOnACoarseClock(t *testing.T) {
+	var mu sync.Mutex
+	up := false
+	var received []string
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !up {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		var ret job.Return
+		_ = json.NewDecoder(r.Body).Decode(&ret)
+		received = append(received, string(ret.JID))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	r := webhookTo(t, server, "s3cret")
+	r.opts.MaxAttempts = 1
+	// One instant for every return: the worst a real clock can do,
+	// made certain.
+	frozen := time.Date(2026, 9, 5, 12, 0, 0, 0, time.UTC)
+	r.opts.Now = func() time.Time { return frozen }
+
+	want := []string{"20260905T1", "20260905T2", "20260905T3", "20260905T4", "20260905T5"}
+	for _, jid := range want[:4] {
+		if err := r.Return(context.Background(), aReturn(jid, "web1", true)); err != nil {
+			t.Fatalf("%s: %v", jid, err)
+		}
+	}
+	// Four files, not one: a name that collides loses a return
+	// outright, which is worse than reordering it.
+	if n := r.Spooled(); n != 4 {
+		t.Fatalf("%d returns spooled, want 4 — a shared timestamp overwrote one", n)
+	}
+
+	mu.Lock()
+	up = true
+	mu.Unlock()
+
+	if err := r.Return(context.Background(), aReturn(want[4], "web1", true)); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(received) != len(want) {
+		t.Fatalf("received %v, want %v", received, want)
+	}
+	for i := range want {
+		if received[i] != want[i] {
+			t.Fatalf("received %v, want %v — the spool reordered inside one clock tick",
+				received, want)
+		}
+	}
+}
