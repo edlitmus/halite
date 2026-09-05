@@ -824,6 +824,14 @@ metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
 metrics_client_ca: /usr/local/etc/halite/pki/ca.crt
 ```
 
+The scraper's own certificate is
+`halite-hub keys operator create prometheus --lifetime 8760h` — pass
+the lifetime, because the default is thirty days and a scraper cannot
+notice its own expiring. Making the node's serving certificate is two
+commands on the hub or a state that renews it; both are worked through
+in [metrics.md](metrics.md) under "The two certificates, and how to
+make them".
+
 Only the agent serves it. Reading the hub's by hand:
 
 ```sh

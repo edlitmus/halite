@@ -115,6 +115,14 @@ returner: local
 #
 # And, to refuse a scraper that presents no certificate of its own. The
 # enrollment CA is the obvious one, so the scraper carries what
-# `halite-hub keys operator create prometheus` produced.
+# `halite-hub keys operator create prometheus --lifetime 8760h`
+# produced. Pass the lifetime: the default is thirty days, and a scraper
+# cannot notice its own certificate expiring.
 #
 # metrics_client_ca: /usr/local/etc/halite/pki/ca.crt
+#
+# Making the serving certificate above is two commands on the hub, or a
+# state that renews it; both are written out in docs/metrics.md under
+# "The two certificates, and how to make them". The short version is
+# that it needs `serverAuth` and a SAN covering the address Prometheus
+# scrapes, and that `ca.key` must never be copied to a node to make one.

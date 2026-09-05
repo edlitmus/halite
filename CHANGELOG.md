@@ -316,6 +316,27 @@ Only the agent serves it. A one-shot `halite-node call` is a fresh
 process whose counters start at zero and whose lifetime is a second;
 there is nothing for a scraper to reach.
 
+Two certificates face opposite ways here, and confusing them is the
+commonest way to get a target that will not come up: the node's serving
+certificate proves the scraper reached the node it meant to, and the
+scraper's client certificate proves the thing scraping is allowed to.
+`docs/metrics.md` works both through with commands that were run rather
+than composed — the hub route, where `x509.create_certificate` signs
+from the enrollment CA whose key is already there and the pair is
+copied out, and the tree route, where `x509.certificate_managed` renews
+from a metrics CA of its own. Never the enrollment CA for the second:
+its key would have to be on every node, and it signs every identity in
+the estate.
+
+`ext_key_usage: serverAuth` and a SAN covering the scraped address are
+both required, and neither failure names the setting that caused it —
+which is the same reason the node's own `node.crt` cannot be reused, as
+it has `clientAuth` and no SAN. `keys operator create` takes
+`--lifetime`, and the documentation now says to pass it: the default is
+thirty days and a scraper cannot notice its own certificate expiring,
+so the scrape stops a month after it was set up at whatever hour the
+command was run.
+
 That is what closed the gap this entry used to describe. Two things a
 node knows and the hub cannot: what its bounded queues discarded, which
 never reaches the hub by definition, and where a state run's time went
@@ -1290,8 +1311,16 @@ was whether it was slow. **Where a state run's time goes**, in the node
 row, is the same trick one level down — compiling the tree against
 applying it.
 
-Four tests hold the file to being importable and to being about this
-build: every query names a family this build registers, every panel has
+A test also holds the documentation to the exposition in both
+directions. One direction was already checked: a document naming a
+metric that does not exist produces an alert that stays silent. The
+other is quieter — a family registered, exposed on every scrape, and
+named in no document, so an operator meets it first as an unfamiliar
+series on a graph. Nine families arrived in one change and what was
+documented was counted by hand; a hand is what that replaces.
+
+Four tests hold the dashboard to being importable and to being about
+this build: every query names a family this build registers, every panel has
 its own identifier, no panel overlaps another or runs past the
 twenty-four columns the grid has, and every panel carries a
 description. A panel written against a metric that does not exist draws
