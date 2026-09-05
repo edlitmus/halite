@@ -30,9 +30,23 @@ $user = 'halite-ci'
 # A password nobody needs to know: it exists because
 # CreateProcessWithLogonW wants credentials, and it lives for the length
 # of one job on a throwaway machine.
-Add-Type -AssemblyName 'System.Web'
-$plain = [System.Web.Security.Membership]::GeneratePassword(24, 6)
+#
+# Generated from the crypto RNG rather than System.Web's
+# Membership.GeneratePassword, which is .NET Framework only: under pwsh
+# this failed with "Unable to find type
+# [System.Web.Security.Membership]" before it reached anything
+# interesting. RandomNumberGenerator is in both, so this script does not
+# care which PowerShell runs it.
+#
+# The four appended characters satisfy the local password policy's
+# complexity rule without having to reason about what base64 produced.
+$bytes = New-Object 'System.Byte[]' 30
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+$plain = [Convert]::ToBase64String($bytes) + '!aA1'
 $secure = ConvertTo-SecureString $plain -AsPlainText -Force
+
+# Masked so that nothing downstream can print it into a public log.
+Write-Host "::add-mask::$plain"
 
 if (Get-LocalUser -Name $user -ErrorAction SilentlyContinue) {
     Set-LocalUser -Name $user -Password $secure

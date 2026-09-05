@@ -105,10 +105,6 @@ jobs:
       # than their own package, and the cache does not notice a file
       # that did not exist when the result was recorded.
       #
-      # Run as a standard account rather than the runner's
-      # administrator: the suite asserts that a file it has denied
-      # itself cannot be read, and an administrator reads it anyway. See
-      # the script.
       # The standard account gets its own empty module cache, so a
       # toolchain that needs fetching would be fetched there rather than
       # found. Assert the runner already has the pinned one.
@@ -117,9 +113,18 @@ jobs:
         shell: bash
         run: .github/toolchain-check.sh
 
+      # Run as a standard account rather than the runner's
+      # administrator: the suite asserts that a file it has denied
+      # itself cannot be read, and an administrator reads it anyway. See
+      # the script.
+      #
+      # `shell: powershell` rather than pwsh, because the local-account
+      # cmdlets are native to Windows PowerShell and reaching them from
+      # pwsh goes through a compatibility layer that is one more thing to
+      # be flaky.
       - name: test (windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         env:
           CGO_ENABLED: 0
         run: .github/run-as-standard-user.ps1 test -count=1 ./...
@@ -172,7 +177,7 @@ jobs:
 
       - name: race (windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: powershell
         env:
           CGO_ENABLED: 1
         run: .github/run-as-standard-user.ps1 test -count=1 -race ./...
