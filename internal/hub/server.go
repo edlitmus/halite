@@ -127,7 +127,8 @@ type Server struct {
 	// every test wants and what SPEC 26.2 allows an operator to choose.
 	Metrics *metrics.Registry
 
-	jobClock job.Clock
+	jobClock     job.Clock
+	jobClockOnce sync.Once
 	// background counts the work the hub starts outside a request --
 	// queued delivery to a node that has just connected. Serve waits
 	// for it, because a hub that reports it has stopped while a
@@ -155,10 +156,31 @@ func (s *Server) goBackground(work func()) {
 }
 
 // clock assigns job identifiers that do not collide.
+//
+// The clock is adopted once. This used to be a bare `if
+// s.jobClock.Now == nil && s.Now != nil` assignment, and every caller
+// of this function is a request handler — dispatch, orch, the reactor,
+// the runner — so two concurrent submissions on a hub with `Now` set
+// both wrote the field while `Clock.Next` read it under its own mutex.
+// That is an unsynchronised write racing a read.
+//
+// It never fired in production, because `Now` is nil there and the
+// branch is dead. It became reachable when the hub's tests started
+// setting the clock before Serve rather than during, which is the fix
+// for a different race on the same field, and a dead branch that comes
+// alive is worth closing rather than leaving to the next person to
+// find. `nodesOnce` immediately below does the same thing for the same
+// reason.
+//
+// Adopting once also settles what the clock *is*: a hub takes the clock
+// it was given at first use and keeps it, rather than picking one up
+// later because a field changed underneath it.
 func (s *Server) clock() *job.Clock {
-	if s.jobClock.Now == nil && s.Now != nil {
-		s.jobClock.Now = s.Now
-	}
+	s.jobClockOnce.Do(func() {
+		if s.Now != nil {
+			s.jobClock.Now = s.Now
+		}
+	})
 	return &s.jobClock
 }
 

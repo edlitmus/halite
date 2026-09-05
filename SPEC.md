@@ -1459,7 +1459,15 @@ Notes on the ones that carry the most weight:
 | Windows | `win_pkg`, `win_service`, `win_file`, `win_dacl`, `win_task`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_registry`, `win_disk`, `win_system`, `win_timezone`, `win_wua` (Windows Update), `win_certutil`, `win_dsc` (bridged), `win_lgpo` (bridged) |
 | macOS | `mac_brew_pkg`, `mac_service`, `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_defaults`, `mac_keychain`, `mac_assistive` |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf`, `jail` |
-| Common Linux | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `zfs`, `zpool`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
+| Common Linux | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
+| ZFS, on every platform that has it | `zfs`, `zpool` |
+
+`zfs` and `zpool` have a row of their own because they belong to a filesystem rather than to an
+operating system. ZFS is native on FreeBSD and on illumos and is OpenZFS on Linux, and the command
+line is the same on all three; filing them under Linux would say that a FreeBSD node cannot manage
+its own pools, which is the platform where they were first implemented and verified. A module in
+this row is available wherever the kernel module is, and refuses by name where it is not — which is
+the same contract every other row has, stated against a subsystem instead of a distribution.
 
 ### 15.4 Language and runtime modules
 

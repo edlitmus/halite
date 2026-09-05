@@ -579,7 +579,8 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `zfs`, `zpool` | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
+| Common Linux | none | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
+| ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | none under these names | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf`, `jail` |
 | Debian, Ubuntu | none | `aptpkg`, `debconf`, `dpkg`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
@@ -589,9 +590,13 @@ specification cannot be quietly missed.
 
 Two notes on this table:
 
-- `zfs` and `zpool` are filed under "Common Linux" in SPEC 15.3. They were
-  implemented and verified on FreeBSD, where ZFS is native. The spec's
-  placement is wrong and section 15.3 should move them to a shared row.
+- `zfs` and `zpool` used to be filed under "Common Linux" in SPEC 15.3,
+  which was wrong: they were implemented and verified on FreeBSD, where
+  ZFS is native, and the placement said a FreeBSD node could not manage
+  its own pools. 15.3 now gives them a row of their own, because they
+  belong to a filesystem rather than to an operating system. This is one
+  of the few places the specification was amended rather than diverged
+  from, and it is recorded here for that reason.
 - The FreeBSD row reads as entirely absent but is not, functionally: the
   FreeBSD behaviour that `freebsdpkg`, `freebsd_service`, and
   `freebsd_sysctl` would provide is implemented inside the virtual `pkg`,
