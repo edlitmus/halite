@@ -86,7 +86,7 @@ whether the estate can migrate. The registries answer:
 
 ```
 halite-node call sys.list_modules        # 50
-halite-node call sys.list_state_modules  # 27
+halite-node call sys.list_state_modules  # 31
 ```
 
 against SPEC 15.2's 56 core execution modules, 15.5's 47 core state
@@ -111,10 +111,10 @@ an hour in.
 
 | State | What the execution side has | What it also needs |
 |---|---|---|
-| `timezone.system` | `get_zone` | `set_zone`; `timedatectl` on Linux, `/etc/localtime` elsewhere, `tzutil` on Windows |
-| `environ.setenv` | `get`, `has_value`, `items` | `setval`, and a decision about what "permanent" means: `/etc/environment` on Linux, the registry on Windows |
-| `mount.mounted` | `active` | `mount`, `umount`, `remount`, `set_fstab` |
-| `zpool.present` | `healthy`, `list` | `create`, `destroy`, `export`, `import` — the largest of the four |
+| ~~`timezone.system`~~ | `get_zone` | **done** — `set_zone`, `zone_compare`, `list_zones` and the state. Windows names its zones its own way and this build says so rather than shipping a CLDR table that goes stale |
+| ~~`environ.setenv`~~ | `get`, `has_value`, `items` | **done** — `setval`, `setenv`, `persisted` and the state. "Permanent" is `/etc/environment` on a unix and the environment key of the registry on Windows, and it is the *default*, because the process-only setting Salt writes changes nothing an operator can observe |
+| ~~`mount.mounted`~~ | `active` | **done** — `mount`, `umount`, `remount`, `set_fstab`, `rm_fstab`, `fstab`, `is_mounted`, `swaps`, and both states. Unix only, and declared so |
+| `zpool.present` | `healthy`, `list` | `create`, `destroy`, `export`, `import` — the last one left, and the largest |
 | ~~`beacon.present`~~ | the `beacons` module ships whole | **done** — the state only, so this one really was just the wrapper |
 
 `schedule` is the same shape as `beacon`, and this section previously
@@ -136,7 +136,8 @@ twice.
 `environ`, `firewall`, `hostname`, `iptables`, `kernelpkg`, `locale`,
 `logrotate`, `lvm`, `mac_defaults`, `mount`, `nftables`, `pro`,
 `reboot`, `selinux`, `ssh_known_hosts`, `sudo`, `timezone`, `win_wua`,
-`zpool`. `pkgrepo` has since shipped.
+`zpool`. `pkgrepo`, `beacon`, `schedule`, `timezone`, `environ` and
+`mount` have since shipped, which leaves 17.
 
 Ranked by what the estate's own tree reaches for, and by what a
 migration is blocked on. **`pkgrepo` and `http` are done**, and are struck
@@ -418,15 +419,26 @@ Sequenced by value per unit of work, and by what unblocks what.
    both, because they are the same state twice. `schedule.absent`
    already existed and did not persist, so a job a state removed came
    back on the next restart.
-4. **The rest of §2.1** — `timezone`, `environ` and `mount`, each of
-   which needs its mutating execution half as well as the state.
+4. ~~**The rest of §2.1**~~ — **done** except `zpool`. `timezone`,
+   `environ` and `mount` each needed its mutating execution half as well
+   as the state, which is what §2.1 said and what it cost. `zpool` is
+   the one left, and the largest.
 5. **`hostname`** and **`ssh_known_hosts`**. Small and universal.
 
 **Next — stop the drift**
 
 5. **Stand up CI**, running `make check`, the conformance suites and
-   `make saltdiff`. Everything above stays fixed only if something
-   enforces it (§3.5).
+   `make saltdiff` — **on Linux as well as Windows**. This has moved up
+   in the ranking because the cost of not having it is now measured
+   rather than guessed at. `internal/builtin` did not compile on Linux
+   at all for two weeks: a test helper had been put in a Windows-only
+   file and a Linux-only caller could not see it, so `go test
+   ./internal/builtin` failed to build on the platform the estate
+   actually runs. A second test asserted a guarantee that a unix process
+   group cannot give and only a Windows job object can, and passed
+   for the same reason — nothing had run it here. Both were found by
+   running the suite in a container by hand, which is not a process.
+   Everything above stays fixed only if something enforces it (§3.5).
 6. **The Debian and Ubuntu platform row** (§2.3). Ten modules, and the
    estate is Ubuntu.
 

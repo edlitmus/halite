@@ -252,6 +252,13 @@ func Strings(args *value.Map, name string) []string {
 	switch t := v.(type) {
 	case string:
 		return []string{t}
+	case []string:
+		// A list a module built itself rather than one that came in
+		// through YAML. Returning nil for it reads as "the argument was
+		// not given", and a caller cannot tell that from an empty list:
+		// mount.mounted decided a filesystem had none of the options it
+		// was mounted with and remounted it on every run.
+		return t
 	case []any:
 		out := make([]string, 0, len(t))
 		for _, item := range t {

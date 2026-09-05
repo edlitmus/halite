@@ -287,9 +287,9 @@ had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
-this build ships 50 execution modules and 28 state modules against a
-specification naming roughly 90 and 46 — 283 execution functions across 50
-modules and 76 state functions across 28. FreeBSD is the platform it is
+this build ships 50 execution modules and 31 state modules against a
+specification naming roughly 90 and 46 — 297 execution functions across 50
+modules and 80 state functions across 31. FreeBSD is the platform it is
 verified on; `make test-linux` runs the suite as Linux binaries under this
 host's compat layer, which covers the platform-neutral code and the
 `/proc` grain collector but reaches no apt, dnf, or systemd. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is
