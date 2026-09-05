@@ -97,6 +97,19 @@ cover:
 # The race detector is the one place cgo is wanted: DEV_ENV pins
 # CGO_ENABLED=0 for every other target, and -race with it off fails
 # outright rather than quietly running without the detector.
+#
+# This is the target to use. It works wherever the Go toolchain supports
+# the detector and a C compiler is present, which is every platform this
+# project is developed on: FreeBSD and macOS have clang in base, and
+# Linux has gcc. `racecheck` further down is *only* for a host that has
+# no compiler, which in practice means Windows; it is slower and it is
+# not a better answer anywhere else.
+#
+# Worth running more than once. Two of the three defects the detector
+# has found here are intermittent -- one appears in roughly one sweep in
+# three, the other loses about one run in eight -- so a single green run
+# says less than it looks like it does. CI runs this on every change for
+# that reason.
 race:
 	@env CGO_ENABLED=1 go test -count=1 -race ./...
 
@@ -536,17 +549,20 @@ zfscheck: zfscheck-image
 		-v halite-zfsvm:/vm \
 		$(ZFSCHECK_IMAGE)
 
-# `make racecheck` is the `race` leg for a host that cannot run it.
+# `make racecheck` is the `race` leg for a host that has no C compiler.
 #
-# `race` sets CGO_ENABLED=1 on purpose, and the detector needs a C
-# toolchain. Windows ships none, so `make check` could not complete
-# there at all — on the platform that has found four cross-platform
-# defects so far. This runs the same recipe in a container that has a
-# compiler.
+# **If your host has one, run `make race` instead.** FreeBSD and macOS
+# have clang in base and Linux has gcc, so this target is not for them:
+# it is slower, it needs Docker, and it answers exactly the same
+# question. `make check` already includes `race`, and it has been run on
+# FreeBSD and on Ubuntu Linux.
 #
-# It is not only a workaround. The detector had never run against this
-# tree on Linux either, so this is also the first time the goroutines
-# are interleaved by the scheduler the estate actually runs.
+# It exists because of Windows. `race` sets CGO_ENABLED=1 on purpose --
+# the detector is unavailable with cgo off, and a target that quietly
+# ran without it would report nothing it had not first made true -- and
+# Windows ships no compiler, so `make check` could not complete there at
+# all. That is the whole of the gap this fills, on the platform that has
+# found four cross-platform defects so far.
 #
 # `racecheck` is not part of `check`. `check` has to work on a machine
 # with no network and no Docker, which is the same machine a release is

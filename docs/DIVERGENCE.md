@@ -1206,20 +1206,31 @@ undo; and the failure mode of getting either wrong is the permanent loss
 of everything on the pool. A warning an operator has to close is worth
 more than a state that closes it for them.
 
-### 4.8 What the race detector established
+### 4.8 What running the race detector more often established
 
 `make check` runs `race`, and `race` sets `CGO_ENABLED=1` on purpose:
 the detector is unavailable with cgo off, and a target that quietly ran
-without it would report nothing it had not first made true. The cost is
-a C toolchain, and Windows — the platform 4.6 is about — has none, so
-`make check` had never completed there at all. The detector had never
-run on Linux either; 4.1's runs are unit tests under emulation.
+without it would report nothing it had not first made true.
 
-`make racecheck` closes both. It runs the `race` recipe verbatim in a
-container that has a compiler, as an unprivileged account.
+**The detector is not new here.** `make check` and `make race` have been
+run on FreeBSD, the development platform, and on Ubuntu Linux, and the
+Go toolchain supports the detector on both. What had never happened is
+`make check` completing on **Windows**: the cost of `CGO_ENABLED=1` is a
+C toolchain, Windows ships none, and so the race leg could not run there
+at all. `make racecheck` is for that case and that case only — the
+`race` recipe verbatim, in a container that has a compiler, as an
+unprivileged account. A host with a compiler runs `make race` and gets
+the same answer faster.
 
-It found three things on its first afternoon, and only one of them is a
-race:
+So the three findings below are not what a first run turned up. Two of
+them were reachable on FreeBSD and on Linux the whole time and had
+simply never been hit; the third needed an account no developer uses.
+That is the more useful lesson, and the sharper one: **a gate that runs
+sometimes is not the same as a gate that runs.** The data race appeared
+in one full sweep and not in the two that followed it, and the flaky
+test loses about one run in eight — neither is found by running the
+detector once on a new platform, and both are found by running it on
+every change.
 
 **A data race on the hub's clock.** `Server.Now` is a func field the
 tests set, and `now()` reads it from background goroutines —
@@ -1247,9 +1258,13 @@ latent problem. Both skip now, saying why. It is the failure the
 permtest package doc already describes for `os.Chmod` on Windows,
 arriving from the other direction.
 
-The general shape is 4.6's: none of the three was a defect in the
-detector's own subject, and none was reachable from the platform the
-tests were written on.
+The general shape is not 4.6's. 4.6 and 4.7 are about a platform nobody
+had run, and the defects there were unreachable until somebody did.
+These were reachable all along on platforms that do run the suite, and
+what found them was repetition and a different account rather than a new
+system. The first two are the argument for running the detector on every
+change rather than when somebody remembers; the third is the argument
+for running it as the account a hub actually runs as.
 
 ### 4.9 What CI established on its first afternoon
 

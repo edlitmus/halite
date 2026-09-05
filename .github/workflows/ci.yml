@@ -6,9 +6,10 @@
 # deciding to. What that cost is measured rather than guessed at.
 # `internal/builtin` did not compile on Linux for two weeks. The suite
 # was red on Windows for a day over an assertion that cannot hold there.
-# The race detector had never run on any platform, and found three
-# defects the first time it did. Every one of those was found by hand,
-# late, and none of them had to be.
+# The race detector had been run on FreeBSD and on Linux, but only when
+# somebody remembered, which is not often enough to catch a race that
+# appears in one sweep out of three. Every one of those was found by
+# hand, late, and none of them had to be.
 #
 # The jobs are split by make target rather than run as one `make check`,
 # so a failure names the leg that failed instead of the word "check".
@@ -129,10 +130,17 @@ jobs:
           CGO_ENABLED: 0
         run: .github/run-as-standard-user.ps1 test -count=1 ./...
 
-  # The race detector, which had never run against this tree anywhere
-  # until 2026-09-05. It found a data race on the hub's clock, a test
-  # that lost about one run in eight on Linux and had never lost on
-  # Windows, and two permission helpers that cannot work as root.
+  # The race detector, on every change rather than when somebody
+  # remembers. It has been run on FreeBSD and on Linux for a long time;
+  # what it had never been is *frequent*, and the two races it found on
+  # 2026-09-05 are both intermittent -- a data race on the hub's clock
+  # that appears in roughly one sweep in three, and a test that loses
+  # about one run in eight on Linux and had never lost on Windows. A
+  # single green run says less than it looks like it does.
+  #
+  # Windows is the exception to "has been run": it had never run this
+  # leg at all, because CGO_ENABLED=1 needs a compiler the image does
+  # not put on PATH by default.
   #
   # `race` sets CGO_ENABLED=1 on purpose: the detector is unavailable
   # with cgo off, and a job that ran without it would report nothing it

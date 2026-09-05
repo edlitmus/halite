@@ -343,15 +343,28 @@ described in the specification section named.
 make build      # bin/halite-node, halite-hub, halite-api
 make test
 make check      # fmt, vet, test, race, and the build policy
+make race       # the race detector; needs a C compiler, so cgo is on
 make test-linux # the suite as Linux binaries, under the compat layer
 make cover
 make vuln       # govulncheck; needs the network, so not part of check
 make repro      # build twice from two paths and compare the digests
 make fuzz       # FUZZTIME=30m for a real campaign
 make saltdiff   # the differential against Salt, in a container
-make racecheck  # the race leg, for a host with no C toolchain
 make zfscheck   # the zpool module against a real pool, in a VM
+make racecheck  # `race` in a container, for a host with no C compiler
 ```
+
+`make race` is the race detector, and it is the one to use: FreeBSD and
+macOS have clang in base and Linux has gcc, so it runs natively on every
+platform this is developed on, and `make check` already includes it.
+`racecheck` exists for Windows alone, which ships no compiler and
+therefore could not run `make check` at all — it answers the same
+question in a container, more slowly.
+
+Worth running more than once either way. Two of the three defects the
+detector has found here are intermittent, one appearing in roughly one
+sweep in three, so a single green run says less than it looks like it
+does.
 
 Every one of those runs in CI on push and on each pull request —
 `.github/workflows/ci.yml`, split by target so a failure names the leg —
