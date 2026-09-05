@@ -3467,6 +3467,20 @@ What is **not** built in phase 5:
   cross-compile from the vendored tree.
 - Cross-compilation is verified for the four target platforms; nothing beyond
   compilation is verified.
+- **CI runs the gates**, in `.github/workflows/`. SPEC 4.2 says the
+  dependency policy "has teeth: CI enforces it", and until 2026-09-05
+  nothing enforced anything: every gate was a make target or a Go test,
+  run when somebody remembered. `ci.yml` runs each leg of `make check`
+  on push and on every pull request, on Linux and Windows, with the
+  Salt differential and the race detector among them. `release.yml`
+  builds a tag on two runner images and compares the digests, which is
+  SPEC 4.3's two-builder check and the one property `make repro` cannot
+  establish on its own.
+- The two Windows legs do not go through `make`. GNU make on Windows
+  runs recipes through `cmd.exe` unless it finds a POSIX shell, and
+  these recipes are `sh`; provisioning one is more moving parts than the
+  single `go test` line each target expands to. The workflow says so at
+  the point it does it, and says what to do if either grows past a line.
 - The Makefile is written for BSD make and uses `!=` rather than
   `$(shell ...)`. GNU make handles `!=` from 4.0 onward, and it has now
   been run under one: every target expands under GNU Make 4.4.1, and

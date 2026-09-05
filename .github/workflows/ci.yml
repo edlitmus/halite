@@ -1,0 +1,216 @@
+# The checks SPEC 4.2 says have teeth.
+#
+# "CI enforces it" is the specification's phrase for the dependency
+# policy, and until now nothing did: every gate in this file existed as a
+# make target or a Go test, and the only thing that ran them was a person
+# deciding to. What that cost is measured rather than guessed at.
+# `internal/builtin` did not compile on Linux for two weeks. The suite
+# was red on Windows for a day over an assertion that cannot hold there.
+# The race detector had never run on any platform, and found three
+# defects the first time it did. Every one of those was found by hand,
+# late, and none of them had to be.
+#
+# The jobs are split by make target rather than run as one `make check`,
+# so a failure names the leg that failed instead of the word "check".
+# Together they are `check` plus the two gates it deliberately leaves
+# out: the Salt differential, which needs a container, and the
+# reproducibility check.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to a pull request cancels the first. The gates are long
+# and the answer for a superseded commit is not worth the runner.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # `check` has to work on a machine with no network, which is the same
+  # machine a release is built on. The toolchain is the one thing CI
+  # fetches, and it fetches the version go.mod pins rather than whatever
+  # the runner image shipped.
+  GOTOOLCHAIN: auto
+
+jobs:
+  # The fast gate. Formatting, vet, and the specification's own build
+  # rules -- the lexicon of SPEC 2.3, the dependency allowlist of 4.2,
+  # and the import restrictions of 25.3. Runs first because it is
+  # seconds, and a tree that fails it should not occupy eight runners.
+  policy:
+    name: fmt, vet, policy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make fmt-check
+      - run: make vet
+      - run: make policy
+
+  # Every shipped target, built and vetted. `go build` does not compile
+  # test files, so this runs vet too: that is what catches a test helper
+  # that only exists on one platform, which is how internal/builtin's
+  # 197 tests silently stopped running everywhere but Windows.
+  build-all:
+    name: build all targets
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make build-all
+
+  # The suite, on both platforms that have ever run it.
+  #
+  # Windows is not a formality here. The first native run failed 80
+  # tests across 12 packages, and three of those were defects on every
+  # platform that only a system without unlink-while-open could show.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: test (make)
+        if: runner.os == 'Linux'
+        run: make test
+
+      # The same recipe, spelled out, because GNU make on Windows runs
+      # recipes through cmd.exe unless it finds a POSIX sh, and this
+      # Makefile's recipes are sh. Provisioning one is more moving parts
+      # than the one line the `test` target actually is; if this ever
+      # grows past a line, install a shell and call make instead.
+      #
+      # Kept honest by `make test`'s own definition: CGO_ENABLED=0, and
+      # -count=1 because several audits here read the whole tree rather
+      # than their own package, and the cache does not notice a file
+      # that did not exist when the result was recorded.
+      - name: test (windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: 0
+        run: go test -count=1 ./...
+
+  # The race detector, which had never run against this tree anywhere
+  # until 2026-09-05. It found a data race on the hub's clock, a test
+  # that lost about one run in eight on Linux and had never lost on
+  # Windows, and two permission helpers that cannot work as root.
+  #
+  # `race` sets CGO_ENABLED=1 on purpose: the detector is unavailable
+  # with cgo off, and a job that ran without it would report nothing it
+  # had not first made true. That is why the Windows leg provisions a
+  # compiler rather than skipping when it finds none -- a skipped leg
+  # that says nothing is the failure this whole file exists to prevent.
+  race:
+    name: race (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: race (make)
+        if: runner.os == 'Linux'
+        run: make race
+
+      # The runner image ships mingw-w64, but "ships it today" is not a
+      # thing to depend on silently: assert a compiler, install one if
+      # the image ever stops carrying it, and fail loudly if neither
+      # works.
+      - name: ensure a C compiler
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          if ! command -v gcc >/dev/null; then
+            choco install mingw -y --no-progress
+          fi
+          gcc --version
+
+      - name: race (windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          CGO_ENABLED: 1
+        run: go test -count=1 -race ./...
+
+  # The FIPS artifact set is a shipped deliverable, and a restriction
+  # that only holds in the build nobody runs locally is a restriction
+  # that breaks on the tag. The whole suite, with all cryptography
+  # routed through the certified module.
+  fips:
+    name: fips-test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # fips-test builds with GOPROXY=off, and fetching a toolchain
+      # needs the proxy. So if the runner's Go is older than the pinned
+      # toolchain, the failure arrives offline and looks like a
+      # dependency problem. Say what it is instead.
+      - name: the runner's Go is the pinned toolchain
+        run: .github/toolchain-check.sh
+      - run: make fips-test
+
+  # SPEC 31 calls this the primary correctness gate: the same tree
+  # compiled by halite and by Salt, compared. It has always skipped
+  # where Salt is absent, which is every machine this project is
+  # developed on -- so the primary correctness gate was green by not
+  # running. The container is what makes it a command.
+  saltdiff:
+    name: salt differential
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: make saltdiff
+
+  # Two builds of the same source on one machine, from two paths.
+  #
+  # This is not SPEC 4.3's two-builder check, which is on the tag and in
+  # release.yml. It is the cheap half: a build that is not reproducible
+  # from two paths on one machine will not be reproducible across two.
+  repro:
+    name: reproducible build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `make release` stamps the commit through -buildvcs, and a
+          # shallow clone with no tags makes `git describe` answer
+          # differently than it will anywhere else.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: the runner's Go is the pinned toolchain
+        run: .github/toolchain-check.sh
+      - run: make repro
