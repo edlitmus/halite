@@ -95,14 +95,26 @@ returner: local
 #
 # exec_path: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Prometheus metrics, SPEC 26.2. A node has no listener to serve an
-# exposition on and does not get one for this, so it writes the file
-# node_exporter's textfile collector already reads. Unset, which is the
-# default, a node records nothing.
+# Prometheus metrics, SPEC 26.2. A node dials the hub and is dialled by
+# nothing; this is the one deliberate exception, and it is off until you
+# set an address. Only the agent serves it -- `halite-node connect` --
+# because a one-shot `halite-node call` has counters that start at zero
+# and a lifetime of a second.
 #
-# Only the agent writes it -- `halite-node connect`. A one-shot
-# `halite-node call` starts its counters at zero, and writing those over
-# the agent's file reads as a restart to a scraper.
+# There is no plaintext mode. A node's exposition says which functions
+# ran, which extensions, and when a deployment went out, which is the
+# same argument that put the hub's endpoint behind a certificate. The
+# node's own node.crt will not serve it: that certificate is issued for
+# client authentication and carries no name a scraper could verify, so
+# this is one you supply. `x509.certificate_managed` can keep it renewed
+# from the tree like anything else.
 #
-# metrics_textfile: /var/lib/node_exporter/textfile_collector/halite.prom
-# metrics_interval: 60s
+# metrics_listen: ':4512'
+# metrics_tls_cert: /usr/local/etc/halite/pki/metrics.crt
+# metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
+#
+# And, to refuse a scraper that presents no certificate of its own. The
+# enrollment CA is the obvious one, so the scraper carries what
+# `halite-hub keys operator create prometheus` produced.
+#
+# metrics_client_ca: /usr/local/etc/halite/pki/ca.crt

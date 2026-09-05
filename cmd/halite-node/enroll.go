@@ -362,20 +362,18 @@ func runConnect(args *cli.Args) int {
 		"Returns waiting to be posted to the hub.",
 		func() float64 { return float64(len(returns)) })
 	metricsFailed := func(err error) {
-		// Named, and warned rather than fatal: the first write happens
-		// at startup so a directory this account cannot use is
-		// reported where the operator who set it is looking, and a node
-		// that refused to start over a metrics file would be one no
-		// highstate could reach to fix.
-		n.log.Warn("the metrics file could not be written",
-			"path", n.metrics.path, "error", err.Error())
+		// Warned rather than fatal, and named: a node that refused to
+		// start over its metrics certificate or a port already in use
+		// would be one no highstate could reach to fix either. The
+		// absence shows up at the scraper as a target that is down,
+		// which is the signal that belongs there.
+		n.log.Warn("the metrics endpoint is not serving",
+			"listen", n.metrics.listen, "error", err.Error())
 	}
-	go n.metrics.run(ctx, metricsFailed)
-	// Written here rather than from that goroutine, because returning
-	// from main does not wait for one: the last write has to be on the
-	// path that leaves this function or it happens only when the
-	// scheduler allows.
-	defer n.metrics.Report(metricsFailed)
+	go n.metrics.serve(ctx, metricsFailed, func(addr string) {
+		n.log.Info("metrics listening", "address", addr,
+			"client_certificate_required", n.metrics.requiresClientCert())
+	})
 	go exec.Run(ctx.Done())
 	go n.postReturns(ctx, args, returns)
 	go n.refreshGrains(ctx, args)

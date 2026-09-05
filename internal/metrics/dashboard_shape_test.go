@@ -177,9 +177,10 @@ func TestTheDashboardVariablesAndTheQueriesAgree(t *testing.T) {
 	}
 }
 
-// The node families come from the textfile collector, which is a
-// different scrape job with different instances. A node panel filtered
-// by the API's job variable draws an empty graph on every estate.
+// The node families come from the nodes' own scrape job: a node is its
+// own target with its own certificate, not something the API's scrape
+// carries. A node panel filtered by the API's job variable draws an
+// empty graph on every estate.
 //
 // Only the families no other process records. `halite_beacon_dropped_total`,
 // `halite_beacon_events_total` and the two state-duration histograms are

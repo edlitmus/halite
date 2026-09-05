@@ -3,7 +3,7 @@
     {
       "name": "DS_PROMETHEUS",
       "label": "Prometheus",
-      "description": "The Prometheus that scrapes halite-api. The node row also needs the one that scrapes node_exporter, which is usually the same server.",
+      "description": "The Prometheus that scrapes halite-api. The node row also needs the job that scrapes the nodes themselves, which is usually the same server.",
       "type": "datasource",
       "pluginId": "prometheus",
       "pluginName": "Prometheus"
@@ -44,7 +44,7 @@
   "annotations": {
     "list": []
   },
-  "description": "halite's control plane: the hub, the API, and the node agents. Point it at the Prometheus that scrapes halite-api; the node row reads the textfile collector instead and has its own job variable.",
+  "description": "halite's control plane: the hub, the API, and the node agents. Point it at the Prometheus that scrapes halite-api; the node row reads the nodes' own scrape job and has its own variables.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -1583,7 +1583,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "On the hub this family is orchestration. A node's own compile time is in the node row, which comes from the textfile collector rather than from this scrape.",
+      "description": "On the hub this family is orchestration. A node's own compile time is in the node row, which reads the nodes' own scrape job rather than this one.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -5190,7 +5190,7 @@
           "type": "timeseries"
         }
       ],
-      "title": "Node agents (textfile collector)",
+      "title": "Node agents",
       "type": "row"
     },
     {
@@ -5745,15 +5745,15 @@
       {
         "current": {
           "selected": false,
-          "text": "node",
-          "value": "node"
+          "text": "halite-nodes",
+          "value": "halite-nodes"
         },
         "datasource": {
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
         "definition": "label_values(halite_node_connected, job)",
-        "description": "The scrape job that collects node_exporter, where a node's halite.prom is picked up. Only the node row uses it, and it is empty on an estate where no node sets metrics_textfile.",
+        "description": "The scrape job for the halite nodes themselves \u2014 `halite-nodes` in the documented prometheus.yml. Only the node row uses it, and it is empty on an estate where no node sets metrics_listen.",
         "hide": 0,
         "includeAll": false,
         "label": "Node job",

@@ -287,24 +287,34 @@ specification names is written by something outside the program, and an
 estate with a thousand distinct states would otherwise turn one family
 into a thousand series.
 
-A node has no listener and does not get one for this. SPEC 6.1 has it
-dial the hub and be dialled by nothing, and opening a scrape port on
-every managed machine to answer a question about the control plane is a
-larger change to an estate than the answer is worth. It writes its
-exposition to the file `metrics_textfile` names instead — the one
-node_exporter's textfile collector already reads on most fleets — so
-the scraper that reaches every machine picks the numbers up with the
-node's own `instance` label on them. Unset, which is the default, a
-node records nothing.
+A node dials the hub and is dialled by nothing, and `metrics_listen` is
+the one deliberate exception: set, the agent serves `/v1/metrics` on
+that address and nothing else, and an unrouted path gets a 404 rather
+than a description of what might be there. Unset, which is the default,
+a node opens no port at all. DIVERGENCE 1.13 records it.
 
-Only the agent writes it. A one-shot `halite-node call` is a fresh
-process whose counters start at zero, and writing those over the
-agent's file would report every counter on the machine falling to
-nearly nothing each time somebody ran a command by hand — which a
-scraper reads as a restart, not as a mistake. The file is replaced by
-rename, on the interval and once more as the node stops, because the
-collector reads whenever it likes and rejects a half-written exposition
-whole.
+There is no plaintext mode. A node's exposition says which functions
+ran, which extensions, and when a deployment went out, which is the
+argument that put the hub's endpoint behind a certificate and the API's
+behind a token; it does not weaken because the subject is one machine.
+The node's own `node.crt` is deliberately not reused — it is issued
+with `ExtKeyUsage: ClientAuth` and carries no DNS or IP name, so Go
+refuses it as a serving certificate and a scraper would have nothing to
+verify it against. `metrics_tls_cert` and `metrics_tls_key` are ones
+the operator supplies, exactly as `halite-api` takes `tls_cert`, and
+`x509.certificate_managed` can keep them renewed from the tree.
+`metrics_client_ca` goes further and refuses a scraper that presents no
+certificate of its own.
+
+Neither a missing certificate nor an address already in use is fatal.
+Both are warned about, naming the setting and the address, and the node
+goes on running jobs: a node that refused to start over its metrics
+certificate would be one no highstate could reach to fix the
+certificate.
+
+Only the agent serves it. A one-shot `halite-node call` is a fresh
+process whose counters start at zero and whose lifetime is a second;
+there is nothing for a scraper to reach.
 
 That is what closed the gap this entry used to describe. Two things a
 node knows and the hub cannot: what its bounded queues discarded, which
@@ -343,8 +353,8 @@ What arrived with them, beyond SPEC's list:
   returns waiting for the hub, and each beacon's queue.
   `halite_beacon_dropped_total` is counted on both sides: the node
   counts its own, and the hub reads the count out of the overflow event
-  the node already sends, so an estate that collects no textfiles still
-  gets the number. SPEC 26.2's rule — every bounded queue and every
+  the node already sends, so an estate that scrapes no nodes still gets
+  the number. SPEC 26.2's rule — every bounded queue and every
   drop path has a counter — now holds across the build.
 - **Where a request went.** `halite_event_subscriber_lag_seconds`,
   `halite_gitfs_fetch_duration_seconds` and
@@ -842,7 +852,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 213 settings in the
+The configuration reference explains each of the 215 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.
@@ -1269,8 +1279,8 @@ server, authentication and policy, the hub's own service metrics, the
 API's, and two collapsed rows for the node agents and for relays. It
 asks only for a data source. Four variables pick the job name and which
 halite-api to read, and — separately — the job that scrapes
-node_exporter and which nodes to cover, because a node's metrics do not
-arrive in the same scrape.
+the nodes and which of them to cover, because a node is its own scrape
+target with its own certificate.
 
 Two panels are the ones worth having. **Where the time goes** puts how
 long the API took to answer against how long the hub took to answer the
@@ -1297,7 +1307,7 @@ The alerting rules in [metrics.md](docs/metrics.md) grew with the
 families: the CA and the node certificates, beacon events lost to a
 full queue, a git ref refused for its signature, subscribers falling
 behind the bus, an orchestration that would not compile, and three that
-read the nodes' textfiles — returns a node threw away, jobs it refused,
+read the nodes' own job — returns a node threw away, jobs it refused,
 and extensions that ran out of time. Twenty-two rules, all accepted by
 `promtool check rules`.
 

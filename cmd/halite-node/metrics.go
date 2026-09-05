@@ -2,14 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/metrics"
@@ -17,25 +21,28 @@ import (
 
 // nodeMetrics is what a node counts about itself.
 //
-// A node has no listener, by design: SPEC 6.1 has it dial the hub and
-// be dialled by nothing, and opening a scrape port on every managed
-// machine to answer a question about the control plane is a larger
-// change to an estate than the answer is worth. So the exposition goes
-// to a file, which is how node_exporter's textfile collector has always
-// taken metrics from things that cannot serve them, and the scraper
-// that already reaches every machine picks it up with the node's own
-// `instance` label already on it.
+// SPEC 6.1 has a node dial the hub and be dialled by nothing, and this
+// is the one deliberate exception: an agent asked for `metrics_listen`
+// serves `/v1/metrics` there and nothing else. Recorded as DIVERGENCE
+// 1.11, because it is a listener on a machine the specification says
+// has none.
 //
-// Only the agent writes it. A one-shot `halite-node call` is a fresh
-// process whose counters start at zero, and writing those over the
-// agent's file would report every counter in the estate falling to
-// nearly nothing each time an operator ran a command by hand -- which
-// a scraper reads as a restart, not as a mistake.
+// Off unless the address is set. A port on every managed machine is a
+// decision an operator makes, not one that arrives with an upgrade.
+//
+// Only the agent serves it. A one-shot `halite-node call` is a fresh
+// process whose counters start at zero and whose lifetime is a second;
+// there is nothing for a scraper to reach and nothing worth reaching.
 type nodeMetrics struct {
 	registry *metrics.Registry
-	path     string
-	interval time.Duration
-	mode     os.FileMode
+	listen   string
+	// The certificate settings are kept rather than loaded, because
+	// every command line builds one of these and only the agent serves
+	// anything: reading a certificate from disk for `halite-node call`
+	// would report a misconfigured endpoint on every command an
+	// operator typed, and reading it at construction would report it
+	// through whatever logger existed then.
+	certFile, keyFile, clientCAFile string
 
 	jobs         *metrics.Counter
 	jobDuration  *metrics.Histogram
@@ -63,27 +70,27 @@ type nodeMetrics struct {
 
 // newNodeMetrics reads the settings and declares the families.
 //
-// A node with no `metrics_textfile` gets a struct whose registry is
-// nil, and every metric on it is nil too. The metrics package makes
-// each of those a no-op, so the call sites are unconditional and a node
-// that exposes nothing pays for nothing.
+// A node with no `metrics_listen` gets a struct whose registry is nil,
+// and every metric on it is nil too. The metrics package makes each of
+// those a no-op, so the call sites are unconditional and a node that
+// exposes nothing pays for nothing.
+//
+// Nothing is read from disk here and nothing can fail. What the
+// certificate settings name is checked when the agent comes to serve
+// them, which is where the failure is worth a line and where there is a
+// logger that has the node's identity on it.
 func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 	m := &nodeMetrics{}
 	if !cfg.Bool("metrics", true) {
 		return m
 	}
-	m.path = strings.TrimSpace(cfg.String("metrics_textfile", ""))
-	if m.path == "" {
+	m.listen = strings.TrimSpace(cfg.String("metrics_listen", ""))
+	if m.listen == "" {
 		return m
 	}
-	m.interval = cfg.Duration("metrics_interval", time.Minute)
-	if m.interval <= 0 {
-		m.interval = time.Minute
-	}
-	// World-readable, because the collector runs as its own account and
-	// this is an exposition rather than a secret. The redactor never
-	// sees a metric: nothing here carries a value from pillar.
-	m.mode = 0o644
+	m.certFile = cfg.String("metrics_tls_cert", "")
+	m.keyFile = cfg.String("metrics_tls_key", "")
+	m.clientCAFile = cfg.String("metrics_client_ca", "")
 
 	r := metrics.NewRegistry()
 	m.registry = r
@@ -272,60 +279,127 @@ func (m *nodeMetrics) gauge(name, help string, read func() float64) {
 	m.registry.GaugeFunc(name, help, read)
 }
 
-// write renders the exposition and replaces the file.
+// requiresClientCert reports whether a scraper has to present one, for
+// the line the agent logs when it starts: "serving metrics" and
+// "serving metrics to anybody who can reach the port" are different
+// facts, and only one of them is in the configuration file.
+func (m *nodeMetrics) requiresClientCert() bool { return m.clientCAFile != "" }
+
+// metricsTLS builds the listener's TLS configuration.
 //
-// By rename, because the collector reads whenever it likes: a partial
-// file is one it rejects whole, and it reports that as the node's
-// metrics being broken rather than as a write in progress.
-func (m *nodeMetrics) write() error {
-	if !m.on() {
-		return nil
+// There is no plaintext mode. A node's exposition says which functions
+// ran, which extensions, and when a deployment went out, and that is
+// the argument that put the hub's endpoint behind a certificate and the
+// API's behind a token; a node's is not less telling because it is one
+// machine.
+//
+// The node's own `node.crt` is deliberately not used. It is issued for
+// client authentication and carries no DNS or IP name, so a scraper has
+// nothing to verify it against and Go refuses it as a serving
+// certificate. This is a certificate the operator supplies, the way
+// `halite-api` takes `tls_cert`.
+func (m *nodeMetrics) serverTLS() (*tls.Config, error) {
+	if m.certFile == "" || m.keyFile == "" {
+		return nil, fmt.Errorf("metrics_listen is set to %q and metrics_tls_cert "+
+			"and metrics_tls_key are not; there is no plaintext metrics endpoint",
+			m.listen)
 	}
-	var body strings.Builder
-	if err := m.registry.Write(&body); err != nil {
-		return err
+	pair, err := tls.LoadX509KeyPair(m.certFile, m.keyFile)
+	if err != nil {
+		return nil, fmt.Errorf("the metrics certificate: %w", err)
 	}
-	if dir := filepath.Dir(m.path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
+	out := &tls.Config{
+		Certificates: []tls.Certificate{pair},
+		// 1.3 only, as everywhere else here: what talks to this is a
+		// scraper, so there is nothing to be compatible with.
+		MinVersion: tls.VersionTLS13,
+		NextProtos: []string{"h2", "http/1.1"},
 	}
-	return atomicfile.Write(m.path, []byte(body.String()), m.mode)
+
+	// No ALPN gate, unlike the hub's port. The whole point of this
+	// endpoint is that an ordinary Prometheus can reach it, and the hub
+	// is unscrapeable precisely because it has one.
+	if m.clientCAFile == "" {
+		return out, nil
+	}
+	raw, err := os.ReadFile(m.clientCAFile)
+	if err != nil {
+		return nil, fmt.Errorf("the metrics client CA: %w", err)
+	}
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(raw) {
+		return nil, fmt.Errorf("%s holds no certificate this can verify a scraper against",
+			m.clientCAFile)
+	}
+	out.ClientCAs = pool
+	out.ClientAuth = tls.RequireAndVerifyClientCert
+	return out, nil
 }
 
-// run rewrites the file on the interval until the context ends.
+// handler answers `/v1/metrics` and nothing else.
 //
-// The write on the way out is the caller's, through Report, and not
-// this loop's: this runs in a goroutine, and a process that returns
-// from its main function does not wait for one. The last write was
-// here at first and raced the exit -- it happened when the scheduler
-// felt like it, which is the worst kind of "usually works".
-func (m *nodeMetrics) run(ctx context.Context, onError func(error)) {
-	if !m.on() {
-		return
-	}
-	m.Report(onError)
-	ticker := time.NewTicker(m.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			m.Report(onError)
-		case <-ctx.Done():
+// Nothing else on purpose: this is a scrape target, not a second
+// control surface on a managed machine. An unrouted path gets a 404
+// rather than a description of what else might be here.
+func (m *nodeMetrics) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/metrics", func(w http.ResponseWriter, r *http.Request) {
+		var body strings.Builder
+		if err := m.registry.Write(&body); err != nil {
+			http.Error(w, "the exposition could not be written", http.StatusInternalServerError)
 			return
 		}
-	}
+		w.Header().Set("Content-Type", metrics.ContentType)
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, body.String())
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "this node serves /v1/metrics and nothing else", http.StatusNotFound)
+	})
+	return mux
 }
 
-// Report writes the file and hands any failure to the caller.
+// serve runs the endpoint until the context ends.
 //
-// Called once more as the node stops, on the way out of the agent's own
-// goroutine: without it a node stopped for a deployment leaves up to an
-// interval of counting in memory, and the counters come back from zero
-// on the other side with nothing to say the gap was a restart rather
-// than an idle minute.
-func (m *nodeMetrics) Report(onError func(error)) {
-	if err := m.write(); err != nil && onError != nil {
-		onError(err)
+// The listener is opened here rather than at construction so that the
+// address being in use is reported when the agent starts, next to
+// everything else it says about itself, and reported rather than fatal:
+// a node that will not run because a port is taken is a node no
+// highstate can reach to free the port.
+func (m *nodeMetrics) serve(ctx context.Context, onError func(error), started func(string)) {
+	if !m.on() || m.listen == "" {
+		return
+	}
+	serverTLS, err := m.serverTLS()
+	if err != nil {
+		if onError != nil {
+			onError(err)
+		}
+		return
+	}
+	ln, err := tls.Listen("tcp", m.listen, serverTLS)
+	if err != nil {
+		if onError != nil {
+			onError(fmt.Errorf("the metrics endpoint could not listen on %s: %w", m.listen, err))
+		}
+		return
+	}
+	if started != nil {
+		started(ln.Addr().String())
+	}
+	srv := &http.Server{
+		Handler:           m.handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return ctx },
+	}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdown)
+	}()
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) && onError != nil {
+		onError(fmt.Errorf("the metrics endpoint stopped: %w", err))
 	}
 }
