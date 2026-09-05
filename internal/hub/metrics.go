@@ -168,9 +168,9 @@ func (s *Server) setupMetrics() {
 			"Time to compile a state tree into a low state. On the hub this is orchestration.", nil),
 		// End to end, because that is all a return carries: the node
 		// reports one duration for the job, and compiling the tree
-		// happened inside it. A node writing a textfile splits the two,
-		// and the same family there is the apply alone -- so the hub's
-		// number is the larger of the two by the compile time.
+		// happened inside it. A node serving its own exposition splits
+		// the two, and the same family there is the apply alone -- so
+		// the hub's number is the larger by the compile time.
 		stateRun: r.Histogram("halite_state_run_duration_seconds",
 			"Time a node spent on a state run end to end, from its return. Compiling the tree is inside it.", nil),
 	}

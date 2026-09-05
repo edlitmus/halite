@@ -809,18 +809,22 @@ The hub and the API expose them at `/v1/metrics`. Point the scraper at
 expositions merged, and the hub speaks its own ALPN identifier that no
 ordinary client can send.
 
-A node has no listener and does not get one for this. It writes its
-exposition to the file `metrics_textfile` names, which is the one
-node_exporter's textfile collector reads, so the scraper that already
-reaches every machine picks it up with no port opened anywhere:
+A node serves its own on `metrics_listen`, and opens no port until that
+is set — it dials the hub and is dialled by nothing otherwise. There is
+no plaintext mode; the certificate is one you supply, because the
+node's own `node.crt` is issued for client authentication and cannot
+serve TLS:
 
 ```yaml
 # node.yaml
-metrics_textfile: /var/lib/node_exporter/textfile_collector/halite.prom
+metrics_listen: ':4512'
+metrics_tls_cert: /usr/local/etc/halite/pki/metrics.crt
+metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
+# and, to refuse a scraper with no certificate of its own:
+metrics_client_ca: /usr/local/etc/halite/pki/ca.crt
 ```
 
-Unset, which is the default, a node records nothing. Reading the hub's
-by hand:
+Only the agent serves it. Reading the hub's by hand:
 
 ```sh
 halite-hub metrics --as ed

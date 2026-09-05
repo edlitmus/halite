@@ -377,6 +377,42 @@ larger unauthenticated surface than before by one certificate.
 
 ---
 
+### 1.13 A node listens, when an operator asks it to
+
+SPEC 6.1 has a node dial the hub and be dialled by nothing, and every
+other part of this build holds to that: there is no inbound control
+path to a node, no port to reach it on, and nothing an attacker can
+connect to.
+
+`metrics_listen` is one deliberate exception. Set, the agent serves
+`/v1/metrics` on that address and nothing else — an unrouted path gets
+a 404 rather than a description of what might be there. Unset, which is
+the default, a node opens no port at all and the divergence does not
+exist on that machine.
+
+The first cut avoided the listener entirely by writing the exposition
+to a file for node_exporter's textfile collector. That works and needs
+no port, and it was dropped because it needs node_exporter: two of the
+five machines in the estate this was tried on did not have one, the
+collector directory differs per platform, and an estate ends up
+depending on somebody else's agent to see its own control plane.
+
+The endpoint is not a second control surface. It reads, it serves one
+path, and it takes a serving certificate the operator supplies —
+there is no plaintext mode, because a node's exposition says which
+functions ran, which extensions, and when a deployment went out. That
+is the argument SPEC 26.2's own endpoints are built on, and it does not
+weaken because the subject is one machine. `metrics_client_ca` goes
+further and refuses a scraper that presents no certificate of its own.
+
+The node's own `node.crt` is deliberately not reused. It is issued with
+`ExtKeyUsage: ClientAuth` and carries no DNS or IP name, so it cannot
+serve TLS and a scraper would have nothing to verify it against. Giving
+a node a second, serving certificate would mean a new certificate type,
+names requested at enrollment and vetted by the hub, and a renewal path
+covering both — a PKI feature rather than a listener, and not one this
+change makes.
+
 ## 2. Module coverage
 
 The build ships **50 execution modules / 283 functions** and **28 state

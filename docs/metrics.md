@@ -12,11 +12,12 @@ at them, what each family means, and what is worth alerting on.
 |---|---|---|---|
 | `halite-api` | 4511 | `/v1/metrics` | a bearer token |
 | `halite-hub` | 4510 | `/v1/metrics` | an operator certificate **and** the `metrics.show` grant |
-| `halite-node` | — | a file named by `metrics_textfile` | the file's permissions |
+| `halite-node` | `metrics_listen`, typically 4512 | `/v1/metrics` | a serving certificate, and optionally a client one |
 
-The two services follow the `listen` setting; there is no separate
-metrics port and no way to move the path. `metrics: false` turns the
-recording off entirely, on any of the three.
+The hub and the API follow the `listen` setting; there is no separate
+metrics port for them and no way to move the path. A node listens on
+`metrics_listen` and nowhere else, and opens no port until that is set.
+`metrics: false` turns the recording off entirely, on any of the three.
 
 **Point the scraper at `halite-api`.** It answers with both expositions
 — its own and the hub's — merged into one document, and it is the only
@@ -34,14 +35,15 @@ curl: (35) TLS connect error: error:0A000438:SSL routines::tlsv1 alert internal 
 That is the ALPN gate of [DIVERGENCE 1.7](DIVERGENCE.md), not a
 certificate problem, and TLS 1.3 has no way to say so in the alert.
 
-A node has no listener at all. SPEC 6.1 has it dial the hub and be
-dialled by nothing, and opening a scrape port on every managed machine
-to answer a question about the control plane is a larger change to an
-estate than the answer is worth. So a node writes its exposition to a
-file instead — see [A node's metrics](#a-nodes-metrics) below. Most of
-what a node does is also visible on the hub, as jobs, returns, and
-events; what is not is the part that never reaches the hub, which is
-exactly the part worth having.
+A node is different in kind. SPEC 6.1 has it dial the hub and be
+dialled by nothing, and this endpoint is the one deliberate exception —
+[DIVERGENCE 1.13](DIVERGENCE.md). It is off until `metrics_listen` says
+otherwise, it serves one path, and it takes a certificate. See
+[A node's metrics](#a-nodes-metrics) below.
+
+Most of what a node does is also visible on the hub, as jobs, returns,
+and events. What is not is the part that never reaches the hub, which
+is exactly the part worth having.
 
 ## Setting up an external scraper
 
@@ -286,45 +288,106 @@ the same files under `/etc/prometheus/`.
 
 ## A node's metrics
 
-A node writes its exposition to the file `metrics_textfile` names, and
-nothing else reads it. That file is the one node_exporter's textfile
-collector already reads on most fleets, so the scraper that reaches
-every machine picks the numbers up with the node's own `instance` label
-already on them, and no port is opened anywhere.
+`halite-node connect` serves `/v1/metrics` on `metrics_listen`, and a
+Prometheus scrapes it like any other target. Unset, which is the
+default, a node opens no port at all: it dials the hub and is dialled
+by nothing, and a listener on every managed machine is a decision an
+operator makes rather than one that arrives with an upgrade.
+[DIVERGENCE 1.13](DIVERGENCE.md) records the exception.
 
 ```yaml
 # node.yaml
-metrics_textfile: /var/lib/node_exporter/textfile_collector/halite.prom
-metrics_interval: 60s
+metrics_listen: ':4512'
+metrics_tls_cert: /usr/local/etc/halite/pki/metrics.crt
+metrics_tls_key: /usr/local/etc/halite/pki/metrics.key
 ```
 
-Unset, which is the default, a node records nothing at all. There is no
-second setting to turn it on: a path is the decision.
+**Only the agent serves it.** A one-shot `halite-node call` or
+`state apply` is a fresh process whose counters start at zero and whose
+lifetime is a second; there is nothing for a scraper to reach and
+nothing worth reaching.
 
-The file is replaced by rename on every interval and once more as the
-node stops, so a shutdown does not lose up to an interval of counting.
-The collector reads whenever it likes, and a half-written exposition is
-one it rejects whole rather than one it waits for.
+### There is no plaintext mode
 
-**Only the agent writes it** — `halite-node connect`, the long-running
-process. A one-shot `halite-node call` or `state apply` is a fresh
-process whose counters start at zero, and writing those over the agent's
-file would report every counter on the machine falling to nearly nothing
-each time an operator ran a command by hand. A scraper reads that as a
-restart, not as a mistake.
+`metrics_listen` without `metrics_tls_cert` and `metrics_tls_key`
+serves nothing, and says so in the log. A node's exposition names which
+functions ran, which extensions, and when a deployment went out. That
+is the argument that put the hub's endpoint behind a certificate and
+the API's behind a token, and it does not weaken because the subject is
+one machine.
 
-The collector's own directory is where the file belongs, and the
-account node_exporter runs as has to be able to read it. The file is
-written 0644 for that reason; nothing in it comes from pillar, and the
-redactor never sees a metric.
+**The node's own `node.crt` will not do.** It is issued with
+`ExtKeyUsage: ClientAuth` and carries no DNS or IP name, so Go refuses
+it as a serving certificate and a scraper would have nothing to verify
+it against. This is a certificate you supply, exactly as `halite-api`
+takes `tls_cert` — and `x509.certificate_managed` can keep it renewed
+from the tree like anything else the estate manages.
 
-Two things a node knows and the hub cannot:
+To refuse a scraper that presents no certificate of its own, name a CA
+it must be signed by. The enrollment CA is the obvious one, so the
+scraper carries what `halite-hub keys operator create prometheus`
+produced:
+
+```yaml
+metrics_client_ca: /usr/local/etc/halite/pki/ca.crt
+```
+
+Left empty, the port is served to anyone who can reach it. That is a
+decision to make deliberately rather than by omission.
+
+### Pointing Prometheus at the nodes
+
+A second scrape job, because these are different targets with different
+certificates from the one `halite-api` presents:
+
+```yaml
+  - job_name: halite-nodes
+    scheme: https
+    scrape_interval: 30s
+    metrics_path: /v1/metrics
+    tls_config:
+      ca_file: /usr/local/etc/prometheus/halite-nodes-ca.crt
+      # Only when metrics_client_ca is set on the nodes.
+      cert_file: /usr/local/etc/prometheus/scraper.crt
+      key_file: /usr/local/etc/prometheus/scraper.key
+    static_configs:
+      - targets:
+          - 'web1.example:4512'
+          - 'web2.example:4512'
+```
+
+The address in `targets` has to be one the node's certificate covers,
+the same trap as the API's — a certificate issued for the hostname and
+scraped by address fails verification, and Prometheus reports that as a
+target that is down rather than as a certificate problem. `server_name`
+in `tls_config` is the way out when the two cannot be made to agree.
+
+Every file named there has to be readable **by the account Prometheus
+runs as**, which is not the one halite runs as: see the same warning
+under [Point Prometheus at it](#4-point-prometheus-at-it) above, which
+applies here unchanged.
+
+### What is not fatal
+
+Neither a missing certificate nor an address already in use stops the
+agent. Both are warned about, naming the setting and the address, and
+the node goes on running jobs. A node that refused to start over its
+metrics certificate would be one no highstate could reach to fix the
+certificate.
+
+The consequence is that a misconfigured endpoint looks like a target
+that is down, or one that was never created — which is why
+`absent(up{job="halite-nodes"})` belongs in the rules alongside
+anything watching `up`, for the reason given under
+[Alerting](#alerting).
+
+### Two things a node knows and the hub cannot
 
 - **Drops.** A node's job queue, its queue of returns waiting for the
   hub, and each beacon's queue are all bounded, and what they discard
   never reaches the hub by definition. `halite_node_returns_dropped_total`
-  climbing is a node whose answers are being thrown away, and until
-  this existed the only trace was a log line.
+  climbing is a node whose answers are being thrown away, and the only
+  other trace is a log line.
 - **Where the time goes.** The hub sees one duration per job.
   `halite_state_compile_duration_seconds` and
   `halite_state_run_duration_seconds` split that into rendering the
@@ -334,14 +397,15 @@ Two things a node knows and the hub cannot:
   [What is exposed](#what-is-exposed).
 
 A node with no hub — `--local`, or a masterless estate — records the
-same families, minus the ones about a hub it does not have.
+same families, minus the ones about a hub it does not have. It still
+needs `metrics_listen` and a certificate to serve them.
 
 ## What is exposed
 
 All families are prefixed `halite_`. Which process records one decides
 where you read it: the hub's and the API's arrive in the scrape of
-`halite-api`, and the node's arrive through the textfile collector under
-whatever job your `node_exporter` scrape is called.
+`halite-api`, and the node's arrive in a scrape of the nodes
+themselves, under whatever you call that job.
 
 ### The hub
 
@@ -405,7 +469,7 @@ whatever job your `node_exporter` scrape is called.
 
 ### A node
 
-In the textfile, not in the scrape of `halite-api`.
+In the scrape of the nodes, not in the scrape of `halite-api`.
 
 | Family | Type | Labels | What it says |
 |---|---|---|---|
@@ -436,8 +500,7 @@ In the textfile, not in the scrape of `halite-api`.
 `halite_state_compile_duration_seconds` are recorded on both sides. That
 is deliberate, and they are not the same number. The hub's are the
 estate totalled from what nodes reported; the node's are that one
-machine, and a node whose textfile nobody collects still contributes to
-the hub's.
+machine, and a node nobody scrapes still contributes to the hub's.
 
 `halite_state_run_duration_seconds` differs in a second way, and it is
 worth knowing before the two are put on one graph. A return carries one
@@ -554,14 +617,13 @@ top pick what you are looking at:
 |---|---|
 | `job` | the scrape job name in `prometheus.yml`, `halite` unless you renamed it |
 | `instance` | which `halite-api` to read, when more than one is scraped |
-| `node_job` | the job that scrapes `node_exporter`, where a node's `halite.prom` arrives |
+| `node_job` | the scrape job for the nodes themselves, `halite-nodes` in the example above |
 | `node_instance` | which nodes the node row covers |
 
 The last two exist because a node's metrics do not arrive in the same
-scrape. They come through the textfile collector under whatever job
-your `node_exporter` scrape is called, and a node panel filtered by the
-API's job would draw an empty graph on every estate — which is checked
-by a test.
+scrape: the nodes are their own targets with their own certificates,
+and a node panel filtered by the API's job would draw an empty graph on
+every estate — which is checked by a test.
 
 The rows: fleet health, certificates and enrollment, jobs, states and
 orchestration, pillar, events and reactions, the file server,
@@ -584,7 +646,7 @@ Four panels are worth knowing about before you need them:
   reaching zero takes the estate with it.
 
 The node row is collapsed because it is empty unless some node sets
-`metrics_textfile` and something collects it. The relay row is
+`metrics_listen` and something scrapes it. The relay row is
 collapsed because those families exist only on a hub running with
 `relay: true`. An empty panel in either place on an estate that does
 neither is correct.
@@ -769,8 +831,8 @@ you want to know about before the cap is reached:
           summary: "The relay is connected upstream and its spool is not draining"
 ```
 
-On an estate collecting the nodes' textfiles, three more. These read
-the `node_exporter` job rather than the halite one, and they are the
+On an estate scraping its nodes, three more. These read the nodes'
+own job rather than the hub's, and they are the
 only place their subject appears at all — a return a node discarded
 never reached the hub to be counted there:
 
