@@ -3463,8 +3463,12 @@ What is **not** built in phase 5:
 - Cross-compilation is verified for the four target platforms; nothing beyond
   compilation is verified.
 - The Makefile is written for BSD make and uses `!=` rather than
-  `$(shell ...)`. GNU make handles `!=` from 4.0 onward, so it should work,
-  but it has not been run under GNU make.
+  `$(shell ...)`. GNU make handles `!=` from 4.0 onward, and it has now
+  been run under one: every target expands under GNU Make 4.4.1, and
+  `racecheck` was run through it end to end rather than only expanded.
+  What that establishes is that the file parses and its recipes are
+  well formed there; it is not a claim that every target's *result* has
+  been compared between the two makes.
 - Reproducible builds: see 5.2.
 
 ### 6.3 The compatibility shim and the migration tool

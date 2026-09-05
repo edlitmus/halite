@@ -89,10 +89,13 @@ with no network and no Docker, which is the same machine a release is
 built on with `GOPROXY=off`; a host with a compiler should run `make
 race` directly and get the same answer faster.
 
-There is also no `make` on this host at all, which is its own note: the
-Makefile is written for BSD make, and DIVERGENCE 6.2 records that it has
-never been run under GNU make. It still has not been. The legs above were
-run by hand, with the environment each recipe sets.
+There is also no `make` on this host at all, so the legs above were run
+by hand with the environment each recipe sets. The Makefile is written
+for BSD make, and DIVERGENCE 6.2 recorded that it had never been run
+under GNU make; it has now, in a container — all 33 targets expand under
+GNU Make 4.4.1 and `racecheck` runs through it end to end. That says the
+file parses there, not that every target's result matches between the
+two makes.
 
 ---
 
