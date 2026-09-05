@@ -1251,6 +1251,45 @@ The general shape is 4.6's: none of the three was a defect in the
 detector's own subject, and none was reachable from the platform the
 tests were written on.
 
+### 4.9 What CI established on its first afternoon
+
+The gates were stood up on 2026-09-05 and found four things before the
+branch that added them was merged. Two were environment, and are
+recorded because they had been silently true for the life of the
+project; two were defects.
+
+**Line endings were whatever each checkout said.** There was no
+`.gitattributes`. Every machine here uses LF and GitHub's Windows
+runners default to CRLF, and this project's tests read this project's
+own files — so `buildpolicy` reported that `go.mod` had no `toolchain`
+directive, `docsaudit` reported the generated pages as out of date with
+code that had not changed, and `specaudit` made two accusations against
+this document that were not true. Sharper than any of those: a shell
+script under CRLF is `#!/bin/sh\r`, which no kernel will exec, so a
+Windows clone with stock settings produced a `make racecheck` that could
+not start.
+
+**The runner is an administrator**, so `permtest.DenyRead`'s DENY entry
+did not deny and a test reported the code under test for a condition the
+environment never created. It is 4.8's root problem on the other
+platform. The unix side skips because a container's account cannot be
+changed from inside a test; CI runs the Windows suite as a standard
+local account instead, which keeps the coverage and is the account a hub
+runs as anyway.
+
+**A spool cannot trust a nanosecond timestamp to be unique.** The
+webhook returner named each spooled file by its timestamp alone; on a
+clock with half-millisecond granularity three returns shared one, the
+sort fell through to the content digest, and the backlog went upstream
+in an arbitrary order against the oldest-first guarantee 6.1b
+advertises. The **relay** spool had the same root cause and a worse
+consequence — its name is the timestamp and the drop count, so two
+returns inside one tick are the same file and the second silently
+overwrote the first. Both carry a monotonic sequence now. The second was
+found by inspection rather than by a test, and it is the more serious of
+the two: silent loss in the mechanism whose whole purpose is that an
+outage delays returns rather than losing them.
+
 
 ## 5. Test coverage against SPEC 31
 

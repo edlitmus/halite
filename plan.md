@@ -497,9 +497,27 @@ than the unix one's: CI runs the Windows suite as a standard account,
 which keeps the coverage instead of skipping it, and is the account a
 hub runs as anyway.
 
-Neither was reachable from any machine this project is developed on.
-That is the argument for CI restated as a measurement, four hours after
-the argument stopped being necessary.
+**And then, once the Windows suite could run at all, a defect in a
+durability guarantee.** The webhook returner's spool names each file by
+its nanosecond timestamp, on the reasoning that two returns cannot be
+spooled in the same nanosecond. They can: `time.Now` is only as fine as
+the platform's clock, and on Windows that is about half a millisecond —
+the same granularity as §1.1. Three returns shared a timestamp, the sort
+fell through to the content digest, and the backlog went upstream as 3,
+2, 1, against the oldest-first guarantee the spool exists to provide.
+
+Fixing it turned up a worse one by inspection: the **relay** spool names
+files by timestamp and drop count, so two returns inside one tick are
+the *same file* and the second silently overwrites the first — in the
+one mechanism whose stated purpose is that an outage delays returns
+rather than losing them. No test reached it, and none would have on a
+machine with a fine clock.
+
+None of the four was reachable from any machine this project is
+developed on. That is the argument for CI restated as a measurement,
+four hours after the argument stopped being necessary — and the last of
+them is silent data loss in a property `docs/DIVERGENCE.md` advertises
+as something Salt's syndic does not do.
 
 ---
 
