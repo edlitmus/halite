@@ -45,8 +45,8 @@ func specPlatformModules(t *testing.T) map[string]bool {
 // TestPendingPlatformModulesMatchTheSpec holds the refusal table to the
 // specification in both directions.
 //
-// SPEC 15.3 names 65 platform modules and this build registers two. The
-// other 63 were absent rather than refused, so a tree naming `aptpkg`
+// SPEC 15.3 names 65 platform modules and this build registers a
+// handful of them. The rest were absent rather than refused, so a tree naming `aptpkg`
 // got "not a function this build ships" — which reads as a typo, and
 // sends an operator looking for a spelling error instead of a gap. They
 // are declared as pending now, and this is what stops that table

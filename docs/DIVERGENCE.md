@@ -3402,9 +3402,10 @@ What is **not** built in phase 5:
 - **Windows parity, in part.** The suite now runs natively there and
   passes: see 4.6. What is built is the platform-neutral half — grains,
   the file states, `cmd`, the Chocolatey provider, the extension
-  sandbox. What is not is the module set of SPEC 15.3: no `win_dacl`,
-  so a state that sets an owner is refused rather than applied, and no
-  `win_service`, so there is no service provider for the platform.
+  sandbox — and four of SPEC 15.3's eighteen Windows modules:
+  `win_dacl`, `win_service`, `win_registry` and `win_task`. What is not
+  is the other fourteen, listed in 2.3. There is still no user or group
+  provider for the platform, so `user.present` has nothing to reach.
 - **`minionfs`/`nodefs`**, which SPEC 13.2 marks a subset and disables
   by default.
 

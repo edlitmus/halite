@@ -86,7 +86,7 @@ Delivery follows the phases in SPEC section 32.
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Done**: authentication, the execution and event endpoints, webhooks, OIDC, LDAP, returners, and the bridge protocol with its extension model |
-| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built; Windows and macOS parity is not |
+| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship. macOS has providers and no module set. |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
 
 A node manages its own tree today — Salt's masterless mode — and that is
@@ -223,7 +223,7 @@ in front of you, and names what does not.
 Bundles are delivered by the file server under `_ext/` and fetched with
 `saltutil.sync_all`, which keeps Salt's name and states the difference:
 synchronizing fetches, it does not load. What is running does not change
-until the node restarts. SPEC 20.3's seventeen bridged returners —
+until the node restarts. SPEC 20.3's sixteen bridged returners —
 postgres, redis, kafka — are extensions of kind `returner`, found by
 name.
 
@@ -274,9 +274,11 @@ refused by name, key exchange is P-256 or P-384, and TOTP is refused
 because RFC 6238 is HMAC-SHA-1; that last one fails closed, so a
 password alone is never enough on an account that asked for two factors.
 
-What is not built is the rest of phase 5 — Windows and macOS parity —
-and phase 6. The code cross-compiles for both and has been run on
-neither.
+What is not built is the rest of phase 5 and phase 6. Windows is most of
+the way there: the suite runs natively and passes, a real host has been
+driven, and `win_dacl`, `win_service`, `win_registry` and `win_task`
+ship — fourteen of SPEC 15.3's Windows modules do not, and there is no
+user or group provider. macOS compiles and has been run on nothing.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.
@@ -289,9 +291,11 @@ Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
 this build ships 50 execution modules and 32 state modules against a
 specification naming roughly 90 and 46 — 305 execution functions across 50
-modules and 82 state functions across 32. FreeBSD is the platform it is
-verified on; `make test-linux` runs the suite as Linux binaries under this
-host's compat layer, which covers the platform-neutral code and the
+modules and 82 state functions across 32. FreeBSD is the development
+platform; Linux and Windows have each been verified against a real host,
+and macOS and Linux arm64 have not been run at all. `make test-linux`
+runs the suite as Linux binaries under this host's compat layer, which
+covers the platform-neutral code and the
 `/proc` grain collector but reaches no apt, dnf, or systemd. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is
 the full accounting — every module gap, every unexercised platform, every
 test layer SPEC section 31 requires that does not exist yet, and the
@@ -356,7 +360,7 @@ by Salt and by halite, and the same documents parsed by PyYAML and by
 halite. Both skip loudly rather than passing quietly when the reference
 is absent — SPEC section 31 calls the first the primary correctness
 gate, so a skip there is a gap and not a pass. It has been run against
-Salt 3006.25 and 3008.2.
+Salt 3006.25, 3007.1 and 3008.2.
 
 ```sh
 python3 -m venv /tmp/salt && /tmp/salt/bin/pip install salt PyYAML

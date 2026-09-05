@@ -97,7 +97,16 @@ func TestAnExtensionCallIsObserved(t *testing.T) {
 		if c.name != "echo" {
 			t.Errorf("a call was observed against %q", c.name)
 		}
-		if c.took <= 0 {
+		// Non-negative rather than positive. Go's monotonic clock on
+		// Windows has a granularity of about half a millisecond, and a
+		// call that reuses an already-warm pooled process returns
+		// inside that, so `time.Since` reads exactly zero. That is a
+		// correct reading of a sub-tick call and a histogram bucketing
+		// it at zero is right; a floor applied at the point of
+		// measurement would make the counter lie to satisfy a test. A
+		// negative duration is the thing that cannot happen, and is
+		// what this is for.
+		if c.took < 0 {
 			t.Errorf("a call was observed as taking %v", c.took)
 		}
 	}

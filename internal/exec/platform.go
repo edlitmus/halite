@@ -18,7 +18,10 @@ type PendingModule struct {
 // runners are: a name absent from the registry makes "not written yet"
 // and "you have mistyped it" the same message, and the second sends
 // somebody looking for a typo that is not there. SPEC 15.3 is an
-// inventory of 65 modules; two of them ship.
+// inventory of 65 modules; the ones this build ships are absent from
+// the table below, and the test named at the end is what keeps that
+// true in both directions. A count in this comment would go stale the
+// first time a module arrived, so there is not one.
 //
 // A test holds this table to SPEC 15.3 in both directions, so a module
 // that arrives cannot stay listed as pending and one that is added to
