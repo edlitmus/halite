@@ -104,12 +104,25 @@ jobs:
       # -count=1 because several audits here read the whole tree rather
       # than their own package, and the cache does not notice a file
       # that did not exist when the result was recorded.
-      - name: test (windows)
+      #
+      # Run as a standard account rather than the runner's
+      # administrator: the suite asserts that a file it has denied
+      # itself cannot be read, and an administrator reads it anyway. See
+      # the script.
+      # The standard account gets its own empty module cache, so a
+      # toolchain that needs fetching would be fetched there rather than
+      # found. Assert the runner already has the pinned one.
+      - name: the runner's Go is the pinned toolchain
         if: runner.os == 'Windows'
         shell: bash
+        run: .github/toolchain-check.sh
+
+      - name: test (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         env:
           CGO_ENABLED: 0
-        run: go test -count=1 ./...
+        run: .github/run-as-standard-user.ps1 test -count=1 ./...
 
   # The race detector, which had never run against this tree anywhere
   # until 2026-09-05. It found a data race on the hub's clock, a test
@@ -152,12 +165,17 @@ jobs:
           fi
           gcc --version
 
-      - name: race (windows)
+      - name: the runner's Go is the pinned toolchain
         if: runner.os == 'Windows'
         shell: bash
+        run: .github/toolchain-check.sh
+
+      - name: race (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
         env:
           CGO_ENABLED: 1
-        run: go test -count=1 -race ./...
+        run: .github/run-as-standard-user.ps1 test -count=1 -race ./...
 
   # The FIPS artifact set is a shipped deliverable, and a restriction
   # that only holds in the build nobody runs locally is a restriction

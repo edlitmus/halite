@@ -472,13 +472,34 @@ found three defects the first time it did. Every correction in §0.1
 drifted for the same reason: the only thing that ran any of these was a
 person deciding to.
 
-What remains is to watch it earn its place. A gate is worth what it
-catches, and this one has caught nothing yet — it was written after the
-defects it would have found. The first thing to distrust is a job that
-goes green without doing its work: §1.2's lesson was that each finding
-hid behind the one before it, and a workflow has the same failure mode
-in a form nobody reads. The Windows legs are the ones to watch, because
-they are the two that do not go through `make`.
+**It earned its place on the first run**, and on the legs this document
+predicted: six jobs green, both Windows jobs red, five failing tests
+across four packages, two causes and neither of them a Windows defect.
+
+**Line endings, four of the five.** There was no `.gitattributes`, so
+line endings were whatever each checkout's `core.autocrlf` said. Every
+machine this project is developed on uses LF; GitHub's Windows runners
+default to CRLF. That breaks every test that reads the project's own
+files — `buildpolicy` reported that `go.mod` has no `toolchain`
+directive, `docsaudit` reported the generated pages as out of date with
+code that had not changed, and `specaudit` made two accusations against
+DIVERGENCE.md that were not true. A checkout setting nothing pinned, and
+sharper than the tests: `contrib/docker/race/run.sh` under CRLF is
+`#!/bin/sh\r`, which no kernel will exec, so a Windows clone with stock
+settings produced a `make racecheck` that could not start.
+
+**A privileged account, the fifth.** The runner is a local
+administrator, and `permtest.DenyRead`'s DENY entry did not deny — so
+`TestFileManagedRefusesAnUnreadableFile` failed reporting the code under
+test for a condition the environment never created. It is §1.2's root
+problem on the other platform, and the fix is the container's rather
+than the unix one's: CI runs the Windows suite as a standard account,
+which keeps the coverage instead of skipping it, and is the account a
+hub runs as anyway.
+
+Neither was reachable from any machine this project is developed on.
+That is the argument for CI restated as a measurement, four hours after
+the argument stopped being necessary.
 
 ---
 
