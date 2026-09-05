@@ -90,6 +90,8 @@ func New() *Registries {
 	registerEnviron(r)
 	registerMount(r)
 	registerZpool(r)
+	registerHostname(r)
+	registerSSHKnownHosts(r)
 	return r
 }
 

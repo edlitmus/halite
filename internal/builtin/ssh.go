@@ -38,7 +38,7 @@ func registerSSH(r *Registries) {
 				keys := parseAuthorizedKeys(readLines(path))
 				out := value.NewMap(len(keys))
 				for _, k := range keys {
-					if k.Raw != "" {
+					if k.Verbatim {
 						continue
 					}
 					out.Set(k.Key, value.MapOf(
@@ -97,12 +97,18 @@ type authKey struct {
 	Type    string
 	Key     string
 	Comment string
-	// Raw holds a comment or blank line, preserved verbatim.
+	// Raw holds a comment, a blank line, or anything this build does
+	// not understand, preserved verbatim.
 	Raw string
+	// Verbatim says Raw is the whole of this record, which a bare
+	// `Raw != ""` cannot: a blank line has an empty Raw and is not a
+	// key. Reading it as one put an entry under the empty string into
+	// `ssh.auth_keys`.
+	Verbatim bool
 }
 
 func (k authKey) String() string {
-	if k.Raw != "" {
+	if k.Verbatim {
 		return k.Raw
 	}
 	var parts []string
@@ -122,12 +128,12 @@ func parseAuthorizedKeys(lines []string) []authKey {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			out = append(out, authKey{Raw: line})
+			out = append(out, authKey{Raw: line, Verbatim: true})
 			continue
 		}
 		k, ok := parseAuthKeyLine(trimmed)
 		if !ok {
-			out = append(out, authKey{Raw: line})
+			out = append(out, authKey{Raw: line, Verbatim: true})
 			continue
 		}
 		out = append(out, k)
@@ -271,7 +277,7 @@ func sshAuthAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 	kept := make([]authKey, 0, len(existing))
 	found := false
 	for _, k := range existing {
-		if k.Key == want.Key && k.Raw == "" {
+		if k.Key == want.Key && !k.Verbatim {
 			found = true
 			continue
 		}
