@@ -89,6 +89,7 @@ func New() *Registries {
 	registerTimezone(r)
 	registerEnviron(r)
 	registerMount(r)
+	registerZpool(r)
 	return r
 }
 

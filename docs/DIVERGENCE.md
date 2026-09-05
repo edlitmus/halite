@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **50 execution modules / 297 functions** and **31 state
-modules / 80 functions**.
+The build ships **50 execution modules / 305 functions** and **32 state
+modules / 82 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -474,7 +474,7 @@ different reason is given.
 | `sysrc` | implemented | 3 | not in SPEC 15.5; FreeBSD's equivalent of the `hostname`/`service`-enable states. `managed` is Salt's name and `present` is this build's, and they are the same function |
 | `test` | implemented | 6 | |
 | `user` | implemented | 2 | |
-| `zfs` | implemented | 2 | `filesystem_present`, `absent`; no `zpool` state |
+| `zfs` | implemented | 2 | `filesystem_present`, `absent` |
 | `acl` | not implemented | 0 | see 2.1 |
 | `apparmor` | not implemented | 0 | |
 | `at` | not implemented | 0 | |
@@ -505,7 +505,7 @@ different reason is given.
 | `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
 | `win_wua` | not implemented | 0 | Windows only |
 | `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run |
-| `zpool` | not implemented | 0 | the exec side reads; no state writes |
+| `zpool` | implemented | 2 | `present` creates a pool that is not there and manages the properties of one that is; it does **not** reshape an existing pool, and reports a layout that does not match as a warning instead. `absent` exports by default and destroys only when told |
 
 `file.accumulated`, which SPEC 15.5 requires, is not implemented.
 
@@ -1091,6 +1091,79 @@ reads — would let a state pass while granting nobody anything. And
 one: Salt has `reg.present` and an estate migrating from it will want
 the same, so it is a decision for a person rather than a quiet addition.
 
+
+
+### 4.7 What a node with ZFS established
+
+ZFS is a kernel module and has no userspace stand-in, so none of `zpool`
+could be verified where the rest of this project is. A container shares
+the host's kernel, and the kernels a developer machine runs — Docker
+Desktop's WSL2 kernel here, a VM kernel on macOS — carry no `zfs.ko`.
+The `zfs` and `zpool` reading functions had been verified on FreeBSD, on
+hardware; the writing half had nowhere to run.
+
+So it is run in a virtual machine with its own kernel, booted under KVM
+from an Ubuntu cloud image, against pools built on files. That is `make
+zfscheck`, and the point of making it a target rather than an afternoon
+is that the next person to touch this can repeat it in ninety seconds.
+
+**It found two defects on its first run**, both in reading `zpool list`,
+and neither of them reachable from a fixture written from memory — which
+is what the fixtures were, until this replaced them with bytes captured
+from the tool:
+
+- Scripted mode indents **every** row under the pool by exactly one tab,
+  whatever its depth. `-H` removes the header and the column padding and
+  leaves the indentation, but it does not vary it, so the tree `zpool
+  list -v` draws for a person is flat for a program. A reader that took
+  the indentation for depth found every pool empty — and `zpool.present`
+  then warned that a pool it had itself just created was "nothing".
+- The `logs`, `cache` and `spare` section headers are printed
+  **unindented and space-padded**, ignoring `-H` in the middle of an
+  otherwise tab-separated listing. A reader that took every unindented
+  row for the pool's own row swallowed the header and filed the pool's
+  log device as a third leg of the mirror above it.
+
+Both are now read the way the tool writes them: the layout is grouped by
+name rather than by depth, and the section headers open a vdev of their
+own. The fixtures in `zpool_test.go` are the real bytes.
+
+**One shape still cannot be recovered**, and it is stated rather than
+worked around: a bare device added as a stripe column beside a mirror is
+indistinguishable from another leaf of that mirror, because the depth
+that would separate them is what scripted mode drops. It reads as a
+wider mirror. This is survivable only because the layout is never used
+to act — see below — and it is one of the reasons it is not.
+
+**What the run establishes.** A pool is created from a declared layout
+and the run after it reports no change; `ashift` set at creation reads
+back as the value it was given, so a property that can only be set once
+still converges; a pool exported by `zpool.absent` and then declared
+present again is *imported* rather than created over, with its data
+intact — checked by digest, because creating a pool over the devices of
+one that already holds data is the failure this ordering exists to
+prevent; a property change is applied and then is not applied again; and
+`zpool.absent` exports by default and destroys only when told, because
+the two differ by whether the data survives.
+
+**What it does not establish.** The vdevs are files, not disks: nothing
+here exercises `ashift` against a drive that misreports its sector size,
+device naming under `/dev/disk/by-id`, or a pool whose devices move
+between controllers. Nothing exercises a degraded pool, a resilver, or a
+scrub that finds something — `zpool.healthy` is tested against pools
+that are healthy. And it runs on Linux with OpenZFS 2.2.2; FreeBSD,
+where this project's ZFS reading was originally verified, is not covered
+by the harness.
+
+**`zpool.present` does not reshape a pool that exists**, and this is the
+design rather than a gap. It creates a pool that is not there and
+manages the properties of one that is. Where the declared layout differs
+from the actual one it reports the difference as a warning and stops. A
+top-level vdev cannot be removed from most pools at all; `zpool add`
+aimed at what was meant to be a mirror turns it into a stripe with no
+undo; and the failure mode of getting either wrong is the permanent loss
+of everything on the pool. A warning an operator has to close is worth
+more than a state that closes it for them.
 
 
 ## 5. Test coverage against SPEC 31

@@ -54,7 +54,8 @@ TARGETS = linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
 	darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 .PHONY: all build test race vet cover check release cross clean tidy vendor policy fmt \
-	fips fips-cross fips-verify fips-test
+	fips fips-cross fips-verify fips-test \
+	saltdiff saltdiff-image zfscheck zfscheck-image
 
 all: build
 
@@ -488,3 +489,33 @@ saltdiff: saltdiff-image
 		-v halite-gocache:/gocache \
 		-v halite-gomodcache:/gomodcache \
 		$(SALTDIFF_IMAGE)
+
+# `make zfscheck` runs the zpool module against a real pool.
+#
+# ZFS is a kernel module and there is no userspace stand-in, so a
+# container cannot host this: it shares the host's kernel, and the
+# kernel a developer machine runs — WSL2's, a macOS VM's — has no
+# zfs.ko. So this boots a virtual machine that has its own.
+#
+# It found two defects the first time it ran, both of them in reading
+# `zpool list`, and neither reachable from a fixture written by hand:
+# scripted mode indents every row under the pool by exactly one tab
+# whatever its depth, and prints the logs, cache and spare section
+# headers unindented and space-padded, ignoring -H altogether.
+#
+# The named volume keeps the cloud image and the built disk between
+# runs. The first run downloads about 600MB; later ones take under a
+# minute. --device /dev/kvm is what makes that true: without it qemu
+# emulates the processor and the run takes about twenty times as long,
+# which the script says out loud rather than merely being slow.
+ZFSCHECK_IMAGE ?= halite-zfscheck:24.04
+
+zfscheck-image:
+	docker build -t $(ZFSCHECK_IMAGE) contrib/vm/zfs
+
+zfscheck: zfscheck-image
+	docker run --rm --privileged \
+		$$(test -e /dev/kvm && echo --device /dev/kvm) \
+		-v "$(CURDIR)":/src \
+		-v halite-zfsvm:/vm \
+		$(ZFSCHECK_IMAGE)
