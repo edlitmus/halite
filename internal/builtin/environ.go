@@ -16,7 +16,7 @@ import (
 // section 15.2 and the environ.setenv state of 15.5. The reading half —
 // get, has_value and items — is registered with the data module.
 //
-// Salt's environ.setval writes os.environ in the minion process and
+// Salt's environ.setval writes the agent process's own environment and
 // nothing else, and its state does the same. Here that would be a state
 // that reports a change and changes nothing an operator can observe:
 // SPEC section 25.4 gives every child process a clean environment, so a
@@ -96,10 +96,13 @@ func registerEnviron(r *Registries) {
 				opt("false_unsets", signature.Bool, false, "Treat a value of false as a removal rather than the string."),
 				opt("permanent", signature.Bool, true, "Manage the place the platform keeps the variable across a reboot. False makes this state affect only the agent's own process, as Salt's does."),
 				opt("scope", signature.String, "", environScopeDoc),
-				// Declared so they can be refused by name rather than
-				// ignored: a tree carrying either gets told, once.
+				// Declared so that it is refused by name rather than
+				// ignored. Salt's other option that this build does not
+				// honour is not declared at all, because its name
+				// carries a word SPEC section 2.3 prohibits; a tree
+				// carrying it gets the unknown-argument error, which
+				// names the file, the line and the key.
 				opt("clear_all", signature.Bool, false, "Not accepted; see the comment this state returns."),
-				opt("update_minion", signature.Bool, false, "Not accepted; see the comment this state returns."),
 			},
 			Mutates:  true,
 			TestMode: signature.TestReliable,
@@ -373,21 +376,13 @@ func declaredEnviron(args *value.Map) (*value.Map, error) {
 	return value.MapOf(name, raw), nil
 }
 
-// refusedEnvironOptions names the two Salt options this build does not
-// take, and says why, once, rather than accepting them and doing
-// something else.
+// refusedEnvironOptions names the Salt option this build does not take,
+// and says why, rather than accepting it and doing something else.
 func refusedEnvironOptions(args *value.Map) string {
 	if states.Bool(args, "clear_all", false) {
-		return "clear_all: True is not accepted: in Salt it empties the minion's " +
+		return "clear_all: True is not accepted: in Salt it empties the agent's " +
 			"whole environment, and the variables it would remove here are " +
 			"the ones this agent is running on. Declare the removals."
-	}
-	if states.Bool(args, "update_minion", false) {
-		return "update_minion: True is not accepted: SPEC section 25.4 gives every " +
-			"child process a clean environment, so a variable set in the " +
-			"agent reaches nothing it runs. This state always writes the " +
-			"agent's copy, and permanent decides whether it writes the " +
-			"platform's as well."
 	}
 	return ""
 }

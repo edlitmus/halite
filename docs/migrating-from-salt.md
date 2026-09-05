@@ -124,10 +124,10 @@ and SPEC.md is wrong.
 
 ### `environ.setenv` persists
 
-Salt's `environ.setenv` sets a variable in the minion process and nothing
-else. It does not survive the minion restarting, and it does not reach
-anything the minion runs, so a state that uses it changes nothing an
-operator can observe afterwards.
+Salt's `environ.setenv` sets a variable in the agent process and nothing
+else. It does not survive a restart, and it does not reach anything the
+agent runs, so a state that uses it changes nothing an operator can
+observe afterwards.
 
 halite's `permanent` defaults to **true**, and the state manages the
 place the platform actually keeps the variable: `/etc/environment` on a
@@ -135,9 +135,13 @@ unix, `HKCU\Environment` or the machine key on Windows. A tree carrying
 `environ.setenv` will therefore write a file or a registry value that
 Salt never wrote. Set `permanent: False` for Salt's behaviour.
 
-`clear_all` and `update_minion: True` are refused rather than ignored,
-each with the reason, so a tree carrying either is told once instead of
-running against a different meaning.
+`clear_all: True` is refused rather than ignored, with the reason: in
+Salt it empties the whole environment, and here the variables it would
+remove are the ones the agent is running on. Salt's other option, the one
+asking for the agent's own copy to be written too, is not a parameter of
+this state at all — this build always writes that copy — so a tree
+carrying it gets the unknown-argument error naming the file, the line and
+the key.
 
 ## Encrypted pillar
 
@@ -197,8 +201,8 @@ configuration file; a tree needs the same edits:
 ## What is not there
 
 halite ships a subset of Salt's roughly 400 modules, chosen by what a
-real estate applies. This build has 289 execution functions across 50
-modules and 78 state functions across 30. The [module
+real estate applies. This build has 297 execution functions across 50
+modules and 80 state functions across 31. The [module
 reference](modules.md) lists all of them and
 [DIVERGENCE.md](DIVERGENCE.md) lists what is missing, module by module,
 with the reason.

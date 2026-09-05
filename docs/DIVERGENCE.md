@@ -379,8 +379,8 @@ larger unauthenticated surface than before by one certificate.
 
 ## 2. Module coverage
 
-The build ships **50 execution modules / 289 functions** and **30 state
-modules / 78 functions**.
+The build ships **50 execution modules / 297 functions** and **31 state
+modules / 80 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -411,7 +411,7 @@ different reason is given.
 | `hashutil` | implemented | 9 | |
 | `hosts` | implemented | 3 | |
 | `mine` | implemented | 6 | the store is on the hub; a node publishes its own and reads others' through the RBAC policy |
-| `mount` | implemented | 1 | read-only; `mount`/`umount`/`fstab` not written |
+| `mount` | implemented | 9 | the running table comes from `/proc/self/mounts` where there is one and from parsing `mount` where there is not, and how much a declared option can be compared against it depends on which; declared for the platforms with a mount table and refused on Windows, whose mount points are drive letters and junctions rather than an fstab |
 | `network` | implemented | 5 | |
 | `pillar` | implemented | 5 | |
 | `pkg` | implemented | 18 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
@@ -489,7 +489,7 @@ different reason is given.
 | `logrotate` | not implemented | 0 | |
 | `lvm` | not implemented | 0 | Linux only |
 | `mac_defaults` | not implemented | 0 | macOS only |
-| `mount` | not implemented | 0 | the exec side is read-only, so the state has nothing to build on |
+| `mount` | implemented | 2 | `mounted` and `unmounted`, each managing the running mount and the table together |
 | `nftables` | not implemented | 0 | Linux only |
 | `npm` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pip` | implemented | 2 | install and remove, comparing against the tool's own listing |
@@ -519,11 +519,13 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-2 of 65 present — the rows below total 63 absent. This is the largest
+6 of 65 present — the rows below total 59 absent. This is the largest
 single gap and it is a direct consequence of having one host to develop
-on.
+on. The four that arrived most recently are the Windows ones, and they
+arrived because a Windows host became available: the gap tracks the
+hardware, not the intent.
 
-The 63 are declared as pending rather than simply missing. A name absent
+The 59 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -546,7 +548,7 @@ specification cannot be quietly missed.
 | Debian, Ubuntu | none | `aptpkg`, `debconf`, `dpkg`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
-| Windows | none | `win_pkg`, `win_service`, `win_file`, `win_dacl`, `win_task`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_registry`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
+| Windows | `win_dacl`, `win_service`, `win_registry`, `win_task` | `win_pkg`, `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | none | `mac_brew_pkg`, `mac_service`, `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_defaults`, `mac_keychain`, `mac_assistive` |
 
 Two notes on this table:

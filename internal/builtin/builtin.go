@@ -88,6 +88,7 @@ func New() *Registries {
 	registerWatcherStates(r)
 	registerTimezone(r)
 	registerEnviron(r)
+	registerMount(r)
 	return r
 }
 

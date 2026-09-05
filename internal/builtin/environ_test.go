@@ -143,39 +143,34 @@ func TestEnvironSetenvInTestModeWritesNothing(t *testing.T) {
 	}
 }
 
-// The two Salt options this build does not honour are refused by name,
-// rather than accepted and quietly given a different meaning.
-func TestEnvironSetenvRefusesTheOptionsItDoesNotHonour(t *testing.T) {
+// The Salt option this build does not honour is refused by name, rather
+// than accepted and quietly given a different meaning.
+func TestEnvironSetenvRefusesTheOptionItDoesNotHonour(t *testing.T) {
 	r := New()
-	for _, tc := range []struct{ option, want string }{
-		{"clear_all", "clear_all: True is not accepted"},
-		{"update_minion", "update_minion: True is not accepted"},
-	} {
-		c := environFixture(t)
-		res, err := r.States.Call(c, "environ.setenv",
-			value.MapOf("name", "HALITE_TEST_X", "value", "x", tc.option, true))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.Result == nil || *res.Result {
-			t.Errorf("%s was accepted: %s", tc.option, res.Comment)
-		}
-		if !strings.Contains(res.Comment, tc.want) {
-			t.Errorf("%s is refused with %q", tc.option, res.Comment)
-		}
+	c := environFixture(t)
+	res, err := r.States.Call(c, "environ.setenv",
+		value.MapOf("name", "HALITE_TEST_X", "value", "x", "clear_all", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result == nil || *res.Result {
+		t.Errorf("clear_all was accepted: %s", res.Comment)
+	}
+	if !strings.Contains(res.Comment, "clear_all: True is not accepted") {
+		t.Errorf("clear_all is refused with %q", res.Comment)
 	}
 
-	// The same options set to false are the default behaviour and are
-	// not refused: a tree that spells out what it does not want should
-	// not be stopped for saying so.
-	c := environFixture(t)
-	res, err := r.States.Call(c, "environ.setenv", value.MapOf(
-		"name", "HALITE_TEST_OK", "value", "x", "clear_all", false, "update_minion", false))
+	// The same option set to false is the default behaviour and is not
+	// refused: a tree that spells out what it does not want should not
+	// be stopped for saying so.
+	c = environFixture(t)
+	res, err = r.States.Call(c, "environ.setenv", value.MapOf(
+		"name", "HALITE_TEST_OK", "value", "x", "clear_all", false))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res.Result == nil || !*res.Result {
-		t.Errorf("the options set to false were refused: %s", res.Comment)
+		t.Errorf("clear_all: False was refused: %s", res.Comment)
 	}
 }
 

@@ -154,11 +154,9 @@ notify:
 // function this build lacks still blocks.
 func TestARealStateGapStillBlocks(t *testing.T) {
 	root := writeSLSTree(t, map[string]string{
-		"base/app.sls": `mount_it:
-  mount.mounted:
-    - name: /srv
-    - device: /dev/da0p1
-    - fstype: ufs
+		"base/app.sls": `confine_it:
+  selinux.mode:
+    - name: enforcing
 
 trust_it:
   ssh_known_hosts.present:
@@ -167,11 +165,12 @@ trust_it:
 `,
 	})
 	rep := auditSLSTree(t, root)
-	// Both are still gaps. `pkgrepo.managed` used to stand here and no
-	// longer does, which is the guard working the other way: a test that
-	// asserts a gap exists has to be corrected when the gap is filled,
-	// or it starts asserting that a shipped module is missing.
-	for _, name := range []string{"mount.mounted", "ssh_known_hosts.present"} {
+	// Both are still gaps. `pkgrepo.managed` stood here once and
+	// `mount.mounted` after it, and neither does now: that is the guard
+	// working the other way round, because a test asserting a gap exists
+	// has to be corrected when the gap is filled, or it quietly starts
+	// asserting that a shipped module is missing.
+	for _, name := range []string{"selinux.mode", "ssh_known_hosts.present"} {
 		f, ok := findingFor(rep, name)
 		if !ok {
 			t.Fatalf("%s produced no finding", name)
