@@ -160,13 +160,20 @@ cannot distinguish a 10 µs call from a 400 µs one. That is the
 platform's clock rather than this build's, and it is worth knowing
 before somebody writes an alert on the low buckets.
 
-### 1.2 And three more, the first time the race detector ran
+### 1.2 And three more, from running the race detector *more often*
 
-The detector had never run against this tree on any platform: Windows
-has no compiler for it (§0.2) and 4.1's Linux runs are unit tests under
-emulation. `make racecheck` runs it in a container. DIVERGENCE 4.8 is
-the account; what belongs here is that it found three things and only
-one of them is a race.
+An earlier revision of this section said the detector had never run
+against this tree on any platform. **That was wrong.** `make check` and
+`make race` have been run on FreeBSD, the development platform, and on
+Ubuntu Linux, and the toolchain supports the detector on both. What had
+never happened is `make check` completing on Windows, where
+`CGO_ENABLED=1` has no compiler to use — which is what `make racecheck`
+and the container are for, and nothing else.
+
+The correction matters because it changes the lesson. These three were
+**reachable on platforms that already ran the detector**, and had simply
+never been hit; DIVERGENCE 4.8 is the account. What found them was
+repetition and a different account, not a new system.
 
 1. **A data race on the hub's clock.** `Server.Now` is a func field, and
    `now()` reads it from background goroutines while two tests assigned
@@ -183,10 +190,19 @@ one of them is a race.
 
 Each appeared only after the one before it was fixed, which is the
 argument for running a new environment more than once before believing
-it. **The cheap platforms in §7 item 9 should be read the same way**:
-macOS and FreeBSD are not one afternoon each, they are one afternoon
-each *per layer*, and the race detector is a layer nothing had run
-anywhere.
+it.
+
+The first two say something sharper than "run it somewhere new": **a
+gate that runs sometimes is not the same as a gate that runs.** The data
+race showed up in one full sweep and not in the two after it, and the
+flake loses about one run in eight. Neither is found by running the
+detector once, on any platform. Both are found by running it on every
+change, which is what CI now does — and which is why §3.5 moved from an
+argument to a measurement.
+
+**§7's remaining platforms should be read that way too.** macOS has
+never run the suite and FreeBSD has, so they are not the same item: the
+first is 4.6's kind of risk, and the second is this section's.
 
 ---
 
@@ -467,10 +483,11 @@ Unchanged since the last revision, and verified again here.
 The argument for it was never abstract. `internal/builtin` did not
 compile on Linux for two weeks. The suite went red on 2026-09-04 over a
 one-line assertion that cannot hold on Windows and stayed red until
-somebody looked. The race detector had never run on any platform and
-found three defects the first time it did. Every correction in §0.1
-drifted for the same reason: the only thing that ran any of these was a
-person deciding to.
+somebody looked. The race detector, which had been run on FreeBSD and on
+Linux, had never been run *often enough* to catch a race that appears in
+one sweep out of three (§1.2). Every correction in §0.1 drifted for the
+same reason: the only thing that ran any of these was a person deciding
+to.
 
 **It earned its place on the first run**, and on the legs this document
 predicted: six jobs green, both Windows jobs red, five failing tests
@@ -627,9 +644,8 @@ Sequenced by value per unit of work, and by what unblocks what.
 it runs. It held the top of this list through three revisions, and the
 cost of it ranking second was paid three times: two weeks of a package
 that did not compile on Linux, a day of a red suite on Windows, and a
-race detector that had never run anywhere. The one thing left is to
-distrust it until it has caught something — see §3.5's closing
-paragraph.
+race detector that ran when somebody remembered rather than on every
+change, which is not often enough to catch a one-in-three race.
 
 **Now — the estate's own blockers**
 
