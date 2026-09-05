@@ -11,7 +11,8 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
-// registerZFS installs the zfs and zpool modules.
+// registerZFS installs the zfs module. The zpool module is beside it in
+// zpool.go.
 //
 // Both tools have a scripted output mode — `-H -p` for zfs, `-H -p` for
 // zpool — which emits tab-separated fields with no header and no unit
@@ -96,57 +97,6 @@ func registerZFS(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				return zfsExists(c, states.Str(args, "dataset", "")), nil
-			},
-		},
-		exec.Module{
-			Sig: signature.Signature{
-				Module: "zpool", Function: "list",
-				Doc:       "Return the pools and their space and health.",
-				TestMode:  signature.TestNotApplicable,
-				Platforms: []string{"freebsd", "linux", "illumos"},
-				Section:   "15.3",
-			},
-			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				res, err := zfsRun(c, "zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,health")
-				if err != nil {
-					return nil, err
-				}
-				out := value.NewMap(4)
-				for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-					f := strings.Split(line, "\t")
-					if len(f) < 5 {
-						continue
-					}
-					out.Set(f[0], value.MapOf(
-						"size", parseInt64(f[1]),
-						"allocated", parseInt64(f[2]),
-						"free", parseInt64(f[3]),
-						"health", f[4],
-					))
-				}
-				return out, nil
-			},
-		},
-		exec.Module{
-			Sig: signature.Signature{
-				Module: "zpool", Function: "healthy",
-				Doc: "Report whether every pool is ONLINE. A pool that is DEGRADED or worse " +
-					"makes this false, which is what a beacon or a check state watches.",
-				TestMode:  signature.TestNotApplicable,
-				Platforms: []string{"freebsd", "linux", "illumos"},
-				Section:   "15.3",
-			},
-			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				res, err := zfsRun(c, "zpool", "list", "-H", "-o", "health")
-				if err != nil {
-					return nil, err
-				}
-				for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
-					if strings.TrimSpace(line) != "ONLINE" && strings.TrimSpace(line) != "" {
-						return false, nil
-					}
-				}
-				return true, nil
 			},
 		},
 	)

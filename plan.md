@@ -86,7 +86,7 @@ whether the estate can migrate. The registries answer:
 
 ```
 halite-node call sys.list_modules        # 50
-halite-node call sys.list_state_modules  # 31
+halite-node call sys.list_state_modules  # 32
 ```
 
 against SPEC 15.2's 56 core execution modules, 15.5's 47 core state
@@ -109,12 +109,16 @@ it — still small, still worth doing early, but two pieces rather than
 one, and a plan that said otherwise would have had somebody discover it
 an hour in.
 
+**This section is now closed.** All five are built. The estimate of
+"still small" held for four of them and not for `zpool`, where the work
+was not the code but finding somewhere to run it: see §2.1a.
+
 | State | What the execution side has | What it also needs |
 |---|---|---|
 | ~~`timezone.system`~~ | `get_zone` | **done** — `set_zone`, `zone_compare`, `list_zones` and the state. Windows names its zones its own way and this build says so rather than shipping a CLDR table that goes stale |
 | ~~`environ.setenv`~~ | `get`, `has_value`, `items` | **done** — `setval`, `setenv`, `persisted` and the state. "Permanent" is `/etc/environment` on a unix and the environment key of the registry on Windows, and it is the *default*, because the process-only setting Salt writes changes nothing an operator can observe |
 | ~~`mount.mounted`~~ | `active` | **done** — `mount`, `umount`, `remount`, `set_fstab`, `rm_fstab`, `fstab`, `is_mounted`, `swaps`, and both states. Unix only, and declared so |
-| `zpool.present` | `healthy`, `list` | `create`, `destroy`, `export`, `import` — the last one left, and the largest |
+| ~~`zpool.present`~~ | `healthy`, `list` | **done** — `exists`, `get`, `vdevs`, `create`, `destroy`, `export`, `import`, `scrub`, and `present` and `absent`. `present` creates a pool and manages its properties; it does not reshape one that exists, and says so, because a top-level vdev cannot be removed from most pools and `zpool add` aimed at a mirror makes it a stripe with no undo |
 | ~~`beacon.present`~~ | the `beacons` module ships whole | **done** — the state only, so this one really was just the wrapper |
 
 `schedule` is the same shape as `beacon`, and this section previously
@@ -124,6 +128,33 @@ the five small gaps a real tree reached for. What it did not have was
 removed by a state came back on the next restart. Both are fixed, and
 the two states are one implementation because they are the same state
 twice.
+
+### 2.1a What `zpool` cost, and what it bought
+
+ZFS is a kernel module and there is no userspace stand-in, so none of it
+could be verified where the rest of this project is: a container shares
+the host's kernel, and neither Docker Desktop's WSL2 kernel nor a macOS
+VM kernel has `zfs.ko`. The module was therefore run against a real pool
+inside a virtual machine with its own kernel, booted under KVM, and that
+is now `make zfscheck` rather than an afternoon somebody has to repeat.
+
+It was worth it on the first run. Two defects, both in reading `zpool
+list`, and neither reachable from a fixture written from memory:
+
+- Scripted mode indents **every** row under the pool by exactly one tab,
+  whatever its depth. A reader that took the indentation for depth found
+  every pool empty, and the state then warned that a pool it had just
+  created was "nothing".
+- The `logs`, `cache` and `spare` section headers are printed
+  **unindented and space-padded**, ignoring `-H` in the middle of an
+  otherwise tab-separated listing. A reader that took every unindented
+  row for the pool's own row filed a pool's log device as an extra leg
+  of the mirror above it.
+
+The general lesson is the one §1 already drew from Windows and §5 draws
+about CI: a fixture written from memory tests the memory. The specific
+lesson is that a kernel-backed subsystem needs a kernel, and that
+renting one for ninety seconds is cheap.
 
 ### 2.2 Core modules missing entirely
 
@@ -136,8 +167,8 @@ twice.
 `environ`, `firewall`, `hostname`, `iptables`, `kernelpkg`, `locale`,
 `logrotate`, `lvm`, `mac_defaults`, `mount`, `nftables`, `pro`,
 `reboot`, `selinux`, `ssh_known_hosts`, `sudo`, `timezone`, `win_wua`,
-`zpool`. `pkgrepo`, `beacon`, `schedule`, `timezone`, `environ` and
-`mount` have since shipped, which leaves 17.
+`zpool`. `pkgrepo`, `beacon`, `schedule`, `timezone`, `environ`,
+`mount` and `zpool` have since shipped, which leaves 16.
 
 Ranked by what the estate's own tree reaches for, and by what a
 migration is blocked on. **`pkgrepo` and `http` are done**, and are struck
@@ -419,10 +450,10 @@ Sequenced by value per unit of work, and by what unblocks what.
    both, because they are the same state twice. `schedule.absent`
    already existed and did not persist, so a job a state removed came
    back on the next restart.
-4. ~~**The rest of §2.1**~~ — **done** except `zpool`. `timezone`,
-   `environ` and `mount` each needed its mutating execution half as well
-   as the state, which is what §2.1 said and what it cost. `zpool` is
-   the one left, and the largest.
+4. ~~**The rest of §2.1**~~ — **done.** `timezone`, `environ` and
+   `mount` each needed its mutating execution half as well as the state,
+   which is what §2.1 said and what it cost. `zpool` closed it, and cost
+   a virtual machine rather than a container: see §2.1a.
 5. **`hostname`** and **`ssh_known_hosts`**. Small and universal.
 
 **Next — stop the drift**
