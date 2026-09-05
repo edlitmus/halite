@@ -32,6 +32,9 @@ type Spool struct {
 	// dropped counts returns refused because the spool was full,
 	// which an operator needs to see rather than infer.
 	dropped int
+	// seq orders returns spooled inside one clock tick, and keeps two
+	// of them from being the same file. See Put.
+	seq uint64
 }
 
 // Entry is one spooled return.
@@ -75,7 +78,22 @@ func (s *Spool) Put(body []byte, now time.Time) error {
 		s.dropped++
 		return fmt.Errorf("the relay spool is full at %d bytes", s.bytes)
 	}
-	name := fmt.Sprintf("%020d-%d.json", now.UTC().UnixNano(), s.dropped)
+	// The sequence is what makes this name unique, and that is a
+	// stronger requirement here than ordering.
+	//
+	// The name was the nanosecond timestamp and the drop count. Two
+	// returns spooled inside one clock tick produce the same timestamp
+	// and the same drop count, so they produce the *same file*, and the
+	// second silently overwrote the first -- in the one mechanism whose
+	// stated purpose is that an outage delays returns rather than
+	// losing them. `time.Now` is only as fine as the platform's clock,
+	// and on Windows that is about half a millisecond.
+	//
+	// Found by inspection while fixing the same root cause in the
+	// webhook returner's spool, where a coarse clock reordered the
+	// backlog instead of eating it. No test reached this one.
+	s.seq++
+	name := fmt.Sprintf("%020d-%09d-%d.json", now.UTC().UnixNano(), s.seq, s.dropped)
 	if err := os.WriteFile(filepath.Join(s.dir, name), body, 0o600); err != nil {
 		return err
 	}

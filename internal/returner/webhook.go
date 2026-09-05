@@ -94,6 +94,8 @@ type webhookReturner struct {
 	mu       sync.Mutex
 	spooled  int64
 	measured bool
+	// seq orders returns spooled inside one clock tick. See spool.
+	seq uint64
 }
 
 func (r *webhookReturner) Name() string { return "webhook" }
@@ -216,9 +218,10 @@ func digestOf(b []byte) string {
 
 // spool writes one undelivered body to disk.
 //
-// The name carries the time and a digest, so the drain reads them in
-// the order they were spooled and a repeat of the same body does not
-// make a second file.
+// The name carries the time, a sequence and a digest, so the drain reads
+// them in the order they were spooled — even when the clock is too
+// coarse to tell two of them apart — and a repeat of the same body does
+// not make a second file.
 func (r *webhookReturner) spool(kind string, body []byte) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -232,8 +235,23 @@ func (r *webhookReturner) spool(kind string, body []byte) error {
 		// operator was told about.
 		return fmt.Errorf("the spool is full at %d bytes; %s discarded", r.spooled, kind)
 	}
-	name := fmt.Sprintf("%d-%s-%s.json",
-		r.opts.now().UTC().UnixNano(), kind, digestOf(body))
+	// The timestamp orders the spool and the sequence breaks its ties.
+	//
+	// The name used to be the nanosecond timestamp alone, on the
+	// reasoning that two returns cannot be spooled in the same
+	// nanosecond. They can: `time.Now` is only as fine as the platform's
+	// clock, and on Windows that is about half a millisecond, so three
+	// returns spooled in a loop shared one timestamp. Sorting then fell
+	// through to the content digest, which is an arbitrary order, and
+	// the backlog went upstream as 3, 2, 1 -- against the oldest-first
+	// guarantee this spool exists to provide. CI found it; no machine
+	// this project is developed on has a coarse enough clock to.
+	//
+	// The sequence resets when the process does, which the timestamp
+	// covers: a restart takes longer than a tick.
+	r.seq++
+	name := fmt.Sprintf("%019d-%09d-%s-%s.json",
+		r.opts.now().UTC().UnixNano(), r.seq, kind, digestOf(body))
 	path := filepath.Join(r.opts.SpoolDir, name)
 	if err := os.WriteFile(path, body, 0o600); err != nil {
 		return err
@@ -277,9 +295,10 @@ func (r *webhookReturner) drain(ctx context.Context) {
 			names = append(names, e.Name())
 		}
 	}
-	// The name begins with a nanosecond timestamp, zero-padded by
-	// nothing, so this is a string sort over equal-width numbers for
-	// any time this century.
+	// The name begins with a zero-padded nanosecond timestamp and then
+	// a zero-padded sequence, so a string sort is chronological and
+	// total. Names written before the sequence existed carry the same
+	// 19-digit timestamp and sort with them.
 	sort.Strings(names)
 
 	for _, name := range names {

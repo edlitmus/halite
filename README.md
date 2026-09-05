@@ -348,7 +348,17 @@ make cover
 make vuln       # govulncheck; needs the network, so not part of check
 make repro      # build twice from two paths and compare the digests
 make fuzz       # FUZZTIME=30m for a real campaign
+make saltdiff   # the differential against Salt, in a container
+make racecheck  # the race leg, for a host with no C toolchain
+make zfscheck   # the zpool module against a real pool, in a VM
 ```
+
+Every one of those runs in CI on push and on each pull request —
+`.github/workflows/ci.yml`, split by target so a failure names the leg —
+on Linux and on Windows both. `release.yml` adds what a single machine
+cannot check: on a tag, two builders compile the same source and their
+digests are compared, which is the reproducibility property SPEC section
+4.3 asks for and `make repro` can only half prove.
 
 `make check` runs the specification's own build rules as tests: the
 lexicon policy of section 2.3, the dependency allowlist of section 4.2,

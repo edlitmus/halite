@@ -1,0 +1,33 @@
+# Every text file is LF in the working tree, on every platform.
+#
+# There was no .gitattributes, so line endings were whatever each
+# checkout's core.autocrlf happened to say. That is not a style
+# preference here, because this project's tests read its own files:
+#
+#   - internal/buildpolicy parses go.mod with `^toolchain go1\.\d+$`,
+#     which does not match `toolchain go1.26.6\r`. CI reported that
+#     go.mod had no toolchain directive, about a go.mod that has one.
+#   - internal/docsaudit regenerates docs/configuration.md and
+#     docs/modules.md and compares bytes. The generator writes LF, so a
+#     CRLF checkout says the committed file is out of date with the code
+#     when nothing about the code changed.
+#   - internal/specaudit matches multi-line strings against DIVERGENCE.md
+#     and splits its prose into sentences. CRLF moved the sentence
+#     boundaries and produced two accusations that were not true.
+#
+# All four passed on every machine this project is developed on and
+# failed the first time CI checked out on a Windows runner, where
+# core.autocrlf defaults to true. They are not Windows defects; they are
+# a checkout setting nothing pinned.
+#
+# The shell scripts are the other half, and the sharper one: run.sh with
+# CRLF is `#!/bin/sh\r`, which no kernel will exec. A Windows clone with
+# stock settings produced a `make racecheck` that could not start.
+* text=auto eol=lf
+
+# Binary, so that "text" is never guessed at for them.
+*.png binary
+*.jpg binary
+*.gz binary
+*.xz binary
+*.zip binary

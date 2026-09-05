@@ -441,24 +441,83 @@ Unchanged since the last revision, and verified again here.
   and has never been run. `contrib/` has systemd units, FreeBSD rc.d
   scripts and example configuration, and that is the whole packaging
   story.
-- **There is no CI at all** — no `.github/`, no GitLab config, no
-  Jenkinsfile. SPEC 4.2 opens by saying the dependency policy "has teeth:
-  CI enforces it", and 4.3 assigns CI the dependency assertion and the
-  two-builder reproducibility check on every tag. The *checks* mostly
-  exist as `make` targets and Go tests; nothing runs them automatically.
-- **Reproducibility is one builder, not two.** `make repro` builds twice
-  on one machine from two paths, and its own comment is honest about the
-  difference.
+- **CI exists**, in `.github/workflows/`. SPEC 4.2 opens by saying the
+  dependency policy "has teeth: CI enforces it", and until now nothing
+  did. `ci.yml` runs every leg of `make check` on push and on every pull
+  request — `fmt-check`, `vet` and `policy` as one fast gate, then
+  `build-all` across all eight targets, the suite and the race detector
+  on Linux *and* Windows, `fips-test`, and the Salt differential that
+  SPEC 31 calls the primary correctness gate and that had been green by
+  not running. The jobs are split by make target so a failure names the
+  leg rather than the word "check".
+- **Reproducibility is two builders on a tag**, in `release.yml`: the
+  same tag built on two runner images, compared by digest. `make repro`
+  remains the cheap half and still runs on every change, because a build
+  that is not reproducible from two paths on one machine will not be
+  reproducible across two.
+- **What CI does not yet do.** It does not publish anything: SPEC 27.2's
+  artifacts do not exist to publish (§3.5's first bullet is unchanged),
+  so `release.yml` proves the build is reproducible and stops there. It
+  runs on GitHub-hosted runners, which is a dependency SPEC does not
+  discuss.
 - Toolchain provenance — fetch by digest from an internal mirror — is not
   implemented.
 
-**Standing up CI is the highest-leverage item in this document**, and
-§1.1 is now the proof rather than the argument. The suite went red on
-2026-09-04 over a one-line assertion that cannot hold on Windows, and
-stayed red until this document was written, because the only thing that
-runs the suite is a person deciding to. The fix took one line; the day
-it went unnoticed is the cost, and it is a cost that recurs. Every
-correction in §0.1 drifted for the same reason.
+**CI was the highest-leverage item in this document, and it is done.**
+The argument for it was never abstract. `internal/builtin` did not
+compile on Linux for two weeks. The suite went red on 2026-09-04 over a
+one-line assertion that cannot hold on Windows and stayed red until
+somebody looked. The race detector had never run on any platform and
+found three defects the first time it did. Every correction in §0.1
+drifted for the same reason: the only thing that ran any of these was a
+person deciding to.
+
+**It earned its place on the first run**, and on the legs this document
+predicted: six jobs green, both Windows jobs red, five failing tests
+across four packages, two causes and neither of them a Windows defect.
+
+**Line endings, four of the five.** There was no `.gitattributes`, so
+line endings were whatever each checkout's `core.autocrlf` said. Every
+machine this project is developed on uses LF; GitHub's Windows runners
+default to CRLF. That breaks every test that reads the project's own
+files — `buildpolicy` reported that `go.mod` has no `toolchain`
+directive, `docsaudit` reported the generated pages as out of date with
+code that had not changed, and `specaudit` made two accusations against
+DIVERGENCE.md that were not true. A checkout setting nothing pinned, and
+sharper than the tests: `contrib/docker/race/run.sh` under CRLF is
+`#!/bin/sh\r`, which no kernel will exec, so a Windows clone with stock
+settings produced a `make racecheck` that could not start.
+
+**A privileged account, the fifth.** The runner is a local
+administrator, and `permtest.DenyRead`'s DENY entry did not deny — so
+`TestFileManagedRefusesAnUnreadableFile` failed reporting the code under
+test for a condition the environment never created. It is §1.2's root
+problem on the other platform, and the fix is the container's rather
+than the unix one's: CI runs the Windows suite as a standard account,
+which keeps the coverage instead of skipping it, and is the account a
+hub runs as anyway.
+
+**And then, once the Windows suite could run at all, a defect in a
+durability guarantee.** The webhook returner's spool names each file by
+its nanosecond timestamp, on the reasoning that two returns cannot be
+spooled in the same nanosecond. They can: `time.Now` is only as fine as
+the platform's clock, and on Windows that is about half a millisecond —
+the same granularity as §1.1. Three returns shared a timestamp, the sort
+fell through to the content digest, and the backlog went upstream as 3,
+2, 1, against the oldest-first guarantee the spool exists to provide.
+
+Fixing it turned up a worse one by inspection: the **relay** spool names
+files by timestamp and drop count, so two returns inside one tick are
+the *same file* and the second silently overwrites the first — in the
+one mechanism whose stated purpose is that an outage delays returns
+rather than losing them. No test reached it, and none would have on a
+machine with a fine clock.
+
+None of the four was reachable from any machine this project is
+developed on. That is the argument for CI restated as a measurement,
+four hours after the argument stopped being necessary — and the last of
+them is silent data loss in a property `docs/DIVERGENCE.md` advertises
+as something Salt's syndic does not do.
 
 ---
 
@@ -564,55 +623,54 @@ report emits the undefined-reference row SPEC 28.5 requires.
 
 Sequenced by value per unit of work, and by what unblocks what.
 
-**Now — stop the drift**
+~~**Now — stop the drift.** Stand up CI.~~ **Done**, and §3.5 says what
+it runs. It held the top of this list through three revisions, and the
+cost of it ranking second was paid three times: two weeks of a package
+that did not compile on Linux, a day of a red suite on Windows, and a
+race detector that had never run anywhere. The one thing left is to
+distrust it until it has caught something — see §3.5's closing
+paragraph.
 
-1. **Stand up CI**, running `make check`, the conformance suites and
-   `make saltdiff` — **on Linux and Windows both**, and `make racecheck`
-   with them. The Windows runner still needs a make of some kind, and
-   wants mingw-w64 so `race` runs there natively rather than only in the
-   container (§0.2); a runner that skips a leg without saying so is the
-   failure mode this item exists to prevent. This is first rather
-   than second, and §1.1 is why. The last time it ranked second,
-   `internal/builtin` did not compile on Linux for two weeks — a test
-   helper in a Windows-only file, a Linux-only caller that could not see
-   it — and a second test asserted a guarantee only a Windows job object
-   can give and passed for the same reason. Both were found by running
-   the suite in a container by hand, which is not a process. Then the
-   same gap let a red suite stand for a day on the platform the tests
-   were written on, over a one-line assertion that could not hold there.
+**Now — the estate's own blockers**
 
-**Then — the estate's own blockers**
-
-2. **`hostname`** and **`ssh_known_hosts`**. Small, universal, and the
+1. **`hostname`** and **`ssh_known_hosts`**. Small, universal, and the
    last of the core modules every estate touches.
-3. **The Debian and Ubuntu platform row** (§2.3). Ten modules, and the
+2. **The Debian and Ubuntu platform row** (§2.3). Ten modules, and the
    estate is Ubuntu. This is the largest single block of work in the
    document and the one the migration is actually blocked on.
 
 **Then — phase 6 foundations**
 
-4. The two SPEC 30 benchmarks that need no harness (§3.1). Metrics are no
+3. The two SPEC 30 benchmarks that need no harness (§3.1). Metrics are no
    longer on this list; §3.2 closed.
-5. Get the differential to compare *applied* results, in the container it
-   already has (§3.4).
-6. The chaos suite, starting with the paths no test reaches at all.
-7. Packaging and the two-builder reproducibility check (§3.5).
-8. The render sandbox (§3.3), which is the largest unbuilt security
+4. Get the differential to compare *applied* results, in the container it
+   already has, and in the job CI now runs it from (§3.4).
+5. The chaos suite, starting with the paths no test reaches at all.
+6. **Packaging** (§3.5). The reproducibility half of this item is done —
+   `release.yml` compares two builders on every tag — and what is left
+   is that there are no artifacts to publish: no nfpm config, no `.msi`,
+   no `.pkg`, no SBOM, no attestation. CI is the thing that would sign
+   and publish them, so this is now the next release-shaped work rather
+   than a prerequisite for it.
+7. The render sandbox (§3.3), which is the largest unbuilt security
    control and the one SPEC argues for most directly.
 
 **In parallel, cheap and independent**
 
-9. **Run the suite on macOS and FreeBSD.** Windows found three
-   cross-platform defects in one afternoon and a fourth the next day;
-   there is no reason to think those two hold none (§1).
+8. **Run the suite on macOS and FreeBSD.** Windows found three
+   cross-platform defects in one afternoon and a fourth the next day,
+   and the race detector found three more the first time it ran; there
+   is no reason to think those two hold none (§1, §1.2). Neither is a
+   GitHub-hosted runner, so neither is covered by what was just built —
+   which is the honest limit of item 1.
 
 **Blocked on a decision**
 
-10. The `cmd.run` default, the unplanned modules, a `win_registry` state,
-    job signing and node evidence (§6).
+9. The `cmd.run` default, the unplanned modules, a `win_registry` state,
+   job signing and node evidence (§6).
 
 **Last**
 
-11. The YAML over-acceptance set, prioritising the chomping case; the six
+10. The YAML over-acceptance set, prioritising the chomping case; the six
     real template gaps; the regexcompat character-class false positive
     (§5).

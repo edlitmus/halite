@@ -1,0 +1,104 @@
+# SPEC 4.3's two-builder reproducibility check, on every tag.
+#
+# `make repro` builds twice on one machine from two paths, and its own
+# comment is honest that this is not the property SPEC asks for. The
+# property is that two *builders* produce byte-identical artifacts, and
+# the only way to have it is to use two.
+#
+# What makes it possible at all is already in the Makefile: CGO_ENABLED=0
+# so nothing links against a host library, -trimpath so no build path
+# reaches the binary, GOFLAGS=-mod=vendor and GOPROXY=off so the inputs
+# are the tree and nothing fetched, and SOURCE_DATE_EPOCH taken from the
+# commit rather than from the clock. This job is what proves those hold
+# rather than merely being written down.
+#
+# The two builders differ in the way that matters: a different runner
+# image, and therefore a different filesystem layout, hostname,
+# environment and kernel. They agree on the toolchain, because go.mod
+# pins it -- a build that changed with the compiler would not be a
+# reproducibility failure, it would be a different build.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: auto
+
+jobs:
+  build:
+    name: build (${{ matrix.builder }})
+    runs-on: ${{ matrix.builder }}
+    strategy:
+      fail-fast: false
+      matrix:
+        builder: [ubuntu-24.04, ubuntu-22.04]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The tag itself is an input: version.Version comes from `git
+          # describe` and SOURCE_DATE_EPOCH from the commit date. A
+          # shallow clone answers both differently and the two builders
+          # would disagree for a reason that is not the one being
+          # tested.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Both builders must compile with the same toolchain or they will
+      # disagree for a reason that has nothing to do with
+      # reproducibility. Asserted rather than assumed, because two
+      # runner images are two chances to drift.
+      - name: the runner's Go is the pinned toolchain
+        run: .github/toolchain-check.sh
+
+      # Vendored and offline, which is the point: the build must not be
+      # able to fetch anything, so that what it produces depends on the
+      # tree alone.
+      - run: make release
+
+      - name: digests
+        run: |
+          cd bin
+          sha256sum halite-node halite-hub halite-api | tee ../digests-${{ matrix.builder }}.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.builder }}
+          path: digests-${{ matrix.builder }}.txt
+          if-no-files-found: error
+
+  compare:
+    name: two builders agree
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-*
+          merge-multiple: true
+
+      # Compared by digest rather than by artifact, because the question
+      # is whether the bytes match and a diff of two short files says
+      # exactly which binary did not.
+      - name: compare
+        run: |
+          set -e
+          ls -l digests-*.txt
+          a=digests-ubuntu-24.04.txt
+          b=digests-ubuntu-22.04.txt
+          for f in "$a" "$b"; do
+            test -s "$f" || { echo "$f is missing or empty"; exit 1; }
+          done
+          if diff -u "$a" "$b"; then
+            echo "two builders produced identical binaries"
+          else
+            echo "REPRODUCIBILITY FAILURE: the two builders disagree"
+            exit 1
+          fi
