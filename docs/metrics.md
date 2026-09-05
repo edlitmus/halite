@@ -335,6 +335,158 @@ metrics_client_ca: /usr/local/etc/halite/pki/ca.crt
 Left empty, the port is served to anyone who can reach it. That is a
 decision to make deliberately rather than by omission.
 
+### The two certificates, and how to make them
+
+There are two, and they face opposite ways. Confusing them is the
+commonest way to get a target that will not come up.
+
+| | What it proves | Named by | Needed when |
+|---|---|---|---|
+| The node's **serving** certificate | that the scraper reached the node it meant to | `metrics_tls_cert` on the node, `ca_file` at Prometheus | always |
+| The scraper's **client** certificate | that the thing scraping is allowed to | `cert_file` at Prometheus, `metrics_client_ca` on the node | only with `metrics_client_ca` |
+
+#### The scraper's client certificate
+
+An operator certificate, which the hub already knows how to issue:
+
+```sh
+halite-hub keys operator create prometheus --lifetime 8760h
+```
+
+```
+operator  prometheus
+principal cert:CN=prometheus
+cert      /usr/local/etc/halite/pki/operator-prometheus.crt
+key       /usr/local/etc/halite/pki/operator-prometheus.key
+expires   2027-09-05T01:07:28Z
+```
+
+It carries `TLS Web Client Authentication` and is signed by the
+enrollment CA, which is why `metrics_client_ca: <pki_dir>/ca.crt` on
+the node accepts it.
+
+**Pass `--lifetime`.** The default is 720h — thirty days — and a
+scraper cannot notice its own certificate expiring. The scrape simply
+starts failing a month after you set it up, at whatever hour you
+happened to run the command. This is the same trap as `token_lifetime`
+for the API's scraper, one certificate further along.
+
+The certificate grants nothing at the hub by itself. It is a client
+certificate the node checks against a CA, not a principal the policy
+consults; a node does not read `policy.yaml`. If you would rather the
+same identity never be usable as an operator, bind it to no role and it
+can do nothing but present itself.
+
+#### The node's serving certificate, issued on the hub
+
+The simplest, and one trust root for everything. The enrollment CA's key
+is already on the hub, so issue there and copy the result out:
+
+```sh
+halite-node call x509.create_private_key \
+    path=/tmp/node1-metrics.key algorithm=ec curve=p256
+
+halite-node call x509.create_certificate \
+    private_key=/tmp/node1-metrics.key \
+    path=/tmp/node1-metrics.crt \
+    signing_cert=/usr/local/etc/halite/pki/ca.crt \
+    signing_private_key=/usr/local/etc/halite/pki/ca.key \
+    CN=node1.example \
+    days_valid=90 \
+    ext_key_usage='["serverAuth"]' \
+    subject_alt_names='["DNS:node1.example","IP:10.0.0.11"]'
+```
+
+```sh
+$ openssl x509 -in /tmp/node1-metrics.crt -noout -subject -issuer -ext extendedKeyUsage,subjectAltName
+subject=CN=node1.example
+issuer=CN=halite enrollment CA
+X509v3 Extended Key Usage:
+    TLS Web Server Authentication
+X509v3 Subject Alternative Name:
+    DNS:node1.example, IP Address:10.0.0.11
+```
+
+Then the pair goes to the node, the key mode 0600 and readable by the
+account the agent runs as, and Prometheus verifies it with the same
+`ca.crt` it already needs.
+
+**`ext_key_usage` and `subject_alt_names` are both required in
+practice.** Without `serverAuth` Go refuses the certificate for serving
+and the handshake fails with an incompatible key usage; without a SAN
+covering the address in `targets` it fails verification. Neither error
+mentions the setting that produced it. This is also why the node's own
+`node.crt` cannot be reused — it has `clientAuth` and no SAN at all.
+
+**Do not run this on the node.** It needs `ca.key`, and the enrollment
+CA signs every identity in the estate: a copy on a managed machine is a
+copy an attacker who takes that machine can mint node certificates
+with. Issue on the hub, ship the result.
+
+#### The node's serving certificate, managed by the tree
+
+For an estate that would rather not copy files around, the same two
+functions have state forms, and `days_remaining` renews before expiry.
+The signing key has to be where the state runs — on the node — so this
+takes **a separate CA for metrics and nothing else**, never the
+enrollment CA. A metrics CA that leaks signs metrics certificates; the
+enrollment CA that leaks is the estate.
+
+Make it once, on the hub or wherever you keep such things:
+
+```sh
+halite-node call x509.create_private_key \
+    path=/usr/local/etc/halite/pki/metrics-ca.key algorithm=ec curve=p256
+halite-node call x509.create_certificate \
+    private_key=/usr/local/etc/halite/pki/metrics-ca.key \
+    path=/usr/local/etc/halite/pki/metrics-ca.crt \
+    ca=true CN='halite metrics CA' days_valid=3650
+```
+
+Put its key in pillar, GPG-encrypted like any other secret, and the
+state becomes:
+
+```yaml
+# states/metrics_cert.sls
+/usr/local/etc/halite/pki/metrics.key:
+  x509.private_key_managed:
+    - algorithm: ec
+    - curve: p256
+    - mode: '0600'
+
+/usr/local/etc/halite/pki/metrics.crt:
+  x509.certificate_managed:
+    - private_key: /usr/local/etc/halite/pki/metrics.key
+    - signing_cert: {{ pillar['metrics_ca']['cert'] }}
+    - signing_private_key: {{ pillar['metrics_ca']['key'] }}
+    - CN: {{ grains['id'] }}
+    - subject_alt_names:
+        - 'DNS:{{ grains['id'] }}'
+    - ext_key_usage:
+        - serverAuth
+    - days_valid: 90
+    - days_remaining: 30
+    - mode: '0644'
+    - require:
+        - x509: /usr/local/etc/halite/pki/metrics.key
+```
+
+It converges. A second run reports the certificate already in place and
+changes nothing; a run inside the renewal window reissues and says so:
+
+```
+Comment: A certificate was written to /usr/local/etc/halite/pki/metrics.crt,
+         because it expires in under 30 days, on 2026-09-25T01:04:56Z.
+```
+
+Prometheus then verifies every node against `metrics-ca.crt` rather
+than the enrollment CA, and `metrics_client_ca` stays pointed at
+`ca.crt` — the two are different trust roots doing different jobs, and
+that is the arrangement, not a mistake.
+
+Both certificate paths were run end to end against a node and a real
+Prometheus before being written down.
+
 ### Pointing Prometheus at the nodes
 
 A second scrape job, because these are different targets with different
