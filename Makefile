@@ -237,11 +237,27 @@ repro:
 # about nearly everything and wrong about that — and the tree did not
 # compile there at all. Nothing caught it, because nothing compiled for
 # macOS until an operator did.
+# Compiles every shipped target, tests included.
+#
+# `go build` does not compile test files, so a test that builds on one
+# platform and not another passes this target for as long as nobody runs
+# the suite on the other one. That happened: a helper for the Windows
+# service tests was called from http_test.go, which is not
+# platform-specific at all, and internal/builtin's 197 tests stopped
+# compiling everywhere but Windows. `go test ./...` reported it as one
+# package failing to build, and every test inside it silently stopped
+# running -- which looks the same as a package that passes.
+#
+# `go vet` type-checks the test files, so it is what catches that, and
+# it is why this target runs both. The helper itself was moved in the
+# commit that added timezone, environ and mount; this is what stops the
+# next one.
 build-all:
 	@for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; \
 		printf "  %-16s " "$$t"; \
 		env $(DEV_ENV) GOOS=$$os GOARCH=$$arch go build ./... || exit 1; \
+		env $(DEV_ENV) GOOS=$$os GOARCH=$$arch go vet ./... || exit 1; \
 		echo ok; \
 	done
 
