@@ -97,6 +97,7 @@ func New() *Registries {
 	registerDebconf(r)
 	registerFirewall(r)
 	registerNetplan(r)
+	registerAppArmor(r)
 	return r
 }
 

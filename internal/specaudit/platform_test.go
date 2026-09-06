@@ -104,3 +104,102 @@ func TestEveryPendingPlatformModuleSaysWhy(t *testing.T) {
 		}
 	}
 }
+
+// The ledger's own platform table is held to the registry, both columns.
+//
+// TestPendingPlatformModulesMatchTheSpec checks the registry against
+// SPEC 15.3 and says nothing about DIVERGENCE 2.3, which is prose with
+// a table in it — and that table drifted. `ufw` and `netplan` were
+// listed in the Present column and left in the Absent column of the
+// same row, so the ledger said each of them was both, and the audit
+// that exists to stop the ledger lying did not look there.
+//
+// A reader takes that table for the answer, because it is the only
+// place the gap is broken down by platform. So: every name in a Present
+// cell is one the build answers to, every name in an Absent cell is one
+// it does not, and each of SPEC 15.3's modules appears in exactly one
+// cell of the whole table.
+func TestTheLedgerPlatformTableMatchesTheRegistry(t *testing.T) {
+	doc := repoFile(t, ledgerFile)
+	present, absent := ledgerPlatformColumns(t, doc)
+
+	registries := builtin.New()
+	built := map[string]bool{}
+	for _, module := range registries.Exec.Signatures().Modules() {
+		built[module] = true
+	}
+	for module := range registries.Exec.Aliases() {
+		built[module] = true
+	}
+	pending := exec.PendingPlatformModules()
+
+	for name := range present {
+		if !built[name] {
+			t.Errorf("%s: DIVERGENCE 2.3 lists it as present and the build does not have it", name)
+		}
+		if absent[name] {
+			t.Errorf("%s: DIVERGENCE 2.3 lists it in both columns of the table", name)
+		}
+	}
+	for name := range absent {
+		if built[name] {
+			t.Errorf("%s: DIVERGENCE 2.3 lists it as absent and the build ships it", name)
+		}
+		if _, ok := pending[name]; !ok {
+			t.Errorf("%s: DIVERGENCE 2.3 lists it as absent and it is not declared pending", name)
+		}
+	}
+
+	// And nothing SPEC 15.3 names may be missing from the table
+	// altogether, which is how a module comes to be neither claimed nor
+	// disclaimed.
+	for name := range specPlatformModules(t) {
+		if !present[name] && !absent[name] {
+			t.Errorf("%s: SPEC 15.3 names it and DIVERGENCE 2.3's table has it in neither column", name)
+		}
+	}
+	t.Logf("DIVERGENCE 2.3 lists %d present and %d absent", len(present), len(absent))
+}
+
+// ledgerPlatformColumns reads the two module columns of DIVERGENCE 2.3's
+// table. The row label is skipped: "Common Linux" carries no backticks,
+// but a row label that gained one would otherwise read as a module.
+func ledgerPlatformColumns(t *testing.T, doc string) (present, absent map[string]bool) {
+	t.Helper()
+	const heading = "### 2.3 Platform modules"
+	start := strings.Index(doc, heading)
+	if start < 0 {
+		t.Fatalf("%s has no section 2.3; this audit is reading a document it was not written for", ledgerFile)
+	}
+	body := doc[start+len(heading):]
+	if end := strings.Index(body, "\n### "); end > 0 {
+		body = body[:end]
+	}
+
+	present, absent = map[string]bool{}, map[string]bool{}
+	rows := 0
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+		cells := strings.Split(strings.Trim(line, "|"), "|")
+		if len(cells) != 3 || strings.Contains(cells[0], "---") {
+			continue
+		}
+		if strings.TrimSpace(cells[1]) == "Present" {
+			continue // the header
+		}
+		rows++
+		for _, name := range namesIn(cells[1]) {
+			present[name] = true
+		}
+		for _, name := range namesIn(cells[2]) {
+			absent[name] = true
+		}
+	}
+	if rows == 0 {
+		t.Fatalf("%s section 2.3 has no table rows; this audit has stopped checking anything", ledgerFile)
+	}
+	return present, absent
+}

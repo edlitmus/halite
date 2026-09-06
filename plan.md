@@ -417,16 +417,19 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 19 of SPEC 15.2**: `acl`, `apparmor`, `at`, `blockdev`,
-`data`, `kernelpkg`, `locale`, `logrotate`, `nfs`, `ps`, `reboot`,
-`selinux`, `shadow`, `state`, `sudo`, `swap`, `system`, `tls`, `tmpfs`.
+**Execution, 18 of SPEC 15.2**: `acl`, `at`, `blockdev`, `data`,
+`kernelpkg`, `locale`, `logrotate`, `nfs`, `ps`, `reboot`, `selinux`,
+`shadow`, `state`, `sudo`, `swap`, `system`, `tls`, `tmpfs`.
 
-**State, 15 of SPEC 15.5**: `acl`, `apparmor`, `at`, `iptables`,
-`kernelpkg`, `locale`, `logrotate`, `lvm`, `mac_defaults`, `nftables`,
-`pro`, `reboot`, `selinux`, `sudo`, `win_wua`.
+**State, 14 of SPEC 15.5**: `acl`, `at`, `iptables`, `kernelpkg`,
+`locale`, `logrotate`, `lvm`, `mac_defaults`, `nftables`, `pro`,
+`reboot`, `selinux`, `sudo`, `win_wua`.
 
-`hostname` and `ssh_known_hosts` have since shipped, which is what moved
-both counts.
+`hostname`, `ssh_known_hosts` and `apparmor` have since shipped, which
+is what moved both counts. `apparmor` moved three at once: SPEC names it
+in 15.2, in 15.5 and in 15.3's Debian row, so it is the only remaining
+item on this list that closes a platform gap as a side effect of closing
+a core one.
 
 Ranked by what the estate's own tree reaches for, and by what a migration
 is blocked on:
@@ -446,8 +449,14 @@ is blocked on:
    accepts, which pins whatever answered the day the tree first ran.
 3. **`system`**, `reboot`, `ps`, `status` depth. What an operator reaches
    for during an incident.
-4. **`selinux`**, `apparmor`, `iptables`, `nftables`, `sudo`, `acl`.
-   Platform-shaped and mostly Linux; see 2.3. `firewall` is struck: it
+4. **`selinux`**, `iptables`, `nftables`, `sudo`, `acl`. Platform-shaped
+   and mostly Linux; see 2.3. `apparmor` is struck: it ships, with seven
+   execution functions and the `apparmor.mode` state, and it closed
+   15.2, 15.5 and 15.3's Debian row together. `selinux` is the one left
+   whose shape it informs — the same question (what is the running
+   policy, and what does a state do about it) against a mechanism that
+   answers it entirely differently, so nothing here was built to be
+   shared between them until there is a second one to share with. `firewall` is struck: it
    ships as a virtual module with a ufw provider, which closed 15.2's
    execution module, 15.5's state and 15.3's `ufw` together. Its
    provider interface is shaped by the one provider it has, and
@@ -467,13 +476,13 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 47 of 65
+### 2.3 Platform modules: 46 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
 is the difference between a gap and a typo, and it is already done.
-Fifteen ship: `zfs`, `zpool`, the four Windows ones, `dpkg`, and **eight
-aliases**.
+Nineteen ship: `zfs`, `zpool`, the four Windows ones, `dpkg`, `debconf`,
+`netplan`, `apparmor`, and **nine aliases**.
 
 **The aliases answered the open question this section used to end with.**
 SPEC names both halves and both are true: 15.2's `pkg`, `service` and
@@ -501,7 +510,7 @@ what an operator is looking for.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 5 | **The estate is Ubuntu.** `dpkg`, `debconf` and `netplan` ship; `aptpkg` and `ufw` are aliases. `snap`, `pro`, `debbuild` and `apparmor` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
+| Debian and Ubuntu | 4 | **The estate is Ubuntu.** `dpkg`, `debconf`, `netplan` and `apparmor` ship; `aptpkg` and `ufw` are aliases. `snap`, `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
 | Common Linux | 11 | `systemd_service` is an alias. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
@@ -845,9 +854,11 @@ what each cost and what each decided.
 
 **Now — the estate's own blocker**
 
-1. **The Debian and Ubuntu platform row** (§2.3). Ten modules, and the
-   estate is Ubuntu. This is now the largest single block of work in the
-   document and the one the migration is actually blocked on.
+1. **The Debian and Ubuntu platform row** (§2.3). `snap`, `pro` and
+   `debbuild` remain of it; `apparmor` has since shipped and took
+   15.2's and 15.5's rows with it. The estate is Ubuntu, and this is
+   still what the migration is blocked on, but it is no longer the
+   largest block in the document — the Common Linux row is.
 
 **Then — phase 6 foundations**
 
