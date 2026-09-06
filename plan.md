@@ -304,6 +304,53 @@ The limit is worth stating: this checks data, not behaviour. Whether
 `sysrc` is the right way to read a FreeBSD hostname is a question for a
 FreeBSD runner, which is what found it.
 
+### 1.5 And four more, the first time anything compiled for tier 3
+
+SPEC 27.1's tier 3 — OpenBSD, NetBSD, Solaris and illumos, Linux on
+riscv64, ppc64le and s390x — promises "compiles and is published".
+Nothing had ever compiled for any of them: `TARGETS` in the Makefile
+listed the eight tier 1 and tier 2 platforms, so `build-all` enforced
+the tiers that were also the tiers somebody ran on, and the one tier
+whose entire content is a compilation promise was the one nothing
+compiled.
+
+Compiled for the first time on 2026-09-06: **four of the nine targets
+failed**, all four in `internal/bridge`'s resource limits, and both
+failures were real platform differences rather than typos — OpenBSD has
+no `RLIMIT_AS`, and Solaris and illumos have no `RLIMIT_NPROC` at all.
+DIVERGENCE 4.10 has the detail.
+
+**This is §1.3 and §1.4's defect a third time, in a third place.** Those
+two were fixtures forcing a branch the platform does not take; this is a
+build tag claiming platforms are alike when they are not. Same root:
+code that decides by platform can only be checked on the platform it
+decides for, and nobody was on these. It is also 4.4a exactly — macOS
+grouped with the BSDs for the width of `syscall.Rlimit`, tree did not
+compile there at all, found when somebody finally built for it.
+
+What changed:
+
+- The four targets build, and so does AIX, which is in no tier and was
+  fixed because leaving one platform uncompilable is how this arose.
+- `limitsAvailable` now reads the same declarations `Confine` applies,
+  so `sys.list_extensions` cannot report a limit as enforced that is
+  skipped, or the reverse. Before, it said all four limits were enforced
+  on every unix, which was a sentence rather than a consequence.
+- `TARGETS` carries all seventeen platforms, so `build-all` compiles and
+  vets each and `cross` publishes it — which is what tier 3 says. 98s
+  for the seventeen.
+- `internal/buildpolicy` reads SPEC 27.1's tier table and the Makefile's
+  target list and fails if they disagree in **either** direction. Each
+  tier's platform cell is matched in full, so any edit to that table
+  fails and lands in front of somebody who has to decide what it means
+  for the build. That is the part that lasts: a row quietly growing a
+  platform nothing compiles for is how this happened.
+
+The limit, again: compiling is what tier 3 promises and compiling is
+what is checked. Nothing has *run* on any of these seven platforms, and
+the `RLIMIT_DATA` mapping on OpenBSD is read from that platform's
+documented behaviour rather than watched taking effect.
+
 ---
 
 ## 2. Phase 5's real remainder: the module inventory
@@ -603,8 +650,9 @@ Unchanged since the last revision, and verified again here.
   dependency policy "has teeth: CI enforces it", and until now nothing
   did. `ci.yml` runs every leg of `make check` on push and on every pull
   request — `fmt-check`, `vet` and `policy` as one fast gate, then
-  `build-all` across all eight targets, the suite and the race detector
-  on Linux *and* Windows, `fips-test`, and the Salt differential that
+  `build-all` across all seventeen targets of SPEC 27.1, tier 3
+  included, the suite and the race detector on Linux, Windows, macOS and
+  FreeBSD, `fips-test`, and the Salt differential that
   SPEC 31 calls the primary correctness gate and that had been green by
   not running. The jobs are split by make target so a failure names the
   leg rather than the word "check".
@@ -620,6 +668,9 @@ Unchanged since the last revision, and verified again here.
   discuss.
 - Toolchain provenance — fetch by digest from an internal mirror — is not
   implemented.
+- **`cross` now publishes tier 3 too**, which is the second half of what
+  that tier promises. It is nine more binaries per release and nothing
+  has run any of them; see §1.5 for what that does and does not mean.
 
 **CI was the highest-leverage item in this document, and it is done.**
 The argument for it was never abstract. `internal/builtin` did not
@@ -838,8 +889,23 @@ run by hand anyway.
 
 Between them the two runners found five defects in a day: two on macOS
 (§1.3) and two more on FreeBSD, plus the audit in §1.4 that generalised
-them. Which is §1's argument for the fourth time, and the last time it
-can be made — there is no platform left with no automation.
+them. Which is §1's argument for the fourth time.
+
+~~**Compile for SPEC 27.1's tier 3.**~~ **Done**, and it was the fifth
+time. Nothing had ever built for OpenBSD, NetBSD, Solaris, illumos, or
+Linux on riscv64, ppc64le or s390x, because `TARGETS` listed only the
+platforms somebody already ran on — so the one tier whose whole promise
+is "compiles" was the one tier nothing compiled. Four of the nine
+targets failed on the first attempt (§1.5). `build-all` covers all
+seventeen now, and `internal/buildpolicy` fails if the Makefile and the
+tier table ever disagree again.
+
+That closes the *compilation* argument and not the running one. Seven
+platforms now compile on every change and no test has ever executed on
+any of them, which is a weaker claim than the four have and exactly the
+claim SPEC 27.1 makes for tier 3. If that is ever to become more, it
+needs hardware or an emulator per platform, and it belongs under
+"blocked on a decision" rather than here.
 
 **Blocked on a decision**
 

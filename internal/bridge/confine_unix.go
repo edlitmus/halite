@@ -22,6 +22,11 @@ import (
 // for any extension; the limits hold for a cooperating one.
 func Confine() {
 	apply := func(name string, resource int) {
+		// A limit this platform's kernel does not have is skipped
+		// rather than guessed at. See rlimit.go.
+		if resource == rlimitAbsent {
+			return
+		}
 		raw := os.Getenv(name)
 		if raw == "" {
 			return
@@ -39,10 +44,10 @@ func Confine() {
 		// running under the tighter one.
 		_ = syscall.Setrlimit(resource, &limit)
 	}
-	apply("HALITE_EXT_RLIMIT_AS", rlimitAS)
+	apply("HALITE_EXT_RLIMIT_AS", rlimitMemory.resource)
 	apply("HALITE_EXT_RLIMIT_CPU", syscall.RLIMIT_CPU)
 	apply("HALITE_EXT_RLIMIT_NOFILE", syscall.RLIMIT_NOFILE)
-	apply("HALITE_EXT_RLIMIT_NPROC", rlimitNPROC)
+	apply("HALITE_EXT_RLIMIT_NPROC", rlimitProcesses)
 }
 
 // setRlimit writes a limit into a syscall.Rlimit field of whatever width

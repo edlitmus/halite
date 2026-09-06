@@ -67,17 +67,22 @@ func lookupIDs(name, group string) (uint32, uint32, error) {
 	return uint32(uid), uint32(gid), nil
 }
 
-// limitsAvailable: setrlimit covers all four, and the child applies
-// them to itself.
+// limitsAvailable: setrlimit covers cpu and open files on every unix,
+// and the child applies them to itself. The other two are read from
+// this platform's own declaration rather than assumed, because not
+// every unix has both — see rlimit.go.
 //
-// RLIMIT_AS bounds virtual address space, which a garbage-collected
-// runtime reserves far more of than it commits — so the warning belongs
-// beside the unbounded default here and nowhere else.
+// Taking them from the same constants `Confine` uses is the point: a
+// limit reported as enforced and then skipped, or skipped and then
+// reported, is the failure this arrangement makes impossible.
 func limitsAvailable() limitSupport {
 	return limitSupport{
-		Memory: true, CPU: true, OpenFiles: true, Processes: true,
-		MemoryLabel:     "address space",
-		MemoryUnbounded: "address space unbounded (RLIMIT_AS kills a garbage-collected runtime)",
+		Memory:          rlimitMemory.resource != rlimitAbsent,
+		CPU:             true,
+		OpenFiles:       true,
+		Processes:       rlimitProcesses != rlimitAbsent,
+		MemoryLabel:     rlimitMemory.label,
+		MemoryUnbounded: rlimitMemory.unbounded,
 	}
 }
 
