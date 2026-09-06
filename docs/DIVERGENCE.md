@@ -1508,15 +1508,43 @@ with no error, no event and no log line. The reactions it never ran
 leave no trace anywhere at all — the failure is indistinguishable from a
 quiet estate.
 
-**It is recorded rather than fixed, and deliberately.** Making `Read`
-refuse a pruned offset changes what every follower does when it falls
-behind, including the API's event stream and any operator running
-`halite events`; the reactor would need somewhere to put the fact that
-it skipped, and "stop and say so" is only better than "skip silently" if
-something is listening. That is a decision about the reactor's
-durability guarantees rather than a bug fix, and it belongs in the same
-conversation as the reactor's own queue overflow, which drops the oldest
-and does say so, in three places.
+**This is an unimplemented requirement, not an open question.** The
+first version of this entry called it a decision somebody had to make.
+That was wrong, and SPEC 17.2 says so in as many words:
+
+> Subscribers register a set of tag globs and a starting position, which
+> may be `latest`, `earliest`, or a specific offset. **A subscriber that
+> falls behind is disconnected with an explicit `subscriber_lag` error**
+> rather than causing the bus to buffer without bound.
+>
+> Replay from an offset is supported, which makes a reactor restart
+> lossless and makes incident reconstruction possible. Salt's event bus
+> is lossy by construction, and every mature Salt estate has learned
+> this during an incident.
+
+So the behaviour is named, the error is named, and the paragraph's whole
+argument is that Salt loses events silently and this must not. Silently
+advancing a stale reader is the Salt behaviour with a different
+mechanism.
+
+**Checked rather than recalled**, against Salt's own source in the
+differential container, on 3007.1 and again on 3008.2: `salt/utils/event.py`
+has no `offset`, `replay`, `resume` or `backlog` — not as an
+implementation, not as a word. A Salt subscriber holds no position, so
+it cannot be stale. The comparable condition is a subscriber that cannot
+keep up, and ZeroMQ handles it by dropping at a high-water mark of 1000
+(`pub_hwm`, set on `SNDHWM` and `RCVHWM` in `salt/transport/zeromq.py`)
+without telling the subscriber. Unchanged between the two versions.
+
+**How it survived.** `subscriber_lag` exists in this build — as a
+*metric*. `halite_event_subscriber_lag_seconds` is registered, documented
+in metrics.md, and carries a p95 alert in the shipped Grafana dashboard.
+The observability half was built and the behaviour half was not, and a
+row with a metric against it reads as done. Nothing caught the
+difference because `internal/specaudit` holds module tables and counts to
+SPEC and not prose requirements like this one — the same shape as the
+tier 3 targets in 4.10, where the specification made a claim no test
+made.
 
 What the chaos scenario does now is assert the current behaviour and
 name it as the gap it is. The assertion is written so that fixing it

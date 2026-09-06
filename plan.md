@@ -674,9 +674,16 @@ Unchanged since the last revision, and verified again here.
 
   **It found two things on its first run.** A reader resuming from a
   pruned event-bus offset is silently skipped forward — 380 events,
-  measured — which is DIVERGENCE 4.12 and is recorded rather than fixed,
-  because refusing a stale offset changes what every follower does and
-  is a decision about the reactor's durability rather than a bug fix.
+  measured — which is DIVERGENCE 4.12. It is written down and not yet
+  fixed, but it is **not** an open decision: SPEC 17.2 names the
+  behaviour and names the error (`subscriber_lag`), and its whole
+  argument is that Salt loses events silently and this must not.
+  Checked against Salt 3007.1 and 3008.2 in the differential container:
+  `salt/utils/event.py` has no offset, replay or resume at all, and a
+  subscriber that cannot keep up is dropped at a high-water mark of
+  1000 without being told. Silently advancing a stale reader is the
+  Salt behaviour by another mechanism. `subscriber_lag` exists here as
+  a *metric* and not as the error, which is how it read as done.
   And the behaviour first written down for `hub restart mid-job` could
   not be tested as written, because stopping a hub *drains*: `Serve`
   waits for the batch goroutine, so a graceful stop never leaves the
@@ -927,11 +934,12 @@ what each cost and what each decided.
 3. Get the differential to compare *applied* results, in the container it
    already has, and in the job CI now runs it from (§3.4).
 4. ~~The chaos suite~~ — **done**, and it earned its place immediately
-   (§3.4). What is left of it is the two things it declined to decide:
-   whether a follower that falls behind the event bus should be refused
-   rather than silently advanced (DIVERGENCE 4.12), and what a reactor
-   should then do about it. Both are questions for §6 rather than
-   commits.
+   (§3.4). What it left behind is a commit rather than a question:
+   **`subscriber_lag`** (SPEC 17.2, DIVERGENCE 4.12). A follower whose
+   offset has been pruned is silently advanced, and the specification
+   already says it must be refused with a named error. The metric of
+   that name ships; the behaviour does not. What a reactor then does
+   with the refusal is the part that is still a §6 question.
 5. **Packaging** (§3.5). The reproducibility half of this item is done —
    `release.yml` compares two builders on every tag — and what is left
    is that there are no artifacts to publish: no nfpm config, no `.msi`,
