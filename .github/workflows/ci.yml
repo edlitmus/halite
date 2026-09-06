@@ -84,11 +84,8 @@ jobs:
   # arm64, so it is the first time this tree's tests have run on that
   # architecture anywhere.
   #
-  # FreeBSD is the development platform and is *not* here, because
-  # GitHub has no FreeBSD runner and the agent is .NET, so a self-hosted
-  # one is not straightforward either. It needs a VM inside a Linux
-  # runner or a second CI system; the plan carries it as its own item
-  # rather than pretending this matrix covers it.
+  # FreeBSD is not in this matrix because there is no runner to put it
+  # on; it has a job of its own further down, in a virtual machine.
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -292,9 +289,19 @@ jobs:
             echo "go.mod names no toolchain; this job reads it from there" >&2
             exit 1
           fi
-          fetch -q "https://go.dev/dl/${version}.freebsd-amd64.tar.gz" -o /tmp/go.tar.gz
-          tar -C /usr/local -xzf /tmp/go.tar.gz
-          /usr/local/go/bin/go version
+          # Into $HOME rather than /usr/local: the VM's account is not
+          # root, and asking for sudo would make this depend on how the
+          # image is built rather than on anything about FreeBSD.
+          #
+          # Under `toolchain/` rather than straight into $HOME, because
+          # the archive unpacks a directory called `go` and $HOME/go is
+          # where GOPATH already points. Putting a toolchain there would
+          # have it share a directory with the module cache it is about
+          # to populate.
+          mkdir -p "$HOME/toolchain"
+          fetch -q -o /tmp/go.tar.gz "https://go.dev/dl/${version}.freebsd-amd64.tar.gz"
+          tar -C "$HOME/toolchain" -xzf /tmp/go.tar.gz
+          "$HOME/toolchain/go/bin/go" version
 
       # Through `make`, unlike the Windows and macOS legs. FreeBSD's
       # make is bmake, which is the dialect this Makefile was written
@@ -305,7 +312,7 @@ jobs:
         shell: cpa.sh {0}
         run: |
           set -e
-          export PATH=/usr/local/go/bin:$PATH
+          export PATH="$HOME/toolchain/go/bin:$PATH"
           make test
 
   # The FIPS artifact set is a shipped deliverable, and a restriction
