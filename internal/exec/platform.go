@@ -27,7 +27,6 @@ type PendingModule struct {
 // that arrives cannot stay listed as pending and one that is added to
 // the specification cannot be quietly missed.
 var pendingPlatformModules = map[string]PendingModule{
-	"debconf":              {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"debbuild":             {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"apt_key":              {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"ufw":                  {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},

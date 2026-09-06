@@ -94,6 +94,7 @@ func New() *Registries {
 	registerSSHKnownHosts(r)
 	registerDpkg(r)
 	registerAliases(r)
+	registerDebconf(r)
 	return r
 }
 

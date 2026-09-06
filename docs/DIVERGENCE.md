@@ -415,8 +415,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **52 execution modules / 319 functions** and **34 state
-modules / 85 functions**.
+The build ships **53 execution modules / 322 functions** and **35 state
+modules / 86 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -555,7 +555,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-15 of 65 present — the rows below total 50 absent.
+16 of 65 present — the rows below total 49 absent.
 
 Eight of the fifteen are **aliases**, and they are new. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -585,7 +585,7 @@ ones, and they arrived because a Windows host became available: the gap
 tracks the hardware, not the intent. `dpkg` is the first of the Debian
 row, and the estate is Ubuntu.
 
-The 50 are declared as pending rather than simply missing. A name absent
+The 49 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -606,7 +606,7 @@ specification cannot be quietly missed.
 | Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` (all aliases) | `pf`, `jail` |
-| Debian, Ubuntu | `dpkg`, `aptpkg` (alias) | `debconf`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
+| Debian, Ubuntu | `dpkg`, `debconf`, `aptpkg` (alias) | `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
