@@ -556,9 +556,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-20 of 65 present — the rows below total 45 absent.
+21 of 65 present — the rows below total 44 absent.
 
-Nine of the twenty are **aliases**. SPEC names both
+Ten of the twenty-one are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -599,7 +599,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 45 are declared as pending rather than simply missing. A name absent
+The 44 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -619,7 +619,7 @@ specification cannot be quietly missed.
 |---|---|---|
 | Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
-| FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` (all aliases) | `pf`, `jail` |
+| FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (all aliases) | `jail` |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
@@ -3335,6 +3335,76 @@ rather than a pass on a disk nothing looked at. The first version of
 that file claimed every unix and broke the build for two of SPEC 27.1's
 tier 3 targets — 4.10's lesson, one working day later, caught by
 `build-all` exactly as intended.
+
+### 5.31 `pf`, and the second provider reshaping the interface
+
+`firewallProvider`'s own comment said this would happen:
+
+> **The interface is shaped by ufw, because ufw is the only provider.**
+> That is worth stating rather than pretending otherwise. A second
+> provider will probably reshape it: firewalld thinks in zones and
+> services, nftables and pf in a whole ruleset that is replaced at once
+> rather than a set of rules added one at a time, and neither maps
+> cleanly onto "allow this port from that address".
+
+`pf` is that second provider, and it went first — ahead of `iptables`
+and `nftables` — because plan §7's re-rank found the fleet is four
+FreeBSD hosts to one Ubuntu, so `firewall` shipping with a ufw provider
+and nothing else meant the only host that could use it was the only host
+that is not FreeBSD.
+
+Three things came out of it.
+
+**It manages an anchor, not `pf.conf`.** pf loads a ruleset;
+`pfctl -f /etc/pf.conf` replaces the whole of it. A configuration
+management system that owned that file would own every rule on the host
+— including the ones an operator wrote by hand — and would discard them
+on its first run. So halite loads into `anchor "halite"`, which
+`pfctl -a halite -f -` replaces without touching anything else, and the
+operator keeps pf.conf and decides where in the evaluation order the
+managed rules sit. That last part is a decision only they can make: pf
+is last-match-wins, so the anchor's position changes what it does.
+
+**The cost of that is the worst failure this module could have, so it is
+checked.** `pfctl -a halite -f -` succeeds whether or not pf.conf
+contains `anchor "halite"`. Without the reference the rules load,
+`pfctl -a halite -s rules` lists them back, and no packet is ever
+matched against them — a firewall reporting rules it is not enforcing,
+with everything looking correct. `Apply` reads pf.conf and refuses with
+the line to add rather than writing rules into the void. An *unreadable*
+pf.conf does not refuse: unreadable is not absent, and stopping a state
+on a technicality is not the same as stopping it on a fault.
+
+**`SetDefault` refuses, which is the interface reshaping.** ufw has a
+default policy per direction as a setting. pf has whatever the last
+matching rule of the ruleset says, which is a line in the file halite
+deliberately does not own. The refusal names where the answer lives —
+`block all` near the top of pf.conf — rather than pretending, and
+`firewall.status` reports no defaults on pf for the same reason: a guess
+presented as a fact is worse than nothing. That is the first place the
+virtual module's shape has failed to fit a provider, and it failed in
+the way the comment predicted, which is the useful outcome. It did not
+require changing the interface: a provider that cannot do something says
+so.
+
+**Every rule is `quick`.** pf is last-match-wins and the module's shape —
+and ufw's — is first-match-wins. Emitting `quick` makes the first match
+decisive, which is what somebody writing `firewall.allowed` means. It
+also makes a rule's effect independent of the anchor's order, which
+matters because the whole anchor is rewritten and sorted on every
+change: without `quick`, which rule won would depend on alphabetical
+order.
+
+**What is not established.** None of it has run against a real pf. The
+tests supply `pfctl`'s output and record what would be run; the rendered
+rules are checked against the spelling `pfctl -s rules` prints back,
+because this provider compares its own text with pf's, but nothing has
+watched pf accept one. Two of the load-bearing behaviours were checked
+by swapping in the wrong implementation and watching the tests fail:
+dropping `quick`, and skipping the anchor-reference check. CI has a
+FreeBSD runner, which could take this further than it has.
+
+`jail` remains the FreeBSD row's one genuine absence.
 
 ## 6. Everything else not started
 

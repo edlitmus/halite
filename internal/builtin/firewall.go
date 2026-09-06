@@ -49,6 +49,7 @@ type firewallProvider interface {
 
 var firewallProviders = []firewallProvider{
 	ufwProvider{},
+	pfProvider{},
 }
 
 // firewallStatus is what a provider reports about itself.

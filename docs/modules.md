@@ -38,6 +38,7 @@ table and says which of them the node in hand can use.
 | `freebsdpkg` | `pkg` | pkgng |
 | `mac_brew_pkg` | `pkg` | mac_brew_pkg |
 | `mac_service` | `service` | mac_service |
+| `pf` | `firewall` | pf |
 | `systemd_service` | `service` | systemd_service |
 | `ufw` | `firewall` | ufw |
 | `win_pkg` | `pkg` | chocolatey |

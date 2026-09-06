@@ -521,13 +521,13 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 45 of 65
+### 2.3 Platform modules: 44 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
 is the difference between a gap and a typo, and it is already done.
-Twenty ship: `zfs`, `zpool`, the four Windows ones, `dpkg`, `debconf`,
-`netplan`, `apparmor`, `snap`, and **nine aliases**.
+Twenty-one ship: `zfs`, `zpool`, the four Windows ones, `dpkg`,
+`debconf`, `netplan`, `apparmor`, `snap`, and **ten aliases**.
 
 **The aliases answered the open question this section used to end with.**
 SPEC names both halves and both are true: 15.2's `pkg`, `service` and
@@ -560,7 +560,7 @@ what an operator is looking for.
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
-| FreeBSD | 2 | **Four hosts of five.** `freebsdpkg`, `freebsd_service` and `freebsd_sysctl` are aliases; `pf` and `jail` are genuinely absent, and `pf` is the firewall on every one of them — `firewall` ships with a ufw provider and nothing else. §7 puts `pf` first. |
+| FreeBSD | 1 | **Four hosts of five.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases. `pf` shipped as the `firewall` module's second provider and was the first to reshape that interface — it refuses a default policy, because pf has none (DIVERGENCE 5.31). `jail` is the row's one genuine absence. |
 | SUSE | 1 | `zypperpkg`. |
 
 Note the overlap with 2.2: `iptables`, `nftables` and `lvm` are named in
@@ -954,14 +954,14 @@ place.
 
 **Now — the fleet this actually runs on**
 
-1. **`pf`** (§2.3, SPEC 15.3's FreeBSD row). The firewall on four of
-   five hosts, and genuinely absent: `firewall` ships as a virtual
-   module with a **ufw** provider and nothing else, so the only host
-   that can use it is the only host that is not FreeBSD. This also does
-   what `iptables` and `nftables` were ranked for — `pf` replaces a
-   whole ruleset at once rather than adding rules one at a time, which
-   is the shape most likely to reshape a provider interface currently
-   designed around its only provider.
+1. ~~**`pf`**~~ — **done**, the same day the re-rank put it first. It
+   manages an `anchor` rather than pf.conf, refuses to load rules into
+   an anchor pf.conf does not reference — which would report rules the
+   firewall never evaluates — and refuses a default policy, because pf
+   has none. That last is the `firewall` interface being reshaped by its
+   second provider, exactly as its own comment predicted, and it needed
+   no change to the interface: a provider that cannot do something says
+   so. DIVERGENCE 5.31.
 2. **Upgrade testing** (§3.4, SPEC 31). A hub at N with nodes at N−1 and
    N+1, job cache format migration, and certificate rotation across an
    upgrade. Not hypothetical here: rebuilding five hosts from source
