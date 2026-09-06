@@ -37,7 +37,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	// explain.
 	"apt_key": {Platform: "debian", When: "not planned: apt-key was removed in Debian 12 and Ubuntu 24.04; " +
 		"use `pkgrepo`, which writes the signed-by keyrings that replaced it"},
-	"snap":                 {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"pro":                  {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"yumpkg":               {Platform: "rhel", When: "phase 5, with the RHEL platform work"},
 	"dnfpkg":               {Platform: "rhel", When: "phase 5, with the RHEL platform work"},

@@ -519,13 +519,13 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 46 of 65
+### 2.3 Platform modules: 45 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
 is the difference between a gap and a typo, and it is already done.
-Nineteen ship: `zfs`, `zpool`, the four Windows ones, `dpkg`, `debconf`,
-`netplan`, `apparmor`, and **nine aliases**.
+Twenty ship: `zfs`, `zpool`, the four Windows ones, `dpkg`, `debconf`,
+`netplan`, `apparmor`, `snap`, and **nine aliases**.
 
 **The aliases answered the open question this section used to end with.**
 SPEC names both halves and both are true: 15.2's `pkg`, `service` and
@@ -553,7 +553,7 @@ what an operator is looking for.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 4 | **The estate is Ubuntu.** `dpkg`, `debconf`, `netplan` and `apparmor` ship; `aptpkg` and `ufw` are aliases. `snap`, `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
+| Debian and Ubuntu | 3 | **The estate is Ubuntu.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
 | Common Linux | 11 | `systemd_service` is an alias. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
@@ -897,11 +897,16 @@ what each cost and what each decided.
 
 **Now — the estate's own blocker**
 
-1. **The Debian and Ubuntu platform row** (§2.3). `snap`, `pro` and
-   `debbuild` remain of it; `apparmor` has since shipped and took
-   15.2's and 15.5's rows with it. The estate is Ubuntu, and this is
-   still what the migration is blocked on, but it is no longer the
-   largest block in the document — the Common Linux row is.
+1. **The Debian and Ubuntu platform row** (§2.3). `pro` and `debbuild`
+   remain of it. `apparmor` shipped and took 15.2's and 15.5's rows with
+   it; `snap` shipped and is the one the estate will actually reach for,
+   because Ubuntu ships real workloads that way and `pkg` cannot see any
+   of them. Neither of the two left is a migration blocker: `pro` needs
+   the FIPS question in §6 answered first — whether a Pro-enabled FIPS
+   node and a `GOFIPS140` build are one claim or two — and `debbuild`
+   belongs with the unbuilt packaging work in §3.5 rather than with the
+   migration. **So the Debian row is no longer the top of this list.**
+   The Common Linux row is the largest block now, at eleven.
 
 **Then — phase 6 foundations**
 

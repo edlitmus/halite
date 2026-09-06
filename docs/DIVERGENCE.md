@@ -415,8 +415,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **56 execution modules / 341 functions** and **38 state
-modules / 92 functions**.
+The build ships **57 execution modules / 347 functions** and **39 state
+modules / 94 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -555,9 +555,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-19 of 65 present — the rows below total 46 absent.
+20 of 65 present — the rows below total 45 absent.
 
-Nine of the nineteen are **aliases**. SPEC names both
+Nine of the twenty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -580,10 +580,10 @@ built" into "built, and fails when you call it", which is the worse of
 the two answers. `sys.list_aliases` reports the table and says which of
 them this node can use.
 
-Of the ten that are modules in their own right, four are the Windows
+Of the eleven that are modules in their own right, four are the Windows
 ones, and they arrived because a Windows host became available: the gap
-tracks the hardware, not the intent. Four are the Debian row — `dpkg`,
-`debconf`, `netplan` and `apparmor` — and the estate is Ubuntu.
+tracks the hardware, not the intent. Five are the Debian row — `dpkg`,
+`debconf`, `netplan`, `apparmor` and `snap` — and the estate is Ubuntu.
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -596,7 +596,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 46 are declared as pending rather than simply missing. A name absent
+The 45 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -617,7 +617,7 @@ specification cannot be quietly missed.
 | Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` (all aliases) | `pf`, `jail` |
-| Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `snap`, `pro` |
+| Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
@@ -3018,6 +3018,59 @@ while the enabled flag is world-readable, so an unprivileged
 It reports both facts separately rather than collapsing them, because
 the collapse would answer "is this node confined" with "no" on a node
 that is.
+
+### 5.28 `snap.installed` does not take a version, and `pkg.installed` does
+
+This is a deliberate difference from what an operator coming from `pkg`
+expects, and from what Salt's community snap module offers, so it is
+recorded here rather than left to be discovered.
+
+snapd refreshes snaps by itself — four times a day by default — and that
+cannot be turned off. It can be deferred, up to 60 days at a time, and
+no further. A state holding a snap at a version would therefore report
+the node as drifted after the first automatic refresh and on every run
+after it, forever, while being unable to do anything about it. The
+honest options were to refuse the argument or to hold the version with
+`--revision` and a hold that expires; the second is a promise this build
+would break on day 61.
+
+So `snap.installed` manages **presence and the tracked channel**, and
+refuses `version` with the reason. It is a declared parameter precisely
+so that it can be refused with one: undeclared, the signature answers
+"is not a parameter of this function", which reads as a typo — and a
+tree carrying `version:` over from a `pkg.installed` state is not a typo
+but an assumption that does not survive snapd.
+
+**`--classic` is declared in the tree or the install fails.** A classic
+snap runs with the host's own filesystem and devices; the confinement is
+not weakened but absent. snapd refuses to install one without the flag
+and says "repeat the command including --classic", which reads like a
+formality. The obvious convenience — catching that and retrying with the
+flag — would convert a confined install into an unconfined one on the
+store's say-so, with nothing in the tree recording the decision. It is
+not done, and the failure explains what the flag means rather than
+repeating snapd's wording.
+
+**Removal keeps the data unless told not to.** snapd saves a snapshot of
+a removed snap's data, and reinstalling restores it, so a tree that
+removes a snap in one state and installs it in another gets the old data
+back rather than a fresh install. `purge: true` discards it. The state's
+comment says which of the two happened on every run rather than leaving
+it to whoever reads the argument.
+
+**`snap list` is read by its header rather than by column position.**
+snapd has renamed and reordered that table: `Tracking` used to be
+`Channel`, `Publisher` used to be `Developer`, and they are in the other
+order. A parser taking the fourth field as the channel reads a publisher
+as one on an older node and reports every snap as tracking `canonical*`.
+A row whose field count does not match the header is skipped rather than
+guessed at.
+
+None of this has been run against a real snapd. The tests supply
+`snap list`'s output and record what would be run; whether `snap refresh
+--channel=` switches a channel the way this expects is a question for a
+node with snapd on it, which CI's Ubuntu runners have and this build
+does not yet ask them.
 
 ## 6. Everything else not started
 
