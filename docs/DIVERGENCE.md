@@ -612,8 +612,18 @@ specification cannot be quietly missed.
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | `mac_brew_pkg`, `mac_service` (aliases) | `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_defaults`, `mac_keychain`, `mac_assistive` |
 
-Two notes on this table:
+Notes on this table:
 
+- **`apt_key` is not pending, it is declined.** Every other entry here
+  says "not yet"; this one says "not this". `apt-key` was deprecated in
+  Debian 11 and removed in Debian 12 and Ubuntu 24.04, so there is no
+  tool left for the module to drive, and `pkgrepo` already writes the
+  `signed-by` keyrings that replaced it. It stays in the table because
+  SPEC 15.3 still names it and a name the specification has and the
+  build does not is exactly what the table exists to explain — but its
+  reason says the module is not coming, rather than implying a date.
+  Building it would have meant driving a binary the estate's own
+  platform does not install.
 - `zfs` and `zpool` used to be filed under "Common Linux" in SPEC 15.3,
   which was wrong: they were implemented and verified on FreeBSD, where
   ZFS is native, and the placement said a FreeBSD node could not manage

@@ -354,7 +354,7 @@ what an operator is looking for.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 6 | **The estate is Ubuntu.** `dpkg` and `debconf` ship; `aptpkg` and `ufw` are aliases. `apt_key`, `netplan`, `snap`, `pro`, `debbuild`, `apparmor` do not. |
+| Debian and Ubuntu | 6 | **The estate is Ubuntu.** `dpkg` and `debconf` ship; `aptpkg` and `ufw` are aliases. `netplan`, `snap`, `pro`, `debbuild` and `apparmor` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
 | Common Linux | 11 | `systemd_service` is an alias. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |

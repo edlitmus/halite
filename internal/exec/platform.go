@@ -27,8 +27,16 @@ type PendingModule struct {
 // that arrives cannot stay listed as pending and one that is added to
 // the specification cannot be quietly missed.
 var pendingPlatformModules = map[string]PendingModule{
-	"debbuild":             {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
-	"apt_key":              {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
+	"debbuild": {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
+	// Not "not yet" but "not this": apt-key was deprecated in Debian 11,
+	// removed in Debian 12 and Ubuntu 24.04, and there is no tool left
+	// for this module to drive. `pkgrepo` writes the `signed-by`
+	// keyrings that replaced it. Kept in this table rather than dropped
+	// because SPEC 15.3 still names it, and a name the specification has
+	// and the build does not is exactly what this table exists to
+	// explain.
+	"apt_key": {Platform: "debian", When: "not planned: apt-key was removed in Debian 12 and Ubuntu 24.04; " +
+		"use `pkgrepo`, which writes the signed-by keyrings that replaced it"},
 	"netplan":              {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"apparmor":             {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"snap":                 {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
