@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -72,34 +73,67 @@ func TestAShortNameAndAQualifiedOneAreTheSameNode(t *testing.T) {
 	}
 }
 
-// The persistent name is read out of the file, and a node that has never
-// had one configured reads as empty rather than as an error.
-func TestThePersistentHostnameIsReadFromTheFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "hostname")
+// hostnameFixture points the persistent name wherever this platform
+// keeps it, and returns the function that writes one there.
+//
+// FreeBSD keeps it in rc.conf and is read through `sysrc`; everything
+// else keeps it in /etc/hostname. The first version of these tests
+// redirected the file and nothing else, so on FreeBSD — the platform
+// this project is developed on — they exercised a branch the module
+// does not take there, and reported a pass for it. That went unseen
+// until FreeBSD had CI, because the file branch is what Linux takes and
+// Windows skips the module entirely.
+func hostnameFixture(t *testing.T) (c *exec.Context, where string, set func(name string)) {
+	t.Helper()
+	c = newCtx(false)
+
+	if runtime.GOOS == "freebsd" {
+		runner := &exec.RecordingRunner{
+			// Unset is a non-zero exit, which is a node that has never
+			// had one configured rather than an error.
+			Responses: map[string]exec.Result{"sysrc -n hostname": {Code: 1}},
+		}
+		c.Runner = runner
+		return c, "rc.conf", func(name string) {
+			runner.Responses["sysrc -n hostname"] = exec.Result{Stdout: name + "\n"}
+		}
+	}
+
+	path := filepath.Join(t.TempDir(), "hostname")
 	old := EtcHostnamePath
 	EtcHostnamePath = path
 	t.Cleanup(func() { EtcHostnamePath = old })
+	return c, path, func(name string) {
+		if name == "" {
+			_ = os.Remove(path)
+			return
+		}
+		writeFile(t, path, "# set by the installer\n\n"+name+"\n")
+	}
+}
 
-	c := newCtx(false)
+// The persistent name is read from wherever this platform keeps it, and
+// a node that has never had one configured reads as empty rather than as
+// an error.
+func TestThePersistentHostnameIsRead(t *testing.T) {
+	c, wantWhere, set := hostnameFixture(t)
 
-	// Absent is empty and not an error: that is the difference the
-	// state closes, so it has to be readable rather than fatal.
+	// Unset is empty and not an error: that is the difference the state
+	// closes, so it has to be readable rather than fatal.
 	name, where, err := persistentHostname(c)
 	if err != nil {
-		t.Fatalf("an absent file was an error: %v", err)
+		t.Fatalf("an unset persistent hostname was an error: %v", err)
 	}
 	if name != "" {
-		t.Errorf("an absent file read as %q", name)
+		t.Errorf("an unset persistent hostname read as %q", name)
 	}
-	if where != path {
-		t.Errorf("the file was reported as %q", where)
+	if where != wantWhere {
+		t.Errorf("it was reported as coming from %q, want %q", where, wantWhere)
 	}
 
-	// A comment and a blank line are not the name.
-	if err := os.WriteFile(path, []byte("# set by the installer\n\nweb1.example\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	// And once it is set it reads back. On a unix that also means a
+	// comment and a blank line in the file are not the name.
+	set("web1.example")
 	name, _, err = persistentHostname(c)
 	if err != nil {
 		t.Fatal(err)
@@ -133,46 +167,43 @@ func TestTheHostnameStateRefusesOnWindows(t *testing.T) {
 // The state reports the two halves separately, because which one was
 // wrong is what an operator needs to know.
 func TestTheHostnameStateReportsWhichHalfWasWrong(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("hostname.system is unix only; see TestTheHostnameStateRefusesOnWindows")
-	}
-	dir := t.TempDir()
-	path := filepath.Join(dir, "hostname")
-	old := EtcHostnamePath
-	EtcHostnamePath = path
-	t.Cleanup(func() { EtcHostnamePath = old })
+	skipOffPlatform(t, unixOnly)
+	c, where, set := hostnameFixture(t)
 
 	running, err := runningHostname()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// The file says something else, and the running name is already
-	// what the state asks for. Only the file should be in the changes,
-	// and the comment should say so — this is the hand-renamed node
-	// that would have gone back at the next boot.
-	if err := os.WriteFile(path, []byte("something-else\n"), 0o644); err != nil {
+	// The persistent name says something else, and the running name is
+	// already what the state asks for. Only the persistent half should
+	// be in the changes — this is the hand-renamed node that would have
+	// gone back at the next boot.
+	set("something-else")
+
+	c.Test = true
+	r := New()
+	res, err := r.States.Call(c, "hostname.system", value.MapOf("name", running))
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	r := New()
-	res := run(t, r, "hostname.system", value.MapOf("name", running), true)
 	if !res.HasChanges() {
 		t.Fatalf("no change was reported when the file disagreed: %+v", res)
 	}
 	if _, ok := res.Changes.Get("running"); ok {
 		t.Errorf("the running name was reported as changing, and it already matched: %+v", res.Changes)
 	}
-	if _, ok := res.Changes.Get(path); !ok {
-		t.Errorf("the file was not reported as changing: %+v", res.Changes)
+	if _, ok := res.Changes.Get(where); !ok {
+		t.Errorf("the persistent name was not reported as changing: %+v", res.Changes)
 	}
 
 	// And with both already right, nothing changes and the state says
-	// so rather than rewriting a file that is correct.
-	if err := os.WriteFile(path, []byte(running+"\n"), 0o644); err != nil {
+	// so rather than rewriting what is already correct.
+	set(running)
+	res, err = r.States.Call(c, "hostname.system", value.MapOf("name", running))
+	if err != nil {
 		t.Fatal(err)
 	}
-	res = run(t, r, "hostname.system", value.MapOf("name", running), true)
 	if res.HasChanges() {
 		t.Errorf("a converged node reported changes: %+v", res.Changes)
 	}
