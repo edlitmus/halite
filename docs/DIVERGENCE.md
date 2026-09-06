@@ -845,6 +845,13 @@ restricted functions. What is written down now is the property in each
 case, because a count in prose goes stale the first time the thing is
 added to and nobody re-reads the sentence.
 
+The last three rows are SPEC 27.1's tier 3, and "compiles" is the whole
+of what that tier promises. Four of the nine targets in them did not
+compile at all until 2026-09-06 — both OpenBSD architectures, Solaris
+and illumos — which 4.10 records. All seventeen targets are in
+`build-all` now, so that column is checked on every change rather than
+asserted here.
+
 | Platform | Compiles | Unit tests run | Verified against a real system |
 |---|---|---|---|
 | FreeBSD amd64 | yes | yes, and on every change — a QEMU virtual machine on a Linux runner, 1m44s for the suite; the race detector is left off it deliberately | yes — grains, highstate, drift reconvergence, requisites |
@@ -852,6 +859,9 @@ added to and nobody re-reads the sentence.
 | Linux arm64 | yes | no — but macOS in CI is arm64, so the platform-neutral code now runs on that architecture somewhere | no |
 | macOS | yes, since 2026-08-29, and built natively on one | yes, on every change — macos-15 (arm64) in CI, the suite and the race detector | no |
 | Windows | yes | yes, natively on Windows 11 — every package, no skips | yes — grains from the registry and Win32, the file states, `cmd`, the Chocolatey provider, the job-object extension sandbox |
+| OpenBSD, NetBSD amd64 and arm64 | yes, since 2026-09-06, and vetted with the tests — never before that | no | no |
+| Solaris, illumos amd64 | yes, since 2026-09-06, and vetted with the tests — never before that | no | no |
+| Linux riscv64, ppc64le, s390x | yes, and on every change | no | no |
 
 ### 4.0 Where each platform keeps its files
 
@@ -1344,6 +1354,70 @@ overwrote the first. Both carry a monotonic sequence now. The second was
 found by inspection rather than by a test, and it is the more serious of
 the two: silent loss in the mechanism whose whole purpose is that an
 outage delays returns rather than losing them.
+
+### 4.10 What compiling for tier 3 established
+
+SPEC 27.1 puts OpenBSD, NetBSD, Solaris and illumos, and Linux on
+riscv64, ppc64le and s390x in tier 3, whose whole promise is "compiles
+and is published". Nothing had ever compiled for any of them. The
+Makefile's `TARGETS` had eight entries — the tier 1 and tier 2
+platforms — so `build-all` checked the claim it was not making and
+skipped the one it was.
+
+Compiled on 2026-09-06 for the first time: **four of the nine tier 3
+targets did not build at all**, and had not for as long as the extension
+sandbox has existed. Every failure was in `internal/bridge`'s resource
+limits, and each was a real difference between the platforms rather than
+a typo:
+
+- **OpenBSD has no `RLIMIT_AS`.** `rlimit_bsd.go` claimed darwin,
+  freebsd, netbsd, openbsd and dragonfly in one build tag on the
+  strength of the BSDs spelling `RLIMIT_NPROC` alike. OpenBSD bounds
+  memory with `RLIMIT_DATA`, which anonymous `mmap` counts against there
+  and does not on Linux or the other BSDs — a real limit, but not the
+  same limit, so the number an operator would choose differs.
+  `Describe` now says "data segment" there rather than "address space",
+  because saying the wrong one is how somebody sets a bound that does
+  not do what they read.
+- **Solaris and illumos have no `RLIMIT_NPROC` at all.** They bound
+  process counts with resource controls — `project.max-lwps` and the
+  zone's equivalent — which an operator sets on the project or the zone
+  and a process cannot set on itself. There is nothing `Confine` can do,
+  so it does nothing and `sys.list_extensions` says the limit is not
+  enforced here. AIX is grouped with them: Go's `syscall` carries no
+  `RLIMIT_NPROC` for it either, and declaring a limit nobody has watched
+  take effect would be worse than declaring none. AIX is in no tier and
+  was fixed anyway, because leaving one platform uncompilable is how
+  this was arrived at.
+
+This is the same shape as 4.4a, where macOS was grouped with the BSDs
+for the width of `syscall.Rlimit` and the tree did not compile there at
+all. A build tag is a claim about which platforms are alike, and the
+platform nobody compiles for is the platform the claim is wrong about.
+
+The fix that matters is not the four files. It is that
+`limitsAvailable` now reads the same two declarations `Confine` applies,
+so a limit reported as enforced and then skipped — or skipped and then
+reported — is no longer expressible. Before, the description said all
+four limits were enforced on every unix, which was a sentence and not a
+consequence of anything.
+
+`TARGETS` now carries all seventeen platforms of SPEC 27.1, so
+`build-all` compiles and vets each one, and `cross` publishes it —
+which is what tier 3 says. `internal/buildpolicy` reads the tier table
+out of SPEC 27.1 and the target list out of the Makefile and fails if
+they disagree in either direction: a platform the specification promises
+and the build does not compile, or a target the build carries and no
+tier covers. The platform cell of each tier row is matched in full, so
+any edit to that table fails the test and puts the change in front of
+somebody who has to decide what it means for the build. A row that
+quietly grew a platform nothing compiles for is how this happened.
+
+What this does **not** establish is that halite works on any of these.
+Compiling is what tier 3 promises and compiling is what is now checked.
+Nothing has run on OpenBSD, NetBSD, Solaris, illumos, or on riscv64,
+ppc64le or s390x — the `RLIMIT_DATA` mapping in particular is read from
+OpenBSD's documented behaviour and has not been watched take effect.
 
 
 ## 5. Test coverage against SPEC 31

@@ -50,8 +50,19 @@ DEV_ENV     = CGO_ENABLED=0
 FIPS_MODULE ?= v1.0.0
 FIPS_ENV     = $(RELEASE_ENV) GOFIPS140=$(FIPS_MODULE)
 
-TARGETS = linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
+# Every platform SPEC 27.1 puts in a support tier, tier 3 included --
+# whose whole promise is "compiles and is published". That promise went
+# unchecked until it was checked: four of the nine tier 3 targets did
+# not compile at all, every one of them in internal/bridge's resource
+# limits, and the specification had been claiming otherwise for as long
+# as it had said it. internal/buildpolicy now fails if this list and
+# that table drift apart again.
+TIER12_TARGETS = linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
 	darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
+	illumos/amd64 solaris/amd64 \
+	linux/riscv64 linux/ppc64le linux/s390x
+TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
 .PHONY: all build test race vet cover check release cross clean tidy vendor policy fmt \
 	fips fips-cross fips-verify fips-test \
