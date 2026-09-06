@@ -72,18 +72,30 @@ jobs:
           cache: true
       - run: make build-all
 
-  # The suite, on both platforms that have ever run it.
+  # The suite, on every platform a hosted runner exists for.
   #
   # Windows is not a formality here. The first native run failed 80
   # tests across 12 packages, and three of those were defects on every
   # platform that only a system without unlink-while-open could show.
+  #
+  # macOS had never run the suite at all when it was added: DIVERGENCE
+  # 4.x recorded it as compiling and nothing more, which is the exact
+  # profile Windows had before it yielded four defects. It is also
+  # arm64, so it is the first time this tree's tests have run on that
+  # architecture anywhere.
+  #
+  # FreeBSD is the development platform and is *not* here, because
+  # GitHub has no FreeBSD runner and the agent is .NET, so a self-hosted
+  # one is not straightforward either. It needs a VM inside a Linux
+  # runner or a second CI system; the plan carries it as its own item
+  # rather than pretending this matrix covers it.
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022]
+        os: [ubuntu-24.04, windows-2022, macos-15]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -130,6 +142,20 @@ jobs:
           CGO_ENABLED: 0
         run: .github/run-as-standard-user.ps1 test -count=1 ./...
 
+      # macOS does not go through make either, for a different reason
+      # than Windows: Apple ships GNU Make 3.81, the last GPLv2 release,
+      # and this Makefile uses `!=` shell assignment, which GNU make
+      # gained in 4.0. `make test` there would not fail loudly — it
+      # would misparse the version variables and carry on — so it is
+      # not used. Installing a newer make through Homebrew is the
+      # alternative, and it is more moving parts than the one line the
+      # target expands to.
+      - name: test (macos)
+        if: runner.os == 'macOS'
+        env:
+          CGO_ENABLED: 0
+        run: go test -count=1 ./...
+
   # The race detector, on every change rather than when somebody
   # remembers. It has been run on FreeBSD and on Linux for a long time;
   # what it had never been is *frequent*, and the two races it found on
@@ -138,9 +164,11 @@ jobs:
   # about one run in eight on Linux and had never lost on Windows. A
   # single green run says less than it looks like it does.
   #
-  # Windows is the exception to "has been run": it had never run this
+  # Windows was the exception to "has been run": it had never run this
   # leg at all, because CGO_ENABLED=1 needs a compiler the image does
-  # not put on PATH by default.
+  # not put on PATH by default. macOS is the second, and it needs no
+  # provisioning -- the image ships clang, and Go supports the detector
+  # on darwin/arm64.
   #
   # `race` sets CGO_ENABLED=1 on purpose: the detector is unavailable
   # with cgo off, and a job that ran without it would report nothing it
@@ -153,7 +181,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022]
+        os: [ubuntu-24.04, windows-2022, macos-15]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -189,6 +217,17 @@ jobs:
         env:
           CGO_ENABLED: 1
         run: .github/run-as-standard-user.ps1 test -count=1 -race ./...
+
+      # Asserted the same way the Windows leg's compiler is, for the
+      # same reason: cgo silently off would run this whole job without
+      # the detector and report a pass that checked nothing.
+      - name: race (macos)
+        if: runner.os == 'macOS'
+        env:
+          CGO_ENABLED: 1
+        run: |
+          cc --version >/dev/null
+          go test -count=1 -race ./...
 
   # The FIPS artifact set is a shipped deliverable, and a restriction
   # that only holds in the build nobody runs locally is a restriction

@@ -716,12 +716,27 @@ what each cost and what each decided.
 
 **In parallel, cheap and independent**
 
-7. **Run the suite on macOS and FreeBSD.** Windows found three
+7. **Run the suite on FreeBSD.** ~~and macOS~~ — macOS is done, and the
+   claim that struck it from item 1 was wrong.
+
+   This item used to say "neither is a GitHub-hosted runner, so neither
+   is covered". **macOS is one**, and has been all along; the sentence
+   was written about FreeBSD and let macOS ride along without being
+   checked. It is now in the `test` and `race` matrices, which also
+   makes it the first time this tree's tests have run on arm64
+   anywhere.
+
+   FreeBSD really is not one. GitHub hosts Ubuntu, Windows and macOS,
+   and the runner agent is .NET, so a self-hosted FreeBSD runner is not
+   a straightforward answer either. The two real options are a FreeBSD
+   VM inside a Linux runner, or a second CI system with native support.
+   That is a decision about infrastructure rather than a morning's
+   work, which is why it stays an item.
+
+   The reason to want both is §1 and §1.2: Windows found three
    cross-platform defects in one afternoon and a fourth the next day,
-   and the race detector found three more the first time it ran; there
-   is no reason to think those two hold none (§1, §1.2). Neither is a
-   GitHub-hosted runner, so neither is covered by what was just built —
-   which is the honest limit of item 1.
+   and the race detector found three more. macOS had never run the
+   suite at all, which is the profile Windows had.
 
 **Blocked on a decision**
 
