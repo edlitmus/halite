@@ -114,11 +114,13 @@ events forever; and a grain provider that timed out was waited out for 61
 seconds against a 300ms bound. None of these was a Windows bug. They were
 bugs that only a platform without unlink-while-open could show.
 
-**The lesson generalises.** macOS builds and has providers, and its test
-suite has never been run there either. FreeBSD is the development
-platform and its five modules are unbuilt. Linux arm64 has never run the
-suite. Every one of those is the same shape of risk this was, and the
-cost of finding out is one afternoon each.
+**The lesson generalises, and did.** macOS built and had providers and
+had never run the suite; it runs on every change now, and found two
+defects within five minutes of a runner existing — see §1.3. FreeBSD is
+the development platform, has run the suite for a long time, and has no
+CI because GitHub hosts no runner for it. Linux arm64 has still never
+run it, though macOS in CI is arm64, so the platform-neutral code now
+runs on that architecture somewhere.
 
 **What Windows still lacks** is the module set, not the platform work:
 `win_dacl`, `win_service`, `win_registry` and `win_task` ship; the other
@@ -203,6 +205,41 @@ argument to a measurement.
 **§7's remaining platforms should be read that way too.** macOS has
 never run the suite and FreeBSD has, so they are not the same item: the
 first is 4.6's kind of risk, and the second is this section's.
+
+### 1.3 And two more, five minutes after macOS had a runner
+
+macOS is a GitHub-hosted runner. An earlier revision of §7 said it was
+not — the sentence was written about FreeBSD and macOS was allowed to
+ride along in it unchecked, which is §1.2's mistake made a second time
+about a second thing. It costs two lines in the matrix, and it is arm64,
+so it is also the first time these tests have run on that architecture.
+
+Both findings are in tests rather than modules, and both are the same
+shape as the sentence that delayed them: **a guard written for the one
+platform anybody had run.**
+
+1. **Seven zpool tests fell through a Windows-shaped skip.** It read `if
+   runtime.GOOS == "windows"`, which is true of the platform it was
+   written on and says nothing about macOS — neither Windows nor a ZFS
+   platform, so the registry refused the states correctly and the tests
+   were not expecting to be refused. It asks whether this node is one of
+   the platforms `zfsPlatforms` declares now, rather than naming one it
+   is not.
+2. **The timezone fixture could not converge on darwin.** It redirects
+   the zone files and blanks `Lookup` so `setZone` writes them rather
+   than reaching for systemd; darwin takes neither path, driving
+   `systemsetup`, which the test mocks. Nothing moved the link the
+   reader reads, so the state could not have converged however correct
+   it was — and it *is* correct: `zoneFromPath` takes the last
+   `/zoneinfo/` in a target, which is what makes macOS's
+   /var/db/timezone path parse. The fixture was what stood between the
+   module and any evidence of that, which is the more insidious failure
+   because it looks like coverage.
+
+FreeBSD is the platform this now leaves uncovered, and it is a harder
+problem than macOS was: GitHub hosts no FreeBSD runner and the agent is
+.NET, so self-hosting is not the straightforward answer either. It needs
+a VM inside a Linux runner or a second CI system. §7 carries it.
 
 ---
 
