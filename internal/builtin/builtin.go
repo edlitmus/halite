@@ -98,6 +98,7 @@ func New() *Registries {
 	registerFirewall(r)
 	registerNetplan(r)
 	registerAppArmor(r)
+	registerSnap(r)
 	return r
 }
 
