@@ -14,10 +14,25 @@ import (
 
 // SysctlConfPath is where a persisted sysctl setting is written. It is a
 // variable so a test can point it somewhere harmless.
-var SysctlConfPath = defaultSysctlConf()
+var SysctlConfPath = sysctlConfFor(runtime.GOOS)
 
-func defaultSysctlConf() string {
-	if runtime.GOOS == "linux" {
+// sysctlConfFor is the path for a named platform rather than for the
+// running one.
+//
+// Taking the platform as an argument is what makes it checkable from
+// anywhere, which a bare `if runtime.GOOS == "linux"` is not: the branch
+// nobody is running is the branch nobody can assert. internal/config
+// already works this way — `RootFor`, `VarPathFor`, `RunPathFor` — and
+// it does because a Windows path layout that was never checked from
+// another host put a node's configuration and enrollment key in
+// `\etc\halite` off the root of whichever drive it started in.
+//
+// Linux has a drop-in directory and the rest do not. Writing into
+// /etc/sysctl.conf on a systemd node works but puts an estate's setting
+// in the file the distribution also edits, which is the file an upgrade
+// argues with.
+func sysctlConfFor(goos string) string {
+	if goos == "linux" {
 		return "/etc/sysctl.d/99-halite.conf"
 	}
 	return "/etc/sysctl.conf"

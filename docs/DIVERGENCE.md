@@ -847,7 +847,7 @@ added to and nobody re-reads the sentence.
 
 | Platform | Compiles | Unit tests run | Verified against a real system |
 |---|---|---|---|
-| FreeBSD amd64 | yes | yes | yes — grains, highstate, drift reconvergence, requisites |
+| FreeBSD amd64 | yes | yes, and on every change — a QEMU virtual machine on a Linux runner, 1m44s for the suite; the race detector is left off it deliberately | yes — grains, highstate, drift reconvergence, requisites |
 | Linux amd64 | yes | yes, under emulation — all but three packages, named in 4.1 | yes — a node enrolled with a hub, highstate applied, under systemd (Ubuntu; see 4.5) |
 | Linux arm64 | yes | no — but macOS in CI is arm64, so the platform-neutral code now runs on that architecture somewhere | no |
 | macOS | yes, since 2026-08-29, and built natively on one | yes, on every change — macos-15 (arm64) in CI, the suite and the race detector | no |
