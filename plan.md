@@ -241,6 +241,69 @@ problem than macOS was: GitHub hosts no FreeBSD runner and the agent is
 .NET, so self-hosting is not the straightforward answer either. It needs
 a VM inside a Linux runner or a second CI system. §7 carries it.
 
+### 1.4 What FreeBSD found, and the audit that came out of it
+
+FreeBSD went into CI in a QEMU virtual machine on a Linux runner,
+because GitHub hosts no FreeBSD runner and Cirrus CI — which ran native
+FreeBSD and was what projects in this position used — stopped running
+jobs in June 2026. The prediction was that emulation would make it too
+slow for a pull request. It runs the suite in **1m44s**, faster than the
+Windows leg, so that was wrong; only the race detector is left off it,
+because the detector's own slowdown multiplied by emulation's is a
+different proposition.
+
+It found two things in its first green run, and the second is the one
+that matters:
+
+1. The virtual machine's account is not root, so a toolchain unpacked
+   into `/usr/local` failed. Environmental.
+2. **`hostname`'s tests had never run FreeBSD's branch.**
+   `persistentHostname` reads rc.conf through `sysrc` there and
+   /etc/hostname everywhere else; the tests redirected the file and
+   nothing else. Linux took the file branch and passed, Windows skipped
+   the module, and FreeBSD — the only platform with a `sysrc`, and the
+   one this project is developed on — had no automation. The module's
+   FreeBSD path had no test at all, behind a test that looked like one.
+
+**That is the same defect as §1.3's macOS timezone fixture**, one week
+apart: a fixture that forces one code path on a platform that takes
+another, passing while asserting nothing. Two platforms, two fixtures,
+one mistake — which is a pattern rather than a coincidence, so the rest
+of the platform-branching code was audited rather than left for the next
+runner to find.
+
+**The audit's finding is about shape, not about any one module.** A
+decision made from `runtime.GOOS` can only be checked on the platform it
+decides for, so with four platforms every branch but one is unreachable
+from any given host. `internal/config` solved this before —
+`RootFor(goos)`, `VarPathFor(goos, kind)` take the platform as an
+argument, after a layout that was never checked from another host put a
+node's configuration and enrollment key in `\etc\halite` off whichever
+drive it started on. The modules had not followed it.
+
+What changed:
+
+- `sysctlConfFor(goos)` replaces a bare `if runtime.GOOS == "linux"`,
+  and six platforms are asserted from wherever the suite runs.
+- `hashLocations` was already a table keyed by platform and **nothing
+  asserted it**. Its field index is now pinned per platform: a wrong one
+  reads a UID or a date, compares it against a password hash, never
+  matches, and so resets the password on every run — on a platform
+  nobody develops on, reporting a change rather than failing.
+- `pickAccountTool` had no test at all. Its fallback — the branch a
+  minimal container takes — is now checked through an injected
+  `Lookup`, from any host.
+- Every platform *name* in every signature is checked against the set Go
+  actually has: 194 declarations. A typo there produces a module that
+  refuses everywhere, and on all but one platform the refusal is what a
+  reader would expect to see anyway.
+- A refusal has to name both the platform the node is on and the ones
+  the module runs on.
+
+The limit is worth stating: this checks data, not behaviour. Whether
+`sysrc` is the right way to read a FreeBSD hostname is a question for a
+FreeBSD runner, which is what found it.
+
 ---
 
 ## 2. Phase 5's real remainder: the module inventory
@@ -753,27 +816,30 @@ what each cost and what each decided.
 
 **In parallel, cheap and independent**
 
-7. **Run the suite on FreeBSD.** ~~and macOS~~ — macOS is done, and the
-   claim that struck it from item 1 was wrong.
+~~**Run the suite on macOS and FreeBSD.**~~ **Both done**, and this item
+was wrong twice before it closed.
 
-   This item used to say "neither is a GitHub-hosted runner, so neither
-   is covered". **macOS is one**, and has been all along; the sentence
-   was written about FreeBSD and let macOS ride along without being
-   checked. It is now in the `test` and `race` matrices, which also
-   makes it the first time this tree's tests have run on arm64
-   anywhere.
+It said "neither is a GitHub-hosted runner, so neither is covered".
+**macOS is one**, and always was; the sentence was written about FreeBSD
+and let macOS ride along unchecked. macOS is in the `test` and `race`
+matrices now, and being arm64 it is also the first time this tree's
+tests have run on that architecture.
 
-   FreeBSD really is not one. GitHub hosts Ubuntu, Windows and macOS,
-   and the runner agent is .NET, so a self-hosted FreeBSD runner is not
-   a straightforward answer either. The two real options are a FreeBSD
-   VM inside a Linux runner, or a second CI system with native support.
-   That is a decision about infrastructure rather than a morning's
-   work, which is why it stays an item.
+Then it said FreeBSD needed "a decision about infrastructure rather than
+a morning's work", on the reasoning that GitHub hosts no runner for it
+and emulation would be too slow to sit in front of a pull request. The
+first half is true and the second was a guess: `test (freebsd)` runs in
+**1m44s**, which is faster than the Windows leg. It runs in a QEMU
+virtual machine on a Linux runner through
+`cross-platform-actions/action`, and the race detector is deliberately
+left off it — that product of two slowdowns is the part that would have
+been too slow, and FreeBSD is the platform where the detector has been
+run by hand anyway.
 
-   The reason to want both is §1 and §1.2: Windows found three
-   cross-platform defects in one afternoon and a fourth the next day,
-   and the race detector found three more. macOS had never run the
-   suite at all, which is the profile Windows had.
+Between them the two runners found five defects in a day: two on macOS
+(§1.3) and two more on FreeBSD, plus the audit in §1.4 that generalised
+them. Which is §1's argument for the fourth time, and the last time it
+can be made — there is no platform left with no automation.
 
 **Blocked on a decision**
 
