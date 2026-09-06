@@ -193,8 +193,11 @@ func TestUpdateLocksPerJobAndNotPerStore(t *testing.T) {
 
 	held := make(chan struct{})
 	release := make(chan struct{})
+	holderDone := make(chan struct{})
 	done := make(chan struct{})
+
 	go func() {
+		defer close(holderDone)
 		_, _ = c.Update(first.JID, func(*Job) error {
 			close(held)
 			<-release
@@ -203,22 +206,41 @@ func TestUpdateLocksPerJobAndNotPerStore(t *testing.T) {
 	}()
 	<-held
 
+	var secondErr error
 	go func() {
-		if _, err := c.Update(second.JID, func(cur *Job) error {
+		defer close(done)
+		_, secondErr = c.Update(second.JID, func(cur *Job) error {
 			cur.State = Complete
 			return nil
-		}); err != nil {
-			t.Error(err)
-		}
-		close(done)
+		})
 	}()
 
+	blocked := false
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
+		blocked = true
+	}
+
+	// Let the holder go and wait for both, before anything is asserted.
+	// Both of these write a file inside the cache directory, and the
+	// directory is a t.TempDir that is removed when this function
+	// returns — so a goroutine still running here writes into a
+	// directory being deleted. That is not theoretical: the first
+	// version of this test did not wait for the holder, passed on every
+	// machine here, and failed on CI's emulated FreeBSD runner with
+	// "TempDir RemoveAll cleanup: directory not empty", which is the
+	// same slow-machine window the defect this file is about lives in.
+	close(release)
+	<-holderDone
+	<-done
+
+	if blocked {
 		t.Error("an update to one job waited on an update to another; the lock is per store")
 	}
-	close(release)
+	if secondErr != nil {
+		t.Error(secondErr)
+	}
 }
 
 // A mutator that returns an error writes nothing, which is how a caller
