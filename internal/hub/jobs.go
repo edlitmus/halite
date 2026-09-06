@@ -122,15 +122,27 @@ func (s *Server) completeIfDone(id job.ID) {
 	if err != nil || len(missing) > 0 {
 		return
 	}
-	j, err := s.Jobs.Get(id)
-	if err != nil || j.State == job.Complete {
-		return
-	}
-	j.State = job.Complete
-	if err := s.Jobs.Put(j); err != nil {
+	// Through Update rather than Get and Put: the goroutine that
+	// delivers a node its queued jobs is editing this same record, and
+	// a whole-record write here would put back the spool entry it had
+	// just cleared -- sending the node the job a second time on its
+	// next connection. See job.Cache.Update.
+	_, err = s.Jobs.Update(id, func(cur *job.Job) error {
+		if cur.State == job.Complete {
+			return errAlreadyComplete
+		}
+		cur.State = job.Complete
+		return nil
+	})
+	if err != nil && !errors.Is(err, errAlreadyComplete) {
 		s.warn("could not mark a job complete", "jid", string(id), "error", err.Error())
 	}
 }
+
+// errAlreadyComplete abandons an update that has nothing to do. It never
+// reaches an operator: a job marked complete twice is two goroutines
+// agreeing, not a fault.
+var errAlreadyComplete = errors.New("the job is already complete")
 
 // submit is POST /v1/jobs: an operator asking for a job.
 func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string) {
@@ -304,10 +316,12 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 	// Expiring it is what stops the batch goroutine from advancing and
 	// what makes every node refuse it: the check is already there in
 	// the replay guard, and one mechanism is better than two.
-	j.Queued = nil
-	j.Expires = s.now().Add(-time.Second)
-	j.State = job.Aborted
-	if err := s.Jobs.Put(j); err != nil {
+	if _, err := s.Jobs.Update(id, func(cur *job.Job) error {
+		cur.Queued = nil
+		cur.Expires = s.now().Add(-time.Second)
+		cur.State = job.Aborted
+		return nil
+	}); err != nil {
 		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
 		return
 	}

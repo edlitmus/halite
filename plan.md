@@ -351,6 +351,49 @@ what is checked. Nothing has *run* on any of these seven platforms, and
 the `RLIMIT_DATA` mapping on OpenBSD is read from that platform's
 documented behaviour rather than watched taking effect.
 
+### 1.6 And the one CI had been reporting for a week
+
+`TestAQueuedJobWaitsForTheNodeToReturn` had been failing about one run
+in twenty and was written off as a flake worth watching. It was not a
+flake. It is a **lost update on the job record**, and the failure it
+reports is real: a queued job could be delivered to the same node
+twice.
+
+The hub's job record is read, changed and written back by several
+goroutines and the write replaces the whole file. The goroutine that
+gives a reconnecting node its missed jobs clears that node from the
+spool; the goroutine that records the node's return marks the job
+complete. Both read, both write, and the later write puts back
+everything the earlier one changed — including the spool entry. A spool
+entry that comes back means the node is sent the job again on its next
+connection, which for the `cmd.run` a queued job usually is, is a second
+run of an instruction issued once.
+
+`job.Cache.Update` now does read-change-write under a per-job lock and
+hands the mutator what is on disk. DIVERGENCE 4.11 has the account and
+the boundary — which sites were converted and which four `Put` calls are
+creates and did not need to be.
+
+**Three things this says about the rest of the document.**
+
+1. It is the **third defect of this shape in a fortnight**. The other
+   two are in §1.2's list: the webhook spool naming files by a timestamp
+   that is not unique, and the relay spool doing the same and silently
+   overwriting. All three are durability mechanisms that are correct
+   read one operation at a time and wrong when two arrive together, and
+   none of them had a test with two writers in it. That is a gap in how
+   this build is tested rather than three unrelated bugs, and §3.4's
+   chaos suite is where it belongs.
+2. **An intermittent test failure is a finding until it is diagnosed.**
+   This one was reported here as "noted but unaddressed" for a week
+   while modules were built on top of it. The cost of that reading was
+   nothing this time and could have been a duplicated `pkg.installed`
+   on the estate.
+3. It is §1's argument again, in the form the argument was always
+   about: **only CI found it.** No local run has ever failed this test,
+   before or since — the window needs a slower machine than the ones
+   here, and every one of the four runners is slower than these.
+
 ---
 
 ## 2. Phase 5's real remainder: the module inventory

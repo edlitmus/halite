@@ -1430,6 +1430,63 @@ Nothing has run on OpenBSD, NetBSD, Solaris, illumos, or on riscv64,
 ppc64le or s390x — the `RLIMIT_DATA` mapping in particular is read from
 OpenBSD's documented behaviour and has not been watched take effect.
 
+### 4.11 A queued job could be delivered twice
+
+Found on 2026-09-06 by CI, as an intermittent failure of
+`TestAQueuedJobWaitsForTheNodeToReturn` that had been showing up perhaps
+once in twenty runs and then failed both `test` legs of one run. It is a
+defect in the hub, not in the test.
+
+**The job record is read, changed and written back by several
+goroutines, and the write replaces the whole file.** When a node
+reconnects, one goroutine gives it the jobs it missed and then clears
+that node from each job's spool. The return the node sends back arrives
+on another goroutine, which marks the job complete. Both read the
+record; both write it. When the second read happened before the first
+write, the second write puts back everything the first had changed — and
+what it puts back is the spool entry.
+
+The consequence is not a wrong number in a status page. A spool entry
+that comes back from the dead means **the node is sent the job again the
+next time it connects**: a second run of an instruction an operator
+issued once. For the `test.ping` in the test that is nothing; for the
+`cmd.run` or `pkg.installed` that a queued job usually is, it is the
+thing SPEC 9.5's spool exists to make reliable, doing the opposite.
+
+`job.Cache.Update(id, mutate)` reads, changes and writes under a per-job
+lock, and the mutator is given the record as it is on disk rather than a
+copy taken earlier. Every site in the hub that changes a record which
+has already been delivered goes through it: the queued delivery, the
+completion, the batch's delivery accounting, the state transitions,
+`Resume` and `kill`. The four `Put` calls that remain are creates — the
+job's first write and the two that follow it in `Dispatch`, all before
+anything has been sent to any node, and the runner's own record.
+
+Per job rather than one lock for the store, so a busy hub's bookkeeping
+does not queue behind whichever record is slowest to write. It does not
+make the cache safe for two hub *processes* sharing a directory; one hub
+owns its job cache, and nothing in SPEC asks for more than that.
+
+**This is the third defect of this shape in a fortnight**, and the
+first two are in 4.9: the webhook returner's spool naming files by a
+timestamp that is not unique, and the relay spool doing the same and
+silently overwriting. All three are a durability mechanism that is
+correct when read one operation at a time and wrong when two arrive
+together. The common cause is that none of them was written with a
+second writer in mind, and none of the tests had two.
+
+The test that now demonstrates it is deterministic rather than lucky.
+`TestGetThenPutLosesOneOfTwoChanges` forces the interleaving and asserts
+that the change *is* lost, so it stands as the reason `Update` exists
+rather than as a description of it; `TestUpdateKeepsBothChanges` forces
+the same interleaving through `Update`. Removing the lock makes
+`TestEveryWritersChangeLands` report **1 of 40** writes surviving, which
+is the size of the hazard when more than two goroutines are involved —
+a batched job's delivery accounting, for instance.
+
+What found it was CI running the suite on four platforms on every
+change. It had been in the tree since the queue policy was built and no
+local run had ever failed on it.
 
 ## 5. Test coverage against SPEC 31
 
