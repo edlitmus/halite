@@ -415,7 +415,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **52 execution modules / 318 functions** and **34 state
+The build ships **52 execution modules / 319 functions** and **34 state
 modules / 85 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -456,7 +456,7 @@ different reason is given.
 | `service` | implemented | 16 | FreeBSD rc provider only; see 2.5 |
 | `ssh_auth` | implemented | 2 | registered as `ssh.auth_keys` and `ssh.known_hosts`; SPEC 15.2 names no module for either state, and both read the same account's files, so they share one |
 | `status` | implemented | 4 | |
-| `sys` | implemented | 9 | |
+| `sys` | implemented | 10 | |
 | `sysctl` | implemented | 3 | |
 | `sysrc` | implemented | 3 | FreeBSD; SPEC lists it as core |
 | `test` | implemented | 5 | |
@@ -555,14 +555,37 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-7 of 65 present — the rows below total 58 absent. This is the largest
-single gap and it is a direct consequence of having one host to develop
-on. Four of the seven are the Windows ones, and they arrived because a
-Windows host became available: the gap tracks the hardware, not the
-intent. `dpkg` is the first of the Debian row, and the estate is
-Ubuntu.
+15 of 65 present — the rows below total 50 absent.
 
-The 59 are declared as pending rather than simply missing. A name absent
+Eight of the fifteen are **aliases**, and they are new. SPEC names both
+halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
+as virtual modules that pick a provider for the node they are on, and
+15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
+modules of their own. This build implemented the first and left the
+second refusing by name, which is the open question this table used to
+end with. It is answered: the per-platform names should exist, and they
+resolve to the virtual module.
+
+The providers had been carrying 15.3's names all along — the apt
+provider calls itself `aptpkg`, the launchd one `mac_service` — so what
+was missing was only the name being callable. An alias is a module name
+rather than a second set of functions, which is what keeps the counts
+honest: `pkg` has eighteen functions whether or not four platforms can
+each reach them under another name.
+
+Only the names whose provider exists are aliased. `zypperpkg` and
+`dnfpkg` stay pending, because SUSE has no provider here and the dnf one
+covers repositories but not packages; aliasing either would turn "not
+built" into "built, and fails when you call it", which is the worse of
+the two answers. `sys.list_aliases` reports the table and says which of
+them this node can use.
+
+Of the seven that are modules in their own right, four are the Windows
+ones, and they arrived because a Windows host became available: the gap
+tracks the hardware, not the intent. `dpkg` is the first of the Debian
+row, and the estate is Ubuntu.
+
+The 50 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -580,14 +603,14 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | none | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
+| Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
-| FreeBSD | none under these names | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf`, `jail` |
-| Debian, Ubuntu | `dpkg` | `aptpkg`, `debconf`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
+| FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` (all aliases) | `pf`, `jail` |
+| Debian, Ubuntu | `dpkg`, `aptpkg` (alias) | `debconf`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
-| Windows | `win_dacl`, `win_service`, `win_registry`, `win_task` | `win_pkg`, `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
-| macOS | none | `mac_brew_pkg`, `mac_service`, `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_defaults`, `mac_keychain`, `mac_assistive` |
+| Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
+| macOS | `mac_brew_pkg`, `mac_service` (aliases) | `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_defaults`, `mac_keychain`, `mac_assistive` |
 
 Two notes on this table:
 
@@ -598,12 +621,18 @@ Two notes on this table:
   belong to a filesystem rather than to an operating system. This is one
   of the few places the specification was amended rather than diverged
   from, and it is recorded here for that reason.
-- The FreeBSD row reads as entirely absent but is not, functionally: the
-  FreeBSD behaviour that `freebsdpkg`, `freebsd_service`, and
-  `freebsd_sysctl` would provide is implemented inside the virtual `pkg`,
-  `service`, and `sysctl` modules, which is where SPEC 15.2 says provider
-  selection belongs. Whether the named per-platform modules should also exist
-  as aliases is an open question. `pf` and `jail` are genuinely absent.
+- The FreeBSD row used to read as entirely absent while being
+  functionally present: the behaviour `freebsdpkg`, `freebsd_service`
+  and `freebsd_sysctl` would provide is implemented inside the virtual
+  `pkg`, `service` and `sysctl` modules, which is where SPEC 15.2 says
+  provider selection belongs. Whether the named per-platform modules
+  should *also* exist as aliases was the open question this note
+  carried; it is answered, they should, and all three are aliases now.
+  `pf` and `jail` are genuinely absent.
+- An alias refuses on a node the provider does not match, and says which
+  provider that node has. `aptpkg.install` on a RHEL node is neither a
+  typo nor an unbuilt module — it is the wrong module for the machine,
+  and the message names the one the machine would use.
 
 ### 2.4 Language and runtime modules (SPEC 15.4)
 

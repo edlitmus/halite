@@ -27,7 +27,6 @@ type PendingModule struct {
 // that arrives cannot stay listed as pending and one that is added to
 // the specification cannot be quietly missed.
 var pendingPlatformModules = map[string]PendingModule{
-	"aptpkg":               {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"debconf":              {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"debbuild":             {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"apt_key":              {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
@@ -44,7 +43,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"dnf_module":           {Platform: "rhel", When: "phase 5, with the RHEL platform work"},
 	"chattr":               {Platform: "rhel", When: "phase 5, with the RHEL platform work"},
 	"zypperpkg":            {Platform: "suse", When: "phase 5, with the SUSE platform work"},
-	"win_pkg":              {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_file":             {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_useradd":          {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_groupadd":         {Platform: "windows", When: "phase 5, with Windows parity"},
@@ -58,8 +56,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"win_certutil":         {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_dsc":              {Platform: "windows", When: "an extension of kind `module`; SPEC section 24 marks it bridged"},
 	"win_lgpo":             {Platform: "windows", When: "an extension of kind `module`; SPEC section 24 marks it bridged"},
-	"mac_brew_pkg":         {Platform: "darwin", When: "phase 5, with macOS parity"},
-	"mac_service":          {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_user":             {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_group":            {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_shadow":           {Platform: "darwin", When: "phase 5, with macOS parity"},
@@ -68,12 +64,8 @@ var pendingPlatformModules = map[string]PendingModule{
 	"mac_defaults":         {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_keychain":         {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_assistive":        {Platform: "darwin", When: "phase 5, with macOS parity"},
-	"freebsdpkg":           {Platform: "freebsd", When: "phase 5; the development platform, and still not built"},
-	"freebsd_service":      {Platform: "freebsd", When: "phase 5; the development platform, and still not built"},
-	"freebsd_sysctl":       {Platform: "freebsd", When: "phase 5; the development platform, and still not built"},
 	"pf":                   {Platform: "freebsd", When: "phase 5; the development platform, and still not built"},
 	"jail":                 {Platform: "freebsd", When: "phase 5; the development platform, and still not built"},
-	"systemd_service":      {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"journald":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"iptables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"nftables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},

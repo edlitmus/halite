@@ -93,6 +93,7 @@ func New() *Registries {
 	registerHostname(r)
 	registerSSHKnownHosts(r)
 	registerDpkg(r)
+	registerAliases(r)
 	return r
 }
 

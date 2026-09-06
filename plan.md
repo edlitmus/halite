@@ -39,7 +39,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **58 of SPEC 15.3's 65 platform modules, 20 of SPEC 15.2's core execution modules and 16 of SPEC 15.5's core state modules remain.** |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **50 of SPEC 15.3's 65 platform modules, 20 of SPEC 15.2's core execution modules and 16 of SPEC 15.5's core state modules remain.** |
 | 6. Hardening to 1.0 | Barely started. Metrics are nearly complete (§3.2). No benchmarks, no chaos suite, no packaging, no CI, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
@@ -314,32 +314,46 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 58 of 65
+### 2.3 Platform modules: 50 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
-is the difference between a gap and a typo, and it is already done. The
-seven that ship are `zfs`, `zpool`, the four Windows ones, and `dpkg`.
+is the difference between a gap and a typo, and it is already done.
+Fifteen ship: `zfs`, `zpool`, the four Windows ones, `dpkg`, and **eight
+aliases**.
 
-`dpkg` is the first of the Debian row and the one that pays off soonest,
+**The aliases answered the open question this section used to end with.**
+SPEC names both halves and both are true: 15.2's `pkg`, `service` and
+`sysctl` pick a provider for the node, and 15.3 names `aptpkg`,
+`freebsdpkg`, `systemd_service` and the rest as modules of their own.
+The providers here had been carrying 15.3's names all along, so what was
+missing was the name being callable. It is a module name rather than a
+second set of functions, which is what keeps the counts honest, and it
+refuses on a node whose provider does not match — naming the provider
+that node *does* have, because `aptpkg.install` on a RHEL node is
+neither a typo nor an unbuilt module but the wrong module for the
+machine.
+
+Only the names whose provider exists are aliased. `zypperpkg` and
+`dnfpkg` stay pending: SUSE has no provider here and the dnf one covers
+repositories but not packages, so aliasing either would turn "not built"
+into "built, and fails when you call it".
+
+`dpkg` is the other Debian arrival, and the one that pays off soonest,
 because it is the half the virtual `pkg` module is deliberately not:
 `pkg.list_pkgs` filters to what is installed, so a package left
 half-configured by an interrupted upgrade is invisible there — and apt
 refuses to do anything else until it is resolved, which makes it exactly
-what an operator is looking for. The rest of the row is package
-management proper, and `aptpkg` needs §2.3's own open question answered
-first: the apt behaviour already exists inside `pkg`'s provider, so
-whether the named module should also exist is the same question the
-FreeBSD row asks and neither has been answered.
+what an operator is looking for.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 9 | **The estate is Ubuntu.** `dpkg` ships. `aptpkg`, `apt_key`, `ufw`, `netplan`, `snap`, `pro`, `debconf`, `debbuild`, `apparmor` do not. |
-| Common Linux | 12 | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
-| Windows | 14 | Four ship. No user or group provider. |
-| macOS | 10 | The providers ship; the `mac_*` modules do not. |
+| Debian and Ubuntu | 8 | **The estate is Ubuntu.** `dpkg` ships and `aptpkg` is an alias. `apt_key`, `ufw`, `netplan`, `snap`, `pro`, `debconf`, `debbuild`, `apparmor` do not. |
+| Common Linux | 11 | `systemd_service` is an alias. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
+| Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
+| macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
-| FreeBSD | 5 | The development platform, still unbuilt. |
+| FreeBSD | 2 | `freebsdpkg`, `freebsd_service` and `freebsd_sysctl` are aliases; `pf` and `jail` are genuinely absent. |
 | SUSE | 1 | `zypperpkg`. |
 
 Note the overlap with 2.2: `iptables`, `nftables` and `lvm` are named in

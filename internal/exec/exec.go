@@ -283,13 +283,84 @@ type Module struct {
 
 // Registry holds the execution modules a build ships.
 type Registry struct {
-	fns  map[string]Func
-	sigs *signature.Registry
+	fns     map[string]Func
+	sigs    *signature.Registry
+	aliases map[string]Alias
+}
+
+// Alias is a platform module name that resolves to a virtual one.
+//
+// SPEC 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest
+// as modules in their own right; SPEC 15.2 names `pkg`, `service` and
+// `sysctl` as virtual modules that pick a provider. Both are true, and
+// the providers in this build already carry 15.3's names — the apt
+// provider calls itself `aptpkg`, the launchd one `mac_service`. What
+// was missing was the name being callable.
+//
+// An alias is a module name, not a set of functions. Resolving one
+// rather than registering a second copy of every function keeps the
+// counts honest: `pkg` has eighteen functions whether or not four
+// platforms can each reach them under another name, and a build that
+// reported seventy-two would be describing its own bookkeeping.
+type Alias struct {
+	// Module is the virtual module the name resolves to.
+	Module string
+	// Usable reports whether this node is one where the alias means
+	// anything, and says why when it is not. A `aptpkg.install` on a
+	// RHEL node has to fail, and "this node's pkg provider is dnf"
+	// is the failure worth reading.
+	Usable func(*Context) error
+	// Provider names the provider the alias stands for, for listings
+	// and documentation.
+	Provider string
 }
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
-	return &Registry{fns: map[string]Func{}, sigs: signature.NewRegistry()}
+	return &Registry{
+		fns:     map[string]Func{},
+		sigs:    signature.NewRegistry(),
+		aliases: map[string]Alias{},
+	}
+}
+
+// Alias makes a platform module name resolve to a virtual module.
+func (r *Registry) Alias(name string, a Alias) {
+	if _, taken := r.aliases[name]; taken {
+		panic("exec: " + name + " is aliased twice")
+	}
+	r.aliases[name] = a
+}
+
+// Aliases returns the alias table, for listings and the audits.
+func (r *Registry) Aliases() map[string]Alias {
+	out := make(map[string]Alias, len(r.aliases))
+	for k, v := range r.aliases {
+		out[k] = v
+	}
+	return out
+}
+
+// resolve maps an aliased function name onto the one that implements it.
+//
+// The usability check happens here rather than at registration, because
+// which provider a node has is a property of the node and this registry
+// is built once per process.
+func (r *Registry) resolve(c *Context, name string) (string, error) {
+	module, fn, ok := strings.Cut(name, ".")
+	if !ok {
+		return name, nil
+	}
+	alias, aliased := r.aliases[module]
+	if !aliased {
+		return name, nil
+	}
+	if alias.Usable != nil && c != nil {
+		if err := alias.Usable(c); err != nil {
+			return "", fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	return alias.Module + "." + fn, nil
 }
 
 // Add registers module functions.
@@ -315,13 +386,35 @@ func (r *Registry) Add(mods ...Module) {
 func (r *Registry) Signatures() *signature.Registry { return r.sigs }
 
 // Has reports whether a function is registered.
-func (r *Registry) Has(name string) bool { _, ok := r.fns[name]; return ok }
+// Has reports whether a name resolves, through an alias if it is one.
+//
+// Without the node's context, so it answers "this name exists" rather
+// than "this node can run it". That is the right question here: the
+// callers are validation and the migration report, and a tree naming
+// `aptpkg.install` is a tree that will work on the Debian nodes it is
+// written for, whatever the machine holding the file happens to be.
+func (r *Registry) Has(name string) bool {
+	if _, ok := r.fns[name]; ok {
+		return true
+	}
+	resolved, err := r.resolve(nil, name)
+	if err != nil {
+		return false
+	}
+	_, ok := r.fns[resolved]
+	return ok
+}
 
 // Names lists every function, sorted.
 func (r *Registry) Names() []string { return r.sigs.Names() }
 
 // Call binds arguments against the signature and invokes the function.
 func (r *Registry) Call(c *Context, name string, args *value.Map) (any, error) {
+	resolved, err := r.resolve(c, name)
+	if err != nil {
+		return nil, err
+	}
+	name = resolved
 	fn, ok := r.fns[name]
 	if !ok {
 		return nil, &UnknownFunctionError{Name: name, Known: r.nearMisses(name)}
@@ -344,6 +437,11 @@ func (r *Registry) Call(c *Context, name string, args *value.Map) (any, error) {
 // CallPositional binds a Salt-style argument vector: positional arguments
 // then key=value pairs.
 func (r *Registry) CallPositional(c *Context, name string, args []any, kwargs *value.Map) (any, error) {
+	resolved, err := r.resolve(c, name)
+	if err != nil {
+		return nil, err
+	}
+	name = resolved
 	fn, ok := r.fns[name]
 	if !ok {
 		return nil, &UnknownFunctionError{Name: name, Known: r.nearMisses(name)}
