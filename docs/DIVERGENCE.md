@@ -415,8 +415,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **50 execution modules / 305 functions** and **32 state
-modules / 82 functions**.
+The build ships **51 execution modules / 310 functions** and **34 state
+modules / 85 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -454,7 +454,7 @@ different reason is given.
 | `random` | implemented | 3 | `crypto/rand` |
 | `saltutil` | implemented | 9 | |
 | `service` | implemented | 16 | FreeBSD rc provider only; see 2.5 |
-| `ssh_auth` | implemented | 1 | registered as `ssh.auth_keys` |
+| `ssh_auth` | implemented | 2 | registered as `ssh.auth_keys` and `ssh.known_hosts`; SPEC 15.2 names no module for either state, and both read the same account's files, so they share one |
 | `status` | implemented | 4 | |
 | `sys` | implemented | 9 | |
 | `sysctl` | implemented | 3 | |
@@ -469,7 +469,7 @@ different reason is given.
 | `blockdev` | not implemented | 0 | |
 | `data` | not implemented | 0 | |
 | `firewall` | not implemented | 0 | |
-| `hostname` | not implemented | 0 | |
+| `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
 | `locale` | not implemented | 0 | |
@@ -518,7 +518,7 @@ different reason is given.
 | `environ` | implemented | 1 | `setenv`; `permanent` defaults to true here and to false in Salt, so a tree carrying this state writes a file or a registry value Salt never wrote; see migrating-from-salt.md |
 | `firewall` | not implemented | 0 | |
 | `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
-| `hostname` | not implemented | 0 | |
+| `hostname` | implemented | 1 | `system`; the running name and the persistent one are read and reported separately, because a node where they disagree renames itself at the next boot |
 | `iptables` | not implemented | 0 | Linux only |
 | `kernelpkg` | not implemented | 0 | |
 | `locale` | not implemented | 0 | |
@@ -534,7 +534,7 @@ different reason is given.
 | `reboot` | not implemented | 0 | |
 | `schedule` | implemented | 2 | present and absent; absent now persists, which it did not before 
 | `selinux` | not implemented | 0 | Linux only |
-| `ssh_known_hosts` | not implemented | 0 | |
+| `ssh_known_hosts` | implemented | 2 | present and absent; a key is either declared outright or scanned and checked against a declared fingerprint, and trust on first use is refused by name rather than performed silently |
 | `sudo` | not implemented | 0 | |
 | `timezone` | implemented | 1 | `system`; a zone the node does not have is refused in test mode, where the tool would never run to say so |
 | `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 

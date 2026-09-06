@@ -39,7 +39,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **59 of SPEC 15.3's 65 platform modules, 21 of SPEC 15.2's core execution modules and 18 of SPEC 15.5's core state modules remain.** |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **59 of SPEC 15.3's 65 platform modules, 20 of SPEC 15.2's core execution modules and 16 of SPEC 15.5's core state modules remain.** |
 | 6. Hardening to 1.0 | Barely started. Metrics are nearly complete (§3.2). No benchmarks, no chaos suite, no packaging, no CI, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
@@ -270,32 +270,43 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 21 of SPEC 15.2**: `acl`, `apparmor`, `at`, `blockdev`,
-`data`, `firewall`, `hostname`, `kernelpkg`, `locale`, `logrotate`,
-`nfs`, `ps`, `reboot`, `selinux`, `shadow`, `state`, `sudo`, `swap`,
-`system`, `tls`, `tmpfs`.
+**Execution, 20 of SPEC 15.2**: `acl`, `apparmor`, `at`, `blockdev`,
+`data`, `firewall`, `kernelpkg`, `locale`, `logrotate`, `nfs`, `ps`,
+`reboot`, `selinux`, `shadow`, `state`, `sudo`, `swap`, `system`, `tls`,
+`tmpfs`.
 
-**State, 18 of SPEC 15.5**: `acl`, `apparmor`, `at`, `firewall`,
-`hostname`, `iptables`, `kernelpkg`, `locale`, `logrotate`, `lvm`,
-`mac_defaults`, `nftables`, `pro`, `reboot`, `selinux`,
-`ssh_known_hosts`, `sudo`, `win_wua`.
+**State, 16 of SPEC 15.5**: `acl`, `apparmor`, `at`, `firewall`,
+`iptables`, `kernelpkg`, `locale`, `logrotate`, `lvm`, `mac_defaults`,
+`nftables`, `pro`, `reboot`, `selinux`, `sudo`, `win_wua`.
 
-The previous revision said sixteen. It named the right set and
-subtracted wrong; eighteen is what the table holds.
+`hostname` and `ssh_known_hosts` have since shipped, which is what moved
+both counts.
 
 Ranked by what the estate's own tree reaches for, and by what a migration
 is blocked on:
 
-1. **`hostname`**, exec and state. Universal, small, and the last of the
-   ones every estate touches.
-2. **`ssh_known_hosts`** state. `ssh_auth` ships; this is its pair.
+1. ~~**`hostname`**, exec and state~~ — **done.** Four execution
+   functions and the state, managing the running name and the persistent
+   one together, because a node where those disagree renames itself at
+   the next boot. Unix only and declared so: a Windows rename waits for a
+   reboot, so a state that set one would report a change on every run
+   until somebody rebooted — the shape §6's `win_registry` question is
+   already about, and not worth shipping twice before it is answered.
+2. ~~**`ssh_known_hosts`** state~~ — **done**, with `ssh.known_hosts`
+   beside it, the way `ssh_auth` pairs with `ssh.auth_keys`. One
+   deliberate break from Salt, recorded in the ledger: trust on first use
+   is refused rather than performed. A key is declared outright or
+   scanned and checked against a declared fingerprint; Salt scans and
+   accepts, which pins whatever answered the day the tree first ran.
 3. **`system`**, `reboot`, `ps`, `status` depth. What an operator reaches
    for during an incident.
 4. **`selinux`**, `apparmor`, `firewall`, `iptables`, `nftables`,
    `sudo`, `acl`. Platform-shaped and mostly Linux; see 2.3.
 5. The rest — `at`, `blockdev`, `data`, `kernelpkg`, `locale`,
    `logrotate`, `nfs`, `swap`, `tls`, `tmpfs`, `lvm` — each small, none
-   blocking.
+   blocking. `locale` now also carries `internal/migrate`'s gap test,
+   which needs a state that does not exist and comes due whenever one is
+   built.
 
 `shadow` and `state` are deliberately last. `shadow` overlaps
 `user.present`'s ageing arguments, which section 6 lists as an open
@@ -647,33 +658,34 @@ that did not compile on Linux, a day of a red suite on Windows, and a
 race detector that ran when somebody remembered rather than on every
 change, which is not often enough to catch a one-in-three race.
 
-**Now — the estate's own blockers**
+~~**`hostname`** and **`ssh_known_hosts`**.~~ **Done**, and §2.2 says
+what each cost and what each decided.
 
-1. **`hostname`** and **`ssh_known_hosts`**. Small, universal, and the
-   last of the core modules every estate touches.
-2. **The Debian and Ubuntu platform row** (§2.3). Ten modules, and the
-   estate is Ubuntu. This is the largest single block of work in the
+**Now — the estate's own blocker**
+
+1. **The Debian and Ubuntu platform row** (§2.3). Ten modules, and the
+   estate is Ubuntu. This is now the largest single block of work in the
    document and the one the migration is actually blocked on.
 
 **Then — phase 6 foundations**
 
-3. The two SPEC 30 benchmarks that need no harness (§3.1). Metrics are no
+2. The two SPEC 30 benchmarks that need no harness (§3.1). Metrics are no
    longer on this list; §3.2 closed.
-4. Get the differential to compare *applied* results, in the container it
+3. Get the differential to compare *applied* results, in the container it
    already has, and in the job CI now runs it from (§3.4).
-5. The chaos suite, starting with the paths no test reaches at all.
-6. **Packaging** (§3.5). The reproducibility half of this item is done —
+4. The chaos suite, starting with the paths no test reaches at all.
+5. **Packaging** (§3.5). The reproducibility half of this item is done —
    `release.yml` compares two builders on every tag — and what is left
    is that there are no artifacts to publish: no nfpm config, no `.msi`,
    no `.pkg`, no SBOM, no attestation. CI is the thing that would sign
    and publish them, so this is now the next release-shaped work rather
    than a prerequisite for it.
-7. The render sandbox (§3.3), which is the largest unbuilt security
+6. The render sandbox (§3.3), which is the largest unbuilt security
    control and the one SPEC argues for most directly.
 
 **In parallel, cheap and independent**
 
-8. **Run the suite on macOS and FreeBSD.** Windows found three
+7. **Run the suite on macOS and FreeBSD.** Windows found three
    cross-platform defects in one afternoon and a fourth the next day,
    and the race detector found three more the first time it ran; there
    is no reason to think those two hold none (§1, §1.2). Neither is a
@@ -682,11 +694,11 @@ change, which is not often enough to catch a one-in-three race.
 
 **Blocked on a decision**
 
-9. The `cmd.run` default, the unplanned modules, a `win_registry` state,
+8. The `cmd.run` default, the unplanned modules, a `win_registry` state,
    job signing and node evidence (§6).
 
 **Last**
 
-10. The YAML over-acceptance set, prioritising the chomping case; the six
+9. The YAML over-acceptance set, prioritising the chomping case; the six
     real template gaps; the regexcompat character-class false positive
     (§5).

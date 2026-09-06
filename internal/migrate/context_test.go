@@ -158,19 +158,23 @@ func TestARealStateGapStillBlocks(t *testing.T) {
   selinux.mode:
     - name: enforcing
 
-trust_it:
-  ssh_known_hosts.present:
-    - name: build.example
-    - user: deploy
+speak_it:
+  locale.system:
+    - name: en_GB.UTF-8
 `,
 	})
 	rep := auditSLSTree(t, root)
-	// Both are still gaps. `pkgrepo.managed` stood here once and
-	// `mount.mounted` after it, and neither does now: that is the guard
-	// working the other way round, because a test asserting a gap exists
-	// has to be corrected when the gap is filled, or it quietly starts
-	// asserting that a shipped module is missing.
-	for _, name := range []string{"selinux.mode", "ssh_known_hosts.present"} {
+	// Both are still gaps. `pkgrepo.managed` stood here once,
+	// `mount.mounted` after it, and `ssh_known_hosts.present` after
+	// that; none of the three does now. That is the guard working the
+	// other way round, because a test asserting a gap exists has to be
+	// corrected when the gap is filled, or it quietly starts asserting
+	// that a shipped module is missing.
+	//
+	// Three corrections in, the pattern is worth naming: this test is a
+	// checklist of what has not been built, and it comes due every time
+	// something is. Whoever fills `locale` next will land here.
+	for _, name := range []string{"selinux.mode", "locale.system"} {
 		f, ok := findingFor(rep, name)
 		if !ok {
 			t.Fatalf("%s produced no finding", name)

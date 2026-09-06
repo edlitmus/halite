@@ -600,7 +600,22 @@ reactor:
 
 	// And it has written down where it got to, so the next start does
 	// not do this again.
-	if got := r.readOffset(); got == eventbus.Earliest || got == eventbus.Latest {
-		t.Errorf("the reactor recorded its position as %q", got)
+	//
+	// Waited for rather than sampled. Handling the third event and
+	// recording the position after it are two steps, and this read used
+	// to happen between them; on a slow machine it also landed inside
+	// writeOffset's atomic replace, which on Windows makes the file
+	// briefly unopenable. CI caught the second of those.
+	deadline = time.After(5 * time.Second)
+	for {
+		got := r.readOffset()
+		if got != eventbus.Earliest && got != eventbus.Latest {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("the reactor recorded its position as %q", got)
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }

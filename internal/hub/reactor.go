@@ -470,15 +470,42 @@ func (r *Reactor) reportError(j reactorJob, file string, err error) {
 }
 
 // readOffset is where the reactor had got to.
+//
+// "No file" and "the file could not be read" are different answers and
+// used to be the same one. The first is a first start, and beginning at
+// the end is right: reacting to a month of history on first boot would
+// be worse than missing what happened while there was no reactor. The
+// second is a reactor that *has* a recorded position and cannot see it,
+// and silently starting at the end there skips everything that happened
+// while it was down — which looks exactly like an estate with nothing
+// to react to.
+//
+// The retry is for the writer, which is this same reactor: writeOffset
+// replaces the file atomically, and on Windows a replace makes the
+// target briefly unopenable, so a read that lands in that window fails
+// for a reason that will be gone in microseconds. Reported as a flake
+// by CI, where a slower machine widens the window; the defect underneath
+// it is the conflation above, which no platform was safe from.
 func (r *Reactor) readOffset() string {
 	if r.OffsetFile == "" {
 		return eventbus.Latest
 	}
-	raw, err := os.ReadFile(filepath.Clean(r.OffsetFile))
-	if err != nil {
-		// No file is a first start, and starting at the end is right:
-		// reacting to a month of history on first boot would be worse
-		// than missing what happened while there was no reactor.
+	var raw []byte
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		raw, err = os.ReadFile(filepath.Clean(r.OffsetFile))
+		if err == nil || os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	switch {
+	case err != nil && os.IsNotExist(err):
+		return eventbus.Latest
+	case err != nil:
+		r.Server.warn("the reactor's recorded position could not be read; starting from the end, "+
+			"so anything the bus holds from before now is not reacted to",
+			"file", r.OffsetFile, "error", err.Error())
 		return eventbus.Latest
 	}
 	offset := strings.TrimSpace(string(raw))
