@@ -1487,6 +1487,75 @@ a batched job's delivery accounting, for instance.
 What found it was CI running the suite on four platforms on every
 change. It had been in the tree since the queue policy was built and no
 local run had ever failed on it.
+### 4.12 A reader that falls behind the event bus is not told
+
+Found on 2026-09-06 by the chaos suite, on its first run, which is what
+the suite was built for.
+
+SPEC 31's chaos row names "event bus at retention limit". Writing the
+scenario down meant deciding what a reader should experience when the
+history it was pointing at has been pruned, and the answer written first
+was the one that seems obvious: it should be told its offset is gone.
+The test then measured what the build does. **It skips forward and says
+nothing.** `Read` resolves the offset, finds no surviving segment with
+that sequence, and continues from the oldest one that does exist. The
+scenario's own run reported **380 events silently skipped**.
+
+That is not a wrong number in a status page either. The reader this
+matters to is the reactor: it holds an offset, and a hub whose bus
+turned over while the reactor was behind resumes it at a later point
+with no error, no event and no log line. The reactions it never ran
+leave no trace anywhere at all — the failure is indistinguishable from a
+quiet estate.
+
+**This is an unimplemented requirement, not an open question.** The
+first version of this entry called it a decision somebody had to make.
+That was wrong, and SPEC 17.2 says so in as many words:
+
+> Subscribers register a set of tag globs and a starting position, which
+> may be `latest`, `earliest`, or a specific offset. **A subscriber that
+> falls behind is disconnected with an explicit `subscriber_lag` error**
+> rather than causing the bus to buffer without bound.
+>
+> Replay from an offset is supported, which makes a reactor restart
+> lossless and makes incident reconstruction possible. Salt's event bus
+> is lossy by construction, and every mature Salt estate has learned
+> this during an incident.
+
+So the behaviour is named, the error is named, and the paragraph's whole
+argument is that Salt loses events silently and this must not. Silently
+advancing a stale reader is the Salt behaviour with a different
+mechanism.
+
+**Checked rather than recalled**, against Salt's own source in the
+differential container, on 3007.1 and again on 3008.2: `salt/utils/event.py`
+has no `offset`, `replay`, `resume` or `backlog` — not as an
+implementation, not as a word. A Salt subscriber holds no position, so
+it cannot be stale. The comparable condition is a subscriber that cannot
+keep up, and ZeroMQ handles it by dropping at a high-water mark of 1000
+(`pub_hwm`, set on `SNDHWM` and `RCVHWM` in `salt/transport/zeromq.py`)
+without telling the subscriber. Unchanged between the two versions.
+
+**How it survived.** `subscriber_lag` exists in this build — as a
+*metric*. `halite_event_subscriber_lag_seconds` is registered, documented
+in metrics.md, and carries a p95 alert in the shipped Grafana dashboard.
+The observability half was built and the behaviour half was not, and a
+row with a metric against it reads as done. Nothing caught the
+difference because `internal/specaudit` holds module tables and counts to
+SPEC and not prose requirements like this one — the same shape as the
+tier 3 targets in 4.10, where the specification made a claim no test
+made.
+
+What the chaos scenario does now is assert the current behaviour and
+name it as the gap it is. The assertion is written so that fixing it
+fails this test with a message saying which two documents to rewrite —
+which is the cheapest way to make sure the fix and the record move
+together.
+
+The distinction the build does draw is worth stating: a **malformed**
+offset is refused. So the silence is about a well-formed offset whose
+data has gone, not about parsing, and `TestABadOffsetIsRefusedRatherThan
+SilentlyStartingOver` has covered the other half since before this.
 
 ## 5. Test coverage against SPEC 31
 
@@ -3071,6 +3140,66 @@ None of this has been run against a real snapd. The tests supply
 --channel=` switches a channel the way this expects is a question for a
 node with snapd on it, which CI's Ubuntu runners have and this build
 does not yet ask them.
+
+### 5.29 The chaos layer, and what building it cost
+
+SPEC 31's Chaos row names eight scenarios and says each must have "a
+defined, tested, documented behaviour". Until 2026-09-06 `grep -i chaos`
+over the tree returned nothing.
+
+`internal/chaos` is the registry: for each scenario, SPEC's own wording,
+what this build is defined to do, and what its test leaves
+unestablished. Three guards hold it in place, and each was checked by
+breaking it:
+
+- Every scenario SPEC names is registered and nothing is registered that
+  SPEC does not name. Adding a scenario to the Chaos row fails it.
+- Every scenario has a test that names it through `chaos.Exercises`,
+  found by reading the tree — the tests live in the packages whose
+  machinery they drive, because the hub's lab is unexported. Pointing a
+  test at the wrong scenario fails it.
+- Every scenario says what its test does **not** establish. Emptying one
+  fails it. This is the field that stops the layer becoming the
+  reassurance its absence already was: every scenario here is a lab, and
+  a lab is not an estate.
+
+**Where the scenarios live.** Five in `internal/hub` (restart mid-job,
+network partition, disk full, clock skew, certificate expiry), one more
+there for the reactor's queue, one in `internal/eventbus`, one in
+`internal/bridge`, one in `internal/job`. Two of the nine are existing
+tests marked rather than rewritten — the extension hang and the
+concurrent-writer shape — because a second test of the same thing would
+be worse than a marker.
+
+**A ninth scenario is not in SPEC.** `concurrent-bookkeeping` is the
+shape all three of 4.9 and 4.11's defects had: correct read one
+operation at a time, wrong when two arrive together. SPEC's eight are
+all about the machine misbehaving, and none of this build's actual
+concurrency defects would have been caught by any of them. It is
+registered with `Spec` left empty and the guard permits exactly that,
+so a scenario beyond the specification has to say it is one.
+
+**What it found immediately.** Two things, on the first run:
+
+1. A reader resuming from a pruned event-bus offset is silently skipped
+   forward — 380 events, measured. 4.12 has it.
+2. The behaviour written down for `hub restart mid-job` could not be
+   tested the way it was first written, because **stopping a hub
+   drains**: `Serve` waits for the batch goroutine, so a graceful stop
+   always leaves a finished batch and never the half-done one the
+   scenario is about. The interrupted state is now constructed rather
+   than produced, and the Limit says so. That is a smaller finding and a
+   more useful one than it looks: a test that stopped a hub and asserted
+   partial delivery would have passed for the wrong reason on a slow
+   machine and failed on a fast one.
+
+**What it is not.** Nothing here injects a fault into a running estate,
+and the disk-full scenario makes a directory that cannot be created
+rather than filling a disk. `make chaos` runs the layer with `-v`, which
+is the point of the target: each scenario prints the behaviour it holds
+the build to and the limit of what it checked, so "what happens if the
+hub restarts mid-job" is answered by the thing that tests it rather than
+by a document beside it.
 
 ## 6. Everything else not started
 

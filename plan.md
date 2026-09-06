@@ -39,8 +39,8 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **47 of SPEC 15.3's 65 platform modules, 19 of SPEC 15.2's core execution modules and 15 of SPEC 15.5's core state modules remain.** |
-| 6. Hardening to 1.0 | Barely started. Metrics are nearly complete (§3.2). No benchmarks, no chaos suite, no packaging, no CI, no node evidence, no detached signing, no render sandbox. |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **45 of SPEC 15.3's 65 platform modules, 18 of SPEC 15.2's core execution modules and 14 of SPEC 15.5's core state modules remain.** |
+| 6. Hardening to 1.0 | Started. Metrics are nearly complete (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite is built (§3.4). Outstanding: no benchmarks, no packaging, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
 
@@ -662,13 +662,32 @@ Unchanged since the last revision, and verified again here.
 
 ### 3.4 Testing layers that do not exist (SPEC 31)
 
-- **The chaos suite is entirely absent** — `grep -i chaos` over all Go
-  source returns zero. SPEC names eight scenarios, each of which must
-  have "a defined, tested, documented behaviour": hub restart mid-job,
-  network partition, disk full, clock skew, certificate expiry mid-run,
-  extension hang, event bus at retention limit, reactor queue overflow.
-  Several are the code paths most likely to be wrong, because they are
-  the ones no test reaches.
+- ~~**The chaos suite is entirely absent**~~ — **built.** All eight of
+  SPEC's scenarios are registered in `internal/chaos` with a defined
+  behaviour and a stated limit, and each has a test that names it. A
+  ninth is registered that SPEC does not name: the concurrent-writer
+  shape all three of the defects in §1.2 and §1.6 had, none of which
+  any of SPEC's eight would have caught. Three guards hold the registry
+  to SPEC and to the tests, and each was checked by breaking it.
+  DIVERGENCE 5.29 has the account; `make chaos` runs the layer with
+  `-v`, which is the point of it.
+
+  **It found two things on its first run.** A reader resuming from a
+  pruned event-bus offset is silently skipped forward — 380 events,
+  measured — which is DIVERGENCE 4.12. It is written down and not yet
+  fixed, but it is **not** an open decision: SPEC 17.2 names the
+  behaviour and names the error (`subscriber_lag`), and its whole
+  argument is that Salt loses events silently and this must not.
+  Checked against Salt 3007.1 and 3008.2 in the differential container:
+  `salt/utils/event.py` has no offset, replay or resume at all, and a
+  subscriber that cannot keep up is dropped at a high-water mark of
+  1000 without being told. Silently advancing a stale reader is the
+  Salt behaviour by another mechanism. `subscriber_lag` exists here as
+  a *metric* and not as the error, which is how it read as done.
+  And the behaviour first written down for `hub restart mid-job` could
+  not be tested as written, because stopping a hub *drains*: `Serve`
+  waits for the batch goroutine, so a graceful stop never leaves the
+  half-done batch the scenario is about.
 - **The Salt differential runs** — `make saltdiff` builds a container
   carrying Salt's onedir bundle, and all three comparisons pass over ten
   trees; the container defaults to 3007.1 and the ledger records runs
@@ -914,7 +933,13 @@ what each cost and what each decided.
    longer on this list; §3.2 closed.
 3. Get the differential to compare *applied* results, in the container it
    already has, and in the job CI now runs it from (§3.4).
-4. The chaos suite, starting with the paths no test reaches at all.
+4. ~~The chaos suite~~ — **done**, and it earned its place immediately
+   (§3.4). What it left behind is a commit rather than a question:
+   **`subscriber_lag`** (SPEC 17.2, DIVERGENCE 4.12). A follower whose
+   offset has been pruned is silently advanced, and the specification
+   already says it must be refused with a named error. The metric of
+   that name ships; the behaviour does not. What a reactor then does
+   with the refusal is the part that is still a §6 question.
 5. **Packaging** (§3.5). The reproducibility half of this item is done —
    `release.yml` compares two builders on every tag — and what is left
    is that there are no artifacts to publish: no nfpm config, no `.msi`,

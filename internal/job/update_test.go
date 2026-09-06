@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/edlitmus/halite/internal/chaos"
 )
 
 // Get, change, Put loses one of two concurrent changes, and this proves
@@ -22,6 +24,12 @@ import (
 // grown a guarantee it does not advertise and this file would be the
 // place to find out.
 func TestGetThenPutLosesOneOfTwoChanges(t *testing.T) {
+	// The shape SPEC 31 does not name and this build has been wrong
+	// about three times. internal/chaos says why it is in the registry.
+	sc := chaos.Exercises(chaos.ConcurrentBookkeeping)
+	t.Logf("%s: %s", sc.Key, sc.Behaviour)
+	t.Logf("%s: not established: %s", sc.Key, sc.Limit)
+
 	c := newCache(t)
 	j := dispatched(t, c, time.Now(), "web1.example")
 	j.Queued = []string{"web1.example"}
@@ -144,6 +152,7 @@ func TestUpdateKeepsBothChanges(t *testing.T) {
 // arrive on others, and an append that reads a stale slice drops every
 // entry added since it read.
 func TestEveryWritersChangeLands(t *testing.T) {
+	_ = chaos.Exercises(chaos.ConcurrentBookkeeping)
 	c := newCache(t)
 	j := dispatched(t, c, time.Now())
 

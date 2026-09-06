@@ -64,7 +64,7 @@ TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
 	linux/riscv64 linux/ppc64le linux/s390x
 TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
-.PHONY: all build test race vet cover check release cross clean tidy vendor policy fmt \
+.PHONY: all build test chaos race vet cover check release cross clean tidy vendor policy fmt \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image
 
@@ -93,6 +93,24 @@ release:
 # thirteen settings that had just started being read.
 test:
 	@env $(DEV_ENV) go test -count=1 ./...
+
+# SPEC 31's chaos layer, run on its own so the scenarios can be read.
+#
+# They are part of `make test` like everything else; this target exists
+# because the output is the point. Each scenario logs the behaviour it
+# holds the build to and what it leaves unestablished, and `-v` is how
+# an operator asking "what happens if the hub restarts mid-job" gets the
+# answer from the thing that checks it rather than from a document
+# beside it.
+#
+# internal/chaos itself is the registry and its guards: that every
+# scenario SPEC names is defined, that each has a test, and that each
+# says what it does not establish.
+chaos:
+	@env $(DEV_ENV) go test -count=1 -v \
+		-run 'Chaos|Scenario|Exercis|GetThenPut|EveryWriters|HungExtension' \
+		./internal/chaos/... ./internal/hub/... ./internal/eventbus/... \
+		./internal/bridge/... ./internal/job/...
 
 # The correctness core is held to a higher bar than the rest of the tree,
 # because the YAML parser, the template engine, the state compiler, and the
