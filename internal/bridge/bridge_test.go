@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/edlitmus/halite/internal/chaos"
 )
 
 // buildEcho compiles the test extension once, and answers with its
@@ -176,6 +178,14 @@ func TestAPanickingFunctionNamesItself(t *testing.T) {
 // A hung extension cannot hang the agent. That is the whole reason
 // SPEC 24.2 makes an extension a process.
 func TestAHungExtensionIsKilled(t *testing.T) {
+	// SPEC 31's chaos layer names this one, and it was already here.
+	// Marking it is what ties it to the behaviour written down in
+	// internal/chaos, so the guard there reports it as covered rather
+	// than asking for a second test of the same thing.
+	sc := chaos.Exercises(chaos.ExtensionHang)
+	t.Logf("%s: %s", sc.Key, sc.Behaviour)
+	t.Logf("%s: not established: %s", sc.Key, sc.Limit)
+
 	proc := startEcho(t, func(o *Options) { o.Timeout = 500 * time.Millisecond })
 
 	started := time.Now()
