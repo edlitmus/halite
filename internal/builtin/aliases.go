@@ -65,6 +65,12 @@ func registerAliases(r *Registries) {
 
 	// sysctl has no provider table: it is one implementation that reads
 	// the platform's own tool, so the guard is the platform.
+	r.Exec.Alias("ufw", exec.Alias{
+		Module:   "firewall",
+		Provider: "ufw",
+		Usable:   firewallProviderIs("ufw"),
+	})
+
 	r.Exec.Alias("freebsd_sysctl", exec.Alias{
 		Module:   "sysctl",
 		Provider: "freebsd",
@@ -107,6 +113,20 @@ func serviceProviderIs(provider string) func(*exec.Context) error {
 		}
 		if p.Name() != provider {
 			return fmt.Errorf("this is the %s spelling of `service`, and this node's init system is %s; call `service` instead, which picks the right one",
+				provider, p.Name())
+		}
+		return nil
+	}
+}
+
+func firewallProviderIs(provider string) func(*exec.Context) error {
+	return func(c *exec.Context) error {
+		p, err := pickFirewallProvider(c)
+		if err != nil {
+			return err
+		}
+		if p.Name() != provider {
+			return fmt.Errorf("this is the %s spelling of `firewall`, and this node's firewall is %s; call `firewall` instead, which picks the right one",
 				provider, p.Name())
 		}
 		return nil

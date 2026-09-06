@@ -28,6 +28,9 @@ func TestEveryAliasResolvesToSomethingReal(t *testing.T) {
 	for _, p := range availableServiceProviders() {
 		providers[p.Name()] = true
 	}
+	for _, p := range firewallProviders {
+		providers[p.Name()] = true
+	}
 
 	aliases := r.Exec.Aliases()
 	if len(aliases) == 0 {

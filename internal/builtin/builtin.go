@@ -95,6 +95,7 @@ func New() *Registries {
 	registerDpkg(r)
 	registerAliases(r)
 	registerDebconf(r)
+	registerFirewall(r)
 	return r
 }
 
