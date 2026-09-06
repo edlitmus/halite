@@ -65,11 +65,17 @@ func registerAliases(r *Registries) {
 
 	// sysctl has no provider table: it is one implementation that reads
 	// the platform's own tool, so the guard is the platform.
-	r.Exec.Alias("ufw", exec.Alias{
-		Module:   "firewall",
-		Provider: "ufw",
-		Usable:   firewallProviderIs("ufw"),
-	})
+	// The firewall providers, by the name SPEC 15.3 gives each. `ufw` is
+	// the Debian row's and `pf` is the FreeBSD row's, and they resolve
+	// to the same virtual module because they answer the same question
+	// with different tools.
+	for _, provider := range []string{"ufw", "pf"} {
+		r.Exec.Alias(provider, exec.Alias{
+			Module:   "firewall",
+			Provider: provider,
+			Usable:   firewallProviderIs(provider),
+		})
+	}
 
 	r.Exec.Alias("freebsd_sysctl", exec.Alias{
 		Module:   "sysctl",

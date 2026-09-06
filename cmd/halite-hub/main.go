@@ -40,6 +40,7 @@ Usage:
   halite-hub event <listen|tags> the event bus
   halite-hub metrics             the Prometheus exposition
   halite-hub ssh <target> <fun>  run on a machine with no agent
+  halite-hub doctor              check this hub and say what to fix
   halite-hub migrate <tree>      audit an existing Salt tree and report
   halite-hub lint <path>...      render and parse a file without executing
   halite-hub version             print the build identity
@@ -199,6 +200,8 @@ func main() {
 			"A node fetches from `salt://` today; this is the push in the other direction.")
 	case "ssh":
 		os.Exit(runSSH(args))
+	case "doctor":
+		os.Exit(runDoctor(args))
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub: unknown subcommand %q\n\n%s", os.Args[1], usage)
 		os.Exit(2)

@@ -314,9 +314,10 @@ whichever trees already use it, found at apply time.
 
 The pair is what makes the mismatch SPEC asks `doctor` to warn about
 visible at all: a FIPS kernel running a non-FIPS binary, or the reverse,
-is a deployment mistake neither fact finds alone. `doctor` itself is not
-built, so nothing warns yet; the grains are there for a tree to assert
-on in the meantime.
+is a deployment mistake neither fact finds alone. `doctor` now compares
+them and warns in both directions, with a different remedy for each;
+5.30 has the reasoning, including why a platform with no kernel FIPS
+mode is a skip rather than a warning.
 
 None of the four is evidence to an assessor. They are grains, which is
 to say a node's own account of itself, and a node that is lying about
@@ -555,9 +556,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-20 of 65 present — the rows below total 45 absent.
+21 of 65 present — the rows below total 44 absent.
 
-Nine of the twenty are **aliases**. SPEC names both
+Ten of the twenty-one are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -583,7 +584,9 @@ them this node can use.
 Of the eleven that are modules in their own right, four are the Windows
 ones, and they arrived because a Windows host became available: the gap
 tracks the hardware, not the intent. Five are the Debian row — `dpkg`,
-`debconf`, `netplan`, `apparmor` and `snap` — and the estate is Ubuntu.
+`debconf`, `netplan`, `apparmor` and `snap`. That row was built when
+this project's fleet was assumed to be Ubuntu; it is one Ubuntu host
+to four FreeBSD, which plan §7 re-ranked around on 2026-09-06.
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -596,7 +599,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 45 are declared as pending rather than simply missing. A name absent
+The 44 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -616,7 +619,7 @@ specification cannot be quietly missed.
 |---|---|---|
 | Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
-| FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` (all aliases) | `pf`, `jail` |
+| FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (all aliases) | `jail` |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
@@ -3242,6 +3245,167 @@ the build to and the limit of what it checked, so "what happens if the
 hub restarts mid-job" is answered by the thing that tests it rather than
 by a document beside it.
 
+### 5.30 `doctor`, and the FIPS check that needed a fleet to design
+
+SPEC 26.4 gives `halite-node doctor` and `halite-hub doctor` ten checks
+— configuration validity, clock skew against the hub, certificate
+validity and expiry, connectivity, file server reachability, pillar
+compilation, disk space, queue depths, extension signatures, and FIPS
+mode consistency — and argues for them in one line worth repeating:
+"most operational tickets on a Salt estate are one of these checks, and
+making them a single command is worth more than it appears."
+
+The tree had one mention of the word, in a comment.
+
+**The remediation line is the design.** SPEC asks for "a pass or fail
+per check with a remediation line", and a check that says a certificate
+expires in three days and stops has moved the problem rather than
+answered it: the operator still has to know which command renews it.
+`doctor_test.go` fails the build if any check can report something other
+than a pass without saying what to do about it, driven through every
+status each check can reach rather than through the happy path. A guard
+also holds the check set to SPEC 26.4's own sentence in both directions.
+Both were verified by breaking them.
+
+**Four statuses, not two.** `skip` is the one SPEC does not name and the
+one that makes the rest readable: a check that cannot run and reports a
+pass is worse than one that says nothing, because it answers a question
+it did not ask. A check that does not belong to the role is not run at
+all rather than skipped — "queue depths: skipped, this is a node" on
+every node run is noise on every run rather than information on any.
+
+**A warning does not fail the command.** `doctor` belongs in a cron job
+and in a state's `onlyif`, and a certificate three weeks from expiry
+must not fail either; it is a thing to do this month, not a reason to
+stop. Only a failure exits non-zero.
+
+#### The FIPS check, and why the fleet's shape decided it
+
+SPEC 27.4 gives the mismatch warning to `doctor`: "The `fips_mode` grain
+reports both the host's kernel FIPS state and the binary's own mode, and
+a mismatch is a `doctor` warning."
+
+The facts were already reported — 1.11 records why they are separate
+grains — and nothing correlated them. Both directions are worth a
+warning and they are **different** warnings:
+
+- A `-fips` artifact on a host whose kernel is not in FIPS mode reads as
+  compliant and is not. Everything on the box says FIPS except the box,
+  and this is the one that costs an assessment.
+- An ordinary build on a host that *is* in FIPS mode makes halite the
+  non-compliant component on an otherwise compliant host. An operator
+  watching only the kernel's state will not think to look.
+
+The third case is the one that needed knowing where this runs. On the
+BSDs and macOS there is no kernel FIPS mode at all, and
+`internal/grains/platform_bsd.go` reports `fips_mode` as a hardcoded
+false so that a template does not have to guard for the platform — right
+there, and wrong as an input to this check. A naive
+`artifact && !kernel` would have warned on every one of those hosts.
+**This project's own fleet is four FreeBSD hosts to one Linux**, so that
+is a warning on four nodes in five, and a check that cries wolf on most
+of an estate is a check nobody reads. The kernel state is therefore a
+pointer: nil is "there is no such switch", which is a `skip` with the
+reason, and it becomes a warning only if a FIPS artifact turns up there
+anyway — which `FIPS_TARGETS` does not build.
+
+The nil case carries the caller's own reason rather than one written in
+the check, because "freebsd has no kernel FIPS mode" and "this command
+does not read the Windows policy value" are both nils. The first version
+guessed, and told a Windows operator that Windows has no kernel FIPS
+mode in the same breath as saying the check applies on Windows.
+
+#### What it does not do
+
+The hub's pillar check compiles for a node with no grains, which reaches
+the top file and every SLS matching `'*'` — the majority of a tree and
+the part that breaks — and cannot reach an SLS behind a grain target.
+Which files a real node gets is a question about that node, and
+`halite-node doctor` compiles the whole of its own; the two together are
+the answer. The hub's queue check reports the reactor's configured bound
+rather than a live depth, because a diagnostic that needed the thing it
+diagnoses to be running would be no use on the day it is not.
+
+And free space is not reportable everywhere. `syscall` exposes `Statfs`
+on Linux, macOS, FreeBSD and DragonFly; OpenBSD spells the same fields
+`F_bavail` and `F_bsize`; NetBSD declares `Statfs_t` as `[0]byte` and
+offers no `Statfs` at all, and Solaris, illumos and AIX have statvfs,
+which Go does not expose. Those last four report a skip with the reason
+rather than a pass on a disk nothing looked at. The first version of
+that file claimed every unix and broke the build for two of SPEC 27.1's
+tier 3 targets — 4.10's lesson, one working day later, caught by
+`build-all` exactly as intended.
+
+### 5.31 `pf`, and the second provider reshaping the interface
+
+`firewallProvider`'s own comment said this would happen:
+
+> **The interface is shaped by ufw, because ufw is the only provider.**
+> That is worth stating rather than pretending otherwise. A second
+> provider will probably reshape it: firewalld thinks in zones and
+> services, nftables and pf in a whole ruleset that is replaced at once
+> rather than a set of rules added one at a time, and neither maps
+> cleanly onto "allow this port from that address".
+
+`pf` is that second provider, and it went first — ahead of `iptables`
+and `nftables` — because plan §7's re-rank found the fleet is four
+FreeBSD hosts to one Ubuntu, so `firewall` shipping with a ufw provider
+and nothing else meant the only host that could use it was the only host
+that is not FreeBSD.
+
+Three things came out of it.
+
+**It manages an anchor, not `pf.conf`.** pf loads a ruleset;
+`pfctl -f /etc/pf.conf` replaces the whole of it. A configuration
+management system that owned that file would own every rule on the host
+— including the ones an operator wrote by hand — and would discard them
+on its first run. So halite loads into `anchor "halite"`, which
+`pfctl -a halite -f -` replaces without touching anything else, and the
+operator keeps pf.conf and decides where in the evaluation order the
+managed rules sit. That last part is a decision only they can make: pf
+is last-match-wins, so the anchor's position changes what it does.
+
+**The cost of that is the worst failure this module could have, so it is
+checked.** `pfctl -a halite -f -` succeeds whether or not pf.conf
+contains `anchor "halite"`. Without the reference the rules load,
+`pfctl -a halite -s rules` lists them back, and no packet is ever
+matched against them — a firewall reporting rules it is not enforcing,
+with everything looking correct. `Apply` reads pf.conf and refuses with
+the line to add rather than writing rules into the void. An *unreadable*
+pf.conf does not refuse: unreadable is not absent, and stopping a state
+on a technicality is not the same as stopping it on a fault.
+
+**`SetDefault` refuses, which is the interface reshaping.** ufw has a
+default policy per direction as a setting. pf has whatever the last
+matching rule of the ruleset says, which is a line in the file halite
+deliberately does not own. The refusal names where the answer lives —
+`block all` near the top of pf.conf — rather than pretending, and
+`firewall.status` reports no defaults on pf for the same reason: a guess
+presented as a fact is worse than nothing. That is the first place the
+virtual module's shape has failed to fit a provider, and it failed in
+the way the comment predicted, which is the useful outcome. It did not
+require changing the interface: a provider that cannot do something says
+so.
+
+**Every rule is `quick`.** pf is last-match-wins and the module's shape —
+and ufw's — is first-match-wins. Emitting `quick` makes the first match
+decisive, which is what somebody writing `firewall.allowed` means. It
+also makes a rule's effect independent of the anchor's order, which
+matters because the whole anchor is rewritten and sorted on every
+change: without `quick`, which rule won would depend on alphabetical
+order.
+
+**What is not established.** None of it has run against a real pf. The
+tests supply `pfctl`'s output and record what would be run; the rendered
+rules are checked against the spelling `pfctl -s rules` prints back,
+because this provider compares its own text with pf's, but nothing has
+watched pf accept one. Two of the load-bearing behaviours were checked
+by swapping in the wrong implementation and watching the tests fail:
+dropping `quick`, and skipping the anchor-reference check. CI has a
+FreeBSD runner, which could take this further than it has.
+
+`jail` remains the FreeBSD row's one genuine absence.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -3817,8 +3981,8 @@ What is **not** built in the API:
   local state run's duration, and the scheduler's `maxrunning` skips.
   The hub counts what reaches it, which is most of SPEC 26.2's state and
   beacon families but not the drops.
-- **Tracing** (SPEC 26.3) and **`doctor`** (SPEC 26.4), the other two
-  parts of section 26.
+- **Tracing** (SPEC 26.3), the one part of section 26 still unbuilt.
+  `doctor` (26.4) ships; see 5.30.
 - **`mtls` hook authentication.** The mode is implemented and refused
   when no client certificate is presented, but it has never been
   exercised against a real sender.
@@ -3937,7 +4101,7 @@ accounts it locks out are named at startup, and key exchange is P-256 or
 P-384. 1.10 records why those are this build's doing rather than the
 `GODEBUG` setting's, 1.11 why the grain is a pair, and 5.15 what running
 it established. `doctor`, which SPEC 27.4 gives the mismatch warning to,
-is not built.
+now exists and carries it (5.30).
 
 What is **not** built in phase 5:
 
