@@ -2,6 +2,7 @@ package hub
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"os"
@@ -131,6 +132,38 @@ func (r *Reactor) Run(ctx context.Context) error {
 		wake := bus.Wait()
 		events, next, err := bus.Read(from, tags, 500)
 		if err != nil {
+			// A reactor that has fallen off the back of the bus and one
+			// whose offset file is corrupt are different, and they
+			// resume from different places.
+			//
+			// Lagged: the offset says exactly where the reactor was, and
+			// the oldest event still on the bus is the nearest surviving
+			// point to it. Resuming there loses the least, and nothing
+			// before it can be re-run because everything the reactor
+			// processed is older than the offset it is holding.
+			//
+			// Malformed: the offset says nothing at all about where the
+			// reactor was, so there is nowhere to resume but the end.
+			// Replaying the whole bus on the strength of an unreadable
+			// file would fire every reaction the retention window still
+			// holds.
+			var lag *eventbus.LagError
+			if errors.As(err, &lag) {
+				r.Server.m().eventsDropped.With("subscriber_lag").Inc()
+				r.Server.warn("the reactor fell behind the event bus and events were lost",
+					"offset", lag.From, "segments_pruned", lag.Segments,
+					"resuming_from", lag.Oldest)
+				// Recorded on the bus as well as in the log, because a
+				// reaction that did not happen leaves no other trace and
+				// this is the only moment anything knows it did not.
+				r.Server.emit("halite/reactor/lag", "", map[string]any{
+					"offset": lag.From, "segments_pruned": int64(lag.Segments),
+					"resuming_from": lag.Oldest,
+				})
+				from = lag.Oldest
+				r.writeOffset(from)
+				continue
+			}
 			// A bad offset must not wedge the reactor for ever: start
 			// from what is there now and say so, because the
 			// alternative is a reactor that has silently stopped.

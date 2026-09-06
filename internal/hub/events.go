@@ -215,6 +215,30 @@ func (s *Server) eventStream(w http.ResponseWriter, r *http.Request, principal s
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
+	// Before the success header, because after it there is nowhere left
+	// to put an error: the stream is a 200 and a body, and a reader that
+	// got fewer events than it asked for cannot tell that from a quiet
+	// hub. SPEC 17.2 names this error; DIVERGENCE 4.12 records the
+	// version of this handler that returned silently instead.
+	//
+	// 410 rather than 400: the offset was well formed and was one this
+	// bus issued. What is gone is the data behind it, which is what a
+	// Gone says and a Bad Request does not.
+	if err := s.Events.Lag(from); err != nil {
+		var lag *eventbus.LagError
+		if errors.As(err, &lag) {
+			s.m().eventsDropped.With("subscriber_lag").Inc()
+			s.warn("a subscriber asked to resume from a pruned offset",
+				"offset", lag.From, "segments_pruned", lag.Segments,
+				"oldest", lag.Oldest)
+			transport.WriteError(w, http.StatusGone, transport.CodeSubscriberLag,
+				fmt.Errorf("%w. Resume from %s to lose the least, or from `earliest` "+
+					"for whatever the bus still holds", lag, lag.Oldest))
+			return
+		}
+		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
+		return
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok && follow {

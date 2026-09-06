@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto"
 	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -537,5 +539,169 @@ func waitFor(t *testing.T, within time.Duration, what string, ok func() bool) {
 			t.Fatalf("timed out after %s waiting for %s", within, what)
 		}
 		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// A subscriber that has fallen off the back of the bus is refused by
+// name, before anything is streamed to it.
+//
+// SPEC 17.2 names this error. The half that matters is *when*: after the
+// success header there is nowhere left to put it, and a reader that got
+// fewer events than it asked for cannot tell that from a quiet hub.
+// DIVERGENCE 4.12 records the version of this handler that returned
+// silently, and the version of the bus that skipped forward without
+// saying so.
+func TestChaosASubscriberThatFellBehindIsRefusedByName(t *testing.T) {
+	s := chaos.Exercises(chaos.EventBusAtRetention)
+	says(t, s)
+
+	l := newLab(t).withJobs(t).withEvents(t)
+	op := l.operator(t, "ed")
+	bus := l.server.Events
+	bus.SegmentBytes = 512
+	bus.MaxBytes = 2048
+
+	// An offset handed out early, then pruned from under its holder.
+	first, err := bus.Append(&eventbus.Event{
+		Tag: "halite/chaos/first", Data: map[string]any{"pad": strings.Repeat("z", 64)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 200; i++ {
+		if _, err := bus.Append(&eventbus.Event{
+			Tag:  "halite/chaos/churn",
+			Data: map[string]any{"n": i, "pad": strings.Repeat("z", 64)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := bus.Prune(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := bus.Lag(first); err == nil {
+		t.Fatal("the offset was not pruned; this test needs a bus that has turned over")
+	}
+
+	// The operator asks to resume from it and is told, rather than
+	// quietly handed a later position.
+	err = op.FollowEvents(context.Background(), nil, first, false, 100,
+		func(json.RawMessage) error { return nil })
+	if err == nil {
+		t.Fatal("following from a pruned offset succeeded; the subscriber was silently " +
+			"advanced and would have no way to know what it missed")
+	}
+	if code := transport.CodeOf(err); code != transport.CodeSubscriberLag {
+		t.Errorf("the refusal carries the code %q, want %q — a follower acts on the code "+
+			"rather than the prose", code, transport.CodeSubscriberLag)
+	}
+	// And it says where to go instead, because "your offset is gone"
+	// with nowhere to resume cannot be acted on.
+	if !strings.Contains(err.Error(), "Resume from") {
+		t.Errorf("the refusal does not say what to resume from: %v", err)
+	}
+	t.Logf("refused: %v", err)
+
+	// `latest` and `earliest` cannot lag: they are resolved against what
+	// exists now, so an operator who does not care where they were is
+	// never refused.
+	for _, from := range []string{eventbus.Earliest, eventbus.Latest, ""} {
+		if err := op.FollowEvents(context.Background(), nil, from, false, 10,
+			func(json.RawMessage) error { return nil }); err != nil {
+			t.Errorf("following from %q was refused: %v", from, err)
+		}
+	}
+}
+
+// A reactor that fell behind resumes at the oldest surviving event, not
+// at the end, and records that it skipped.
+//
+// The two failures are different and resume from different places. A
+// lagged reactor knows exactly where it was, so the oldest event still
+// on the bus is the nearest surviving point to it and loses the least;
+// nothing before it can be re-run, because everything it processed is
+// older than the offset it was holding. A reactor with an unreadable
+// offset knows nothing about where it was, so there is nowhere to go but
+// the end — replaying the whole retention window on the strength of a
+// corrupt file would fire every reaction in it.
+func TestChaosAReactorThatFellBehindResumesAtTheOldest(t *testing.T) {
+	s := chaos.Exercises(chaos.EventBusAtRetention)
+	t.Logf("%s: the reactor's half", s.Key)
+
+	l, r, _ := reactorLab(t, map[string]string{
+		"audit.sls": `
+record_it:
+  runner.event.send:
+    - args:
+        tag: halite/audit/saw_it
+`,
+	}, `
+reactor:
+  - tag: 'halite/node/*/start'
+    sls:
+      - $DIR/audit.sls
+    principal: 'cert:CN=ed'
+`)
+	l.server.Policy = labPolicy(t)
+	r.OffsetFile = filepath.Join(t.TempDir(), "reactor.offset")
+
+	bus := l.server.Events
+	bus.SegmentBytes = 512
+	bus.MaxBytes = 2048
+
+	stale, err := bus.Append(&eventbus.Event{
+		Tag: "halite/chaos/stale", Data: map[string]any{"pad": strings.Repeat("q", 64)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 200; i++ {
+		if _, err := bus.Append(&eventbus.Event{
+			Tag:  "halite/chaos/churn",
+			Data: map[string]any{"n": i, "pad": strings.Repeat("q", 64)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := bus.Prune(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var lag *eventbus.LagError
+	if err := bus.Lag(stale); !errors.As(err, &lag) {
+		t.Fatalf("the offset was not pruned (%v); this test needs a bus that has turned over", err)
+	}
+
+	// The reactor comes back holding it.
+	r.writeOffset(stale)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = r.Run(ctx) }()
+
+	// It resumes at the oldest surviving event rather than at the end.
+	waitFor(t, 10*time.Second, "the reactor to move off the pruned offset", func() bool {
+		got := r.readOffset()
+		return got != stale && got != ""
+	})
+	got := r.readOffset()
+	if got == eventbus.Latest {
+		t.Error("a lagged reactor jumped to the end; every event still on the bus was " +
+			"skipped as well as the ones that were pruned")
+	}
+
+	// And it said so. A reaction that did not happen leaves no other
+	// trace, and this is the only moment anything knows it did not.
+	waitFor(t, 10*time.Second, "the reactor's lag event", func() bool {
+		events, _, err := bus.Read(eventbus.Earliest, []string{"halite/reactor/lag"}, 10)
+		return err == nil && len(events) > 0
+	})
+	events, _, err := bus.Read(eventbus.Earliest, []string{"halite/reactor/lag"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, ok := events[0].Data["segments_pruned"]; !ok {
+		t.Errorf("the lag event does not say how far behind it was: %+v", events[0].Data)
+	} else {
+		t.Logf("the reactor recorded a lag of %v segments, resuming at %v",
+			n, events[0].Data["resuming_from"])
 	}
 }

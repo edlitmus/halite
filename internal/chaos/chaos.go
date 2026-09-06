@@ -173,18 +173,25 @@ var Scenarios = []Scenario{
 			"is enforced by discarding history, not by refusing the present, because a " +
 			"bus that stopped accepting events at a threshold would go blind exactly " +
 			"when an estate was busiest. " +
-			"A reader whose offset is in a pruned segment is **not** told. `Read` skips " +
-			"to the oldest segment that still exists and returns events from there with " +
-			"no indication that anything was missed; the scenario's test measured 380 " +
-			"events silently skipped. That is what this build does and it is written " +
-			"here because it is what this build does — it is a gap rather than a " +
-			"decision, and DIVERGENCE 4.12 argues it the other way. A malformed offset " +
-			"is refused, so the silence is about a well-formed offset whose data has " +
-			"gone rather than about parsing.",
+			"A reader whose offset has been pruned is refused by name: SPEC 17.2's " +
+			"`subscriber_lag`, carrying how many segments went and the oldest offset " +
+			"still held, so that \"your position is gone\" comes with somewhere to " +
+			"resume. An operator streaming events gets it as a 410 with the code, " +
+			"before any success header — after one there is nowhere left to put an " +
+			"error, and a reader handed fewer events than it asked for cannot tell that " +
+			"from a quiet hub. `latest` and `earliest` cannot lag, being resolved " +
+			"against what exists now, and a malformed offset stays a malformed offset. " +
+			"The reactor resumes at the oldest surviving event rather than at the end, " +
+			"counts the loss in `halite_events_dropped_total{reason=\"subscriber_lag\"}` " +
+			"and emits `halite/reactor/lag` — because a reaction that did not happen " +
+			"leaves no other trace, and that is the only moment anything knows it did " +
+			"not.",
 		Limit: "Pruning is by segment, so the limit is honoured to within one segment " +
-			"rather than exactly. A bus configured with a MaxBytes smaller than one " +
-			"segment keeps one segment. Nothing here establishes what a *reactor* does " +
-			"with the skip, which is where the consequence actually lands.",
+			"rather than exactly, and the count in the error is segments rather than " +
+			"events: the bus keeps no tally of what was in a segment it deleted. " +
+			"Nothing here establishes what happens to a reaction that was owed and " +
+			"never ran — the loss is recorded, not recovered, and no bus with a " +
+			"retention window can do better than record it.",
 	},
 	{
 		Key:  ReactorQueueOverflow,
