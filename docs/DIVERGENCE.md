@@ -415,8 +415,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **52 execution modules / 319 functions** and **34 state
-modules / 85 functions**.
+The build ships **54 execution modules / 330 functions** and **36 state
+modules / 90 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -468,7 +468,7 @@ different reason is given.
 | `beacons` | implemented | 10 | `list` answers from the registry and the configuration; the nine that change a running node's watchers name the phase they arrive in |
 | `blockdev` | not implemented | 0 | |
 | `data` | not implemented | 0 | |
-| `firewall` | not implemented | 0 | |
+| `firewall` | implemented | 8 | virtual, with a ufw provider: status, enable, disable, set_default, allow, deny, delete and reload. firewalld, nftables and pf are not built, and the provider interface is shaped by the one provider it has |
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
@@ -516,7 +516,7 @@ different reason is given.
 | `at` | not implemented | 0 | |
 | `beacon` | implemented | 2 | present and absent, both persisting to beacons.d so a declaration survives a restart 
 | `environ` | implemented | 1 | `setenv`; `permanent` defaults to true here and to false in Salt, so a tree carrying this state writes a file or a registry value Salt never wrote; see migrating-from-salt.md |
-| `firewall` | not implemented | 0 | |
+| `firewall` | implemented | 4 | `enabled`, `allowed`, `denied` and `absent`; convergence is asked of ufw through its own `--dry-run` rather than computed from a status listing written for a person |
 | `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `hostname` | implemented | 1 | `system`; the running name and the persistent one are read and reported separately, because a node where they disagree renames itself at the next boot |
 | `iptables` | not implemented | 0 | Linux only |
@@ -555,7 +555,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-15 of 65 present — the rows below total 50 absent.
+17 of 65 present — the rows below total 48 absent.
 
 Eight of the fifteen are **aliases**, and they are new. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -585,7 +585,7 @@ ones, and they arrived because a Windows host became available: the gap
 tracks the hardware, not the intent. `dpkg` is the first of the Debian
 row, and the estate is Ubuntu.
 
-The 50 are declared as pending rather than simply missing. A name absent
+The 48 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -606,14 +606,24 @@ specification cannot be quietly missed.
 | Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` (all aliases) | `pf`, `jail` |
-| Debian, Ubuntu | `dpkg`, `aptpkg` (alias) | `debconf`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
+| Debian, Ubuntu | `dpkg`, `debconf`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | `mac_brew_pkg`, `mac_service` (aliases) | `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_defaults`, `mac_keychain`, `mac_assistive` |
 
-Two notes on this table:
+Notes on this table:
 
+- **`apt_key` is not pending, it is declined.** Every other entry here
+  says "not yet"; this one says "not this". `apt-key` was deprecated in
+  Debian 11 and removed in Debian 12 and Ubuntu 24.04, so there is no
+  tool left for the module to drive, and `pkgrepo` already writes the
+  `signed-by` keyrings that replaced it. It stays in the table because
+  SPEC 15.3 still names it and a name the specification has and the
+  build does not is exactly what the table exists to explain — but its
+  reason says the module is not coming, rather than implying a date.
+  Building it would have meant driving a binary the estate's own
+  platform does not install.
 - `zfs` and `zpool` used to be filed under "Common Linux" in SPEC 15.3,
   which was wrong: they were implemented and verified on FreeBSD, where
   ZFS is native, and the placement said a FreeBSD node could not manage

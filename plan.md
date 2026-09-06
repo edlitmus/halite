@@ -39,7 +39,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **50 of SPEC 15.3's 65 platform modules, 20 of SPEC 15.2's core execution modules and 16 of SPEC 15.5's core state modules remain.** |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **48 of SPEC 15.3's 65 platform modules, 19 of SPEC 15.2's core execution modules and 15 of SPEC 15.5's core state modules remain.** |
 | 6. Hardening to 1.0 | Barely started. Metrics are nearly complete (§3.2). No benchmarks, no chaos suite, no packaging, no CI, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
@@ -270,14 +270,13 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 20 of SPEC 15.2**: `acl`, `apparmor`, `at`, `blockdev`,
-`data`, `firewall`, `kernelpkg`, `locale`, `logrotate`, `nfs`, `ps`,
-`reboot`, `selinux`, `shadow`, `state`, `sudo`, `swap`, `system`, `tls`,
-`tmpfs`.
+**Execution, 19 of SPEC 15.2**: `acl`, `apparmor`, `at`, `blockdev`,
+`data`, `kernelpkg`, `locale`, `logrotate`, `nfs`, `ps`, `reboot`,
+`selinux`, `shadow`, `state`, `sudo`, `swap`, `system`, `tls`, `tmpfs`.
 
-**State, 16 of SPEC 15.5**: `acl`, `apparmor`, `at`, `firewall`,
-`iptables`, `kernelpkg`, `locale`, `logrotate`, `lvm`, `mac_defaults`,
-`nftables`, `pro`, `reboot`, `selinux`, `sudo`, `win_wua`.
+**State, 15 of SPEC 15.5**: `acl`, `apparmor`, `at`, `iptables`,
+`kernelpkg`, `locale`, `logrotate`, `lvm`, `mac_defaults`, `nftables`,
+`pro`, `reboot`, `selinux`, `sudo`, `win_wua`.
 
 `hostname` and `ssh_known_hosts` have since shipped, which is what moved
 both counts.
@@ -300,8 +299,15 @@ is blocked on:
    accepts, which pins whatever answered the day the tree first ran.
 3. **`system`**, `reboot`, `ps`, `status` depth. What an operator reaches
    for during an incident.
-4. **`selinux`**, `apparmor`, `firewall`, `iptables`, `nftables`,
-   `sudo`, `acl`. Platform-shaped and mostly Linux; see 2.3.
+4. **`selinux`**, `apparmor`, `iptables`, `nftables`, `sudo`, `acl`.
+   Platform-shaped and mostly Linux; see 2.3. `firewall` is struck: it
+   ships as a virtual module with a ufw provider, which closed 15.2's
+   execution module, 15.5's state and 15.3's `ufw` together. Its
+   provider interface is shaped by the one provider it has, and
+   `iptables` and `nftables` are the two most likely to reshape it —
+   they replace a whole ruleset at once rather than adding rules one at
+   a time, which is a different thing from what the interface currently
+   asks a provider to do.
 5. The rest — `at`, `blockdev`, `data`, `kernelpkg`, `locale`,
    `logrotate`, `nfs`, `swap`, `tls`, `tmpfs`, `lvm` — each small, none
    blocking. `locale` now also carries `internal/migrate`'s gap test,
@@ -314,7 +320,7 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 50 of 65
+### 2.3 Platform modules: 48 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
@@ -348,7 +354,7 @@ what an operator is looking for.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 8 | **The estate is Ubuntu.** `dpkg` ships and `aptpkg` is an alias. `apt_key`, `ufw`, `netplan`, `snap`, `pro`, `debconf`, `debbuild`, `apparmor` do not. |
+| Debian and Ubuntu | 6 | **The estate is Ubuntu.** `dpkg` and `debconf` ship; `aptpkg` and `ufw` are aliases. `netplan`, `snap`, `pro`, `debbuild` and `apparmor` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
 | Common Linux | 11 | `systemd_service` is an alias. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
