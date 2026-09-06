@@ -401,6 +401,13 @@ const (
 	CodeRefused   = "refused"
 	CodeMalformed = "malformed"
 	CodeInternal  = "internal"
+	// CodeSubscriberLag is SPEC 17.2's name for a subscriber asking to
+	// resume the event bus from a position that has since been pruned.
+	// Distinct from CodeMalformed on purpose: the offset was well
+	// formed and this bus issued it, and what has gone is the data
+	// behind it. A follower acts on the two differently -- one is a bug
+	// in the follower, the other is a follower that was away too long.
+	CodeSubscriberLag = "subscriber_lag"
 )
 
 // WriteJSON sends a value with the canonical settings of SPEC 6.4:

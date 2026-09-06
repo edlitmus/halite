@@ -1,6 +1,7 @@
 package eventbus
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -92,56 +93,48 @@ func TestChaosEventBusAtRetentionLimit(t *testing.T) {
 	// And now the question the chaos row is really asking: a reader
 	// holding an offset into a segment that has been pruned.
 	//
-	// **It is not told.** `Read` skips forward to the oldest segment
-	// that still exists and returns events from there, with no
-	// indication that anything was missed. That is recorded here as
-	// what this build does, and DIVERGENCE 4.12 says why it is a gap:
-	// a reactor that falls behind pruning resumes silently, and the
-	// reactions it never ran leave no trace anywhere. Asserting it
-	// keeps the scenario honest and makes the day somebody fixes it a
-	// day this test changes.
-	behind, next, err := bus.Read(first, nil, 10)
+	// It is refused, by name, with how far behind it fell and where to
+	// resume to lose the least. That is SPEC 17.2's `subscriber_lag`,
+	// and until it was implemented this call returned events from the
+	// oldest surviving segment with no indication that anything had
+	// been missed -- 380 of them, measured by the first version of this
+	// test. DIVERGENCE 4.12.
+	behind, _, err := bus.Read(first, nil, 10)
+	if err == nil {
+		t.Fatalf("reading from a pruned offset returned %d events and no error; a "+
+			"subscriber that has fallen off the back of the bus was silently "+
+			"advanced, which is what SPEC 17.2 names Salt's bus for doing",
+			len(behind))
+	}
+	if !errors.Is(err, ErrSubscriberLag) {
+		t.Fatalf("a pruned offset gave %v, want a subscriber_lag", err)
+	}
+	var lag *LagError
+	if !errors.As(err, &lag) {
+		t.Fatalf("the error carries no detail: %v", err)
+	}
+	if lag.From != first {
+		t.Errorf("the error names %q as the offset asked for, want %q", lag.From, first)
+	}
+	if lag.Segments < 1 {
+		t.Errorf("the error says %d segments were pruned", lag.Segments)
+	}
+	// Oldest is the point of it: "your offset is gone" without somewhere
+	// to resume cannot be acted on.
+	resumed, _, err := bus.Read(lag.Oldest, nil, 10)
 	if err != nil {
-		t.Fatalf("reading from a pruned offset was an error: %v. If that is the new "+
-			"behaviour it is the better one, and this scenario's definition and "+
-			"DIVERGENCE 4.12 both need rewriting.", err)
+		t.Fatalf("the offset the lag error names as the oldest was itself refused: %v", err)
 	}
-	if len(behind) == 0 {
-		t.Fatal("reading from a pruned offset returned nothing at all")
+	if len(resumed) == 0 {
+		t.Error("resuming from the offset the error named returned nothing")
 	}
-	gotN := numberOf(t, behind[0])
-	if gotN == 0 {
-		t.Errorf("the first event was still readable; this test needs a bus that has " +
-			"actually pruned the offset it then reads from")
-	}
-	t.Logf("a reader resuming from a pruned offset silently skipped %d events "+
-		"and continued at %s", gotN, next)
+	t.Logf("refused: %v", err)
 
 	// A malformed offset is refused, which is the case that *is*
 	// distinguished — so the silence above is about a valid offset
 	// whose data has gone, not about parsing.
 	if _, _, err := bus.Read("not-an-offset", nil, 10); err == nil {
 		t.Error("a malformed offset was accepted")
-	}
-}
-
-// numberOf reads back the counter an event was appended with.
-func numberOf(t *testing.T, e Event) int {
-	t.Helper()
-	raw, ok := e.Data["n"]
-	if !ok {
-		t.Fatalf("an event came back without its counter: %+v", e.Data)
-	}
-	switch n := raw.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case int64:
-		return int(n)
-	default:
-		t.Fatalf("the counter came back as %T", raw)
-		return 0
 	}
 }
 

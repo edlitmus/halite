@@ -1487,7 +1487,7 @@ a batched job's delivery accounting, for instance.
 What found it was CI running the suite on four platforms on every
 change. It had been in the tree since the queue policy was built and no
 local run had ever failed on it.
-### 4.12 A reader that falls behind the event bus is not told
+### 4.12 A reader that fell behind the event bus was not told
 
 Found on 2026-09-06 by the chaos suite, on its first run, which is what
 the suite was built for.
@@ -1552,10 +1552,51 @@ fails this test with a message saying which two documents to rewrite —
 which is the cheapest way to make sure the fix and the record move
 together.
 
-The distinction the build does draw is worth stating: a **malformed**
-offset is refused. So the silence is about a well-formed offset whose
-data has gone, not about parsing, and `TestABadOffsetIsRefusedRatherThan
+The distinction the build already drew is worth stating: a **malformed**
+offset is refused. So the silence was about a well-formed offset whose
+data had gone, not about parsing, and `TestABadOffsetIsRefusedRatherThan
 SilentlyStartingOver` has covered the other half since before this.
+
+**Fixed the same day.** `eventbus.Bus.Lag` reports whether an offset has
+been pruned without reading anything, and `Read` calls it first, so the
+silent advance is no longer reachable. The error is `ErrSubscriberLag`,
+carrying the offset asked for, how many whole segments went, and the
+oldest offset the bus still holds — because "your position is gone"
+without somewhere to resume cannot be acted on. It is deliberately not
+`ErrBadOffset`: the two say different things about where the reader was,
+and the callers resume from different places because of it.
+
+- **An operator streaming events** gets a **410** with
+  `transport.CodeSubscriberLag`, and gets it *before* the success
+  header. That is the half that matters. After a 200 there is nowhere
+  left to put an error, and a reader handed fewer events than it asked
+  for cannot tell that from a quiet hub — which is exactly how the
+  original defect stayed invisible. 410 rather than 400 because the
+  offset was well formed and this bus issued it; what is gone is the
+  data behind it.
+- **The reactor** resumes at the oldest surviving event rather than at
+  the end. It knows exactly where it was, so the oldest event still held
+  is the nearest surviving point to it and loses the least; nothing
+  before it can be re-run, because everything it processed is older than
+  the offset it was holding. A reactor with an *unreadable* offset still
+  jumps to the end, and that asymmetry is the point: a corrupt file says
+  nothing about where the reactor was, and replaying the whole retention
+  window on the strength of one would fire every reaction in it.
+- **The loss is recorded three ways**, on the same argument the reactor
+  queue's overflow is: a warning naming the offset and the distance, a
+  `halite/reactor/lag` event, and
+  `halite_events_dropped_total{reason="subscriber_lag"}`. A reaction
+  that did not happen leaves no other trace, and this is the only moment
+  anything knows it did not.
+
+`latest` and `earliest` cannot lag — they are resolved against what
+exists now — so an operator who does not care where they were is never
+refused.
+
+**What is still true:** the loss is recorded rather than recovered. No
+bus with a retention window can do better, and the count in the error is
+segments rather than events, because the bus keeps no tally of what was
+in a segment it deleted.
 
 ## 5. Test coverage against SPEC 31
 

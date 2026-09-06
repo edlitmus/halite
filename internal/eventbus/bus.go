@@ -240,6 +240,86 @@ const (
 // issued.
 var ErrBadOffset = errors.New("that is not an offset on this bus")
 
+// ErrSubscriberLag is SPEC 17.2's named error: a subscriber asking to
+// resume from a position the bus has since pruned.
+//
+// It is deliberately not ErrBadOffset. The offset was issued by this bus
+// and was valid when it was handed out; what has happened is that the
+// subscriber fell further behind than the retention window is wide. The
+// two call for different answers — a malformed offset says nothing about
+// where the reader was, so there is nowhere to resume but the end, while
+// a lagged one says exactly where it was, and the oldest surviving event
+// is the nearest point to it.
+//
+// Returning it at all is the whole argument of SPEC 17.2. This build
+// used to skip forward to the oldest surviving segment and return events
+// from there with no indication that anything was missed; the chaos
+// scenario measured 380 events silently skipped. That is what Salt's bus
+// does — checked against 3007.1 and 3008.2, which have no offset,
+// replay or resume at any level and drop at a ZeroMQ high-water mark of
+// 1000 without telling anyone — and SPEC 17.2 names it as the thing a
+// durable log exists not to do. DIVERGENCE 4.12.
+var ErrSubscriberLag = errors.New("subscriber_lag")
+
+// LagError says how far behind a subscriber fell, because "your offset
+// is gone" without a number cannot be acted on.
+//
+// Oldest is what to resume from to lose the least. A caller that wants
+// to carry on rather than stop uses it and knows what it skipped.
+type LagError struct {
+	// From is the offset that was asked for.
+	From string
+	// Oldest is the oldest offset the bus still holds.
+	Oldest string
+	// Segments is how many whole segments were pruned from under the
+	// subscriber. It is a lower bound on what was missed rather than an
+	// event count: the bus prunes by segment and does not keep a tally
+	// of what was in one it deleted.
+	Segments int
+}
+
+func (e *LagError) Error() string {
+	return fmt.Sprintf(
+		"subscriber_lag: the offset %s has been pruned; %d whole segment(s) were "+
+			"removed from under it and the oldest event the bus still holds is at %s",
+		e.From, e.Segments, e.Oldest)
+}
+
+func (e *LagError) Is(target error) bool { return target == ErrSubscriberLag }
+
+// Lag reports whether a subscriber resuming from this offset has fallen
+// off the back of the bus, without reading anything.
+//
+// Separate from Read so that a caller streaming to a client can refuse
+// before it writes a success header. `latest` and `earliest` cannot lag:
+// they are resolved against what exists now.
+func (b *Bus) Lag(from string) error {
+	switch from {
+	case "", Latest, Earliest:
+		return nil
+	}
+	segment, _, err := parseOffset(from)
+	if err != nil {
+		return nil // malformed is ErrBadOffset's business, not this one
+	}
+	segments, err := b.segments()
+	if err != nil {
+		return err
+	}
+	if len(segments) == 0 || segment >= segments[0] {
+		return nil
+	}
+	pruned := 0
+	for seq := segment; seq < segments[0]; seq++ {
+		pruned++
+	}
+	return &LagError{
+		From:     from,
+		Oldest:   fmt.Sprintf("%08d:%d", segments[0], 0),
+		Segments: pruned,
+	}
+}
+
 // parseOffset reads a segment and position.
 func parseOffset(offset string) (int, int64, error) {
 	seg, pos, ok := strings.Cut(offset, ":")
@@ -287,6 +367,13 @@ func (b *Bus) Resolve(from string) (int, int64, error) {
 // Read returns up to limit events from a starting position, filtered by
 // tag globs, and the offset to continue from.
 func (b *Bus) Read(from string, tags []string, limit int) ([]Event, string, error) {
+	// Before anything is read. A reader that has fallen off the back is
+	// told so rather than silently advanced to the oldest segment that
+	// still exists — SPEC 17.2, and DIVERGENCE 4.12 for what it used to
+	// do instead.
+	if err := b.Lag(from); err != nil {
+		return nil, "", err
+	}
 	segment, at, err := b.Resolve(from)
 	if err != nil {
 		return nil, "", err
