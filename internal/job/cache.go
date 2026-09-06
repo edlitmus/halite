@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
@@ -35,6 +36,16 @@ type Cache struct {
 	// MaxBytes is the ceiling on the whole store.
 	MaxBytes int64
 	Now      func() time.Time
+
+	// mu serialises Update against Update, per job.
+	//
+	// A job record is read, changed and written back by several of the
+	// hub's goroutines at once, and the write is a whole-file replace.
+	// Two of them interleaving lose one of the two changes -- see
+	// Update, which is what to use instead of Get and Put for anything
+	// that changes a record that already exists.
+	mu    sync.Mutex
+	locks map[ID]*sync.Mutex
 }
 
 // ErrNoJob is returned for a jid the hub has no record of.
@@ -86,6 +97,69 @@ func (c *Cache) Put(j *Job) error {
 		return fmt.Errorf("encoding the record for %s: %w", j.JID, err)
 	}
 	return writeAtomic(filepath.Join(dir, "job.json"), append(raw, '\n'), 0o600)
+}
+
+// Update changes a job's record without losing a concurrent change.
+//
+// `Get`, change the value, `Put` is the obvious way to edit a record and
+// it is wrong here, because `Put` replaces the whole file. Two of the
+// hub's goroutines doing it at once keep one change and discard the
+// other, and the one discarded is whichever finished reading first.
+//
+// That is not hypothetical. A node reconnecting is given the jobs it
+// missed by one goroutine, which then clears the node from the job's
+// spool; the return the node sends back arrives on another, which marks
+// the job complete. Both read the record, both write it. When the
+// second read happened before the first write, the spool entry came
+// back from the dead and **the node was sent the job again on its next
+// reconnection** -- a second run of an instruction an operator issued
+// once. CI caught it as an intermittent failure of
+// `TestAQueuedJobWaitsForTheNodeToReturn`; DIVERGENCE 4.11 has the
+// account.
+//
+// `mutate` is called with the record as it is on disk, inside the lock,
+// and may be called only once. It must change the record it is given
+// rather than a copy taken earlier -- that is the whole point. Return a
+// non-nil error to abandon the update and write nothing.
+//
+// What this does not do is make the cache safe for two *processes*. One
+// hub owns its job directory; two would need a lock on the file, and
+// nothing in SPEC asks for that.
+func (c *Cache) Update(id ID, mutate func(*Job) error) (*Job, error) {
+	unlock := c.lock(id)
+	defer unlock()
+
+	j, err := c.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	if err := mutate(j); err != nil {
+		return nil, err
+	}
+	if err := c.Put(j); err != nil {
+		return nil, err
+	}
+	return j, nil
+}
+
+// lock takes the mutex for one job and returns the release.
+//
+// Per job rather than one for the store: the hub delivers to many jobs
+// at once and a single lock would serialise a busy hub's whole
+// bookkeeping behind whichever record was slowest to write.
+func (c *Cache) lock(id ID) func() {
+	c.mu.Lock()
+	if c.locks == nil {
+		c.locks = map[ID]*sync.Mutex{}
+	}
+	m, ok := c.locks[id]
+	if !ok {
+		m = &sync.Mutex{}
+		c.locks[id] = m
+	}
+	c.mu.Unlock()
+	m.Lock()
+	return m.Unlock
 }
 
 // Get reads a job's record.

@@ -22,8 +22,16 @@ import (
 // did.
 func (s *Server) deliver(j *job.Job, msg transport.Message, nodes []string) int {
 	if s.Jobs != nil {
+		// The caller's copy tracks the batch's progress; the record on
+		// disk is changed through Update, because a return from one of
+		// these very nodes can be recorded before this line runs and
+		// its goroutine is editing the same record. See
+		// job.Cache.Update.
 		j.Delivered = append(j.Delivered, nodes...)
-		if err := s.Jobs.Put(j); err != nil {
+		if _, err := s.Jobs.Update(j.JID, func(cur *job.Job) error {
+			cur.Delivered = append(cur.Delivered, nodes...)
+			return nil
+		}); err != nil {
 			s.warn("could not record a delivery", "jid", string(j.JID), "error", err.Error())
 		}
 	}
@@ -176,7 +184,11 @@ func (s *Server) Settle() (int, error) {
 		default:
 			j.State = job.Partial
 		}
-		if err := s.Jobs.Put(j); err != nil {
+		state := j.State
+		if _, err := s.Jobs.Update(j.JID, func(cur *job.Job) error {
+			cur.State = state
+			return nil
+		}); err != nil {
 			return settled, err
 		}
 		settled++
@@ -193,7 +205,10 @@ func (s *Server) setState(j *job.Job, state job.State) {
 	if s.Jobs == nil {
 		return
 	}
-	if err := s.Jobs.Put(j); err != nil {
+	if _, err := s.Jobs.Update(j.JID, func(cur *job.Job) error {
+		cur.State = state
+		return nil
+	}); err != nil {
 		s.warn("could not record a job's state", "jid", string(j.JID), "error", err.Error())
 	}
 }
@@ -216,7 +231,10 @@ func (s *Server) Resume(ctx context.Context, id job.ID) (*job.Job, error) {
 	s.info("resuming a batch",
 		"jid", string(id), "delivered", len(j.Delivered), "remaining", len(j.Remaining()))
 	j.State = job.Batching
-	if err := s.Jobs.Put(j); err != nil {
+	if _, err := s.Jobs.Update(id, func(cur *job.Job) error {
+		cur.State = job.Batching
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 	// The goroutine gets its own copy, because it mutates Delivered

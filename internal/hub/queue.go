@@ -50,16 +50,28 @@ func (s *Server) deliverQueued(nodeID string) {
 				"expires": j.Expires.UTC().Format(time.RFC3339),
 				"reason":  "the node did not connect before the job expired",
 			})
-			j.Dequeue(nodeID)
-			if err := s.Jobs.Put(j); err != nil {
+			if _, err := s.Jobs.Update(j.JID, func(cur *job.Job) error {
+				cur.Dequeue(nodeID)
+				return nil
+			}); err != nil {
 				s.warn("could not clear an expired queue entry",
 					"jid", string(j.JID), "node_id", nodeID, "error", err.Error())
 			}
 			continue
 		}
 		if s.fleet().Send(nodeID, messageFor(j)) {
-			j.Dequeue(nodeID)
-			if err := s.Jobs.Put(j); err != nil {
+			// Through Update, not Put. The node can run the job and
+			// send its return before this line, and the goroutine
+			// recording that return is editing the same record. A
+			// whole-record Put here writes back the copy `List` gave
+			// us, which still has this node's return missing and, when
+			// the two land the other way round, puts this very spool
+			// entry back -- so the node is sent the job again the next
+			// time it connects.
+			if _, err := s.Jobs.Update(j.JID, func(cur *job.Job) error {
+				cur.Dequeue(nodeID)
+				return nil
+			}); err != nil {
 				s.warn("could not record a queued delivery",
 					"jid", string(j.JID), "node_id", nodeID, "error", err.Error())
 			}
