@@ -229,6 +229,85 @@ jobs:
           cc --version >/dev/null
           go test -count=1 -race ./...
 
+  # FreeBSD, which is the development platform and had no automation at
+  # all.
+  #
+  # It runs in a QEMU virtual machine on a Linux runner, because there
+  # is no other way to get it here: GitHub hosts Ubuntu, Windows and
+  # macOS, the runner agent is .NET so self-hosting is not a
+  # straightforward answer either, and Cirrus CI — which ran native
+  # FreeBSD and was what most projects used — stopped running jobs in
+  # June 2026.
+  #
+  # **It is emulated, not accelerated.** GitHub's hosted runners expose
+  # no /dev/kvm, so QEMU falls back to software translation. That is the
+  # reason only the suite runs here and not the race detector: the
+  # detector is already several times slower than a plain run, and the
+  # product of the two multipliers is not a gate anybody would wait for.
+  # FreeBSD is also the platform where the detector *has* been run by
+  # hand for a long time, so it is the least severe of the three gaps to
+  # leave open.
+  #
+  # If this proves too slow to sit in front of every pull request, the
+  # honest change is to move it to a schedule and say so — a nightly
+  # gate is a compromise, and this project's position is that a gate
+  # which runs sometimes is not the same as a gate that runs. For a
+  # platform whose alternative is no coverage at all, it is still the
+  # better of the two.
+  freebsd:
+    name: test (freebsd)
+    runs-on: ubuntu-24.04
+    # Emulation makes the wall time hard to predict, and the default job
+    # timeout is six hours. This bounds a hang without pretending to
+    # know what a healthy run costs; the number moves once there is a
+    # measurement behind it.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the virtual machine
+        uses: cross-platform-actions/action@v1.5.0
+        with:
+          operating_system: freebsd
+          version: '15.1'
+          # The suite writes nothing the runner needs afterwards, and
+          # syncing a Go build tree back out of an emulated VM is not
+          # free.
+          sync_files: runner-to-vm
+
+      # Every step below runs inside the VM.
+      #
+      # The toolchain comes from go.dev rather than from pkg, and its
+      # version is read out of go.mod rather than written here. `pkg
+      # install go` gives whatever the ports tree has, which is a second
+      # source of truth for a thing this project pins deliberately —
+      # SPEC 4.3 wants the toolchain fixed, and a workflow naming its
+      # own version would drift from the file that decides.
+      - name: Install the pinned toolchain
+        shell: cpa.sh {0}
+        run: |
+          set -e
+          version=$(awk '/^toolchain /{print $2; exit}' go.mod)
+          if [ -z "$version" ]; then
+            echo "go.mod names no toolchain; this job reads it from there" >&2
+            exit 1
+          fi
+          fetch -q "https://go.dev/dl/${version}.freebsd-amd64.tar.gz" -o /tmp/go.tar.gz
+          tar -C /usr/local -xzf /tmp/go.tar.gz
+          /usr/local/go/bin/go version
+
+      # Through `make`, unlike the Windows and macOS legs. FreeBSD's
+      # make is bmake, which is the dialect this Makefile was written
+      # for -- `!=` is native there rather than a 4.0 feature Apple's
+      # make predates. This is the one platform where CI runs the target
+      # rather than a copy of what it expands to.
+      - name: test
+        shell: cpa.sh {0}
+        run: |
+          set -e
+          export PATH=/usr/local/go/bin:$PATH
+          make test
+
   # The FIPS artifact set is a shipped deliverable, and a restriction
   # that only holds in the build nobody runs locally is a restriction
   # that breaks on the tag. The whole suite, with all cryptography
