@@ -572,3 +572,26 @@ func TestTestModeCommentsArePredictions(t *testing.T) {
 		t.Errorf("applied comment %q should be in the past tense", res.Comment)
 	}
 }
+
+// skipOffPlatform skips a test whose module is declared for platforms
+// this node is not one of.
+//
+// It takes the module's own list rather than naming a platform to avoid,
+// which is the distinction three separate guards in this package have
+// had to learn: `if runtime.GOOS == "windows"` is true of the one
+// machine it was written on and says nothing about the next one. macOS
+// walked through two such guards the first time a runner existed.
+//
+// The registry refuses these modules off their platforms, correctly, so
+// a test that calls one there is asserting against the refusal rather
+// than against the module.
+func skipOffPlatform(t *testing.T, platforms []string) {
+	t.Helper()
+	for _, p := range platforms {
+		if runtime.GOOS == p {
+			return
+		}
+	}
+	t.Skipf("this module is declared for %s and this node is %s; the registry refuses it here",
+		strings.Join(platforms, ", "), runtime.GOOS)
+}

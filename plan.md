@@ -39,7 +39,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **48 of SPEC 15.3's 65 platform modules, 19 of SPEC 15.2's core execution modules and 15 of SPEC 15.5's core state modules remain.** |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **47 of SPEC 15.3's 65 platform modules, 19 of SPEC 15.2's core execution modules and 15 of SPEC 15.5's core state modules remain.** |
 | 6. Hardening to 1.0 | Barely started. Metrics are nearly complete (§3.2). No benchmarks, no chaos suite, no packaging, no CI, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
@@ -357,7 +357,7 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 48 of 65
+### 2.3 Platform modules: 47 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
@@ -391,7 +391,7 @@ what an operator is looking for.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 6 | **The estate is Ubuntu.** `dpkg` and `debconf` ship; `aptpkg` and `ufw` are aliases. `netplan`, `snap`, `pro`, `debbuild` and `apparmor` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
+| Debian and Ubuntu | 5 | **The estate is Ubuntu.** `dpkg`, `debconf` and `netplan` ship; `aptpkg` and `ufw` are aliases. `snap`, `pro`, `debbuild` and `apparmor` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
 | Common Linux | 11 | `systemd_service` is an alias. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
