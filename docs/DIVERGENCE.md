@@ -415,8 +415,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **55 execution modules / 334 functions** and **37 state
-modules / 91 functions**.
+The build ships **56 execution modules / 341 functions** and **38 state
+modules / 92 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -464,7 +464,7 @@ different reason is given.
 | `user` | implemented | 3 | reads through `os/user`, writes through `pw` or `useradd` |
 | `at` | not implemented | 0 | |
 | `acl` | not implemented | 0 | POSIX ACL reading needs `acl_get_file`, which is cgo on FreeBSD; needs the `getfacl` binary path instead |
-| `apparmor` | not implemented | 0 | Linux only; no host to verify on |
+| `apparmor` | implemented | 7 | reads securityfs directly rather than shelling to `aa-status`, so a node with no `apparmor-utils` can still be asked what it enforces; the mode changes need that package and name it |
 | `beacons` | implemented | 10 | `list` answers from the registry and the configuration; the nine that change a running node's watchers name the phase they arrive in |
 | `blockdev` | not implemented | 0 | |
 | `data` | not implemented | 0 | |
@@ -512,7 +512,7 @@ different reason is given.
 | `user` | implemented | 2 | |
 | `zfs` | implemented | 2 | `filesystem_present`, `absent` |
 | `acl` | not implemented | 0 | see 2.1 |
-| `apparmor` | not implemented | 0 | |
+| `apparmor` | implemented | 1 | `mode`, taking enforce, complain or disable; `kill` and `unconfined` are set in the profile itself and are refused by name |
 | `at` | not implemented | 0 | |
 | `beacon` | implemented | 2 | present and absent, both persisting to beacons.d so a declaration survives a restart 
 | `environ` | implemented | 1 | `setenv`; `permanent` defaults to true here and to false in Salt, so a tree carrying this state writes a file or a registry value Salt never wrote; see migrating-from-salt.md |
@@ -555,9 +555,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-18 of 65 present — the rows below total 47 absent.
+19 of 65 present — the rows below total 46 absent.
 
-Eight of the fifteen are **aliases**, and they are new. SPEC names both
+Nine of the nineteen are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -580,12 +580,23 @@ built" into "built, and fails when you call it", which is the worse of
 the two answers. `sys.list_aliases` reports the table and says which of
 them this node can use.
 
-Of the seven that are modules in their own right, four are the Windows
+Of the ten that are modules in their own right, four are the Windows
 ones, and they arrived because a Windows host became available: the gap
-tracks the hardware, not the intent. `dpkg` is the first of the Debian
-row, and the estate is Ubuntu.
+tracks the hardware, not the intent. Four are the Debian row — `dpkg`,
+`debconf`, `netplan` and `apparmor` — and the estate is Ubuntu.
 
-The 47 are declared as pending rather than simply missing. A name absent
+`apparmor` is the one of those that is not only a platform module: SPEC
+names it in 15.2's core execution list and 15.5's core state list as
+well, so building it closed three rows rather than one. It is also the
+only module here that reads a kernel interface directly instead of
+shelling out. `aa-status` lives in `apparmor-utils`, which a default
+Ubuntu does not install, so a node can be running AppArmor with no way
+to run `aa-status` on it; `/sys/kernel/security/apparmor/profiles` is
+what `aa-status` itself reads and is always there. The tools that
+*change* a mode really are in that package, and the module names it
+rather than reporting a missing binary.
+
+The 46 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -606,7 +617,7 @@ specification cannot be quietly missed.
 | Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` (all aliases) | `pf`, `jail` |
-| Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
+| Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `snap`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
@@ -2910,6 +2921,46 @@ node controls and SPEC 12.4 does not trust by default; 11 Python
 extension directories, which is the bridged-extension path of SPEC 24.6
 working as intended; and one `service.xk`, a typo the audit caught
 statically that Salt would have found at run time.
+
+### 5.27 What building `apparmor` found
+
+The module itself is in 2.3. Two things came out of building it that
+are about this document rather than about AppArmor.
+
+**The platform table in 2.3 said two modules were both present and
+absent.** `ufw` and `netplan` were added to the Present column and left
+in the Absent column of the same row. Nothing caught it:
+`TestPendingPlatformModulesMatchTheSpec` holds the *registry's* pending
+table to SPEC 15.3 in both directions, and had done since the row was
+written, but says nothing about the markdown table a reader actually
+reads — which is the only place the gap is broken down by platform, and
+therefore the place a reader takes for the answer.
+
+That is the audit's own failure mode rather than a new one: a guard
+checks the thing it was pointed at, and the ledger's prose was never
+pointed at. `TestTheLedgerPlatformTableMatchesTheRegistry` now reads
+both columns and holds each name to the build — present means the build
+answers to it, absent means it does not and is declared pending, and
+every module SPEC 15.3 names appears in exactly one cell. It was checked
+against the drift it was written for: restoring the two duplicated names
+fails it four ways.
+
+**A default Ubuntu cannot run `aa-status`.** It is in `apparmor-utils`,
+which is not part of the base install, while AppArmor itself is on and
+enforcing thirty-odd profiles. A module that shelled out to it would
+have been unable to answer "what is confined here" on precisely the
+nodes where it is worth asking. `/sys/kernel/security/apparmor/profiles`
+is what `aa-status` itself reads, is two columns, and is always present;
+this module reads it. The tools that *change* a mode really are in that
+package, and the failure names the package rather than reporting a
+binary that was not found.
+
+Reading it directly has one cost worth stating: the file is root-only
+while the enabled flag is world-readable, so an unprivileged
+`apparmor.status` can answer whether the node is confined and not how.
+It reports both facts separately rather than collapsing them, because
+the collapse would answer "is this node confined" with "no" on a node
+that is.
 
 ## 6. Everything else not started
 
