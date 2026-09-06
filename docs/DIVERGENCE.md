@@ -584,7 +584,9 @@ them this node can use.
 Of the eleven that are modules in their own right, four are the Windows
 ones, and they arrived because a Windows host became available: the gap
 tracks the hardware, not the intent. Five are the Debian row — `dpkg`,
-`debconf`, `netplan`, `apparmor` and `snap` — and the estate is Ubuntu.
+`debconf`, `netplan`, `apparmor` and `snap`. That row was built when
+this project's fleet was assumed to be Ubuntu; it is one Ubuntu host
+to four FreeBSD, which plan §7 re-ranked around on 2026-09-06.
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as

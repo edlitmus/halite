@@ -474,8 +474,10 @@ in 15.2, in 15.5 and in 15.3's Debian row, so it is the only remaining
 item on this list that closes a platform gap as a side effect of closing
 a core one.
 
-Ranked by what the estate's own tree reaches for, and by what a migration
-is blocked on:
+Ranked by what the fleet's own tree reaches for. Not by "what a
+migration is blocked on", which is how this list was ordered until
+2026-09-06: the fleet is entirely on halite and there is no migration
+to block. §7 has the consequences.
 
 1. ~~**`hostname`**, exec and state~~ — **done.** Four execution
    functions and the state, managing the running name and the persistent
@@ -553,12 +555,12 @@ what an operator is looking for.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 3 | **The estate is Ubuntu.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
+| Debian and Ubuntu | 3 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
 | Common Linux | 11 | `systemd_service` is an alias. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
-| FreeBSD | 2 | `freebsdpkg`, `freebsd_service` and `freebsd_sysctl` are aliases; `pf` and `jail` are genuinely absent. |
+| FreeBSD | 2 | **Four hosts of five.** `freebsdpkg`, `freebsd_service` and `freebsd_sysctl` are aliases; `pf` and `jail` are genuinely absent, and `pf` is the firewall on every one of them — `firewall` ships with a ufw provider and nothing else. §7 puts `pf` first. |
 | SUSE | 1 | `zypperpkg`. |
 
 Note the overlap with 2.2: `iptables`, `nftables` and `lvm` are named in
@@ -908,103 +910,146 @@ report emits the undefined-reference row SPEC 28.5 requires.
 
 ## 7. Suggested order
 
-Sequenced by value per unit of work, and by what unblocks what.
+**This section was re-ranked on 2026-09-06, and the premise it had used
+through every previous revision was wrong.**
 
-~~**Now — stop the drift.** Stand up CI.~~ **Done**, and §3.5 says what
-it runs. It held the top of this list through three revisions, and the
-cost of it ranking second was paid three times: two weeks of a package
-that did not compile on Linux, a day of a red suite on Windows, and a
-race detector that ran when somebody remembered rather than on every
-change, which is not often enough to catch a one-in-three race.
+It ranked by "what the migration is blocked on", and by "the estate is
+Ubuntu". Neither is true. The fleet is **100% on halite** — the
+migration is finished, so there is nothing left to be blocked. And it is
+**four FreeBSD hosts** (two physical, two virtual) **to one Ubuntu**,
+built from source and installed with `make install`. Every item below
+moved, and two of them moved a long way.
 
-~~**`hostname`** and **`ssh_known_hosts`**.~~ **Done**, and §2.2 says
-what each cost and what each decided.
+Three consequences, before the list:
 
-**Now — the estate's own blocker**
+- **FreeBSD carries 80% of production and is SPEC 27.1 tier 2.** Tier 2
+  promises "built and unit-tested; functional tests on a subset"; tier 1
+  promises full CI, functional tests and packages. CI already runs the
+  whole unit suite on FreeBSD on every change, which is more than tier 2
+  asks for and less than tier 1 describes. Whether the table should move
+  is a question for §6 rather than a commit — but ranking Linux work
+  above FreeBSD work, which this document did, was ranking one host
+  above four.
+- **Deploying from source demotes packaging and promotes upgrades.**
+  SPEC 27.2's `.deb`, `.rpm`, `.msi` and `.pkg` serve nobody on this
+  fleet. What `make install` from source *guarantees* is that a hub and
+  its nodes run different versions for as long as an upgrade takes,
+  because five hosts are not rebuilt in the same instant. SPEC 31's
+  Upgrade row — hub at N with nodes at N−1 and N+1 — went from a
+  theoretical gap to a condition this fleet enters deliberately, every
+  time, and nothing establishes what happens.
+- **The Salt differential now guards a translation, not a system.** SPEC
+  31 calls it the primary correctness gate on the strength of "a corpus
+  of real SLS and pillar trees from this estate". The estate runs no
+  Salt. It remains the only check that can say an existing tree means
+  the same thing under a reimplementation, and it is worth keeping — but
+  deepening it to compare *applied* results, which this list had at
+  number three, is work for a migration nobody is doing.
 
-1. **The Debian and Ubuntu platform row** (§2.3). `pro` and `debbuild`
-   remain of it. `apparmor` shipped and took 15.2's and 15.5's rows with
-   it; `snap` shipped and is the one the estate will actually reach for,
-   because Ubuntu ships real workloads that way and `pkg` cannot see any
-   of them. Neither of the two left is a migration blocker: `pro` needs
-   the FIPS question in §6 answered first — whether a Pro-enabled FIPS
-   node and a `GOFIPS140` build are one claim or two — and `debbuild`
-   belongs with the unbuilt packaging work in §3.5 rather than with the
-   migration. **So the Debian row is no longer the top of this list.**
-   The Common Linux row is the largest block now, at eleven.
+~~**Stand up CI.**~~ ~~**`hostname` and `ssh_known_hosts`.**~~ ~~**The
+chaos suite.**~~ ~~**`subscriber_lag`.**~~ ~~**`doctor`.**~~ ~~**Compile
+for tier 3.**~~ ~~**Run the suite on macOS and FreeBSD.**~~ All done.
+§7.1 keeps the reasoning from the ones whose argument still earns its
+place.
 
-**Then — phase 6 foundations**
+**Now — the fleet this actually runs on**
 
-2. The two SPEC 30 benchmarks that need no harness (§3.1). Metrics are no
-   longer on this list; §3.2 closed.
-3. Get the differential to compare *applied* results, in the container it
-   already has, and in the job CI now runs it from (§3.4).
-4. ~~The chaos suite~~ — **done**, and it earned its place immediately
-   (§3.4). ~~What it left behind is a commit: **`subscriber_lag`**~~ —
-   **also done**, the same day it was found. A follower whose offset has
-   been pruned is refused by name with how far it fell and where to
-   resume; an operator gets a 410 before any success header, and the
-   reactor resumes at the oldest surviving event rather than at the end,
-   recording the loss in a warning, an event and a counter. SPEC 17.2,
-   DIVERGENCE 4.12.
-5. **Packaging** (§3.5). The reproducibility half of this item is done —
-   `release.yml` compares two builders on every tag — and what is left
-   is that there are no artifacts to publish: no nfpm config, no `.msi`,
-   no `.pkg`, no SBOM, no attestation. CI is the thing that would sign
-   and publish them, so this is now the next release-shaped work rather
-   than a prerequisite for it.
-6. The render sandbox (§3.3), which is the largest unbuilt security
-   control and the one SPEC argues for most directly.
+1. **`pf`** (§2.3, SPEC 15.3's FreeBSD row). The firewall on four of
+   five hosts, and genuinely absent: `firewall` ships as a virtual
+   module with a **ufw** provider and nothing else, so the only host
+   that can use it is the only host that is not FreeBSD. This also does
+   what `iptables` and `nftables` were ranked for — `pf` replaces a
+   whole ruleset at once rather than adding rules one at a time, which
+   is the shape most likely to reshape a provider interface currently
+   designed around its only provider.
+2. **Upgrade testing** (§3.4, SPEC 31). A hub at N with nodes at N−1 and
+   N+1, job cache format migration, and certificate rotation across an
+   upgrade. Not hypothetical here: rebuilding five hosts from source
+   means the fleet is version-skewed during every upgrade, on purpose,
+   and nothing says what that does. This is the item the fleet's own
+   deployment method creates.
+3. **`jail`** (§2.3). The other genuinely absent FreeBSD module. Below
+   `pf` because a firewall is on every host and a jail is a choice — but
+   two of the four FreeBSD hosts are physical, which is where jails
+   live.
 
-**In parallel, cheap and independent**
+**Then — phase 6, on a fleet that is in production**
 
-~~**Run the suite on macOS and FreeBSD.**~~ **Both done**, and this item
-was wrong twice before it closed.
+4. **Tracing** (§3.2, SPEC 26.3), now the only unbuilt part of section
+   26. `doctor` closed the other and was worth more than its size: it is
+   what an operator reaches for at the moment something is wrong, and
+   this fleet is past the point where that is hypothetical.
+5. The two SPEC 30 benchmarks that need no harness (§3.1).
+6. The render sandbox (§3.3), the largest unbuilt security control and
+   the one SPEC argues for most directly.
+7. **Node evidence and detached signing** (§6). Supply chain, and it
+   matters more now that the thing being supplied runs everything.
 
-It said "neither is a GitHub-hosted runner, so neither is covered".
-**macOS is one**, and always was; the sentence was written about FreeBSD
-and let macOS ride along unchecked. macOS is in the `test` and `race`
-matrices now, and being arm64 it is also the first time this tree's
-tests have run on that architecture.
+**Demoted, with the reason**
 
-Then it said FreeBSD needed "a decision about infrastructure rather than
-a morning's work", on the reasoning that GitHub hosts no runner for it
-and emulation would be too slow to sit in front of a pull request. The
-first half is true and the second was a guess: `test (freebsd)` runs in
-**1m44s**, which is faster than the Windows leg. It runs in a QEMU
-virtual machine on a Linux runner through
-`cross-platform-actions/action`, and the race detector is deliberately
-left off it — that product of two slowdowns is the part that would have
-been too slow, and FreeBSD is the platform where the detector has been
-run by hand anyway.
-
-Between them the two runners found five defects in a day: two on macOS
-(§1.3) and two more on FreeBSD, plus the audit in §1.4 that generalised
-them. Which is §1's argument for the fourth time.
-
-~~**Compile for SPEC 27.1's tier 3.**~~ **Done**, and it was the fifth
-time. Nothing had ever built for OpenBSD, NetBSD, Solaris, illumos, or
-Linux on riscv64, ppc64le or s390x, because `TARGETS` listed only the
-platforms somebody already ran on — so the one tier whose whole promise
-is "compiles" was the one tier nothing compiled. Four of the nine
-targets failed on the first attempt (§1.5). `build-all` covers all
-seventeen now, and `internal/buildpolicy` fails if the Makefile and the
-tier table ever disagree again.
-
-That closes the *compilation* argument and not the running one. Seven
-platforms now compile on every change and no test has ever executed on
-any of them, which is a weaker claim than the four have and exactly the
-claim SPEC 27.1 makes for tier 3. If that is ever to become more, it
-needs hardware or an emulator per platform, and it belongs under
-"blocked on a decision" rather than here.
+8. **Packaging** (§3.5) — was fifth, on the argument that the fleet
+   needs a way to deploy. It has one. `make install` is FreeBSD-aware
+   already: rc.d service files, `pw useradd` in its own error message.
+   If any of SPEC 27.2 is built for this fleet it is a **FreeBSD port or
+   pkg** rather than a `.deb`, and neither ranks above `make install`
+   continuing to work. The reproducible-build half is done regardless.
+9. **The Debian and Ubuntu row** (§2.3) — was first, through three
+   revisions. `pro` and `debbuild` remain, on one host. `pro`'s design
+   question is answered: a Pro-enabled FIPS node and a `GOFIPS140` build
+   are **two** claims and both are required, which is what `doctor`'s
+   FIPS check now says out loud. So it is buildable — it is simply worth
+   less than it was when the estate was imagined to be Ubuntu.
+10. **The Common Linux row** (§2.3, eleven modules) — was "the largest
+    block now". It is, and almost all of it is Linux-only: `journald`,
+    `iptables`, `nftables`, `lvm`, `mdadm`, `modprobe`, `udev`,
+    `authselect`. `pam`, `quota` and `openssl_cert` are the three that
+    also mean something on FreeBSD, and they are the three worth taking
+    out of this row first.
+11. Deepening the Salt differential to compare applied results (§3.4).
+    See above: it guards a translation that has already happened.
 
 **Blocked on a decision**
 
-8. The `cmd.run` default, the unplanned modules, a `win_registry` state,
-   job signing and node evidence (§6).
+12. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
+    carries and what CI already runs on it.
+13. The `cmd.run` default, the unplanned modules, a `win_registry`
+    state, and job signing (§6).
+14. Whether a follower that falls behind the event bus should stop or
+    resume. `subscriber_lag` refuses the read now; what a *reactor*
+    should do with the refusal is the open half (DIVERGENCE 4.12).
 
 **Last**
 
-9. The YAML over-acceptance set, prioritising the chomping case; the six
-    real template gaps; the regexcompat character-class false positive
-    (§5).
+15. The YAML over-acceptance set, prioritising the chomping case; the
+    six real template gaps; the regexcompat character-class false
+    positive (§5).
+
+---
+
+### 7.1 What the closed items are kept for
+
+**CI** held the top of this list through three revisions, and the cost
+of it ranking second was paid three times: two weeks of a package that
+did not compile on Linux, a day of a red suite on Windows, and a race
+detector that ran when somebody remembered rather than on every change —
+which is not often enough to catch a one-in-three race.
+
+**macOS and FreeBSD in CI** was wrong twice before it closed. It said
+"neither is a GitHub-hosted runner"; macOS is one and always was, and
+the sentence was written about FreeBSD and let macOS ride along
+unchecked. Then it said FreeBSD needed "a decision about infrastructure
+rather than a morning's work", on the reasoning that emulation would be
+too slow to sit in front of a pull request: `test (freebsd)` runs in
+**1m44s**, faster than the Windows leg. Between them the two runners
+found five defects in a day, and FreeBSD has since found two more that
+no other runner did — which reads differently now that FreeBSD is most
+of the fleet.
+
+**Tier 3** was the fifth time §1's argument was made. Nothing had ever
+built for OpenBSD, NetBSD, Solaris, illumos, or Linux on riscv64,
+ppc64le or s390x, so the one tier whose whole promise is "compiles" was
+the one tier nothing compiled; four of nine targets failed on the first
+attempt. It has since caught a defect within a working day, in
+`doctor`'s free-space code. What it does **not** establish is that
+anything runs on those seven platforms — which is exactly the claim SPEC
+27.1 makes for tier 3, and no more.
