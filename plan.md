@@ -40,7 +40,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
 | 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **45 of SPEC 15.3's 65 platform modules, 18 of SPEC 15.2's core execution modules and 14 of SPEC 15.5's core state modules remain.** |
-| 6. Hardening to 1.0 | Started. Metrics are nearly complete (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite is built (§3.4). Outstanding: no benchmarks, no packaging, no node evidence, no detached signing, no render sandbox. |
+| 6. Hardening to 1.0 | Started. Metrics are nearly complete and `doctor` ships (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite is built (§3.4). Outstanding: no benchmarks, no tracing, no packaging, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
 
@@ -629,10 +629,16 @@ This section has moved further than any other since the last revision.
   alert written from SPEC 26.2's table against the latter matches
   nothing, silently, and silence is what it would do if the estate were
   healthy.
-- **Tracing (26.3) and `doctor` (26.4) still do not exist.** `tracing` is
-  an inert key (§4). `doctor` has one passing mention in a comment. It is
-  also where SPEC 27.4 puts the FIPS grain-mismatch warning, so that
-  warning has nowhere to live.
+- ~~**Tracing (26.3) and `doctor` (26.4) still do not exist.**~~
+  **`doctor` ships**, with all ten of SPEC 26.4's checks, a remediation
+  line on every finding that a guard makes mandatory, and the check set
+  held to the specification's own sentence in both directions. It
+  carries SPEC 27.4's FIPS mismatch warning, which had nowhere to live
+  before. DIVERGENCE 5.30, including why a platform with no kernel FIPS
+  mode is a skip rather than a warning — the fleet is four FreeBSD hosts
+  to one Linux, and a check that warns on four nodes in five is one
+  nobody reads. **Tracing (26.3) is still an inert key** (§4) and is now
+  the only unbuilt part of section 26.
 
 ### 3.3 The security model's unbuilt half (SPEC 25)
 

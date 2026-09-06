@@ -68,11 +68,19 @@ func (r *Reactor) workerCount() int {
 	return 2 * runtime.NumCPU()
 }
 
+// DefaultReactorQueueDepth is the bound the reactor's worker queues
+// share when nothing overrides it.
+//
+// Exported so that `halite-hub doctor` can report the bound without
+// repeating the number: a diagnostic that says 10,000 while the reactor
+// uses something else is worse than one that says nothing.
+const DefaultReactorQueueDepth = 10000
+
 func (r *Reactor) queueDepth() int {
 	if r.QueueDepth > 0 {
 		return r.QueueDepth
 	}
-	return 10000
+	return DefaultReactorQueueDepth
 }
 
 func (r *Reactor) maxDepth() int {

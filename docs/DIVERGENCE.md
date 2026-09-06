@@ -314,9 +314,10 @@ whichever trees already use it, found at apply time.
 
 The pair is what makes the mismatch SPEC asks `doctor` to warn about
 visible at all: a FIPS kernel running a non-FIPS binary, or the reverse,
-is a deployment mistake neither fact finds alone. `doctor` itself is not
-built, so nothing warns yet; the grains are there for a tree to assert
-on in the meantime.
+is a deployment mistake neither fact finds alone. `doctor` now compares
+them and warns in both directions, with a different remedy for each;
+5.30 has the reasoning, including why a platform with no kernel FIPS
+mode is a skip rather than a warning.
 
 None of the four is evidence to an assessor. They are grains, which is
 to say a node's own account of itself, and a node that is lying about
@@ -3242,6 +3243,97 @@ the build to and the limit of what it checked, so "what happens if the
 hub restarts mid-job" is answered by the thing that tests it rather than
 by a document beside it.
 
+### 5.30 `doctor`, and the FIPS check that needed a fleet to design
+
+SPEC 26.4 gives `halite-node doctor` and `halite-hub doctor` ten checks
+— configuration validity, clock skew against the hub, certificate
+validity and expiry, connectivity, file server reachability, pillar
+compilation, disk space, queue depths, extension signatures, and FIPS
+mode consistency — and argues for them in one line worth repeating:
+"most operational tickets on a Salt estate are one of these checks, and
+making them a single command is worth more than it appears."
+
+The tree had one mention of the word, in a comment.
+
+**The remediation line is the design.** SPEC asks for "a pass or fail
+per check with a remediation line", and a check that says a certificate
+expires in three days and stops has moved the problem rather than
+answered it: the operator still has to know which command renews it.
+`doctor_test.go` fails the build if any check can report something other
+than a pass without saying what to do about it, driven through every
+status each check can reach rather than through the happy path. A guard
+also holds the check set to SPEC 26.4's own sentence in both directions.
+Both were verified by breaking them.
+
+**Four statuses, not two.** `skip` is the one SPEC does not name and the
+one that makes the rest readable: a check that cannot run and reports a
+pass is worse than one that says nothing, because it answers a question
+it did not ask. A check that does not belong to the role is not run at
+all rather than skipped — "queue depths: skipped, this is a node" on
+every node run is noise on every run rather than information on any.
+
+**A warning does not fail the command.** `doctor` belongs in a cron job
+and in a state's `onlyif`, and a certificate three weeks from expiry
+must not fail either; it is a thing to do this month, not a reason to
+stop. Only a failure exits non-zero.
+
+#### The FIPS check, and why the fleet's shape decided it
+
+SPEC 27.4 gives the mismatch warning to `doctor`: "The `fips_mode` grain
+reports both the host's kernel FIPS state and the binary's own mode, and
+a mismatch is a `doctor` warning."
+
+The facts were already reported — 1.11 records why they are separate
+grains — and nothing correlated them. Both directions are worth a
+warning and they are **different** warnings:
+
+- A `-fips` artifact on a host whose kernel is not in FIPS mode reads as
+  compliant and is not. Everything on the box says FIPS except the box,
+  and this is the one that costs an assessment.
+- An ordinary build on a host that *is* in FIPS mode makes halite the
+  non-compliant component on an otherwise compliant host. An operator
+  watching only the kernel's state will not think to look.
+
+The third case is the one that needed knowing where this runs. On the
+BSDs and macOS there is no kernel FIPS mode at all, and
+`internal/grains/platform_bsd.go` reports `fips_mode` as a hardcoded
+false so that a template does not have to guard for the platform — right
+there, and wrong as an input to this check. A naive
+`artifact && !kernel` would have warned on every one of those hosts.
+**This project's own fleet is four FreeBSD hosts to one Linux**, so that
+is a warning on four nodes in five, and a check that cries wolf on most
+of an estate is a check nobody reads. The kernel state is therefore a
+pointer: nil is "there is no such switch", which is a `skip` with the
+reason, and it becomes a warning only if a FIPS artifact turns up there
+anyway — which `FIPS_TARGETS` does not build.
+
+The nil case carries the caller's own reason rather than one written in
+the check, because "freebsd has no kernel FIPS mode" and "this command
+does not read the Windows policy value" are both nils. The first version
+guessed, and told a Windows operator that Windows has no kernel FIPS
+mode in the same breath as saying the check applies on Windows.
+
+#### What it does not do
+
+The hub's pillar check compiles for a node with no grains, which reaches
+the top file and every SLS matching `'*'` — the majority of a tree and
+the part that breaks — and cannot reach an SLS behind a grain target.
+Which files a real node gets is a question about that node, and
+`halite-node doctor` compiles the whole of its own; the two together are
+the answer. The hub's queue check reports the reactor's configured bound
+rather than a live depth, because a diagnostic that needed the thing it
+diagnoses to be running would be no use on the day it is not.
+
+And free space is not reportable everywhere. `syscall` exposes `Statfs`
+on Linux, macOS, FreeBSD and DragonFly; OpenBSD spells the same fields
+`F_bavail` and `F_bsize`; NetBSD declares `Statfs_t` as `[0]byte` and
+offers no `Statfs` at all, and Solaris, illumos and AIX have statvfs,
+which Go does not expose. Those last four report a skip with the reason
+rather than a pass on a disk nothing looked at. The first version of
+that file claimed every unix and broke the build for two of SPEC 27.1's
+tier 3 targets — 4.10's lesson, one working day later, caught by
+`build-all` exactly as intended.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -3817,8 +3909,8 @@ What is **not** built in the API:
   local state run's duration, and the scheduler's `maxrunning` skips.
   The hub counts what reaches it, which is most of SPEC 26.2's state and
   beacon families but not the drops.
-- **Tracing** (SPEC 26.3) and **`doctor`** (SPEC 26.4), the other two
-  parts of section 26.
+- **Tracing** (SPEC 26.3), the one part of section 26 still unbuilt.
+  `doctor` (26.4) ships; see 5.30.
 - **`mtls` hook authentication.** The mode is implemented and refused
   when no client certificate is presented, but it has never been
   exercised against a real sender.
@@ -3937,7 +4029,7 @@ accounts it locks out are named at startup, and key exchange is P-256 or
 P-384. 1.10 records why those are this build's doing rather than the
 `GODEBUG` setting's, 1.11 why the grain is a pair, and 5.15 what running
 it established. `doctor`, which SPEC 27.4 gives the mismatch warning to,
-is not built.
+now exists and carries it (5.30).
 
 What is **not** built in phase 5:
 

@@ -291,6 +291,44 @@ func (c *Client) Health(ctx context.Context) (string, error) {
 	return string(bytes.TrimSpace(body)), nil
 }
 
+// HealthDate reads the hub's clock from the Date header on its health
+// response, for SPEC 26.4's clock skew check.
+//
+// The health endpoint because it needs no certificate: a node whose
+// certificate has expired still wants to know whether its clock is why.
+// The Date header rather than something in the body because it is
+// already there on every response Go serves, and adding a timestamp to
+// a health endpoint that a node compares against would be a protocol
+// change for a second of precision nothing here needs — the things this
+// decides, a job's window and a certificate's validity, turn on minutes.
+func (c *Client) HealthDate(ctx context.Context) (time.Time, error) {
+	client, err := c.client()
+	if err != nil {
+		return time.Time{}, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.timeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url(PathHealth), nil)
+	if err != nil {
+		return time.Time{}, err
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return time.Time{}, err
+	}
+	defer res.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 4096))
+	raw := res.Header.Get("Date")
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("the hub sent no Date header, so its clock cannot be read")
+	}
+	at, err := http.ParseTime(raw)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("the hub's Date header %q is not a time: %w", raw, err)
+	}
+	return at, nil
+}
+
 // Enrollment is what a node gets back when it asks to join.
 type Enrollment struct {
 	NodeID      string

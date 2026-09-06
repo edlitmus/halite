@@ -51,6 +51,7 @@ Usage:
   halite-node renew                              replace this node's certificate
   halite-node connect                            hold the stream open to the hub
   halite-node event send <tag> [json]            put an event on the hub's bus
+  halite-node doctor                            check this node and say what to fix
 
 enroll and connect flags:
   --hub <address>      the hub to dial, default from the hub setting
@@ -141,6 +142,8 @@ func main() {
 		os.Exit(runOneshot(args))
 	case "event":
 		os.Exit(runEvent(args))
+	case "doctor":
+		os.Exit(runDoctor(args))
 	default:
 		fmt.Fprintf(os.Stderr, "halite-node: unknown subcommand %q\n\n%s", sub, usage)
 		os.Exit(2)
