@@ -390,13 +390,7 @@ func TestAPoolsLayoutIsReadOutOfTheListingByName(t *testing.T) {
 // state of a machine with ZFS installed and no pools on it.
 func zpoolFixture(t *testing.T, responses map[string]string) *exec.Context {
 	t.Helper()
-	// The states are declared for the platforms with ZFS and the
-	// registry refuses them elsewhere. They are exercised on a Linux
-	// node — under `make zpoolcheck`, against a real pool — rather than
-	// on a Windows one pretending to have one.
-	if runtime.GOOS == "windows" {
-		t.Skip("zpool does not run on Windows, and this build says so")
-	}
+	skipWithoutZFSPlatform(t)
 	scripted := map[string]exec.Result{
 		// A pool that is not there: zpool list exits non-zero.
 		"zpool list -H -o name tank": {Code: 1, Stderr: "cannot open 'tank': no such pool"},
@@ -408,4 +402,30 @@ func zpoolFixture(t *testing.T, responses map[string]string) *exec.Context {
 	c.Runner = &exec.RecordingRunner{Responses: scripted}
 	c.Lookup = func(name string) string { return "/sbin/" + name }
 	return c
+}
+
+// skipWithoutZFSPlatform skips where the registry would refuse these
+// states anyway.
+//
+// It asks whether this node is one of the platforms zpool is declared
+// for, rather than naming the platforms it is not. That distinction is
+// the whole point: this guard used to read `if runtime.GOOS ==
+// "windows"`, which was true of the one platform anybody had run it on
+// and silently wrong about every other. macOS is neither Windows nor a
+// ZFS platform, so seven of these tests fell through it the first time
+// a macOS runner existed — the registry refusing correctly, and the
+// tests not expecting to be refused.
+//
+// The states are exercised for real on a Linux node under `make
+// zfscheck`, against a pool in a virtual machine, rather than on a node
+// pretending to have one.
+func skipWithoutZFSPlatform(t *testing.T) {
+	t.Helper()
+	for _, p := range zfsPlatforms {
+		if runtime.GOOS == p {
+			return
+		}
+	}
+	t.Skipf("zpool is declared for %s, and this node is %s; the registry refuses it here and this build says so",
+		strings.Join(zfsPlatforms, ", "), runtime.GOOS)
 }
