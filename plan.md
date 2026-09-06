@@ -39,7 +39,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **59 of SPEC 15.3's 65 platform modules, 20 of SPEC 15.2's core execution modules and 16 of SPEC 15.5's core state modules remain.** |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **58 of SPEC 15.3's 65 platform modules, 20 of SPEC 15.2's core execution modules and 16 of SPEC 15.5's core state modules remain.** |
 | 6. Hardening to 1.0 | Barely started. Metrics are nearly complete (§3.2). No benchmarks, no chaos suite, no packaging, no CI, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
@@ -314,16 +314,27 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 59 of 65
+### 2.3 Platform modules: 58 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
 is the difference between a gap and a typo, and it is already done. The
-six that ship are `zfs`, `zpool`, and the four Windows ones.
+seven that ship are `zfs`, `zpool`, the four Windows ones, and `dpkg`.
+
+`dpkg` is the first of the Debian row and the one that pays off soonest,
+because it is the half the virtual `pkg` module is deliberately not:
+`pkg.list_pkgs` filters to what is installed, so a package left
+half-configured by an interrupted upgrade is invisible there — and apt
+refuses to do anything else until it is resolved, which makes it exactly
+what an operator is looking for. The rest of the row is package
+management proper, and `aptpkg` needs §2.3's own open question answered
+first: the apt behaviour already exists inside `pkg`'s provider, so
+whether the named module should also exist is the same question the
+FreeBSD row asks and neither has been answered.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 10 | **The estate is Ubuntu.** `aptpkg`, `dpkg`, `apt_key`, `ufw`, `netplan`, `snap`, `pro`, `debconf`, `debbuild`, `apparmor`. |
+| Debian and Ubuntu | 9 | **The estate is Ubuntu.** `dpkg` ships. `aptpkg`, `apt_key`, `ufw`, `netplan`, `snap`, `pro`, `debconf`, `debbuild`, `apparmor` do not. |
 | Common Linux | 12 | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
 | Windows | 14 | Four ship. No user or group provider. |
 | macOS | 10 | The providers ship; the `mac_*` modules do not. |

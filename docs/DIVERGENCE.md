@@ -415,7 +415,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **51 execution modules / 310 functions** and **34 state
+The build ships **52 execution modules / 318 functions** and **34 state
 modules / 85 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -555,11 +555,12 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-6 of 65 present — the rows below total 59 absent. This is the largest
+7 of 65 present — the rows below total 58 absent. This is the largest
 single gap and it is a direct consequence of having one host to develop
-on. The four that arrived most recently are the Windows ones, and they
-arrived because a Windows host became available: the gap tracks the
-hardware, not the intent.
+on. Four of the seven are the Windows ones, and they arrived because a
+Windows host became available: the gap tracks the hardware, not the
+intent. `dpkg` is the first of the Debian row, and the estate is
+Ubuntu.
 
 The 59 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
@@ -582,7 +583,7 @@ specification cannot be quietly missed.
 | Common Linux | none | `systemd_service`, `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | none under these names | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf`, `jail` |
-| Debian, Ubuntu | none | `aptpkg`, `debconf`, `dpkg`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
+| Debian, Ubuntu | `dpkg` | `aptpkg`, `debconf`, `debbuild`, `apt_key`, `ufw`, `netplan`, `apparmor`, `snap`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task` | `win_pkg`, `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |

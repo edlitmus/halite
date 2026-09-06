@@ -92,6 +92,7 @@ func New() *Registries {
 	registerZpool(r)
 	registerHostname(r)
 	registerSSHKnownHosts(r)
+	registerDpkg(r)
 	return r
 }
 

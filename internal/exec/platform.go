@@ -29,7 +29,6 @@ type PendingModule struct {
 var pendingPlatformModules = map[string]PendingModule{
 	"aptpkg":               {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"debconf":              {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
-	"dpkg":                 {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"debbuild":             {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"apt_key":              {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
 	"ufw":                  {Platform: "debian", When: "phase 5, with the Debian and Ubuntu platform work"},
