@@ -65,8 +65,30 @@ New-Item -ItemType Directory -Force -Path $work, "$work\cache", "$work\mod", "$w
 # The workspace has to be writable: `go test` writes nothing into it,
 # but the audits shell out to `go run ./tools/gendocs` and the toolchain
 # wants somewhere for its own scratch.
+#
+# Full control rather than Modify, and the difference is not academic.
+# Modify is read, write, execute and delete; it excludes WRITE_OWNER and
+# FILE_DELETE_CHILD, and this suite has tests whose whole subject is
+# ownership and permissions:
+#
+#   - internal/winsec asserts that an account can set the owner of a
+#     file it already owns. Owning a file grants READ_CONTROL and
+#     WRITE_DAC implicitly, but *not* WRITE_OWNER, so under Modify that
+#     failed with access denied — the platform behaving correctly
+#     against a grant that was too tight.
+#   - Tests that strip every entry from a file's own DACL then rely on
+#     `t.TempDir()` to clean up. Deleting a file whose ACEs are gone
+#     needs FILE_DELETE_CHILD on the parent, so the cleanup failed and
+#     took the test with it.
+#
+# This does not weaken what the standard account is for. The point of it
+# is that the account is not an *administrator*, so a DENY entry
+# actually denies and `permtest` can create the conditions it tests for.
+# Full control over its own scratch tree does not change that: an
+# explicit DENY still precedes an inherited ALLOW, which is why the
+# permission tests this account was introduced for still hold.
 foreach ($dir in @($PWD.Path, $work)) {
-    icacls $dir /grant "${user}:(OI)(CI)M" /T /Q | Out-Null
+    icacls $dir /grant "${user}:(OI)(CI)F" /T /Q | Out-Null
 }
 
 # Go itself, wherever setup-go put it. Resolved rather than assumed,
