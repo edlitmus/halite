@@ -19,6 +19,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
 )
 
@@ -195,12 +196,53 @@ are listed, module by module, in [DIVERGENCE.md](DIVERGENCE.md).
 
 `, len(r.Exec.Names()), len(execSigs.Modules()), len(r.States.Names()), len(stateSigs.Modules()))
 
+	writeAliases(&b, r.Exec.Aliases())
+
 	b.WriteString("## Execution modules\n\n")
 	writeModules(&b, execSigs)
 	b.WriteString("## State modules\n\n")
 	b.WriteString("A state function is what an SLS file calls. Each declares whether it\nchanges the system and whether its test mode is reliable; the conformance\nharness of SPEC section 11.6 holds every one of them to that claim.\n\n")
 	writeModules(&b, stateSigs)
 	return b.String()
+}
+
+// writeAliases lists the per-platform names of SPEC 15.3 that resolve to
+// a virtual module.
+//
+// They are not in the signature registry — an alias is a module name
+// rather than a second set of functions — so they would not appear in
+// this reference at all without being written out here, and a reference
+// that omits a callable name is a reference an operator cannot trust.
+func writeAliases(b *strings.Builder, aliases map[string]exec.Alias) {
+	if len(aliases) == 0 {
+		return
+	}
+	names := make([]string, 0, len(aliases))
+	for name := range aliases {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	b.WriteString("## Per-platform names\n\n")
+	b.WriteString(`SPEC section 15.2 has ` + "`pkg`" + `, ` + "`service`" + ` and ` + "`sysctl`" + ` as virtual modules that
+pick a provider for the node they run on, and section 15.3 names the
+per-platform modules below. Both are real: each name here resolves to the
+virtual module, and refuses on a node whose provider is a different one —
+naming the provider that node does have, since ` + "`aptpkg.install`" + ` on a RHEL
+node is the wrong module for the machine rather than a mistake in the tree.
+
+An alias is a name, not a copy: the functions are the virtual module's and
+are documented under it. ` + "`halite-node call sys.list_aliases`" + ` reports this
+table and says which of them the node in hand can use.
+
+| Name | Resolves to | Provider |
+|---|---|---|
+`)
+	for _, name := range names {
+		a := aliases[name]
+		fmt.Fprintf(b, "| `%s` | `%s` | %s |\n", name, a.Module, a.Provider)
+	}
+	b.WriteString("\n")
 }
 
 func writeModules(b *strings.Builder, reg *signature.Registry) {

@@ -62,6 +62,14 @@ func TestPendingPlatformModulesMatchTheSpec(t *testing.T) {
 	for _, module := range registries.Exec.Signatures().Modules() {
 		built[module] = true
 	}
+	// An alias counts as built, because the question this audit asks is
+	// whether an operator naming the module gets it. SPEC 15.3's
+	// `aptpkg` resolves to 15.2's `pkg` and refuses on a node whose
+	// package manager is something else — which is an answer, and not
+	// the "this build does not have it" a pending entry would give.
+	for module := range registries.Exec.Aliases() {
+		built[module] = true
+	}
 
 	for name := range inSpec {
 		_, isPending := pending[name]

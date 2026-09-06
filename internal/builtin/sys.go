@@ -29,6 +29,42 @@ func registerSys(r *Registries) {
 		},
 		exec.Module{
 			Sig: signature.Signature{
+				Module: "sys", Function: "list_aliases",
+				Doc: "List the per-platform module names of SPEC 15.3 that resolve to a virtual module, and what each stands for.",
+				// Listed apart from list_modules rather than mixed into
+				// it. An alias is a second name for functions that are
+				// already counted once, and folding it in would make
+				// the module list disagree with the function list for a
+				// reason that reads as a discrepancy.
+				TestMode: signature.TestNotApplicable,
+				Section:  "15.6",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				aliases := r.Exec.Aliases()
+				out := value.NewMap(len(aliases))
+				for _, name := range sortedAliasNames(aliases) {
+					a := aliases[name]
+					entry := value.NewMap(3)
+					entry.Set("module", a.Module)
+					entry.Set("provider", a.Provider)
+					// Whether this node is one where the name means
+					// anything, which is the question an operator has
+					// when they are looking at the list.
+					if a.Usable != nil {
+						if err := a.Usable(c); err != nil {
+							entry.Set("usable_here", false)
+							entry.Set("why_not", err.Error())
+						} else {
+							entry.Set("usable_here", true)
+						}
+					}
+					out.Set(name, entry)
+				}
+				return out, nil
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
 				Module: "sys", Function: "list_extensions",
 				Doc:      "List the signed extensions this node has loaded, and what confines each.",
 				TestMode: signature.TestNotApplicable,
@@ -206,6 +242,15 @@ func toAnyList(ss []string) []any {
 // sortedKeys keeps `sys.list_extensions` rendering the same way twice,
 // which matters because an operator compares two nodes' output.
 func sortedKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedAliasNames(m map[string]exec.Alias) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
