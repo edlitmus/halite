@@ -266,6 +266,29 @@ func zoneFixture(t *testing.T) (c *exec.Context, want string, settle func()) {
 	// So that setZone writes the files rather than reaching for systemd,
 	// which is what a container without one gets.
 	c.Lookup = func(string) string { return "" }
+
+	if runtime.GOOS == "darwin" {
+		// darwin does not take the file-writing path at all: setZone
+		// drives `systemsetup`, which this test mocks, so nothing moves
+		// the link the reader reads and the state could never converge
+		// here however correct it was. The real tool re-points
+		// /etc/localtime, so settle does that.
+		//
+		// Found by putting macOS in CI. It is a gap in this fixture
+		// rather than in the module -- `zoneFromPath` takes the last
+		// `/zoneinfo/` in the target, which is what makes macOS's
+		// /var/db/timezone/zoneinfo path read correctly -- but the
+		// fixture is what stood between the module and any evidence
+		// that it works there.
+		return c, "America/Denver", func() {
+			if err := os.Remove(localtimePath); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(zoneinfoDir, "America/Denver"), localtimePath); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 	return c, "America/Denver", func() {}
 }
 

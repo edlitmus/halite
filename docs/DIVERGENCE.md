@@ -849,8 +849,8 @@ added to and nobody re-reads the sentence.
 |---|---|---|---|
 | FreeBSD amd64 | yes | yes | yes — grains, highstate, drift reconvergence, requisites |
 | Linux amd64 | yes | yes, under emulation — all but three packages, named in 4.1 | yes — a node enrolled with a hub, highstate applied, under systemd (Ubuntu; see 4.5) |
-| Linux arm64 | yes | no | no |
-| macOS | yes, since 2026-08-29, and built natively on one | no | no |
+| Linux arm64 | yes | no — but macOS in CI is arm64, so the platform-neutral code now runs on that architecture somewhere | no |
+| macOS | yes, since 2026-08-29, and built natively on one | yes, on every change — macos-15 (arm64) in CI, the suite and the race detector | no |
 | Windows | yes | yes, natively on Windows 11 — every package, no skips | yes — grains from the registry and Win32, the file states, `cmd`, the Chocolatey provider, the job-object extension sandbox |
 
 ### 4.0 Where each platform keeps its files
