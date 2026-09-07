@@ -70,9 +70,18 @@ halite-node doctor — web1.example
                                          event bus; both prune by age and size and both default generously.
   skip  extension signatures             no extensions are installed
                                          Extensions live under the extension directory; there are none to check.
+  warn  module verification              9 of the 21 modules that change this machine as root have not been
+                                         run against the tool they drive: apparmor, debconf, dpkg, hostname,
+                                         netplan, pkgrepo, snap, sysctl, timezone
+                                         This is a statement about what has been demonstrated, not a fault on
+                                         this node: these modules may be entirely correct.
+                                         What it means is that if one of them does the wrong thing, halite is
+                                         not ruled out as the cause.
+                                         `sys.evidence` says what is assumed for each, and docs/DIVERGENCE.md
+                                         records why.
   pass  FIPS mode consistency            neither the kernel nor this build is in FIPS mode
 
-  7 pass, 1 warn, 1 skip
+  7 pass, 2 warn, 1 skip
 ```
 
 Salt has no equivalent. Most of what these checks look at is why a
@@ -111,6 +120,7 @@ says "not applicable here" is one nobody reads to the end.
 | disk space | ✓ | ✓ |
 | queue depths | | ✓ |
 | extension signatures | ✓ | |
+| module verification | ✓ | ✓ |
 | FIPS mode consistency | ✓ | ✓ |
 
 The configuration check **re-reads the file from disk** rather than
@@ -127,6 +137,40 @@ halite the non-compliant component on an otherwise compliant host. Both
 warn, with different remedies. On the BSDs and macOS there is no kernel
 FIPS mode to be consistent with, and the check skips rather than warning
 about a switch the platform does not have.
+
+**Module verification is a statement about halite, not about the node.**
+Most modules that change a machine work by running another program and
+reading what it says back, and a unit test cannot establish that half:
+it supplies the output, so it checks that the parser reads what the test
+author believed the program prints. That belief has been wrong, and the
+case that proves it is a firewall — `pf` matched no rule at all on a
+real FreeBSD host while its idempotence test passed, because the fixture
+was written in the module's own spelling.
+
+So this check answers a question an operator would otherwise have to
+take on trust: of the modules that change this machine as root, which
+have never been pointed at the tool they drive. It warns and never
+fails, because nothing is wrong with the node — what it means is that if
+one of those modules does the wrong thing, halite is not ruled out as
+the cause. `sys.evidence` gives the same answer per module, with the
+note saying what is assumed:
+
+```
+$ halite-node call sys.evidence undemonstrated_only=true --out yaml
+web1.example:
+  apparmor:
+    level: assumed
+    demonstrated: false
+    root: true
+    note: no node with AppArmor running has been asked to enforce or disable a
+      profile by this module; both the `aa-enforce` behaviour and the securityfs
+      format are taken from documentation (DIVERGENCE 5.27)
+```
+
+The same table is a release gate: `make release-gate` refuses a build in
+which any root-mutating module is still an assumption. It runs behind a
+build tag so that ordinary development is not blocked by it, and it is
+the first job of the release workflow.
 
 `--out json` and `--out yaml` render the whole report, including every
 remedy, so a state can read it:

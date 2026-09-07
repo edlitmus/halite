@@ -480,6 +480,103 @@ func ExtensionSignatures(required bool, extensions []ExtensionTrust) Check {
 	}
 }
 
+// ModuleVerification reports which of the modules that change this
+// machine have never been run against the tool they drive.
+//
+// # Why a diagnostic and not only a document
+//
+// Most of these modules work by running another program and reading
+// what it says back, and a unit test cannot establish that half: it
+// supplies the output, so it checks that the parser reads what the test
+// author believed the program prints. That belief has been wrong, and
+// the case that proves it is a firewall — `pf` matched no rule at all
+// on a real host while its idempotence test passed, because the fixture
+// was written in the module's own spelling.
+//
+// An operator deciding whether to point one of these at a production
+// machine is entitled to that fact before they do it, from the command
+// they already run, rather than from a document on a machine they are
+// not looking at.
+//
+// # This is never a failure
+//
+// Nothing is wrong with the node. `Warn` is the whole range, and only
+// for the modules that need root — a module that changes a machine with
+// no privilege can be wrong without being dangerous, and grading those
+// the same way is how a warning becomes something people scroll past.
+func ModuleVerification(modules []ModuleTrust) Check {
+	return Check{
+		Name:  "module verification",
+		Roles: []string{RoleNode, RoleHub},
+		Run: func(context.Context) Result {
+			res := Result{Name: "module verification"}
+			if len(modules) == 0 {
+				res.Status = Skip
+				res.Detail = "no modules that change anything were reported"
+				res.Remedy = "This build registered no mutating modules, which is unusual; " +
+					"`sys.list_modules` says what it did register."
+				return res
+			}
+			var root, other, demonstrated []string
+			rootTotal := 0
+			for _, m := range modules {
+				if m.Root {
+					rootTotal++
+				}
+				switch {
+				case m.Demonstrated:
+					demonstrated = append(demonstrated, m.Module)
+				case m.Root:
+					root = append(root, m.Module)
+				default:
+					other = append(other, m.Module)
+				}
+			}
+			sort.Strings(root)
+			sort.Strings(other)
+			switch {
+			case len(root) > 0:
+				res.Status = Warn
+				// Counted against the modules that need root, not
+				// against every mutating module: a denominator that
+				// includes things the numerator cannot is a ratio an
+				// operator has to re-derive before they can use it.
+				res.Detail = fmt.Sprintf(
+					"%d of the %d modules that change this machine as root have not been "+
+						"run against the tool they drive: %s",
+					len(root), rootTotal, strings.Join(root, ", "))
+				res.Remedy = "This is a statement about what has been demonstrated, not a " +
+					"fault on this node: these modules may be entirely correct.\nWhat it " +
+					"means is that if one of them does the wrong thing, halite is not ruled " +
+					"out as the cause.\n`sys.evidence` says what is assumed for each, and " +
+					"docs/DIVERGENCE.md records why."
+			case len(other) > 0:
+				res.Status = Pass
+				res.Detail = fmt.Sprintf(
+					"every module that changes this machine as root has been run against its "+
+						"tool; %d unprivileged ones have not", len(other))
+			default:
+				res.Status = Pass
+				res.Detail = fmt.Sprintf("all %d modules that change this machine have been "+
+					"run against the tool they drive", len(demonstrated))
+			}
+			return res
+		},
+	}
+}
+
+// ModuleTrust is one module's verification state, as `sys.evidence`
+// reports it.
+type ModuleTrust struct {
+	Module string
+	// Demonstrated is whether anything has run this module against the
+	// program it drives.
+	Demonstrated bool
+	// Root is whether any of its mutating functions needs root, which is
+	// what decides whether a gap is worth an operator's attention.
+	Root bool
+}
+
 // ExtensionTrust is one extension's signature state.
 type ExtensionTrust struct {
 	Name   string

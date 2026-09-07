@@ -64,7 +64,7 @@ TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
 	linux/riscv64 linux/ppc64le linux/s390x
 TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
-.PHONY: all build test chaos race vet cover check release cross clean tidy vendor policy fmt \
+.PHONY: all build test chaos race vet cover check release release-gate cross clean tidy vendor policy fmt \
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image
@@ -79,6 +79,21 @@ build:
 	done
 
 # release builds the way CI does: vendored, offline, cgo off.
+# A module that changes a machine as root and has never been run against
+# the tool it drives does not go into a release.
+#
+# Behind a build tag so that ordinary development is not blocked by it: a
+# module written today is undemonstrated today, and that is the normal
+# state of new work. This fires once, where the decision is made.
+#
+# The gate has exactly one failure mode -- a release does not happen --
+# and a release that does not happen breaks nothing.
+# internal/builtin/releasegate_test.go carries the argument, and
+# internal/builtin/evidence.go carries the table.
+release-gate:
+	@env $(DEV_ENV) go test -count=1 -tags releasegate \
+		-run TestReleaseGateNoUnverifiedRootMutatingModule ./internal/builtin/
+
 release:
 	@mkdir -p bin
 	@for b in $(BINARIES); do \

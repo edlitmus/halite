@@ -60,6 +60,13 @@ Run the diagnostics of the specification's section 26.4 against this hub.
 Changes nothing, and starts no listener, so it is safe on a hub that is
 already running.
 Exits non-zero only on a failure.
+One of the checks,
+.Sy module verification ,
+is about
+.Nm
+rather than about the machine: it names the modules that change a host
+as root and have never been run against the tool they drive.
+It warns and never fails.
 .It Cm migrate Ar tree
 Audit an existing Salt tree and report what would and would not work.
 .Sq lexicon:allow

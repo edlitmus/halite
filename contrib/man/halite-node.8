@@ -66,6 +66,16 @@ Run the diagnostics of the specification's section 26.4 and print a
 pass, warning, failure or skip for each, with a line saying what to do
 about anything that is not a pass.
 Changes nothing.
+One of the checks,
+.Sy module verification ,
+is about
+.Nm
+rather than about the machine: it names the modules that change this
+host as root and have never been run against the tool they drive.
+It warns and never fails.
+See
+.Sy sys.evidence
+for the same answer per module, with the assumption named.
 Exits non-zero only on a failure, so a warning does not fail a cron job
 or a state's
 .Sy onlyif .

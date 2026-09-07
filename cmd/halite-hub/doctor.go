@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/doctor"
@@ -56,6 +57,7 @@ func runDoctor(args *cli.Args) int {
 		hubPillarCheck(cfg),
 		hubDiskCheck(cfg),
 		hubQueueCheck(cfg),
+		doctor.ModuleVerification(builtin.New().Trust()),
 		hubFIPSCheck(),
 	})
 
