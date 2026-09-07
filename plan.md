@@ -640,8 +640,9 @@ This section has moved further than any other since the last revision.
   before. DIVERGENCE 5.30, including why a platform with no kernel FIPS
   mode is a skip rather than a warning — the fleet is four FreeBSD hosts
   to one Linux, and a check that warns on four nodes in five is one
-  nobody reads. **Tracing (26.3) is still an inert key** (§4) and is now
-  the only unbuilt part of section 26.
+  nobody reads. **Tracing (26.3) is half built**: the machinery exists in
+  `internal/tracing` and nothing starts a span yet, so the key is still
+  inert (§4). §7 has what is left.
 
 ### 3.3 The security model's unbuilt half (SPEC 25)
 
@@ -1006,10 +1007,15 @@ place.
 
 **Then — phase 6, on a fleet that is in production**
 
-4. **Tracing** (§3.2, SPEC 26.3), now the only unbuilt part of section
-   26. `doctor` closed the other and was worth more than its size: it is
-   what an operator reaches for at the moment something is wrong, and
-   this fleet is past the point where that is hypothetical.
+4. **Tracing** (§3.2, SPEC 26.3), the only unbuilt part of section 26.
+   **Half built**: `internal/tracing` has the W3C Trace Context
+   propagation, the span model, the sampler and the OTLP/HTTP JSON
+   exporter, all tested against the two specifications' own examples
+   rather than against what this build produces. What is *not* done is
+   the wiring — no span is started anywhere, `tracing` is still an inert
+   key, and nothing is exported. SPEC asks for a span per job, per state
+   and per file transfer, and that is the next commit. DIVERGENCE 5.33
+   says so plainly rather than letting a new package imply a feature.
 5. The two SPEC 30 benchmarks that need no harness (§3.1).
 6. The render sandbox (§3.3), the largest unbuilt security control and
    the one SPEC argues for most directly.

@@ -3620,6 +3620,78 @@ With this, **SPEC 15.3's FreeBSD row ships entirely**: `freebsdpkg`,
 `freebsd_service` and `freebsd_sysctl` as aliases, `pf` as the
 `firewall` module's second provider, and `jail`.
 
+### 5.33 Tracing's machinery, and what it is not yet
+
+SPEC 26.3 asks for W3C Trace Context propagation, a span per job, per
+state and per file transfer, and OTLP over HTTP with JSON encoding, off
+by default and sampled when on.
+
+**`internal/tracing` is the first three-quarters of that and none of the
+middle clause.** The propagation, the span model, the sampler and the
+exporter exist and are tested. **Nothing starts a span**: no job, no
+state and no file transfer is traced, `tracing` remains an inert key,
+and an operator who sets `tracing: otlp` still gets what 4.x's inert-key
+table promises — nothing, silently.
+
+That is written here first because a new package with a specification
+section's name on it reads as a feature, and this project has spent a
+day finding rows where half of something shipped and the other half was
+assumed. This is that shape deliberately, split at a seam, rather than
+that shape by accident.
+
+**Two external formats, owned rather than imported.** SPEC chose
+OTLP/HTTP with JSON because it "needs no OpenTelemetry SDK", which is a
+dependency decision under SPEC 4.2 as much as a wire one. The cost is
+that nothing but this build's own tests stands between a mistake in
+either format and a collector quietly misreading every span, so both are
+checked against their specifications' own examples rather than against
+what the code produces — the lesson 5.31 cost, applied before rather
+than after.
+
+Two things in OTLP/JSON are easy to get wrong in exactly the way that
+produces a body a collector accepts and misreads:
+
+- **Identifiers are hex, not base64.** Proto3's JSON mapping encodes a
+  `bytes` field as base64; OTLP overrides that for `trace_id`, `span_id`
+  and `parent_span_id`. A base64 identifier is a perfectly good string,
+  so nothing errors and the trace never joins up.
+- **64-bit numbers are strings.** A nanosecond timestamp is about
+  1.7 × 10^18 and a float64 is exact to about 9 × 10^15, so a JSON
+  number loses the last digits — which is the resolution a span duration
+  is made of.
+
+And a root span omits `parentSpanId` rather than sending a zero one: a
+present-but-zero parent is read as a parent that does not exist, and the
+span hangs off nothing instead of being a root.
+
+**Off means a nil pointer.** SPEC has tracing off by default, and off
+here costs no goroutine, no buffer and no allocation per job: `Tracer`
+and `Span` tolerate a nil receiver on every method, so a call site never
+guards. A call site that has to guard eventually forgets to, and the one
+it forgets is a nil dereference in a hub.
+
+**The sampling decision is inherited and never re-made.** A trace
+sampled in at the hub and out at the node has a hole exactly where
+somebody is looking, which is worse than sampling everything or nothing.
+An unsampled span is still created and still propagates its identifiers,
+because W3C requires a system that is not recording to pass the context
+along — otherwise a sampled trace crossing it loses its middle.
+
+**A slow collector costs spans, not a fleet.** A finished span is queued
+and dropped when the queue is full, never waited on: the caller is a hub
+dispatching a job, and telemetry is allowed to lose data where a fleet is
+not allowed to stop. The drops are counted rather than logged one at a
+time, on the argument the reactor's queue overflow already made. Measured
+with the exporter deliberately wedged: 197 of 200 spans dropped and
+nothing blocked.
+
+**What is left**, and what the next commit is: reading the three
+settings into a tracer, a span per job on the hub with `traceparent` on
+the job message and on the HTTP requests, a span per state on the node
+under whatever the job carried, a span per file transfer, and removing
+`tracing` from the inert table. Until that lands, this section is the
+honest statement of what exists.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

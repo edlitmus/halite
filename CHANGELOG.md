@@ -18,6 +18,31 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Tracing's machinery, and not yet its wiring
+
+`internal/tracing` has SPEC 26.3's W3C Trace Context propagation, the
+span model, the sampler and the OTLP-over-HTTP JSON exporter. **Nothing
+starts a span yet** — no job, no state, no file transfer — and `tracing`
+is still an inert key, so setting it still gets what the inert table
+promises. That is said here and in DIVERGENCE 5.33 because a new package
+with a specification section's name on it otherwise reads as a feature.
+
+The two formats are owned rather than imported, which is what SPEC chose
+when it said this "needs no OpenTelemetry SDK". So both are tested
+against their own specifications' examples rather than against what this
+build produces: the W3C document's sample `traceparent`, and OTLP/JSON's
+two departures from proto3 — identifiers in hex rather than base64, and
+64-bit numbers as strings, each of which produces a body a collector
+accepts and misreads.
+
+Off is a nil pointer: no goroutine, no buffer, no allocation per job. A
+sampling decision is inherited rather than re-made, because a trace
+sampled in at the hub and out at the node has a hole where somebody is
+looking. And a finished span is dropped rather than waited on when the
+queue is full — measured at 197 of 200 with the collector wedged, with
+nothing blocked, because telemetry may lose data and a fleet may not
+stop.
+
 ### Manual pages
 
 `halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc — what a
