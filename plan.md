@@ -710,8 +710,12 @@ Unchanged since the last revision, and verified again here.
   `internal/state` 90.1%). Unchanged to the decimal since the last
   revision. Branch coverage, which SPEC actually requires, is unmeasured
   and will be lower.
-- **Upgrade testing** (hub at N with nodes at N−1 and N+1, cache format
-  migration, certificate rotation across an upgrade) does not exist.
+- ~~**Upgrade testing**~~ — **built.** All three clauses of SPEC 31's
+  Upgrade row have tests, and `internal/specaudit` holds the row to them
+  in both directions so a fourth clause cannot sit there uncovered. What
+  it establishes is the tolerance and the refusal; no two halite
+  versions have ever actually run against each other, because there has
+  never been a second version. DIVERGENCE 4.13.
 - **Integration testing** across the tier 1 matrix does not exist. The
   repository has two containers — the saltdiff image and the ZFS virtual
   machine of §2.1a — and each is a correctness harness for one subsystem
@@ -962,12 +966,21 @@ place.
    second provider, exactly as its own comment predicted, and it needed
    no change to the interface: a provider that cannot do something says
    so. DIVERGENCE 5.31.
-2. **Upgrade testing** (§3.4, SPEC 31). A hub at N with nodes at N−1 and
-   N+1, job cache format migration, and certificate rotation across an
-   upgrade. Not hypothetical here: rebuilding five hosts from source
-   means the fleet is version-skewed during every upgrade, on purpose,
-   and nothing says what that does. This is the item the fleet's own
-   deployment method creates.
+2. ~~**Upgrade testing**~~ — **done**, and it found a defect on the way.
+   A job record carried no version marker and round-tripped through
+   `job.Job`, so an older hub reading and writing back a record a newer
+   hub had written silently dropped every field it did not know —
+   eleven keys in and nine out, measured. That is the rollback case, one
+   `git checkout` and one `make install` away on a fleet built from
+   source. The record now carries `halite.job/1`, and a schema this
+   build does not know is readable and refused for writing.
+
+   It also **corrected an assumption**: Salt requires its server
+   upgraded first and halite does not, because the wire is tolerant in
+   both directions. That tolerance was accidental — `encoding/json`'s
+   defaults and one `default:` branch — and is now a guarantee with a
+   test on each direction. The ALPN is the only place skew is fatal, and
+   it is frozen. DIVERGENCE 4.13.
 3. **`jail`** (§2.3). The other genuinely absent FreeBSD module. Below
    `pf` because a firewall is on every host and a jail is a choice — but
    two of the four FreeBSD hosts are physical, which is where jails

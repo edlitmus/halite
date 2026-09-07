@@ -1601,6 +1601,97 @@ bus with a retention window can do better, and the count in the error is
 segments rather than events, because the bus keeps no tally of what was
 in a segment it deleted.
 
+### 4.13 An older hub silently truncated a newer hub's job records
+
+SPEC 31's Upgrade row — "Hub at version N with nodes at N-1 and N+1;
+state and job cache format migration; certificate rotation across an
+upgrade" — had nothing behind it. Asking what it was asking about, on
+2026-09-06, produced one defect and one correction to an assumption
+everybody arriving from Salt brings with them.
+
+**The defect.** A job record round-trips through `job.Job`, and
+`encoding/json` drops every field the struct does not have. The record
+carried no version marker of any kind, so a hub could not tell a record
+a *newer* hub had written from one of its own — it read it, changed one
+field, and wrote it back without the rest. Measured on a record with two
+extra fields: **eleven keys in, nine out**, silently, with nothing
+anywhere recording that it had happened.
+
+That is the rollback case, and it is not exotic on a fleet built from
+source: going back a tag is one `git checkout` and one `make install`.
+Every job record the newer hub had touched would be quietly truncated by
+the older one, and rolling forward again would not bring the fields
+back.
+
+`job.Job` now carries `Schema`, and `JobSchema` is `halite.job/1`. An
+empty schema is a record written before the field existed — this build's
+own shape — and is accepted and stamped on the next write. A schema this
+build does not know is **readable and not writable**: `jobs list` on a
+rolled-back hub keeps working and an operator can still look at the job,
+and both `Put` and `Update` refuse with `ErrForeignRecord`, naming the
+record, the schema found, the schema this build writes, and what to do.
+`Update` refuses *before* the mutator runs, so a caller with a side
+effect in it does not have the side effect and then hear the write
+failed.
+
+Refusing rather than truncating is this project's answer everywhere else
+it has faced the same choice — the pruned event-bus offset (4.12), the
+snap version snapd will not hold (5.28), the pf anchor nothing
+references (5.31). Truncating and reporting success is the one option
+that leaves nobody able to find out.
+
+**The correction.** Salt requires its server upgraded before its agents,
+because the agent speaks a protocol the server defines. Halite does not
+share that constraint, and this is the first time anybody checked rather
+than assumed:
+
+- A newer hub talking to an older node: an unknown message type reaches
+  the node's `default:` branch, which logs it and carries on. The stream
+  stays open.
+- A newer node talking to an older hub: nothing in this tree calls
+  `DisallowUnknownFields`, so a request carrying fields the hub has
+  never heard of is accepted and the fields ignored.
+
+So **neither upgrade order is forced**. What is worth saying plainly is
+that the tolerance was *accidental*: it falls out of `encoding/json`'s
+defaults and one `default:` branch, and nothing recorded it as a
+guarantee or would have noticed it being taken away. It is a guarantee
+now, with a test on each direction.
+
+The one place skew is fatal is the **ALPN**. SPEC 6.4 makes `halite/1`
+mandatory and rejects a peer that does not offer it, so moving it breaks
+both directions at once — that, and not the message shapes, is where an
+upgrade order would come from. It is frozen at 1, and a test says what
+has to be rewritten together if it ever moves.
+
+**The return schema was frozen and unenforced.** SPEC 9.4 freezes
+`halite.ret/1` "so a dashboard built on it keeps working"; the hub
+filled in a missing schema and validated nothing, so a return marked
+`halite.ret/2` was recorded as though it were v1. It is now accepted,
+stored as it arrived, warned about, and counted in
+`halite_returns_foreign_schema_total`.
+
+Accepted rather than refused, and the asymmetry with the job record is
+deliberate. A record is bookkeeping the hub owns and can decline to
+touch. A return is the only evidence that work already happened on a
+node: refusing it loses that evidence, the node has nowhere to put it
+again, and the job looks unanswered for ever. It is the same argument
+`doctor`'s disk-full check makes — a write that fails after the
+instruction has gone out must not become a second untruth.
+
+**What is not established.** All of it is a lab. No two halite versions
+have ever actually run against each other, because there has never been
+a second version; every "older node" here is this build sending what an
+older one would send. What the tests pin is the tolerance and the
+refusal, not an upgrade anybody has performed. `internal/specaudit`'s
+`TestEveryUpgradeClauseHasATest` holds SPEC 31's Upgrade row to the
+tests that claim its clauses, in both directions, so a fourth clause
+added to the row cannot sit there uncovered.
+
+The fleet this was found for is five hosts and has had no upgrade
+trouble — which its owner points out is too small to be evidence either
+way.
+
 ## 5. Test coverage against SPEC 31
 
 ### 5.1 Branch coverage

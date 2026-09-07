@@ -81,10 +81,66 @@ func (c *Cache) jobDir(id ID) (string, error) {
 	return filepath.Join(c.dir, id.Day(), string(id)), nil
 }
 
+// ErrForeignRecord is returned for a record whose schema this build
+// does not know.
+//
+// It means a newer hub wrote it, which happens after a rollback: the
+// binary went back and the records did not. Reading one is fine and
+// stays fine -- `jobs list` on a rolled-back hub should keep working --
+// and *writing* it is refused, because a write round-trips the record
+// through this build's struct and drops every field the struct does not
+// have. Silently. Ten keys in and eight out, measured.
+//
+// Refusing is this project's answer everywhere else it has faced the
+// same choice: the pruned event-bus offset, the snap version that snapd
+// will not hold, the pf anchor nothing references. Truncating a record
+// and reporting success is the one option that leaves nobody able to
+// find out.
+var ErrForeignRecord = errors.New("this record was written by a newer halite")
+
+// ForeignRecordError says which record and which schema.
+type ForeignRecordError struct {
+	JID    ID
+	Schema string
+	Known  string
+}
+
+func (e *ForeignRecordError) Error() string {
+	return fmt.Sprintf(
+		"the record for %s has schema %q and this build writes %q: it was written by a "+
+			"newer halite, and writing it back would silently drop every field this "+
+			"build does not know. It can still be read. Run the version that wrote it, "+
+			"or move the record aside",
+		e.JID, e.Schema, e.Known)
+}
+
+func (e *ForeignRecordError) Is(target error) bool { return target == ErrForeignRecord }
+
+// checkSchema decides whether this build may write a record.
+//
+// An empty schema is a record written before the field existed, which is
+// this build's own shape: it is accepted and stamped. Anything else that
+// is not this build's is refused.
+func checkSchema(j *Job) error {
+	switch j.Schema {
+	case "", JobSchema:
+		return nil
+	default:
+		return &ForeignRecordError{JID: j.JID, Schema: j.Schema, Known: JobSchema}
+	}
+}
+
 // Put writes a job's record. SPEC 9.1 step 4: this happens before
 // delivery, with the resolved node set, so that a missing return is
 // detectable rather than invisible.
+//
+// It refuses a record whose schema this build does not know rather than
+// truncating it. See ErrForeignRecord.
 func (c *Cache) Put(j *Job) error {
+	if err := checkSchema(j); err != nil {
+		return err
+	}
+	j.Schema = JobSchema
 	dir, err := c.jobDir(j.JID)
 	if err != nil {
 		return err
@@ -131,6 +187,13 @@ func (c *Cache) Update(id ID, mutate func(*Job) error) (*Job, error) {
 
 	j, err := c.Get(id)
 	if err != nil {
+		return nil, err
+	}
+	// Before the mutator runs, not after. A caller that has already
+	// been handed the record and had its change refused has no way to
+	// tell whether anything happened, and a mutator with a side effect
+	// would have had it.
+	if err := checkSchema(j); err != nil {
 		return nil, err
 	}
 	if err := mutate(j); err != nil {

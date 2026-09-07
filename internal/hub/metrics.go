@@ -42,6 +42,10 @@ type hubMetrics struct {
 
 	eventsPublished *metrics.Counter
 	eventsDropped   *metrics.Counter
+	// returnsForeignSchema counts returns from a node newer than this
+	// hub. Non-zero during an upgrade and zero afterwards; non-zero
+	// afterwards is a node somebody forgot.
+	returnsForeignSchema *metrics.Counter
 
 	reactorDropped  *metrics.Counter
 	reactorDuration *metrics.Histogram
@@ -118,6 +122,10 @@ func (s *Server) setupMetrics() {
 			"Events appended to the bus, by the first two segments of the tag.", "tag_prefix"),
 		eventsDropped: r.Counter("halite_events_dropped_total",
 			"Events that did not reach the bus.", "reason"),
+
+		returnsForeignSchema: r.Counter("halite_returns_foreign_schema_total",
+			"Returns whose schema this build does not know, which means a node is "+
+				"newer than this hub."),
 
 		reactorDropped: r.Counter("halite_reactor_dropped_total",
 			"Events dropped from a reactor worker's queue because it was full."),

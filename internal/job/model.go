@@ -11,6 +11,14 @@ import (
 // so a dashboard built on it keeps working.
 const ReturnSchema = "halite.ret/1"
 
+// JobSchema is the version of the job record's shape.
+//
+// The return's has been frozen since 9.4 and the record's had none at
+// all, which meant a hub could not tell a record written by a newer hub
+// from one of its own -- and would truncate it on the next write. See
+// Job.Schema.
+const JobSchema = "halite.job/1"
+
 // Offline is the per-job policy of SPEC 9.5 for a node that is not
 // connected.
 type Offline string
@@ -115,6 +123,25 @@ type Job struct {
 	// were matched, were not connected, and are to be given the job
 	// when they next appear -- if it has not expired by then.
 	Queued []string `json:"queued,omitempty"`
+
+	// Schema is the version of this record's shape.
+	//
+	// It exists so that a hub can tell it is looking at a record a
+	// newer hub wrote. Without it, it cannot: a record round-trips
+	// through this struct, and `encoding/json` drops every field the
+	// struct does not have -- measured at ten keys in and eight out.
+	// So an older hub reading, changing and writing back a newer
+	// record silently destroyed whatever the newer version had added,
+	// with nothing anywhere recording that it happened. That is the
+	// rollback case, and SPEC 31's "job cache format migration" row is
+	// asking about exactly it. DIVERGENCE 4.13.
+	//
+	// Empty means a record written before this field existed, which is
+	// this build's own shape and is stamped on the next write. Anything
+	// else this build does not know is refused for *writing* and still
+	// readable, because `jobs list` on a rolled-back hub should keep
+	// working and truncating the record should not.
+	Schema string `json:"schema,omitempty"`
 }
 
 // IsQueuedFor reports whether a node is owed this job.
