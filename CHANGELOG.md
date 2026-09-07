@@ -154,6 +154,28 @@ manages an anchor rather than `pf.conf`, and refuses to load rules into
 an anchor `pf.conf` does not reference — which pf would accept, list
 back, and never evaluate.
 
+### `jail`, and SPEC 15.3's FreeBSD row complete
+
+`jail` lists, inspects, starts and stops FreeBSD jails, with a
+`jail.running` state for the ones `jail.conf` defines. It does not write
+`jail.conf`: a module that did would own every jail on the host including
+the ones somebody else defined, and a file is `file.managed`'s to own.
+
+It reads `jls --libxo=json` rather than the table, and that is a decision
+rather than a preference. `pf` had just cost a real defect by comparing
+its own rendered text against another program's output on an assumption
+nobody had checked; where a platform offers a structured interface,
+parsing the human one is choosing the surface that bit us. More to the
+point, a test runs the **real** `jls` on CI's FreeBSD runner and feeds
+its output to the same parser — the test `pf` did not have. A host with
+no jails still proves the envelope, which is the part this build had to
+guess at.
+
+What is still assumed is marked as assumed: the field names inside a
+jail entry need a host with a jail running.
+
+With it, **SPEC 15.3's FreeBSD row ships entirely** — the first row to.
+
 ### What a real pf found
 
 `pf` ran on a FreeBSD host the evening it shipped and found a defect in

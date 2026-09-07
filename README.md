@@ -291,9 +291,9 @@ had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
-this build ships 57 execution modules and 39 state modules against a
-specification naming roughly 90 and 46 — 347 execution functions across 57
-modules and 94 state functions across 39. FreeBSD is the development
+this build ships 58 execution modules and 40 state modules against a
+specification naming roughly 90 and 46 — 353 execution functions across 58
+modules and 95 state functions across 40. FreeBSD is the development
 platform; Linux and Windows have each been verified against a real host,
 and macOS and Linux arm64 have not been run at all. `make test-linux`
 runs the suite as Linux binaries under this host's compat layer, which
