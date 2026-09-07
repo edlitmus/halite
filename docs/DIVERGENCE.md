@@ -3486,14 +3486,71 @@ matters because the whole anchor is rewritten and sorted on every
 change: without `quick`, which rule won would depend on alphabetical
 order.
 
-**What is not established.** None of it has run against a real pf. The
-tests supply `pfctl`'s output and record what would be run; the rendered
-rules are checked against the spelling `pfctl -s rules` prints back,
-because this provider compares its own text with pf's, but nothing has
-watched pf accept one. Two of the load-bearing behaviours were checked
-by swapping in the wrong implementation and watching the tests fail:
-dropping `quick`, and skipping the anchor-reference check. CI has a
-FreeBSD runner, which could take this further than it has.
+**What a real pf established, and what this section claimed before it.**
+
+This section originally ended: "None of it has run against a real pf.
+The tests supply `pfctl`'s output and record what would be run; the
+rendered rules are checked against the spelling `pfctl -s rules` prints
+back, because this provider compares its own text with pf's."
+
+The second half of that sentence was false, and it was the module's
+central assumption. `pfRule`'s own comment stated it outright — "`any` is
+written out rather than omitted because pf accepts both and the explicit
+form is what `pfctl -s rules` prints back" — asserted, never checked.
+
+**pf does not print back the text it was given.** It reprints from its
+parsed form. `mail.edlitmus.info`, a FreeBSD host in this project's own
+fleet, loaded two rules and returned them like this:
+
+	loaded:  block drop in quick proto tcp from any to any port 9999
+	printed: block drop in quick proto tcp from any to any port = 9999
+	loaded:  pass in quick proto tcp from any to any port 9998
+	printed: pass ... port = 9998 flags S/SA keep state
+
+The `=` is pf writing back the port comparison it parsed. The flags and
+state tracking are pf's defaults for a `pass` rule, applied whether or
+not they were asked for and printed as though they had been.
+
+So **no rule ever matched itself**. Both of mail's rules were reported as
+added on every run, and `firewall.absent` could remove neither — the same
+defect mirrored, because a rule that cannot be found cannot be taken
+away. A firewall state that reports a change on every run is one an
+operator stops reading, and one that cannot remove a rule is one they
+have to reach past.
+
+`normalizePFRule` now folds both sides into one spelling before
+comparing: whitespace collapsed, `port = ` to `port `, `from any to any`
+to `all` — because pf prints one or the other depending on what else the
+rule constrains, so folding both sides means neither has to predict
+which — and pf's default state-tracking suffixes removed.
+
+**The test that should have caught it passed, and the reason is the
+lesson.** `TestPFApplyIsIdempotent` supplied a fixture written in the
+module's own spelling, so it compared this build's text against this
+build's text and agreed. That is precisely the defect 1.4 generalised
+after the macOS timezone and FreeBSD hostname fixtures — a fixture that
+forces the shape the real thing does not take, passing while asserting
+nothing — repeated in a section written by whoever had just finished
+writing 1.4. The generalisation was about *code branches*; it applies
+just as much to *output being parsed*, and nothing said so. It does now:
+a fixture standing in for another program's output is worth as little as
+its provenance, and the fixture here is what mail returned.
+
+Two gaps remain, both needing more than a spelling change. A port list
+renders as one rule and pf expands it into one rule per port, so
+`{ 80, 443 }` cannot match what it is compared against; that wants the
+list expanded at render time. And a rule carrying pf options this module
+does not write — `modulate state`, an interface — would print back with
+them and not match.
+
+What is established now: `status`, `enabled`, `allowed` and `absent` on a
+real FreeBSD host, idempotent across runs. What is still not: the anchor
+refusal has not been seen refuse on hardware, and no test has watched pf
+reject a rule this module rendered.
+
+Two of the load-bearing behaviours were also checked by swapping in the
+wrong implementation and watching the tests fail: dropping `quick`, and
+skipping the anchor-reference check.
 
 `jail` remains the FreeBSD row's one genuine absence.
 

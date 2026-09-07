@@ -958,14 +958,26 @@ place.
 
 **Now — the fleet this actually runs on**
 
-1. ~~**`pf`**~~ — **done**, the same day the re-rank put it first. It
-   manages an `anchor` rather than pf.conf, refuses to load rules into
-   an anchor pf.conf does not reference — which would report rules the
-   firewall never evaluates — and refuses a default policy, because pf
-   has none. That last is the `firewall` interface being reshaped by its
-   second provider, exactly as its own comment predicted, and it needed
-   no change to the interface: a provider that cannot do something says
-   so. DIVERGENCE 5.31.
+1. ~~**`pf`**~~ — **done**, the same day the re-rank put it first, and
+   **run on a real FreeBSD host the same evening**, which found a defect
+   in it. It manages an `anchor` rather than pf.conf, refuses to load
+   rules into an anchor pf.conf does not reference — which would report
+   rules the firewall never evaluates — and refuses a default policy,
+   because pf has none. That last is the `firewall` interface being
+   reshaped by its second provider, exactly as its own comment
+   predicted, and it needed no change to the interface.
+
+   The defect is the more instructive half. pf does not print back the
+   text it is given — it reprints from its parsed form, `port = 9999`
+   with a pass rule's default flags and state tracking appended — so no
+   rule ever matched itself, both of `mail.edlitmus.info`'s rules were
+   reported as added on every run, and `firewall.absent` could remove
+   neither. The module's own comment had asserted the opposite and
+   nothing had checked it, and the idempotence test passed because its
+   fixture was written in the module's own spelling. That is §1.4's
+   lesson about fixtures, repeated by whoever had just written §1.4, in
+   a form §1.4 did not cover: it generalised about code branches and
+   applies equally to another program's output. DIVERGENCE 5.31.
 2. ~~**Upgrade testing**~~ — **done**, and it found a defect on the way.
    A job record carried no version marker and round-tripped through
    `job.Job`, so an older hub reading and writing back a record a newer
