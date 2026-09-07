@@ -166,8 +166,10 @@ func (pfProvider) SetDefault(c *exec.Context, direction, policy string) error {
 // The whole anchor, because that is pf's unit: there is no `pfctl` verb
 // that adds one rule to a loaded set. Reading the current set, changing
 // it, and loading it back is therefore the only shape available, and it
-// is why a rule's rendered text is its identity here — two rules that
-// render the same line are the same rule.
+// is why a rule's text is its identity here — two rules that normalize
+// to the same line are the same rule. Normalized rather than rendered
+// because pf reprints a rule in its own spelling rather than the one it
+// was given; see normalizePFRule.
 func (p pfProvider) Apply(c *exec.Context, r firewallRule, remove, dryRun bool) (bool, error) {
 	line, err := pfRule(r)
 	if err != nil {
@@ -178,10 +180,11 @@ func (p pfProvider) Apply(c *exec.Context, r firewallRule, remove, dryRun bool) 
 		return false, err
 	}
 
+	key := normalizePFRule(line)
 	want := make([]string, 0, len(current)+1)
 	found := false
 	for _, existing := range current {
-		if existing == line {
+		if normalizePFRule(existing) == key {
 			found = true
 			continue
 		}
@@ -393,6 +396,47 @@ func pfRule(r firewallRule) (string, error) {
 		b.WriteString(" port " + port)
 	}
 	return b.String(), nil
+}
+
+// normalizePFRule folds a rule into the one spelling both sides of the
+// comparison in Apply can be written in.
+//
+// `pfRule` renders what to load; `pfctl -a halite -s rules` prints what
+// is loaded, and pf does not print back the text it was given. It
+// reprints from its own parsed form, which adds the spellings this
+// undoes. Comparing the two raw was this provider's first defect found
+// on a real pf: mail.edlitmus.info loaded two rules, matched neither of
+// them on the next run, and reported both as added again on every run.
+//
+//	loaded:  block drop in quick proto tcp from any to any port 9999
+//	printed: block drop in quick proto tcp from any to any port = 9999
+//	loaded:  pass in quick proto tcp from any to any port 9998
+//	printed: pass ... port = 9998 flags S/SA keep state
+//
+// The port operator is pf writing the comparison it parsed. The flags
+// and the state tracking are pf's defaults for a `pass` rule, applied
+// whether or not they were asked for and printed as though they were.
+//
+// `from any to any` collapses to `all` because pf prints one or the
+// other depending on what else the rule constrains, and folding both
+// sides to a single token means neither has to predict which.
+//
+// Two known gaps, both of which need more than a spelling change. A
+// port list renders as one rule and pf expands it into one rule per
+// port, so `{ 80, 443 }` cannot match whatever it is compared against;
+// that wants the list expanded at render time. And a rule carrying pf
+// options this does not write — `modulate state`, an interface — would
+// print back with them.
+func normalizePFRule(rule string) string {
+	rule = strings.Join(strings.Fields(rule), " ")
+	rule = strings.ReplaceAll(rule, "port = ", "port ")
+	rule = strings.ReplaceAll(rule, " from any to any", " all")
+	for _, suffix := range []string{" flags S/SA keep state", " keep state"} {
+		if strings.HasSuffix(rule, suffix) {
+			return strings.TrimSuffix(rule, suffix)
+		}
+	}
+	return rule
 }
 
 // pfAddress writes an address the way pf does, with `any` for empty.
