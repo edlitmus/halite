@@ -1031,10 +1031,10 @@ place.
 
 **Then — closing the gate, which this fleet can do**
 
-5. **Demonstrate the five modules the gate is still red on.** It was
-   nine; `make fleetcheck` closed four of them, and this stays the
-   highest-ranked *unbuilt* item because nothing else on this list can
-   ship a release until it is done.
+5. **Demonstrate the three modules the gate is still red on.** It was
+   nine; `make fleetcheck` closed four and the two live CI legs closed
+   two more. This stays the highest-ranked *unbuilt* item because
+   nothing else on this list can ship a release until it is done.
 
    ~~`dpkg`~~, ~~`debconf`~~, ~~`pkgrepo`~~ and ~~`timezone`~~ are done,
    driven against a real Debian's own tools in a disposable container —
@@ -1044,36 +1044,49 @@ place.
    and each note names the distribution and what it does not cover.
    DIVERGENCE 5.35.
 
+   ~~`hostname`~~ and ~~`sysctl`~~ are done too, and needed no new
+   infrastructure at all — which is what the previous revision of this
+   item was about to reach for. Neither can be done in a container:
+   `sysctl` is the kernel and a container shares the host's, and Docker
+   bind-mounts `/etc/hostname` so the atomic replace cannot work there.
+   The machines were already in CI — a GitHub runner is a fresh virtual
+   machine per job, and the FreeBSD one boots on every change. The two
+   legs exercise *different branches*: `hostnamectl` and a sysctl
+   drop-in on Linux; `sysrc`, rc.conf and `/etc/sysctl.conf` on FreeBSD,
+   which is the branch §1.4 found had no test at all. DIVERGENCE 5.36.
+
    **What is left, and what each actually needs**, in the order the
    effort is worth it:
 
-   1. **`hostname`** — the smallest gap of the five. The Linux branch is
-      the same container; the FreeBSD `sysrc` branch needs the virtual
-      machine CI already runs on every change.
-   2. **`sysctl`** — a container shares the host's kernel, so this needs
-      a disposable virtual machine to be honest. `zfscheck` already
-      boots one under KVM, so the machinery exists and wants
-      generalising rather than writing.
-   3. **`apparmor`** — a GitHub runner's own kernel has it, and loading
-      a profile needs `CAP_MAC_ADMIN`. Plausible directly on the runner
-      or in a privileged container; unverified, and worth one afternoon
-      to find out.
-   4. **`snap`** — snapd is already on an Ubuntu runner and the obstacle
+   1. **`netplan`** — the worst consequence in the set: it reconfigures
+      the interface an operator is connected over, and `netplan apply`
+      on a CI runner would cut the job's own network. It needs a network
+      namespace or a nested machine — **or the one Ubuntu host in this
+      fleet, which settles it in an afternoon** and is still the fastest
+      route.
+   2. **`apparmor`** — a GitHub runner's own kernel has it, and loading
+      a profile needs `CAP_MAC_ADMIN`. Plausible directly on the runner;
+      unverified, and an afternoon to find out either way. Worth doing
+      before `netplan` if the answer is yes, because it is free.
+   3. **`snap`** — snapd is already on an Ubuntu runner and the obstacle
       is the network: `snap install` fetches, and there is no offline
       equivalent of the local apt repository `fleetcheck` uses. Either a
       pre-seeded snap or an exception to the no-network rule, and the
       exception is the wrong answer.
-   5. **`netplan`** — the worst consequence in the set and the most
-      awkward to reach: `netplan apply` reconfigures the interface the
-      job is running over, so it needs a network namespace or a nested
-      machine. **The one Ubuntu host in this fleet can settle it in an
-      afternoon**, which is still the fastest route.
 
-   The lesson from doing the first four is worth carrying: the run found
-   six defects on its first attempt and every one was in the *test*, not
-   the module — wrong argument names and wrong return shapes, written by
-   somebody who had just read the interfaces. Expect that, and expect it
-   to be the useful part.
+   Two lessons from doing the first six, both worth carrying.
+
+   The Debian run found six defects on its first attempt and every one
+   was in the *test*, not the module — wrong argument names and wrong
+   return shapes, written by somebody who had just read the interfaces.
+   Expect that, and expect it to be the useful part.
+
+   And **a live test that passes is not yet a test**. Of the two breaks
+   pushed at `hostname` and `sysctl`, one was invisible to every
+   assertion in the file, because `set_hostname` writes both halves and
+   a module that confuses them agrees with one that does not. The two
+   had to be pulled apart deliberately before anything could tell them
+   apart. Break every live assertion on purpose before believing it.
 
 **Then — phase 6, on a fleet that is in production.** Two of the four
 were closed while this revision was being written, so the first genuinely

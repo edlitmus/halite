@@ -3694,8 +3694,8 @@ gate are the two that leave an operator no worse off: run the module
 against the real tool and say which machine, or take it out of the
 build.
 
-**As it stands the gate is red**, on five modules — nine when this was
-written, and 5.35 is what closed four of them. That is the honest
+**As it stands the gate is red**, on three modules — nine when this was
+written; 5.35 closed four and 5.36 two more. That is the honest
 position rather than a defect in the gate: `netplan` reconfigures the
 interface an operator is connected over and has never been run against a
 real netplan, and `sysctl` sets kernel parameters and has never set one.
@@ -4115,7 +4115,10 @@ It runs nightly, on demand, and on a push that touches the modules it
 drives or the image itself. The evidence table's claim is only as good
 as the last run, which is what makes the schedule part of the claim.
 
-#### The five that are left, and what each actually needs
+#### The five that were left, and what each actually needed
+
+5.36 closed the first two of these, and it did so with no new
+infrastructure: the machines were already there.
 
 - **`snap`** — snapd is already on a GitHub Ubuntu runner. The obstacle
   is the network: `snap install` fetches, and there is no offline
@@ -4123,15 +4126,135 @@ as the last run, which is what makes the schedule part of the claim.
 - **`apparmor`** — the runner's own kernel has it, and loading a profile
   needs `CAP_MAC_ADMIN`. Plausible in a privileged container or directly
   on the runner; unverified.
-- **`sysctl`** — a container shares the host's kernel, so this needs a
-  disposable virtual machine to be honest about. The `zfscheck` image
-  already boots one under KVM, and that is the machinery to reuse.
+- ~~**`sysctl`**~~ — **done** (5.36), and the prediction here was
+  half right: a container is indeed not honest for it, and the
+  disposable virtual machine turned out to be the CI runner itself
+  rather than one booted under KVM.
 - **`netplan`** — `netplan apply` reconfigures the interface the job is
   running over. It needs a network namespace or a nested machine, and it
   is the module with the worst consequence if it is wrong.
-- **`hostname`** — the Linux branch is a container away; the FreeBSD
-  `sysrc` branch needs the virtual machine CI already runs, which is the
-  smallest remaining gap of the five.
+- ~~**`hostname`**~~ — **done** (5.36). "The Linux branch is a container
+  away" was wrong: Docker bind-mounts `/etc/hostname`, so the atomic
+  replace cannot work there either. Both branches went to real machines.
+
+### 5.36 The two modules a container could not reach
+
+5.35 closed four of the nine root-mutating modules the release gate was
+red on, and named the five that were left with what each would take.
+`hostname` and `sysctl` were the first two on that list, and both needed
+the same thing the others did not: **a machine, not an image.**
+
+**`sysctl` is the kernel.** A container shares the host's, `/proc/sys`
+is mounted read-only inside one, and a container that remounted it would
+be writing to the kernel of whoever ran the test. There is no honest
+version of this in a container: measured with `--cap-add=SYS_ADMIN`,
+even a namespaced `net.*` parameter is refused, and the ones that are
+*not* namespaced would have reached the developer's own machine.
+
+**`hostname` got closer and still could not.** A container has its own
+UTS namespace, so `hostname(1)` really does change the running name
+there — with `CAP_SYS_ADMIN`, which the default container does not have.
+But Docker bind-mounts `/etc/hostname` from outside, so this module's
+atomic replace — write a temporary file beside it, rename over it —
+fails with `device or resource busy`. That is the container rather than
+the module, on a file that is an ordinary one everywhere halite actually
+runs. And `hostnamectl` is not running in an image, which is the branch
+a systemd node takes.
+
+#### The machine that was already there
+
+A GitHub runner is a fresh virtual machine per job with a real kernel,
+destroyed minutes later. So is the FreeBSD virtual machine CI already
+boots for every change. Renaming either and moving one kernel parameter
+costs nothing, and needs no nested virtualisation, no privileged
+container, and no new infrastructure at all — which was the more
+elaborate answer this was about to reach for.
+
+Two legs, and they exercise **different branches** rather than the same
+code twice:
+
+| | Linux (Ubuntu 24.04 runner) | FreeBSD 15.1 (CI's virtual machine) |
+|---|---|---|
+| `hostname` running + persistent | `hostnamectl`, systemd running | `sysrc`, rc.conf |
+| `sysctl` persist target | `/etc/sysctl.d/` drop-in | `/etc/sysctl.conf` |
+| `sysctlAssign` spelling | `sysctl -w name=value` | the bare BSD form |
+
+The FreeBSD half matters most. `hostname`'s `sysrc` branch **had no test
+at all behind a fixture that looked like one** — plan.md §1.4, the
+finding that made this project audit its platform branching — and it is
+now driven on a real FreeBSD. And `sysctlAssign` tries two spellings
+because BSD and Linux disagree about `-w`; which one each platform
+accepts had never been checked on the side that is not Linux.
+
+Everything is captured and restored. Not for the runner's sake — it is
+deleted — but because these are meant to be runnable on a real host by
+somebody who wants the answer for their own platform, and a test that
+leaves a machine renamed is one nobody runs twice. A separate CI step
+asserts afterwards that the machine got its name back, so a cleanup that
+stopped working would be visible rather than merely absent.
+
+#### Three of the six passed for the wrong reason, and one was invisible
+
+They passed on the first run, which after 5.35 was itself suspicious.
+Two deliberate breaks were pushed to find out.
+
+**`sysctl.present` persisting without setting the running value** was
+caught twice on both platforms — by the kernel read-back and by the
+convergence check. That is the assertion working.
+
+**`hostname.get_persistent` replaced with `runningHostname()`** was
+caught by nothing. Every test in the file passed. The reason is
+structural rather than careless: `set_hostname` sets *both* halves, so
+after it runs the two names are legitimately equal and a module that
+confuses them agrees with a module that does not. Adding a direct read
+of `/etc/hostname` beside the module's answer did not help either, for
+the same reason — both were the string the test had just written.
+
+**The two have to be pulled apart to tell them apart.** So there is now
+a test that renames the machine with `hostname(1)` alone, leaving the
+boot-time record untouched, and asserts that `get_persistent` still
+reports the old name while `get_hostname` reports the new one. With the
+break reapplied it fails and names the case in its own message:
+
+> This is the node somebody renamed by hand, and the module cannot see it
+
+Which is the case `hostname` exists for, in the module's own comment —
+*"the node that was renamed by hand and would have gone back on the next
+boot"* — and nothing had tested it. The state is asked about it too, and
+has to report the running half as wrong and the persistent half as
+already right, because reporting "both" there would tell an operator to
+worry about a file that is fine.
+
+#### The one deliberate step away from realism
+
+`sysctl.present` is driven with its `config` argument pointed at a
+temporary file rather than the platform's real `/etc/sysctl.conf` or
+drop-in directory. The reason is specific rather than convenient:
+appending to a machine's own `sysctl.conf` and then editing it back out
+is a rewrite of a file an operator may have hand-maintained, and getting
+that restore wrong costs them something a test has no business costing.
+The path is the only difference — `writeSysctlConf` does not branch on
+it — and the note in the evidence table says so rather than claiming the
+real path was exercised.
+
+#### Where the gate stands
+
+`hostname` and `sysctl` move to `hardware`. **The release gate is red on
+three modules**: `apparmor`, `netplan` and `snap`. It was nine.
+
+Each of the three needs something the previous six did not:
+
+- **`apparmor`** wants a kernel with AppArmor and `CAP_MAC_ADMIN`. A
+  GitHub runner has the first; whether a job can load a profile is
+  unverified and is an afternoon's work to find out.
+- **`snap`** wants snapd, which an Ubuntu runner already has, and the
+  network, which the no-network rule of 5.35 refuses. Either a
+  pre-seeded snap or an exception, and the exception is the wrong
+  answer.
+- **`netplan`** applies a configuration to the interface the job is
+  running over, so it wants a network namespace or a nested machine. It
+  has the worst consequence of the three if it is wrong, and it is the
+  one this project's own Ubuntu host could settle in an afternoon.
 
 ## 6. Everything else not started
 

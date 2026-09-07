@@ -109,6 +109,29 @@ var moduleEvidence = map[string]exec.Evidence{
 		"branch, which had no test at all behind a fixture that looked like one " +
 		"(plan.md §1.3)"},
 
+	// ---- Mutated a real machine, in `make fleetcheck`'s CI legs ----
+	//
+	// Not the container: `sysctl` is the kernel and a container shares
+	// the host's, and Docker bind-mounts `/etc/hostname` so the atomic
+	// replace cannot work there. These run on machines that are
+	// destroyed when the job ends -- a GitHub runner and the FreeBSD
+	// virtual machine -- and really rename them and really move a kernel
+	// parameter.
+
+	"hostname": {Level: exec.Hardware, Note: "renamed a real machine on both branches: " +
+		"`hostnamectl` on an Ubuntu 24.04 runner under systemd, and `sysrc` on FreeBSD " +
+		"15.1 -- the branch that had no test at all behind a fixture that looked like one " +
+		"(plan.md §1.4). The running name and the boot-time name are checked separately, " +
+		"and checked while they *differ*, which is the node somebody renamed by hand " +
+		"(DIVERGENCE 5.36). Not covered: macOS and the other BSDs"},
+	"sysctl": {Level: exec.Hardware, Note: "set a parameter on two real kernels: Linux " +
+		"6.x on an Ubuntu 24.04 runner, persisted to a drop-in, and FreeBSD 15.1, " +
+		"persisted to sysctl.conf -- so both spellings `sysctlAssign` tries are now known " +
+		"to work on the platform that takes them (DIVERGENCE 5.36). Not covered: the real " +
+		"`/etc/sysctl.conf` path, because a test that edits a hand-maintained file and " +
+		"puts it back can cost an operator more than the coverage is worth; the persist " +
+		"target is redirected and nothing else is"},
+
 	// ---- Read from a real system, mutation never watched ----
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
@@ -143,11 +166,6 @@ var moduleEvidence = map[string]exec.Evidence{
 		"not been run, and the YAML this writes has never been round-tripped through a " +
 		"real netplan — which is the module that reconfigures the interface an operator " +
 		"is connected over"},
-	"sysctl": {Level: exec.Assumed, Note: "no kernel parameter has been set on a real " +
-		"machine by this module, on any platform"},
-	"hostname": {Level: exec.Assumed, Note: "the FreeBSD `sysrc` branch had no test at " +
-		"all behind a fixture that looked like one (plan.md §1.4) and is covered now, but " +
-		"no machine has been renamed by this module"},
 }
 
 // Trust renders this registry's evidence for `doctor`.
