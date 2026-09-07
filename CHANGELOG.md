@@ -18,6 +18,47 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Every module now says what has been demonstrated about it
+
+21 modules in this build change a machine as root. Almost all of them
+work by running another program and reading what it says back, and that
+is the half a unit test cannot establish: the test supplies the output,
+so what it checks is that the parser reads what the test author believed
+the program prints. That belief has been wrong three times, and once on
+a firewall — `pf` matched no rule at all on a real host while its
+idempotence test passed, because the fixture was written in the module's
+own spelling.
+
+So the claim is now explicit and per module. `internal/builtin/evidence.go`
+declares one of three levels — run against the real tool on a real
+machine, run against the real tool but only reading, or written from
+documentation — with a note naming the tool and the doubt. `assumed` is
+the zero value, so a module nobody classified reads as undemonstrated
+rather than as absent, and a guard requires an explicit declaration from
+every root-mutating module.
+
+Four places carry it, in the order an operator meets them:
+
+- **`sys.evidence`** answers per module, before anything is run.
+- **`doctor` gains a module verification check**, which names the
+  root-mutating modules that have never been run against the tool they
+  drive. It warns and never fails: nothing is wrong with the node. What
+  it means is that if one of those modules does the wrong thing, halite
+  is not ruled out as the cause.
+- **A failing mutation appends the note to its error** — only a failing
+  one, and only a mutating one. It never appears on success, because a
+  warning nobody can act on is a warning people learn to skip.
+- **`make release-gate`** refuses a build in which any root-mutating
+  module is still an assumption, and it is the release workflow's first
+  job. The gate has exactly one failure mode — a release does not
+  happen — and a release that does not happen breaks nothing. It is
+  behind a build tag so that ordinary development is not blocked by it.
+
+As it stands the gate is red, on nine modules: `apparmor`, `debconf`,
+`dpkg`, `hostname`, `netplan`, `pkgrepo`, `snap`, `sysctl` and
+`timezone`. None is known to be wrong; none is known to be right.
+DIVERGENCE 5.33 has the table and the argument.
+
 ### Manual pages
 
 `halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc — what a

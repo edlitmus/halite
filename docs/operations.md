@@ -15,13 +15,23 @@ There is a manual page for each binary too — `man 8 halite-node`,
 `/usr/local/share/man/man8`. On a machine built from source that is the
 documentation it has; `docs/` does not travel with the binary.
 
-Ten checks with a remediation line on anything that is not a pass —
+Eleven checks with a remediation line on anything that is not a pass —
 configuration validity, certificate expiry, connectivity, clock skew
 against the hub, the file server, pillar compilation, disk space, the
-reactor's queue, extension signatures, and whether the host kernel's
-FIPS mode agrees with this binary's. SPEC section 26.4, and
-[the command reference](command-reference.md) has the output and what
-each role runs.
+reactor's queue, extension signatures, module verification, and whether
+the host kernel's FIPS mode agrees with this binary's. SPEC section
+26.4, and [the command reference](command-reference.md) has the output
+and what each role runs.
+
+Ten of those are about the machine. **Module verification is about
+halite**: it names the modules that change this machine as root and have
+never been run against the tool they drive, because a unit test cannot
+establish that half — it supplies the program's output, so it checks
+that the parser reads what the test author believed. That belief has
+been wrong on a firewall. It warns and never fails; what it means is
+that if one of those modules does the wrong thing, halite is not ruled
+out as the cause. `sys.evidence` gives the same answer per module with
+the assumption named.
 
 It changes nothing, so it is safe on a machine that is already
 misbehaving, and it exits non-zero only on a failure — a warning is a

@@ -286,6 +286,12 @@ type Registry struct {
 	fns     map[string]Func
 	sigs    *signature.Registry
 	aliases map[string]Alias
+	// evidence records what has been demonstrated about each module's
+	// dealings with the tool it drives. See evidence.go: a mutating
+	// function that fails in a module nobody has demonstrated says so,
+	// because the operator reading that failure is deciding whether the
+	// fault is theirs or ours.
+	evidence evidenceStore
 }
 
 // Alias is a platform module name that resolves to a virtual one.
@@ -431,7 +437,8 @@ func (r *Registry) Call(c *Context, name string, args *value.Map) (any, error) {
 		}
 		return nil, fmt.Errorf("%s: %s", name, strings.Join(msgs, "; "))
 	}
-	return fn(c, bound)
+	out, err := fn(c, bound)
+	return out, r.withEvidence(name, sig, err)
 }
 
 // CallPositional binds a Salt-style argument vector: positional arguments
@@ -458,7 +465,8 @@ func (r *Registry) CallPositional(c *Context, name string, args []any, kwargs *v
 		}
 		return nil, fmt.Errorf("%s: %s", name, strings.Join(msgs, "; "))
 	}
-	return fn(c, bound)
+	out, err := fn(c, bound)
+	return out, r.withEvidence(name, sig, err)
 }
 
 // UnknownFunctionError names the functions a caller may have meant.
