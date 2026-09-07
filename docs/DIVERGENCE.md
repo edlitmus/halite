@@ -1601,6 +1601,97 @@ bus with a retention window can do better, and the count in the error is
 segments rather than events, because the bus keeps no tally of what was
 in a segment it deleted.
 
+### 4.13 An older hub silently truncated a newer hub's job records
+
+SPEC 31's Upgrade row — "Hub at version N with nodes at N-1 and N+1;
+state and job cache format migration; certificate rotation across an
+upgrade" — had nothing behind it. Asking what it was asking about, on
+2026-09-06, produced one defect and one correction to an assumption
+everybody arriving from Salt brings with them.
+
+**The defect.** A job record round-trips through `job.Job`, and
+`encoding/json` drops every field the struct does not have. The record
+carried no version marker of any kind, so a hub could not tell a record
+a *newer* hub had written from one of its own — it read it, changed one
+field, and wrote it back without the rest. Measured on a record with two
+extra fields: **eleven keys in, nine out**, silently, with nothing
+anywhere recording that it had happened.
+
+That is the rollback case, and it is not exotic on a fleet built from
+source: going back a tag is one `git checkout` and one `make install`.
+Every job record the newer hub had touched would be quietly truncated by
+the older one, and rolling forward again would not bring the fields
+back.
+
+`job.Job` now carries `Schema`, and `JobSchema` is `halite.job/1`. An
+empty schema is a record written before the field existed — this build's
+own shape — and is accepted and stamped on the next write. A schema this
+build does not know is **readable and not writable**: `jobs list` on a
+rolled-back hub keeps working and an operator can still look at the job,
+and both `Put` and `Update` refuse with `ErrForeignRecord`, naming the
+record, the schema found, the schema this build writes, and what to do.
+`Update` refuses *before* the mutator runs, so a caller with a side
+effect in it does not have the side effect and then hear the write
+failed.
+
+Refusing rather than truncating is this project's answer everywhere else
+it has faced the same choice — the pruned event-bus offset (4.12), the
+snap version snapd will not hold (5.28), the pf anchor nothing
+references (5.31). Truncating and reporting success is the one option
+that leaves nobody able to find out.
+
+**The correction.** Salt requires its server upgraded before its agents,
+because the agent speaks a protocol the server defines. Halite does not
+share that constraint, and this is the first time anybody checked rather
+than assumed:
+
+- A newer hub talking to an older node: an unknown message type reaches
+  the node's `default:` branch, which logs it and carries on. The stream
+  stays open.
+- A newer node talking to an older hub: nothing in this tree calls
+  `DisallowUnknownFields`, so a request carrying fields the hub has
+  never heard of is accepted and the fields ignored.
+
+So **neither upgrade order is forced**. What is worth saying plainly is
+that the tolerance was *accidental*: it falls out of `encoding/json`'s
+defaults and one `default:` branch, and nothing recorded it as a
+guarantee or would have noticed it being taken away. It is a guarantee
+now, with a test on each direction.
+
+The one place skew is fatal is the **ALPN**. SPEC 6.4 makes `halite/1`
+mandatory and rejects a peer that does not offer it, so moving it breaks
+both directions at once — that, and not the message shapes, is where an
+upgrade order would come from. It is frozen at 1, and a test says what
+has to be rewritten together if it ever moves.
+
+**The return schema was frozen and unenforced.** SPEC 9.4 freezes
+`halite.ret/1` "so a dashboard built on it keeps working"; the hub
+filled in a missing schema and validated nothing, so a return marked
+`halite.ret/2` was recorded as though it were v1. It is now accepted,
+stored as it arrived, warned about, and counted in
+`halite_returns_foreign_schema_total`.
+
+Accepted rather than refused, and the asymmetry with the job record is
+deliberate. A record is bookkeeping the hub owns and can decline to
+touch. A return is the only evidence that work already happened on a
+node: refusing it loses that evidence, the node has nowhere to put it
+again, and the job looks unanswered for ever. It is the same argument
+`doctor`'s disk-full check makes — a write that fails after the
+instruction has gone out must not become a second untruth.
+
+**What is not established.** All of it is a lab. No two halite versions
+have ever actually run against each other, because there has never been
+a second version; every "older node" here is this build sending what an
+older one would send. What the tests pin is the tolerance and the
+refusal, not an upgrade anybody has performed. `internal/specaudit`'s
+`TestEveryUpgradeClauseHasATest` holds SPEC 31's Upgrade row to the
+tests that claim its clauses, in both directions, so a fourth clause
+added to the row cannot sit there uncovered.
+
+The fleet this was found for is five hosts and has had no upgrade
+trouble — which its owner points out is too small to be evidence either
+way.
+
 ## 5. Test coverage against SPEC 31
 
 ### 5.1 Branch coverage
@@ -3395,14 +3486,71 @@ matters because the whole anchor is rewritten and sorted on every
 change: without `quick`, which rule won would depend on alphabetical
 order.
 
-**What is not established.** None of it has run against a real pf. The
-tests supply `pfctl`'s output and record what would be run; the rendered
-rules are checked against the spelling `pfctl -s rules` prints back,
-because this provider compares its own text with pf's, but nothing has
-watched pf accept one. Two of the load-bearing behaviours were checked
-by swapping in the wrong implementation and watching the tests fail:
-dropping `quick`, and skipping the anchor-reference check. CI has a
-FreeBSD runner, which could take this further than it has.
+**What a real pf established, and what this section claimed before it.**
+
+This section originally ended: "None of it has run against a real pf.
+The tests supply `pfctl`'s output and record what would be run; the
+rendered rules are checked against the spelling `pfctl -s rules` prints
+back, because this provider compares its own text with pf's."
+
+The second half of that sentence was false, and it was the module's
+central assumption. `pfRule`'s own comment stated it outright — "`any` is
+written out rather than omitted because pf accepts both and the explicit
+form is what `pfctl -s rules` prints back" — asserted, never checked.
+
+**pf does not print back the text it was given.** It reprints from its
+parsed form. `mail.edlitmus.info`, a FreeBSD host in this project's own
+fleet, loaded two rules and returned them like this:
+
+	loaded:  block drop in quick proto tcp from any to any port 9999
+	printed: block drop in quick proto tcp from any to any port = 9999
+	loaded:  pass in quick proto tcp from any to any port 9998
+	printed: pass ... port = 9998 flags S/SA keep state
+
+The `=` is pf writing back the port comparison it parsed. The flags and
+state tracking are pf's defaults for a `pass` rule, applied whether or
+not they were asked for and printed as though they had been.
+
+So **no rule ever matched itself**. Both of mail's rules were reported as
+added on every run, and `firewall.absent` could remove neither — the same
+defect mirrored, because a rule that cannot be found cannot be taken
+away. A firewall state that reports a change on every run is one an
+operator stops reading, and one that cannot remove a rule is one they
+have to reach past.
+
+`normalizePFRule` now folds both sides into one spelling before
+comparing: whitespace collapsed, `port = ` to `port `, `from any to any`
+to `all` — because pf prints one or the other depending on what else the
+rule constrains, so folding both sides means neither has to predict
+which — and pf's default state-tracking suffixes removed.
+
+**The test that should have caught it passed, and the reason is the
+lesson.** `TestPFApplyIsIdempotent` supplied a fixture written in the
+module's own spelling, so it compared this build's text against this
+build's text and agreed. That is precisely the defect 1.4 generalised
+after the macOS timezone and FreeBSD hostname fixtures — a fixture that
+forces the shape the real thing does not take, passing while asserting
+nothing — repeated in a section written by whoever had just finished
+writing 1.4. The generalisation was about *code branches*; it applies
+just as much to *output being parsed*, and nothing said so. It does now:
+a fixture standing in for another program's output is worth as little as
+its provenance, and the fixture here is what mail returned.
+
+Two gaps remain, both needing more than a spelling change. A port list
+renders as one rule and pf expands it into one rule per port, so
+`{ 80, 443 }` cannot match what it is compared against; that wants the
+list expanded at render time. And a rule carrying pf options this module
+does not write — `modulate state`, an interface — would print back with
+them and not match.
+
+What is established now: `status`, `enabled`, `allowed` and `absent` on a
+real FreeBSD host, idempotent across runs. What is still not: the anchor
+refusal has not been seen refuse on hardware, and no test has watched pf
+reject a rule this module rendered.
+
+Two of the load-bearing behaviours were also checked by swapping in the
+wrong implementation and watching the tests fail: dropping `quick`, and
+skipping the anchor-reference check.
 
 `jail` remains the FreeBSD row's one genuine absence.
 

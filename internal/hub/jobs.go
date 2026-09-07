@@ -43,8 +43,34 @@ func (s *Server) returned(w http.ResponseWriter, r *http.Request, nodeID string)
 	// a reactor watching halite/job/<jid>/ret/web1.example never fired,
 	// because upstream every one of them said ret/relay1.example.
 	ran := ret.NodeID
-	if ret.Schema == "" {
+	// A return with no schema is one from a node old enough not to send
+	// one, and is this build's shape: stamped and accepted.
+	//
+	// A return with a schema this build does not know is **accepted and
+	// said so**, which is the opposite of what the job record does two
+	// paragraphs of reasoning away, and deliberately. A record is
+	// bookkeeping the hub owns and can decline to touch; a return is
+	// the only evidence that work already happened on a node. Refusing
+	// it loses that evidence and the node has nowhere to put it again,
+	// so the job would look unanswered for ever. The same argument
+	// `doctor`'s disk-full check makes: a write that fails after the
+	// instruction has gone out must not be turned into a second
+	// untruth.
+	//
+	// What it must not be is silent. SPEC 9.4 freezes `halite.ret/1`
+	// "so a dashboard built on it keeps working", and until this the
+	// freeze had nothing behind it — an unknown schema was stored
+	// verbatim and nothing anywhere noticed.
+	switch ret.Schema {
+	case "":
 		ret.Schema = job.ReturnSchema
+	case job.ReturnSchema:
+	default:
+		s.m().returnsForeignSchema.Inc()
+		s.warn("a return arrived with a schema this build does not know",
+			"jid", string(ret.JID), "node_id", ret.NodeID,
+			"schema", ret.Schema, "known", job.ReturnSchema,
+			"node_version", ret.NodeVersion)
 	}
 	if s.Jobs == nil {
 		transport.WriteError(w, http.StatusServiceUnavailable, transport.CodeInternal,

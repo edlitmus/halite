@@ -592,6 +592,7 @@ themselves, under whatever you call that job.
 | `halite_fileserver_bytes_total` | counter | — | Bytes served. |
 | `halite_events_published_total` | counter | `tag_prefix` | Events reaching the bus. |
 | `halite_events_dropped_total` | counter | `reason` | Events that did not. |
+| `halite_returns_foreign_schema_total` | counter | — | Returns whose schema this hub does not know, which means a node is newer than it. Non-zero while an upgrade is in flight and zero afterwards; non-zero afterwards is a node somebody forgot. |
 | `halite_event_subscriber_lag_seconds` | histogram | — | How old an event was when a subscriber was handed it. |
 | `halite_reactor_duration_seconds` | histogram | `tag_prefix` | Render and dispatch time for one reaction. |
 | `halite_reactor_dropped_total` | counter | — | Reactions the queue could not hold. |

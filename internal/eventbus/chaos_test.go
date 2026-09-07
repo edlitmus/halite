@@ -154,8 +154,23 @@ func TestChaosEventBusRetentionKeepsTheSegmentInHand(t *testing.T) {
 	}
 	defer bus.Close()
 	bus.SegmentBytes = 512
-	bus.Retention = time.Nanosecond
+	bus.Retention = time.Hour
 	bus.MaxBytes = 0
+	// The clock is moved rather than the retention window shrunk to a
+	// nanosecond. A nanosecond window depends on every segment's
+	// modification time being measurably in the past, and a filesystem's
+	// timestamp granularity is not measured in nanoseconds — Windows
+	// hands out the same tick to files written milliseconds apart, so
+	// the segment rotated just before the current one was inside the
+	// window and survived. This test then reported two segments where it
+	// wanted one, on CI, on a machine slow enough to make the write and
+	// the check land in different ticks.
+	//
+	// Which is this session's first defect all over again: a test that
+	// asserts something about the clock rather than about the code. The
+	// bus has a clock hook; using it makes granularity irrelevant.
+	now := time.Now()
+	bus.Now = func() time.Time { return now.Add(2 * time.Hour) }
 
 	for i := 0; i < 200; i++ {
 		if _, err := bus.Append(&Event{

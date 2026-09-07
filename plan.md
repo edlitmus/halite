@@ -710,8 +710,12 @@ Unchanged since the last revision, and verified again here.
   `internal/state` 90.1%). Unchanged to the decimal since the last
   revision. Branch coverage, which SPEC actually requires, is unmeasured
   and will be lower.
-- **Upgrade testing** (hub at N with nodes at N−1 and N+1, cache format
-  migration, certificate rotation across an upgrade) does not exist.
+- ~~**Upgrade testing**~~ — **built.** All three clauses of SPEC 31's
+  Upgrade row have tests, and `internal/specaudit` holds the row to them
+  in both directions so a fourth clause cannot sit there uncovered. What
+  it establishes is the tolerance and the refusal; no two halite
+  versions have ever actually run against each other, because there has
+  never been a second version. DIVERGENCE 4.13.
 - **Integration testing** across the tier 1 matrix does not exist. The
   repository has two containers — the saltdiff image and the ZFS virtual
   machine of §2.1a — and each is a correctness harness for one subsystem
@@ -954,20 +958,41 @@ place.
 
 **Now — the fleet this actually runs on**
 
-1. ~~**`pf`**~~ — **done**, the same day the re-rank put it first. It
-   manages an `anchor` rather than pf.conf, refuses to load rules into
-   an anchor pf.conf does not reference — which would report rules the
-   firewall never evaluates — and refuses a default policy, because pf
-   has none. That last is the `firewall` interface being reshaped by its
-   second provider, exactly as its own comment predicted, and it needed
-   no change to the interface: a provider that cannot do something says
-   so. DIVERGENCE 5.31.
-2. **Upgrade testing** (§3.4, SPEC 31). A hub at N with nodes at N−1 and
-   N+1, job cache format migration, and certificate rotation across an
-   upgrade. Not hypothetical here: rebuilding five hosts from source
-   means the fleet is version-skewed during every upgrade, on purpose,
-   and nothing says what that does. This is the item the fleet's own
-   deployment method creates.
+1. ~~**`pf`**~~ — **done**, the same day the re-rank put it first, and
+   **run on a real FreeBSD host the same evening**, which found a defect
+   in it. It manages an `anchor` rather than pf.conf, refuses to load
+   rules into an anchor pf.conf does not reference — which would report
+   rules the firewall never evaluates — and refuses a default policy,
+   because pf has none. That last is the `firewall` interface being
+   reshaped by its second provider, exactly as its own comment
+   predicted, and it needed no change to the interface.
+
+   The defect is the more instructive half. pf does not print back the
+   text it is given — it reprints from its parsed form, `port = 9999`
+   with a pass rule's default flags and state tracking appended — so no
+   rule ever matched itself, both of `mail.edlitmus.info`'s rules were
+   reported as added on every run, and `firewall.absent` could remove
+   neither. The module's own comment had asserted the opposite and
+   nothing had checked it, and the idempotence test passed because its
+   fixture was written in the module's own spelling. That is §1.4's
+   lesson about fixtures, repeated by whoever had just written §1.4, in
+   a form §1.4 did not cover: it generalised about code branches and
+   applies equally to another program's output. DIVERGENCE 5.31.
+2. ~~**Upgrade testing**~~ — **done**, and it found a defect on the way.
+   A job record carried no version marker and round-tripped through
+   `job.Job`, so an older hub reading and writing back a record a newer
+   hub had written silently dropped every field it did not know —
+   eleven keys in and nine out, measured. That is the rollback case, one
+   `git checkout` and one `make install` away on a fleet built from
+   source. The record now carries `halite.job/1`, and a schema this
+   build does not know is readable and refused for writing.
+
+   It also **corrected an assumption**: Salt requires its server
+   upgraded first and halite does not, because the wire is tolerant in
+   both directions. That tolerance was accidental — `encoding/json`'s
+   defaults and one `default:` branch — and is now a guarantee with a
+   test on each direction. The ALPN is the only place skew is fatal, and
+   it is frozen. DIVERGENCE 4.13.
 3. **`jail`** (§2.3). The other genuinely absent FreeBSD module. Below
    `pf` because a firewall is on every host and a jail is a choice — but
    two of the four FreeBSD hosts are physical, which is where jails
