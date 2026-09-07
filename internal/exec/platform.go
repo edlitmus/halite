@@ -67,7 +67,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"mac_defaults":         {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_keychain":         {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_assistive":        {Platform: "darwin", When: "phase 5, with macOS parity"},
-	"jail":                 {Platform: "freebsd", When: "phase 5; the development platform, and still not built"},
 	"journald":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"iptables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"nftables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},

@@ -521,13 +521,14 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 44 of 65
+### 2.3 Platform modules: 43 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
 is the difference between a gap and a typo, and it is already done.
-Twenty-one ship: `zfs`, `zpool`, the four Windows ones, `dpkg`,
-`debconf`, `netplan`, `apparmor`, `snap`, and **ten aliases**.
+Twenty-two ship: `zfs`, `zpool`, the four Windows ones, `dpkg`,
+`debconf`, `netplan`, `apparmor`, `snap`, `jail`, and **ten aliases**.
+**SPEC 15.3's FreeBSD row ships entirely**, which is the first row to.
 
 **The aliases answered the open question this section used to end with.**
 SPEC names both halves and both are true: 15.2's `pkg`, `service` and
@@ -560,7 +561,7 @@ what an operator is looking for.
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
-| FreeBSD | 1 | **Four hosts of five.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases. `pf` shipped as the `firewall` module's second provider and was the first to reshape that interface — it refuses a default policy, because pf has none (DIVERGENCE 5.31). `jail` is the row's one genuine absence. |
+| FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32). |
 | SUSE | 1 | `zypperpkg`. |
 
 Note the overlap with 2.2: `iptables`, `nftables` and `lvm` are named in
@@ -993,10 +994,15 @@ place.
    defaults and one `default:` branch — and is now a guarantee with a
    test on each direction. The ALPN is the only place skew is fatal, and
    it is frozen. DIVERGENCE 4.13.
-3. **`jail`** (§2.3). The other genuinely absent FreeBSD module. Below
-   `pf` because a firewall is on every host and a jail is a choice — but
-   two of the four FreeBSD hosts are physical, which is where jails
-   live.
+3. ~~**`jail`**~~ — **done**, and written against what `pf` cost. It
+   reads `jls --libxo=json` rather than the table, because parsing the
+   human interface where a structured one exists is choosing the surface
+   that bit `pf`; and `TestJailReadsWhatARealJlsPrints` runs the real
+   `jls` on CI's FreeBSD runner and feeds the parser what came back,
+   which is the test `pf` did not have. What is still assumed — the
+   field names inside a jail entry — is marked as assumed and needs a
+   host with a jail running. DIVERGENCE 5.32. **SPEC 15.3's FreeBSD row
+   now ships entirely.**
 
 **Then — phase 6, on a fleet that is in production**
 

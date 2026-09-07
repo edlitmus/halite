@@ -99,6 +99,7 @@ func New() *Registries {
 	registerNetplan(r)
 	registerAppArmor(r)
 	registerSnap(r)
+	registerJail(r)
 	return r
 }
 

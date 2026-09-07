@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **57 execution modules / 347 functions** and **39 state
-modules / 94 functions**.
+The build ships **58 execution modules / 353 functions** and **40 state
+modules / 95 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -556,9 +556,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-21 of 65 present — the rows below total 44 absent.
+22 of 65 present — the rows below total 43 absent.
 
-Ten of the twenty-one are **aliases**. SPEC names both
+Ten of the twenty-two are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -599,7 +599,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 44 are declared as pending rather than simply missing. A name absent
+The 43 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -619,7 +619,7 @@ specification cannot be quietly missed.
 |---|---|---|
 | Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
-| FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (all aliases) | `jail` |
+| FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
@@ -3553,6 +3553,72 @@ wrong implementation and watching the tests fail: dropping `quick`, and
 skipping the anchor-reference check.
 
 `jail` remains the FreeBSD row's one genuine absence.
+
+### 5.32 `jail`, written against what `pf` cost
+
+`jail` was the FreeBSD row's last absence, and it was written the day
+after `pf`'s only real-hardware defect — a module that compared its own
+rendered text against another program's output on an assumption nobody
+had checked, with a test that agreed because its fixture was written in
+the module's own spelling (5.31). Two things here are different because
+of that, and they are the point of this entry.
+
+**It reads `jls --libxo=json`, not the table.** `jls` prints columns that
+depend on the flags, on whether a jail has an address, and on the
+version; libxo's JSON exists precisely so a program does not have to
+guess at a spelling. Where a platform offers a structured interface,
+parsing the human one is choosing the surface that bit us.
+
+**The envelope is checked against a real `jls`.**
+`TestJailReadsWhatARealJlsPrints` runs the actual command on FreeBSD and
+feeds its output to the same parser, and CI has a FreeBSD runner on every
+change. This is the test `pf` did not have: every other test in that file
+feeds the parser a document this build wrote, which proves only that the
+parser reads its own spelling.
+
+A host with no jails still settles the part that matters. The wrapper is
+there whether or not the array has anything in it, and the wrapper — the
+container names `jail-information` and `jail` — is what this build had to
+guess. If the real `jls` wraps it differently the test says so by name
+and points at the comment and this section, and the module keeps working
+regardless: `jailEntries` looks for the container it expects and then,
+failing that, for any array of objects carrying a `jid`, which is a
+property of a jail entry rather than a guess about a name.
+
+**What is still assumed, and marked as such.** The field names *inside* a
+jail entry — `name`, `path`, `host.hostname`, `osrelease`, `state`. Those
+need a host with a jail running and CI's FreeBSD runner has none. The
+parser reads a field it does not find as empty rather than failing, so a
+wrong guess costs a blank column and not a broken module, and the real-
+`jls` test reports a jail parsed with no jid, which is the one field
+whose absence would mean the wrong shape entirely. This project's own
+fleet has FreeBSD hosts that could settle the rest in a minute.
+
+**What it does not do.** Create or destroy a jail. A jail's definition
+lives in `/etc/jail.conf` or `/etc/jail.conf.d`, which is a file, and a
+module that wrote it would own every jail on the host including the ones
+somebody else defined — the same argument `pf` makes about `pf.conf`, and
+the same answer: `file.managed` owns the file and this owns the running
+state. `jail.running` on a name nothing defines refuses and lists what
+*is* defined, because the fix is a file and the tool's own error does not
+say which.
+
+The configured list comes from `jail -e ,` rather than from parsing
+jail.conf here. That file has includes, variables and inheritance, and a
+second parser for it in this module would disagree with the real one
+eventually.
+
+**`jail -c` and `jail -r` rather than `service jail onestart`.** The
+service script honours `jail_enable` and `jail_list` in rc.conf, so a
+state going through it would silently refuse to start a jail an operator
+had deliberately left out of `jail_list`. Which behaviour an estate wants
+is a real question; starting the jail the state names is the answer that
+does what the state says, and the other is available through
+`service.running` if that is what somebody means.
+
+With this, **SPEC 15.3's FreeBSD row ships entirely**: `freebsdpkg`,
+`freebsd_service` and `freebsd_sysctl` as aliases, `pf` as the
+`firewall` module's second provider, and `jail`.
 
 ## 6. Everything else not started
 
