@@ -65,6 +65,7 @@ TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
 TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
 .PHONY: all build test chaos race vet cover check release cross clean tidy vendor policy fmt \
+	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image
 
@@ -398,6 +399,13 @@ BINDIR    ?= /usr/local/bin
 CONFDIR   != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /usr/local/etc/halite ;; *) echo /etc/halite ;; esac
 STATEDIR  != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /var/db/halite ;; *) echo /var/lib/halite ;; esac
 SERVICEDIR != case `uname -s` in FreeBSD|OpenBSD|NetBSD|DragonFly) echo /usr/local/etc/rc.d ;; *) echo /etc/systemd/system ;; esac
+
+# MANDIR follows BINDIR to /usr/local for the same reason it does: one
+# prefix on every platform, so nothing has to know which one it is on.
+# Section 8 because every command in these pages administers a machine
+# and most of them need root, which is the distinction section 1 does
+# not make.
+MANDIR    ?= /usr/local/share/man/man8
 CACHEDIR  ?= /var/cache/halite
 LOGDIR    ?= /var/log/halite
 
@@ -466,10 +474,36 @@ install:
 		fi; \
 	done
 	@$(MAKE) install-service
+	@$(MAKE) install-man
 	@echo
 	@echo "installed. Nothing was started and no configuration was written."
 	@echo "  configuration  $(CONFDIR)/{hub,node,api}.yaml — contrib/examples has one of each"
 	@echo "  service files  $(SERVICEDIR)"
+	@echo "  manual pages   $(MANDIR)"
+
+# install-man puts the manual pages in place.
+#
+# Overwritten like the service files: picking up a correction is the
+# reason to run it. Not fatal if the directory cannot be written --
+# a machine with no man hierarchy, or an install into a prefix that has
+# none, should still get working binaries. It says so rather than
+# failing, because "make install failed" over a manual page is a worse
+# outcome than a node without one.
+#
+# internal/docsaudit holds these pages to the binaries' own dispatch
+# switches, so a command cannot ship without one.
+install-man:
+	@p=`dirname "$(MANDIR)"`; \
+	if test -w "$(MANDIR)" 2>/dev/null || test -w "$$p"; then \
+		install -d -m 0755 "$(MANDIR)" || exit 1; \
+		for b in $(BINARIES); do \
+			echo "  $(MANDIR)/$$b.8"; \
+			install -m 0644 contrib/man/$$b.8 "$(MANDIR)/$$b.8" || exit 1; \
+		done; \
+	else \
+		echo "  ! cannot write $(MANDIR); the manual pages were not installed" >&2; \
+		echo "  ! set MANDIR, or install contrib/man/*.8 by hand" >&2; \
+	fi
 
 # install-service puts the platform's own service files in place. They
 # are overwritten: picking up a fix to them is the reason to run this.

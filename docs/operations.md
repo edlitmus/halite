@@ -10,6 +10,11 @@ halite-node doctor
 halite-hub doctor
 ```
 
+There is a manual page for each binary too — `man 8 halite-node`,
+`halite-hub`, `halite-api` — installed by `make install` into
+`/usr/local/share/man/man8`. On a machine built from source that is the
+documentation it has; `docs/` does not travel with the binary.
+
 Ten checks with a remediation line on anything that is not a pass —
 configuration validity, certificate expiry, connectivity, clock skew
 against the hub, the file server, pillar compilation, disk space, the

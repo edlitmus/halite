@@ -18,6 +18,24 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Manual pages
+
+`halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc — what a
+FreeBSD port expects and what groff reads on Linux. Section 8 because
+each command administers a machine and most need root.
+
+`make install` puts them in `/usr/local/share/man/man8`, and does not
+fail the install when it cannot: a machine with no man hierarchy should
+still get working binaries, and it says so rather than stopping.
+
+They are a deliverable in their own right rather than only a package's
+contents, which is the point of them here. This project's own fleet is
+built from source and installed with `make install`; `docs/` does not
+travel with the binary, so on four hosts of five the manual page is the
+documentation that exists. A test holds every subcommand of every binary
+to the page for that binary, and to the command reference, so a command
+cannot ship without both.
+
 ### Every platform SPEC 27.1 promises now compiles
 
 `TARGETS` listed the eight tier 1 and tier 2 platforms, so `build-all`

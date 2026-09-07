@@ -177,3 +177,114 @@ func readDoc(t *testing.T, path string) string {
 	}
 	return string(b)
 }
+
+// Every subcommand is in its binary's manual page.
+//
+// The manual page is the documentation a machine has when the source
+// tree is not on it, which on this project's own fleet is every machine
+// but one: they are built from source somewhere and installed with
+// `make install`, and `docs/` does not travel with the binary. So a
+// command missing from the page is a command an operator on the machine
+// cannot find at all, which is worse than one missing from a document
+// they could at least fetch.
+//
+// Held to the same table as the command reference. A subcommand
+// deliberately absent from one is deliberately absent from both — the
+// reasons are the same reasons, and two lists would drift.
+func TestEverySubcommandIsInItsManualPage(t *testing.T) {
+	root := repoRoot(t)
+	found := 0
+	for _, binary := range []string{"halite-node", "halite-hub", "halite-api"} {
+		page := readDoc(t, filepath.Join(root, "contrib", "man", binary+".8"))
+		for _, sub := range subcommandsOf(t, root, binary) {
+			if _, deliberate := undocumented[binary+" "+sub]; deliberate {
+				continue
+			}
+			found++
+			// mdoc marks a command with `.It Cm name`, which is what a
+			// reader's `man` renders and what `/name` finds. Matching
+			// the macro rather than the bare word means a command
+			// mentioned only in passing does not count as documented.
+			if commandInPage(page, sub) {
+				continue
+			}
+			t.Errorf("`%s %s` is a subcommand and contrib/man/%s.8 does not document it. "+
+				"The manual page is what an operator has on a machine built from source; "+
+				"a command missing from it cannot be found there at all.",
+				binary, sub, binary)
+		}
+	}
+	if found == 0 {
+		t.Fatal("no subcommands were checked against a manual page")
+	}
+	t.Logf("checked %d subcommands against three manual pages", found)
+}
+
+// commandInPage looks for the mdoc list entry that documents a command.
+//
+// `.It Cm name` is the ordinary form. A command that takes a subcommand
+// of its own is written `.It Cm name Ar subcommand`, and one with
+// alternatives as `.It Cm name Oo Cm a | b Oc`, so the match is on the
+// start of the line rather than the whole of it.
+func commandInPage(page, sub string) bool {
+	for _, line := range strings.Split(page, "\n") {
+		line = strings.TrimSpace(strings.TrimRight(line, "\r"))
+		if !strings.HasPrefix(line, ".It Cm ") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, ".It Cm ")
+		word, _, _ := strings.Cut(rest, " ")
+		if word == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// Each manual page is well formed enough to be read.
+//
+// Not a full mdoc parse — that is `mandoc -Tlint`'s job and it is not on
+// every machine this suite runs on. These are the four things whose
+// absence makes a page useless rather than untidy, and each of them has
+// to be right before a reader gets as far as the content.
+func TestEachManualPageHasItsPreamble(t *testing.T) {
+	root := repoRoot(t)
+	for _, binary := range []string{"halite-node", "halite-hub", "halite-api"} {
+		name := filepath.Join("contrib", "man", binary+".8")
+		page := readDoc(t, filepath.Join(root, name))
+		upper := strings.ToUpper(binary)
+		lines := map[string]bool{}
+		for _, line := range strings.Split(page, "\n") {
+			lines[strings.TrimSpace(strings.TrimRight(line, "\r"))] = true
+		}
+		// Whole lines for the section headings, prefixes for the macros
+		// that carry an argument. `.Sh NAME` was checked with a
+		// substring match at first, and `.Sh NAMES` satisfied it —
+		// found by breaking this test on purpose, which is the only
+		// reason it is right now.
+		for _, want := range []struct{ macro, why string }{
+			{".Sh NAME", "no NAME section, so `apropos` and `man -k` cannot index it"},
+			{".Sh SYNOPSIS", "no synopsis"},
+			{".Sh DESCRIPTION", "no description"},
+			{".Dt " + upper + " 8", "the wrong title or section, so `man 8 " + binary + "` finds nothing"},
+			{".Os", "no operating system line"},
+		} {
+			if !lines[want.macro] {
+				t.Errorf("%s has no line %q: %s", name, want.macro, want.why)
+			}
+		}
+		for _, want := range []struct{ macro, why string }{
+			{".Dd ", "no date, so `man` renders an empty footer"},
+			{".Nd ", "no one-line description, which is what `apropos` prints"},
+		} {
+			if !strings.Contains(page, "\n"+want.macro) {
+				t.Errorf("%s has no %q: %s", name, strings.TrimSpace(want.macro), want.why)
+			}
+		}
+		// The name in NAME has to be the binary's, or `man -k` indexes
+		// it under something nobody will search for.
+		if !strings.Contains(page, ".Nm "+binary) && !strings.Contains(page, "\n.Nm\n") {
+			t.Errorf("%s never names %s with .Nm", name, binary)
+		}
+	}
+}
