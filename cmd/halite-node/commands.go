@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/runner"
 	"github.com/edlitmus/halite/internal/state"
+	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
 )
@@ -188,12 +190,27 @@ func (n *node) stateCompiler(p *value.Map, jobID string) *state.Compiler {
 
 // applyStates runs the compiled low state and prints the result.
 func applyStates(n *node, p *value.Map, compiled *state.Compiled) int {
+	// A run from the command line gets the same three spans a run from
+	// a hub does. An operator who turns tracing on to find out why a
+	// highstate is slow is, more often than not, running it by hand --
+	// and a feature that only works under the agent is one they conclude
+	// does not work.
+	n.startTracing()
+	span := n.tracer.StartSpan(tracing.SpanContext{}, "state apply", tracing.KindServer)
+	defer span.End()
+	span.SetAttr("halite.node", n.nodeID)
+	span.SetAttr("halite.env", n.env)
+	span.SetAttr("halite.local", true)
+	n.jobCtx = tracing.ContextWithSpan(context.Background(), span)
+	n.files = n.traceFiles(span)
+
 	ctx := n.context(p)
 	r := &runner.Runner{
 		States:   n.registry.States,
 		Exec:     n.registry.Exec,
 		Ctx:      ctx,
 		FailHard: n.cfg.Bool("failhard", false),
+		Tracer:   n.tracer,
 	}
 	result := r.Run(compiled.Low)
 	// Every value the gpg renderer decrypted, so that a state which puts

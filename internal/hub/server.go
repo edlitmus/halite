@@ -24,6 +24,7 @@ import (
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/target"
+	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -126,6 +127,11 @@ type Server struct {
 	// without one is instrumented and records nothing, which is what
 	// every test wants and what SPEC 26.2 allows an operator to choose.
 	Metrics *metrics.Registry
+
+	// Tracer is SPEC 26.3's, or nil where tracing is off -- which is
+	// the default, and which is a nil pointer rather than a disabled
+	// object, so an untraced hub allocates nothing per dispatch.
+	Tracer *tracing.Tracer
 
 	jobClock     job.Clock
 	jobClockOnce sync.Once

@@ -332,7 +332,14 @@ func runServe(args *cli.Args) int {
 	bus.MaxBytes = h.cfg.Int("event_max_size", eventbus.DefaultMaxBytes)
 	defer bus.Close()
 
+	// Started before the server so that a span from the first dispatch
+	// has somewhere to go, and drained after it so that the last batch
+	// before a restart is not the one that is lost.
+	tracer := buildTracer(h.cfg, h.log, "halite-hub")
+	defer stopTracer(tracer, h.log)
+
 	server := &hub.Server{
+		Tracer:         tracer,
 		Authority:      h.auth,
 		Log:            h.log,
 		PingInterval:   h.cfg.Duration("hub_alive_interval", 30*time.Second),

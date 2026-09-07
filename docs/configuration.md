@@ -1894,7 +1894,23 @@ The key for `metrics_tls_cert`, mode 600 and readable by the account the agent r
 
 off or otlp.
 
-`off` or `otlp`. Named and refused; distributed tracing is SPEC 26.3 and is not built.
+`off` or `otlp`. On, a span is recorded for each job, each state and each file transfer, and exported to `tracing_endpoint` in OTLP over HTTP with JSON encoding. SPEC 26.3.
+
+### `tracing_endpoint`
+
+*all three programs · `http://127.0.0.1:4318` · SPEC section 26.3*
+
+The OTLP/HTTP collector's URL.
+
+The collector's URL. The base is enough -- `/v1/traces` is appended when it is not already there. Read only when `tracing` is `otlp`.
+
+### `tracing_sample_rate`
+
+*all three programs · `0.1` · SPEC section 26.3*
+
+The fraction of traces recorded, 0 to 1.
+
+The fraction of traces recorded, 0 to 1. The decision is made once at the root and inherited by every span in the trace, so a sampled job is sampled all the way down. An explicit 0 is refused: it is `tracing: off` written in a way that looks like it is on.
 
 ## Index
 
@@ -2115,6 +2131,8 @@ Every setting, and which programs read it.
 | `token_retention` | `halite-api` | `720h` | The API service |
 | `top_file_merging_strategy` | `halite-node`, `halite-hub` | `merge` | The tree: states and pillar |
 | `tracing` | all three programs | `off` | Logging and diagnostics |
+| `tracing_endpoint` | all three programs | `http://127.0.0.1:4318` | Logging and diagnostics |
+| `tracing_sample_rate` | all three programs | `0.1` | Logging and diagnostics |
 | `undefined` | `halite-node`, `halite-hub` | `strict` | Rendering and templates |
 | `yaml_bool_11` | `halite-node`, `halite-hub` | `true` | Rendering and templates |
 

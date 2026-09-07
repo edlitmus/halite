@@ -18,30 +18,59 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
-### Tracing's machinery, and not yet its wiring
+### Tracing
 
-`internal/tracing` has SPEC 26.3's W3C Trace Context propagation, the
-span model, the sampler and the OTLP-over-HTTP JSON exporter. **Nothing
-starts a span yet** — no job, no state, no file transfer — and `tracing`
-is still an inert key, so setting it still gets what the inert table
-promises. That is said here and in DIVERGENCE 5.33 because a new package
-with a specification section's name on it otherwise reads as a feature.
+SPEC 26.3, complete: W3C Trace Context propagation, a span per job, per
+state and per file transfer, exported in OTLP over HTTP with JSON
+encoding. Off by default and sampled when on.
 
-The two formats are owned rather than imported, which is what SPEC chose
-when it said this "needs no OpenTelemetry SDK". So both are tested
-against their own specifications' examples rather than against what this
-build produces: the W3C document's sample `traceparent`, and OTLP/JSON's
-two departures from proto3 — identifiers in hex rather than base64, and
-64-bit numbers as strings, each of which produces a body a collector
-accepts and misreads.
+Three settings. `tracing` is `off` or `otlp`, `tracing_endpoint` is the
+collector's URL, and `tracing_sample_rate` is the fraction of traces
+recorded. A hub dispatching a job starts the trace and puts it on the
+job message; the node continues it, hangs a span on each state that
+*executed*, and hangs a span on each file it fetches; the hub picks the
+trace up again on its side of the transfer. One highstate is one trace
+from the operator's submission to the last file the last state pulled.
 
-Off is a nil pointer: no goroutine, no buffer, no allocation per job. A
-sampling decision is inherited rather than re-made, because a trace
-sampled in at the hub and out at the node has a hole where somebody is
-looking. And a finished span is dropped rather than waited on when the
-queue is full — measured at 197 of 200 with the collector wedged, with
-nothing blocked, because telemetry may lose data and a fleet may not
-stop.
+**It shipped in two halves and the first half was a mistake.** The
+machinery landed with nothing starting a span, which was recorded in the
+ledger and was not sufficient: a package carrying a specification
+section's name reads as a feature whatever a document says. This is the
+other half.
+
+Some decisions worth naming:
+
+- **Off is a nil pointer** — no goroutine, no buffer, no allocation per
+  job — and every method tolerates a nil receiver so no call site
+  guards. The one hole in that is field access, and the wiring found it:
+  a hub with tracing off panicked in an HTTP handler on the first test
+  that ran one.
+- **A misconfiguration is logged, never fatal.** A bad collector URL
+  turns tracing off and says so at error level. A node that will not
+  start because of a typo in a telemetry setting takes a machine's
+  management with it.
+- **`tracing_sample_rate: 0` is refused**, because it is `tracing: off`
+  written in a way that looks like it is on. An absent rate is the
+  default instead, and the default is a tenth rather than the
+  conventional hundredth — at 1% a five-host fleet records about one
+  trace a day, which is a feature that appears not to work.
+- **A state's span covers the states that ran**, not the ones a
+  requisite skipped, and carries whether the state changed anything.
+  A converged run is nearly every run, and without that every span in
+  one looks the same.
+- **The `traceparent` goes on the job message, not in a header**,
+  because a job crosses the subscribe stream and a header belongs to
+  the stream. It is not written to the job record, so a rollback cannot
+  silently truncate one.
+
+Two defects came out of the wiring. `Tracer.Stop` panicked when called
+twice, on the shutdown path, where two callers meeting is the normal
+case. And a file transfer ignored its caller's context, so a job
+cancelled by `jobs kill` while fetching a large file kept fetching —
+worth more than the tracing that found it.
+
+Nothing here has met a real collector yet. DIVERGENCE 5.34 says so and
+says what that leaves unestablished.
 
 ### Manual pages
 
@@ -1106,7 +1135,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 215 settings in the
+The configuration reference explains each of the 217 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

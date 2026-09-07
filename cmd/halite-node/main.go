@@ -34,6 +34,7 @@ import (
 	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/template"
+	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -120,30 +121,30 @@ func main() {
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	case "call":
-		os.Exit(runCall(args))
+		exitWith(runCall(args))
 	case "state":
-		os.Exit(runState(args))
+		exitWith(runState(args))
 	case "grains":
-		os.Exit(runGrains(args))
+		exitWith(runGrains(args))
 	case "pillar":
-		os.Exit(runPillar(args))
+		exitWith(runPillar(args))
 	case "lint":
-		os.Exit(runLint(args))
+		exitWith(runLint(args))
 	case "enroll":
-		os.Exit(runEnroll(args))
+		exitWith(runEnroll(args))
 	case "renew":
-		os.Exit(runRenew(args))
+		exitWith(runRenew(args))
 	case "connect", "serve":
-		os.Exit(runConnect(args))
+		exitWith(runConnect(args))
 	case "oneshot":
 		// The mode `halite-hub ssh` invokes on a target after pushing
 		// this binary. Not in the usage text: a person has no reason to
 		// run it, and it reads a job on stdin.
-		os.Exit(runOneshot(args))
+		exitWith(runOneshot(args))
 	case "event":
-		os.Exit(runEvent(args))
+		exitWith(runEvent(args))
 	case "doctor":
-		os.Exit(runDoctor(args))
+		exitWith(runDoctor(args))
 	default:
 		fmt.Fprintf(os.Stderr, "halite-node: unknown subcommand %q\n\n%s", sub, usage)
 		os.Exit(2)
@@ -216,6 +217,15 @@ type node struct {
 	// on `metrics_listen`. Never nil; a node that records nothing gets
 	// one whose families are all nil.
 	metrics *nodeMetrics
+	// tracer is SPEC 26.3's, or nil where tracing is off -- which is
+	// the default and is a nil pointer rather than a disabled object,
+	// so an untraced node allocates nothing per job.
+	tracer *tracing.Tracer
+	// jobCtx carries the running job's span, so that a state and a file
+	// transfer become children of it without every seam between here
+	// and a module growing a span parameter. Nil outside a job, which
+	// yields a nil span, which every method accepts.
+	jobCtx context.Context
 	// statesRunning counts the state runs in progress, which is what
 	// `disable_during_state_run` reads. SPEC 16.3.
 	//
@@ -286,6 +296,11 @@ func setup(args *cli.Args) *node {
 	if args.Bool("permissive", false) || cfg.String("undefined", "strict") == "permissive" {
 		n.undef = template.Permissive
 	}
+	// Built here rather than where it is first used, so that a
+	// misconfigured collector is reported once at startup instead of
+	// being discovered by the first job that had somewhere to send a
+	// span.
+	n.buildTracer()
 
 	// SPEC 28.3's environment controls, the pair to state_allowlist and
 	// state_denylist. They were declared, documented, and enforced by
@@ -598,7 +613,9 @@ func (n *node) pillarContext(partial *value.Map) *exec.Context {
 // job.
 func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 	return &exec.Context{
-		Ctx:          context.Background(),
+		// The job's context, so that a module's own work is inside the
+		// job's span rather than beside it.
+		Ctx:          n.runContext(),
 		Grains:       n.grains,
 		Pillar:       p,
 		Config:       n.cfg.Redacted(),
@@ -718,4 +735,17 @@ func seedConfiguredSecrets(secrets *redact.Set, cfg *config.Config) {
 			secrets.AddTree(v)
 		}
 	}
+}
+
+// runContext is what a module runs under: the job's context when there
+// is a job, and a background one otherwise.
+//
+// A one-shot `halite-node call` has no job and no span, and the nil
+// span that produces is a working span -- so this is the only place
+// that has to know the difference.
+func (n *node) runContext() context.Context {
+	if n.jobCtx != nil {
+		return n.jobCtx
+	}
+	return context.Background()
 }

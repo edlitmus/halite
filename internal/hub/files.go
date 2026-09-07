@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/fileserver"
+	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -84,10 +85,31 @@ func (s *Server) manifest(w http.ResponseWriter, r *http.Request, env string) {
 // handling, which SPEC 13.5 asks for and which is a great deal of
 // fiddly code to get wrong by hand.
 func (s *Server) file(w http.ResponseWriter, r *http.Request, nodeID, env, path string) {
+	// The hub's half of SPEC 26.3's file-transfer span, continuing the
+	// node's trace through the `traceparent` its client sent.
+	//
+	// It is the other end of the node's span rather than a second span
+	// for the same thing: what it separates is the time the hub spent
+	// resolving, hashing and writing the file from the time the transfer
+	// took, and those are two different problems with two different
+	// answers. A request with no `traceparent` -- an untraced node, or a
+	// node older than this -- produces no span at all rather than a
+	// root, because a file transfer with no job above it is a fragment
+	// nobody can use.
+	var span *tracing.Span
+	if parent := tracing.Extract(r.Header); parent.IsValid() {
+		span = s.Tracer.StartSpan(parent, "file serve", tracing.KindServer)
+		defer span.End()
+		span.SetAttr("halite.file.env", env)
+		span.SetAttr("halite.file.uri", path)
+		span.SetAttr("halite.node", nodeID)
+	}
+
 	resolved, err := s.Files.Resolve(env, path)
 	if errors.Is(err, fileserver.ErrOutsideRoot) {
 		s.warn("a file request tried to leave the root",
 			"node_id", nodeID, "env", env, "path", path)
+		span.Fail(err)
 		transport.WriteError(w, http.StatusForbidden, transport.CodeRefused, err)
 		return
 	}
@@ -121,5 +143,24 @@ func (s *Server) file(w http.ResponseWriter, r *http.Request, nodeID, env, path 
 		w.Header().Set("X-Halite-Hash", algorithm+":"+digest)
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
+	span.SetAttr("halite.file.bytes", info.Size())
+	// Whether the node already had it. This is the attribute the node's
+	// own span cannot carry -- it sits below that seam -- and it is the
+	// one that answers "is this tree being re-sent on every run".
+	span.SetAttr("halite.file.not_modified", matchesETag(r, algorithm, digest))
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+}
+
+// matchesETag reports whether the request already carries the digest
+// this file has, which is what `http.ServeContent` is about to turn
+// into a 304.
+//
+// Read here rather than inferred from the status, because
+// `http.ServeContent` writes the response itself and the handler never
+// sees what it decided.
+func matchesETag(r *http.Request, algorithm, digest string) bool {
+	if algorithm == "" || digest == "" {
+		return false
+	}
+	return strings.Contains(r.Header.Get("If-None-Match"), algorithm+":"+digest)
 }

@@ -41,6 +41,7 @@ type Tracer struct {
 	QueueDepth int
 
 	start   sync.Once
+	halt    sync.Once
 	queue   chan *Span
 	stop    chan struct{}
 	stopped chan struct{}
@@ -112,11 +113,18 @@ func (t *Tracer) Start() {
 // It waits, rather than abandoning the queue, because the spans most
 // worth having are usually the last ones before something stopped. A
 // caller that cannot wait passes a context with a deadline.
+//
+// Stopping twice is not an error. Shutdown is where two paths meet --
+// a deferred flush and a signal handler, a test's cleanup and its own
+// explicit drain -- and a shutdown path that panics when both run is a
+// process that dies noisily while doing the right thing. The second call
+// still waits for the drain the first started, so a caller that stops
+// and then reads what was exported sees all of it.
 func (t *Tracer) Stop(ctx context.Context) {
 	if t == nil || t.stop == nil {
 		return
 	}
-	close(t.stop)
+	t.halt.Do(func() { close(t.stop) })
 	select {
 	case <-t.stopped:
 	case <-ctx.Done():

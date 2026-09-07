@@ -16,7 +16,6 @@ import "sort"
 // asked for. The SPEC section is not repeated here: the key table
 // already carries one, and two of them would drift.
 var InertKeys = map[string]string{
-	"tracing":           "no spans are emitted, and nothing is exported",
 	"ext_pillar_fail":   "external pillar is not built, so there is no failure for this to govern",
 	"pillar_cache_disk": "pillar is never written to disk; the encrypted cache needs the encryption stack, which this build does not have",
 	"legacy_acl":        "the preserved Salt ACL is kept for you to read and is never consulted; convert it into `policy`",

@@ -340,6 +340,12 @@ func runConnect(args *cli.Args) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// The exporter's goroutine, for as long as the agent runs. `main`
+	// exits through `exitWith`, which drains it: an agent stopped by a
+	// service manager must not lose the last batch, which is usually the
+	// one holding whatever went wrong just before it stopped.
+	n.startTracing()
+
 	// The executor runs jobs; the loop below reads the stream. They are
 	// separate goroutines with a bounded queue between them, per SPEC
 	// 9.6, so a state run that takes ten minutes does not stop the node
@@ -688,6 +694,11 @@ func (n *node) acceptJob(msg transport.Message) {
 		Kwarg: msg.Kwarg,
 		Env:   msg.Env,
 		Nonce: msg.Nonce,
+		// The hub's trace, so that this node's spans continue it rather
+		// than starting a second one beside it. Empty from a hub that is
+		// not tracing, or one older than this field, and an empty parent
+		// starts a root -- which is what an untraced hub should produce.
+		TraceParent: msg.TraceParent,
 	}
 	if msg.Expires != "" {
 		expires, err := time.Parse(time.RFC3339Nano, msg.Expires)

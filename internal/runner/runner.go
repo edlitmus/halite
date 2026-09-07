@@ -17,6 +17,7 @@ import (
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/states"
+	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -107,6 +108,10 @@ type Runner struct {
 	// must see steps one to three as they finished, or every requisite
 	// pointing back at them refuses and the resumed run does nothing.
 	Seed map[string]states.Result
+	// Tracer records SPEC 26.3's span per state. Nil is off, and a nil
+	// tracer hands out nil spans whose methods do nothing, so nothing
+	// below branches on whether tracing is configured.
+	Tracer *tracing.Tracer
 	// Now is the clock, overridable for a test.
 	Now func() time.Time
 	// Sleep is how a retry waits, overridable for a test.
@@ -417,6 +422,25 @@ func mustGet(m *value.Map, key string) any {
 
 // execute runs one chunk, applying the retry loop and the check_cmd.
 func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
+	// SPEC 26.3's span per state, under the job's.
+	//
+	// Started here rather than in Run's loop so that it covers what
+	// actually ran: a chunk skipped by a requisite or held by an
+	// `unless` did no work, and a trace in which every declaration in a
+	// highstate appears as a span is one where the four that ran are
+	// hidden among the four hundred that did not.
+	//
+	// The retry loop is inside it deliberately. A state that succeeded
+	// on its third attempt took as long as all three attempts, and that
+	// is the duration an operator is looking for.
+	span := r.Tracer.StartSpan(tracing.ParentFrom(r.Ctx.Ctx), "state "+ch.Func(), tracing.KindInternal)
+	defer span.End()
+	span.SetAttr("halite.state.id", ch.ID)
+	span.SetAttr("halite.state.fun", ch.Func())
+	if ch.Name != "" {
+		span.SetAttr("halite.state.name", ch.Name)
+	}
+
 	// The chunk's own runas and umask apply to every command the state
 	// runs, not only to its unless and onlyif conditions. SPEC section
 	// 11.7 lists both as per-state options, and an option that governs
@@ -467,7 +491,29 @@ func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
 	if res.Name == "" {
 		res.Name = ch.Name
 	}
+	// Changed, not merely succeeded: "which states actually did
+	// something" is the question a highstate trace is opened to answer,
+	// and a run in which everything converged is a run of spans that all
+	// look the same without it.
+	span.SetAttr("halite.state.changed", res.Changes != nil && res.Changes.Len() > 0)
+	if res.Failed() {
+		span.SetStatus(tracing.StatusError, firstLine(res.Comment))
+	} else {
+		span.SetStatus(tracing.StatusOk, "")
+	}
 	return res
+}
+
+// firstLine keeps a span's status message to one line.
+//
+// A state's comment can be a paragraph -- a diff, a package manager's
+// output -- and a collector that indexes the message field is not the
+// place to put one.
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // applyCheckCmd runs the check_cmd commands and lets them decide the

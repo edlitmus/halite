@@ -10,6 +10,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/target"
+	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -138,8 +139,46 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 		Batch:       batch,
 	}
 
+	// SPEC 26.3's span per job, started once the job exists and before
+	// anything is delivered.
+	//
+	// It ends when Dispatch returns, not when the job does. A job is
+	// asynchronous by design -- the hub writes it to each node's stream
+	// and the returns arrive minutes later -- so a span held open until
+	// the last return would be a span held open across a node that never
+	// answers. What this measures is the dispatch: resolving the target,
+	// recording the job, and writing it to every stream, which is the
+	// part the hub is responsible for and the part that can be slow for
+	// a reason an operator can act on.
+	//
+	// Each node then continues the trace from the `traceparent` on the
+	// message, so the node-side spans are children of this one and
+	// outlive it. A parent that finishes before its children is
+	// ordinary in a trace and is what an asynchronous fan-out looks
+	// like.
+	span := s.Tracer.StartSpan(tracing.SpanContext{}, "dispatch "+j.Fun, tracing.KindServer)
+	defer span.End()
+	span.SetAttr("halite.jid", string(j.JID))
+	span.SetAttr("halite.fun", j.Fun)
+	span.SetAttr("halite.target", j.Target)
+	span.SetAttr("halite.target_kind", j.TargetKind)
+	span.SetAttr("halite.nodes", len(matched))
+	if j.Submitter != "" {
+		span.SetAttr("halite.submitter", j.Submitter)
+	}
+	if j.Test {
+		span.SetAttr("halite.test", true)
+	}
+	// Through SpanContextOf rather than the field: a nil span is what
+	// tracing being off looks like, and reaching into it is the one way
+	// past the nil-safety every method has.
+	if sc, ok := tracing.SpanContextOf(span); ok {
+		j.TraceParent = tracing.FormatTraceParent(sc)
+	}
+
 	if s.Jobs != nil {
 		if err := s.Jobs.Put(j); err != nil {
+			span.Fail(err)
 			return nil, err
 		}
 	}
@@ -267,6 +306,11 @@ func messageFor(j *job.Job) transport.Message {
 		Env:     j.Env,
 		Expires: j.Expires.UTC().Format(time.RFC3339Nano),
 		Nonce:   j.Nonce,
+		// The trace this job belongs to, so the node's spans continue
+		// it. Empty on a hub that is not tracing, which is a job message
+		// byte-for-byte identical to the one this build sent before
+		// tracing existed.
+		TraceParent: j.TraceParent,
 	}
 }
 

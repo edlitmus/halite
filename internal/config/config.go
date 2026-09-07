@@ -258,6 +258,41 @@ func (c *Config) Int(path string, def int64) int64 {
 	return def
 }
 
+// Float reads a fractional setting.
+//
+// Accepts an integer as well, because 0 and 1 are the two values an
+// operator is most likely to write for a rate and YAML gives both of
+// them to Go as int64.
+func (c *Config) Float(path string, def float64) float64 {
+	v, ok := c.Get(path)
+	if !ok || v == nil {
+		return def
+	}
+	switch t := v.(type) {
+	case float64:
+		return t
+	case int64:
+		return float64(t)
+	case string:
+		if f, err := strconv.ParseFloat(t, 64); err == nil {
+			return f
+		}
+	}
+	return def
+}
+
+// IsSet reports whether a key was written at all.
+//
+// The difference between "not set" and "set to the zero value" is the
+// whole of some settings: `tracing_sample_rate: 0` means record nothing
+// and an absent one means use the default, and they are opposite
+// intentions that a float cannot distinguish. OptionalBool is the same
+// idea for booleans; this answers it for any type.
+func (c *Config) IsSet(path string) bool {
+	v, ok := c.Get(path)
+	return ok && v != nil
+}
+
 // Duration reads a duration, accepting either a Go duration string or a
 // bare number of seconds, which is how Salt writes intervals.
 func (c *Config) Duration(path string, def time.Duration) time.Duration {

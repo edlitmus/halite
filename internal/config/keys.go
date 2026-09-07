@@ -224,6 +224,8 @@ var Keys = []Key{
 	{"log_file", all, "", "Log file; empty logs to stderr or the journal.", "26.1"},
 	{"log_format", all, "json", "json or console.", "26.1"},
 	{"tracing", all, "off", "off or otlp.", "26.3"},
+	{"tracing_endpoint", all, "http://127.0.0.1:4318", "The OTLP/HTTP collector's URL.", "26.3"},
+	{"tracing_sample_rate", all, "0.1", "The fraction of traces recorded, 0 to 1.", "26.3"},
 
 	// Node execution.
 	{"node_data_cache", hubOnly, "true", "Keep per-node grains, pillar, and mine on the hub.", "28.3"},

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/runner"
+	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -28,6 +30,18 @@ func (n *node) executeJob(j *job.Job) *job.Return {
 	// report what it would do and believe it had done it. The same
 	// applies to the environment a job names.
 	n = n.forJob()
+
+	// SPEC 26.3's span per job, under whatever the hub sent. Nil when
+	// tracing is off, and every method on it tolerates that, so nothing
+	// below this line branches on whether tracing is configured.
+	span := n.jobSpan(j)
+	defer span.End()
+	// The states and the file transfers this job causes hang off it,
+	// and they find it through the context rather than through a
+	// parameter on every seam between here and a module.
+	n.jobCtx = tracing.ContextWithSpan(context.Background(), span)
+	n.files = n.traceFiles(span)
+
 	started := time.Now()
 	ret := &job.Return{
 		JID:         j.JID,
@@ -69,7 +83,20 @@ func (n *node) executeJob(j *job.Job) *job.Return {
 
 	out, err := n.runFunction(j)
 	if err != nil {
+		span.Fail(err)
 		return fail(ret, err)
+	}
+	span.SetAttr("halite.success", out.success)
+	span.SetAttr("halite.retcode", out.retcode)
+	if !out.success {
+		// A job that ran and reported a failure is a failed span. The
+		// distinction from the branch above is the message, not the
+		// status: one is "this did not run" and the other is "this ran
+		// and the machine is not as asked", and an operator reading a
+		// trace needs to tell them apart.
+		span.SetStatus(tracing.StatusError, "the job reported a failure")
+	} else {
+		span.SetStatus(tracing.StatusOk, "")
 	}
 	ret.Success = out.success
 	ret.RetCode = out.retcode
@@ -241,6 +268,7 @@ func (n *node) runStateJob(j *job.Job, fn string) (outcome, error) {
 		Exec:     n.registry.Exec,
 		Ctx:      n.contextFor(p, string(j.JID)),
 		FailHard: n.cfg.Bool("failhard", false),
+		Tracer:   n.tracer,
 	}).Run(compiled.Low)
 	n.metrics.observeStateRun(time.Since(runStarted))
 	result.Secrets = n.secrets
