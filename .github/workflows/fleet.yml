@@ -34,7 +34,10 @@ on:
       - "internal/builtin/debconf*.go"
       - "internal/builtin/pkgrepo*.go"
       - "internal/builtin/timezone*.go"
+      - "internal/builtin/hostname*.go"
+      - "internal/builtin/sysctl*.go"
       - "internal/builtin/live_debian_test.go"
+      - "internal/builtin/live_system_test.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
       - ".github/workflows/fleet.yml"
@@ -78,3 +81,100 @@ jobs:
           echo "what that covers and what it does not. A failure means"
           echo "either a module changed or Debian did; both are worth"
           echo "reading rather than retrying."
+
+  # `hostname` and `sysctl` on a machine rather than in an image.
+  #
+  # Neither can be done in a container and the reasons are different.
+  # `sysctl` is the kernel, and a container shares the host's: /proc/sys
+  # is read-only there, and a container that remounted it would be
+  # writing to whoever's machine ran the test. `hostname` gets closer --
+  # a container has its own UTS namespace, so the running name really
+  # changes -- but Docker bind-mounts /etc/hostname, so the atomic
+  # replace fails with `device or resource busy`, and `hostnamectl` is
+  # not running, which is the branch a systemd node takes.
+  #
+  # A GitHub runner is a fresh virtual machine that is destroyed when the
+  # job ends. Renaming it and moving one kernel parameter costs nothing,
+  # and both are put back regardless.
+  linux:
+    name: linux (real kernel, real hostname)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+
+      # `sudo -E` alone loses PATH, and the toolchain setup-go installed
+      # is on PATH rather than in a standard location -- so root would
+      # run a different Go, or none. The environment is named
+      # explicitly instead.
+      - name: drive hostname and sysctl
+        run: |
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl' ./internal/builtin/
+
+      # The runner is thrown away, so this is not about the runner. It
+      # is the assertion that the tests' own cleanup works, because they
+      # are meant to be runnable on a real host and one that leaves a
+      # machine renamed is one nobody runs twice.
+      - name: the machine was put back
+        if: always()
+        run: |
+          echo "hostname: $(hostname)"
+          echo "swappiness: $(sysctl -n vm.swappiness)"
+          test "$(hostname)" != "halite-live-probe" || {
+            echo "the tests left this machine renamed"; exit 1; }
+
+  # The same two modules on FreeBSD, which is the platform four of the
+  # five hosts in this project's own fleet run.
+  #
+  # It is a different pair of branches rather than the same code on
+  # another kernel: `hostname` reads and writes rc.conf through `sysrc`
+  # here, and that branch had no test at all behind a fixture that looked
+  # like one (plan.md 1.4). `sysctl` persists to /etc/sysctl.conf rather
+  # than a drop-in, and `sysctlAssign` tries two spellings because BSD
+  # and Linux disagree about `-w` -- which has never been checked on the
+  # side that is not Linux.
+  freebsd:
+    name: freebsd (real kernel, sysrc)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the virtual machine
+        uses: cross-platform-actions/action@v1.5.0
+        with:
+          operating_system: freebsd
+          version: '15.1'
+          sync_files: runner-to-vm
+
+      # Read out of go.mod rather than named here, for the reason ci.yml
+      # gives: a workflow with its own version is a second source of
+      # truth for something this project pins deliberately.
+      - name: Install the pinned toolchain
+        shell: cpa.sh {0}
+        run: |
+          set -e
+          version=$(awk '/^toolchain /{print $2; exit}' go.mod)
+          test -n "$version" || { echo "go.mod names no toolchain" >&2; exit 1; }
+          mkdir -p "$HOME/toolchain"
+          fetch -q -o /tmp/go.tar.gz "https://go.dev/dl/${version}.freebsd-amd64.tar.gz"
+          tar -C "$HOME/toolchain" -xzf /tmp/go.tar.gz
+
+      - name: drive hostname and sysctl
+        shell: cpa.sh {0}
+        run: |
+          set -e
+          export PATH="$HOME/toolchain/go/bin:$PATH"
+          sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl' ./internal/builtin/
+
+      - name: the machine was put back
+        shell: cpa.sh {0}
+        if: always()
+        run: |
+          echo "hostname: $(hostname)"
+          echo "rc.conf:  $(sysrc -n hostname 2>/dev/null || echo unset)"
+          test "$(hostname)" != "halite-live-probe" || {
+            echo "the tests left this machine renamed"; exit 1; }
