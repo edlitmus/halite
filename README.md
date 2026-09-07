@@ -87,7 +87,7 @@ Delivery follows the phases in SPEC section 32.
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Done**: authentication, the execution and event endpoints, webhooks, OIDC, LDAP, returners, and the bridge protocol with its extension model |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship. macOS has providers and no module set. |
-| 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | Not started |
+| 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | **Started**: the chaos suite and SPEC 31's upgrade layer are built, CI runs every leg of `make check` on Linux, Windows, macOS and FreeBSD, metrics are nearly complete, and `doctor` ships. The scale harness, external review, detached signing, tracing, packaging and the backtracking regex engine are not. |
 
 A node manages its own tree today — Salt's masterless mode — and that is
 worth shipping on its own, because it can be validated against Salt in
@@ -274,11 +274,13 @@ refused by name, key exchange is P-256 or P-384, and TOTP is refused
 because RFC 6238 is HMAC-SHA-1; that last one fails closed, so a
 password alone is never enough on an account that asked for two factors.
 
-What is not built is the rest of phase 5 and phase 6. Windows is most of
-the way there: the suite runs natively and passes, a real host has been
-driven, and `win_dacl`, `win_service`, `win_registry` and `win_task`
-ship — fourteen of SPEC 15.3's Windows modules do not, and there is no
-user or group provider. macOS compiles and has been run on nothing.
+What is not built is the rest of phase 5 and most of phase 6. Windows is
+most of the way there: the suite runs natively and passes, a real host
+has been driven, and `win_dacl`, `win_service`, `win_registry` and
+`win_task` ship — fourteen of SPEC 15.3's Windows modules do not, and
+there is no user or group provider. macOS compiles and runs the suite in
+CI and has been run on no estate. FreeBSD runs the suite on every change
+and `pf` has been driven on a real host.
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
 the two things inside phase 2 that are still absent — `halite-hub
 files`, and external pillar.

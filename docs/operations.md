@@ -3,6 +3,29 @@
 Running halite on a machine: scheduling it, the service files, what the
 exit codes mean, and where the output goes.
 
+## When something is wrong, start here
+
+```
+halite-node doctor
+halite-hub doctor
+```
+
+Ten checks with a remediation line on anything that is not a pass —
+configuration validity, certificate expiry, connectivity, clock skew
+against the hub, the file server, pillar compilation, disk space, the
+reactor's queue, extension signatures, and whether the host kernel's
+FIPS mode agrees with this binary's. SPEC section 26.4, and
+[the command reference](command-reference.md) has the output and what
+each role runs.
+
+It changes nothing, so it is safe on a machine that is already
+misbehaving, and it exits non-zero only on a failure — a warning is a
+thing to do this month, not a reason to page anybody. That makes it
+usable in a cron job and in a state's `onlyif`.
+
+Most of what it looks at is why a run fails with something unhelpful.
+Reaching for it first is usually faster than reading a log.
+
 ## Exit codes
 
 Every command follows the same convention, so a script never has to parse
