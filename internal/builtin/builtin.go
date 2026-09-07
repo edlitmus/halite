@@ -100,6 +100,11 @@ func New() *Registries {
 	registerAppArmor(r)
 	registerSnap(r)
 	registerJail(r)
+
+	// Last, because it is a statement about everything above it:
+	// what has actually been demonstrated about each module and the
+	// program it drives.
+	registerEvidence(r)
 	return r
 }
 

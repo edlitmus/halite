@@ -30,8 +30,31 @@ env:
   GOTOOLCHAIN: auto
 
 jobs:
+  # Nothing is built until this passes.
+  #
+  # A module that changes a machine as root and has never been run
+  # against the tool it drives does not go into a release. Everything
+  # else this build does about that informs somebody who is already
+  # looking -- `doctor` warns, `sys.evidence` answers, a failing mutation
+  # says so. A release reaches operators who are not looking: a fleet
+  # upgrades and whatever shipped is running as root on every host in it.
+  #
+  # The gate can only ever stop a release, never cause a bad one, which
+  # is why it is a gate and not a warning.
+  gate:
+    name: no unverified root-mutating module
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+          cache: false
+      - run: make release-gate
+
   build:
     name: build (${{ matrix.builder }})
+    needs: gate
     runs-on: ${{ matrix.builder }}
     strategy:
       fail-fast: false

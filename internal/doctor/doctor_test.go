@@ -51,6 +51,7 @@ func all(t *testing.T) []Check {
 		DiskFree(map[string]FreeSpace{"/var/lib/halite": {Free: 100 << 30}}, 1<<30, 128<<20),
 		QueueDepths(map[string]QueueDepth{"reactor": {Depth: 1, Limit: 10000}}),
 		ExtensionSignatures(true, []ExtensionTrust{{Name: "ext", Signed: true}}),
+		ModuleVerification([]ModuleTrust{{Module: "pkg", Demonstrated: true, Root: true}}),
 		FIPSConsistency(FIPSState{Kernel: &kernel, Platform: "linux"}),
 	}
 }
@@ -191,6 +192,11 @@ func everyOutcome(t *testing.T) []Result {
 		FIPSConsistency(FIPSState{Kernel: &yes, Platform: "linux"}),
 		FIPSConsistency(FIPSState{Kernel: &no, Artifact: true, Enabled: true, Module: "v1.0.0", Platform: "linux"}),
 		FIPSConsistency(FIPSState{Kernel: &no, Platform: "linux"}),
+
+		ModuleVerification(nil),
+		ModuleVerification([]ModuleTrust{{Module: "apparmor", Root: true}, {Module: "pkg", Demonstrated: true, Root: true}}),
+		ModuleVerification([]ModuleTrust{{Module: "environ"}, {Module: "pkg", Demonstrated: true, Root: true}}),
+		ModuleVerification([]ModuleTrust{{Module: "pkg", Demonstrated: true, Root: true}}),
 	)
 
 	var out []Result

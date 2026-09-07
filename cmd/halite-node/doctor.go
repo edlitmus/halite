@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/doctor"
@@ -41,6 +42,7 @@ func runDoctor(args *cli.Args) int {
 		nodePillarCheck(n),
 		nodeDiskCheck(n),
 		nodeExtensionCheck(n),
+		doctor.ModuleVerification(builtin.New().Trust()),
 		nodeFIPSCheck(n),
 	})
 

@@ -509,7 +509,7 @@ to block. §7 has the consequences.
    they replace a whole ruleset at once rather than adding rules one at
    a time, which is a different thing from what the interface currently
    asks a provider to do.
-5. The rest — `at`, `blockdev`, `data`, `kernelpkg`, `locale`,
+7. The rest — `at`, `blockdev`, `data`, `kernelpkg`, `locale`,
    `logrotate`, `nfs`, `swap`, `tls`, `tmpfs`, `lvm` — each small, none
    blocking. `locale` now also carries `internal/migrate`'s gap test,
    which needs a state that does not exist and comes due whenever one is
@@ -633,16 +633,19 @@ This section has moved further than any other since the last revision.
   nothing, silently, and silence is what it would do if the estate were
   healthy.
 - ~~**Tracing (26.3) and `doctor` (26.4) still do not exist.**~~
-  **`doctor` ships**, with all ten of SPEC 26.4's checks, a remediation
+  **`doctor` ships**, with all eleven of SPEC 26.4's checks, a remediation
   line on every finding that a guard makes mandatory, and the check set
   held to the specification's own sentence in both directions. It
   carries SPEC 27.4's FIPS mismatch warning, which had nowhere to live
   before. DIVERGENCE 5.30, including why a platform with no kernel FIPS
   mode is a skip rather than a warning — the fleet is four FreeBSD hosts
   to one Linux, and a check that warns on four nodes in five is one
-  nobody reads. **Tracing (26.3) is half built**: the machinery exists in
-  `internal/tracing` and nothing starts a span yet, so the key is still
-  inert (§4). §7 has what is left.
+  nobody reads. **Tracing (26.3) ships too**, machinery and wiring: a
+  span per job, per state and per file transfer, `tracing` off the inert
+  table, and a trace that survives the hop from hub to node and back
+  across a file transfer. **SPEC section 26 is complete.** DIVERGENCE
+  5.34, including the two defects the wiring found and the one thing it
+  does not establish — no collector has read a span this build made.
 
 ### 3.3 The security model's unbuilt half (SPEC 25)
 
@@ -895,17 +898,17 @@ unchanged.
    (`system`, `members`), `file.managed` (`skip_verify`, `keep_source`),
    `file.replace`, `pkg.installed`, `git.latest`. The `user.present` row
    is one coherent feature — shadow ageing policy — not six oversights.
-6. **`module.run` argument pass-through.** Salt passes unknown kwargs
+8. **`module.run` argument pass-through.** Salt passes unknown kwargs
    through to the function being run; this build validates against a
    fixed parameter list. Strict validation is right for every other state
    and wrong for this one.
-7. **systemd over D-Bus, or `systemctl` shell-out?** SPEC 15.2 says the
+9. **systemd over D-Bus, or `systemctl` shell-out?** SPEC 15.2 says the
    former; the build does the latter. Note that Windows settled the
    general form of this question: `win_service` speaks the service
    control manager's API because `sc.exe` has no machine-readable output
    mode, and `win_task` runs `schtasks` because it does. systemd has
    both, so this is a cost question rather than a correctness one.
-8. **Do reference bridges ship?** SPEC 20.3 promises in-tree `postgres`
+10. **Do reference bridges ship?** SPEC 20.3 promises in-tree `postgres`
    and `sqs` as worked examples, and no destination extension exists.
 
 Question 9 of the previous revision — strict undefined (33.4) — is
@@ -1005,59 +1008,122 @@ place.
    host with a jail running. DIVERGENCE 5.32. **SPEC 15.3's FreeBSD row
    now ships entirely.**
 
-**Then — phase 6, on a fleet that is in production**
+4. ~~**Module evidence**~~ — **done**, and it is the generalisation of
+   items 1 and 3 rather than a new idea. `pf` was the third time a
+   fixture written from expectation had passed while asserting nothing
+   (§1.3, §1.4, DIVERGENCE 5.31), and after three the shape is the
+   finding. Every module that changes something now declares what has
+   actually been demonstrated about it — run against the real tool on a
+   real machine, run against it but only reading, or written from
+   documentation — with a note naming the tool and the doubt.
 
-4. **Tracing** (§3.2, SPEC 26.3), the only unbuilt part of section 26.
-   **Half built**: `internal/tracing` has the W3C Trace Context
+   `sys.evidence` answers per module, `doctor` gains a **module
+   verification** check that names the root-mutating ones nobody has
+   demonstrated, a failing mutation carries the note, and
+   `make release-gate` refuses a release in which any root-mutating
+   module is still an assumption. The gate has one failure mode — a
+   release does not happen — which is why it can be a gate rather than a
+   warning. DIVERGENCE 5.33.
+
+   Writing the table also found three wrong cross-references in the
+   ledger, including one where CI's coverage was *weaker* than the
+   document implied.
+
+**Then — closing the gate, which this fleet can do**
+
+5. **Demonstrate the nine modules the gate is red on**, which is now the
+   highest-ranked *unbuilt* item because nothing else on this list can
+   ship a release until it is done. They are `apparmor`, `debconf`,
+   `dpkg`, `hostname`, `netplan`, `pkgrepo`, `snap`, `sysctl` and
+   `timezone`.
+
+   The ranking argument is that **this fleet already has every host they
+   need**. Four FreeBSD hosts cover `sysctl`, `hostname`, `timezone` and
+   `pkgrepo`; the one Ubuntu host covers `apparmor`, `debconf`, `dpkg`,
+   `netplan`, `snap` and `pkgrepo` again. None of it needs a machine
+   that does not exist, which is not true of most of what follows.
+
+   Two of the nine are worth doing first and for different reasons.
+   **`netplan` reconfigures the interface an operator is connected
+   over** and has never been run against a real netplan — the worst
+   consequence in the set. **`sysctl` sets kernel parameters on every
+   platform** and has never set one, which is the widest reach.
+
+   The work per module is small and the same each time: run the mutating
+   path on a host, capture what the tool actually printed, replace the
+   invented fixture with it, and raise the level with a note saying
+   which machine. `pf` took an evening and found a defect; that is the
+   expected yield rather than a lucky one.
+
+**Then — phase 6, on a fleet that is in production.** Two of the four
+were closed while this revision was being written, so the first genuinely
+unbuilt item here is number 7.
+
+6. ~~**Tracing**~~ — **done**, and it took two commits because the
+   first was half of one. `internal/tracing` landed with the
    propagation, the span model, the sampler and the OTLP/HTTP JSON
-   exporter, all tested against the two specifications' own examples
-   rather than against what this build produces. What is *not* done is
-   the wiring — no span is started anywhere, `tracing` is still an inert
-   key, and nothing is exported. SPEC asks for a span per job, per state
-   and per file transfer, and that is the next commit. DIVERGENCE 5.33
-   says so plainly rather than letting a new package imply a feature.
-5. The two SPEC 30 benchmarks that need no harness (§3.1).
-6. The render sandbox (§3.3), the largest unbuilt security control and
+   exporter and with nothing starting a span, which the ledger recorded
+   and which was not sufficient: a package carrying a specification
+   section's name reads as a feature whatever a document says.
+
+   It is wired now. Three settings, `tracing` off the inert table, and a
+   trace that runs from an operator's submission through the hub's
+   dispatch, the node's job, each state that actually executed, each
+   file that state fetched, and the hub's side of that transfer. The
+   state span deliberately covers the states that *ran* rather than
+   every declaration in the highstate, and carries whether the state
+   changed anything, because a converged run is nearly every run.
+
+   Two defects fell out of the wiring, which is the argument for doing
+   it rather than shipping the seam: `Tracer.Stop` panicked when called
+   twice, on the shutdown path, and a file transfer ignored its caller's
+   context — so `jobs kill` did not stop a fetch. DIVERGENCE 5.34.
+
+   **What is not established**: no span this build produces has been
+   read by a real collector. That is the same shape as §5 above, one
+   layer up, and the first estate to set `tracing: otlp` settles it.
+7. The two SPEC 30 benchmarks that need no harness (§3.1).
+8. The render sandbox (§3.3), the largest unbuilt security control and
    the one SPEC argues for most directly.
-7. **Node evidence and detached signing** (§6). Supply chain, and it
+9. **Node evidence and detached signing** (§6). Supply chain, and it
    matters more now that the thing being supplied runs everything.
 
 **Demoted, with the reason**
 
-8. **Packaging** (§3.5) — was fifth, on the argument that the fleet
+10. **Packaging** (§3.5) — was fifth, on the argument that the fleet
    needs a way to deploy. It has one. `make install` is FreeBSD-aware
    already: rc.d service files, `pw useradd` in its own error message.
    If any of SPEC 27.2 is built for this fleet it is a **FreeBSD port or
    pkg** rather than a `.deb`, and neither ranks above `make install`
    continuing to work. The reproducible-build half is done regardless.
-9. **The Debian and Ubuntu row** (§2.3) — was first, through three
+11. **The Debian and Ubuntu row** (§2.3) — was first, through three
    revisions. `pro` and `debbuild` remain, on one host. `pro`'s design
    question is answered: a Pro-enabled FIPS node and a `GOFIPS140` build
    are **two** claims and both are required, which is what `doctor`'s
    FIPS check now says out loud. So it is buildable — it is simply worth
    less than it was when the estate was imagined to be Ubuntu.
-10. **The Common Linux row** (§2.3, eleven modules) — was "the largest
+12. **The Common Linux row** (§2.3, eleven modules) — was "the largest
     block now". It is, and almost all of it is Linux-only: `journald`,
     `iptables`, `nftables`, `lvm`, `mdadm`, `modprobe`, `udev`,
     `authselect`. `pam`, `quota` and `openssl_cert` are the three that
     also mean something on FreeBSD, and they are the three worth taking
     out of this row first.
-11. Deepening the Salt differential to compare applied results (§3.4).
+13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.
 
 **Blocked on a decision**
 
-12. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
+14. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
     carries and what CI already runs on it.
-13. The `cmd.run` default, the unplanned modules, a `win_registry`
+15. The `cmd.run` default, the unplanned modules, a `win_registry`
     state, and job signing (§6).
-14. Whether a follower that falls behind the event bus should stop or
+16. Whether a follower that falls behind the event bus should stop or
     resume. `subscriber_lag` refuses the read now; what a *reactor*
     should do with the refusal is the open half (DIVERGENCE 4.12).
 
 **Last**
 
-15. The YAML over-acceptance set, prioritising the chomping case; the
+17. The YAML over-acceptance set, prioritising the chomping case; the
     six real template gaps; the regexcompat character-class false
     positive (§5).
 

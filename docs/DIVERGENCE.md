@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **58 execution modules / 353 functions** and **40 state
+The build ships **58 execution modules / 354 functions** and **40 state
 modules / 95 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -457,7 +457,7 @@ different reason is given.
 | `service` | implemented | 16 | FreeBSD rc provider only; see 2.5 |
 | `ssh_auth` | implemented | 2 | registered as `ssh.auth_keys` and `ssh.known_hosts`; SPEC 15.2 names no module for either state, and both read the same account's files, so they share one |
 | `status` | implemented | 4 | |
-| `sys` | implemented | 10 | |
+| `sys` | implemented | 11 | `evidence` is not in SPEC 15.6 and reports what has been demonstrated about each module that changes something: an operator planning a change on a production machine is entitled to know which modules have never been run against the tool they drive, before rather than after |
 | `sysctl` | implemented | 3 | |
 | `sysrc` | implemented | 3 | FreeBSD; SPEC lists it as core |
 | `test` | implemented | 5 | |
@@ -3527,11 +3527,11 @@ which — and pf's default state-tracking suffixes removed.
 **The test that should have caught it passed, and the reason is the
 lesson.** `TestPFApplyIsIdempotent` supplied a fixture written in the
 module's own spelling, so it compared this build's text against this
-build's text and agreed. That is precisely the defect 1.4 generalised
+build's text and agreed. That is precisely the defect plan.md §1.4 generalised
 after the macOS timezone and FreeBSD hostname fixtures — a fixture that
 forces the shape the real thing does not take, passing while asserting
 nothing — repeated in a section written by whoever had just finished
-writing 1.4. The generalisation was about *code branches*; it applies
+writing plan.md §1.4. The generalisation was about *code branches*; it applies
 just as much to *output being parsed*, and nothing said so. It does now:
 a fixture standing in for another program's output is worth as little as
 its provenance, and the fixture here is what mail returned.
@@ -3619,6 +3619,101 @@ does what the state says, and the other is available through
 With this, **SPEC 15.3's FreeBSD row ships entirely**: `freebsdpkg`,
 `freebsd_service` and `freebsd_sysctl` as aliases, `pf` as the
 `firewall` module's second provider, and `jail`.
+
+### 5.33 What has been demonstrated, and what has only been assumed
+
+This build has 150 mutating execution functions across 40 modules, and
+**21 modules with at least one function that changes a machine as
+root** — `apparmor`, `debconf`, `dpkg`, `firewall`, `hostname`, `jail`,
+`mount`, `netplan`, `pkg`, `pkgrepo`, `service`, `snap`, `sysctl`,
+`sysrc`, `timezone`, `user`, `win_dacl`, `win_registry`, `win_service`,
+`win_task`, `zpool`. Until now this document could say which *platforms*
+had been run on and could not answer "has `apparmor.enforce` ever
+enforced a profile", because nothing recorded it.
+
+**Almost all of these modules work by running another program and
+reading what it says back, and that is the half a unit test cannot
+establish.** The test supplies the output, so what it checks is that the
+parser reads what the test author believed the program prints. 5.31 is
+what that costs: `pf` matched no rule at all on a real FreeBSD host,
+reported both of the host's rules as added on every run, and could
+remove neither — while `TestPFApplyIsIdempotent` passed, because its
+fixture was written in the module's own spelling and agreed with itself.
+plan.md §1.3 and §1.4 are the same mistake on `timezone` and `hostname`
+one and two weeks earlier. Three instances is a pattern, and the pattern
+is that a fixture standing in for another program's output is worth
+exactly its provenance.
+
+**So the claim is now made explicitly, per module, and it is mostly
+unflattering.** `internal/builtin/evidence.go` declares one of three
+levels for every module that changes something:
+
+| Level | Means | Modules |
+|---|---|---|
+| hardware | the mutating path has been run against the real tool on a real machine | `firewall` (pf only), `pkg` (apt only), `win_dacl`, `win_registry`, `win_task`, `zpool` |
+| captured | the module has been run against the real tool, but only reading it | `jail`, `mount`, `service`, `sysrc`, `user`, `win_service` |
+| assumed | the fixtures were written from documentation or from expectation | `apparmor`, `debconf`, `dpkg`, `hostname`, `netplan`, `pkgrepo`, `snap`, `sysctl`, `timezone` |
+
+`assumed` is the zero value, so a module nobody has classified reads as
+undemonstrated rather than as absent. Each declaration carries a note
+naming the tool and the doubt, and a guard requires one from every
+root-mutating module: the default being right is not the same as the
+default having been decided, and an operator is owed the difference
+between "considered and unverified" and "nobody looked".
+
+**Four places carry it, in the order an operator meets them.**
+
+- `sys.evidence` answers per module, before anything is run. Not in SPEC
+  15.6; the ledger's `sys` row records the addition.
+- `doctor` gains a **module verification** check, which SPEC 26.4's list
+  now names. It warns and never fails, and only for the modules that
+  need root — a module that changes a machine with no privilege can be
+  wrong without being dangerous, and grading those the same way is how a
+  warning becomes something people scroll past.
+- A **failing** mutation appends the note to its error. Only a failing
+  one, and only a mutating one: a read that goes wrong is a question
+  about the node, a change that goes wrong is a question about both, and
+  that is the moment the second half is worth raising. It never appears
+  on success, because a warning nobody can act on is a warning people
+  learn to skip.
+- `make release-gate` refuses a build in which any root-mutating module
+  is still an assumption, and it is the release workflow's first job.
+
+**The gate is the one control here that cannot make things worse.** It
+has exactly one failure mode — a release does not happen — and a release
+that does not happen breaks nothing. Everything else in this list
+informs somebody who is already looking; a release reaches operators who
+are not, because a fleet upgrades and whatever shipped is running as
+root on every host in it. It sits behind a build tag so that ordinary
+development is not blocked: a module written today is undemonstrated
+today, and that is the normal state of new work.
+
+There is no override, and that is deliberate rather than absolute. An
+override is what gets used at five on a Friday. The two ways past the
+gate are the two that leave an operator no worse off: run the module
+against the real tool and say which machine, or take it out of the
+build.
+
+**As it stands the gate is red**, on nine modules. That is the honest
+position rather than a defect in the gate: `netplan` reconfigures the
+interface an operator is connected over and has never been run against a
+real netplan, and `sysctl` sets kernel parameters and has never set one.
+Neither is known to be wrong. Neither is known to be right, which is the
+point.
+
+**What this cannot do** is tell whether a declaration is true. No test
+distinguishes a module verified on hardware from one whose row says so.
+That is why every level above `assumed` requires a note naming the
+machine or the captured output: the note is the part a person can go and
+check, and a level with no note would be a claim that could not be
+audited.
+
+Writing the table also found three wrong cross-references in this
+document, which is its own small argument for the exercise: `zpool`'s
+hardware evidence is 4.7 and not the module table, the Windows DACL
+runner is an administrator (4.9) so CI's DENY coverage is *weaker* than
+assumed rather than stronger, and 5.31's reference to "1.4" meant
+plan.md's section 1.4 and read as this document's.
 
 ### 5.34 Tracing, and the wiring that had to follow it
 

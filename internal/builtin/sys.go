@@ -189,7 +189,61 @@ func registerSys(r *Registries) {
 				return argspecFor(r.States.Signatures(), states.Str(args, "name", "")), nil
 			},
 		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "sys", Function: "evidence",
+				Doc: "Report what has been demonstrated about each module's dealings with the tool it drives.",
+				Params: []signature.Param{
+					opt("name", signature.String, "", "A module name; omit for every module that changes something."),
+					opt("undemonstrated_only", signature.Bool, false,
+						"Report only the modules that change something and have not been demonstrated."),
+				},
+				TestMode: signature.TestNotApplicable,
+				Section:  "15.6",
+			},
+			// A failing mutation says this on its way past, but that is
+			// after the fact. An operator planning a change asks first,
+			// and this is where they ask.
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				return evidenceReport(r,
+					states.Str(args, "name", ""),
+					states.Bool(args, "undemonstrated_only", false)), nil
+			},
+		},
 	)
+}
+
+// evidenceReport renders the evidence table for `sys.evidence`.
+//
+// Every module that changes something appears, including the ones with
+// no declaration: a module absent from the table is undemonstrated by
+// definition, and leaving it out would make the answer depend on
+// whether anybody had written a row.
+func evidenceReport(r *Registries, name string, undemonstratedOnly bool) *value.Map {
+	trust := r.Trust()
+	out := value.NewMap(len(trust))
+	for _, m := range trust {
+		if name != "" && m.Module != name {
+			continue
+		}
+		if undemonstratedOnly && m.Demonstrated {
+			continue
+		}
+		e := r.Exec.Evidence(m.Module)
+		entry := value.NewMap(4)
+		entry.Set("level", e.Level.String())
+		entry.Set("demonstrated", m.Demonstrated)
+		entry.Set("root", m.Root)
+		if e.Note != "" {
+			entry.Set("note", e.Note)
+		} else {
+			// The honest answer for a module nobody classified, rather
+			// than an empty field that reads as "nothing to report".
+			entry.Set("note", "no declaration; nothing has checked this module against the program it drives")
+		}
+		out.Set(m.Module, entry)
+	}
+	return out
 }
 
 // docFor renders documentation for one name, one module, or everything.

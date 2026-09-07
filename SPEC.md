@@ -2338,8 +2338,8 @@ and needs no OpenTelemetry SDK. Tracing is off by default and sampled when on.
 
 `halite-node doctor` and `halite-hub doctor` check configuration validity, clock skew against the
 hub, certificate validity and expiry, connectivity, file server reachability, pillar compilation,
-disk space, queue depths, extension signatures, and FIPS mode consistency, and print a pass or fail
-per check with a remediation line. Most operational tickets on a Salt estate are one of these
+disk space, queue depths, extension signatures, module verification, and FIPS mode consistency,
+and print a pass or fail per check with a remediation line. Most operational tickets on a Salt estate are one of these
 checks, and making them a single command is worth more than it appears.
 
 ## 27. Packaging and platforms
