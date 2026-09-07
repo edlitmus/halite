@@ -285,8 +285,12 @@ func TestAnUnreadablePFConfDoesNotRefuse(t *testing.T) {
 // The whole anchor is rewritten on every change, so without this a state
 // would report a change on every run and reload the firewall each time.
 func TestPFApplyIsIdempotent(t *testing.T) {
-	existing := "pass in quick proto tcp from any to any port 22\n" +
-		"block drop in quick proto tcp from any to any port 23\n"
+	// What pfctl prints, not what pfRule renders. Written in the module's
+	// own spelling this test passed against a provider that could not
+	// match a single rule on a real host: pf reprints the port operator,
+	// and adds the flags and state tracking a pass rule gets by default.
+	existing := "pass in quick proto tcp from any to any port = 22 flags S/SA keep state\n" +
+		"block drop in quick proto tcp from any to any port = 23\n"
 	pfConf(t, "anchor \"halite\"\n")
 
 	c, runner := pfFixture(t, map[string]exec.Result{
@@ -332,10 +336,10 @@ func TestPFApplyIsIdempotent(t *testing.T) {
 		if !strings.Contains(cmd.String(), "-f -") {
 			continue
 		}
-		if strings.Contains(cmd.Stdin, "port 23") {
+		if strings.Contains(cmd.Stdin, "port = 23") {
 			t.Errorf("the removed rule is still in the anchor: %q", cmd.Stdin)
 		}
-		if !strings.Contains(cmd.Stdin, "port 22") {
+		if !strings.Contains(cmd.Stdin, "port = 22") {
 			t.Errorf("removing one rule dropped another: %q", cmd.Stdin)
 		}
 	}
@@ -450,5 +454,75 @@ func TestPFIsRegisteredAsAFirewallProvider(t *testing.T) {
 	}
 	if !found {
 		t.Error("pf is not in firewallProviders, so no node can pick it")
+	}
+}
+
+// A rule pf printed back is the rule that was loaded.
+//
+// The cases are what mail.edlitmus.info returned from `pfctl -a halite -s
+// rules` for an anchor loaded with 9999/tcp denied and 9998/tcp allowed —
+// the first run of this provider against a real pf, and the first two
+// rules it failed to recognise as its own.
+func TestPFNormalizeMatchesWhatPFPrints(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		rule    firewallRule
+		printed string
+	}{
+		{
+			"a deny, with the port operator pf writes",
+			firewallRule{Action: "deny", Port: "9999", Protocol: "tcp"},
+			"block drop in quick proto tcp from any to any port = 9999",
+		},
+		{
+			"a pass, which pf also makes stateful",
+			firewallRule{Action: "allow", Port: "9998", Protocol: "tcp"},
+			"pass in quick proto tcp from any to any port = 9998 flags S/SA keep state",
+		},
+		{
+			"udp, which keeps state without flags",
+			firewallRule{Action: "allow", Port: "53", Protocol: "udp"},
+			"pass in quick proto udp from any to any port = 53 keep state",
+		},
+		{
+			"an unconstrained rule, which pf prints as all",
+			firewallRule{Action: "deny"},
+			"block drop in quick all",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rendered, err := pfRule(tc.rule)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := normalizePFRule(rendered), normalizePFRule(tc.printed); got != want {
+				t.Errorf("a rule pf printed back did not match the one loaded:\n"+
+					" loaded: %s\n  as: %s\nprinted: %s\n  as: %s",
+					rendered, got, tc.printed, want)
+			}
+		})
+	}
+}
+
+// Normalizing does not collapse rules that differ.
+func TestPFNormalizeKeepsDifferentRulesApart(t *testing.T) {
+	deny, err := pfRule(firewallRule{Action: "deny", Port: "9999", Protocol: "tcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, other := range []firewallRule{
+		{Action: "allow", Port: "9999", Protocol: "tcp"},
+		{Action: "deny", Port: "9998", Protocol: "tcp"},
+		{Action: "deny", Port: "9999", Protocol: "udp"},
+		{Action: "deny", Port: "9999", Protocol: "tcp", Direction: "out"},
+		{Action: "deny", Port: "9999", Protocol: "tcp", From: "10.0.0.0/8"},
+	} {
+		line, err := pfRule(other)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if normalizePFRule(line) == normalizePFRule(deny) {
+			t.Errorf("%q normalized to the same rule as %q", line, deny)
+		}
 	}
 }
