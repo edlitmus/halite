@@ -633,15 +633,19 @@ This section has moved further than any other since the last revision.
   nothing, silently, and silence is what it would do if the estate were
   healthy.
 - ~~**Tracing (26.3) and `doctor` (26.4) still do not exist.**~~
-  **`doctor` ships**, with all ten of SPEC 26.4's checks, a remediation
+  **`doctor` ships**, with all eleven of SPEC 26.4's checks, a remediation
   line on every finding that a guard makes mandatory, and the check set
   held to the specification's own sentence in both directions. It
   carries SPEC 27.4's FIPS mismatch warning, which had nowhere to live
   before. DIVERGENCE 5.30, including why a platform with no kernel FIPS
   mode is a skip rather than a warning — the fleet is four FreeBSD hosts
   to one Linux, and a check that warns on four nodes in five is one
-  nobody reads. **Tracing (26.3) is still an inert key** (§4) and is now
-  the only unbuilt part of section 26.
+  nobody reads. **Tracing (26.3) ships too**, machinery and wiring: a
+  span per job, per state and per file transfer, `tracing` off the inert
+  table, and a trace that survives the hop from hub to node and back
+  across a file transfer. **SPEC section 26 is complete.** DIVERGENCE
+  5.34, including the two defects the wiring found and the one thing it
+  does not establish — no collector has read a span this build made.
 
 ### 3.3 The security model's unbuilt half (SPEC 25)
 
@@ -1051,12 +1055,33 @@ place.
    which machine. `pf` took an evening and found a defect; that is the
    expected yield rather than a lucky one.
 
-**Then — phase 6, on a fleet that is in production**
+**Then — phase 6, on a fleet that is in production.** Two of the four
+were closed while this revision was being written, so the first genuinely
+unbuilt item here is number 7.
 
-6. **Tracing** (§3.2, SPEC 26.3), now the only unbuilt part of section
-   26. `doctor` closed the other and was worth more than its size: it is
-   what an operator reaches for at the moment something is wrong, and
-   this fleet is past the point where that is hypothetical.
+6. ~~**Tracing**~~ — **done**, and it took two commits because the
+   first was half of one. `internal/tracing` landed with the
+   propagation, the span model, the sampler and the OTLP/HTTP JSON
+   exporter and with nothing starting a span, which the ledger recorded
+   and which was not sufficient: a package carrying a specification
+   section's name reads as a feature whatever a document says.
+
+   It is wired now. Three settings, `tracing` off the inert table, and a
+   trace that runs from an operator's submission through the hub's
+   dispatch, the node's job, each state that actually executed, each
+   file that state fetched, and the hub's side of that transfer. The
+   state span deliberately covers the states that *ran* rather than
+   every declaration in the highstate, and carries whether the state
+   changed anything, because a converged run is nearly every run.
+
+   Two defects fell out of the wiring, which is the argument for doing
+   it rather than shipping the seam: `Tracer.Stop` panicked when called
+   twice, on the shutdown path, and a file transfer ignored its caller's
+   context — so `jobs kill` did not stop a fetch. DIVERGENCE 5.34.
+
+   **What is not established**: no span this build produces has been
+   read by a real collector. That is the same shape as §5 above, one
+   layer up, and the first estate to set `tracing: otlp` settles it.
 7. The two SPEC 30 benchmarks that need no harness (§3.1).
 8. The render sandbox (§3.3), the largest unbuilt security control and
    the one SPEC argues for most directly.

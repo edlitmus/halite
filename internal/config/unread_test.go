@@ -109,8 +109,14 @@ func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
 // declared on `file.managed` and is a configuration key, and neither was
 // read by anything.
 func readSomewhere(text, key string) bool {
+	// Every accessor on Config, and adding one to Config means adding
+	// it here. `Float` and `IsSet` arrived with `tracing_sample_rate`
+	// and this guard reported the setting unread until they did, which
+	// is the guard working: an accessor it does not know about is a way
+	// to read a key that it cannot see.
 	for _, accessor := range []string{
-		"String", "Bool", "OptionalBool", "Int", "Map", "StringSlice", "Roots", "Duration", "Get",
+		"String", "Bool", "OptionalBool", "Int", "Float", "IsSet",
+		"Map", "StringSlice", "Roots", "Duration", "Get",
 	} {
 		if strings.Contains(text, fmt.Sprintf(".%s(%q", accessor, key)) {
 			return true

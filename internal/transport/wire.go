@@ -102,6 +102,15 @@ type Message struct {
 	Ret     string         `json:"ret,omitempty"`
 	Expires string         `json:"expires,omitempty"`
 	Nonce   string         `json:"nonce,omitempty"`
+	// TraceParent is the W3C trace context header's value, carried on a
+	// job so that the node's spans join the hub's trace. SPEC 26.3.
+	//
+	// On the message rather than in a header because a job crosses the
+	// subscribe stream, which is one long-lived HTTP response carrying
+	// many messages: a header belongs to the stream and a trace belongs
+	// to the job. An older node ignores it, which is the wire tolerance
+	// 4.13 turned from an accident into a guarantee.
+	TraceParent string `json:"traceparent,omitempty"`
 	// Event.
 	Tag  string         `json:"tag,omitempty"`
 	Data map[string]any `json:"data,omitempty"`

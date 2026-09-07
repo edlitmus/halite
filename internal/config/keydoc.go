@@ -962,6 +962,14 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"tracing": {
 		Group:  "Logging and diagnostics",
-		Detail: "`off` or `otlp`. Named and refused; distributed tracing is SPEC 26.3 and is not built.",
+		Detail: "`off` or `otlp`. On, a span is recorded for each job, each state and each file transfer, and exported to `tracing_endpoint` in OTLP over HTTP with JSON encoding. SPEC 26.3.",
+	},
+	"tracing_endpoint": {
+		Group:  "Logging and diagnostics",
+		Detail: "The collector's URL. The base is enough -- `/v1/traces` is appended when it is not already there. Read only when `tracing` is `otlp`.",
+	},
+	"tracing_sample_rate": {
+		Group:  "Logging and diagnostics",
+		Detail: "The fraction of traces recorded, 0 to 1. The decision is made once at the root and inherited by every span in the trace, so a sampled job is sampled all the way down. An explicit 0 is refused: it is `tracing: off` written in a way that looks like it is on.",
 	},
 }

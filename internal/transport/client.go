@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/tracing"
 )
 
 // ErrPending is what a node gets while an operator has not yet decided.
@@ -112,7 +113,7 @@ func (c *Client) client() (*http.Client, error) {
 		cfg = EnrollConfig(c.CA, name)
 	}
 	c.http = &http.Client{
-		Transport: &http.Transport{
+		Transport: tracePropagating{next: &http.Transport{
 			TLSClientConfig:     cfg,
 			ForceAttemptHTTP2:   true,
 			TLSHandshakeTimeout: HandshakeTimeout,
@@ -120,9 +121,44 @@ func (c *Client) client() (*http.Client, error) {
 			// is no response header timeout here; the per-request
 			// deadline comes from the context instead.
 			IdleConnTimeout: IdleStreamTimeout,
-		},
+		}},
 	}
 	return c.http, nil
+}
+
+// tracePropagating puts SPEC 26.3's `traceparent` on every request this
+// client makes.
+//
+// A round tripper rather than a line in each request builder. There are
+// ten of those and there will be more, and a header that must be
+// remembered at each one is a header that is on nine of them: a file
+// fetch traced end to end and a pillar compile that is not would be
+// worse than neither, because the gap looks like the hub not
+// participating.
+//
+// It only ever adds the header when the request's context carries a
+// span, and a request whose context has none is byte-for-byte what this
+// build sent before tracing existed. Nothing here is conditional on
+// tracing being configured -- a nil tracer produces no span, which
+// produces no header.
+//
+// Only the hub is on the other end of this client, so there is no
+// question of leaking a trace identifier to a third party. The OTLP
+// exporter reaches the collector through safehttp instead and does not
+// pass through here.
+type tracePropagating struct{ next http.RoundTripper }
+
+func (t tracePropagating) RoundTrip(req *http.Request) (*http.Response, error) {
+	if span := tracing.SpanFrom(req.Context()); span != nil {
+		// Cloned, because RoundTrip must not modify the request it is
+		// given -- net/http retries one, and a mutated header on a
+		// retried request is the kind of thing that works until it
+		// does not.
+		cloned := req.Clone(req.Context())
+		tracing.Inject(cloned.Header, span)
+		return t.next.RoundTrip(cloned)
+	}
+	return t.next.RoundTrip(req)
 }
 
 // Reset drops the cached HTTP client, so that a certificate collected

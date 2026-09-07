@@ -91,6 +91,17 @@ type Job struct {
 	// carried into every event the job produces, so that "what did this
 	// cause" has an answer. SPEC 17.1.
 	Correlation string `json:"correlation,omitempty"`
+	// TraceParent is the W3C trace context this job runs under, as the
+	// header spells it. SPEC 26.3.
+	//
+	// Deliberately not serialised. It is in-flight state rather than a
+	// record: it reaches a node on the job message and is used to parent
+	// that node's spans, and adding a field to the persisted record
+	// would mean an older build silently dropping it on a rollback --
+	// the defect 4.13 exists to have fixed once. A trace that has ended
+	// is in the collector, and the identifier is on the job's log lines,
+	// which is where an operator looks for it afterwards.
+	TraceParent string `json:"-"`
 	// Target and TargetKind are what the operator typed, kept so that
 	// `jobs show` can say what was asked for and not only who answered.
 	Target     string `json:"target,omitempty"`

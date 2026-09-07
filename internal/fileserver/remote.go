@@ -36,10 +36,27 @@ type Remote struct {
 	// HashType is the digest to verify against.
 	HashType string
 
+	// ctx is what a transfer's request is made under.
+	//
+	// It carries two things a background context cannot: the cancellation
+	// of the job that asked for the file, so that `jobs kill` stops a
+	// fetch instead of leaving it running, and the trace context of the
+	// state that asked, so the hub's side of the transfer joins the
+	// node's trace. Nil means background, which is what a Remote built
+	// outside a run gets.
+	ctx context.Context
+
+	// cache is shared between the copies WithContext makes, by pointer,
+	// so that a per-run copy does not re-hash a file the last one
+	// verified -- and so that copying a Remote does not copy a mutex.
+	cache *digestCache
+}
+
+// digestCache remembers what each cached path was verified as, so a
+// second request in one run does not re-read the file to hash it.
+type digestCache struct {
 	mu sync.Mutex
-	// digests remembers what each cached path was verified as, so a
-	// second request in one run does not re-read the file to hash it.
-	digests map[string]string
+	by map[string]string
 }
 
 // Fetch is the part of the transport this package needs. Defined here,
@@ -50,9 +67,32 @@ type Fetch interface {
 	FetchFile(ctx context.Context, env, path, etag string) (body []byte, digest string, notModified bool, err error)
 }
 
+// WithContext returns a Remote whose transfers are made under ctx.
+//
+// A copy rather than a setter, because one node serves many runs and a
+// field set by whichever run started last would attach a job's
+// cancellation to another job's fetch. The digest cache is shared by
+// pointer: it is about what is on disk, which is the same fact for every
+// run, and re-verifying a file per run would undo the reason it exists.
+func (r *Remote) WithContext(ctx context.Context) *Remote {
+	if r == nil {
+		return nil
+	}
+	copied := *r
+	copied.ctx = ctx
+	return &copied
+}
+
+func (r *Remote) context() context.Context {
+	if r.ctx != nil {
+		return r.ctx
+	}
+	return context.Background()
+}
+
 // NewRemote builds a hub-backed file server.
 func NewRemote(client Fetch, dir string, envs []string) *Remote {
-	return &Remote{Client: client, Dir: dir, Environments: envs, digests: map[string]string{}}
+	return &Remote{Client: client, Dir: dir, Environments: envs, cache: &digestCache{by: map[string]string{}}}
 }
 
 func (r *Remote) hashType() string {
@@ -134,9 +174,9 @@ func (r *Remote) Hash(env, uri string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	r.mu.Lock()
-	digest, ok := r.digests[path]
-	r.mu.Unlock()
+	r.cache.mu.Lock()
+	digest, ok := r.cache.by[path]
+	r.cache.mu.Unlock()
 	if ok {
 		return r.hashType(), digest, nil
 	}
@@ -176,7 +216,7 @@ func (r *Remote) cacheFile(env, rel string) (string, error) {
 		etag = r.hashType() + ":" + existing
 	}
 
-	body, published, notModified, err := r.Client.FetchFile(context.Background(), env, rel, etag)
+	body, published, notModified, err := r.Client.FetchFile(r.context(), env, rel, etag)
 	if err != nil {
 		return "", err
 	}
@@ -218,9 +258,9 @@ func (r *Remote) remember(path, digest string) {
 	if digest == "" {
 		return
 	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.digests[path] = digest
+	r.cache.mu.Lock()
+	defer r.cache.mu.Unlock()
+	r.cache.by[path] = digest
 }
 
 // cachePath is where a file lands, refusing anything that would put it
@@ -243,7 +283,7 @@ func (r *Remote) cachePath(env, rel string) (string, error) {
 
 // ManifestFor reads the hub's listing for a subtree.
 func (r *Remote) ManifestFor(env, prefix string) (*Manifest, error) {
-	raw, err := r.Client.FileManifest(context.Background(), env, prefix)
+	raw, err := r.Client.FileManifest(r.context(), env, prefix)
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +362,7 @@ func (r *Remote) ForEnv(env string) *Remote {
 // before it can fetch it — every other consumer here asks for a path it
 // already knows the name of.
 func (r *Remote) ListPrefix(env, prefix string) ([]Entry, error) {
-	raw, err := r.Client.FileManifest(context.Background(), env, prefix)
+	raw, err := r.Client.FileManifest(r.context(), env, prefix)
 	if err != nil {
 		return nil, err
 	}

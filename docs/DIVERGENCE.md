@@ -3715,6 +3715,235 @@ runner is an administrator (4.9) so CI's DENY coverage is *weaker* than
 assumed rather than stronger, and 5.31's reference to "1.4" meant
 plan.md's section 1.4 and read as this document's.
 
+### 5.34 Tracing, and the wiring that had to follow it
+
+SPEC 26.3 asks for W3C Trace Context propagation, a span per job, per
+state and per file transfer, and OTLP over HTTP with JSON encoding, off
+by default and sampled when on.
+
+**This shipped in two halves, and the first half was a mistake.** The
+propagation, the span model, the sampler and the exporter landed as
+`internal/tracing` with nothing starting a span: no job, no state and no
+file transfer was traced, `tracing` remained an inert key, and an
+operator who set `tracing: otlp` got what 4.x's inert-key table
+promised — nothing, silently. That was documented rather than hidden,
+and documenting it was not sufficient. A package carrying a
+specification section's name reads as a feature whatever the ledger
+says, and this section now records the completion rather than the seam.
+
+#### The two external formats, owned rather than imported
+
+SPEC chose OTLP/HTTP with JSON because it "needs no OpenTelemetry SDK",
+which is a dependency decision under SPEC 4.2 as much as a wire one. The
+cost is that nothing but this build's own tests stands between a mistake
+in either format and a collector quietly misreading every span, so both
+are checked against their specifications' own examples rather than
+against what the code produces — the lesson 5.31 cost, applied before
+rather than after.
+
+Two things in OTLP/JSON are easy to get wrong in exactly the way that
+produces a body a collector accepts and misreads:
+
+- **Identifiers are hex, not base64.** Proto3's JSON mapping encodes a
+  `bytes` field as base64; OTLP overrides that for `trace_id`, `span_id`
+  and `parent_span_id`. A base64 identifier is a perfectly good string,
+  so nothing errors and the trace never joins up.
+- **64-bit numbers are strings.** A nanosecond timestamp is about
+  1.7 × 10^18 and a float64 is exact to about 9 × 10^15, so a JSON
+  number loses the last digits — which is the resolution a span duration
+  is made of.
+
+And a root span omits `parentSpanId` rather than sending a zero one: a
+present-but-zero parent is read as a parent that does not exist, and the
+span hangs off nothing instead of being a root.
+
+#### Off means a nil pointer
+
+SPEC has tracing off by default, and off here costs no goroutine, no
+buffer and no allocation per job: `Tracer` and `Span` tolerate a nil
+receiver on every method, so a call site never guards. A call site that
+has to guard eventually forgets to, and the one it forgets is a nil
+dereference in a hub.
+
+**That property has exactly one hole, and the wiring found it.** A nil
+span's *methods* are safe; its *fields* are not. `Dispatch` read
+`span.Context` to put the identifier on the job message, and the first
+test that ran a hub with tracing off panicked in an HTTP handler.
+`SpanContextOf` existed for this and the call site had not used it.
+Every propagation site goes through it now.
+
+#### The sampling decision is inherited and never re-made
+
+A trace sampled in at the hub and out at the node has a hole exactly
+where somebody is looking, which is worse than sampling everything or
+nothing. An unsampled span is still created and still propagates its
+identifiers, because W3C requires a system that is not recording to pass
+the context along — otherwise a sampled trace crossing it loses its
+middle.
+
+#### A slow collector costs spans, not a fleet
+
+A finished span is queued and dropped when the queue is full, never
+waited on: the caller is a hub dispatching a job, and telemetry is
+allowed to lose data where a fleet is not allowed to stop. The drops are
+counted rather than logged one at a time, on the argument the reactor's
+queue overflow already made. Measured with the exporter deliberately
+wedged: 197 of 200 spans dropped and nothing blocked.
+
+The same argument decides what a misconfiguration does. A `tracing`
+value that is not one of the two names, an endpoint that is not an HTTP
+URL, and a sample rate outside 0 to 1 are each refused — but the refusal
+is logged at error level and the process runs with tracing off, never
+fatal. A node that will not start because a collector URL has a typo in
+it takes a machine's management with it, and no telemetry is worth that.
+The refusal exists so that the operator is told, not so that the node is.
+
+**`tracing_sample_rate: 0` is refused rather than obeyed**, and it is
+the one refusal that needs its own sentence. It is indistinguishable in
+behaviour from `tracing: off` and distinguishable in intent: whoever
+wrote it believed they had turned something on. An absent rate is the
+default instead, because an operator who wrote nothing did not ask for
+nothing. The default is a tenth rather than the conventional hundredth —
+at 1% a five-host fleet applying a highstate every half hour records
+roughly one trace a day, which is a feature that appears not to work.
+
+#### Where the spans start, and where they deliberately do not
+
+| Span | Where | Kind |
+|---|---|---|
+| `dispatch <fun>` | the hub, once the job exists and before delivery | server |
+| `job <fun>` | the node, under the `traceparent` the message carried | server |
+| `state <module.function>` | the node, per state that **executed** | internal |
+| `file fetch` / `file hash` / `file list` | the node, per request to the tree | client |
+| `file serve` | the hub, under the node's file span | server |
+
+**The dispatch span ends when `Dispatch` returns, not when the job
+does.** A job is asynchronous by design — the hub writes it to each
+node's stream and the returns arrive minutes later — so a span held open
+until the last return is a span held open across a node that never
+answers. What it measures is the hub's part: resolving the target,
+recording the job, writing it to every stream. The node's spans continue
+the trace and outlive it, which is what an asynchronous fan-out looks
+like in a trace.
+
+**A state's span is started where the state is executed, not in the loop
+that walks the chunks.** A highstate is mostly declarations that
+converge or are held by a requisite, and a trace with a span per chunk
+buries the four that did work among the four hundred that did not. Each
+span carries `halite.state.changed`, because "which states actually did
+something" is the question a highstate trace is opened to answer and a
+converged run is nearly every run. The retry loop is inside the span: a
+state that succeeded on its third attempt took as long as all three,
+and that is the duration somebody is looking for.
+
+**`file serve` is started only when the request carries a
+`traceparent`.** A file transfer with no job above it is a fragment
+nobody can use, so an untraced node — or one older than this — produces
+no hub-side span rather than a root.
+
+**What is not traced, and why.** `Exists` on the file tree, because it
+is answered from the cache in the common case and a span per existence
+check would bury the transfers in the checks that preceded them. Reading
+an SLS out of the tree, because that is compilation rather than a
+transfer and a span per included file is a span per line of a top file.
+And `halite-node call`, which produces none of SPEC 26.3's three spans,
+so there is nothing for it to export.
+
+#### What the propagation costs, and what it does not
+
+The `traceparent` reaches a node **on the job message rather than in a
+header**, because a job crosses the subscribe stream — one long-lived
+HTTP response carrying many messages. A header belongs to the stream and
+a trace belongs to the job. An older node ignores the field, which is
+the wire tolerance 4.13 turned from an accident into a guarantee, and an
+untraced hub sends a message byte-for-byte identical to the one this
+build sent before tracing existed. Both directions are held by a test.
+
+**It is not written to the job record.** The field is `json:"-"` — it is
+in-flight state rather than a record, and adding a field to the
+persisted record would mean an older build silently dropping it on a
+rollback, which is the defect 4.13 exists to have fixed once.
+
+**Every HTTP request carries it through a round tripper, not through
+each request builder.** There are ten builders and there will be more,
+and a header that must be remembered at each one is a header that is on
+nine of them: a file fetch traced end to end beside a pillar compile
+that is not reads as the hub declining to take part. The round tripper
+clones the request rather than modifying it, because `net/http` retries
+one.
+
+#### Two defects the wiring found
+
+**`Tracer.Stop` panicked when called twice.** `close of closed channel`,
+on the shutdown path. Shutdown is where two paths meet — a deferred
+flush and a signal handler, a test's cleanup and its own explicit
+drain — and a shutdown path that dies when both arrive is worse than one
+that does nothing. It is idempotent now, and the second call still waits
+for the drain the first started.
+
+**A file transfer ignored its caller's context.** `Remote.cacheFile`
+passed `context.Background()` to every fetch, so a job cancelled by
+`jobs kill` while fetching a large file kept fetching, and there was
+nowhere for a trace to travel. `Remote` now carries a context, set per
+run through `WithContext`, and the digest cache moved behind a pointer
+so that the copy is legal. The cancellation is worth more than the
+tracing was.
+
+#### What a real run established, and what it did not
+
+The unit tests here check this build against the two specifications'
+examples. They do not check that a `halite-node` binary, configured
+from a file, exports anything at all — which is a different claim and
+the one 5.33 is about. So it was run: `halite-node state apply --local`
+against a two-state tree, with `tracing: otlp` and a collector process
+listening on 4318, and the JSON that arrived was read.
+
+It arrived correct. One trace, a `state apply` root of kind 2 with no
+`parentSpanId`, two `state test.succeed_without_changes` children of
+kind 1 both naming the root as parent, identifiers in hex, timestamps
+as strings, `halite.state.changed` false on both, and the resource
+carrying `service.name` and `service.version`.
+
+**Every timestamp in it was identical**, which looked like a defect and
+is not. Measured on this Windows 11 host: over 500,000 reads of
+`time.Now()` with nothing sleeping, the wall clock advanced 8 times and
+the monotonic reading advanced with it, the smallest step being 518µs.
+Two `test.succeed_without_changes` states take less than that, so the
+spans genuinely begin and end within one tick.
+
+The first attempt at a fix — deriving the end from `Finish.Sub(Start)`
+so that the monotonic reading survives `UnixNano` — was written, tested
+and then reverted, because the measurement above shows the monotonic
+clock is no finer here and the change fixed nothing that had been
+demonstrated. It is recorded because writing it was the mistake this
+document keeps describing, caught one step earlier than usual: a
+plausible cause, a change that would have looked like a fix, and a test
+that passed for an unrelated reason (`time.Sleep` raises the timer
+resolution, so the test never entered the case it was written for).
+
+**What an operator should expect from this**: on a platform whose clock
+is coarse, a span shorter than one tick has a duration of zero. That is
+the platform rather than halite, it does not affect ordering or
+parentage, and it matters least where tracing matters most — a state
+that took no measurable time is not the one being investigated.
+
+#### What is still not established
+
+**No real collector has read a span this build produced.** The one in
+the run above was thirty lines written to capture the request body; it
+proves the export path, the payload's shape and the configuration, and
+it proves nothing about whether Jaeger, Tempo or an OpenTelemetry
+Collector *interprets* it as intended. "A body a collector accepts and
+misreads" is precisely the failure this section spends two paragraphs
+on, and a collector that only records is not one that has read.
+
+The hub's half is less established still: the propagation is held by a
+test against a real HTTP boundary, and no hub-dispatched job has been
+traced through to a node on real machines. That is the same gap the
+module evidence table (5.33) exists to make visible, one layer up, and
+it is what the first estate to set `tracing: otlp` on both ends will
+settle.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
