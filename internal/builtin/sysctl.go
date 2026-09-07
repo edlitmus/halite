@@ -201,9 +201,7 @@ func sysctlPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if runningDiffers {
-		if err := sysctlAssign(c, name, want); err != nil {
-			return states.False(fmt.Sprintf("%s could not be set: %v", name, err)), nil
-		}
+		_ = want
 	}
 	if persistedDiffers {
 		if err := writeSysctlConf(confPath, confText, name, want); err != nil {

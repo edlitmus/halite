@@ -69,11 +69,7 @@ func registerHostname(r *Registries) {
 				Section:   "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				name, _, err := persistentHostname(c)
-				if err != nil {
-					return nil, err
-				}
-				return name, nil
+				return runningHostname()
 			},
 		},
 		exec.Module{

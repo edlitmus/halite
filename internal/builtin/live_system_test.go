@@ -145,6 +145,42 @@ func TestLiveHostnameRenamesTheMachineAndPutsItBack(t *testing.T) {
 		t.Errorf("the persistent name is %v and the module set %q; this machine "+
 			"would come back as %v after a reboot", persistedAfter, want, persistedAfter)
 	}
+
+	// And against the platform's own record, not through the module.
+	//
+	// Asking `get_persistent` alone is not enough and the reason is
+	// specific: a `get_persistent` that mistakenly returned the *running*
+	// name would agree with the line above, because this test has just
+	// made both of them the same string. So the file the machine will
+	// actually read at boot is read here directly.
+	if got, where := persistentByHand(t, c); got != want {
+		t.Errorf("%s holds %q and the module set %q; this machine would come "+
+			"back as %q after a reboot", where, got, want, got)
+	}
+}
+
+// persistentByHand reads the boot-time hostname the way the platform
+// stores it, without going through the module under test.
+func persistentByHand(t *testing.T, c *exec.Context) (name, where string) {
+	t.Helper()
+	if runtime.GOOS == "freebsd" {
+		res, err := c.Run(exec.Command{
+			Argv:           []string{"sysrc", "-n", "hostname"},
+			IgnoreExitCode: true,
+		})
+		if err != nil {
+			t.Fatalf("sysrc: %v", err)
+		}
+		if res.Code != 0 {
+			return "", "rc.conf"
+		}
+		return strings.TrimSpace(res.Stdout), "rc.conf"
+	}
+	body, err := os.ReadFile("/etc/hostname")
+	if err != nil {
+		t.Fatalf("/etc/hostname: %v", err)
+	}
+	return strings.TrimSpace(string(body)), "/etc/hostname"
 }
 
 // The state converges rather than reporting a change every run.
