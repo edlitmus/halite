@@ -454,8 +454,8 @@ func TestLiveRepoIsWrittenAndAptReadsIt(t *testing.T) {
 		t.Errorf("writing a repository that was not there reported changed=%v", out)
 	}
 
-	// apt read it, which is what the refresh above established. Assert
-	// it directly too, so a provider that swallowed the refresh error
+	// apt read it, which is what the refresh above established. Asserted
+	// directly too, so a provider that swallowed the refresh error
 	// cannot pass.
 	res, err := c.Run(exec.Command{Argv: []string{"apt-get", "update"}, IgnoreExitCode: true})
 	if err != nil {
@@ -463,6 +463,27 @@ func TestLiveRepoIsWrittenAndAptReadsIt(t *testing.T) {
 	}
 	if res.Code != 0 {
 		t.Fatalf("apt-get update failed on the repository this module wrote:\n%s", res.Stderr+res.Stdout)
+	}
+
+	// And apt can actually see a package from it.
+	//
+	// The exit code above is necessary and not sufficient: measured in
+	// this image, `apt-get update` reports an unreachable source as a
+	// warning and still exits 0. It exits non-zero for a repository it
+	// *rejects* -- an unsigned one, say -- so the check above does bite
+	// for that, and would not notice a repository apt had quietly
+	// ignored. This is the assertion that apt's index really holds what
+	// this module published.
+	policy, err := c.Run(exec.Command{
+		Argv:           []string{"apt-cache", "policy", "hello"},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(policy.Stdout, "file:"+dir) {
+		t.Errorf("apt's index does not name the repository this module wrote.\n"+
+			"`apt-cache policy hello` said:\n%s", policy.Stdout)
 	}
 
 	// Read back through the module.

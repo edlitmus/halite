@@ -107,6 +107,18 @@ RUN cd /srv/halite-fleet/pkgs \
     && gpg --batch --yes --export --output /etc/apt/keyrings/halite-fleet.gpg \
     && rm -f Release
 
+# Debian's own sources are disabled *after* the build has used them.
+#
+# The run has no network, so every apt call spends about nine seconds per
+# upstream source failing to resolve deb.debian.org before it gets to the
+# local repository -- and `apt-get update` reports those as warnings and
+# still exits 0, so the delay buys nothing at all. Twenty-eight of the
+# thirty seconds a run took were that.
+#
+# Disabled rather than deleted, so `pkgrepo.list_repos` still sees a
+# realistic sources.list.d rather than an empty one.
+RUN set -e;     for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do         [ -f "$f" ] || continue;         sed -i 's/^\([^#]\)/# offline: /' "$f";     done
+
 # The tests run as root, deliberately, and this is the opposite of the
 # race image's decision.
 #

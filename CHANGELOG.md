@@ -93,11 +93,18 @@ made by somebody who had just read them. `debconf.set` takes
 `dpkg.search` is keyed by owning package rather than by path. That is a
 fixture written in the module's own spelling, pointed the other way.
 
-Then every assertion was broken on purpose. Five bit; one did not, and
+Then every assertion was broken on purpose. Six bit; one did not, and
 the one that did not was the more useful: `the version is not empty`
 passes with the architecture and version columns swapped, because an
 architecture is a non-empty string. Each field is compared against what
 `dpkg-query` says about the same package now.
+
+The same weakness turned up in the repository check, and measuring it
+was what showed it: `apt-get update` exits 0 with a source it could not
+reach, so asserting the exit code proves apt did not *reject* the
+repository rather than that it read it. Writing the repository to a
+directory apt never looks at demonstrated the gap. The test now asks
+`apt-cache policy` whether the index actually holds a package from it.
 
 The four move from `assumed` to `hardware`, each note naming the
 distribution and version and what it does **not** cover — one

@@ -3997,6 +3997,14 @@ image must carry the toolchain rather than fetching it, so it is built
 `internal/buildpolicy`, because a pin that moved would otherwise surface
 as a network error rather than as a version mismatch.
 
+**Debian's own sources are disabled in the image, after the build has
+used them.** With no network, every apt call spent about nine seconds
+per upstream source failing to resolve `deb.debian.org` before reaching
+the local one — twenty-eight of the thirty seconds a run took — and
+bought nothing, because those failures are warnings apt ignores anyway.
+They are commented out rather than deleted, so `pkgrepo.list_repos`
+still sees a realistic `sources.list.d`.
+
 **The apt repository is signed rather than trusted, for the same
 reason.** apt refuses an unsigned repository, and the way round that is
 `[trusted=yes]` — which `pkgrepo` does not offer as a declared field.
@@ -4039,6 +4047,7 @@ Five deliberate defects, each reverted after it was seen to fail:
 | `debconf-set-selections` fields reordered | debconf said `warning: Unknown type true, skipping line 1` |
 | the architecture and version columns swapped | both fields disagreed with `dpkg-query` |
 | `linkZone` made a no-op | the zone read back as the old one |
+| the repository written to a directory apt does not read | apt's index did not name it |
 
 The debconf one is the most instructive. **A malformed line makes
 `debconf-set-selections` warn and carry on**, rather than failing — so a
@@ -4054,6 +4063,23 @@ passes with the columns swapped, since an architecture is a non-empty
 string. That assertion now compares each field against what
 `dpkg-query` says about the same package. An assertion with nowhere to
 fail is the thing this whole section is about.
+
+**The repository check had the same weakness and it took a measurement
+to see it.** `apt-get update` was asserted to exit 0, which is
+necessary and not sufficient: measured in this image, apt reports an
+*unreachable* source as a warning and still exits 0. It exits non-zero
+for a repository it *rejects* — an unsigned one — so that check does
+bite for the case it was written for, and it would not have noticed a
+repository apt had quietly ignored. Breaking `aptSourcesDir` to a
+directory apt does not read demonstrated exactly that: the exit code
+stayed 0. The test now also asks `apt-cache policy` whether the index
+holds a package from the repository, which is the assertion that the
+publish actually took.
+
+Dropping `signed-by=` is worth noting for the opposite reason: it fails
+*inside the module's own refresh* rather than in the test's check, with
+apt's own words — `NO_PUBKEY`. The module surfaces what apt said, which
+is what an operator needs and was not previously demonstrated.
 
 #### What it establishes, and the four boundaries it does not cross
 
