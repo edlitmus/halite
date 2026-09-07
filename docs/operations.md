@@ -881,6 +881,45 @@ halite-hub metrics --as ed --filter reactor
 end to end, every family with its labels and meaning, the alerting
 rules, and what the specification names that this build does not have.
 
+## Tracing
+
+Off by default. On, a hub records a span for each job it dispatches, a
+node records one for the job and one for each state that **ran**, and
+each file a state fetches is a span on both ends. One highstate is one
+trace, from the submission to the last file the last state pulled.
+
+```yaml
+# hub.yaml and node.yaml both
+tracing: otlp
+tracing_endpoint: http://collector.example:4318
+tracing_sample_rate: 0.1
+```
+
+The export is OTLP over HTTP with JSON encoding, which any
+OpenTelemetry collector accepts and which needs no SDK here.
+`tracing_endpoint` takes the base URL; `/v1/traces` is appended when it
+is not already there.
+
+**Turn it on in both places or the trace stops at the boundary.** The
+hub starts the trace and puts it on the job message; a node with
+tracing off passes the identifiers along but records nothing, so the
+trace exists with a hole in the middle exactly where the work happened.
+
+**The sample rate is decided once, at the hub, and inherited all the
+way down.** A job that is sampled is sampled through every state and
+every file transfer it causes, so a trace is never half there. Zero is
+refused rather than obeyed — it is `tracing: off` written in a way that
+looks like it is on — and leaving the rate out gets a tenth.
+
+Nothing else changes. A misconfigured endpoint logs an error at startup
+and leaves tracing off rather than stopping the service, and a collector
+that is slow or unreachable costs spans and never a job: a finished span
+is dropped when the queue is full rather than waited on, and the drops
+are counted and reported when the process stops.
+
+What is not established: no span this build produces has yet been read
+by a real collector. DIVERGENCE 5.34 says what that leaves open.
+
 ## Before you apply anything
 
 ```sh

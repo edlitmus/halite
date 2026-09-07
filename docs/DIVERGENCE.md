@@ -3889,16 +3889,60 @@ run through `WithContext`, and the digest cache moved behind a pointer
 so that the copy is legal. The cancellation is worth more than the
 tracing was.
 
+#### What a real run established, and what it did not
+
+The unit tests here check this build against the two specifications'
+examples. They do not check that a `halite-node` binary, configured
+from a file, exports anything at all — which is a different claim and
+the one 5.33 is about. So it was run: `halite-node state apply --local`
+against a two-state tree, with `tracing: otlp` and a collector process
+listening on 4318, and the JSON that arrived was read.
+
+It arrived correct. One trace, a `state apply` root of kind 2 with no
+`parentSpanId`, two `state test.succeed_without_changes` children of
+kind 1 both naming the root as parent, identifiers in hex, timestamps
+as strings, `halite.state.changed` false on both, and the resource
+carrying `service.name` and `service.version`.
+
+**Every timestamp in it was identical**, which looked like a defect and
+is not. Measured on this Windows 11 host: over 500,000 reads of
+`time.Now()` with nothing sleeping, the wall clock advanced 8 times and
+the monotonic reading advanced with it, the smallest step being 518µs.
+Two `test.succeed_without_changes` states take less than that, so the
+spans genuinely begin and end within one tick.
+
+The first attempt at a fix — deriving the end from `Finish.Sub(Start)`
+so that the monotonic reading survives `UnixNano` — was written, tested
+and then reverted, because the measurement above shows the monotonic
+clock is no finer here and the change fixed nothing that had been
+demonstrated. It is recorded because writing it was the mistake this
+document keeps describing, caught one step earlier than usual: a
+plausible cause, a change that would have looked like a fix, and a test
+that passed for an unrelated reason (`time.Sleep` raises the timer
+resolution, so the test never entered the case it was written for).
+
+**What an operator should expect from this**: on a platform whose clock
+is coarse, a span shorter than one tick has a duration of zero. That is
+the platform rather than halite, it does not affect ordering or
+parentage, and it matters least where tracing matters most — a state
+that took no measurable time is not the one being investigated.
+
 #### What is still not established
 
-Nothing here has met a real collector. The payload is checked against
-OTLP's own documented example and the exporter against a test server;
-no span produced by this build has been read by Jaeger, Tempo, or an
-OpenTelemetry Collector, and "a body a collector accepts and misreads"
-is precisely the failure this section spends two paragraphs on. That is
-the same gap the module evidence table (5.33) exists to make visible,
-one layer up, and it is what the first estate to turn `tracing: otlp` on
-will settle.
+**No real collector has read a span this build produced.** The one in
+the run above was thirty lines written to capture the request body; it
+proves the export path, the payload's shape and the configuration, and
+it proves nothing about whether Jaeger, Tempo or an OpenTelemetry
+Collector *interprets* it as intended. "A body a collector accepts and
+misreads" is precisely the failure this section spends two paragraphs
+on, and a collector that only records is not one that has read.
+
+The hub's half is less established still: the propagation is held by a
+test against a real HTTP boundary, and no hub-dispatched job has been
+traced through to a node on real machines. That is the same gap the
+module evidence table (5.33) exists to make visible, one layer up, and
+it is what the first estate to set `tracing: otlp` on both ends will
+settle.
 
 ## 6. Everything else not started
 

@@ -110,8 +110,14 @@ case. And a file transfer ignored its caller's context, so a job
 cancelled by `jobs kill` while fetching a large file kept fetching —
 worth more than the tracing that found it.
 
-Nothing here has met a real collector yet. DIVERGENCE 5.34 says so and
-says what that leaves unestablished.
+It has been run for real, once: `halite-node state apply --local` with
+`tracing: otlp` against a listening endpoint, and the JSON that arrived
+was read — one trace, a root and two state children, correct parentage,
+hex identifiers, string timestamps. What that does **not** establish is
+that a real collector interprets it as intended, which is the failure
+mode the format notes above are about. DIVERGENCE 5.34 says what is
+open, including why every timestamp in that run was identical and why
+the obvious fix for it was written and then reverted.
 
 
 ### Manual pages
