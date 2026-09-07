@@ -18,6 +18,174 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Manual pages
+
+`halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc — what a
+FreeBSD port expects and what groff reads on Linux. Section 8 because
+each command administers a machine and most need root.
+
+`make install` puts them in `/usr/local/share/man/man8`, and does not
+fail the install when it cannot: a machine with no man hierarchy should
+still get working binaries, and it says so rather than stopping.
+
+They are a deliverable in their own right rather than only a package's
+contents, which is the point of them here. This project's own fleet is
+built from source and installed with `make install`; `docs/` does not
+travel with the binary, so on four hosts of five the manual page is the
+documentation that exists. A test holds every subcommand of every binary
+to the page for that binary, and to the command reference, so a command
+cannot ship without both.
+
+### Every platform SPEC 27.1 promises now compiles
+
+`TARGETS` listed the eight tier 1 and tier 2 platforms, so `build-all`
+enforced the tiers somebody already ran on and left the one tier whose
+entire content is a compilation promise. Compiled for the first time,
+**four of the nine tier 3 targets failed** — OpenBSD has no `RLIMIT_AS`,
+and Solaris and illumos have no `RLIMIT_NPROC` at all. All seventeen
+build and vet now, `cross` publishes them, and `internal/buildpolicy`
+fails if the Makefile and SPEC 27.1's table ever disagree again, in
+either direction.
+
+It has since caught a defect within a working day, in `doctor`'s
+free-space code: `Statfs` is spelled differently on OpenBSD and does not
+exist on NetBSD.
+
+### `doctor`, and the FIPS check that needed a real fleet to design
+
+`halite-node doctor` and `halite-hub doctor` are SPEC 26.4: ten checks,
+each with a remediation line, which a guard makes mandatory for anything
+that is not a pass. A check that says a certificate expires in three days
+and stops has moved the problem rather than answered it.
+
+Four statuses rather than two. A check that cannot run says `skip` and
+says what would make it apply, because one that could not run and
+reported a pass would be answering a question it did not ask. A check
+outside the role is not run at all. A warning does not fail the command,
+so it is usable in a cron job and in a state's `onlyif`.
+
+It carries SPEC 27.4's FIPS mismatch warning, which had nowhere to live
+before: a FIPS binary on a host whose kernel is not in FIPS mode reads as
+compliant and is not, and an ordinary build on a host that *is* in FIPS
+mode makes halite the non-compliant component. Both warn, differently. On
+the BSDs and macOS there is no kernel FIPS mode at all and the check
+skips rather than warning about a switch the platform does not have.
+
+### The chaos layer of SPEC 31
+
+`grep -i chaos` over the tree returned nothing. Nine scenarios now, each
+with a behaviour written down, a test that names it, and a statement of
+what the test does not establish — the last being what stops the layer
+becoming the reassurance its absence already was. Three guards hold the
+registry to SPEC's own list and to the tests.
+
+The ninth is not in SPEC. `concurrent-bookkeeping` is the shape three of
+this project's worst defects had, and not one of SPEC's eight would have
+caught any of them.
+
+It found two things on its first run, and one of them is below.
+
+### A follower that falls behind the event bus is told
+
+SPEC 17.2 names a `subscriber_lag` error and argues that the whole point
+of a durable log is that Salt's bus is lossy. This build advanced such a
+reader to the oldest surviving segment and returned events from there
+with no indication anything had been missed — the chaos scenario measured
+**380 events silently skipped**. It read as done because `subscriber_lag`
+had shipped as a *metric* and not as the error.
+
+A pruned offset is now refused by name, carrying how far behind it fell
+and where to resume. An operator streaming events gets a 410 with the
+code **before** the success header, because after a 200 there is nowhere
+left to put an error and a reader handed fewer events than it asked for
+cannot tell that from a quiet hub. The reactor resumes at the oldest
+surviving event rather than the end, and records the loss in a warning,
+an event and a counter.
+
+### A queued job could be delivered twice
+
+Found as an intermittent CI failure that had been written off as a flake.
+The hub's job record was read, changed and written back by several
+goroutines and the write replaces the whole file, so a queued job's spool
+entry came back from the dead and the node would be sent the job again on
+its next connection — a second run of an instruction issued once.
+
+`job.Cache.Update` does read-change-write under a per-job lock and hands
+the mutator what is on disk. Removing the lock makes the test report **1
+of 40** writes surviving.
+
+### An older hub cannot truncate a newer one's job records
+
+A record round-trips through `job.Job`, and `encoding/json` drops every
+field the struct does not have. The record carried no version marker, so
+a hub could not tell a record a newer hub had written from one of its own
+— eleven keys in, nine out, silently. That is the rollback case, one
+`git checkout` and one `make install` away on a fleet built from source.
+
+Records carry `halite.job/1` now. A schema this build does not know is
+readable and not writable: `jobs list` on a rolled-back hub keeps
+working, and both writers refuse rather than truncate.
+
+Checking what SPEC 31's Upgrade row asks about also settled a question
+worth stating: **halite does not share Salt's requirement that the server
+be upgraded first.** An unknown message type reaches the node's default
+branch and the stream stays open; nothing calls `DisallowUnknownFields`,
+so unknown request fields are ignored. Neither order is forced. That
+tolerance was accidental, and it is a guarantee now with a test on each
+direction. The ALPN is the one place skew is fatal, and it is frozen.
+
+### `apparmor`, `snap`, `dpkg`, `debconf`, `netplan` and `pf`
+
+Six platform modules, and `apparmor` closed three of SPEC section 15's
+rows at once — it is named in 15.2, 15.5 and 15.3's Debian row. It reads
+securityfs directly rather than shelling to `aa-status`, which lives in
+`apparmor-utils` and is not installed by a default Ubuntu, so a node can
+be enforcing thirty profiles with no way to run the tool that reports
+them.
+
+`snap` exists because snapd keeps its own database and a snap is
+invisible to `pkg.list_pkgs`. It refuses a `version`, because snapd
+refreshes snaps four times a day and cannot be stopped from doing so, and
+declines to infer `--classic` from the store's say-so.
+
+`pf` is the `firewall` module's second provider and the first to reshape
+that interface: it refuses a default policy, because pf has none. It
+manages an anchor rather than `pf.conf`, and refuses to load rules into
+an anchor `pf.conf` does not reference — which pf would accept, list
+back, and never evaluate.
+
+### What a real pf found
+
+`pf` ran on a FreeBSD host the evening it shipped and found a defect in
+itself. pf does not print back the text it is given: it reprints from its
+parsed form, writing `port = 9999` and appending a pass rule's default
+flags and state tracking. So no rule ever matched itself — both of the
+host's rules were reported as added on every run and `firewall.absent`
+could remove neither.
+
+The module's own comment had asserted the opposite and nothing had
+checked it, and the idempotence test passed because its fixture was
+written in the module's own spelling: this build's text compared against
+this build's text, agreeing. Both sides are normalized now, and the
+fixture is what the host returned.
+
+### CI runs every leg on four platforms
+
+`ci.yml` runs `fmt-check`, `vet`, `policy`, `build-all` across all
+seventeen targets, the suite and the race detector on Linux, Windows and
+macOS, the suite on FreeBSD in an emulated virtual machine, `fips-test`,
+the Salt differential, and the reproducibility check — on every push and
+every pull request.
+
+FreeBSD runs in QEMU through `cross-platform-actions/action` in **1m44s**,
+faster than the Windows leg. It has since found two defects no other
+runner did.
+
+The Windows suite runs as a standard local account rather than as the
+runner's administrator, because an administrator's DENY entry does not
+deny and a permission test reported the code under test for a condition
+the environment never created.
+
 ### A node manages its own tree
 
 `halite-node state apply --local` compiles and applies a tree with no hub:
@@ -923,9 +1091,10 @@ tree, and doing that to one found ten defects in an hour — among them a
 empty files.
 
 Absent, and recorded as such: the comparison of what an apply actually
-does, which needs the containerised harness; the integration, scale,
-upgrade, and chaos suites, which need the hub; `govulncheck`; and
-reproducible-build verification, which needs a second builder.
+does, which needs the containerised harness; the integration and scale
+suites; and `govulncheck`. The chaos and upgrade layers have since been
+built and have their own sections above, and reproducible-build
+verification runs on every tag.
 
 ### A relay serves a segment and answers upstream as one client
 
@@ -1382,10 +1551,10 @@ header now carries the build, on the line under the tree it audited.
 
 ### What is not built
 
-The rest of phase 5, and phase 6. No Windows or macOS parity, no
-detached job signing, no signed state trees, and no backtracking regex
-engine. `doctor`, which SPEC 27.4 gives the FIPS mismatch warning to, is
-not built either.
+The rest of phase 5, and most of phase 6. No detached job signing, no
+signed state trees, no backtracking regex engine, no tracing, and none
+of SPEC 27.2's artifacts. Windows and macOS parity, and `doctor`, have
+since been built and have their own sections above.
 
 Two things inside phase 2 are still absent: `halite-hub files`, the push
 in the other direction from `salt-cp`, and external pillar. Phase 3's

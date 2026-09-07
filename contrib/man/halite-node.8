@@ -1,0 +1,179 @@
+.\" halite-node(8)
+.\"
+.\" mdoc rather than man(7): this project's fleet is mostly FreeBSD,
+.\" mdoc is what a FreeBSD port expects, and groff reads it on Linux.
+.\" Section 8 because every one of these commands administers a machine
+.\" and most of them need root.
+.Dd September 7, 2026
+.Dt HALITE-NODE 8
+.Os
+.Sh NAME
+.Nm halite-node
+.Nd managed endpoint agent and local executor
+.Sh SYNOPSIS
+.Nm
+.Ar command
+.Op Ar arguments ...
+.Op Fl -flag Ns = Ns Ar value ...
+.Sh DESCRIPTION
+.Nm
+is the agent that runs on a managed machine.
+It executes module functions, compiles and applies state trees, and holds
+a stream open to a hub that gives it work.
+.Pp
+It has two modes.
+With
+.Fl -local
+it works entirely from its own configuration and its own file roots and
+needs no hub, which is what Salt calls masterless.
+.Sq lexicon:allow
+Without it, the tree, the pillar and the jobs come from the hub named in
+the configuration.
+.Pp
+Nothing but the commands marked below changes anything on the machine.
+.Sh COMMANDS
+.Bl -tag -width "state apply"
+.It Cm call Ar module.function Op Ar args ...
+Run one execution module function and print what it returned.
+Positional arguments are given in order; keyword arguments are given as
+.Ar name Ns = Ns Ar value .
+.It Cm state Ar subcommand Op Ar args ...
+Compile or apply a state tree.
+.Cm state apply
+applies the highstate,
+.Cm state apply Ar sls
+applies one file, and
+.Cm state show
+compiles without applying.
+With
+.Fl -test
+nothing is changed and the result is what would have changed.
+.It Cm grains Oo Cm items | item | get | ls Oc Op Ar key
+Read this node's grains.
+.Cm get
+takes one key and answers with its value;
+.Cm item
+takes any number and answers with a mapping.
+.It Cm pillar Oo Cm items | item | get Oc Op Ar key
+Read this node's pillar, compiled by the hub or from local roots.
+.It Cm lint Ar path
+Render and parse a file without executing anything in it.
+Templates are rendered, so a
+.Sy #!yaml|gpg
+file is decrypted.
+.It Cm doctor
+Run the diagnostics of the specification's section 26.4 and print a
+pass, warning, failure or skip for each, with a line saying what to do
+about anything that is not a pass.
+Changes nothing.
+Exits non-zero only on a failure, so a warning does not fail a cron job
+or a state's
+.Sy onlyif .
+.It Cm enroll
+Ask a hub for a certificate.
+The first request is pending until an operator accepts it; the second
+collects the certificate.
+.It Cm renew
+Replace this node's certificate before it expires.
+.It Cm connect
+Hold the stream to the hub open and run what it sends.
+.Cm serve
+is an alias.
+This is what the service unit runs.
+.It Cm event send Ar tag Op Ar json
+Put an event on the hub's bus.
+.It Cm version
+Print the build identity: version, commit, and the Go toolchain.
+.El
+.Sh OPTIONS
+.Bl -tag -width "--pillar-root dir"
+.It Fl -help
+Describe the program without running the command.
+.It Fl -local
+Work from local roots rather than through a hub.
+.It Fl -config Ar path
+Configuration file.
+Defaults to
+.Pa node.yaml
+under the configuration root.
+.It Fl -root Ar dir
+Configuration root.
+.It Fl -file-root Ar dir
+A state root, repeatable.
+Implies
+.Fl -local .
+.It Fl -pillar-root Ar dir
+A pillar root, repeatable.
+Implies
+.Fl -local .
+.It Fl -env Ar name
+Environment, default
+.Sy base .
+.It Fl -pillarenv Ar name
+Pillar environment, defaulting to
+.Fl -env .
+.It Fl -id Ar node-id
+Override the node identity.
+.It Fl -out Ar format
+.Sy nested
+(default),
+.Sy json ,
+.Sy yaml ,
+.Sy txt ,
+or
+.Sy quiet .
+.It Fl -test
+Run every state in test mode, changing nothing.
+.It Fl -permissive
+Allow undefined template names, as Salt does.
+.Sq lexicon:allow
+.El
+.Pp
+.Cm enroll
+and
+.Cm connect
+take further options; see
+.Nm
+.Fl -help .
+.Sh FILES
+.Bl -tag -width "/usr/local/etc/halite/node.yaml" -compact
+.It Pa /usr/local/etc/halite/node.yaml
+Configuration on the BSDs.
+.It Pa /etc/halite/node.yaml
+Configuration elsewhere.
+.It Pa /usr/local/etc/halite/pki
+Key material: this node's certificate and key, and the hub's CA.
+.It Pa /var/db/halite
+Durable state on the BSDs;
+.Pa /var/lib/halite
+elsewhere.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Pp
+A state run that applied cleanly exits 0.
+A run with a failed state exits non-zero.
+.Cm doctor
+exits non-zero only when a check fails, not when one warns.
+.Sh EXAMPLES
+Apply the highstate from local roots, changing nothing:
+.Pp
+.Dl halite-node state apply --local --test
+.Pp
+Ask what is wrong with this machine:
+.Pp
+.Dl halite-node doctor
+.Pp
+Read one grain:
+.Pp
+.Dl halite-node grains get os --local
+.Sh SEE ALSO
+.Xr halite-hub 8 ,
+.Xr halite-api 8
+.Pp
+The command reference, the operations guide and the configuration
+reference ship in
+.Pa docs/
+in the source tree.
+.Sh AUTHORS
+.An Ed Silva Aq Mt ed@edlitmus.info

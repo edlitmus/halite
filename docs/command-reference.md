@@ -49,6 +49,103 @@ is the spelling muscle memory produces.
 takes any number and answers with a mapping. Salt's do the same, and
 mixing them up is why `grains item a b c` used to answer about `a`.
 
+## Asking a machine what is wrong with it
+
+`halite-node doctor` and `halite-hub doctor` run the checks of SPEC
+section 26.4 and print a pass, warning, failure or skip for each, with a
+line saying what to do about anything that is not a pass.
+
+```
+$ halite-node doctor
+halite-node doctor — web1.example
+
+  pass  configuration validity           /etc/halite/node.yaml loads, and matches what this process is running
+  pass  certificate validity and expiry  this node's certificate: 71 days left; the hub's CA: 2 years left
+  pass  connectivity                     hub.example:4506 answered in 12ms: halite-hub 1.0.0 ok
+  pass  clock skew against the hub       within 1m of the hub (0s ahead of)
+  pass  file server reachability         the hub's file server: 1 root(s)
+  pass  pillar compilation               compiles, 6 top-level key(s)
+  warn  disk space                       /var/lib/halite: 512.0 MiB free
+                                         Check `retention` and `max_bytes` for the job cache and the
+                                         event bus; both prune by age and size and both default generously.
+  skip  extension signatures             no extensions are installed
+                                         Extensions live under the extension directory; there are none to check.
+  pass  FIPS mode consistency            neither the kernel nor this build is in FIPS mode
+
+  7 pass, 1 warn, 1 skip
+```
+
+Salt has no equivalent. Most of what these checks look at is why a
+`salt-call` fails with something unhelpful, and finding out means
+knowing which of a dozen things to look at by hand.
+
+| Salt | halite | Status |
+|---|---|---|
+| — | `halite-node doctor` | works |
+| — | `halite-hub doctor` | works |
+| — | `halite-node doctor --out json` | works |
+
+**The exit code is 0 unless something is broken.** A warning does not
+fail the command: a certificate three weeks from expiry is a thing to do
+this month rather than a reason for a cron job to page somebody. Only a
+`fail` exits non-zero, so `halite-node doctor` is safe in a state's
+`onlyif` and in a monitoring check that should not fire on a warning.
+
+**A skip is not a pass.** A check that cannot run says so and says what
+would make it apply — no certificate yet, no extensions installed, no
+kernel FIPS mode on this platform. A check that could not run and
+reported a pass would be answering a question it did not ask.
+
+**What each role runs.** A check that does not apply to the role is not
+run at all rather than skipped, because a report whose every other line
+says "not applicable here" is one nobody reads to the end.
+
+| Check | node | hub |
+|---|---|---|
+| configuration validity | ✓ | ✓ |
+| certificate validity and expiry | ✓ | ✓ |
+| connectivity | ✓ | |
+| clock skew against the hub | ✓ | |
+| file server reachability | ✓ | ✓ |
+| pillar compilation | ✓ | ✓ |
+| disk space | ✓ | ✓ |
+| queue depths | | ✓ |
+| extension signatures | ✓ | |
+| FIPS mode consistency | ✓ | ✓ |
+
+The configuration check **re-reads the file from disk** rather than
+reporting what this process started with, because the interesting case
+is a file edited since the service started: the running process is fine
+and the next restart is not, which is otherwise found at the worst
+possible moment.
+
+The FIPS check compares the host kernel's mode with this binary's, which
+SPEC 27.4 asks for and which neither fact answers alone. A `-fips`
+artifact on a host whose kernel is not in FIPS mode reads as compliant
+and is not; an ordinary build on a host that *is* in FIPS mode makes
+halite the non-compliant component on an otherwise compliant host. Both
+warn, with different remedies. On the BSDs and macOS there is no kernel
+FIPS mode to be consistent with, and the check skips rather than warning
+about a switch the platform does not have.
+
+`--out json` and `--out yaml` render the whole report, including every
+remedy, so a state can read it:
+
+```yaml
+role: node
+worst: warn
+counts: {pass: 7, warn: 1, skip: 1}
+checks:
+  disk space:
+    status: warn
+    detail: "/var/lib/halite: 512.0 MiB free"
+    remedy: "Check `retention` and `max_bytes` for the job cache and the event bus..."
+```
+
+Nothing `doctor` does changes anything. It is meant to be run on a
+machine that is already misbehaving, and a diagnostic with a side effect
+is one nobody dares run twice.
+
 ## Checking a tree without running it
 
 | Salt | halite | Status |

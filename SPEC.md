@@ -2358,13 +2358,14 @@ The hub and the API are supported on tier 1 Linux only. Nodes are supported on e
 
 | Artifact | Contents |
 |---|---|
-| `.deb`, `.rpm` | Per binary, built with nfpm: systemd unit, sysusers, tmpfiles, logrotate, default configuration under `/etc/halite/`, and a postinstall that creates the account and directories but does not start a service with a default configuration |
+| `.deb`, `.rpm` | Per binary, built with nfpm: systemd unit, sysusers, tmpfiles, logrotate, the manual page, default configuration under `/etc/halite/`, and a postinstall that creates the account and directories but does not start a service with a default configuration |
 | `.msi` | Windows service registration, an event log source, and configuration under `%PROGRAMDATA%\Halite` |
-| `.pkg` | macOS with a launchd plist |
-| FreeBSD package | rc.d script |
-| Tarball | Static binaries plus example configuration, for air-gapped and container use |
+| `.pkg` | macOS with a launchd plist and the manual page |
+| FreeBSD package | rc.d script and the manual page |
+| Tarball | Static binaries plus example configuration and the manual pages, for air-gapped and container use |
 | Container image | `FROM scratch` with the static binary, CA bundle, and time zone data. No shell, no package manager. Separate images per binary. |
 | SBOM and provenance | Per artifact, section 4.3 |
+| Manual pages | `halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc. Section 8 because each command administers a machine and most need root. They are a deliverable in their own right and not only a package's contents: a machine built from source and installed with `make install` gets them and does not get `docs/`. Every subcommand appears in the page for its binary, held there by a test. |
 
 ### 27.3 Filesystem layout
 

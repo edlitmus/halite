@@ -1,0 +1,139 @@
+.\" halite-hub(8)
+.Dd September 7, 2026
+.Dt HALITE-HUB 8
+.Os
+.Sh NAME
+.Nm halite-hub
+.Nd the central service and the operator command line
+.Sh SYNOPSIS
+.Nm
+.Ar command
+.Op Ar arguments ...
+.Op Fl -flag Ns = Ns Ar value ...
+.Sh DESCRIPTION
+.Nm
+is the control plane.
+It holds the enrollment authority, serves the state tree and the pillar,
+dispatches jobs to nodes and records what they return, runs the event bus
+and the reactor, and is the command line an operator drives the fleet
+from.
+.Pp
+One process serves both: the same binary that runs
+.Cm serve
+is the one an operator types
+.Cm run
+into, and the second speaks to the first over the same mutually
+authenticated transport a node uses.
+.Sh COMMANDS
+.Bl -tag -width "keys subcommand"
+.It Cm serve
+Run the control plane.
+This is what the service unit runs.
+With
+.Fl -relay
+it serves its own nodes and presents them to an upstream hub as one
+client.
+.It Cm keys Ar subcommand
+The enrollment and key lifecycle: list requests, accept, reject, revoke,
+and read a node's fingerprint.
+.It Cm run Ar target Ar function Op Ar args ...
+Run a function across the fleet.
+.Fl -batch
+makes the hub own the batch, so closing the terminal does not stop it.
+.It Cm runner Ar function Op Ar args ...
+Run a function on the hub itself rather than on a node.
+.It Cm orch Ar subcommand
+Orchestration, which runs on the hub and drives nodes in a defined order.
+.It Cm jobs Ar subcommand
+The job cache: list, look at one, resume a batch, or kill one in flight.
+.It Cm policy Oo Cm show | test Oc
+The role-based authorization policy, and what it decides for a given
+principal, target and function.
+.It Cm event Oo Cm listen | tags Oc
+The event bus: follow it, or list the tags it carries.
+.It Cm metrics
+Print the Prometheus exposition.
+.It Cm ssh Ar target Ar function Op Ar args ...
+Run on a machine with no agent, by pushing the binary over SSH.
+.It Cm doctor
+Run the diagnostics of the specification's section 26.4 against this hub.
+Changes nothing, and starts no listener, so it is safe on a hub that is
+already running.
+Exits non-zero only on a failure.
+.It Cm migrate Ar tree
+Audit an existing Salt tree and report what would and would not work.
+.Sq lexicon:allow
+.It Cm lint Ar path ...
+Render and parse a file without executing anything in it.
+.It Cm version
+Print the build identity.
+.El
+.Sh OPTIONS
+.Bl -tag -width "--config path"
+.It Fl -help
+Describe the program without running the command.
+.It Fl -config Ar path
+Configuration file.
+Defaults to
+.Pa hub.yaml
+under the configuration root.
+.It Fl -root Ar dir
+Configuration root.
+.It Fl -out Ar format
+.Sy summary
+(default) or
+.Sy json .
+.El
+.Pp
+.Cm serve ,
+.Cm run ,
+.Cm orch
+and
+.Cm ssh
+each take a good many more; see
+.Nm
+.Fl -help .
+.Sh FILES
+.Bl -tag -width "/usr/local/etc/halite/hub.yaml" -compact
+.It Pa /usr/local/etc/halite/hub.yaml
+Configuration on the BSDs.
+.It Pa /etc/halite/hub.yaml
+Configuration elsewhere.
+.It Pa /usr/local/etc/halite/pki
+The enrollment CA, and this hub's own certificate and key.
+.It Pa /var/db/halite
+Durable state on the BSDs;
+.Pa /var/lib/halite
+elsewhere.
+Holds the job cache, the event bus and the key store.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Pp
+.Cm run
+exits non-zero when a node returned a failure, so a script does not have
+to read the output to know.
+.Cm doctor
+exits non-zero only when a check fails, not when one warns.
+.Sh EXAMPLES
+Run a function across everything, a tenth of the fleet at a time:
+.Pp
+.Dl halite-hub run '*' test.ping --batch=10%
+.Pp
+Accept a node that has asked to enrol:
+.Pp
+.Dl halite-hub keys accept web1.example
+.Pp
+Ask what is wrong with this hub:
+.Pp
+.Dl halite-hub doctor
+.Sh SEE ALSO
+.Xr halite-node 8 ,
+.Xr halite-api 8
+.Pp
+The command reference, the operations guide and the configuration
+reference ship in
+.Pa docs/
+in the source tree.
+.Sh AUTHORS
+.An Ed Silva Aq Mt ed@edlitmus.info

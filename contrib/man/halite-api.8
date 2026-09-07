@@ -1,0 +1,100 @@
+.\" halite-api(8)
+.Dd September 7, 2026
+.Dt HALITE-API 8
+.Os
+.Sh NAME
+.Nm halite-api
+.Nd the HTTP API service
+.Sh SYNOPSIS
+.Nm
+.Ar command
+.Op Ar arguments ...
+.Op Fl -flag Ns = Ns Ar value ...
+.Sh DESCRIPTION
+.Nm
+serves the HTTP API: authentication, the execution and event endpoints,
+and the webhook receivers.
+.Pp
+It holds no fleet state of its own.
+It is a client of
+.Xr halite-hub 8 ,
+authenticating to it with an operator certificate, so every job it
+submits is authorized by the hub's own policy against the principal the
+request authenticated as.
+The policy file it reads is the hub's, and reading it here is how the API
+answers a permission question without a round trip.
+.Sh COMMANDS
+.Bl -tag -width "account subcommand"
+.It Cm serve
+Run the HTTP API.
+This is what the service unit runs.
+.It Cm token Ar subcommand
+Issued tokens:
+.Cm list ,
+.Cm show ,
+.Cm revoke ,
+.Cm prune .
+.Fl -principal
+revokes every token a principal holds rather than one named token.
+.It Cm account Ar subcommand
+Local accounts:
+.Cm hash
+produces a password hash for the account file, and
+.Cm list
+reads what is in it.
+.It Cm version
+Print the build identity.
+.El
+.Sh OPTIONS
+.Bl -tag -width "--config path"
+.It Fl -help
+Describe the program without running the command.
+.It Fl -config Ar path
+Configuration file.
+Defaults to
+.Pa api.yaml
+under the configuration root.
+.It Fl -root Ar dir
+Configuration root.
+.It Fl -out Ar format
+.Sy nested
+(default),
+.Sy json ,
+.Sy yaml ,
+or
+.Sy txt .
+.El
+.Pp
+.Cm serve
+takes the listener, the TLS material, the hub it is a client of and the
+identity it presents; see
+.Nm
+.Fl -help .
+.Sh FILES
+.Bl -tag -width "/usr/local/etc/halite/api.yaml" -compact
+.It Pa /usr/local/etc/halite/api.yaml
+Configuration on the BSDs.
+.It Pa /etc/halite/api.yaml
+Configuration elsewhere.
+.It Pa /usr/local/etc/halite/pki
+The operator certificate and key this service presents to the hub.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+Produce a password hash for the local account file:
+.Pp
+.Dl halite-api account hash
+.Pp
+Revoke every token a principal holds:
+.Pp
+.Dl halite-api token revoke --principal cert:CN=ed
+.Sh SEE ALSO
+.Xr halite-hub 8 ,
+.Xr halite-node 8
+.Pp
+The policy this service enforces is the hub's:
+.Nm halite-hub Cm policy show
+reads the same file.
+.Sh AUTHORS
+.An Ed Silva Aq Mt ed@edlitmus.info
