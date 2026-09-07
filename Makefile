@@ -67,7 +67,8 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 .PHONY: all build test chaos race vet cover check release release-gate cross clean tidy vendor policy fmt \
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
-	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image
+	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
+	fleetcheck fleetcheck-image
 
 all: build
 
@@ -626,6 +627,43 @@ zfscheck: zfscheck-image
 		-v "$(CURDIR)":/src \
 		-v halite-zfsvm:/vm \
 		$(ZFSCHECK_IMAGE)
+
+# `make fleetcheck` drives the Debian row against the real tools.
+#
+# dpkg, debconf, pkgrepo and timezone change a machine as root and
+# reach their subsystems by running another program. Their tests
+# supplied that program's output, written from a manual page, so what
+# they established is that the parser reads what the author believed --
+# which is the defect 5.31 cost a firewall and 5.33 now records per
+# module.
+#
+# This image is a real Debian with the real tools, and the run is
+# destructive on purpose: it holds a package, writes the debconf
+# database, adds and removes an apt repository, and relinks
+# /etc/localtime. That is acceptable because the machine is thrown away
+# and is exactly what a fixture cannot establish.
+#
+# It reaches no network. Everything it needs -- a .deb, a local apt
+# repository, the zone files -- is baked in at build time, and run.sh
+# asserts that before it starts. A gate that depends on somebody else's
+# mirror goes red for reasons unrelated to the change, and a gate people
+# learn to ignore is worse than no gate.
+#
+# Not part of `make check` and not a pull request gate, for the same
+# reason zfscheck is not: it needs Docker, it takes minutes, and its
+# failures are worth a person reading rather than a merge button going
+# grey. CI runs it nightly.
+FLEETCHECK_IMAGE ?= halite-fleet:bookworm
+
+fleetcheck-image:
+	docker build -t $(FLEETCHECK_IMAGE) contrib/docker/fleet
+
+fleetcheck: fleetcheck-image
+	docker run --rm \
+		-v "$(CURDIR)":/src -w /src \
+		-v halite-gocache:/gocache -v halite-gomodcache:/gomodcache \
+		$(FLEETCHECK_IMAGE) \
+		go test -count=1 -v -run TestLive ./internal/builtin/
 
 # `make racecheck` is the `race` leg for a host that has no C compiler.
 #

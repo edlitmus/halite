@@ -1031,29 +1031,49 @@ place.
 
 **Then — closing the gate, which this fleet can do**
 
-5. **Demonstrate the nine modules the gate is red on**, which is now the
+5. **Demonstrate the five modules the gate is still red on.** It was
+   nine; `make fleetcheck` closed four of them, and this stays the
    highest-ranked *unbuilt* item because nothing else on this list can
-   ship a release until it is done. They are `apparmor`, `debconf`,
-   `dpkg`, `hostname`, `netplan`, `pkgrepo`, `snap`, `sysctl` and
-   `timezone`.
+   ship a release until it is done.
 
-   The ranking argument is that **this fleet already has every host they
-   need**. Four FreeBSD hosts cover `sysctl`, `hostname`, `timezone` and
-   `pkgrepo`; the one Ubuntu host covers `apparmor`, `debconf`, `dpkg`,
-   `netplan`, `snap` and `pkgrepo` again. None of it needs a machine
-   that does not exist, which is not true of most of what follows.
+   ~~`dpkg`~~, ~~`debconf`~~, ~~`pkgrepo`~~ and ~~`timezone`~~ are done,
+   driven against a real Debian's own tools in a disposable container —
+   destructively, because these are the mutating modules and a parser
+   that reads correctly says nothing about whether the write took. It
+   reaches no network, it runs nightly rather than gating pull requests,
+   and each note names the distribution and what it does not cover.
+   DIVERGENCE 5.35.
 
-   Two of the nine are worth doing first and for different reasons.
-   **`netplan` reconfigures the interface an operator is connected
-   over** and has never been run against a real netplan — the worst
-   consequence in the set. **`sysctl` sets kernel parameters on every
-   platform** and has never set one, which is the widest reach.
+   **What is left, and what each actually needs**, in the order the
+   effort is worth it:
 
-   The work per module is small and the same each time: run the mutating
-   path on a host, capture what the tool actually printed, replace the
-   invented fixture with it, and raise the level with a note saying
-   which machine. `pf` took an evening and found a defect; that is the
-   expected yield rather than a lucky one.
+   1. **`hostname`** — the smallest gap of the five. The Linux branch is
+      the same container; the FreeBSD `sysrc` branch needs the virtual
+      machine CI already runs on every change.
+   2. **`sysctl`** — a container shares the host's kernel, so this needs
+      a disposable virtual machine to be honest. `zfscheck` already
+      boots one under KVM, so the machinery exists and wants
+      generalising rather than writing.
+   3. **`apparmor`** — a GitHub runner's own kernel has it, and loading
+      a profile needs `CAP_MAC_ADMIN`. Plausible directly on the runner
+      or in a privileged container; unverified, and worth one afternoon
+      to find out.
+   4. **`snap`** — snapd is already on an Ubuntu runner and the obstacle
+      is the network: `snap install` fetches, and there is no offline
+      equivalent of the local apt repository `fleetcheck` uses. Either a
+      pre-seeded snap or an exception to the no-network rule, and the
+      exception is the wrong answer.
+   5. **`netplan`** — the worst consequence in the set and the most
+      awkward to reach: `netplan apply` reconfigures the interface the
+      job is running over, so it needs a network namespace or a nested
+      machine. **The one Ubuntu host in this fleet can settle it in an
+      afternoon**, which is still the fastest route.
+
+   The lesson from doing the first four is worth carrying: the run found
+   six defects on its first attempt and every one was in the *test*, not
+   the module — wrong argument names and wrong return shapes, written by
+   somebody who had just read the interfaces. Expect that, and expect it
+   to be the useful part.
 
 **Then — phase 6, on a fleet that is in production.** Two of the four
 were closed while this revision was being written, so the first genuinely

@@ -76,6 +76,39 @@ var moduleEvidence = map[string]exec.Evidence{
 		"refusal refusing. A port list still cannot match, because pf expands one. The " +
 		"ufw provider has not been driven at all"},
 
+	// ---- Mutated a real Debian, in `make fleetcheck`'s container ----
+	//
+	// The container is thrown away and is not a machine anybody depends
+	// on, and the note says so. What it is *not* is a stand-in: the
+	// binary is Debian's own `dpkg` at Debian's own version, reading
+	// Debian's own package database, and the writes below really happen.
+	// The scope it does not cover is the other distributions and the
+	// other init systems, which is the same caveat 4.5 makes about the
+	// one real Ubuntu node.
+
+	"dpkg": {Level: exec.Hardware, Note: "driven against the real dpkg 1.21.23 on Debian 12 " +
+		"in `make fleetcheck`: the listing, control fields, file list and ownership search " +
+		"read from the real package database, a real .deb read from disk, and a hold placed " +
+		"through `dpkg --set-selections` and confirmed by dpkg itself (DIVERGENCE 5.35). " +
+		"Not covered: `dpkg.verify`, and any distribution other than Debian 12"},
+	"debconf": {Level: exec.Hardware, Note: "driven against the real debconf 1.5.82 on " +
+		"Debian 12 in `make fleetcheck`: an answer written through " +
+		"`debconf-set-selections` and read back by both `debconf-get-selections` and " +
+		"`debconf-show` (DIVERGENCE 5.35). A malformed line makes debconf warn and " +
+		"continue rather than fail, which this module turns into an error -- demonstrated " +
+		"by breaking the field order on purpose"},
+	"pkgrepo": {Level: exec.Hardware, Note: "the apt provider was driven on Debian 12 in " +
+		"`make fleetcheck`: a signed repository written, read by a real `apt-get update`, " +
+		"listed, and removed (DIVERGENCE 5.35). Not covered: the yum, zypper and " +
+		"Chocolatey providers, and a repository reached over the network rather than from " +
+		"the filesystem"},
+	"timezone": {Level: exec.Hardware, Note: "driven on Debian 12 in `make fleetcheck`: " +
+		"`/etc/localtime` really relinked against a real tzdata 2026b and read back, and a " +
+		"zone the machine does not have refused (DIVERGENCE 5.35). Not covered: the " +
+		"`timedatectl` branch, which needs systemd running, and the macOS `systemsetup` " +
+		"branch, which had no test at all behind a fixture that looked like one " +
+		"(plan.md §1.3)"},
+
 	// ---- Read from a real system, mutation never watched ----
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
@@ -106,24 +139,15 @@ var moduleEvidence = map[string]exec.Evidence{
 	"snap": {Level: exec.Assumed, Note: "nothing here has run against a real snapd, and " +
 		"the `snap list` fixtures were written from its documented columns rather than " +
 		"captured (DIVERGENCE 5.28)"},
-	"dpkg": {Level: exec.Assumed, Note: "the `dpkg-query` and `dpkg` output this parses " +
-		"was written from documentation, not captured from a Debian host"},
-	"debconf": {Level: exec.Assumed, Note: "`debconf-show` and `debconf-set-selections` " +
-		"have not been run; both formats are taken from their manual pages"},
 	"netplan": {Level: exec.Assumed, Note: "`netplan generate` and `netplan apply` have " +
 		"not been run, and the YAML this writes has never been round-tripped through a " +
 		"real netplan — which is the module that reconfigures the interface an operator " +
 		"is connected over"},
-	"pkgrepo": {Level: exec.Assumed, Note: "no repository has been added, changed or " +
-		"removed on a real machine by this module, on any platform"},
 	"sysctl": {Level: exec.Assumed, Note: "no kernel parameter has been set on a real " +
 		"machine by this module, on any platform"},
 	"hostname": {Level: exec.Assumed, Note: "the FreeBSD `sysrc` branch had no test at " +
 		"all behind a fixture that looked like one (plan.md §1.4) and is covered now, but " +
 		"no machine has been renamed by this module"},
-	"timezone": {Level: exec.Assumed, Note: "the macOS `systemsetup` branch could not " +
-		"converge behind its fixture (plan.md §1.3) and is covered now, but no machine's " +
-		"clock has been re-zoned by this module"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

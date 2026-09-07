@@ -54,10 +54,56 @@ Four places carry it, in the order an operator meets them:
   happen — and a release that does not happen breaks nothing. It is
   behind a build tag so that ordinary development is not blocked by it.
 
-As it stands the gate is red, on nine modules: `apparmor`, `debconf`,
-`dpkg`, `hostname`, `netplan`, `pkgrepo`, `snap`, `sysctl` and
-`timezone`. None is known to be wrong; none is known to be right.
-DIVERGENCE 5.33 has the table and the argument.
+As it stands the gate is red on five modules — `apparmor`, `hostname`,
+`netplan`, `snap` and `sysctl`. It was nine; the four that closed did so
+by being driven against their real tools, below. None of the five is
+known to be wrong; none is known to be right. DIVERGENCE 5.33 has the
+table and the argument.
+
+### Four of the nine gate-blocking modules have now met their tools
+
+`make fleetcheck` drives `dpkg`, `debconf`, `pkgrepo` and `timezone`
+against a real Debian in a container, and the run is destructive on
+purpose: it holds a package through `dpkg --set-selections`, writes an
+answer into the debconf database, adds and removes a **signed** apt
+repository that a real `apt-get update` reads, and relinks
+`/etc/localtime`. Reading is not enough — these are the mutating
+modules, and a parser that reads correctly says nothing about whether
+the write took.
+
+A container is not a stand-in here, and that distinction is the point.
+`sysctl` in a container is not the real kernel, so it is not covered.
+But `dpkg` in a container is Debian's own `dpkg` reading Debian's own
+package database — the machine is disposable and the tool is not
+synthetic.
+
+It reaches no network. Everything the run needs is baked into the image
+and asserted before it starts, because this build compiles with
+`GOPROXY=off` from a vendored tree and a check that depends on somebody
+else's mirror becomes a check people ignore.
+
+**On the first run against the real tools, six of the ten tests
+failed** — every one a wrong assumption about halite's own interfaces,
+made by somebody who had just read them. `debconf.set` takes
+`question`/`type`/`value`, `pkgrepo.mod_repo` takes `baseurl` not `uri`,
+`dpkg.search` is keyed by owning package rather than by path. That is a
+fixture written in the module's own spelling, pointed the other way.
+
+Then every assertion was broken on purpose. Five bit; one did not, and
+the one that did not was the more useful: `the version is not empty`
+passes with the architecture and version columns swapped, because an
+architecture is a non-empty string. Each field is compared against what
+`dpkg-query` says about the same package now.
+
+The four move from `assumed` to `hardware`, each note naming the
+distribution and version and what it does **not** cover — one
+distribution, no init system, a `file://` repository, and `dpkg.verify`
+undriven. The release gate is red on five modules rather than nine.
+
+It runs nightly and on demand rather than gating pull requests, on the
+precedent `zfscheck` set: a module's dealings with `dpkg` do not change
+because somebody edited the YAML parser. DIVERGENCE 5.35, including
+what each of the remaining five would actually take.
 
 ### Tracing
 
