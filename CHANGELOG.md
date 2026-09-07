@@ -54,11 +54,57 @@ Four places carry it, in the order an operator meets them:
   happen — and a release that does not happen breaks nothing. It is
   behind a build tag so that ordinary development is not blocked by it.
 
-As it stands the gate is red on five modules — `apparmor`, `hostname`,
-`netplan`, `snap` and `sysctl`. It was nine; the four that closed did so
-by being driven against their real tools, below. None of the five is
-known to be wrong; none is known to be right. DIVERGENCE 5.33 has the
-table and the argument.
+As it stands the gate is red on three modules — `apparmor`, `netplan`
+and `snap`. It was nine; the six that closed did so by being driven
+against their real tools, below. None of the three is known to be wrong;
+none is known to be right. DIVERGENCE 5.33 has the table and the
+argument.
+
+### `hostname` and `sysctl` on real machines
+
+The two the container could not reach. `sysctl` is the kernel and a
+container shares the host's — `/proc/sys` is read-only there, and
+remounting it would write to the kernel of whoever ran the test.
+`hostname` gets closer, since a container has its own UTS namespace, but
+Docker bind-mounts `/etc/hostname` so the atomic replace fails, and
+`hostnamectl` is not running, which is the branch a systemd node takes.
+
+The machines were already there: a GitHub runner is a fresh virtual
+machine per job, and CI already boots a FreeBSD one for every change.
+Both are destroyed minutes later. No nested virtualisation, no
+privileged container, no new infrastructure — which is what this was
+about to reach for.
+
+The two legs exercise different branches rather than the same code
+twice: `hostnamectl` and a sysctl drop-in on Linux; `sysrc`, rc.conf and
+`/etc/sysctl.conf` on FreeBSD. **`hostname`'s `sysrc` branch had no test
+at all behind a fixture that looked like one** — the finding that made
+this project audit its platform branching — and it is now driven on a
+real FreeBSD.
+
+Everything is captured and put back, and a separate CI step asserts
+afterwards that the machine got its name back.
+
+**Two breaks were pushed to find out whether the tests bite. One was
+caught twice; the other was invisible to every test in the file.**
+Replacing `get_persistent` with the *running* name broke nothing,
+because `set_hostname` sets both halves — so after it runs the two names
+are legitimately equal and a module confusing them agrees with one that
+does not. Reading `/etc/hostname` directly did not help either, for the
+same reason.
+
+The two have to be pulled apart to be told apart. There is now a test
+that renames the machine with `hostname(1)` alone, leaving the boot-time
+record untouched, and asserts the module reports them differently. That
+is the case `hostname` exists for in its own comment — the node somebody
+renamed by hand, which would go back at the next reboot — and nothing
+had tested it.
+
+The release gate is red on three modules rather than five. DIVERGENCE
+5.36, including the one deliberate step away from realism: `sysctl`'s
+persist target is redirected to a temporary file, because editing an
+operator's hand-maintained `sysctl.conf` and putting it back can cost
+them more than the coverage is worth.
 
 ### Four of the nine gate-blocking modules have now met their tools
 
