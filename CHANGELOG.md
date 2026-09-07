@@ -191,6 +191,24 @@ written in the module's own spelling: this build's text compared against
 this build's text, agreeing. Both sides are normalized now, and the
 fixture is what the host returned.
 
+### CI installs the toolchain go.mod pins
+
+Every job said `go-version-file: go.mod`, and `setup-go` reads the `go`
+directive from that file — a floor, `1.26.0` — rather than the
+`toolchain` directive, which is the pin. So a runner installed the floor
+from the action's own cached source and then fetched `1.26.6` from
+`proxy.golang.org` through `GOTOOLCHAIN=auto`: over the network,
+uncached, before a line of this repository compiled.
+
+Twelve jobs a push each carried that. One of them died in `setup-go`'s
+own `go env GOPATH` when the fetch failed, which is how it was noticed.
+
+The workflows name the pin now, so the toolchain arrives from the same
+place the floor did and `GOTOOLCHAIN=auto` has nothing to download. That
+puts the same version in two files, so a test holds them together in
+both directions: a `toolchain` bump that forgets a workflow fails, and a
+workflow naming a version go.mod does not pin fails.
+
 ### CI runs every leg on four platforms
 
 `ci.yml` runs `fmt-check`, `vet`, `policy`, `build-all` across all
