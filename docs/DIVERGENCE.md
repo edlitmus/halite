@@ -3967,18 +3967,35 @@ database, adds and removes a signed apt repository, and relinks
 *mutating* ones, and a parser that reads correctly says nothing about
 whether the write took.
 
-#### It reaches no network, and that is a decision rather than an ideal
+#### It has no network, and the first attempt at saying so did not hold
 
-Everything the run needs is baked into the image and `run.sh` asserts it
-before starting: a real `.deb`, a local apt repository, a signing key,
-the zone files. The run is put in its own network namespace where the
-kernel allows it, and says so where it cannot.
+Everything the run needs is baked into the image: a real `.deb`, a local
+apt repository, a signing key, the zone files. `run.sh` asserts each of
+them before starting, and asserts its own networking too — `--network
+none`, so the container has loopback and nothing else, and the run
+refuses if it finds an interface beside it.
 
 This build compiles with `GOPROXY=off` from a vendored tree. A check
 that reaches `archive.ubuntu.com` goes red for reasons unrelated to the
 change under test, and a gate people learn to ignore is worse than no
 gate — which is the argument this document has made about every other
 guard here. It applies to this one too.
+
+**The first version of that assertion did nothing, and said so.** It
+used `unshare -n` inside the container, which needs `CAP_SYS_ADMIN`;
+the container has neither that capability on this developer's Docker
+nor on a GitHub runner, so the fallback path ran every time and printed
+that the isolation had not been applied. It was noticed by reading a
+green CI log rather than by anything failing — which is the argument for
+making a check say what it did rather than only whether it passed.
+
+`--network none` is enforced by the runtime instead of asked for by the
+process, and the container cannot opt out of it. The cost is that the
+image must carry the toolchain rather than fetching it, so it is built
+`FROM golang:1.26.6-bookworm` with `GOTOOLCHAIN=local` — pinned to
+`go.mod`'s own `toolchain` directive, and held there by
+`internal/buildpolicy`, because a pin that moved would otherwise surface
+as a network error rather than as a version mismatch.
 
 **The apt repository is signed rather than trusted, for the same
 reason.** apt refuses an unsigned repository, and the way round that is

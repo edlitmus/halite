@@ -28,23 +28,26 @@ ls /srv/halite-fleet/pkgs/*.deb >/dev/null 2>&1 || {
 }
 echo "packages:     $(ls /srv/halite-fleet/pkgs/*.deb | tr '\n' ' ')"
 
-# The run itself gets no network. `unshare -n` is the assertion rather
-# than a promise in a comment: a test that quietly started reaching a
-# mirror would fail here rather than on the day the mirror is down.
+# The run has no network: `make fleetcheck` starts this container with
+# `--network none`, so there is no interface but loopback and a test that
+# quietly started reaching a mirror fails here rather than on the day the
+# mirror is down.
 #
-# Where the kernel will not allow it -- an unprivileged container, some
-# CI sandboxes -- the run still happens and says that the isolation was
-# not applied, because losing the whole check to gain the assertion is
-# the wrong trade.
+# Asserted rather than assumed, because the container does not choose its
+# own networking and a recipe that dropped the flag would otherwise go
+# unnoticed for as long as nothing needed it.
+echo "--- checking that this run has no network"
+if ip -o link show 2>/dev/null | grep -qvE ": lo:"; then
+	echo "this container has an interface other than loopback:"
+	ip -o link show
+	echo "run it with --network none; \`make fleetcheck\` does"
+	exit 1
+fi
+echo "interfaces:   loopback only"
+
 echo "--- driving the modules"
 export HALITE_FLEET_LIVE=1
 export HALITE_FLEET_PKGDIR=/srv/halite-fleet/pkgs
 export HALITE_FLEET_KEYRING=/etc/apt/keyrings/halite-fleet.gpg
 
-if unshare -n true 2>/dev/null; then
-	exec unshare -n sh -c 'ip link set lo up 2>/dev/null || true; exec "$@"' sh "$@"
-fi
-echo "note: this kernel would not give the run its own network namespace,"
-echo "      so 'offline' is unasserted here. The tests still reach nothing"
-echo "      by design; see the Dockerfile."
 exec "$@"

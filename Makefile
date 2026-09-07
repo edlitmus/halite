@@ -659,7 +659,7 @@ fleetcheck-image:
 	docker build -t $(FLEETCHECK_IMAGE) contrib/docker/fleet
 
 fleetcheck: fleetcheck-image
-	docker run --rm \
+	docker run --rm --network none \
 		-v "$(CURDIR)":/src -w /src \
 		-v halite-gocache:/gocache -v halite-gomodcache:/gomodcache \
 		$(FLEETCHECK_IMAGE) \

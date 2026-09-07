@@ -18,17 +18,33 @@
 # and its own `/etc/localtime` is relinked. What it is *not* is a
 # machine anybody depends on, which is what makes that acceptable.
 #
-# # It does not touch the network at test time
+# # It has no network at test time, enforced rather than promised
 #
-# Every package and every repository the tests need is baked in here, and
-# `run.sh` asserts it. That is not tidiness: this project builds with
-# GOPROXY=off from a vendored tree, and a check that reaches
-# archive.ubuntu.com goes red for reasons unrelated to the change under
-# test. A gate people learn to ignore is worse than no gate, and one that
-# depends on somebody else's mirror becomes that gate within a month.
+# `make fleetcheck` runs this with `--network none`, so the container has
+# no interface but loopback. Everything the tests need is baked in here
+# and `run.sh` asserts it before starting.
 #
-# So the image build is allowed the network and the run is not.
-FROM golang:1.25-bookworm
+# That is not tidiness: this project builds with GOPROXY=off from a
+# vendored tree, and a check that reaches archive.ubuntu.com goes red for
+# reasons unrelated to the change under test. A gate people learn to
+# ignore is worse than no gate, and one that depends on somebody else's
+# mirror becomes that gate within a month.
+#
+# The first attempt asserted it with `unshare -n` inside the container,
+# which needs CAP_SYS_ADMIN and silently did not apply -- on this
+# developer's Docker or on a GitHub runner. It said so rather than
+# pretending, which is how it was noticed; `--network none` is the
+# version that actually holds. The build is allowed the network and the
+# run is not.
+# Pinned to the toolchain go.mod names, not to a major.
+#
+# The other images take `golang:1.25-bookworm` and let GOTOOLCHAIN=auto
+# fetch the pinned toolchain on first use, which costs one download into
+# a cached volume and is fine there. It is not fine here: this image runs
+# with no network at all, so a toolchain it has to fetch is a toolchain
+# it cannot get. internal/buildpolicy holds this tag to go.mod's
+# `toolchain` directive so the two cannot drift.
+FROM golang:1.26.6-bookworm
 
 # The tools under test, and the two that build the local repository.
 #
@@ -36,13 +52,14 @@ FROM golang:1.25-bookworm
 #   debconf-utils debconf-set-selections and debconf-get-selections
 #   tzdata        the zone files timezone.set_zone links to
 #   apt-utils     apt-ftparchive, and what apt expects of a full install
+#   iproute2      `ip link`, for run.sh to check its own networking
 #
 # `debconf` and `dpkg` themselves come with the base image, which is the
 # point: they are Debian's own, at Debian's own version, not something
 # installed to make a test pass.
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
-        dpkg-dev debconf-utils tzdata apt-utils \
+        dpkg-dev debconf-utils tzdata apt-utils iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 # A real .deb on disk, for `dpkg.bin_pkg_info` — which reads a package
@@ -98,7 +115,9 @@ RUN cd /srv/halite-fleet/pkgs \
 # tests for. Here root is the condition. Every module in this image
 # declares that it needs root, and running them as anybody else would
 # exercise the privilege check rather than the tool.
-ENV GOTOOLCHAIN=auto
+# `local`, not `auto`: the image already has the pinned toolchain, and
+# `auto` would reach for the network the run does not have.
+ENV GOTOOLCHAIN=local
 ENV GOCACHE=/gocache
 ENV GOMODCACHE=/gomodcache
 

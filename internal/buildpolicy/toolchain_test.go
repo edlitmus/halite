@@ -148,3 +148,52 @@ func TestTheWorkflowsInstallTheToolchainGoModPins(t *testing.T) {
 	}
 	t.Logf("%d workflow steps install Go %s, which go.mod pins", steps, want)
 }
+
+// The image that runs with no network carries the toolchain go.mod pins.
+//
+// `contrib/docker/fleet` runs `--network none`, so `GOTOOLCHAIN=auto`
+// would reach for a toolchain it cannot fetch and the whole check would
+// fail on the day the pin moved -- with an error about the network
+// rather than about the pin. The other images take a major-version base
+// and let the pinned toolchain be downloaded once into a cached volume,
+// which is fine where there is a network to download it over.
+//
+// So this one names an exact base tag, and that tag is held here. The
+// pair drifting apart is not hypothetical: go.mod's toolchain moves
+// whenever Go does, and nothing else in the tree would notice.
+func TestTheOfflineImagePinsTheSameToolchain(t *testing.T) {
+	root := repoRoot(t)
+	mod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := regexp.MustCompile(`(?m)^toolchain go(1\.\d+(?:\.\d+)?)$`).FindStringSubmatch(string(mod))
+	if pin == nil {
+		t.Fatal("go.mod has no `toolchain` directive")
+	}
+	want := pin[1]
+
+	path := filepath.Join(root, "contrib", "docker", "fleet", "Dockerfile")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := regexp.MustCompile(`(?m)^FROM golang:([0-9][^-\s]*)`).FindStringSubmatch(string(body))
+	if from == nil {
+		t.Fatal("contrib/docker/fleet/Dockerfile does not start from a golang: image; " +
+			"this guard has stopped checking anything")
+	}
+	if from[1] != want {
+		t.Errorf("the offline image is built FROM golang:%s and go.mod pins %s. "+
+			"That image runs with --network none, so it cannot fetch the pin: the run "+
+			"would fail with a network error rather than saying the two had drifted.",
+			from[1], want)
+	}
+	// And it must not be left on `auto`, which is the setting that would
+	// reach for the network in the first place.
+	if !regexp.MustCompile(`(?m)^ENV GOTOOLCHAIN=local$`).Match(body) {
+		t.Error("contrib/docker/fleet/Dockerfile does not set GOTOOLCHAIN=local; " +
+			"`auto` in an image with no network is a fetch that cannot succeed")
+	}
+	t.Logf("the offline image is golang:%s, which go.mod pins", want)
+}

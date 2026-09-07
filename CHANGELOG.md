@@ -77,10 +77,14 @@ But `dpkg` in a container is Debian's own `dpkg` reading Debian's own
 package database — the machine is disposable and the tool is not
 synthetic.
 
-It reaches no network. Everything the run needs is baked into the image
+It has no network — `--network none`, and the run refuses if it finds an
+interface beside loopback. Everything it needs is baked into the image
 and asserted before it starts, because this build compiles with
 `GOPROXY=off` from a vendored tree and a check that depends on somebody
-else's mirror becomes a check people ignore.
+else's mirror becomes a check people ignore. The first version of that
+assertion used `unshare -n`, which needs a capability the container does
+not have, so it never applied — noticed by reading a green log rather
+than by anything failing.
 
 **On the first run against the real tools, six of the ten tests
 failed** — every one a wrong assumption about halite's own interfaces,
