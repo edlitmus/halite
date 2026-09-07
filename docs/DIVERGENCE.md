@@ -3694,7 +3694,8 @@ gate are the two that leave an operator no worse off: run the module
 against the real tool and say which machine, or take it out of the
 build.
 
-**As it stands the gate is red**, on nine modules. That is the honest
+**As it stands the gate is red**, on five modules — nine when this was
+written, and 5.35 is what closed four of them. That is the honest
 position rather than a defect in the gate: `netplan` reconfigures the
 interface an operator is connected over and has never been run against a
 real netplan, and `sysctl` sets kernel parameters and has never set one.
@@ -3943,6 +3944,194 @@ traced through to a node on real machines. That is the same gap the
 module evidence table (5.33) exists to make visible, one layer up, and
 it is what the first estate to set `tracing: otlp` on both ends will
 settle.
+
+### 5.35 A synthetic Debian, and four modules that have now met their tools
+
+5.33 left nine root-mutating modules declared `assumed`, and the release
+gate red on all nine. Four of them — `dpkg`, `debconf`, `pkgrepo` and
+`timezone` — needed no machine that does not exist. They needed a Debian
+with the real tools on it, and `make fleetcheck` is that.
+
+**A container is not a stand-in here, and that distinction is the whole
+argument.** `sysctl` in a container is not the real kernel and `netplan`
+in a container is not the real network stack, so neither is covered
+below. But `dpkg` in a container *is* Debian's own `dpkg`, at Debian's
+own version, reading Debian's own package database — the same binary a
+node runs, doing the same thing. The machine is disposable; the tool is
+not synthetic.
+
+That is what makes the run destructive on purpose. It holds a package
+through `dpkg --set-selections`, writes an answer into the debconf
+database, adds and removes a signed apt repository, and relinks
+`/etc/localtime`. Reading is not enough: the modules in question are the
+*mutating* ones, and a parser that reads correctly says nothing about
+whether the write took.
+
+#### It has no network, and the first attempt at saying so did not hold
+
+Everything the run needs is baked into the image: a real `.deb`, a local
+apt repository, a signing key, the zone files. `run.sh` asserts each of
+them before starting, and asserts its own networking too — `--network
+none`, so the container has loopback and nothing else, and the run
+refuses if it finds an interface beside it.
+
+This build compiles with `GOPROXY=off` from a vendored tree. A check
+that reaches `archive.ubuntu.com` goes red for reasons unrelated to the
+change under test, and a gate people learn to ignore is worse than no
+gate — which is the argument this document has made about every other
+guard here. It applies to this one too.
+
+**The first version of that assertion did nothing, and said so.** It
+used `unshare -n` inside the container, which needs `CAP_SYS_ADMIN`;
+the container has neither that capability on this developer's Docker
+nor on a GitHub runner, so the fallback path ran every time and printed
+that the isolation had not been applied. It was noticed by reading a
+green CI log rather than by anything failing — which is the argument for
+making a check say what it did rather than only whether it passed.
+
+`--network none` is enforced by the runtime instead of asked for by the
+process, and the container cannot opt out of it. The cost is that the
+image must carry the toolchain rather than fetching it, so it is built
+`FROM golang:1.26.6-bookworm` with `GOTOOLCHAIN=local` — pinned to
+`go.mod`'s own `toolchain` directive, and held there by
+`internal/buildpolicy`, because a pin that moved would otherwise surface
+as a network error rather than as a version mismatch.
+
+**Debian's own sources are disabled in the image, after the build has
+used them.** With no network, every apt call spent about nine seconds
+per upstream source failing to resolve `deb.debian.org` before reaching
+the local one — twenty-eight of the thirty seconds a run took — and
+bought nothing, because those failures are warnings apt ignores anyway.
+They are commented out rather than deleted, so `pkgrepo.list_repos`
+still sees a realistic `sources.list.d`.
+
+**The apt repository is signed rather than trusted, for the same
+reason.** apt refuses an unsigned repository, and the way round that is
+`[trusted=yes]` — which `pkgrepo` does not offer as a declared field.
+The field it does offer is `signedby`, which names a keyring, and that
+is what an operator actually sets. So the image generates a key, signs
+the repository, and the test names the keyring: the field is exercised
+rather than stepped past.
+
+#### What the first run found
+
+Ten tests, and on the first run against the real tools **six of them
+failed**. Every one was the test's fault rather than the module's, and
+that is worth recording rather than quietly fixing:
+
+- `debconf.set` takes `question`, `type` and `value`; the test passed a
+  `data` map.
+- `pkgrepo.mod_repo` takes `baseurl`, not `uri`, and has no `opts`.
+- `timezone.set_zone` takes `timezone`, not `name`.
+- `timezone.list_zones` returns `[]string`, and the test asserted
+  `[]any`, so it read zero zones from a listing of hundreds.
+- `dpkg.search` is keyed by owning package holding the paths, not by
+  path — because several packages can own one path.
+- `dpkg.get_selections` is flat, package to selection word, rather than
+  grouped by state the way Salt returns it.
+
+Six wrong assumptions about this build's own interfaces, made by
+somebody who had just read them. That is the same failure mode as a
+fixture written in the module's own spelling, pointed the other way, and
+it is the reason a live test is worth more than its unit test even when
+it passes.
+
+#### Every assertion was broken on purpose, and one break was not a break
+
+Five deliberate defects, each reverted after it was seen to fail:
+
+| Break | What happened |
+|---|---|
+| `signed-by=` dropped from the apt source line | `apt-get update` refused the repository |
+| the state written before the package in a selection line | dpkg reported `install`, and the module reported no change |
+| `debconf-set-selections` fields reordered | debconf said `warning: Unknown type true, skipping line 1` |
+| the architecture and version columns swapped | both fields disagreed with `dpkg-query` |
+| `linkZone` made a no-op | the zone read back as the old one |
+| the repository written to a directory apt does not read | apt's index did not name it |
+
+The debconf one is the most instructive. **A malformed line makes
+`debconf-set-selections` warn and carry on**, rather than failing — so a
+module that ignored its stderr would silently answer nothing and report
+success. This one surfaces it as an error, which was true before this
+test existed and was not known to be true.
+
+**And one break was not a break.** Removing the trailing newline from
+what `dpkg --set-selections` is given changed nothing, because dpkg
+tolerates it. It is recorded because the first version of the
+architecture assertion also did not bite: `the version is not empty`
+passes with the columns swapped, since an architecture is a non-empty
+string. That assertion now compares each field against what
+`dpkg-query` says about the same package. An assertion with nowhere to
+fail is the thing this whole section is about.
+
+**The repository check had the same weakness and it took a measurement
+to see it.** `apt-get update` was asserted to exit 0, which is
+necessary and not sufficient: measured in this image, apt reports an
+*unreachable* source as a warning and still exits 0. It exits non-zero
+for a repository it *rejects* — an unsigned one — so that check does
+bite for the case it was written for, and it would not have noticed a
+repository apt had quietly ignored. Breaking `aptSourcesDir` to a
+directory apt does not read demonstrated exactly that: the exit code
+stayed 0. The test now also asks `apt-cache policy` whether the index
+holds a package from the repository, which is the assertion that the
+publish actually took.
+
+Dropping `signed-by=` is worth noting for the opposite reason: it fails
+*inside the module's own refresh* rather than in the test's check, with
+apt's own words — `NO_PUBKEY`. The module surfaces what apt said, which
+is what an operator needs and was not previously demonstrated.
+
+#### What it establishes, and the four boundaries it does not cross
+
+`dpkg`, `debconf`, `pkgrepo` and `timezone` move from `assumed` to
+`hardware` in the evidence table, and the release gate is red on five
+modules rather than nine. Each note carries its own scope, because the
+scope is narrower than "verified":
+
+- **One distribution, one version.** Debian 12, dpkg 1.21.23, debconf
+  1.5.82, tzdata 2026b. Ubuntu's apt is close and not identical, and
+  nothing here says anything about RHEL, SUSE or Alpine.
+- **One init system, which is none.** `timezone`'s `timedatectl` branch
+  needs systemd running and is not covered; the container takes the
+  zone-file branch. That is the branch a FreeBSD node takes too, so it
+  is the more useful half — but it is half.
+- **The filesystem, not the network.** The apt repository is a `file://`
+  one. A repository over HTTPS, with the redirects and mirrors that
+  implies, is not exercised.
+- **`dpkg.verify` is not driven**, because provoking a real checksum
+  mismatch means damaging an installed package, and the cleanup is
+  worse than the coverage.
+
+#### Why it is not a pull request gate
+
+`zfscheck` set the precedent and the reasoning is the same: it needs
+Docker, it takes minutes, and a failure is worth a person reading rather
+than a merge button going grey. A module's dealings with `dpkg` do not
+change because somebody edited the YAML parser, so running it on every
+push would mostly be running it for nothing — and a check that is
+usually irrelevant is one people learn to skip.
+
+It runs nightly, on demand, and on a push that touches the modules it
+drives or the image itself. The evidence table's claim is only as good
+as the last run, which is what makes the schedule part of the claim.
+
+#### The five that are left, and what each actually needs
+
+- **`snap`** — snapd is already on a GitHub Ubuntu runner. The obstacle
+  is the network: `snap install` fetches, and there is no offline
+  equivalent of the local apt repository above.
+- **`apparmor`** — the runner's own kernel has it, and loading a profile
+  needs `CAP_MAC_ADMIN`. Plausible in a privileged container or directly
+  on the runner; unverified.
+- **`sysctl`** — a container shares the host's kernel, so this needs a
+  disposable virtual machine to be honest about. The `zfscheck` image
+  already boots one under KVM, and that is the machinery to reuse.
+- **`netplan`** — `netplan apply` reconfigures the interface the job is
+  running over. It needs a network namespace or a nested machine, and it
+  is the module with the worst consequence if it is wrong.
+- **`hostname`** — the Linux branch is a container away; the FreeBSD
+  `sysrc` branch needs the virtual machine CI already runs, which is the
+  smallest remaining gap of the five.
 
 ## 6. Everything else not started
 

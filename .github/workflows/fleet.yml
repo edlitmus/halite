@@ -1,0 +1,80 @@
+# The modules that change a machine, driven against the real tools.
+#
+# # Why this is not part of CI
+#
+# It is destructive by design. The run holds a package, writes the
+# debconf database, adds and removes an apt repository, and relinks
+# /etc/localtime — in a container that is thrown away, which is what
+# makes that acceptable and is also why it cannot share a job with
+# anything else.
+#
+# And it does not gate a pull request. `zfscheck` set that precedent for
+# the same reasons: it takes minutes, it needs Docker, and a failure here
+# is worth a person reading rather than a merge button going grey. A
+# module's dealings with `dpkg` do not change because somebody edited the
+# YAML parser, so running it per push would mostly be running it for
+# nothing — and a check that is usually irrelevant is a check people
+# learn to skip.
+#
+# Nightly, then, plus on demand. `workflow_dispatch` is the one that
+# matters in practice: after touching one of these modules, run it.
+name: Fleet
+
+on:
+  schedule:
+    # 04:00 UTC, which is after the working day everywhere this fleet is
+    # and before the first person looks at anything.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+  # On a change to the modules it drives or to the image itself, because
+  # those are the pushes where the answer can actually differ.
+  push:
+    paths:
+      - "internal/builtin/dpkg*.go"
+      - "internal/builtin/debconf*.go"
+      - "internal/builtin/pkgrepo*.go"
+      - "internal/builtin/timezone*.go"
+      - "internal/builtin/live_debian_test.go"
+      - "internal/builtin/evidence.go"
+      - "contrib/docker/fleet/**"
+      - ".github/workflows/fleet.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  debian:
+    name: debian (real dpkg, debconf, apt, tzdata)
+    runs-on: ubuntu-24.04
+    # Generous, because the first run of a changed image builds it and
+    # the toolchain is fetched into an empty module cache. The run
+    # itself is seconds.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Built here rather than pulled, so that what runs is what the
+      # tree says. An image from a registry is one more thing that can
+      # drift from the repository that is supposed to describe it.
+      - name: build the image
+        run: docker build -t halite-fleet:bookworm contrib/docker/fleet
+
+      # `make fleetcheck` is the same command a person runs, and running
+      # the recipe rather than a copy of it is what stops the two
+      # diverging. The image is already built above, so this step only
+      # re-tags nothing and runs.
+      - name: drive the modules
+        run: make fleetcheck
+
+      # What was actually established, in the log, whether or not the
+      # job passed. The evidence table in internal/builtin/evidence.go
+      # claims these modules have met their tools; this is where that
+      # claim is either true today or visibly not.
+      - name: what this established
+        if: always()
+        run: |
+          echo "The modules driven here are declared Hardware in"
+          echo "internal/builtin/evidence.go, and DIVERGENCE 5.35 records"
+          echo "what that covers and what it does not. A failure means"
+          echo "either a module changed or Debian did; both are worth"
+          echo "reading rather than retrying."
