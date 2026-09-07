@@ -183,6 +183,79 @@ func persistentByHand(t *testing.T, c *exec.Context) (name, where string) {
 	return strings.TrimSpace(string(body)), "/etc/hostname"
 }
 
+// **The running name and the boot-time name pulled apart, and the module
+// asked to tell them apart.**
+//
+// This is the case `hostname` exists for, in its own words: the node
+// somebody renamed by hand, which would go back to its old name at the
+// next boot. Nothing else here can catch a `get_persistent` that
+// reports the running name by mistake — every other test sets both
+// halves together, so the two agree and a module confusing them agrees
+// too. Demonstrated: `get_persistent` was replaced with
+// `runningHostname()` on purpose and every other assertion in this file
+// still passed.
+//
+// So the two are separated deliberately, with `hostname(1)` rather than
+// through the module, and then the difference is what is asserted.
+func TestLiveHostnameTellsTheRunningNameFromTheBootTimeOne(t *testing.T) {
+	c := system(t)
+	r := New()
+
+	bootTime, where := persistentByHand(t, c)
+	if bootTime == "" {
+		t.Skipf("this machine has no persistent hostname in %s, so there is nothing to differ from", where)
+	}
+	before, err := r.Exec.Call(c, "hostname.get_hostname", value.NewMap(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, _ := before.(string)
+
+	// The running name only. Through `hostname(1)` rather than through
+	// the module, because the module deliberately sets both and the
+	// point here is to make them disagree.
+	const renamed = "halite-live-running-only"
+	if _, err := c.Run(exec.Command{Argv: []string{"hostname", renamed}}); err != nil {
+		t.Fatalf("renaming by hand: %v", err)
+	}
+	t.Cleanup(func() {
+		if _, err := c.Run(exec.Command{Argv: []string{"hostname", running}}); err != nil {
+			t.Errorf("this machine was left running as %q: %v", renamed, err)
+		}
+	})
+
+	// Nothing wrote the boot-time record, so it must still say what it
+	// said. A module reading the running name here would say `renamed`.
+	persisted, err := r.Exec.Call(c, "hostname.get_persistent", value.NewMap(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted != bootTime {
+		t.Errorf("get_persistent = %v after only the running name changed; %s still holds %q. "+
+			"This is the node somebody renamed by hand, and the module cannot see it",
+			persisted, where, bootTime)
+	}
+	if now, _ := r.Exec.Call(c, "hostname.get_hostname", value.NewMap(0)); now != renamed {
+		t.Errorf("get_hostname = %v after the machine was renamed to %q", now, renamed)
+	}
+
+	// And the state sees exactly one half as wrong: the running name.
+	// That is the report an operator needs -- "this node will change its
+	// own name at the next reboot" -- and it is the reason the module
+	// reports the two halves separately at all.
+	out, err := r.States.Call(testCtx(t), "hostname.system", value.MapOf("name", bootTime))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Changes.Len() == 0 {
+		t.Fatalf("the running name is %q and the state was asked for %q, and it reported no change",
+			renamed, bootTime)
+	}
+	if !strings.Contains(out.Comment, "running") {
+		t.Errorf("the state does not say which half is wrong: %q", out.Comment)
+	}
+}
+
 // The state converges rather than reporting a change every run.
 //
 // A hostname state that reports a change on every run is one an operator
