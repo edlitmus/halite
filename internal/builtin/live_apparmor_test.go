@@ -207,8 +207,25 @@ func TestLiveAppArmorReadsWhatSecurityfsPrints(t *testing.T) {
 	if readable, _ := status.Get("profiles_readable"); readable != true {
 		t.Fatalf("securityfs is not readable as root: %v", status)
 	}
-	if tools, _ := status.Get("tools"); tools != true {
-		t.Errorf("status reports the aa-* tools absent and this test found them")
+	// `tools` is not "is the binary installed" -- it is "can a mode be
+	// changed here", and on Ubuntu 24.04 those differ. So it is checked
+	// against an actual invocation rather than against an expectation.
+	tools, _ := status.Get("tools")
+	usable, why := apparmorToolsUsable(c)
+	if tools != usable {
+		t.Errorf("status reports tools=%v and running one says %v (%s)", tools, usable, why)
+	}
+	if usable {
+		if _, present := status.Get("tools_reason"); present {
+			t.Error("a node whose tools work carries a reason it does not need")
+		}
+	} else {
+		reason, _ := status.Get("tools_reason")
+		if text, _ := reason.(string); strings.TrimSpace(text) == "" {
+			t.Error("tools=false with no reason; an operator cannot act on that")
+		} else {
+			t.Logf("mode changes are not possible here: %s", text)
+		}
 	}
 	count, _ := status.Get("profiles")
 	n, _ := count.(int)

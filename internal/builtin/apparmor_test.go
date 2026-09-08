@@ -231,13 +231,32 @@ func TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist(t *testing.T) {
 		})
 	}
 
+	// The reason carries the tool's own words, and the tools print a
+	// blank line before their error -- so a message built from the
+	// *first* line came out as a colon with nothing after it, in a CI
+	// log, where it was the only thing explaining a skip.
+	c, runner := apparmorFixture(t, "Y\n", loaded)
+	runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
+		Code:   1,
+		Stderr: "\nERROR: Can't parse mount rule mount " + `""` + " -> " + `"/tmp/"` + ",",
+	}
+	st, err := apparmorStatus(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	why, _ := st.Get("tools_reason")
+	reason, _ := why.(string)
+	if !strings.Contains(reason, "Can't parse mount rule") {
+		t.Errorf("the reason does not carry what the tool said: %q", reason)
+	}
+
 	// And where the probe comes back the way a working tool answers --
 	// it did not find the profile -- the tools are usable.
-	c, runner := apparmorFixture(t, "Y\n", loaded)
+	c, runner = apparmorFixture(t, "Y\n", loaded)
 	runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
 		Code: 1, Stderr: "ERROR: profile halite-probe-does-not-exist does not exist",
 	}
-	st, err := apparmorStatus(c)
+	st, err = apparmorStatus(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +278,7 @@ func TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist(t *testing.T) {
 	if tools, _ := st.Get("tools"); tools != false {
 		t.Errorf("tools = %v with no tools installed", tools)
 	}
-	why, _ := st.Get("tools_reason")
+	why, _ = st.Get("tools_reason")
 	if reason, _ := why.(string); !strings.Contains(reason, "apparmor-utils") {
 		t.Errorf("the reason does not name the package: %q", reason)
 	}

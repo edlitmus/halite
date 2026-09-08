@@ -309,7 +309,7 @@ func apparmorToolsUsable(c *exec.Context) (bool, string) {
 	for _, broken := range []string{"cannot have a source", "Can't parse", "Traceback", "Include file"} {
 		if strings.Contains(out, broken) {
 			return false, "the aa-* tools cannot parse this node's profile tree, so no mode " +
-				"can be changed on it by any means: " + firstLine(out)
+				"can be changed on it by any means: " + firstMeaningfulLine(out)
 		}
 	}
 	return true, ""
@@ -501,4 +501,18 @@ func apparmorModeState(c *exec.Context, args *value.Map) (states.Result, error) 
 		return states.False(fmt.Sprintf("%s could not be put into %s mode: %v", name, want, err)), nil
 	}
 	return states.Changed(fmt.Sprintf("%s moved from %s to %s mode.", name, current, want), changes), nil
+}
+
+// firstMeaningfulLine is firstLine, skipping the blank ones.
+//
+// The aa-* tools print an empty line before their error, so `firstLine`
+// on their output is the empty string -- which is how a message
+// explaining a failure came out as a colon and nothing after it.
+func firstMeaningfulLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
