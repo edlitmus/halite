@@ -231,10 +231,12 @@ func TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist(t *testing.T) {
 		})
 	}
 
-	// The reason carries the tool's own words, and the tools print a
-	// blank line before their error -- so a message built from the
-	// *first* line came out as a colon with nothing after it, in a CI
-	// log, where it was the only thing explaining a skip.
+	// The reason carries the tool's own words, and it survives the blank
+	// line the aa-* tools print before their error. That looked like a
+	// defect in a CI log and was not -- the log line was being read
+	// through a grep that stopped at the first line -- but the property
+	// is worth holding, because the reason is the only thing explaining
+	// a skip to whoever reads it next.
 	c, runner := apparmorFixture(t, "Y\n", loaded)
 	runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
 		Code:   1,
