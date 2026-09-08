@@ -129,33 +129,46 @@ jobs:
           echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '\n' ' ')"
 
       # **The `aa-*` tools on this image cannot parse this image's own
-      # profiles, and the offending one is moved aside deliberately.**
+      # profiles, and the one line they choke on is commented out
+      # deliberately.**
       #
       # They are Python, and before doing anything they parse every
       # profile under /etc/apparmor.d with their own parser rather than
       # with `apparmor_parser`. Ubuntu 24.04's apparmor-utils 4.0.1
-      # cannot read `abstractions/passt`, shipped by Ubuntu's own `passt`
-      # package -- so on a stock runner `aa-enforce`, `aa-complain` and
-      # `aa-disable` all fail, on every profile, including /usr/bin/man.
+      # cannot read a mount rule in `abstractions/passt`, shipped by
+      # Ubuntu's own `passt` package -- so on a stock runner
+      # `aa-enforce`, `aa-complain` and `aa-disable` all fail, on every
+      # profile, including /usr/bin/man.
       #
-      # That is a fact about Ubuntu rather than about halite, and it is
-      # recorded in DIVERGENCE 5.37 rather than worked around silently.
-      # It is moved aside here so that the *separate* question -- does
-      # halite drive these tools correctly when they work -- can be
-      # answered at all. Both facts are worth having and neither
-      # substitutes for the other.
+      # That is a fact about Ubuntu rather than about halite, and
+      # DIVERGENCE 5.37 records it rather than working around it
+      # silently. The line is commented out here so that the *separate*
+      # question -- does halite drive these tools correctly when they
+      # work -- can be answered at all. Both facts are worth having and
+      # neither substitutes for the other.
+      #
+      # Moving the whole file aside was tried first and produced a
+      # different failure: other profiles `include` it, so the tools then
+      # could not find it. One line is the smaller change.
       #
       # Visible here rather than inside a test helper, because a
       # workaround a reader cannot see is one that becomes the truth.
-      - name: move aside the profile apparmor-utils cannot parse
+      - name: comment out the rule apparmor-utils cannot parse
         run: |
           set -e
           for f in $(sudo grep -rl runbindable /etc/apparmor.d/abstractions/ 2>/dev/null); do
-            echo "moving aside $f (owned by: $(dpkg -S "$f" 2>/dev/null | cut -d: -f1))"
-            sudo mv "$f" "$f.halite-moved"
+            echo "patching $f (owned by: $(dpkg -S "$f" 2>/dev/null | cut -d: -f1))"
+            sudo cp -a "$f" "$f.halite-orig"
+            sudo sed -i 's/^\([^#].*runbindable.*\)$/# halite: /' "$f"
+            sudo grep -n 'halite:' "$f" || true
           done
-          sudo aa-complain /usr/bin/man >/dev/null 2>&1             && echo "the aa-* tools work now"             || echo "the aa-* tools still fail; the tests will say so"
-          sudo aa-enforce /usr/bin/man >/dev/null 2>&1 || true
+          if sudo aa-complain /usr/bin/man >/dev/null 2>&1; then
+            echo "the aa-* tools work now"
+            sudo aa-enforce /usr/bin/man >/dev/null 2>&1 || true
+          else
+            echo "the aa-* tools still fail:"
+            sudo aa-complain /usr/bin/man 2>&1 | head -3
+          fi
 
       # `sudo -E` alone loses PATH, and the toolchain setup-go installed
       # is on PATH rather than in a standard location -- so root would
@@ -168,13 +181,13 @@ jobs:
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
       # nothing depends on it is one that stops working unnoticed.
-      - name: put the moved profile back
+      - name: put the patched profile back
         if: always()
         run: |
-          for f in /etc/apparmor.d/abstractions/*.halite-moved; do
+          for f in /etc/apparmor.d/abstractions/*.halite-orig; do
             [ -e "$f" ] || continue
-            sudo mv "$f" "${f%.halite-moved}"
-            echo "restored ${f%.halite-moved}"
+            sudo mv "$f" "${f%.halite-orig}"
+            echo "restored ${f%.halite-orig}"
           done
 
       # The runner is thrown away, so this is not about the runner. It
