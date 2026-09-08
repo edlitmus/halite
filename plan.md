@@ -902,12 +902,12 @@ unchanged.
    through to the function being run; this build validates against a
    fixed parameter list. Strict validation is right for every other state
    and wrong for this one.
-9. **systemd over D-Bus, or `systemctl` shell-out?** SPEC 15.2 says the
-   former; the build does the latter. Note that Windows settled the
-   general form of this question: `win_service` speaks the service
-   control manager's API because `sc.exe` has no machine-readable output
-   mode, and `win_task` runs `schtasks` because it does. systemd has
-   both, so this is a cost question rather than a correctness one.
+9. ~~**systemd over D-Bus, or `systemctl` shell-out?**~~ **Resolved
+   (DIVERGENCE 5.39): D-Bus, as SPEC 15.2 says.** `internal/dbus` is a
+   direct ~470-line wire client; the systemd provider issues its whole
+   surface over `org.freedesktop.systemd1`, waits on `JobRemoved` for
+   job completion, and falls back to `systemctl` only when the bus
+   cannot be reached. Driven against real systemd 255.
 10. **Do reference bridges ship?** SPEC 20.3 promises in-tree `postgres`
    and `sqs` as worked examples, and no destination extension exists.
 11. **Does `apparmor` stop depending on the `aa-*` tools?** They are
