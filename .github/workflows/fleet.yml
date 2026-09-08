@@ -159,8 +159,11 @@ jobs:
           for f in $(sudo grep -rl runbindable /etc/apparmor.d/abstractions/ 2>/dev/null); do
             echo "patching $f (owned by: $(dpkg -S "$f" 2>/dev/null | cut -d: -f1))"
             sudo cp -a "$f" "$f.halite-orig"
-            sudo sed -i 's/^\([^#].*runbindable.*\)$/# halite: /' "$f"
-            sudo grep -n 'halite:' "$f" || true
+            # awk rather than sed: a backreference in a YAML string
+            # inside a shell single-quote is three levels of escaping
+            # and it has been eaten twice already.
+            sudo awk '$0 ~ /runbindable/ && $0 !~ /^[ 	]*#/ { print "# halite disabled: " $0; next } { print }' "$f.halite-orig" | sudo tee "$f" >/dev/null
+            sudo grep -n "halite disabled" "$f" || echo "  nothing was commented out"
           done
           if sudo aa-complain /usr/bin/man >/dev/null 2>&1; then
             echo "the aa-* tools work now"
