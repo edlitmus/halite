@@ -11,7 +11,7 @@ import (
 // registerEvidence declares what has actually been demonstrated about
 // each module's dealings with the tool it drives.
 //
-// # The default is "assumed", and most of this table says so
+// # The default is "assumed", and earning better has been the work
 //
 // A module that mutates a machine mostly works by running another
 // program and reading what it says back. A unit test supplies that
@@ -24,13 +24,15 @@ import (
 // `systemsetup`, and `hostname`'s did the same to FreeBSD's `sysrc`
 // branch (plan.md §1.3, §1.4). Each looked like coverage.
 //
-// So this table is deliberately unflattering. Most of it is `Assumed`,
-// because most of these modules have never been pointed at the program
-// they drive, and writing that down is the only way an operator learns
-// it before they need to know. `exec.Registry` appends the note to a
-// *failing* mutation, `sys.evidence` and `doctor` answer it on request,
-// and the release gate refuses to ship a build whose root-privileged
-// mutating modules are still assumptions.
+// `Assumed` is the zero value on purpose: a module nobody has
+// classified must read as "nobody looked", not as "fine". DIVERGENCE
+// 5.33 wrote the table down per module and it was mostly `Assumed`
+// then; 5.35 through 5.38 drove all but two of the root-mutating
+// modules against their real tools on real machines. What is still
+// `Assumed` — `apparmor` and `snap` — says why in its own note, and
+// the release gate refuses to ship while either is. `exec.Registry`
+// appends the note to a *failing* mutation, and `sys.evidence` and
+// `doctor` answer it on request.
 //
 // # What each level means here
 //
@@ -109,14 +111,21 @@ var moduleEvidence = map[string]exec.Evidence{
 		"branch, which had no test at all behind a fixture that looked like one " +
 		"(plan.md §1.3)"},
 
-	// ---- Mutated a real machine, in `make fleetcheck`'s CI legs ----
+	// ---- Mutated a real machine, in the live CI legs ----
 	//
-	// Not the container: `sysctl` is the kernel and a container shares
-	// the host's, and Docker bind-mounts `/etc/hostname` so the atomic
-	// replace cannot work there. These run on machines that are
-	// destroyed when the job ends -- a GitHub runner and the FreeBSD
-	// virtual machine -- and really rename them and really move a kernel
-	// parameter.
+	// Not the fleetcheck container: `sysctl` is the kernel and a
+	// container shares the host's, Docker bind-mounts `/etc/hostname` so
+	// the atomic replace cannot work there, and the container has no
+	// netplan at all. These run on machines rather than images -- a
+	// GitHub runner and the FreeBSD virtual machine, and for `netplan`
+	// this project's own Ubuntu host -- and really rename them, really
+	// move a kernel parameter, and really have a running netplan
+	// validate a document this module wrote.
+	//
+	// `netplan` never gets as far as `netplan apply`, and that is
+	// deliberate rather than a gap in coverage: it is the one path the
+	// module keeps behind an explicit `apply: true`, because it
+	// reconfigures the interface the run arrives over.
 
 	"hostname": {Level: exec.Hardware, Note: "renamed a real machine on both branches: " +
 		"`hostnamectl` on an Ubuntu 24.04 runner under systemd, and `sysrc` on FreeBSD " +
