@@ -123,8 +123,7 @@ jobs:
           echo "apparmor enabled: $(cat /sys/module/apparmor/parameters/enabled 2>&1)"
           echo "securityfs:       $(sudo head -3 /sys/kernel/security/apparmor/profiles 2>&1)"
           echo "profiles loaded:  $(sudo wc -l < /sys/kernel/security/apparmor/profiles 2>&1)"
-          echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '
-' ' ')"
+          echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '\n' ' ')"
 
       # `sudo -E` alone loses PATH, and the toolchain setup-go installed
       # is on PATH rather than in a standard location -- so root would
