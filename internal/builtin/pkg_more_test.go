@@ -1,6 +1,8 @@
 package builtin
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -340,5 +342,175 @@ func TestPkgDeltaReportsWhatActuallyHappened(t *testing.T) {
 	}
 	if got.Len() != 3 {
 		t.Errorf("changes = %v", got.StringKeys())
+	}
+}
+
+// ---- the apt-only functions of 5.40 ----
+
+// aptArchivesTemp points aptArchivesDir at a throwaway directory for the
+// life of a test.
+func aptArchivesTemp(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	old := aptArchivesDir
+	aptArchivesDir = dir
+	t.Cleanup(func() { aptArchivesDir = old })
+	return dir
+}
+
+// info_installed reads dpkg's per-package blocks and drops anything that
+// is known to dpkg but not actually installed.
+func TestPkgInfoInstalledParsesBlocksAndSkipsUninstalled(t *testing.T) {
+	c := newCtx(false)
+	c.Runner = &exec.RecordingRunner{Default: exec.Result{Stdout: `Package: bash
+Version: 5.2.21-2ubuntu4
+Architecture: amd64
+Status: installed
+Installed-Size: 7396
+Section: shells
+Source: bash
+Maintainer: Ubuntu Developers <x@ubuntu.com>
+
+Package: leftover
+Version: 1.0-1
+Architecture: amd64
+Status: config-files
+Installed-Size: 40
+Section: utils
+Source: leftover
+Maintainer: Someone <y@example.com>
+
+`}}
+
+	got, err := aptProvider{}.InfoInstalled(c, []string{"bash", "leftover"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.Get("leftover"); ok {
+		t.Error("a package in config-files was reported as installed")
+	}
+	m, ok := got.Get("bash")
+	if !ok {
+		t.Fatalf("bash is missing: %v", got.StringKeys())
+	}
+	fields := m.(*value.Map)
+	for k, want := range map[string]any{
+		"version":        "5.2.21-2ubuntu4",
+		"architecture":   "amd64",
+		"installed_size": "7396",
+		"section":        "shells",
+		"source":         "bash",
+	} {
+		if v, _ := fields.Get(k); v != want {
+			t.Errorf("bash.%s = %#v, want %#v", k, v, want)
+		}
+	}
+}
+
+// list_downloaded reads the archive cache, taking each package's identity
+// from dpkg-deb rather than from the filename.
+func TestPkgListDownloadedReadsTheCache(t *testing.T) {
+	dir := aptArchivesTemp(t)
+	deb := filepath.Join(dir, "hello_2.10-3build1_amd64.deb")
+	const body = "not really a deb"
+	if err := os.WriteFile(deb, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A non-.deb file in the same directory must be ignored.
+	if err := os.WriteFile(filepath.Join(dir, "lock"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := newCtx(false)
+	// Only one .deb in the directory, so one dpkg-deb call: answer it
+	// from Default rather than keying on a path that quotes differently
+	// per platform.
+	c.Runner = &exec.RecordingRunner{Default: exec.Result{
+		Stdout: "Package: hello\nVersion: 2.10-3build1\nArchitecture: amd64\n",
+	}}
+
+	got, err := aptProvider{}.ListDownloaded(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Len() != 1 {
+		t.Fatalf("cache = %v", got.StringKeys())
+	}
+	m, _ := got.Get("hello")
+	fields := m.(*value.Map)
+	if v, _ := fields.Get("version"); v != "2.10-3build1" {
+		t.Errorf("version = %#v", v)
+	}
+	if v, _ := fields.Get("path"); v != deb {
+		t.Errorf("path = %#v", v)
+	}
+	if v, _ := fields.Get("size"); v != int64(len(body)) {
+		t.Errorf("size = %#v", v)
+	}
+}
+
+// autoremove in dry-run mode parses `apt-get autoremove --simulate` and
+// changes nothing.
+func TestPkgAutoremoveDryRunParsesRemvLines(t *testing.T) {
+	c := newCtx(false)
+	c.Runner = &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"apt-get autoremove -y -q --simulate": {Stdout: `Reading package lists...
+Building dependency tree...
+The following packages will be REMOVED:
+  libfoo1 libbar2
+0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.
+Remv libfoo1 [1.2-3]
+Remv libbar2 [4.5-1ubuntu2]
+`},
+	}}
+
+	got, err := aptProvider{}.Autoremove(c, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Len() != 2 {
+		t.Fatalf("changes = %v", got.StringKeys())
+	}
+	m, _ := got.Get("libfoo1")
+	fields := m.(*value.Map)
+	if old, _ := fields.Get("old"); old != "1.2-3" {
+		t.Errorf("libfoo1 old = %#v", old)
+	}
+	if nw, _ := fields.Get("new"); nw != nil {
+		t.Errorf("libfoo1 new = %#v, want nil", nw)
+	}
+}
+
+// A provider that is not apt is refused by name, not answered with an
+// empty map.
+func TestPkgAptOnlyFunctionsRefuseOtherProviders(t *testing.T) {
+	c := newCtx(false)
+	c.Grains = value.MapOf("os", "FreeBSD", "os_family", "FreeBSD")
+	c.Lookup = func(name string) string {
+		if name == "pkg" {
+			return "/usr/sbin/pkg"
+		}
+		return ""
+	}
+	r := New()
+
+	for _, tc := range []struct {
+		fn     string
+		args   *value.Map
+		phrase string
+	}{
+		{"pkg.info_installed", value.MapOf("pkgs", []any{"bash"}), "cannot describe an installed package"},
+		{"pkg.download", value.MapOf("pkgs", []any{"bash"}), "cannot fetch a package without installing"},
+		{"pkg.list_downloaded", value.NewMap(0), "cannot fetch a package without installing"},
+		{"pkg.autoremove", value.NewMap(0), "cannot autoremove unused dependencies"},
+	} {
+		_, err := r.Exec.Call(c, tc.fn, tc.args)
+		if err == nil {
+			t.Errorf("%s answered on a pkgng node", tc.fn)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.phrase) || !strings.Contains(err.Error(), "pkgng") {
+			t.Errorf("%s: error does not name the provider and reason: %v", tc.fn, err)
+		}
 	}
 }
