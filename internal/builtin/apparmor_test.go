@@ -183,6 +183,109 @@ func TestStatusCountsEveryMode(t *testing.T) {
 	}
 }
 
+// **`tools` says whether a mode can be changed, not whether a binary is
+// on PATH.**
+//
+// The two came apart on a real Ubuntu 24.04: apparmor-utils 4.0.1 is
+// installed, is on PATH, and cannot run, because it parses every profile
+// under /etc/apparmor.d with its own Python parser before doing anything
+// and cannot read the set Ubuntu itself ships. `tools: true` there was
+// an answer an operator would have acted on. DIVERGENCE 5.37.
+//
+// The three shapes below are the ones seen: two different unparseable
+// mount rules, and the `Include file not found` that came of moving one
+// of them out of the way.
+func TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist(t *testing.T) {
+	loaded := "/usr/bin/man (enforce)\n"
+
+	for _, tc := range []struct {
+		name, stderr string
+	}{
+		{"a mount rule the python parser rejects",
+			"ERROR: Operation {'runbindable'} cannot have a source. Source = AARE('/')"},
+		{"a mount rule it cannot parse at all",
+			`ERROR: Can't parse mount rule mount "" -> "/tmp/",`},
+		{"an include it cannot find",
+			"ERROR: Include file /etc/apparmor.d/abstractions/passt not found"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, runner := apparmorFixture(t, "Y\n", loaded)
+			runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
+				Code: 1, Stderr: tc.stderr,
+			}
+			st, err := apparmorStatus(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tools, _ := st.Get("tools"); tools != false {
+				t.Errorf("tools = %v on a node where every aa-* call fails", tools)
+			}
+			why, _ := st.Get("tools_reason")
+			reason, _ := why.(string)
+			if !strings.Contains(reason, "cannot parse") {
+				t.Errorf("tools_reason does not say why: %q", reason)
+			}
+			if !strings.Contains(reason, "no mode") {
+				t.Errorf("tools_reason does not say what it means for the operator: %q", reason)
+			}
+		})
+	}
+
+	// The reason carries the tool's own words, and it survives the blank
+	// line the aa-* tools print before their error. That looked like a
+	// defect in a CI log and was not -- the log line was being read
+	// through a grep that stopped at the first line -- but the property
+	// is worth holding, because the reason is the only thing explaining
+	// a skip to whoever reads it next.
+	c, runner := apparmorFixture(t, "Y\n", loaded)
+	runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
+		Code:   1,
+		Stderr: "\nERROR: Can't parse mount rule mount " + `""` + " -> " + `"/tmp/"` + ",",
+	}
+	st, err := apparmorStatus(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	why, _ := st.Get("tools_reason")
+	reason, _ := why.(string)
+	if !strings.Contains(reason, "Can't parse mount rule") {
+		t.Errorf("the reason does not carry what the tool said: %q", reason)
+	}
+
+	// And where the probe comes back the way a working tool answers --
+	// it did not find the profile -- the tools are usable.
+	c, runner = apparmorFixture(t, "Y\n", loaded)
+	runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
+		Code: 1, Stderr: "ERROR: profile halite-probe-does-not-exist does not exist",
+	}
+	st, err = apparmorStatus(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tools, _ := st.Get("tools"); tools != true {
+		t.Errorf("tools = %v on a node whose tools work", tools)
+	}
+	if _, present := st.Get("tools_reason"); present {
+		t.Error("a working node carries a reason it does not need")
+	}
+
+	// A node with no apparmor-utils at all names the package, because
+	// that is a different problem with a different fix.
+	c, _ = apparmorFixture(t, "Y\n", loaded)
+	c.Lookup = func(string) string { return "" }
+	st, err = apparmorStatus(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tools, _ := st.Get("tools"); tools != false {
+		t.Errorf("tools = %v with no tools installed", tools)
+	}
+	why, _ = st.Get("tools_reason")
+	if reason, _ := why.(string); !strings.Contains(reason, "apparmor-utils") {
+		t.Errorf("the reason does not name the package: %q", reason)
+	}
+}
+
 // The state moves a profile between modes, and does nothing to one that
 // is already right.
 func TestTheModeStateConvergesAProfile(t *testing.T) {

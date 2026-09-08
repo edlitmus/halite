@@ -156,9 +156,14 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	// ---- Never pointed at the tool it drives ----
 
-	"apparmor": {Level: exec.Assumed, Note: "no node with AppArmor running has been asked " +
-		"to enforce or disable a profile by this module; both the `aa-enforce` behaviour " +
-		"and the securityfs format are taken from documentation (DIVERGENCE 5.27)"},
+	"apparmor": {Level: exec.Assumed, Note: "the *reading* half is demonstrated: " +
+		"securityfs parses correctly against 123 real profiles on Ubuntu 24.04, in all " +
+		"four modes. The *mutating* half is not, and now for a known reason rather than " +
+		"an unexamined one -- apparmor-utils 4.0.1 cannot parse the profile set Ubuntu " +
+		"itself ships, so `aa-enforce`, `aa-complain` and `aa-disable` fail on every " +
+		"profile on that platform and this module has no other way to change a mode " +
+		"(DIVERGENCE 5.37). `apparmor.status` reports that as `tools: false` with the " +
+		"reason, rather than `true` because the binary is on PATH"},
 	"snap": {Level: exec.Assumed, Note: "nothing here has run against a real snapd, and " +
 		"the `snap list` fixtures were written from its documented columns rather than " +
 		"captured (DIVERGENCE 5.28)"},

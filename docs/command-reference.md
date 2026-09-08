@@ -70,9 +70,8 @@ halite-node doctor — web1.example
                                          event bus; both prune by age and size and both default generously.
   skip  extension signatures             no extensions are installed
                                          Extensions live under the extension directory; there are none to check.
-  warn  module verification              9 of the 21 modules that change this machine as root have not been
-                                         run against the tool they drive: apparmor, debconf, dpkg, hostname,
-                                         netplan, pkgrepo, snap, sysctl, timezone
+  warn  module verification              3 of the 21 modules that change this machine as root have not been
+                                         run against the tool they drive: apparmor, netplan, snap
                                          This is a statement about what has been demonstrated, not a fault on
                                          this node: these modules may be entirely correct.
                                          What it means is that if one of them does the wrong thing, halite is
@@ -162,10 +161,18 @@ web1.example:
     level: assumed
     demonstrated: false
     root: true
-    note: no node with AppArmor running has been asked to enforce or disable a
-      profile by this module; both the `aa-enforce` behaviour and the securityfs
-      format are taken from documentation (DIVERGENCE 5.27)
+    note: the *reading* half is demonstrated: securityfs parses correctly against
+      123 real profiles on Ubuntu 24.04, in all four modes. The *mutating* half is
+      not, and now for a known reason rather than an unexamined one -- apparmor-utils
+      4.0.1 cannot parse the profile set Ubuntu itself ships, so `aa-enforce`,
+      `aa-complain` and `aa-disable` fail on every profile on that platform and this
+      module has no other way to change a mode (DIVERGENCE 5.37)
 ```
+
+A note that says what *is* established as well as what is not is the
+point of the level being per module rather than per project: `apparmor`
+reads correctly and cannot write, and an operator planning a change
+needs both halves of that sentence.
 
 The same table is a release gate: `make release-gate` refuses a build in
 which any root-mutating module is still an assumption. It runs behind a

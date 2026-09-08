@@ -4244,9 +4244,12 @@ three modules**: `apparmor`, `netplan` and `snap`. It was nine.
 
 Each of the three needs something the previous six did not:
 
-- **`apparmor`** wants a kernel with AppArmor and `CAP_MAC_ADMIN`. A
-  GitHub runner has the first; whether a job can load a profile is
-  unverified and is an afternoon's work to find out.
+- ~~**`apparmor`**~~ — **attempted** (5.37), and the forecast here was
+  wrong in a useful way. A runner can load a profile; that was never the
+  obstacle. The obstacle is that Ubuntu 24.04's own `aa-*` tools cannot
+  parse Ubuntu's own profiles, so every mutating function in the module
+  is inoperable on that platform. The reading half is verified; the gate
+  stays red on it.
 - **`snap`** wants snapd, which an Ubuntu runner already has, and the
   network, which the no-network rule of 5.35 refuses. Either a
   pre-seeded snap or an exception, and the exception is the wrong
@@ -4255,6 +4258,121 @@ Each of the three needs something the previous six did not:
   running over, so it wants a network namespace or a nested machine. It
   has the worst consequence of the three if it is wrong, and it is the
   one this project's own Ubuntu host could settle in an afternoon.
+
+### 5.37 `apparmor`: the reading half is verified and the writing half cannot run
+
+5.36 left three modules blocking the release gate and ranked `apparmor`
+second, on the grounds that a GitHub runner's kernel has AppArmor and
+the only open question was whether a job can load a profile. It can. The
+answer to the question nobody asked is the finding.
+
+#### What is now demonstrated
+
+**securityfs parses.** `parseAppArmorProfiles` reads a file this build
+had never opened, and its format was taken from documentation. Against
+a real Ubuntu 24.04 it reads **123 profiles** correctly — 91
+unconfined, 28 enforce, 4 complain, 0 kill — and every mode it produces
+is one AppArmor actually has. The profile count agrees with the number
+of non-empty lines in the file, checked directly rather than through the
+module, so a parser that silently dropped a line it did not recognise
+would be caught.
+
+That was one of the three things 5.33 recorded as guesses, and it is a
+guess no longer.
+
+#### What cannot run, and it is not halite
+
+The other two guesses were about `aa-enforce` and `aa-complain`. Neither
+can be answered on Ubuntu 24.04, because **the tools do not work there
+at all**.
+
+The `aa-*` tools are Python, and before doing anything they parse every
+profile under `/etc/apparmor.d` with their own parser rather than with
+`apparmor_parser`. Ubuntu 24.04's apparmor-utils 4.0.1 cannot read the
+profile set Ubuntu itself ships:
+
+    aa-complain halite-live-probe:
+      ERROR: Operation {'runbindable'} cannot have a source. Source = AARE('/')
+
+The rule is in `abstractions/passt`, shipped by Ubuntu's own `passt`
+package — nothing exotic, nothing Docker installed. And it fails
+identically on `/usr/bin/man`, so it is not about the profile being
+asked for. `aa-enforce` and `aa-disable` fail the same way. Every
+mutating function this module has goes through those three tools, so on
+that platform **`apparmor.enforce`, `apparmor.complain` and
+`apparmor.disable` cannot work by any means.**
+
+**Two workarounds were tried and both are recorded rather than kept.**
+Moving the abstraction aside produced `ERROR: Include file
+/etc/apparmor.d/abstractions/passt not found`, because other profiles
+include it. Commenting out the single unparseable rule produced the next
+one — `ERROR: Can't parse mount rule mount "" -> "/tmp/",`. At that
+point the workaround is the story, and the story is that this platform's
+own tools do not work.
+
+So the CI leg does nothing to the machine and the tests say so and skip.
+They **skip rather than fail** because a nightly that is permanently red
+is a nightly nobody reads; what keeps that from being a silent pass is
+the release gate, which still refuses to ship `apparmor` as
+demonstrated. The colour of a test is not the enforcement here — the
+gate is.
+
+#### The one change this found
+
+`apparmor.status` reported `tools: true` whenever `aa-enforce` was on
+`PATH`. On Ubuntu 24.04 it is on PATH and cannot run, so that field was
+answering a question nobody asked — "is the binary installed" — while
+appearing to answer the one they did: **can a mode be changed on this
+node.**
+
+It asks now, by running the tool against a profile no machine has. The
+tools parse the whole tree *before* looking up the name, so a tree they
+cannot read fails at the parse and a tree they can read fails at the
+lookup; the two are told apart by which error comes back, and nothing is
+changed either way. A node where they cannot run reports `tools: false`
+and a `tools_reason` saying why, in the operator's terms:
+
+> the aa-\* tools cannot parse this node's profile tree, so no mode can
+> be changed on it by any means
+
+That is a field that was quietly wrong on the commonest Linux this
+project targets, and only running it found that.
+
+#### What would close this, and the decision it needs
+
+Three routes, and the third is a question for a person rather than a
+commit:
+
+1. **A machine whose tools work.** Any distribution whose apparmor-utils
+   can parse its own profiles — an older Ubuntu, or a Debian, or a
+   Ubuntu 24.04 without `passt` installed. The tests are written and
+   would run there unchanged; this is an afternoon on a host that has
+   one.
+2. **Wait for apparmor-utils.** The Python parser catching up with the
+   profiles the same distribution ships is somebody else's fix, and not
+   one to plan around.
+3. **Stop depending on the `aa-*` tools.** `apparmor_parser` is C, is
+   installed by default, parses everything the kernel does, and already
+   does the loading here — `apparmor.reload` uses it and works on this
+   machine. It can load a profile in complain mode directly.
+
+   The catch is persistence, and it is the reason this is a decision
+   rather than an obvious improvement. `aa-complain` *edits the profile
+   file* to add `flags=(complain)` and then reloads it, so the mode
+   survives a reboot. `apparmor_parser --complain` sets the running mode
+   and changes no file, so the next boot loads the profile as written
+   and the mode is gone. Reimplementing the file edit means this project
+   parsing AppArmor profile syntax, which is a larger thing to own than
+   it looks and is exactly the sort of surface 5.31 was about.
+
+   Doing it would make the module work on a platform where it currently
+   cannot, at the cost of either losing persistence or taking on a
+   parser. That trade is not one to make quietly.
+
+`apparmor` therefore stays `assumed` and the gate stays red on it — but
+the note is now a fact with a reproduction rather than "nobody has run
+it", which is the difference this whole exercise is for. The gate is
+red on **three** modules: `apparmor`, `netplan` and `snap`.
 
 ## 6. Everything else not started
 
