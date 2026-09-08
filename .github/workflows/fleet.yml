@@ -36,6 +36,8 @@ on:
       - "internal/builtin/timezone*.go"
       - "internal/builtin/hostname*.go"
       - "internal/builtin/sysctl*.go"
+      - "internal/builtin/apparmor*.go"
+      - "internal/builtin/live_apparmor_test.go"
       - "internal/builtin/live_debian_test.go"
       - "internal/builtin/live_system_test.go"
       - "internal/builtin/evidence.go"
@@ -97,7 +99,7 @@ jobs:
   # job ends. Renaming it and moving one kernel parameter costs nothing,
   # and both are put back regardless.
   linux:
-    name: linux (real kernel, real hostname)
+    name: linux (real kernel, hostname, apparmor)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -106,13 +108,31 @@ jobs:
         with:
           go-version: "1.26.6"
 
+      # The aa-* tools are in `apparmor-utils`, which Ubuntu does not
+      # install by default -- which is itself a fact the module is built
+      # around: a node can be running AppArmor with no way to change a
+      # mode on it. The parser and the kernel LSM are already here.
+      - name: install the AppArmor tools
+        run: sudo apt-get install -y --no-install-recommends apparmor-utils
+
+      # What this machine actually offers, printed whether or not the
+      # tests then pass. A live check that fails is worth more when the
+      # log says what it was looking at.
+      - name: what this machine offers
+        run: |
+          echo "apparmor enabled: $(cat /sys/module/apparmor/parameters/enabled 2>&1)"
+          echo "securityfs:       $(sudo head -3 /sys/kernel/security/apparmor/profiles 2>&1)"
+          echo "profiles loaded:  $(sudo wc -l < /sys/kernel/security/apparmor/profiles 2>&1)"
+          echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '
+' ' ')"
+
       # `sudo -E` alone loses PATH, and the toolchain setup-go installed
       # is on PATH rather than in a standard location -- so root would
       # run a different Go, or none. The environment is named
       # explicitly instead.
-      - name: drive hostname and sysctl
+      - name: drive hostname, sysctl and apparmor
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor' ./internal/builtin/
 
       # The runner is thrown away, so this is not about the runner. It
       # is the assertion that the tests' own cleanup works, because they
