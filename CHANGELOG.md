@@ -60,6 +60,48 @@ against their real tools, below. None of the three is known to be wrong;
 none is known to be right. DIVERGENCE 5.33 has the table and the
 argument.
 
+### `apparmor`: what running it found
+
+Ranked next of the three modules blocking the release gate, on the
+grounds that a GitHub runner's kernel has AppArmor and the only question
+was whether a job can load a profile. It can. The finding is the answer
+to a question nobody had asked.
+
+**The reading half is now demonstrated.** `securityfs` parses correctly
+against 123 real profiles on Ubuntu 24.04 — 91 unconfined, 28 enforce,
+4 complain — with the count checked against the file directly rather
+than through the module. That format was taken from documentation and
+was one of the three things recorded as a guess.
+
+**The writing half cannot run there at all, and it is not halite's
+fault.** The `aa-*` tools are Python and parse every profile under
+`/etc/apparmor.d` with their own parser before doing anything.
+apparmor-utils 4.0.1 cannot read the profile set Ubuntu itself ships —
+a mount rule in `abstractions/passt`, from Ubuntu's own `passt`
+package — so `aa-enforce`, `aa-complain` and `aa-disable` all fail on
+every profile, including `/usr/bin/man`. Every mutating function this
+module has goes through those tools.
+
+Two workarounds were tried and neither was kept: moving the abstraction
+aside produced `Include file not found`, because other profiles include
+it; commenting out the offending rule produced the next unparseable one.
+At that point the workaround is the story.
+
+**One field was quietly wrong and is fixed.** `apparmor.status` reported
+`tools: true` whenever `aa-enforce` was on `PATH` — answering "is the
+binary installed" while appearing to answer "can a mode be changed
+here". It asks now, by running the tool against a profile no machine
+has, and a node where they cannot run reports `tools: false` with the
+reason. That field was wrong on the commonest Linux this project
+targets, and only running it found that.
+
+`apparmor` stays blocking the gate, and the note is now a fact with a
+reproduction rather than "nobody has run it". DIVERGENCE 5.37 has what
+would close it, including the one route that needs a decision: dropping
+the `aa-*` tools for `apparmor_parser` would make the module work there
+and would cost either the persistence `aa-complain` gets by editing the
+profile file, or this project owning an AppArmor profile parser.
+
 ### `hostname` and `sysctl` on real machines
 
 The two the container could not reach. `sysctl` is the kernel and a

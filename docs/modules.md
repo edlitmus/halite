@@ -129,7 +129,7 @@ apparmor.reload(path: path)
 
 #### `apparmor.status`
 
-Report whether AppArmor is on, and how many profiles are in each mode.
+Report whether AppArmor is on, how many profiles are in each mode, and whether a mode can be changed on this node.
 
 ```
 apparmor.status()

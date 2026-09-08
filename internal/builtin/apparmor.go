@@ -80,7 +80,7 @@ func registerAppArmor(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "apparmor", Function: "status",
-				Doc:       "Report whether AppArmor is on, and how many profiles are in each mode.",
+				Doc:       "Report whether AppArmor is on, how many profiles are in each mode, and whether a mode can be changed on this node.",
 				TestMode:  signature.TestNotApplicable,
 				Platforms: linuxOnly,
 				Section:   "15.2",
@@ -264,9 +264,60 @@ func apparmorStatus(c *exec.Context) (*value.Map, error) {
 	out.Set("modes", counts)
 	// Whether a mode can be changed on this node at all, which is a
 	// different question from whether AppArmor is running.
-	out.Set("tools", c.Which("aa-enforce") != "")
+	//
+	// Asked by running one, not by looking on PATH. That distinction
+	// cost nothing to write and turns out to be the whole of the field:
+	// on Ubuntu 24.04 the `aa-*` tools are installed, are on PATH, and
+	// cannot run — apparmor-utils 4.0.1 parses every profile under
+	// /etc/apparmor.d with its own Python parser before doing anything,
+	// and it cannot read the profile set Ubuntu itself ships. `tools:
+	// true` there was an answer an operator would have acted on.
+	// DIVERGENCE 5.37.
+	usable, why := apparmorToolsUsable(c)
+	out.Set("tools", usable)
+	if !usable && why != "" {
+		out.Set("tools_reason", why)
+	}
 	return out, nil
 }
+
+// apparmorToolsUsable reports whether a mode can actually be changed
+// here, and why not when it cannot.
+//
+// The probe is an invocation against a profile that does not exist. That
+// is deliberate: the tools parse the whole profile tree *before* looking
+// for the profile named, so a tree they cannot read fails at the parse
+// and a tree they can read fails at the lookup. The two are told apart
+// by which error comes back, and nothing on the machine is changed
+// either way.
+func apparmorToolsUsable(c *exec.Context) (bool, string) {
+	if c.Which("aa-enforce") == "" {
+		return false, "the aa-* tools are not installed; they are in apparmor-utils, " +
+			"which Ubuntu does not install by default"
+	}
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"aa-enforce", apparmorProbeProfile},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return false, err.Error()
+	}
+	out := res.Stderr + res.Stdout
+	// A tree the tools cannot parse. The wording differs between
+	// versions and between the rules they choke on, so the shapes are
+	// matched rather than one message.
+	for _, broken := range []string{"cannot have a source", "Can't parse", "Traceback", "Include file"} {
+		if strings.Contains(out, broken) {
+			return false, "the aa-* tools cannot parse this node's profile tree, so no mode " +
+				"can be changed on it by any means: " + firstLine(out)
+		}
+	}
+	return true, ""
+}
+
+// apparmorProbeProfile is a name no machine has, used to ask the tools
+// whether they work without changing anything.
+const apparmorProbeProfile = "halite-probe-does-not-exist"
 
 // apparmorEnabled reads the kernel parameter, and returns why not.
 func apparmorEnabled() (bool, string) {

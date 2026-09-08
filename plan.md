@@ -910,6 +910,27 @@ unchanged.
    both, so this is a cost question rather than a correctness one.
 10. **Do reference bridges ship?** SPEC 20.3 promises in-tree `postgres`
    and `sqs` as worked examples, and no destination extension exists.
+11. **Does `apparmor` stop depending on the `aa-*` tools?** They are
+   Python, and Ubuntu 24.04's own apparmor-utils cannot parse Ubuntu's
+   own profiles — so `apparmor.enforce`, `complain` and `disable` are
+   inoperable on the commonest Linux this project targets, and the
+   module has no other way to change a mode. DIVERGENCE 5.37 has the
+   reproduction.
+
+   `apparmor_parser` is C, ships by default, parses everything the
+   kernel does, and this module already uses it for `reload`. It can
+   load a profile in complain mode directly. **The catch is
+   persistence:** `aa-complain` edits the profile file to add
+   `flags=(complain)` so the mode survives a reboot, and
+   `apparmor_parser --complain` changes no file, so the next boot loads
+   the profile as written and the mode is gone.
+
+   So the choice is between a module that works on Ubuntu but forgets
+   its mode at the next boot, a module that works on Ubuntu and owns an
+   AppArmor profile parser — a larger surface than it looks, and the
+   sort §5.31 was about — and leaving it as it is with the fact
+   recorded. It is a security control, so the third is not obviously
+   wrong; that is why it is here rather than in §7.
 
 Question 9 of the previous revision — strict undefined (33.4) — is
 answered and struck: `CatUndefined` is implemented and the migration
@@ -1033,8 +1054,10 @@ place.
 
 5. **Demonstrate the three modules the gate is still red on.** It was
    nine; `make fleetcheck` closed four and the two live CI legs closed
-   two more. This stays the highest-ranked *unbuilt* item because
-   nothing else on this list can ship a release until it is done.
+   two more. `apparmor` was attempted and is now blocked on a decision
+   rather than on effort. This stays the highest-ranked *unbuilt* item
+   because nothing else on this list can ship a release until it is
+   done.
 
    ~~`dpkg`~~, ~~`debconf`~~, ~~`pkgrepo`~~ and ~~`timezone`~~ are done,
    driven against a real Debian's own tools in a disposable container —
@@ -1064,10 +1087,19 @@ place.
       namespace or a nested machine — **or the one Ubuntu host in this
       fleet, which settles it in an afternoon** and is still the fastest
       route.
-   2. **`apparmor`** — a GitHub runner's own kernel has it, and loading
-      a profile needs `CAP_MAC_ADMIN`. Plausible directly on the runner;
-      unverified, and an afternoon to find out either way. Worth doing
-      before `netplan` if the answer is yes, because it is free.
+   2. ~~**`apparmor`**~~ — **attempted, and it is a decision now rather
+      than an afternoon.** A runner can load a profile; that was never
+      the obstacle. Ubuntu 24.04's own `aa-*` tools cannot parse
+      Ubuntu's own profiles — apparmor-utils 4.0.1 against
+      `abstractions/passt`, from the stock `passt` package — so
+      `aa-enforce`, `aa-complain` and `aa-disable` fail on *every*
+      profile there, `/usr/bin/man` included. Every mutating function in
+      the module goes through them.
+
+      The reading half is verified (securityfs, 123 real profiles), and
+      `apparmor.status` no longer claims `tools: true` for a binary that
+      is present and cannot run. The gate stays red on it. §6 carries
+      the decision; DIVERGENCE 5.37 has the detail.
    3. **`snap`** — snapd is already on an Ubuntu runner and the obstacle
       is the network: `snap install` fetches, and there is no offline
       equivalent of the local apt repository `fleetcheck` uses. Either a

@@ -128,50 +128,27 @@ jobs:
           echo "apparmor-utils:   $(dpkg-query -W -f='${Version}' apparmor-utils)"
           echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '\n' ' ')"
 
-      # **The `aa-*` tools on this image cannot parse this image's own
-      # profiles, and the one line they choke on is commented out
-      # deliberately.**
+      # No workaround here, and that is the conclusion rather than a
+      # gap.
       #
-      # They are Python, and before doing anything they parse every
-      # profile under /etc/apparmor.d with their own parser rather than
-      # with `apparmor_parser`. Ubuntu 24.04's apparmor-utils 4.0.1
-      # cannot read a mount rule in `abstractions/passt`, shipped by
-      # Ubuntu's own `passt` package -- so on a stock runner
-      # `aa-enforce`, `aa-complain` and `aa-disable` all fail, on every
-      # profile, including /usr/bin/man.
+      # The `aa-*` tools are Python and parse every profile under
+      # /etc/apparmor.d with their own parser before doing anything.
+      # Ubuntu 24.04's apparmor-utils 4.0.1 cannot parse the profile set
+      # Ubuntu itself ships: first a mount rule in `abstractions/passt`,
+      # and with that one commented out, another one straight after. So
+      # every `aa-*` invocation fails on every profile, including
+      # /usr/bin/man.
       #
-      # That is a fact about Ubuntu rather than about halite, and
-      # DIVERGENCE 5.37 records it rather than working around it
-      # silently. The line is commented out here so that the *separate*
-      # question -- does halite drive these tools correctly when they
-      # work -- can be answered at all. Both facts are worth having and
-      # neither substitutes for the other.
+      # Two workarounds were tried and both are recorded in DIVERGENCE
+      # 5.37 rather than kept: moving the file aside produced `Include
+      # file not found` because other profiles include it, and commenting
+      # out the offending rule produced the next unparseable rule. At
+      # that point the workaround is the story, and the story is that
+      # this platform's own tools do not work.
       #
-      # Moving the whole file aside was tried first and produced a
-      # different failure: other profiles `include` it, so the tools then
-      # could not find it. One line is the smaller change.
-      #
-      # Visible here rather than inside a test helper, because a
-      # workaround a reader cannot see is one that becomes the truth.
-      - name: comment out the rule apparmor-utils cannot parse
-        run: |
-          set -e
-          for f in $(sudo grep -rl runbindable /etc/apparmor.d/abstractions/ 2>/dev/null); do
-            echo "patching $f (owned by: $(dpkg -S "$f" 2>/dev/null | cut -d: -f1))"
-            sudo cp -a "$f" "$f.halite-orig"
-            # awk rather than sed: a backreference in a YAML string
-            # inside a shell single-quote is three levels of escaping
-            # and it has been eaten twice already.
-            sudo awk '$0 ~ /runbindable/ && $0 !~ /^[ 	]*#/ { print "# halite disabled: " $0; next } { print }' "$f.halite-orig" | sudo tee "$f" >/dev/null
-            sudo grep -n "halite disabled" "$f" || echo "  nothing was commented out"
-          done
-          if sudo aa-complain /usr/bin/man >/dev/null 2>&1; then
-            echo "the aa-* tools work now"
-            sudo aa-enforce /usr/bin/man >/dev/null 2>&1 || true
-          else
-            echo "the aa-* tools still fail:"
-            sudo aa-complain /usr/bin/man 2>&1 | head -3
-          fi
+      # The tests below say so and skip the mode changes. What keeps that
+      # from being a silent pass is the release gate, which still refuses
+      # to ship `apparmor` as demonstrated.
 
       # `sudo -E` alone loses PATH, and the toolchain setup-go installed
       # is on PATH rather than in a standard location -- so root would
@@ -184,15 +161,6 @@ jobs:
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
       # nothing depends on it is one that stops working unnoticed.
-      - name: put the patched profile back
-        if: always()
-        run: |
-          for f in /etc/apparmor.d/abstractions/*.halite-orig; do
-            [ -e "$f" ] || continue
-            sudo mv "$f" "${f%.halite-orig}"
-            echo "restored ${f%.halite-orig}"
-          done
-
       # The runner is thrown away, so this is not about the runner. It
       # is the assertion that the tests' own cleanup works, because they
       # are meant to be runnable on a real host and one that leaves a
