@@ -524,8 +524,22 @@ func saltAttrChain(t *template.AttrExpr) (string, bool) {
 
 // auditYAMLText parses the file with templating stripped, so that the YAML
 // hazards are found even when the tree's pillar is not available.
+//
+// It audits each arm-consistent rendering rather than the whole stripped
+// text, because keeping every branch of a conditional at once invents
+// duplicate keys the file does not have: a grain-gated pillar file that
+// defines `apache:` once per branch has one definition in every rendering
+// of it that can exist.
 func auditYAMLText(rep *Report, rel, body string) {
-	stripped := stripTemplating(body)
+	mark := len(rep.Findings)
+	for _, stripped := range strippedVariants(body) {
+		auditYAMLVariant(rep, rel, stripped)
+	}
+	dedupeFindings(rep, mark)
+}
+
+// auditYAMLVariant audits one rendering of the file.
+func auditYAMLVariant(rep *Report, rel, stripped string) {
 	opts := yaml.DefaultOptions(rel)
 	opts.AllowDuplicateKeys = true // collect them all rather than stopping
 	_, warns, err := yaml.Parse([]byte(stripped), opts)
@@ -640,12 +654,198 @@ func stripTemplating(src string) string {
 	return string(out)
 }
 
+// maxArmVariants bounds how many renderings of one file are audited. An
+// if/elif chain longer than this has its middle arms audited together,
+// which is the old behaviour for a shape no real tree has.
+const maxArmVariants = 8
+
+// armSpan is one conditional arm's content, as byte offsets into the
+// source. Blanking preserves length, so these index the stripped text too.
+type armSpan struct{ from, to int }
+
+// strippedVariants returns the renderings of the file to audit: the
+// templating-stripped text once per arm of its longest conditional, with
+// the arms not being audited blanked out.
+//
+// A file with no branching yields exactly one rendering, which is the
+// whole stripped text.
+func strippedVariants(src string) []string {
+	base := stripTemplating(src)
+	conds := conditionalArms(src)
+	most := 0
+	for _, arms := range conds {
+		if len(arms) > most {
+			most = len(arms)
+		}
+	}
+	if most <= 1 {
+		return []string{base}
+	}
+	if most > maxArmVariants {
+		most = maxArmVariants
+	}
+	variants := make([]string, 0, most)
+	for k := 0; k < most; k++ {
+		buf := []byte(base)
+		for _, arms := range conds {
+			// A conditional with fewer arms than this rendering's index
+			// keeps its last one, so every arm is audited by some
+			// rendering and no rendering mixes two arms of one
+			// conditional.
+			keep := k
+			if keep >= len(arms) {
+				keep = len(arms) - 1
+			}
+			for j, a := range arms {
+				if j != keep {
+					blankSpan(buf, a)
+				}
+			}
+		}
+		variants = append(variants, string(buf))
+	}
+	return variants
+}
+
+// blankSpan overwrites an arm with spaces, keeping the newlines so that
+// every later line stays where its author put it.
+func blankSpan(buf []byte, a armSpan) {
+	for i := a.from; i < a.to && i < len(buf); i++ {
+		if buf[i] != '\n' {
+			buf[i] = ' '
+		}
+	}
+}
+
+// conditionalArms returns the arms of every {% if %} in the source that
+// has more than one: the if body, each elif body, and the else body. A
+// single-armed if is left out, as keeping its one body can never invent a
+// duplicate.
+//
+// It tracks block nesting because {% else %} also belongs to {% for %} in
+// Jinja, and a for-else is not a pair of alternatives: both its body and
+// its else can produce keys.
+func conditionalArms(src string) [][]armSpan {
+	type frame struct {
+		kind string
+		arms []armSpan
+		// open is where the arm currently being read starts.
+		open int
+	}
+	var stack []*frame
+	var out [][]armSpan
+
+	popTo := func(kind string) *frame {
+		for len(stack) > 0 {
+			f := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if f.kind == kind {
+				return f
+			}
+		}
+		return nil
+	}
+
+	for i := 0; i < len(src); {
+		if !strings.HasPrefix(src[i:], "{%") {
+			i++
+			continue
+		}
+		end := strings.Index(src[i:], "%}")
+		if end < 0 {
+			break
+		}
+		tagEnd := i + end + len("%}")
+		switch tagKeyword(src[i+len("{%") : i+end]) {
+		case "if":
+			stack = append(stack, &frame{kind: "if", open: tagEnd})
+		case "for":
+			stack = append(stack, &frame{kind: "for", open: tagEnd})
+		case "elif", "else":
+			if n := len(stack); n > 0 && stack[n-1].kind == "if" {
+				f := stack[n-1]
+				f.arms = append(f.arms, armSpan{f.open, i})
+				f.open = tagEnd
+			}
+		case "endif":
+			if f := popTo("if"); f != nil {
+				f.arms = append(f.arms, armSpan{f.open, i})
+				if len(f.arms) > 1 {
+					out = append(out, f.arms)
+				}
+			}
+		case "endfor":
+			popTo("for")
+		case "raw":
+			// Everything up to {% endraw %} is literal text, so the
+			// tags in it are not tags.
+			if j := strings.Index(src[tagEnd:], "endraw"); j >= 0 {
+				if k := strings.Index(src[tagEnd+j:], "%}"); k >= 0 {
+					i = tagEnd + j + k + len("%}")
+					continue
+				}
+			}
+		}
+		i = tagEnd
+	}
+	return out
+}
+
+// tagKeyword reads the statement a {% %} tag opens, allowing for Jinja's
+// whitespace-control dashes.
+func tagKeyword(inner string) string {
+	inner = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(inner), "-"))
+	if i := strings.IndexAny(inner, " \t\r\n("); i >= 0 {
+		return inner[:i]
+	}
+	return inner
+}
+
+// dedupeFindings drops findings added after mark that repeat one the
+// report already carries. Auditing a file once per conditional arm sees
+// everything outside the conditional once per arm, and the report should
+// say each of those things once.
+func dedupeFindings(rep *Report, mark int) {
+	if mark < 0 || mark > len(rep.Findings) {
+		return
+	}
+	seen := make(map[Finding]bool, len(rep.Findings))
+	for _, f := range rep.Findings[:mark] {
+		seen[f] = true
+	}
+	kept := rep.Findings[:mark]
+	for _, f := range rep.Findings[mark:] {
+		if seen[f] {
+			continue
+		}
+		seen[f] = true
+		kept = append(kept, f)
+	}
+	rep.Findings = kept
+}
+
 // auditPillarTop reports every pillar top entry targeting a grain that is
 // not in the trusted allowlist, so that SPEC section 12.4 can be
 // configured deliberately rather than discovered during an incident.
 func auditPillarTop(rep *Report, rel, body string, trusted []string) {
-	stripped := stripTemplating(body)
-	v, _, err := yaml.Parse([]byte(stripped), yaml.DefaultOptions(rel))
+	mark := len(rep.Findings)
+	for _, stripped := range strippedVariants(body) {
+		auditPillarTopVariant(rep, rel, stripped, trusted)
+	}
+	dedupeFindings(rep, mark)
+}
+
+// auditPillarTopVariant reads the targets out of one rendering of the top
+// file. A gated top file that opens `base:` in each arm of a conditional
+// is not a duplicate key in any rendering of it, and reading the arms
+// together made the file fail to parse and took every grain finding in it
+// with the file.
+func auditPillarTopVariant(rep *Report, rel, stripped string, trusted []string) {
+	opts := yaml.DefaultOptions(rel)
+	// The YAML pass reports a real duplicate; here the aim is to read as
+	// much of the file as it has.
+	opts.AllowDuplicateKeys = true
+	v, _, err := yaml.Parse([]byte(stripped), opts)
 	if err != nil {
 		return
 	}

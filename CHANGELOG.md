@@ -18,6 +18,37 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `migrate` read every branch of a conditional at once
+
+A grain-gated pillar file defines the same key once per branch:
+
+    {% if grains['os_family'] == 'Debian' %}
+    apache:
+      pkg: apache2
+    {% else %}
+    apache:
+      pkg: httpd
+    {% endif %}
+
+The audit strips templating before it reads the YAML, so that a tree
+whose pillar is not available is still checked. Stripping left the body
+of every branch in place, and the file above was reported as two
+blocking duplicate keys — a report that says a working tree cannot be
+applied, which is the way for this tool to be useless. Only one branch
+is ever live, so the file has one definition of `apache`.
+
+The YAML, declaration, and pillar-top passes now read one rendering of a
+file per arm of its longest conditional, with the other arms blanked in
+place so that every position still matches the file on disk. A duplicate
+inside a single arm, or outside every arm, is still reported — once,
+rather than once per rendering.
+
+The pillar top file lost more than a false finding. A top file that
+opens `base:` in each arm read as a duplicate key, the parse failed, and
+`auditPillarTop` returned without reporting anything: a gated top file
+targeting untrusted grains was called clean, and the first run would not
+have compiled pillar at all.
+
 ### Every module now says what has been demonstrated about it
 
 21 modules in this build change a machine as root. Almost all of them

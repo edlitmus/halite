@@ -759,3 +759,207 @@ base:
 		}
 	}
 }
+
+// TestGatedBranchesAreNotDuplicateKeys is the report an operator cannot
+// use: a grain-gated pillar file defines the same key once per branch,
+// and the audit called every one of them a blocking duplicate. Only one
+// branch of a conditional is ever live, so the file has one definition.
+func TestGatedBranchesAreNotDuplicateKeys(t *testing.T) {
+	root := t.TempDir()
+	pillar := filepath.Join(root, "pillar")
+	mkdirAll(t, pillar)
+	writeFile(t, filepath.Join(root, "top.sls"), "base:\n  '*':\n    - web\n")
+	writeFile(t, filepath.Join(root, "web.sls"), "nop:\n  test.nop: []\n")
+	writeFile(t, filepath.Join(pillar, "top.sls"), "base:\n  '*':\n    - common\n")
+	writeFile(t, filepath.Join(pillar, "common.sls"), `{% if grains['os_family'] == 'Debian' %}
+apache:
+  pkg: apache2
+{% elif grains['os_family'] == 'RedHat' %}
+apache:
+  pkg: httpd
+{% else %}
+apache:
+  pkg: unknown
+{% endif %}
+`)
+
+	rep, err := Run(Options{Root: root, PillarRoot: pillar})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range rep.Findings {
+		if strings.Contains(f.Msg, "duplicate mapping key") {
+			t.Errorf("a gated branch was reported as a duplicate: %s", f)
+		}
+	}
+}
+
+// TestDuplicateInOneArmIsStillReported is the other half: the fix must
+// not buy quiet by stopping looking. A key repeated inside a single
+// branch, or outside every branch, is a real duplicate — and is reported
+// once, not once per branch audited.
+func TestDuplicateInOneArmIsStillReported(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"outside the conditional", `{% if grains['os'] == 'Ubuntu' %}
+apache:
+  pkg: apache2
+{% else %}
+apache:
+  pkg: httpd
+{% endif %}
+shared: 1
+shared: 2
+`},
+		{"inside the if arm", `{% if grains['os'] == 'Ubuntu' %}
+dup: 1
+dup: 2
+{% else %}
+apache:
+  pkg: httpd
+{% endif %}
+`},
+		{"inside the else arm", `{% if grains['os'] == 'Ubuntu' %}
+apache:
+  pkg: apache2
+{% else %}
+dup: 1
+dup: 2
+{% endif %}
+`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			pillar := filepath.Join(root, "pillar")
+			mkdirAll(t, pillar)
+			writeFile(t, filepath.Join(root, "top.sls"), "base:\n  '*':\n    - web\n")
+			writeFile(t, filepath.Join(root, "web.sls"), "nop:\n  test.nop: []\n")
+			writeFile(t, filepath.Join(pillar, "top.sls"), "base:\n  '*':\n    - common\n")
+			writeFile(t, filepath.Join(pillar, "common.sls"), tc.body)
+
+			rep, err := Run(Options{Root: root, PillarRoot: pillar})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var dups []Finding
+			for _, f := range rep.Findings {
+				if strings.Contains(f.Msg, "duplicate mapping key") {
+					dups = append(dups, f)
+				}
+			}
+			if len(dups) != 1 {
+				t.Errorf("duplicate findings = %d, want exactly 1: %+v", len(dups), dups)
+			}
+		})
+	}
+}
+
+// TestGatedPillarTopReportsEveryGrainTarget covers the finding the gating
+// used to take with it. A top file that opens `base:` in each arm of a
+// conditional read as a duplicate key, the parse failed, and the audit
+// reported no grain targets at all — a tree called clean whose first run
+// would not compile pillar.
+func TestGatedPillarTopReportsEveryGrainTarget(t *testing.T) {
+	root := t.TempDir()
+	pillar := filepath.Join(root, "pillar")
+	mkdirAll(t, pillar)
+	writeFile(t, filepath.Join(root, "top.sls"), "base:\n  '*':\n    - web\n")
+	writeFile(t, filepath.Join(root, "web.sls"), "nop:\n  test.nop: []\n")
+	writeFile(t, filepath.Join(pillar, "common.sls"), "key: value\n")
+	writeFile(t, filepath.Join(pillar, "top.sls"), `{% if grains['os_family'] == 'Debian' %}
+base:
+  'roles:web':
+    - match: grain
+    - common
+{% else %}
+base:
+  'datacentre:iad':
+    - match: grain
+    - common
+{% endif %}
+`)
+
+	rep, err := Run(Options{Root: root, PillarRoot: pillar})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := findingsFor(rep, CatPillarGrain)
+	subjects := map[string]int{}
+	for _, f := range found {
+		subjects[f.Subject]++
+	}
+	if subjects["roles"] != 1 || subjects["datacentre"] != 1 || len(found) != 2 {
+		t.Errorf("grain findings = %+v, want one each for roles and datacentre", found)
+	}
+}
+
+// TestStrippedVariantsKeepPositions guards the property every finding's
+// position depends on: blanking the arms this rendering does not audit
+// must not move a single later line or column.
+func TestStrippedVariantsKeepPositions(t *testing.T) {
+	src := `a: 1
+{% if x %}
+b: {{ two }}
+{% elif y %}
+b: 3
+{% else %}
+b: 4
+{% endif %}
+c: 5
+`
+	variants := strippedVariants(src)
+	if len(variants) != 3 {
+		t.Fatalf("renderings = %d, want one per arm of the conditional", len(variants))
+	}
+	srcLines := strings.Split(src, "\n")
+	for n, v := range variants {
+		lines := strings.Split(v, "\n")
+		if len(lines) != len(srcLines) {
+			t.Fatalf("rendering %d changed the line count: %q", n, v)
+		}
+		for i := range srcLines {
+			if len(lines[i]) != len(srcLines[i]) {
+				t.Errorf("rendering %d line %d changed length: %q became %q",
+					n, i+1, srcLines[i], lines[i])
+			}
+		}
+		if strings.Contains(v, "{%") || strings.Contains(v, "{{") {
+			t.Errorf("rendering %d kept templating: %q", n, v)
+		}
+	}
+	// Each arm is audited by some rendering: the three bodies appear
+	// across the three renderings, one at a time.
+	for _, want := range []string{"b: 3", "b: 4"} {
+		seen := 0
+		for _, v := range variants {
+			if strings.Contains(v, want) {
+				seen++
+			}
+		}
+		if seen != 1 {
+			t.Errorf("%q appears in %d renderings, want exactly 1", want, seen)
+		}
+	}
+}
+
+// TestForElseIsNotAPairOfAlternatives. Jinja's {% for %} takes an
+// {% else %} too, and a loop body is not an alternative to it: reading
+// them as arms would stop the audit from looking at a loop body at all.
+func TestForElseIsNotAPairOfAlternatives(t *testing.T) {
+	src := "{% for i in items %}\na: {{ i }}\n{% else %}\nb: none\n{% endfor %}\n"
+	if arms := conditionalArms(src); len(arms) != 0 {
+		t.Errorf("conditionalArms found %d conditionals in a for-else: %+v", len(arms), arms)
+	}
+	variants := strippedVariants(src)
+	if len(variants) != 1 {
+		t.Fatalf("renderings = %d, want 1 for a file with no conditional", len(variants))
+	}
+	for _, want := range []string{"a:", "b: none"} {
+		if !strings.Contains(variants[0], want) {
+			t.Errorf("the rendering dropped %q: %q", want, variants[0])
+		}
+	}
+}

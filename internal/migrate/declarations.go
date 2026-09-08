@@ -26,13 +26,25 @@ import (
 // a missed finding is a surprise later, and a false one is a surprise now
 // about something that is fine.
 func auditDeclarations(rep *Report, opts Options, rel, body string) {
-	source := strings.Split(body, "\n")
 	if opts.StateRegistry == nil {
 		return
 	}
+	source := strings.Split(body, "\n")
+	// One rendering per conditional arm, as the YAML pass does: reading
+	// the arms together can leave a file that does not parse, and a file
+	// that does not parse has its declarations dropped.
+	mark := len(rep.Findings)
+	for _, stripped := range strippedVariants(body) {
+		auditDeclarationsIn(rep, opts, rel, source, stripped)
+	}
+	dedupeFindings(rep, mark)
+}
+
+// auditDeclarationsIn checks the declarations of one rendering.
+func auditDeclarationsIn(rep *Report, opts Options, rel string, source []string, stripped string) {
 	yopts := yaml.DefaultOptions(rel)
 	yopts.AllowDuplicateKeys = true
-	parsed, _, err := yaml.Parse([]byte(stripTemplating(body)), yopts)
+	parsed, _, err := yaml.Parse([]byte(stripped), yopts)
 	if err != nil {
 		// The YAML audit already reported this. A file that does not
 		// parse has no declarations to check.
