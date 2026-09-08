@@ -131,6 +131,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`/etc/sysctl.conf` path, because a test that edits a hand-maintained file and " +
 		"puts it back can cost an operator more than the coverage is worth; the persist " +
 		"target is redirected and nothing else is"},
+	"netplan": {Level: exec.Hardware, Note: "`netplan.managed` wrote a document into " +
+		"/etc/netplan on a real netplan 1.1.2 (Ubuntu 24.04), real `netplan generate` " +
+		"validated it, and `netplan get` read the values back -- so the YAML this " +
+		"module's encoder produces is now known to be the YAML netplan reads, not merely " +
+		"valid YAML (DIVERGENCE 5.38). A document with an unknown key was refused with " +
+		"netplan's own message. Not covered, and deliberately: `netplan apply`, which " +
+		"reconfigures the interface the run arrives over -- the module never calls it " +
+		"unless a declaration names `apply: true`, and no live test applies"},
 
 	// ---- Read from a real system, mutation never watched ----
 
@@ -167,10 +175,6 @@ var moduleEvidence = map[string]exec.Evidence{
 	"snap": {Level: exec.Assumed, Note: "nothing here has run against a real snapd, and " +
 		"the `snap list` fixtures were written from its documented columns rather than " +
 		"captured (DIVERGENCE 5.28)"},
-	"netplan": {Level: exec.Assumed, Note: "`netplan generate` and `netplan apply` have " +
-		"not been run, and the YAML this writes has never been round-tripped through a " +
-		"real netplan — which is the module that reconfigures the interface an operator " +
-		"is connected over"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

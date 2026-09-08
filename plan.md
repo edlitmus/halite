@@ -1052,12 +1052,13 @@ place.
 
 **Then — closing the gate, which this fleet can do**
 
-5. **Demonstrate the three modules the gate is still red on.** It was
-   nine; `make fleetcheck` closed four and the two live CI legs closed
-   two more. `apparmor` was attempted and is now blocked on a decision
-   rather than on effort. This stays the highest-ranked *unbuilt* item
-   because nothing else on this list can ship a release until it is
-   done.
+5. **Demonstrate the two modules the gate is still red on.** It was
+   nine; `make fleetcheck` closed four, the two live CI legs closed two
+   more, and `netplan` closed on this fleet's Ubuntu host (DIVERGENCE
+   5.38). `apparmor` was attempted and is now blocked on a decision
+   rather than on effort; `snap` needs the network the no-network rule
+   refuses. This stays the highest-ranked *unbuilt* item because nothing
+   else on this list can ship a release until it is done.
 
    ~~`dpkg`~~, ~~`debconf`~~, ~~`pkgrepo`~~ and ~~`timezone`~~ are done,
    driven against a real Debian's own tools in a disposable container —
@@ -1078,16 +1079,18 @@ place.
    drop-in on Linux; `sysrc`, rc.conf and `/etc/sysctl.conf` on FreeBSD,
    which is the branch §1.4 found had no test at all. DIVERGENCE 5.36.
 
+   ~~`netplan`~~ is done, on this fleet's one Ubuntu host as forecast.
+   The obstacle it was ranked for never applied: the module does not run
+   `netplan apply` unless a declaration names it, so the test writes a
+   document, has real `netplan generate` validate it, reads it back
+   through `netplan get`, and removes it — none of which touches an
+   interface, so the CI Linux leg runs it too. What is *not* covered is
+   `netplan apply` itself, deliberately and by name. DIVERGENCE 5.38.
+
    **What is left, and what each actually needs**, in the order the
    effort is worth it:
 
-   1. **`netplan`** — the worst consequence in the set: it reconfigures
-      the interface an operator is connected over, and `netplan apply`
-      on a CI runner would cut the job's own network. It needs a network
-      namespace or a nested machine — **or the one Ubuntu host in this
-      fleet, which settles it in an afternoon** and is still the fastest
-      route.
-   2. ~~**`apparmor`**~~ — **attempted, and it is a decision now rather
+   1. ~~**`apparmor`**~~ — **attempted, and it is a decision now rather
       than an afternoon.** A runner can load a profile; that was never
       the obstacle. Ubuntu 24.04's own `aa-*` tools cannot parse
       Ubuntu's own profiles — apparmor-utils 4.0.1 against
@@ -1100,13 +1103,13 @@ place.
       `apparmor.status` no longer claims `tools: true` for a binary that
       is present and cannot run. The gate stays red on it. §6 carries
       the decision; DIVERGENCE 5.37 has the detail.
-   3. **`snap`** — snapd is already on an Ubuntu runner and the obstacle
+   2. **`snap`** — snapd is already on an Ubuntu runner and the obstacle
       is the network: `snap install` fetches, and there is no offline
       equivalent of the local apt repository `fleetcheck` uses. Either a
       pre-seeded snap or an exception to the no-network rule, and the
       exception is the wrong answer.
 
-   Two lessons from doing the first six, both worth carrying.
+   Two lessons from doing the first seven, both worth carrying.
 
    The Debian run found six defects on its first attempt and every one
    was in the *test*, not the module — wrong argument names and wrong

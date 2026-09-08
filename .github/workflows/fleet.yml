@@ -37,8 +37,10 @@ on:
       - "internal/builtin/hostname*.go"
       - "internal/builtin/sysctl*.go"
       - "internal/builtin/apparmor*.go"
+      - "internal/builtin/netplan*.go"
       - "internal/builtin/live_apparmor_test.go"
       - "internal/builtin/live_debian_test.go"
+      - "internal/builtin/live_netplan_test.go"
       - "internal/builtin/live_system_test.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
@@ -98,8 +100,16 @@ jobs:
   # A GitHub runner is a fresh virtual machine that is destroyed when the
   # job ends. Renaming it and moving one kernel parameter costs nothing,
   # and both are put back regardless.
+  #
+  # `netplan` rides along here rather than needing its own machine,
+  # because the module never applies unless a declaration asks: the test
+  # writes a file into /etc/netplan, has real `netplan generate` validate
+  # it, reads it back through `netplan get`, and removes it. None of that
+  # touches an interface, so the runner being reachable only over its one
+  # NIC does not matter -- `netplan apply` is the path that would, and no
+  # live test runs it (DIVERGENCE 5.38).
   linux:
-    name: linux (real kernel, hostname, apparmor)
+    name: linux (real kernel, hostname, apparmor, netplan)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -127,6 +137,8 @@ jobs:
           echo "profiles loaded:  $(sudo grep -c . /sys/kernel/security/apparmor/profiles 2>&1)"
           echo "apparmor-utils:   $(dpkg-query -W -f='${Version}' apparmor-utils)"
           echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '\n' ' ')"
+          echo "netplan:          $(dpkg-query -W -f='${Version}' netplan.io 2>&1)"
+          echo "netplan files:    $(ls /etc/netplan 2>&1 | tr '\n' ' ')"
 
       # No workaround here, and that is the conclusion rather than a
       # gap.
@@ -154,9 +166,9 @@ jobs:
       # is on PATH rather than in a standard location -- so root would
       # run a different Go, or none. The environment is named
       # explicitly instead.
-      - name: drive hostname, sysctl and apparmor
+      - name: drive hostname, sysctl, apparmor and netplan
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan' ./internal/builtin/
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
@@ -170,8 +182,11 @@ jobs:
         run: |
           echo "hostname: $(hostname)"
           echo "swappiness: $(sysctl -n vm.swappiness)"
+          echo "netplan files: $(ls /etc/netplan | tr '\n' ' ')"
           test "$(hostname)" != "halite-live-probe" || {
             echo "the tests left this machine renamed"; exit 1; }
+          test ! -e /etc/netplan/98-halite-live-probe.yaml || {
+            echo "the tests left the probe config in /etc/netplan"; exit 1; }
 
   # The same two modules on FreeBSD, which is the platform four of the
   # five hosts in this project's own fleet run.

@@ -4254,10 +4254,12 @@ Each of the three needs something the previous six did not:
   network, which the no-network rule of 5.35 refuses. Either a
   pre-seeded snap or an exception, and the exception is the wrong
   answer.
-- **`netplan`** applies a configuration to the interface the job is
-  running over, so it wants a network namespace or a nested machine. It
-  has the worst consequence of the three if it is wrong, and it is the
-  one this project's own Ubuntu host could settle in an afternoon.
+- ~~**`netplan`**~~ — **done** (5.38), and the forecast here was wrong
+  in the way that mattered: it wants no network namespace and no nested
+  machine, because the module never applies unless asked. Writing the
+  document and having real `netplan generate` validate it is the half a
+  fixture could not reach, and it ran on this project's own Ubuntu host
+  in an afternoon, as predicted.
 
 ### 5.37 `apparmor`: the reading half is verified and the writing half cannot run
 
@@ -4373,6 +4375,82 @@ commit:
 the note is now a fact with a reproduction rather than "nobody has run
 it", which is the difference this whole exercise is for. The gate is
 red on **three** modules: `apparmor`, `netplan` and `snap`.
+
+### 5.38 `netplan`: the encoder writes netplan's YAML, and it is never applied
+
+5.37 ranked the three remaining modules and said `netplan` was "the one
+this project's own Ubuntu host could settle in an afternoon." This is
+that afternoon.
+
+#### What is now demonstrated
+
+**The directory parses in the order netplan reads it.** `netplanFiles`
+lists `/etc/netplan` lexically — the reason a tree numbers its files —
+and against the real directory on Ubuntu 24.04 the module's listing
+matches a direct read, suffix filter and sort included. One of the
+machine's own `90-NM-*.yaml` files, mode 0600, parses to a document
+rooted at `network:`, and `netplan get all` agrees the tree is well
+formed.
+
+**The document this module writes is the document netplan reads.**
+`netplan.managed` renders its `config` with this package's own YAML
+encoder. That was a 5.33 guess — "the YAML this writes has never been
+round-tripped through a real netplan" — and it is the exact shape of
+mistake 5.31 cost a firewall. Now: the state writes
+`98-halite-live-probe.yaml`, real `netplan generate` (netplan 1.1.2)
+accepts it, and `netplan get ethernets.hal0probe.optional` returns
+`true` — the value that went in, read back out by netplan's own parser.
+The file is 0600, and a second run reports no change.
+
+**A document netplan rejects fails the state, with netplan's own words.**
+A config carrying an unknown key (`addressess`) makes real `netplan
+generate` fail; the module reports it with netplan's message and the
+sentence "nothing has been applied", and the file is left on disk where
+5.33's fixture said it would be. The fixture text and the real text
+match.
+
+#### What was not run, and that is the design
+
+**`netplan apply` was not run, and no live test will run it.** Applying
+reconfigures the interface the run arrives over, and whether the node
+stays reachable afterwards is a fact about the network and not about the
+file — there is no dry run that can prove otherwise. The module is built
+around this: `netplan.managed` writes and validates and stops, and calls
+`netplan apply` only when a declaration names `apply: true`. A live test
+that applied would be exercising the one path the module exists to keep
+behind an explicit request, on the interface the test is talking over.
+
+So the bounded gap is `netplan apply` itself — nothing has watched it
+run. What is demonstrated is `netplan.managed`, the state an estate
+actually writes, minus that opt-in branch. That is the same shape as
+`firewall`'s "still not seen on hardware: the anchor refusal refusing"
+and `sysctl`'s redirected persist path: a gap named and reasoned about,
+not one nobody looked at.
+
+#### Where it runs
+
+`HALITE_SYSTEM_LIVE=1`, the gate `hostname`, `sysctl` and `apparmor`
+share — here on this project's own netplan-managed Ubuntu 24.04 host,
+which is where the Linux provider work is done. Not the fleet container:
+it has no netplan, and 5.35's no-network rule would refuse it anyway.
+The CI `linux` leg gains it for free, because the test never applies —
+a GitHub `ubuntu-24.04` runner has netplan, and writing a file plus
+`netplan generate` touches no interface.
+
+The probe brings its own file, like `apparmor`'s: numbered `98-` to sort
+last, `renderer: networkd` so a NetworkManager host never sees it, an
+interface name (`hal0probe`) that matches no hardware, and `optional:
+true` so an apply that never happens could not stall a boot. It is
+removed and the tree regenerated in a cleanup that runs whatever the
+test did.
+
+#### Where the gate stands
+
+`netplan` moves to `hardware`. **The release gate is red on two
+modules**: `apparmor` and `snap`. It was nine. `apparmor`'s red is a
+documented platform defect with a reproduction (5.37), not an untried
+path; `snap` still wants snapd and the network together, and the
+network is what 5.35's rule refuses.
 
 ## 6. Everything else not started
 
