@@ -227,16 +227,18 @@ func TestLiveAppArmorMovesAProfileThroughEveryMode(t *testing.T) {
 	// complain, then back to enforce. Both through the aa-* tools, and
 	// both by *profile name* -- which is what the module passes and what
 	// had never been checked against the real tools.
+	//
+	// Each tool is reported separately rather than the first failure
+	// ending the test, because "which of the three works here" is the
+	// answer wanted and one Fatal hides the other two.
 	if _, err := r.Exec.Call(c, "apparmor.complain", value.MapOf("name", liveAppArmorProfile)); err != nil {
-		t.Fatalf("apparmor.complain: %v", err)
-	}
-	if mode := liveMode(t, c, r); mode != "complain" {
+		t.Errorf("apparmor.complain: %v", err)
+	} else if mode := liveMode(t, c, r); mode != "complain" {
 		t.Errorf("after apparmor.complain the profile is in %q mode", mode)
 	}
 	if _, err := r.Exec.Call(c, "apparmor.enforce", value.MapOf("name", liveAppArmorProfile)); err != nil {
-		t.Fatalf("apparmor.enforce: %v", err)
-	}
-	if mode := liveMode(t, c, r); mode != "enforce" {
+		t.Errorf("apparmor.enforce: %v", err)
+	} else if mode := liveMode(t, c, r); mode != "enforce" {
 		t.Errorf("after apparmor.enforce the profile is in %q mode", mode)
 	}
 

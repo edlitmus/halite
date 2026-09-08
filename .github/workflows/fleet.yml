@@ -124,6 +124,18 @@ jobs:
           echo "securityfs:       $(sudo head -3 /sys/kernel/security/apparmor/profiles 2>&1)"
           echo "profiles loaded:  $(sudo wc -l < /sys/kernel/security/apparmor/profiles 2>&1)"
           echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '\n' ' ')"
+          echo "--- which profiles use the syntax the python tools reject"
+          grep -rl runbindable /etc/apparmor.d/ 2>/dev/null || echo "  none"
+          echo "--- apparmor-utils version"
+          dpkg-query -W -f='${Version}' apparmor-utils; echo
+          dpkg-query -W -f='${Version}' apparmor; echo
+          echo "--- does aa-complain work on a stock profile at all"
+          sudo aa-complain /usr/bin/man 2>&1 | head -3 || true
+          sudo aa-enforce /usr/bin/man 2>&1 | head -3 || true
+          echo "--- is the offending profile one docker installed"
+          for f in $(grep -rl runbindable /etc/apparmor.d/ 2>/dev/null); do
+            echo "$f -> $(dpkg -S "$f" 2>&1 | head -1)"
+          done
 
       # `sudo -E` alone loses PATH, and the toolchain setup-go installed
       # is on PATH rather than in a standard location -- so root would
