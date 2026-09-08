@@ -118,24 +118,45 @@ jobs:
       # What this machine actually offers, printed whether or not the
       # tests then pass. A live check that fails is worth more when the
       # log says what it was looking at.
+      # What this machine offers, printed whether or not the tests then
+      # pass. A live check that fails is worth more when the log says
+      # what it was looking at.
       - name: what this machine offers
         run: |
           echo "apparmor enabled: $(cat /sys/module/apparmor/parameters/enabled 2>&1)"
-          echo "securityfs:       $(sudo head -3 /sys/kernel/security/apparmor/profiles 2>&1)"
-          echo "profiles loaded:  $(sudo wc -l < /sys/kernel/security/apparmor/profiles 2>&1)"
-          echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '\n' ' ')"
-          echo "--- which profiles use the syntax the python tools reject"
-          grep -rl runbindable /etc/apparmor.d/ 2>/dev/null || echo "  none"
-          echo "--- apparmor-utils version"
-          dpkg-query -W -f='${Version}' apparmor-utils; echo
-          dpkg-query -W -f='${Version}' apparmor; echo
-          echo "--- does aa-complain work on a stock profile at all"
-          sudo aa-complain /usr/bin/man 2>&1 | head -3 || true
-          sudo aa-enforce /usr/bin/man 2>&1 | head -3 || true
-          echo "--- is the offending profile one docker installed"
-          for f in $(grep -rl runbindable /etc/apparmor.d/ 2>/dev/null); do
-            echo "$f -> $(dpkg -S "$f" 2>&1 | head -1)"
+          echo "profiles loaded:  $(sudo grep -c . /sys/kernel/security/apparmor/profiles 2>&1)"
+          echo "apparmor-utils:   $(dpkg-query -W -f='${Version}' apparmor-utils)"
+          echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '
+' ' ')"
+
+      # **The `aa-*` tools on this image cannot parse this image's own
+      # profiles, and the offending one is moved aside deliberately.**
+      #
+      # They are Python, and before doing anything they parse every
+      # profile under /etc/apparmor.d with their own parser rather than
+      # with `apparmor_parser`. Ubuntu 24.04's apparmor-utils 4.0.1
+      # cannot read `abstractions/passt`, shipped by Ubuntu's own `passt`
+      # package -- so on a stock runner `aa-enforce`, `aa-complain` and
+      # `aa-disable` all fail, on every profile, including /usr/bin/man.
+      #
+      # That is a fact about Ubuntu rather than about halite, and it is
+      # recorded in DIVERGENCE 5.37 rather than worked around silently.
+      # It is moved aside here so that the *separate* question -- does
+      # halite drive these tools correctly when they work -- can be
+      # answered at all. Both facts are worth having and neither
+      # substitutes for the other.
+      #
+      # Visible here rather than inside a test helper, because a
+      # workaround a reader cannot see is one that becomes the truth.
+      - name: move aside the profile apparmor-utils cannot parse
+        run: |
+          set -e
+          for f in $(sudo grep -rl runbindable /etc/apparmor.d/abstractions/ 2>/dev/null); do
+            echo "moving aside $f (owned by: $(dpkg -S "$f" 2>/dev/null | cut -d: -f1))"
+            sudo mv "$f" "$f.halite-moved"
           done
+          sudo aa-complain /usr/bin/man >/dev/null 2>&1             && echo "the aa-* tools work now"             || echo "the aa-* tools still fail; the tests will say so"
+          sudo aa-enforce /usr/bin/man >/dev/null 2>&1 || true
 
       # `sudo -E` alone loses PATH, and the toolchain setup-go installed
       # is on PATH rather than in a standard location -- so root would
@@ -144,6 +165,18 @@ jobs:
       - name: drive hostname, sysctl and apparmor
         run: |
           sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor' ./internal/builtin/
+
+      # Put back, for the same reason the tests restore what they touch:
+      # the runner is thrown away, and a cleanup that only works because
+      # nothing depends on it is one that stops working unnoticed.
+      - name: put the moved profile back
+        if: always()
+        run: |
+          for f in /etc/apparmor.d/abstractions/*.halite-moved; do
+            [ -e "$f" ] || continue
+            sudo mv "$f" "${f%.halite-moved}"
+            echo "restored ${f%.halite-moved}"
+          done
 
       # The runner is thrown away, so this is not about the runner. It
       # is the assertion that the tests' own cleanup works, because they

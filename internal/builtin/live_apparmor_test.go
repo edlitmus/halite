@@ -90,7 +90,63 @@ func apparmorLive(t *testing.T) *exec.Context {
 			t.Fatalf("%s is not installed; apparmor_parser is in `apparmor` and the aa-* tools are in `apparmor-utils`", tool)
 		}
 	}
+	requireWorkingAppArmorTools(t, c)
 	return c
+}
+
+// requireWorkingAppArmorTools fails early, once, when this machine's
+// `aa-*` tools cannot run at all.
+//
+// # Why a whole check for this
+//
+// The `aa-*` tools are Python, and before doing anything they parse
+// *every* profile under /etc/apparmor.d with their own parser — not
+// with `apparmor_parser`. One profile that parser does not understand
+// therefore breaks every mode change on the machine, whatever profile
+// was asked about.
+//
+// That is not hypothetical. Ubuntu 24.04's own apparmor-utils 4.0.1
+// cannot parse `abstractions/passt`, shipped by Ubuntu's own `passt`
+// package, and on a machine with it installed `aa-enforce`,
+// `aa-complain` and `aa-disable` all fail — including on stock profiles
+// like /usr/bin/man. DIVERGENCE 5.37.
+//
+// Without this check, three tests fail with the same confusing message
+// and none of them says that the fault is neither halite's nor the
+// profile's.
+func requireWorkingAppArmorTools(t *testing.T, c *exec.Context) {
+	t.Helper()
+	res, err := c.Run(exec.Command{
+		// `--help` does not parse the tree; a real invocation against a
+		// profile that does not exist does, and fails at the parse
+		// before it gets as far as not finding it.
+		Argv:           []string{"aa-complain", "halite-no-such-profile-probe"},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		t.Fatalf("running aa-complain at all: %v", err)
+	}
+	out := res.Stderr + res.Stdout
+	if !strings.Contains(out, "cannot have a source") && !strings.Contains(out, "Traceback") {
+		return
+	}
+	var offenders []string
+	if entries, err := os.ReadDir(filepath.Join(liveAppArmorDir, "abstractions")); err == nil {
+		for _, e := range entries {
+			p := filepath.Join(liveAppArmorDir, "abstractions", e.Name())
+			if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), "runbindable") {
+				offenders = append(offenders, p)
+			}
+		}
+	}
+	t.Fatalf("this machine's aa-* tools cannot parse its own profile tree, so no mode "+
+		"change can be made on it by any means:\n  %s\n"+
+		"Profiles using syntax they reject: %v\n"+
+		"That is a defect in apparmor-utils rather than in halite or in the profile "+
+		"asked about — it fails the same way on /usr/bin/man. DIVERGENCE 5.37 records "+
+		"it; the workflow moves the offending abstraction aside so that halite's own "+
+		"behaviour can be established separately.",
+		strings.TrimSpace(firstLine(out)), offenders)
 }
 
 // writeLiveProfile puts the profile on disk and removes every trace of
