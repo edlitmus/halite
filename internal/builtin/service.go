@@ -392,6 +392,16 @@ func (systemdProvider) Available(c *exec.Context) bool {
 }
 
 func (systemdProvider) Status(c *exec.Context, name string) (bool, error) {
+	if b, ok := dialOrNil(c); ok {
+		state, err := b.activeState(withServiceSuffix(name))
+		b.Close()
+		if err == nil {
+			return state == "active" || state == "reloading", nil
+		}
+		// A read that reached systemd and still failed -- a malformed
+		// unit name -- is rare. Fall through to systemctl rather than
+		// fail the caller on it.
+	}
 	res, err := c.Run(exec.Command{
 		Argv:           []string{"systemctl", "is-active", "--quiet", name},
 		IgnoreExitCode: true,
@@ -403,6 +413,13 @@ func (systemdProvider) Status(c *exec.Context, name string) (bool, error) {
 }
 
 func (systemdProvider) Enabled(c *exec.Context, name string) (bool, error) {
+	if b, ok := dialOrNil(c); ok {
+		state, err := b.unitFileState(withServiceSuffix(name))
+		b.Close()
+		if err == nil {
+			return systemdEnabledState(state), nil
+		}
+	}
 	res, err := c.Run(exec.Command{
 		Argv:           []string{"systemctl", "is-enabled", name},
 		IgnoreExitCode: true,
@@ -410,8 +427,17 @@ func (systemdProvider) Enabled(c *exec.Context, name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	state := strings.TrimSpace(firstLine(res.Stdout))
-	return state == "enabled" || state == "enabled-runtime" || state == "static", nil
+	return systemdEnabledState(strings.TrimSpace(firstLine(res.Stdout))), nil
+}
+
+// systemdEnabledState reads the unit-file states that mean "this unit
+// starts at boot" -- the same set `systemctl is-enabled` exits 0 for.
+func systemdEnabledState(state string) bool {
+	switch state {
+	case "enabled", "enabled-runtime", "static":
+		return true
+	}
+	return false
 }
 
 func systemctl(c *exec.Context, verb, name string) error {
@@ -419,18 +445,44 @@ func systemctl(c *exec.Context, verb, name string) error {
 	return err
 }
 
-func (systemdProvider) Start(c *exec.Context, name string) error { return systemctl(c, "start", name) }
-func (systemdProvider) Stop(c *exec.Context, name string) error  { return systemctl(c, "stop", name) }
+// systemdJob issues a start/stop-class verb over D-Bus, waiting for the
+// job to finish, or falls back to `systemctl` when the bus is
+// unreachable. verb is the D-Bus member; shellVerb is the systemctl
+// subcommand.
+func systemdJob(c *exec.Context, member, shellVerb, name string) error {
+	if b, ok := dialOrNil(c); ok {
+		defer b.Close()
+		return b.runJob(member, withServiceSuffix(name))
+	}
+	return systemctl(c, shellVerb, name)
+}
+
+func (systemdProvider) Start(c *exec.Context, name string) error {
+	return systemdJob(c, "StartUnit", "start", name)
+}
+func (systemdProvider) Stop(c *exec.Context, name string) error {
+	return systemdJob(c, "StopUnit", "stop", name)
+}
 func (systemdProvider) Restart(c *exec.Context, name string) error {
-	return systemctl(c, "restart", name)
+	return systemdJob(c, "RestartUnit", "restart", name)
 }
 func (systemdProvider) Reload(c *exec.Context, name string) error {
-	return systemctl(c, "reload", name)
+	return systemdJob(c, "ReloadUnit", "reload", name)
 }
+
 func (systemdProvider) Enable(c *exec.Context, name string) error {
+	if b, ok := dialOrNil(c); ok {
+		defer b.Close()
+		return b.enable(withServiceSuffix(name))
+	}
 	return systemctl(c, "enable", name)
 }
+
 func (systemdProvider) Disable(c *exec.Context, name string) error {
+	if b, ok := dialOrNil(c); ok {
+		defer b.Close()
+		return b.disable(withServiceSuffix(name))
+	}
 	return systemctl(c, "disable", name)
 }
 

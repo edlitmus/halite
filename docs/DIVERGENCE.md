@@ -454,7 +454,7 @@ different reason is given.
 | `pkg` | implemented | 18 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
 | `random` | implemented | 3 | `crypto/rand` |
 | `saltutil` | implemented | 9 | |
-| `service` | implemented | 16 | FreeBSD rc provider only; see 2.5 |
+| `service` | implemented | 16 | systemd (over D-Bus, 5.39) and FreeBSD rc verified; see 2.5 |
 | `ssh_auth` | implemented | 2 | registered as `ssh.auth_keys` and `ssh.known_hosts`; SPEC 15.2 names no module for either state, and both read the same account's files, so they share one |
 | `status` | implemented | 4 | |
 | `sys` | implemented | 11 | `evidence` is not in SPEC 15.6 and reports what has been demonstrated about each module that changes something: an operator planning a change on a production machine is entitled to know which modules have never been run against the tool they drive, before rather than after |
@@ -708,7 +708,7 @@ platform family.
 | Module | Providers specified | Implemented | Verified |
 |---|---|---|---|
 | `pkg` | apt, dnf, yum, zypper, apk, pacman, pkgng, brew, macpkg, winrepo, choco | pkgng, apt, dnf/yum, apk, brew, chocolatey | pkgng on FreeBSD; apt on Ubuntu, including every optional capability (holds, world upgrade, file ownership, repository listing); chocolatey on Windows 11 |
-| `service` | systemd, sysvinit, upstart, openrc, launchd, freebsd_rc, smf, windows | freebsd_rc, systemd, sysvinit, launchd, windows | freebsd_rc on this host; windows against the real service control manager on Windows 11 |
+| `service` | systemd, sysvinit, upstart, openrc, launchd, freebsd_rc, smf, windows | freebsd_rc, systemd, sysvinit, launchd, windows | systemd over its real D-Bus API on systemd 255, start through mask, with the `systemctl` fallback (5.39); freebsd_rc on this host; windows against the real service control manager on Windows 11 |
 
 The apt provider's base six functions and all four optional capabilities
 were exercised against a real dpkg database on Ubuntu 24.04:
@@ -732,9 +732,10 @@ comparison, which a `pkg.latest` over a few hundred packages notices.
 The live differential against `dpkg --compare-versions` and
 `rpmdev-vercmp` still needs a host that has them. See 5.2.
 
-The D-Bus client SPEC 15.2 specifies for talking to systemd is not written.
-The `service` module would fall back to `systemctl` on a Linux host, and that
-fallback has never been executed.
+The D-Bus client SPEC 15.2 specifies for talking to systemd is written
+(`internal/dbus`) and the systemd provider now uses it, with `systemctl`
+as the fallback SPEC names. Both paths were driven against a real systemd
+255. See 5.39.
 
 ---
 
@@ -961,7 +962,9 @@ executed** under the compat layer:
 - the dnf/yum and apk providers of `pkg` — the apt provider has since
   been run against a real dpkg database, base functions and all four
   optional capabilities (2.5)
-- the systemd provider of `service`, and `service.masked`
+- ~~the systemd provider of `service`, and `service.masked`~~ — **done**
+  (5.39): the whole systemd surface, start through mask, driven against a
+  real systemd 255 over D-Bus with `systemctl` as the fallback
 - the `useradd`/`groupadd`/`usermod` branch of `user` and `group`
 - Linux `sysctl` handling, which differs from FreeBSD's
 
@@ -4451,6 +4454,82 @@ modules**: `apparmor` and `snap`. It was nine. `apparmor`'s red is a
 documented platform defect with a reproduction (5.37), not an untried
 path; `snap` still wants snapd and the network together, and the
 network is what 5.35's rule refuses.
+
+### 5.39 `service`: systemd over its own D-Bus API
+
+SPEC 15.2: systemd "is spoken to over its D-Bus API where available,
+falling back to `systemctl`; the D-Bus client is a direct implementation
+of the wire protocol over a unix socket, since D-Bus marshalling is
+well-specified and small." The build did only `systemctl` -- the same
+thing Salt's `systemd_service.py` does -- and plan.md §8 item 9 and §4.5
+both tracked it. This closes it.
+
+#### The client, and what it is not
+
+`internal/dbus` is about 470 lines: the SASL EXTERNAL handshake,
+little-endian marshalling for the handful of types a systemd `Manager`
+call needs (`y b u s o g a () v`), the four message types, and one
+connection used one call at a time. It is not a general D-Bus library --
+no session bus, no fd passing, no property `Set`, no async dispatch --
+because nothing here needs them.
+
+It is written rather than vendored because SPEC says to, and the reason
+holds up: `github.com/godbus/dbus` and `github.com/coreos/go-systemd`
+are a dependency to audit and a wire surface to track upstream, against
+a protocol whose marshalling fits on a page. The *job-completion* model
+is borrowed from `coreos/go-systemd` -- a `JobRemoved` subscription --
+without the code.
+
+#### Job completion, which is the awkward part
+
+`systemctl start` blocks until the job finishes. The raw `StartUnit`
+call returns a job object path immediately and the unit may not be up
+yet. So the binding calls `Manager.Subscribe`, installs an `AddMatch`
+for `JobRemoved`, and reads until the signal for its job path arrives --
+which systemd can emit *before* the method return, so job results are
+buffered by path until the return names one. `"done"` is success;
+`"failed"`, `"canceled"`, `"timeout"` and `"dependency"` are the error.
+
+The live leg makes the wait observable: the probe unit has a one-second
+`ExecStartPre`, and a provider that did not wait would return while the
+unit was still `activating` rather than `active`. It asserts `active`
+the moment `service.start` returns.
+
+#### The fallback boundary
+
+Fall back to `systemctl` only when the bus was never reached -- no
+socket, authentication refused, `Hello` failed. An error that came
+*back* from systemd -- an unknown unit, a polkit refusal, a job that
+failed -- is returned as-is and never retried on the shell, where it
+fails the same way with a worse message. The three reads (`Status`,
+`Enabled`, `Masked`) additionally fall through on a D-Bus read error, so
+a malformed unit name behaves exactly as it did before this change.
+
+#### What was demonstrated
+
+Live on this project's Ubuntu 24.04 host, real systemd 255,
+`HALITE_SYSTEM_LIVE`: a throwaway unit in `/run/systemd/system`,
+attached to nothing, started / stopped / restarted / enabled / disabled
+/ masked / unmasked through the module, each step checked against
+`systemctl show` and `systemctl is-enabled` run directly rather than
+against the module's own read-back. `service.get_all` reads the
+unit-file list over D-Bus. The `systemctl` fallback drives the same unit
+when the dial is forced to fail. Alongside, `internal/dbus` carries
+marshalling round-trips, a hand-computed `Hello` byte layout, a variant
+unwrap, and a full handshake-and-call over `net.Pipe`.
+
+#### Where the gate stands
+
+`service` moves from `captured` to `hardware`. It was `captured` on the
+strength of "halite's own units run under a real systemd" and the
+Windows provider's reads -- nothing had watched this module start or
+stop anything. Now the systemd branch has been driven end to end over
+its real API. Uncovered: the launchd, sysvinit and openrc providers,
+which have not been run at all, and the FreeBSD rc branch, which still
+only reads. The release gate is unchanged -- `service` was never on it
+-- and the CI `linux` leg gains the live `service` test for free, safe
+there because a GitHub runner has systemd and the probe unit confines
+nothing.
 
 ## 6. Everything else not started
 

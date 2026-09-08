@@ -38,9 +38,12 @@ on:
       - "internal/builtin/sysctl*.go"
       - "internal/builtin/apparmor*.go"
       - "internal/builtin/netplan*.go"
+      - "internal/builtin/service*.go"
+      - "internal/dbus/**"
       - "internal/builtin/live_apparmor_test.go"
       - "internal/builtin/live_debian_test.go"
       - "internal/builtin/live_netplan_test.go"
+      - "internal/builtin/live_service_test.go"
       - "internal/builtin/live_system_test.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
@@ -108,8 +111,13 @@ jobs:
   # touches an interface, so the runner being reachable only over its one
   # NIC does not matter -- `netplan apply` is the path that would, and no
   # live test runs it (DIVERGENCE 5.38).
+  #
+  # `service` rides along too: a container has no running systemd for it
+  # to speak D-Bus to, and a GitHub runner does. The test drives a
+  # throwaway unit in /run/systemd/system that is attached to nothing
+  # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan)
+    name: linux (real kernel, hostname, apparmor, netplan, service)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -139,6 +147,8 @@ jobs:
           echo "tools:            $(command -v apparmor_parser aa-enforce aa-complain aa-disable | tr '\n' ' ')"
           echo "netplan:          $(dpkg-query -W -f='${Version}' netplan.io 2>&1)"
           echo "netplan files:    $(ls /etc/netplan 2>&1 | tr '\n' ' ')"
+          echo "systemd:          $(systemctl --version | head -1)"
+          echo "system bus:       $(test -S /run/dbus/system_bus_socket && echo present || echo missing)"
 
       # No workaround here, and that is the conclusion rather than a
       # gap.
@@ -166,9 +176,9 @@ jobs:
       # is on PATH rather than in a standard location -- so root would
       # run a different Go, or none. The environment is named
       # explicitly instead.
-      - name: drive hostname, sysctl, apparmor and netplan
+      - name: drive hostname, sysctl, apparmor, netplan and service
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService' ./internal/builtin/
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
@@ -183,10 +193,13 @@ jobs:
           echo "hostname: $(hostname)"
           echo "swappiness: $(sysctl -n vm.swappiness)"
           echo "netplan files: $(ls /etc/netplan | tr '\n' ' ')"
+          echo "probe unit: $(systemctl is-active halite-live-probe 2>&1)"
           test "$(hostname)" != "halite-live-probe" || {
             echo "the tests left this machine renamed"; exit 1; }
           test ! -e /etc/netplan/98-halite-live-probe.yaml || {
             echo "the tests left the probe config in /etc/netplan"; exit 1; }
+          test ! -e /run/systemd/system/halite-live-probe.service || {
+            echo "the tests left the probe unit in /run/systemd/system"; exit 1; }
 
   # The same two modules on FreeBSD, which is the platform four of the
   # five hosts in this project's own fleet run.

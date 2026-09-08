@@ -115,12 +115,13 @@ var moduleEvidence = map[string]exec.Evidence{
 	//
 	// Not the fleetcheck container: `sysctl` is the kernel and a
 	// container shares the host's, Docker bind-mounts `/etc/hostname` so
-	// the atomic replace cannot work there, and the container has no
-	// netplan at all. These run on machines rather than images -- a
-	// GitHub runner and the FreeBSD virtual machine, and for `netplan`
-	// this project's own Ubuntu host -- and really rename them, really
-	// move a kernel parameter, and really have a running netplan
-	// validate a document this module wrote.
+	// the atomic replace cannot work there, the container has no netplan
+	// at all, and a container has no running systemd for `service` to
+	// speak to. These run on machines rather than images -- a GitHub
+	// runner and the FreeBSD virtual machine, and this project's own
+	// Ubuntu host -- and really rename them, really move a kernel
+	// parameter, really have a running netplan validate a document, and
+	// really start and stop a real unit over systemd's own D-Bus API.
 	//
 	// `netplan` never gets as far as `netplan apply`, and that is
 	// deliberate rather than a gap in coverage: it is the one path the
@@ -148,16 +149,19 @@ var moduleEvidence = map[string]exec.Evidence{
 		"netplan's own message. Not covered, and deliberately: `netplan apply`, which " +
 		"reconfigures the interface the run arrives over -- the module never calls it " +
 		"unless a declaration names `apply: true`, and no live test applies"},
+	"service": {Level: exec.Hardware, Note: "the systemd provider was driven against a real " +
+		"systemd 255 on an Ubuntu 24.04 host over its own D-Bus API: a unit started, " +
+		"stopped, restarted, enabled, disabled, masked and unmasked, each checked against " +
+		"`systemctl` directly rather than the module's own read-back, and the `JobRemoved` " +
+		"wait shown to be awaited (DIVERGENCE 5.39). The `systemctl` fallback was driven " +
+		"against the same unit. Not covered: the launchd, sysvinit and openrc providers, " +
+		"which have not been run at all, and the FreeBSD rc branch, which still only reads"},
 
 	// ---- Read from a real system, mutation never watched ----
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
 		"through its API on every Windows run and converges against what it finds, but " +
 		"nothing has watched this module start, stop or re-type a service"},
-	"service": {Level: exec.Captured, Note: "halite's own systemd units run under a real " +
-		"systemd (DIVERGENCE 4.5) and the Windows provider reads the real service control " +
-		"manager, but nothing has watched this module start or stop a service on any " +
-		"platform, and the launchd and rc.d providers have not been run at all"},
 	"jail": {Level: exec.Captured, Note: "the shape of `jls --libxo=json` is checked " +
 		"against the real jls on CI's FreeBSD runner, but no jail has been started or " +
 		"stopped by this module and the field names inside a jail entry are still " +

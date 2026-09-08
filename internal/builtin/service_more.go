@@ -243,6 +243,13 @@ func (freebsdRCProvider) List(c *exec.Context) ([]string, error) {
 }
 
 func (systemdProvider) List(c *exec.Context) ([]string, error) {
+	if b, ok := dialOrNil(c); ok {
+		names, err := b.listUnitFiles()
+		b.Close()
+		if err == nil && len(names) > 0 {
+			return names, nil
+		}
+	}
 	res, err := c.Run(exec.Command{
 		Argv: []string{"systemctl", "list-unit-files", "--type=service", "--no-legend", "--no-pager", "--plain"},
 	})
@@ -260,14 +267,29 @@ func (systemdProvider) List(c *exec.Context) ([]string, error) {
 }
 
 func (systemdProvider) Mask(c *exec.Context, name string) error {
+	if b, ok := dialOrNil(c); ok {
+		defer b.Close()
+		return b.mask(withServiceSuffix(name))
+	}
 	return systemctl(c, "mask", name)
 }
 
 func (systemdProvider) Unmask(c *exec.Context, name string) error {
+	if b, ok := dialOrNil(c); ok {
+		defer b.Close()
+		return b.unmask(withServiceSuffix(name))
+	}
 	return systemctl(c, "unmask", name)
 }
 
 func (systemdProvider) Masked(c *exec.Context, name string) (bool, error) {
+	if b, ok := dialOrNil(c); ok {
+		state, err := b.unitFileState(withServiceSuffix(name))
+		b.Close()
+		if err == nil {
+			return state == "masked" || state == "masked-runtime", nil
+		}
+	}
 	res, err := c.Run(exec.Command{
 		Argv:           []string{"systemctl", "is-enabled", name},
 		IgnoreExitCode: true,
