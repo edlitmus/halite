@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **58 execution modules / 354 functions** and **40 state
+The build ships **58 execution modules / 359 functions** and **40 state
 modules / 95 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -451,7 +451,7 @@ different reason is given.
 | `mount` | implemented | 9 | the running table comes from `/proc/self/mounts` where there is one and from parsing `mount` where there is not, and how much a declared option can be compared against it depends on which; declared for the platforms with a mount table and refused on Windows, whose mount points are drive letters and junctions rather than an fstab |
 | `network` | implemented | 5 | |
 | `pillar` | implemented | 5 | |
-| `pkg` | implemented | 18 | FreeBSD `pkg` provider only; see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
+| `pkg` | implemented | 23 | `info_installed`, `file_dict`, `download`, `list_downloaded` and `autoremove` are apt-only, verified live (5.40); see 2.5. `version_cmp` implements the Debian and RPM orderings directly and asks pkg(8) for FreeBSD's |
 | `random` | implemented | 3 | `crypto/rand` |
 | `saltutil` | implemented | 9 | |
 | `service` | implemented | 16 | systemd (over D-Bus, 5.39) and FreeBSD rc verified; see 2.5 |
@@ -802,23 +802,28 @@ after. Many carry a credential, and the temporary directory is
 world-readable. A `salt://` source goes through the file server, so the
 containment rules of 13.5 apply to it as to any other file.
 
-### `pkg` — 18 of 26
+### `pkg` — 23 of 26
 
 Present: `install`, `remove`, `purge`, `upgrade`, `version`,
 `version_cmp`, `latest_version`, `upgrade_available`, `list_pkgs`,
 `list_upgrades`, `list_holds`, `list_repos`, `hold`, `unhold`,
-`file_list`, `owner`, `refresh_db`, `available_version`.
-Absent: `info_installed`, `file_dict`, `mod_repo`, `del_repo`,
-`list_downloaded`, `download`, `autoremove`.
+`file_list`, `file_dict`, `owner`, `refresh_db`, `available_version`,
+`info_installed`, `download`, `list_downloaded`, `autoremove`.
+Absent: `mod_repo`, `del_repo` — the `pkgrepo` module already does that
+job and is verified, so a second spelling on `pkg` is a decision rather
+than a gap.
 
 The optional capabilities — holding, upgrading everything at once, mapping
-a package to the files it owns, and listing repositories — sit behind
-interfaces beside the provider one rather than in it, because they are not
-universal: apk has no hold in the dpkg sense, and pkgng's idea of a
-repository is a file rather than a line in sources.list. A provider that
-cannot answer says so and names itself, rather than returning an empty
-answer that a tree would read as "there are none". pkgng and apt implement
-all four; dnf/yum implements all four with holding routed through the
+a package to the files it owns, listing repositories, describing an
+installed package, fetching one without installing it, and clearing
+unused dependencies — sit behind interfaces beside the provider one
+rather than in it, because they are not universal: apk has no hold in the
+dpkg sense, and pkgng's idea of a repository is a file rather than a line
+in sources.list. A provider that cannot answer says so and names itself,
+rather than returning an empty answer that a tree would read as "there
+are none". `info_installed`, `download`, `list_downloaded` and
+`autoremove` are apt-only for now (5.40); pkgng and apt implement the
+older four; dnf/yum implements those four with holding routed through the
 `versionlock` plugin; apk implements upgrading and file ownership but
 neither holding nor repository listing. See 2.5 for what has been run
 against a real system and what has not.
@@ -4530,6 +4535,48 @@ only reads. The release gate is unchanged -- `service` was never on it
 -- and the CI `linux` leg gains the live `service` test for free, safe
 there because a GitHub runner has systemd and the probe unit confines
 nothing.
+
+### 5.40 `pkg`: five more functions, apt
+
+§3 had `pkg` at 18 of SPEC 15.2's 26. Five of the eight absent were
+work not done rather than choices: `info_installed`, `file_dict`,
+`download`, `list_downloaded`, `autoremove`. A tree migrating from Salt
+that called any of them got "unknown module function".
+
+They are implemented in the **apt provider**, each behind an optional
+interface beside `pkgProvider` -- `pkgInspector`, `pkgDownloader`,
+`pkgAutoremover` -- the way holding, world upgrade and file ownership
+already were, so a non-apt provider is refused by name rather than
+answering with an empty map. `file_dict` needs no interface: it is
+`file_list` over several packages, so the module loops the existing
+`pkgOwner`.
+
+#### What was verified, and where
+
+Live on this Ubuntu 24.04 host, `HALITE_SYSTEM_LIVE`:
+
+- `info_installed` for real packages, every field checked against
+  `dpkg-query -W -f=` run directly -- not the module's own read-back.
+  Records whose dpkg status is not `installed` (a package in
+  `config-files`) are dropped, because a tree asking what is installed
+  does not want them.
+- `file_dict` for two packages, cross-checked against `dpkg -L`.
+- `download` of a small real package into a redirected archive
+  directory, then `list_downloaded` reading it back with the version
+  `dpkg-deb` reports from the file itself. The archive path is a
+  variable so the test writes nowhere near `/var/cache/apt`.
+
+`autoremove` really removes packages, so it is not run on the host the
+work is done on. Its live leg is in the fleet container
+(`HALITE_FLEET_LIVE`), which is Debian with real apt and is thrown away:
+a leaf package and an autoremovable dependency are installed, then
+`pkg.autoremove` is asked to clear the dependency and the change map is
+checked against `dpkg`. In `--test` mode it parses `apt-get autoremove
+--simulate` and changes nothing.
+
+`mod_repo` and `del_repo` stay absent: the `pkgrepo` module already
+does that job and is verified (5.35), so a second spelling on `pkg` is a
+decision for a person, not a gap.
 
 ## 6. Everything else not started
 

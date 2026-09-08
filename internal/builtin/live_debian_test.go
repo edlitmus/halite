@@ -623,6 +623,85 @@ func TestLiveTimezoneRefusesAZoneThisMachineDoesNotHave(t *testing.T) {
 	}
 }
 
+// ---- pkg.autoremove ----
+
+// **A real autoremove, in the container that can be thrown away.**
+//
+// `autoremove` really removes packages, so it does not run on the host
+// the Linux work is done on. Here it installs the image's own leaf
+// package, marks it auto, and asks `pkg.autoremove` to reclaim it --
+// which exercises the real `apt-get autoremove` and the before/after
+// `pkgDelta` a fixture cannot. The `--test` path is checked first: it
+// must predict the removal and make none.
+func TestLivePkgAutoremoveReclaimsAnUnneededPackage(t *testing.T) {
+	c := live(t)
+	r := New()
+
+	matches, err := filepath.Glob(filepath.Join(pkgDir(t), "*.deb"))
+	if err != nil || len(matches) == 0 {
+		t.Fatalf("no .deb in the image's package directory: %v", err)
+	}
+	deb := matches[0]
+
+	nameRes, err := c.Run(exec.Command{Argv: []string{"dpkg-deb", "-f", deb, "Package"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pkg := strings.TrimSpace(nameRes.Stdout)
+	t.Cleanup(func() {
+		_, _ = c.Run(exec.Command{
+			Argv: []string{"apt-get", "purge", "-y", "-q", pkg}, Env: aptEnv(), IgnoreExitCode: true,
+		})
+	})
+
+	if _, err := c.Run(exec.Command{
+		Argv: []string{"apt-get", "install", "-y", "-q", deb}, Env: aptEnv(),
+	}); err != nil {
+		t.Fatalf("installing %s: %v", pkg, err)
+	}
+	if _, err := c.Run(exec.Command{Argv: []string{"apt-mark", "auto", pkg}, Env: aptEnv()}); err != nil {
+		t.Fatalf("apt-mark auto %s: %v", pkg, err)
+	}
+
+	// Test mode: predict, change nothing.
+	testC := *c
+	testC.Test = true
+	predicted, err := r.Exec.Call(&testC, "pkg.autoremove", value.NewMap(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := predicted.(*value.Map).Get(pkg); !ok {
+		t.Errorf("--test did not predict removing %s: %v", pkg, predicted.(*value.Map).StringKeys())
+	}
+	if s := dpkgStatusWord(t, c, pkg); s != "installed" {
+		t.Fatalf("--test removed %s: status is %q", pkg, s)
+	}
+
+	// For real.
+	out, err := r.Exec.Call(c, "pkg.autoremove", value.NewMap(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := out.(*value.Map).Get(pkg); !ok {
+		t.Errorf("autoremove did not report removing %s: %v", pkg, out.(*value.Map).StringKeys())
+	}
+	if s := dpkgStatusWord(t, c, pkg); s == "installed" {
+		t.Errorf("%s is still installed after autoremove", pkg)
+	}
+}
+
+func dpkgStatusWord(t *testing.T, c *exec.Context, pkg string) string {
+	t.Helper()
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"dpkg-query", "-W", "-f=${db:Status-Status}", pkg},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(res.Stdout)
+}
+
 // ---- helpers ----
 
 func listHas(list []any, want string) bool {

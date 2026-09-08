@@ -57,9 +57,11 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	"pkg": {Level: exec.Hardware, Note: "the apt provider installed packages in a " +
 		"highstate on a real Ubuntu node and converged, and its optional capabilities " +
-		"were run on Ubuntu 24.04 (DIVERGENCE 4.5). The Chocolatey provider has only " +
-		"been read from, and dnf, yum, zypper, apk, pacman and pkgng have not been " +
-		"driven at all"},
+		"were run on Ubuntu 24.04 (DIVERGENCE 4.5); `info_installed`, `file_dict`, " +
+		"`download` and `list_downloaded` were checked field by field against real " +
+		"dpkg-query and dpkg-deb, and `autoremove` really reclaimed a package in the " +
+		"fleet container (5.40). The Chocolatey provider has only been read from, and " +
+		"dnf, yum, zypper, apk, pacman and pkgng have not been driven at all"},
 	"zpool": {Level: exec.Hardware, Note: "driven against real pools on Linux with " +
 		"OpenZFS 2.2.2, which found two defects in reading `zpool list` that the " +
 		"fixtures had agreed with (DIVERGENCE 4.7). FreeBSD, where this project's ZFS " +

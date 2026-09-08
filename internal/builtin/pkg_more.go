@@ -2,6 +2,8 @@ package builtin
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -48,6 +50,29 @@ type pkgOwner interface {
 type pkgRepos interface {
 	ListRepos(c *exec.Context) (*value.Map, error)
 }
+
+// pkgInspector is a provider that can describe an installed package in
+// detail, beyond the version `list_pkgs` returns.
+type pkgInspector interface {
+	InfoInstalled(c *exec.Context, names []string) (*value.Map, error)
+}
+
+// pkgDownloader is a provider that can fetch a package without installing
+// it, and say what has been fetched.
+type pkgDownloader interface {
+	Download(c *exec.Context, names []string) (*value.Map, error)
+	ListDownloaded(c *exec.Context) (*value.Map, error)
+}
+
+// pkgAutoremover is a provider that can remove the packages installed as
+// dependencies that nothing needs any more.
+type pkgAutoremover interface {
+	Autoremove(c *exec.Context, dryRun bool) (*value.Map, error)
+}
+
+// aptArchivesDir is where apt keeps downloaded .deb files, as a variable
+// so a test can point it somewhere harmless.
+var aptArchivesDir = "/var/cache/apt/archives"
 
 func registerPkgMore(r *Registries) {
 	r.Exec.Add(
@@ -229,7 +254,150 @@ func registerPkgMore(r *Registries) {
 				return rp.ListRepos(c)
 			},
 		},
+
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "pkg", Function: "info_installed",
+				Doc: "Return detailed information about installed packages, keyed by name.",
+				Params: []signature.Param{
+					req("pkgs", signature.List, "Package names."),
+				},
+				TestMode: signature.TestNotApplicable,
+				Section:  "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				i, err := pickInspector(c)
+				if err != nil {
+					return nil, err
+				}
+				return i.InfoInstalled(c, states.Strings(args, "pkgs"))
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "pkg", Function: "file_dict",
+				Doc: "Return the files several packages own, keyed by package. The plural of file_list.",
+				Params: []signature.Param{
+					req("pkgs", signature.List, "Package names."),
+				},
+				TestMode: signature.TestNotApplicable,
+				Section:  "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				o, err := pickOwner(c)
+				if err != nil {
+					return nil, err
+				}
+				names := states.Strings(args, "pkgs")
+				out := value.NewMap(len(names))
+				for _, name := range names {
+					files, err := o.FileList(c, name)
+					if err != nil {
+						return nil, err
+					}
+					sort.Strings(files)
+					list := make([]any, len(files))
+					for i, f := range files {
+						list[i] = f
+					}
+					out.Set(name, list)
+				}
+				return out, nil
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "pkg", Function: "download",
+				Doc: "Fetch packages into the local cache without installing them, and report what was fetched.",
+				Params: []signature.Param{
+					req("pkgs", signature.List, "Package names."),
+				},
+				Mutates:    true,
+				TestMode:   signature.TestReliable,
+				Privileges: []string{"root"},
+				Section:    "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				d, err := pickDownloader(c)
+				if err != nil {
+					return nil, err
+				}
+				names := states.Strings(args, "pkgs")
+				if c.Test {
+					return names, nil
+				}
+				return d.Download(c, names)
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "pkg", Function: "list_downloaded",
+				Doc:      "Return the packages sitting in the local cache, keyed by name.",
+				TestMode: signature.TestNotApplicable,
+				Section:  "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				d, err := pickDownloader(c)
+				if err != nil {
+					return nil, err
+				}
+				return d.ListDownloaded(c)
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "pkg", Function: "autoremove",
+				Doc:        "Remove the packages installed as dependencies that nothing needs any more, returning what changed.",
+				Mutates:    true,
+				TestMode:   signature.TestReliable,
+				Privileges: []string{"root"},
+				Section:    "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				a, err := pickAutoremover(c)
+				if err != nil {
+					return nil, err
+				}
+				return a.Autoremove(c, c.Test)
+			},
+		},
 	)
+}
+
+func pickInspector(c *exec.Context) (pkgInspector, error) {
+	p, err := pickPkgProvider(c)
+	if err != nil {
+		return nil, err
+	}
+	i, ok := p.(pkgInspector)
+	if !ok {
+		return nil, fmt.Errorf("the %s provider cannot describe an installed package in detail", p.Name())
+	}
+	return i, nil
+}
+
+func pickDownloader(c *exec.Context) (pkgDownloader, error) {
+	p, err := pickPkgProvider(c)
+	if err != nil {
+		return nil, err
+	}
+	d, ok := p.(pkgDownloader)
+	if !ok {
+		return nil, fmt.Errorf("the %s provider cannot fetch a package without installing it", p.Name())
+	}
+	return d, nil
+}
+
+func pickAutoremover(c *exec.Context) (pkgAutoremover, error) {
+	p, err := pickPkgProvider(c)
+	if err != nil {
+		return nil, err
+	}
+	a, ok := p.(pkgAutoremover)
+	if !ok {
+		return nil, fmt.Errorf("the %s provider cannot autoremove unused dependencies", p.Name())
+	}
+	return a, nil
 }
 
 func holdModule(name, doc string, run func(pkgHolder, *exec.Context, string) error) exec.Module {
@@ -673,6 +841,174 @@ func (aptProvider) ListRepos(c *exec.Context) (*value.Map, error) {
 		out.Set(key, a.m)
 	}
 	return out, nil
+}
+
+// aptInfoFormat is the dpkg-query template info_installed parses. Each
+// record is a small RFC822 block, blank-line separated, which
+// rfc822Blocks already reads.
+const aptInfoFormat = "Package: ${Package}\n" +
+	"Version: ${Version}\n" +
+	"Architecture: ${Architecture}\n" +
+	"Status: ${db:Status-Status}\n" +
+	"Installed-Size: ${Installed-Size}\n" +
+	"Section: ${Section}\n" +
+	"Source: ${source:Package}\n" +
+	"Maintainer: ${Maintainer}\n\n"
+
+func (aptProvider) InfoInstalled(c *exec.Context, names []string) (*value.Map, error) {
+	if len(names) == 0 {
+		return value.NewMap(0), nil
+	}
+	// dpkg-query exits 1 when any name is unknown but still prints the
+	// records it did find; the diagnostic goes to stderr.
+	argv := append([]string{"dpkg-query", "-W", "-f=" + aptInfoFormat}, names...)
+	res, err := c.Run(exec.Command{Argv: argv, Env: aptEnv(), IgnoreExitCode: true})
+	if err != nil {
+		return nil, err
+	}
+	out := value.NewMap(len(names))
+	for _, b := range rfc822Blocks(res.Stdout) {
+		name := b["Package"]
+		// Status is the third word of dpkg's status field: a package in
+		// `config-files` is known to dpkg but not installed, and a tree
+		// asking what is installed does not want it.
+		if name == "" || b["Status"] != "installed" {
+			continue
+		}
+		m := value.NewMap(6)
+		for _, f := range []struct{ key, field string }{
+			{"version", "Version"},
+			{"architecture", "Architecture"},
+			{"installed_size", "Installed-Size"},
+			{"section", "Section"},
+			{"source", "Source"},
+			{"maintainer", "Maintainer"},
+		} {
+			if v := b[f.field]; v != "" {
+				m.Set(f.key, v)
+			}
+		}
+		out.Set(name, m)
+	}
+	return out, nil
+}
+
+func (aptProvider) Download(c *exec.Context, names []string) (*value.Map, error) {
+	if len(names) == 0 {
+		return value.NewMap(0), nil
+	}
+	if err := os.MkdirAll(aptArchivesDir, 0o755); err != nil {
+		return nil, err
+	}
+	// `apt-get download` writes the .deb to the working directory, so it
+	// is pointed at the archive cache rather than left to litter wherever
+	// the run started.
+	argv := append([]string{"apt-get", "download", "-q"}, names...)
+	if _, err := c.Run(exec.Command{Argv: argv, Env: aptEnv(), Dir: aptArchivesDir}); err != nil {
+		return nil, err
+	}
+	all, err := aptScanArchives(c)
+	if err != nil {
+		return nil, err
+	}
+	want := map[string]bool{}
+	for _, n := range names {
+		want[n] = true
+	}
+	out := value.NewMap(len(names))
+	for _, e := range all.Entries() {
+		if key := value.KeyString(e.Key); want[key] {
+			out.Set(key, e.Val)
+		}
+	}
+	return out, nil
+}
+
+func (aptProvider) ListDownloaded(c *exec.Context) (*value.Map, error) {
+	return aptScanArchives(c)
+}
+
+// aptScanArchives reads every .deb in the archive cache and returns
+// {package: {version, architecture, path, size}}. dpkg-deb reads the
+// control fields out of the file itself, so a renamed .deb still reports
+// the package it actually is.
+func aptScanArchives(c *exec.Context) (*value.Map, error) {
+	entries, err := os.ReadDir(aptArchivesDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return value.NewMap(0), nil
+		}
+		return nil, err
+	}
+	out := value.NewMap(len(entries))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".deb") {
+			continue
+		}
+		path := filepath.Join(aptArchivesDir, e.Name())
+		res, err := c.Run(exec.Command{
+			Argv: []string{"dpkg-deb", "-f", path, "Package", "Version", "Architecture"},
+			Env:  aptEnv(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		fields := map[string]string{}
+		for _, ln := range strings.Split(res.Stdout, "\n") {
+			if k, v, ok := strings.Cut(ln, ": "); ok {
+				fields[strings.TrimSpace(k)] = strings.TrimSpace(v)
+			}
+		}
+		name := fields["Package"]
+		if name == "" {
+			continue
+		}
+		m := value.NewMap(4)
+		m.Set("version", fields["Version"])
+		m.Set("architecture", fields["Architecture"])
+		m.Set("path", path)
+		if info, err := e.Info(); err == nil {
+			m.Set("size", info.Size())
+		}
+		out.Set(name, m)
+	}
+	return out, nil
+}
+
+func (p aptProvider) Autoremove(c *exec.Context, dryRun bool) (*value.Map, error) {
+	if dryRun {
+		res, err := c.Run(exec.Command{
+			Argv: []string{"apt-get", "autoremove", "-y", "-q", "--simulate"},
+			Env:  aptEnv(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		changes := value.NewMap(8)
+		for _, ln := range strings.Split(res.Stdout, "\n") {
+			// `Remv <name> [<version>] ...`
+			fields := strings.Fields(ln)
+			if len(fields) < 2 || fields[0] != "Remv" {
+				continue
+			}
+			ver := ""
+			if len(fields) >= 3 {
+				ver = strings.Trim(fields[2], "[]")
+			}
+			changes.Set(fields[1], states.Change(ver, nil))
+		}
+		return changes, nil
+	}
+	before, err := p.ListPkgs(c)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.Run(exec.Command{
+		Argv: []string{"apt-get", "autoremove", "-y", "-q"}, Env: aptEnv(),
+	}); err != nil {
+		return nil, err
+	}
+	return pkgDelta(c, p, before)
 }
 
 // ---- dnf and yum: the optional interfaces ----

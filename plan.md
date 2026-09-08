@@ -577,8 +577,10 @@ What is still absent is `patch`, `sed`, `list_backups`, `restore_backup`,
 `file.accumulated`, which SPEC 15.5 promises by name because trees use it
 and which nothing in the tree implements.
 
-`pkg` has 18 of 26, `service` 16 of 18, `cmd` 12 of 13. Those three are
-unchanged.
+`pkg` has 23 of 26 — `info_installed`, `file_dict`, `download`,
+`list_downloaded` and `autoremove` landed in the apt provider (DIVERGENCE
+5.40), leaving only `mod_repo`/`del_repo`, which `pkgrepo` already
+covers. `service` has 16 of 18, `cmd` 12 of 13.
 
 ### 2.5 The rest of phase 5
 
