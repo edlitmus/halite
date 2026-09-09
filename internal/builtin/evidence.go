@@ -29,13 +29,13 @@ import (
 // 5.33 wrote the table down per module and it was mostly `Assumed`
 // then; 5.35 through 5.38 drove all but two of the root-mutating
 // modules against their real tools on real machines. What is still
-// `Assumed` — `apparmor`, `snap`, `mac_defaults` and `mac_power` — says
-// why in its own note, and the release gate refuses to ship while any
-// is. The two macOS modules are the newest: each has a live test that
-// reads the real tool, but their mutating paths change a Mac's own
-// state and no CI leg is a Mac. `exec.Registry` appends the note to a
-// *failing* mutation, and `sys.evidence` and `doctor` answer it on
-// request.
+// `Assumed` — `apparmor`, `snap`, and the macOS row (`mac_defaults`,
+// `mac_power`, `mac_user`, `mac_group`, `mac_shadow`) — says why in its
+// own note, and the release gate refuses to ship while any is. The
+// macOS modules each have a live test that reads the real tool, but
+// their mutating paths change a Mac's own state and no CI leg is a Mac.
+// `exec.Registry` appends the note to a *failing* mutation, and
+// `sys.evidence` and `doctor` answer it on request.
 //
 // # What each level means here
 //
@@ -198,6 +198,17 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`pmset` -- but the setters run `pmset -a`, which needs root and changes a real Mac's " +
 		"power policy, so no test drives them and no CI leg is a Mac. Nothing has watched a " +
 		"`set_*` converge"},
+	"mac_user": {Level: exec.Assumed, Note: "reads are demonstrated -- `live_mac_user_test.go` " +
+		"parses a real `dscl -plist . -read` and `dscl . -list` on this host, and the virtual " +
+		"`user.present` predicts a creation in test mode against it. The writes -- the " +
+		"`dscl . -create` sequence, `createhomedir`, the recursive home removal -- need root " +
+		"and change Open Directory, so nothing has watched an account be created or removed"},
+	"mac_group": {Level: exec.Assumed, Note: "`macGroupInfo` reads a real group through " +
+		"`dscl -plist . -read` in `live_mac_user_test.go`; the `dseditgroup` writes need root " +
+		"and have not been run"},
+	"mac_shadow": {Level: exec.Assumed, Note: "`dscl . -passwd` is documented and matches what " +
+		"Salt runs, but nothing here has set a real password, and `info` can only ever report " +
+		"whether a hash is present, not compare one -- dscl does not expose it"},
 	"mac_defaults": {Level: exec.Assumed, Note: "the plist reader and writer were built " +
 		"against `defaults export` and `defaults write` output captured by hand on macOS " +
 		"26, and `live_mac_defaults_test.go` drives the real `defaults` against a private " +
