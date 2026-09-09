@@ -31,7 +31,7 @@ import (
 // modules against their real tools on real machines. What is still
 // `Assumed` — `apparmor`, `snap`, and the macOS row (`mac_defaults`,
 // `mac_power`, `mac_user`, `mac_group`, `mac_shadow`,
-// `mac_softwareupdate`) — says why in its own note, and the release gate refuses to ship while any is. The
+// `mac_softwareupdate`, `mac_keychain`) — says why in its own note, and the release gate refuses to ship while any is. The
 // macOS modules each have a live test that reads the real tool, but
 // their mutating paths change a Mac's own state and no CI leg is a Mac.
 // `exec.Registry` appends the note to a *failing* mutation, and
@@ -198,6 +198,12 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`pmset` -- but the setters run `pmset -a`, which needs root and changes a real Mac's " +
 		"power policy, so no test drives them and no CI leg is a Mac. Nothing has watched a " +
 		"`set_*` converge"},
+	"mac_keychain": {Level: exec.Assumed, Note: "`security list-keychains`, `default-keychain` " +
+		"and `find-certificate -a -Z` are read against the real `security` in " +
+		"`live_mac_keychain_test.go`, field by field on this host's own keychains. `import` " +
+		"and `delete-certificate` change a keychain and need root for a system one, so nothing " +
+		"has watched a certificate go in or out; `friendly_name` shells to `openssl` and has " +
+		"only been read"},
 	"mac_softwareupdate": {Level: exec.Assumed, Note: "the `softwareupdate --list` parser was " +
 		"built against real output captured on macOS 26, and `live_mac_softwareupdate_test.go` " +
 		"reads the real schedule state and the downloaded-updates plist. Nothing has installed " +
