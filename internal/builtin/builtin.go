@@ -82,6 +82,9 @@ func New() *Registries {
 	registerWinRegistry(r)
 	registerWinTask(r)
 
+	// The macOS platform modules of SPEC sections 15.3 and 15.5.
+	registerMacDefaults(r)
+
 	// The core modules of SPEC section 15.2 that were absent.
 	registerHTTP(r)
 	registerPkgRepo(r)
