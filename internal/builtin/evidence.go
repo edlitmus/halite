@@ -29,12 +29,13 @@ import (
 // 5.33 wrote the table down per module and it was mostly `Assumed`
 // then; 5.35 through 5.38 drove all but two of the root-mutating
 // modules against their real tools on real machines. What is still
-// `Assumed` — `apparmor`, `snap` and `mac_defaults` — says why in its
-// own note, and the release gate refuses to ship while any is.
-// `mac_defaults` is the newest of the three: it has a live test against
-// the real `defaults`, but nothing runs it unattended. `exec.Registry`
-// appends the note to a *failing* mutation, and `sys.evidence` and
-// `doctor` answer it on request.
+// `Assumed` — `apparmor`, `snap`, `mac_defaults` and `mac_power` — says
+// why in its own note, and the release gate refuses to ship while any
+// is. The two macOS modules are the newest: each has a live test that
+// reads the real tool, but their mutating paths change a Mac's own
+// state and no CI leg is a Mac. `exec.Registry` appends the note to a
+// *failing* mutation, and `sys.evidence` and `doctor` answer it on
+// request.
 //
 // # What each level means here
 //
@@ -192,6 +193,11 @@ var moduleEvidence = map[string]exec.Evidence{
 	"snap": {Level: exec.Assumed, Note: "nothing here has run against a real snapd, and " +
 		"the `snap list` fixtures were written from its documented columns rather than " +
 		"captured (DIVERGENCE 5.28)"},
+	"mac_power": {Level: exec.Assumed, Note: "the `pmset -g custom` parser was built against " +
+		"output captured by hand on macOS 26, and `live_mac_power_test.go` reads the real " +
+		"`pmset` -- but the setters run `pmset -a`, which needs root and changes a real Mac's " +
+		"power policy, so no test drives them and no CI leg is a Mac. Nothing has watched a " +
+		"`set_*` converge"},
 	"mac_defaults": {Level: exec.Assumed, Note: "the plist reader and writer were built " +
 		"against `defaults export` and `defaults write` output captured by hand on macOS " +
 		"26, and `live_mac_defaults_test.go` drives the real `defaults` against a private " +

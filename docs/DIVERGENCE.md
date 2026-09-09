@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **59 execution modules / 363 functions** and **41 state
+The build ships **60 execution modules / 379 functions** and **41 state
 modules / 97 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -556,9 +556,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-23 of 65 present — the rows below total 42 absent.
+24 of 65 present — the rows below total 41 absent.
 
-Ten of the twenty-three are **aliases**. SPEC names both
+Ten of the twenty-four are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -581,15 +581,15 @@ built" into "built, and fails when you call it", which is the worse of
 the two answers. `sys.list_aliases` reports the table and says which of
 them this node can use.
 
-Of the twelve that are modules in their own right, four are the Windows
-ones, and they arrived because a Windows host became available: the gap
-tracks the hardware, not the intent. Five are the Debian row — `dpkg`,
-`debconf`, `netplan`, `apparmor` and `snap`. That row was built when
-this project's fleet was assumed to be Ubuntu; it is one Ubuntu host
-to four FreeBSD, which plan §7 re-ranked around on 2026-09-06. One is
-`mac_defaults`, the first of the macOS row and the one member of it
-SPEC 15.5 also names as a core state; it wraps `defaults(1)` and
-decides convergence from the XML plist `defaults export` writes.
+Of the thirteen that are modules in their own right, four are the
+Windows ones, and they arrived because a Windows host became available:
+the gap tracks the hardware, not the intent. Five are the Debian row —
+`dpkg`, `debconf`, `netplan`, `apparmor` and `snap`. That row was built
+when this project's fleet was assumed to be Ubuntu; it is one Ubuntu
+host to four FreeBSD, which plan §7 re-ranked around on 2026-09-06. Two
+are the start of the macOS row: `mac_defaults`, which wraps `defaults(1)`
+and is the one member of that row SPEC 15.5 also names as a core state,
+and `mac_power`, which wraps `pmset(8)`.
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -627,7 +627,7 @@ specification cannot be quietly missed.
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
-| macOS | `mac_defaults`, `mac_brew_pkg` and `mac_service` (aliases) | `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_keychain`, `mac_assistive` |
+| macOS | `mac_defaults`, `mac_power`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, `mac_assistive` |
 
 Notes on this table:
 
@@ -1036,9 +1036,12 @@ The fix was cross-compiled here and then built natively on a Mac, which
 is the difference between the claim the matrix used to make and one
 worth writing down. Almost nothing has been *run* there: `pkg`,
 `service`, and most of `mac_*` are as unexercised as they were. The
-exception is `mac_defaults`, whose `live_mac_defaults_test.go` drives
-the real `defaults` against a throwaway domain — but only behind
-`HALITE_SYSTEM_LIVE=1`, and no CI leg sets it on a Mac.
+exceptions are `mac_defaults`, whose `live_mac_defaults_test.go` drives
+the real `defaults` against a throwaway domain, and `mac_power`, whose
+`live_mac_power_test.go` reads the real `pmset` — both on a developer's
+Mac, and no CI leg is one. `mac_defaults`'s live leg needs
+`HALITE_SYSTEM_LIVE=1` because it writes; `mac_power`'s reads only and
+runs on any `go test` on a Mac.
 
 OpenBSD still does not build — `syscall.RLIMIT_AS` does not exist there
 — and is not in the shipped target list, so nothing claims it does.
@@ -4646,6 +4649,59 @@ watches this module converge unattended: `evidence.go` records it
 `assumed`, and `make release-gate` is red on it alongside `apparmor`
 and `snap`. The `user` path has not been run at all.
 
+### 5.42 `mac_power`: `pmset`, per power source
+
+The second module of SPEC 15.3's macOS row. It drives `pmset(8)` and
+ships the getter/setter pairs Salt's `mac_power` has, so a tree calling
+`mac_power.set_display_sleep` keeps working: `computer_sleep`,
+`display_sleep`, `harddisk_sleep`, `wake_on_network`, `wake_on_modem`,
+`restart_power_failure` and `sleep_on_power_button`, plus Salt's
+combined `get_sleep`/`set_sleep` over the three timers — sixteen
+functions. SPEC 15.5 names no `mac_power` state, so there is none, the
+same as `win_registry`; a tree that converges a power setting reaches
+these through `module.run`.
+
+**Reading is from `pmset -g custom`, not `pmset -g`.** `-g` prints the
+settings *in use*, which a `caffeinate` assertion changes; `-g custom`
+prints what is *configured*, per power source, which is what a state
+would converge against. A getter takes a `power_source` — `ac`,
+`battery` or `ups` — so a laptop whose profiles differ can be asked
+about either, and a desktop's missing `battery` section falls back to
+`ac` rather than failing. The setters run `pmset -a`, every source,
+matching Salt.
+
+**One label is not its key.** `pmset` takes `powerbutton` and prints it
+back as `Sleep On Power Button`; the setting table carries both. A
+setting `pmset` does not report on a given Mac — `ring` on a machine
+with no modem — is an error from the getter that names it, not a false
+zero. Timer values are 0 to 180 minutes, with `Never` and `Off` for 0;
+flag values take `on`/`off`, `yes`/`no`, `true`/`false` or `1`/`0`, and
+`value.Truthy` is deliberately not used for them because it reads `off`
+as true.
+
+**Which settings a Mac reports is hardware.** The three sleep timers are
+everywhere. `womp` and `autorestart` are not: the CI runner — an Apple
+Silicon macOS 15 VM — reports neither, and the first live test to
+require them failed there rather than on any code fault. What is
+universal is the three timers and the shape of the output; the flags
+are whatever the machine has.
+
+#### What was verified
+
+`live_mac_power_test.go` runs the getters against the real `pmset` on
+whatever Mac runs the suite — no gate, because `pmset -g custom` reads
+and changes nothing, and this makes it the one live macOS leg CI
+actually runs. It requires the `AC Power` section and the three sleep
+timers as `0`–`180` integers, and for each optional flag it checks
+against what `pmset -g custom` reports: present, the getter returns a
+bool; absent, the getter fails rather than inventing one. `get_sleep`'s
+keys are asserted to be Salt's.
+
+The setters are not exercised: `pmset -a` needs root and rewrites a real
+Mac's power policy, and no CI leg runs as root on a Mac. `evidence.go`
+records the module `assumed` for that reason, and `make release-gate`
+is red on it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -5350,11 +5406,11 @@ What is **not** built in phase 5:
   against every target.
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
-- **macOS parity.** The package and service providers ship, and
-  `mac_defaults` — the first module of SPEC 15.3's macOS row, and the
-  one SPEC 15.5 also names as a core state. The other seven of that row
-  (`mac_user`, `mac_group`, `mac_shadow`, `mac_power`,
-  `mac_softwareupdate`, `mac_keychain`, `mac_assistive`) do not.
+- **macOS parity.** The package and service providers ship, and the
+  first two modules of SPEC 15.3's macOS row: `mac_defaults` (also a
+  core state under SPEC 15.5) and `mac_power`. The other six of that row
+  (`mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`,
+  `mac_keychain`, `mac_assistive`) do not.
 - **Windows parity, in part.** The suite now runs natively there and
   passes: see 4.6. What is built is the platform-neutral half — grains,
   the file states, `cmd`, the Chocolatey provider, the extension
