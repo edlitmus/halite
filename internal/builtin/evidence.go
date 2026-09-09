@@ -30,8 +30,8 @@ import (
 // then; 5.35 through 5.38 drove all but two of the root-mutating
 // modules against their real tools on real machines. What is still
 // `Assumed` — `apparmor`, `snap`, and the macOS row (`mac_defaults`,
-// `mac_power`, `mac_user`, `mac_group`, `mac_shadow`) — says why in its
-// own note, and the release gate refuses to ship while any is. The
+// `mac_power`, `mac_user`, `mac_group`, `mac_shadow`,
+// `mac_softwareupdate`) — says why in its own note, and the release gate refuses to ship while any is. The
 // macOS modules each have a live test that reads the real tool, but
 // their mutating paths change a Mac's own state and no CI leg is a Mac.
 // `exec.Registry` appends the note to a *failing* mutation, and
@@ -198,6 +198,12 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`pmset` -- but the setters run `pmset -a`, which needs root and changes a real Mac's " +
 		"power policy, so no test drives them and no CI leg is a Mac. Nothing has watched a " +
 		"`set_*` converge"},
+	"mac_softwareupdate": {Level: exec.Assumed, Note: "the `softwareupdate --list` parser was " +
+		"built against real output captured on macOS 26, and `live_mac_softwareupdate_test.go` " +
+		"reads the real schedule state and the downloaded-updates plist. Nothing has installed " +
+		"or downloaded an update through it: `softwareupdate --install` needs root, reboots the " +
+		"machine, and no CI leg is a Mac. `ignore`, `list_ignored` and `reset_ignored` describe " +
+		"a `softwareupdate` option macOS removed and refuse by name"},
 	"mac_user": {Level: exec.Assumed, Note: "reads are demonstrated -- `live_mac_user_test.go` " +
 		"parses a real `dscl -plist . -read` and `dscl . -list` on this host, and the virtual " +
 		"`user.present` predicts a creation in test mode against it. The writes -- the " +

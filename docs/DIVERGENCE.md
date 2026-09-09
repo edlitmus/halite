@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **63 execution modules / 400 functions** and **41 state
+The build ships **64 execution modules / 412 functions** and **41 state
 modules / 97 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -556,9 +556,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-27 of 65 present — the rows below total 38 absent.
+28 of 65 present — the rows below total 37 absent.
 
-Ten of the twenty-seven are **aliases**. SPEC names both
+Ten of the twenty-eight are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -581,18 +581,18 @@ built" into "built, and fails when you call it", which is the worse of
 the two answers. `sys.list_aliases` reports the table and says which of
 them this node can use.
 
-Of the sixteen that are modules in their own right, four are the
+Of the seventeen that are modules in their own right, four are the
 Windows ones, and they arrived because a Windows host became available:
 the gap tracks the hardware, not the intent. Five are the Debian row —
 `dpkg`, `debconf`, `netplan`, `apparmor` and `snap`. That row was built
 when this project's fleet was assumed to be Ubuntu; it is one Ubuntu
 host to four FreeBSD, which plan §7 re-ranked around on 2026-09-06.
-Five are the macOS row: `mac_defaults` (`defaults(1)`, and the one
+Six are the macOS row: `mac_defaults` (`defaults(1)`, and the one
 member SPEC 15.5 also names as a core state), `mac_power` (`pmset(8)`),
-and `mac_user`, `mac_group` and `mac_shadow`, which drive `dscl(1)` and
+`mac_user`, `mac_group` and `mac_shadow`, which drive `dscl(1)` and
 `dseditgroup(1)` and are what `user.present` and `group.present` branch
 to on a Mac — the same "nothing to reach" gap this document records for
-Windows, closed here.
+Windows, closed here — and `mac_softwareupdate` (`softwareupdate(8)`).
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -630,7 +630,7 @@ specification cannot be quietly missed.
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
-| macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_softwareupdate`, `mac_keychain`, `mac_assistive` |
+| macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_keychain`, `mac_assistive` |
 
 Notes on this table:
 
@@ -4764,6 +4764,48 @@ recursive home removal all need root and change Open Directory, and no
 CI leg runs as root on a Mac. `evidence.go` records all three modules
 `assumed`, and `make release-gate` is red on them.
 
+### 5.44 `mac_softwareupdate`: `softwareupdate`, minus what macOS removed
+
+SPEC 15.3's sixth macOS module. It drives `softwareupdate(8)`:
+`list_available`, `update_available`, `list_downloads`, `download`,
+`download_all`, `update`, `update_all`, `schedule_enabled` and
+`schedule_enable` — twelve functions with the three below.
+
+**Three of Salt's functions describe a mechanism macOS took out.**
+`softwareupdate --ignore`, `--reset-ignored` and the per-update ignore
+list were deprecated years ago and are gone from the binary on current
+macOS — `softwareupdate --ignore` answers "unrecognized option".
+Withholding an update is an MDM control now, through a
+`com.apple.SoftwareUpdate` configuration profile, which is outside what
+this module drives. `ignore`, `list_ignored` and `reset_ignored` are
+registered anyway, and refuse by name with that explanation, so a tree
+carrying them from Salt is not told "unknown function" — the same
+choice `apt_key` and `win_registry`'s absent state make.
+
+**The check schedule is a preference, not a subcommand.** `softwareupdate
+--schedule on|off` is also gone; `--schedule` with no argument still
+prints the state, which `schedule_enabled` reads. `schedule_enable`
+writes `AutomaticCheckEnabled` under
+`/Library/Preferences/com.apple.SoftwareUpdate`, through the same path
+`mac_defaults` writes. `list_downloads` reads the `ProductPaths` keys
+out of `/Library/Updates/index.plist` with the plist reader
+`mac_defaults` already carries.
+
+#### What was verified
+
+`live_mac_softwareupdate_test.go` runs the two safe reads against the
+real tool on any Mac: `softwareupdate --schedule` parses to a bool, and
+the `/Library/Updates` index reads without erroring. `--list` is left
+out on purpose — it contacts Apple's update service, takes tens of
+seconds, and fails with no network, none of which belongs in the
+default suite; its parser is covered by a fixture in both the current
+and the older output form.
+
+The install and download paths are not exercised: `softwareupdate
+--install` needs root, reboots the machine, and no CI leg is a Mac.
+`evidence.go` records the module `assumed`, and `make release-gate` is
+red on it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -5468,12 +5510,12 @@ What is **not** built in phase 5:
   against every target.
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
-- **macOS parity.** The package and service providers ship, and five of
+- **macOS parity.** The package and service providers ship, and six of
   SPEC 15.3's eight macOS modules: `mac_defaults` (also a core state
-  under SPEC 15.5), `mac_power`, and the `dscl`-driven `mac_user`,
+  under SPEC 15.5), `mac_power`, the `dscl`-driven `mac_user`,
   `mac_group` and `mac_shadow` — with which `user.present` and
-  `group.present` work on a Mac. The other three (`mac_softwareupdate`,
-  `mac_keychain`, `mac_assistive`) do not.
+  `group.present` work on a Mac — and `mac_softwareupdate`. The other
+  two (`mac_keychain`, `mac_assistive`) do not.
 - **Windows parity, in part.** The suite now runs natively there and
   passes: see 4.6. What is built is the platform-neutral half — grains,
   the file states, `cmd`, the Chocolatey provider, the extension
