@@ -62,7 +62,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"mac_user":             {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_group":            {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_shadow":           {Platform: "darwin", When: "phase 5, with macOS parity"},
-	"mac_power":            {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_softwareupdate":   {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_keychain":         {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"mac_assistive":        {Platform: "darwin", When: "phase 5, with macOS parity"},
