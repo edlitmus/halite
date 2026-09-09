@@ -284,15 +284,20 @@ func registerUserExec(r *Registries) {
 				Section:    "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name := states.Str(args, "name", "")
+				groups := states.Strings(args, "groups")
+				if c.Test {
+					return true, nil
+				}
+				if runtime.GOOS == "darwin" {
+					err := macUserSetGroups(c, name, groups, false)
+					return err == nil, err
+				}
 				tool, err := pickAccountTool(c)
 				if err != nil {
 					return nil, err
 				}
-				spec := userSpec{Name: states.Str(args, "name", ""), Groups: states.Strings(args, "groups")}
-				if c.Test {
-					return true, nil
-				}
-				_, err = c.Run(exec.Command{Argv: tool.ModUser(spec)})
+				_, err = c.Run(exec.Command{Argv: tool.ModUser(userSpec{Name: name, Groups: groups})})
 				return err == nil, err
 			},
 		},
@@ -469,6 +474,9 @@ func optionalBool(args *value.Map, name string) *bool {
 }
 
 func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
+	if runtime.GOOS == "darwin" {
+		return macUserPresentState(c, args)
+	}
 	spec := specFrom(args)
 	if spec.Name == "" {
 		return states.False("This state needs an account name."), nil
@@ -593,9 +601,18 @@ func diffAccount(current *value.Map, spec userSpec, changes *value.Map) {
 	}
 	// The shell is not in os/user's record, so it is read separately; a
 	// node whose accounts come from a directory service may not expose it
-	// at all, in which case the state cannot tell and does not guess.
+	// at all, in which case the state cannot tell and does not guess. A
+	// reader that already put a shell in the current map — macUserInfo
+	// does, from dscl — is preferred over re-reading /etc/passwd.
 	if spec.Shell != "" {
-		if cur := shellOf(spec.Name); cur != "" && cur != spec.Shell {
+		cur := ""
+		if s, ok := current.Get("shell"); ok && s != nil {
+			cur = value.KeyString(s)
+		}
+		if cur == "" {
+			cur = shellOf(spec.Name)
+		}
+		if cur != "" && cur != spec.Shell {
 			changes.Set("shell", states.Change(cur, spec.Shell))
 		}
 	}
@@ -615,6 +632,9 @@ func shellOf(name string) string {
 }
 
 func userAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
+	if runtime.GOOS == "darwin" {
+		return macUserAbsentState(c, args)
+	}
 	name := states.Str(args, "name", "")
 	tool, err := pickAccountTool(c)
 	if err != nil {
@@ -639,6 +659,9 @@ func userAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 }
 
 func groupPresent(c *exec.Context, args *value.Map) (states.Result, error) {
+	if runtime.GOOS == "darwin" {
+		return macGroupPresentState(c, args)
+	}
 	name := states.Str(args, "name", "")
 	gid := states.Int(args, "gid", 0)
 	tool, err := pickAccountTool(c)
@@ -672,6 +695,9 @@ func groupPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 }
 
 func groupAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
+	if runtime.GOOS == "darwin" {
+		return macGroupAbsentState(c, args)
+	}
 	name := states.Str(args, "name", "")
 	tool, err := pickAccountTool(c)
 	if err != nil {

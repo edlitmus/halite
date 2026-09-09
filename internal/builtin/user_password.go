@@ -85,21 +85,22 @@ func currentHash(name string) (hash string, found bool, err error) {
 // macOS keeps no crypt-style shadow file to read a line out of: a
 // password hash lives in Open Directory, in the per-user ShadowHashData
 // attribute, as a SALTED-SHA512-PBKDF2 dictionary inside a binary plist.
-// Reading it — and the plaintext-based dscl/sysadminctl calls that write
-// one — is real, separate work for the mac_shadow module of SPEC section
-// 15.3, not yet built.
+// There is no portable hash a tree can carry the way it carries a Linux
+// crypt string, so `user.present` refuses a `password:` on darwin (see
+// macUserPresentState) and this is never reached for comparison.
 //
-// dscl will not tell this apart from a missing attribute: querying
-// ShadowHashData unprivileged answers "No such key" with exit 0 either
-// way, the same as it would for an account that genuinely has none. So
-// the permission check has to happen before asking, by euid, rather than
-// from dscl's answer — confirmed against a real `dscl -plist . -read`
-// call on this host.
+// `mac_shadow` (SPEC 15.3) is built and sets a password from a
+// plaintext through `dscl . -passwd`, but it cannot read one back: dscl
+// answers "No such key" for ShadowHashData whether or not one is there,
+// the same either way, so there is nothing to compare against and a
+// hash-based state cannot be idempotent here.
 func currentHashDarwin(name string) (string, bool, error) {
 	if os.Geteuid() != 0 {
 		return "", false, fmt.Errorf("reading a macOS account's password hash needs root, and so does setting one")
 	}
-	return "", false, fmt.Errorf("this build does not yet read a macOS account's password hash (mac_shadow, SPEC 15.3)")
+	return "", false, fmt.Errorf(
+		"macOS keeps no readable password hash; `user.present` does not take a `password:` here, " +
+			"and `mac_shadow.set_password` takes a plaintext")
 }
 
 // currentHashWindows says why there is no hash to read.
