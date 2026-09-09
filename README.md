@@ -86,7 +86,7 @@ Delivery follows the phases in SPEC section 32.
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Done**: authentication, the execution and event endpoints, webhooks, OIDC, LDAP, returners, and the bridge protocol with its extension model |
-| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship. macOS has providers and no module set. |
+| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship. macOS has the package and service providers and the first of its modules, `mac_defaults`. |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | **Started**: the chaos suite and SPEC 31's upgrade layer are built, CI runs every leg of `make check` on Linux, Windows, macOS and FreeBSD, metrics are nearly complete, and `doctor` ships. The scale harness, external review, detached signing, tracing, packaging and the backtracking regex engine are not. |
 
 A node manages its own tree today — Salt's masterless mode — and that is
@@ -291,11 +291,12 @@ had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
-this build ships 58 execution modules and 40 state modules against a
-specification naming roughly 90 and 46 — 359 execution functions across 58
-modules and 95 state functions across 40. FreeBSD is the development
+this build ships 59 execution modules and 41 state modules against a
+specification naming roughly 90 and 46 — 363 execution functions across 59
+modules and 97 state functions across 41. FreeBSD is the development
 platform; Linux and Windows have each been verified against a real host,
-and macOS and Linux arm64 have not been run at all. `make test-linux`
+and macOS has run only its `mac_defaults` live test while Linux arm64 has
+not been run at all. `make test-linux`
 runs the suite as Linux binaries under this host's compat layer, which
 covers the platform-neutral code and the
 `/proc` grain collector but reaches no apt, dnf, or systemd. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is

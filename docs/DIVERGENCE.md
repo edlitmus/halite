@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **58 execution modules / 359 functions** and **40 state
-modules / 95 functions**.
+The build ships **59 execution modules / 363 functions** and **41 state
+modules / 97 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -492,7 +492,7 @@ different reason is given.
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-15 of 46 present, plus `sysrc`, which the section does not list.
+16 of 46 present, plus `sysrc`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -525,7 +525,7 @@ different reason is given.
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `lvm` | not implemented | 0 | Linux only |
-| `mac_defaults` | not implemented | 0 | macOS only |
+| `mac_defaults` | implemented | 2 | macOS only; `write` and `absent`, the exec side is `mac_defaults.*`. Convergence is decided from `defaults export`'s XML plist with the type kept distinct, so a key holding `1` is not taken for one holding `true` |
 | `mount` | implemented | 2 | `mounted` and `unmounted`, each managing the running mount and the table together |
 | `nftables` | not implemented | 0 | Linux only |
 | `npm` | implemented | 2 | install and remove, comparing against the tool's own listing |
@@ -556,9 +556,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-22 of 65 present — the rows below total 43 absent.
+23 of 65 present — the rows below total 42 absent.
 
-Ten of the twenty-two are **aliases**. SPEC names both
+Ten of the twenty-three are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -581,12 +581,15 @@ built" into "built, and fails when you call it", which is the worse of
 the two answers. `sys.list_aliases` reports the table and says which of
 them this node can use.
 
-Of the eleven that are modules in their own right, four are the Windows
+Of the twelve that are modules in their own right, four are the Windows
 ones, and they arrived because a Windows host became available: the gap
 tracks the hardware, not the intent. Five are the Debian row — `dpkg`,
 `debconf`, `netplan`, `apparmor` and `snap`. That row was built when
 this project's fleet was assumed to be Ubuntu; it is one Ubuntu host
-to four FreeBSD, which plan §7 re-ranked around on 2026-09-06.
+to four FreeBSD, which plan §7 re-ranked around on 2026-09-06. One is
+`mac_defaults`, the first of the macOS row and the one member of it
+SPEC 15.5 also names as a core state; it wraps `defaults(1)` and
+decides convergence from the XML plist `defaults export` writes.
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -624,7 +627,7 @@ specification cannot be quietly missed.
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
-| macOS | `mac_brew_pkg`, `mac_service` (aliases) | `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_defaults`, `mac_keychain`, `mac_assistive` |
+| macOS | `mac_defaults`, `mac_brew_pkg` and `mac_service` (aliases) | `mac_user`, `mac_group`, `mac_shadow`, `mac_power`, `mac_softwareupdate`, `mac_keychain`, `mac_assistive` |
 
 Notes on this table:
 
@@ -1031,8 +1034,11 @@ working. `make build-all` compiles every shipped target and is part of
 
 The fix was cross-compiled here and then built natively on a Mac, which
 is the difference between the claim the matrix used to make and one
-worth writing down. Nothing has been *run* there: `pkg`, `service`, and
-everything under `mac_*` are as unexercised as they were.
+worth writing down. Almost nothing has been *run* there: `pkg`,
+`service`, and most of `mac_*` are as unexercised as they were. The
+exception is `mac_defaults`, whose `live_mac_defaults_test.go` drives
+the real `defaults` against a throwaway domain — but only behind
+`HALITE_SYSTEM_LIVE=1`, and no CI leg sets it on a Mac.
 
 OpenBSD still does not build — `syscall.RLIMIT_AS` does not exist there
 — and is not in the shipped target list, so nothing claims it does.
@@ -4578,6 +4584,68 @@ checked against `dpkg`. In `--test` mode it parses `apt-get autoremove
 does that job and is verified (5.35), so a second spelling on `pkg` is a
 decision for a person, not a gap.
 
+### 5.41 `mac_defaults`: the first macOS module
+
+SPEC 15.3's macOS row had eight modules and this build had none of them
+as functions — `mac_brew_pkg` and `mac_service` are aliases onto the
+virtual `pkg` and `service`, and the other six were pending by name.
+`mac_defaults` is the first to arrive, and it is the one that row shares
+with SPEC 15.5's core state list, so building it closes a row in two
+tables rather than one. It ships `mac_defaults.read`, `read_type`,
+`write` and `delete` as execution functions and `mac_defaults.write`
+and `mac_defaults.absent` as states.
+
+**It drives `defaults(1)` and touches no plist directly.** The files
+under `Library/Preferences` are a cache `cfprefsd` owns; a process that
+edits one behind the daemon's back has its write dropped at the next
+flush. This is the same shape as `pkg` and `service` — the subsystem is
+a program, and the module is a careful client of it.
+
+**Reading goes through `defaults export`, not `defaults read`.**
+`defaults read <domain> <key>` prints a value in a display format that
+cannot be parsed back without guessing: a boolean is `1`, a float's
+precision is trimmed, an array is a parenthesised list. `defaults
+export <domain> -` writes a real XML property list, and exits 0 with an
+empty dict for a domain that does not exist rather than failing. A
+minimal reader for that plist — dict, array, string, integer, real,
+true, false — is in the module, because the alternative was shelling
+`plutil` or taking a plist library, and the element set `defaults`
+emits is small and fixed.
+
+**The comparison is typed.** `defaults` keeps `-int 1`, `-bool 1` and
+`-string 1` as three different things, and a state that wrote a string
+where the tree asked for an integer would report the key converged
+while a program reading it as a number found nothing. The reader returns
+`int64` for `<integer>` and `float64` for `<real>`, the wanted value is
+produced in the same Go type the declared `vtype` implies, and a
+mismatch of kind rewrites — so the run after a type change still
+converges.
+
+**`user` becomes that account.** A preference domain is per-user,
+resolved from `$HOME`, so managing a real user's Finder or Dock setting
+means running `defaults` as them. The parameter maps to the command's
+`RunAs`, which is setuid/setgid with the account's full group set and
+its `HOME` — not `su -c` and not `sudo`.
+
+#### What was verified, and where
+
+`live_mac_defaults_test.go` drives the real `defaults` against a
+domain named `com.halite.selftest.<pid>` in the invoking user's own
+store, and a cleanup removes it. No root: a user domain does not need
+it, and it is the only path a Mac CI runner could ever take. It checks
+that the reader agrees with what `defaults export` actually writes for
+each scalar type, an array and a nested dict; that a second `write`
+with the same value is the no-op the state reports as converged; that a
+string-to-int change on one key is seen as a change; and that `absent`
+removes a key and is then converged.
+
+It is gated on `HALITE_SYSTEM_LIVE=1`, the switch the hostname and
+sysctl live tests use, because it writes to a real preferences store
+even in a private corner of one. No CI leg sets it on a Mac, so nothing
+watches this module converge unattended: `evidence.go` records it
+`assumed`, and `make release-gate` is red on it alongside `apparmor`
+and `snap`. The `user` path has not been run at all.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -5282,8 +5350,11 @@ What is **not** built in phase 5:
   against every target.
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
-- **macOS parity.** The package and service providers ship; the module
-  set of SPEC 15.3 does not.
+- **macOS parity.** The package and service providers ship, and
+  `mac_defaults` — the first module of SPEC 15.3's macOS row, and the
+  one SPEC 15.5 also names as a core state. The other seven of that row
+  (`mac_user`, `mac_group`, `mac_shadow`, `mac_power`,
+  `mac_softwareupdate`, `mac_keychain`, `mac_assistive`) do not.
 - **Windows parity, in part.** The suite now runs natively there and
   passes: see 4.6. What is built is the platform-neutral half — grains,
   the file states, `cmd`, the Chocolatey provider, the extension
