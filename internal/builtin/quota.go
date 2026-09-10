@@ -363,12 +363,44 @@ func quotaMode(c *exec.Context, fs string) (any, error) {
 		case strings.Contains(text, " is off"):
 			out.Set(kind, false)
 		default:
+			out := strings.TrimSpace(res.Stdout + res.Stderr)
 			return nil, fmt.Errorf(
-				"`quotaon %s -p %s` did not report a state; it printed %q and exited %d",
-				quotaKinds[kind], fs, strings.TrimSpace(res.Stdout+res.Stderr), res.Code)
+				"`quotaon %s -p %s` did not report a state; it printed %q and exited %d%s",
+				quotaKinds[kind], fs, out, res.Code, quotaKernelSupportNote(out))
 		}
 	}
 	return out, nil
+}
+
+// quotaKernelSupportNote explains the two answers from the quota tools
+// that name a cause an operator cannot act on, or returns "".
+//
+// Both were found by running this on a real machine rather than
+// reasoned about (DIVERGENCE 5.48), and both are worth translating
+// because the tool's own wording sends the reader nowhere.
+//
+//   - "Quota format not supported in kernel" means the kernel has no
+//     `quota_v2` format driver, so the classic `aquota.user` files
+//     cannot be used at all. GitHub's Ubuntu runners are like this.
+//   - ESRCH, which the tools render as "No such process", is the same
+//     thing arriving as an errno rather than as a sentence.
+//
+// The way in on such a kernel is a filesystem built with ext4's own
+// quota feature, where quotas are on from the moment it is mounted:
+// `quota.report` and `quota.set` work there, and `quota.on` and
+// `quota.off` have nothing to switch. So a failure here is not a
+// filesystem without quotas, which is what the bare message reads as.
+func quotaKernelSupportNote(output string) string {
+	lower := strings.ToLower(output)
+	switch {
+	case strings.Contains(lower, "format not supported"),
+		strings.Contains(lower, "no such process"):
+		return " -- this kernel has no classic quota format driver (`quota_v2`), so the aquota files " +
+			"cannot be switched on. A filesystem built with ext4's own quota feature needs no " +
+			"switching on: `quota.report` and `quota.set` work there, and `quota.on` and `quota.off` " +
+			"have nothing to do"
+	}
+	return ""
 }
 
 // quotaRow is one account's quota on one filesystem.
@@ -891,9 +923,14 @@ func quotaSwitch(c *exec.Context, args *value.Map, on bool) (any, error) {
 		out.Set("command", exec.Command{Argv: argv}.String())
 		return out, nil
 	}
-	res, err := c.Run(exec.Command{Argv: argv})
+	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", argv[0], err)
+		return nil, fmt.Errorf("%s could not be run: %w", argv[0], err)
+	}
+	if res.Code != 0 {
+		out := strings.TrimSpace(res.Stderr + res.Stdout)
+		return nil, fmt.Errorf("`%s` exited %d: %s%s",
+			exec.Command{Argv: argv}.String(), res.Code, out, quotaKernelSupportNote(out))
 	}
 	// `quotaon -v` prints a line per filesystem it acted on and nothing
 	// at all for one that was already in the state asked for, which is

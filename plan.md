@@ -1080,23 +1080,35 @@ place.
 
    **`quota` is the one whose answer runs and has not yet reached an
    assertion.** `live_quota_loopback_test.go` makes an ext4 filesystem
-   in a file, mounts it through the loop driver with quotas on, sets a
-   limit through `setquota` and reads it back through `repquota`, and it
-   is wired into `fleet.yml`'s Linux leg. Both runs so far stopped at
-   `quotaon`, which returns ESRCH against a mounted filesystem whose
-   quota files were just written.
+   in a file, mounts it through the loop driver, sets a limit through
+   `setquota` and reads it back through `repquota`, and it is wired into
+   `fleet.yml`'s Linux leg. Three runs so far, and the first two stopped
+   at `quotaon` with ESRCH against a mounted filesystem whose quota
+   files had just been written.
 
    The first diagnosis of that was **wrong**, and it is the useful part.
    ext4's quota feature was blamed on the strength of the symptom alone;
    the next run printed the feature list and the filesystem had never
-   had it. The leg probes now — the mount options the kernel applied,
-   the formats it registers, what `quotacheck` left behind — instead of
-   testing a third hypothesis. This is the §1.4 shape one layer out: not
-   a branch nobody ran, but a branch that runs and stops before it
-   asserts, which looks like progress in a log and is not.
+   had it. Only when the leg was made to **probe instead of guess** did
+   the machine answer: GitHub's Ubuntu kernel has no `quota_v2` format
+   driver, so the *classic* quota route — the aquota files, switched on
+   by `quotaon` — cannot work there at all, and the filesystem's own
+   quota feature is the only way in. The two attempts had each forced
+   the one route that machine cannot take.
 
-   The module stays `assumed` until the leg is green. The test existing
-   is not the demonstration, and neither is the test running.
+   Three lessons, and only the first is about quotas. A symptom is not a
+   diagnosis, and this project's own §1.4 discipline stops at "run the
+   branch" — running it is where the work starts. A test that runs and
+   stops before it asserts **looks like progress in a log and is not**,
+   which is why the ledger now separates three things rather than two:
+   the test existing, the test running, and the test reaching its
+   assertions. And a probe is cheaper than a guess: two runs were spent
+   on hypotheses and the third produced the answer outright.
+
+   The module stays `assumed` until the leg is green. What the failure
+   did buy is in the module rather than the test: `quota.on`,
+   `quota.off` and `quota.get_mode` now translate both of the kernel's
+   opaque answers into what an operator can act on.
 
    This stays the highest-ranked *unbuilt* item because nothing else on
    this list can ship a release until it is done.

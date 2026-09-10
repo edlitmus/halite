@@ -463,3 +463,43 @@ func TestRepquotaIsNeverAskedToHumaniseOrToHideNames(t *testing.T) {
 		t.Errorf("the fixed-width report is asked for as %q", got)
 	}
 }
+
+// The two opaque answers from the quota tools are translated.
+//
+// Both came off a real machine rather than out of a manual (DIVERGENCE
+// 5.48), and both name a cause an operator cannot act on from the
+// wording alone: a kernel with no classic quota format driver says
+// "Quota format not supported in kernel" through one path and "No such
+// process" through the other, and neither says that the filesystem's own
+// quota feature is the way in.
+func TestTheOpaqueQuotaKernelAnswersAreTranslated(t *testing.T) {
+	for _, output := range []string{
+		"quotaon: Quota format not supported in kernel.",
+		"quotaon: using /mnt/aquota.user on /dev/loop0 [/mnt]: No such process",
+	} {
+		note := quotaKernelSupportNote(output)
+		if note == "" {
+			t.Errorf("%q was passed on untranslated", output)
+			continue
+		}
+		if !strings.Contains(note, "quota_v2") {
+			t.Errorf("the note does not name the missing driver: %s", note)
+		}
+		if !strings.Contains(note, "quota feature") {
+			t.Errorf("the note does not say what does work instead: %s", note)
+		}
+	}
+
+	// And an unrelated failure is not given an explanation that does not
+	// apply to it, which would send the reader somewhere worse than the
+	// tool's own wording.
+	for _, output := range []string{
+		"quotaon: Cannot find filesystem to check or filesystem not mounted with quota option.",
+		"repquota: Mountpoint (or device) /nowhere not found.",
+		"",
+	} {
+		if note := quotaKernelSupportNote(output); note != "" {
+			t.Errorf("%q was given the kernel-driver explanation: %s", output, note)
+		}
+	}
+}

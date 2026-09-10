@@ -57,6 +57,10 @@ import (
 type liveQuotaImage struct {
 	mount string
 	c     *exec.Context
+	// route is "classic" or "feature", and it decides what can honestly
+	// be asserted: under the feature there is nothing for `quota.on` and
+	// `quota.off` to switch.
+	route string
 }
 
 // liveQuotaRun runs a setup command and turns a non-zero exit into an
@@ -100,15 +104,86 @@ func liveQuotaSetup(t *testing.T) liveQuotaImage {
 	}
 
 	dir := t.TempDir()
-	image := filepath.Join(dir, "quota.img")
-	mount := filepath.Join(dir, "mnt")
+
+	// **ext4 has two quota mechanisms and this kernel supports only one
+	// of them.** That took two wrong guesses to establish, and the
+	// reasoning is kept here because the error message says none of it.
+	//
+	// The classic mechanism keeps `aquota.user` and `aquota.group` in the
+	// filesystem root, is switched on with `quotaon`, and needs the
+	// kernel's `quota_v2` format driver. The *quota feature* keeps the
+	// same data in hidden inodes, is on from the moment the filesystem is
+	// mounted, and needs no format driver at all.
+	//
+	// GitHub's Ubuntu runners have no `quota_v2`:
+	//
+	//	modprobe: FATAL: Module quota_v2 not found in directory
+	//	          /lib/modules/6.17.0-1022-azure
+	//	quotaon: Quota format not supported in kernel.
+	//
+	// So the classic route cannot work there, and the first two attempts
+	// at this leg both forced it -- once by accident and once by a wrong
+	// diagnosis that blamed the feature for the classic route's failure.
+	//
+	// It tries classic first anyway, because that is the route
+	// `quota.on` and `quota.off` drive and the one worth exercising where
+	// a kernel has it, and falls back to the feature where it does not.
+	// Which route was taken is carried on the image, because it decides
+	// what can honestly be asserted afterwards.
+	image, mount, route := liveQuotaFilesystem(t, c, builder, dir)
+	t.Logf("this kernel gives the %s quota route on %s", route, image)
+	return liveQuotaImage{mount: mount, c: c, route: route}
+}
+
+// liveQuotaFilesystem builds the filesystem, classic route if the kernel
+// has one and the feature route otherwise.
+func liveQuotaFilesystem(t *testing.T, c *exec.Context, builder, dir string) (image, mount, route string) {
+	t.Helper()
+	image = filepath.Join(dir, "quota.img")
+	mount = filepath.Join(dir, "mnt")
 	if err := os.MkdirAll(mount, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	// 64 MiB is enough for a filesystem with room to put an account over
-	// a limit, and small enough that making it costs nothing. It is a
-	// sparse file until something writes to it.
+	// Classic: no quota feature, quota files written by quotacheck,
+	// switched on by quotaon.
+	liveQuotaFreshImage(t, image)
+	if err := liveQuotaRun(c, builder, "-q", "-F", "-O", "^quota", image); err != nil {
+		t.Skipf("an ext4 filesystem could not be made here: %v", err)
+	}
+	liveQuotaMount(t, c, image, mount, "loop,usrquota,grpquota")
+	liveQuotaProbe(t, c, "the mount as applied", "findmnt", "-no", "OPTIONS,FSTYPE,SOURCE", mount)
+
+	classic := liveQuotaRun(c, "quotacheck", "-F", "vfsv1", "-cugm", mount)
+	if classic == nil {
+		classic = liveQuotaRun(c, "quotaon", "-F", "vfsv1", "-ug", mount)
+	}
+	if classic == nil {
+		return image, mount, "classic"
+	}
+	t.Logf("this kernel has no classic quota format, so the feature route it is: %v", classic)
+
+	// Feature: quotas live in hidden inodes and are on at mount. Nothing
+	// is switched on, and nothing can be switched off.
+	if err := liveQuotaRun(c, "umount", mount); err != nil {
+		t.Skipf("the classic attempt could not be undone: %v", err)
+	}
+	liveQuotaFreshImage(t, image)
+	if err := liveQuotaRun(c, builder, "-q", "-F", "-O", "quota", image); err != nil {
+		t.Skipf("an ext4 filesystem with the quota feature could not be made here: %v", err)
+	}
+	liveQuotaMount(t, c, image, mount, "loop,usrquota,grpquota")
+	liveQuotaProbe(t, c, "the feature mount as applied", "findmnt", "-no", "OPTIONS,FSTYPE,SOURCE", mount)
+	return image, mount, "feature"
+}
+
+// liveQuotaFreshImage truncates the backing file back to an empty 64 MiB.
+//
+// 64 MiB is enough for a filesystem with room to put an account over a
+// limit, and small enough that making it twice costs nothing. It is a
+// sparse file until something writes to it.
+func liveQuotaFreshImage(t *testing.T, image string) {
+	t.Helper()
 	f, err := os.Create(image)
 	if err != nil {
 		t.Fatal(err)
@@ -120,66 +195,30 @@ func liveQuotaSetup(t *testing.T) liveQuotaImage {
 	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
 
-	// `-O ^quota` rules out the *filesystem feature* form of ext4
-	// quotas, which keeps the data in hidden inodes and is always on;
-	// this leg wants the classic `aquota.user` / `aquota.group` files,
-	// because those are the ones `quota.on` and `quota.off` switch.
-	//
-	// It was also this leg's first wrong diagnosis, and the comment is
-	// kept honest rather than quietly corrected. The first CI run failed
-	// at `quotaon` with `No such process`, the feature was blamed, and
-	// the next run printed the feature list and disproved it: the
-	// filesystem had no `quota` feature either time. Whatever ESRCH is
-	// about here, it is not that. The probes below are what the run
-	// after this one has to answer with, rather than a third guess
-	// dressed as a fix.
-	if err := liveQuotaRun(c, builder, "-q", "-F", "-O", "^quota", image); err != nil {
-		t.Skipf("an ext4 filesystem could not be made here: %v", err)
-	}
-	liveQuotaProbe(t, c, "the filesystem as made", "dumpe2fs", "-h", image)
-
-	if err := liveQuotaRun(c, "mount", "-o", "loop,usrquota,grpquota", image, mount); err != nil {
+// liveQuotaMount mounts the image and registers the unmount.
+//
+// The cleanup is unconditional and runs even when the test failed: a leg
+// that leaves a loop device attached costs the next job on the same
+// machine, and t.TempDir cannot remove a mounted directory.
+func liveQuotaMount(t *testing.T, c *exec.Context, image, mount, opts string) {
+	t.Helper()
+	if err := liveQuotaRun(c, "mount", "-o", opts, image, mount); err != nil {
 		t.Skipf("the loopback filesystem could not be mounted: %v", err)
 	}
 	t.Cleanup(func() {
-		// Unconditional, and it runs even when the test failed: a leg
-		// that leaves a loop device attached costs the next job on the
-		// same machine, and t.TempDir cannot remove a mounted directory.
+		// The classic attempt unmounts on its own before the feature
+		// attempt remounts, so this can run against a path that is
+		// already free. Asking first keeps a successful run's log clear
+		// of a failure that did not happen.
+		if liveQuotaRun(c, "mountpoint", "-q", mount) != nil {
+			return
+		}
 		if err := liveQuotaRun(c, "umount", mount); err != nil {
 			t.Logf("the loopback filesystem could not be unmounted, which leaves a loop device attached: %v", err)
 		}
 	})
-
-	// What the mount actually applied, rather than what was asked for.
-	// A `usrquota` that the kernel silently dropped would produce
-	// exactly the ESRCH below, and nothing so far has checked it.
-	liveQuotaProbe(t, c, "the mount as applied", "findmnt", "-no", "OPTIONS,FSTYPE,SOURCE", mount)
-
-	// ESRCH from `quotactl(Q_QUOTAON)` is also what a kernel with no
-	// registered quota format returns, and `quota_v2` is a module rather
-	// than built in on some kernels. Loading it is cheap and its failure
-	// is not fatal -- a kernel with it built in has nothing to load.
-	if err := liveQuotaRun(c, "modprobe", "quota_v2"); err != nil {
-		t.Logf("quota_v2 could not be loaded, which is expected on a kernel that has it built in: %v", err)
-	}
-	liveQuotaProbe(t, c, "the quota formats this kernel registers", "sh", "-c", "cat /proc/fs/quota 2>&1; lsmod | grep -i quota")
-
-	// `-F vfsv1` on both, named rather than left to the default. The
-	// tools and the kernel each have their own idea of the default
-	// format, and a mismatch between them is the other thing ESRCH
-	// means. `quotacheck` warns about a filesystem mounted read-write
-	// and carries on, so its exit code is read rather than trusted.
-	if err := liveQuotaRun(c, "quotacheck", "-F", "vfsv1", "-cugm", mount); err != nil {
-		t.Skipf("quotacheck could not initialise the quota files: %v", err)
-	}
-	if err := liveQuotaRun(c, "quotaon", "-F", "vfsv1", "-ug", mount); err != nil {
-		liveQuotaProbe(t, c, "what is in the filesystem root", "ls", "-la", mount)
-		t.Skipf("quotas could not be switched on, so nothing below this line has been demonstrated. "+
-			"The probes above are the evidence for the next attempt, which must explain ESRCH rather "+
-			"than guess at it again: %v", err)
-	}
-	return liveQuotaImage{mount: mount, c: c}
 }
 
 // A limit this module sets is a limit repquota reports, read back
@@ -260,6 +299,13 @@ func TestLiveQuotaSetsALimitARealRepquotaReportsBack(t *testing.T) {
 // once, on the filesystem where quotas happen to be off.
 func TestLiveQuotaReadsBothStatesOfARealFilesystem(t *testing.T) {
 	img := liveQuotaSetup(t)
+	if img.route == "feature" {
+		// Under ext4's quota feature there is no second state to read:
+		// quotas are on from the mount and `quotaoff` has nothing to
+		// switch. Skipping is the honest outcome -- reading "on" twice
+		// and calling it two states would be the dishonest one.
+		t.Skip("this kernel gives the feature route, where quotas are on from the mount and cannot be switched off")
+	}
 	r := New()
 
 	ask := value.NewMap(1)

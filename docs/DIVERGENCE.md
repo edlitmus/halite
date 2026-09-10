@@ -5012,22 +5012,49 @@ filesystem in a file, mounted through the loop driver with quotas on, a
 limit set through `setquota` and read back through `repquota` — and it
 is wired into the Linux leg of `fleet.yml`.
 
-**It runs, and it has not yet reached a single assertion.** Both
-attempts stopped at `quotaon`, which returns ESRCH — `No such process` —
-against a filesystem that is mounted and whose quota files `quotacheck`
-has just written. The first diagnosis was wrong and is worth recording
-as such: ext4's *quota feature* was blamed, and the next run printed the
-feature list and showed the filesystem had never had it. Whatever ESRCH
-is about there, it is not that.
+**It took three CI runs to find out why it could not start, and the
+answer is worth more than the leg.** The first two stopped at `quotaon`
+with ESRCH — `No such process` — against a filesystem that was mounted
+and whose quota files `quotacheck` had just written.
 
-The leg now probes rather than guesses — the mount options the kernel
-actually applied, the quota formats it registers, what `quotacheck` left
-in the filesystem root — and asks for `vfsv1` by name on both tools,
-which is the other thing ESRCH classically means. That is a hypothesis
-with evidence attached rather than a third guess.
+The first diagnosis was wrong, and that is the part to keep. ext4's
+*quota feature* was blamed on the strength of the symptom alone; the
+next run printed the feature list and the filesystem had never had it.
+Only when the leg was made to **probe instead of guess** did the machine
+say what was actually wrong:
 
-Two things are worth separating here. The test **existing** is not the
-demonstration, and neither is the test **running**: it has to reach its
+```
+modprobe: FATAL: Module quota_v2 not found in directory
+          /lib/modules/6.17.0-1022-azure
+quotaon: Quota format not supported in kernel.
+```
+
+**ext4 has two quota mechanisms and GitHub's Ubuntu runners support only
+one of them.** The classic mechanism keeps `aquota.user` and
+`aquota.group` in the filesystem root, is switched on by `quotaon`, and
+needs the kernel's `quota_v2` format driver — which that kernel does not
+have. The *quota feature* keeps the same data in hidden inodes, is on
+from the moment the filesystem is mounted, and needs no driver at all.
+So the route the first two attempts forced was the one route that
+machine cannot take.
+
+The leg tries the classic route first, because it is the one `quota.on`
+and `quota.off` drive and worth exercising where a kernel has it, and
+falls back to the feature. Which route it got decides what it may then
+assert: under the feature there is no second state to read, so the
+on/off test skips by name rather than reading "on" twice and calling it
+two states.
+
+**The module gained something from this that a manual would not have
+given it.** Both of those messages name a cause an operator cannot act
+on, and `quota.on`, `quota.off` and `quota.get_mode` now translate them:
+the note says the kernel has no classic format driver, and that a
+filesystem with ext4's own quota feature needs no switching on and works
+with `quota.report` and `quota.set` regardless. An unrelated failure is
+not given that explanation, which a test pins in both directions.
+
+Three things are worth separating. The test **existing** is not the
+demonstration; neither is the test **running**; it has to reach its
 assertions. `evidence.go` records the module `assumed` and `make
 release-gate` is red on it until it does.
 
