@@ -179,6 +179,17 @@ var moduleEvidence = map[string]exec.Evidence{
 		"whose failure wording is its own, and OpenSSL 1.1.1, whose spelling is in the fixtures and " +
 		"on no machine here"},
 
+	"quota": {Level: exec.Hardware, Note: "driven against a real ext4 filesystem with quotas " +
+		"switched on, on an Ubuntu 24.04 runner: an ext4 image mounted through the loop driver, " +
+		"limits set through the real `setquota` and read back through the real " +
+		"`repquota -O csv` -- four distinct numbers in four positions, so a transposed pair would " +
+		"have shown as a wrong value rather than as two that match -- and `quotaon -p` read in both " +
+		"states (DIVERGENCE 5.48). The BSD fixed-width parser is written to the printf calls in " +
+		"FreeBSD 15.1's own usr.sbin/repquota/repquota.c, and **it has not been run**: this project's " +
+		"fleet is entirely ZFS and has no UFS filesystem to make one on, so `edquota -e` is still " +
+		"checked only as an argument vector. Also not covered: ext4's quota feature route, which the " +
+		"live leg falls back to and no runner has needed"},
+
 	// ---- Read from a real system, mutation never watched ----
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
@@ -221,16 +232,6 @@ var moduleEvidence = map[string]exec.Evidence{
 		"profile on that platform and this module has no other way to change a mode " +
 		"(DIVERGENCE 5.37). `apparmor.status` reports that as `tools: false` with the " +
 		"reason, rather than `true` because the binary is on PATH"},
-	"quota": {Level: exec.Assumed, Note: "the fixed-width parser is written to the printf calls in " +
-		"FreeBSD 15.1's own usr.sbin/repquota/repquota.c rather than to remembered output, and the " +
-		"platform argument table is checked for both tools from any host -- but **no repquota has been " +
-		"run against a filesystem that has quotas**, and no quota has been set. This project's fleet " +
-		"is entirely ZFS, whose quotas are dataset properties these tools cannot see, so the one thing " +
-		"a real machine here settles is that a ZFS filesystem is diverted by name instead of being " +
-		"reported as having no quotas. Closing this needs a filesystem with quota tracking enabled: an " +
-		"ext4 or xfs loopback image on the Linux CI leg is the cheapest, and would exercise `-O csv`, " +
-		"`setquota` and `quotaon -p` at once"},
-
 	"snap": {Level: exec.Assumed, Note: "nothing here has run against a real snapd, and " +
 		"the `snap list` fixtures were written from its documented columns rather than " +
 		"captured (DIVERGENCE 5.28)"},

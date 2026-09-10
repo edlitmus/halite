@@ -5012,14 +5012,16 @@ filesystem in a file, mounted through the loop driver with quotas on, a
 limit set through `setquota` and read back through `repquota` — and it
 is wired into the Linux leg of `fleet.yml`.
 
-**It took three CI runs to find out why it could not start, and the
-answer is worth more than the leg.** The first two stopped at `quotaon`
-with ESRCH — `No such process` — against a filesystem that was mounted
-and whose quota files `quotacheck` had just written.
+**It took six CI runs to reach its first assertion, and five of those
+were about the machine rather than about the module.** That is the part
+worth writing down.
 
-The first diagnosis was wrong, and that is the part to keep. ext4's
-*quota feature* was blamed on the strength of the symptom alone; the
-next run printed the feature list and the filesystem had never had it.
+The first two stopped at `quotaon` with ESRCH — `No such process` —
+against a filesystem that was mounted and whose quota files `quotacheck`
+had just written. The first diagnosis was wrong: ext4's *quota feature*
+was blamed on the strength of the symptom alone, and the next run
+printed the feature list and showed the filesystem had never had it.
+
 Only when the leg was made to **probe instead of guess** did the machine
 say what was actually wrong:
 
@@ -5029,34 +5031,49 @@ modprobe: FATAL: Module quota_v2 not found in directory
 quotaon: Quota format not supported in kernel.
 ```
 
-**ext4 has two quota mechanisms and GitHub's Ubuntu runners support only
-one of them.** The classic mechanism keeps `aquota.user` and
-`aquota.group` in the filesystem root, is switched on by `quotaon`, and
-needs the kernel's `quota_v2` format driver — which that kernel does not
-have. The *quota feature* keeps the same data in hidden inodes, is on
-from the moment the filesystem is mounted, and needs no driver at all.
-So the route the first two attempts forced was the one route that
-machine cannot take.
+**ext4 has two quota mechanisms and both need the same format driver.**
+The classic mechanism keeps `aquota.user` and `aquota.group` in the
+filesystem root and is switched on by `quotaon`; the *quota feature*
+keeps the same data in hidden inodes and is on from the moment the
+filesystem is mounted. Neither works without `quota_v2` — the fifth run
+established that by trying the feature route and having `mount(2)` fail
+with the same ESRCH one layer earlier, because `usrquota` asks for the
+classic format at mount time.
 
-The leg tries the classic route first, because it is the one `quota.on`
-and `quota.off` drive and worth exercising where a kernel has it, and
-falls back to the feature. Which route it got decides what it may then
-assert: under the feature there is no second state to read, so the
-on/off test skips by name rather than reading "on" twice and calling it
-two states.
+And the driver was not a missing kernel feature at all. It was a missing
+**file**: `CONFIG_QFMT_V2=m`, with the module in `linux-modules-extra`
+and absent from the runner image. One `apt-get install` and the leg went
+green on the first try.
 
-**The module gained something from this that a manual would not have
-given it.** Both of those messages name a cause an operator cannot act
-on, and `quota.on`, `quota.off` and `quota.get_mode` now translate them:
-the note says the kernel has no classic format driver, and that a
-filesystem with ext4's own quota feature needs no switching on and works
-with `quota.report` and `quota.set` regardless. An unrelated failure is
-not given that explanation, which a test pins in both directions.
+#### What is verified now
 
-Three things are worth separating. The test **existing** is not the
-demonstration; neither is the test **running**; it has to reach its
-assertions. `evidence.go` records the module `assumed` and `make
-release-gate` is red on it until it does.
+`setquota` set limits on a real ext4 filesystem with quotas switched on,
+and the real `repquota -O csv` read all four back in the right
+positions — four distinct numbers in four positions, so a transposed
+pair would have shown as a wrong value rather than as two that match.
+`quotaon -p` was read in both states. `evidence.go` records the module
+`hardware` and the release gate is no longer red on it.
+
+**The BSD parser has still never run.** It is written to the `printf`
+calls in FreeBSD 15.1's own `usr.sbin/repquota/repquota.c` rather than
+to remembered output, which is better than a fixture and is not a
+demonstration: this project's fleet is entirely ZFS and has no UFS
+filesystem to make one on, so `edquota -e` is checked only as an
+argument vector. Also uncovered: ext4's quota feature route, which the
+leg falls back to and no runner has needed.
+
+#### The lesson, which was cheaper than the six runs
+
+Three things had been one, and they are separate now: the test
+**existing** is not the demonstration, the test **running** is not
+either, and only the test **reaching its assertions** is. Five of these
+runs produced a green Fleet job with a skipping test inside it — which
+looks like progress in a log and is not.
+
+The module gained the part that outlives the leg. Both of the kernel's
+answers name a cause an operator cannot act on, so `quota.on`,
+`quota.off` and `quota.get_mode` translate them, and a test pins that an
+unrelated failure is not given the same explanation.
 
 ### 5.49 `openssl_cert`: the four things crypto/x509 will not do
 

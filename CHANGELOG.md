@@ -78,11 +78,13 @@ would read as "no quotas here" on a fleet where every filesystem may
 have a quota on every account. It says so by name and points at
 `zfs.get` instead.
 
-Nothing has yet run `repquota` against a filesystem that actually has
-quotas, because there is no such filesystem on this project's fleet. The
-test that would close it makes one in a file and is wired into CI; until
-it has run, `quota` is recorded as unverified and the release gate is
-red on it.
+This is now driven against a real ext4 filesystem with quotas switched
+on: limits set through the real `setquota` and read back through the
+real `repquota`, four distinct numbers in four positions, so a
+transposed pair would show as a wrong value rather than as two that
+match. What is still unverified is the BSD half — this project's fleet
+is entirely ZFS and has no filesystem to exercise it on — so
+`edquota -e` is checked as an argument vector and nothing more.
 
 ### The four certificate things the standard library will not do
 

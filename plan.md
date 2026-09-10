@@ -1070,45 +1070,43 @@ place.
 5. **Demonstrate the modules the gate is still red on.** It was nine,
    then two; it is now **eleven**, and the arithmetic is worth stating
    plainly rather than buried. `make fleetcheck` closed four, the two
-   live CI legs closed two more, and `netplan` closed on this fleet's
-   Ubuntu host (DIVERGENCE 5.38) — but the macOS row added eight and
-   `quota` added a ninth, because a module arrives undemonstrated and
-   that is the correct state for new work. `apparmor` is blocked on a
-   decision rather than on effort; `snap` needs the network the
+   live CI legs closed two more, `netplan` closed on this fleet's Ubuntu
+   host (DIVERGENCE 5.38) and `quota` closed on a runner (5.48) — but
+   the macOS row added eight, because a module arrives undemonstrated
+   and that is the correct state for new work. `apparmor` is blocked on
+   a decision rather than on effort; `snap` needs the network the
    no-network rule refuses; the eight macOS modules need a CI leg that
    is a Mac and writes to it, which none is.
 
-   **`quota` is the one whose answer runs and has not yet reached an
-   assertion.** `live_quota_loopback_test.go` makes an ext4 filesystem
-   in a file, mounts it through the loop driver, sets a limit through
-   `setquota` and reads it back through `repquota`, and it is wired into
-   `fleet.yml`'s Linux leg. Three runs so far, and the first two stopped
-   at `quotaon` with ESRCH against a mounted filesystem whose quota
-   files had just been written.
+   ~~**`quota`**~~ — **done**, and it cost six CI runs of which five
+   were about the machine rather than the module. The leg makes an ext4
+   filesystem in a file, mounts it through the loop driver, sets a limit
+   through `setquota` and reads it back through `repquota -O csv`; it is
+   green, and `quota` is `hardware`.
 
-   The first diagnosis of that was **wrong**, and it is the useful part.
-   ext4's quota feature was blamed on the strength of the symptom alone;
-   the next run printed the feature list and the filesystem had never
-   had it. Only when the leg was made to **probe instead of guess** did
-   the machine answer: GitHub's Ubuntu kernel has no `quota_v2` format
-   driver, so the *classic* quota route — the aquota files, switched on
-   by `quotaon` — cannot work there at all, and the filesystem's own
-   quota feature is the only way in. The two attempts had each forced
-   the one route that machine cannot take.
+   The five runs are the useful part. Two were wrong guesses at ext4's
+   two quota mechanisms — the feature was blamed for the classic route's
+   failure on the strength of the symptom alone, and the next run
+   disproved it. The run that settled it was the one that stopped
+   guessing and **probed**: the runner's kernel was missing the
+   `quota_v2` module *file*, present in `linux-modules-extra` and absent
+   from the image, which neither mechanism works without. One
+   `apt-get install` and it passed first time.
 
    Three lessons, and only the first is about quotas. A symptom is not a
-   diagnosis, and this project's own §1.4 discipline stops at "run the
-   branch" — running it is where the work starts. A test that runs and
-   stops before it asserts **looks like progress in a log and is not**,
-   which is why the ledger now separates three things rather than two:
-   the test existing, the test running, and the test reaching its
-   assertions. And a probe is cheaper than a guess: two runs were spent
-   on hypotheses and the third produced the answer outright.
+   diagnosis. A probe is cheaper than a guess, measurably: two runs went
+   on hypotheses and the third produced the answer outright. And a test
+   that runs and skips **looks like progress in a log and is not** —
+   five of those runs were a green Fleet job with a skipping test inside
+   it, so the ledger now separates three things where it had two: the
+   test existing, the test running, and the test reaching its
+   assertions.
 
-   The module stays `assumed` until the leg is green. What the failure
-   did buy is in the module rather than the test: `quota.on`,
-   `quota.off` and `quota.get_mode` now translate both of the kernel's
-   opaque answers into what an operator can act on.
+   What is still assumed is the *BSD* half. The fixed-width parser is
+   written to `repquota.c`'s own printf calls, which is better than a
+   fixture and is not a demonstration, and this fleet has no UFS
+   filesystem to make one on. `edquota -e` remains an argument vector
+   only.
 
    This stays the highest-ranked *unbuilt* item because nothing else on
    this list can ship a release until it is done.

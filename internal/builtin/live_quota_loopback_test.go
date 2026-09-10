@@ -44,14 +44,23 @@ import (
 // use, and no machine here has a UFS filesystem to make one on; that
 // branch is still checked only as an argument vector.
 //
-// **This leg has not yet reached its assertions.** It is written on a
-// FreeBSD host that cannot execute a line of it, which is the same
-// position `hostname`'s FreeBSD branch was in when plan.md §1.4 found it
-// had never been exercised. Its first run on CI got as far as `quotaon`
-// and skipped there, for the ext4 reason `liveQuotaSetup` now explains
-// at the `-O ^quota` flag. Until it has run green, `quota` stays
-// `Assumed` in evidence.go and the release gate stays red on it — the
-// test existing is not the demonstration, running it is.
+// **It took six runs to reach its first assertion, and five of those
+// were the machine rather than the module.** It is written on a FreeBSD
+// host that cannot execute a line of it, so every attempt was a
+// hypothesis posted to CI. Two of them were wrong guesses at ext4's two
+// quota mechanisms. The run that settled it was the one that stopped
+// guessing and probed, and the answer was that the runner's kernel was
+// missing the `quota_v2` module file — present in `linux-modules-extra`,
+// absent from the image. `fleet.yml` installs it now.
+//
+// It is green: `setquota` sets and `repquota -O csv` reads back, on a
+// real ext4 filesystem with quotas switched on. `quota` is `hardware` in
+// evidence.go and the release gate is no longer red on it.
+//
+// The lesson was cheaper than the six runs. A test that runs and skips
+// looks like progress in a log and is not, so three things stay
+// separate: the test existing, the test running, and the test reaching
+// its assertions.
 
 // liveQuotaImage is the loopback filesystem and where it is mounted.
 type liveQuotaImage struct {
