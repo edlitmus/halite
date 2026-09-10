@@ -31,7 +31,7 @@ import (
 // modules against their real tools on real machines. What is still
 // `Assumed` — `apparmor`, `snap`, and the macOS row (`mac_defaults`,
 // `mac_power`, `mac_user`, `mac_group`, `mac_shadow`,
-// `mac_softwareupdate`, `mac_keychain`) — says why in its own note, and the release gate refuses to ship while any is. The
+// `mac_softwareupdate`, `mac_keychain`, `mac_assistive`) — says why in its own note, and the release gate refuses to ship while any is. The
 // macOS modules each have a live test that reads the real tool, but
 // their mutating paths change a Mac's own state and no CI leg is a Mac.
 // `exec.Registry` appends the note to a *failing* mutation, and
@@ -204,6 +204,12 @@ var moduleEvidence = map[string]exec.Evidence{
 		"and `delete-certificate` change a keychain and need root for a system one, so nothing " +
 		"has watched a certificate go in or out; `friendly_name` shells to `openssl` and has " +
 		"only been read"},
+	"mac_assistive": {Level: exec.Assumed, Note: "`live_mac_assistive_test.go` reads the real " +
+		"`access` table of this host's `/Library/Application Support/com.apple.TCC/TCC.db` through " +
+		"the real `sqlite3` and parses the Accessibility rows field by field. The writes -- " +
+		"`install`, `enable`, `remove` -- go to a database System Integrity Protection makes " +
+		"readonly for any process without Full Disk Access, root included, so nothing here has " +
+		"watched a grant be added or removed and no CI leg is a Mac with the entitlement"},
 	"mac_softwareupdate": {Level: exec.Assumed, Note: "the `softwareupdate --list` parser was " +
 		"built against real output captured on macOS 26, and `live_mac_softwareupdate_test.go` " +
 		"reads the real schedule state and the downloaded-updates plist. Nothing has installed " +

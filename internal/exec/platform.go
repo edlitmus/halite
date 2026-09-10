@@ -59,7 +59,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"win_certutil":         {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_dsc":              {Platform: "windows", When: "an extension of kind `module`; SPEC section 24 marks it bridged"},
 	"win_lgpo":             {Platform: "windows", When: "an extension of kind `module`; SPEC section 24 marks it bridged"},
-	"mac_assistive":        {Platform: "darwin", When: "phase 5, with macOS parity"},
 	"journald":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"iptables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"nftables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
