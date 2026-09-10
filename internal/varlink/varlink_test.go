@@ -5,17 +5,31 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
 
+// shortSockPath returns a unix-socket path short enough for macOS, whose
+// sun_path is 104 bytes -- `t.TempDir()` names its directory after the
+// test and blows that budget. os.MkdirTemp's name is a few digits.
+func shortSockPath(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "hvk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return filepath.Join(dir, "s")
+}
+
 // fakeService is a varlink server that answers one request per
 // connection from a table of method -> reply.
 func fakeService(t *testing.T, replies map[string]string) string {
 	t.Helper()
-	sock := filepath.Join(t.TempDir(), "svc.sock")
+	sock := shortSockPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -115,7 +129,7 @@ func TestVarlinkDialFailureIsNotATypedError(t *testing.T) {
 
 func TestVarlinkRespectsAContextDeadline(t *testing.T) {
 	// A listener that accepts and never replies.
-	sock := filepath.Join(t.TempDir(), "hang.sock")
+	sock := shortSockPath(t)
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
