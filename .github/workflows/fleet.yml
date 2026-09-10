@@ -40,16 +40,18 @@ on:
       - "internal/builtin/netplan*.go"
       - "internal/builtin/service*.go"
       - "internal/builtin/pkg*.go"
-      # `quota` is here and `pam` and `openssl_cert` are not, and the
-      # difference is what each needs to be driven. Their live tests
-      # change nothing outside a directory the test owns, so they run in
-      # the ordinary `test` job on every platform. `quota` needs a
-      # filesystem that has quotas, which means root and the loop
-      # driver, which means this workflow.
+      # `quota` and `lvm` are here and `pam` and `openssl_cert` are not,
+      # and the difference is what each needs to be driven. The latter
+      # two change nothing outside a directory the test owns, so they run
+      # in the ordinary `test` job on every platform. `quota` needs a
+      # filesystem that has quotas and `lvm` needs its own block devices;
+      # both mean root and the loop driver, which means this workflow.
       - "internal/builtin/quota*.go"
+      - "internal/builtin/lvm*.go"
       - "internal/dbus/**"
       - "internal/builtin/live_apparmor_test.go"
       - "internal/builtin/live_debian_test.go"
+      - "internal/builtin/live_lvm*_test.go"
       - "internal/builtin/live_netplan_test.go"
       - "internal/builtin/live_pkg_test.go"
       - "internal/builtin/live_quota*_test.go"
@@ -127,7 +129,7 @@ jobs:
   # throwaway unit in /run/systemd/system that is attached to nothing
   # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota)
+    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -156,6 +158,14 @@ jobs:
       # what a runner is.
       - name: install the quota tools
         run: sudo apt-get install -y --no-install-recommends quota
+
+      # LVM's command line is a separate package too, and for the same
+      # reason: a machine with no LVM volumes does not install it. The
+      # loop driver and device-mapper are already in a runner's kernel,
+      # so the `lvm` leg needs nothing else -- it makes its own block
+      # devices out of files with `losetup`.
+      - name: install the LVM tools
+        run: sudo apt-get install -y --no-install-recommends lvm2
 
       # The quota *tools* are not the whole of it. Five runs of this leg
       # established that the runner's kernel cannot enable ext4 quotas by
@@ -208,6 +218,9 @@ jobs:
           echo "quota tools:      $(dpkg-query -W -f='${Version}' quota 2>&1)"
           echo "repquota -O csv:  $(repquota -O csv -a >/dev/null 2>&1 && echo yes || echo no)"
           echo "loop driver:      $(test -e /dev/loop-control && echo present || echo missing)"
+          echo "lvm tools:        $(dpkg-query -W -f='${Version}' lvm2 2>&1)"
+          echo "lvm json report:  $(sudo pvs --reportformat json >/dev/null 2>&1 && echo yes || echo no)"
+          echo "device-mapper:    $(test -e /dev/mapper/control && echo present || echo missing)"
 
       # No workaround here, and that is the conclusion rather than a
       # gap.
@@ -235,9 +248,9 @@ jobs:
       # is on PATH rather than in a standard location -- so root would
       # run a different Go, or none. The environment is named
       # explicitly instead.
-      - name: drive hostname, sysctl, apparmor, netplan, service, pkg and quota
+      - name: drive hostname, sysctl, apparmor, netplan, service, pkg, quota and lvm
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM' ./internal/builtin/
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
