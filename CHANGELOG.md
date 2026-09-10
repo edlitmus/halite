@@ -18,6 +18,96 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A node can be asked what authenticates a login on it
+
+`pam` reads and manages the PAM configuration, on Linux, the BSDs and
+macOS. The useful part is that it follows includes: a PAM service is
+almost never one file, and the two halves of a real estate pull in the
+others differently. FreeBSD's `su` is four rules and an `auth include
+system`; Debian's `sshd` is mostly `@include` of the four `common-*`
+files. Those are two mechanisms rather than two spellings — the typed
+one contributes a single chain, the untyped one contributes all four —
+so a reader that knows only one reports a chain shorter than the one
+that runs.
+
+`pam.rules` resolves both and says which file and line every rule came
+from, so the answer names the file to edit rather than the file that was
+asked about. `pam.services_using` asks it in reverse and sweeps every
+service for a module, which is how "is pam_faillock actually enforced
+here" gets answered; grepping the directory misses a rule that arrives
+through an include and counts the commented-out ones every stock file
+carries.
+
+The two functions that change a file are deliberately narrow. A wrong
+line in /etc/pam.d locks every account out of the node, including the one
+that would repair it, so a new rule goes into its own chain rather than
+at the end of the file, the write is atomic, the result is read back
+through the same parser before the call returns, and removing the last
+rule of a chain is refused outright — PAM denies a request whose chain
+has no rules.
+
+There is no `pam` state, on purpose. What a tree usually wants to assert
+about PAM is the whole file, and `file.managed` already does that.
+
+### Two quota tools that take the same limits in a different order
+
+`quota` reports and sets filesystem quotas. Linux spells the setter
+`setquota -u alice 1024 2048 100 200 /home`; FreeBSD has no `setquota`
+at all and spells it `edquota -u -e /home:1024:2048:100:200 alice`. A
+different tool, a different order, a different separator — and both
+accept a transposed vector without complaint, so getting it wrong sets
+an inode limit as a block limit and nothing says so. The argument vector
+is a table keyed by platform now, and every row is checked from any
+host.
+
+**Linux's own report is refused rather than guessed at.** quota-tools
+leaves a grace column blank when nothing is over its soft limit, so a
+row carries six to eight numbers depending on the state of the
+filesystem — and a grace period under an hour prints as a bare number,
+so there is no rule that recovers which column is missing. Reading it
+anyway would file one account's inode count as another's block limit.
+Linux is read through `repquota -O csv`, and a node whose tools are too
+old to have it is told that rather than given a report assembled from a
+guess. The BSD report needs none of this and is read directly, against
+the `printf` calls in FreeBSD's own repquota rather than against
+remembered output.
+
+**A ZFS filesystem is not a filesystem without quotas.** ZFS quotas are
+dataset properties and `repquota` on one reports nothing at all, which
+would read as "no quotas here" on a fleet where every filesystem may
+have a quota on every account. It says so by name and points at
+`zfs.get` instead.
+
+Nothing has yet run `repquota` against a filesystem that actually has
+quotas, because there is no such filesystem on this project's fleet. The
+test that would close it makes one in a file and is wired into CI; until
+it has run, `quota` is recorded as unverified and the release gate is
+red on it.
+
+### The four certificate things the standard library will not do
+
+`openssl_cert` drives `openssl(1)`, and it does not duplicate `x509` —
+which stays the module for making and reading certificates, uses no
+external program, and works on a node with no openssl at all. What it
+adds is the four things Go cannot do: verify a chain against the
+machine's own trust store, which is how an internal CA is found to be
+expiring; read and write PKCS#12, which every Windows and macOS tool
+speaks and Go reads only through a third-party package; read a
+revocation list closely enough to say when it was issued and what is on
+it; and report which openssl the node actually has, because LibreSSL is
+a different program with the same name and no `-show_chain`.
+
+**A passphrase never reaches the command line.** Every account on a node
+can read another's arguments, so `-passin pass:secret` publishes the
+passphrase of the bundle it is opening for as long as the process runs.
+Both password paths write down a pipe instead.
+
+**An unreadable trust file is no longer reported as an untrusted
+certificate.** An empty `-CAfile` makes openssl exit before verifying
+anything, and reporting that as "not trusted" would send an operator to
+renew a certificate that is fine. That was a defect, and the live test
+against a real openssl found it on its first run.
+
 ### `migrate` read every branch of a conditional at once
 
 A grain-gated pillar file defines the same key once per branch:

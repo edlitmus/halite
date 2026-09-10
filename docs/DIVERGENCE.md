@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **66 execution modules / 425 functions** and **41 state
+The build ships **69 execution modules / 443 functions** and **41 state
 modules / 97 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -556,7 +556,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-30 of 65 present — the rows below total 35 absent.
+33 of 65 present — the rows below total 32 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -608,7 +608,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 43 are declared as pending rather than simply missing. A name absent
+The 32 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -626,7 +626,7 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `quota`, `udev`, `modprobe`, `pam`, `openssl_cert`, `authselect` |
+| Common Linux | `pam`, `quota`, `openssl_cert`, `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `udev`, `modprobe`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
@@ -4894,6 +4894,181 @@ row the bulk read returned.
 `install`, `enable` and `remove` write a database SIP holds readonly, so
 nothing has watched a grant be added or removed. `evidence.go` records
 the module `assumed`, and `make release-gate` is red on it.
+
+### 5.47 `pam`: two include mechanisms, and a chain that is never one file
+
+SPEC 15.3's Common Linux row, first of three. Seven functions —
+`list_services`, `read_file`, `rules`, `has_module`, `services_using`,
+`set_module` and `remove_module` — declared for Linux, the BSDs and
+macOS rather than for Linux alone. The row's name is a filing decision;
+whether a FreeBSD node can be asked what authenticates a login on it is
+not.
+
+**A PAM service is almost never one file, and the two platforms pull in
+the others differently.** FreeBSD's `su` is four rules and an `auth
+include system`; Debian's `sshd` is mostly `@include` of the four
+`common-*` files. These are different mechanisms rather than spellings
+of one: the typed `include` contributes *one* chain, and `@include`
+takes no type and contributes all four. A resolver that knew only the
+first would report Debian's sshd as having almost no rules; one that
+knew only the second would report FreeBSD's `su` as running
+`pam_lastlog` at session time, which it does not. `pam.rules` follows
+both, keeps the file and line each rule came from, and breaks a cycle
+by keeping the offending include as written so the answer still shows
+where the loop is.
+
+**The bracketed control flag contains a space.** Linux-PAM's
+`[success=1 default=ignore]` is one field with a space in it, so
+`strings.Fields` on a Debian `common-auth` files `default=ignore]` as
+the module path — and the module path is what every other function here
+matches on, so the rule becomes invisible to `has_module` and to the
+sweep. On Debian 12 that rule *is* the auth chain. The reader keeps the
+brackets whole and refuses an unclosed one rather than swallowing the
+rest of the line.
+
+**Nothing here converges.** There is deliberately no `pam` state: SPEC
+15.5 names none, and what a tree usually wants to assert about PAM is
+the whole file, which `file.managed` already does with a template and a
+backup. The two mutating functions are narrow on purpose — the caller
+names the type, the module and the position, a new rule is placed
+*within its own chain* rather than at the end of the file, the write is
+atomic, and the result is re-read through the same parser before the
+call returns. `remove_module` refuses to empty a chain, because PAM
+denies a request whose chain has no rules and that is how a node stops
+authenticating anybody, including whoever would repair it.
+
+#### What was verified
+
+`live_pam_test.go` reads *every* service the machine running the tests
+has, and checks the parse against the file rather than against an
+expectation. Two invariants, neither of which needs a fixture: every
+line PAM would act on becomes exactly one rule, and every control flag
+read off the machine is one PAM accepts. On the FreeBSD host this
+project is developed on that is 13 real services and 53 real control
+flags. A third check holds the sweep and the per-service answer to each
+other on the same machine.
+
+Both invariants were broken on purpose before being believed. A parser
+that quietly dropped the `include` lines — the plausible slip, since
+they are not modules — was caught by the line count on three of this
+host's own files.
+
+Nothing has watched this module write to a real /etc/pam.d, and nothing
+will: the mutating half runs against a throwaway tree and against
+nothing else. `evidence.go` records the module `captured` with that
+said in full.
+
+### 5.48 `quota`: two tools, and a report that cannot be parsed on one platform
+
+SPEC 15.3's Common Linux row, second of three. Six functions —
+`report`, `get_mode`, `stats`, `set`, `on` and `off`.
+
+**Linux's fixed-width report is ambiguous, and this build refuses it
+rather than guessing.** quota-tools leaves a grace column *blank* when
+nothing is over its soft limit, so a row carries between six and eight
+whitespace-separated numbers depending on the state of the filesystem —
+and a grace is not always distinguishable from a number, because a grace
+period of under an hour prints as a bare count of minutes. Seven fields
+after the status characters is therefore genuinely ambiguous: either the
+block grace is running and the file grace is not, or the reverse, and
+nothing in the row says which. Reading it anyway would file one
+account's inode count as another's block limit. Linux is read through
+`repquota -O csv`, which quota-tools grew for exactly this, and a node
+whose tools are too old to have it is told so.
+
+The BSDs need no such thing and are read from the report:
+`usr.sbin/repquota/repquota.c` prints `-` in a grace column that is not
+running, so a row always has ten fields. The parser is written to that
+file's `printf` calls, read off /usr/src on this project's own host,
+rather than to remembered output.
+
+**The two tools take the limits in a different order with a different
+separator.** Linux has `setquota -u alice 1024 2048 100 200 /home`;
+FreeBSD has no `setquota` at all and spells it `edquota -u -e
+/home:1024:2048:100:200 alice`. Three chances to write one platform's
+form and have it look right, and the failure is silent: both tools
+accept a transposed vector and set an inode limit as a block limit. The
+argument vector is a table keyed by platform and every row of it is
+checked from any host, which is plan.md §1.4's lesson applied before it
+cost anything.
+
+**A ZFS filesystem is not an unquota'd filesystem.** ZFS quotas are
+dataset properties and `repquota` on one reports nothing at all.
+Reporting that as "this filesystem has no quotas" would be false on this
+project's own fleet, which is entirely ZFS — 55 of this host's 62
+mounted filesystems. `report`, `get_mode` and `set` say so by name and
+point at `zfs.get` for `userquota@<name>`.
+
+#### What was verified, and what has not been
+
+The ZFS diversion is checked against this host's real mount table, and
+the transposition was introduced on purpose and caught by the platform
+table.
+
+**No `repquota` has been run against a filesystem that has quotas, and
+no quota has been set.** There is no such filesystem on this fleet.
+`live_quota_loopback_test.go` is written to close that — an ext4
+filesystem in a file, mounted through the loop driver with quotas on, a
+limit set through `setquota` and read back through `repquota` — and it
+is wired into the Linux leg of `fleet.yml`. **It has not run.** It was
+written on a FreeBSD host that cannot execute a line of it, which is the
+position `hostname`'s FreeBSD branch was in when §1.4 found it had never
+been exercised. `evidence.go` records the module `assumed` and `make
+release-gate` is red on it; the test existing is not the demonstration.
+
+### 5.49 `openssl_cert`: the four things crypto/x509 will not do
+
+SPEC 15.3's Common Linux row, third of three. Five functions —
+`version`, `verify`, `crl_info`, `pkcs12_info` and `pkcs12_create` —
+and none of them duplicates `x509`, which stays this build's
+certificate module and needs no external program at all.
+
+What it adds is the four things the standard library will not do:
+chain verification against the machine's own trust store, which is how
+an expiring internal CA is found; PKCS#12, which Go reads only through
+a third-party package and this build has no dependencies; revocation
+lists, where crypto/x509 will parse one but will not say when it was
+issued or what is on it; and reporting which openssl the node actually
+has, because LibreSSL is a different program with the same name and no
+`-show_chain`.
+
+**The passphrase never reaches the argument vector.** Every account on a
+node can read another's command line, so `-passin pass:secret` publishes
+the passphrase of the bundle it is opening for as long as the process
+runs, and `-passin env:VAR` does the same through /proc. Both password
+paths pass `stdin` and write down the pipe. A test sweeps the module's
+own source for the other three forms, because that is the only way to
+assert about a spelling that must not appear.
+
+**An unreadable trust file is not an untrusted certificate.** That was a
+defect, found by the live test on its first run: an empty `-CAfile`
+makes openssl exit 1 without verifying anything, and the module was
+reporting it as `verified: false` — which would send an operator to
+renew a certificate that is fine. It is now a refusal that says which of
+the two happened.
+
+`-crl_check_all` rather than `-crl_check`, because checking only the
+leaf leaves a revoked intermediate trusted, and an intermediate is what
+gets revoked when a CA is compromised.
+
+#### What was verified
+
+`live_openssl_cert_test.go` drives the real openssl end to end, and it
+needs no gate and no container: this module changes exactly one thing, a
+file it is told to write, and everything happens inside `t.TempDir()`
+with no root and no network. So the *mutating* path is demonstrated
+rather than assumed — a real PKCS#12 bundle written by this module and
+read back through the tool that made it, with the wrong passphrase shown
+to fail, which is what establishes that the right one is really being
+delivered on standard input rather than quietly ignored. A real
+revocation list is generated and read, and a chain is verified and then
+refused against a different CA with openssl's own numbered reason read
+back.
+
+On OpenSSL 3.5.6 / FreeBSD 15.1. `evidence.go` records the module
+`hardware`. Not covered: LibreSSL, whose `verify` has no `-show_chain`
+and whose wording is its own, and OpenSSL 1.1.1, whose spelling is in
+the fixtures and on no machine here.
 
 ## 6. Everything else not started
 

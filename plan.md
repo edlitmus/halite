@@ -17,6 +17,19 @@ windows/amd64 with Go 1.26.6. The previous revision was written on
 2026-09-04 against `c6a9656`; twenty-one commits have landed since, and
 section 0 says which of its findings are now closed.
 
+**Amended 2026-09-10** on freebsd/amd64 with Go 1.26.8, without a full
+re-measurement. Two blocks landed since the date above and the counts in
+§0, §2.3 and §7 were corrected for them rather than re-derived: SPEC
+15.3's **macOS row**, which now ships entirely, and the first three of
+its **Common Linux row** — `pam`, `quota` and `openssl_cert`, which is
+the three §7.12 ranked first. 33 of 65 platform modules now ship. Two
+consequences a reader should not have to hunt for: the release gate is
+red on **eleven** modules rather than two, because eleven of them are
+new and new work is undemonstrated by definition (§7.5 has the
+arithmetic); and `quota`'s answer to that is written but has never been
+run, which §7.5 also says. Everything else here is still measured
+against 2026-09-05.
+
 **A note on this file.** Nothing enforces it. `internal/specaudit`
 guards SPEC.md, `docs/DIVERGENCE.md` and README.md against the
 registries; `internal/docsaudit` guards the generated pages. This
@@ -39,7 +52,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; macOS has providers but no module set. **45 of SPEC 15.3's 65 platform modules, 18 of SPEC 15.2's core execution modules and 14 of SPEC 15.5's core state modules remain.** |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD and macOS rows of SPEC 15.3 now ship entirely. **32 of SPEC 15.3's 65 platform modules, 18 of SPEC 15.2's core execution modules and 14 of SPEC 15.5's core state modules remain.** |
 | 6. Hardening to 1.0 | Started. Metrics are nearly complete and `doctor` ships (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite is built (§3.4). Outstanding: no benchmarks, no tracing, no packaging, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
@@ -521,7 +534,7 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 43 of 65
+### 2.3 Platform modules: 33 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
@@ -557,9 +570,9 @@ what an operator is looking for.
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
 | Debian and Ubuntu | 3 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
-| Common Linux | 11 | `systemd_service` is an alias. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `pam`, `modprobe`, `udev`, `quota`, `openssl_cert`, `authselect`. |
+| Common Linux | 8 | `systemd_service` is an alias. **`pam`, `quota` and `openssl_cert` ship** (DIVERGENCE 5.47-5.49), which is the three §7.12 named as worth taking first because they mean something on FreeBSD too. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `modprobe`, `udev`, `authselect` remain. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
-| macOS | 8 | `mac_brew_pkg` and `mac_service` are aliases; the other `mac_*` modules do not exist. |
+| macOS | 0 | **The row ships entirely**, second after FreeBSD. `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain` and `mac_assistive` are modules (DIVERGENCE 5.41-5.46). Every one of them is `assumed`: no CI leg is a Mac. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
 | FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32). |
 | SUSE | 1 | `zypperpkg`. |
@@ -1054,13 +1067,29 @@ place.
 
 **Then — closing the gate, which this fleet can do**
 
-5. **Demonstrate the two modules the gate is still red on.** It was
-   nine; `make fleetcheck` closed four, the two live CI legs closed two
-   more, and `netplan` closed on this fleet's Ubuntu host (DIVERGENCE
-   5.38). `apparmor` was attempted and is now blocked on a decision
-   rather than on effort; `snap` needs the network the no-network rule
-   refuses. This stays the highest-ranked *unbuilt* item because nothing
-   else on this list can ship a release until it is done.
+5. **Demonstrate the modules the gate is still red on.** It was nine,
+   then two; it is now **eleven**, and the arithmetic is worth stating
+   plainly rather than buried. `make fleetcheck` closed four, the two
+   live CI legs closed two more, and `netplan` closed on this fleet's
+   Ubuntu host (DIVERGENCE 5.38) — but the macOS row added eight and
+   `quota` added a ninth, because a module arrives undemonstrated and
+   that is the correct state for new work. `apparmor` is blocked on a
+   decision rather than on effort; `snap` needs the network the
+   no-network rule refuses; the eight macOS modules need a CI leg that
+   is a Mac and writes to it, which none is.
+
+   **`quota` is the one with a written answer nobody has run yet.**
+   `live_quota_loopback_test.go` makes an ext4 filesystem in a file,
+   mounts it through the loop driver with quotas on, sets a limit
+   through `setquota` and reads it back through `repquota`, and it is
+   wired into `fleet.yml`'s Linux leg. It was written on a FreeBSD host
+   that cannot execute a line of it — the position `hostname`'s FreeBSD
+   branch was in when §1.4 found it had never been exercised — so the
+   module stays `assumed` until the leg has run green. The test existing
+   is not the demonstration.
+
+   This stays the highest-ranked *unbuilt* item because nothing else on
+   this list can ship a release until it is done.
 
    ~~`dpkg`~~, ~~`debconf`~~, ~~`pkgrepo`~~ and ~~`timezone`~~ are done,
    driven against a real Debian's own tools in a disposable container —
@@ -1172,12 +1201,37 @@ unbuilt item here is number 7.
    are **two** claims and both are required, which is what `doctor`'s
    FIPS check now says out loud. So it is buildable — it is simply worth
    less than it was when the estate was imagined to be Ubuntu.
-12. **The Common Linux row** (§2.3, eleven modules) — was "the largest
-    block now". It is, and almost all of it is Linux-only: `journald`,
-    `iptables`, `nftables`, `lvm`, `mdadm`, `modprobe`, `udev`,
-    `authselect`. `pam`, `quota` and `openssl_cert` are the three that
-    also mean something on FreeBSD, and they are the three worth taking
-    out of this row first.
+12. **The Common Linux row** (§2.3) — was eleven modules and is now
+    eight. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
+    first for the reason this item gave: they are the three that mean
+    something on FreeBSD, which is four hosts of five. DIVERGENCE
+    5.47-5.49.
+
+    Two of the three cost more thought than the count suggests, and both
+    lessons generalise. `pam` has **two include mechanisms** that are not
+    spellings of each other — Debian's untyped `@include` and the typed
+    `include` the BSDs and RHEL use — so a reader written on either
+    platform reports a truncated chain on the other. And Linux's
+    `repquota` report is **genuinely ambiguous**: a blank grace column
+    means a row has six to eight numbers depending on the state of the
+    filesystem, and a grace under an hour prints as a bare number, so no
+    rule recovers which column is missing. That one is refused rather
+    than guessed at, and Linux is read through `-O csv` instead.
+
+    `openssl_cert` came out at `hardware` on the first afternoon, which
+    is unusual here and worth naming: its mutating path writes a file it
+    is told to write, in a directory a test owns, needing no root and no
+    network — so the round trip through the real tool costs a
+    `t.TempDir()` and runs wherever the suite does. It found a defect
+    that way, an unreadable trust file being reported as an untrusted
+    certificate.
+
+    What is left is Linux-only: `journald`, `iptables`, `nftables`,
+    `lvm`, `mdadm`, `modprobe`, `udev`, `authselect`. `iptables`,
+    `nftables` and `lvm` are the three worth taking next, because each
+    closes a 15.3 module *and* a 15.5 state, and because the first two
+    are what §2.2 predicts will reshape the `firewall` provider
+    interface.
 13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.
 

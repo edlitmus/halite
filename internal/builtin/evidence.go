@@ -162,6 +162,23 @@ var moduleEvidence = map[string]exec.Evidence{
 		"against the same unit. Not covered: the launchd, sysvinit and openrc providers, " +
 		"which have not been run at all, and the FreeBSD rc branch, which still only reads"},
 
+	// `openssl_cert` is the one module here whose *mutating* path costs
+	// nothing to demonstrate: it writes a file it is told to write, in a
+	// directory the test owns, needing no root and no network. So it is
+	// held to the same standard as the modules that needed a virtual
+	// machine, and the round trip runs wherever the suite does.
+
+	"openssl_cert": {Level: exec.Hardware, Note: "driven end to end against a real OpenSSL 3.5.6 on " +
+		"FreeBSD 15.1: a throwaway CA and leaf built, the chain verified and then refused against a " +
+		"different CA with openssl's own numbered reason read back, a real PKCS#12 bundle written by " +
+		"this module and read back through openssl, and the wrong passphrase shown to fail -- which is " +
+		"what establishes that the right one really is being delivered on standard input rather than " +
+		"quietly ignored. A real revocation list is generated and read. That run found a defect: an " +
+		"unreadable trust file was being reported as an untrusted certificate, which is a different " +
+		"problem with a different fix. Not covered: LibreSSL, whose `verify` has no -show_chain and " +
+		"whose failure wording is its own, and OpenSSL 1.1.1, whose spelling is in the fixtures and " +
+		"on no machine here"},
+
 	// ---- Read from a real system, mutation never watched ----
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
@@ -176,6 +193,20 @@ var moduleEvidence = map[string]exec.Evidence{
 		"unmounted by this module"},
 	"sysrc": {Level: exec.Captured, Note: "reads real rc.conf through the real `sysrc` on " +
 		"CI's FreeBSD runner; nothing has watched this module write one"},
+	// `pam` has no tool to drive, which is why its note reads
+	// differently from every other one here. PAM is a library the login
+	// programs link, not a program this module runs, so there is no
+	// output to capture and no command whose spelling could be wrong.
+	// The risk moves entirely into the file format, and that is what
+	// the live test corpus is.
+	"pam": {Level: exec.Captured, Note: "every service file on the machine running the tests " +
+		"is parsed and checked against the file rather than against an expectation -- 13 real " +
+		"services and 53 real control flags on FreeBSD 15.1, and whatever the Linux and macOS " +
+		"CI legs have -- and the sweep is cross-checked against the per-service answer. Nothing " +
+		"has watched this module write to a real /etc/pam.d: the mutating half runs only against " +
+		"a throwaway tree, deliberately, because a wrong line there locks every account out of " +
+		"the node and a test is not a thing to find that out with"},
+
 	"user": {Level: exec.Captured, Note: "reads go through os/user against the real " +
 		"account database, and no account has been created, changed or removed on a real " +
 		"machine by this module"},
@@ -190,6 +221,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"profile on that platform and this module has no other way to change a mode " +
 		"(DIVERGENCE 5.37). `apparmor.status` reports that as `tools: false` with the " +
 		"reason, rather than `true` because the binary is on PATH"},
+	"quota": {Level: exec.Assumed, Note: "the fixed-width parser is written to the printf calls in " +
+		"FreeBSD 15.1's own usr.sbin/repquota/repquota.c rather than to remembered output, and the " +
+		"platform argument table is checked for both tools from any host -- but **no repquota has been " +
+		"run against a filesystem that has quotas**, and no quota has been set. This project's fleet " +
+		"is entirely ZFS, whose quotas are dataset properties these tools cannot see, so the one thing " +
+		"a real machine here settles is that a ZFS filesystem is diverted by name instead of being " +
+		"reported as having no quotas. Closing this needs a filesystem with quota tracking enabled: an " +
+		"ext4 or xfs loopback image on the Linux CI leg is the cheapest, and would exercise `-O csv`, " +
+		"`setquota` and `quotaon -p` at once"},
+
 	"snap": {Level: exec.Assumed, Note: "nothing here has run against a real snapd, and " +
 		"the `snap list` fixtures were written from its documented columns rather than " +
 		"captured (DIVERGENCE 5.28)"},

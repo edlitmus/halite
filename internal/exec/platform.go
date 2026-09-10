@@ -64,11 +64,8 @@ var pendingPlatformModules = map[string]PendingModule{
 	"nftables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"lvm":                  {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"mdadm":                {Platform: "linux", When: "phase 5, with the Linux platform work"},
-	"quota":                {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"udev":                 {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"modprobe":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
-	"pam":                  {Platform: "linux", When: "phase 5, with the Linux platform work"},
-	"openssl_cert":         {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"authselect":           {Platform: "linux", When: "phase 5, with the Linux platform work"}}
 
 // PendingPlatform reports why a module SPEC 15.3 names is not in this
