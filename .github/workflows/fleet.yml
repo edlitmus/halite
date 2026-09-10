@@ -40,11 +40,19 @@ on:
       - "internal/builtin/netplan*.go"
       - "internal/builtin/service*.go"
       - "internal/builtin/pkg*.go"
+      # `quota` is here and `pam` and `openssl_cert` are not, and the
+      # difference is what each needs to be driven. Their live tests
+      # change nothing outside a directory the test owns, so they run in
+      # the ordinary `test` job on every platform. `quota` needs a
+      # filesystem that has quotas, which means root and the loop
+      # driver, which means this workflow.
+      - "internal/builtin/quota*.go"
       - "internal/dbus/**"
       - "internal/builtin/live_apparmor_test.go"
       - "internal/builtin/live_debian_test.go"
       - "internal/builtin/live_netplan_test.go"
       - "internal/builtin/live_pkg_test.go"
+      - "internal/builtin/live_quota*_test.go"
       - "internal/builtin/live_service_test.go"
       - "internal/builtin/live_system_test.go"
       - "internal/builtin/evidence.go"
