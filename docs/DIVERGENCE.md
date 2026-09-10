@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **70 execution modules / 455 functions** and **42 state
-modules / 103 functions**.
+The build ships **72 execution modules / 481 functions** and **44 state
+modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -520,14 +520,14 @@ different reason is given.
 | `firewall` | implemented | 4 | `enabled`, `allowed`, `denied` and `absent`; convergence is asked of ufw through its own `--dry-run` rather than computed from a status listing written for a person |
 | `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `hostname` | implemented | 1 | `system`; the running name and the persistent one are read and reported separately, because a node where they disagree renames itself at the next boot |
-| `iptables` | not implemented | 0 | Linux only |
+| `iptables` | implemented | 7 | Linux only; `chain_present`, `chain_absent`, `append`, `insert`, `delete`, `set_policy`, `flush`. Idempotence is `iptables -C`, not a re-parse of `iptables-save`. `flush` refuses a built-in chain that is holding traffic out, and a whole-table flush, without force. Not a `firewall` provider -- it is the layer under ufw |
 | `kernelpkg` | not implemented | 0 | |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `lvm` | implemented | 6 | Linux only; `pv_present`, `pv_absent`, `vg_present`, `vg_absent`, `lv_present`, `lv_absent`. `vg_present` extends a group with named devices but never removes one, and `lv_present` grows a volume but never shrinks it — a shrink that outruns the filesystem loses data, and `lvm.lvresize` with `force` is the deliberate path for it. Reports read LVM's `--reportformat json`, not the padded table |
 | `mac_defaults` | implemented | 2 | macOS only; `write` and `absent`, the exec side is `mac_defaults.*`. Convergence is decided from `defaults export`'s XML plist with the type kept distinct, so a key holding `1` is not taken for one holding `true` |
 | `mount` | implemented | 2 | `mounted` and `unmounted`, each managing the running mount and the table together |
-| `nftables` | not implemented | 0 | Linux only |
+| `nftables` | implemented | 9 | Linux only; `table_present`/`absent`, `chain_present`/`absent`, `set_policy`, `append`, `insert`, `delete`, `flush`. Reads `nft -j list`; writes nft syntax through `nft -f -`. A managed rule **must carry a comment**, which is its identity -- a body change under an unchanged comment is not applied. `flush` of a table or the ruleset needs force |
 | `npm` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pip` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pkgrepo` | implemented | 2 | managed and absent, both converging on a second run 
@@ -556,7 +556,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-34 of 65 present — the rows below total 31 absent.
+36 of 65 present — the rows below total 29 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -626,7 +626,7 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `mdadm`, `udev`, `modprobe`, `authselect` |
+| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `systemd_service` (alias) | `journald`, `mdadm`, `udev`, `modprobe`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
@@ -5203,6 +5203,77 @@ and never hit this; the helper now converts. Not covered: thin pools
 and thin volumes (the argument vectors are pinned but nothing has built
 one), striping, and any filesystem on a volume — so `--resizefs` is
 still checked only as an argument.
+
+### 5.51 `iptables` and `nftables`: the two layers under `firewall`
+
+SPEC 15.3's Common Linux row, modules five and six, and SPEC 15.5's
+`iptables` and `nftables` states — building the module and its state
+was one piece of work, as §2.2 said it would be. Thirteen execution
+functions each; seven `iptables` states and nine `nftables` states.
+
+**Neither is a `firewall` provider, and that is a decision.** `firewall`
+is the virtual module whose Linux provider is `ufw`, which is itself a
+front end for one of these two. `iptables` and `nftables` are the layer
+under that — the escape hatch a tree reaches for when it needs a `nat`
+rule, a `mark`, or a jump to a hand-built chain that `ufw` has no
+spelling for. Wiring either as a second `firewall` provider would make
+`firewall.allow` ambiguous on a node that has both, and would put the
+abstraction back over the tool whose reason to exist here is that the
+abstraction ran out. §7's prediction that these would *reshape* the
+provider interface came from the same place as the `pf` one, and `pf`
+reshaped nothing (5.31); the relationship here is `dpkg` to `pkg`.
+
+**Idempotence is where the two tools diverge.** `iptables -C` asks the
+kernel whether a rule is already present, using iptables' own matching —
+so `append` and `delete` put the question to the tool rather than
+re-deriving it from the text of `iptables-save`, which is only read to
+*report*. `nft` has no `-C`. So an `nftables`-managed rule **must carry
+a comment**, and that comment is its identity: `append` adds the rule
+unless a rule in the chain already has that comment, and `delete` finds
+it by comment and removes it by handle. A change to a rule's body under
+an unchanged comment is deliberately **not** applied — re-declare with a
+new comment. This is stricter than Salt, which appends every time, and
+it is the cost of idempotence on a tool that does not offer it. The
+`nftables` states refuse to run without a comment and say why.
+
+**Both refuse the destructive scopes without `force`.** Flushing a
+built-in / base chain whose policy is `DROP`/`drop` strips the rules
+that were letting traffic through, and the node goes off the network
+mid-run; a whole-table flush, or `nft flush ruleset`, empties chains
+this build never wrote. Each is refused unless the call passes `force`.
+
+**Reading is structured; writing avoids the argument vector where it
+bites.** `nftables` reads `nft -j list` — a JSON document, never the
+indented reprint that DIVERGENCE 5.31 was about — and *writes* by
+feeding nft's own syntax to `nft -f -` on standard input, because nft
+re-tokenises its argv and a colon in a comment then breaks its lexer.
+The rule body is passed through untouched: reassembling nft's expression
+grammar would be a second parser for the most intricate surface either
+firewall has.
+
+#### What was verified
+
+Both mutating paths ran against the real tools — `iptables` 1.8.10
+(nf_tables backend) and `nft` 1.0.9 — inside a **throwaway network
+namespace**, so nothing touched the host firewall. The test re-executes
+itself under `unshare --net --map-root-user`, which needs no privilege
+on a kernel with unprivileged user namespaces (Debian and Ubuntu since
+about 2023); where the kernel forbids one, the test skips rather than
+falling back to the host's real ruleset. So `live_iptables_test.go` and
+`live_nftables_test.go` run in the ordinary suite, not behind a gate,
+and both modules are `hardware` in `evidence.go`.
+
+What ran: rules appended, inserted and deleted with the idempotence
+each tool allows; user chains and nft tables created and removed;
+built-in and base chain policies set and updated in place; `nftables.check`
+against nft's own `--check`; the flush guards shown to refuse; and
+`nftables.save` writing a self-contained restore script that flushes
+first. Every result was checked against a fresh read of the tool.
+
+Not covered: `ip6tables` and nft families other than `inet` (the
+argument vectors are pinned, nothing has driven them), the
+`nat`/`mangle`/`raw` tables, nft sets and maps, and `iptables.save`
+against a real `iptables-persistent` layout.
 
 ## 6. Everything else not started
 
