@@ -160,10 +160,18 @@ func TestJournaldVacuumNeedsACriterion(t *testing.T) {
 }
 
 func TestJournaldRefusesWithoutJournalctl(t *testing.T) {
+	// Called through the helper rather than the registry: off Linux the
+	// registry refuses the whole module by platform first (that path is
+	// TestJournaldRefusesOnANonLinuxPlatform), and this assertion is
+	// about the tool check, which is the same everywhere.
 	c := &exec.Context{Runner: &exec.RecordingRunner{}, Lookup: func(string) string { return "" }}
-	if _, err := New().Exec.Call(c, "journald.fields", value.NewMap(0)); err == nil ||
+	if _, err := journaldLines(c, []string{"journalctl", "-q", "--no-pager", "-N"}); err == nil ||
 		!strings.Contains(err.Error(), "journalctl") {
 		t.Errorf("the refusal does not name journalctl: %v", err)
+	}
+	if _, err := journaldQueryFn(c, value.NewMap(0)); err == nil ||
+		!strings.Contains(err.Error(), "journalctl") {
+		t.Errorf("query's refusal does not name journalctl: %v", err)
 	}
 }
 
