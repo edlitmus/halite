@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **65 execution modules / 419 functions** and **41 state
+The build ships **66 execution modules / 425 functions** and **41 state
 modules / 97 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -556,9 +556,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-29 of 65 present — the rows below total 36 absent.
+30 of 65 present — the rows below total 35 absent.
 
-Ten of the twenty-nine are **aliases**. SPEC names both
+Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -581,20 +581,21 @@ built" into "built, and fails when you call it", which is the worse of
 the two answers. `sys.list_aliases` reports the table and says which of
 them this node can use.
 
-Of the eighteen that are modules in their own right, four are the
+Of the nineteen that are modules in their own right, four are the
 Windows ones, and they arrived because a Windows host became available:
 the gap tracks the hardware, not the intent. Five are the Debian row —
 `dpkg`, `debconf`, `netplan`, `apparmor` and `snap`. That row was built
 when this project's fleet was assumed to be Ubuntu; it is one Ubuntu
 host to four FreeBSD, which plan §7 re-ranked around on 2026-09-06.
-Seven are the macOS row, all but `mac_assistive`: `mac_defaults`
+Eight are the macOS row, which is now whole: `mac_defaults`
 (`defaults(1)`, and the one member SPEC 15.5 also names as a core
 state), `mac_power` (`pmset(8)`), `mac_user`, `mac_group` and
 `mac_shadow`, which drive `dscl(1)` and `dseditgroup(1)` and are what
 `user.present` and `group.present` branch to on a Mac — the same
 "nothing to reach" gap this document records for Windows, closed here —
-`mac_softwareupdate` (`softwareupdate(8)`), and `mac_keychain`
-(`security(1)`).
+`mac_softwareupdate` (`softwareupdate(8)`), `mac_keychain`
+(`security(1)`), and `mac_assistive`, which drives `sqlite3(1)` against
+the SIP-protected `TCC.db` to manage the Accessibility grant list.
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -632,7 +633,7 @@ specification cannot be quietly missed.
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
-| macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_assistive` |
+| macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, `mac_assistive`, and `mac_brew_pkg` and `mac_service` (aliases) | none |
 
 Notes on this table:
 
@@ -4846,6 +4847,54 @@ system one, so nothing has watched a certificate go in or out.
 `evidence.go` records the module `assumed`, and `make release-gate` is
 red on it.
 
+### 5.46 `mac_assistive`: `TCC.db`, and the schema Salt's module missed
+
+SPEC 15.3's eighth macOS module, the one that finishes the row, and
+Salt's `assistive`. It manages which applications may drive the machine
+through the Accessibility API — the list System Settings shows under
+Privacy & Security ▸ Accessibility. Six functions: `list`, `installed`,
+`enabled`, `install`, `enable` and `remove`. No state; SPEC 15.5 names
+none, and a tree reaches `install` from `module.run` with `unless:
+mac_assistive.enabled ...`.
+
+**It writes `TCC.db` directly, and that database is SIP-protected.** The
+grants live in the `access` table of `/Library/Application
+Support/com.apple.TCC/TCC.db`, keyed by `kTCCServiceAccessibility`.
+There is no supported tool that edits it — `tccutil` only resets — so
+this module does what Salt's does and drives `sqlite3(1)` against the
+file. On a modern macOS that database is readonly for any process
+without Full Disk Access, root included, and `sqlite3` reports that as
+"attempt to write a readonly database" or "unable to open database
+file". `install`, `enable` and `remove` translate either into an error
+that names Full Disk Access, because the underlying message does not. A
+tree that runs this has granted the agent binary Full Disk Access out of
+band; the module cannot grant it to itself.
+
+**It targets the modern schema, where Salt's does not.** Salt's
+`assistive` still queries an `allowed` column and writes `1` or `0` to
+it. That column was renamed `auth_value` in macOS 10.15, and it holds an
+enumeration rather than a flag: `0` is denied, `2` is allowed. Salt's
+module therefore reads nothing on any macOS from Catalina on. This one
+reads and writes `auth_value` with the `2` / `0` meaning and records the
+`auth_reason` 4 / `auth_version` 1 pair that System Settings itself
+writes for a hand-set grant, so it works on the versions Salt's does not
+and does not work on the ones predating the rename — all long out of
+support. `client_type` is inferred from a leading `/`: a path to a
+binary is type 1, a bundle identifier type 0. Salt branches on a `.app`
+suffix, which neither form has.
+
+#### What was verified
+
+`live_mac_assistive_test.go` reads this host's real `access` table
+through the real `sqlite3`: the rows parse into client / client_type /
+`auth_value` triples on the live schema, `client_type` agrees with
+whether the client is a path, and `installed` / `enabled` agree with a
+row the bulk read returned.
+
+`install`, `enable` and `remove` write a database SIP holds readonly, so
+nothing has watched a grant be added or removed. `evidence.go` records
+the module `assumed`, and `make release-gate` is red on it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -5550,12 +5599,16 @@ What is **not** built in phase 5:
   against every target.
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
-- **macOS parity.** The package and service providers ship, and seven
-  of SPEC 15.3's eight macOS modules — `mac_defaults` (also a core
-  state under SPEC 15.5), `mac_power`, the `dscl`-driven `mac_user`,
-  `mac_group` and `mac_shadow` (with which `user.present` and
-  `group.present` work on a Mac), `mac_softwareupdate`, and
-  `mac_keychain`. Only `mac_assistive` does not.
+- **macOS parity, in evidence rather than in inventory.** The package
+  and service providers ship, and all eight of SPEC 15.3's macOS
+  modules — `mac_defaults` (also a core state under SPEC 15.5),
+  `mac_power`, the `dscl`-driven `mac_user`, `mac_group` and
+  `mac_shadow` (with which `user.present` and `group.present` work on a
+  Mac), `mac_softwareupdate`, `mac_keychain` and `mac_assistive`. What
+  is missing is a Mac in CI: every one of these is `assumed` in the
+  evidence table because its read side has a live test but its mutating
+  side changes a real Mac and no CI leg is one, and `make
+  release-gate` is red on the set.
 - **Windows parity, in part.** The suite now runs natively there and
   passes: see 4.6. What is built is the platform-neutral half — grains,
   the file states, `cmd`, the Chocolatey provider, the extension
