@@ -157,6 +157,36 @@ jobs:
       - name: install the quota tools
         run: sudo apt-get install -y --no-install-recommends quota
 
+      # The quota *tools* are not the whole of it. Five runs of this leg
+      # established that the runner's kernel cannot enable ext4 quotas by
+      # either mechanism, and `modprobe` named the reason exactly:
+      #
+      #   modprobe: FATAL: Module quota_v2 not found in directory
+      #             /lib/modules/6.17.0-1022-azure
+      #
+      # That is a missing *file*, not a missing kernel feature. Ubuntu's
+      # Azure kernels split their modules, and the format driver both
+      # ext4 quota mechanisms need lives in the extra set, which a runner
+      # image does not carry.
+      #
+      # It is allowed to fail. A leg that could not be run is not a leg
+      # that failed, and the test below skips by name either way; the
+      # probe after it is what says which happened, so the next person
+      # reading this does not have to run it again to find out.
+      - name: install the kernel module the quota formats need
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            "linux-modules-extra-$(uname -r)" || \
+            echo "linux-modules-extra-$(uname -r) is not available for this runner kernel"
+
+      - name: whether this kernel can do filesystem quotas at all
+        run: |
+          echo "kernel:           $(uname -r)"
+          echo "quota_v2 module:  $(find /lib/modules/$(uname -r) -name 'quota_v2*' 2>/dev/null | head -1 || echo missing)"
+          echo "modprobe:         $(sudo modprobe quota_v2 2>&1 && echo loaded)"
+          echo "CONFIG_QFMT_V2:   $(grep -h CONFIG_QFMT_V2 /boot/config-$(uname -r) 2>&1)"
+
       # What this machine actually offers, printed whether or not the
       # tests then pass. A live check that fails is worth more when the
       # log says what it was looking at.
