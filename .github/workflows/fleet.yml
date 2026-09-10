@@ -40,11 +40,19 @@ on:
       - "internal/builtin/netplan*.go"
       - "internal/builtin/service*.go"
       - "internal/builtin/pkg*.go"
+      # `quota` is here and `pam` and `openssl_cert` are not, and the
+      # difference is what each needs to be driven. Their live tests
+      # change nothing outside a directory the test owns, so they run in
+      # the ordinary `test` job on every platform. `quota` needs a
+      # filesystem that has quotas, which means root and the loop
+      # driver, which means this workflow.
+      - "internal/builtin/quota*.go"
       - "internal/dbus/**"
       - "internal/builtin/live_apparmor_test.go"
       - "internal/builtin/live_debian_test.go"
       - "internal/builtin/live_netplan_test.go"
       - "internal/builtin/live_pkg_test.go"
+      - "internal/builtin/live_quota*_test.go"
       - "internal/builtin/live_service_test.go"
       - "internal/builtin/live_system_test.go"
       - "internal/builtin/evidence.go"
@@ -119,7 +127,7 @@ jobs:
   # throwaway unit in /run/systemd/system that is attached to nothing
   # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan, service, pkg)
+    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -134,6 +142,50 @@ jobs:
       # mode on it. The parser and the kernel LSM are already here.
       - name: install the AppArmor tools
         run: sudo apt-get install -y --no-install-recommends apparmor-utils
+
+      # The quota tools are a separate package everywhere, which is
+      # itself the reason `quota.report` refuses by name rather than
+      # returning an empty report when `repquota` is missing.
+      #
+      # This runner is where the `quota` module first meets a filesystem
+      # that has quotas at all. This project's own fleet is entirely ZFS,
+      # whose quotas are dataset properties these tools cannot see, so
+      # nothing on it can exercise `setquota` or `repquota` -- the test
+      # makes an ext4 filesystem in a file and mounts it through the loop
+      # driver, which needs a whole virtual machine with root, which is
+      # what a runner is.
+      - name: install the quota tools
+        run: sudo apt-get install -y --no-install-recommends quota
+
+      # The quota *tools* are not the whole of it. Five runs of this leg
+      # established that the runner's kernel cannot enable ext4 quotas by
+      # either mechanism, and `modprobe` named the reason exactly:
+      #
+      #   modprobe: FATAL: Module quota_v2 not found in directory
+      #             /lib/modules/6.17.0-1022-azure
+      #
+      # That is a missing *file*, not a missing kernel feature. Ubuntu's
+      # Azure kernels split their modules, and the format driver both
+      # ext4 quota mechanisms need lives in the extra set, which a runner
+      # image does not carry.
+      #
+      # It is allowed to fail. A leg that could not be run is not a leg
+      # that failed, and the test below skips by name either way; the
+      # probe after it is what says which happened, so the next person
+      # reading this does not have to run it again to find out.
+      - name: install the kernel module the quota formats need
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y --no-install-recommends \
+            "linux-modules-extra-$(uname -r)" || \
+            echo "linux-modules-extra-$(uname -r) is not available for this runner kernel"
+
+      - name: whether this kernel can do filesystem quotas at all
+        run: |
+          echo "kernel:           $(uname -r)"
+          echo "quota_v2 module:  $(find /lib/modules/$(uname -r) -name 'quota_v2*' 2>/dev/null | head -1 || echo missing)"
+          echo "modprobe:         $(sudo modprobe quota_v2 2>&1 && echo loaded)"
+          echo "CONFIG_QFMT_V2:   $(grep -h CONFIG_QFMT_V2 /boot/config-$(uname -r) 2>&1)"
 
       # What this machine actually offers, printed whether or not the
       # tests then pass. A live check that fails is worth more when the
@@ -153,6 +205,9 @@ jobs:
           echo "system bus:       $(test -S /run/dbus/system_bus_socket && echo present || echo missing)"
           echo "apt / dpkg:       $(apt-get --version | head -1) / $(dpkg --version | head -1)"
           echo "hello available:  $(apt-cache show hello >/dev/null 2>&1 && echo yes || echo no)"
+          echo "quota tools:      $(dpkg-query -W -f='${Version}' quota 2>&1)"
+          echo "repquota -O csv:  $(repquota -O csv -a >/dev/null 2>&1 && echo yes || echo no)"
+          echo "loop driver:      $(test -e /dev/loop-control && echo present || echo missing)"
 
       # No workaround here, and that is the conclusion rather than a
       # gap.
@@ -180,9 +235,9 @@ jobs:
       # is on PATH rather than in a standard location -- so root would
       # run a different Go, or none. The environment is named
       # explicitly instead.
-      - name: drive hostname, sysctl, apparmor, netplan, service and pkg
+      - name: drive hostname, sysctl, apparmor, netplan, service, pkg and quota
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota' ./internal/builtin/
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
@@ -198,6 +253,7 @@ jobs:
           echo "swappiness: $(sysctl -n vm.swappiness)"
           echo "netplan files: $(ls /etc/netplan | tr '\n' ' ')"
           echo "probe unit: $(systemctl is-active halite-live-probe 2>&1)"
+          echo "loop devices left attached: $(losetup -a | wc -l)"
           test "$(hostname)" != "halite-live-probe" || {
             echo "the tests left this machine renamed"; exit 1; }
           test ! -e /etc/netplan/98-halite-live-probe.yaml || {
