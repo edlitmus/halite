@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **64 execution modules / 412 functions** and **41 state
+The build ships **65 execution modules / 419 functions** and **41 state
 modules / 97 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -556,9 +556,9 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-28 of 65 present — the rows below total 37 absent.
+29 of 65 present — the rows below total 36 absent.
 
-Ten of the twenty-eight are **aliases**. SPEC names both
+Ten of the twenty-nine are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -581,18 +581,20 @@ built" into "built, and fails when you call it", which is the worse of
 the two answers. `sys.list_aliases` reports the table and says which of
 them this node can use.
 
-Of the seventeen that are modules in their own right, four are the
+Of the eighteen that are modules in their own right, four are the
 Windows ones, and they arrived because a Windows host became available:
 the gap tracks the hardware, not the intent. Five are the Debian row —
 `dpkg`, `debconf`, `netplan`, `apparmor` and `snap`. That row was built
 when this project's fleet was assumed to be Ubuntu; it is one Ubuntu
 host to four FreeBSD, which plan §7 re-ranked around on 2026-09-06.
-Six are the macOS row: `mac_defaults` (`defaults(1)`, and the one
-member SPEC 15.5 also names as a core state), `mac_power` (`pmset(8)`),
-`mac_user`, `mac_group` and `mac_shadow`, which drive `dscl(1)` and
-`dseditgroup(1)` and are what `user.present` and `group.present` branch
-to on a Mac — the same "nothing to reach" gap this document records for
-Windows, closed here — and `mac_softwareupdate` (`softwareupdate(8)`).
+Seven are the macOS row, all but `mac_assistive`: `mac_defaults`
+(`defaults(1)`, and the one member SPEC 15.5 also names as a core
+state), `mac_power` (`pmset(8)`), `mac_user`, `mac_group` and
+`mac_shadow`, which drive `dscl(1)` and `dseditgroup(1)` and are what
+`user.present` and `group.present` branch to on a Mac — the same
+"nothing to reach" gap this document records for Windows, closed here —
+`mac_softwareupdate` (`softwareupdate(8)`), and `mac_keychain`
+(`security(1)`).
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -630,7 +632,7 @@ specification cannot be quietly missed.
 | RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
-| macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_keychain`, `mac_assistive` |
+| macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_assistive` |
 
 Notes on this table:
 
@@ -4806,6 +4808,44 @@ The install and download paths are not exercised: `softwareupdate
 `evidence.go` records the module `assumed`, and `make release-gate` is
 red on it.
 
+### 5.45 `mac_keychain`: `security`, and the passphrase in the process table
+
+SPEC 15.3's seventh macOS module, and Salt's `keychain`. It drives
+`security(1)`: `list_keychains`, `default_keychain`, `list_certs`,
+`get_hash`, `friendly_name`, `install` and `uninstall` — seven
+functions. No state; a tree that wants a certificate present uses
+`module.run` with `unless: mac_keychain.get_hash ...`.
+
+**`security import` takes the passphrase in the argument vector.** `-P
+<passphrase>` is the only form — there is no standard-input path — so
+for as long as the import runs, the PKCS#12 file's passphrase is
+readable in the process table by any account on the machine. That is
+`security`'s design, and it is the same shape `mac_shadow.set_password`
+and Salt's own `keychain.install` carry; the module's doc comment says
+so, and a tree that cannot accept it installs the certificate out of
+band. `friendly_name` shells to `openssl pkcs12 -passin pass:...` and
+has the same exposure.
+
+**Names come from `labl`.** `security find-certificate -a -Z` prints a
+`SHA-1 hash:` line before each certificate's attribute block and the
+name as `"labl"<blob>="..."`, or `0x...` hex when it is not plain
+ASCII; both are read, and the hash is paired with the name that
+follows it. `list_certs` sorts and de-duplicates, because a keychain
+routinely holds a leaf and its issuer under related names.
+
+#### What was verified
+
+`live_mac_keychain_test.go` runs the reads against the real `security`
+on any Mac: the search list and default keychain come back as file
+paths, `find-certificate -a -Z` on the System keychain — which every
+Mac has, populated — parses into name/hash pairs whose hashes are 40
+hex digits, and a by-name lookup finds the same hash the bulk read did.
+
+`import` and `delete-certificate` change a keychain and need root for a
+system one, so nothing has watched a certificate go in or out.
+`evidence.go` records the module `assumed`, and `make release-gate` is
+red on it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -5510,12 +5550,12 @@ What is **not** built in phase 5:
   against every target.
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
-- **macOS parity.** The package and service providers ship, and six of
-  SPEC 15.3's eight macOS modules: `mac_defaults` (also a core state
-  under SPEC 15.5), `mac_power`, the `dscl`-driven `mac_user`,
-  `mac_group` and `mac_shadow` — with which `user.present` and
-  `group.present` work on a Mac — and `mac_softwareupdate`. The other
-  two (`mac_keychain`, `mac_assistive`) do not.
+- **macOS parity.** The package and service providers ship, and seven
+  of SPEC 15.3's eight macOS modules — `mac_defaults` (also a core
+  state under SPEC 15.5), `mac_power`, the `dscl`-driven `mac_user`,
+  `mac_group` and `mac_shadow` (with which `user.present` and
+  `group.present` work on a Mac), `mac_softwareupdate`, and
+  `mac_keychain`. Only `mac_assistive` does not.
 - **Windows parity, in part.** The suite now runs natively there and
   passes: see 4.6. What is built is the platform-neutral half — grains,
   the file states, `cmd`, the Chocolatey provider, the extension
