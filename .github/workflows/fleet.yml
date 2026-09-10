@@ -48,6 +48,7 @@ on:
       # both mean root and the loop driver, which means this workflow.
       - "internal/builtin/quota*.go"
       - "internal/builtin/lvm*.go"
+      - "internal/builtin/mdadm*.go"
       # `iptables` and `nftables` run in a private network namespace, so
       # their live tests are in the ordinary `test` job and need no root
       # -- but a GitHub runner may forbid an unprivileged namespace, and
@@ -65,6 +66,7 @@ on:
       - "internal/builtin/live_netfilter_test.go"
       - "internal/builtin/live_journald_test.go"
       - "internal/builtin/live_lvm*_test.go"
+      - "internal/builtin/live_mdadm_test.go"
       - "internal/builtin/live_netplan_test.go"
       - "internal/builtin/live_pkg_test.go"
       - "internal/builtin/live_quota*_test.go"
@@ -142,7 +144,7 @@ jobs:
   # throwaway unit in /run/systemd/system that is attached to nothing
   # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald)
+    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -179,6 +181,12 @@ jobs:
       # devices out of files with `losetup`.
       - name: install the LVM tools
         run: sudo apt-get install -y --no-install-recommends lvm2
+
+      # mdadm builds its array on loop devices, so nothing here touches
+      # the runner's own disks. The md kernel personalities are
+      # autoloaded by mdadm.
+      - name: install mdadm
+        run: sudo apt-get install -y --no-install-recommends mdadm
 
       # iptables ships on the runner image; nftables usually does too,
       # but install it to be sure. The live tests do their work in a
@@ -270,7 +278,7 @@ jobs:
       # explicitly instead.
       - name: drive hostname, sysctl, apparmor, netplan, service, pkg, quota and lvm
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm' ./internal/builtin/
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
