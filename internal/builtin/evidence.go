@@ -179,6 +179,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"whose failure wording is its own, and OpenSSL 1.1.1, whose spelling is in the fixtures and " +
 		"on no machine here"},
 
+	"journald": {Level: exec.Hardware, Note: "driven against real systemd 255 on Ubuntu 24.04. The reads " +
+		"go through `journalctl -o json` / `-N` / `-F` -- the `jls --libxo=json` precedent (5.32), a machine " +
+		"format rather than the aligned columns SPEC's sentence is about -- and `query`, `fields`, " +
+		"`field_values`, `list_boots` and `disk_usage` were parsed field by field against the host's own " +
+		"journal in the ordinary suite, cursor included. The control verbs `rotate`, `flush` and `sync` were " +
+		"run over journald's own varlink socket (`io.systemd.Journal.*`) as root, and the `journalctl --sync` " +
+		"fallback was shown to take over when the socket was pointed away (DIVERGENCE 5.52). Not covered: " +
+		"`vacuum`, which deletes archived journal files and no test has been willing to on a real machine; the " +
+		"varlink error path (a service that answers and refuses); and any systemd older than 255, whose varlink " +
+		"interface may be absent -- the fallback exists for exactly that and has only been forced by a bad path"},
 	"iptables": {Level: exec.Hardware, Note: "driven against a real iptables 1.8.10 (nf_tables backend) " +
 		"inside a throwaway network namespace on Ubuntu 24.04, so nothing touched the host firewall: rules " +
 		"appended, inserted, checked for idempotence with iptables' own `-C`, and deleted; user chains created, " +

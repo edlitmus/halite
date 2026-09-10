@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **72 execution modules / 481 functions** and **44 state
+The build ships **73 execution modules / 490 functions** and **44 state
 modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -556,7 +556,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-36 of 65 present — the rows below total 29 absent.
+37 of 65 present — the rows below total 28 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -626,7 +626,7 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `systemd_service` (alias) | `journald`, `mdadm`, `udev`, `modprobe`, `authselect` |
+| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `systemd_service` (alias) | `mdadm`, `udev`, `modprobe`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
@@ -5274,6 +5274,61 @@ Not covered: `ip6tables` and nft families other than `inet` (the
 argument vectors are pinned, nothing has driven them), the
 `nat`/`mangle`/`raw` tables, nft sets and maps, and `iptables.save`
 against a real `iptables-persistent` layout.
+
+### 5.52 `journald`: structured reads, and control over the varlink socket
+
+SPEC 15.3's Common Linux row, module seven. Nine execution functions:
+`query`, `fields`, `field_values`, `list_boots`, `disk_usage`,
+`rotate`, `flush`, `sync`, `vacuum`. No state — SPEC 15.5 names none,
+the way it names none for `pam`; a log query has nothing to converge,
+and journald's settings live in journald.conf, which `file.managed`
+already manages.
+
+**The reads do not parse the human `journalctl`.** SPEC's row asks for
+the journal "over a socket rather than by parsing `journalctl` output",
+and the literal reading of that is not reachable without a dependency:
+the journal has no cgo-free read API, its varlink socket does only
+rotate/flush/sync, and the file format's data objects are LZ4/XZ/ZSTD
+compressed — three decompressors this build has no dependency for. So a
+`query` runs `journalctl -o json`, the same call `jail` makes to `jls
+--libxo=json` (5.32): a documented one-object-per-line serialisation,
+not the aligned `-o short` columns that SPEC's sentence is really
+about. `fields` and `field_values` read `-N` and `-F`, which emit one
+bare value per line. `query` carries the last entry's `__CURSOR` back
+out, so a caller can poll from where it left off.
+
+**The control verbs do go over the socket.** `rotate`, `flush` and
+`sync` are `io.systemd.Journal.Rotate`, `FlushToVar` and `Synchronize`
+on `/run/systemd/journal/io.systemd.journal`, spoken by a new
+`internal/varlink` — a ~130-line client for the wire protocol
+(one JSON object plus a NUL byte, each way), the same
+"implement it rather than depend on it" call `internal/dbus` makes one
+layer up. A `journalctl --rotate` / `--flush` / `--sync` fallback takes
+over when the socket cannot be reached (older systemd, a namespace
+without it), which is the shape the systemd `service` provider uses for
+D-Bus (5.39). Which path ran is in the result's `via` field. A varlink
+*error* reply — the service answered and refused — is a real failure
+and does not fall back.
+
+#### What was verified
+
+Against real systemd 255 on Ubuntu 24.04. The reads ran in the ordinary
+suite (`live_journald_test.go`, no gate, no root — `journalctl` shows a
+non-root caller its own entries): `query` with a `_UID` match and its
+cursor round-trip, `fields`, `field_values`, `list_boots` and
+`disk_usage` all parsed field by field against the host's own journal.
+The control verbs ran as root against the real varlink socket —
+`sync`, `rotate` and `flush` each reported `via: varlink` — and the
+`journalctl --sync` fallback was forced by pointing the socket path at
+nothing and shown to take over. `internal/varlink` has its own tests
+against an in-process fake service, covering the reply, the typed error
+reply, an unreachable socket, and a context deadline.
+
+Not covered: `vacuum`, which deletes archived journal files and no test
+has been willing to run against a real machine; the varlink error-reply
+path with a real service; and any systemd older than 255, whose varlink
+interface may be absent — the fallback exists for that and has only
+been exercised through a bad path.
 
 ## 6. Everything else not started
 

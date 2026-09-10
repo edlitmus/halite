@@ -55,12 +55,15 @@ on:
       # namespace is always available, so there is a guaranteed real run.
       - "internal/builtin/iptables*.go"
       - "internal/builtin/nftables*.go"
+      - "internal/builtin/journald*.go"
+      - "internal/varlink/**"
       - "internal/dbus/**"
       - "internal/builtin/live_apparmor_test.go"
       - "internal/builtin/live_debian_test.go"
       - "internal/builtin/live_iptables_test.go"
       - "internal/builtin/live_nftables_test.go"
       - "internal/builtin/live_netfilter_test.go"
+      - "internal/builtin/live_journald_test.go"
       - "internal/builtin/live_lvm*_test.go"
       - "internal/builtin/live_netplan_test.go"
       - "internal/builtin/live_pkg_test.go"
@@ -139,7 +142,7 @@ jobs:
   # throwaway unit in /run/systemd/system that is attached to nothing
   # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables)
+    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -267,7 +270,7 @@ jobs:
       # explicitly instead.
       - name: drive hostname, sysctl, apparmor, netplan, service, pkg, quota and lvm
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald' ./internal/builtin/
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
