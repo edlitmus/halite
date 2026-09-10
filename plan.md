@@ -1078,15 +1078,25 @@ place.
    no-network rule refuses; the eight macOS modules need a CI leg that
    is a Mac and writes to it, which none is.
 
-   **`quota` is the one with a written answer nobody has run yet.**
-   `live_quota_loopback_test.go` makes an ext4 filesystem in a file,
-   mounts it through the loop driver with quotas on, sets a limit
-   through `setquota` and reads it back through `repquota`, and it is
-   wired into `fleet.yml`'s Linux leg. It was written on a FreeBSD host
-   that cannot execute a line of it — the position `hostname`'s FreeBSD
-   branch was in when §1.4 found it had never been exercised — so the
-   module stays `assumed` until the leg has run green. The test existing
-   is not the demonstration.
+   **`quota` is the one whose answer runs and has not yet reached an
+   assertion.** `live_quota_loopback_test.go` makes an ext4 filesystem
+   in a file, mounts it through the loop driver with quotas on, sets a
+   limit through `setquota` and reads it back through `repquota`, and it
+   is wired into `fleet.yml`'s Linux leg. Both runs so far stopped at
+   `quotaon`, which returns ESRCH against a mounted filesystem whose
+   quota files were just written.
+
+   The first diagnosis of that was **wrong**, and it is the useful part.
+   ext4's quota feature was blamed on the strength of the symptom alone;
+   the next run printed the feature list and the filesystem had never
+   had it. The leg probes now — the mount options the kernel applied,
+   the formats it registers, what `quotacheck` left behind — instead of
+   testing a third hypothesis. This is the §1.4 shape one layer out: not
+   a branch nobody ran, but a branch that runs and stops before it
+   asserts, which looks like progress in a log and is not.
+
+   The module stays `assumed` until the leg is green. The test existing
+   is not the demonstration, and neither is the test running.
 
    This stays the highest-ranked *unbuilt* item because nothing else on
    this list can ship a release until it is done.

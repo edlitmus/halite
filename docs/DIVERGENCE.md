@@ -5010,11 +5010,26 @@ no quota has been set.** There is no such filesystem on this fleet.
 `live_quota_loopback_test.go` is written to close that — an ext4
 filesystem in a file, mounted through the loop driver with quotas on, a
 limit set through `setquota` and read back through `repquota` — and it
-is wired into the Linux leg of `fleet.yml`. **It has not run.** It was
-written on a FreeBSD host that cannot execute a line of it, which is the
-position `hostname`'s FreeBSD branch was in when §1.4 found it had never
-been exercised. `evidence.go` records the module `assumed` and `make
-release-gate` is red on it; the test existing is not the demonstration.
+is wired into the Linux leg of `fleet.yml`.
+
+**It runs, and it has not yet reached a single assertion.** Both
+attempts stopped at `quotaon`, which returns ESRCH — `No such process` —
+against a filesystem that is mounted and whose quota files `quotacheck`
+has just written. The first diagnosis was wrong and is worth recording
+as such: ext4's *quota feature* was blamed, and the next run printed the
+feature list and showed the filesystem had never had it. Whatever ESRCH
+is about there, it is not that.
+
+The leg now probes rather than guesses — the mount options the kernel
+actually applied, the quota formats it registers, what `quotacheck` left
+in the filesystem root — and asks for `vfsv1` by name on both tools,
+which is the other thing ESRCH classically means. That is a hypothesis
+with evidence attached rather than a third guess.
+
+Two things are worth separating here. The test **existing** is not the
+demonstration, and neither is the test **running**: it has to reach its
+assertions. `evidence.go` records the module `assumed` and `make
+release-gate` is red on it until it does.
 
 ### 5.49 `openssl_cert`: the four things crypto/x509 will not do
 

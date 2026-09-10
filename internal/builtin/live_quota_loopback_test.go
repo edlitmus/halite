@@ -121,36 +121,24 @@ func liveQuotaSetup(t *testing.T) liveQuotaImage {
 		t.Fatal(err)
 	}
 
-	// `-O ^quota` is the whole of what the first attempt at this leg got
-	// wrong, and it is worth spelling out because the failure was
-	// confusing rather than obvious.
+	// `-O ^quota` rules out the *filesystem feature* form of ext4
+	// quotas, which keeps the data in hidden inodes and is always on;
+	// this leg wants the classic `aquota.user` / `aquota.group` files,
+	// because those are the ones `quota.on` and `quota.off` switch.
 	//
-	// ext4 has two quota mechanisms. The classic one keeps `aquota.user`
-	// and `aquota.group` in the filesystem root and is switched on with
-	// `quotaon`; the newer *quota feature* keeps the same data in hidden
-	// inodes and is always on, with no `quotaon` involved. Ubuntu's
-	// mke2fs now enables the feature by default — so `quotacheck` wrote
-	// the classic files, the kernel ignored them because it was using
-	// the feature, and `quotaon` failed with `No such process`, which
-	// reads as nothing at all to do with a filesystem feature.
-	//
-	// The classic route is the one to force here, because it is the one
-	// `quota.on` and `quota.off` drive: under the feature they have
-	// nothing to switch. The features are logged either way, so the next
-	// person to read a failure here can see what they got.
+	// It was also this leg's first wrong diagnosis, and the comment is
+	// kept honest rather than quietly corrected. The first CI run failed
+	// at `quotaon` with `No such process`, the feature was blamed, and
+	// the next run printed the feature list and disproved it: the
+	// filesystem had no `quota` feature either time. Whatever ESRCH is
+	// about here, it is not that. The probes below are what the run
+	// after this one has to answer with, rather than a third guess
+	// dressed as a fix.
 	if err := liveQuotaRun(c, builder, "-q", "-F", "-O", "^quota", image); err != nil {
 		t.Skipf("an ext4 filesystem could not be made here: %v", err)
 	}
-	if res, err := c.Run(exec.Command{
-		Argv:           []string{"dumpe2fs", "-h", image},
-		IgnoreExitCode: true,
-	}); err == nil {
-		for _, line := range strings.Split(res.Stdout, "\n") {
-			if strings.HasPrefix(line, "Filesystem features:") {
-				t.Logf("the loopback filesystem was made with %s", strings.TrimSpace(line))
-			}
-		}
-	}
+	liveQuotaProbe(t, c, "the filesystem as made", "dumpe2fs", "-h", image)
+
 	if err := liveQuotaRun(c, "mount", "-o", "loop,usrquota,grpquota", image, mount); err != nil {
 		t.Skipf("the loopback filesystem could not be mounted: %v", err)
 	}
@@ -163,20 +151,33 @@ func liveQuotaSetup(t *testing.T) liveQuotaImage {
 		}
 	})
 
-	// `quotacheck` builds the aquota files. It warns about a filesystem
-	// that is mounted read-write and carries on, so its exit code is read
-	// rather than trusted.
-	if err := liveQuotaRun(c, "quotacheck", "-cugm", mount); err != nil {
+	// What the mount actually applied, rather than what was asked for.
+	// A `usrquota` that the kernel silently dropped would produce
+	// exactly the ESRCH below, and nothing so far has checked it.
+	liveQuotaProbe(t, c, "the mount as applied", "findmnt", "-no", "OPTIONS,FSTYPE,SOURCE", mount)
+
+	// ESRCH from `quotactl(Q_QUOTAON)` is also what a kernel with no
+	// registered quota format returns, and `quota_v2` is a module rather
+	// than built in on some kernels. Loading it is cheap and its failure
+	// is not fatal -- a kernel with it built in has nothing to load.
+	if err := liveQuotaRun(c, "modprobe", "quota_v2"); err != nil {
+		t.Logf("quota_v2 could not be loaded, which is expected on a kernel that has it built in: %v", err)
+	}
+	liveQuotaProbe(t, c, "the quota formats this kernel registers", "sh", "-c", "cat /proc/fs/quota 2>&1; lsmod | grep -i quota")
+
+	// `-F vfsv1` on both, named rather than left to the default. The
+	// tools and the kernel each have their own idea of the default
+	// format, and a mismatch between them is the other thing ESRCH
+	// means. `quotacheck` warns about a filesystem mounted read-write
+	// and carries on, so its exit code is read rather than trusted.
+	if err := liveQuotaRun(c, "quotacheck", "-F", "vfsv1", "-cugm", mount); err != nil {
 		t.Skipf("quotacheck could not initialise the quota files: %v", err)
 	}
-	if err := liveQuotaRun(c, "quotaon", "-ug", mount); err != nil {
-		// `No such process` here means the kernel is using the quota
-		// feature rather than the files quotacheck wrote, which is what
-		// `-O ^quota` above exists to prevent. Saying so is the
-		// difference between a skip somebody can act on and one they
-		// have to reproduce.
-		t.Skipf("quotas could not be switched on, so this filesystem is not in the classic quota mode "+
-			"this leg needs: %v", err)
+	if err := liveQuotaRun(c, "quotaon", "-F", "vfsv1", "-ug", mount); err != nil {
+		liveQuotaProbe(t, c, "what is in the filesystem root", "ls", "-la", mount)
+		t.Skipf("quotas could not be switched on, so nothing below this line has been demonstrated. "+
+			"The probes above are the evidence for the next attempt, which must explain ESRCH rather "+
+			"than guess at it again: %v", err)
 	}
 	return liveQuotaImage{mount: mount, c: c}
 }
@@ -293,4 +294,25 @@ func TestLiveQuotaReadsBothStatesOfARealFilesystem(t *testing.T) {
 	if user, _ := got.(*value.Map).GetString("user"); user != false {
 		t.Errorf("quotas were switched off and get_mode says %v", user)
 	}
+}
+
+// liveQuotaProbe runs a read-only command and logs what it said.
+//
+// It exists because this leg has now been diagnosed wrongly once, from
+// an error message that named neither the cause nor anything that would
+// lead to it. A skip that carries the state of the machine is one
+// somebody can act on; a skip that carries only `No such process` is one
+// they have to reproduce before they can start.
+func liveQuotaProbe(t *testing.T, c *exec.Context, what string, argv ...string) {
+	t.Helper()
+	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+	if err != nil {
+		t.Logf("%s: `%s` could not be run: %v", what, strings.Join(argv, " "), err)
+		return
+	}
+	out := strings.TrimSpace(res.Stdout + res.Stderr)
+	if out == "" {
+		out = "(nothing)"
+	}
+	t.Logf("%s (exit %d):\n%s", what, res.Code, out)
 }
