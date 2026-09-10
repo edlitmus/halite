@@ -3,10 +3,12 @@ package builtin
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -97,11 +99,33 @@ func pamTree(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-// Both helpers go through the registry rather than reaching for the
-// function, so that the declared signature — its defaults, its types and
-// its refusals — is exercised by every test in this file.
+// These go through the registry rather than reaching for the function,
+// so that the declared signature — its defaults, its types and its
+// refusals — is exercised.
+//
+// That means they carry the platform restriction with them, and the
+// module is declared for everything except Windows. `pamHere` skips
+// there rather than failing, and TestPamRefusesOnAPlatformWithNoPAM is
+// what keeps that from being a silent pass: Windows asserts the refusal
+// instead of asserting nothing.
+//
+// **The parser tests below do not use these.** Reading a PAM file is
+// platform-neutral logic, and the value of running the suite on four
+// platforms comes from that logic running on all four — plan.md §1 is
+// three defects found precisely because Windows ran code nobody had run
+// there. So those call the reader directly, and every branch of it is
+// exercised on every platform this project builds for.
+func pamHere(t *testing.T) {
+	t.Helper()
+	sig := signature.Signature{Module: "pam", Function: "rules", Platforms: pamPlatforms}
+	if err := sig.CheckPlatform(); err != nil {
+		t.Skip(err.Error())
+	}
+}
+
 func pamCall(t *testing.T, fn string, args *value.Map, test bool) any {
 	t.Helper()
+	pamHere(t)
 	out, err := pamTry(fn, args, test)
 	if err != nil {
 		t.Fatalf("%s: %v", fn, err)
@@ -111,6 +135,7 @@ func pamCall(t *testing.T, fn string, args *value.Map, test bool) any {
 
 func pamCallErr(t *testing.T, fn string, args *value.Map, test bool) error {
 	t.Helper()
+	pamHere(t)
 	_, err := pamTry(fn, args, test)
 	return err
 }
@@ -118,6 +143,39 @@ func pamCallErr(t *testing.T, fn string, args *value.Map, test bool) error {
 func pamTry(fn string, args *value.Map, test bool) (any, error) {
 	r := New()
 	return r.Exec.Call(&exec.Context{Test: test}, fn, args)
+}
+
+// pamRules reads a service through the reader itself, so that the
+// parsing assertions run on every platform including the one with no
+// PAM.
+func pamRules(t *testing.T, service string, resolve bool) []any {
+	t.Helper()
+	rules, err := pamServiceRules(service, resolve)
+	if err != nil {
+		t.Fatalf("pam.rules %s: %v", service, err)
+	}
+	return pamRulesValue(rules)
+}
+
+// A node with no PAM is told so by name.
+//
+// Windows is the one platform this module is not declared for, and it
+// is also the platform that runs these tests with an empty /etc/pam.d
+// and no library to configure. Without this it would skip every test in
+// the file and assert nothing at all about `pam`.
+func TestPamRefusesOnAPlatformWithNoPAM(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skipf("%s has PAM; this is about the platform that does not", runtime.GOOS)
+	}
+	args := value.NewMap(1)
+	args.Set("service", "sshd")
+	_, err := pamTry("pam.rules", args, false)
+	if err == nil {
+		t.Fatal("pam.rules answered on a platform with no PAM")
+	}
+	if !strings.Contains(err.Error(), "this node is windows") {
+		t.Errorf("the refusal does not name the platform: %v", err)
+	}
 }
 
 // modules renders a rule list as "type:module" so an assertion reads as
@@ -154,9 +212,7 @@ func pamModules(t *testing.T, out any) []string {
 func TestATypedIncludePullsInOnlyItsOwnChain(t *testing.T) {
 	pamTree(t, map[string]string{"su": freebsdSu, "system": freebsdSystem})
 
-	args := value.NewMap(1)
-	args.Set("service", "su")
-	got := pamModules(t, pamCall(t, "pam.rules", args, false))
+	got := pamModules(t, pamRules(t, "su", true))
 
 	want := []string{
 		"auth:pam_rootok.so",
@@ -182,9 +238,7 @@ func TestATypedIncludePullsInOnlyItsOwnChain(t *testing.T) {
 func TestAnAtIncludePullsInEveryChainOfTheFileItNames(t *testing.T) {
 	pamTree(t, map[string]string{"sshd": debianSshd, "common-auth": debianCommonAuth})
 
-	args := value.NewMap(1)
-	args.Set("service", "sshd")
-	got := pamModules(t, pamCall(t, "pam.rules", args, false))
+	got := pamModules(t, pamRules(t, "sshd", true))
 
 	// common-account, common-session and common-password are absent from
 	// the tree on purpose: an include naming a service that is not there
@@ -217,9 +271,7 @@ func TestAnAtIncludePullsInEveryChainOfTheFileItNames(t *testing.T) {
 func TestABracketedControlFlagIsNotTornIntoFields(t *testing.T) {
 	pamTree(t, map[string]string{"common-auth": debianCommonAuth})
 
-	args := value.NewMap(1)
-	args.Set("service", "common-auth")
-	list := pamCall(t, "pam.rules", args, false).([]any)
+	list := pamRules(t, "common-auth", true)
 	first := list[0].(*value.Map)
 
 	control, _ := first.GetString("control")
@@ -243,10 +295,7 @@ func TestABracketedControlFlagIsNotTornIntoFields(t *testing.T) {
 func TestALongBracketedFlagKeepsTheModuleArguments(t *testing.T) {
 	pamTree(t, map[string]string{"sshd": debianSshd})
 
-	args := value.NewMap(2)
-	args.Set("service", "sshd")
-	args.Set("resolve_includes", false)
-	list := pamCall(t, "pam.rules", args, false).([]any)
+	list := pamRules(t, "sshd", false)
 
 	var found bool
 	for _, r := range list {
@@ -282,9 +331,7 @@ func TestABackslashContinuesALine(t *testing.T) {
 		"\ttry_first_pass\n" +
 		"account\trequired\tpam_unix.so\n"})
 
-	args := value.NewMap(1)
-	args.Set("service", "svc")
-	list := pamCall(t, "pam.rules", args, false).([]any)
+	list := pamRules(t, "svc", true)
 	if len(list) != 2 {
 		t.Fatalf("a continued line parsed as %d rules, want 2", len(list))
 	}
@@ -307,9 +354,7 @@ func TestAnIncludeCycleTerminates(t *testing.T) {
 		"b": "auth\tinclude\ta\nauth\trequired\tpam_deny.so\n",
 	})
 
-	args := value.NewMap(1)
-	args.Set("service", "a")
-	got := pamModules(t, pamCall(t, "pam.rules", args, false))
+	got := pamModules(t, pamRules(t, "a", true))
 	// The cycle's own rule is kept as written rather than dropped, so
 	// the answer still shows where the loop is.
 	want := []string{"auth:a", "auth:pam_deny.so"}
@@ -537,9 +582,7 @@ func TestAnEditRefusesAPath(t *testing.T) {
 func TestAnUnclosedBracketIsNotReportedAsARule(t *testing.T) {
 	pamTree(t, map[string]string{"svc": "auth\t[success=1 default=ignore\tpam_unix.so\nauth\trequired\tpam_deny.so\n"})
 
-	args := value.NewMap(1)
-	args.Set("service", "svc")
-	got := pamModules(t, pamCall(t, "pam.rules", args, false))
+	got := pamModules(t, pamRules(t, "svc", true))
 	if len(got) != 1 || got[0] != "auth:pam_deny.so" {
 		t.Errorf("a malformed line was read as %v, want only the pam_deny rule", got)
 	}
@@ -549,10 +592,7 @@ func TestAnUnclosedBracketIsNotReportedAsARule(t *testing.T) {
 func TestAChainFilterNarrowsTheAnswer(t *testing.T) {
 	pamTree(t, map[string]string{"su": freebsdSu, "system": freebsdSystem})
 
-	args := value.NewMap(2)
-	args.Set("service", "su")
-	args.Set("type", "account")
-	got := pamModules(t, pamCall(t, "pam.rules", args, false))
+	got := pamModules(t, pamRulesValue(pamOfType(mustPamRules(t, "su"), "account")))
 	want := []string{"account:pam_login_access.so", "account:pam_unix.so"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("su's account chain is %v, want %v", got, want)
@@ -570,4 +610,15 @@ func TestAnUnknownChainIsRefused(t *testing.T) {
 	if err := pamCallErr(t, "pam.rules", args, false); err == nil {
 		t.Error("`sessions` was accepted as a PAM chain")
 	}
+}
+
+// mustPamRules is pamRules without the rendering, for the one assertion
+// that filters before it renders.
+func mustPamRules(t *testing.T, service string) []pamRule {
+	t.Helper()
+	rules, err := pamServiceRules(service, true)
+	if err != nil {
+		t.Fatalf("pam.rules %s: %v", service, err)
+	}
+	return rules
 }

@@ -44,10 +44,12 @@ import (
 // use, and no machine here has a UFS filesystem to make one on; that
 // branch is still checked only as an argument vector.
 //
-// **This leg has not run yet.** It is written on a FreeBSD host that
-// cannot execute a line of it, which is the same position `hostname`'s
-// FreeBSD branch was in when plan.md §1.4 found it had never been
-// exercised. Until it has run green on the Linux leg, `quota` stays
+// **This leg has not yet reached its assertions.** It is written on a
+// FreeBSD host that cannot execute a line of it, which is the same
+// position `hostname`'s FreeBSD branch was in when plan.md §1.4 found it
+// had never been exercised. Its first run on CI got as far as `quotaon`
+// and skipped there, for the ext4 reason `liveQuotaSetup` now explains
+// at the `-O ^quota` flag. Until it has run green, `quota` stays
 // `Assumed` in evidence.go and the release gate stays red on it — the
 // test existing is not the demonstration, running it is.
 
@@ -119,8 +121,35 @@ func liveQuotaSetup(t *testing.T) liveQuotaImage {
 		t.Fatal(err)
 	}
 
-	if err := liveQuotaRun(c, builder, "-q", "-F", image); err != nil {
+	// `-O ^quota` is the whole of what the first attempt at this leg got
+	// wrong, and it is worth spelling out because the failure was
+	// confusing rather than obvious.
+	//
+	// ext4 has two quota mechanisms. The classic one keeps `aquota.user`
+	// and `aquota.group` in the filesystem root and is switched on with
+	// `quotaon`; the newer *quota feature* keeps the same data in hidden
+	// inodes and is always on, with no `quotaon` involved. Ubuntu's
+	// mke2fs now enables the feature by default — so `quotacheck` wrote
+	// the classic files, the kernel ignored them because it was using
+	// the feature, and `quotaon` failed with `No such process`, which
+	// reads as nothing at all to do with a filesystem feature.
+	//
+	// The classic route is the one to force here, because it is the one
+	// `quota.on` and `quota.off` drive: under the feature they have
+	// nothing to switch. The features are logged either way, so the next
+	// person to read a failure here can see what they got.
+	if err := liveQuotaRun(c, builder, "-q", "-F", "-O", "^quota", image); err != nil {
 		t.Skipf("an ext4 filesystem could not be made here: %v", err)
+	}
+	if res, err := c.Run(exec.Command{
+		Argv:           []string{"dumpe2fs", "-h", image},
+		IgnoreExitCode: true,
+	}); err == nil {
+		for _, line := range strings.Split(res.Stdout, "\n") {
+			if strings.HasPrefix(line, "Filesystem features:") {
+				t.Logf("the loopback filesystem was made with %s", strings.TrimSpace(line))
+			}
+		}
 	}
 	if err := liveQuotaRun(c, "mount", "-o", "loop,usrquota,grpquota", image, mount); err != nil {
 		t.Skipf("the loopback filesystem could not be mounted: %v", err)
@@ -141,7 +170,13 @@ func liveQuotaSetup(t *testing.T) liveQuotaImage {
 		t.Skipf("quotacheck could not initialise the quota files: %v", err)
 	}
 	if err := liveQuotaRun(c, "quotaon", "-ug", mount); err != nil {
-		t.Skipf("quotas could not be switched on: %v", err)
+		// `No such process` here means the kernel is using the quota
+		// feature rather than the files quotacheck wrote, which is what
+		// `-O ^quota` above exists to prevent. Saying so is the
+		// difference between a skip somebody can act on and one they
+		// have to reproduce.
+		t.Skipf("quotas could not be switched on, so this filesystem is not in the classic quota mode "+
+			"this leg needs: %v", err)
 	}
 	return liveQuotaImage{mount: mount, c: c}
 }

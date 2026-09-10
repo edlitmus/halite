@@ -265,7 +265,7 @@ func openSSLVerify(c *exec.Context, args *value.Map) (any, error) {
 	// certificate is not trusted, which is a different problem with a
 	// different fix, and would send them to renew a certificate that is
 	// fine. It is an error here rather than an answer.
-	if res.Code != 0 && code == 0 {
+	if res.Code != 0 && !openSSLExamined(res.Stdout, res.Stderr) {
 		return nil, fmt.Errorf(
 			"`openssl verify` could not check %s -- it exited %d without reporting a verification error, "+
 				"which is what an unreadable or empty trust file produces rather than an untrusted "+
@@ -281,6 +281,36 @@ func openSSLVerify(c *exec.Context, args *value.Map) (any, error) {
 	out.Set("chain", openSSLVerifyChain(res.Stdout))
 	out.Set("output", strings.TrimSpace(res.Stdout+res.Stderr))
 	return out, nil
+}
+
+// openSSLExamined reports whether openssl got as far as looking at a
+// certificate.
+//
+// It is the discriminator between "this certificate is not trusted" and
+// "I could not read one of the files you gave me", and those are
+// different problems with different fixes: the first sends an operator
+// to the certificate, the second to the trust file. An empty or
+// unreadable -CAfile produces the second, and openssl exits before it
+// examines anything.
+//
+// Keyed on the *presence of a verdict* rather than on the wording of a
+// load error, because the load errors are a different message per
+// flavour and per version while the verdict is not: openssl prints
+// `<file>: OK` for a certificate that passed and an `error` line for one
+// that did not, and prints neither when it never got that far. Both
+// streams are read, because which one carries the verdict has moved
+// between versions.
+func openSSLExamined(stdout, stderr string) bool {
+	for _, line := range strings.Split(stdout+"\n"+stderr, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "error ") ||
+			strings.HasSuffix(line, ": OK") ||
+			strings.Contains(line, "verification failed") ||
+			strings.Contains(line, "verify error") {
+			return true
+		}
+	}
+	return false
 }
 
 // openSSLVerifyFailure pulls the numbered reason out of openssl's

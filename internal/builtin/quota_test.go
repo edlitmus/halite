@@ -257,18 +257,52 @@ func TestAZFSFilesystemIsNotReportedAsHavingNoQuotas(t *testing.T) {
 // fires: the account gets no warning and no grace period, and simply
 // stops writing one day. That is the failure a quota exists to prevent.
 func TestASoftLimitAboveItsHardLimitIsRefused(t *testing.T) {
-	r := New()
+	// Called directly rather than through the registry, because the
+	// registry refuses the whole function on a platform without quota
+	// tools and this assertion is about the argument check, which is the
+	// same everywhere. Running it on all four platforms is the point:
+	// plan.md §1 is three defects found because Windows ran code nobody
+	// had run there.
 	args := value.NewMap(6)
 	args.Set("filesystem", "/home")
 	args.Set("name", "alice")
 	args.Set("block_soft", int64(30000))
 	args.Set("block_hard", int64(20000))
-	_, err := r.Exec.Call(&exec.Context{Test: true, Runner: &exec.RecordingRunner{}}, "quota.set", args)
+	_, err := quotaSet(&exec.Context{Test: true, Runner: &exec.RecordingRunner{}}, args)
 	if err == nil {
 		t.Fatal("a soft limit above its hard limit was accepted")
 	}
 	if !strings.Contains(err.Error(), "never fires") {
 		t.Errorf("the refusal does not say what is wrong: %v", err)
+	}
+
+	args.Set("block_soft", int64(0))
+	args.Set("block_hard", int64(0))
+	args.Set("inode_soft", int64(200))
+	args.Set("inode_hard", int64(100))
+	if _, err := quotaSet(&exec.Context{Test: true, Runner: &exec.RecordingRunner{}}, args); err == nil {
+		t.Error("an inode soft limit above its hard limit was accepted")
+	}
+}
+
+// A node with no filesystem quotas of this kind is told so by name.
+//
+// macOS and Windows are the two platforms the module is not declared
+// for, and without this they would assert nothing at all about `quota` —
+// every registry-driven test in this file would simply not run.
+func TestQuotaRefusesOnAPlatformWithoutIt(t *testing.T) {
+	if _, why := quotaReadPlan(runtime.GOOS); why != "" {
+		t.Skipf("%s has filesystem quotas; this is about the platforms that do not", runtime.GOOS)
+	}
+	args := value.NewMap(2)
+	args.Set("filesystem", "/home")
+	args.Set("name", "alice")
+	_, err := New().Exec.Call(&exec.Context{Test: true}, "quota.set", args)
+	if err == nil {
+		t.Fatal("quota.set answered on a platform with no quota tools")
+	}
+	if !strings.Contains(err.Error(), "this node is "+runtime.GOOS) {
+		t.Errorf("the refusal does not name the platform: %v", err)
 	}
 }
 

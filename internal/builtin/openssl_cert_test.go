@@ -256,3 +256,36 @@ func readModuleSource(t *testing.T, name string) string {
 	}
 	return string(b)
 }
+
+// A verdict is told apart from a failure to read the files.
+//
+// This is the discriminator that decides whether `verify` answers or
+// refuses, and getting it wrong in either direction is a wrong thing to
+// tell an operator: reporting a load failure as an untrusted certificate
+// sends them to renew one that is fine, and reporting an untrusted
+// certificate as a load failure hides the answer they asked for.
+//
+// It is keyed on the presence of a verdict rather than on the wording of
+// a load error, because the load error is a different message per
+// flavour and per version. The last case is the real one this host's
+// openssl produced against an empty -CAfile.
+func TestAVerdictIsToldApartFromAFailureToReadTheFiles(t *testing.T) {
+	for name, c := range map[string]struct {
+		stdout, stderr string
+		examined       bool
+	}{
+		"a certificate that passed":        {opensslVerifyOK, "", true},
+		"a certificate that failed":        {opensslVerifyFailure, "", true},
+		"the 1.1.1 wording":                {opensslVerifyFailure111, "", true},
+		"an expired certificate":           {opensslExpired, "", true},
+		"a verdict that arrived on stderr": {"", opensslVerifyFailure, true},
+		"an empty trust file": {"", "Error loading file empty.pem\n" +
+			"10B005B776580000:error:05800087:x509 certificate routines:" +
+			"X509_load_cert_file_ex:no certificate found:by_file.c:153:", false},
+		"nothing at all": {"", "", false},
+	} {
+		if got := openSSLExamined(c.stdout, c.stderr); got != c.examined {
+			t.Errorf("%s: openssl was read as having examined=%v, want %v", name, got, c.examined)
+		}
+	}
+}
