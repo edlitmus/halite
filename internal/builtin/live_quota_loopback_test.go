@@ -125,6 +125,11 @@ func liveQuotaSetup(t *testing.T) liveQuotaImage {
 	// at this leg both forced it -- once by accident and once by a wrong
 	// diagnosis that blamed the feature for the classic route's failure.
 	//
+	// The two routes also want different *mount options*, which cost a
+	// fourth run to find: `usrquota` and `grpquota` ask for the classic
+	// format at mount time, so passing them to a feature filesystem
+	// makes `mount(2)` fail with the same ESRCH one layer earlier.
+	//
 	// It tries classic first anyway, because that is the route
 	// `quota.on` and `quota.off` drive and the one worth exercising where
 	// a kernel has it, and falls back to the feature where it does not.
@@ -172,8 +177,20 @@ func liveQuotaFilesystem(t *testing.T, c *exec.Context, builder, dir string) (im
 	if err := liveQuotaRun(c, builder, "-q", "-F", "-O", "quota", image); err != nil {
 		t.Skipf("an ext4 filesystem with the quota feature could not be made here: %v", err)
 	}
-	liveQuotaMount(t, c, image, mount, "loop,usrquota,grpquota")
+	// **Plainly, with no `usrquota` or `grpquota`.** Those options ask
+	// ext4 to enable the classic format at mount time, which is the
+	// thing this kernel cannot do -- so passing them to a feature
+	// filesystem makes `mount(2)` itself fail with the same ESRCH that
+	// `quotaon` gave, one layer earlier:
+	//
+	//	mount: mount(2) system call failed: No such process.
+	//
+	// A filesystem with the quota feature turns its quotas on by itself.
+	// The options that are right for one route are precisely what the
+	// other rejects, which is why the two mounts do not share a string.
+	liveQuotaMount(t, c, image, mount, "loop")
 	liveQuotaProbe(t, c, "the feature mount as applied", "findmnt", "-no", "OPTIONS,FSTYPE,SOURCE", mount)
+	liveQuotaProbe(t, c, "what the feature route reports before anything is set", "repquota", "-O", "csv", "-u", mount)
 	return image, mount, "feature"
 }
 
