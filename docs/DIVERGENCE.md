@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **69 execution modules / 443 functions** and **41 state
-modules / 97 functions**.
+The build ships **70 execution modules / 455 functions** and **42 state
+modules / 103 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -524,7 +524,7 @@ different reason is given.
 | `kernelpkg` | not implemented | 0 | |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
-| `lvm` | not implemented | 0 | Linux only |
+| `lvm` | implemented | 6 | Linux only; `pv_present`, `pv_absent`, `vg_present`, `vg_absent`, `lv_present`, `lv_absent`. `vg_present` extends a group with named devices but never removes one, and `lv_present` grows a volume but never shrinks it — a shrink that outruns the filesystem loses data, and `lvm.lvresize` with `force` is the deliberate path for it. Reports read LVM's `--reportformat json`, not the padded table |
 | `mac_defaults` | implemented | 2 | macOS only; `write` and `absent`, the exec side is `mac_defaults.*`. Convergence is decided from `defaults export`'s XML plist with the type kept distinct, so a key holding `1` is not taken for one holding `true` |
 | `mount` | implemented | 2 | `mounted` and `unmounted`, each managing the running mount and the table together |
 | `nftables` | not implemented | 0 | Linux only |
@@ -556,7 +556,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-33 of 65 present — the rows below total 32 absent.
+34 of 65 present — the rows below total 31 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -626,7 +626,7 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `pam`, `quota`, `openssl_cert`, `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `udev`, `modprobe`, `authselect` |
+| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `systemd_service` (alias) | `journald`, `iptables`, `nftables`, `mdadm`, `udev`, `modprobe`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
@@ -5128,6 +5128,81 @@ On OpenSSL 3.5.6 / FreeBSD 15.1. `evidence.go` records the module
 `hardware`. Not covered: LibreSSL, whose `verify` has no `-show_chain`
 and whose wording is its own, and OpenSSL 1.1.1, whose spelling is in
 the fixtures and on no machine here.
+
+### 5.50 `lvm`: the JSON report, and the two things it will not do
+
+SPEC 15.3's Common Linux row, fourth of eight and the first of the
+three plan §7.12 named as worth taking next — each closes a 15.3 module
+*and* a 15.5 state. Twelve execution functions (`version`, `pvs`,
+`vgs`, `lvs`, `pvcreate`, `pvremove`, `vgcreate`, `vgextend`,
+`vgremove`, `lvcreate`, `lvresize`, `lvremove`) and six states
+(`pv_present`, `pv_absent`, `vg_present`, `vg_absent`, `lv_present`,
+`lv_absent`).
+
+**The reports are read as JSON, not as the padded table.** `pvs`, `vgs`
+and `lvs` print a table for a person by default, and a column's width
+is whatever the widest value on the machine happened to be — a
+`vg_name` with a space in it, which LVM allows, tears a
+`strings.Fields` row in half, and a long device path pushes every field
+after it left by one. That is the shape 5.31 found in `pf`. LVM2 has
+had `--reportformat json` since 2.02.107 (2014), which every targeted
+distribution is far past, and asked with `--units b --nosuffix` every
+size comes back as an exact byte count with no `1.50g` to read as one
+and a half. `jail` made the same call against `jls --libxo=json` (5.32),
+and SPEC 15.3's `journald` row asks for it in as many words.
+
+**It grows and extends; it does not shrink.** `vg_present` adds a named
+device a group does not span yet and never removes one — removing a
+disk from a volume group moves whatever data is on it, which is not a
+thing a state should do as a side effect of a list that got shorter.
+`lv_present` grows a logical volume to a larger declared size and
+refuses to shrink one: a smaller size is reported as a warning and left
+alone, because a shrink that outruns the filesystem on top of it
+destroys data. `lvm.lvresize` is the deliberate path for a shrink, and
+it refuses one too unless the call passes `force` *and* names the
+smaller absolute size — the guard is in this build, before LVM is
+invoked, not left to LVM's own prompt. This is the stance `zpool.present`
+takes: it "does not reshape an existing pool, and reports a layout that
+does not match as a warning instead".
+
+**Every function needs root, the reads included.** A non-root `pvs`
+prints a warning and an empty report rather than an error, and an empty
+report read as "this node has no volume groups" is a false answer to
+give about a node whose root filesystem is on LVM. So the reads are
+declared `root` alongside the writes rather than left to hand back a
+hollow answer.
+
+#### What was verified
+
+The `pvs`/`vgs`/`lvs` JSON parser is checked against real reports
+captured from LVM2 2.03 on Ubuntu 24.04, and every argument vector is
+pinned field by field in `lvm_test.go` — the fix plan §1.4 drew out of
+two fixtures that had each forced a branch their platform does not take.
+
+The **mutating** half is demonstrated. `live_lvm_loopback_test.go`
+drives the real `pvcreate`, `vgcreate`, `vgextend`, `lvcreate`,
+`lvresize` and `lvremove` against two loopback block devices backed by
+files in `t.TempDir()` — nothing the machine came with is touched —
+and it ran on this project's own Ubuntu 24.04 host (kernel 6.18)
+against LVM2 2.03: a group built from one device and grown onto the
+other, a volume carved and grown, the shrink guard shown to refuse a
+smaller size *before* `lvresize` was called, and the whole stack torn
+down through `lvremove` and the `vg_absent`/`pv_absent` states. Every
+step was checked against a fresh `pvs`/`vgs`/`lvs` read rather than the
+module's own answer. It needs root and the loop driver, so it is gated
+behind `HALITE_SYSTEM_LIVE=1` and also runs in the fleet workflow's
+linux leg, the same gate as `quota` (5.48). `evidence.go` records `lvm`
+`hardware`.
+
+That first run found a defect — in the harness, not the module. The
+live helper passed the device list as a Go `[]string`, and the
+signature's List coercion wraps a non-`[]any` value into a one-item
+list, so `pvcreate` was handed the single argument `[/dev/loop4
+/dev/loop7]` and exited 5. Real arguments arrive from YAML as `[]any`
+and never hit this; the helper now converts. Not covered: thin pools
+and thin volumes (the argument vectors are pinned but nothing has built
+one), striping, and any filesystem on a volume — so `--resizefs` is
+still checked only as an argument.
 
 ## 6. Everything else not started
 

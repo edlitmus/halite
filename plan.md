@@ -18,16 +18,18 @@ windows/amd64 with Go 1.26.6. The previous revision was written on
 section 0 says which of its findings are now closed.
 
 **Amended 2026-09-10** on freebsd/amd64 with Go 1.26.8, without a full
-re-measurement. Two blocks landed since the date above and the counts in
-§0, §2.3 and §7 were corrected for them rather than re-derived: SPEC
-15.3's **macOS row**, which now ships entirely, and the first three of
-its **Common Linux row** — `pam`, `quota` and `openssl_cert`, which is
-the three §7.12 ranked first. 33 of 65 platform modules now ship. Two
-consequences a reader should not have to hunt for: the release gate is
-red on **eleven** modules rather than two, because eleven of them are
-new and new work is undemonstrated by definition (§7.5 has the
-arithmetic); and `quota`'s answer to that is written but has never been
-run, which §7.5 also says. Everything else here is still measured
+re-measurement. Several blocks landed since the date above and the counts
+in §0, §2.3 and §7 were corrected for them rather than re-derived: SPEC
+15.3's **macOS row**, which now ships entirely, and the first four of
+its **Common Linux row** — `pam`, `quota`, `openssl_cert` and `lvm`.
+`pam`/`quota`/`openssl_cert` are the three §7.12 ranked first; `lvm` is
+the first of the next three (each closes a 15.3 module *and* a 15.5
+state). 34 of 65 platform modules now ship. One consequence a reader
+should not have to hunt for: the release gate is red on **eleven**
+modules rather than two, because eleven of them are new and new work is
+undemonstrated by definition (§7.5 has the arithmetic) — `lvm`'s
+loopback answer has now been run, against real LVM2 on this fleet's
+Ubuntu host, and is off the list. Everything else here is still measured
 against 2026-09-05.
 
 **A note on this file.** Nothing enforces it. `internal/specaudit`
@@ -534,7 +536,7 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 33 of 65
+### 2.3 Platform modules: 34 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
@@ -570,7 +572,7 @@ what an operator is looking for.
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
 | Debian and Ubuntu | 3 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
-| Common Linux | 8 | `systemd_service` is an alias. **`pam`, `quota` and `openssl_cert` ship** (DIVERGENCE 5.47-5.49), which is the three §7.12 named as worth taking first because they mean something on FreeBSD too. `journald`, `iptables`, `nftables`, `lvm`, `mdadm`, `modprobe`, `udev`, `authselect` remain. |
+| Common Linux | 7 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert` and `lvm` ship** (DIVERGENCE 5.47-5.50). The first three are the three §7.12 named as worth taking first because they mean something on FreeBSD too; `lvm` is the first of the next three, each of which closes a 15.5 state as well. `journald`, `iptables`, `nftables`, `mdadm`, `modprobe`, `udev`, `authselect` remain. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | **The row ships entirely**, second after FreeBSD. `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain` and `mac_assistive` are modules (DIVERGENCE 5.41-5.46). Every one of them is `assumed`: no CI leg is a Mac. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
@@ -1071,12 +1073,13 @@ place.
    then two; it is now **eleven**, and the arithmetic is worth stating
    plainly rather than buried. `make fleetcheck` closed four, the two
    live CI legs closed two more, `netplan` closed on this fleet's Ubuntu
-   host (DIVERGENCE 5.38) and `quota` closed on a runner (5.48) — but
-   the macOS row added eight, because a module arrives undemonstrated
-   and that is the correct state for new work. `apparmor` is blocked on
-   a decision rather than on effort; `snap` needs the network the
-   no-network rule refuses; the eight macOS modules need a CI leg that
-   is a Mac and writes to it, which none is.
+   host (DIVERGENCE 5.38), `quota` closed on a runner (5.48), and `lvm`
+   closed on this fleet's Ubuntu host (5.50) — but the macOS row added
+   eight, because a module arrives undemonstrated and that is the
+   correct state for new work. `apparmor` is blocked on a decision
+   rather than on effort; `snap` needs the network the no-network rule
+   refuses; the eight macOS modules need a CI leg that is a Mac and
+   writes to it, which none is.
 
    ~~**`quota`**~~ — **done**, and it cost six CI runs of which five
    were about the machine rather than the module. The leg makes an ext4
@@ -1222,10 +1225,17 @@ unbuilt item here is number 7.
    FIPS check now says out loud. So it is buildable — it is simply worth
    less than it was when the estate was imagined to be Ubuntu.
 12. **The Common Linux row** (§2.3) — was eleven modules and is now
-    eight. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
+    seven. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
     first for the reason this item gave: they are the three that mean
     something on FreeBSD, which is four hosts of five. DIVERGENCE
-    5.47-5.49.
+    5.47-5.49. ~~`lvm`~~ is **done** too, the first of the next three:
+    twelve execution functions and six states over `--reportformat
+    json` rather than the padded table. The loopback live leg was run
+    against real LVM2 2.03 on this fleet's Ubuntu host — a group built
+    and grown, a volume carved, grown and refused a shrink, the stack
+    torn down — so `lvm` is `hardware` and off the release gate. That
+    run found a defect in the live harness, not the module. DIVERGENCE
+    5.50.
 
     Two of the three cost more thought than the count suggests, and both
     lessons generalise. `pam` has **two include mechanisms** that are not
@@ -1247,11 +1257,10 @@ unbuilt item here is number 7.
     certificate.
 
     What is left is Linux-only: `journald`, `iptables`, `nftables`,
-    `lvm`, `mdadm`, `modprobe`, `udev`, `authselect`. `iptables`,
-    `nftables` and `lvm` are the three worth taking next, because each
-    closes a 15.3 module *and* a 15.5 state, and because the first two
-    are what §2.2 predicts will reshape the `firewall` provider
-    interface.
+    `mdadm`, `modprobe`, `udev`, `authselect`. `iptables` and
+    `nftables` are the two worth taking next, because each closes a
+    15.3 module *and* a 15.5 state, and because they are what §2.2
+    predicts will reshape the `firewall` provider interface.
 13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.
 

@@ -190,6 +190,18 @@ var moduleEvidence = map[string]exec.Evidence{
 		"checked only as an argument vector. Also not covered: ext4's quota feature route, which the " +
 		"live leg falls back to and no runner has needed"},
 
+	"lvm": {Level: exec.Hardware, Note: "driven end to end against a real LVM2 2.03 on Ubuntu " +
+		"24.04 (kernel 6.18): two loopback block devices labelled with `pvcreate`, a volume " +
+		"group built from one and grown onto the other with `vgcreate`/`vgextend`, a logical " +
+		"volume carved and grown with `lvcreate`/`lvresize`, and the whole stack torn down " +
+		"through `lvremove` and the `vg_absent`/`pv_absent` states -- each step checked against " +
+		"a fresh `pvs`/`vgs`/`lvs` read rather than the module's own answer, and the shrink " +
+		"guard shown to refuse a smaller size before `lvresize` was called (DIVERGENCE 5.50). " +
+		"That run found a defect in the live harness -- a `[]string` device list reaching the " +
+		"module as one bracketed argument -- rather than in the module. Not covered: thin pools " +
+		"and thin volumes (the argument vectors are pinned but nothing has built one), striping, " +
+		"and any filesystem on top of a volume, so `--resizefs` is still an argument only"},
+
 	// ---- Read from a real system, mutation never watched ----
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +

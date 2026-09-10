@@ -62,7 +62,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"journald":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"iptables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"nftables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
-	"lvm":                  {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"mdadm":                {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"udev":                 {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"modprobe":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
