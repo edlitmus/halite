@@ -48,9 +48,19 @@ on:
       # both mean root and the loop driver, which means this workflow.
       - "internal/builtin/quota*.go"
       - "internal/builtin/lvm*.go"
+      # `iptables` and `nftables` run in a private network namespace, so
+      # their live tests are in the ordinary `test` job and need no root
+      # -- but a GitHub runner may forbid an unprivileged namespace, and
+      # then they skip there. This leg re-runs them as root, where the
+      # namespace is always available, so there is a guaranteed real run.
+      - "internal/builtin/iptables*.go"
+      - "internal/builtin/nftables*.go"
       - "internal/dbus/**"
       - "internal/builtin/live_apparmor_test.go"
       - "internal/builtin/live_debian_test.go"
+      - "internal/builtin/live_iptables_test.go"
+      - "internal/builtin/live_nftables_test.go"
+      - "internal/builtin/live_netfilter_test.go"
       - "internal/builtin/live_lvm*_test.go"
       - "internal/builtin/live_netplan_test.go"
       - "internal/builtin/live_pkg_test.go"
@@ -129,7 +139,7 @@ jobs:
   # throwaway unit in /run/systemd/system that is attached to nothing
   # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm)
+    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -166,6 +176,13 @@ jobs:
       # devices out of files with `losetup`.
       - name: install the LVM tools
         run: sudo apt-get install -y --no-install-recommends lvm2
+
+      # iptables ships on the runner image; nftables usually does too,
+      # but install it to be sure. The live tests do their work in a
+      # network namespace, so nothing here reconfigures the runner's own
+      # firewall.
+      - name: install the packet-filter tools
+        run: sudo apt-get install -y --no-install-recommends iptables nftables
 
       # The quota *tools* are not the whole of it. Five runs of this leg
       # established that the runner's kernel cannot enable ext4 quotas by
@@ -250,7 +267,7 @@ jobs:
       # explicitly instead.
       - name: drive hostname, sysctl, apparmor, netplan, service, pkg, quota and lvm
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables' ./internal/builtin/
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because

@@ -20,17 +20,18 @@ section 0 says which of its findings are now closed.
 **Amended 2026-09-10** on freebsd/amd64 with Go 1.26.8, without a full
 re-measurement. Several blocks landed since the date above and the counts
 in §0, §2.3 and §7 were corrected for them rather than re-derived: SPEC
-15.3's **macOS row**, which now ships entirely, and the first four of
-its **Common Linux row** — `pam`, `quota`, `openssl_cert` and `lvm`.
-`pam`/`quota`/`openssl_cert` are the three §7.12 ranked first; `lvm` is
-the first of the next three (each closes a 15.3 module *and* a 15.5
-state). 34 of 65 platform modules now ship. One consequence a reader
-should not have to hunt for: the release gate is red on **eleven**
-modules rather than two, because eleven of them are new and new work is
-undemonstrated by definition (§7.5 has the arithmetic) — `lvm`'s
-loopback answer has now been run, against real LVM2 on this fleet's
-Ubuntu host, and is off the list. Everything else here is still measured
-against 2026-09-05.
+15.3's **macOS row**, which now ships entirely, and the first six of
+its **Common Linux row** — `pam`, `quota`, `openssl_cert`, `lvm`,
+`iptables` and `nftables`. `pam`/`quota`/`openssl_cert` are the three
+§7.12 ranked first; `lvm`, `iptables` and `nftables` are the next
+three, each closing a 15.3 module *and* a 15.5 state. 36 of 65 platform
+modules now ship. One consequence a reader should not have to hunt for:
+the release gate is red on **ten** modules rather than two, all of them
+`apparmor`, `snap` or the eight-strong macOS row — every other new
+module has been driven against its real tool. `iptables` and `nftables`
+run their live tests inside an unprivileged network namespace, so they
+reached `hardware` in the ordinary suite. Everything else here is still
+measured against 2026-09-05.
 
 **A note on this file.** Nothing enforces it. `internal/specaudit`
 guards SPEC.md, `docs/DIVERGENCE.md` and README.md against the
@@ -536,7 +537,7 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 34 of 65
+### 2.3 Platform modules: 36 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
@@ -572,7 +573,7 @@ what an operator is looking for.
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
 | Debian and Ubuntu | 3 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
-| Common Linux | 7 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert` and `lvm` ship** (DIVERGENCE 5.47-5.50). The first three are the three §7.12 named as worth taking first because they mean something on FreeBSD too; `lvm` is the first of the next three, each of which closes a 15.5 state as well. `journald`, `iptables`, `nftables`, `mdadm`, `modprobe`, `udev`, `authselect` remain. |
+| Common Linux | 5 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables` and `nftables` ship** (DIVERGENCE 5.47-5.51). The first three mean something on FreeBSD too; `lvm`/`iptables`/`nftables` are the next three, each closing a 15.5 state as well. `iptables` and `nftables` are deliberately **not** `firewall` providers -- they are the layer under `ufw`, and `pf` already showed the "reshapes the interface" prediction was soft. `journald`, `mdadm`, `modprobe`, `udev`, `authselect` remain. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | **The row ships entirely**, second after FreeBSD. `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain` and `mac_assistive` are modules (DIVERGENCE 5.41-5.46). Every one of them is `assumed`: no CI leg is a Mac. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
@@ -1225,17 +1226,20 @@ unbuilt item here is number 7.
    FIPS check now says out loud. So it is buildable — it is simply worth
    less than it was when the estate was imagined to be Ubuntu.
 12. **The Common Linux row** (§2.3) — was eleven modules and is now
-    seven. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
+    five. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
     first for the reason this item gave: they are the three that mean
     something on FreeBSD, which is four hosts of five. DIVERGENCE
-    5.47-5.49. ~~`lvm`~~ is **done** too, the first of the next three:
-    twelve execution functions and six states over `--reportformat
-    json` rather than the padded table. The loopback live leg was run
-    against real LVM2 2.03 on this fleet's Ubuntu host — a group built
-    and grown, a volume carved, grown and refused a shrink, the stack
-    torn down — so `lvm` is `hardware` and off the release gate. That
-    run found a defect in the live harness, not the module. DIVERGENCE
-    5.50.
+    5.47-5.49. ~~`lvm`~~, ~~`iptables`~~ and ~~`nftables`~~ are **done**
+    too, the next three, each closing a 15.5 state as well. `lvm`: the
+    JSON report, grow-not-shrink, a loopback live leg on this fleet's
+    Ubuntu host (5.50). `iptables` and `nftables`: idempotence from
+    `iptables -C` and from nft comment tags respectively, `flush`
+    guards on both, and live tests that run inside an **unprivileged
+    network namespace** so nothing touches the host firewall and they
+    need no CI gate — so both are `hardware` (5.51). All three are off
+    the release gate. `iptables`/`nftables` are deliberately not
+    `firewall` providers; §2.2's "reshapes the interface" prediction was
+    the same one `pf` disproved.
 
     Two of the three cost more thought than the count suggests, and both
     lessons generalise. `pam` has **two include mechanisms** that are not
@@ -1256,11 +1260,11 @@ unbuilt item here is number 7.
     that way, an unreadable trust file being reported as an untrusted
     certificate.
 
-    What is left is Linux-only: `journald`, `iptables`, `nftables`,
-    `mdadm`, `modprobe`, `udev`, `authselect`. `iptables` and
-    `nftables` are the two worth taking next, because each closes a
-    15.3 module *and* a 15.5 state, and because they are what §2.2
-    predicts will reshape the `firewall` provider interface.
+    What is left is Linux-only: `journald`, `mdadm`, `modprobe`,
+    `udev`, `authselect`. `journald` is the one with a design note —
+    SPEC 15.3 wants it read from the journal's native export protocol
+    over a socket rather than by parsing `journalctl` — and the rest
+    are small.
 13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.
 

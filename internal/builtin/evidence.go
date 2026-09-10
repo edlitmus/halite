@@ -179,6 +179,23 @@ var moduleEvidence = map[string]exec.Evidence{
 		"whose failure wording is its own, and OpenSSL 1.1.1, whose spelling is in the fixtures and " +
 		"on no machine here"},
 
+	"iptables": {Level: exec.Hardware, Note: "driven against a real iptables 1.8.10 (nf_tables backend) " +
+		"inside a throwaway network namespace on Ubuntu 24.04, so nothing touched the host firewall: rules " +
+		"appended, inserted, checked for idempotence with iptables' own `-C`, and deleted; user chains created, " +
+		"a jump added, the chain flushed and removed; a built-in chain's policy set; and the dangerous-flush " +
+		"guard shown to refuse a DROP-policy INPUT and a whole-table flush without force (DIVERGENCE 5.51). " +
+		"`live_iptables_test.go` runs in the ordinary suite -- the namespace needs no privilege on a kernel with " +
+		"unprivileged user namespaces -- and skips where the kernel forbids one. Not covered: ip6tables (the " +
+		"argument vector is pinned but nothing has driven it), the `nat`/`mangle`/`raw` tables, and `save` against " +
+		"a real `iptables-persistent` layout"},
+	"nftables": {Level: exec.Hardware, Note: "driven against a real nft 1.0.9 inside a throwaway network " +
+		"namespace on Ubuntu 24.04: tables and chains created and removed, a base chain's policy updated in " +
+		"place, rules added idempotently by their comment and removed by comment, `check` run against nft's own " +
+		"`--check`, the flush guards shown to refuse a whole-table and whole-ruleset flush and a drop-policy base " +
+		"chain without force, and `save` writing a self-contained restore script (DIVERGENCE 5.51). " +
+		"`live_nftables_test.go` runs in the ordinary suite and skips where the kernel forbids an unprivileged " +
+		"namespace. Not covered: the `ip`/`arp`/`bridge`/`netdev` families beyond `inet`, sets and maps, and a " +
+		"body change to a rule whose comment is unchanged -- which this module deliberately does not apply"},
 	"quota": {Level: exec.Hardware, Note: "driven against a real ext4 filesystem with quotas " +
 		"switched on, on an Ubuntu 24.04 runner: an ext4 image mounted through the loop driver, " +
 		"limits set through the real `setquota` and read back through the real " +

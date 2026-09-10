@@ -60,8 +60,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"win_dsc":              {Platform: "windows", When: "an extension of kind `module`; SPEC section 24 marks it bridged"},
 	"win_lgpo":             {Platform: "windows", When: "an extension of kind `module`; SPEC section 24 marks it bridged"},
 	"journald":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
-	"iptables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
-	"nftables":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"mdadm":                {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"udev":                 {Platform: "linux", When: "phase 5, with the Linux platform work"},
 	"modprobe":             {Platform: "linux", When: "phase 5, with the Linux platform work"},

@@ -114,6 +114,8 @@ func New() *Registries {
 	registerQuota(r)
 	registerOpenSSLCert(r)
 	registerLVM(r)
+	registerIPTables(r)
+	registerNFTables(r)
 
 	// Last, because it is a statement about everything above it:
 	// what has actually been demonstrated about each module and the
