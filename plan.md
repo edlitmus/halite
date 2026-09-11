@@ -1325,23 +1325,61 @@ unbuilt item here is number 7.
     reason `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
     `subscription_manager`, `dnf_module` and `chattr` do — shipping
     fixtures for a tool nobody here has run is exactly the mistake
-    DIVERGENCE 5.31 found and this document keeps citing.
+    DIVERGENCE 5.31 found and this document keeps citing. Items 14-18
+    below say exactly what machine closes each.
 13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.
 
+**Blocked on platform access** — nothing here is unbuilt because it was
+skipped; each is written and waiting on a machine this project has
+never had. The pattern items 1-13 set holds: don't ship a fixture for a
+tool nobody has run against it (DIVERGENCE 5.31).
+
+14. **A RHEL or Fedora 8+ host.** Closes `authselect` and the RHEL
+    row's other six modules — `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
+    `subscription_manager`, `dnf_module`, `chattr` (§2.3, all seven
+    unbuilt, not merely unverified) — and lets the `pkg` module's
+    dnf/yum provider be run for the first time: all four optional
+    capabilities (`pkg.hold` through the `versionlock` plugin,
+    upgrading, file ownership, repository listing) are implemented to
+    the same shape apt's were and have never been exercised against a
+    real dnf (DIVERGENCE §2.3/§2.5, evidence.go's `pkg` note).
+15. **A SUSE host.** Closes `zypperpkg`, the SUSE row's one missing
+    module (§2.3) — nothing built yet, not merely unverified, since
+    this project has never had a SUSE machine to write it against.
+16. **An Alpine host.** Verifies the `pkg` module's apk provider — it
+    implements the upgrader and owner capabilities (not holder or
+    repos: apk has no hold in the dpkg sense and no command that lists
+    its repositories) and neither has been run against a real apk — and
+    runs the `service` module's openrc provider for the first time,
+    which Alpine also ships as its default init (evidence.go's
+    `service` note: "the launchd, sysvinit and openrc providers ...
+    have not been run at all").
+17. **A non-systemd Linux with sysvinit** (Devuan, or Debian/Ubuntu
+    with `sysvinit-core` in place of systemd). Runs the `service`
+    module's sysvinit provider for the first time — same gap as 16,
+    different init.
+18. **A Mac that writes preferences, with a CI leg that is one.**
+    Already the largest item on the release gate by count — the eight
+    macOS row modules (§2.3, DIVERGENCE 5.41-5.46), each read-verified
+    but mutating unwatched because no CI leg is a Mac that changes its
+    own state. The same host also runs the `service` module's launchd
+    provider for the first time, which macOS ships but nothing has
+    reached (same evidence.go note as 16 and 17).
+
 **Blocked on a decision**
 
-14. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
+19. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
     carries and what CI already runs on it.
-15. The `cmd.run` default, the unplanned modules, a `win_registry`
+20. The `cmd.run` default, the unplanned modules, a `win_registry`
     state, and job signing (§6).
-16. Whether a follower that falls behind the event bus should stop or
+21. Whether a follower that falls behind the event bus should stop or
     resume. `subscriber_lag` refuses the read now; what a *reactor*
     should do with the refusal is the open half (DIVERGENCE 4.12).
 
 **Last**
 
-17. The YAML over-acceptance set, prioritising the chomping case; the
+22. The YAML over-acceptance set, prioritising the chomping case; the
     six real template gaps; the regexcompat character-class false
     positive (§5).
 

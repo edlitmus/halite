@@ -4481,7 +4481,7 @@ SPEC 15.2: systemd "is spoken to over its D-Bus API where available,
 falling back to `systemctl`; the D-Bus client is a direct implementation
 of the wire protocol over a unix socket, since D-Bus marshalling is
 well-specified and small." The build did only `systemctl` -- the same
-thing Salt's `systemd_service.py` does -- and plan.md §8 item 9 and §4.5
+thing Salt's `systemd_service.py` does -- and plan.md §6 item 9 and §4.5
 both tracked it. This closes it.
 
 #### The client, and what it is not
@@ -6314,6 +6314,21 @@ excavation.
 ---
 
 ## 8. Suggested order for closing this
+
+**Superseded, 2026-09-11 — read plan.md §7 instead.** This section is
+what "ranked by correctness value" looked like before this project had
+a Linux host at all: item 1 below asks for one and forecasts "60 of the
+62 platform modules of SPEC 15.3 wait behind it". That host has
+existed and been used continuously since, SPEC 15.3 counts 65 rather
+than 62, and 40 of those 65 now ship (plan.md §2.3) — the Common Linux
+row is eleven of twelve, `apparmor` and `netplan` are both `hardware`,
+and the correctness-value ranking has moved on through several
+revisions plan.md tracks and this file does not. Kept rather than
+deleted because items 2-4 (real trees, the documents-accepted set, the
+template conformance gaps) are narrower claims that have aged better —
+a reader wanting *today's* ranking, including what platform each
+remaining item needs, wants plan.md §7 and its "Blocked on platform
+access" items.
 
 Ranked by correctness value per unit of work, given one FreeBSD host.
 
