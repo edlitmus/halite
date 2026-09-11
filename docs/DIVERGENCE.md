@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **74 execution modules / 503 functions** and **44 state
+The build ships **76 execution modules / 519 functions** and **44 state
 modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -556,7 +556,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-38 of 65 present — the rows below total 27 absent.
+40 of 65 present — the rows below total 25 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -626,7 +626,7 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `systemd_service` (alias) | `udev`, `modprobe`, `authselect` |
+| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `udev`, `modprobe`, `systemd_service` (alias) | `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
@@ -5374,6 +5374,89 @@ same as `lvm` and `quota`. `evidence.go` records `mdadm` `hardware`.
 Not covered: `grow` (a reshape takes hours), `assemble --scan` (it
 reads every superblock on the host), RAID levels other than 1, and
 metadata 0.90.
+
+### 5.54 `modprobe` and `udev`: the last two Common Linux modules that need no RHEL host
+
+SPEC 15.3's Common Linux row, modules nine and ten. `modprobe`: ten
+execution functions (`list`, `is_loaded`, `info`, `is_denylisted`,
+`load`, `remove`, `persist_load`, `persist_remove`, `denylist`,
+`allowlist`). `udev`: six (`version`, `info`, `list`, `trigger`,
+`settle`, `reload_rules`). Neither has a state; SPEC 15.5 names one for
+none of `pam`, `journald`, `mdadm` or these, and for `modprobe` in
+particular that is a decision already on record — plan.md §6 item 2
+lists Salt's own `kmod` state among the "modules SPEC never planned
+for" that the estate's tree uses, and building one unasked here would
+be answering that question by accident rather than on purpose.
+
+**Both read a tool's own machine format, not its table.** `modprobe`
+parses `/proc/modules` directly — name, size, use count, a comma list
+of dependents or `-`, state, address, a fixed six fields — and
+`modinfo`'s `label:\s*value` lines, where `alias` and `parm` commonly
+repeat and are collected as lists rather than each overwriting the
+last; a continuation line, such as the hex dump `signature:` wraps
+across, carries no label and is dropped rather than glued onto the
+wrong field. `udev` reads `udevadm info --export` (one device,
+shell-quoted `KEY='value'`) and `--export-db` (every device, grouped
+under `P:`/`N:`/`U:`/`S:`/`E:`) — udevadm's own documented modes, not
+the column-aligned default DIVERGENCE 5.31 was about.
+
+**`modprobe` persists in two files because the kernel keeps two ideas
+of "this module matters".** Loading now is `modprobe`; loading at every
+boot is a bare name in `/etc/modules-load.d/<name>.conf`, which is
+systemd-modules-load.service's whole input format; refusing to load a
+module at all is a *different* file,
+`/etc/modprobe.d/denylist-<name>.conf` — the directive inside it is
+still spelled the old way in every modprobe.conf(5), which is the one
+place this module's own source quotes it rather than this project's
+word for the idea, marked as a deliberate quotation. `allowlist`
+removes only the file this module would have written — a stock denylist
+file Debian ships under its own historical name is left alone, and
+`allowlist` refuses by name rather than editing a file it did not
+create.
+
+**`udev.trigger` re-runs rules; it does not write them.** A rule file
+is `file.managed`'s job. What `trigger` and `reload_rules` add is what
+a file write does not do by itself: fire udev's rules against devices
+already present, and tell the running daemon to re-read the rule files
+before the next event.
+
+#### What was verified
+
+Both against a real kernel and a real udev (systemd 255) on Ubuntu
+24.04. `modprobe.list`/`info`/`is_denylisted` read this host's own
+loaded modules; the mutating half loaded and unloaded `netdevsim`, the
+kernel's own simulated networking device for testing — it creates no
+interface merely by loading — with idempotence checked on both load
+and remove, then wrote and removed
+its own modules-load.d and modprobe.d files in a redirected directory.
+`udev.version`/`info`/`list` agree with each other on a device found by
+one and queried by the other, and `trigger`/`reload_rules` ran as root
+against a throwaway loop device and the real daemon. Both are
+`hardware` in evidence.go; the mutating halves of each need root, so
+`live_modprobe_test.go` and `live_udev_test.go`'s control tests are
+gated behind `HALITE_SYSTEM_LIVE=1`, wired into the fleet workflow's
+linux leg, while every read runs in the ordinary suite.
+
+Not covered: a module with real dependents refusing `modprobe.remove`
+(checked only against a fixture); `persist_load`'s options file
+surviving an actual reboot; and a device `udev.trigger` actually
+creates or removes, rather than one that already exists.
+
+**`authselect` is left pending, not built from documentation.**
+SPEC 15.3 files it under Common Linux, but authselect itself is
+Fedora/RHEL 8+ only — Debian and Ubuntu manage PAM through
+`pam-auth-update`, which `pam`'s own module already reads and writes.
+This project's fleet, and every host this work has been able to reach,
+is Debian/Ubuntu or FreeBSD; there is no RHEL machine to run authselect
+against. Every other RHEL-only module in SPEC 15.3 — `yumpkg`,
+`dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`,
+`chattr` — is pending for the same reason, and shipping fixtures for a
+tool nobody here has ever run would be exactly the mistake this
+project's own evidence system exists to catch: DIVERGENCE 5.31 found a
+fixture written in a module's own spelling that agreed with itself and
+disagreed with the real tool. `authselect`'s entry in
+`exec/platform.go` names this reason rather than "phase 5, with the
+Linux platform work".
 
 ## 6. Everything else not started
 

@@ -198,6 +198,20 @@ var moduleEvidence = map[string]exec.Evidence{
 		"member table, checked against real degraded output (a removed slot, a faulty member). Not covered: " +
 		"`grow` (a reshape is too slow for a test), `assemble --scan` (it reads every superblock on the host), " +
 		"RAID levels other than 1, and metadata 0.90"},
+	"modprobe": {Level: exec.Hardware, Note: "driven against a real kernel on Ubuntu 24.04: `list`, `info` and " +
+		"`is_denylisted` read against whatever this host's kernel already has loaded, and the mutating half " +
+		"loaded and unloaded `netdevsim`, the kernel's own simulated networking device for testing (it creates " +
+		"no interface merely by loading), with idempotence checked on both load and remove, then wrote and " +
+		"removed its own modules-load.d and " +
+		"modprobe.d files in a redirected directory (DIVERGENCE 5.54). Not covered: a module with real " +
+		"dependents refusing `remove` -- `xt_conntrack`'s dependency chain is checked only against a fixture -- " +
+		"and `persist_load`'s options file surviving an actual reboot"},
+	"udev": {Level: exec.Hardware, Note: "driven against a real udev (systemd 255) on Ubuntu 24.04: `version`, " +
+		"`info` and `list` read the host's own device database and agree with each other on a device found by " +
+		"one and queried by the other, and `trigger` and `reload_rules` were run as root against a throwaway " +
+		"loop device and the real daemon (DIVERGENCE 5.54). Not covered: a device actually created or removed " +
+		"as a result of `trigger` -- the loop device already existed -- and any rule this module's own reload " +
+		"picked up"},
 	"iptables": {Level: exec.Hardware, Note: "driven against a real iptables 1.8.10 (nf_tables backend) " +
 		"inside a throwaway network namespace on Ubuntu 24.04, so nothing touched the host firewall: rules " +
 		"appended, inserted, checked for idempotence with iptables' own `-C`, and deleted; user chains created, " +

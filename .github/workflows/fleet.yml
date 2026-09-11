@@ -49,6 +49,8 @@ on:
       - "internal/builtin/quota*.go"
       - "internal/builtin/lvm*.go"
       - "internal/builtin/mdadm*.go"
+      - "internal/builtin/modprobe*.go"
+      - "internal/builtin/udev*.go"
       # `iptables` and `nftables` run in a private network namespace, so
       # their live tests are in the ordinary `test` job and need no root
       # -- but a GitHub runner may forbid an unprivileged namespace, and
@@ -67,6 +69,8 @@ on:
       - "internal/builtin/live_journald_test.go"
       - "internal/builtin/live_lvm*_test.go"
       - "internal/builtin/live_mdadm_test.go"
+      - "internal/builtin/live_modprobe_test.go"
+      - "internal/builtin/live_udev_test.go"
       - "internal/builtin/live_netplan_test.go"
       - "internal/builtin/live_pkg_test.go"
       - "internal/builtin/live_quota*_test.go"
@@ -144,7 +148,7 @@ jobs:
   # throwaway unit in /run/systemd/system that is attached to nothing
   # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm)
+    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm, modprobe, udev)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -278,7 +282,7 @@ jobs:
       # explicitly instead.
       - name: drive hostname, sysctl, apparmor, netplan, service, pkg, quota and lvm
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm' ./internal/builtin/
+          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobeLoadsAndPersists|TestLiveUdevControlAsRoot' ./internal/builtin/
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because

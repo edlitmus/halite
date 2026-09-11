@@ -20,14 +20,14 @@ section 0 says which of its findings are now closed.
 **Amended 2026-09-10** on freebsd/amd64 with Go 1.26.8, without a full
 re-measurement. Several blocks landed since the date above and the counts
 in §0, §2.3 and §7 were corrected for them rather than re-derived: SPEC
-15.3's **macOS row**, which now ships entirely, and the first eight of
-its **Common Linux row** — `pam`, `quota`, `openssl_cert`, `lvm`,
-`iptables`, `nftables`, `journald` and `mdadm`. `pam`/`quota`/`openssl_cert`
-are the three §7.12 ranked first; `lvm`, `iptables` and `nftables` are
-the next three, each closing a 15.3 module *and* a 15.5 state;
-`journald` is the one §7.12 flagged for a design decision; `mdadm` is
-exec-only (SPEC 15.5 names no state for it). 38 of 65 platform
-modules now ship. One consequence a reader should not have to hunt for:
+15.3's **macOS row**, which now ships entirely, and eleven of the twelve
+in its **Common Linux row** — every one but `authselect`. `pam`/`quota`/
+`openssl_cert` are the three §7.12 ranked first; `lvm`, `iptables` and
+`nftables` are the next three, each closing a 15.3 module *and* a 15.5
+state; `journald` is the one §7.12 flagged for a design decision;
+`mdadm`, `modprobe` and `udev` are exec-only (SPEC 15.5 names no state
+for any of them). `authselect` is left **pending on purpose** — see
+§2.3's row for why. 40 of 65 platform modules now ship. One consequence a reader should not have to hunt for:
 the release gate is red on **ten** modules rather than two, all of them
 `apparmor`, `snap` or the eight-strong macOS row — every other new
 module has been driven against its real tool. `iptables`/`nftables`
@@ -541,7 +541,7 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 38 of 65
+### 2.3 Platform modules: 40 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
@@ -577,7 +577,7 @@ what an operator is looking for.
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
 | Debian and Ubuntu | 3 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
-| Common Linux | 3 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald` and `mdadm` ship** (DIVERGENCE 5.47-5.53). `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm` is exec-only (13 functions, no state -- SPEC 15.5 names none, like `pam`/`journald`); it parses `mdadm --detail` and `/proc/mdstat`. `modprobe`, `udev`, `authselect` remain -- all small. |
+| Common Linux | 1 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `modprobe` and `udev` ship** (DIVERGENCE 5.47-5.54) -- eleven of twelve. `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm`/`modprobe`/`udev` are exec-only (no state -- SPEC 15.5 names none for any of them). **`authselect` is deliberately pending, not built.** SPEC files it under Common Linux, but it is Fedora/RHEL 8+ only in reality -- Debian manages PAM through `pam-auth-update`, which `pam` already reads -- and this project has no RHEL host to verify against. It waits alongside the other RHEL-only SPEC 15.3 modules for the same reason, rather than shipping fixtures for a tool nobody here has run, which is the exact mistake DIVERGENCE 5.31 warns against. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | **The row ships entirely**, second after FreeBSD. `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain` and `mac_assistive` are modules (DIVERGENCE 5.41-5.46). Every one of them is `assumed`: no CI leg is a Mac. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
@@ -1230,7 +1230,7 @@ unbuilt item here is number 7.
    FIPS check now says out loud. So it is buildable — it is simply worth
    less than it was when the estate was imagined to be Ubuntu.
 12. **The Common Linux row** (§2.3) — was eleven modules and is now
-    five. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
+    one, deliberately unbuilt. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
     first for the reason this item gave: they are the three that mean
     something on FreeBSD, which is four hosts of five. DIVERGENCE
     5.47-5.49. ~~`lvm`~~, ~~`iptables`~~ and ~~`nftables`~~ are **done**
@@ -1283,8 +1283,28 @@ unbuilt item here is number 7.
     a spare and ran fail/remove/add/save_config/stop against it.
     DIVERGENCE 5.53.
 
-    What is left is Linux-only and small: `modprobe`, `udev`,
-    `authselect`.
+    ~~`modprobe`~~ and ~~`udev`~~ are **done**, both exec-only and both
+    small: `modprobe` (10 functions) parses `/proc/modules` and
+    `modinfo` directly and persists across the two files the kernel
+    actually reads — a bare name in `/etc/modules-load.d` for "load at
+    boot" and a `denylist-<name>.conf` in `/etc/modprobe.d` for "never
+    load", the latter still spelled the old way inside the file because
+    that is modprobe.conf(5)'s own directive; `udev` (6 functions)
+    reads `udevadm info --export`/`--export-db` and can `trigger`/
+    `settle`/`reload_rules`. Both driven against a real kernel and udev
+    on this fleet's Ubuntu host, the mutating halves gated on root.
+    DIVERGENCE 5.54.
+
+    That closes eleven of the Common Linux row's twelve. **`authselect`
+    is left pending, deliberately, not built from documentation.** It
+    is Fedora/RHEL 8+ only in reality, whatever row SPEC 15.3 files it
+    under; Debian and Ubuntu manage PAM through `pam-auth-update`,
+    which `pam`'s own module already handles, and this project has no
+    RHEL host to verify authselect against. It waits for the same
+    reason `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
+    `subscription_manager`, `dnf_module` and `chattr` do — shipping
+    fixtures for a tool nobody here has run is exactly the mistake
+    DIVERGENCE 5.31 found and this document keeps citing.
 13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.
 
