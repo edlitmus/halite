@@ -37,6 +37,20 @@ run their live tests inside an unprivileged network namespace and
 were driven as root against real systemd 255. Everything else here is still
 measured against 2026-09-05.
 
+**Amended again 2026-09-11**: `apparmor` closed too (DIVERGENCE 5.55),
+on §6 item 11's first route rather than its third — this fleet's own
+Ubuntu host has no `passt` package installed, so it has none of the
+unparseable `abstractions/passt` syntax that broke `apparmor-utils` on
+the runner 5.37 used, and the same `apparmor-utils` 4.0.1 that failed
+there works here. `live_apparmor_test.go` needed no change: 148 real
+profiles read in all four modes, and a throwaway profile loaded, moved
+complain → enforce by name, disabled with its reboot symlink confirmed,
+and unloaded. §6 item 11's actual question — whether to stop depending
+on the `aa-*` tools so the module also works on a node that *does* have
+an unparseable profile somewhere — is still open and still a decision
+rather than an afternoon; it is just no longer the blocking one. The
+gate drops from ten to **nine**: `snap` and the eight-strong macOS row.
+
 **A note on this file.** Nothing enforces it. `internal/specaudit`
 guards SPEC.md, `docs/DIVERGENCE.md` and README.md against the
 registries; `internal/docsaudit` guards the generated pages. This
@@ -932,12 +946,16 @@ unchanged.
    cannot be reached. Driven against real systemd 255.
 10. **Do reference bridges ship?** SPEC 20.3 promises in-tree `postgres`
    and `sqs` as worked examples, and no destination extension exists.
-11. **Does `apparmor` stop depending on the `aa-*` tools?** They are
-   Python, and Ubuntu 24.04's own apparmor-utils cannot parse Ubuntu's
-   own profiles — so `apparmor.enforce`, `complain` and `disable` are
-   inoperable on the commonest Linux this project targets, and the
-   module has no other way to change a mode. DIVERGENCE 5.37 has the
-   reproduction.
+11. **Does `apparmor` stop depending on the `aa-*` tools?** No longer the
+   blocking question — DIVERGENCE 5.55 closed the release gate on
+   `apparmor` by route 1 below (a host whose tools work), so the module
+   ships. This is now about the *other* kind of host: one whose
+   `apparmor-utils` cannot parse a profile it has, the way Ubuntu
+   24.04's could not parse `abstractions/passt` on the runner 5.37
+   found it on. On such a host `apparmor.enforce`, `complain` and
+   `disable` are still inoperable by any means, and `apparmor.status`
+   says so by name (`tools_reason`) rather than silently. DIVERGENCE
+   5.37 has the reproduction.
 
    `apparmor_parser` is C, ships by default, parses everything the
    kernel does, and this module already uses it for `reload`. It can
@@ -1081,8 +1099,8 @@ place.
    host (DIVERGENCE 5.38), `quota` closed on a runner (5.48), and `lvm`
    closed on this fleet's Ubuntu host (5.50) — but the macOS row added
    eight, because a module arrives undemonstrated and that is the
-   correct state for new work. `apparmor` is blocked on a decision
-   rather than on effort; `snap` needs the network the no-network rule
+   correct state for new work. `apparmor` has since closed too (line 40
+   above, DIVERGENCE 5.55); `snap` needs the network the no-network rule
    refuses; the eight macOS modules need a CI leg that is a Mac and
    writes to it, which none is.
 
@@ -1149,19 +1167,22 @@ place.
    **What is left, and what each actually needs**, in the order the
    effort is worth it:
 
-   1. ~~**`apparmor`**~~ — **attempted, and it is a decision now rather
-      than an afternoon.** A runner can load a profile; that was never
-      the obstacle. Ubuntu 24.04's own `aa-*` tools cannot parse
-      Ubuntu's own profiles — apparmor-utils 4.0.1 against
-      `abstractions/passt`, from the stock `passt` package — so
-      `aa-enforce`, `aa-complain` and `aa-disable` fail on *every*
-      profile there, `/usr/bin/man` included. Every mutating function in
-      the module goes through them.
-
-      The reading half is verified (securityfs, 123 real profiles), and
-      `apparmor.status` no longer claims `tools: true` for a binary that
-      is present and cannot run. The gate stays red on it. §6 carries
-      the decision; DIVERGENCE 5.37 has the detail.
+   1. ~~**`apparmor`**~~ — **done**, and the "afternoon on a host that
+      has one" §6 named as route 1 turned out to be this fleet's own
+      Ubuntu host. The GitHub runner 5.37 used has the stock `passt`
+      package, whose `abstractions/passt` apparmor-utils 4.0.1 cannot
+      parse — breaking `aa-enforce`/`aa-complain`/`aa-disable` on
+      *every* profile there, `/usr/bin/man` included, because the
+      `aa-*` tools parse the whole tree before doing anything. This
+      fleet's host has no `passt` package, so it has none of that
+      syntax, and the same apparmor-utils 4.0.1 works on it: 148 real
+      profiles read in all four modes, and a throwaway profile loaded,
+      moved complain → enforce by name through the real tools, disabled
+      with its reboot symlink confirmed, and unloaded. `apparmor` is
+      `hardware`; the gate is red on nine, not ten. §6 item 11's actual
+      question — teaching the module to change a persisted mode without
+      the `aa-*` tools, for the host that *does* have an unparseable
+      profile — is still open; DIVERGENCE 5.37 and 5.55 have the detail.
    2. **`snap`** — snapd is already on an Ubuntu runner and the obstacle
       is the network: `snap install` fetches, and there is no offline
       equivalent of the local apt repository `fleetcheck` uses. Either a

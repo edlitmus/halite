@@ -28,9 +28,11 @@ import (
 // classified must read as "nobody looked", not as "fine". DIVERGENCE
 // 5.33 wrote the table down per module and it was mostly `Assumed`
 // then; 5.35 through 5.38 drove all but two of the root-mutating
-// modules against their real tools on real machines. What is still
-// `Assumed` — `apparmor`, `snap`, and the macOS row (`mac_defaults`,
-// `mac_power`, `mac_user`, `mac_group`, `mac_shadow`,
+// modules against their real tools on real machines, and `apparmor`
+// closed since (DIVERGENCE 5.37's route 1 — a machine whose `aa-*`
+// tools actually parse its own profile tree, unlike the one 5.37
+// found). What is still `Assumed` — `snap` and the macOS row
+// (`mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`,
 // `mac_softwareupdate`, `mac_keychain`, `mac_assistive`) — says why in its own note, and the release gate refuses to ship while any is. The
 // macOS modules each have a live test that reads the real tool, but
 // their mutating paths change a Mac's own state and no CI leg is a Mac.
@@ -252,6 +254,19 @@ var moduleEvidence = map[string]exec.Evidence{
 		"and thin volumes (the argument vectors are pinned but nothing has built one), striping, " +
 		"and any filesystem on top of a volume, so `--resizefs` is still an argument only"},
 
+	"apparmor": {Level: exec.Hardware, Note: "driven end to end on a real Ubuntu 24.04 host " +
+		"whose apparmor-utils 4.0.1 can parse its own profile tree (no `passt` package, " +
+		"so none of DIVERGENCE 5.37's unparseable abstractions/passt is present): 148 real " +
+		"profiles read correctly across all four modes, and a throwaway profile loaded, " +
+		"moved through complain and back to enforce by name via the real `aa-complain`/ " +
+		"`aa-enforce`, disabled with its reboot-persistence symlink checked, and unloaded " +
+		"-- each step confirmed against securityfs rather than against what the tool " +
+		"printed. `apparmor.mode` converges and predicts correctly in test mode. 5.37's " +
+		"finding stands as a fact about that other machine, not about this module: the " +
+		"`aa-*` tools remain unusable on any host with that package installed, and " +
+		"`apparmor.status` still reports `tools: false` with the reason there rather than " +
+		"claiming a binary on PATH can do something it cannot"},
+
 	// ---- Read from a real system, mutation never watched ----
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
@@ -287,14 +302,6 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	// ---- Never pointed at the tool it drives ----
 
-	"apparmor": {Level: exec.Assumed, Note: "the *reading* half is demonstrated: " +
-		"securityfs parses correctly against 123 real profiles on Ubuntu 24.04, in all " +
-		"four modes. The *mutating* half is not, and now for a known reason rather than " +
-		"an unexamined one -- apparmor-utils 4.0.1 cannot parse the profile set Ubuntu " +
-		"itself ships, so `aa-enforce`, `aa-complain` and `aa-disable` fail on every " +
-		"profile on that platform and this module has no other way to change a mode " +
-		"(DIVERGENCE 5.37). `apparmor.status` reports that as `tools: false` with the " +
-		"reason, rather than `true` because the binary is on PATH"},
 	"snap": {Level: exec.Assumed, Note: "nothing here has run against a real snapd, and " +
 		"the `snap list` fixtures were written from its documented columns rather than " +
 		"captured (DIVERGENCE 5.28)"},

@@ -5465,6 +5465,67 @@ disagreed with the real tool. `authselect`'s entry in
 `exec/platform.go` names this reason rather than "phase 5, with the
 Linux platform work".
 
+### 5.55 `apparmor`: closed on a machine whose own tools can read its own profiles
+
+5.37 ranked three routes to close `apparmor` and named the first "an
+afternoon on a host that has one" — a machine whose `apparmor-utils`
+can parse the profile tree it ships. This project's own development
+host turned out to be that machine.
+
+The obstacle 5.37 found was never AppArmor, or this module, or even
+`apparmor-utils` in general: it was one file, `abstractions/passt`,
+shipped by Ubuntu's own `passt` package on the GitHub runner 5.37 used,
+containing syntax the Python parser in apparmor-utils 4.0.1 cannot
+read. That parser runs over *every* profile under `/etc/apparmor.d`
+before doing anything, so the one file broke `aa-enforce`,
+`aa-complain` and `aa-disable` against every profile on that machine,
+`/usr/bin/man` included. This host has no `passt` package installed,
+so it has no `abstractions/passt`, so the same `apparmor-utils` 4.0.1
+that failed there works here — confirmed directly (`aa-complain
+/usr/bin/man` and `aa-enforce /usr/bin/man` both succeed) before
+trusting it with this module's own live test.
+
+#### What was verified
+
+`live_apparmor_test.go` was already written for exactly this run and
+needed no change: `TestLiveAppArmorReadsWhatSecurityfsPrints` against
+148 real profiles in all four modes, cross-checked against a direct
+line count of `AppArmorProfilesPath` rather than through the module;
+`TestLiveAppArmorMovesAProfileThroughEveryMode` loading a throwaway
+profile that confines nothing, moving it complain → enforce by name
+through the real `aa-complain`/`aa-enforce`, disabling it and
+confirming both that securityfs shows no mode at all (not a mode
+*called* `disable` — the distinction the module is most careful about)
+and that the reboot-persistence symlink `aa-disable` leaves in
+`/etc/apparmor.d/disable/` is really there, then unloading it;
+`TestLiveAppArmorStateConvergesAndPredicts` showing `apparmor.mode`
+predicts in test mode without touching the kernel, applies for real,
+and reports no change on a second run; and
+`TestLiveAppArmorRefusesAProfileThatIsNotThere` naming the missing
+profile in its refusal. All four green, root, Ubuntu 24.04, real
+`apparmor-utils` 4.0.1 and `apparmor_parser` 4.0.1.
+
+`apparmor` moves to `hardware` (DIVERGENCE table, evidence.go). The
+release gate drops from ten to nine — `snap` and the eight-strong macOS
+row remain.
+
+#### What this does and does not settle
+
+This closes the module on the platform it was run on. It does not
+touch the question 5.37 actually raised for a person to answer: a node
+that *does* have `passt` — or any other package whose profile syntax
+this Python parser cannot read — still has an `apparmor` module whose
+`enforce`/`complain`/`disable` cannot work by any means, and
+`apparmor.status`'s `tools_reason` is what tells an operator that
+rather than a silent failure. Route 3 — teaching this module to change
+a profile's persisted mode by editing the file directly, the way
+`aa-complain` does, so it stops depending on `apparmor-utils` at all —
+is still on the table and is still the larger undertaking 5.37 said it
+was. It just is not the blocking question anymore: a module an operator
+can run on a stock Ubuntu host, with a named and detected failure mode
+on the hosts where it cannot, is a materially different thing to ship
+than one that has never been run at all.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
