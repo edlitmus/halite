@@ -1845,24 +1845,29 @@ section 4.1. What is still uncovered is what needs a hub.
 ### 5.2 The fourteen test layers
 
 Every layer SPEC 31 requires beyond the unit layer of 5.1, and where each
-stands. Five are present, one of them stronger than
-specified, four are partial, and four are absent. Nothing is unverified
-any more: the reproducibility layer was, and it is now partial with the
-limit stated rather than the question left open.
+stands. Seven are present, one of them stronger than specified, five are
+partial, and one is absent. Nothing is unverified any more: the
+reproducibility layer was, and it is now partial with the limit stated
+rather than the question left open.
+
+Four rows moved after this table was first written and each said
+"blocked on phase 2" long after phase 2 landed: chaos and upgrade are
+built, scale is partial, and integration is the one that is still
+absent.
 
 | Layer | Status |
 |---|---|
-| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 34 disagree by design, 37 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
+| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 330 of 402 agree, 36 disagree by design, 36 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 157 of 198 agree, 26 are outside the subset, 15 are gaps — see 5.5. |
 | Differential against Salt | **partial.** `internal/saltdiff` compiles ten trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
 | Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder, all of which belong to phases that have not started. |
-| Integration | **absent.** No containerised hub-plus-nodes harness. Blocked on phase 2. |
-| Scale | **absent.** Blocked on phase 2. |
-| Upgrade | **absent.** Nothing to upgrade from. |
-| Chaos | **absent.** Blocked on phase 2. |
+| Integration | **absent.** No containerised hub-plus-nodes harness across the tier 1 matrix. The repository has two containers and a virtual machine — the Salt differential image, the Debian container of 5.35, and the ZFS machine of 6.1 — and each is a correctness harness for one subsystem rather than a matrix. This is the last layer with nothing behind it. |
+| Scale | **partial.** `internal/perf` carries all thirteen rows of SPEC 30 with what measures each, held to SPEC's own table in both directions. The two rows SPEC measures with a benchmark are measured: the highstate compile of 500 states over 50 SLS files, and the cold pillar compile of 200 pillar SLS. `make perf` runs them and fails if either is over its target; `make perf-bench` is the raw measurement. The eleven rows that need the simulated node harness, a soak, or the integration matrix are still unmeasured, and so is the *cached* half of the pillar row, because no pillar cache exists to measure. See 5.57. |
+| Upgrade | **present.** All three clauses of SPEC 31's row have tests and `internal/specaudit` holds the row to them in both directions, so a fourth clause cannot sit there uncovered. Writing them found a job record that silently dropped every field an older build did not know; the record now carries a schema marker. What is not established is two halite versions actually running against each other, because there has never been a second version. See 4.13. |
+| Chaos | **present.** All eight of SPEC's scenarios are registered in `internal/chaos` with a defined behaviour and a stated limit, each with a test that names it, and a ninth is registered that SPEC does not name: the concurrent-writer shape that three defects in a fortnight all had. `make chaos` runs the layer with `-v`, which is the point of it. Its first run found a reader resuming from a pruned event-bus offset being silently skipped forward. See 5.29. |
 | Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. Clean against the database of 2026-08-21. No static analysis beyond `go vet`. No external review. |
 | Reproducibility | **partial.** `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine — not the two independent builders SPEC 31 asks for — but it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. A second builder has still never been tried. |
 
@@ -1902,9 +1907,14 @@ target parser, all clean. The corpora are committed under each package's
 
 Running the suite for the first time put the parser at 228 of 402, with
 140 defects. Twenty fixes took it to 328 and 40, and refusing a block
-collection on its key's line took it to **331 and 37**. Statement coverage of
-`internal/yaml` rose to 96.1% along the way, but the suite is the thing
-actually measuring correctness here.
+collection on its key's line took it to 331 and 37. Measuring chomping
+against PyYAML took it to **330 and 36** — the gap count down by one and
+the agreement count down by one as well, which 5.56 explains: the
+parser got more correct and the suite score got worse, because on two
+cases the suite and both reference implementations disagree and SPEC
+10.1 picks the implementations. Statement coverage of `internal/yaml`
+rose to 96.1% along the way, but the suite is the thing actually
+measuring correctness here.
 
 What the fixes were, and why each mattered beyond the score:
 
@@ -2004,16 +2014,17 @@ What remains, largest first:
 | `gapLenient` | 20 | halite parses a document the suite requires to be an error. This was called the safe direction, and the PyYAML differential of 5.8 showed the framing was wrong: a document the reference implementation refuses is one Salt would not load, so accepting it means the tree loads here and means something nobody wrote. What is left is mostly tabs in odd positions, document markers inside quoted scalars, and under-indented continuations. |
 | `gapFlow` | 4 | complex keys in flow, which SPEC 10.1.2 refuses on purpose but with a message about the wrong thing, and an explicit `? ` key inside flow. |
 | `gapAfterDocument`, `gapExplicitKey`, `gapOther`, `gapPlainScalar`, `gapValueOther` | 10 | five classes of two. |
-| `gapChomping`, `gapDirective`, `gapMappingKey` | 3 | singletons. |
+| `gapDirective`, `gapMappingKey` | 2 | singletons. |
 
 There is no cluster left to take. From here it is one case at a time, and
 the value per fix is lower than anything else on the list in section 8.
 
-Of the 34 deliberate disagreements, 20 are tags outside the nine types, 7
-are tabs used for indentation, 6 are complex keys, and 1 is a duplicate
-key. Those are SPEC 10.1.2 working as specified, and they are excluded
-from the conformance figure, since halite does not claim to be YAML 1.2
-there.
+Of the 36 deliberate disagreements, 20 are tags outside the nine types, 7
+are tabs used for indentation, 6 are complex keys, 1 is a duplicate key,
+and 2 are the end-of-input cases of 5.56. The first four groups are SPEC
+10.1.2 working as specified and the last is SPEC 10.1's choice of
+dialect; all of them are excluded from the conformance figure, since
+halite does not claim to be YAML 1.2 there.
 
 The value comparison runs only where the suite supplies `in.json` and
 halite parses the document, so a case that fails to parse is counted once,
@@ -5525,6 +5536,136 @@ was. It just is not the blocking question anymore: a module an operator
 can run on a stock Ubuntu host, with a named and detected failure mode
 on the hosts where it cannot, is a materially different thing to ship
 than one that has never been run at all.
+
+### 5.56 Chomping: the gap the table named was not the defect it had
+
+Block scalar chomping had one row in the conformance table of 5.4,
+`gapChomping`, and the reason beside it called it "the most damaging gap
+in this table" because chomping is what `file.managed` contents is
+written as. Two things were wrong with that row and one of them was a
+real defect, so the order they came out in matters.
+
+**The row pointed at the wrong thing.** Its case, 565N, is `!!binary`
+over a literal block scalar. halite decodes a binary scalar to bytes,
+which is what PyYAML does and what SPEC 10.1.3 asks for; the suite's
+`in.json` keeps the base64 *source*, because JSON has no binary type,
+and in 565N that source is wrapped over four lines. The comparison
+re-encoded halite's bytes and compared the text, which works only where
+the source is one line — so the two differed in every line break the
+source had, and the trailing one got read as a chomping fault. The
+comparison now decodes the suite's text instead, which is the right
+equivalence for binary in both directions, and the case agrees. Nothing
+in the parser changed.
+
+**Chomping itself had never been measured.** It has five inputs — two
+styles, three indicators, an optional indentation indicator, the shape
+of the trailing lines, and whether the scalar is a mapping value, a
+sequence entry or the whole document — and what existed was a handful
+of cases in `parse_test.go` written from the specification. The matrix
+in `internal/yaml/chomping_test.go` is the product instead: 126
+documents, each in the PyYAML differential of 5.8 *and* in a captured
+table, so the coverage holds on a machine with no Python and the
+differential re-derives it where PyYAML is installed. Breaking the fix
+on purpose fails 20 assertions across both halves, and fails the
+captured half alone with the differential skipped, which is the check
+that matters on a machine that has no reference to compare against.
+
+**It found the defect on its first run.** Four documents: a block
+scalar whose last line is not terminated — the file simply ends — came
+back with a line break that is not in the file, under clip and under
+keep. `contents: |` over a file with no final newline wrote a file with
+one. That is a file that differs from the one the state describes, on
+every run, in the direction nothing notices, and it is the same class as
+the `--- |` defect 5.4 already records. The parser counted the trailing
+breaks it was going to emit from the line *count*; it now counts the
+breaks the file actually has.
+
+**The suite and the reference implementations disagree about this, and
+SPEC picks the implementations.** The YAML test suite expects the break
+to be added at end of input — L24T/01 and JEF9/02 both assert it. PyYAML
+does not add it, and neither does libyaml, which is a separate
+implementation in a different language. SPEC 10.1 specifies PyYAML's
+dialect, for the stated reason that it is the dialect every existing
+Salt tree was written against, so the two suite cases move to the
+deliberate side of the table as `specEndOfInput`. **This is why the
+suite score went down while the parser got more correct**: 331 agreeing
+became 330, and the gap count 37 became 36. A score that can only go up
+is a score that is not measuring anything.
+
+**And a fact about the reference that was being stated wrongly.** Six
+documents in the matrix put a tab at the head of block scalar content.
+Pure Python PyYAML reads them; libyaml refuses them as "a tab character
+where an indentation space is expected". Salt takes
+`getattr(yaml, "CSafeLoader", yaml.SafeLoader)`, so which one an estate
+gets depends on whether libyaml is installed beside it — and the
+differential's shaper carried a comment saying `safe_load` "is what Salt
+uses", which is true only of the half that has no C extension. The
+shaper stays pinned to pure Python, deliberately, so the comparison is
+the same on every machine; the comment now says which implementation
+that is and where they part.
+
+Running the matrix through Salt's own loader on this host — Salt
+3006.25, with libyaml present — agreed with the captured PyYAML answers
+on 120 of the 126, the six differences being exactly the tab cases. That
+was a run by hand and is not committed: `make saltdiff`'s container is
+where a Salt comparison belongs, and it was not re-run for this.
+
+### 5.57 SPEC 30: two rows measured, eleven tracked
+
+SPEC section 30 opens by saying its targets come "with the measurement
+method, so they can be tested rather than asserted". Until now every one
+of the thirteen was asserted: `grep "func Benchmark"` over the tree
+returned nothing, and no target was known to be met or missed.
+
+`internal/perf` carries the table. Every row has a method and either the
+benchmark that measures it or a note saying what it waits on, and
+`TestTheTableIsSpecsOwn` holds the row names to SPEC.md's own table in
+both directions, so a row renamed in the specification fails here rather
+than quietly stopping being tracked.
+
+Two rows name a benchmark as their own method and both are now measured:
+
+| Row | Target | Measured here |
+|---|---|---|
+| Highstate compile, 500 states, 50 SLS files, heavy Jinja | under 2 s on the node | **96 ms**, 21 MB, 172,000 allocations |
+| Pillar compile, 200 pillar SLS, cold | under 500 ms on the hub | **154 ms**, 38 MB, 187,000 allocations |
+
+Measured on the FreeBSD development host, a Xeon E5-2620 v3 at 2.4 GHz,
+Go 1.26.8, three runs of twenty; the spread between runs is under 4%.
+Both targets are met, the first with twenty times the headroom and the
+second with three.
+
+The trees are generated to the shape SPEC names rather than vendored
+from the estate, for a reason worth stating: a generated tree can be
+*asserted*. `TestTheTreesHaveTheShapeSpecNames` checks that the
+compilation really produced 500 chunks over 50 SLS files, that the macro
+import ran, and that the loop over pillar ran — because a benchmark
+cannot fail, and a generator that quietly stopped rendering would report
+a very good number for compiling nothing. That is the lesson of the
+`quota` leg in 5.48 applied to a benchmark: a thing that runs and
+reaches no assertion looks like progress in a log and is not.
+
+`make perf` runs the two and fails if either is over its target;
+`make perf-bench` is the raw measurement for comparing two revisions.
+Neither is in `make check`, deliberately: a wall clock on a shared CI
+runner measures the runner, and a gate that fails for that reason is one
+people learn to ignore.
+
+**What is not measured, and named as such.** The pillar row states two
+numbers — under 500 ms cold and under 5 ms cached — and only the cold
+one has anything behind it, because this build has no pillar cache at
+all: `pillar_cache_disk` is inert and `halite_pillar_cache_hits_total`
+is one of the two metric families of SPEC 26.2 that nothing registers.
+Benchmarking a second compile and calling it "cached" would report the
+cold number twice under two names. The other eleven rows need the
+simulated node harness, a soak, or the integration matrix, and each
+carries which.
+
+**What a number from here means.** One machine compiled one generated
+tree. It is not a claim about a fleet, and a compile is not an apply:
+what is measured is the parse, the render, the requisite resolution and
+the ordering, which is what SPEC's row names and what a node does before
+it touches anything on the host.
 
 ## 6. Everything else not started
 

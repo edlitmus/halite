@@ -1,6 +1,7 @@
 package yaml
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -93,11 +94,14 @@ var reasons = map[string]reason{
 		"SPEC 10.1.2 rejects duplicate keys in one mapping. YAML 1.2 permits them and " +
 			"PyYAML silently keeps the last, which is a frequent invisible cause of a state " +
 			"that does nothing."},
+	specEndOfInput: {true,
+		"a block scalar whose last line is not terminated ends without a line break. The " +
+			"suite expects one to be added; PyYAML and libyaml both add none, and SPEC 10.1 " +
+			"specifies PyYAML's dialect because that is what every existing Salt tree was " +
+			"written against. Adding the break writes a `file.managed` contents the source " +
+			"does not contain, so the two implementations win over the suite here. The " +
+			"matrix in chomping_test.go is what settles it."},
 
-	gapChomping: {false,
-		"block scalar chomping drops trailing line breaks that should be kept. SPEC 10.1.1 " +
-			"names this as mattering for file.managed contents, so it is the most damaging " +
-			"gap in this table."},
 	gapDirective: {false,
 		"a %YAML or %TAG directive is emitted as a scalar document instead of being consumed."},
 	gapExplicitKey: {false,
@@ -128,9 +132,9 @@ const (
 	specTab          = "specTab"
 	specComplexKey   = "specComplexKey"
 	specDuplicateKey = "specDuplicateKey"
+	specEndOfInput   = "specEndOfInput"
 
 	gapAfterDocument = "gapAfterDocument"
-	gapChomping      = "gapChomping"
 	gapDirective     = "gapDirective"
 	gapExplicitKey   = "gapExplicitKey"
 	gapFlow          = "gapFlow"
@@ -157,7 +161,6 @@ var deviations = []deviation{
 	{"4FJ6", devRejects, gapFlow},
 	{"4JVG", devAccepts, gapLenient},
 	{"52DL", devRejects, specTag},
-	{"565N", devValue, gapChomping},
 	{"57H4", devRejects, specTag},
 	{"5TRB", devAccepts, gapLenient},
 	{"5TYM", devRejects, specTag},
@@ -185,7 +188,9 @@ var deviations = []deviation{
 	{"DK95/03", devRejects, specTab},
 	{"DK95/07", devRejects, specTab},
 	{"J7PZ", devRejects, specTag},
+	{"JEF9/02", devValue, specEndOfInput},
 	{"KK5P", devRejects, specComplexKey},
+	{"L24T/01", devValue, specEndOfInput},
 	{"LX3P", devRejects, gapOther},
 	{"M2N8/00", devRejects, gapPlainScalar},
 	{"M2N8/01", devRejects, specComplexKey},
@@ -431,9 +436,15 @@ func jsonShape(v any) any {
 		return float64(t)
 	case []byte:
 		// The suite keeps binary as its base64 source, because JSON has no
-		// binary type. Decoding is correct, so the comparison re-encodes
-		// rather than calling it a difference.
-		return base64.StdEncoding.EncodeToString(t)
+		// binary type, and decoding it is correct -- so the comparison
+		// decodes the suite's text rather than re-encoding ours. It used
+		// to re-encode, which works only where the source is one line:
+		// `!!binary` over a block scalar is wrapped, and re-encoding
+		// produced a single line that differed from the suite's text in
+		// every line break it had. That was recorded as this table's
+		// chomping gap for as long as the table existed, and it was a
+		// defect in the comparison rather than in the parser.
+		return binaryValue(t)
 	case time.Time:
 		return t.Format(time.RFC3339Nano)
 	}
@@ -457,8 +468,21 @@ func decodeJSONStream(s string) ([]any, error) {
 	}
 }
 
+// binaryValue is a decoded `!!binary` scalar, compared against the
+// suite's base64 source by decoding that source. Go's decoder ignores the
+// line breaks a wrapped source carries, which is exactly the equivalence
+// wanted here: two spellings of the same bytes.
+type binaryValue []byte
+
 func sameJSON(a, b any) bool {
 	switch x := a.(type) {
+	case binaryValue:
+		y, ok := b.(string)
+		if !ok {
+			return false
+		}
+		dec, err := base64.StdEncoding.DecodeString(y)
+		return err == nil && bytes.Equal(x, dec)
 	case map[string]any:
 		y, ok := b.(map[string]any)
 		if !ok || len(x) != len(y) {

@@ -64,7 +64,7 @@ TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
 	linux/riscv64 linux/ppc64le linux/s390x
 TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
-.PHONY: all build test chaos race vet cover check release release-gate cross clean tidy vendor policy fmt \
+.PHONY: all build test chaos perf perf-bench race vet cover check release release-gate cross clean tidy vendor policy fmt \
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
@@ -219,6 +219,27 @@ fuzz:
 	@env $(DEV_ENV) go test ./internal/template/ -run=XXX -fuzz='^FuzzRenderStrictUndefined$$' -fuzztime=$(FUZZTIME)
 	@env $(DEV_ENV) go test ./internal/target/ -run=XXX -fuzz='^FuzzCompileAuto$$' -fuzztime=$(FUZZTIME)
 	@env $(DEV_ENV) go test ./internal/target/ -run=XXX -fuzz='^FuzzCompileKind$$' -fuzztime=$(FUZZTIME)
+
+# SPEC section 30's two benchmark rows, measured and checked against the
+# numbers the specification states.
+#
+# Not part of `make check`, and behind a build tag, deliberately. A wall
+# clock on a shared CI runner measures the runner, and a gate that fails
+# for that reason is one people learn to ignore -- which is worse than
+# not having it. This is the target to run on a release candidate, or
+# after a change to the YAML parser, the template engine or the state
+# compiler, which is where a regression would come from.
+#
+# The other eleven rows of SPEC 30 need the simulated node harness, a
+# soak, or an integration matrix. internal/perf carries all thirteen and
+# says what each one waits on; this run prints them.
+perf:
+	@env $(DEV_ENV) go test -count=1 -tags perf -v \
+		-run TestTheMeasuredTargetsAreMet ./internal/perf/
+
+# perf-bench is the raw measurement, for comparing two revisions.
+perf-bench:
+	@env $(DEV_ENV) go test -count=1 -run XXX -bench . -benchmem ./internal/perf/
 
 vet:
 	@env $(DEV_ENV) go vet ./...
