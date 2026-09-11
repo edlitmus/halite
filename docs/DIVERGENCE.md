@@ -5667,6 +5667,138 @@ what is measured is the parse, the render, the requisite resolution and
 the ordering, which is what SPEC's row names and what a node does before
 it touches anything on the host.
 
+### 5.58 The render sandbox: parsing where there is nothing to take
+
+SPEC 25.4's first bullet, built. YAML parsing and template rendering
+happen in a child process; the node keeps module dispatch, template
+loading and gpg decryption. `render_sandbox: true` turns it on, and it
+is off by default while the path is new.
+
+**The argument, which is SPEC's own.** A node runs as root because
+package and service management require it. A state tree arrives from a
+file server, from gitfs, or from whoever can commit to the repository it
+lives in. Between those two facts sit the lexer, the template parser,
+the evaluator and the YAML reader -- the largest and most
+attacker-adjacent code in the system, and the code that needs no
+privilege at all. So it runs somewhere that has none.
+
+**What crosses.** Data, both ways: the body, the stage list, and the
+context a template may read going in; the parsed value with its source
+positions, the rendered text, and the warnings coming back. Two things
+the child cannot do for itself come back as callbacks -- a template
+`include`, which only the parent can resolve through the file server,
+and `salt['pkg.version']`, which only the parent can dispatch. That is
+SPEC's shape rather than a concession to it: "module execution happens
+in the privileged parent ... the sandbox returns data, never a callable
+and never a command to run without validation".
+
+**Both kinds of rendering cross, not just the SLS kind.** A
+`file.managed` with `template: jinja` renders bytes fetched from the
+file server, which is the same attacker-adjacent input by another route,
+so it goes through the same child. It is the jinja stage alone over the
+bytes as they are: a managed file's first line is content, and reading
+`#!/bin/sh` there as a renderer pipeline would deliver something other
+than the file. That is why `render.Template` exists separately, and
+expressing it as a one-stage run is what let it cross the same boundary.
+
+**The pipeline is split rather than shipped whole**, and it is the
+decision worth recording. A pipeline is template stages, then one
+serializer, then data stages -- `checkStages` already enforced exactly
+that -- and the only data stage this build supports is `gpg`. So the
+child runs the head and the parent runs the tail. Decrypted pillar never
+enters the unprivileged process at all, and the child is never told
+where the keyring is: `TestTheChildIsNeverToldWhereTheKeyringIs` checks
+the encoded request for the words.
+
+**The codec, and why `value.EncodeJSON` was not enough.** It drops
+source positions, and a compiler that has lost them says "this state is
+wrong" without saying which line. JSON's number is a float64, so an
+int64 past 2^53, a `.nan` and an `.inf` do not survive it. And
+`encoding/json` replaces invalid UTF-8 with U+FFFD, which matters
+because `cmd.run` output reaches a template. So values are tagged with
+their kind, numbers travel as text, a string that is not valid UTF-8
+travels as base64, and positions index a file table. A round-trip test
+covers every type in the model and a fuzz target holds the pair to being
+exact -- 250,000 executions clean.
+
+#### What it enforces, per platform
+
+Reported by `Describe`, in the manner of the bridge sandbox of 5.21, and
+logged once by the node that starts one.
+
+| Platform | Boundary | Identity | Network |
+|---|---|---|---|
+| Linux, as root | process | drops to `render_sandbox_user` | **denied by the kernel**: the child is in a network namespace of its own, loopback down |
+| Linux, not root | process | not dropped, and says so | not denied; a namespace needs CAP_SYS_ADMIN |
+| FreeBSD, macOS, other unix | process | drops to `render_sandbox_user` when root | not denied; jails, pledge and Capsicum all need cgo, which SPEC 4.2 rules out |
+| Windows | process | not dropped; a restricted token is not built | not denied |
+
+No syscall filter anywhere: the seccomp allowlist SPEC 25.4 asks for on
+the *parent* is a separate item and is not built. No filesystem
+restriction: "read access to the cached tree and nothing else" is the
+account's business today, not the kernel's.
+
+**And the limit that matters most, stated where an operator will read
+it:** a template that calls an execution module still causes the parent
+to run it. `{{ salt['cmd.run']('...') }}` has the same effect sandboxed
+or not, because that is what the template language is; the controls for
+it are RBAC's separate `arbitrary_code` permission and the signed-tree
+work of 25.1. What moved into the child is the code that parses and
+evaluates the attacker's text.
+
+#### What it cost, measured
+
+The same 500 states over 50 SLS files the SPEC 30 benchmark of 5.57
+compiles:
+
+| Engine | Compile |
+|---|---|
+| in process | 96 ms |
+| sandboxed | 217 ms |
+
+FreeBSD, Xeon E5-2620 v3, three runs of twenty. It is 2.3 times the
+work and still an order of magnitude inside SPEC 30's 2 s target, which
+is the number the decision to make this the default will turn on. The
+parent's own allocations fall by half, because the parsing is no longer
+happening there.
+
+#### Two defects, both found by running it rather than by testing it
+
+The tests passed on both.
+
+**Every render error read "web.sls: render failed: web.sls:22:1: ..."**
+The sandbox wrapped the child's message to mark it as a render failure
+rather than a transport failure, which reads fine in isolation. In place
+it was wrong twice: the compiler prefixes a diagnostic with the file
+unless the message already names it, so the file appeared twice and
+three words were added that mean nothing to an operator. The marker is
+now a type that answers `errors.Is` and prints only the child's words.
+The test that missed it asked whether the message *contained* the
+renderer's words; it now compares it with the in-process message
+exactly, and fails on the old behaviour.
+
+**`render_sandbox_user: no-such-account` rendered happily on a node
+that was not root.** The account was looked up only on the branch that
+could act on it, so on any node that could not drop privilege the
+setting was accepted and ignored. That is the worst of the three
+available outcomes: a control that reports itself as configured and does
+nothing. The account is now resolved whether or not it can be applied,
+so a typo fails on every machine, and `Unenforced` reports a control
+that was asked for and cannot be applied -- which the node logs as a
+warning rather than leaving in a description nobody reads.
+
+#### What is not established
+
+The unprivileged account has not been run: this project's hosts render
+as the developer's own account, so `Credential` and the Linux network
+namespace are both written and unexercised. A node running as root with
+`render_sandbox_user` set is what closes that, and it is an afternoon on
+any of the fleet's machines rather than a missing mechanism. The hub is
+not wired: it renders the pillar top file and every pillar SLS in
+process, which is where the secrets are, and SPEC 25.4 is titled for the
+node. Neither of those is a gap in the mechanism, and both are named
+here rather than left for somebody to discover.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -6242,8 +6374,9 @@ What is **not** built in the API:
   local state run's duration, and the scheduler's `maxrunning` skips.
   The hub counts what reaches it, which is most of SPEC 26.2's state and
   beacon families but not the drops.
-- **Tracing** (SPEC 26.3), the one part of section 26 still unbuilt.
-  `doctor` (26.4) ships; see 5.30.
+- ~~**Tracing** (SPEC 26.3), the one part of section 26 still unbuilt.~~
+  Built: `doctor` (26.4) ships, see 5.30, and tracing ships with it, see
+  5.34. **Section 26 is complete.**
 - **`mtls` hook authentication.** The mode is implemented and refused
   when no client certificate is presented, but it has never been
   exercised against a real sender.
@@ -6251,8 +6384,8 @@ What is **not** built in the API:
 Phase 5 is part built — gitfs, s3fs, the agentless path, relays and the
 FIPS artifact set are in, and 6.1b says what each covers. What is
 absent from 5 and 6: Windows and macOS parity, detached job signing,
-signed state trees, the render sandbox, node-side evidence, and the
-backtracking regex engine.
+signed state trees, node-side evidence, and the backtracking regex
+engine. The render sandbox is built: see 5.58.
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.

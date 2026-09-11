@@ -84,6 +84,11 @@ type Config struct {
 	// Test marks the run as a test run, which reaches templates through
 	// `opts` and reaches modules through the execution context.
 	Test bool
+
+	// Engine renders a file. Nil renders in this process, which is what
+	// every caller did before SPEC 25.4's render sandbox existed and
+	// what a node whose `render_sandbox` is off still does.
+	Engine render.Engine
 }
 
 // Compiler turns a tree into an ordered low state.
@@ -221,7 +226,7 @@ func (c *Compiler) loadSLS(out *Compiled, env, name string, seen map[string]bool
 		return
 	}
 
-	res, err := render.Render(src, c.renderOptions(env, name, filePath))
+	res, err := render.Use(c.Config.Engine).Render(src, c.renderOptions(env, name, filePath))
 	out.RenderWarnings = append(out.RenderWarnings, res.Warnings...)
 	if err != nil {
 		out.Diags.Add(value.Pos{File: filePath}, name, "", "%v", err)

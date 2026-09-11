@@ -240,6 +240,18 @@ var KeyDocs = map[string]KeyDoc{
 		Group:  "The tree: states and pillar",
 		Detail: "`hard` fails the whole compilation when an external source fails, which is the right default: a pillar missing the half that holds the credentials is worse than no pillar, because the run proceeds with it.",
 	},
+	"render_sandbox": {
+		Group:  "The tree: states and pillar",
+		Detail: "Moves YAML parsing and template rendering into a child process, which is SPEC 25.4's render sandbox. The parser and the template engine are the largest attacker-adjacent code a node runs and they need no privilege; module dispatch, template loading and gpg decryption stay in the parent. Off by default while the path is new. The node logs what the sandbox actually enforces on this platform when it starts one, and it is never more than it says.",
+	},
+	"render_sandbox_user": {
+		Group:  "The tree: states and pillar",
+		Detail: "The unprivileged account the render child runs as. It needs read access to the cached tree and nothing else. A node that is not root cannot drop to it, and says so rather than rendering as root while claiming otherwise. An account that does not exist fails the first render rather than being ignored.",
+	},
+	"render_sandbox_group": {
+		Group:  "The tree: states and pillar",
+		Detail: "The group for the render child. Empty takes the account's own primary group.",
+	},
 	"state_allowlist": {
 		Group:  "State runs",
 		Detail: "SLS names a run may include, as globs. Empty permits any. This is the control that keeps an operator with `state.apply` from applying anything in the tree, and it is enforced beside the policy's own `allow_sls`.",

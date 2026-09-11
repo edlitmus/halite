@@ -18,6 +18,42 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The tree is parsed where there is nothing to take
+
+`render_sandbox: true` moves YAML parsing and template rendering into a
+child process. A node runs as root because package and service
+management require it; a state tree arrives from a file server or a git
+repository; and between those two facts sit the lexer, the template
+parser, the evaluator and the YAML reader, which are the largest
+attacker-adjacent code the node runs and need no privilege at all. So
+they now run somewhere that has none.
+
+The child gets data and returns data. Module dispatch, template loading
+and gpg decryption stay in the parent, which is the division the
+specification asks for: the sandbox returns a value, never something to
+run. The pipeline is split at its serializer so that decrypted pillar
+never enters the unprivileged process at all.
+
+What it actually enforces differs by platform, so the node says which,
+once, when it starts a child. On Linux as root the network is denied by
+the kernel: the child has a network namespace of its own with loopback
+down. Everywhere else that line reads "not denied", because a jail,
+`pledge` and Capsicum all need a C library this project does not have.
+An account that cannot be dropped to is a warning rather than a silent
+pass, and an account that does not exist fails the render on any
+machine.
+
+It is off by default. On the 500-state tree the performance benchmarks
+compile, it costs 217 ms against 96 ms in process, which is an order of
+magnitude inside the target either way.
+
+Running it found two things no test had. Every render error named the
+file twice, because the sandbox wrapped the child's message and the
+compiler adds the file unless the message already carries it. And a
+misspelled render account was accepted and ignored on any node that was
+not root, which is a setting that reports itself as configured and does
+nothing.
+
 ### A block scalar that ends the file no longer gains a newline
 
 `contents: |` over a file whose last line has no line break wrote a file
@@ -1491,7 +1527,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 217 settings in the
+The configuration reference explains each of the 220 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

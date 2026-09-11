@@ -31,6 +31,7 @@ import (
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
+	"github.com/edlitmus/halite/internal/rendersandbox"
 	"github.com/edlitmus/halite/internal/returner"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/template"
@@ -136,6 +137,12 @@ func main() {
 		exitWith(runRenew(args))
 	case "connect", "serve":
 		exitWith(runConnect(args))
+	case renderSandboxCommand:
+		// The child half of SPEC 25.4's render sandbox, started by a
+		// node that re-executed itself. Not in the usage text: a person
+		// has no reason to run it, and it speaks a framed protocol on
+		// stdin.
+		exitWith(runRenderSandbox(args))
 	case "oneshot":
 		// The mode `halite-hub ssh` invokes on a target after pushing
 		// this binary. Not in the usage text: a person has no reason to
@@ -173,6 +180,9 @@ type node struct {
 	files   stateTree
 	pillars *fileserver.Roots
 	undef   template.UndefinedMode
+	// sandbox is SPEC 25.4's render child, built on first use when
+	// `render_sandbox` is on and nil when it is off.
+	sandbox *rendersandbox.Sandbox
 	// args and root are kept so that a job from a hub naming a
 	// different environment can have its roots rebuilt, rather than
 	// silently running against the environment this invocation happened
@@ -562,6 +572,8 @@ func (n *node) compilePillarOrErr() (*value.Map, error) {
 			GPG:           n.gpgOptions(),
 			OnSecret:      n.secrets.Add,
 			Renderer:      n.defaultRenderer(),
+			// SPEC 25.4, the same child the state compiler uses.
+			Engine: n.renderEngine(),
 			// Both are switches SPEC names and nothing read: 10.1.3's
 			// `yaml_bool_11: false` for a tree that has been audited,
 			// and 10.2.4's `random_seed: nondeterministic`.
@@ -615,7 +627,11 @@ func (n *node) contextFor(p *value.Map, jobID string) *exec.Context {
 	return &exec.Context{
 		// The job's context, so that a module's own work is inside the
 		// job's span rather than beside it.
-		Ctx:          n.runContext(),
+		Ctx: n.runContext(),
+		// SPEC 25.4 again: `file.managed` with `template: jinja`
+		// renders bytes that came off the file server, so it goes
+		// wherever the SLS rendering goes.
+		Render:       n.renderEngine(),
 		Grains:       n.grains,
 		Pillar:       p,
 		Config:       n.cfg.Redacted(),

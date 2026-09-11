@@ -93,6 +93,9 @@ var Keys = []Key{
 	{"template_lstrip_blocks", nodeHub, "false", "Jinja lstrip_blocks.", "10.2.1"},
 	{"random_seed", nodeHub, "deterministic", "deterministic or nondeterministic template randomness.", "10.2.4"},
 	{"regex_engine", nodeHub, "re2", "re2 only until the backtracking engine of SPEC section 10.4 ships.", "10.4"},
+	{"render_sandbox", nodeOnly, "false", "Render and parse the tree in an unprivileged child process.", "25.4"},
+	{"render_sandbox_user", nodeOnly, "", "The account the render child drops to. Requires a node running as root.", "25.4"},
+	{"render_sandbox_group", nodeOnly, "", "The group the render child drops to. Defaults to the account's own.", "25.4"},
 
 	// File server.
 	{"fileserver_backend", hubOnly, "roots", "Ordered list of file server backends.", "13.2"},

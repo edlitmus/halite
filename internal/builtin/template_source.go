@@ -71,7 +71,7 @@ func renderSourceTemplate(c *exec.Context, args *value.Map, src []byte, from str
 		opts.Salt = dispatchAdapter{c}
 	}
 
-	out, warnings, err := render.Template(src, opts)
+	out, warnings, err := render.Use(c.Render).Template(src, opts)
 	if err != nil {
 		return nil, err
 	}
