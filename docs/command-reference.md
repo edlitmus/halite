@@ -70,8 +70,10 @@ halite-node doctor — web1.example
                                          event bus; both prune by age and size and both default generously.
   skip  extension signatures             no extensions are installed
                                          Extensions live under the extension directory; there are none to check.
-  warn  module verification              3 of the 21 modules that change this machine as root have not been
-                                         run against the tool they drive: apparmor, netplan, snap
+  warn  module verification              9 of the 38 modules that change this machine as root have not been
+                                         run against the tool they drive: mac_assistive, mac_defaults,
+                                         mac_group, mac_keychain, mac_power, mac_shadow,
+                                         mac_softwareupdate, mac_user, snap
                                          This is a statement about what has been demonstrated, not a fault on
                                          this node: these modules may be entirely correct.
                                          What it means is that if one of them does the wrong thing, halite is
@@ -157,22 +159,23 @@ note saying what is assumed:
 ```
 $ halite-node call sys.evidence undemonstrated_only=true --out yaml
 web1.example:
-  apparmor:
+  mac_defaults:
     level: assumed
     demonstrated: false
     root: true
-    note: the *reading* half is demonstrated: securityfs parses correctly against
-      123 real profiles on Ubuntu 24.04, in all four modes. The *mutating* half is
-      not, and now for a known reason rather than an unexamined one -- apparmor-utils
-      4.0.1 cannot parse the profile set Ubuntu itself ships, so `aa-enforce`,
-      `aa-complain` and `aa-disable` fail on every profile on that platform and this
-      module has no other way to change a mode (DIVERGENCE 5.37)
+    note: the plist reader and writer were built against `defaults export` and
+      `defaults write` output captured by hand on macOS 26, and
+      `live_mac_defaults_test.go` drives the real `defaults` against a private
+      throwaway domain -- but only behind HALITE_SYSTEM_LIVE=1, and no CI leg
+      runs on a Mac that writes preferences, so nothing has watched this module
+      converge unattended. The `user` path, which becomes another account to
+      reach its domain, has not been run at all
 ```
 
 A note that says what *is* established as well as what is not is the
-point of the level being per module rather than per project: `apparmor`
-reads correctly and cannot write, and an operator planning a change
-needs both halves of that sentence.
+point of the level being per module rather than per project: `mac_defaults`
+reads correctly and cannot be watched writing unattended, and an
+operator planning a change needs both halves of that sentence.
 
 The same table is a release gate: `make release-gate` refuses a build in
 which any root-mutating module is still an assumption. It runs behind a
