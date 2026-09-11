@@ -57,8 +57,18 @@ def main():
     out = []
     for text in documents:
         try:
-            # safe_load is what Salt uses for a state file, so it is the
-            # behaviour worth matching rather than full_load's.
+            # safe_load rather than full_load: the safe schema is what
+            # Salt reads a state file with.
+            #
+            # It is also pinned to the *pure Python* loader on purpose.
+            # Salt's own loader takes `getattr(yaml, "CSafeLoader",
+            # yaml.SafeLoader)`, so what Salt reads depends on whether
+            # libyaml is installed beside it, and the two are not the
+            # same parser: libyaml refuses a tab at the head of block
+            # scalar content, which pure Python accepts. Pinning one of
+            # them keeps this comparison the same on every machine, and
+            # the documents where they part company are named in
+            # chomping_test.go.
             out.append({"shape": shape(yaml.safe_load(text))})
         except Exception as e:  # noqa: BLE001 - any failure is "refused"
             out.append({"err": type(e).__name__ + ": " + str(e).replace("\n", " ")})

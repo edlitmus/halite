@@ -1852,7 +1852,7 @@ limit stated rather than the question left open.
 
 | Layer | Status |
 |---|---|
-| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 34 disagree by design, 37 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
+| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 330 of 402 agree, 36 disagree by design, 36 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 157 of 198 agree, 26 are outside the subset, 15 are gaps — see 5.5. |
 | Differential against Salt | **partial.** `internal/saltdiff` compiles ten trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
@@ -1902,9 +1902,14 @@ target parser, all clean. The corpora are committed under each package's
 
 Running the suite for the first time put the parser at 228 of 402, with
 140 defects. Twenty fixes took it to 328 and 40, and refusing a block
-collection on its key's line took it to **331 and 37**. Statement coverage of
-`internal/yaml` rose to 96.1% along the way, but the suite is the thing
-actually measuring correctness here.
+collection on its key's line took it to 331 and 37. Measuring chomping
+against PyYAML took it to **330 and 36** — the gap count down by one and
+the agreement count down by one as well, which 5.56 explains: the
+parser got more correct and the suite score got worse, because on two
+cases the suite and both reference implementations disagree and SPEC
+10.1 picks the implementations. Statement coverage of `internal/yaml`
+rose to 96.1% along the way, but the suite is the thing actually
+measuring correctness here.
 
 What the fixes were, and why each mattered beyond the score:
 
@@ -2004,16 +2009,17 @@ What remains, largest first:
 | `gapLenient` | 20 | halite parses a document the suite requires to be an error. This was called the safe direction, and the PyYAML differential of 5.8 showed the framing was wrong: a document the reference implementation refuses is one Salt would not load, so accepting it means the tree loads here and means something nobody wrote. What is left is mostly tabs in odd positions, document markers inside quoted scalars, and under-indented continuations. |
 | `gapFlow` | 4 | complex keys in flow, which SPEC 10.1.2 refuses on purpose but with a message about the wrong thing, and an explicit `? ` key inside flow. |
 | `gapAfterDocument`, `gapExplicitKey`, `gapOther`, `gapPlainScalar`, `gapValueOther` | 10 | five classes of two. |
-| `gapChomping`, `gapDirective`, `gapMappingKey` | 3 | singletons. |
+| `gapDirective`, `gapMappingKey` | 2 | singletons. |
 
 There is no cluster left to take. From here it is one case at a time, and
 the value per fix is lower than anything else on the list in section 8.
 
-Of the 34 deliberate disagreements, 20 are tags outside the nine types, 7
-are tabs used for indentation, 6 are complex keys, and 1 is a duplicate
-key. Those are SPEC 10.1.2 working as specified, and they are excluded
-from the conformance figure, since halite does not claim to be YAML 1.2
-there.
+Of the 36 deliberate disagreements, 20 are tags outside the nine types, 7
+are tabs used for indentation, 6 are complex keys, 1 is a duplicate key,
+and 2 are the end-of-input cases of 5.56. The first four groups are SPEC
+10.1.2 working as specified and the last is SPEC 10.1's choice of
+dialect; all of them are excluded from the conformance figure, since
+halite does not claim to be YAML 1.2 there.
 
 The value comparison runs only where the suite supplies `in.json` and
 halite parses the document, so a case that fails to parse is counted once,
@@ -5525,6 +5531,79 @@ was. It just is not the blocking question anymore: a module an operator
 can run on a stock Ubuntu host, with a named and detected failure mode
 on the hosts where it cannot, is a materially different thing to ship
 than one that has never been run at all.
+
+### 5.56 Chomping: the gap the table named was not the defect it had
+
+Block scalar chomping had one row in the conformance table of 5.4,
+`gapChomping`, and the reason beside it called it "the most damaging gap
+in this table" because chomping is what `file.managed` contents is
+written as. Two things were wrong with that row and one of them was a
+real defect, so the order they came out in matters.
+
+**The row pointed at the wrong thing.** Its case, 565N, is `!!binary`
+over a literal block scalar. halite decodes a binary scalar to bytes,
+which is what PyYAML does and what SPEC 10.1.3 asks for; the suite's
+`in.json` keeps the base64 *source*, because JSON has no binary type,
+and in 565N that source is wrapped over four lines. The comparison
+re-encoded halite's bytes and compared the text, which works only where
+the source is one line — so the two differed in every line break the
+source had, and the trailing one got read as a chomping fault. The
+comparison now decodes the suite's text instead, which is the right
+equivalence for binary in both directions, and the case agrees. Nothing
+in the parser changed.
+
+**Chomping itself had never been measured.** It has five inputs — two
+styles, three indicators, an optional indentation indicator, the shape
+of the trailing lines, and whether the scalar is a mapping value, a
+sequence entry or the whole document — and what existed was a handful
+of cases in `parse_test.go` written from the specification. The matrix
+in `internal/yaml/chomping_test.go` is the product instead: 126
+documents, each in the PyYAML differential of 5.8 *and* in a captured
+table, so the coverage holds on a machine with no Python and the
+differential re-derives it where PyYAML is installed. Breaking the fix
+on purpose fails 20 assertions across both halves, and fails the
+captured half alone with the differential skipped, which is the check
+that matters on a machine that has no reference to compare against.
+
+**It found the defect on its first run.** Four documents: a block
+scalar whose last line is not terminated — the file simply ends — came
+back with a line break that is not in the file, under clip and under
+keep. `contents: |` over a file with no final newline wrote a file with
+one. That is a file that differs from the one the state describes, on
+every run, in the direction nothing notices, and it is the same class as
+the `--- |` defect 5.4 already records. The parser counted the trailing
+breaks it was going to emit from the line *count*; it now counts the
+breaks the file actually has.
+
+**The suite and the reference implementations disagree about this, and
+SPEC picks the implementations.** The YAML test suite expects the break
+to be added at end of input — L24T/01 and JEF9/02 both assert it. PyYAML
+does not add it, and neither does libyaml, which is a separate
+implementation in a different language. SPEC 10.1 specifies PyYAML's
+dialect, for the stated reason that it is the dialect every existing
+Salt tree was written against, so the two suite cases move to the
+deliberate side of the table as `specEndOfInput`. **This is why the
+suite score went down while the parser got more correct**: 331 agreeing
+became 330, and the gap count 37 became 36. A score that can only go up
+is a score that is not measuring anything.
+
+**And a fact about the reference that was being stated wrongly.** Six
+documents in the matrix put a tab at the head of block scalar content.
+Pure Python PyYAML reads them; libyaml refuses them as "a tab character
+where an indentation space is expected". Salt takes
+`getattr(yaml, "CSafeLoader", yaml.SafeLoader)`, so which one an estate
+gets depends on whether libyaml is installed beside it — and the
+differential's shaper carried a comment saying `safe_load` "is what Salt
+uses", which is true only of the half that has no C extension. The
+shaper stays pinned to pure Python, deliberately, so the comparison is
+the same on every machine; the comment now says which implementation
+that is and where they part.
+
+Running the matrix through Salt's own loader on this host — Salt
+3006.25, with libyaml present — agreed with the captured PyYAML answers
+on 120 of the 126, the six differences being exactly the tab cases. That
+was a run by hand and is not committed: `make saltdiff`'s container is
+where a Salt comparison belongs, and it was not re-run for this.
 
 ## 6. Everything else not started
 

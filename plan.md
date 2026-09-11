@@ -880,13 +880,20 @@ Lowest priority, and all three suites pass with tables enforced in both
 directions, so nothing here is silently rotting. Re-measured, and
 unchanged.
 
-- **YAML (SPEC 10.1):** 402 cases, 331 agree, 34 deliberate, **37 gaps**.
+- **YAML (SPEC 10.1):** 402 cases, 330 agree, 36 deliberate, **36 gaps**.
   The direction that matters: **20 of those gaps are documents halite
   accepts that the reference implementation refuses**, all admitted
   defects rather than design choices — a tree Salt would not load, loads
-  here. One `gapChomping` case the suite itself calls "the most damaging
-  gap in this table", because block-scalar chomping feeds `file.managed`
-  contents; that one should be fixed regardless of its position here.
+  here. ~~One `gapChomping` case the suite itself calls "the most
+  damaging gap in this table".~~ **Measured and closed, and it was not
+  what the label said.** That case was an `!!binary` value the
+  comparison could not represent; chomping itself had never been
+  measured, and a 126-document matrix against PyYAML found the real
+  defect — a block scalar whose file ends without a final newline came
+  back with one, so `contents: |` wrote a file the source does not
+  contain. The agreement count fell by one in the process, because two
+  suite cases assert a line break that PyYAML and libyaml both decline
+  to add and SPEC 10.1 picks the implementations. DIVERGENCE 5.56.
 - **Templates (SPEC 10.2):** 198 cases, 157 agree, 26 outside the subset,
   **15 gaps — but 9 are corpus-extractor artifacts**. Six are real:
   calling a filter result, string `indent(width=…)`, `groupby` with a
@@ -1379,9 +1386,12 @@ tool nobody has run against it (DIVERGENCE 5.31).
 
 **Last**
 
-22. The YAML over-acceptance set, prioritising the chomping case; the
-    six real template gaps; the regexcompat character-class false
-    positive (§5).
+22. The YAML over-acceptance set — 20 documents halite reads that the
+    reference refuses, which is now the whole of what is left worth
+    taking there, the chomping case having turned out to be a
+    mismeasurement with a real defect behind it (§5, DIVERGENCE 5.56);
+    the six real template gaps; the regexcompat character-class false
+    positive.
 
 ---
 

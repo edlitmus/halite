@@ -470,6 +470,10 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 		text   string
 		indent int
 		blank  bool
+		// br records whether the line was actually terminated by a line
+		// break. The last line of a file need not be, and a break that
+		// is not in the file must not appear in the scalar.
+		br bool
 	}
 	var raw []rawLine
 
@@ -542,17 +546,19 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 			p.next()
 		}
 		text := string(p.src[start:p.off])
+		br := false
 		if !p.eof() {
 			p.next()
+			br = true
 		}
 		if blank {
 			// A blank line's indentation is not nothing: whitespace past
 			// the block's own indent is content, so `|+` over a line of
 			// two spaces at indent 1 keeps one of them.
-			raw = append(raw, rawLine{blank: true, indent: indent})
+			raw = append(raw, rawLine{blank: true, indent: indent, br: br})
 			continue
 		}
-		raw = append(raw, rawLine{text: text, indent: indent})
+		raw = append(raw, rawLine{text: text, indent: indent, br: br})
 	}
 
 	// A whitespace-only line indented past the block is not blank: the
@@ -567,6 +573,16 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 		}
 	}
 
+	breaksIn := func(lines []rawLine) int {
+		n := 0
+		for _, ln := range lines {
+			if ln.br {
+				n++
+			}
+		}
+		return n
+	}
+
 	lastContent := -1
 	for i, ln := range raw {
 		if !ln.blank {
@@ -575,11 +591,17 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 	}
 	if lastContent < 0 {
 		if chomp == '+' {
-			return strings.Repeat("\n", len(raw)), nil
+			return strings.Repeat("\n", breaksIn(raw)), nil
 		}
 		return "", nil
 	}
-	trailing := len(raw) - 1 - lastContent
+	// The breaks chomping acts on are the ones the file actually has,
+	// counted from the last content line to the end. A block scalar that
+	// ends at the end of the file has one fewer than its line count, and
+	// clip and keep both used to add it anyway -- which is a `contents`
+	// block that writes a file the source does not contain, and a state
+	// that reports a change on every run.
+	trailingBreaks := breaksIn(raw[lastContent:])
 	raw = raw[:lastContent+1]
 
 	// extra is the whitespace a line carries past the block's own indent,
@@ -655,8 +677,11 @@ func (p *parser) parseBlockScalar(parentIndent int) (string, error) {
 	case '-':
 		return b.String(), nil
 	case '+':
-		return b.String() + "\n" + strings.Repeat("\n", trailing), nil
+		return b.String() + strings.Repeat("\n", trailingBreaks), nil
 	default:
-		return b.String() + "\n", nil
+		if trailingBreaks > 0 {
+			return b.String() + "\n", nil
+		}
+		return b.String(), nil
 	}
 }

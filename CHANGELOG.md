@@ -18,6 +18,30 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A block scalar that ends the file no longer gains a newline
+
+`contents: |` over a file whose last line has no line break wrote a file
+with one. The document has no final newline; the string halite built had
+one, under both the default chomping and `|+`. That is a file that
+differs from the one the state describes, on every run, in the direction
+nothing notices, and it is what a `file.managed` reports a change for
+forever.
+
+It was found by measuring rather than by reading: block scalar chomping
+now has a 126-document matrix — two styles, three chomping indicators,
+an explicit indentation indicator, and the trailing shapes each of them
+behaves differently on — checked against PyYAML, which is the dialect
+the specification asks for because it is the one every existing Salt
+tree was written against. The matrix runs in the PyYAML differential
+where Python is installed and against a captured table everywhere else,
+so it holds on a machine with no reference to compare against.
+
+The conformance table had carried a chomping gap for as long as it had
+existed, with a note calling it the most damaging entry in the table.
+That entry was something else entirely: a binary value the comparison
+could not represent. The real defect was next to it and nothing had ever
+looked.
+
 ### A node can be asked what authenticates a login on it
 
 `pam` reads and manages the PAM configuration, on Linux, the BSDs and

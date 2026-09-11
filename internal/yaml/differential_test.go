@@ -149,6 +149,12 @@ func diffCorpus() []diffCase {
 	add("invalid/unclosed-quote", "k: 'abc\n")
 	add("invalid/tag-unknown", "k: !!nosuch 1\n")
 
+	// Block scalar chomping, the construct SPEC 10.1.1 singles out
+	// because it is what `file.managed` contents is written as. The
+	// matrix lives in chomping_test.go, which also holds the captured
+	// answers for a machine with no PyYAML.
+	cases = append(cases, blockScalarCases()...)
+
 	return cases
 }
 
@@ -307,6 +313,9 @@ func TestPyYAMLDifferential(t *testing.T) {
 	t.Logf("PyYAML differential: %d of %d agree, %d differ", agreed, len(cases), differed)
 	if os.Getenv("HALITE_YAML_DIFF_REGEN") != "" {
 		regenDiffTable(t, cases, theirs)
+	}
+	if os.Getenv("HALITE_YAML_CHOMP_REGEN") != "" {
+		regenChompTable(t, cases, theirs)
 	}
 }
 
