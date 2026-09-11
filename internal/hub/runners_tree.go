@@ -358,6 +358,11 @@ func registerEventRunner(r *Runners) {
 
 // cachedNode is what the hub holds about one node.
 func (s *Server) cachedNode(id string) (*value.Map, error) {
+	// Get reports a node it holds nothing about as ErrUnknownNode. It
+	// used to report it as no data and no error, and this function
+	// dereferenced the nil for any node the hub had not heard from --
+	// which is a panic rather than a diagnostic, and is why the
+	// contract changed rather than this line.
 	data, err := s.nodes().Get(id)
 	if err != nil {
 		return nil, err
@@ -426,8 +431,16 @@ func (c *RunnerContext) compilePillarFor() (*pillar.Compiled, error) {
 	node := c.arg("node")
 	data, err := c.Server.nodes().Get(node)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w; the node has to have pushed its grains before "+
-			"its pillar can be compiled the way it would receive it", node, err)
+		// The message used to be attached to every error from here,
+		// which read as though it explained the common case and did
+		// not: absence was not an error at all, so the pillar of a node
+		// that had never connected panicked the hub on the next line
+		// instead. It now fires on the case it describes.
+		if errors.Is(err, ErrUnknownNode) {
+			return nil, fmt.Errorf("%w; its pillar cannot be compiled the way it would "+
+				"receive it until then", err)
+		}
+		return nil, err
 	}
 	grains := value.NewMap(0)
 	if len(data.Grains) > 0 {

@@ -40,6 +40,24 @@ type NodeData struct {
 // honest answer when nothing has been cached.
 var errNoNodeCache = errors.New("this hub has no node data cache")
 
+// ErrUnknownNode is what Get reports for a node the cache holds nothing
+// about.
+//
+// Absence used to be `(nil, nil)`: no data, no error. Every caller
+// checks the error, and three of the four then dereferenced the nil --
+// so `halite-hub runner pillar.show_pillar node=x` panicked the hub for
+// any node that had never pushed its grains, and so did `cachedNode`,
+// and so did the fleet version survey for any accepted node in the same
+// state. A nil pointer behind a nil error is a trap that has to be
+// remembered at every call site, and this package forgot it three times
+// out of four.
+//
+// Reporting absence as an error is the fix that cannot be forgotten:
+// the callers that were wrong already check the error and are now
+// right without being touched, and the two that genuinely want "no data
+// is fine" say so with errors.Is.
+var ErrUnknownNode = errors.New("this hub holds no data for the node")
+
 // NodeCache is the store of node data.
 type NodeCache struct {
 	dir string
@@ -115,7 +133,8 @@ func (c *NodeCache) Get(nodeID string) (*NodeData, error) {
 	}
 	raw, err := atomicfile.Read(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+		return nil, fmt.Errorf("%s: %w; it has to have connected and pushed its grains first",
+			nodeID, ErrUnknownNode)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("reading the node data for %s: %w", nodeID, err)
@@ -148,10 +167,14 @@ func (c *NodeCache) Delete(nodeID string) error {
 func (c *NodeCache) Matchable(nodeID string) (target.Node, error) {
 	n := target.Node{ID: nodeID, Grains: value.NewMap(0), Pillar: value.NewMap(0)}
 	data, err := c.Get(nodeID)
-	if errors.Is(err, errNoNodeCache) {
+	// A node the hub holds nothing about still matches on its own ID,
+	// and so does every node when the hub has no cache at all. Both are
+	// "no grains to match on" rather than a failure: SPEC 8.2's ID
+	// matching does not depend on a node having connected.
+	if errors.Is(err, errNoNodeCache) || errors.Is(err, ErrUnknownNode) {
 		return n, nil
 	}
-	if err != nil || data == nil {
+	if err != nil {
 		return n, err
 	}
 	if len(data.Grains) > 0 {

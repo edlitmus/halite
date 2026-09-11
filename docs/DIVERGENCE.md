@@ -5799,6 +5799,75 @@ process, which is where the secrets are, and SPEC 25.4 is titled for the
 node. Neither of those is a gap in the mechanism, and both are named
 here rather than left for somebody to discover.
 
+### 5.59 A nil pointer behind a nil error, three times over
+
+`halite-hub runner pillar.show_pillar node=ref-salt1` panicked the hub
+on 2026-09-11, against a node that had been accepted and had not yet
+connected. The handler died with "invalid memory address or nil pointer
+dereference" and the operator got a stream error.
+
+**The cause is one line and it is a contract rather than a mistake in
+arithmetic.** `NodeCache.Get` reported absence as `(nil, nil)`: no data,
+no error. Three of its four callers checked the error and then
+dereferenced the nil:
+
+| Command | What it dereferenced |
+|---|---|
+| `pillar.show_pillar` | the node's cached grains |
+| `cache.grains` | the same, one function further in |
+| `manage.versions` | the reported version, for every accepted node in the survey |
+
+Each is an ordinary command against an ordinary state -- the window
+between `halite-hub keys accept` and a node's first subscribe -- and
+each took the hub's handler with it rather than returning an error.
+
+**The fix is the contract, not the call sites.** `Get` now reports
+absence as `ErrUnknownNode`, wrapped with the node's name and what is
+missing. Every caller that was wrong already checked the error, so all
+three became correct without being touched; the two that genuinely want
+"no data is fine" -- `Matchable`, which must still match a node on its
+own ID, and the relay's grain forwarding -- say so with `errors.Is`. A
+caller added tomorrow cannot forget a nil check it does not have to
+make.
+
+**The convention already existed and this was the one store outside
+it.** Six stores in this tree read a record by identifier, and five of
+them -- the job cache, the keystore, the API token store, the mine, and
+the orchestration store -- already reported absence as a named error
+(`ErrNoJob`, `ErrNotFound`, `ErrNoMineData`, `ErrNoOrchRun`). Only the
+node cache returned a nil pair. That is the shape this ledger keeps
+recording: two paths that must agree, where one of them was written
+later and nobody compared them.
+
+#### The sweep that followed
+
+Every function in the tree that returns a pointer or a map together
+with an error and can return both as nil, found by walking the syntax
+tree rather than by grep: **seventeen**, of which the node cache was the
+only defect.
+
+- Eleven nil-check at every call site: the apt, yum and choco
+  repository providers, `lvmFindLV`, `lvmFindPV`, `macAssistiveFind`,
+  `firstBrewFormula`, `loadFile`, and the render sandbox's own
+  encode and decode helpers.
+- Three are nil-safe by design, which is the other correct answer:
+  `*tracing.Tracer` hands out nil spans whose methods do nothing,
+  `*policy.Policy` denies everything when nil, and `requireProtocol`
+  returns nil to mean "use the base configuration", which is the
+  standard library's own contract for that callback.
+- Two carry a nil map, which Go reads as empty: the orchestration
+  resume seed and the sandbox's keyword arguments.
+- One was the node cache.
+
+What the sweep cannot do is prove the general rule, and saying so is
+part of the finding: deciding whether *this* call site dereferences
+*that* function's result needs type resolution rather than syntax, so
+the seventeen were read by hand. The guard that remains is behavioural
+and specific --
+`TestARunnerAnswersForANodeThatHasNeverConnected` calls all three
+commands against a node in exactly that state, and it reproduces the
+original panic exactly when the contract is put back.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

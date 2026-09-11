@@ -469,3 +469,83 @@ func runnerRequest(fun string, kwargs map[string]any) transport.RunnerRequest {
 
 // jobIDOf is the identifier as the job cache holds it.
 func jobIDOf(s string) job.ID { return job.ID(s) }
+
+// A node the hub has accepted and never heard from is an ordinary
+// state, and three runners crashed the hub over it.
+//
+// `NodeCache.Get` reported absence as `(nil, nil)`: no data and no
+// error. Every caller checked the error; three of the four then
+// dereferenced the nil. `halite-hub runner pillar.show_pillar
+// node=ref-salt1` on a node that had not yet connected took the hub's
+// handler down with "invalid memory address or nil pointer
+// dereference", and `cache.grains` and `manage.versions` had the same
+// defect waiting behind them.
+//
+// The test enrolls a node and never connects it, which is exactly the
+// state between `halite-hub keys accept` and the node's first
+// subscribe, and asks each of the three for it.
+func TestARunnerAnswersForANodeThatHasNeverConnected(t *testing.T) {
+	l := newLab(t).withJobs(t).withPillar(t, map[string]string{
+		"top.sls":    "base:\n  '*':\n    - common\n",
+		"common.sls": "tier: production\n",
+	})
+	l.enrolled(t, "never-connected.example")
+	op := l.operator(t, "ed")
+
+	// Two of them refuse, and the refusal has to name the node and say
+	// what is missing rather than being a stream error from a dead
+	// handler.
+	for _, fun := range []string{"pillar.show_pillar", "cache.grains"} {
+		res, err := op.Runner(context.Background(), transport.RunnerRequest{
+			Fun:   fun,
+			Kwarg: map[string]any{"node": "never-connected.example"},
+		})
+		if err != nil {
+			t.Fatalf("%s: the request itself failed, which is what a panicking handler looks like: %v", fun, err)
+		}
+		if res.Success {
+			t.Errorf("%s succeeded for a node the hub holds nothing about", fun)
+			continue
+		}
+		if !strings.Contains(res.Error, "never-connected.example") {
+			t.Errorf("%s refused without naming the node: %s", fun, res.Error)
+		}
+		if !strings.Contains(res.Error, "grains") {
+			t.Errorf("%s refused without saying what is missing: %s", fun, res.Error)
+		}
+	}
+
+	// The third answers, because a fleet survey over a node that has
+	// reported no version has an answer: unknown.
+	versions := mapOf(t, returned(t, call(t, op, "manage.versions")))
+	nodes := mapOf(t, versions)
+	byVersion, ok := nodes.Get("nodes")
+	if !ok {
+		t.Fatalf("manage.versions returned %v", versions.StringKeys())
+	}
+	unknown, ok := mapOf(t, byVersion).Get("unknown")
+	if !ok {
+		t.Fatalf("manage.versions did not file the node under unknown: %v", mapOf(t, byVersion).StringKeys())
+	}
+	items, ok := unknown.([]any)
+	if !ok || len(items) != 1 || value.KeyString(items[0]) != "never-connected.example" {
+		t.Errorf("manage.versions filed %v under unknown", unknown)
+	}
+}
+
+// Targeting must not regress with the contract change: a node the hub
+// holds nothing about still matches on its own ID, which is how a job
+// reaches a node between acceptance and its first connection.
+func TestANodeWithNoCachedDataStillMatchesOnItsID(t *testing.T) {
+	l := newLab(t).withJobs(t)
+	node, err := l.server.nodes().Matchable("never-connected.example")
+	if err != nil {
+		t.Fatalf("matching a node with no cached data: %v", err)
+	}
+	if node.ID != "never-connected.example" {
+		t.Errorf("the matchable node is %q", node.ID)
+	}
+	if node.Grains == nil || node.Grains.Len() != 0 {
+		t.Errorf("the matchable node carries grains: %v", node.Grains)
+	}
+}

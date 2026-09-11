@@ -18,6 +18,22 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A node that has never connected no longer panics the hub
+
+`halite-hub runner pillar.show_pillar node=x` crashed the hub's handler
+for any node that had been accepted and had not yet connected. So did
+`cache.grains`, and so did `manage.versions` for a fleet with one such
+node in it.
+
+The node cache reported "I hold nothing about this node" as success with
+no data. Three of its four callers checked the error, found none, and
+dereferenced the nothing. Absence is now an error that names the node
+and says what is missing, which makes the three correct without
+touching them and leaves nothing for the next caller to remember.
+
+Five other stores in the tree already reported absence that way. The
+node cache was the one outside the convention.
+
 ### The tree is parsed where there is nothing to take
 
 `render_sandbox: true` moves YAML parsing and template rendering into a
