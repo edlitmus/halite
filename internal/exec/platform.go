@@ -59,9 +59,14 @@ var pendingPlatformModules = map[string]PendingModule{
 	"win_certutil":         {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_dsc":              {Platform: "windows", When: "an extension of kind `module`; SPEC section 24 marks it bridged"},
 	"win_lgpo":             {Platform: "windows", When: "an extension of kind `module`; SPEC section 24 marks it bridged"},
-	"udev":                 {Platform: "linux", When: "phase 5, with the Linux platform work"},
-	"modprobe":             {Platform: "linux", When: "phase 5, with the Linux platform work"},
-	"authselect":           {Platform: "linux", When: "phase 5, with the Linux platform work"}}
+	// authselect is Fedora/RHEL 8+ only in reality, whatever row SPEC
+	// 15.3 files it under. This project's fleet, and every host this
+	// work has been able to reach, is Debian/Ubuntu or FreeBSD -- there
+	// is no RHEL machine to run authselect against, and shipping
+	// fixtures for a tool nobody here has run is the mistake DIVERGENCE
+	// 5.31 exists to warn against. It waits for the same reason the
+	// other RHEL-only modules below do.
+	"authselect": {Platform: "rhel", When: "needs a RHEL 8+ host to verify against, which this project does not have"}}
 
 // PendingPlatform reports why a module SPEC 15.3 names is not in this
 // build, and whether it is one of them at all.
