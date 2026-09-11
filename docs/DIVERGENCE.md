@@ -4953,6 +4953,13 @@ that quietly dropped the `include` lines — the plausible slip, since
 they are not modules — was caught by the line count on three of this
 host's own files.
 
+Run since on a real Ubuntu 24.04 host, the other mechanism this section
+opened with: 33 real services, 191 real control flags, and 420 rules
+that arrived through Debian's untyped `@include` fan-out rather than
+FreeBSD's typed one — an order of magnitude more include resolution
+than the FreeBSD corpus exercises, on the platform the mechanism
+differs on.
+
 Nothing has watched this module write to a real /etc/pam.d, and nothing
 will: the mutating half runs against a throwaway tree and against
 nothing else. `evidence.go` records the module `captured` with that
