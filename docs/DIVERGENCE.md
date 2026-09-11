@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **73 execution modules / 490 functions** and **44 state
+The build ships **74 execution modules / 503 functions** and **44 state
 modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -556,7 +556,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-37 of 65 present — the rows below total 28 absent.
+38 of 65 present — the rows below total 27 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -626,7 +626,7 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `systemd_service` (alias) | `mdadm`, `udev`, `modprobe`, `authselect` |
+| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `systemd_service` (alias) | `udev`, `modprobe`, `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
@@ -5329,6 +5329,51 @@ has been willing to run against a real machine; the varlink error-reply
 path with a real service; and any systemd older than 255, whose varlink
 interface may be absent — the fallback exists for that and has only
 been exercised through a bad path.
+
+### 5.53 `mdadm`: `--detail` and /proc/mdstat, and a `create` that refuses
+
+SPEC 15.3's Common Linux and Storage rows, module eight. Thirteen
+execution functions: `version`, `list`, `detail`, `examine`, `mdstat`,
+`create`, `assemble`, `stop`, `add`, `fail`, `remove`, `grow`,
+`save_config`. No state — SPEC 15.5 names one for `lvm`, `zfs` and
+`zpool` and none for this, and that is right: building or reshaping an
+array is a careful, one-time, destructive operation, not a target a
+convergence loop re-checks. `pam` and `journald` have no state for the
+same kind of reason.
+
+**mdadm has no JSON, so `detail` parses the human report.** `--detail
+--export` is a `KEY=value` list but carries no health — not degraded,
+not which member failed. So `detail` reads `mdadm --detail`, whose
+header is `Label : Value` with a closed label set (the split is on the
+first colon, because a creation time carries its own) and whose member
+table is fixed-column with the device path taken from the end, because
+a `removed` slot has no path. This is a format, not the drifting `-o
+short` shape 5.31 was about. `mdstat` reads `/proc/mdstat` directly for
+the one thing `--detail` shows poorly: the resync, recovery and reshape
+percentages, the way `zpool status` reads a scrub.
+
+**`create` refuses without `force`.** `mdadm --create` overwrites the
+member devices. The module refuses a device that is already an array,
+and refuses a member whose `mdadm --examine` finds an md superblock —
+it may belong to another array — unless `force` is set. `--run` is
+always passed so mdadm does not stop on its interactive prompt.
+
+#### What was verified
+
+Against a real mdadm 4.3 on Ubuntu 24.04. `live_mdadm_test.go` builds a
+RAID1 with a spare across three loop devices, then runs `fail` ->
+`remove` -> `add` on a member with idempotence checked each way,
+`save_config` (which wrote an ARRAY line while keeping a hand-added
+MAILADDR line), and `stop` — every step checked against a fresh `mdadm
+--detail` / `--examine` / `/proc/mdstat` read, and `create` shown to
+refuse both an existing array and a member that already carries a
+superblock. It needs root and the loop driver, so it is gated behind
+`HALITE_SYSTEM_LIVE=1` and runs in the fleet workflow's linux leg, the
+same as `lvm` and `quota`. `evidence.go` records `mdadm` `hardware`.
+
+Not covered: `grow` (a reshape takes hours), `assemble --scan` (it
+reads every superblock on the host), RAID levels other than 1, and
+metadata 0.90.
 
 ## 6. Everything else not started
 

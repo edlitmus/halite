@@ -20,12 +20,13 @@ section 0 says which of its findings are now closed.
 **Amended 2026-09-10** on freebsd/amd64 with Go 1.26.8, without a full
 re-measurement. Several blocks landed since the date above and the counts
 in §0, §2.3 and §7 were corrected for them rather than re-derived: SPEC
-15.3's **macOS row**, which now ships entirely, and the first seven of
+15.3's **macOS row**, which now ships entirely, and the first eight of
 its **Common Linux row** — `pam`, `quota`, `openssl_cert`, `lvm`,
-`iptables`, `nftables` and `journald`. `pam`/`quota`/`openssl_cert` are
-the three §7.12 ranked first; `lvm`, `iptables` and `nftables` are the
-next three, each closing a 15.3 module *and* a 15.5 state; `journald`
-is the one §7.12 flagged for a design decision. 37 of 65 platform
+`iptables`, `nftables`, `journald` and `mdadm`. `pam`/`quota`/`openssl_cert`
+are the three §7.12 ranked first; `lvm`, `iptables` and `nftables` are
+the next three, each closing a 15.3 module *and* a 15.5 state;
+`journald` is the one §7.12 flagged for a design decision; `mdadm` is
+exec-only (SPEC 15.5 names no state for it). 38 of 65 platform
 modules now ship. One consequence a reader should not have to hunt for:
 the release gate is red on **ten** modules rather than two, all of them
 `apparmor`, `snap` or the eight-strong macOS row — every other new
@@ -540,7 +541,7 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
-### 2.3 Platform modules: 37 of 65
+### 2.3 Platform modules: 38 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
@@ -576,7 +577,7 @@ what an operator is looking for.
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
 | Debian and Ubuntu | 3 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
-| Common Linux | 4 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables` and `journald` ship** (DIVERGENCE 5.47-5.52). `iptables`/`nftables` are deliberately **not** `firewall` providers -- the layer under `ufw`, and `pf` showed the "reshapes the interface" prediction was soft. `journald` reads through `journalctl -o json` (the `jls --libxo=json` precedent) and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm`, `modprobe`, `udev`, `authselect` remain -- all small. |
+| Common Linux | 3 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald` and `mdadm` ship** (DIVERGENCE 5.47-5.53). `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm` is exec-only (13 functions, no state -- SPEC 15.5 names none, like `pam`/`journald`); it parses `mdadm --detail` and `/proc/mdstat`. `modprobe`, `udev`, `authselect` remain -- all small. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | **The row ships entirely**, second after FreeBSD. `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain` and `mac_assistive` are modules (DIVERGENCE 5.41-5.46). Every one of them is `assumed`: no CI leg is a Mac. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
@@ -1273,7 +1274,16 @@ unbuilt item here is number 7.
     socket, through a new ~130-line `internal/varlink`. Both halves
     driven against real systemd 255. DIVERGENCE 5.52.
 
-    What is left is Linux-only and small: `mdadm`, `modprobe`, `udev`,
+    ~~`mdadm`~~ is **done**, exec-only: 13 functions over `mdadm
+    --detail` (parsed as `Label : Value` + a member table) and
+    `/proc/mdstat` (the resync/recovery/reshape progress, the way
+    `zpool status` reads a scrub). `create` refuses an existing array
+    or a member that already carries an md superblock without `force`.
+    A loopback live leg on this fleet's Ubuntu host built a RAID1 with
+    a spare and ran fail/remove/add/save_config/stop against it.
+    DIVERGENCE 5.53.
+
+    What is left is Linux-only and small: `modprobe`, `udev`,
     `authselect`.
 13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.

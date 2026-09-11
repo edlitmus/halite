@@ -189,6 +189,15 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`vacuum`, which deletes archived journal files and no test has been willing to on a real machine; the " +
 		"varlink error path (a service that answers and refuses); and any systemd older than 255, whose varlink " +
 		"interface may be absent -- the fallback exists for exactly that and has only been forced by a bad path"},
+	"mdadm": {Level: exec.Hardware, Note: "driven end to end against a real mdadm 4.3 on Ubuntu 24.04: a " +
+		"RAID1 with a spare built across three loop devices with `create`, then `fail` -> `remove` -> `add` on a " +
+		"member with idempotence checked each way, `save_config` writing an ARRAY line while keeping a MAILADDR " +
+		"line, and `stop` -- every step checked against a fresh `mdadm --detail` / `--examine` / `/proc/mdstat` " +
+		"read, and `create` over an existing array and over a member that already carries a superblock both shown " +
+		"to refuse (DIVERGENCE 5.53). The `--detail` parser is written to mdadm's `Label : Value` header and its " +
+		"member table, checked against real degraded output (a removed slot, a faulty member). Not covered: " +
+		"`grow` (a reshape is too slow for a test), `assemble --scan` (it reads every superblock on the host), " +
+		"RAID levels other than 1, and metadata 0.90"},
 	"iptables": {Level: exec.Hardware, Note: "driven against a real iptables 1.8.10 (nf_tables backend) " +
 		"inside a throwaway network namespace on Ubuntu 24.04, so nothing touched the host firewall: rules " +
 		"appended, inserted, checked for idempotence with iptables' own `-C`, and deleted; user chains created, " +
