@@ -354,6 +354,30 @@ The pillar environment, defaulting to env.
 
 Lets pillar come from a different environment than states. Leaving it unset — pillar following `env` — is what most estates want; setting it is how a test environment reads production pillar by accident.
 
+### `render_sandbox`
+
+*`halite-node` · `false` · SPEC section 25.4*
+
+Render and parse the tree in an unprivileged child process.
+
+Moves YAML parsing and template rendering into a child process, which is SPEC 25.4's render sandbox. The parser and the template engine are the largest attacker-adjacent code a node runs and they need no privilege; module dispatch, template loading and gpg decryption stay in the parent. Off by default while the path is new. The node logs what the sandbox actually enforces on this platform when it starts one, and it is never more than it says.
+
+### `render_sandbox_group`
+
+*`halite-node` · no default · SPEC section 25.4*
+
+The group the render child drops to. Defaults to the account's own.
+
+The group for the render child. Empty takes the account's own primary group.
+
+### `render_sandbox_user`
+
+*`halite-node` · no default · SPEC section 25.4*
+
+The account the render child drops to. Requires a node running as root.
+
+The unprivileged account the render child runs as. It needs read access to the cached tree and nothing else. A node that is not root cannot drop to it, and says so rather than rendering as root while claiming otherwise. An account that does not exist fails the first render rather than being ignored.
+
 ### `top_file_merging_strategy`
 
 *`halite-node`, `halite-hub` · `merge` · SPEC section 11.2*
@@ -2065,6 +2089,9 @@ Every setting, and which programs read it.
 | `relay_timeout` | `halite-hub` | `60s` | Relays |
 | `relay_upstream` | `halite-hub` | — | Relays |
 | `relay_upstream_port` | `halite-hub` | `4510` | Relays |
+| `render_sandbox` | `halite-node` | `false` | The tree: states and pillar |
+| `render_sandbox_group` | `halite-node` | — | The tree: states and pillar |
+| `render_sandbox_user` | `halite-node` | — | The tree: states and pillar |
 | `renderer` | `halite-node`, `halite-hub` | `jinja|yaml` | Rendering and templates |
 | `require_job_signature` | `halite-node` | `false` | Node execution controls |
 | `returner` | `halite-node` | `local` | Returners |

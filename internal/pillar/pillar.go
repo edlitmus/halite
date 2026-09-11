@@ -74,6 +74,11 @@ type Config struct {
 	// Renderer is the default pipeline of SPEC section 10.
 	Renderer []string
 
+	// Engine renders a pillar file. Nil renders in this process. The
+	// node sets it from `render_sandbox`; the hub does not yet, and
+	// SPEC 25.4 is titled for the node.
+	Engine render.Engine
+
 	// Local marks a development compilation from a local pillar root.
 	// `halite-node call pillar.items --local` sets it; it never runs
 	// against the hub's roots. SPEC section 12.1.
@@ -184,7 +189,7 @@ func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 		return nil, nil
 	}
 
-	res, err := render.Render(src, c.renderOptions(env, state.TopName, path, nil))
+	res, err := render.Use(c.Config.Engine).Render(src, c.renderOptions(env, state.TopName, path, nil))
 	out.Warnings = append(out.Warnings, res.Warnings...)
 	if err != nil {
 		out.Diags.Add(value.Pos{File: path}, state.TopName, "", "%v", err)
@@ -386,7 +391,7 @@ func (c *Compiler) mergeSLS(out *Compiled, env, name string, seen map[string]boo
 	// The pillar being built so far is passed to the renderer, so that
 	// `salt['pillar.get']` inside pillar rendering resolves against the
 	// partially built tree in declaration order. SPEC section 10.2.7.
-	res, err := render.Render(src, c.renderOptions(env, name, path, out.Pillar))
+	res, err := render.Use(c.Config.Engine).Render(src, c.renderOptions(env, name, path, out.Pillar))
 	out.Warnings = append(out.Warnings, res.Warnings...)
 	if err != nil {
 		out.Diags.Add(value.Pos{File: path}, name, "", "%v", err)

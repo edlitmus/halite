@@ -74,7 +74,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
 | 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD and macOS rows of SPEC 15.3 now ship entirely. **32 of SPEC 15.3's 65 platform modules, 18 of SPEC 15.2's core execution modules and 14 of SPEC 15.5's core state modules remain.** |
-| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Outstanding: the scale harness the other eleven performance rows need, no packaging, no node evidence, no detached signing, no render sandbox. |
+| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Outstanding: the scale harness the other eleven performance rows need, no packaging, no node evidence, no detached signing; the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
 
 ### 0.1 What the previous revision listed and what has closed
 
@@ -699,13 +699,23 @@ This section has moved further than any other since the last revision.
 
 Unchanged since the last revision, and verified again here.
 
-- **The render sandbox (25.4) does not exist.** SPEC puts all YAML
-  parsing and template rendering in an unprivileged child with no
-  network, because "the parser and the template engine are the largest
-  and most attacker-adjacent code in the system, and they need no
-  privilege at all". Both run in-process in the privileged parent. The
-  Linux seccomp allowlist and capability drop are likewise absent. Do not
-  mistake the bridge sandbox for this one: `internal/bridge` confines
+- ~~**The render sandbox (25.4) does not exist.**~~ **Built**, in
+  `internal/rendersandbox`, behind `render_sandbox: true` and off by
+  default while the path is new. YAML parsing and template rendering
+  happen in a child; module dispatch, template loading and gpg
+  decryption stay in the parent, which is SPEC's own division. The
+  pipeline is split at its serializer so that decrypted pillar never
+  enters the unprivileged process. It costs 2.3 times the compile — 217
+  ms against 96 ms on the SPEC 30 tree — and is still an order of
+  magnitude inside that target. DIVERGENCE 5.58.
+
+  Two parts of the same bullet remain. **The Linux seccomp allowlist and
+  capability drop on the privileged *parent* are not built**, and they
+  are a separate mechanism from the child. And **the unprivileged
+  account is written and unexercised**: this project's hosts render as
+  the developer's own account, so `Credential` and the network namespace
+  both need a node running as root to be demonstrated. Do not mistake
+  the bridge sandbox for either: `internal/bridge` confines
   *extensions*, and it is built.
 - **Node-side evidence (25.7) does not exist.** No hash-chained
   append-only record of accepted jobs, no `halite-node verify-evidence`.
@@ -911,8 +921,23 @@ unchanged.
   calling a filter result, string `indent(width=…)`, `groupby` with a
   numeric attribute, `{{ self.foo() }}`, a `caller=none` macro default,
   and the `is in` test.
-- **PyYAML differential:** 114 documents, 104 agree, 10 deviations, zero
-  unexplained. Done.
+- **PyYAML differential:** 240 documents, 230 agree, 10 deviations, zero
+  unexplained. Done. The count grew with the chomping matrix of
+  DIVERGENCE 5.56.
+
+- **`salt['x.y'] is defined` always answers true**, found while building
+  the render sandbox. `template.Dispatcher.HasModule` exists, is
+  implemented by every dispatcher in the tree, and is called by nothing:
+  a subscript of `salt` returns a dispatch value whatever the name, so
+  the guard `{% if salt['foo.bar'] is defined %}` takes the true branch
+  on a node that does not have the module and fails at the call instead.
+  Salt answers false, because its loader raises and Jinja turns that
+  into undefined, so this is a migration defect as well as a wrong
+  answer. The fix is confined to the subscript spelling: a name with a
+  dot in it can be checked, and a bare `salt['pkg']` used as a prefix
+  for `salt.pkg.version` cannot, so only the first consults the
+  registry. Not fixed here, because it changes what an existing tree
+  means and belongs in its own change.
 - **The regex engine (SPEC 10.4):** `internal/regexcompat` refuses 11
   PCRE constructs by name with a workaround apiece and hands the rest to
   RE2. The estate's real tree produced **zero regex findings across 193
@@ -1256,8 +1281,15 @@ unbuilt item here is number 7.
    checked. The generated trees are asserted to the shape SPEC names,
    because a benchmark cannot fail and one measuring nothing reports an
    excellent number. DIVERGENCE 5.57.
-8. The render sandbox (§3.3), the largest unbuilt security control and
-   the one SPEC argues for most directly.
+8. ~~The render sandbox~~ (§3.3) — **done**, and the two things it did
+   not settle are named rather than implied. The mechanism works on
+   every platform the tree builds for and enforces different amounts on
+   each, which `Describe` reports and the node logs; what is unexercised
+   is the unprivileged account, because nothing here runs a node as
+   root. Running it is what turned up both of its defects — an error
+   message that named the file twice, and a `render_sandbox_user` that
+   was accepted and ignored on any node that could not drop privilege.
+   Neither was reachable from a test that passed. DIVERGENCE 5.58.
 9. **Node evidence and detached signing** (§6). Supply chain, and it
    matters more now that the thing being supplied runs everything.
 

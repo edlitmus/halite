@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -42,6 +43,13 @@ type Context struct {
 	PillarErr error
 	// Config is the effective configuration, redacted.
 	Config *value.Map
+
+	// Render is the engine a state renders a templated file source
+	// with. Nil renders in this process. It is here rather than being
+	// reached for at the call site because SPEC 25.4's boundary is
+	// about *where* a template runs, and `file.managed` with
+	// `template: jinja` is a template over bytes from the file server.
+	Render render.Engine
 
 	NodeID string
 	Env    string

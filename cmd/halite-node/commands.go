@@ -157,6 +157,10 @@ func (n *node) stateCompiler(p *value.Map, jobID string) *state.Compiler {
 		Loader:   n.files,
 		Registry: n.registry.States.Signatures(),
 		Config: state.Config{
+			// SPEC 25.4: nil unless `render_sandbox` is on, in which case
+			// every file in this compilation is parsed and rendered in an
+			// unprivileged child rather than here.
+			Engine: n.renderEngine(),
 			// `salt['pillar.get']` and its neighbours are ordinary in an
 			// SLS file. The compiler has always passed this through to
 			// the renderer and nothing ever set it, so every one of them

@@ -154,6 +154,13 @@ func (w Warning) String() string {
 	return fmt.Sprintf("%s:%d:%d: %s", w.File, w.Line, w.Col, w.Msg)
 }
 
+// errUnknownStage is the one message for a stage the pipeline runner
+// reached and cannot run, shared with ApplyDataStages so the two halves
+// of a split pipeline refuse in the same words.
+func errUnknownStage(file, stage string) error {
+	return fmt.Errorf("%s: renderer %q has no implementation in this build", file, stage)
+}
+
 // ParsePipeline reads the shebang-style first line and returns the stage
 // list and the body with that line removed. A file without one gets the
 // default pipeline.
@@ -241,6 +248,19 @@ func checkStages(stages []string, file string) error {
 // Render runs a source through its pipeline.
 func Render(src []byte, opts Options) (Result, error) {
 	stages, body := ParsePipelineWith(string(src), opts.Renderer)
+	return RunStages(body, stages, opts)
+}
+
+// RunStages runs an explicit pipeline over a body whose shebang line has
+// already been removed by ParsePipelineWith.
+//
+// Split out of Render for the render sandbox of SPEC 25.4, which has to
+// run *part* of a pipeline: the template and serializer stages happen in
+// the unprivileged child, and the data stages that follow happen in the
+// parent, because `gpg` needs a keyring the child deliberately cannot
+// reach. Passing the stage list explicitly is what stops the child from
+// re-reading the shebang and running the whole thing.
+func RunStages(body string, stages []string, opts Options) (Result, error) {
 	res := Result{Pipeline: stages}
 
 	// Every stage is checked before any of them runs. A serializer ends
@@ -295,7 +315,7 @@ func Render(src []byte, opts Options) (Result, error) {
 			res.Value = v
 
 		default:
-			return res, fmt.Errorf("%s: renderer %q has no implementation in this build", opts.File, stage)
+			return res, errUnknownStage(opts.File, stage)
 		}
 	}
 
