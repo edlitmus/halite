@@ -212,11 +212,12 @@ var moduleEvidence = map[string]exec.Evidence{
 	// the live test corpus is.
 	"pam": {Level: exec.Captured, Note: "every service file on the machine running the tests " +
 		"is parsed and checked against the file rather than against an expectation -- 13 real " +
-		"services and 53 real control flags on FreeBSD 15.1, and whatever the Linux and macOS " +
-		"CI legs have -- and the sweep is cross-checked against the per-service answer. Nothing " +
-		"has watched this module write to a real /etc/pam.d: the mutating half runs only against " +
-		"a throwaway tree, deliberately, because a wrong line there locks every account out of " +
-		"the node and a test is not a thing to find that out with"},
+		"services and 53 real control flags on FreeBSD 15.1, 33 services and 191 flags (420 " +
+		"rules through Debian's own @include fan-out) on Ubuntu 24.04, and whatever the Linux " +
+		"and macOS CI legs have -- and the sweep is cross-checked against the per-service " +
+		"answer. Nothing has watched this module write to a real /etc/pam.d: the mutating half " +
+		"runs only against a throwaway tree, deliberately, because a wrong line there locks " +
+		"every account out of the node and a test is not a thing to find that out with"},
 
 	"user": {Level: exec.Captured, Note: "reads go through os/user against the real " +
 		"account database, and no account has been created, changed or removed on a real " +
