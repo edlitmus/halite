@@ -74,7 +74,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
 | 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD and macOS rows of SPEC 15.3 now ship entirely. **32 of SPEC 15.3's 65 platform modules, 18 of SPEC 15.2's core execution modules and 14 of SPEC 15.5's core state modules remain.** |
-| 6. Hardening to 1.0 | Started. Metrics are nearly complete and `doctor` ships (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite is built (§3.4). Outstanding: no benchmarks, no tracing, no packaging, no node evidence, no detached signing, no render sandbox. |
+| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Outstanding: the scale harness the other eleven performance rows need, no packaging, no node evidence, no detached signing, no render sandbox. |
 
 ### 0.1 What the previous revision listed and what has closed
 
@@ -636,15 +636,27 @@ covers. `service` has 16 of 18, `cmd` 12 of 13.
 
 Grouped by what each unblocks.
 
-### 3.1 Nothing is measured (SPEC 30)
+### 3.1 Two of the thirteen are measured (SPEC 30)
 
-`grep "func Benchmark"` over the tree returns **zero**. Two of SPEC 30's
-thirteen rows name a benchmark as their own measurement method —
-highstate compile under 2 s, pillar compile under 500 ms cold and 5 ms
-cached — so those are cheap and can land immediately. The rest need the
-simulated node harness: 20,000 nodes per hub, 10,000-node dispatch
-windows, 5,000 events/second, hub memory under 4 GiB, node memory under
-40 MiB idle. None of the thirteen is known to be met or missed.
+~~`grep "func Benchmark"` over the tree returns **zero**.~~ **Done for
+the two rows that named a benchmark as their own method**, which is what
+this item said was cheap. `internal/perf` carries all thirteen rows with
+what measures each, held to SPEC's own table in both directions, and
+`make perf` runs the measured two against their targets.
+
+Both are met with room: the highstate compile of 500 states over 50 SLS
+files takes **96 ms** against a 2 s target, and the cold pillar compile
+of 200 pillar SLS takes **154 ms** against 500 ms. FreeBSD, Xeon E5-2620
+v3, Go 1.26.8. DIVERGENCE 5.57.
+
+Two things it does not settle. The pillar row's *cached* number has
+nothing to measure, because there is no pillar cache — the same feature
+§3.2's two missing metric families wait on. And the other eleven rows
+still need the simulated node harness, a soak, or the integration
+matrix: 20,000 nodes per hub, 10,000-node dispatch windows, 5,000
+events/second, hub memory under 4 GiB, node memory under 40 MiB idle.
+Each is tracked with what it waits on, which is a different thing from
+being measured.
 
 ### 3.2 The observability trio (SPEC 26): metrics are nearly done
 
@@ -1237,7 +1249,13 @@ unbuilt item here is number 7.
    **What is not established**: no span this build produces has been
    read by a real collector. That is the same shape as §5 above, one
    layer up, and the first estate to set `tracing: otlp` settles it.
-7. The two SPEC 30 benchmarks that need no harness (§3.1).
+7. ~~The two SPEC 30 benchmarks that need no harness~~ (§3.1) —
+   **done.** Both targets are met with room, 96 ms against 2 s and
+   154 ms against 500 ms, and the other eleven rows are now tracked with
+   what each waits on rather than being thirteen numbers nobody had
+   checked. The generated trees are asserted to the shape SPEC names,
+   because a benchmark cannot fail and one measuring nothing reports an
+   excellent number. DIVERGENCE 5.57.
 8. The render sandbox (§3.3), the largest unbuilt security control and
    the one SPEC argues for most directly.
 9. **Node evidence and detached signing** (§6). Supply chain, and it

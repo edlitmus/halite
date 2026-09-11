@@ -42,6 +42,22 @@ That entry was something else entirely: a binary value the comparison
 could not represent. The real defect was next to it and nothing had ever
 looked.
 
+### The performance targets are measured rather than asserted
+
+SPEC section 30 gives thirteen targets "with the measurement method, so
+they can be tested rather than asserted", and until now none had been
+measured. The two that name a benchmark as their own method now are, and
+both are met: a highstate of 500 states over 50 SLS files compiles in
+96 ms against a 2 s target, and 200 pillar SLS compile cold in 154 ms
+against 500 ms.
+
+`make perf` runs them and fails if either is over. The other eleven rows
+need a simulated fleet, a soak, or an integration matrix; each is now
+tracked with what it waits on, which is a smaller thing than being
+measured and a larger thing than a number nobody has checked. One of
+them is a half-row: the pillar target states a cached number too, and
+there is no pillar cache in this build to measure.
+
 ### A node can be asked what authenticates a login on it
 
 `pam` reads and manages the PAM configuration, on Linux, the BSDs and

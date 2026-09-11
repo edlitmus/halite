@@ -1845,10 +1845,15 @@ section 4.1. What is still uncovered is what needs a hub.
 ### 5.2 The fourteen test layers
 
 Every layer SPEC 31 requires beyond the unit layer of 5.1, and where each
-stands. Five are present, one of them stronger than
-specified, four are partial, and four are absent. Nothing is unverified
-any more: the reproducibility layer was, and it is now partial with the
-limit stated rather than the question left open.
+stands. Seven are present, one of them stronger than specified, five are
+partial, and one is absent. Nothing is unverified any more: the
+reproducibility layer was, and it is now partial with the limit stated
+rather than the question left open.
+
+Four rows moved after this table was first written and each said
+"blocked on phase 2" long after phase 2 landed: chaos and upgrade are
+built, scale is partial, and integration is the one that is still
+absent.
 
 | Layer | Status |
 |---|---|
@@ -1859,10 +1864,10 @@ limit stated rather than the question left open.
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
 | Property | **present** for all five named properties, each checked over generated input rather than a fixed corpus: path containment never escapes a root (`internal/fileserver/property_test.go`, 23000 generated paths plus the symlink cases), the topological sort is stable, requisite resolution terminates, and a requisite genuinely orders its target (`internal/state/property_test.go`, over random requisite graphs including cycles), the YAML parser never panics (`internal/yaml/property_test.go`, 50000 generated documents), and targeting is monotonic under grain addition (`internal/target/property_test.go`, 20000 expression and node pairs). Negation is asserted as the documented exception to monotonicity rather than left implicit. |
 | Fuzz | **present** for three of the eight named targets: the YAML parser and its encoder, the template lexer and parser, and the compound target parser. `make fuzz` runs all seven functions; `make fuzz FUZZTIME=30m` is a campaign. The first run found four defects, listed in 5.3 below. Still absent: the wire message decoder, the cron parser, the roster parser, and the bridge protocol decoder, all of which belong to phases that have not started. |
-| Integration | **absent.** No containerised hub-plus-nodes harness. Blocked on phase 2. |
-| Scale | **absent.** Blocked on phase 2. |
-| Upgrade | **absent.** Nothing to upgrade from. |
-| Chaos | **absent.** Blocked on phase 2. |
+| Integration | **absent.** No containerised hub-plus-nodes harness across the tier 1 matrix. The repository has two containers and a virtual machine — the Salt differential image, the Debian container of 5.35, and the ZFS machine of 6.1 — and each is a correctness harness for one subsystem rather than a matrix. This is the last layer with nothing behind it. |
+| Scale | **partial.** `internal/perf` carries all thirteen rows of SPEC 30 with what measures each, held to SPEC's own table in both directions. The two rows SPEC measures with a benchmark are measured: the highstate compile of 500 states over 50 SLS files, and the cold pillar compile of 200 pillar SLS. `make perf` runs them and fails if either is over its target; `make perf-bench` is the raw measurement. The eleven rows that need the simulated node harness, a soak, or the integration matrix are still unmeasured, and so is the *cached* half of the pillar row, because no pillar cache exists to measure. See 5.57. |
+| Upgrade | **present.** All three clauses of SPEC 31's row have tests and `internal/specaudit` holds the row to them in both directions, so a fourth clause cannot sit there uncovered. Writing them found a job record that silently dropped every field an older build did not know; the record now carries a schema marker. What is not established is two halite versions actually running against each other, because there has never been a second version. See 4.13. |
+| Chaos | **present.** All eight of SPEC's scenarios are registered in `internal/chaos` with a defined behaviour and a stated limit, each with a test that names it, and a ninth is registered that SPEC does not name: the concurrent-writer shape that three defects in a fortnight all had. `make chaos` runs the layer with `-v`, which is the point of it. Its first run found a reader resuming from a pruned event-bus offset being silently skipped forward. See 5.29. |
 | Security | **partial.** The dependency-graph assertion of 4.2 is implemented and enforced (`internal/buildpolicy`, `make policy`), and `make vuln` runs `govulncheck`. It is not part of `make check`, because it fetches the tool and the vulnerability database and `check` has to work on the machine a release is built on, which has no network and `GOPROXY=off`. With no third-party dependencies it scans the Go standard library and nothing else, which makes it a check on the toolchain rather than on a supply chain — a smaller claim than the name suggests, and the one worth making. Clean against the database of 2026-08-21. No static analysis beyond `go vet`. No external review. |
 | Reproducibility | **partial.** `make repro` builds every binary twice, the second time from a copy of the tree at a different path so that `-trimpath` is exercised rather than assumed, and compares the digests. They match. That is one builder, one toolchain, one machine — not the two independent builders SPEC 31 asks for — but it establishes the half that usually breaks first and has to hold before two builders can agree about anything: the build embeds neither the clock nor the working directory. A second builder has still never been tried. |
 
@@ -5604,6 +5609,63 @@ Running the matrix through Salt's own loader on this host — Salt
 on 120 of the 126, the six differences being exactly the tab cases. That
 was a run by hand and is not committed: `make saltdiff`'s container is
 where a Salt comparison belongs, and it was not re-run for this.
+
+### 5.57 SPEC 30: two rows measured, eleven tracked
+
+SPEC section 30 opens by saying its targets come "with the measurement
+method, so they can be tested rather than asserted". Until now every one
+of the thirteen was asserted: `grep "func Benchmark"` over the tree
+returned nothing, and no target was known to be met or missed.
+
+`internal/perf` carries the table. Every row has a method and either the
+benchmark that measures it or a note saying what it waits on, and
+`TestTheTableIsSpecsOwn` holds the row names to SPEC.md's own table in
+both directions, so a row renamed in the specification fails here rather
+than quietly stopping being tracked.
+
+Two rows name a benchmark as their own method and both are now measured:
+
+| Row | Target | Measured here |
+|---|---|---|
+| Highstate compile, 500 states, 50 SLS files, heavy Jinja | under 2 s on the node | **96 ms**, 21 MB, 172,000 allocations |
+| Pillar compile, 200 pillar SLS, cold | under 500 ms on the hub | **154 ms**, 38 MB, 187,000 allocations |
+
+Measured on the FreeBSD development host, a Xeon E5-2620 v3 at 2.4 GHz,
+Go 1.26.8, three runs of twenty; the spread between runs is under 4%.
+Both targets are met, the first with twenty times the headroom and the
+second with three.
+
+The trees are generated to the shape SPEC names rather than vendored
+from the estate, for a reason worth stating: a generated tree can be
+*asserted*. `TestTheTreesHaveTheShapeSpecNames` checks that the
+compilation really produced 500 chunks over 50 SLS files, that the macro
+import ran, and that the loop over pillar ran — because a benchmark
+cannot fail, and a generator that quietly stopped rendering would report
+a very good number for compiling nothing. That is the lesson of the
+`quota` leg in 5.48 applied to a benchmark: a thing that runs and
+reaches no assertion looks like progress in a log and is not.
+
+`make perf` runs the two and fails if either is over its target;
+`make perf-bench` is the raw measurement for comparing two revisions.
+Neither is in `make check`, deliberately: a wall clock on a shared CI
+runner measures the runner, and a gate that fails for that reason is one
+people learn to ignore.
+
+**What is not measured, and named as such.** The pillar row states two
+numbers — under 500 ms cold and under 5 ms cached — and only the cold
+one has anything behind it, because this build has no pillar cache at
+all: `pillar_cache_disk` is inert and `halite_pillar_cache_hits_total`
+is one of the two metric families of SPEC 26.2 that nothing registers.
+Benchmarking a second compile and calling it "cached" would report the
+cold number twice under two names. The other eleven rows need the
+simulated node harness, a soak, or the integration matrix, and each
+carries which.
+
+**What a number from here means.** One machine compiled one generated
+tree. It is not a claim about a fleet, and a compile is not an apply:
+what is measured is the parse, the render, the requisite resolution and
+the ordering, which is what SPEC's row names and what a node does before
+it touches anything on the host.
 
 ## 6. Everything else not started
 
