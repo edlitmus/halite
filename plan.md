@@ -982,15 +982,31 @@ unchanged.
 
 ## 6. Questions that need a person, not a commit
 
-1. **The `cmd.run` shell default (SPEC 33.3).** **54 of the estate
-   report's 93 review findings** are one category: a `cmd.run` naming a
-   program with arguments, pipes or `||`, which this build treats as a
-   single program name because it runs without a shell. None blocks, so
-   they are all latent breakage at migration. Decide whether
-   `cmd_default_shell: true` is the estate-wide setting for a period, or
-   whether 54 call sites get rewritten. **This is a scheduling decision
-   with numbers attached, and it should be taken before the estate starts
-   rewriting states.**
+1. ~~**The `cmd.run` shell default (SPEC 33.3).**~~ **Answered
+   2026-09-12: `cmd_default_shell: true`, estate-wide, for maximum
+   compatibility.** 54 of the estate report's 93 review findings were one
+   category -- a `cmd.run` naming a program with arguments, pipes or
+   `||`, which this build treats as a single program name because it runs
+   without a shell. Those 54 call sites are not rewritten; the setting
+   carries them.
+
+   **This is a setting, not a code change, and the distinction matters.**
+   SPEC 15.2 defines the *default* as an argument vector and the shipped
+   default stays `false`. What changes is the estate's own node
+   configuration. Anyone reading this later: do not "fix" the built-in
+   default to match the estate, because that would be a SPEC break made
+   by inference rather than by decision.
+
+   Two consequences worth stating where the decision is recorded. A
+   command run through a shell is re-interpreted by it, so anything
+   reaching `cmd.run` from pillar or a template is now shell syntax
+   rather than an opaque argument -- which is exactly Salt's own exposure
+   and is the compatibility being bought. And the setting has had a
+   defect of its own: it once applied to states that *had* said which
+   form they were in, so a converted state silently stopped passing its
+   arguments -- the `cmd_default_shell` row in DIVERGENCE 5.9, found by
+   running the estate's own tree. That is fixed, and it is the reason to
+   turn this on deliberately rather than quietly.
 2. **Modules SPEC never planned for** but the estate uses:
    `alternatives` (3 references), `docker_container`/`docker_image` (2),
    `rabbitmq_policy`/`user`/`vhost` (3), `kmod` (1), `macpackage` (1).

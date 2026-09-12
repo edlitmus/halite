@@ -7436,7 +7436,7 @@ excavation.
 |---|---|---|---|
 | 1 | Project name | Halite, unchanged | module path, binary names, `HALITE=1` in the child environment, the `#HALITE_CRON_IDENTIFIER:` marker in managed crontabs |
 | 2 | Compatibility horizon | no date set | the config shim has no removal path |
-| 3 | `cmd.run` default | argv, per 15.2 | `cmd_default_shell` is read but a tree relying on shell parsing breaks at migration |
+| 3 | `cmd.run` default | argv in the build, per 15.2; **`cmd_default_shell: true` estate-wide, decided 2026-09-12** | the shipped default is unchanged and the estate turns the setting on, so the 54 call sites the migration report flagged are carried rather than rewritten. A command run through a shell is re-interpreted by it, which is Salt's own exposure and is the compatibility being bought |
 | 4 | Strict undefined | strict, per 10.2.6 | `--permissive` exists as the transition |
 | 5 | PAM | dropped | no local account authentication; phase 4 concern |
 | 6 | Detached job signing | not implemented | phase 6 |
