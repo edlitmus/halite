@@ -2,6 +2,7 @@ package template
 
 import (
 	"math"
+	"strconv"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/value"
@@ -322,7 +323,7 @@ func addSequenceFilters(f map[string]FilterFunc) {
 		if err != nil {
 			return nil, err
 		}
-		attr, ok := argString(args, kwargs, 0, "attribute")
+		attr, ok := argAttrName(args, kwargs, 0, "attribute")
 		if !ok {
 			return nil, fc.Errorf("groupby needs an attribute name")
 		}
@@ -337,7 +338,8 @@ func addSequenceFilters(f map[string]FilterFunc) {
 		started := false
 		flush := func() {
 			if started {
-				out = append(out, []any{curKey, group})
+				// Python's groupby yields (grouper, list(group)) tuples.
+				out = append(out, Tuple{curKey, group})
 			}
 		}
 		for _, item := range sorted {
@@ -379,6 +381,23 @@ func addSequenceFilters(f map[string]FilterFunc) {
 }
 
 func identity(v any) any { return v }
+
+// argAttrName reads an `attribute` argument that names a tuple position as
+// well as a dotted path. Jinja's groupby accepts `groupby(0)` to group a
+// sequence of tuples by position, and getAttr already turns a numeric name
+// into a sequence index, so formatting the integer as a string reaches
+// that path unchanged.
+func argAttrName(args []any, kwargs map[string]any, i int, name string) (string, bool) {
+	if s, ok := argString(args, kwargs, i, name); ok {
+		return s, true
+	}
+	if v, ok := arg(args, kwargs, i, name); ok {
+		if n, ok := asInt(v); ok {
+			return strconv.FormatInt(n, 10), true
+		}
+	}
+	return "", false
+}
 
 func attrKey(fc *FilterContext, attr string) func(any) any {
 	return func(item any) any {

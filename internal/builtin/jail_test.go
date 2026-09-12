@@ -57,19 +57,27 @@ func jailFixture(t *testing.T, responses map[string]hexec.Result) (*hexec.Contex
 
 const jlsCmd = "jls --libxo=json -v"
 
-// jlsJSON is libxo's envelope as this build expects it. **Invented**:
-// the container names are what libxo's convention produces and no real
-// `jls` has confirmed them here. The parser falls back to finding the
-// array by shape for exactly that reason, and the test below checks the
-// real thing.
+// jlsJSON is libxo's envelope, and it is no longer invented.
+//
+// It used to be, and it carried the cost: the fixture spelled a `state`
+// field in the module's own spelling, the module read `e["state"]`, and
+// the two agreed with each other for as long as the module existed. No
+// `jls` has ever printed a `state` -- it is not a jail parameter --  so
+// every real host reported an empty one. jail_fields_test.go now checks
+// each key here against the list `jls -h` publishes, which is a
+// statement by the tool rather than by this project, and the container
+// names are confirmed against a real `jls` on this fleet's own FreeBSD
+// hosts.
+//
+// The flag a jail's state really comes from is `dying`.
 const jlsJSON = `{
-  "__version": "1",
+  "__version": "2",
   "jail-information": {
     "jail": [
       {"jid": 1, "name": "mail", "path": "/jails/mail", "host.hostname": "mail.example",
-       "state": "ACTIVE", "osrelease": "14.1-RELEASE"},
+       "dying": false, "osrelease": "14.1-RELEASE"},
       {"jid": 2, "name": "web", "path": "/jails/web", "host.hostname": "web.example",
-       "state": "ACTIVE", "osrelease": "13.3-RELEASE"}
+       "dying": false, "osrelease": "13.3-RELEASE"}
     ]
   }
 }`
@@ -203,7 +211,7 @@ func TestJlsOutputThatIsNotJSONIsRefusedWithTheReason(t *testing.T) {
 func TestTheJailStateStartsWhatIsDefinedAndNotRunning(t *testing.T) {
 	c, runner := jailFixture(t, map[string]hexec.Result{
 		jlsCmd:         {Stdout: `{"jail-information": {"jail": []}}`},
-		"jail -e ,":    {Stdout: "mail,web\n"},
+		"jail -e \x1f": {Stdout: "name=mail\x1fpersist\nname=web\x1fpersist\n"},
 		"jail -c mail": {},
 	})
 	res, err := jailRunningState(c, value.MapOf("name", "mail"))
@@ -238,8 +246,8 @@ func TestTheJailStateStartsWhatIsDefinedAndNotRunning(t *testing.T) {
 // needs rather than the tool's error.
 func TestStartingAJailNothingDefinesSaysSo(t *testing.T) {
 	c, runner := jailFixture(t, map[string]hexec.Result{
-		jlsCmd:      {Stdout: `{"jail-information": {"jail": []}}`},
-		"jail -e ,": {Stdout: "mail,web\n"},
+		jlsCmd:         {Stdout: `{"jail-information": {"jail": []}}`},
+		"jail -e \x1f": {Stdout: "name=mail\x1fpersist\nname=web\x1fpersist\n"},
 	})
 	res, err := jailRunningState(c, value.MapOf("name", "database"))
 	if err != nil {
@@ -294,8 +302,8 @@ func TestTheJailStateStopsAndIsIdempotent(t *testing.T) {
 // Test mode predicts and runs nothing.
 func TestTheJailStateInTestModeRunsNothing(t *testing.T) {
 	c, runner := jailFixture(t, map[string]hexec.Result{
-		jlsCmd:      {Stdout: `{"jail-information": {"jail": []}}`},
-		"jail -e ,": {Stdout: "mail\n"},
+		jlsCmd:         {Stdout: `{"jail-information": {"jail": []}}`},
+		"jail -e \x1f": {Stdout: "name=mail\x1fpersist\n"},
 	})
 	c.Test = true
 	res, err := jailRunningState(c, value.MapOf("name", "mail"))
@@ -317,30 +325,60 @@ func TestTheJailStateInTestModeRunsNothing(t *testing.T) {
 //
 // jail.conf has includes, variables and inheritance, and a second parser
 // for it in this module would disagree with the real one eventually.
+// The fixture below is what a real `jail -e` prints, and the fixture it
+// replaced was not. That one said `web,mail,db` -- a bare list of names,
+// which `jail -e` has never produced. It prints one line per configured
+// jail carrying that jail's *parameters*, and the module split the whole
+// thing on the separator and took every field as a name. See 5.70.
+const jailExhibitFixture = "name=web\x1fpath=/jails/web\x1fpersist\n" +
+	"name=mail\x1fpath=/jails/mail\x1fhost.hostname=mail.example\n" +
+	"name=db\x1fpath=\"/jails/d b\"\x1fpersist\n"
+
 func TestTheConfiguredJailsComeFromJailItself(t *testing.T) {
 	c, runner := jailFixture(t, map[string]hexec.Result{
-		"jail -e ,": {Stdout: "web,mail,db\n"},
+		"jail -e \x1f": {Stdout: jailExhibitFixture},
 	})
 	got, err := jailConfigured(c, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(got, ",") != "db,mail,web" {
-		t.Errorf("read %v, want them sorted", got)
+		t.Errorf("read %v, want the three names sorted -- not their parameters", got)
 	}
-	if !hasRun(runner, "jail -e ,") {
+	if !hasRun(runner, "jail -e \x1f") {
 		t.Errorf("ran %v", runner.RanCommands())
 	}
 
 	// A named configuration is passed through.
 	c, runner = jailFixture(t, map[string]hexec.Result{
-		"jail -f /etc/jail.conf.d/mail.conf -e ,": {Stdout: "mail\n"},
+		"jail -f /etc/jail.conf.d/mail.conf -e \x1f": {Stdout: "name=mail\x1fpersist\n"},
 	})
 	if _, err := jailConfigured(c, "/etc/jail.conf.d/mail.conf"); err != nil {
 		t.Fatal(err)
 	}
-	if !hasRun(runner, "jail -f /etc/jail.conf.d/mail.conf -e ,") {
+	if !hasRun(runner, "jail -f /etc/jail.conf.d/mail.conf -e \x1f") {
 		t.Errorf("ran %v", runner.RanCommands())
+	}
+}
+
+// A jail whose name needs quoting comes back unquoted.
+func TestAQuotedJailNameIsRead(t *testing.T) {
+	names, err := parseJailExhibit("name=\"d b\"\x1fpersist\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || names[0] != "d b" {
+		t.Errorf("read %v, want the name without its quotes", names)
+	}
+}
+
+// A line `jail -e` would never print is refused rather than skipped.
+//
+// Quietly dropping it would make a defined jail look undefined, which is
+// the shape the defect in 5.70 actually took.
+func TestAnExhibitLineWithNoNameIsRefused(t *testing.T) {
+	if _, err := parseJailExhibit("path=/jails/web\x1fpersist\n"); err == nil {
+		t.Error("a line with no name= was accepted")
 	}
 }
 

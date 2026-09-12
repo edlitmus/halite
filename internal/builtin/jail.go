@@ -119,6 +119,83 @@ func registerJail(r *Registries) {
 		},
 		exec.Module{
 			Sig: signature.Signature{
+				Module: "jail", Function: "show_config",
+				Doc: "Return the parameters `jail.conf` gives one jail, running or not.",
+				Params: []signature.Param{
+					req("name", signature.String, "The jail's name."),
+					opt("config", signature.Path, "", "The configuration to read; defaults to /etc/jail.conf."),
+				},
+				TestMode:   signature.TestNotApplicable,
+				Privileges: []string{"root"},
+				Platforms:  jailOnly,
+				Section:    "15.3",
+			},
+			// This reads `jail -e` rather than parsing jail.conf, for
+			// the reason the whole module does: jail.conf has includes,
+			// variables and inheritance, and a jail's real parameters
+			// are what `jail` resolves them to. The values here are the
+			// ones the jail would actually be created with, including
+			// everything it inherits from the global block, which is
+			// what an operator is asking when they ask what a jail is
+			// configured as.
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				name := strings.TrimSpace(states.Str(args, "name", ""))
+				if name == "" {
+					return nil, fmt.Errorf("jail.show_config needs a jail name")
+				}
+				params, err := jailShowConfig(c, states.Str(args, "config", ""), name)
+				if err != nil {
+					return nil, err
+				}
+				return params, nil
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "jail", Function: "get_enabled",
+				Doc: "Return the jails rc.conf starts at boot, and whether jails are enabled at all.",
+				Params: []signature.Param{
+					opt("file", signature.Path, "", "An rc.conf other than the default."),
+				},
+				TestMode:  signature.TestNotApplicable,
+				Platforms: jailOnly,
+				Section:   "15.3",
+			},
+			// **`jail_enable` and `jail_list` are two different facts and
+			// both are needed.** A jail defined in jail.conf does not
+			// start at boot because it is defined; it starts because
+			// `jail_list` names it and `jail_enable` is on. So a jail can
+			// be configured, startable by hand, and still absent after a
+			// reboot -- which is the question an operator is really
+			// asking, and which `jail.configured` cannot answer.
+			//
+			// An empty `jail_list` with `jail_enable="YES"` is not a
+			// misconfiguration: it is a host that runs jails on purpose
+			// and starts none of them automatically.
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				file := states.Str(args, "file", "")
+				enable, _, err := sysrcGet(c, "jail_enable", file)
+				if err != nil {
+					return nil, err
+				}
+				list, _, err := sysrcGet(c, "jail_list", file)
+				if err != nil {
+					return nil, err
+				}
+				names := strings.Fields(list)
+				at := make([]any, len(names))
+				for i, n := range names {
+					at[i] = n
+				}
+				out := value.NewMap(3)
+				out.Set("enabled", strings.EqualFold(strings.TrimSpace(enable), "YES"))
+				out.Set("jails", at)
+				out.Set("jail_enable", strings.TrimSpace(enable))
+				return out, nil
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
 				Module: "jail", Function: "configured",
 				Doc: "Return the jails `jail.conf` defines, running or not.",
 				Params: []signature.Param{
@@ -143,9 +220,22 @@ func registerJail(r *Registries) {
 		},
 	)
 
+	// **`config` is on every one of these, and on the state.** It was on
+	// `jail.configured` alone, so a tree keeping its jails in a file of
+	// its own could list them and could not start one: the listing read
+	// the named file and the start read /etc/jail.conf. Two paths that
+	// must agree and did not, which is the shape 5.70 was.
+	//
+	// `-rc` is restart, and it is jail(8)'s own spelling rather than a
+	// stop followed by a start: the usage line reads `-[cmr]`, the verbs
+	// combine, and a jail restarted this way is removed and recreated in
+	// one call. Driven against a real jail, whose jid changed from 6 to
+	// 7 across it, which is the observable difference between a restart
+	// and a no-op.
 	for _, m := range []struct{ fn, verb, doc string }{
 		{"start", "-c", "Start a jail that `jail.conf` defines."},
 		{"stop", "-r", "Stop a running jail."},
+		{"restart", "-rc", "Stop a running jail and start it again."},
 	} {
 		fn, verb := m.fn, m.verb
 		r.Exec.Add(exec.Module{
@@ -154,6 +244,7 @@ func registerJail(r *Registries) {
 				Doc: m.doc,
 				Params: []signature.Param{
 					req("name", signature.String, "The jail's name."),
+					opt("config", signature.Path, "", "The configuration to read; defaults to /etc/jail.conf."),
 				},
 				Mutates: true, TestMode: signature.TestReliable,
 				Privileges: []string{"root"},
@@ -168,7 +259,7 @@ func registerJail(r *Registries) {
 				if c.Test {
 					return true, nil
 				}
-				return true, jailRun(c, verb, name)
+				return true, jailRun(c, states.Str(args, "config", ""), verb, name)
 			},
 		})
 	}
@@ -180,6 +271,7 @@ func registerJail(r *Registries) {
 			Params: []signature.Param{
 				nameParam("The jail's name. Defaults to the state ID."),
 				opt("running", signature.Bool, true, "Whether it should be running."),
+				opt("config", signature.Path, "", "The configuration to read; defaults to /etc/jail.conf."),
 			},
 			Mutates:    true,
 			TestMode:   signature.TestReliable,
@@ -197,7 +289,11 @@ type jailInfo struct {
 	Name     string
 	Path     string
 	Hostname string
-	State    string
+	// Dying is the kernel's own word for a jail that has been removed
+	// and whose processes have not all exited yet. It is a real jail
+	// parameter; `state` is not one, which is the whole of the defect
+	// below.
+	Dying bool
 	// OSRelease is the userland version inside the jail, which is one of
 	// the reasons somebody looks at a jail's details at all: a jail can
 	// run an older FreeBSD than the host it is on.
@@ -209,7 +305,7 @@ func (j jailInfo) asMap() *value.Map {
 		"jid", j.JID,
 		"path", j.Path,
 		"hostname", j.Hostname,
-		"state", j.State,
+		"state", j.state(),
 		"osrelease", j.OSRelease,
 	)
 }
@@ -284,12 +380,9 @@ func parseJls(stdout string) (map[string]jailInfo, error) {
 			Name:     stringOf(e["name"]),
 			Path:     stringOf(e["path"]),
 			Hostname: stringOf(e["host.hostname"]),
-			State:    stringOf(e["state"]),
+			Dying:    boolOf(e["dying"]),
 		}
 		j.OSRelease = stringOf(e["osrelease"])
-		if j.Hostname == "" {
-			j.Hostname = stringOf(e["hostname"])
-		}
 		// A jail with no name is one started by `jail -c` without one,
 		// which jls identifies by jid. Keying by the jid keeps it
 		// visible rather than dropping it.
@@ -345,6 +438,48 @@ func arrayOfJails(v any) []map[string]any {
 	return out
 }
 
+// state reports a jail as an operator asks about it.
+//
+// **`state` is not a field `jls` prints, and this module read one for as
+// long as it has existed.** The fixture it was tested against carried
+// `"state": "ACTIVE"`, a value invented by whoever wrote the fixture, so
+// the unit test agreed with the module and the field was empty on every
+// real host. That is DIVERGENCE 5.31's lesson -- a fixture written in
+// the module's own spelling asserts nothing -- arriving for the fourth
+// time, and it was found by asking `jls` itself rather than by reading
+// it: `jls -h` prints the complete list of parameters it knows, and
+// `state` is not among them.
+//
+// What the kernel has instead is `dying`, one of the parameters in
+// `security.jail.param`. A jail is dying when it has been removed and
+// some process inside it has not exited yet, which is exactly the state
+// an operator is looking for when a jail will not go away. So the
+// reported word is derived from the parameter that exists rather than
+// read from one that does not.
+func (j jailInfo) state() string {
+	if j.Dying {
+		return "DYING"
+	}
+	return "ACTIVE"
+}
+
+// boolOf reads a flag libxo may have written as a boolean, as a number
+// or as a string, the way intOf already allows for the same spread.
+func boolOf(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case float64:
+		return t != 0
+	case string:
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "true", "1", "yes":
+			return true
+		}
+	}
+	return false
+}
+
 func stringOf(v any) string {
 	switch t := v.(type) {
 	case nil:
@@ -390,26 +525,176 @@ func jailConfigured(c *exec.Context, conf string) ([]string, error) {
 	if err := haveJail(c, "jail"); err != nil {
 		return nil, err
 	}
+	out, err := jailExhibit(c, conf)
+	if err != nil {
+		return nil, err
+	}
+	names, err := parseJailExhibit(out)
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// jailExhibit runs `jail -e` and returns what it printed.
+//
+// Shared by the two readers that need it so there is one spelling of the
+// command and one place the separator is chosen, rather than the pair
+// that has already gone wrong twice in this module.
+func jailExhibit(c *exec.Context, conf string) (string, error) {
 	argv := []string{"jail"}
 	if conf != "" {
 		argv = append(argv, "-f", conf)
 	}
-	argv = append(argv, "-e", ",")
+	argv = append(argv, "-e", jailListSeparator)
 	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+	if err != nil {
+		return "", err
+	}
+	if res.Code != 0 {
+		return "", fmt.Errorf("jail -e: %s", firstLine(res.Stderr+res.Stdout))
+	}
+	return res.Stdout, nil
+}
+
+// jailListSeparator is what `jail -e` is asked to put between
+// parameters.
+//
+// **Not a comma, which is what this asked for until it was run against a
+// jail.conf that defined something.** `-e` separates *parameters*, and a
+// parameter's value may contain a comma without being quoted:
+//
+//	$ jail -f t.conf -e ,
+//	name=tricky,path="/tmp/a b,c",host.hostname=x,y,persist
+//
+// `path` is quoted there because it has a space in it and
+// `host.hostname` is not, so no rule recovers where one parameter ends
+// and the next begins. ASCII unit separator cannot appear in a jail.conf
+// value, so with it the record is unambiguous. This is the same refusal
+// to guess that made `quota` read Linux through `-O csv`.
+const jailListSeparator = "\x1f"
+
+// parseJailExhibit reads the names out of `jail -e`.
+//
+// **`jail -e` does not print a list of names.** It prints one line per
+// configured jail, and on each line that jail's parameters separated by
+// the separator, with the name carried as the `name=` parameter:
+//
+//	name=web,path=/tmp/web,persist
+//	name=db,path=/tmp/db,persist
+//
+// This module split the whole output on the separator and took every
+// field as a jail name, so for the jail.conf above it answered
+// `[name=web, path=/tmp/web, persist, name=db, ...]` -- not one of which
+// is a name. `jail.configured` returned that, and `jail.running` looked
+// for its jail in it and never found one, so **the state reported "is
+// not defined in jail.conf, so there is nothing to start" for every jail
+// that was in fact defined, and could not start any jail at all**.
+//
+// Nothing caught it because the fleet's own host has no jails in
+// jail.conf: `jail -e` printed nothing, the function returned nothing,
+// and an empty list is exactly what a host with no configured jails
+// should produce. The defect needed a populated jail.conf to become
+// visible, and the tests supplied their own spelling instead.
+//
+// A line with no `name=` is refused rather than skipped. `jail -e` puts
+// the name first on every line it prints, so a line without one is a
+// format this reader does not understand, and a list of configured jails
+// that quietly omits one is worse than no list: a state would start a
+// jail that is already running, or report a defined jail as undefined.
+func parseJailExhibit(out string) ([]string, error) {
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line == "" {
+			continue
+		}
+		name, ok := jailNameOf(line)
+		if !ok {
+			return nil, fmt.Errorf(
+				"`jail -e` printed a line with no `name=` parameter on it: %q. "+
+					"Every line it prints describes one configured jail and carries that "+
+					"jail's name, so this build cannot tell which jails are defined", line)
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// jailShowConfig returns one configured jail's resolved parameters.
+//
+// A jail that jail.conf does not define is an error rather than an empty
+// map, and the error lists what is defined. An empty map would read as
+// "this jail has no parameters", which is a different and untrue thing:
+// every jail has at least a path.
+func jailShowConfig(c *exec.Context, conf, name string) (*value.Map, error) {
+	out, err := jailExhibit(c, conf)
 	if err != nil {
 		return nil, err
 	}
-	if res.Code != 0 {
-		return nil, fmt.Errorf("jail -e: %s", firstLine(res.Stderr+res.Stdout))
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line == "" {
+			continue
+		}
+		got, ok := jailNameOf(line)
+		if !ok {
+			continue
+		}
+		if got == name {
+			return jailParamsOf(line), nil
+		}
+		names = append(names, got)
 	}
-	var out []string
-	for _, name := range strings.Split(strings.TrimSpace(res.Stdout), ",") {
-		if name = strings.TrimSpace(name); name != "" {
-			out = append(out, name)
+	sort.Strings(names)
+	return nil, fmt.Errorf("jail.conf does not define a jail called %q. Defined: %s",
+		name, states.SortedNames(names))
+}
+
+// jailParamsOf turns one `jail -e` line into its parameters.
+//
+// A parameter with no `=` is a flag rather than a setting -- `persist`
+// and `allow.mount.devfs` are printed bare -- and those are reported as
+// true rather than as an empty string, because that is what they mean
+// and an empty string reads as "set to nothing".
+func jailParamsOf(line string) *value.Map {
+	params := strings.Split(line, jailListSeparator)
+	out := value.NewMap(len(params))
+	for _, param := range params {
+		param = strings.TrimSpace(param)
+		if param == "" {
+			continue
+		}
+		key, val, ok := strings.Cut(param, "=")
+		if !ok {
+			out.Set(param, true)
+			continue
+		}
+		if len(val) >= 2 && strings.HasPrefix(val, `"`) && strings.HasSuffix(val, `"`) {
+			val = val[1 : len(val)-1]
+		}
+		out.Set(key, val)
+	}
+	return out
+}
+
+// jailNameOf pulls the name parameter out of one `jail -e` line.
+func jailNameOf(line string) (string, bool) {
+	for _, param := range strings.Split(line, jailListSeparator) {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(param), "name=")
+		if !ok {
+			continue
+		}
+		// A name with a space or a separator in it comes back quoted,
+		// the way `path="/tmp/a b,c"` does.
+		if len(rest) >= 2 && strings.HasPrefix(rest, `"`) && strings.HasSuffix(rest, `"`) {
+			rest = rest[1 : len(rest)-1]
+		}
+		if rest != "" {
+			return rest, true
 		}
 	}
-	sort.Strings(out)
-	return out, nil
+	return "", false
 }
 
 // jailRun starts or stops a jail through `jail` itself.
@@ -421,14 +706,16 @@ func jailConfigured(c *exec.Context, conf string) ([]string, error) {
 // had deliberately left out of `jail_list`. Which of the two an estate
 // wants is a real question; starting the jail the state names is the
 // answer that does what the state says.
-func jailRun(c *exec.Context, verb, name string) error {
+func jailRun(c *exec.Context, conf, verb, name string) error {
 	if err := haveJail(c, "jail"); err != nil {
 		return err
 	}
-	res, err := c.Run(exec.Command{
-		Argv:           []string{"jail", verb, name},
-		IgnoreExitCode: true,
-	})
+	argv := []string{"jail"}
+	if conf != "" {
+		argv = append(argv, "-f", conf)
+	}
+	argv = append(argv, verb, name)
+	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
 		return err
 	}
@@ -445,6 +732,7 @@ func jailRunningState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False("This state needs a jail name."), nil
 	}
 	want := states.Bool(args, "running", true)
+	conf := states.Str(args, "config", "")
 
 	jails, err := jailList(c)
 	if err != nil {
@@ -463,7 +751,7 @@ func jailRunningState(c *exec.Context, args *value.Map) (states.Result, error) {
 		// A jail that jail.conf does not define cannot be started, and
 		// saying so beats `jail -c` failing with its own wording: the
 		// fix is a file, and naming the file is what an operator needs.
-		configured, err := jailConfigured(c, "")
+		configured, err := jailConfigured(c, conf)
 		if err == nil && !contains(configured, name) {
 			return states.False(fmt.Sprintf(
 				"%s is not defined in jail.conf, so there is nothing to start. This state "+
@@ -481,7 +769,7 @@ func jailRunningState(c *exec.Context, args *value.Map) (states.Result, error) {
 	if c.Test {
 		return states.WouldChange(fmt.Sprintf("%s would be %s.", name, didWhat), changes), nil
 	}
-	if err := jailRun(c, verb, name); err != nil {
+	if err := jailRun(c, conf, verb, name); err != nil {
 		return states.False(fmt.Sprintf("%s could not be %s: %v", name, didWhat, err)), nil
 	}
 	return states.Changed(fmt.Sprintf("%s was %s.", name, didWhat), changes), nil

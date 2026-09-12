@@ -147,6 +147,8 @@ func (r *renderer) getAttr(obj any, name string, pos Pos) (any, error) {
 	switch t := obj.(type) {
 	case dispatchValue:
 		return t.child(name), nil
+	case selfValue:
+		return t.attr(name, pos)
 	case *Namespace:
 		if v, ok := t.m.Get(name); ok {
 			return v, nil
@@ -190,6 +192,17 @@ func (r *renderer) getItem(obj, key any, pos Pos) (any, error) {
 	}
 	if dv, ok := obj.(dispatchValue); ok {
 		if s, ok := key.(string); ok {
+			// A dotted subscript names a module.function pair completely,
+			// so it is the one spelling the registry can actually check:
+			// `salt['foo.bar'] is defined` must answer as Salt's loader
+			// would, which is false for a module the node does not have.
+			// A bare key such as salt['pkg'] is only ever a prefix for a
+			// further subscript or attribute (salt['pkg'].version), and a
+			// prefix names nothing the registry can look up, so it must
+			// keep producing a dispatch value unconditionally.
+			if strings.Contains(s, ".") && !dv.d.HasModule(s) {
+				return Undefined{Name: s, Pos: pos, Hint: fmt.Sprintf("no such execution module or function: %s", s)}, nil
+			}
 			return dispatchValue{dv.d, s}, nil
 		}
 	}
@@ -787,6 +800,8 @@ func typeName(v any) string {
 		return "a macro"
 	case dispatchValue:
 		return "the salt dispatcher"
+	case selfValue:
+		return "the self reference"
 	case *Namespace:
 		return "a namespace"
 	case *LoopInfo:

@@ -84,9 +84,12 @@ func mapMethod(m *value.Map, name string) (Callable, bool) {
 
 	case "items":
 		return funcValue{"items", func([]any, map[string]any) (any, error) {
+			// Python's dict.items() yields (key, value) tuples, not
+			// key-value lists, and `[('items', 42)]` versus `[['items',
+			// 42]]` is a real answer a migrated tree can print.
 			out := make([]any, 0, m.Len())
 			for _, e := range m.Entries() {
-				out = append(out, []any{e.Key, e.Val})
+				out = append(out, Tuple{e.Key, e.Val})
 			}
 			return out, nil
 		}}, true

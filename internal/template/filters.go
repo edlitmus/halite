@@ -228,9 +228,17 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if err != nil {
 			return nil, err
 		}
-		width := int64(4)
+		// Jinja's `width` is a column count by default, but it accepts a
+		// literal string too — `indent(width='>>> ')` prefixes every
+		// indented line with the string as written rather than that many
+		// spaces, which is how a tree marks up a diff or a quoted block.
+		pad := strings.Repeat(" ", 4)
 		if w, ok := arg(args, kwargs, 0, "width"); ok {
-			width, _ = asInt(w)
+			if s, ok := w.(string); ok {
+				pad = s
+			} else if n, ok := asInt(w); ok {
+				pad = strings.Repeat(" ", int(n))
+			}
 		}
 		first := false
 		if b, ok := arg(args, kwargs, 1, "first"); ok {
@@ -240,7 +248,6 @@ func addCoreFilters(f map[string]FilterFunc) {
 		if b, ok := arg(args, kwargs, 2, "blank"); ok {
 			blank = truthy(b)
 		}
-		pad := strings.Repeat(" ", int(width))
 		lines := strings.Split(s, "\n")
 		for i, ln := range lines {
 			if i == 0 && !first {

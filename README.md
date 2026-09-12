@@ -292,7 +292,7 @@ had not.
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
 this build ships 77 execution modules and 44 state modules against a
-specification naming roughly 90 and 46 — 532 execution functions across 77
+specification naming roughly 90 and 46 — 535 execution functions across 77
 modules and 119 state functions across 44. FreeBSD is the development
 platform; Linux and Windows have each been verified against a real host,
 and macOS has run only the read-side live tests of its `mac_*` modules

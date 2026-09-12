@@ -18,6 +18,96 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A guard on an optional module now answers correctly
+
+`{% if salt['foo.bar'] is defined %}` used to take the true branch on
+every node, whether or not the node had the module, and then fail at the
+call. Salt answers false there. A tree that guards an optional module was
+therefore running the guarded branch everywhere, which is the wrong
+answer rather than merely a missing feature.
+
+A subscript whose key names a module -- one with a dot in it -- is now
+checked against what the node actually has. A bare `salt['pkg']` used as
+a prefix is not, because half a name cannot be checked, and it keeps
+working as before.
+
+### The template engine has no known gaps against Jinja's own tests
+
+Six real disagreements with Jinja closed: calling the result of a filter,
+`indent` with a string width, `groupby` on a numeric attribute,
+`{{ self.foo() }}`, a macro whose parameter is named `caller`, and the
+`is in` test -- which turned out to be the lexer mistaking a dictionary's
+closing brace for the end of the tag.
+
+Of 198 cases extracted from Jinja's own suite, 164 now agree and 25 are
+outside the subset the specification defines. The 9 that remain need
+something the corpus extractor cannot carry across from Python, so none
+of them is a gap in this engine.
+
+### A regular expression is no longer refused for what is inside a class
+
+Patterns were scanned for constructs that cannot be translated, and the
+scan did not know about character classes, so `[(?=]` -- three ordinary
+characters -- was refused as a lookahead. Nothing in the estate's tree
+had tripped it.
+
+### Jails: restart, what a jail is configured as, and what starts at boot
+
+`jail.restart` is new. So is `jail.show_config`, which returns the
+settings a jail would actually be created with, inheritance included,
+rather than what the configuration file literally says.
+
+`jail.get_enabled` answers a question that had no answer before: which
+jails start at boot. A jail does not start because it is defined. It
+starts because the boot configuration names it, so a jail can be defined,
+startable by hand, and still absent after a reboot.
+
+Every one of these commands can now be pointed at a configuration file
+other than the default. Previously only the listing could, so a system
+keeping its jails in its own file could list them and could not start
+one.
+
+### A jail state that could never start a jail
+
+`jail.running` reported that a jail was "not defined in jail.conf" for
+every jail that was defined, and so could not start any of them. It read
+the list of configured jails from a command that prints each jail's
+settings rather than its name, and matched against the settings.
+
+Starting and stopping jails, and the state that does it, are now driven
+against a real jail on a real host rather than reasoned about.
+
+### A jail's state was always blank
+
+`jail.list` reported a state read from a field that `jls` has never
+printed, so it was empty on every host. The test agreed with it because
+the fixture invented the same field. State now comes from the flag the
+kernel really has, and every field this build reads is checked against
+the list `jls` itself publishes.
+
+### `quota` works on FreeBSD, where it had two defects nobody could see
+
+Reading FreeBSD's quota tools rather than running them left two faults,
+on the platform that is four of this fleet's five hosts.
+
+Asking whether quotas are switched on used a flag that only Linux has, so
+the question could not be answered on a BSD at all. It is read from the
+kernel's own mount flag now, which reports one state for the whole
+filesystem rather than one per kind, and says so.
+
+Worse, `repquota` asked about a filesystem missing from `/etc/fstab`
+reports the problem and then exits successfully. That was read as a
+filesystem with no quotas on it -- a believable answer, and the wrong
+one. A report that was never produced is now told apart from a report
+with nothing in it.
+
+Both are now driven against a real filesystem with real quotas rather
+than reasoned about. One thing that came out of doing so is worth knowing
+before relying on it: FreeBSD records "this filesystem has quotas" as a
+single fact covering both users and groups, so switching off only one of
+the two leaves the answer unchanged. Asking whether quotas are on cannot
+confirm that switching one kind off took effect.
+
 ### A tab where Salt refuses one is now refused here too
 
 Five of the twenty documents halite read that Salt would not load were

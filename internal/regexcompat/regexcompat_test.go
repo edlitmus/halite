@@ -133,6 +133,139 @@ func TestAllNineBackreferencesAreCaught(t *testing.T) {
 	}
 }
 
+func TestAConstructSpelledInsideACharacterClassIsLiteral(t *testing.T) {
+	// A character class scan is a raw substring search with only an
+	// escape check, so a construct spelling that appears inside
+	// [...] — where it is a set of literal characters, not syntax — was
+	// a false positive. Every one of the 11 constructs must be silent
+	// when it only ever occurs inside a class.
+	cases := []struct {
+		pattern string
+		name    string
+	}{
+		{`[(?=]`, "lookahead"},
+		{`[(?!]`, "negative lookahead"},
+		{`[(?<=]`, "lookbehind"},
+		{`[(?<!]`, "negative lookbehind"},
+		{`[(?>]`, "atomic group"},
+		{`[(?R]`, "recursion"},
+		{`[(?(]`, "conditional group"},
+		{`[\G]`, "anchor to the end of the previous match"},
+		{`[\K]`, "match reset"},
+		{`[\1]`, "backreference"},
+		{`[\k<]`, "named backreference"},
+	}
+	for _, c := range cases {
+		if got := Unsupported(c.pattern); len(got) != 0 {
+			t.Errorf("%s: %q inside a class was wrongly refused: %v", c.name, c.pattern, got)
+		}
+	}
+
+	// The paren-based constructs, once literal inside a class, are also
+	// ordinary regexps RE2 can compile. The backslash-based ones (\G,
+	// \K, \1, \k) are not asserted the same way here: RE2 itself refuses
+	// an unrecognized escape inside a class regardless of this package,
+	// so Compile failing on those is Go's own syntax check, not a false
+	// positive from Unsupported.
+	for _, p := range []string{`[(?=]`, `[(?!]`, `[(?<=]`, `[(?<!]`, `[(?>]`, `[(?R]`, `[(?(]`} {
+		if _, err := Compile(p); err != nil {
+			t.Errorf("%q inside a class should compile, got %v", p, err)
+		}
+	}
+}
+
+func TestTheSameConstructOutsideAClassIsStillRefused(t *testing.T) {
+	// The fix for the class false positive must not swing the other way:
+	// a construct that is genuinely outside a class must still be
+	// caught. This is the direction where a regression is expensive, so
+	// it gets its own test alongside TestEveryUnsupportedConstructIsNamed.
+	cases := []struct {
+		pattern string
+		name    string
+	}{
+		{`a(?=b)[xyz]`, "lookahead"},
+		{`[xyz](?!b)`, "negative lookahead"},
+		{`(?<=a)[xyz]`, "lookbehind"},
+		{`[xyz](?<!a)`, "negative lookbehind"},
+		{`(?>a)[xyz]`, "atomic group"},
+		{`[xyz]\((?R)\)`, "recursion"},
+		{`(a)(?(1)[xyz]|c)`, "conditional group"},
+		{`[xyz]\Ga`, "anchor to the end of the previous match"},
+		{`a\K[xyz]b`, "match reset"},
+		{`(a)[xyz]\1`, "backreference"},
+		{`(?P<x>a)[xyz]\k<x>`, "named backreference"},
+	}
+	for _, c := range cases {
+		found := Unsupported(c.pattern)
+		if len(found) == 0 {
+			t.Errorf("%s: %q was wrongly accepted once a class was added nearby", c.name, c.pattern)
+			continue
+		}
+		named := false
+		for _, f := range found {
+			if f.Name == c.name {
+				named = true
+			}
+		}
+		if !named {
+			t.Errorf("%q reported %v, none named %q", c.pattern, found, c.name)
+		}
+	}
+}
+
+func TestALiteralCloseBracketAsTheFirstClassCharacter(t *testing.T) {
+	// "]" as the first character of a class (or the first after a
+	// leading "^") is a literal "]", not the close. Getting this wrong
+	// is the classic off-by-one in bracket-expression parsing.
+	cases := []struct {
+		name    string
+		pattern string
+	}{
+		{"literal ] first in the class", `[](?=]`},
+		{"literal ] first after a negating ^", `[^](?=]`},
+	}
+	for _, c := range cases {
+		if got := Unsupported(c.pattern); len(got) != 0 {
+			t.Errorf("%s: %q was wrongly refused: %v", c.name, c.pattern, got)
+		}
+		if _, err := Compile(c.pattern); err != nil {
+			t.Errorf("%s: %q should compile, got %v", c.name, c.pattern, err)
+		}
+	}
+}
+
+func TestAnEscapedBracketDoesNotOpenOrCloseAClass(t *testing.T) {
+	// `\[` outside a class is a literal bracket, not the start of one, so
+	// the "(?=" that follows is a real lookahead and must be refused.
+	if got := Unsupported(`\[(?=]`); len(got) == 0 {
+		t.Error(`\[(?= should still be refused: the "[" is escaped, so no class was opened`)
+	}
+
+	// `\]` inside a class is a literal bracket, not the close, so the
+	// "(?=" that follows is still inside the class and must be silent.
+	if got := Unsupported(`[\](?=]`); len(got) != 0 {
+		t.Errorf(`[\](?=] should be accepted: the escaped "]" does not close the class, got %v`, got)
+	}
+}
+
+func TestAPosixClassDoesNotConfuseTheBracketNesting(t *testing.T) {
+	// The inner "[:" of a POSIX class like [[:alpha:]] is not a nested
+	// class, and its own "]" (the one in ":]") must not be read as the
+	// close of the outer class.
+	if got := Unsupported(`[[:alpha:]]`); len(got) != 0 {
+		t.Errorf("[[:alpha:]] was wrongly refused: %v", got)
+	}
+	if _, err := Compile(`[[:alpha:]]+`); err != nil {
+		t.Errorf("[[:alpha:]]+ did not compile: %v", err)
+	}
+
+	// A construct spelling placed after a POSIX class, still inside the
+	// outer bracket expression, must remain silent.
+	if got := Unsupported(`[[:alpha:](?=]`); len(got) != 0 {
+		t.Errorf("[[:alpha:](?=] was wrongly refused: %v", got)
+	}
+}
+
 func TestASyntaxErrorIsReportedAsItself(t *testing.T) {
 	// A pattern RE2 rejects for its own reasons is not an unsupported
 	// construct, and saying so would send the reader down the wrong path.

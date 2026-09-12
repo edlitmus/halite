@@ -603,7 +603,7 @@ what an operator is looking for.
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | **The row ships entirely**, second after FreeBSD. `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain` and `mac_assistive` are modules (DIVERGENCE 5.41-5.46). Every one of them is `assumed`: no CI leg is a Mac. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
-| FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32). |
+| FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32); its field names are no longer assumed either, and auditing them against the list `jls -h` publishes found one the module had invented (5.66). The FreeBSD half of the **Common Linux** row's `quota` was audited at the same time and had two defects, both from being read rather than run (5.65). |
 | SUSE | 1 | `zypperpkg`. |
 
 Note the overlap with 2.2: `iptables`, `nftables` and `lvm` are named in
@@ -938,16 +938,20 @@ unchanged.
   contain. The agreement count fell by one in the process, because two
   suite cases assert a line break that PyYAML and libyaml both decline
   to add and SPEC 10.1 picks the implementations. DIVERGENCE 5.56.
-- **Templates (SPEC 10.2):** 198 cases, 157 agree, 26 outside the subset,
-  **15 gaps — but 9 are corpus-extractor artifacts**. Six are real:
+- **Templates (SPEC 10.2):** 198 cases, **164 agree, 25 outside the
+  subset, 9 gaps** — and the 9 are the corpus-extractor artifacts, so
+  **no engine gap remains**. The six that were real are closed:
   calling a filter result, string `indent(width=…)`, `groupby` with a
   numeric attribute, `{{ self.foo() }}`, a `caller=none` macro default,
-  and the `is in` test.
+  and the `is in` test. DIVERGENCE 5.68. A seventh closed with them: a
+  case labelled as needing the Python object model was mismeasured, and
+  was only `dict.items()` yielding a list where Jinja yields a tuple.
 - **PyYAML differential:** 240 documents, 230 agree, 10 deviations, zero
   unexplained. Done. The count grew with the chomping matrix of
   DIVERGENCE 5.56.
 
-- **`salt['x.y'] is defined` always answers true**, found while building
+- ~~**`salt['x.y'] is defined` always answers true**~~ — **fixed**
+  (DIVERGENCE 5.69). It was found while building
   the render sandbox. `template.Dispatcher.HasModule` exists, is
   implemented by every dispatcher in the tree, and is called by nothing:
   a subscript of `salt` returns a dispatch value whatever the name, so
@@ -958,16 +962,21 @@ unchanged.
   answer. The fix is confined to the subscript spelling: a name with a
   dot in it can be checked, and a bare `salt['pkg']` used as a prefix
   for `salt.pkg.version` cannot, so only the first consults the
-  registry. Not fixed here, because it changes what an existing tree
-  means and belongs in its own change.
+  registry. It changed what an existing tree means, which is why it
+  waited for a change of its own: a tree guarding an optional module had
+  been running the guarded branch on every node.
 - **The regex engine (SPEC 10.4):** `internal/regexcompat` refuses 11
   PCRE constructs by name with a workaround apiece and hands the rest to
   RE2. The estate's real tree produced **zero regex findings across 193
   files**, which answers SPEC 33 question 8: the backtracking engine
-  stays in phase 6 and on this evidence could be dropped. One cheap
+  stays in phase 6 and on this evidence could be dropped. ~~One cheap
   defect, still open: detection is a raw substring scan with only an
   escape check, so a construct spelling inside a character class —
-  `[(?=]` — is a false positive, and no test covers it.
+  `[(?=]` — is a false positive, and no test covers it.~~ **Fixed**
+  (DIVERGENCE 5.67): the scan tracks bracket expressions, including the
+  literal `]` first in a class and POSIX sub-expressions, and the
+  detection direction is tested hardest because breaking it would be
+  worse than the false positive. Nothing in the tree had tripped it.
 
 ---
 
@@ -1052,7 +1061,8 @@ through every previous revision was wrong.**
 It ranked by "what the migration is blocked on", and by "the estate is
 Ubuntu". Neither is true. The fleet is **100% on halite** — the
 migration is finished, so there is nothing left to be blocked. And it is
-**four FreeBSD hosts** (two physical, two virtual) **to one Ubuntu**,
+**four FreeBSD hosts** (two physical, two cloud instances) **to one
+Ubuntu**,
 built from source and installed with `make install`. Every item below
 moved, and two of them moved a long way.
 

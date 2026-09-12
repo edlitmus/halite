@@ -252,11 +252,25 @@ var moduleEvidence = map[string]exec.Evidence{
 		"limits set through the real `setquota` and read back through the real " +
 		"`repquota -O csv` -- four distinct numbers in four positions, so a transposed pair would " +
 		"have shown as a wrong value rather than as two that match -- and `quotaon -p` read in both " +
-		"states (DIVERGENCE 5.48). The BSD fixed-width parser is written to the printf calls in " +
-		"FreeBSD 15.1's own usr.sbin/repquota/repquota.c, and **it has not been run**: this project's " +
-		"fleet is entirely ZFS and has no UFS filesystem to make one on, so `edquota -e` is still " +
-		"checked only as an argument vector. Also not covered: ext4's quota feature route, which the " +
-		"live leg falls back to and no runner has needed"},
+		"states (DIVERGENCE 5.48). **The BSD half was written from " +
+		"repquota.c and never run, and running the tools found two defects no unit test here " +
+		"disagreed with.** `quotaon -p` is a Linux option -- FreeBSD's quotaon has none, so " +
+		"`quota.get_mode` could not answer at all on four of this fleet's five hosts, against a " +
+		"module comment asserting that both platforms had it; state now comes from the kernel's " +
+		"MNT_QUOTA mount flag, which is one flag for both kinds and says so. And a BSD `repquota` " +
+		"asked about a filesystem missing from fstab prints its reason on stderr and **exits " +
+		"zero**, which the table branch read as a report of no quotas. Both are fixed and both " +
+		"have unit tests. **The BSD half has now been run**, against a real UFS " +
+		"filesystem on a 64 MiB memory disk on this fleet's own FreeBSD 15.1 host -- the premise " +
+		"that an all-ZFS fleet had nowhere to make one was wrong, the same way it was wrong for " +
+		"the Linux leg. `edquota -e` really sets four distinct limits in four positions and the " +
+		"fixed-width `repquota` parser really reads them back, checked by transposing two of them " +
+		"on purpose and watching the test catch it; the second run is idempotent; and `mount` " +
+		"really prints the `with quotas` that sys/mount.h spells, in both states. That run also " +
+		"turned the MNT_QUOTA limitation from a comment into an assertion: switching **one** kind " +
+		"off leaves the flag set, because it covers the whole filesystem, so on a BSD " +
+		"`quota.get_mode` cannot confirm that `quota.off` for a single kind took effect. Also not covered: ext4's quota feature route, which the " +
+		"Linux live leg falls back to and no runner has needed"},
 
 	"lvm": {Level: exec.Hardware, Note: "driven end to end against a real LVM2 2.03 on Ubuntu " +
 		"24.04 (kernel 6.18): two loopback block devices labelled with `pvcreate`, a volume " +
@@ -288,10 +302,34 @@ var moduleEvidence = map[string]exec.Evidence{
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
 		"through its API on every Windows run and converges against what it finds, but " +
 		"nothing has watched this module start, stop or re-type a service"},
-	"jail": {Level: exec.Captured, Note: "the shape of `jls --libxo=json` is checked " +
-		"against the real jls on CI's FreeBSD runner, but no jail has been started or " +
-		"stopped by this module and the field names inside a jail entry are still " +
-		"assumed (DIVERGENCE 5.32)"},
+	"jail": {Level: exec.Hardware, Note: "the shape of `jls --libxo=json` is checked " +
+		"against the real jls on CI's FreeBSD runner, and **the field names inside a jail " +
+		"entry are no longer assumed**: every key this module subscripts out of an entry is " +
+		"checked against the parameter list `jls -h` publishes, on a real FreeBSD 15.1 host. " +
+		"That audit found one it had invented -- it read a `state` field, which is not a jail " +
+		"parameter and which no jls has ever printed, against a fixture that supplied " +
+		"`\"state\": \"ACTIVE\"` in the module's own spelling -- so every real host reported " +
+		"an empty state and every test agreed. State is now derived from `dying`, which is a " +
+		"real parameter. **The mutating half is demonstrated too**: on the same host a " +
+		"jail was defined, started through `jail.start`, found in a raw `jls` rather than " +
+		"through this module's own reader, and stopped through `jail.stop`; and the " +
+		"`jail.running` state converged, reported no change on a second run and stopped it " +
+		"again. Both were checked by breaking them on purpose. That run found a third defect: " +
+		"`jail -e` prints each configured jail's **parameters**, not a list of names, and this " +
+		"module split the whole output on the separator and took every field as a name -- so " +
+		"`jail.running` answered \"is not defined in jail.conf\" for every jail that was in " +
+		"fact defined and **could never start one**. Invisible until now because the fleet's " +
+		"own host has no jails in jail.conf, where the empty answer looks correct " +
+		"(DIVERGENCE 5.32, 5.66, 5.70). **The three gaps 5.70 named are closed** (5.71): " +
+		"`jail.restart` is driven against a real jail and checked by its jid changing, because " +
+		"a restart that did nothing would pass any check that only asked whether the jail is up " +
+		"afterwards; a jail with an `ip4.addr` of its own starts and its address reads back " +
+		"through `jail.show_config`; and a jail with a live process in it is stopped and the " +
+		"process goes with it. That last test was wrong first and passed anyway -- `jexec` runs " +
+		"a binary from inside the jail rather than from the host, so nothing had ever been " +
+		"running in it, and `ps -J` was catching the short-lived `jexec` process itself. Not " +
+		"covered: `jail.conf` includes and variables, a jail with a vnet of its own rather than " +
+		"an address alias, and `jail -m` to modify a running jail in place"},
 	"mount": {Level: exec.Captured, Note: "reads the real /proc/self/mounts and the real " +
 		"`mount` output on the platforms CI runs, and nothing has been mounted or " +
 		"unmounted by this module"},

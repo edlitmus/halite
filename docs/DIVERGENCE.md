@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **77 execution modules / 532 functions** and **44 state
+The build ships **77 execution modules / 535 functions** and **44 state
 modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -1858,7 +1858,7 @@ absent.
 | Layer | Status |
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 40 disagree by design, 31 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
-| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 157 of 198 agree, 26 are outside the subset, 15 are gaps — see 5.5. |
+| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 164 of 198 agree, 25 are outside the subset, 9 are gaps — see 5.5 and 5.68. |
 | Differential against Salt | **partial.** `internal/saltdiff` compiles ten trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
@@ -2036,8 +2036,10 @@ as a rejection, and its value is never checked.
 
 ### 5.5 Where template conformance stands
 
-157 of 198 of Jinja's own extractable cases, 26 of the rest outside the
-subset by design and 15 gaps. `internal/template` rose to 81.9% statements
+164 of 198 of Jinja's own extractable cases, 25 of the rest outside the
+subset by design and **9 gaps, every one of them a corpus-extractor
+artifact rather than an engine gap** -- see 5.68, which closed the six
+that were real. `internal/template` rose to 81.9% statements
 on the way, still the one correctness-core package under the SPEC 31 bar.
 
 Writing the second corpus found a crash on the first run.
@@ -6217,6 +6219,444 @@ The table stands at 331 agreeing, 40 deliberate and **31 gaps**, the
 over-acceptance set is down from 20 to 15, and conformance where halite
 claims to conform is 91.4%.
 
+### 5.65 The BSD half of `quota`, and the two defects in it
+
+`quota` has said since 5.48 that its BSD half "has not been run": the
+fixed-width parser was written to the `printf` calls in FreeBSD's own
+`usr.sbin/repquota/repquota.c`, and `edquota -e` was checked only as an
+argument vector. The reason given was that this fleet is entirely ZFS
+and has no UFS filesystem to make one on.
+
+**The premise was wrong, and it is the same premise the Linux leg had
+already beaten.** A filesystem does not have to be one the machine came
+with: `mdconfig` makes a memory-backed disk, `newfs` puts UFS on it, and
+the whole thing is thrown away afterwards -- which is what the Linux leg
+does with a file and the loop driver. Nothing about ZFS was ever in the
+way.
+
+Running the tools instead of reading them found **two defects that every
+unit test in the package agreed with**, both on the platform that is four
+of this fleet's five hosts.
+
+**`quotaon -p` is a Linux option.** FreeBSD's `quotaon` does not have
+it:
+
+```
+$ quotaon -u -p /
+quotaon: illegal option -- p
+usage: quotaon [-g] [-u] [-v] -a
+       quotaon [-g] [-u] [-v] filesystem ...
+```
+
+so `quota.get_mode` could not answer at all on a BSD. The module's own
+comment asserted the opposite -- "both platforms print ... is on or ...
+is off for -p" -- and a second comment described a fallback to reading
+the mount options that was never written. It failed loudly rather than
+lying, which is the only reason this was a gap and not a wrong answer.
+
+What the BSDs have instead is in the kernel, and `sys/mount.h` gives it
+the spelling the tools print:
+
+```
+{ MNT_QUOTA,	"with quotas" },
+#define MNT_QUOTA 0x0000000000002000ULL /* quotas are enabled on fs */
+```
+
+So state is now read from a plain `mount`. `mount -p` is deliberately
+not used, because its own manual page says it "will not list userquota
+or groupquota items from fstab(5) because they are not true mount
+options and are not information returned by getmntinfo(3)".
+
+**MNT_QUOTA is one flag for both kinds**, and the answer says so rather
+than presenting one bit under two names as two readings. Deriving the
+kinds from `quota.user` and `quota.group` at the filesystem root was
+considered and refused: those files exist after a `quotacheck` whether or
+not `quotaon` has since run, so their presence answers a different
+question from the one asked.
+
+**A BSD `repquota` that never looked exits zero.** Asked about a
+filesystem that is not in fstab it prints its reason on stderr, prints
+nothing at all on stdout, and succeeds:
+
+```
+$ repquota -u -v /; echo $?
+repquota: / not found in fstab
+0
+```
+
+Parsed on stdout alone that is an empty table, which reads as "this
+filesystem has no quotas" -- the believable kind of wrong, because it is
+exactly what an unquota'd filesystem really says. The Linux branch had
+guarded its own version of this since it was written: `quotaLooksLikeCSV`
+exists because "a tool that does not know `-O` may print its usage and
+exit zero, and a usage message parsed as a table is a report of quotas
+that do not exist". The BSD branch, written from the source and never
+run, had the same hole and no guard. It is 5.31's pair-shaped defect
+again: two paths that must agree, and only one of them checked.
+
+The banner is the discriminator. Under `-v` repquota prints `*** Report
+for user quotas on ...` whenever it reads a filesystem, so a report that
+looked has one whether or not any account holds a limit. No banner means
+no look, and that is now an error carrying the tool's own words. A
+banner with no rows under it is left alone, because a filesystem with
+quotas and nobody over a limit is a real and common answer.
+
+**What is proven.** Both defects have unit tests, each confirmed by
+breaking the fix on purpose and watching the test fail.
+`live_quota_ufs_test.go` then drove the rest against a real UFS
+filesystem on a 64 MiB memory disk, on this fleet's own FreeBSD 15.1
+host. `edquota -e` sets four distinct limits in four positions and the
+fixed-width parser reads all four back; transposing two of them on
+purpose produced exactly the failure the assertion promises. The second
+application is idempotent. And a real kernel prints the string
+sys/mount.h spells:
+
+```
+/dev/md0 on /tmp/.../mnt (ufs, local, with quotas, soft-updates)
+```
+
+**The live run also corrected the test that was written to check it**,
+which is the more useful half. That test switched user quotas off and
+expected the mount flag to clear. It does not: MNT_QUOTA is one bit for
+the whole filesystem, so it stays set while group quotas are still on.
+The limitation had been written into `get_mode`'s own `comment` an hour
+earlier by the same hand that then wrote an assertion contradicting it.
+
+It is an assertion now rather than a sentence, because it changes what a
+caller can do: **on a BSD, `quota.get_mode` cannot confirm that
+`quota.off` for a single kind took effect.** The test reads all three
+states -- both kinds on, one off, both off -- and the middle one is the
+one that would have gone unnoticed.
+
+What is still not covered: `quota.on`/`quota.off` against `-a`, and
+FreeBSD's alternative quota file locations, which fstab can override and
+this leg leaves at their defaults.
+
+That leg writes to `/etc/fstab`, and deliberately. FreeBSD's `repquota`,
+`quotacheck` and `quotaon` all resolve their filesystem argument through
+`getfsfile(3)`, so a mount fstab does not name is one they refuse to
+look at -- the second defect above arriving as a constraint, with no flag
+that avoids it. The entry is written with `noauto` and a pass number of
+0, so a line the test fails to clean up still does nothing at the next
+boot: `noauto` keeps `mount` from mounting it and a zero pass number
+keeps `fsck` and `quotacheck` from checking it. Untidy is the worst case;
+a host that will not boot is not.
+
+### 5.66 `jail` read a field `jls` has never printed
+
+5.32 shipped `jail` reading `jls --libxo=json` rather than the table, and
+recorded one thing as still assumed: the field names inside a jail entry.
+Auditing them found that one was invented.
+
+**The module read `e["state"]`.** `state` is not a jail parameter. It is
+not in `security.jail.param`, it is not in the list `jls -h` publishes,
+and no `jls` has ever printed one. A missing key unmarshals to the zero
+value, so the field was quietly empty on every real host, the parser
+reported no error, and `jail.list` returned a `state` that was always
+`""`.
+
+The unit test agreed, because its fixture supplied `"state": "ACTIVE"` --
+a value invented by whoever wrote the fixture, in the module's own
+spelling. **That is 5.31's lesson arriving for the fourth time**, and the
+first three (1.3, 1.4, 5.31) were all the same shape: a fixture written
+from expectation passes while asserting nothing.
+
+The kernel's word for what an operator is actually asking about is
+`dying` -- a jail that has been removed and whose processes have not all
+exited, which is precisely the case somebody is looking at when a jail
+will not go away. State is derived from that now.
+
+**The audit is written backwards on purpose.** `TestJailReadsWhatARealJlsPrints`
+checks that what a real `jls` prints parses, which cannot catch reading a
+key `jls` never emits. The new check goes the other way: every key this
+module subscripts out of an entry is looked up in the parameter list
+`jls -h` prints, and `state` is asserted *absent* so nobody reintroduces
+it from a fixture. The list comes from the tool rather than from a table
+maintained here, which is the same move `jls --libxo=json` was over the
+aligned columns.
+
+Two smaller things came out of it. A fallback reading a bare `hostname`
+key was dead -- `host.hostname` is the parameter and bare `hostname` is
+not one -- and is gone. And libxo's envelope version has moved from 1 to
+2 since the module was written, so the test now reads the container by
+name and ignores the version, which nothing depends on.
+
+Confirmed against a real FreeBSD 15.1 host. **Still not demonstrated: no
+jail has been started or stopped by this module**, so `jail.start`,
+`jail.stop` and the `jail.running` state remain argument vectors that
+nothing has watched take effect. `jail` stays `captured` rather than
+`hardware` for that reason.
+
+### 5.67 A PCRE construct spelled inside a character class is not one
+
+`internal/regexcompat` refuses 11 PCRE constructs by name so that a
+migration knows what it is in for. Detection was a raw substring scan
+with an escape check and nothing else, so a construct's spelling *inside
+a character class* was reported as the construct: `[(?=]` is a class
+matching one of `(`, `?` or `=`, and it was refused as a lookahead.
+
+The scan now tracks whether each offset falls inside a bracket
+expression, and honours the rules that make that harder than it looks: a
+`]` first in a class -- or first after a leading `^` -- is a literal
+`]` and does not close it, an escaped `\[` opens nothing, an escaped
+`\]` closes nothing, and a POSIX sub-expression like `[:alpha:]` is
+consumed whole so its inner `]` cannot close the outer class.
+
+The detection direction is tested hardest, because breaking it would be
+far worse than the false positive being fixed: all 11 constructs are
+asserted still refused outside a class, each alongside an unrelated class
+in the same pattern. The fix was confirmed by disabling the class
+tracking and watching five tests fail.
+
+Nothing in the estate's tree was affected. A sweep for a construct
+spelling inside a bracket expression across the repository found none, so
+this was real and latent -- which is also why 5.5's "zero regex findings
+across 193 files" did not turn it up.
+
+### 5.68 The six real template gaps, and one that was mismeasured
+
+5.5 left 198 corpus cases at 157 agreeing and 15 gaps, of which nine were
+corpus-extractor artifacts and **six were real engine gaps**. All six are
+closed, and the table now stands at **164 agreeing, 25 outside the subset
+and 9 gaps -- every remaining gap an extractor artifact, so no engine gap
+is left**.
+
+Each was one feature, and three of the six were not where the label said.
+
+**Calling a filter result.** `foo|attr("items")()` did not parse: the
+postfix grammar stopped at a filter's own call arguments and let nothing
+follow. The trailer loop is now reusable and runs again after each filter
+is applied, so `.`, `[]` and `()` all chain off a filter the way they
+chain off anything else.
+
+**String `indent(width=...)`.** The filter coerced `width` to an integer
+whatever it was given, so a string width silently became zero and
+indented nothing. A string is now used as the literal prefix and an
+integer as a column count.
+
+**`groupby` with a numeric attribute.** `groupby(0)` groups by a tuple
+position and the filter accepted only a string attribute.
+
+**`{{ self.foo() }}`.** `self` did not exist. It renders a named block
+through a sub-renderer, which is the mechanism `super()` already used.
+
+**The `caller=none` macro default** was the most interesting of the six,
+because the defect was the opposite way round from the label. A macro
+whose parameter is literally named `caller` was overwriting the real
+`{% call %}` block binding with its own default on every invocation, so
+`{% call x() %}aha!{% endcall %}` rendered `[]` rather than `[aha!]`. The
+binding now wins over the default when both are present.
+
+**And `is in` was not a test defect at all.** The test was implemented
+and correct; the lexer was greedy. `{{ 1 in {"foo": 1} }}` ends
+`1}}}`, and the close delimiter was matched against the dictionary's own
+closing brace. The lexer now tracks bracket depth and tries the close
+delimiter only when nothing inside the tag is still open -- which is the
+same fix Jinja's own lexer carries for the same case.
+
+**The seventh was a mismeasurement.** One case was filed as needing "the
+Python object model, and no code path that reaches an arbitrary method",
+which is a real limit of this engine and was not what that case needed.
+`dict.items()` was already implemented; it returned a list where Jinja
+returns a tuple, so the entire disagreement was `[['items', 42]]` against
+`[('items', 42)]`. It is closed rather than reclassified, and it is the
+second time in this ledger that a row's label named something other than
+what it measured -- 5.56's chomping row was the first. A label is not a
+measurement.
+
+`dictsort` builds the same untyped pairs `items()` used to. No corpus
+case renders it directly, so it is left alone and recorded here rather
+than fixed on speculation.
+
+### 5.69 `salt['x.y'] is defined` answered true for a module the node does not have
+
+Found while building the render sandbox and recorded in 5.5 as unfixed,
+because it changes what an existing tree means and belonged in its own
+change. This is that change.
+
+`template.Dispatcher.HasModule` existed, was implemented by every
+dispatcher in the tree, and was called by nothing. A subscript of `salt`
+returned a dispatch value whatever the name, so:
+
+```jinja
+{% if salt['foo.bar'] is defined %}
+```
+
+took the true branch on a node without the module and failed at the call
+instead. Salt answers false there -- its loader raises and Jinja turns
+that into undefined -- so this was a migration defect as well as a wrong
+answer, and the wrong answer is the dangerous half: a tree guarding an
+optional module ran the guarded branch everywhere.
+
+The fix is confined to the subscript spelling, which is what makes it
+safe. **A key containing a dot names a module and is checked**; a bare
+`salt['pkg']` used as a prefix for `salt.pkg.version` names half of one
+and cannot be, so it still returns a dispatch value unconditionally.
+Both spellings of a call to a module the node *does* have keep working.
+
+### 5.70 `jail -e` does not print a list of names, and `jail.running` could never start a jail
+
+Starting a real jail through the module -- which 5.66 left as the last
+undemonstrated half of `jail` -- found a third defect, and it is the
+worst of the three.
+
+**`jail -e` prints parameters, not names.** It prints one line per
+configured jail, and on each line that jail's parameters separated by the
+separator it was given, with the name carried as `name=`:
+
+```
+$ jail -f t.conf -e ,
+name=web,path=/tmp/web,persist
+name=db,path=/tmp/db,persist
+```
+
+`jailConfigured` split the whole output on the separator and took every
+field as a jail name, so for that configuration it answered
+`[name=web, path=/tmp/web, persist, name=db, ...]`, not one of which is a
+name. `jail.configured` returned that list. And `jail.running` looked for
+its jail in it, never found one, and reported:
+
+```
+halite_live_state is not defined in jail.conf, so there is nothing to
+start.
+```
+
+for a jail that was defined -- while printing the definition it had just
+read in the same sentence. **The state could not start any jail at all**,
+which makes the SPEC 15.5 state it implements inoperable rather than
+merely wrong.
+
+**Why nothing caught it.** This fleet's own FreeBSD host defines no jails
+in jail.conf: `jail -e` printed nothing, the function returned an empty
+list, and an empty list is exactly right for a host with no configured
+jails. The defect needed a *populated* jail.conf to become visible. The
+unit test supplied one -- in the module's own spelling, `web,mail,db`,
+a format `jail -e` has never produced. That is the third fixture in this
+module written from expectation (5.66 has the other two), and the second
+time in this ledger that a test and the code it tests agreed with each
+other and with nothing else.
+
+**The separator was unsafe as well.** `-e ,` is ambiguous, because a
+parameter's value may contain a comma without being quoted:
+
+```
+name=tricky,path="/tmp/a b,c",host.hostname=x,y,persist
+```
+
+`path` is quoted because it contains a space and `host.hostname` is not,
+so no rule recovers where one parameter ends and the next begins. The
+separator is ASCII unit separator now, which cannot appear in a jail.conf
+value -- the same refusal to guess that made `quota` read Linux through
+`-O csv` rather than its fixed-width report.
+
+A line with no `name=` is refused rather than skipped, because a list of
+configured jails that quietly omits one is worse than no list: a state
+would start a jail that is already running, or call a defined jail
+undefined, which is the exact shape this defect took.
+
+**What is now demonstrated.** A jail defined, started through
+`jail.start`, found in a raw `jls` rather than through this module's own
+reader -- deliberately, because a reader and a writer wrong in the same
+direction would agree with each other -- and stopped through
+`jail.stop`. The `jail.running` state converges, reports no change on a
+second application, and stops the jail when asked for `running: false`.
+Both were confirmed by breaking them on purpose.
+
+`jail` is `hardware`. Not covered: a jail with a network stack of its
+own, jail.conf includes and variables, and stopping a jail that still has
+processes in it.
+
+The live leg writes its definition to `/etc/jail.conf`, because
+`jailRun` runs `jail -c <name>` with no `-f` and a jail must be in the
+default configuration for the module to start it at all. What makes that
+safe is `jail_list`: jails start at boot from the names in that rc.conf
+variable rather than from everything jail.conf defines, so an entry left
+behind starts nothing. The leg refuses to run where `jail_list` is not
+empty, because that reasoning does not hold there.
+
+### 5.71 Finishing `jail`: the three gaps 5.70 named, and a test that passed without testing
+
+5.70 left `jail` at `hardware` with three things named as not covered.
+All three are closed, and closing the third found that the test written
+for it was passing without testing anything.
+
+**`jail.restart`**, which the module did not have. It is `jail -rc`,
+jail(8)'s own spelling rather than a stop followed by a start: the usage
+line reads `-[cmr]`, the verbs combine, and the jail is removed and
+recreated in one call.
+
+The assertion is the jid, not whether the jail is up afterwards. A
+restart that quietly did nothing would pass the second check, because the
+jail was already running; the kernel allocates a new jid on every create,
+so a jail that came back with the jid it had was never removed. Driven
+against a real jail, where it went from 6 to 7.
+
+**A jail with an address of its own.** Every jail this suite had started
+was a bare `persist` jail sharing the host's network stack, so no network
+configuration had been exercised at all. One now starts with an
+`ip4.addr` on a loopback alias, which needs no interface of its own and
+collides with nothing, and its address reads back through the `jail -e`
+parser 5.70 rewrote.
+
+**A jail with a process still in it**, and this is the instructive one.
+
+The first version of that test put no process in the jail and passed. It
+ran `jexec <name> /bin/sleep 600`, on the assumption that `jexec` runs
+the host's binary in the jail's context. It does not -- it runs a binary
+from inside the jail, and the jail's root was an empty directory:
+
+```
+jexec: execvp: /bin/sleep: No such file or directory
+```
+
+So there was never a process to stop. The check said there was, because
+`ps -J` was catching **the `jexec` process itself**, which really is in
+the jail for the instant between attaching to it and failing to exec. The
+test passed on that race, and the only reason it was caught is that
+breaking `jail -r` on purpose made it *skip* rather than fail -- a result
+that made no sense for the break applied, and which was worth chasing
+rather than explaining away.
+
+It now copies `/rescue/sleep` into the jail root. That is FreeBSD's own
+statically linked recovery build, so one file is a complete userland: no
+runtime linker, no libc, no base system. With a real process inside, the
+stop is checked both ways -- the jail leaves `jls` and the process is
+gone -- and breaking `jail -r` now fails it on both counts.
+
+The lesson is 5.31's with the direction reversed. There the fixture was
+written in the module's own spelling; here the *test* was written on a
+wrong belief about another program, and both produce the same thing: a
+green test that asserts nothing. A skip is not a pass, and a result that
+does not match the change that produced it is a finding.
+
+**And a fourth thing, found while doing the above.** `config` was a
+parameter of `jail.configured` alone. So a tree keeping its jails in a
+file of its own could list them and could not start one: the listing read
+the named file and `jail -c` read `/etc/jail.conf`. That is 5.70's shape
+exactly -- two paths that must agree, and only one of them given the
+information -- in a second place in the same module. `config` is on
+`jail.start`, `jail.stop`, `jail.restart`, `jail.show_config` and the
+`jail.running` state now, and a test asserts the flag reaches every verb.
+
+**Two functions arrived with it.** `jail.show_config` returns a
+configured jail's resolved parameters, read from `jail -e` rather than by
+parsing jail.conf, so what comes back is what the jail would actually be
+created with -- inheritance from the global block included, which is what
+an operator is asking. A bare flag such as `persist` reads as true rather
+than as a setting with an empty value, because those are different
+claims.
+
+`jail.get_enabled` answers a question `jail.configured` cannot: whether a
+jail starts at boot. It does not start because it is defined; it starts
+because `jail_list` names it and `jail_enable` is on. A jail can be
+configured, startable by hand, and absent after a reboot. An empty
+`jail_list` with `jail_enable="YES"` is not a misconfiguration -- it is
+this fleet's own host, which runs jails deliberately and autostarts none.
+
+Still not covered: `jail.conf` includes and variables, a jail with a vnet
+of its own rather than an address alias, and `jail -m` to modify a
+running jail in place.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -7059,6 +7499,7 @@ changed: see 3.
    positions, document markers inside quoted scalars, and under-indented
    continuations — none of which a Salt tree contains, which is why this
    sits below the two above it.
-4. **The remaining 15 template conformance gaps** (5.5), of which eight
-   need a Python callable the corpus extractor cannot carry and are not
-   engine gaps at all. The six that are real are one feature each.
+4. ~~**The remaining 15 template conformance gaps**~~ (5.5) -- **the six
+   real ones are closed** (5.68). The 9 that remain all need a Python
+   callable or a scoping construct the corpus extractor cannot carry,
+   so none of them is an engine gap.

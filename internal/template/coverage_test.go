@@ -320,6 +320,53 @@ func (d *recordingDispatcher) CallModule(name string, args []any, _ map[string]a
 
 func (d *recordingDispatcher) HasModule(name string) bool { return true }
 
+// TestDottedSubscriptConsultsRegistry covers the fix for the defect plan.md
+// section 5 records: `salt['x.y'] is defined` used to answer true for every
+// name, dispatchable or not, because subscripting `salt` built a callable
+// unconditionally. Salt's own loader raises for a module it does not have,
+// and Jinja turns that raise into undefined, so the guard must answer false
+// on a node without the module. A bare key with no dot names a prefix, not
+// a module.function pair, and a prefix cannot be checked against the
+// registry, so it must keep working exactly as it always has.
+func TestDottedSubscriptConsultsRegistry(t *testing.T) {
+	d := &selectiveDispatcher{known: map[string]bool{"test.echo": true}}
+	ctx := map[string]any{"salt": NewDispatch(d)}
+
+	if got := render(t, `{{ salt['test.echo']('a') }}`, ctx); got != "test.echo(a)" {
+		t.Errorf("calling a present module through the bracket form = %q", got)
+	}
+	if got := render(t, `{{ salt.test.echo('b') }}`, ctx); got != "test.echo(b)" {
+		t.Errorf("calling a present module through the attribute form = %q", got)
+	}
+	if got := render(t, `{% if salt['test.echo'] is defined %}yes{% else %}no{% endif %}`, ctx); got != "yes" {
+		t.Errorf("present module: is defined = %q, want yes", got)
+	}
+	if got := render(t, `{% if salt['no.such'] is defined %}yes{% else %}no{% endif %}`, ctx); got != "no" {
+		t.Errorf("absent module: is defined = %q, want no", got)
+	}
+	// A dotless key is a prefix for further attribute or subscript access,
+	// never a module.function pair on its own, so the registry is never
+	// consulted for it and the chained call must still reach the module.
+	if got := render(t, `{{ salt['test'].echo('c') }}`, ctx); got != "test.echo(c)" {
+		t.Errorf("bare prefix used ahead of an attribute = %q", got)
+	}
+}
+
+// selectiveDispatcher answers HasModule from a fixed set, unlike
+// recordingDispatcher which always says yes, so it can stand in for a node
+// that genuinely lacks a module.
+type selectiveDispatcher struct{ known map[string]bool }
+
+func (d *selectiveDispatcher) HasModule(name string) bool { return d.known[name] }
+
+func (d *selectiveDispatcher) CallModule(name string, args []any, _ map[string]any) (any, error) {
+	parts := make([]string, len(args))
+	for i, a := range args {
+		parts[i] = renderValue(a)
+	}
+	return name + "(" + strings.Join(parts, ",") + ")", nil
+}
+
 func TestUndefinedRendersAndDescribes(t *testing.T) {
 	u := Undefined{Name: "pillar.nginx", Hint: "mapping has no key nginx"}
 	if u.String() != "" {
