@@ -603,7 +603,7 @@ what an operator is looking for.
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | **The row ships entirely**, second after FreeBSD. `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain` and `mac_assistive` are modules (DIVERGENCE 5.41-5.46). Every one of them is `assumed`: no CI leg is a Mac. |
 | RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
-| FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32). |
+| FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32); its field names are no longer assumed either, and auditing them against the list `jls -h` publishes found one the module had invented (5.66). The FreeBSD half of the **Common Linux** row's `quota` was audited at the same time and had two defects, both from being read rather than run (5.65). |
 | SUSE | 1 | `zypperpkg`. |
 
 Note the overlap with 2.2: `iptables`, `nftables` and `lvm` are named in
@@ -1061,7 +1061,8 @@ through every previous revision was wrong.**
 It ranked by "what the migration is blocked on", and by "the estate is
 Ubuntu". Neither is true. The fleet is **100% on halite** — the
 migration is finished, so there is nothing left to be blocked. And it is
-**four FreeBSD hosts** (two physical, two virtual) **to one Ubuntu**,
+**four FreeBSD hosts** (two physical, two cloud instances) **to one
+Ubuntu**,
 built from source and installed with `make install`. Every item below
 moved, and two of them moved a long way.
 
