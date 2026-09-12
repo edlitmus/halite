@@ -40,6 +40,100 @@ env:
   GOTOOLCHAIN: auto
 
 jobs:
+  # Which legs this commit actually needs.
+  #
+  # # Why not `paths-ignore`
+  #
+  # The obvious way to skip CI on a documentation change is a
+  # `paths-ignore` on the trigger, and it would be wrong here, because
+  # **this repository's documentation is under test**. `internal/docsaudit`
+  # holds the generated pages and the prose counts to the registries,
+  # `internal/specaudit` holds SPEC.md and DIVERGENCE.md to them, and
+  # `make policy` reads SPEC 2.3's lexicon out of SPEC.md. One wrong
+  # number in README.md fails the suite:
+  #
+  #	docsaudit_test.go:262: README.md says 534 execution functions;
+  #	                       this build has 535
+  #
+  # A trigger-level skip would let exactly that merge unchecked, and the
+  # whole point of those audits is that a claim in a document is a claim
+  # the build can be held to.
+  #
+  # So the split is per job rather than per workflow. A documentation
+  # change still runs the two legs that read documentation -- `policy`
+  # and the Linux `test` -- and skips the eleven that cannot be affected
+  # by it: the other platforms, the race detector, the cross-build, FIPS,
+  # the Salt differential and the reproducibility check. That is about
+  # two minutes instead of the better part of twenty.
+  #
+  # # It fails towards running more, not less
+  #
+  # If the range cannot be worked out -- a new branch whose `before` is
+  # all zeros, a missing base ref, a shallow fetch -- this reports a code
+  # change and everything runs. A skipped check that should have run is
+  # invisible; a check that ran needlessly costs a runner.
+  changes:
+    name: what changed
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.what.outputs.code }}
+      test-os: ${{ steps.what.outputs.test-os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The whole history, because the comparison needs the base
+          # commit and a shallow clone does not have it.
+          fetch-depth: 0
+
+      - id: what
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The range, by event. Anything unexpected leaves it empty and
+          # the fallback below runs everything.
+          range=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            if [ -n "$base" ] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+              range="$base...HEAD"
+            fi
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            before="${{ github.event.before }}"
+            case "$before" in
+              ""|0000000000000000000000000000000000000000) ;;
+              *) git cat-file -e "$before^{commit}" 2>/dev/null && range="$before..HEAD" ;;
+            esac
+          fi
+
+          if [ -z "$range" ]; then
+            echo "no usable commit range for this event; running every leg"
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo 'test-os=["ubuntu-24.04","windows-2022","macos-15"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          files=$(git diff --name-only "$range")
+          echo "changed files:"
+          echo "$files" | sed 's/^/  /'
+
+          # Everything that is not a Markdown file is code, and so is a
+          # deleted or renamed one. `.github/` is deliberately not
+          # documentation even when it is a .md, because a workflow
+          # change must run the workflow.
+          if echo "$files" | grep -qvE '^[^/]*\.md$|^docs/[^/]*\.md$'; then
+            code=true
+          else
+            code=false
+          fi
+          echo "code=$code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = true ]; then
+            echo 'test-os=["ubuntu-24.04","windows-2022","macos-15"]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'test-os=["ubuntu-24.04"]' >> "$GITHUB_OUTPUT"
+          fi
+
   # The fast gate. Formatting, vet, and the specification's own build
   # rules -- the lexicon of SPEC 2.3, the dependency allowlist of 4.2,
   # and the import restrictions of 25.3. Runs first because it is
@@ -78,6 +172,8 @@ jobs:
   # 197 tests silently stopped running everywhere but Windows.
   build-all:
     name: build all targets
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -104,11 +200,16 @@ jobs:
   # on; it has a job of its own further down, in a virtual machine.
   test:
     name: test (${{ matrix.os }})
+    needs: changes
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022, macos-15]
+        # Three platforms for a code change, Linux alone for a
+        # documentation one -- because the suite is what holds the
+        # documents to the registries, and that verdict does not differ
+        # by platform.
+        os: ${{ fromJSON(needs.changes.outputs.test-os) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -191,6 +292,8 @@ jobs:
   # that says nothing is the failure this whole file exists to prevent.
   race:
     name: race (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -271,6 +374,8 @@ jobs:
   # better of the two.
   freebsd:
     name: test (freebsd)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     # Emulation makes the wall time hard to predict, and the default job
     # timeout is six hours. This bounds a hang without pretending to
@@ -339,6 +444,8 @@ jobs:
   # routed through the certified module.
   fips:
     name: fips-test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -362,6 +469,8 @@ jobs:
   # running. The container is what makes it a command.
   saltdiff:
     name: salt differential
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -374,6 +483,8 @@ jobs:
   # from two paths on one machine will not be reproducible across two.
   repro:
     name: reproducible build
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
