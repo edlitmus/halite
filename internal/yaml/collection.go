@@ -142,10 +142,18 @@ func (p *parser) parseBlockMap(indent int) (*value.Map, error) {
 		// produced the key has to be remembered.
 		explicitEntry := false
 
-		if p.peek() == '?' && (p.peekAt(1) == ' ' || p.peekAt(1) == '\n') {
+		// A tab after `?` reaches here rather than being read as part of
+		// a plain scalar: `?` followed by white space is the explicit
+		// key indicator, and a tab is white space. Without this,
+		// `?\tkey:` parsed as a mapping whose key was the four
+		// characters `?`, tab, `k`... which is a document PyYAML
+		// refuses and this build was quietly finding a meaning for.
+		if p.peek() == '?' && (p.peekAt(1) == ' ' || p.peekAt(1) == '\t' || p.peekAt(1) == '\n') {
 			explicitEntry = true
 			p.next()
-			p.skipSpaces()
+			if err := p.skipIndicatorSeparation("an explicit key's `?`"); err != nil {
+				return nil, err
+			}
 			key, err = p.parseExplicitKey(indent)
 			if err != nil {
 				return nil, err
@@ -421,7 +429,9 @@ func (p *parser) parseBlockSeq(indent int) ([]any, error) {
 		}
 		p.next() // the '-'
 
-		p.skipSpaces()
+		if err := p.skipIndicatorSeparation("a sequence entry's `-`"); err != nil {
+			return nil, err
+		}
 		if p.eof() || p.peek() == '\n' || p.peek() == '#' {
 			if p.peek() == '#' {
 				p.skipLine()

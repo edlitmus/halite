@@ -87,7 +87,19 @@ var reasons = map[string]reason{
 			"tag is refused by design: a parser that can construct an arbitrary type is how " +
 			"a YAML file becomes code execution."},
 	specTab: {true,
-		"SPEC 10.1.2 rejects tab characters used for indentation."},
+		"SPEC 10.1.2 rejects tab characters used for indentation, and SPEC 10.1 makes " +
+			"PyYAML's the dialect, which is stricter than the suite about where a tab may " +
+			"be at all: PyYAML refuses one between a block indicator and what it " +
+			"introduces whatever follows, where the suite allows it before a scalar and " +
+			"refuses it before a collection. Following the suite's subtler rule would mean " +
+			"reading documents Salt will not load, so the simple rule wins and these " +
+			"documents -- two of them spec examples -- are refused here and by PyYAML."},
+	specTabQuoted: {true,
+		"the suite refuses a tab used as the indentation of a continuation line inside a " +
+			"double-quoted scalar; PyYAML reads it, folding the line as it would any other. " +
+			"halite reads it too, for the same reason it refuses the cases above: SPEC 10.1 " +
+			"picks the dialect an existing tree was written against. It was recorded as a " +
+			"leniency defect until the two references were actually compared."},
 	specComplexKey: {true,
 		"SPEC 10.1.2 rejects a mapping or a sequence used as a mapping key."},
 	specDuplicateKey: {true,
@@ -132,6 +144,7 @@ const (
 	specTab          = "specTab"
 	specComplexKey   = "specComplexKey"
 	specDuplicateKey = "specDuplicateKey"
+	specTabQuoted    = "specTabQuoted"
 	specEndOfInput   = "specEndOfInput"
 
 	gapAfterDocument = "gapAfterDocument"
@@ -164,6 +177,7 @@ var deviations = []deviation{
 	{"57H4", devRejects, specTag},
 	{"5TRB", devAccepts, gapLenient},
 	{"5TYM", devRejects, specTag},
+	{"6BCT", devRejects, specTab},
 	{"6CA3", devRejects, specTab},
 	{"6CK3", devRejects, specTag},
 	{"6HB6", devRejects, specTab},
@@ -176,6 +190,7 @@ var deviations = []deviation{
 	{"9MMW", devRejects, gapFlow},
 	{"9MQT/01", devAccepts, gapLenient},
 	{"9WXW", devRejects, specTag},
+	{"A2M4", devRejects, specTab},
 	{"AB8U", devRejects, gapAfterDocument},
 	{"C4HZ", devRejects, specTag},
 	{"CC74", devRejects, specTag},
@@ -184,7 +199,7 @@ var deviations = []deviation{
 	{"CUP7", devRejects, specTag},
 	{"CXX2", devAccepts, gapLenient},
 	{"DK95/00", devRejects, specTab},
-	{"DK95/01", devAccepts, gapLenient},
+	{"DK95/01", devAccepts, specTabQuoted},
 	{"DK95/03", devRejects, specTab},
 	{"DK95/07", devRejects, specTab},
 	{"J7PZ", devRejects, specTag},
@@ -220,10 +235,7 @@ var deviations = []deviation{
 	{"X4QW", devAccepts, gapLenient},
 	{"XW4D", devRejects, specComplexKey},
 	{"Y79Y/002", devRejects, specTab},
-	{"Y79Y/004", devAccepts, gapLenient},
-	{"Y79Y/005", devAccepts, gapLenient},
-	{"Y79Y/006", devAccepts, gapLenient},
-	{"Y79Y/008", devAccepts, gapLenient},
+	{"Y79Y/010", devRejects, specTab},
 	{"Z67P", devRejects, specTag},
 	{"Z9M4", devRejects, specTag},
 }

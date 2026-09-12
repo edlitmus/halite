@@ -18,6 +18,27 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A tab where Salt refuses one is now refused here too
+
+Five of the twenty documents halite read that Salt would not load were
+tabs, and taking them turned out to be a choice between two references
+rather than a defect to fix.
+
+The YAML test suite has a subtle rule: a tab after a `-` is fine before
+a plain value and wrong before a nested list. PyYAML has a simple one:
+no tab there at all, and none almost anywhere outside a quoted string.
+The specification says halite reads what Salt reads, so the simple rule
+wins, and it is the rule an operator already gets from their old tool.
+
+Four documents that used to load now do not. One more was never a
+defect: a tab inside a quoted string, which the suite refuses and Salt
+reads, and which halite had been treating as its own fault.
+
+Two of the suite's own specification examples now fail here, because
+they contain a tab Salt refuses. That is the trade, and it is recorded
+rather than papered over: the score on one reference falls while
+agreement with the one that decides what a tree means rises.
+
 ### Six more `file` functions, and one of them was undoing your work
 
 `patch`, `sed`, `seek_read`, `seek_write`, `list_backups` and

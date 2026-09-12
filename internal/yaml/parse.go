@@ -385,6 +385,37 @@ func (p *parser) skipSpaces() {
 	}
 }
 
+// skipIndicatorSeparation consumes the white space between a block
+// indicator and what it introduces, and refuses a tab in it.
+//
+// The reference implementations disagree about this and SPEC 10.1
+// settles which one halite follows. The YAML test suite accepts a tab
+// after `-` when a scalar follows (`-\t-1`) and refuses it when a
+// collection does (`-\t-`), on the reasoning that the second is
+// indentation. PyYAML refuses both, and every other tab outside a
+// quoted scalar with it. SPEC 10.1 specifies PyYAML's dialect because
+// that is what every existing Salt tree was written against, and a
+// document Salt will not load must not load here and mean something
+// nobody wrote.
+//
+// So the rule here is the simple one rather than the subtle one, and it
+// is the same rule an operator gets from Salt: no tab between an
+// indicator and its content.
+func (p *parser) skipIndicatorSeparation(indicator string) error {
+	for !p.eof() {
+		switch p.peek() {
+		case ' ':
+			p.next()
+		case '\t':
+			return p.err("tab character after %s; YAML permits only spaces between an "+
+				"indicator and what it introduces", indicator)
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
 func (p *parser) skipLine() {
 	for !p.eof() && p.peek() != '\n' {
 		p.next()
