@@ -18,6 +18,19 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A guard on an optional module now answers correctly
+
+`{% if salt['foo.bar'] is defined %}` used to take the true branch on
+every node, whether or not the node had the module, and then fail at the
+call. Salt answers false there. A tree that guards an optional module was
+therefore running the guarded branch everywhere, which is the wrong
+answer rather than merely a missing feature.
+
+A subscript whose key names a module -- one with a dot in it -- is now
+checked against what the node actually has. A bare `salt['pkg']` used as
+a prefix is not, because half a name cannot be checked, and it keeps
+working as before.
+
 ### The template engine has no known gaps against Jinja's own tests
 
 Six real disagreements with Jinja closed: calling the result of a filter,

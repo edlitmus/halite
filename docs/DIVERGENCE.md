@@ -6444,6 +6444,32 @@ measurement.
 case renders it directly, so it is left alone and recorded here rather
 than fixed on speculation.
 
+### 5.69 `salt['x.y'] is defined` answered true for a module the node does not have
+
+Found while building the render sandbox and recorded in 5.5 as unfixed,
+because it changes what an existing tree means and belonged in its own
+change. This is that change.
+
+`template.Dispatcher.HasModule` existed, was implemented by every
+dispatcher in the tree, and was called by nothing. A subscript of `salt`
+returned a dispatch value whatever the name, so:
+
+```jinja
+{% if salt['foo.bar'] is defined %}
+```
+
+took the true branch on a node without the module and failed at the call
+instead. Salt answers false there -- its loader raises and Jinja turns
+that into undefined -- so this was a migration defect as well as a wrong
+answer, and the wrong answer is the dangerous half: a tree guarding an
+optional module ran the guarded branch everywhere.
+
+The fix is confined to the subscript spelling, which is what makes it
+safe. **A key containing a dot names a module and is checked**; a bare
+`salt['pkg']` used as a prefix for `salt.pkg.version` names half of one
+and cannot be, so it still returns a dispatch value unconditionally.
+Both spellings of a call to a module the node *does* have keep working.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -950,7 +950,8 @@ unchanged.
   unexplained. Done. The count grew with the chomping matrix of
   DIVERGENCE 5.56.
 
-- **`salt['x.y'] is defined` always answers true**, found while building
+- ~~**`salt['x.y'] is defined` always answers true**~~ — **fixed**
+  (DIVERGENCE 5.69). It was found while building
   the render sandbox. `template.Dispatcher.HasModule` exists, is
   implemented by every dispatcher in the tree, and is called by nothing:
   a subscript of `salt` returns a dispatch value whatever the name, so
@@ -961,8 +962,9 @@ unchanged.
   answer. The fix is confined to the subscript spelling: a name with a
   dot in it can be checked, and a bare `salt['pkg']` used as a prefix
   for `salt.pkg.version` cannot, so only the first consults the
-  registry. Not fixed here, because it changes what an existing tree
-  means and belongs in its own change.
+  registry. It changed what an existing tree means, which is why it
+  waited for a change of its own: a tree guarding an optional module had
+  been running the guarded branch on every node.
 - **The regex engine (SPEC 10.4):** `internal/regexcompat` refuses 11
   PCRE constructs by name with a workaround apiece and hands the rest to
   RE2. The estate's real tree produced **zero regex findings across 193
