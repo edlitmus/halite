@@ -499,9 +499,15 @@ registries in both directions.
 `shadow`, `state`, `sudo`, `swap`, `system`, `tls`, `tmpfs`. `ps` has
 shipped (DIVERGENCE 5.61).
 
-**State, 14 of SPEC 15.5**: `acl`, `at`, `iptables`, `kernelpkg`,
-`locale`, `logrotate`, `lvm`, `mac_defaults`, `nftables`, `pro`,
-`reboot`, `selinux`, `sudo`, `win_wua`.
+**State, 10 of SPEC 15.5**: `acl`, `at`, `kernelpkg`, `locale`,
+`logrotate`, `pro`, `reboot`, `selinux`, `sudo`, `win_wua`.
+
+Re-measured against the registry on 2026-09-12: this row had said 14 and
+still listed `iptables`, `lvm`, `mac_defaults` and `nftables`, all four
+of which ship. §7.12 recorded them as done and this row was not updated
+with it, which is the drift the header of this file warns about -- the
+platform table of §2.3 is held to the registry by `internal/specaudit`
+and these two counts are not.
 
 `hostname`, `ssh_known_hosts` and `apparmor` have since shipped, which
 is what moved both counts. `apparmor` moved three at once: SPEC names it
