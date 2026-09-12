@@ -195,7 +195,10 @@ func registerFileStates(r *Registries) {
 		opt("dir_mode", signature.Mode, "", "Mode for directories created by makedirs. Empty uses 0755."),
 		opt("create", signature.Bool, true, "Create the file if it does not exist."),
 		opt("replace", signature.Bool, true, "Rewrite the file when its contents differ."),
-		opt("backup", signature.String, "", "Keep a copy of the previous contents with this suffix."),
+		opt("backup", signature.String, "", "Keep a copy of the previous contents. `node` keeps "+
+			"a timestamped one in the cache, which `file.list_backups` enumerates, and Salt's "+
+			"own spelling of that value is accepted beside it. Anything else is a suffix "+
+			"written beside the file."),
 		opt("show_changes", signature.Bool, true, "Include a unified diff in the changes."),
 	}
 
@@ -466,11 +469,27 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if contentsDiffer {
-		if suffix := states.Str(args, "backup", ""); suffix != "" && exists {
-			if err := writeAtomic(path+suffix, current, 0o600); err != nil {
-				return states.False(fmt.Sprintf("The backup of %s could not be written: %v", path, err)), nil
+		if backup := states.Str(args, "backup", ""); backup != "" && exists {
+			// `node` is this project's spelling and Salt's own value is
+			// kept working beside it, because a tree already writes it.
+			// Both mean the cache rather than a suffix: a timestamped
+			// copy under `<cache_dir>/file_backup`, which
+			// `file.list_backups` enumerates and `file.restore_backup`
+			// puts back. Any other value is a suffix written beside the
+			// file, which is what this argument has always done.
+			switch strings.ToLower(backup) {
+			case "node", "minion": // lexicon:allow — Salt's own value, kept working
+				id, err := keepBackup(c, path, current, 0o600)
+				if err != nil {
+					return states.False(fmt.Sprintf("The backup of %s could not be kept: %v", path, err)), nil
+				}
+				changes.Set("backup", id)
+			default:
+				if err := writeAtomic(path+backup, current, 0o600); err != nil {
+					return states.False(fmt.Sprintf("The backup of %s could not be written: %v", path, err)), nil
+				}
+				changes.Set("backup", path+backup)
 			}
-			changes.Set("backup", path+suffix)
 		}
 		writeMode := wantMode
 		if writeMode == 0 {

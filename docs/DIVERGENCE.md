@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **77 execution modules / 526 functions** and **44 state
+The build ships **77 execution modules / 532 functions** and **44 state
 modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -441,7 +441,7 @@ different reason is given.
 | `dnsutil` | implemented | 2 | |
 | `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
-| `file` | implemented | 40 | |
+| `file` | implemented | 46 | `patch` runs the system patch with `--forward`, because left to itself it reverses an already-applied patch and exits 0; `sed` is done in Go rather than by an editor, and its `limit` is a real per-line filter; `list_backups` and `restore_backup` read the cache a state fills with `backup: node` |
 | `git` | implemented | 5 | through the system `git` binary |
 | `grains` | implemented | 7 | |
 | `group` | implemented | 1 | |
@@ -6048,6 +6048,95 @@ will eventually be handed to something that kills. The wiring in those
 tests is the node's own, a dispatcher over the execution registry, so
 what is checked is the arrangement a beacon actually runs under rather
 than a function called directly.
+
+### 5.63 The six `file` functions SPEC names and this build did not have
+
+`patch`, `sed`, `seek_read`, `seek_write`, `list_backups` and
+`restore_backup`. The module goes from 40 of the ~50 SPEC 15.2
+enumerates to 46, and three of the six are worth more than their size.
+
+#### `patch` reverses a file if you let it
+
+SPEC says "`patch` uses the system `patch` binary", which is right for
+the reason `ps` shells out: agreeing with GNU patch about fuzz, offsets
+and reversed hunks is a large program to write and an unbounded one to
+keep right.
+
+What running it found is the whole reason this entry is here. **A patch
+applied twice, with no terminal, reverses the file and exits zero.**
+`patch` detects the condition, asks "Reversed (or previously applied)
+patch detected! Assume -R? [y]", gets no answer, takes its own default,
+and undoes the change. A state run's second pass is exactly that
+situation, so a tree that applied a patch would have had it silently
+reverted on the next highstate, with a success reported. Measured on
+FreeBSD patch 2.0-12u11.
+
+So the question is never asked: `--batch` refuses every prompt and
+`--forward` ignores an already-applied patch and says so. A caller who
+means to reverse one passes `-R`, and then `--forward` is left off,
+because otherwise it would refuse their own request.
+
+Two smaller things came from the same run. `--forward` writes a
+`<name>.rej` beside the file every time it ignores a patch, which is
+litter in a directory a tree manages, so the reject file is discarded
+with `-r -`. And `patch` puts its verdict in the *middle* of its output
+-- it opens with a commentary on what it thinks the file is and ends
+with "done" -- so the error carries every line rather than the first or
+the last.
+
+Test mode runs `--dry-run`, which is what makes SPEC 11.6's contract
+satisfiable for a patch without a second opinion about what one would
+do.
+
+#### `sed` does not run sed, and does not delegate either
+
+Salt's `file.sed` shells out to `sed -i`. This one does the work in Go,
+against a regular expression this project's own engine compiled and with
+the atomic write the rest of the module uses, so nothing runs an editor
+over a file as root.
+
+The obvious implementation is a thin front door onto `file.replace`, and
+it is wrong for one reason: `limit` is a **per-line** filter and
+`file.replace` works on the whole file. Passing it through would either
+ignore it, which replaces more than the caller asked and is the
+accept-but-do-nothing defect this project keeps finding in its own
+settings table, or quietly mean something else. So the line walk is
+here, and `g` means what sed means by it: without it, one replacement
+per eligible line.
+
+#### The backup cache
+
+`list_backups` and `restore_backup` need somewhere to list, and this
+build had a `backup` argument that wrote `<path><suffix>` beside the
+file -- useful, and not something either function can enumerate.
+
+`backup: node`, with Salt's own value accepted beside it, now keeps a
+timestamped copy under `<cache_dir>/file_backup/<the file's own absolute
+path>/`. The path is mirrored rather than flattened so two files with
+the same basename do not share a history and an operator can find a
+backup with `ls`. The timestamp format sorts lexically as well as
+chronologically, which is what lets the listing sort by name and be
+sorting by time, and it holds no colons, because a Windows path cannot.
+
+Two decisions: a restore **keeps the current contents first**, so
+choosing the wrong backup is itself undoable; and a backup identifier is
+a name in the cache and nothing else, so one holding a separator is
+refused rather than resolved into a path outside it.
+
+A node with no `cache_dir` keeps no backups and says so, rather than
+writing them relative to whatever the working directory happens to be.
+
+#### What is still not there
+
+`get_selinux_context` and `set_selinux_context`, deliberately. There is
+no SELinux on any machine this project has, and a context reader written
+from documentation is the mistake 5.31 is cited for. They belong with
+the `selinux` core module and with the RHEL host of plan.md item 14.
+
+`file.accumulated` is also still absent and is a different shape: SPEC
+15.5 promises it as a *state*, one that other states append to and that
+a `file.managed` renders, so it needs the compiler to carry accumulated
+data across chunks rather than a new file operation.
 
 ## 6. Everything else not started
 

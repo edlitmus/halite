@@ -612,12 +612,23 @@ piece of work.
 
 ### 2.4 Function-level shortfalls inside modules that ship
 
-`file` has **40** of the ~50 SPEC 15.2 enumerates. The previous revision
-said 32 and named `hardlink` among the absences; `file.hardlink` ships.
-What is still absent is `patch`, `sed`, `list_backups`, `restore_backup`,
-`seek_read`, `seek_write` and the SELinux context pair, along with
-`file.accumulated`, which SPEC 15.5 promises by name because trees use it
-and which nothing in the tree implements.
+`file` has **46** of the ~50 SPEC 15.2 enumerates. ~~What is still
+absent is `patch`, `sed`, `list_backups`, `restore_backup`, `seek_read`,
+`seek_write`~~ — **all six ship** (DIVERGENCE 5.63). Two things are
+still absent and they are different in kind:
+
+- **The SELinux context pair**, `get_selinux_context` and
+  `set_selinux_context`. Deliberately not written: there is no SELinux
+  on any machine this project has, and a context reader written from
+  documentation is the mistake DIVERGENCE 5.31 keeps being cited for.
+  It belongs with the `selinux` core module of §2.2 and with the RHEL
+  host of item 14, which is also where a STIG-shaped estate would put
+  it.
+- **`file.accumulated`**, which SPEC 15.5 promises by name because
+  trees use it and which nothing implements. It is a *state*, not an
+  execution function: a declaration that other states append to and
+  that a `file.managed` then renders, so it needs the compiler to hold
+  accumulated data across chunks rather than a new file operation.
 
 `pkg` has 23 of 26 — `info_installed`, `file_dict`, `download`,
 `list_downloaded` and `autoremove` landed in the apt provider (DIVERGENCE
