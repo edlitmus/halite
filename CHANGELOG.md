@@ -18,6 +18,14 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A jail's state was always blank
+
+`jail.list` reported a state read from a field that `jls` has never
+printed, so it was empty on every host. The test agreed with it because
+the fixture invented the same field. State now comes from the flag the
+kernel really has, and every field this build reads is checked against
+the list `jls` itself publishes.
+
 ### `quota` works on FreeBSD, where it had two defects nobody could see
 
 Reading FreeBSD's quota tools rather than running them left two faults,

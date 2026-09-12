@@ -57,19 +57,27 @@ func jailFixture(t *testing.T, responses map[string]hexec.Result) (*hexec.Contex
 
 const jlsCmd = "jls --libxo=json -v"
 
-// jlsJSON is libxo's envelope as this build expects it. **Invented**:
-// the container names are what libxo's convention produces and no real
-// `jls` has confirmed them here. The parser falls back to finding the
-// array by shape for exactly that reason, and the test below checks the
-// real thing.
+// jlsJSON is libxo's envelope, and it is no longer invented.
+//
+// It used to be, and it carried the cost: the fixture spelled a `state`
+// field in the module's own spelling, the module read `e["state"]`, and
+// the two agreed with each other for as long as the module existed. No
+// `jls` has ever printed a `state` -- it is not a jail parameter --  so
+// every real host reported an empty one. jail_fields_test.go now checks
+// each key here against the list `jls -h` publishes, which is a
+// statement by the tool rather than by this project, and the container
+// names are confirmed against a real `jls` on this fleet's own FreeBSD
+// hosts.
+//
+// The flag a jail's state really comes from is `dying`.
 const jlsJSON = `{
-  "__version": "1",
+  "__version": "2",
   "jail-information": {
     "jail": [
       {"jid": 1, "name": "mail", "path": "/jails/mail", "host.hostname": "mail.example",
-       "state": "ACTIVE", "osrelease": "14.1-RELEASE"},
+       "dying": false, "osrelease": "14.1-RELEASE"},
       {"jid": 2, "name": "web", "path": "/jails/web", "host.hostname": "web.example",
-       "state": "ACTIVE", "osrelease": "13.3-RELEASE"}
+       "dying": false, "osrelease": "13.3-RELEASE"}
     ]
   }
 }`

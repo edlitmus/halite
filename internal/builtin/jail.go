@@ -197,7 +197,11 @@ type jailInfo struct {
 	Name     string
 	Path     string
 	Hostname string
-	State    string
+	// Dying is the kernel's own word for a jail that has been removed
+	// and whose processes have not all exited yet. It is a real jail
+	// parameter; `state` is not one, which is the whole of the defect
+	// below.
+	Dying bool
 	// OSRelease is the userland version inside the jail, which is one of
 	// the reasons somebody looks at a jail's details at all: a jail can
 	// run an older FreeBSD than the host it is on.
@@ -209,7 +213,7 @@ func (j jailInfo) asMap() *value.Map {
 		"jid", j.JID,
 		"path", j.Path,
 		"hostname", j.Hostname,
-		"state", j.State,
+		"state", j.state(),
 		"osrelease", j.OSRelease,
 	)
 }
@@ -284,12 +288,9 @@ func parseJls(stdout string) (map[string]jailInfo, error) {
 			Name:     stringOf(e["name"]),
 			Path:     stringOf(e["path"]),
 			Hostname: stringOf(e["host.hostname"]),
-			State:    stringOf(e["state"]),
+			Dying:    boolOf(e["dying"]),
 		}
 		j.OSRelease = stringOf(e["osrelease"])
-		if j.Hostname == "" {
-			j.Hostname = stringOf(e["hostname"])
-		}
 		// A jail with no name is one started by `jail -c` without one,
 		// which jls identifies by jid. Keying by the jid keeps it
 		// visible rather than dropping it.
@@ -343,6 +344,48 @@ func arrayOfJails(v any) []map[string]any {
 		out = append(out, m)
 	}
 	return out
+}
+
+// state reports a jail as an operator asks about it.
+//
+// **`state` is not a field `jls` prints, and this module read one for as
+// long as it has existed.** The fixture it was tested against carried
+// `"state": "ACTIVE"`, a value invented by whoever wrote the fixture, so
+// the unit test agreed with the module and the field was empty on every
+// real host. That is DIVERGENCE 5.31's lesson -- a fixture written in
+// the module's own spelling asserts nothing -- arriving for the fourth
+// time, and it was found by asking `jls` itself rather than by reading
+// it: `jls -h` prints the complete list of parameters it knows, and
+// `state` is not among them.
+//
+// What the kernel has instead is `dying`, one of the parameters in
+// `security.jail.param`. A jail is dying when it has been removed and
+// some process inside it has not exited yet, which is exactly the state
+// an operator is looking for when a jail will not go away. So the
+// reported word is derived from the parameter that exists rather than
+// read from one that does not.
+func (j jailInfo) state() string {
+	if j.Dying {
+		return "DYING"
+	}
+	return "ACTIVE"
+}
+
+// boolOf reads a flag libxo may have written as a boolean, as a number
+// or as a string, the way intOf already allows for the same spread.
+func boolOf(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case float64:
+		return t != 0
+	case string:
+		switch strings.ToLower(strings.TrimSpace(t)) {
+		case "true", "1", "yes":
+			return true
+		}
+	}
+	return false
 }
 
 func stringOf(v any) string {

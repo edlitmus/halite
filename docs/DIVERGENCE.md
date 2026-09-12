@@ -6316,6 +6316,51 @@ boot: `noauto` keeps `mount` from mounting it and a zero pass number
 keeps `fsck` and `quotacheck` from checking it. Untidy is the worst case;
 a host that will not boot is not.
 
+### 5.66 `jail` read a field `jls` has never printed
+
+5.32 shipped `jail` reading `jls --libxo=json` rather than the table, and
+recorded one thing as still assumed: the field names inside a jail entry.
+Auditing them found that one was invented.
+
+**The module read `e["state"]`.** `state` is not a jail parameter. It is
+not in `security.jail.param`, it is not in the list `jls -h` publishes,
+and no `jls` has ever printed one. A missing key unmarshals to the zero
+value, so the field was quietly empty on every real host, the parser
+reported no error, and `jail.list` returned a `state` that was always
+`""`.
+
+The unit test agreed, because its fixture supplied `"state": "ACTIVE"` --
+a value invented by whoever wrote the fixture, in the module's own
+spelling. **That is 5.31's lesson arriving for the fourth time**, and the
+first three (1.3, 1.4, 5.31) were all the same shape: a fixture written
+from expectation passes while asserting nothing.
+
+The kernel's word for what an operator is actually asking about is
+`dying` -- a jail that has been removed and whose processes have not all
+exited, which is precisely the case somebody is looking at when a jail
+will not go away. State is derived from that now.
+
+**The audit is written backwards on purpose.** `TestJailReadsWhatARealJlsPrints`
+checks that what a real `jls` prints parses, which cannot catch reading a
+key `jls` never emits. The new check goes the other way: every key this
+module subscripts out of an entry is looked up in the parameter list
+`jls -h` prints, and `state` is asserted *absent* so nobody reintroduces
+it from a fixture. The list comes from the tool rather than from a table
+maintained here, which is the same move `jls --libxo=json` was over the
+aligned columns.
+
+Two smaller things came out of it. A fallback reading a bare `hostname`
+key was dead -- `host.hostname` is the parameter and bare `hostname` is
+not one -- and is gone. And libxo's envelope version has moved from 1 to
+2 since the module was written, so the test now reads the container by
+name and ignores the version, which nothing depends on.
+
+Confirmed against a real FreeBSD 15.1 host. **Still not demonstrated: no
+jail has been started or stopped by this module**, so `jail.start`,
+`jail.stop` and the `jail.running` state remain argument vectors that
+nothing has watched take effect. `jail` stays `captured` rather than
+`hardware` for that reason.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

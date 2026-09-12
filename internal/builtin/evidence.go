@@ -298,9 +298,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"through its API on every Windows run and converges against what it finds, but " +
 		"nothing has watched this module start, stop or re-type a service"},
 	"jail": {Level: exec.Captured, Note: "the shape of `jls --libxo=json` is checked " +
-		"against the real jls on CI's FreeBSD runner, but no jail has been started or " +
-		"stopped by this module and the field names inside a jail entry are still " +
-		"assumed (DIVERGENCE 5.32)"},
+		"against the real jls on CI's FreeBSD runner, and **the field names inside a jail " +
+		"entry are no longer assumed**: every key this module subscripts out of an entry is " +
+		"checked against the parameter list `jls -h` publishes, on a real FreeBSD 15.1 host. " +
+		"That audit found one it had invented -- it read a `state` field, which is not a jail " +
+		"parameter and which no jls has ever printed, against a fixture that supplied " +
+		"`\"state\": \"ACTIVE\"` in the module's own spelling -- so every real host reported " +
+		"an empty state and every test agreed. State is now derived from `dying`, which is a " +
+		"real parameter. Still not demonstrated: **no jail has been started or stopped by this " +
+		"module**, so `jail.start`, `jail.stop` and the `jail.running` state are argument " +
+		"vectors and nothing has watched one take effect (DIVERGENCE 5.32)"},
 	"mount": {Level: exec.Captured, Note: "reads the real /proc/self/mounts and the real " +
 		"`mount` output on the platforms CI runs, and nothing has been mounted or " +
 		"unmounted by this module"},
