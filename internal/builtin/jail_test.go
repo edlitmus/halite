@@ -330,13 +330,13 @@ func TestTheJailStateInTestModeRunsNothing(t *testing.T) {
 // which `jail -e` has never produced. It prints one line per configured
 // jail carrying that jail's *parameters*, and the module split the whole
 // thing on the separator and took every field as a name. See 5.70.
-const jailExhibit = "name=web\x1fpath=/jails/web\x1fpersist\n" +
+const jailExhibitFixture = "name=web\x1fpath=/jails/web\x1fpersist\n" +
 	"name=mail\x1fpath=/jails/mail\x1fhost.hostname=mail.example\n" +
 	"name=db\x1fpath=\"/jails/d b\"\x1fpersist\n"
 
 func TestTheConfiguredJailsComeFromJailItself(t *testing.T) {
 	c, runner := jailFixture(t, map[string]hexec.Result{
-		"jail -e \x1f": {Stdout: jailExhibit},
+		"jail -e \x1f": {Stdout: jailExhibitFixture},
 	})
 	got, err := jailConfigured(c, "")
 	if err != nil {

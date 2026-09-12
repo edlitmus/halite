@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // Every field this module reads out of a jail entry is a field `jls`
@@ -149,5 +150,71 @@ func TestAJailsStateIsDerivedFromTheParameterThatExists(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A configured jail's parameters are read out of `jail -e`, flags and
+// all.
+func TestAJailsConfiguredParametersAreRead(t *testing.T) {
+	params := jailParamsOf("name=web\x1fpath=\"/jails/w b\"\x1fpersist\x1fallow.mount.devfs\x1fdevfs_ruleset=4")
+	for key, want := range map[string]any{
+		"name":              "web",
+		"path":              "/jails/w b",
+		"devfs_ruleset":     "4",
+		"persist":           true,
+		"allow.mount.devfs": true,
+	} {
+		got, ok := params.GetString(key)
+		if !ok {
+			t.Errorf("%s is missing from %v", key, params)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s reads %v, want %v", key, got, want)
+		}
+	}
+	// A bare flag must not read as a setting with an empty value, which
+	// is a different and untrue statement about the jail.
+	if got, _ := params.GetString("persist"); got == "" {
+		t.Error("the bare flag `persist` read as a setting with no value")
+	}
+}
+
+// Asking about a jail jail.conf does not define names the ones it does.
+//
+// An empty map would read as "this jail has no parameters", which is
+// untrue of every jail: they all have at least a path.
+func TestShowConfigForAnUndefinedJailNamesWhatIsDefined(t *testing.T) {
+	c, _ := jailFixture(t, map[string]exec.Result{
+		"jail -e \x1f": {Stdout: jailExhibitFixture},
+	})
+	_, err := jailShowConfig(c, "", "nope")
+	if err == nil {
+		t.Fatal("an undefined jail returned parameters")
+	}
+	for _, name := range []string{"web", "mail", "db"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("the error does not name the defined jail %q: %v", name, err)
+		}
+	}
+}
+
+// Every mutating verb passes an alternative configuration through.
+//
+// `config` used to be on `jail.configured` alone, so a tree keeping its
+// jails in a file of its own could list them and could not start one:
+// the listing read the named file and the start read /etc/jail.conf.
+// That is the pair-shaped defect of 5.70 in a second place.
+func TestAnAlternativeConfigurationReachesEveryVerb(t *testing.T) {
+	const conf = "/etc/jail.conf.d/mail.conf"
+	for fn, verb := range map[string]string{"start": "-c", "stop": "-r", "restart": "-rc"} {
+		want := "jail -f " + conf + " " + verb + " mail"
+		c, runner := jailFixture(t, map[string]exec.Result{want: {}})
+		if _, err := New().Exec.Call(c, "jail."+fn, value.MapOf("name", "mail", "config", conf)); err != nil {
+			t.Fatalf("jail.%s: %v", fn, err)
+		}
+		if !hasRun(runner, want) {
+			t.Errorf("jail.%s ran %v, want %q", fn, runner.RanCommands(), want)
+		}
 	}
 }

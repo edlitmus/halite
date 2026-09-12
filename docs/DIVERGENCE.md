@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **77 execution modules / 532 functions** and **44 state
+The build ships **77 execution modules / 535 functions** and **44 state
 modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -6573,6 +6573,89 @@ safe is `jail_list`: jails start at boot from the names in that rc.conf
 variable rather than from everything jail.conf defines, so an entry left
 behind starts nothing. The leg refuses to run where `jail_list` is not
 empty, because that reasoning does not hold there.
+
+### 5.71 Finishing `jail`: the three gaps 5.70 named, and a test that passed without testing
+
+5.70 left `jail` at `hardware` with three things named as not covered.
+All three are closed, and closing the third found that the test written
+for it was passing without testing anything.
+
+**`jail.restart`**, which the module did not have. It is `jail -rc`,
+jail(8)'s own spelling rather than a stop followed by a start: the usage
+line reads `-[cmr]`, the verbs combine, and the jail is removed and
+recreated in one call.
+
+The assertion is the jid, not whether the jail is up afterwards. A
+restart that quietly did nothing would pass the second check, because the
+jail was already running; the kernel allocates a new jid on every create,
+so a jail that came back with the jid it had was never removed. Driven
+against a real jail, where it went from 6 to 7.
+
+**A jail with an address of its own.** Every jail this suite had started
+was a bare `persist` jail sharing the host's network stack, so no network
+configuration had been exercised at all. One now starts with an
+`ip4.addr` on a loopback alias, which needs no interface of its own and
+collides with nothing, and its address reads back through the `jail -e`
+parser 5.70 rewrote.
+
+**A jail with a process still in it**, and this is the instructive one.
+
+The first version of that test put no process in the jail and passed. It
+ran `jexec <name> /bin/sleep 600`, on the assumption that `jexec` runs
+the host's binary in the jail's context. It does not -- it runs a binary
+from inside the jail, and the jail's root was an empty directory:
+
+```
+jexec: execvp: /bin/sleep: No such file or directory
+```
+
+So there was never a process to stop. The check said there was, because
+`ps -J` was catching **the `jexec` process itself**, which really is in
+the jail for the instant between attaching to it and failing to exec. The
+test passed on that race, and the only reason it was caught is that
+breaking `jail -r` on purpose made it *skip* rather than fail -- a result
+that made no sense for the break applied, and which was worth chasing
+rather than explaining away.
+
+It now copies `/rescue/sleep` into the jail root. That is FreeBSD's own
+statically linked recovery build, so one file is a complete userland: no
+runtime linker, no libc, no base system. With a real process inside, the
+stop is checked both ways -- the jail leaves `jls` and the process is
+gone -- and breaking `jail -r` now fails it on both counts.
+
+The lesson is 5.31's with the direction reversed. There the fixture was
+written in the module's own spelling; here the *test* was written on a
+wrong belief about another program, and both produce the same thing: a
+green test that asserts nothing. A skip is not a pass, and a result that
+does not match the change that produced it is a finding.
+
+**And a fourth thing, found while doing the above.** `config` was a
+parameter of `jail.configured` alone. So a tree keeping its jails in a
+file of its own could list them and could not start one: the listing read
+the named file and `jail -c` read `/etc/jail.conf`. That is 5.70's shape
+exactly -- two paths that must agree, and only one of them given the
+information -- in a second place in the same module. `config` is on
+`jail.start`, `jail.stop`, `jail.restart`, `jail.show_config` and the
+`jail.running` state now, and a test asserts the flag reaches every verb.
+
+**Two functions arrived with it.** `jail.show_config` returns a
+configured jail's resolved parameters, read from `jail -e` rather than by
+parsing jail.conf, so what comes back is what the jail would actually be
+created with -- inheritance from the global block included, which is what
+an operator is asking. A bare flag such as `persist` reads as true rather
+than as a setting with an empty value, because those are different
+claims.
+
+`jail.get_enabled` answers a question `jail.configured` cannot: whether a
+jail starts at boot. It does not start because it is defined; it starts
+because `jail_list` names it and `jail_enable` is on. A jail can be
+configured, startable by hand, and absent after a reboot. An empty
+`jail_list` with `jail_enable="YES"` is not a misconfiguration -- it is
+this fleet's own host, which runs jails deliberately and autostarts none.
+
+Still not covered: `jail.conf` includes and variables, a jail with a vnet
+of its own rather than an address alias, and `jail -m` to modify a
+running jail in place.
 
 ## 6. Everything else not started
 

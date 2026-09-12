@@ -51,6 +51,22 @@ scan did not know about character classes, so `[(?=]` -- three ordinary
 characters -- was refused as a lookahead. Nothing in the estate's tree
 had tripped it.
 
+### Jails: restart, what a jail is configured as, and what starts at boot
+
+`jail.restart` is new. So is `jail.show_config`, which returns the
+settings a jail would actually be created with, inheritance included,
+rather than what the configuration file literally says.
+
+`jail.get_enabled` answers a question that had no answer before: which
+jails start at boot. A jail does not start because it is defined. It
+starts because the boot configuration names it, so a jail can be defined,
+startable by hand, and still absent after a reboot.
+
+Every one of these commands can now be pointed at a configuration file
+other than the default. Previously only the listing could, so a system
+keeping its jails in its own file could list them and could not start
+one.
+
 ### A jail state that could never start a jail
 
 `jail.running` reported that a jail was "not defined in jail.conf" for

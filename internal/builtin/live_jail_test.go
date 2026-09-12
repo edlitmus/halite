@@ -3,9 +3,11 @@ package builtin
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
@@ -209,9 +211,15 @@ func liveJailSetup(t *testing.T) *exec.Context {
 // for a jail invented by a test.
 func liveJailConf(t *testing.T, name, root string) {
 	t.Helper()
+	liveJailConfWith(t, name, root, "")
+}
+
+// liveJailConfWith is liveJailConf with extra parameters in the block.
+func liveJailConfWith(t *testing.T, name, root, extra string) {
+	t.Helper()
 	const path = "/etc/jail.conf"
-	block := fmt.Sprintf("\n%s {\n\tpath = \"%s\";\n\tmount.devfs = 0;\n\tmount.fstab = \"\";\n\tpersist;\n}\n",
-		name, root)
+	block := fmt.Sprintf("\n%s {\n\tpath = \"%s\";\n\tmount.devfs = 0;\n\tmount.fstab = \"\";\n%s\tpersist;\n}\n",
+		name, root, extra)
 
 	before, err := os.ReadFile(path)
 	if err != nil {
@@ -273,4 +281,201 @@ func liveJailFromModule(t *testing.T, c *exec.Context, r *Registries, name strin
 		return nil
 	}
 	return entry.(*value.Map)
+}
+
+// `jail.restart` really stops and starts, rather than doing nothing.
+//
+// A restart that quietly did nothing would pass any check that only
+// asked whether the jail is running afterwards, because it was running
+// before. The jid is the discriminator: the kernel allocates a new one
+// on every create, so a jail that came back with the jid it had was
+// never removed.
+func TestLiveJailRestartAllocatesANewJid(t *testing.T) {
+	c := liveJailSetup(t)
+	name := "halite_live_restart"
+	liveJailConf(t, name, t.TempDir())
+	r := New()
+
+	args := value.MapOf("name", name)
+	if _, err := r.Exec.Call(c, "jail.start", args); err != nil {
+		t.Fatalf("jail.start: %v", err)
+	}
+	t.Cleanup(func() {
+		if liveJailRunning(t, c, name) {
+			if err := liveQuotaRun(c, "jail", "-r", name); err != nil {
+				t.Errorf("the test's jail could not be removed -- run `jail -r %s`: %v", name, err)
+			}
+		}
+	})
+	before := liveJailJID(t, c, r, name)
+
+	if _, err := r.Exec.Call(c, "jail.restart", args); err != nil {
+		t.Fatalf("jail.restart: %v", err)
+	}
+	if !liveJailRunning(t, c, name) {
+		t.Fatal("jail.restart returned success and the jail is not running")
+	}
+	after := liveJailJID(t, c, r, name)
+	if after == before {
+		t.Errorf("the jail came back with the jid it had (%d), so it was never removed -- "+
+			"`jail -rc` did not restart it", before)
+	}
+}
+
+// A jail with an address of its own starts, and its parameters read back.
+//
+// This is the gap 5.70 left named: every jail this suite had started was
+// a bare `persist` jail sharing the host's network stack, so nothing had
+// exercised a jail with any network configuration at all. The address is
+// a loopback alias on 127/8, which needs no interface of its own and
+// collides with nothing an operator is using.
+func TestLiveJailWithAnAddressOfItsOwn(t *testing.T) {
+	c := liveJailSetup(t)
+	name := "halite_live_net"
+	root := t.TempDir()
+	const addr = "127.0.44.1"
+	liveJailConfWith(t, name, root, fmt.Sprintf("\tip4.addr = \"%s\";\n\tip4 = new;\n", addr))
+	r := New()
+
+	if _, err := r.Exec.Call(c, "jail.start", value.MapOf("name", name)); err != nil {
+		t.Skipf("a jail with its own address could not be started here, which is a property of "+
+			"the host's network rather than of this module: %v", err)
+	}
+	t.Cleanup(func() {
+		if liveJailRunning(t, c, name) {
+			if err := liveQuotaRun(c, "jail", "-r", name); err != nil {
+				t.Errorf("the test's jail could not be removed -- run `jail -r %s`: %v", name, err)
+			}
+		}
+	})
+	if !liveJailRunning(t, c, name) {
+		t.Fatal("jail.start returned success and the jail is not in `jls`")
+	}
+
+	// The address is read back through the module's own config reader,
+	// against the real `jail -e`, which is the parser 5.70 rewrote.
+	shown, err := r.Exec.Call(c, "jail.show_config", value.MapOf("name", name))
+	if err != nil {
+		t.Fatalf("jail.show_config: %v", err)
+	}
+	got, _ := shown.(*value.Map).GetString("ip4.addr")
+	if fmt.Sprint(got) != addr {
+		t.Errorf("the jail's ip4.addr reads %v, want %q", got, addr)
+	}
+}
+
+// A jail with a process still in it is stopped, and the process goes.
+//
+// The other gap 5.70 named. `jail -r` kills what is inside; a stop that
+// reported success while leaving the process running would be the
+// dangerous failure, because the jail is gone from `jls` either way.
+func TestLiveJailStopsAJailWithAProcessInIt(t *testing.T) {
+	c := liveJailSetup(t)
+	name := "halite_live_busy"
+	root := t.TempDir()
+	liveJailConf(t, name, root)
+	r := New()
+
+	if _, err := r.Exec.Call(c, "jail.start", value.MapOf("name", name)); err != nil {
+		t.Fatalf("jail.start: %v", err)
+	}
+	t.Cleanup(func() {
+		if liveJailRunning(t, c, name) {
+			if err := liveQuotaRun(c, "jail", "-r", name); err != nil {
+				t.Errorf("the test's jail could not be removed -- run `jail -r %s`: %v", name, err)
+			}
+		}
+	})
+	jid := liveJailJID(t, c, r, name)
+
+	// **`jexec` runs a binary that is inside the jail, not one on the
+	// host**, so an empty jail root has nothing to execute:
+	//
+	//	jexec: execvp: /bin/sleep: No such file or directory
+	//
+	// The first version of this test assumed otherwise and passed
+	// anyway, which is the part worth keeping. `ps -J` caught the
+	// short-lived `jexec` process itself, which really is in the jail
+	// for the instant between attaching and failing to exec -- so the
+	// check saw a process, the test went green, and nothing had ever
+	// been running in the jail when the stop arrived. It passed on a
+	// race, and skipped the one time the race went the other way.
+	//
+	// `/rescue/sleep` is statically linked, so it needs no libraries,
+	// no runtime linker and no /lib inside the jail. Copying that one
+	// file in is the whole userland this test needs.
+	liveJailInstallSleep(t, root)
+	sleeper := exec.Command{Argv: []string{"jexec", name, "/sleep", "600"}}
+	go func() { _, _ = c.Run(sleeper) }()
+	if !liveJailHasProcess(t, c, jid) {
+		t.Fatal("nothing is running inside the jail, so this would be testing a stop with " +
+			"nothing to stop -- which is what the first version of this test did")
+	}
+
+	if _, err := r.Exec.Call(c, "jail.stop", value.MapOf("name", name)); err != nil {
+		t.Fatalf("jail.stop on a jail with a process in it: %v", err)
+	}
+	if liveJailRunning(t, c, name) {
+		t.Error("jail.stop returned success and the jail is still in `jls`")
+	}
+	if liveJailHasProcess(t, c, jid) {
+		t.Error("the jail is gone and a process is still running in it, which is the failure " +
+			"that would otherwise be invisible: `jls` reports no jail either way")
+	}
+}
+
+// liveJailInstallSleep puts a statically linked sleep inside the jail.
+//
+// Static on purpose: /rescue is FreeBSD's own set of statically linked
+// recovery tools, so one file is a complete userland for this. A
+// dynamically linked /bin/sleep would need the runtime linker and libc
+// in the jail as well, which is a base system rather than a fixture.
+func liveJailInstallSleep(t *testing.T, root string) {
+	t.Helper()
+	const src = "/rescue/sleep"
+	binary, err := os.ReadFile(src)
+	if err != nil {
+		t.Skipf("%s could not be read, so nothing can be run inside the jail: %v", src, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sleep"), binary, 0o755); err != nil {
+		t.Fatalf("the static sleep could not be put in the jail: %v", err)
+	}
+}
+
+// liveJailJID reads a running jail's jid through the module.
+func liveJailJID(t *testing.T, c *exec.Context, r *Registries, name string) int {
+	t.Helper()
+	entry := liveJailFromModule(t, c, r, name)
+	if entry == nil {
+		t.Fatalf("%s is not running, so it has no jid", name)
+	}
+	jid, _ := entry.GetString("jid")
+	n, ok := jid.(int)
+	if !ok || n == 0 {
+		t.Fatalf("%s has no usable jid: %v", name, jid)
+	}
+	return n
+}
+
+// liveJailHasProcess asks `ps` whether anything is in the jail.
+//
+// `ps -J <jid>` selects by jail, which is the question being asked, and
+// it is a raw `ps` rather than this build's own module so that the check
+// does not depend on the code under test.
+func liveJailHasProcess(t *testing.T, c *exec.Context, jid int) bool {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		res, err := c.Run(exec.Command{
+			Argv:           []string{"ps", "-J", fmt.Sprint(jid), "-o", "pid="},
+			IgnoreExitCode: true,
+		})
+		if err == nil && strings.TrimSpace(res.Stdout) != "" {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

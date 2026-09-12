@@ -320,8 +320,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`jail.running` answered \"is not defined in jail.conf\" for every jail that was in " +
 		"fact defined and **could never start one**. Invisible until now because the fleet's " +
 		"own host has no jails in jail.conf, where the empty answer looks correct " +
-		"(DIVERGENCE 5.32, 5.66, 5.70). Not covered: a jail with a network stack of its own, " +
-		"`jail.conf` includes and variables, and stopping a jail with processes still in it"},
+		"(DIVERGENCE 5.32, 5.66, 5.70). **The three gaps 5.70 named are closed** (5.71): " +
+		"`jail.restart` is driven against a real jail and checked by its jid changing, because " +
+		"a restart that did nothing would pass any check that only asked whether the jail is up " +
+		"afterwards; a jail with an `ip4.addr` of its own starts and its address reads back " +
+		"through `jail.show_config`; and a jail with a live process in it is stopped and the " +
+		"process goes with it. That last test was wrong first and passed anyway -- `jexec` runs " +
+		"a binary from inside the jail rather than from the host, so nothing had ever been " +
+		"running in it, and `ps -J` was catching the short-lived `jexec` process itself. Not " +
+		"covered: `jail.conf` includes and variables, a jail with a vnet of its own rather than " +
+		"an address alias, and `jail -m` to modify a running jail in place"},
 	"mount": {Level: exec.Captured, Note: "reads the real /proc/self/mounts and the real " +
 		"`mount` output on the platforms CI runs, and nothing has been mounted or " +
 		"unmounted by this module"},
