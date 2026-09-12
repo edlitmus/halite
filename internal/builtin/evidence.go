@@ -67,6 +67,15 @@ var moduleEvidence = map[string]exec.Evidence{
 		"dpkg-query and dpkg-deb, and `autoremove` really reclaimed a package in the " +
 		"fleet container (5.40). The Chocolatey provider has only been read from, and " +
 		"dnf, yum, zypper, apk, pacman and pkgng have not been driven at all"},
+	"file": {Level: exec.Hardware, Note: "writes, reads, moves, links and removes real files " +
+		"on a real filesystem throughout this package's tests, and `patch` drives the real " +
+		"`patch` binary -- which is where running it found that an already-applied patch is " +
+		"*reversed* rather than refused unless `--forward` is passed (DIVERGENCE 5.63). Two " +
+		"limits: nothing here has written a file it does not own, so the `chown` path is " +
+		"exercised only where the account already matches, the SELinux context pair is " +
+		"not implemented at all rather than implemented and unrun, and `patch` is " +
+		"unexercised on Windows because the binary that runtime resolves there -- " +
+		"Strawberry Perl's patch 2.5.9 -- aborts on an ordinary unified diff"},
 	"ps": {Level: exec.Hardware, Note: "read and signalled against the real process table " +
 		"on every platform the suite runs: the FreeBSD libxo path and the column path " +
 		"the other unixes take are both parsed from what the machine's own `ps` printed, " +

@@ -18,6 +18,50 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Six more `file` functions, and one of them was undoing your work
+
+`patch`, `sed`, `seek_read`, `seek_write`, `list_backups` and
+`restore_backup`.
+
+The first is the one to know about. `patch`, given no terminal and a
+patch that has already been applied, asks whether it should reverse it,
+answers its own question, and exits reporting success. A state run's
+second pass is exactly that situation, so a tree that applied a patch
+would have had it quietly undone on the next highstate. The question is
+now never asked, and an already-applied patch is reported rather than
+reversed. It also no longer leaves a reject file beside a file the tree
+is managing.
+
+`sed` does the work in Go rather than running an editor over a file as
+root, and its line limit is a real filter rather than an argument that
+is accepted and ignored.
+
+Backups can now be listed and put back. `backup: node` in a state keeps
+a timestamped copy in the cache, where the file's own path is mirrored
+so two files with the same name do not share a history. Restoring keeps
+the current contents first, so choosing the wrong one is also undoable.
+
+Two things SPEC names are still missing, and both are named in the
+ledger: the SELinux context pair, which will be written on a machine
+that has SELinux rather than from its documentation, and
+`file.accumulated`, which is a state rather than a file operation.
+
+### A node can watch a process, and watch what it is eating
+
+Two beacons that were declared and unbuilt now work. One fires when a
+process appears or disappears, which is the question about a thing that
+should be running. The other fires when a matched process crosses a
+resource threshold, which is the question about a thing that is running
+and taking the machine with it.
+
+Both take a pattern rather than a name, because a daemon is usually
+several processes and watching only one of them answers a different
+question. Thresholds are written the way the load beacon's already are,
+and they compare the process table's own numbers, so a threshold means
+what the table said. A threshold on a field that does not exist is
+refused with the fields that do, rather than being a beacon that never
+fires and never says why.
+
 ### `ps`, so a node can be asked what is running on it
 
 Seven functions over the process table: the list, one process by ID,

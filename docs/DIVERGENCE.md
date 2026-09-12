@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **77 execution modules / 526 functions** and **44 state
+The build ships **77 execution modules / 532 functions** and **44 state
 modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -441,7 +441,7 @@ different reason is given.
 | `dnsutil` | implemented | 2 | |
 | `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
-| `file` | implemented | 40 | |
+| `file` | implemented | 46 | `patch` runs the system patch with `--forward`, because left to itself it reverses an already-applied patch and exits 0; `sed` is done in Go rather than by an editor, and its `limit` is a real per-line filter; `list_backups` and `restore_backup` read the cache a state fills with `backup: node` |
 | `git` | implemented | 5 | through the system `git` binary |
 | `grains` | implemented | 7 | |
 | `group` | implemented | 1 | |
@@ -5999,6 +5999,172 @@ threshold), were registered as pending "a later phase, with a portable
 reader for it". That reader now exists, and a beacon in this build is a
 function over the node's own execution modules.
 
+### 5.62 The two process beacons
+
+`proc` and `ps` were registered as pending "a later phase, with a
+portable reader for it". The reader arrived with the `ps` module of
+5.61, and these are functions over it -- which is what a beacon is in
+this build, and why one is portable wherever its module is.
+
+**Two beacons, because SPEC gives them different jobs**, and the
+difference is the one an operator cares about. `proc` answers "is it
+there", which is a question about a thing that should be running and a
+page when it is not. `ps` answers "is it behaving", which is a question
+about a thing that is running and a page when it eats the machine. Salt
+has both names and uses them for nearly the same thing; here they mean
+what the inventory says.
+
+    beacons:
+      proc:
+        - processes:
+            sshd: running
+            oldthing: stopped
+      ps:
+        - processes:
+            nginx:
+              cpu_percent: ['>', 80]
+              rss_kb: ['>', 500000]
+
+Three decisions:
+
+- **Every key is a pattern, matched against the process name or the
+  whole command line.** A daemon is often several processes, a
+  supervisor and its workers, and a beacon that could only name one of
+  them would answer a different question from the one asked.
+- **A wanted state decides whether to speak at all**, which is what
+  makes `stopped` useful: the event is the absence. With no wanted
+  state the reading is reported every poll and `onchangeonly` decides,
+  which is how the `service` beacon beside it already behaves.
+- **The `ps` thresholds compare the process table's own fields**, under
+  the comparison form the `load` beacon already uses. Nothing is
+  derived on the way, so a threshold means what `ps.psaux` reported. A
+  field the table does not have is refused with the fields it does,
+  because the alternative is a beacon that never fires and never says
+  why.
+
+Both are exercised against processes the tests start and mark, for the
+reason 5.61 gives: a pattern loose enough to match somebody's editor
+will eventually be handed to something that kills. The wiring in those
+tests is the node's own, a dispatcher over the execution registry, so
+what is checked is the arrangement a beacon actually runs under rather
+than a function called directly.
+
+### 5.63 The six `file` functions SPEC names and this build did not have
+
+`patch`, `sed`, `seek_read`, `seek_write`, `list_backups` and
+`restore_backup`. The module goes from 40 of the ~50 SPEC 15.2
+enumerates to 46, and three of the six are worth more than their size.
+
+#### `patch` reverses a file if you let it
+
+SPEC says "`patch` uses the system `patch` binary", which is right for
+the reason `ps` shells out: agreeing with GNU patch about fuzz, offsets
+and reversed hunks is a large program to write and an unbounded one to
+keep right.
+
+What running it found is the whole reason this entry is here. **A patch
+applied twice, with no terminal, reverses the file and exits zero.**
+`patch` detects the condition, asks "Reversed (or previously applied)
+patch detected! Assume -R? [y]", gets no answer, takes its own default,
+and undoes the change. A state run's second pass is exactly that
+situation, so a tree that applied a patch would have had it silently
+reverted on the next highstate, with a success reported. Measured on
+FreeBSD patch 2.0-12u11.
+
+So the question is never asked: `--batch` refuses every prompt and
+`--forward` ignores an already-applied patch and says so. A caller who
+means to reverse one passes `-R`, and then `--forward` is left off,
+because otherwise it would refuse their own request.
+
+Two smaller things came from the same run. `--forward` writes a
+`<name>.rej` beside the file every time it ignores a patch, which is
+litter in a directory a tree manages, so the reject file is discarded
+with `-r -`. And `patch` puts its verdict in the *middle* of its output
+-- it opens with a commentary on what it thinks the file is and ends
+with "done" -- so the error carries every line rather than the first or
+the last.
+
+Test mode runs `--dry-run`, which is what makes SPEC 11.6's contract
+satisfiable for a patch without a second opinion about what one would
+do.
+
+**And a platform where there is nothing to get right.** CI's Windows
+runner resolves `patch` to Strawberry Perl's 2.5.9, which aborts on an
+ordinary unified diff -- "Assertation failed! ... patch.c, Line 354;
+Expression: hunk" -- under `--dry-run` as well as for real. A module
+cannot be correct against a binary that asserts, so the live test skips
+there, naming the tool and its message rather than the platform. A
+Windows node with a working `patch` is served by the same code; what is
+recorded is that this project has never seen one.
+
+#### `sed` does not run sed, and does not delegate either
+
+Salt's `file.sed` shells out to `sed -i`. This one does the work in Go,
+against a regular expression this project's own engine compiled and with
+the atomic write the rest of the module uses, so nothing runs an editor
+over a file as root.
+
+The obvious implementation is a thin front door onto `file.replace`, and
+it is wrong for one reason: `limit` is a **per-line** filter and
+`file.replace` works on the whole file. Passing it through would either
+ignore it, which replaces more than the caller asked and is the
+accept-but-do-nothing defect this project keeps finding in its own
+settings table, or quietly mean something else. So the line walk is
+here, and `g` means what sed means by it: without it, one replacement
+per eligible line.
+
+#### The backup cache
+
+`list_backups` and `restore_backup` need somewhere to list, and this
+build had a `backup` argument that wrote `<path><suffix>` beside the
+file -- useful, and not something either function can enumerate.
+
+`backup: node`, with Salt's own value accepted beside it, now keeps a
+timestamped copy under `<cache_dir>/file_backup/<the file's own absolute
+path>/`. The path is mirrored rather than flattened so two files with
+the same basename do not share a history and an operator can find a
+backup with `ls`. The timestamp format sorts lexically as well as
+chronologically, which is what lets the listing sort by name and be
+sorting by time, and it holds no colons, because a Windows path cannot.
+
+Two decisions: a restore **keeps the current contents first**, so
+choosing the wrong backup is itself undoable; and a backup identifier is
+a name in the cache and nothing else, so one holding a separator is
+refused rather than resolved into a path outside it.
+
+A node with no `cache_dir` keeps no backups and says so, rather than
+writing them relative to whatever the working directory happens to be.
+
+**And the fourth instance of a defect this project has already recorded
+twice.** The first version named each copy by `time.Now` on the
+reasoning that two backups cannot be taken in the same instant. They
+can: the clock is only as fine as the platform's, and on Windows that is
+about half a millisecond. CI's Windows leg turned three keeps into two
+files -- the second silently replacing the first, which is the whole
+point of a backup, lost.
+
+The webhook returner's spool and the relay's spool both did this, both
+lost returns for it (4.9), and the concurrent-writer scenario in the
+chaos layer of 5.29 exists *because* of them. Knowing about a defect
+class is evidently not the same as not writing it again. The name is now
+claimed with `O_EXCL` and takes a suffix on collision, so two processes
+keeping a backup of one file in one tick cannot both win, and the test
+for it holds the clock still rather than racing it -- which is the
+difference between a test that would have caught this and one that
+happened to run on the right machine.
+
+#### What is still not there
+
+`get_selinux_context` and `set_selinux_context`, deliberately. There is
+no SELinux on any machine this project has, and a context reader written
+from documentation is the mistake 5.31 is cited for. They belong with
+the `selinux` core module and with the RHEL host of plan.md item 14.
+
+`file.accumulated` is also still absent and is a different shape: SPEC
+15.5 promises it as a *state*, one that other states append to and that
+a `file.managed` renders, so it needs the compiler to carry accumulated
+data across chunks rather than a new file operation.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -6235,7 +6401,7 @@ system, so it is portable wherever its module is and cannot disagree
 with the state that acts on the same fact.
 
 Built: `diskusage`, `load`, `memusage`, `service`, `filechanges`,
-`cert_info`, and `status`. The controls of SPEC 16.3 are all there — a
+`cert_info`, `status`, and the two process beacons `proc` and `ps`. The controls of SPEC 16.3 are all there — a
 token bucket per instance, coalescing with a count, a bounded queue that
 reports what it dropped, and `disable_during_state_run`.
 
@@ -6247,11 +6413,12 @@ What is **not** built in beacons:
   metadata, which is the portable answer SPEC 16.2 names for exactly
   this case; it is slower, and a change that is reverted between two
   polls is one it never sees.
-- **Seventeen of SPEC 16.2's inventory**: `swapusage`, `cpuusage`,
-  `network_info`, `network_settings`, `proc`, `ps`, `pkg`, `journald`,
-  `log`, `wtmp`, `btmp`, `sh`, and the four platform notifiers. Each is
-  registered and answers with when it arrives, so a configuration
-  naming one is refused with a reason rather than skipped.
+- **Fifteen of SPEC 16.2's inventory**: `swapusage`, `cpuusage`,
+  `network_info`, `network_settings`, `pkg`, `journald`, `log`, `wtmp`,
+  `btmp`, `sh`, and the four platform notifiers. Each is registered and
+  answers with when it arrives, so a configuration naming one is refused
+  with a reason rather than skipped. `proc` and `ps` have left this list
+  — see 5.62.
 - **Beacons through pillar.** SPEC 16.1 names three sources: the
   configuration file, `beacons.d`, and pillar. The first two work; a
   beacon delivered through pillar does not.
