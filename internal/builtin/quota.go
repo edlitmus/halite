@@ -329,14 +329,48 @@ func quotaStats(c *exec.Context, kind string) (any, error) {
 	return out, nil
 }
 
-// quotaMode reports whether quotas are switched on.
+// quotaModePlan says how this platform answers "are quotas switched on",
+// and there is no single answer because the two families expose it
+// through different mechanisms entirely.
 //
-// It asks `quotaon -p`, which reports state rather than changing it, and
-// falls back to reading the mount options where the tool does not have
-// that flag. A filesystem whose quotas are off is not an error: it is the
-// answer.
+// **`quotaon -p` is a Linux option and FreeBSD's quotaon does not have
+// it.** This module asserted the opposite for as long as it has existed
+// -- the comment here read "both platforms print ... is on or ... is off
+// for -p" -- and it was never run on a BSD. FreeBSD 15.1 answers:
+//
+//	quotaon: illegal option -- p
+//	usage: quotaon [-g] [-u] [-v] -a
+//	       quotaon [-g] [-u] [-v] filesystem ...
+//
+// and exits 1, so `quota.get_mode` could not answer at all on the
+// platform that is four of this fleet's five hosts. It failed loudly
+// rather than lying, which is the only reason this was a gap and not a
+// wrong answer, and it is DIVERGENCE 5.48's own admission arriving as a
+// defect: the BSD half was written from repquota.c and never executed.
+//
+// The BSDs carry the state in the kernel's mount flags instead.
+// `sys/mount.h` defines it and gives it the spelling the tools print:
+//
+//	{ MNT_QUOTA,	"with quotas" },
+//	#define MNT_QUOTA 0x0000000000002000ULL /* quotas are enabled on fs */
+//
+// so a plain `mount` names it on the filesystem's own line. `mount -p`
+// is deliberately not used: its own manual page says it "will not list
+// userquota or groupquota items from fstab(5) because they are not true
+// mount options and are not information returned by getmntinfo(3)".
+func quotaModePlan(goos string) (flag bool, why string) {
+	switch goos {
+	case "linux":
+		return false, "quota-tools' quotaon prints the state of each kind under -p"
+	case "freebsd", "openbsd", "netbsd", "dragonfly":
+		return true, "the BSD kernel carries MNT_QUOTA in the mount flags and quotaon has no -p"
+	}
+	return false, ""
+}
+
+// quotaMode reports whether quotas are switched on for a filesystem.
 func quotaMode(c *exec.Context, fs string) (any, error) {
-	out := value.NewMap(4)
+	out := value.NewMap(5)
 	out.Set("filesystem", fs)
 	if why := quotaWrongMechanism(c, fs); why != "" {
 		out.Set("user", false)
@@ -344,6 +378,19 @@ func quotaMode(c *exec.Context, fs string) (any, error) {
 		out.Set("comment", why)
 		return out, nil
 	}
+	flag, why := quotaModePlan(runtime.GOOS)
+	if why == "" {
+		return nil, fmt.Errorf("this build does not know how to read quota state on %s", runtime.GOOS)
+	}
+	if flag {
+		return quotaModeFromMountFlags(c, fs, out)
+	}
+	return quotaModeFromQuotaon(c, fs, out)
+}
+
+// quotaModeFromQuotaon reads the state a kind at a time, which is what
+// Linux's quota-tools expose and what this module has always done.
+func quotaModeFromQuotaon(c *exec.Context, fs string, out *value.Map) (any, error) {
 	for _, kind := range []string{"user", "group"} {
 		res, err := c.Run(exec.Command{
 			Argv:           []string{"quotaon", quotaKinds[kind], "-p", fs},
@@ -352,8 +399,7 @@ func quotaMode(c *exec.Context, fs string) (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("quotaon could not be run on this node: %w", err)
 		}
-		// Both platforms print "... is on" or "... is off" for -p. A
-		// tool that does not know -p says so on stderr and exits
+		// A tool that does not know -p says so on stderr and exits
 		// non-zero, and "off" would be the wrong thing to report about a
 		// question that was never asked.
 		text := strings.ToLower(res.Stdout)
@@ -363,13 +409,90 @@ func quotaMode(c *exec.Context, fs string) (any, error) {
 		case strings.Contains(text, " is off"):
 			out.Set(kind, false)
 		default:
-			out := strings.TrimSpace(res.Stdout + res.Stderr)
+			said := strings.TrimSpace(res.Stdout + res.Stderr)
 			return nil, fmt.Errorf(
 				"`quotaon %s -p %s` did not report a state; it printed %q and exited %d%s",
-				quotaKinds[kind], fs, out, res.Code, quotaKernelSupportNote(out))
+				quotaKinds[kind], fs, said, res.Code, quotaKernelSupportNote(said))
 		}
 	}
 	return out, nil
+}
+
+// quotaModeFromMountFlags reads the BSD kernel's own MNT_QUOTA flag.
+//
+// **It cannot tell user quotas from group quotas, and it says so rather
+// than guessing.** MNT_QUOTA is one bit for the whole filesystem: the
+// kernel records that quotas are enabled, not which kinds, so `mount`
+// prints "with quotas" whether one kind is on or both. Reporting the
+// same bit under both names without a word would invent a fact --
+// exactly the shape DIVERGENCE 5.31 is cited for -- so both keys carry
+// the flag and a `comment` names the limit, the way `apparmor.status`
+// reports what its tools cannot do.
+//
+// Deriving the kinds from `quota.user` and `quota.group` at the
+// filesystem root was considered and refused: those files exist after a
+// `quotacheck` whether or not `quotaon` has since run, so their presence
+// answers a different question from the one that was asked.
+func quotaModeFromMountFlags(c *exec.Context, fs string, out *value.Map) (any, error) {
+	res, err := c.Run(exec.Command{Argv: []string{"mount"}, IgnoreExitCode: true})
+	if err != nil {
+		return nil, fmt.Errorf("mount could not be run on this node: %w", err)
+	}
+	if res.Code != 0 {
+		return nil, fmt.Errorf("`mount` exited %d: %s", res.Code,
+			strings.TrimSpace(firstLine(res.Stderr+res.Stdout)))
+	}
+	on, found := quotaMountFlagSaysQuotas(res.Stdout, fs)
+	if !found {
+		return nil, fmt.Errorf(
+			"`mount` does not list %q, so whether it has quotas cannot be read; "+
+				"a filesystem must be mounted for the kernel to carry MNT_QUOTA for it", fs)
+	}
+	out.Set("user", on)
+	out.Set("group", on)
+	out.Set("comment", "this is a BSD, where the kernel carries one MNT_QUOTA flag for the whole "+
+		"filesystem rather than one per kind -- `mount` prints \"with quotas\" whether user quotas, "+
+		"group quotas or both are on, so these two keys are that one flag and not two separate "+
+		"readings")
+	return out, nil
+}
+
+// quotaMountFlagSaysQuotas finds a filesystem in `mount`'s output and
+// reports whether its flag list carries "with quotas".
+//
+// A BSD `mount` line is `<device> on <mountpoint> (<type>, <flags...>)`:
+//
+//	/dev/md0 on /mnt (ufs, local, with quotas)
+//
+// The mount point is matched rather than the device, because that is
+// what every other function in this module takes as its `filesystem`
+// argument. The flags are read from inside the parentheses only, so a
+// device or mount point that happens to contain the words cannot be
+// mistaken for the flag.
+func quotaMountFlagSaysQuotas(out, fs string) (on, found bool) {
+	for _, line := range strings.Split(out, "\n") {
+		open := strings.LastIndexByte(line, '(')
+		closing := strings.LastIndexByte(line, ')')
+		if open < 0 || closing < open {
+			continue
+		}
+		head := line[:open]
+		const marker = " on "
+		i := strings.Index(head, marker)
+		if i < 0 {
+			continue
+		}
+		if strings.TrimSpace(head[i+len(marker):]) != fs {
+			continue
+		}
+		for _, flag := range strings.Split(line[open+1:closing], ",") {
+			if strings.TrimSpace(flag) == "with quotas" {
+				return true, true
+			}
+		}
+		return false, true
+	}
+	return false, false
 }
 
 // quotaKernelSupportNote explains the two answers from the quota tools
@@ -487,9 +610,33 @@ func quotaRun(c *exec.Context, kind, fs string) ([]quotaRow, string, error) {
 	}
 
 	if !csv {
-		res, err := c.Run(exec.Command{Argv: quotaReportArgv(kind, fs, false)})
+		res, err := c.Run(exec.Command{Argv: quotaReportArgv(kind, fs, false), IgnoreExitCode: true})
 		if err != nil {
 			return nil, "", fmt.Errorf("repquota could not be run on this node: %w", err)
+		}
+		// **A BSD repquota that never looked exits 0.** Asked about a
+		// filesystem that is not in fstab it prints nothing at all on
+		// stdout, puts its reason on stderr and succeeds:
+		//
+		//	$ repquota -u -v /; echo $?
+		//	repquota: / not found in fstab
+		//	0
+		//
+		// Parsed on stdout alone that is an empty table, which reads as
+		// "this filesystem has no quotas" -- a false answer about a
+		// filesystem that may well have them, and the believable kind,
+		// because it is what an unquota'd filesystem really does say.
+		// The Linux branch below already guards its own version of this
+		// (a tool that does not know `-O` printing usage and exiting
+		// zero); the BSD branch was written from repquota.c and never
+		// run, so it did not.
+		//
+		// The banner is the discriminator. `-v` makes repquota print
+		// `*** Report for user quotas on ...` before the rows, so a
+		// report that looked has one whether or not any account has a
+		// limit. No banner means no look.
+		if err := quotaTableLooksLikeAReport(res, fs); err != nil {
+			return nil, "", err
 		}
 		rows, err := quotaParseTable(res.Stdout, fs)
 		return rows, "table", err
@@ -515,6 +662,37 @@ func quotaRun(c *exec.Context, kind, fs string) ([]quotaRow, string, error) {
 // The header is checked rather than the exit code alone, because a tool
 // that does not know `-O` may print its usage and exit zero, and a usage
 // message parsed as a table is a report of quotas that do not exist.
+// quotaTableLooksLikeAReport refuses a repquota run that did not look.
+//
+// Two ways it can fail to look, and neither is an empty report: a
+// non-zero exit, and the zero exit with an empty stdout that a
+// filesystem missing from fstab produces. Both are turned into the
+// tool's own words, because "not found in fstab" tells an operator
+// exactly what to do and "this filesystem has no quotas" sends them
+// looking for a quota system that was never consulted.
+//
+// A banner with no rows underneath it is left alone: that is a
+// filesystem with quotas switched on and nobody holding a limit, which
+// is a real and common answer.
+func quotaTableLooksLikeAReport(res exec.Result, fs string) error {
+	said := strings.TrimSpace(firstLine(res.Stderr + res.Stdout))
+	if res.Code != 0 {
+		return fmt.Errorf("`repquota` was refused on %s (exit %d: %s)", fs, res.Code, said)
+	}
+	if strings.Contains(res.Stdout, "*** Report for") {
+		return nil
+	}
+	if said == "" {
+		said = "nothing at all"
+	}
+	return fmt.Errorf(
+		"`repquota` exited 0 for %s without producing a report; it printed %q. "+
+			"This is not an empty report -- under -v repquota prints a `*** Report for ...` "+
+			"banner whenever it reads a filesystem, so its absence means the filesystem was "+
+			"never consulted and nothing here can say whether it has quotas",
+		fs, said)
+}
+
 func quotaLooksLikeCSV(out string) bool {
 	first, _, _ := strings.Cut(out, "\n")
 	return strings.HasPrefix(strings.TrimSpace(first), "User,") ||

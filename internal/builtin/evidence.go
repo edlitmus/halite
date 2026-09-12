@@ -252,11 +252,20 @@ var moduleEvidence = map[string]exec.Evidence{
 		"limits set through the real `setquota` and read back through the real " +
 		"`repquota -O csv` -- four distinct numbers in four positions, so a transposed pair would " +
 		"have shown as a wrong value rather than as two that match -- and `quotaon -p` read in both " +
-		"states (DIVERGENCE 5.48). The BSD fixed-width parser is written to the printf calls in " +
-		"FreeBSD 15.1's own usr.sbin/repquota/repquota.c, and **it has not been run**: this project's " +
-		"fleet is entirely ZFS and has no UFS filesystem to make one on, so `edquota -e` is still " +
-		"checked only as an argument vector. Also not covered: ext4's quota feature route, which the " +
-		"live leg falls back to and no runner has needed"},
+		"states (DIVERGENCE 5.48). **The BSD half was written from " +
+		"repquota.c and never run, and running the tools found two defects no unit test here " +
+		"disagreed with.** `quotaon -p` is a Linux option -- FreeBSD's quotaon has none, so " +
+		"`quota.get_mode` could not answer at all on four of this fleet's five hosts, against a " +
+		"module comment asserting that both platforms had it; state now comes from the kernel's " +
+		"MNT_QUOTA mount flag, which is one flag for both kinds and says so. And a BSD `repquota` " +
+		"asked about a filesystem missing from fstab prints its reason on stderr and **exits " +
+		"zero**, which the table branch read as a report of no quotas. Both are fixed and both " +
+		"have unit tests. `live_quota_ufs_test.go` drives the rest against a real UFS filesystem " +
+		"on a memory disk -- the premise that this ZFS fleet had nowhere to make one was wrong, " +
+		"the same way it was wrong for the Linux leg -- but **it is gated on root and has not yet " +
+		"been run**, so `edquota -e` and the fixed-width parser are still argument vector and " +
+		"printf calls respectively. Also not covered: ext4's quota feature route, which the " +
+		"Linux live leg falls back to and no runner has needed"},
 
 	"lvm": {Level: exec.Hardware, Note: "driven end to end against a real LVM2 2.03 on Ubuntu " +
 		"24.04 (kernel 6.18): two loopback block devices labelled with `pvcreate`, a volume " +

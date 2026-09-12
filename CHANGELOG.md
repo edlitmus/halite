@@ -18,6 +18,22 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `quota` works on FreeBSD, where it had two defects nobody could see
+
+Reading FreeBSD's quota tools rather than running them left two faults,
+on the platform that is four of this fleet's five hosts.
+
+Asking whether quotas are switched on used a flag that only Linux has, so
+the question could not be answered on a BSD at all. It is read from the
+kernel's own mount flag now, which reports one state for the whole
+filesystem rather than one per kind, and says so.
+
+Worse, `repquota` asked about a filesystem missing from `/etc/fstab`
+reports the problem and then exits successfully. That was read as a
+filesystem with no quotas on it -- a believable answer, and the wrong
+one. A report that was never produced is now told apart from a report
+with nothing in it.
+
 ### A tab where Salt refuses one is now refused here too
 
 Five of the twenty documents halite read that Salt would not load were

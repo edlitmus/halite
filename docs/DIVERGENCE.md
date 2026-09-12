@@ -6217,6 +6217,105 @@ The table stands at 331 agreeing, 40 deliberate and **31 gaps**, the
 over-acceptance set is down from 20 to 15, and conformance where halite
 claims to conform is 91.4%.
 
+### 5.65 The BSD half of `quota`, and the two defects in it
+
+`quota` has said since 5.48 that its BSD half "has not been run": the
+fixed-width parser was written to the `printf` calls in FreeBSD's own
+`usr.sbin/repquota/repquota.c`, and `edquota -e` was checked only as an
+argument vector. The reason given was that this fleet is entirely ZFS
+and has no UFS filesystem to make one on.
+
+**The premise was wrong, and it is the same premise the Linux leg had
+already beaten.** A filesystem does not have to be one the machine came
+with: `mdconfig` makes a memory-backed disk, `newfs` puts UFS on it, and
+the whole thing is thrown away afterwards -- which is what the Linux leg
+does with a file and the loop driver. Nothing about ZFS was ever in the
+way.
+
+Running the tools instead of reading them found **two defects that every
+unit test in the package agreed with**, both on the platform that is four
+of this fleet's five hosts.
+
+**`quotaon -p` is a Linux option.** FreeBSD's `quotaon` does not have
+it:
+
+```
+$ quotaon -u -p /
+quotaon: illegal option -- p
+usage: quotaon [-g] [-u] [-v] -a
+       quotaon [-g] [-u] [-v] filesystem ...
+```
+
+so `quota.get_mode` could not answer at all on a BSD. The module's own
+comment asserted the opposite -- "both platforms print ... is on or ...
+is off for -p" -- and a second comment described a fallback to reading
+the mount options that was never written. It failed loudly rather than
+lying, which is the only reason this was a gap and not a wrong answer.
+
+What the BSDs have instead is in the kernel, and `sys/mount.h` gives it
+the spelling the tools print:
+
+```
+{ MNT_QUOTA,	"with quotas" },
+#define MNT_QUOTA 0x0000000000002000ULL /* quotas are enabled on fs */
+```
+
+So state is now read from a plain `mount`. `mount -p` is deliberately
+not used, because its own manual page says it "will not list userquota
+or groupquota items from fstab(5) because they are not true mount
+options and are not information returned by getmntinfo(3)".
+
+**MNT_QUOTA is one flag for both kinds**, and the answer says so rather
+than presenting one bit under two names as two readings. Deriving the
+kinds from `quota.user` and `quota.group` at the filesystem root was
+considered and refused: those files exist after a `quotacheck` whether or
+not `quotaon` has since run, so their presence answers a different
+question from the one asked.
+
+**A BSD `repquota` that never looked exits zero.** Asked about a
+filesystem that is not in fstab it prints its reason on stderr, prints
+nothing at all on stdout, and succeeds:
+
+```
+$ repquota -u -v /; echo $?
+repquota: / not found in fstab
+0
+```
+
+Parsed on stdout alone that is an empty table, which reads as "this
+filesystem has no quotas" -- the believable kind of wrong, because it is
+exactly what an unquota'd filesystem really says. The Linux branch had
+guarded its own version of this since it was written: `quotaLooksLikeCSV`
+exists because "a tool that does not know `-O` may print its usage and
+exit zero, and a usage message parsed as a table is a report of quotas
+that do not exist". The BSD branch, written from the source and never
+run, had the same hole and no guard. It is 5.31's pair-shaped defect
+again: two paths that must agree, and only one of them checked.
+
+The banner is the discriminator. Under `-v` repquota prints `*** Report
+for user quotas on ...` whenever it reads a filesystem, so a report that
+looked has one whether or not any account holds a limit. No banner means
+no look, and that is now an error carrying the tool's own words. A
+banner with no rows under it is left alone, because a filesystem with
+quotas and nobody over a limit is a real and common answer.
+
+**What is proven and what is not.** Both defects have unit tests, and
+each was confirmed by breaking the fix on purpose and watching the test
+fail. `live_quota_ufs_test.go` drives the rest -- `edquota -e` and the
+fixed-width parser -- against a real UFS filesystem on a memory disk,
+and **it is gated on root and has not yet been run**. Until it has, the
+argument vector is still an argument vector.
+
+That leg writes to `/etc/fstab`, and deliberately. FreeBSD's `repquota`,
+`quotacheck` and `quotaon` all resolve their filesystem argument through
+`getfsfile(3)`, so a mount fstab does not name is one they refuse to
+look at -- the second defect above arriving as a constraint, with no flag
+that avoids it. The entry is written with `noauto` and a pass number of
+0, so a line the test fails to clean up still does nothing at the next
+boot: `noauto` keeps `mount` from mounting it and a zero pass number
+keeps `fsck` and `quotacheck` from checking it. Untidy is the worst case;
+a host that will not boot is not.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
