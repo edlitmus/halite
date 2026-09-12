@@ -13,8 +13,9 @@ package template
 //	multiplicative := unary { ("*" | "/" | "//" | "%") unary }
 //	unary        := ("-" | "+") unary | power
 //	power        := postfix [ "**" unary ]
-//	postfix      := primary { "." name | "[" subscript "]" | "(" args ")" }
-//	filters      := unary { "|" name [ "(" args ")" ] }
+//	postfix      := primary trailers
+//	trailers     := { "." name | "[" subscript "]" | "(" args ")" }
+//	filters      := unary { "|" name [ "(" args ")" ] trailers }
 //
 // Filters sit above unary rather than inside postfix, which is what makes
 // `-5 | abs` evaluate to 5: the filter applies to the negation, not to the
@@ -304,6 +305,9 @@ func (p *parser) parseTrailingFilters(e Expr) (Expr, error) {
 		if e, err = p.parseFilterChain(e); err != nil {
 			return nil, err
 		}
+		if e, err = p.parseTrailers(e); err != nil {
+			return nil, err
+		}
 	}
 	return e, nil
 }
@@ -330,6 +334,17 @@ func (p *parser) parsePostfix() (Expr, error) {
 	if err != nil {
 		return nil, err
 	}
+	return p.parseTrailers(e)
+}
+
+// parseTrailers consumes the `.name`, `[key]`, and `(args)` suffixes that
+// can follow any expression, not only a primary one. A filter's result is
+// exactly as eligible for these as a primary is — `foo|attr("items")()`
+// calls what the attr filter returns — so parseTrailingFilters calls this
+// too, after each filter application, rather than stopping at the filter
+// call the way `filters := unary { "|" name [ "(" args ")" ] }` once did.
+func (p *parser) parseTrailers(e Expr) (Expr, error) {
+	var err error
 	for {
 		t := p.peek()
 		if t.kind != tokOp {

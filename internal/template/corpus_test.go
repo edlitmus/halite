@@ -143,10 +143,6 @@ var corpusReasons = map[string]corpusReason{
 		"the template calls a Python string or dict method. halite has filters, not the " +
 			"Python object model, and no code path that reaches an arbitrary method."},
 
-	gapCallResult: {false,
-		"the result of a filter or a subscript cannot be called."},
-	gapNumericAttribute: {false,
-		"the Django-style `a.0` spelling of a subscript is not parsed."},
 	gapTestArgument: {false,
 		"a test taking an argument is not parsed in every position."},
 	gapScoping: {false,
@@ -154,8 +150,6 @@ var corpusReasons = map[string]corpusReason{
 	gapRendering: {false,
 		"a value renders differently from Jinja: tuple and dict spelling, float formatting, " +
 			"and the like."},
-	gapFilterBehaviour: {false,
-		"a filter halite has behaves differently from Jinja's."},
 	gapOther: {false,
 		"an unclassified difference."},
 }
@@ -166,13 +160,10 @@ const (
 	specStrictUndefined = "specStrictUndefined"
 	specPythonMethod    = "specPythonMethod"
 
-	gapCallResult       = "gapCallResult"
-	gapFilterBehaviour  = "gapFilterBehaviour"
-	gapNumericAttribute = "gapNumericAttribute"
-	gapOther            = "gapOther"
-	gapRendering        = "gapRendering"
-	gapScoping          = "gapScoping"
-	gapTestArgument     = "gapTestArgument"
+	gapOther        = "gapOther"
+	gapRendering    = "gapRendering"
+	gapScoping      = "gapScoping"
+	gapTestArgument = "gapTestArgument"
 )
 
 type corpusDeviation struct {
@@ -182,8 +173,6 @@ type corpusDeviation struct {
 
 // corpusDeviations is the expected-failure set for Jinja's own tests.
 var corpusDeviations = []corpusDeviation{
-	{"test_api::test_item_and_attribute", specPythonMethod},
-	{"test_api::test_item_and_attribute#1", gapCallResult},
 	{"test_api::test_custom_code_generator", gapRendering},
 	{"test_api::test_custom_context", gapOther},
 	{"test_core_tags::test_else", specStrictUndefined},
@@ -191,7 +180,6 @@ var corpusDeviations = []corpusDeviation{
 	{"test_core_tags::test_loop_errors", specStrictUndefined},
 	{"test_ext::test_extend_late", specNoAutoescape},
 	{"test_ext::test_scoping", specNoAutoescape},
-	{"test_filters::test_indent_width_string", gapFilterBehaviour},
 	{"test_filters::test_urlize", specNotInSubset},
 	{"test_filters::test_urlize#1", specNotInSubset},
 	{"test_filters::test_urlize#2", specNotInSubset},
@@ -200,14 +188,11 @@ var corpusDeviations = []corpusDeviation{
 	{"test_filters::test_urlize_target_parameter", specNotInSubset},
 	{"test_filters::test_urlize_extra_schemes_parameter", specNotInSubset},
 	{"test_filters::test_unique", specPythonMethod},
-	{"test_filters::test_groupby_tuple_index", gapNumericAttribute},
-	{"test_inheritance::test_reuse_blocks", gapOther},
 	{"test_lexnparse::test_call", gapOther},
 	{"test_lexnparse::test_short_conditional_expression", specStrictUndefined},
 	{"test_regression::test_urlize_filter_escaping", specNotInSubset},
 	{"test_regression::test_urlize_filter_closing_punctuation", specNotInSubset},
 	{"test_regression::test_nested_for_else", specStrictUndefined},
-	{"test_regression::test_double_caller", gapRendering},
 	{"test_regression::test_pass_context_loop_vars", gapScoping},
 	{"test_regression::test_pass_context_scoped_loop_vars", gapScoping},
 	{"test_regression::test_pass_context_in_blocks", gapScoping},
@@ -222,7 +207,6 @@ var corpusDeviations = []corpusDeviation{
 	{"test_security::test_basic_format_all_okay#1", specPythonMethod},
 	{"test_security::test_safe_format_all_okay#1", specNoAutoescape},
 	{"test_tests::test_multiple_tests", gapTestArgument},
-	{"test_tests::test_in", gapTestArgument},
 }
 
 func corpusIndex(t *testing.T) map[string]corpusDeviation {

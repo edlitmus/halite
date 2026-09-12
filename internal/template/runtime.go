@@ -147,6 +147,8 @@ func (r *renderer) getAttr(obj any, name string, pos Pos) (any, error) {
 	switch t := obj.(type) {
 	case dispatchValue:
 		return t.child(name), nil
+	case selfValue:
+		return t.attr(name, pos)
 	case *Namespace:
 		if v, ok := t.m.Get(name); ok {
 			return v, nil
@@ -787,6 +789,8 @@ func typeName(v any) string {
 		return "a macro"
 	case dispatchValue:
 		return "the salt dispatcher"
+	case selfValue:
+		return "the self reference"
 	case *Namespace:
 		return "a namespace"
 	case *LoopInfo:

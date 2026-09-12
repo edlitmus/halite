@@ -118,6 +118,12 @@ type lexer struct {
 	// the text after it to be left alone. It is the explicit opposite of
 	// `-%}` and turns off `trim_blocks` for that one delimiter.
 	keepNextText bool
+	// bracketDepth counts unmatched `(`, `[`, and `{` inside the tag being
+	// lexed. `}}` starts with the same byte that closes a dict or set
+	// literal, so `{"foo": 1}}}` has three `}` in a row belonging to two
+	// different things; the close delimiter is only tried while nothing
+	// is still open, exactly as Jinja's own lexer does it.
+	bracketDepth int
 }
 
 type lexOptions struct {
@@ -446,6 +452,7 @@ func findEndTag(src string, d Delimiters, endTag string) (body string, consumed 
 // lexTag tokenizes the expression inside a `{{ }}` or `{% %}`.
 func (l *lexer) lexTag(open, close string, openKind, closeKind tokenKind) error {
 	start := l.pos()
+	l.bracketDepth = 0
 	l.emit(token{kind: openKind, val: open, pos: start})
 	l.advance(len(open))
 	if l.off < len(l.src) && (l.src[l.off] == '-' || l.src[l.off] == '+') {
@@ -457,21 +464,28 @@ func (l *lexer) lexTag(open, close string, openKind, closeKind tokenKind) error 
 		if l.off >= len(l.src) {
 			return &Error{Pos: start, Msg: "unterminated tag; expected " + close}
 		}
-		// The closing delimiter, with or without a whitespace-control
-		// marker. `-` strips what follows; `+` is its opposite and keeps
-		// what follows even when trim_blocks would have eaten it.
-		if (l.src[l.off] == '-' || l.src[l.off] == '+') && strings.HasPrefix(l.src[l.off+1:], close) {
-			marker := l.src[l.off]
-			l.advance(1 + len(close))
-			l.emit(token{kind: closeKind, val: close, pos: l.pos()})
-			l.trimNextText = marker == '-'
-			l.keepNextText = marker == '+'
-			return nil
-		}
-		if strings.HasPrefix(l.src[l.off:], close) {
-			l.advance(len(close))
-			l.emit(token{kind: closeKind, val: close, pos: l.pos()})
-			return nil
+		// A dict or set literal's closing `}` is indistinguishable from
+		// the first byte of `}}` by lookahead alone, so the close
+		// delimiter is only a candidate once every `(`, `[`, and `{`
+		// opened inside the tag has been closed.
+		if l.bracketDepth == 0 {
+			// The closing delimiter, with or without a whitespace-control
+			// marker. `-` strips what follows; `+` is its opposite and
+			// keeps what follows even when trim_blocks would have eaten
+			// it.
+			if (l.src[l.off] == '-' || l.src[l.off] == '+') && strings.HasPrefix(l.src[l.off+1:], close) {
+				marker := l.src[l.off]
+				l.advance(1 + len(close))
+				l.emit(token{kind: closeKind, val: close, pos: l.pos()})
+				l.trimNextText = marker == '-'
+				l.keepNextText = marker == '+'
+				return nil
+			}
+			if strings.HasPrefix(l.src[l.off:], close) {
+				l.advance(len(close))
+				l.emit(token{kind: closeKind, val: close, pos: l.pos()})
+				return nil
+			}
 		}
 		if err := l.lexOne(); err != nil {
 			return err
@@ -528,6 +542,17 @@ func (l *lexer) lexOne() error {
 		}
 	}
 	if strings.ContainsRune("+-*/%~<>=|.,:()[]{}!", rune(c)) {
+		switch c {
+		case '(', '[', '{':
+			l.bracketDepth++
+		case ')', ']', '}':
+			// A stray closing bracket is a parse error the parser reports
+			// with the token in hand; going negative here would make the
+			// close-delimiter check ignore a real `}}` forever.
+			if l.bracketDepth > 0 {
+				l.bracketDepth--
+			}
+		}
 		l.advance(1)
 		l.emit(token{kind: tokOp, val: string(c), pos: p})
 		return nil

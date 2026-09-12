@@ -18,6 +18,19 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The template engine has no known gaps against Jinja's own tests
+
+Six real disagreements with Jinja closed: calling the result of a filter,
+`indent` with a string width, `groupby` on a numeric attribute,
+`{{ self.foo() }}`, a macro whose parameter is named `caller`, and the
+`is in` test -- which turned out to be the lexer mistaking a dictionary's
+closing brace for the end of the tag.
+
+Of 198 cases extracted from Jinja's own suite, 164 now agree and 25 are
+outside the subset the specification defines. The 9 that remain need
+something the corpus extractor cannot carry across from Python, so none
+of them is a gap in this engine.
+
 ### A regular expression is no longer refused for what is inside a class
 
 Patterns were scanned for constructs that cannot be translated, and the

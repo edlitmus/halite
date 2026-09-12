@@ -1858,7 +1858,7 @@ absent.
 | Layer | Status |
 |---|---|
 | Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 40 disagree by design, 31 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
-| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 157 of 198 agree, 26 are outside the subset, 15 are gaps — see 5.5. |
+| Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 164 of 198 agree, 25 are outside the subset, 9 are gaps — see 5.5 and 5.68. |
 | Differential against Salt | **partial.** `internal/saltdiff` compiles ten trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
 | Conformance, state modules | **present** and stronger than specified — see 1.4. Covers 6 of the 46 state functions. |
@@ -2036,8 +2036,10 @@ as a rejection, and its value is never checked.
 
 ### 5.5 Where template conformance stands
 
-157 of 198 of Jinja's own extractable cases, 26 of the rest outside the
-subset by design and 15 gaps. `internal/template` rose to 81.9% statements
+164 of 198 of Jinja's own extractable cases, 25 of the rest outside the
+subset by design and **9 gaps, every one of them a corpus-extractor
+artifact rather than an engine gap** -- see 5.68, which closed the six
+that were real. `internal/template` rose to 81.9% statements
 on the way, still the one correctness-core package under the SPEC 31 bar.
 
 Writing the second corpus found a crash on the first run.
@@ -6387,6 +6389,61 @@ spelling inside a bracket expression across the repository found none, so
 this was real and latent -- which is also why 5.5's "zero regex findings
 across 193 files" did not turn it up.
 
+### 5.68 The six real template gaps, and one that was mismeasured
+
+5.5 left 198 corpus cases at 157 agreeing and 15 gaps, of which nine were
+corpus-extractor artifacts and **six were real engine gaps**. All six are
+closed, and the table now stands at **164 agreeing, 25 outside the subset
+and 9 gaps -- every remaining gap an extractor artifact, so no engine gap
+is left**.
+
+Each was one feature, and three of the six were not where the label said.
+
+**Calling a filter result.** `foo|attr("items")()` did not parse: the
+postfix grammar stopped at a filter's own call arguments and let nothing
+follow. The trailer loop is now reusable and runs again after each filter
+is applied, so `.`, `[]` and `()` all chain off a filter the way they
+chain off anything else.
+
+**String `indent(width=...)`.** The filter coerced `width` to an integer
+whatever it was given, so a string width silently became zero and
+indented nothing. A string is now used as the literal prefix and an
+integer as a column count.
+
+**`groupby` with a numeric attribute.** `groupby(0)` groups by a tuple
+position and the filter accepted only a string attribute.
+
+**`{{ self.foo() }}`.** `self` did not exist. It renders a named block
+through a sub-renderer, which is the mechanism `super()` already used.
+
+**The `caller=none` macro default** was the most interesting of the six,
+because the defect was the opposite way round from the label. A macro
+whose parameter is literally named `caller` was overwriting the real
+`{% call %}` block binding with its own default on every invocation, so
+`{% call x() %}aha!{% endcall %}` rendered `[]` rather than `[aha!]`. The
+binding now wins over the default when both are present.
+
+**And `is in` was not a test defect at all.** The test was implemented
+and correct; the lexer was greedy. `{{ 1 in {"foo": 1} }}` ends
+`1}}}`, and the close delimiter was matched against the dictionary's own
+closing brace. The lexer now tracks bracket depth and tries the close
+delimiter only when nothing inside the tag is still open -- which is the
+same fix Jinja's own lexer carries for the same case.
+
+**The seventh was a mismeasurement.** One case was filed as needing "the
+Python object model, and no code path that reaches an arbitrary method",
+which is a real limit of this engine and was not what that case needed.
+`dict.items()` was already implemented; it returned a list where Jinja
+returns a tuple, so the entire disagreement was `[['items', 42]]` against
+`[('items', 42)]`. It is closed rather than reclassified, and it is the
+second time in this ledger that a row's label named something other than
+what it measured -- 5.56's chomping row was the first. A label is not a
+measurement.
+
+`dictsort` builds the same untyped pairs `items()` used to. No corpus
+case renders it directly, so it is left alone and recorded here rather
+than fixed on speculation.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -7229,6 +7286,7 @@ changed: see 3.
    positions, document markers inside quoted scalars, and under-indented
    continuations — none of which a Salt tree contains, which is why this
    sits below the two above it.
-4. **The remaining 15 template conformance gaps** (5.5), of which eight
-   need a Python callable the corpus extractor cannot carry and are not
-   engine gaps at all. The six that are real are one feature each.
+4. ~~**The remaining 15 template conformance gaps**~~ (5.5) -- **the six
+   real ones are closed** (5.68). The 9 that remain all need a Python
+   callable or a scoping construct the corpus extractor cannot carry,
+   so none of them is an engine gap.

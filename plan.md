@@ -938,11 +938,14 @@ unchanged.
   contain. The agreement count fell by one in the process, because two
   suite cases assert a line break that PyYAML and libyaml both decline
   to add and SPEC 10.1 picks the implementations. DIVERGENCE 5.56.
-- **Templates (SPEC 10.2):** 198 cases, 157 agree, 26 outside the subset,
-  **15 gaps — but 9 are corpus-extractor artifacts**. Six are real:
+- **Templates (SPEC 10.2):** 198 cases, **164 agree, 25 outside the
+  subset, 9 gaps** — and the 9 are the corpus-extractor artifacts, so
+  **no engine gap remains**. The six that were real are closed:
   calling a filter result, string `indent(width=…)`, `groupby` with a
   numeric attribute, `{{ self.foo() }}`, a `caller=none` macro default,
-  and the `is in` test.
+  and the `is in` test. DIVERGENCE 5.68. A seventh closed with them: a
+  case labelled as needing the Python object model was mismeasured, and
+  was only `dict.items()` yielding a list where Jinja yields a tuple.
 - **PyYAML differential:** 240 documents, 230 agree, 10 deviations, zero
   unexplained. Done. The count grew with the chomping matrix of
   DIVERGENCE 5.56.

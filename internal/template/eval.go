@@ -653,6 +653,28 @@ func (r *renderer) renderBlockAt(name string, defs []*BlockNode, idx int) error 
 	return r.renderNodes(defs[idx].Body)
 }
 
+// selfValue is the `self` name inside a template body, which Jinja
+// reserves so a block can render another block — or itself again, for a
+// repeated heading or footer — through `self.name()`. It shares the
+// mechanism `super()` already uses: a sub-renderer captures the block's
+// output as a string instead of writing it to the enclosing render.
+type selfValue struct{ r *renderer }
+
+func (s selfValue) attr(name string, pos Pos) (any, error) {
+	defs := s.r.blocks[name]
+	if len(defs) == 0 {
+		return Undefined{Name: "self." + name, Pos: pos, Hint: fmt.Sprintf("%q is not a block in this template", name)}, nil
+	}
+	return funcValue{name, func([]any, map[string]any) (any, error) {
+		sub := s.r.sub()
+		sub.scope = s.r.scope
+		if err := sub.renderBlockAt(name, defs, 0); err != nil {
+			return nil, err
+		}
+		return sub.out.String(), nil
+	}}, nil
+}
+
 func (r *renderer) renderInclude(t *IncludeNode) error {
 	names, err := r.templateNames(t.Name, t.Pos())
 	if err != nil {
@@ -860,12 +882,24 @@ func (m *Macro) Call(args []any, kwargs map[string]any) (any, error) {
 	}
 	sub.scope = newScope(m.scope)
 
+	hasCaller := false
 	if c, ok := kwargs[callerKey]; ok {
 		sub.scope.set("caller", c)
+		hasCaller = true
 	}
 
 	bound := map[string]bool{callerKey: true}
 	for i, p := range m.Params {
+		// A macro written `{% macro x(caller=none) %}` declares `caller`
+		// only so referencing it outside a `{% call %}` block is a
+		// default rather than an error; the block itself must still win
+		// when one is present, or `{% call x() %}...{% endcall %}` would
+		// have the caller's own body clobbered by the parameter's
+		// default on every invocation.
+		if p.Name == "caller" && hasCaller {
+			bound[p.Name] = true
+			continue
+		}
 		switch {
 		case i < len(args):
 			sub.scope.set(p.Name, args[i])
@@ -925,6 +959,12 @@ func (r *renderer) eval(e Expr) (any, error) {
 	case *NameExpr:
 		if v, ok := r.scope.lookup(t.Name); ok {
 			return v, nil
+		}
+		// `self` is Jinja's reserved reference to the template's own
+		// blocks, and no `{% set self = ... %}` in a real Salt tree
+		// shadows it, because Jinja does not let one either.
+		if t.Name == "self" {
+			return selfValue{r}, nil
 		}
 		return Undefined{Name: t.Name, Pos: t.Pos()}, nil
 
