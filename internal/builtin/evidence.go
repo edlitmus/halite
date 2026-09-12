@@ -72,8 +72,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`patch` binary -- which is where running it found that an already-applied patch is " +
 		"*reversed* rather than refused unless `--forward` is passed (DIVERGENCE 5.63). Two " +
 		"limits: nothing here has written a file it does not own, so the `chown` path is " +
-		"exercised only where the account already matches, and the SELinux context pair is " +
-		"not implemented at all rather than implemented and unrun"},
+		"exercised only where the account already matches, the SELinux context pair is " +
+		"not implemented at all rather than implemented and unrun, and `patch` is " +
+		"unexercised on Windows because the binary that runtime resolves there -- " +
+		"Strawberry Perl's patch 2.5.9 -- aborts on an ordinary unified diff"},
 	"ps": {Level: exec.Hardware, Note: "read and signalled against the real process table " +
 		"on every platform the suite runs: the FreeBSD libxo path and the column path " +
 		"the other unixes take are both parsed from what the machine's own `ps` printed, " +

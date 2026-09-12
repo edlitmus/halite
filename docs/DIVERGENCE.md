@@ -6088,6 +6088,15 @@ Test mode runs `--dry-run`, which is what makes SPEC 11.6's contract
 satisfiable for a patch without a second opinion about what one would
 do.
 
+**And a platform where there is nothing to get right.** CI's Windows
+runner resolves `patch` to Strawberry Perl's 2.5.9, which aborts on an
+ordinary unified diff -- "Assertation failed! ... patch.c, Line 354;
+Expression: hunk" -- under `--dry-run` as well as for real. A module
+cannot be correct against a binary that asserts, so the live test skips
+there, naming the tool and its message rather than the platform. A
+Windows node with a working `patch` is served by the same code; what is
+recorded is that this project has never seen one.
+
 #### `sed` does not run sed, and does not delegate either
 
 Salt's `file.sed` shells out to `sed -i`. This one does the work in Go,
