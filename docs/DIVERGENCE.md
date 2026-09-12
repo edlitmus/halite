@@ -5999,6 +5999,56 @@ threshold), were registered as pending "a later phase, with a portable
 reader for it". That reader now exists, and a beacon in this build is a
 function over the node's own execution modules.
 
+### 5.62 The two process beacons
+
+`proc` and `ps` were registered as pending "a later phase, with a
+portable reader for it". The reader arrived with the `ps` module of
+5.61, and these are functions over it -- which is what a beacon is in
+this build, and why one is portable wherever its module is.
+
+**Two beacons, because SPEC gives them different jobs**, and the
+difference is the one an operator cares about. `proc` answers "is it
+there", which is a question about a thing that should be running and a
+page when it is not. `ps` answers "is it behaving", which is a question
+about a thing that is running and a page when it eats the machine. Salt
+has both names and uses them for nearly the same thing; here they mean
+what the inventory says.
+
+    beacons:
+      proc:
+        - processes:
+            sshd: running
+            oldthing: stopped
+      ps:
+        - processes:
+            nginx:
+              cpu_percent: ['>', 80]
+              rss_kb: ['>', 500000]
+
+Three decisions:
+
+- **Every key is a pattern, matched against the process name or the
+  whole command line.** A daemon is often several processes, a
+  supervisor and its workers, and a beacon that could only name one of
+  them would answer a different question from the one asked.
+- **A wanted state decides whether to speak at all**, which is what
+  makes `stopped` useful: the event is the absence. With no wanted
+  state the reading is reported every poll and `onchangeonly` decides,
+  which is how the `service` beacon beside it already behaves.
+- **The `ps` thresholds compare the process table's own fields**, under
+  the comparison form the `load` beacon already uses. Nothing is
+  derived on the way, so a threshold means what `ps.psaux` reported. A
+  field the table does not have is refused with the fields it does,
+  because the alternative is a beacon that never fires and never says
+  why.
+
+Both are exercised against processes the tests start and mark, for the
+reason 5.61 gives: a pattern loose enough to match somebody's editor
+will eventually be handed to something that kills. The wiring in those
+tests is the node's own, a dispatcher over the execution registry, so
+what is checked is the arrangement a beacon actually runs under rather
+than a function called directly.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -6235,7 +6285,7 @@ system, so it is portable wherever its module is and cannot disagree
 with the state that acts on the same fact.
 
 Built: `diskusage`, `load`, `memusage`, `service`, `filechanges`,
-`cert_info`, and `status`. The controls of SPEC 16.3 are all there — a
+`cert_info`, `status`, and the two process beacons `proc` and `ps`. The controls of SPEC 16.3 are all there — a
 token bucket per instance, coalescing with a count, a bounded queue that
 reports what it dropped, and `disable_during_state_run`.
 
@@ -6247,11 +6297,12 @@ What is **not** built in beacons:
   metadata, which is the portable answer SPEC 16.2 names for exactly
   this case; it is slower, and a change that is reverted between two
   polls is one it never sees.
-- **Seventeen of SPEC 16.2's inventory**: `swapusage`, `cpuusage`,
-  `network_info`, `network_settings`, `proc`, `ps`, `pkg`, `journald`,
-  `log`, `wtmp`, `btmp`, `sh`, and the four platform notifiers. Each is
-  registered and answers with when it arrives, so a configuration
-  naming one is refused with a reason rather than skipped.
+- **Fifteen of SPEC 16.2's inventory**: `swapusage`, `cpuusage`,
+  `network_info`, `network_settings`, `pkg`, `journald`, `log`, `wtmp`,
+  `btmp`, `sh`, and the four platform notifiers. Each is registered and
+  answers with when it arrives, so a configuration naming one is refused
+  with a reason rather than skipped. `proc` and `ps` have left this list
+  — see 5.62.
 - **Beacons through pillar.** SPEC 16.1 names three sources: the
   configuration file, `beacons.d`, and pillar. The first two work; a
   beacon delivered through pillar does not.

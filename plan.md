@@ -532,9 +532,10 @@ to block. §7 has the consequences.
    the system's own `ps`, FreeBSD's libxo JSON where there is one, and
    both halves demonstrated on a real process table -- the mutating one
    against processes the test starts and marks, so it needs no root and
-   touches nothing else on the machine. It also unblocks two of SPEC
+   touches nothing else on the machine. It also unblocked two of SPEC
    16.2's beacons, `proc` and `ps`, which were pending "a later phase,
-   with a portable reader for it" and now have one. DIVERGENCE 5.61.
+   with a portable reader for it" -- **and both now ship**, leaving
+   fifteen of that inventory. DIVERGENCE 5.61 and 5.62.
 4. **`selinux`**, `iptables`, `nftables`, `sudo`, `acl`. Platform-shaped
    and mostly Linux; see 2.3. `apparmor` is struck: it ships, with seven
    execution functions and the `apparmor.mode` state, and it closed

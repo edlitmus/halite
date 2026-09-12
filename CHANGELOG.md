@@ -18,6 +18,22 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A node can watch a process, and watch what it is eating
+
+Two beacons that were declared and unbuilt now work. One fires when a
+process appears or disappears, which is the question about a thing that
+should be running. The other fires when a matched process crosses a
+resource threshold, which is the question about a thing that is running
+and taking the machine with it.
+
+Both take a pattern rather than a name, because a daemon is usually
+several processes and watching only one of them answers a different
+question. Thresholds are written the way the load beacon's already are,
+and they compare the process table's own numbers, so a threshold means
+what the table said. A threshold on a field that does not exist is
+refused with the fields that do, rather than being a beacon that never
+fires and never says why.
+
 ### `ps`, so a node can be asked what is running on it
 
 Seven functions over the process table: the list, one process by ID,

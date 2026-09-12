@@ -41,6 +41,21 @@ func New() *Registry {
 			Fn: serviceState,
 		},
 		Module{
+			Name: "proc",
+			Doc: "Fire on a process being there, or not being there. Each key under " +
+				"`processes` is a pattern matched against the process name, or against " +
+				"the whole command line when `full` is set; a value of `running` or " +
+				"`stopped` emits only in that case.",
+			Fn: procPresence,
+		},
+		Module{
+			Name: "ps",
+			Doc: "Fire when a matched process crosses a resource threshold. Each key " +
+				"under `processes` is a pattern, and its value a mapping of a process " +
+				"table field to a comparison, as `cpu_percent: ['>', 80]`.",
+			Fn: psThreshold,
+		},
+		Module{
 			Name: "filechanges",
 			Doc: "Fire when a watched file's digest, size, or mode changes, or when it " +
 				"appears or is removed. `files` is a list of paths.",
@@ -85,8 +100,6 @@ func registerPending(r *Registry) {
 		pending("cpuusage", "Fire when processor use is above a threshold.", readers),
 		pending("network_info", "Fire on interface counter thresholds.", readers),
 		pending("network_settings", "Fire when an interface attribute changes.", readers, "linux", "windows"),
-		pending("proc", "Fire on a process appearing or disappearing.", readers),
-		pending("ps", "Fire on a process crossing a resource threshold.", readers),
 		pending("pkg", "Fire when package updates are available.", "phase 5, with the package provider matrix", "linux"),
 		pending("journald", "Fire on a journal match.", "phase 5, with the systemd platform work", "linux"),
 		pending("log", "Fire on a regular expression matching a log line.", readers),
