@@ -6135,6 +6135,24 @@ refused rather than resolved into a path outside it.
 A node with no `cache_dir` keeps no backups and says so, rather than
 writing them relative to whatever the working directory happens to be.
 
+**And the fourth instance of a defect this project has already recorded
+twice.** The first version named each copy by `time.Now` on the
+reasoning that two backups cannot be taken in the same instant. They
+can: the clock is only as fine as the platform's, and on Windows that is
+about half a millisecond. CI's Windows leg turned three keeps into two
+files -- the second silently replacing the first, which is the whole
+point of a backup, lost.
+
+The webhook returner's spool and the relay's spool both did this, both
+lost returns for it (4.9), and the concurrent-writer scenario in the
+chaos layer of 5.29 exists *because* of them. Knowing about a defect
+class is evidently not the same as not writing it again. The name is now
+claimed with `O_EXCL` and takes a suffix on collision, so two processes
+keeping a backup of one file in one tick cannot both win, and the test
+for it holds the clock still rather than racing it -- which is the
+difference between a test that would have caught this and one that
+happened to run on the right machine.
+
 #### What is still not there
 
 `get_selinux_context` and `set_selinux_context`, deliberately. There is

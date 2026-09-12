@@ -501,8 +501,29 @@ func cacheDirOf(c *exec.Context) string {
 	return value.KeyString(v)
 }
 
+// backupNow is the clock, replaceable so that a test can hold it still
+// and exercise the collision path below deliberately.
+var backupNow = time.Now
+
 // keepBackup copies the current contents into the cache and answers with
 // the identifier `list_backups` will report.
+//
+// # A timestamp is not a unique name
+//
+// `time.Now` is only as fine as the platform's clock, and on Windows
+// that is about half a millisecond. Two backups taken inside one tick
+// get the same name, and the second silently replaces the first --
+// which is the whole point of a backup, lost. CI's Windows leg found
+// exactly that: three keeps in a row produced two files.
+//
+// This is the *fourth* time this shape has been recorded here. The
+// webhook returner's spool and the relay's spool both named files by a
+// timestamp on the same reasoning, both lost returns for it (DIVERGENCE
+// 4.9), and the concurrent-writer scenario in the chaos layer exists
+// because of them. Knowing about a defect class is evidently not the
+// same as not writing it again, so the name is now made unique rather
+// than assumed to be: a collision takes a suffix, which keeps the
+// lexical order chronological and leaves the older copy where it is.
 func keepBackup(c *exec.Context, path string, contents []byte, mode os.FileMode) (string, error) {
 	dir, err := fileBackupDir(c, path)
 	if err != nil {
@@ -511,11 +532,36 @@ func keepBackup(c *exec.Context, path string, contents []byte, mode os.FileMode)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
-	id := time.Now().UTC().Format(backupTimeFormat)
-	if err := writeAtomic(filepath.Join(dir, id), contents, mode.Perm()); err != nil {
-		return "", err
+
+	stamp := backupNow().UTC().Format(backupTimeFormat)
+	for attempt := 1; ; attempt++ {
+		id := stamp
+		if attempt > 1 {
+			id = fmt.Sprintf("%s-%d", stamp, attempt)
+		}
+		full := filepath.Join(dir, id)
+		// O_EXCL is what makes this a claim rather than a hope: two
+		// processes keeping a backup of the same file in the same tick
+		// cannot both win.
+		f, err := os.OpenFile(full, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode.Perm())
+		if os.IsExist(err) {
+			if attempt > 1000 {
+				return "", fmt.Errorf("a thousand backups of %s share one timestamp", path)
+			}
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if _, err := f.Write(contents); err != nil {
+			f.Close()
+			return "", err
+		}
+		if err := f.Close(); err != nil {
+			return "", err
+		}
+		return id, nil
 	}
-	return id, nil
 }
 
 func fileListBackupsFn(c *exec.Context, args *value.Map) (any, error) {

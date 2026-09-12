@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	hexec "github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
@@ -316,4 +317,54 @@ func runFileManaged(t *testing.T, c *hexec.Context, args *value.Map) (bool, erro
 		return false, fmt.Errorf("file.managed failed: %s", res.Comment)
 	}
 	return res.Changes != nil && res.Changes.Len() > 0, nil
+}
+
+// Three backups taken inside one clock tick are three backups.
+//
+// The clock is held still rather than raced against, because the defect
+// this covers is only reachable on a platform whose clock is coarse
+// enough to repeat: `time.Now` is about half a millisecond on Windows,
+// and CI's Windows leg turned three keeps into two files. Freezing the
+// clock makes the case reachable everywhere, which is the difference
+// between a test that would have caught it and one that happened to run
+// on the right machine.
+func TestBackupsInOneClockTickDoNotReplaceEachOther(t *testing.T) {
+	frozen := time.Date(2026, 9, 12, 5, 38, 11, 0, time.UTC)
+	previous := backupNow
+	backupNow = func() time.Time { return frozen }
+	t.Cleanup(func() { backupNow = previous })
+
+	cache := t.TempDir()
+	c := fileCtx(t, cache)
+	path := filepath.Join(t.TempDir(), "motd")
+	writeFile(t, path, "original\n")
+
+	ids := map[string]bool{}
+	for _, contents := range []string{"one", "two", "three"} {
+		id, err := keepBackup(c, path, []byte(contents), 0o600)
+		if err != nil {
+			t.Fatalf("keeping a backup: %v", err)
+		}
+		if ids[id] {
+			t.Fatalf("the identifier %q was handed out twice", id)
+		}
+		ids[id] = true
+	}
+
+	listed := patchCall(t, c, "file.list_backups", "path", path).([]any)
+	if len(listed) != 3 {
+		t.Fatalf("three keeps in one tick left %d backups", len(listed))
+	}
+	// Every one of them still holds what it was given, which is the
+	// property a replaced file loses.
+	seen := map[string]bool{}
+	for _, raw := range listed {
+		row := raw.(*value.Map)
+		seen[contentsOf(t, value.KeyString(patchMustGet(t, row, "path")))] = true
+	}
+	for _, want := range []string{"one", "two", "three"} {
+		if !seen[want] {
+			t.Errorf("the backup holding %q was overwritten: %v", want, seen)
+		}
+	}
 }
