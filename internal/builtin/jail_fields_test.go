@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
-	"github.com/edlitmus/halite/internal/value"
 )
 
 // Every field this module reads out of a jail entry is a field `jls`
@@ -205,16 +204,35 @@ func TestShowConfigForAnUndefinedJailNamesWhatIsDefined(t *testing.T) {
 // jails in a file of its own could list them and could not start one:
 // the listing read the named file and the start read /etc/jail.conf.
 // That is the pair-shaped defect of 5.70 in a second place.
+//
+// **This drives `jailRun` rather than the registry, so that it runs on
+// every host.** Going through `jail.start` would be more end to end and
+// would only ever execute on FreeBSD, because the registry refuses the
+// module everywhere else by design -- so the one assertion here that is
+// genuinely platform-independent, the shape of the argument vector,
+// would be checked on exactly the platform least likely to get it wrong.
+// It is the same reasoning as `quota`'s platform table, which is a
+// function of `goos` for the same reason.
 func TestAnAlternativeConfigurationReachesEveryVerb(t *testing.T) {
 	const conf = "/etc/jail.conf.d/mail.conf"
-	for fn, verb := range map[string]string{"start": "-c", "stop": "-r", "restart": "-rc"} {
+	for _, verb := range []string{"-c", "-r", "-rc"} {
 		want := "jail -f " + conf + " " + verb + " mail"
 		c, runner := jailFixture(t, map[string]exec.Result{want: {}})
-		if _, err := New().Exec.Call(c, "jail."+fn, value.MapOf("name", "mail", "config", conf)); err != nil {
-			t.Fatalf("jail.%s: %v", fn, err)
+		if err := jailRun(c, conf, verb, "mail"); err != nil {
+			t.Fatalf("jail %s: %v", verb, err)
 		}
 		if !hasRun(runner, want) {
-			t.Errorf("jail.%s ran %v, want %q", fn, runner.RanCommands(), want)
+			t.Errorf("jail %s ran %v, want %q", verb, runner.RanCommands(), want)
 		}
+	}
+
+	// And with no configuration named, no -f is passed at all rather
+	// than an empty one, which `jail` would read as a file called "".
+	c, runner := jailFixture(t, map[string]exec.Result{"jail -c mail": {}})
+	if err := jailRun(c, "", "-c", "mail"); err != nil {
+		t.Fatalf("jail -c: %v", err)
+	}
+	if !hasRun(runner, "jail -c mail") {
+		t.Errorf("ran %v, want no -f at all", runner.RanCommands())
 	}
 }
