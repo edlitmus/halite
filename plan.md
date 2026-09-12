@@ -1382,7 +1382,7 @@ unbuilt item here is number 7.
     reason `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
     `subscription_manager`, `dnf_module` and `chattr` do — shipping
     fixtures for a tool nobody here has run is exactly the mistake
-    DIVERGENCE 5.31 found and this document keeps citing. Items 14-18
+    DIVERGENCE 5.31 found and this document keeps citing. Items 14-19
     below say exactly what machine closes each.
 13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.
@@ -1424,19 +1424,73 @@ tool nobody has run against it (DIVERGENCE 5.31).
     provider for the first time, which macOS ships but nothing has
     reached (same evidence.go note as 16 and 17).
 
+19. **A Linux host with a FIPS kernel, and one hardened to CIS Level
+    2.** The newest item here and the one with the most behind it,
+    because an estate that would actually run this is Ubuntu LTS with a
+    FIPS kernel from a vendor channel, and everything below is a claim
+    this project has made against a machine of a different shape.
+
+    - **The FIPS artifacts have been run nowhere** (DIVERGENCE 4.5).
+      They ship for Linux and no host has executed one.
+    - **`doctor`'s FIPS consistency check has never seen a kernel that
+      says yes.** It compares `/proc/sys/crypto/fips_enabled` against
+      the binary's own mode, and the branch that matters — a compliant
+      kernel under a build that is not one, which reads as compliant
+      and is not — needs a kernel in FIPS mode to reach. §3.2 and
+      DIVERGENCE 5.30.
+    - **A vendor's FIPS channel is two claims and the grain reports
+      one.** A certified frozen kernel and a patched one from an
+      updates channel both write 1 to that file, and for an assessment
+      they are different answers. The natural place to say which is a
+      `pro` module, which is not built (§2.3, item 11 above).
+    - **Every Linux evidence note was captured on one release.** The
+      `service` provider over D-Bus and `journald` over its varlink
+      socket were both driven against systemd 255, `netplan` against
+      netplan 1.1.2, and `apparmor` against apparmor-utils 4.0.1. An
+      LTS one version older carries systemd 249, the netplan 0.10x line
+      before its rewrite, and apparmor-utils 3.x. None of the four is
+      known to be broken there; all four are claims about a machine
+      this project does not run, which is the shape of every finding in
+      §1.
+    - **Linux arm64 compiles and nothing more** (DIVERGENCE 4.5), and
+      an estate of this kind is increasingly arm64.
+    - ~~**A CIS Level 2 host will exercise a path that is written and
+      unexercised, and probably break it.**~~ **The refusal is built**,
+      which is the half that needed no such host. The agentless mode
+      caches the pushed binary under `/var/tmp/halite-thin` and executes
+      it there, and hardening benchmarks commonly mount `/var/tmp`
+      `noexec`; every step up to the last one succeeds on such a host,
+      so what an operator used to get was "Permission denied" about a
+      binary installed successfully a moment earlier. The staging
+      directory is now proved rather than assumed: the same script that
+      creates it writes a probe, runs it, and removes it, and a target
+      that will not execute is refused by name with `noexec` and
+      `thin_dir` in the message. It is the check `OpenNodeCache` already
+      makes for itself, asked about execution rather than about writing,
+      and it costs no extra round trip. DIVERGENCE 5.60. **What still
+      needs the host is the demonstration**: the script is exercised
+      against a real `/bin/sh` and a real directory, and no `noexec`
+      mount has ever refused it, because making one needs root on a
+      hardened machine.
+
+    The read half of all of this needs no root and writes nothing, so
+    it is an afternoon rather than a project. The `-fips` artifacts, the
+    grains, `doctor`, and the read paths of those four modules, in FIPS
+    mode and out, is the whole of it.
+
 **Blocked on a decision**
 
-19. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
+20. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
     carries and what CI already runs on it.
-20. The `cmd.run` default, the unplanned modules, a `win_registry`
+21. The `cmd.run` default, the unplanned modules, a `win_registry`
     state, and job signing (§6).
-21. Whether a follower that falls behind the event bus should stop or
+22. Whether a follower that falls behind the event bus should stop or
     resume. `subscriber_lag` refuses the read now; what a *reactor*
     should do with the refusal is the open half (DIVERGENCE 4.12).
 
 **Last**
 
-22. The YAML over-acceptance set — 20 documents halite reads that the
+23. The YAML over-acceptance set — 20 documents halite reads that the
     reference refuses, which is now the whole of what is left worth
     taking there, the chomping case having turned out to be a
     mismeasurement with a real defect behind it (§5, DIVERGENCE 5.56);

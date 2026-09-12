@@ -18,6 +18,20 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### An agentless run says when the target will not execute its cache
+
+A hardened host mounts `/var/tmp` with `noexec`, and that is where the
+pushed binary is cached and run from. Every step of the run succeeded on
+such a host, right up to the last one: the directory was made, the
+binary copied, its digest verified, and then it would not run. What came
+back was "Permission denied" about a file installed successfully a
+moment earlier.
+
+The staging directory is now proved rather than assumed. The script that
+creates it writes a probe, runs it, and removes it, and a target that
+will not execute is refused by name, with the directory and the likely
+cause in the message. It costs no extra round trip.
+
 ### A node that has never connected no longer panics the hub
 
 `halite-hub runner pillar.show_pillar node=x` crashed the hub's handler
