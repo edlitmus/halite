@@ -333,6 +333,72 @@ var moduleEvidence = map[string]exec.Evidence{
 	"mount": {Level: exec.Captured, Note: "reads the real /proc/self/mounts and the real " +
 		"`mount` output on the platforms CI runs, and nothing has been mounted or " +
 		"unmounted by this module"},
+	"acl": {Level: exec.Hardware, Note: "driven against the real getfacl and setfacl on this " +
+		"fleet's FreeBSD 15.1 host. The mutating half needs no root -- an ACL is set on a file " +
+		"the test owns -- so the round trip runs wherever the suite does. Two things were " +
+		"learned from the tool rather than assumed, and both are in the module's comment: " +
+		"`setfacl -m` on a new (tag, qualifier) pair inserts at the **front** rather than " +
+		"appending, and an existing entry is matched for update by (tag, qualifier, type) " +
+		"together -- so a `deny` for an already-`allow`ed user is a second entry, not a " +
+		"replacement. The permission and flag column order was derived empirically, each of the " +
+		"14 permission letters and 7 flag columns set alone against a scratch file and the real " +
+		"output captured, which is what lets the dry run compare canonical forms instead of " +
+		"guessing. **This is NFSv4 only**: ZFS is what this fleet has, Linux's tool of the same " +
+		"name speaks a different grammar, and a POSIX.1e-shaped entry is refused by name rather " +
+		"than misread -- confirmed as root against a real UFS filesystem built on a memory disk " +
+		"and mounted with `-o acls`. Not covered: Linux, which needs its own captured fixtures " +
+		"and a host to take them from"},
+	"tmpfs": {Level: exec.Captured, Note: "read against the real `mount` and `df` on this " +
+		"fleet's FreeBSD 15.1 host, both against the tmpfs the host already had and against one " +
+		"the test mounted as root and then unmounted, with the reader shown to flip in both " +
+		"directions. **It reads and never writes, by design**, so Captured is its ceiling rather " +
+		"than a shortfall: mounting a tmpfs is `mount.mount` with a fstype, and a wrapper here " +
+		"would duplicate `mount.mounted`'s idempotence and fstab handling for no gain. " +
+		"`tmpfs.resize` is deliberately absent too -- Linux's live resize is `mount.remount`, and " +
+		"FreeBSD's tmpfs(4) documents `size` only at mount time, so shipping one would mean " +
+		"claiming a behaviour nothing here has verified. The unit fixtures are real unedited " +
+		"`mount` and `df -Pk` captures that happen to disagree about this host's own tmpfs mount " +
+		"point, a Linux-compat artifact, and that disagreement is kept as a test proving the " +
+		"join degrades to no usage figures rather than to a wrong number"},
+	"at": {Level: exec.Hardware, Note: "driven against the real at/atq/atc/atrm on this " +
+		"fleet's FreeBSD 15.1 host, as root: a job scheduled far enough ahead that it never " +
+		"fires, found in a real `atq`, its script read back through a real `at -c`, removed, and " +
+		"the removal shown idempotent; the `at.present`/`at.absent` pair round-trips an " +
+		"identified job without duplicating it. **The queue parser was written without a real " +
+		"`atq` to read** -- `at` refuses an unprivileged caller on this host, so it was derived " +
+		"from the printf format in the binary itself (`%s\\t%-16s%c%s\\t%ld`), which says the " +
+		"job number is the last field. That inference is now confirmed against real output, and " +
+		"checked by reading the first field instead on purpose and watching the test fail. Not " +
+		"covered: Linux's at, whose argument vector is pinned in the platform table and which no " +
+		"leg has run; and a job actually firing, which nothing here waits for"},
+	"swap": {Level: exec.Hardware, Note: "driven against the real swapon/swapoff on this " +
+		"fleet's FreeBSD 15.1 host: swap made on a 64 MiB memory disk, switched on and off " +
+		"through this module, and **confirmed each time through `mount.swaps` rather than " +
+		"through this module's own reader** -- a writer and a reader wrong in the same direction " +
+		"would otherwise agree with each other. Idempotent in both directions, and the FreeBSD " +
+		"refusal of a priority was shown to refuse rather than to drop the argument silently. " +
+		"Checked by making swapoff a no-op and watching the test catch it. The host had no swap " +
+		"at all to begin with, so the empty reading is exercised too. Not covered: Linux, whose " +
+		"`mkswap`/`swapon -p` path is a platform-table row nothing has run; and persistence, " +
+		"which is deliberately `mount.mounted`'s job rather than this module's"},
+	// `sudo` reads and never writes, which is why `Captured` is its
+	// ceiling rather than a shortfall. There is no mutating path to
+	// demonstrate: a sudoers file is written by `file.managed`, and what
+	// this module adds is the check that runs *before* that write.
+	"sudo": {Level: exec.Captured, Note: "driven against the real sudo and visudo 1.9.17p2 on " +
+		"this fleet's FreeBSD 15.1 host. `sudo.validate` runs the real `visudo -c` over files a " +
+		"test writes -- one the grammar accepts, one it rejects, and one that is not there -- " +
+		"and each answer carries visudo's own words; this needs no privilege, which is the " +
+		"point of it. `sudo.path` was read **both ways on the same host**: unprivileged it falls " +
+		"back to the platform's conventional location and says so, and as root it comes from " +
+		"`sudo -V` itself, so neither branch of the fallback is assumed. `sudo.list` was read as " +
+		"root against a real account, and a missing account refused. Every assertion was checked " +
+		"by breaking the code and watching it fail. **This module writes nothing by design** -- " +
+		"no sudoers parser is written here, because a second parser for that grammar would " +
+		"eventually disagree with the real one about who may become root. Not covered: Linux, " +
+		"where the conventional path differs and no CI leg reads it as root; and Salt's " +
+		"`sudo.salt_call`, deliberately not built, because `cmd.run` already takes a `runas` and " +
+		"applies it with setuid rather than through a second privilege system"},
 	"sysrc": {Level: exec.Captured, Note: "reads real rc.conf through the real `sysrc` on " +
 		"CI's FreeBSD runner; nothing has watched this module write one"},
 	// `pam` has no tool to drive, which is why its note reads

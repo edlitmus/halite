@@ -108,6 +108,13 @@ func New() *Registries {
 	registerFirewall(r)
 	registerNetplan(r)
 	registerAppArmor(r)
+	registerSudo(r)
+	registerSwap(r)
+	registerAt(r)
+	registerData(r)
+	registerTLS(r)
+	registerACL(r)
+	registerTmpfs(r)
 	registerSnap(r)
 	registerJail(r)
 

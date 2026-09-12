@@ -201,8 +201,8 @@ configuration file; a tree needs the same edits:
 ## What is not there
 
 halite ships a subset of Salt's roughly 400 modules, chosen by what a
-real estate applies. This build has 535 execution functions across 77
-modules and 119 state functions across 44. The [module
+real estate applies. This build has 571 execution functions across 84
+modules and 121 state functions across 45. The [module
 reference](modules.md) lists all of them and
 [DIVERGENCE.md](DIVERGENCE.md) lists what is missing, module by module,
 with the reason.
