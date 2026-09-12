@@ -18,6 +18,13 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A regular expression is no longer refused for what is inside a class
+
+Patterns were scanned for constructs that cannot be translated, and the
+scan did not know about character classes, so `[(?=]` -- three ordinary
+characters -- was refused as a lookahead. Nothing in the estate's tree
+had tripped it.
+
 ### A jail's state was always blank
 
 `jail.list` reported a state read from a field that `jls` has never

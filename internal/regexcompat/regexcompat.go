@@ -57,6 +57,7 @@ var probes = []probe{
 // report, which is what makes the size of a migration measurable before
 // it is committed to rather than discovered during it.
 func Unsupported(pattern string) []Construct {
+	inClass := classSpans(pattern)
 	var found []Construct
 	for _, p := range probes {
 		off := 0
@@ -66,22 +67,22 @@ func Unsupported(pattern string) []Construct {
 				break
 			}
 			at := off + i
-			if !escaped(pattern, at) {
+			if !escaped(pattern, at) && !inClass[at] {
 				found = append(found, Construct{Syntax: p.syntax, Name: p.name, Offset: at, Workaround: p.workaround})
 			}
 			off = at + 1
 		}
 	}
-	found = append(found, backreferences(pattern)...)
+	found = append(found, backreferences(pattern, inClass)...)
 	return found
 }
 
 // backreferences finds \1 through \9 and the named forms, which RE2 has
 // no way to express.
-func backreferences(pattern string) []Construct {
+func backreferences(pattern string, inClass []bool) []Construct {
 	var found []Construct
 	for i := 0; i < len(pattern)-1; i++ {
-		if pattern[i] != '\\' || escaped(pattern, i) {
+		if pattern[i] != '\\' || escaped(pattern, i) || inClass[i] {
 			continue
 		}
 		c := pattern[i+1]
@@ -109,6 +110,91 @@ func escaped(s string, i int) bool {
 		n++
 	}
 	return n%2 == 1
+}
+
+// posixClassMarkers are the second characters of a POSIX bracket
+// sub-expression: [:alpha:], [.ch.], and [=a=]. Each opens a span that
+// runs to its own matching two-character terminator, during which an
+// ordinary "]" does not close the surrounding character class.
+const posixClassMarkers = ":.="
+
+// classSpans reports, for every byte offset of pattern, whether that byte
+// falls inside a character class ([...]). PCRE's construct spellings —
+// "(?=", "\1", and the rest — are literal characters inside a class, so
+// `[(?=]` is a class matching one of three literal characters, never a
+// lookahead. Reporting it as one would be a false positive that blocks a
+// valid, harmless pattern.
+func classSpans(pattern string) []bool {
+	inside := make([]bool, len(pattern))
+	inClass := false
+	// firstCharPending tracks the classic bracket-expression exception: a
+	// "]" appearing as the very first character of a class (or the first
+	// after a negating "^") is a literal "]", not the close. It is only
+	// ever true for the one character slot right after the class opens.
+	firstCharPending := false
+
+	for i := 0; i < len(pattern); i++ {
+		c := pattern[i]
+
+		if !inClass {
+			if c == '\\' {
+				i++ // the escaped character, whatever it is, is consumed with it
+				continue
+			}
+			if c == '[' {
+				inClass = true
+				firstCharPending = true
+				if i+1 < len(pattern) && pattern[i+1] == '^' {
+					// A negating "^" does not itself count as the first
+					// character for the literal-"]" exception.
+					inside[i+1] = true
+					i++
+				}
+			}
+			continue
+		}
+
+		// Inside the class.
+		inside[i] = true
+
+		if c == '\\' {
+			if i+1 < len(pattern) {
+				inside[i+1] = true
+				i++
+			}
+			firstCharPending = false
+			continue
+		}
+
+		if c == '[' && i+1 < len(pattern) && strings.IndexByte(posixClassMarkers, pattern[i+1]) >= 0 {
+			marker := pattern[i+1]
+			terminator := string(marker) + "]"
+			if end := strings.Index(pattern[i+2:], terminator); end >= 0 {
+				closeAt := i + 2 + end + len(terminator)
+				for k := i; k < closeAt; k++ {
+					inside[k] = true
+				}
+				i = closeAt - 1
+				firstCharPending = false
+				continue
+			}
+			// No matching terminator: not a real POSIX sub-expression,
+			// so fall through and treat the "[" as an ordinary literal.
+		}
+
+		if c == ']' {
+			if firstCharPending {
+				firstCharPending = false
+				continue
+			}
+			inClass = false
+			continue
+		}
+
+		firstCharPending = false
+	}
+
+	return inside
 }
 
 // Error is a refusal to compile a pattern, naming what RE2 lacks.

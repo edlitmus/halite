@@ -6361,6 +6361,32 @@ jail has been started or stopped by this module**, so `jail.start`,
 nothing has watched take effect. `jail` stays `captured` rather than
 `hardware` for that reason.
 
+### 5.67 A PCRE construct spelled inside a character class is not one
+
+`internal/regexcompat` refuses 11 PCRE constructs by name so that a
+migration knows what it is in for. Detection was a raw substring scan
+with an escape check and nothing else, so a construct's spelling *inside
+a character class* was reported as the construct: `[(?=]` is a class
+matching one of `(`, `?` or `=`, and it was refused as a lookahead.
+
+The scan now tracks whether each offset falls inside a bracket
+expression, and honours the rules that make that harder than it looks: a
+`]` first in a class -- or first after a leading `^` -- is a literal
+`]` and does not close it, an escaped `\[` opens nothing, an escaped
+`\]` closes nothing, and a POSIX sub-expression like `[:alpha:]` is
+consumed whole so its inner `]` cannot close the outer class.
+
+The detection direction is tested hardest, because breaking it would be
+far worse than the false positive being fixed: all 11 constructs are
+asserted still refused outside a class, each alongside an unrelated class
+in the same pattern. The fix was confirmed by disabling the class
+tracking and watching five tests fail.
+
+Nothing in the estate's tree was affected. A sweep for a construct
+spelling inside a bracket expression across the repository found none, so
+this was real and latent -- which is also why 5.5's "zero regex findings
+across 193 files" did not turn it up.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

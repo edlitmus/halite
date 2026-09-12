@@ -964,10 +964,14 @@ unchanged.
   PCRE constructs by name with a workaround apiece and hands the rest to
   RE2. The estate's real tree produced **zero regex findings across 193
   files**, which answers SPEC 33 question 8: the backtracking engine
-  stays in phase 6 and on this evidence could be dropped. One cheap
+  stays in phase 6 and on this evidence could be dropped. ~~One cheap
   defect, still open: detection is a raw substring scan with only an
   escape check, so a construct spelling inside a character class —
-  `[(?=]` — is a false positive, and no test covers it.
+  `[(?=]` — is a false positive, and no test covers it.~~ **Fixed**
+  (DIVERGENCE 5.67): the scan tracks bracket expressions, including the
+  literal `]` first in a class and POSIX sub-expressions, and the
+  detection direction is tested hardest because breaking it would be
+  worse than the false positive. Nothing in the tree had tripped it.
 
 ---
 
