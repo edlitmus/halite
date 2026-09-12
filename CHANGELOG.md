@@ -18,6 +18,36 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `ps`, so a node can be asked what is running on it
+
+Seven functions over the process table: the list, one process by ID,
+pattern matching by name or by whole command line, the heaviest
+processes by processor share or by resident memory, and signalling one
+process or every match. Salt's names, so a tree that uses them keeps
+working.
+
+It reads through the system's own `ps`, and through FreeBSD's libxo JSON
+where there is one, because parsing a table meant for a person when a
+structured interface exists is how this project has been bitten before.
+The alternatives were a C library or a dependency the specification
+rules out.
+
+Two refusals worth knowing about. Asking about a process that is not
+there is an error rather than an empty answer, because a tree acting on
+an ID it read somewhere else needs to tell "gone" from "here with
+nothing to say". And killing by a pattern that matches nothing is
+refused, because that is a misspelling far more often than a tidy
+machine.
+
+The whole module, signalling included, is demonstrated against real
+processes. They are processes the tests start and mark, so no root is
+involved and nothing else on the machine is touched.
+
+It also unblocks two beacons that were waiting for a portable way to
+read the process table: one that fires when a process appears or
+disappears, and one that fires when a process crosses a resource
+threshold.
+
 ### An agentless run says when the target will not execute its cache
 
 A hardened host mounts `/var/tmp` with `noexec`, and that is where the

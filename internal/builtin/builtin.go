@@ -35,6 +35,7 @@ func New() *Registries {
 	registerCron(r)
 	registerPkg(r)
 	registerService(r)
+	registerPS(r)
 	registerIntrospect(r)
 	registerCrypto(r)
 	registerDataStore(r)
