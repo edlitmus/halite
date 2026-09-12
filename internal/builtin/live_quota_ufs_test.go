@@ -123,50 +123,80 @@ func TestLiveQuotaOnARealUFSFilesystem(t *testing.T) {
 	}
 }
 
-// The BSD mount flag is read off a filesystem that really has quotas.
+// The BSD mount flag is read off a filesystem that really has quotas,
+// and the limitation in that flag is pinned rather than described.
 //
-// This is the half no fixture can settle. `quotaMountFlagSaysQuotas`
+// This is the half no fixture could settle. `quotaMountFlagSaysQuotas`
 // parses what `mount` prints, and what `mount` prints for a quota'd UFS
-// is the one string nothing here had ever seen -- sys/mount.h spells it
-// "with quotas" and the unit test takes that spelling on the header's
-// word. Here the kernel supplies it.
+// was the one string nothing here had ever seen -- sys/mount.h spells it
+// "with quotas" and the unit test takes the header's word for it. A real
+// kernel supplies it here:
 //
-// Both states are read, because a reader that matched nothing and
-// returned false would agree with the tool exactly once.
+//	/dev/md0 on /tmp/.../mnt (ufs, local, with quotas, soft-updates)
+//
+// **The first version of this test was wrong, and the kernel said so.**
+// It switched user quotas off and expected the flag to clear. It does
+// not: MNT_QUOTA is one bit for the whole filesystem, so it stays set
+// while group quotas are still on. That is the limitation `get_mode`
+// already reported in its `comment`, arriving as a failing assertion
+// written by whoever had just documented it -- and it is worth more as
+// an assertion than as a sentence, because it changes what a caller can
+// do. **On a BSD, `quota.get_mode` cannot confirm that `quota.off` for a
+// single kind took effect.** Both states are read, and so is the state
+// in between.
 func TestLiveQuotaReadsTheBSDMountFlagInBothStates(t *testing.T) {
 	img := liveUFSSetup(t)
 	r := New()
 
 	ask := value.NewMap(1)
 	ask.Set("filesystem", img.mount)
-	got, err := r.Exec.Call(img.c, "quota.get_mode", ask)
-	if err != nil {
-		t.Fatalf("quota.get_mode on a quota'd UFS: %v", err)
+
+	readMode := func(what string) *value.Map {
+		t.Helper()
+		got, err := r.Exec.Call(img.c, "quota.get_mode", ask)
+		if err != nil {
+			t.Fatalf("quota.get_mode %s: %v", what, err)
+		}
+		return got.(*value.Map)
 	}
-	m := got.(*value.Map)
+	switchOff := func(kind string) {
+		t.Helper()
+		off := value.NewMap(2)
+		off.Set("filesystem", img.mount)
+		off.Set("kind", kind)
+		if _, err := r.Exec.Call(img.c, "quota.off", off); err != nil {
+			t.Fatalf("quota.off %s: %v", kind, err)
+		}
+	}
+
+	m := readMode("on a quota'd UFS")
 	if user, _ := m.GetString("user"); user != true {
 		t.Errorf("quotas are on for this filesystem and get_mode says %v", user)
 	}
 	// The comment is part of the answer on this platform, not decoration:
-	// MNT_QUOTA is one flag for both kinds and a caller must be told that
-	// rather than left to read two keys as two readings.
+	// the assertion below is the reason a caller has to be told.
 	if comment, _ := m.GetString("comment"); !strings.Contains(fmt.Sprint(comment), "MNT_QUOTA") {
 		t.Errorf("the BSD answer does not say that its two keys are one kernel flag: %v", comment)
 	}
 
-	off := value.NewMap(2)
-	off.Set("filesystem", img.mount)
-	off.Set("kind", "user")
-	if _, err := r.Exec.Call(img.c, "quota.off", off); err != nil {
-		t.Fatalf("quota.off: %v", err)
+	// One kind off, and the flag deliberately does not move.
+	switchOff("user")
+	m = readMode("after switching user quotas off")
+	if user, _ := m.GetString("user"); user != true {
+		t.Errorf("user quotas were switched off and the flag read %v; on a BSD it must still "+
+			"read true, because MNT_QUOTA covers the whole filesystem and group quotas are "+
+			"still on. If this ever fails, the kernel has gained a per-kind flag and "+
+			"quotaModeFromMountFlags can stop apologising for not having one", user)
 	}
 
-	got, err = r.Exec.Call(img.c, "quota.get_mode", ask)
-	if err != nil {
-		t.Fatalf("quota.get_mode after switching off: %v", err)
+	// Both off, and now it clears.
+	switchOff("group")
+	m = readMode("after switching both off")
+	if user, _ := m.GetString("user"); user != false {
+		t.Errorf("both kinds were switched off and the mount flag still reads %v", user)
 	}
-	if user, _ := got.(*value.Map).GetString("user"); user != false {
-		t.Errorf("quotas were switched off and the mount flag still reads %v", user)
+	if group, _ := m.GetString("group"); group != false {
+		t.Errorf("both kinds were switched off and the group key reads %v", group)
 	}
 }
 

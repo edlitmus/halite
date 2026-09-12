@@ -260,11 +260,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"MNT_QUOTA mount flag, which is one flag for both kinds and says so. And a BSD `repquota` " +
 		"asked about a filesystem missing from fstab prints its reason on stderr and **exits " +
 		"zero**, which the table branch read as a report of no quotas. Both are fixed and both " +
-		"have unit tests. `live_quota_ufs_test.go` drives the rest against a real UFS filesystem " +
-		"on a memory disk -- the premise that this ZFS fleet had nowhere to make one was wrong, " +
-		"the same way it was wrong for the Linux leg -- but **it is gated on root and has not yet " +
-		"been run**, so `edquota -e` and the fixed-width parser are still argument vector and " +
-		"printf calls respectively. Also not covered: ext4's quota feature route, which the " +
+		"have unit tests. **The BSD half has now been run**, against a real UFS " +
+		"filesystem on a 64 MiB memory disk on this fleet's own FreeBSD 15.1 host -- the premise " +
+		"that an all-ZFS fleet had nowhere to make one was wrong, the same way it was wrong for " +
+		"the Linux leg. `edquota -e` really sets four distinct limits in four positions and the " +
+		"fixed-width `repquota` parser really reads them back, checked by transposing two of them " +
+		"on purpose and watching the test catch it; the second run is idempotent; and `mount` " +
+		"really prints the `with quotas` that sys/mount.h spells, in both states. That run also " +
+		"turned the MNT_QUOTA limitation from a comment into an assertion: switching **one** kind " +
+		"off leaves the flag set, because it covers the whole filesystem, so on a BSD " +
+		"`quota.get_mode` cannot confirm that `quota.off` for a single kind took effect. Also not covered: ext4's quota feature route, which the " +
 		"Linux live leg falls back to and no runner has needed"},
 
 	"lvm": {Level: exec.Hardware, Note: "driven end to end against a real LVM2 2.03 on Ubuntu " +

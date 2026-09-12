@@ -75,6 +75,13 @@ filesystem with no quotas on it -- a believable answer, and the wrong
 one. A report that was never produced is now told apart from a report
 with nothing in it.
 
+Both are now driven against a real filesystem with real quotas rather
+than reasoned about. One thing that came out of doing so is worth knowing
+before relying on it: FreeBSD records "this filesystem has quotas" as a
+single fact covering both users and groups, so switching off only one of
+the two leaves the answer unchanged. Asking whether quotas are on cannot
+confirm that switching one kind off took effect.
+
 ### A tab where Salt refuses one is now refused here too
 
 Five of the twenty documents halite read that Salt would not load were

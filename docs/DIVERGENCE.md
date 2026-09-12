@@ -6301,12 +6301,36 @@ no look, and that is now an error carrying the tool's own words. A
 banner with no rows under it is left alone, because a filesystem with
 quotas and nobody over a limit is a real and common answer.
 
-**What is proven and what is not.** Both defects have unit tests, and
-each was confirmed by breaking the fix on purpose and watching the test
-fail. `live_quota_ufs_test.go` drives the rest -- `edquota -e` and the
-fixed-width parser -- against a real UFS filesystem on a memory disk,
-and **it is gated on root and has not yet been run**. Until it has, the
-argument vector is still an argument vector.
+**What is proven.** Both defects have unit tests, each confirmed by
+breaking the fix on purpose and watching the test fail.
+`live_quota_ufs_test.go` then drove the rest against a real UFS
+filesystem on a 64 MiB memory disk, on this fleet's own FreeBSD 15.1
+host. `edquota -e` sets four distinct limits in four positions and the
+fixed-width parser reads all four back; transposing two of them on
+purpose produced exactly the failure the assertion promises. The second
+application is idempotent. And a real kernel prints the string
+sys/mount.h spells:
+
+```
+/dev/md0 on /tmp/.../mnt (ufs, local, with quotas, soft-updates)
+```
+
+**The live run also corrected the test that was written to check it**,
+which is the more useful half. That test switched user quotas off and
+expected the mount flag to clear. It does not: MNT_QUOTA is one bit for
+the whole filesystem, so it stays set while group quotas are still on.
+The limitation had been written into `get_mode`'s own `comment` an hour
+earlier by the same hand that then wrote an assertion contradicting it.
+
+It is an assertion now rather than a sentence, because it changes what a
+caller can do: **on a BSD, `quota.get_mode` cannot confirm that
+`quota.off` for a single kind took effect.** The test reads all three
+states -- both kinds on, one off, both off -- and the middle one is the
+one that would have gone unnoticed.
+
+What is still not covered: `quota.on`/`quota.off` against `-a`, and
+FreeBSD's alternative quota file locations, which fstab can override and
+this leg leaves at their defaults.
 
 That leg writes to `/etc/fstab`, and deliberately. FreeBSD's `repquota`,
 `quotacheck` and `quotaon` all resolve their filesystem argument through
