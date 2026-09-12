@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -247,9 +248,8 @@ func (o *Options) hasBinary(ctx context.Context, t roster.Target, remote string)
 // would like.
 func (o *Options) push(ctx context.Context, t roster.Target, binary, remote string) error {
 	dir := t.ThinDir
-	if _, stderr, err := o.script(ctx, t,
-		"mkdir -p "+shellQuote(dir)+" && chmod 700 "+shellQuote(dir)); err != nil {
-		return fmt.Errorf("%s: preparing %s: %w", t.ID, dir, enrich(err, stderr))
+	if err := o.prepare(ctx, t, dir); err != nil {
+		return err
 	}
 
 	staging := remote + ".partial"
@@ -287,6 +287,71 @@ func (o *Options) push(ctx context.Context, t roster.Target, binary, remote stri
 		return fmt.Errorf("%s: installing the binary: %w", t.ID, enrich(err, stderr))
 	}
 	return nil
+}
+
+// prepareScript is what the target runs. Separated so that a test can
+// run it through a real /bin/sh against a real directory: the shell is
+// the thing being programmed here, and a script checked only against
+// what its author meant is the mistake DIVERGENCE 5.31 is about.
+func prepareScript(dir string) string {
+	quoted := shellQuote(dir)
+	probe := shellQuote(dir + "/.halite-probe")
+	// Written as one script over stdin, because a target's login shell
+	// is not always POSIX and this is already how everything else here
+	// reaches it. `rm` runs whatever happened, so a refused probe does
+	// not leave a file behind.
+	return "mkdir -p " + quoted + " && chmod 700 " + quoted + " || exit 1\n" +
+		"printf '#!/bin/sh\\nexit 0\\n' > " + probe + " && chmod 700 " + probe + " || exit 2\n" +
+		probe + "; status=$?\n" +
+		"rm -f " + probe + "\n" +
+		"exit $status\n"
+}
+
+// prepare makes the staging directory and proves the target can run
+// something out of it.
+//
+// `mkdir -p` succeeding says the directory exists. It does not say this
+// account can use it, and the dimension that decides an agentless run is
+// execution: a host hardened to a benchmark commonly mounts `/var/tmp`
+// `noexec`, which is where SPEC 21.1's cache lives by default.
+//
+// Every step up to the last one succeeds on such a host. The directory
+// is made, the binary copies, its digest verifies, it is installed under
+// its cached name -- and then it does not run, and what the operator is
+// given is "Permission denied" about a file that was just installed
+// successfully. So the probe runs here, once, where the answer can name
+// the directory and the likely reason.
+//
+// It is the check `OpenNodeCache` already makes for itself on the hub,
+// asked about execution rather than about writing.
+func (o *Options) prepare(ctx context.Context, t roster.Target, dir string) error {
+	_, stderr, err := o.script(ctx, t, prepareScript(dir))
+	if err == nil {
+		return nil
+	}
+	switch exitStatus(err) {
+	case 1:
+		return fmt.Errorf("%s: %s could not be created: %w", t.ID, dir, enrich(err, stderr))
+	case 2:
+		return fmt.Errorf("%s: nothing could be written to %s: %w", t.ID, dir, enrich(err, stderr))
+	}
+	// Anything else is the probe itself refusing to run, which is what
+	// a `noexec` mount looks like from here: 126 from a shell, or 1
+	// from an `execve` that never happened.
+	return fmt.Errorf("%s: %s holds the pushed binary and will not run it. "+
+		"A filesystem mounted `noexec` is the usual reason, and hardening benchmarks "+
+		"ask for exactly that on /var/tmp and /tmp. Set `thin_dir` in the roster to a "+
+		"directory this account may execute from: %w", t.ID, dir, enrich(err, stderr))
+}
+
+// exitStatus reports a command's exit status, or -1 when it did not run
+// far enough to have one.
+func exitStatus(err error) int {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode()
+	}
+	return -1
 }
 
 // remoteDigest asks the target for the binary's SHA-256.

@@ -1454,16 +1454,24 @@ tool nobody has run against it (DIVERGENCE 5.31).
       §1.
     - **Linux arm64 compiles and nothing more** (DIVERGENCE 4.5), and
       an estate of this kind is increasingly arm64.
-    - **A CIS Level 2 host will exercise a path that is written and
-      unexercised, and probably break it.** The agentless mode caches
-      the pushed binary under `/var/tmp/halite-thin` and executes it
-      there; CIS hardening commonly mounts `/var/tmp` `noexec`. The
-      failure would arrive as a bare permission error rather than as a
-      diagnosis. The fix is the one the node cache already makes for
-      itself: `OpenNodeCache` writes and removes a probe file rather
-      than trusting that a directory which exists is a directory this
-      process can use. The same question, asked about execution rather
-      than about writing.
+    - ~~**A CIS Level 2 host will exercise a path that is written and
+      unexercised, and probably break it.**~~ **The refusal is built**,
+      which is the half that needed no such host. The agentless mode
+      caches the pushed binary under `/var/tmp/halite-thin` and executes
+      it there, and hardening benchmarks commonly mount `/var/tmp`
+      `noexec`; every step up to the last one succeeds on such a host,
+      so what an operator used to get was "Permission denied" about a
+      binary installed successfully a moment earlier. The staging
+      directory is now proved rather than assumed: the same script that
+      creates it writes a probe, runs it, and removes it, and a target
+      that will not execute is refused by name with `noexec` and
+      `thin_dir` in the message. It is the check `OpenNodeCache` already
+      makes for itself, asked about execution rather than about writing,
+      and it costs no extra round trip. DIVERGENCE 5.60. **What still
+      needs the host is the demonstration**: the script is exercised
+      against a real `/bin/sh` and a real directory, and no `noexec`
+      mount has ever refused it, because making one needs root on a
+      hardened machine.
 
     The read half of all of this needs no root and writes nothing, so
     it is an afternoon rather than a project. The `-fips` artifacts, the

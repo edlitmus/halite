@@ -5868,6 +5868,52 @@ and specific --
 commands against a node in exactly that state, and it reproduces the
 original panic exactly when the contract is put back.
 
+### 5.60 The staging directory an agentless run cannot execute from
+
+SPEC 21.1 caches the pushed binary under `thin_dir`, which defaults to
+`/var/tmp/halite-thin`, and runs it from there. A host hardened to a CIS
+benchmark commonly mounts `/var/tmp` with `noexec`.
+
+**Every step of an agentless run up to the last one succeeds on such a
+host.** The directory is created, `chmod 700` applies, the binary
+copies, its SHA-256 verifies against the local one, and it is moved to
+its cached name. Then it does not run, and what the operator is handed
+is a bare "Permission denied" about a file that was installed
+successfully a moment earlier, or the run's own "answered without a
+framed return; the binary may not have run".
+
+`mkdir -p` succeeding says the directory exists. It does not say this
+account can use it, and the dimension that decides this path is
+execution. So the preparation script now proves it: it writes a two-line
+probe, runs it, removes it whatever happened, and reports three
+different failures apart --
+
+| Exit | Meaning |
+|---|---|
+| 1 | the directory could not be created |
+| 2 | nothing could be written into it |
+| anything else | the probe would not run, which is what `noexec` looks like from here |
+
+-- so a target that will not execute is refused by name, with `noexec`
+and `thin_dir` in the message, rather than diagnosed as a corrupt
+transfer. It is the check `OpenNodeCache` already makes for itself on
+the hub, asked about execution rather than about writing, and it rides
+in the round trip that was already being made.
+
+**What is established and what is not.** The script is run through a
+real `/bin/sh` against a real directory, including both of the failures
+that can be produced without root, because the shell is the thing being
+programmed and a script checked against what its author meant is what
+5.31 is about. Two things came out of running it rather than reading it:
+`chmod 700` on a directory the caller *owns* repairs it, so the
+unwritable case is only reachable when the directory belongs to somebody
+else; and the probe's own name being taken is the way to reach that
+branch locally. What has not happened is a `noexec` mount refusing it,
+which needs root on a hardened host and is plan.md's item 19.
+
+This package had no tests beyond framing before this. It has five now,
+and they are the first coverage the agentless transport has had.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
