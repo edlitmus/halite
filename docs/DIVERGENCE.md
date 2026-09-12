@@ -1857,7 +1857,7 @@ absent.
 
 | Layer | Status |
 |---|---|
-| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 330 of 402 agree, 36 disagree by design, 36 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
+| Conformance, YAML | **present.** All 402 cases of the suite's `data` branch run on every `go test`, vendored under `internal/yaml/testdata/yaml-test-suite/`. Each case is checked three ways: a document the suite calls invalid must be refused, one it calls valid must parse, and where the suite supplies `in.json` the parsed tree must match. Every disagreement has a row in a table giving its reason, enforced in both directions so a stale row fails as loudly as an unrecorded one. Standing: 331 of 402 agree, 40 disagree by design, 31 are gaps — see 5.4. The dialect SPEC 10.1 actually specifies is PyYAML's rather than the standard's, and that half is checked against PyYAML itself — see 5.8. |
 | Conformance, templates | **present.** Two corpora under `internal/template/testdata/jinja-corpus/`, run on every `go test`. 198 cases are extracted mechanically from Jinja's own pytest suite, carrying each case's environment options; disagreements have a row apiece with a reason, enforced in both directions. 123 more are written here for what Jinja's tests cannot cover: Salt's added filters, the strict undefined of 10.2.6, the limits of 10.2.8, and the refusals the subset owes an operator — those carry no deviation table, because a case that fails there is one this project got wrong. Standing: 157 of 198 agree, 26 are outside the subset, 15 are gaps — see 5.5. |
 | Differential against Salt | **partial.** `internal/saltdiff` compiles ten trees with both implementations and compares the low state: the chunk sequence first, then each chunk's arguments. It runs against Salt 3006.25 and 3008.2. The trees cover file and cmd states, a five-link requisite chain including a reversed requisite, Jinja loops and conditionals over pillar, include with extend, `names` expansion, explicit ordering, macros and filters, grain conditionals, and argument types end to end. Two deviations are recorded, each naming the Salt major it was observed under, because the majors disagree with each other about what `show_lowstate` projects. Standing: every tree agrees. It makes all three comparisons SPEC 31 asks for, with the third — the state results — compared as test-mode *predictions* rather than as the results of an apply, which still needs somewhere to apply a tree. See 5.7. |
 | Differential, version comparison | **partial.** `pkg.version_cmp` exists, with the Debian and RPM orderings implemented directly and FreeBSD's asked of pkg(8), since libpkg is its own specification. The FreeBSD half of the differential is real and runs here: 14 pairs go to `pkg version -t` and to halite and must agree, and the test skips loudly rather than passing quietly where pkg(8) is absent. The Debian and RPM halves need a Debian or RHEL host for `dpkg --compare-versions` and `rpmdev-vercmp`; until then they are tested against those projects' own published vectors, which are the cases the algorithms are known to get wrong. |
@@ -1908,11 +1908,13 @@ target parser, all clean. The corpora are committed under each package's
 Running the suite for the first time put the parser at 228 of 402, with
 140 defects. Twenty fixes took it to 328 and 40, and refusing a block
 collection on its key's line took it to 331 and 37. Measuring chomping
-against PyYAML took it to **330 and 36** — the gap count down by one and
+against PyYAML took it to 330 and 36 — the gap count down by one and
 the agreement count down by one as well, which 5.56 explains: the
 parser got more correct and the suite score got worse, because on two
 cases the suite and both reference implementations disagree and SPEC
-10.1 picks the implementations. Statement coverage of `internal/yaml`
+10.1 picks the implementations. Refusing a tab between a block indicator
+and what it introduces took it to **331 and 31**, which is 5.64.
+Statement coverage of `internal/yaml`
 rose to 96.1% along the way, but the suite is the thing actually
 measuring correctness here.
 
@@ -2011,7 +2013,7 @@ What remains, largest first:
 
 | Class | Cases | What it is |
 |---|---|---|
-| `gapLenient` | 20 | halite parses a document the suite requires to be an error. This was called the safe direction, and the PyYAML differential of 5.8 showed the framing was wrong: a document the reference implementation refuses is one Salt would not load, so accepting it means the tree loads here and means something nobody wrote. What is left is mostly tabs in odd positions, document markers inside quoted scalars, and under-indented continuations. |
+| `gapLenient` | 15 | halite parses a document the suite requires to be an error. This was called the safe direction, and the PyYAML differential of 5.8 showed the framing was wrong: a document the reference implementation refuses is one Salt would not load, so accepting it means the tree loads here and means something nobody wrote. It was 20; the tab cluster closed in 5.64. What is left is document markers inside quoted scalars, under-indented continuations, and anchors in positions the reference refuses. |
 | `gapFlow` | 4 | complex keys in flow, which SPEC 10.1.2 refuses on purpose but with a message about the wrong thing, and an explicit `? ` key inside flow. |
 | `gapAfterDocument`, `gapExplicitKey`, `gapOther`, `gapPlainScalar`, `gapValueOther` | 10 | five classes of two. |
 | `gapDirective`, `gapMappingKey` | 2 | singletons. |
@@ -2019,8 +2021,10 @@ What remains, largest first:
 There is no cluster left to take. From here it is one case at a time, and
 the value per fix is lower than anything else on the list in section 8.
 
-Of the 36 deliberate disagreements, 20 are tags outside the nine types, 7
-are tabs used for indentation, 6 are complex keys, 1 is a duplicate key,
+Of the 40 deliberate disagreements, 20 are tags outside the nine types,
+10 are tabs (7 used for indentation and 3 between an indicator and what
+it introduces, see 5.64), 6 are complex keys, 1 is a duplicate key, 1 is
+a tab inside a quoted scalar that PyYAML reads and the suite refuses,
 and 2 are the end-of-input cases of 5.56. The first four groups are SPEC
 10.1.2 working as specified and the last is SPEC 10.1's choice of
 dialect; all of them are excluded from the conformance figure, since
@@ -6164,6 +6168,54 @@ the `selinux` core module and with the RHEL host of plan.md item 14.
 15.5 promises it as a *state*, one that other states append to and that
 a `file.managed` renders, so it needs the compiler to carry accumulated
 data across chunks rather than a new file operation.
+
+### 5.64 Tabs: the suite has a subtle rule and PyYAML has a simple one
+
+Five of the twenty documents halite accepted that the reference refuses
+were tabs, and taking them turned out to be a choice between the two
+references rather than a defect to fix.
+
+**What each reference does.** The suite accepts a tab between a block
+indicator and what it introduces when a *scalar* follows -- `-\t-1` is
+one of its own cases -- and refuses it when a *collection* does, on the
+reasoning that the collection's indentation begins there. PyYAML refuses
+both, and nearly every other tab outside a quoted scalar with them.
+Measured over the suite's whole tab set, the two disagree on seven of
+twenty cases.
+
+SPEC 10.1 settles it. The dialect is PyYAML's, because that is what
+every existing Salt tree was written against, and a document Salt will
+not load must not load here and mean something nobody wrote. So the
+simple rule wins over the subtle one, and it is the rule an operator
+already gets from Salt.
+
+**What changed.** A tab between an indicator and its content is refused,
+and `?` followed by a tab is now the explicit key indicator rather than
+the first character of a plain scalar: `?\tkey:` had been read as a
+mapping whose key was the four characters `?`, tab, `k`, `e`..., which
+is a meaning invented for a document Salt refuses.
+
+Four of the twenty over-acceptances closed: `Y79Y/004`, `005`, `006`
+and `008`.
+
+**And one was never a defect.** `DK95/01` is a tab used as the
+indentation of a continuation line *inside* a double-quoted scalar. The
+suite refuses it, PyYAML reads it and folds the line like any other, and
+halite read it too -- while recording it as a leniency defect of its
+own. The two references had never been compared on it. It is
+reclassified as the dialect rather than a fault, which is the fifth of
+the twenty gone.
+
+**Three documents moved the other way**, two of them spec examples:
+`6BCT` (Separation Spaces) and `A2M4` (Indentation Indicators) both
+contain a tab after an indicator, and `Y79Y/010` is `-\t-1` itself.
+PyYAML refuses all three, so they are recorded as deliberate. It is the
+same trade 5.56 made: the score against one reference falls while
+agreement with the one SPEC names rises.
+
+The table stands at 331 agreeing, 40 deliberate and **31 gaps**, the
+over-acceptance set is down from 20 to 15, and conformance where halite
+claims to conform is 91.4%.
 
 ## 6. Everything else not started
 

@@ -231,7 +231,12 @@ func (p *parser) parseBlockValue(minIndent, parentIndent int, inline bool) (any,
 		}
 		return p.bind(np, v), nil
 
-	case p.peek() == '?' && (p.peekAt(1) == ' ' || p.peekAt(1) == '\n'):
+	// A tab counts here as well as a space: `?` followed by white space
+	// is the explicit key indicator whichever it is, and the tab is
+	// refused inside parseBlockMap with a message about the tab. Reading
+	// `?\t-` as a plain scalar instead, which is what leaving the tab
+	// out did, is a document PyYAML refuses being given a meaning.
+	case p.peek() == '?' && (p.peekAt(1) == ' ' || p.peekAt(1) == '\t' || p.peekAt(1) == '\n'):
 		if inline {
 			return nil, p.err("an explicit key cannot begin on the same line as the key it belongs to; " +
 				"put the `?` on the next line, indented under the key")

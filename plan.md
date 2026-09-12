@@ -921,11 +921,14 @@ Lowest priority, and all three suites pass with tables enforced in both
 directions, so nothing here is silently rotting. Re-measured, and
 unchanged.
 
-- **YAML (SPEC 10.1):** 402 cases, 330 agree, 36 deliberate, **36 gaps**.
-  The direction that matters: **20 of those gaps are documents halite
-  accepts that the reference implementation refuses**, all admitted
-  defects rather than design choices — a tree Salt would not load, loads
-  here. ~~One `gapChomping` case the suite itself calls "the most
+- **YAML (SPEC 10.1):** 402 cases, 331 agree, 40 deliberate, **31 gaps**.
+  The direction that matters: **15 of those gaps are documents halite
+  accepts that the reference implementation refuses** — a tree Salt
+  would not load, loads here. It was 20, and the five that went were
+  tabs: four the parser now refuses between a block indicator and what
+  it introduces, and one that turned out never to have been a defect at
+  all, because on that document the suite and PyYAML disagree and SPEC
+  10.1 picks PyYAML. DIVERGENCE 5.64. ~~One `gapChomping` case the suite itself calls "the most
   damaging gap in this table".~~ **Measured and closed, and it was not
   what the label said.** That case was an `!!binary` value the
   comparison could not represent; chomping itself had never been
@@ -1509,12 +1512,12 @@ tool nobody has run against it (DIVERGENCE 5.31).
 
 **Last**
 
-23. The YAML over-acceptance set — 20 documents halite reads that the
-    reference refuses, which is now the whole of what is left worth
-    taking there, the chomping case having turned out to be a
-    mismeasurement with a real defect behind it (§5, DIVERGENCE 5.56);
-    the six real template gaps; the regexcompat character-class false
-    positive.
+23. The YAML over-acceptance set — **15** documents halite reads that
+    the reference refuses, down from 20 (§5, DIVERGENCE 5.64). What is
+    left is document markers inside quoted scalars, under-indented
+    continuations, and anchors in positions the reference refuses; the
+    tab cluster is closed. Then the six real template gaps and the
+    regexcompat character-class false positive.
 
 ---
 
