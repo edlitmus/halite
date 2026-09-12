@@ -334,6 +334,14 @@ func (o *Options) prepare(ctx context.Context, t roster.Target, dir string) erro
 		return fmt.Errorf("%s: %s could not be created: %w", t.ID, dir, enrich(err, stderr))
 	case 2:
 		return fmt.Errorf("%s: nothing could be written to %s: %w", t.ID, dir, enrich(err, stderr))
+	case noStatus:
+		// The script never ran, so nothing has been learned about the
+		// directory. ssh could not be started, or was killed, or the
+		// context expired -- and calling any of that a `noexec` mount
+		// would be a confident answer to a question nobody asked. CI's
+		// Windows leg found this by failing to find `ssh` at all and
+		// being told its /var/tmp was mounted wrong.
+		return fmt.Errorf("%s: preparing %s: %w", t.ID, dir, enrich(err, stderr))
 	}
 	// Anything else is the probe itself refusing to run, which is what
 	// a `noexec` mount looks like from here: 126 from a shell, or 1
@@ -344,14 +352,17 @@ func (o *Options) prepare(ctx context.Context, t roster.Target, dir string) erro
 		"directory this account may execute from: %w", t.ID, dir, enrich(err, stderr))
 }
 
-// exitStatus reports a command's exit status, or -1 when it did not run
-// far enough to have one.
+// noStatus is what exitStatus reports for a command that never ran.
+const noStatus = -1
+
+// exitStatus reports a command's exit status, or noStatus when it did
+// not run far enough to have one.
 func exitStatus(err error) int {
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
 		return exit.ExitCode()
 	}
-	return -1
+	return noStatus
 }
 
 // remoteDigest asks the target for the binary's SHA-256.

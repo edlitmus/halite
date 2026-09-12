@@ -1,3 +1,14 @@
+//go:build unix
+
+// The tests here stand a POSIX shell in for the target, which is what
+// the script being tested talks to, so they build where there is one.
+// A Windows operator can drive an agentless run -- the target is the
+// unix machine, not the one running the command -- and what CI's
+// Windows leg found by running these anyway is in `prepare`: a failure
+// to start ssh at all was being reported as a filesystem mounted
+// `noexec`, which is a confident answer to a question nobody asked.
+// That defect is fixed and its test runs everywhere this file does.
+
 package sshexec
 
 import (
@@ -149,6 +160,25 @@ func TestATargetThatWillNotExecuteIsToldWhy(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal does not mention %q:\n%v", want, err)
 		}
+	}
+}
+
+// A target that could not be reached at all is a different answer
+// again. Nothing has been learned about the directory when the command
+// never ran, and saying `noexec` there is the mistake CI found.
+func TestATargetThatCouldNotBeReachedIsNotDiagnosed(t *testing.T) {
+	o := &Options{SSH: filepath.Join(t.TempDir(), "no-such-ssh")}
+	target := roster.Target{ID: "web1.example", Host: "web1.example", ThinDir: "/var/tmp/halite-thin"}
+
+	err := o.prepare(context.Background(), target, target.ThinDir)
+	if err == nil {
+		t.Fatal("a target whose ssh does not exist was accepted")
+	}
+	if strings.Contains(err.Error(), "noexec") {
+		t.Errorf("an ssh that never ran was diagnosed as a filesystem: %v", err)
+	}
+	if !strings.Contains(err.Error(), "preparing /var/tmp/halite-thin") {
+		t.Errorf("the error does not say what was being attempted: %v", err)
 	}
 }
 

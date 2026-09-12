@@ -5900,6 +5900,13 @@ transfer. It is the check `OpenNodeCache` already makes for itself on
 the hub, asked about execution rather than about writing, and it rides
 in the round trip that was already being made.
 
+**And a diagnosis that was too confident, which CI found.** The first
+version treated anything that was not exit 1 or 2 as "the probe would
+not run", including a command that never ran at all. The Windows leg
+could not find `ssh` and was told its `/var/tmp` was mounted `noexec`.
+A command with no exit status has established nothing about the
+directory, and now says so.
+
 **What is established and what is not.** The script is run through a
 real `/bin/sh` against a real directory, including both of the failures
 that can be produced without root, because the shell is the thing being
