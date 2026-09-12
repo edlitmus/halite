@@ -302,7 +302,7 @@ var moduleEvidence = map[string]exec.Evidence{
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
 		"through its API on every Windows run and converges against what it finds, but " +
 		"nothing has watched this module start, stop or re-type a service"},
-	"jail": {Level: exec.Captured, Note: "the shape of `jls --libxo=json` is checked " +
+	"jail": {Level: exec.Hardware, Note: "the shape of `jls --libxo=json` is checked " +
 		"against the real jls on CI's FreeBSD runner, and **the field names inside a jail " +
 		"entry are no longer assumed**: every key this module subscripts out of an entry is " +
 		"checked against the parameter list `jls -h` publishes, on a real FreeBSD 15.1 host. " +
@@ -310,9 +310,18 @@ var moduleEvidence = map[string]exec.Evidence{
 		"parameter and which no jls has ever printed, against a fixture that supplied " +
 		"`\"state\": \"ACTIVE\"` in the module's own spelling -- so every real host reported " +
 		"an empty state and every test agreed. State is now derived from `dying`, which is a " +
-		"real parameter. Still not demonstrated: **no jail has been started or stopped by this " +
-		"module**, so `jail.start`, `jail.stop` and the `jail.running` state are argument " +
-		"vectors and nothing has watched one take effect (DIVERGENCE 5.32)"},
+		"real parameter. **The mutating half is demonstrated too**: on the same host a " +
+		"jail was defined, started through `jail.start`, found in a raw `jls` rather than " +
+		"through this module's own reader, and stopped through `jail.stop`; and the " +
+		"`jail.running` state converged, reported no change on a second run and stopped it " +
+		"again. Both were checked by breaking them on purpose. That run found a third defect: " +
+		"`jail -e` prints each configured jail's **parameters**, not a list of names, and this " +
+		"module split the whole output on the separator and took every field as a name -- so " +
+		"`jail.running` answered \"is not defined in jail.conf\" for every jail that was in " +
+		"fact defined and **could never start one**. Invisible until now because the fleet's " +
+		"own host has no jails in jail.conf, where the empty answer looks correct " +
+		"(DIVERGENCE 5.32, 5.66, 5.70). Not covered: a jail with a network stack of its own, " +
+		"`jail.conf` includes and variables, and stopping a jail with processes still in it"},
 	"mount": {Level: exec.Captured, Note: "reads the real /proc/self/mounts and the real " +
 		"`mount` output on the platforms CI runs, and nothing has been mounted or " +
 		"unmounted by this module"},

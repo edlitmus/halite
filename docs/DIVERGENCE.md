@@ -6494,6 +6494,86 @@ safe. **A key containing a dot names a module and is checked**; a bare
 and cannot be, so it still returns a dispatch value unconditionally.
 Both spellings of a call to a module the node *does* have keep working.
 
+### 5.70 `jail -e` does not print a list of names, and `jail.running` could never start a jail
+
+Starting a real jail through the module -- which 5.66 left as the last
+undemonstrated half of `jail` -- found a third defect, and it is the
+worst of the three.
+
+**`jail -e` prints parameters, not names.** It prints one line per
+configured jail, and on each line that jail's parameters separated by the
+separator it was given, with the name carried as `name=`:
+
+```
+$ jail -f t.conf -e ,
+name=web,path=/tmp/web,persist
+name=db,path=/tmp/db,persist
+```
+
+`jailConfigured` split the whole output on the separator and took every
+field as a jail name, so for that configuration it answered
+`[name=web, path=/tmp/web, persist, name=db, ...]`, not one of which is a
+name. `jail.configured` returned that list. And `jail.running` looked for
+its jail in it, never found one, and reported:
+
+```
+halite_live_state is not defined in jail.conf, so there is nothing to
+start.
+```
+
+for a jail that was defined -- while printing the definition it had just
+read in the same sentence. **The state could not start any jail at all**,
+which makes the SPEC 15.5 state it implements inoperable rather than
+merely wrong.
+
+**Why nothing caught it.** This fleet's own FreeBSD host defines no jails
+in jail.conf: `jail -e` printed nothing, the function returned an empty
+list, and an empty list is exactly right for a host with no configured
+jails. The defect needed a *populated* jail.conf to become visible. The
+unit test supplied one -- in the module's own spelling, `web,mail,db`,
+a format `jail -e` has never produced. That is the third fixture in this
+module written from expectation (5.66 has the other two), and the second
+time in this ledger that a test and the code it tests agreed with each
+other and with nothing else.
+
+**The separator was unsafe as well.** `-e ,` is ambiguous, because a
+parameter's value may contain a comma without being quoted:
+
+```
+name=tricky,path="/tmp/a b,c",host.hostname=x,y,persist
+```
+
+`path` is quoted because it contains a space and `host.hostname` is not,
+so no rule recovers where one parameter ends and the next begins. The
+separator is ASCII unit separator now, which cannot appear in a jail.conf
+value -- the same refusal to guess that made `quota` read Linux through
+`-O csv` rather than its fixed-width report.
+
+A line with no `name=` is refused rather than skipped, because a list of
+configured jails that quietly omits one is worse than no list: a state
+would start a jail that is already running, or call a defined jail
+undefined, which is the exact shape this defect took.
+
+**What is now demonstrated.** A jail defined, started through
+`jail.start`, found in a raw `jls` rather than through this module's own
+reader -- deliberately, because a reader and a writer wrong in the same
+direction would agree with each other -- and stopped through
+`jail.stop`. The `jail.running` state converges, reports no change on a
+second application, and stops the jail when asked for `running: false`.
+Both were confirmed by breaking them on purpose.
+
+`jail` is `hardware`. Not covered: a jail with a network stack of its
+own, jail.conf includes and variables, and stopping a jail that still has
+processes in it.
+
+The live leg writes its definition to `/etc/jail.conf`, because
+`jailRun` runs `jail -c <name>` with no `-f` and a jail must be in the
+default configuration for the module to start it at all. What makes that
+safe is `jail_list`: jails start at boot from the names in that rc.conf
+variable rather than from everything jail.conf defines, so an entry left
+behind starts nothing. The leg refuses to run where `jail_list` is not
+empty, because that reasoning does not hold there.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -437,7 +437,7 @@ func jailConfigured(c *exec.Context, conf string) ([]string, error) {
 	if conf != "" {
 		argv = append(argv, "-f", conf)
 	}
-	argv = append(argv, "-e", ",")
+	argv = append(argv, "-e", jailListSeparator)
 	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
 		return nil, err
@@ -445,14 +445,94 @@ func jailConfigured(c *exec.Context, conf string) ([]string, error) {
 	if res.Code != 0 {
 		return nil, fmt.Errorf("jail -e: %s", firstLine(res.Stderr+res.Stdout))
 	}
-	var out []string
-	for _, name := range strings.Split(strings.TrimSpace(res.Stdout), ",") {
-		if name = strings.TrimSpace(name); name != "" {
-			out = append(out, name)
-		}
+	out, err := parseJailExhibit(res.Stdout)
+	if err != nil {
+		return nil, err
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// jailListSeparator is what `jail -e` is asked to put between
+// parameters.
+//
+// **Not a comma, which is what this asked for until it was run against a
+// jail.conf that defined something.** `-e` separates *parameters*, and a
+// parameter's value may contain a comma without being quoted:
+//
+//	$ jail -f t.conf -e ,
+//	name=tricky,path="/tmp/a b,c",host.hostname=x,y,persist
+//
+// `path` is quoted there because it has a space in it and
+// `host.hostname` is not, so no rule recovers where one parameter ends
+// and the next begins. ASCII unit separator cannot appear in a jail.conf
+// value, so with it the record is unambiguous. This is the same refusal
+// to guess that made `quota` read Linux through `-O csv`.
+const jailListSeparator = "\x1f"
+
+// parseJailExhibit reads the names out of `jail -e`.
+//
+// **`jail -e` does not print a list of names.** It prints one line per
+// configured jail, and on each line that jail's parameters separated by
+// the separator, with the name carried as the `name=` parameter:
+//
+//	name=web,path=/tmp/web,persist
+//	name=db,path=/tmp/db,persist
+//
+// This module split the whole output on the separator and took every
+// field as a jail name, so for the jail.conf above it answered
+// `[name=web, path=/tmp/web, persist, name=db, ...]` -- not one of which
+// is a name. `jail.configured` returned that, and `jail.running` looked
+// for its jail in it and never found one, so **the state reported "is
+// not defined in jail.conf, so there is nothing to start" for every jail
+// that was in fact defined, and could not start any jail at all**.
+//
+// Nothing caught it because the fleet's own host has no jails in
+// jail.conf: `jail -e` printed nothing, the function returned nothing,
+// and an empty list is exactly what a host with no configured jails
+// should produce. The defect needed a populated jail.conf to become
+// visible, and the tests supplied their own spelling instead.
+//
+// A line with no `name=` is refused rather than skipped. `jail -e` puts
+// the name first on every line it prints, so a line without one is a
+// format this reader does not understand, and a list of configured jails
+// that quietly omits one is worse than no list: a state would start a
+// jail that is already running, or report a defined jail as undefined.
+func parseJailExhibit(out string) ([]string, error) {
+	var names []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line == "" {
+			continue
+		}
+		name, ok := jailNameOf(line)
+		if !ok {
+			return nil, fmt.Errorf(
+				"`jail -e` printed a line with no `name=` parameter on it: %q. "+
+					"Every line it prints describes one configured jail and carries that "+
+					"jail's name, so this build cannot tell which jails are defined", line)
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// jailNameOf pulls the name parameter out of one `jail -e` line.
+func jailNameOf(line string) (string, bool) {
+	for _, param := range strings.Split(line, jailListSeparator) {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(param), "name=")
+		if !ok {
+			continue
+		}
+		// A name with a space or a separator in it comes back quoted,
+		// the way `path="/tmp/a b,c"` does.
+		if len(rest) >= 2 && strings.HasPrefix(rest, `"`) && strings.HasSuffix(rest, `"`) {
+			rest = rest[1 : len(rest)-1]
+		}
+		if rest != "" {
+			return rest, true
+		}
+	}
+	return "", false
 }
 
 // jailRun starts or stops a jail through `jail` itself.

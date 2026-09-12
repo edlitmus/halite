@@ -51,6 +51,16 @@ scan did not know about character classes, so `[(?=]` -- three ordinary
 characters -- was refused as a lookahead. Nothing in the estate's tree
 had tripped it.
 
+### A jail state that could never start a jail
+
+`jail.running` reported that a jail was "not defined in jail.conf" for
+every jail that was defined, and so could not start any of them. It read
+the list of configured jails from a command that prints each jail's
+settings rather than its name, and matched against the settings.
+
+Starting and stopping jails, and the state that does it, are now driven
+against a real jail on a real host rather than reasoned about.
+
 ### A jail's state was always blank
 
 `jail.list` reported a state read from a field that `jls` has never
