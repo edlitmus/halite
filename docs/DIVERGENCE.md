@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **76 execution modules / 519 functions** and **44 state
+The build ships **77 execution modules / 526 functions** and **44 state
 modules / 119 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -477,7 +477,7 @@ different reason is given.
 | `logrotate` | not implemented | 0 | |
 | `nfs` | not implemented | 0 | |
 | `pkgrepo` | implemented | 4 | list_repos, get_repo, mod_repo, del_repo; virtual, with providers for apt, dnf/yum and Chocolatey 
-| `ps` | not implemented | 0 | process enumeration is per-platform; FreeBSD needs `kvm` or `sysctl kern.proc` |
+| `ps` | implemented | 7 | reads through the system `ps`, and FreeBSD's own libxo JSON where there is one; `kvm` is C and `sysctl kern.proc` needs golang.org/x/sys, so neither was reachable under SPEC 4.2. `pkill` refuses a pattern matching nothing, because that is a misspelling far more often than a tidy machine |
 | `reboot` | not implemented | 0 | |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
 | `selinux` | not implemented | 0 | Linux only; no host to verify on |
@@ -5920,6 +5920,84 @@ which needs root on a hardened host and is plan.md's item 19.
 
 This package had no tests beyond framing before this. It has five now,
 and they are the first coverage the agentless transport has had.
+
+### 5.61 `ps`: the process table, without a C library
+
+SPEC 15.2 names `ps` and this ledger recorded it as not implemented with
+the reason "process enumeration is per-platform; FreeBSD needs `kvm` or
+`sysctl kern.proc`". Both halves of that were true and neither was
+reachable: `libkvm` is C, and `sysctl kern.proc` from Go needs cgo or
+golang.org/x/sys, which SPEC 4.2 rules out. Linux's `/proc` could have
+been read directly and no other platform has one, so a reader written
+that way would have been a Linux module wearing a portable name.
+
+So it asks `ps`, the program every unix has, with the column names POSIX
+specifies. On FreeBSD it asks for libxo JSON instead, which is the `jls`
+decision of 5.32 for the same reason 5.31 gives: parsing a
+human-aligned table where a structured interface exists is choosing the
+surface that bit `pf`. Elsewhere the columns are requested explicitly
+and the command is taken as everything after the eighth field, because
+it is the only column that can hold a space.
+
+Seven functions, under Salt's names so an existing tree keeps working:
+`pid_list`, `proc_info`, `pgrep`, `psaux`, `top`, `kill_pid`, `pkill`.
+
+Three decisions worth recording:
+
+- **`proc_info` refuses a process that is not there** rather than
+  answering with an empty mapping. A tree acting on a pid it read
+  somewhere else needs to tell "gone" from "here with nothing to say".
+- **`pkill` refuses a pattern that matches nothing.** A pattern matching
+  no process is a misspelling far more often than a tidy machine, and
+  reporting success is how a tree comes to believe it stopped something
+  it never named. `pgrep` is how to ask without acting.
+- **A signal this build does not know is refused rather than passed
+  through.** `kill -0` and `kill -9` differ by one character and one of
+  them is a question. The set is the signals every unix spells the same;
+  `SIGINFO` would work on a BSD and fail on Linux, at the moment it was
+  wanted.
+
+No Windows: `ps` is a unix program, and a `ps` that quietly meant
+something else on one platform is worse than one that says it does not
+run there. No CPU or memory totals either -- `status.loadavg`,
+`status.meminfo` and `status.uptime` already answer those, and a second
+spelling of the same number is a thing to keep in agreement for no gain.
+
+**It is `hardware`, and cheaply.** The mutating half is demonstrated
+against processes the test starts and marks with a string that exists
+nowhere else on the machine: killed by pid, killed by pattern, and shown
+to change nothing in test mode. That needs no root and touches nothing
+an operator is using, which is the rule rather than a convenience -- a
+test that pattern-matches a live process table can kill something
+somebody is relying on. What is *not* covered is signalling another
+account's process, which is the case that needs privilege.
+
+Writing the test found the thing worth knowing about the process table:
+**a shell `exec`s the last command of a `-c` string**, so
+`sh -c "sleep 300 # marker"` leaves `sleep 300` in the table and the
+marker is gone with the shell that held it. The children here block on
+`read`, which is a builtin, so the shell stays with its own command line
+intact and there is no grandchild to leak.
+
+A second defect came from a unit test written against a shape Linux
+really prints: `[kworker/0:1]`. The name was taken as the last path
+element, which turns a kernel thread into `0:1` and makes
+`pgrep kworker` match nothing. The slash inside a bracketed name is part
+of the name; the brackets come off and the rest is left alone.
+
+One thing the first real run showed and no fixture would have: a
+process that rewrites its own argument vector has whatever it wrote
+there as its command, so `smbd: client [10.0.0.1] (smbd)` reports the
+name `smbd:`, colon included. That is what the machine says the process
+is called and it is left alone rather than tidied, because the tidying
+would be a guess about somebody else's title format. Matching is by
+regular expression, so a pattern of `smbd` finds it either way.
+
+**What this unblocks.** Two of SPEC 16.2's beacons, `proc` (a process
+appearing or disappearing) and `ps` (a process crossing a resource
+threshold), were registered as pending "a later phase, with a portable
+reader for it". That reader now exists, and a beacon in this build is a
+function over the node's own execution modules.
 
 ## 6. Everything else not started
 

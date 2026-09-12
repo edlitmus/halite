@@ -67,6 +67,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"dpkg-query and dpkg-deb, and `autoremove` really reclaimed a package in the " +
 		"fleet container (5.40). The Chocolatey provider has only been read from, and " +
 		"dnf, yum, zypper, apk, pacman and pkgng have not been driven at all"},
+	"ps": {Level: exec.Hardware, Note: "read and signalled against the real process table " +
+		"on every platform the suite runs: the FreeBSD libxo path and the column path " +
+		"the other unixes take are both parsed from what the machine's own `ps` printed, " +
+		"and the mutating half is demonstrated against processes the test started and " +
+		"marked, killed by pid and by pattern, with test mode shown to change nothing. " +
+		"No root is involved, which is the limit worth naming: signalling *another " +
+		"account's* process is the case that needs privilege and it has not been run"},
 	"zpool": {Level: exec.Hardware, Note: "driven against real pools on Linux with " +
 		"OpenZFS 2.2.2, which found two defects in reading `zpool list` that the " +
 		"fixtures had agreed with (DIVERGENCE 4.7). FreeBSD, where this project's ZFS " +

@@ -494,9 +494,10 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 18 of SPEC 15.2**: `acl`, `at`, `blockdev`, `data`,
-`kernelpkg`, `locale`, `logrotate`, `nfs`, `ps`, `reboot`, `selinux`,
-`shadow`, `state`, `sudo`, `swap`, `system`, `tls`, `tmpfs`.
+**Execution, 17 of SPEC 15.2**: `acl`, `at`, `blockdev`, `data`,
+`kernelpkg`, `locale`, `logrotate`, `nfs`, `reboot`, `selinux`,
+`shadow`, `state`, `sudo`, `swap`, `system`, `tls`, `tmpfs`. `ps` has
+shipped (DIVERGENCE 5.61).
 
 **State, 14 of SPEC 15.5**: `acl`, `at`, `iptables`, `kernelpkg`,
 `locale`, `logrotate`, `lvm`, `mac_defaults`, `nftables`, `pro`,
@@ -526,8 +527,14 @@ to block. §7 has the consequences.
    is refused rather than performed. A key is declared outright or
    scanned and checked against a declared fingerprint; Salt scans and
    accepts, which pins whatever answered the day the tree first ran.
-3. **`system`**, `reboot`, `ps`, `status` depth. What an operator reaches
-   for during an incident.
+3. **`system`**, `reboot`, ~~`ps`~~, `status` depth. What an operator
+   reaches for during an incident. **`ps` ships**: seven functions over
+   the system's own `ps`, FreeBSD's libxo JSON where there is one, and
+   both halves demonstrated on a real process table -- the mutating one
+   against processes the test starts and marks, so it needs no root and
+   touches nothing else on the machine. It also unblocks two of SPEC
+   16.2's beacons, `proc` and `ps`, which were pending "a later phase,
+   with a portable reader for it" and now have one. DIVERGENCE 5.61.
 4. **`selinux`**, `iptables`, `nftables`, `sudo`, `acl`. Platform-shaped
    and mostly Linux; see 2.3. `apparmor` is struck: it ships, with seven
    execution functions and the `apparmor.mode` state, and it closed
