@@ -76,10 +76,11 @@ func netplanLive(t *testing.T) *exec.Context {
 	if runtime.GOOS != "linux" {
 		t.Skipf("netplan is Linux's, and this is %s", runtime.GOOS)
 	}
-	// netplan is Debian's and Ubuntu's. A RHEL or Alpine node has none
-	// and never will, which is a skip; a Debian-family node that has
-	// none is the broken runner this used to assume.
-	requireToolOfFamilies(t, "netplan", c.Which("netplan") != "", "Debian")
+	// netplan is **Ubuntu's**, not the Debian family's. Debian 13 ships
+	// none -- it uses ifupdown or systemd-networkd -- so gating on the
+	// family failed four tests on a machine that was behaving normally.
+	// The os grain is what tells the two apart.
+	requireToolOfDistros(t, "netplan", c.Which("netplan") != "", "Ubuntu")
 	return c
 }
 

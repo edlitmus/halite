@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	oscmd "os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -331,20 +330,24 @@ func TestTheFreeBSDCancelMechanismWorksAgainstARealProcess(t *testing.T) {
 		t.Skip("this host has no sleep to stand in for a shutdown")
 	}
 
-	// A copy named `shutdown`, because rebootFindShutdown matches the
-	// command's own basename -- which is the point of it, and is why a
-	// stray `grep shutdown` does not count as a pending reboot.
-	dir := t.TempDir()
-	stand := filepath.Join(dir, "shutdown")
-	body, err := os.ReadFile(sleep)
-	if err != nil {
-		t.Skipf("%s could not be copied: %v", sleep, err)
-	}
-	if err := os.WriteFile(stand, body, 0o755); err != nil {
-		t.Fatalf("the stand-in could not be written: %v", err)
-	}
-
-	cmd := oscmd.Command(stand, "600")
+	// The real `sleep`, started under argv[0] "shutdown".
+	//
+	// `rebootFindShutdown` matches the command's own basename, which is
+	// the point of it -- a stray `grep shutdown` must not count as a
+	// pending reboot -- and `ps -o command=` prints argv, so setting
+	// argv[0] is enough and is what this does.
+	//
+	// The obvious alternative, copying the binary to a file named
+	// `shutdown`, is wrong on two of this project's own platforms.
+	// Alpine's coreutils and Ubuntu 26.04's are **multi-call binaries**:
+	// they dispatch on argv[0], so the copy exits immediately with
+	//
+	//	coreutils: unknown program 'shutdown'
+	//
+	// and the process this test needs to find is gone before it looks.
+	// That is exactly how this test failed on both, against a
+	// rebootPending that was working correctly.
+	cmd := &oscmd.Cmd{Path: sleep, Args: []string{"shutdown", "600"}}
 	if err := cmd.Start(); err != nil {
 		t.Skipf("the stand-in could not be started: %v", err)
 	}
@@ -357,6 +360,7 @@ func TestTheFreeBSDCancelMechanismWorksAgainstARealProcess(t *testing.T) {
 	// It has to be visible to the module's own reader, through the real
 	// `ps`, before anything is asserted about cancelling it.
 	var pending rebootPendingShutdown
+	var err error
 	for i := 0; i < 50; i++ {
 		if pending, err = rebootPending(c); err != nil {
 			t.Fatalf("rebootPending: %v", err)

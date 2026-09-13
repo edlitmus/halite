@@ -87,6 +87,25 @@ func apparmorLive(t *testing.T) *exec.Context {
 	// different machine rather than a broken one.
 	_, err := os.Stat(AppArmorEnabledPath)
 	requireToolOfFamilies(t, "AppArmor ("+AppArmorEnabledPath+")", err == nil, "Debian", "Suse")
+
+	// Present is not enabled, and that distinction is a real machine
+	// state rather than a broken one. **openSUSE Leap 16 builds AppArmor
+	// into its kernel and does not enable it** -- it defaults to SELinux
+	// -- so the file above exists, says `N`, and every test past this
+	// point was failing against a module that had correctly reported
+	// "built into this kernel and not enabled".
+	//
+	// There is nothing to drive on such a machine, so this skips, and
+	// says which node it skipped on. It is not narrowed to SUSE: a
+	// Debian node with AppArmor switched off is the same situation, and
+	// a skip naming an Ubuntu machine is itself worth reading.
+	enabled, err := os.ReadFile(AppArmorEnabledPath)
+	if err != nil || strings.TrimSpace(string(enabled)) != "Y" {
+		t.Skipf("AppArmor is built into this %s kernel and not enabled (%s reads %q); "+
+			"there is nothing here to drive",
+			liveOSName(t), AppArmorEnabledPath, strings.TrimSpace(string(enabled)))
+	}
+
 	if c.Which("apparmor_parser") == "" {
 		t.Fatal("apparmor_parser is not installed; it is in the `apparmor` package")
 	}

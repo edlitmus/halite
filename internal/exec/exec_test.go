@@ -3,6 +3,7 @@ package exec
 import (
 	"context"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -68,11 +69,20 @@ func TestUmaskReachesTheChild(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("a umask has no meaning on Windows; TestUmaskSaysSoWhereItHasNoMeaning covers that")
 	}
+	// Looked up rather than written down. `touch` is /usr/bin/touch on
+	// Debian and RHEL and /bin/touch on Alpine, where it is a symlink
+	// into a multi-call coreutils binary -- so the hard-coded path made
+	// this fail on Alpine with "not found" against a machine that has
+	// the tool.
+	touch, err := osexec.LookPath("touch")
+	if err != nil {
+		t.Skipf("this host has no touch: %v", err)
+	}
 	dir := t.TempDir()
 	target := filepath.Join(dir, "created")
 	r := &OSRunner{}
-	_, err := r.Run(context.Background(), Command{
-		Argv:  []string{"/usr/bin/touch", target},
+	_, err = r.Run(context.Background(), Command{
+		Argv:  []string{touch, target},
 		Umask: "077",
 	})
 	if err != nil {

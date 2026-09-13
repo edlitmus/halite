@@ -126,9 +126,26 @@ func TestLiveSudoPathSaysWhichRouteItTook(t *testing.T) {
 				"the reason the fallback exists: %v", comment)
 		}
 	case "convention":
-		if os.Geteuid() == 0 {
+		// As root the original sudo does report its own sudoers path, so
+		// falling back to convention there means something. sudo-rs does
+		// not report one at all -- it prints a single version line and
+		// nothing else -- so on a node running it, convention is the only
+		// answer available and the module is right to say so. Ubuntu
+		// 26.04 installs both packages and puts sudo-rs on PATH, which is
+		// how this test started failing on a machine behaving correctly.
+		version, verr := sudoVersion(c)
+		isSudoRS := false
+		if verr == nil {
+			s, _ := version.(string)
+			isSudoRS = strings.HasPrefix(s, "sudo-rs ")
+		}
+		if os.Geteuid() == 0 && !isSudoRS {
 			t.Errorf("running as root the path should come from sudo itself, not from "+
 				"convention: %v", comment)
+		}
+		if isSudoRS {
+			t.Logf("this node runs sudo-rs, which reports no sudoers path; convention is the "+
+				"only route and the comment says so: %v", comment)
 		}
 		if !strings.Contains(comment.(string), "not a statement about this node") {
 			t.Errorf("the fallback does not say it is one: %v", comment)

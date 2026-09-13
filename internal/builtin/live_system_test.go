@@ -498,6 +498,38 @@ func liveOSFamily(t *testing.T) string {
 	return s
 }
 
+// liveOSName is this node's `os` grain -- Ubuntu, Debian, CentOS Stream,
+// AlmaLinux, and so on. Where `liveOSFamily` groups Ubuntu and Debian
+// together, this tells them apart, which some tools need: netplan is
+// Ubuntu's and Debian does not ship it.
+func liveOSName(t *testing.T) string {
+	t.Helper()
+	g, _ := grains.Collect(grains.Options{})
+	if g == nil {
+		return ""
+	}
+	name, _ := g.GetString("os")
+	s, _ := name.(string)
+	return s
+}
+
+// requireToolOfDistros is requireToolOfFamilies one level finer, for a
+// tool that one distribution in a family ships and another does not.
+func requireToolOfDistros(t *testing.T, tool string, present bool, distros ...string) {
+	t.Helper()
+	if present {
+		return
+	}
+	os := liveOSName(t)
+	for _, d := range distros {
+		if os == d {
+			t.Fatalf("this is %s and it has no %s; HALITE_SYSTEM_LIVE says the tools are here", os, tool)
+		}
+	}
+	t.Skipf("%s is %s's and this node's os grain is %q; there is nothing here to drive",
+		tool, strings.Join(distros, " or "), os)
+}
+
 // requireToolOfFamilies decides whether a tool this node does not have
 // is a failure or a reason to skip.
 //
