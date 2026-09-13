@@ -82,9 +82,11 @@ func apparmorLive(t *testing.T) *exec.Context {
 	if runtime.GOOS != "linux" {
 		t.Skipf("AppArmor is a Linux LSM and this is %s", runtime.GOOS)
 	}
-	if _, err := os.Stat(AppArmorEnabledPath); err != nil {
-		t.Fatalf("this machine has no AppArmor (%s: %v); HALITE_SYSTEM_LIVE says it is available", AppArmorEnabledPath, err)
-	}
+	// AppArmor is the LSM Debian, Ubuntu and SUSE ship. RHEL ships
+	// SELinux instead and has no /sys/module/apparmor at all, which is a
+	// different machine rather than a broken one.
+	_, err := os.Stat(AppArmorEnabledPath)
+	requireToolOfFamilies(t, "AppArmor ("+AppArmorEnabledPath+")", err == nil, "Debian", "Suse")
 	if c.Which("apparmor_parser") == "" {
 		t.Fatal("apparmor_parser is not installed; it is in the `apparmor` package")
 	}

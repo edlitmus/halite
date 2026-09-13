@@ -1,8 +1,12 @@
 package builtin
 
 import (
+	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // The scheduling command is a table keyed on platform, checked from any
@@ -265,5 +269,58 @@ func TestThePSColumnsAreAskedForSeparately(t *testing.T) {
 	}
 	if !equalStrings(columns, []string{"pid=", "command="}) {
 		t.Errorf("%v asks for columns %v, want a separate -o for pid= and command=", argv, columns)
+	}
+}
+
+// Cancelling on a machine with nothing pending reports no change, and
+// runs no cancel command at all.
+//
+// # The exit status could not answer this, and was trusted anyway
+//
+// The Linux branch used to skip the "is anything pending" question and
+// read `shutdown -c`'s exit status instead. systemd exits **0 whether or
+// not there was anything to cancel**, so on a quiet machine this
+// returned `changed: true` with the comment "the pending shutdown was
+// cancelled" -- a state that would report converging work forever, and a
+// module claiming to have done something no one asked and nothing did.
+// It was found on a real AlmaLinux node, by the live test of the same
+// name, because no unit test covered the quiet case. This is that test.
+func TestCancellingWithNothingPendingReportsNoChange(t *testing.T) {
+	if runtime.GOOS != "linux" && runtime.GOOS != "freebsd" {
+		t.Skipf("reboot.cancel is built for linux and freebsd; this is %s", runtime.GOOS)
+	}
+
+	// A process table with no shutdown in it. `ps` is the only command
+	// that may run: reaching the cancel itself is the defect.
+	psKey := "ps -ax -o pid= -o command="
+	c := &exec.Context{
+		Runner: &exec.RecordingRunner{
+			Responses: map[string]exec.Result{
+				psKey: {Stdout: "  1 /sbin/init\n 42 /usr/bin/sshd\n"},
+			},
+		},
+		Lookup: func(name string) string { return "/usr/bin/" + name },
+	}
+
+	out, err := rebootCancel(c)
+	if err != nil {
+		t.Fatalf("cancelling nothing was an error: %v", err)
+	}
+	m, ok := out.(*value.Map)
+	if !ok {
+		t.Fatalf("rebootCancel returned %T", out)
+	}
+	if changed, _ := m.GetString("changed"); changed != false {
+		comment, _ := m.GetString("comment")
+		t.Errorf("changed = %v with nothing pending, comment %q; want false", changed, comment)
+	}
+
+	// And it never reached the cancel. On FreeBSD that command would be
+	// a `kill`; on Linux a `shutdown -c` whose exit status says nothing.
+	rec, _ := c.Runner.(*exec.RecordingRunner)
+	for _, ran := range rec.Ran {
+		if s := ran.String(); strings.Contains(s, "shutdown") || strings.Contains(s, "kill") {
+			t.Errorf("a cancel was run against a machine with nothing pending: %q", s)
+		}
 	}
 }

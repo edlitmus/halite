@@ -223,6 +223,32 @@ func TestLiveMdadmBuildsAnArrayARealMdadmReportsBack(t *testing.T) {
 		t.Error("a second add reported a change")
 	}
 
+	// Let the initial resync finish before asking whether save_config is
+	// idempotent.
+	//
+	// `mdadm --detail --scan` reports a `spares=` count, and that count
+	// is *transient*: a freshly created array reports one value while it
+	// is building and another once it has settled. Two calls seconds
+	// apart really did print
+	//
+	//	ARRAY /dev/md/halNNN metadata=1.2 spares=2 UUID=...
+	//	ARRAY /dev/md/halNNN metadata=1.2 spares=1 UUID=...
+	//
+	// so save_config wrote a different file each time and this check
+	// failed against a module that had done exactly what it was asked.
+	// The question it means to ask is whether saving twice over a
+	// *settled* array is a no-op.
+	//
+	// `mdadm --wait` blocks until the resync thread finishes and exits
+	// non-zero when there was nothing to wait for, which is not an
+	// error here.
+	if _, err := c.Run(exec.Command{
+		Argv:           []string{"mdadm", "--wait", rig.array},
+		IgnoreExitCode: true,
+	}); err != nil {
+		t.Fatalf("mdadm --wait %s could not be run: %v", rig.array, err)
+	}
+
 	// save_config keeps non-ARRAY lines and lists the array.
 	conf := filepath.Join(t.TempDir(), "mdadm.conf")
 	if err := os.WriteFile(conf, []byte("MAILADDR root\n"), 0o644); err != nil {

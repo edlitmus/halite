@@ -120,9 +120,29 @@ func liveSwapLinuxFile(t *testing.T, c *exec.Context) string {
 	if err != nil {
 		t.Skipf("the swap file could not be created: %v", err)
 	}
-	if err := f.Truncate(64 << 20); err != nil {
+	// Written rather than truncated, because a hole is not swap.
+	//
+	// `f.Truncate` makes a sparse file, and Linux's swapon refuses one
+	// outright -- it needs blocks it can address without asking the
+	// filesystem to allocate them under memory pressure:
+	//
+	//	swapon: .../halite-live-swap.img: skipping - it appears to
+	//	        have holes.
+	//
+	// FreeBSD's md-backed path does not care, which is why a sparse file
+	// served until this ran on a real AlmaLinux node. 64 MiB of zeroes
+	// in 1 MiB writes costs a fraction of a second.
+	const swapSize = 64 << 20
+	zeros := make([]byte, 1<<20)
+	for written := 0; written < swapSize; written += len(zeros) {
+		if _, err := f.Write(zeros); err != nil {
+			f.Close()
+			t.Skipf("the swap file could not be written: %v", err)
+		}
+	}
+	if err := f.Sync(); err != nil {
 		f.Close()
-		t.Skipf("the swap file could not be sized: %v", err)
+		t.Skipf("the swap file could not be flushed: %v", err)
 	}
 	if err := f.Close(); err != nil {
 		t.Skipf("the swap file could not be written: %v", err)

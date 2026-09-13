@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -394,25 +395,161 @@ func journaldListBootsFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	res, err := c.Run(exec.Command{
-		Argv:           []string{"journalctl", "-q", "--no-pager", "--list-boots", "-o", "json"},
+		Argv:           journaldListBootsArgv(),
 		IgnoreExitCode: true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("journalctl could not be run: %w", err)
 	}
-	text := strings.TrimSpace(res.Stdout)
+	return journaldParseBoots(res.Stdout)
+}
+
+// journaldListBootsArgv asks for the boot list, in UTC.
+//
+// **`--utc` is not a formatting preference, it is what makes the answer
+// parseable.** systemd before v250 ignores `-o json` here and prints a
+// human table whose timestamps carry the *local* zone abbreviation:
+//
+//	0 0509834583... Sun 2026-09-13 10:08:30 PDT—Sun 2026-09-13 10:32:57 PDT
+//
+// Go's time package parses an abbreviation it cannot resolve as offset
+// zero, silently, so reading that on a Pacific host would place every
+// boot seven hours from where it happened and nothing would report an
+// error. With `--utc` the same systemd prints `UTC`, which resolves
+// exactly. The flag has been in journalctl far longer than the JSON
+// output has, and it changes nothing for the versions that do emit JSON,
+// whose timestamps are epoch microseconds either way.
+func journaldListBootsArgv() []string {
+	return []string{"journalctl", "-q", "--no-pager", "--utc", "--list-boots", "-o", "json"}
+}
+
+// journaldParseBoots reads either shape `journalctl --list-boots` has.
+//
+// # There are two, and the old one does not announce itself
+//
+// JSON output for `--list-boots` arrived in systemd v250. Before that
+// `-o json` is **accepted and ignored**: journalctl exits 0 and prints
+// its ordinary table. So the failure is not an error from the tool, it
+// is a successful command whose output is not what the caller asked for,
+// and the only symptom was a JSON parse error naming a character:
+//
+//	`journalctl --list-boots -o json` did not parse:
+//	invalid character '0' after top-level value
+//
+// -- the '0' being the boot index in the table's first column.
+//
+// This is not a museum piece. systemd 239 is RHEL 8 and systemd 249 is
+// Ubuntu 22.04, and SPEC 27.1 puts both in tier 1, so `list_boots`
+// returned an error rather than a list on two supported platforms. Both
+// fixtures in the tests beside this were captured from real machines of
+// each kind.
+//
+// Both paths produce the same four keys -- index, boot_id, first_entry,
+// last_entry, the last two in epoch microseconds -- so a caller never
+// has to know which systemd answered.
+func journaldParseBoots(stdout string) ([]any, error) {
+	text := strings.TrimSpace(stdout)
 	if text == "" {
 		return []any{}, nil
 	}
-	var boots []any
-	if err := json.Unmarshal([]byte(text), &boots); err != nil {
-		return nil, fmt.Errorf("`journalctl --list-boots -o json` did not parse: %w", err)
+
+	// The modern shape. UseNumber keeps the microsecond counts as
+	// integers; a plain unmarshal into []any would make them float64 and
+	// the table path below would then disagree about the type of the
+	// same field.
+	if strings.HasPrefix(text, "[") {
+		dec := json.NewDecoder(strings.NewReader(text))
+		dec.UseNumber()
+		var boots []any
+		if err := dec.Decode(&boots); err != nil {
+			return nil, fmt.Errorf("`%s` did not parse: %w",
+				strings.Join(journaldListBootsArgv(), " "), err)
+		}
+		out := make([]any, len(boots))
+		for i, b := range boots {
+			out[i] = value.FromJSON(b)
+		}
+		return out, nil
 	}
-	out := make([]any, len(boots))
-	for i, b := range boots {
-		out[i] = value.FromJSON(b)
+
+	return journaldParseBootTable(text)
+}
+
+// journaldBootTableTime is how systemd before v250 spells a boot's first
+// and last entry, once `--utc` has settled the zone.
+const journaldBootTableTime = "Mon 2006-01-02 15:04:05 MST"
+
+// journaldParseBootTable reads the pre-v250 table.
+//
+// One boot per line: index, boot id, then the first and last entry
+// separated by an em dash. The index is signed -- the current boot is 0
+// and earlier ones count backwards -- and it is also how a line is told
+// from anything else journalctl might print, since a line whose first
+// field is not a number is not a boot.
+func journaldParseBootTable(text string) ([]any, error) {
+	var out []any
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 {
+			continue
+		}
+		index, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		m := value.NewMap(4)
+		m.Set("index", index)
+		m.Set("boot_id", fields[1])
+		first, last := journaldSplitBootRange(strings.Join(fields[2:], " "))
+		m.Set("first_entry", journaldBootMicros(first))
+		m.Set("last_entry", journaldBootMicros(last))
+		out = append(out, m)
+	}
+	if out == nil {
+		return nil, fmt.Errorf(
+			"`%s` printed neither JSON nor a boot table this build can read: %s",
+			strings.Join(journaldListBootsArgv(), " "), firstLine(text))
 	}
 	return out, nil
+}
+
+// journaldSplitBootRange separates "<first>—<last>".
+//
+// The separator is an em dash on the versions this was captured from. A
+// plain hyphen is accepted too rather than assumed absent, because the
+// range is the part of the line this build is least sure of and half an
+// answer -- a first entry with no last -- is better than none.
+func journaldSplitBootRange(s string) (first, last string) {
+	for _, sep := range []string{"\u2014", "--"} {
+		if a, b, ok := strings.Cut(s, sep); ok {
+			return strings.TrimSpace(a), strings.TrimSpace(b)
+		}
+	}
+	return strings.TrimSpace(s), ""
+}
+
+// journaldBootMicros turns one table timestamp into epoch microseconds,
+// or nil.
+//
+// nil rather than a zero or a guess: a boot whose time this build cannot
+// read is a missing field, and a caller comparing it against anything
+// should see that rather than be handed the epoch.
+func journaldBootMicros(s string) any {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse(journaldBootTableTime, s)
+	if err != nil {
+		return nil
+	}
+	// An abbreviation Go cannot resolve parses as offset zero under a
+	// fabricated zone of that name, which is a wrong answer rather than
+	// an error. `--utc` is what stops that happening; this refuses
+	// anything that arrives without it anyway.
+	if name, offset := t.Zone(); offset != 0 || (name != "UTC" && name != "GMT") {
+		return nil
+	}
+	return t.UnixMicro()
 }
 
 func journaldDiskUsageFn(c *exec.Context, args *value.Map) (any, error) {

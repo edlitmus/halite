@@ -18,6 +18,59 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### What a RHEL machine found in an hour
+
+The first run of the suite on AlmaLinux — a platform the specification
+has always listed and no machine here had ever run — found six real
+defects. None of them could have been found by a test on the machines
+this project already had.
+
+**Reading the list of boots did not work on two supported platforms.**
+The module asked systemd for that list as JSON. Versions before 250
+accept the request, ignore it, and print a human table instead, so the
+answer was a parse error rather than a list. That is every RHEL 8 and
+every Ubuntu 22.04 node. Both shapes are read now, and the request is
+made in UTC — without that, the older format carries a local timezone
+abbreviation that would have been read as UTC and placed every boot
+several hours from where it happened, with nothing reporting an error.
+
+**Scheduling a job said it had failed when it had worked.** The `at`
+module recognised one wording of the tool's confirmation. RHEL's `at`
+uses another, in lower case, after a warning line. So the job was
+queued, the module reported failure, and the job stayed queued with the
+caller told it did not exist.
+
+**Listing that queue could not work on Linux at all.** `atq` prints the
+job number in the first column on Linux and the last on FreeBSD. The
+module knew only FreeBSD's layout, so on Linux it read the owner's name
+where it expected a number and every read failed — which also broke
+scheduling and removing a job by name, since both find it by listing.
+
+**Cancelling a reboot on a quiet machine reported success.** On systemd
+the cancel command exits successfully whether or not anything was
+pending, and that status was being trusted. A state built on it would
+have reported work on every run, forever. Both platforms now check
+whether anything is pending before acting, and say so plainly when
+nothing is.
+
+**RHEL's package manager had no name an operator could call.** The
+specification names `dnfpkg` and `yumpkg`; both were listed as not
+built, on the strength of a note saying the provider behind them did not
+handle packages. It does, and has been the provider every RHEL node
+uses. The note outlived the gap it described.
+
+Alongside those, the live tests themselves were Ubuntu-shaped: eleven of
+them failed on RHEL for having no AppArmor, no netplan and no dpkg,
+which is not a fault but a different operating system. They now say
+which platforms a tool belongs to and skip elsewhere, with the reason,
+while still failing on a machine that ought to have it. A test asserting
+that saving a RAID configuration twice changes nothing was asserting it
+while the array was still building, and one creating a swap file was
+making a sparse one, which Linux refuses.
+
+The suite now passes on AlmaLinux: thirty-nine live checks run, forty-six
+skip for platforms they do not apply to, none fail.
+
 ### Seven Linux distributions this project could not previously run on
 
 The specification names the platforms halite supports. Between the

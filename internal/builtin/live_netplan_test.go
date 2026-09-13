@@ -76,9 +76,10 @@ func netplanLive(t *testing.T) *exec.Context {
 	if runtime.GOOS != "linux" {
 		t.Skipf("netplan is Linux's, and this is %s", runtime.GOOS)
 	}
-	if c.Which("netplan") == "" {
-		t.Fatal("this machine has no netplan; HALITE_SYSTEM_LIVE says it is available")
-	}
+	// netplan is Debian's and Ubuntu's. A RHEL or Alpine node has none
+	// and never will, which is a skip; a Debian-family node that has
+	// none is the broken runner this used to assume.
+	requireToolOfFamilies(t, "netplan", c.Which("netplan") != "", "Debian")
 	return c
 }
 

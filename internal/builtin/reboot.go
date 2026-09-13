@@ -472,30 +472,39 @@ func rebootBlocked() string {
 // converge, and the tool's own complaint that there was nothing to
 // cancel is the answer to a different question.
 //
-// FreeBSD cannot be asked to cancel without a pid -- see
-// rebootCancelArgv for what its one cancel-shaped flag really does -- so
-// the process table is read first there, and a quiet machine is answered
-// without running anything at all. Linux is not asked the same question
-// first: a shutdown scheduled under systemd is held by systemd rather
-// than by a resident `shutdown` process, so an empty process table would
-// prove nothing about whether one is pending. There `shutdown -c` is
-// asked directly and its exit status is the answer.
+// Whether anything is pending is established first, on every platform,
+// and a quiet machine is answered without running anything at all.
+//
+// FreeBSD has no choice: there is no cancel flag, so a pid is needed to
+// build a command -- see rebootCancelArgv for what its one
+// cancel-shaped flag really does. Linux could once have leaned on
+// `shutdown -c`'s exit status instead, and did, wrongly: systemd exits 0
+// whether or not there was anything to cancel, so every call reported a
+// change. Both now ask the same question the same way.
 func rebootCancel(c *exec.Context) (any, error) {
-	var pid int64
-	if runtime.GOOS == "freebsd" {
-		pending, err := rebootPending(c)
-		if err != nil {
-			return nil, err
-		}
-		if !pending.found {
-			out := value.NewMap(2)
-			out.Set("changed", false)
-			out.Set("comment", "no shutdown is pending on this node, so there was nothing to cancel")
-			return out, nil
-		}
-		pid = pending.pid
+	// Asked on both platforms, not just FreeBSD.
+	//
+	// FreeBSD needs the pid to build a command at all. Linux was left to
+	// `shutdown -c` and its exit status, on the reasoning that systemd
+	// holds a schedule no process shows -- and that was wrong twice
+	// over. systemd's `shutdown -c` exits **0 when nothing is pending**,
+	// so the status answers nothing: on a quiet AlmaLinux node this
+	// reported `changed: true` and "the pending shutdown was cancelled",
+	// having cancelled nothing. And the reason Linux was excused no
+	// longer holds, because `rebootPending` reads
+	// /run/systemd/shutdown/scheduled now and can see exactly the
+	// schedule the process table does not.
+	pending, err := rebootPending(c)
+	if err != nil {
+		return nil, err
 	}
-	argv, err := rebootCancelArgv(runtime.GOOS, pid)
+	if !pending.found {
+		out := value.NewMap(2)
+		out.Set("changed", false)
+		out.Set("comment", "no shutdown is pending on this node, so there was nothing to cancel")
+		return out, nil
+	}
+	argv, err := rebootCancelArgv(runtime.GOOS, pending.pid)
 	if err != nil {
 		return nil, err
 	}
@@ -513,12 +522,15 @@ func rebootCancel(c *exec.Context) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("shutdown could not be run on this node: %w", err)
 	}
+	// Something was pending when this started, so a non-zero status here
+	// is a cancel that failed rather than a quiet machine -- which is
+	// the distinction the exit status alone could not make.
 	said := strings.TrimSpace(res.Stderr + res.Stdout)
 	out.Set("changed", res.Code == 0)
 	if res.Code == 0 {
 		out.Set("comment", "the pending shutdown was cancelled")
 	} else {
-		out.Set("comment", "there was no shutdown to cancel: "+firstLine(said))
+		out.Set("comment", "a shutdown is pending and cancelling it failed: "+firstLine(said))
 	}
 	return out, nil
 }

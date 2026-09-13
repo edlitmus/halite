@@ -34,9 +34,10 @@ func pkgLive(t *testing.T) *exec.Context {
 	if runtime.GOOS != "linux" {
 		t.Skipf("the apt provider is Linux's, and this is %s", runtime.GOOS)
 	}
-	if c.Which("dpkg-query") == "" || c.Which("apt-get") == "" {
-		t.Fatal("HALITE_SYSTEM_LIVE is set and there is no apt/dpkg; this is not a Debian-family node")
-	}
+	// The apt provider is Debian's. Everything else has a different
+	// package manager, which `pkg` selects and these tests do not drive.
+	requireToolOfFamilies(t, "apt and dpkg",
+		c.Which("dpkg-query") != "" && c.Which("apt-get") != "", "Debian")
 	return c
 }
 

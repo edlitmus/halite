@@ -556,7 +556,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-40 of 65 present — the rows below total 25 absent.
+42 of 65 present — the rows below total 23 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -574,12 +574,23 @@ rather than a second set of functions, which is what keeps the counts
 honest: `pkg` has eighteen functions whether or not four platforms can
 each reach them under another name.
 
-Only the names whose provider exists are aliased. `zypperpkg` and
-`dnfpkg` stay pending, because SUSE has no provider here and the dnf one
-covers repositories but not packages; aliasing either would turn "not
-built" into "built, and fails when you call it", which is the worse of
-the two answers. `sys.list_aliases` reports the table and says which of
-them this node can use.
+Only the names whose provider exists are aliased. `zypperpkg` stays
+pending, because SUSE has no provider here, and aliasing it would turn
+"not built" into "built, and fails when you call it", which is the worse
+of the two answers. `sys.list_aliases` reports the table and says which
+of them this node can use.
+
+`dnfpkg` and `yumpkg` were pending on the same grounds and should not
+have been. The reason given was that the dnf provider "covers
+repositories but not packages"; it implements ListPkgs, Install, Remove,
+LatestVersion and RefreshDB, and `pkg` has been selecting it on RHEL
+nodes throughout. The sentence outlived the gap it described. What found
+it was the first run on a real AlmaLinux machine (5.74), where an alias
+test failed with "0 aliases matched this node's provider dnfpkg" — a
+node whose package manager no SPEC 15.3 name could reach. There is still
+no `apkpkg`: Alpine has a working provider, but 15.3's table has no
+Alpine row, and inventing the name here would be this build deciding a
+specification it implements.
 
 Of the nineteen that are modules in their own right, four are the
 Windows ones, and they arrived because a Windows host became available:
@@ -630,7 +641,7 @@ specification cannot be quietly missed.
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
-| RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
+| RHEL family | `yumpkg` and `dnfpkg` (aliases) | `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, `mac_assistive`, and `mac_brew_pkg` and `mac_service` (aliases) | none |

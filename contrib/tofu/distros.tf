@@ -52,7 +52,7 @@ locals {
       family  = "rhel"
       # dnf, plus the SELinux userland that `selinux` will need to exist
       # before it can be written.
-      packages = "quota lvm2 mdadm nftables iptables-nft policycoreutils policycoreutils-python-utils selinux-policy-targeted firewalld rsync tar git curl e2fsprogs util-linux"
+      packages = "at quota lvm2 mdadm nftables iptables-nft policycoreutils policycoreutils-python-utils selinux-policy-targeted firewalld rsync tar git curl e2fsprogs util-linux"
       closes   = "dnf provider (never driven), selinux, firewalld; SPEC 27.1 tier 1"
     }
 
@@ -67,7 +67,7 @@ locals {
     alma8 = {
       os_name  = "AlmaLinux x64"
       family   = "rhel"
-      packages = "quota lvm2 mdadm nftables iptables policycoreutils policycoreutils-python-utils selinux-policy-targeted firewalld rsync tar git curl e2fsprogs util-linux"
+      packages = "at quota lvm2 mdadm nftables iptables policycoreutils policycoreutils-python-utils selinux-policy-targeted firewalld rsync tar git curl e2fsprogs util-linux"
       closes   = "yum-era RHEL 8, dnf provider on the older line; SPEC 27.1 tier 1"
     }
 
@@ -77,7 +77,7 @@ locals {
       # musl and OpenRC. `quota-tools` rather than `quota`, which is one
       # of the reasons the bootstrap installs package by package and
       # records what it could not find.
-      packages = "quota-tools lvm2 mdadm iptables nftables rsync tar git curl e2fsprogs util-linux bash"
+      packages = "at quota-tools lvm2 mdadm iptables nftables rsync tar git curl e2fsprogs util-linux bash"
       closes   = "apk provider (never driven), the non-systemd service path; SPEC 27.1 tier 2"
     }
 
@@ -87,28 +87,28 @@ locals {
       # SPEC 27.1 names SUSE 15; Vultr carries Leap 16, which is the
       # current one. The zypper provider does not exist yet, so this row
       # is here to be written against rather than to verify anything.
-      packages = "quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
+      packages = "at quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
       closes   = "zypper (not yet implemented); SPEC 27.1 tier 2"
     }
 
     debian13 = {
       os_name  = "Debian 13 x64 (trixie)"
       family   = "debian"
-      packages = "quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
+      packages = "at quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
       closes   = "Debian 13; SPEC 27.1 tier 1"
     }
 
     ubuntu2204 = {
       os_name  = "Ubuntu 22.04 LTS x64"
       family   = "debian"
-      packages = "quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
+      packages = "at quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
       closes   = "Ubuntu 22.04, the oldest tier 1 Ubuntu; SPEC 27.1 tier 1"
     }
 
     ubuntu2604 = {
       os_name  = "Ubuntu 26.04 LTS x64"
       family   = "debian"
-      packages = "quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
+      packages = "at quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
       closes   = "Ubuntu 26.04, the newest tier 1 Ubuntu; SPEC 27.1 tier 1"
     }
   }

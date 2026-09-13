@@ -33,6 +33,7 @@ table and says which of them the node in hand can use.
 | Name | Resolves to | Provider |
 |---|---|---|
 | `aptpkg` | `pkg` | aptpkg |
+| `dnfpkg` | `pkg` | dnfpkg |
 | `freebsd_service` | `service` | freebsd_service |
 | `freebsd_sysctl` | `sysctl` | freebsd |
 | `freebsdpkg` | `pkg` | pkgng |
@@ -42,6 +43,7 @@ table and says which of them the node in hand can use.
 | `systemd_service` | `service` | systemd_service |
 | `ufw` | `firewall` | ufw |
 | `win_pkg` | `pkg` | chocolatey |
+| `yumpkg` | `pkg` | yumpkg |
 
 ## Execution modules
 
