@@ -197,7 +197,28 @@ func stateSucceeded(r states.Result) bool {
 	return r.Result != nil && *r.Result
 }
 
+// atRunsHere skips a test that has to go through the platform-gated
+// path, naming what still covers it elsewhere.
+//
+// `atFindByIdentifier` and the states reach `atCheckPlatform`, which
+// knows linux and freebsd and refuses the rest by name. So the three
+// tests below cannot run on a macOS or Windows runner, and they failed
+// there rather than skipping until this was added.
+//
+// What is *not* lost by skipping: the argument vectors are a table keyed
+// on goos, and the `TestAtScheduleArgv*` tests pass a goos explicitly
+// rather than reading the host's, so every row is checked from any
+// machine. That is the half a platform-specific mistake hides in. This
+// is the same split `quota` makes, for the same reason.
+func atRunsHere(t *testing.T) {
+	t.Helper()
+	if err := atCheckPlatform(runtime.GOOS); err != nil {
+		t.Skipf("the identifier path goes through the platform table: %v", err)
+	}
+}
+
 func TestAtFindByIdentifierMatchesTheMarkerLine(t *testing.T) {
+	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	showKey := (exec.Command{Argv: []string{"at", "-c", "5"}}).String()
 	c := atTestCtx(map[string]exec.Result{
@@ -214,6 +235,7 @@ func TestAtFindByIdentifierMatchesTheMarkerLine(t *testing.T) {
 }
 
 func TestAtFindByIdentifierReportsNotFoundRatherThanError(t *testing.T) {
+	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqSampleFixture}})
 	_, found, err := atFindByIdentifier(c, "no-such-identifier")
@@ -226,6 +248,7 @@ func TestAtFindByIdentifierReportsNotFoundRatherThanError(t *testing.T) {
 }
 
 func TestAtPresentSkipsWhenAlreadyQueued(t *testing.T) {
+	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	showKey := (exec.Command{Argv: []string{"at", "-c", "5"}}).String()
 	c := atTestCtx(map[string]exec.Result{
@@ -247,6 +270,7 @@ func TestAtPresentSkipsWhenAlreadyQueued(t *testing.T) {
 }
 
 func TestAtPresentSchedulesANewJobAndReportsItsNumber(t *testing.T) {
+	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	scheduleArgv, err := atScheduleArgv(runtime.GOOS, "", "now + 1 hour")
 	if err != nil {
@@ -281,6 +305,7 @@ func TestAtPresentRejectsAnEmptyTimespec(t *testing.T) {
 }
 
 func TestAtAbsentRemovesTheMatchingJob(t *testing.T) {
+	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	showKey := (exec.Command{Argv: []string{"at", "-c", "5"}}).String()
 	rmKey := (exec.Command{Argv: []string{"atrm", "5"}}).String()
@@ -308,6 +333,7 @@ func TestAtAbsentRemovesTheMatchingJob(t *testing.T) {
 }
 
 func TestAtAbsentIsTrueWhenNothingMatches(t *testing.T) {
+	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqSampleFixture}})
 	result, err := atAbsent(c, value.MapOf("name", "no-such-job"))
@@ -320,6 +346,7 @@ func TestAtAbsentIsTrueWhenNothingMatches(t *testing.T) {
 }
 
 func TestAtAtrmSkipsAJobThatIsNotQueued(t *testing.T) {
+	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqSampleFixture}})
 	out, err := atAtrmFn(c, value.MapOf("job", int64(999)))
@@ -345,6 +372,7 @@ func TestAtAtRejectsAnEmptyCommand(t *testing.T) {
 }
 
 func TestAtAtInTestModeSchedulesNothing(t *testing.T) {
+	atRunsHere(t)
 	c := atTestCtx(nil)
 	c.Test = true
 	out, err := atAtFn(c, value.MapOf("timespec", "now + 1 hour", "cmd", "backup.sh"))

@@ -54,6 +54,24 @@ func TestLiveACLRoundTripsAnNFSv4EntryOnARealFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// **The temporary directory is not necessarily ZFS**, and this test
+	// assumed it was. On the machine it was written on /tmp is ZFS and
+	// `getfacl` answers in NFSv4; on CI's FreeBSD runner /tmp is UFS and
+	// it answers in POSIX.1e, so the module refused -- correctly, and by
+	// name -- and the test read that refusal as a failure:
+	//
+	//	"user::rw-" is a POSIX.1e ACL entry; this build manages NFSv4
+	//	ACLs only
+	//
+	// Which family a path speaks is a property of the filesystem under
+	// it, not of the operating system, so it has to be asked rather than
+	// inferred from GOOS. The refusal itself is covered by its own test
+	// against a UFS filesystem built for the purpose.
+	if !liveACLIsNFSv4(t, c, path) {
+		t.Skipf("%s is on a filesystem whose ACLs are not NFSv4; this module manages those "+
+			"only, and TestLivePOSIXOneACLIsRefusedByNameAgainstARealUFSFilesystem covers "+
+			"the refusal", path)
+	}
 
 	set := value.MapOf("name", path, "tag", "user", "qualifier", me.Username, "perms", "rw", "type", "allow")
 	out, err := r.Exec.Call(c, "acl.set", set)
@@ -232,4 +250,33 @@ func TestLivePOSIXOneACLIsRefusedByNameAgainstARealUFSFilesystem(t *testing.T) {
 	if extended != true {
 		t.Errorf("a file with a non-trivial POSIX.1e ACL (a mask entry) read as trivial: %v", extended)
 	}
+}
+
+// liveACLIsNFSv4 asks the filesystem under a path which ACL family it
+// speaks.
+//
+// A POSIX.1e entry is three colon-separated fields -- `user::rw-` -- and
+// an NFSv4 one carries a type and a much longer permission set. Reading
+// the real `getfacl` is the only way to tell: the answer depends on the
+// filesystem, so two paths on the same host can differ.
+func liveACLIsNFSv4(t *testing.T, c *exec.Context, path string) bool {
+	t.Helper()
+	res, err := c.Run(exec.Command{Argv: []string{"getfacl", "-q", path}, IgnoreExitCode: true})
+	if err != nil || res.Code != 0 {
+		t.Logf("`getfacl -q %s` could not be read, so the family is unknown: %v", path, err)
+		return false
+	}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// An NFSv4 entry has four or more colon-separated fields; a
+		// POSIX.1e one has exactly three.
+		if strings.Count(line, ":") >= 3 {
+			return true
+		}
+		return false
+	}
+	return false
 }

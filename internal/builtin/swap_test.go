@@ -156,7 +156,27 @@ func TestSwapOnInTestModeRunsNoMutatingCommand(t *testing.T) {
 	}
 }
 
+// swapRunsHere skips a test that reaches the platform table.
+//
+// `swapOnFn` and `swapOffFn` build their argument vector from a table
+// keyed on goos that knows linux and freebsd, so on any other runner
+// they refuse for that reason rather than for the one being asserted --
+// and the two tests below were asserting the message about a missing
+// `swapon`. They failed on macOS and Windows rather than skipping until
+// this was added.
+//
+// Nothing is lost: `swapOnArgv` and `swapOffArgv` take a goos
+// explicitly, so every row of the table is checked from any machine,
+// which is where a platform-specific mistake would hide.
+func swapRunsHere(t *testing.T) {
+	t.Helper()
+	if _, err := swapOnArgv(runtime.GOOS, "/dev/null", 0); err != nil {
+		t.Skipf("this module's platform table does not cover %s: %v", runtime.GOOS, err)
+	}
+}
+
 func TestSwapOnRefusesWithoutTheTool(t *testing.T) {
+	swapRunsHere(t)
 	c := &exec.Context{Runner: &exec.RecordingRunner{}, Lookup: func(string) string { return "" }}
 	if _, err := swapOnFn(c, value.MapOf("name", swapTestPath)); err == nil || !strings.Contains(err.Error(), "swapon") {
 		t.Errorf("swapOnFn without swapon on the node = %v, want an error naming swapon", err)
@@ -223,6 +243,7 @@ func TestSwapOffRejectsAnEmptyName(t *testing.T) {
 }
 
 func TestSwapOffRefusesWithoutTheTool(t *testing.T) {
+	swapRunsHere(t)
 	c := &exec.Context{Runner: &exec.RecordingRunner{}, Lookup: func(string) string { return "" }}
 	if _, err := swapOffFn(c, value.MapOf("name", swapTestPath)); err == nil || !strings.Contains(err.Error(), "swapoff") {
 		t.Errorf("swapOffFn without swapoff on the node = %v, want an error naming swapoff", err)
