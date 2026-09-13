@@ -7102,6 +7102,92 @@ itself), the ARRAY line is gone, the MAILADDR line is not, and a second
 matter: that a failed stop zeroes nothing, and that test mode runs
 neither command.
 
+### 5.76 Four platforms, four assumptions: what the seven-host sweep found
+
+5.74 was one RHEL machine. This is the whole lab: alma8, rocky9,
+alpine, opensuse16, debian13, ubuntu2204 and ubuntu2604, every one of
+them a platform SPEC 27.1 names. Three passed. The other four each
+disproved a different assumption.
+
+**BusyBox's ps is a third flavour, not a dialect of the other two.**
+`psArgv` had two rows -- Linux's `-eww --no-headers -o` and BSD's
+`-axwwo` -- and Alpine's ps is neither. It is BusyBox's, whose entire
+usage is
+
+	ps [-o COL1,COL2=HEADER] [-T]
+
+with no `-e`, no `-ww`, no `--no-headers` and no BSD `-ax`. The Linux
+spelling fails on it outright with `ps: unrecognized option: w`, which
+took nine live tests with it. It also spells two columns differently --
+`stat` for `state`, `args` for `command` -- and **refuses `%cpu` and
+`%mem`**, by name:
+
+	ps: bad -o argument '%cpu', supported arguments: ...
+
+The module detects it by asking the tool rather than the distribution,
+since an Alpine carrying `procps-compat` is not this case and a Debian
+with busybox first on PATH is. The parser now reads against whichever
+column set was requested instead of a package-level constant.
+
+The two percentages come back **nil rather than zero**, because zero is
+a claim that a process is idle and this is the absence of a
+measurement. `ps.top by: cpu` refuses by name on such a node rather than
+returning the first few processes in arrival order and calling them the
+busiest; `by: memory` sorts on RSS, which BusyBox does report, and still
+works. This is the same rule 5.73's `reboot.required` follows in
+answering "this build cannot tell" rather than "no".
+
+The refactor was caught half-finished by this project's own FreeBSD live
+test: the libxo path stopped declaring its percentages known, and
+`TestLivePSTopAnswersInOrder` failed on beastie within the minute.
+
+**Ubuntu 26.04 ships sudo-rs.** Both packages are installed and the
+`sudo` an operator types resolves to `/usr/lib/cargo/bin/sudo`, whose
+`-V` prints one line and stops:
+
+	sudo-rs 0.2.13-0ubuntu1.2
+
+where the original prints `Sudo version 1.9.17p2` and a block of
+settings below it. `sudo.version` read only the original's wording and
+failed on a tier 1 platform for a machine with a perfectly good sudo.
+Both are read now, and the implementation stays in the string a caller
+gets: a bare `0.2.13` would read as a wildly old sudo to anything
+comparing versions, and the two projects' numbering has nothing to do
+with each other. sudo-rs also reports no sudoers path at all, so the
+`sudo.path` fallback to convention -- which already says it is a
+convention and not a statement about the node -- is the only answer
+available there, and the live test no longer demands otherwise.
+
+**netplan is Ubuntu's, not the Debian family's.** 5.74 gave the live
+gates an `os_family` to check, and `grains` deliberately groups Debian
+and Ubuntu together, so Debian 13 -- which ships no netplan, using
+ifupdown or systemd-networkd -- failed four tests for behaving normally.
+The gate reads the `os` grain now, which is the grain that tells them
+apart.
+
+**AppArmor can be compiled in and switched off.** openSUSE Leap 16
+builds it into the kernel and defaults to SELinux, so
+`/sys/module/apparmor/parameters/enabled` exists, reads `N`, and three
+tests failed against a module that had correctly reported "built into
+this kernel and is not enabled". Present is not enabled. The gate skips
+where it is off, on any family rather than just SUSE: a Debian node with
+AppArmor disabled is the same machine state, and a skip naming an Ubuntu
+host is itself worth reading.
+
+#### Two test-only faults, both about assuming a path
+
+`TestUmaskReachesTheChild` ran `/usr/bin/touch`, which on Alpine is
+`/bin/touch`. It looks the tool up now.
+
+And 5.73's own stand-in process -- a copy of `sleep` renamed `shutdown`,
+so that `rebootFindShutdown` would match its basename -- is wrong on two
+platforms here. Alpine's coreutils and Ubuntu 26.04's are **multi-call
+binaries**: they dispatch on `argv[0]`, so the copy exits immediately
+with `coreutils: unknown program 'shutdown'` and the process the test
+needs to find is gone before it looks. It sets `argv[0]` on the real
+binary instead, which is what `ps -o command=` prints anyway, and works
+on every flavour including BusyBox's.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

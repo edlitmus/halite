@@ -18,6 +18,46 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Seven machines, four wrong assumptions
+
+The first run of the suite across the whole test lab rather than one
+machine of it. Three of the seven passed. Each of the other four
+disproved something different the build had taken for granted.
+
+**Alpine's process listing tool is a different program.** It is
+BusyBox's, and the options every other Linux accepts are simply not
+there — the command failed outright, taking nine checks with it. It also
+cannot report the two percentage figures at all. The module now
+recognises it and reads what it does offer, and those percentages come
+back as *absent* rather than as zero: zero would be a claim that a
+process is idle, which is a different and wrong answer. Asking for the
+busiest processes by processor time is refused by name on such a
+machine, rather than returning an arbitrary few and calling them the
+busiest; by memory still works, because that figure is available.
+
+**Ubuntu 26.04 ships a different sudo.** It installs the Rust rewrite
+alongside the original and puts the rewrite first, and the rewrite
+reports its version in one line where the original prints a block. The
+version reader knew only the original's wording, so it failed on a
+machine with a perfectly good sudo. Both are read now, and which
+implementation answered stays visible to the caller, because the two
+projects' version numbers mean nothing to each other.
+
+**Netplan belongs to Ubuntu, not to the Debian family.** Debian 13 does
+not ship it, and the checks added last time grouped the two together, so
+four of them failed on a machine behaving normally.
+
+**AppArmor can be built into a kernel and switched off.** openSUSE does
+exactly that, defaulting to SELinux instead, so three checks failed
+against a module that had correctly reported it as present and not
+enabled.
+
+Two of the test harness's own faults surfaced too, both the same
+mistake: assuming where a program lives, and assuming a program can be
+renamed. On Alpine and Ubuntu 26.04 the basic command-line tools are a
+single binary that decides what to do from the name it was called by, so
+a copy under a new name refuses to run at all.
+
 ### Destroying a RAID array, and a test lab that tested one machine
 
 `mdadm.destroy` stops an array and wipes the identifying marks from its
