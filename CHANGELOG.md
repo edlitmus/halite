@@ -18,6 +18,44 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Seven Linux distributions this project could not previously run on
+
+The specification names the platforms halite supports. Between the
+hosted runners and the two development machines, the ones actually
+covered were Ubuntu 24.04, Windows, macOS, FreeBSD and a single arm64
+Linux. Everything else was a claim with no machine behind it, and two of
+those claims were worse than untested: the package providers for `dnf`
+and `apk` are written and had never once been run against the real tool.
+The SELinux module was absent from the build entirely, because there was
+nothing to write it against.
+
+`contrib/tofu` raises the missing machines on a cloud provider and
+destroys them again: the RHEL family, Alpine, openSUSE, and the Debian
+and Ubuntu releases a single runner does not cover. `make lab-up`,
+`make lab-test`, `make lab-down`. They are deliberately short-lived, so
+a full sweep across seven distributions costs a few cents and nothing is
+left running to drift or to bill.
+
+Two things it does not do, stated because a test lab that overstates its
+coverage is worse than none. There is **no arm64 machine**, because the
+provider sells none, so half of what the specification asks for at the
+top tier still rests on one host elsewhere. And **Amazon Linux is not
+offered off its own cloud**, so that platform remains untested anywhere.
+
+The machines report what they are rather than what they were expected to
+be. Package names differ between distributions in ways nobody here has
+verified by hand — the quota tools are one package name on Debian and
+another on Alpine — so the bootstrap installs them one at a time and
+records any name that did not resolve, instead of failing the boot. It
+records the operating system's own account of its version too, because
+one row of the table is an assumption about how the provider names its
+images. A machine that did not finish provisioning is refused rather
+than tested.
+
+Nothing has been run on it yet. The configuration is checked against the
+provider's real schema and every image name in it resolves against the
+live catalogue, but no instance has been raised.
+
 ### Rebooting a machine, and the flag that rebooted the wrong one
 
 `system` and `reboot` now ship, the last two core execution modules this

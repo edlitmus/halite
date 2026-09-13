@@ -68,7 +68,8 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
-	fleetcheck fleetcheck-image
+	fleetcheck fleetcheck-image \
+	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr
 
 all: build
 
@@ -721,3 +722,118 @@ racecheck: racecheck-image
 		-v halite-gomodcache:/gomodcache \
 		-w /src \
 		$(RACECHECK_IMAGE)
+
+
+# ---- The Vultr lab, SPEC 27.1's platforms that nothing here runs ----
+#
+# Seven Linux distributions this estate has no machine for -- the RHEL
+# family, Alpine, openSUSE, and the Debian and Ubuntu releases the single
+# ubuntu-24.04 runner does not cover. contrib/tofu/distros.tf says what
+# each row is for; contrib/tofu/README.md says what a run costs and what
+# it cannot do.
+#
+# They are **ephemeral**. `lab-up` raises them, `lab-test` drives them,
+# `lab-down` destroys them, and nothing is meant to survive between
+# sessions. `lab-down` is the important one: an instance nobody destroys
+# bills at its plan's monthly cap forever.
+TOFU      ?= tofu
+TOFU_DIR   = contrib/tofu
+LAB        = $(TOFU_DIR)/lab.sh
+
+# The address SSH is opened to. Vultr's firewall needs a CIDR, and the
+# one that should be in it is wherever this command is being run from --
+# not a value committed to a file, which is why variables.tf has no
+# default for it. Override for a fixed address:
+#
+#	make lab-up LAB_SSH_CIDR=203.0.113.7/32
+#
+# Left empty here and worked out inside the recipes rather than with
+# `!=`. `!=` is evaluated when the Makefile is *parsed*, so this would
+# call out to a public address service on every `make build`; and
+# `$(shell ...)` is not an option at all, because BSD make has none and
+# this project is developed on FreeBSD -- it would expand to nothing and
+# open the firewall to "/32".
+LAB_SSH_CIDR ?=
+
+# The rows to raise. Empty means every row of the matrix:
+#
+#	make lab-up LAB_DISTROS='["rocky9","alpine"]'
+LAB_DISTROS ?= []
+
+lab-distros:
+	@echo "rows of the matrix in $(TOFU_DIR)/distros.tf:"
+	@grep -oE '^    [a-z0-9]+ = \{' $(TOFU_DIR)/distros.tf | sed 's/ *= *{//;s/^ */  /'
+
+# A plan, which is also the only offline-ish check that the OS names in
+# distros.tf still resolve: the data sources query the real catalogue.
+lab-plan:
+	@set -e; \
+	test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }; \
+	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
+	echo "opening SSH to $$cidr"; \
+	$(TOFU) -chdir=$(TOFU_DIR) init -input=false; \
+	$(TOFU) -chdir=$(TOFU_DIR) plan -input=false \
+		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
+		-var 'distros=$(LAB_DISTROS)'
+
+lab-up:
+	@set -e; \
+	test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }; \
+	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
+	echo "opening SSH to $$cidr"; \
+	$(TOFU) -chdir=$(TOFU_DIR) init -input=false; \
+	$(TOFU) -chdir=$(TOFU_DIR) apply -input=false -auto-approve \
+		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
+		-var 'distros=$(LAB_DISTROS)'
+	@echo
+	@echo "instances are booting; 'make lab-wait' blocks until they have provisioned."
+	@echo "REMEMBER: 'make lab-down' when you are finished, or they bill until you do."
+
+# The operator's current public address, or whatever LAB_SSH_CIDR said.
+# Its own target so that lab-up and lab-plan cannot drift apart, and so
+# the failure when the address cannot be worked out is one message in one
+# place rather than a firewall rule quietly built from an empty string.
+lab-cidr:
+	@if [ -n "$(LAB_SSH_CIDR)" ]; then \
+		echo "$(LAB_SSH_CIDR)"; \
+	else \
+		ip=`curl -fsS https://api.ipify.org 2>/dev/null || true`; \
+		if [ -z "$$ip" ]; then \
+			echo "your public address could not be determined; pass LAB_SSH_CIDR=a.b.c.d/32" >&2; \
+			exit 1; \
+		fi; \
+		echo "$$ip/32"; \
+	fi
+
+# Destroy has to pass the variables too, because variable validation runs
+# on a destroy as well and `allowed_ssh_cidrs` refuses an empty list.
+#
+# The address below is from TEST-NET-3, the documentation range, and is
+# deliberately not the operator's. Nothing is created by a destroy, so
+# the value never builds a rule -- and a destroy must not depend on
+# working out a public address, because the run that most needs to
+# succeed is the one cleaning up after something already went wrong.
+lab-down:
+	@test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }
+	$(TOFU) -chdir=$(TOFU_DIR) destroy -input=false -auto-approve \
+		-var 'allowed_ssh_cidrs=["203.0.113.1/32"]' \
+		-var 'distros=$(LAB_DISTROS)'
+
+lab-hosts:
+	@$(LAB) hosts $(DISTRO)
+
+lab-wait:
+	@$(LAB) wait $(DISTRO)
+
+lab-facts:
+	@$(LAB) facts $(DISTRO)
+
+# Build, unit suite and live suite on every instance. Keeps going after a
+# host fails and names the ones that did.
+lab-test:
+	@$(LAB) test $(DISTRO)
+
+# make lab-ssh DISTRO=rocky9
+lab-ssh:
+	@test -n "$(DISTRO)" || { echo "usage: make lab-ssh DISTRO=<name>; 'make lab-distros' lists them" >&2; exit 1; }
+	@$(LAB) ssh $(DISTRO)

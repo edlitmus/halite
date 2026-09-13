@@ -1,0 +1,21 @@
+# State carries every attribute of every resource, including the public
+# key and the addresses, and a plan file carries the same. Neither is a
+# build artifact and neither belongs in a repository that is published.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# lab.sh pins host keys here; the addresses change every run.
+.known_hosts
+
+# .terraform.lock.hcl is deliberately NOT ignored. It pins the provider
+# to the build that was actually run, which is the same promise go.sum
+# makes about this repository's one dependency.
+
+# A .tfvars would be where somebody eventually writes the API key,
+# whatever the README says. The provider reads VULTR_API_KEY from the
+# environment and nothing here needs a variables file.
+*.tfvars
+*.tfvars.json

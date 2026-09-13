@@ -480,7 +480,7 @@ different reason is given.
 | `ps` | implemented | 7 | reads through the system `ps`, and FreeBSD's own libxo JSON where there is one; `kvm` is C and `sysctl kern.proc` needs golang.org/x/sys, so neither was reachable under SPEC 4.2. `pkill` refuses a pattern matching nothing, because that is a misspelling far more often than a tidy machine |
 | `reboot` | implemented | 5 | `required`, `scheduled`, `last_boot`, `schedule` and `cancel` — the layer above the immediate verbs, for a tree that wants a reboot it can countermand. `required` has a different answer on every platform and says which it used: FreeBSD compares `freebsd-version -k` against `-r`, Debian and Ubuntu read `/run/reboot-required`, and anywhere else it returns "this build cannot tell" rather than `false`. `uname -r` is used for none of it, because on the FreeBSD development host it reports the Linux compatibility layer's number. `schedule` has no zero delay: an immediate reboot is `system.reboot`, a different function on purpose. **`cancel` is not one command on both platforms** — Linux cancels with `shutdown -c`, and on FreeBSD that flag *power cycles the machine*, so the pending shutdown is found in the process table and sent SIGTERM, which is what FreeBSD's own shutdown(8) documents (5.73) |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
-| `selinux` | not implemented | 0 | Linux only; no host to verify on |
+| `selinux` | not implemented | 0 | Linux only. A Red Hat machine can now be raised on demand -- `make lab-up LAB_DISTROS='["rocky9"]'`, contrib/tofu -- so this waits on the work rather than on a host |
 | `shadow` | not implemented | 0 | |
 | `state` | not implemented | 0 | reachable as `halite-node state`, not as a callable module function |
 | `sudo` | implemented | 4 | `validate` runs the real `visudo -c` over a file that is not yet installed, which is the function the rest exist for; `path` asks `sudo -V` and falls back to the platform convention saying which route it took; plus `version` and `list`. No sudoers parser is written here (5.72). Salt's `sudo.salt_call` is deliberately absent: `cmd.run` already takes a `runas` |
@@ -6769,9 +6769,11 @@ skip the unmount precisely when that reader was wrong.
 
 **What is left of §2.2's list: seven.** `blockdev`, `kernelpkg`, `locale`,
 `logrotate`, `nfs`, `selinux` and `shadow`. Four of those are
-Linux-shaped and wait on the Ubuntu host, `selinux` waits on a Red Hat
-one this project does not have, and `shadow` waits on the `user.present`
-ageing question rather than on any machine. `reboot` and `system` ship in
+Linux-shaped and wait on the Ubuntu host; `shadow` waits on the
+`user.present` ageing question rather than on any machine. `selinux`
+used to wait on "a Red Hat one this project does not have", and that is
+no longer the blocker: contrib/tofu raises Rocky 9 and AlmaLinux on
+demand. What it waits on now is the work. `reboot` and `system` ship in
 5.73 -- and the sentence that stood here, that they "can be built here
 but not fully demonstrated, because their real mutation is rebooting the
 host this is written on", turned out to be the whole story.
