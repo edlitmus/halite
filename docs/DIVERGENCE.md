@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **77 execution modules / 535 functions** and **44 state
-modules / 119 functions**.
+The build ships **84 execution modules / 571 functions** and **45 state
+modules / 121 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -463,12 +463,12 @@ different reason is given.
 | `test` | implemented | 5 | |
 | `timezone` | implemented | 4 | `set_zone` writes through `timedatectl` where it runs and the zone files where it does not; the zone is named as the platform names it, and `list_zones` says which names those are |
 | `user` | implemented | 3 | reads through `os/user`; writes through `pw` or `useradd`, and through `dscl` on macOS (5.43) |
-| `at` | not implemented | 0 | |
-| `acl` | not implemented | 0 | POSIX ACL reading needs `acl_get_file`, which is cgo on FreeBSD; needs the `getfacl` binary path instead |
+| `at` | implemented | 4 | `at`, `atq`, `atc`, `atrm` over the real binaries; the queue parser reads the job number as the last field, which is what `atq`'s own printf format says and what a real queue confirmed (5.72) |
+| `acl` | implemented | 5 | NFSv4 only, through the real `getfacl`/`setfacl`: `get`, `set`, `remove`, `wipe`, `is_extended`. A POSIX.1e-shaped entry is refused by name rather than misread, and Linux's grammar waits for a host to capture it from (5.72). The cgo objection this row used to raise is answered by shelling to the binary, which is what the rest of this build does |
 | `apparmor` | implemented | 7 | reads securityfs directly rather than shelling to `aa-status`, so a node with no `apparmor-utils` can still be asked what it enforces; the mode changes need that package and name it |
 | `beacons` | implemented | 10 | `list` answers from the registry and the configuration; the nine that change a running node's watchers name the phase they arrive in |
 | `blockdev` | not implemented | 0 | |
-| `data` | not implemented | 0 | |
+| `data` | implemented | 11 | a node-local key/value store in one JSON file under the cache directory, in SPEC 6.4's canonical form. `load` and `items` both read from disk because there is no in-process session to flush, and `dump` replaces the store rather than flushing a memory this build does not keep (5.72) |
 | `firewall` | implemented | 8 | virtual, with a ufw provider: status, enable, disable, set_default, allow, deny, delete and reload. firewalld, nftables and pf are not built, and the provider interface is shaped by the one provider it has |
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
@@ -483,11 +483,11 @@ different reason is given.
 | `selinux` | not implemented | 0 | Linux only; no host to verify on |
 | `shadow` | not implemented | 0 | |
 | `state` | not implemented | 0 | reachable as `halite-node state`, not as a callable module function |
-| `sudo` | not implemented | 0 | |
-| `swap` | not implemented | 0 | |
+| `sudo` | implemented | 4 | `validate` runs the real `visudo -c` over a file that is not yet installed, which is the function the rest exist for; `path` asks `sudo -V` and falls back to the platform convention saying which route it took; plus `version` and `list`. No sudoers parser is written here (5.72). Salt's `sudo.salt_call` is deliberately absent: `cmd.run` already takes a `runas` |
+| `swap` | implemented | 3 | `on`, `off` and `list` over the real `swapon`/`swapoff`, with the argument vector chosen by a platform table so every row is checkable from any host. FreeBSD has no priority flag and the module refuses one rather than dropping it. Persistence is `mount.mounted`'s job (5.72) |
 | `system` | not implemented | 0 | |
-| `tls` | not implemented | 0 | |
-| `tmpfs` | not implemented | 0 | |
+| `tls` | implemented | 6 | a CA directory convention, idempotent issuance, an issuance ledger and real CRL generation, all routed through `x509`'s existing certificate helpers rather than a second engine. Four of Salt's functions here are deliberately absent as renames of `x509` calls that already work (5.72) |
+| `tmpfs` | implemented | 3 | `list`, `is_mounted` and `usage`, read-only by design: mounting one is `mount.mount` with a fstype, and a wrapper would duplicate `mount.mounted` for no gain. `usage` joins the mount table with `df`, and degrades to no figures rather than a wrong number when the two disagree (5.72) |
 | `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification |
 
 ### 2.2 Core state modules (SPEC 15.5)
@@ -514,7 +514,7 @@ different reason is given.
 | `zfs` | implemented | 2 | `filesystem_present`, `absent` |
 | `acl` | not implemented | 0 | see 2.1 |
 | `apparmor` | implemented | 1 | `mode`, taking enforce, complain or disable; `kill` and `unconfined` are set in the profile itself and are refused by name |
-| `at` | not implemented | 0 | |
+| `at` | implemented | 2 | `present` and `absent`, keyed by an identifier carried as the first line of the job's own script, so a second run finds the job it already scheduled instead of queueing another (5.72) |
 | `beacon` | implemented | 2 | present and absent, both persisting to beacons.d so a declaration survives a restart 
 | `environ` | implemented | 1 | `setenv`; `permanent` defaults to true here and to false in Salt, so a tree carrying this state writes a file or a registry value Salt never wrote; see migrating-from-salt.md |
 | `firewall` | implemented | 4 | `enabled`, `allowed`, `denied` and `absent`; convergence is asked of ufw through its own `--dry-run` rather than computed from a status listing written for a person |
@@ -6656,6 +6656,124 @@ this fleet's own host, which runs jails deliberately and autostarts none.
 Still not covered: `jail.conf` includes and variables, a jail with a vnet
 of its own rather than an address alias, and `jail -m` to modify a
 running jail in place.
+
+### 5.72 Seven of SPEC 15.2's missing modules, and one that was never missing
+
+§2.2 of plan.md listed seventeen core execution modules as absent. Seven
+ship now -- `acl`, `at`, `data`, `sudo`, `swap`, `tls` and `tmpfs` -- and
+an eighth, `state`, turned out not to be absent at all. Nine remain.
+
+They were taken as a block because they are the ones this fleet's own
+FreeBSD host can *demonstrate*, rather than the ones that were easiest to
+write. Every module here with a tool behind it was driven against that
+tool as root on a real machine, and every assertion was then confirmed by
+breaking the code and watching the test fail.
+
+**`state` was never missing.** `state.apply` and its seven neighbours are
+intercepted by `runFunction` in `cmd/halite-node` before the execution
+registry is consulted, routed to the compiler, and reachable three ways:
+the `state` subcommand, `call state.apply`, and a dispatched job.
+Registering a `state` module would have produced a second, thinner
+implementation of the pipeline the node actually runs -- which is the
+duplicate-surface defect this project treats as a failure, not a feature.
+The row is struck rather than filled, and the count of what is left drops
+by one without anything being built.
+
+**`sudo` is not Salt's `sudo`.** Salt's has one function, `salt_call`,
+which runs a call as another account by shelling out. `cmd.run` already
+takes a `runas` and applies it with setuid and setgid directly, with no
+second privilege system in the path, so reimplementing it would add a
+worse route to something the build has. What this module does instead is
+the thing `file.managed` cannot: `sudo.validate` runs the real
+`visudo -c` over a sudoers file that is **not yet installed**. A
+malformed sudoers does not degrade -- sudo refuses to run at all, for
+everybody, and the account that could fix it is the one that just stopped
+working.
+
+No sudoers parser is written here. That grammar has includes, aliases and
+a version of its own -- 50 on this host -- and a second parser for it
+would eventually disagree with the real one about who may become root.
+
+`sudo.path` asks `sudo -V`, which reports the file sudo will actually
+read. That removes the Jinja branch the estate's own `sudo.sls` carries
+to choose between `/etc/sudoers` and `/usr/local/etc/sudoers`. The catch
+is that sudo prints its plugin configuration to root alone, so there is a
+fallback to the platform convention -- and the answer says which route it
+took, because a silent fallback is a defect that hides twice. **Both
+branches were exercised on the same host**, unprivileged and as root.
+
+**`at`'s parser was written without a real queue to read**, and that is
+the interesting part. `at` refuses an unprivileged caller here, so rather
+than invent a fixture the parser was derived from the printf format
+inside the `atq` binary itself:
+
+```
+%s\t%-16s%c%s\t%ld
+```
+
+which says the job number is the last field. That inference is now
+confirmed against a real queue, and checked by reading the first field
+instead on purpose and watching the test fail on the date. The
+`at.present`/`at.absent` pair keys on an identifier carried as the first
+line of the job's own script, so a second run finds the job it already
+scheduled rather than queueing another.
+
+**`swap` is verified through someone else's reader.** The round trip
+makes swap on a memory disk, switches it on and off through this module,
+and confirms each change through `mount.swaps` rather than through
+`swap.list` -- a writer and a reader wrong in the same direction would
+otherwise agree with each other and prove nothing. FreeBSD's `swapon`
+has no priority flag, and the module refuses one rather than dropping it
+silently. Persistence stays `mount.mounted`'s job.
+
+**`acl` is NFSv4 only, and says so.** ZFS is what this fleet runs, and
+Linux's tool of the same name speaks a different grammar that no host
+here could supply fixtures for; a POSIX.1e-shaped entry is refused by
+name rather than misread, which was confirmed as root against a real UFS
+filesystem built for the purpose. Two behaviours were learned from
+`setfacl` rather than assumed: a new `(tag, qualifier)` pair is inserted
+at the **front** of the ACL rather than appended, and an existing entry is
+matched for update by `(tag, qualifier, type)` together -- so a `deny` for
+an already-`allow`ed user is a second entry, not a replacement. The
+permission and flag column order was derived empirically, each letter set
+alone against a scratch file and the real output captured, which is what
+lets the dry run compare canonical forms instead of guessing.
+
+**`tmpfs` and `tls` both came back smaller than asked, correctly.**
+`tmpfs` reads and never writes: mounting one is `mount.mount` with a
+fstype, and a wrapper would duplicate `mount.mounted`'s idempotence and
+fstab handling for no gain. `tmpfs.resize` is absent for a different
+reason -- Linux's live resize is `mount.remount`, and FreeBSD's tmpfs(4)
+documents `size` only at mount time, so shipping one would claim a
+behaviour nothing here has verified. `tls` drops four of Salt's functions
+as renames of `x509` calls that already accept an explicit path, and
+routes every byte of certificate maths through `x509`'s existing helpers;
+what is genuinely new is a CA directory convention, idempotent issuance,
+an issuance ledger, and real CRL *generation*, where `openssl_cert` only
+parses a CRL something else produced.
+
+**One test in this block was fixed for logging rather than for
+correctness**, and it is worth recording why. The fresh-tmpfs leg
+unmounts explicitly at the end, to assert the reader notices; its safety
+cleanup then unmounted again and logged that it could not:
+
+```
+umount: /tmp/.../mnt: not a file system root directory
+```
+
+on every successful run. A warning printed by a passing test is worse
+than no warning, because it teaches whoever reads the log to ignore that
+line, and one day it will be the real thing. The cleanup asks the
+kernel's mount table first now -- not this module's reader, which would
+skip the unmount precisely when that reader was wrong.
+
+**What is left of §2.2's list: nine.** `blockdev`, `kernelpkg`, `locale`,
+`logrotate`, `nfs`, `reboot`, `selinux`, `shadow` and `system`. Four of
+those are Linux-shaped and wait on the Ubuntu host, `selinux` waits on a
+Red Hat one this project does not have, `shadow` waits on the
+`user.present` ageing question rather than on any machine, and `reboot`
+and `system` can be built here but not fully demonstrated, because their
+real mutation is rebooting the host this is written on.
 
 ## 6. Everything else not started
 

@@ -494,10 +494,21 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 17 of SPEC 15.2**: `acl`, `at`, `blockdev`, `data`,
-`kernelpkg`, `locale`, `logrotate`, `nfs`, `reboot`, `selinux`,
-`shadow`, `state`, `sudo`, `swap`, `system`, `tls`, `tmpfs`. `ps` has
-shipped (DIVERGENCE 5.61).
+**Execution, 9 of SPEC 15.2**: `blockdev`, `kernelpkg`, `locale`,
+`logrotate`, `nfs`, `reboot`, `selinux`, `shadow`, `system`.
+
+Re-measured against the registry on 2026-09-12. This row said 17. Seven
+shipped together as the block this fleet's own FreeBSD host can
+*demonstrate* rather than merely build -- `acl`, `at`, `data`, `sudo`,
+`swap`, `tls` and `tmpfs`, each driven against its real tool as root and
+each assertion confirmed by breaking the code (DIVERGENCE 5.72).
+
+**And `state` was never missing**, which is the eighth. `state.apply` and
+its seven neighbours are intercepted in `cmd/halite-node` before the
+execution registry is consulted and routed to the compiler, so they are
+already reachable three ways. Registering a module for them would be a
+second, thinner copy of the pipeline the node actually runs. The row is
+struck rather than filled. `ps` shipped earlier (DIVERGENCE 5.61).
 
 **State, 10 of SPEC 15.5**: `acl`, `at`, `kernelpkg`, `locale`,
 `logrotate`, `pro`, `reboot`, `selinux`, `sudo`, `win_wua`.

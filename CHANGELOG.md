@@ -18,6 +18,32 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Seven more of the modules the specification names
+
+`acl`, `at`, `data`, `sudo`, `swap`, `tls` and `tmpfs` now ship. They
+were taken together because they are the ones this project's own FreeBSD
+machine can prove rather than merely run, so each was driven against the
+real tool on a real host.
+
+`sudo` is worth a word because it is not what Salt's module of that name
+does. It checks a sudoers file with sudo's own checker *before* the file
+is installed. A broken sudoers does not degrade gracefully: sudo stops
+working for everyone, and the account that could repair it is the one
+that just stopped working. It also reports which sudoers file this
+machine actually reads, which removes the need for a tree to guess at the
+path per operating system.
+
+Three of the seven are deliberately smaller than their Salt equivalents,
+in each case because the missing functions already exist elsewhere under
+better names. Those omissions are listed with their reasons rather than
+left to be discovered.
+
+### `state.apply` was already there
+
+It was recorded as a missing module. It is not: it has always been
+reachable, by three separate routes, and adding a module for it would
+have meant a second copy of the machinery that actually runs it.
+
 ### A guard on an optional module now answers correctly
 
 `{% if salt['foo.bar'] is defined %}` used to take the true branch on
