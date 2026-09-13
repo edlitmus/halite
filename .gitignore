@@ -31,3 +31,11 @@ complex-tree.txt
 # committable.
 *.tfvars
 *.tfvars.json
+
+# And `.env`, for the same reason and more so: it is the filename
+# `git add -A` sweeps up, and nothing in this repository reads one. The
+# lab reads its token from the environment, or from a file under $HOME
+# that no commit here can reach -- see LAB_ENV in the Makefile.
+.env
+.env.*
+*.env

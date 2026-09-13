@@ -740,6 +740,40 @@ TOFU      ?= tofu
 TOFU_DIR   = contrib/tofu
 LAB        = $(TOFU_DIR)/lab.sh
 
+# Where the API token may live, when it is not already in the
+# environment.
+#
+# **Outside the repository, deliberately.** A `.env` at the root would be
+# the obvious place and is the wrong one: it is the filename `git add -A`
+# sweeps up, and a token in a git worktree is a token one careless commit
+# from being published. `*.tfvars` is ignored tree-wide and would at
+# least be safe from that, but it would make the key a tofu *variable* --
+# visible in a saved plan file and in `tofu console` -- and would not
+# help `vultr-cli`, which reads the environment.
+#
+# A file under $HOME serves both, cannot be committed from here, and
+# keeps versions.tf's claim true: the token lives in exactly one place,
+# and nothing in this repository can carry it.
+#
+# Format is one `KEY=value` per line, as `sh` would read it:
+#
+#	VULTR_API_KEY=...
+#
+# The environment always wins, so an exported key needs no file at all.
+LAB_ENV ?= $(HOME)/.config/halite/lab.env
+
+# Load it if the environment has no key, then insist on one either way.
+# Used inside a single chained recipe, since each recipe line is its own
+# shell and an export in one does not reach the next.
+LAB_LOAD_KEY = if [ -z "$$VULTR_API_KEY" ] && [ -r "$(LAB_ENV)" ]; then \
+		. "$(LAB_ENV)"; export VULTR_API_KEY; \
+	fi; \
+	test -n "$$VULTR_API_KEY" || { \
+		echo "VULTR_API_KEY is not set, and $(LAB_ENV) does not supply it." >&2; \
+		echo "  Export it, or put VULTR_API_KEY=... in that file (chmod 600)." >&2; \
+		exit 1; \
+	}
+
 # The address SSH is opened to. Vultr's firewall needs a CIDR, and the
 # one that should be in it is wherever this command is being run from --
 # not a value committed to a file, which is why variables.tf has no
@@ -768,7 +802,7 @@ lab-distros:
 # distros.tf still resolve: the data sources query the real catalogue.
 lab-plan:
 	@set -e; \
-	test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }; \
+	$(LAB_LOAD_KEY); \
 	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
 	echo "opening SSH to $$cidr"; \
 	$(TOFU) -chdir=$(TOFU_DIR) init -input=false; \
@@ -778,7 +812,7 @@ lab-plan:
 
 lab-up:
 	@set -e; \
-	test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }; \
+	$(LAB_LOAD_KEY); \
 	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
 	echo "opening SSH to $$cidr"; \
 	$(TOFU) -chdir=$(TOFU_DIR) init -input=false; \
@@ -814,9 +848,10 @@ lab-cidr:
 # working out a public address, because the run that most needs to
 # succeed is the one cleaning up after something already went wrong.
 lab-down:
-	@test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }
+	@set -e; \
+	$(LAB_LOAD_KEY); \
 	$(TOFU) -chdir=$(TOFU_DIR) destroy -input=false -auto-approve \
-		-var 'allowed_ssh_cidrs=["203.0.113.1/32"]' \
+		-var "allowed_ssh_cidrs=[\"203.0.113.1/32\"]" \
 		-var 'distros=$(LAB_DISTROS)'
 
 # Converge a lab that a failed apply left half-finished.
@@ -837,7 +872,7 @@ lab-down:
 # If an instance really is broken, `make lab-down` and start again.
 lab-repair:
 	@set -e; \
-	test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }; \
+	$(LAB_LOAD_KEY); \
 	$(LAB) untaint; \
 	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
 	echo "converging with SSH open to $$cidr"; \

@@ -78,6 +78,25 @@ make lab-down                 # destroy them
 plan's monthly cap for as long as they exist, and nothing destroys them
 on a timer.
 
+To avoid exporting it every session, put it in a file **outside the
+worktree** and `make` will load it when the environment has none:
+
+```sh
+mkdir -p ~/.config/halite && chmod 700 ~/.config/halite
+printf 'VULTR_API_KEY=...\n' > ~/.config/halite/lab.env
+chmod 600 ~/.config/halite/lab.env
+```
+
+`LAB_ENV` in the Makefile points there and can be overridden. The
+environment always wins, so an exported key needs no file.
+
+Not a `.env` in the repository, and not a `.tfvars`. `.env` is the
+filename `git add -A` sweeps up. `.tfvars` is ignored tree-wide and so
+would survive that, but it would make the token a tofu *variable* --
+which reaches saved plan files and `tofu console` -- and `vultr-cli`
+reads the environment regardless, so the key would end up in two places.
+A file under `$HOME` serves both and cannot be committed from here.
+
 Useful variations:
 
 ```sh

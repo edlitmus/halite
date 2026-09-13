@@ -21,6 +21,11 @@ terraform {
 # vultr-cli already keeps it, so the token lives in exactly one place and
 # no state file, plan file or shell history in this repository can carry
 # it.
+#
+# `make` will load it from $HOME/.config/halite/lab.env when the
+# environment has none -- outside the worktree, so the sentence above
+# stays true. See LAB_ENV in the Makefile for why not a `.env` here and
+# not a `.tfvars`.
 provider "vultr" {
   rate_limit  = 700
   retry_limit = 3
