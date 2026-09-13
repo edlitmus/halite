@@ -172,3 +172,48 @@ func registeredMetricFamilies(t *testing.T) map[string]bool {
 	}
 	return out
 }
+
+// Every divergence number this ledger cites is a section that exists.
+//
+// The sibling test above holds `Test...` citations to tests that are
+// defined, for a stated reason: a citation is the whole of the argument
+// that something was deliberate, so one pointing at nothing is worse
+// than none. The same is true of "(5.74)", and nothing checked it --
+// two such citations were written and shipped before the sections they
+// named existed, found by hand rather than by this suite.
+//
+// Only backreferences are checked. A row may legitimately point forward
+// to a section added in the same change, so the rule is that the number
+// resolves, not that it precedes the citation.
+func TestLedgerDivergenceCitationsResolve(t *testing.T) {
+	ledger := repoFile(t, ledgerFile)
+
+	// The headings that exist: "### 5.74 ..." and "#### 5.74 ...".
+	heading := regexp.MustCompile(`(?m)^#{2,4} (\d+\.\d+[a-z]?) `)
+	defined := map[string]bool{}
+	for _, m := range heading.FindAllStringSubmatch(ledger, -1) {
+		defined[m[1]] = true
+	}
+	if len(defined) == 0 {
+		t.Fatal("no section headings were found; this check has stopped checking")
+	}
+
+	// A citation is a bare number in parentheses: "(5.74)", "(see 5.31)",
+	// "(DIVERGENCE 4.5)". Prose like "(3.2 GB)" is excluded by requiring
+	// the whole parenthesised run to be citation-shaped.
+	cited := regexp.MustCompile(`\((?:see |DIVERGENCE )?(\d+\.\d+[a-z]?)\)`)
+	checked := 0
+	for i, line := range strings.Split(ledger, "\n") {
+		for _, m := range cited.FindAllStringSubmatch(line, -1) {
+			checked++
+			if !defined[m[1]] {
+				t.Errorf("%s:%d cites %s, which is not a section in this file",
+					ledgerFile, i+1, m[1])
+			}
+		}
+	}
+	if checked == 0 {
+		t.Error("no divergence citations were checked")
+	}
+	t.Logf("checked %d divergence citations against %d sections", checked, len(defined))
+}

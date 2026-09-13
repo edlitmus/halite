@@ -30,7 +30,23 @@ set -eu
 TOFU_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(CDPATH='' cd -- "$TOFU_DIR/../.." && pwd)"
 
-SSH_OPTS="-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$TOFU_DIR/.known_hosts -o ConnectTimeout=10 -o BatchMode=yes"
+# `-n` is load-bearing, not tidiness.
+#
+# Every loop below reads its host list with `read`, and ssh reads
+# *stdin* whether or not the remote command wants any. Without `-n` the
+# first ssh of the first iteration swallows the rest of the list, the
+# loop ends, and `make lab-test` reports on one host having silently
+# skipped the other six -- which is exactly what it did: alma8 was
+# simply the first row alphabetically.
+#
+# The loops also read on fd 3 rather than stdin, so the two defences are
+# independent: either one alone fixes this, and a future caller that
+# needs stdin for a remote command does not reintroduce it.
+SSH_OPTS="-n -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$TOFU_DIR/.known_hosts -o ConnectTimeout=10 -o BatchMode=yes"
+
+# For the two calls that genuinely need stdin: the tar stream, and an
+# interactive shell.
+SSH_STDIN_OPTS="-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$TOFU_DIR/.known_hosts -o ConnectTimeout=10 -o BatchMode=yes"
 REMOTE_DIR=/root/halite
 
 usage() {
@@ -168,7 +184,7 @@ hosts)
     tmp="$(load_targets "$@")"
     trap 'rm -f "$tmp"' EXIT
     printf '%-12s %-16s %s\n' DISTRO ADDRESS STATE
-    while IFS="$(printf '\t')" read -r name addr; do
+    while IFS="$(printf '\t')" read -r name addr <&3; do
         [ -n "$name" ] || continue
         # shellcheck disable=SC2086
         if ssh $SSH_OPTS "root@$addr" 'test -f /var/lib/halite-lab/ready' 2>/dev/null; then
@@ -177,7 +193,7 @@ hosts)
             state="not ready"
         fi
         printf '%-12s %-16s %s\n' "$name" "$addr" "$state"
-    done <"$tmp"
+    done 3<"$tmp"
     ;;
 
 wait)
@@ -187,24 +203,24 @@ wait)
     # success for a host that never came up.
     tmp_wait="$(load_targets "$@")"
     trap 'rm -f "$tmp_wait"' EXIT
-    while IFS="$(printf '\t')" read -r name addr; do
+    while IFS="$(printf '\t')" read -r name addr <&3; do
         [ -n "$name" ] || continue
         echo "waiting for $name ($addr)"
         wait_for_ready "$name" "$addr" || rc=1
-    done <"$tmp_wait"
+    done 3<"$tmp_wait"
     exit $rc
     ;;
 
 facts)
     tmp="$(load_targets "$@")"
     trap 'rm -f "$tmp"' EXIT
-    while IFS="$(printf '\t')" read -r name addr; do
+    while IFS="$(printf '\t')" read -r name addr <&3; do
         [ -n "$name" ] || continue
         echo "=== $name ($addr)"
         # shellcheck disable=SC2086
         ssh $SSH_OPTS "root@$addr" 'cat /var/lib/halite-lab/facts 2>/dev/null || echo "no facts: the bootstrap did not get far enough"'
         echo
-    done <"$tmp"
+    done 3<"$tmp"
     ;;
 
 ssh)
@@ -221,7 +237,7 @@ ssh)
         exit 1
     fi
     # shellcheck disable=SC2086
-    exec ssh $SSH_OPTS "root@$addr"
+    exec ssh $SSH_STDIN_OPTS "root@$addr"
     ;;
 
 test)
@@ -234,7 +250,7 @@ test)
     out="$(mktemp)"
     trap 'rm -f "$tmp_targets" "$out"' EXIT
 
-    while IFS="$(printf '\t')" read -r name addr; do
+    while IFS="$(printf '\t')" read -r name addr <&3; do
         [ -n "$name" ] || continue
         echo
         echo "################ $name ($addr)"
@@ -264,7 +280,7 @@ test)
         # variable. SC2086 is the deliberately unquoted SSH_OPTS.
         # shellcheck disable=SC2086,SC2029
         if ! git -C "$REPO_ROOT" archive --format=tar HEAD |
-            ssh $SSH_OPTS "root@$addr" "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR && tar -C $REMOTE_DIR -xf -"; then
+            ssh $SSH_STDIN_OPTS "root@$addr" "rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR && tar -C $REMOTE_DIR -xf -"; then
             echo "FAIL $name: the tree could not be shipped"
             failed="$failed $name(ship)"
             continue
@@ -312,7 +328,7 @@ test)
             echo "PASS $name"
             passed="$passed $name"
         fi
-    done <"$tmp_targets"
+    done 3<"$tmp_targets"
 
     echo
     echo "================ lab summary"

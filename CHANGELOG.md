@@ -18,6 +18,44 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Destroying a RAID array, and a test lab that tested one machine
+
+`mdadm.destroy` stops an array and wipes the identifying marks from its
+member disks, so they stop looking like part of an array and do not
+quietly rejoin one at the next boot. It is the one function in that
+module whose purpose is to lose data, and it behaves accordingly: it
+reads which disks belong to the array before stopping it, because
+afterwards nothing can say, and it wipes them **only if the stop
+actually worked**. A stop fails when the array is in use, which is
+precisely when wiping its disks would destroy a filesystem out from
+under whatever is using it. It also removes the array from the boot-time
+configuration, found by identity rather than by device name — the name
+in that file is often not the one an operator would type.
+
+Salt is where the function comes from, and comparing the two settled a
+question about its neighbour. Writing the array list to the boot
+configuration records a count of spare disks that changes while an array
+is still rebuilding, so calling it twice during a rebuild writes two
+different files. That is left as it is. Filtering the field would make
+this build's configuration file disagree with the tool that reads it,
+over a difference that exists only for a few seconds. Salt writes the
+same thing unfiltered, and avoids the churn the same way this build
+does: by never calling it from anything that runs repeatedly.
+
+**The test lab was only ever testing one machine.** `make lab-test`
+reported on the first host alphabetically and silently skipped the other
+six. The cause is an old trap: the remote-shell command reads standard
+input whether or not it needs any, and the loop was feeding it the list
+of remaining hosts. The first connection swallowed the rest of the list
+and the loop ended. Fixed twice over — the command is told not to read
+input, and the list is read on a channel it cannot reach.
+
+Two claims in the divergence ledger pointed at sections that did not
+exist, one of them shipped in the previous change. There is now a check
+that every such reference resolves, which found a third: a reference to
+the specification written in the same shorthand the ledger uses for
+itself.
+
 ### What a RHEL machine found in an hour
 
 The first run of the suite on AlmaLinux — a platform the specification

@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **86 execution modules / 585 functions** and **46 state
+The build ships **86 execution modules / 586 functions** and **46 state
 modules / 122 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -5367,10 +5367,10 @@ been exercised through a bad path.
 
 ### 5.53 `mdadm`: `--detail` and /proc/mdstat, and a `create` that refuses
 
-SPEC 15.3's Common Linux and Storage rows, module eight. Thirteen
+SPEC 15.3's Common Linux and Storage rows, module eight. Fourteen
 execution functions: `version`, `list`, `detail`, `examine`, `mdstat`,
-`create`, `assemble`, `stop`, `add`, `fail`, `remove`, `grow`,
-`save_config`. No state — SPEC 15.5 names one for `lvm`, `zfs` and
+`create`, `assemble`, `stop`, `destroy`, `add`, `fail`, `remove`,
+`grow`, `save_config`. No state — SPEC 15.5 names one for `lvm`, `zfs` and
 `zpool` and none for this, and that is right: building or reshaping an
 array is a careful, one-time, destructive operation, not a target a
 convergence loop re-checks. `pam` and `journald` have no state for the
@@ -5405,6 +5405,30 @@ refuse both an existing array and a member that already carries a
 superblock. It needs root and the loop driver, so it is gated behind
 `HALITE_SYSTEM_LIVE=1` and runs in the fleet workflow's linux leg, the
 same as `lvm` and `quota`. `evidence.go` records `mdadm` `hardware`.
+
+**`destroy` is the one function here whose purpose is data loss** (5.75).
+It stops the array and zeroes its members' superblocks, matching Salt's
+`raid.destroy`, including the guard that matters: the members are read
+*before* the stop, because `--detail` cannot answer afterwards, and they
+are zeroed **only if the stop succeeded** -- a stop fails when the array
+is mounted, and zeroing a live array's members destroys a filesystem
+under itself. It takes no `force`: unlike `create`, where the damage
+would be incidental, here the verb is the request. It also drops the
+array's line from mdadm.conf, matched by device path *or* UUID where
+Salt matches the path alone -- `save_config` writes the path
+`--detail --scan` resolved, usually `/dev/md/<name>` rather than the
+`/dev/mdN` a caller passes, so matching only the caller's spelling would
+leave the line behind on every named array.
+
+**`save_config` writes a snapshot, transient fields and all.**
+`mdadm --detail --scan` reports a live `spares=` count, so two calls
+seconds apart during a resync write different lines and both report a
+change. That is left alone rather than filtered: the file would
+otherwise disagree with the tool that reads it, over a difference that
+exists only while an array rebuilds. Salt writes the same unfiltered
+output, and avoids the churn the same way this build does -- by never
+calling it from a convergence loop. Salt's `raid.present` calls it only
+inside `if not present`; this build has no state at all.
 
 Not covered: `grow` (a reshape takes hours), `assemble --scan` (it
 reads every superblock on the host), RAID levels other than 1, and
@@ -6936,6 +6960,148 @@ machine and countermanding it, which is the gated live test
 (`HALITE_SYSTEM_LIVE=1` *and* `HALITE_REBOOT_LIVE=1`) that no run has yet
 set. The first attempt at exactly that is what power cycled this host.
 
+### 5.74 What one RHEL machine found in an hour
+
+The first run of the suite on AlmaLinux 8.10, raised by the lab in
+contrib/tofu (5.73's successor in spirit: a platform SPEC 27.1 has
+always listed and no machine here had ever run). Six real defects, none
+of them reachable from the machines this project already had.
+
+**`journald.list_boots` failed on two tier 1 platforms.** The module
+asked for `--list-boots -o json`. systemd before v250 **accepts that
+flag and ignores it**, printing its ordinary table, so the command
+exited 0 and the module could not parse the result:
+
+    `journalctl --list-boots -o json` did not parse:
+    invalid character '0' after top-level value
+
+-- the `0` being the boot index in the table's first column. systemd 239
+is RHEL 8 and systemd 249 is Ubuntu 22.04. Both shapes are read now,
+from fixtures captured on real machines of each kind, behind one set of
+keys so a caller never learns which systemd answered.
+
+The request also carries `--utc`, which is not a formatting preference.
+Without it the old format prints the *local* zone abbreviation, and Go
+parses an abbreviation it cannot resolve as offset zero under a
+fabricated zone of that name -- so a Pacific host's boots would have been
+recorded seven hours from where they happened, silently. The fixture for
+that case is the same machine with `TZ` set.
+
+**`at.at` reported failure for jobs it had queued.** The confirmation
+parser matched the literal `Job `, which is FreeBSD's and Debian's
+wording. at-3.1.20 on RHEL prints `job %ld at %s` -- lower case, after a
+`warning:` line. Both format strings were read out of the real binaries
+with `strings -a`. The job was queued, the module said it had failed,
+and the job stayed in the queue with the caller told it did not exist.
+
+**`at.atq` could not read a Linux queue at all**, which also broke
+`at.present` and `at.absent`, since all three find a job by listing.
+FreeBSD's atq prints `%s\t%-16s%c%s\t%ld` -- job number last -- and
+Linux's prints `%ld\t%s %c %s` -- job number first. The module knew only
+FreeBSD's and read the owner's name where it wanted a number. Linux is
+one of the two platforms `atCheckPlatform` admits.
+
+**`reboot.cancel` reported a change on a quiet machine.** systemd's
+`shutdown -c` exits 0 whether or not anything was pending, and that
+status was the whole answer, so a state built on it would report work
+forever. Both platforms now establish whether anything is pending before
+acting -- which Linux can do because 5.73's `rebootPending` reads
+/run/systemd/shutdown/scheduled. The fix was confirmed by putting the
+bypass back and watching the new test fail.
+
+**`dnfpkg` and `yumpkg` had no name an operator could call.** Covered in
+§2.3: the note declaring them pending said the dnf provider "covers
+repositories but not packages", and it does implement all five package
+operations. The sentence outlived the gap it described.
+
+#### The eleven tests that were Ubuntu-shaped
+
+Eleven live tests failed on RHEL for having no AppArmor, no netplan and
+no dpkg. The gates deliberately **fail rather than skip** when a tool is
+missing, because a live suite that skips its way to green has tested
+nothing -- right while the only machine running it was one Ubuntu
+runner, and wrong the moment a RHEL or Alpine node appeared. They now
+name the `os_family` values a tool belongs to, read through `grains` so
+the test and the product cannot disagree, and skip elsewhere **with the
+reason**, while still failing on a machine that ought to have the tool.
+`systemctl` is in that set: Alpine is OpenRC.
+
+Three others were fixtures rather than gates. `modprobe` asked for
+`netdevsim`, which Alma's 4.18 kernel does not build -- it skips by name
+now, as the CI workflow already allows for the quota formats on Azure
+kernels. The swap test made its backing file with `Truncate`, and
+Linux's `swapon` refuses a sparse file outright. And three `at` unit
+tests fed FreeBSD's atq layout to module code that reads
+`runtime.GOOS`, so the fixture follows the platform now.
+
+**Result: AlmaLinux 8.10 runs 39 live checks, skips 46 for platforms
+they do not apply to, and fails none.** The unit suite is green there and
+on FreeBSD. Six of the seven lab rows are still unrun.
+
+### 5.75 `mdadm.destroy`, and a snapshot left as a snapshot
+
+Salt's `raid` module has one function this build did not: `destroy`.
+Comparing the two also settled an open question about `save_config`.
+
+**`destroy` stops an array and zeroes its members' superblocks**, so
+they stop looking like array members and do not quietly rejoin one at
+the next boot. Two properties are carried over from Salt deliberately.
+The members are read *before* the stop, because `mdadm --detail` cannot
+answer once the array is gone. And they are zeroed **only if the stop
+succeeded** -- a stop fails when the array is mounted or otherwise busy,
+which is exactly when zeroing its members would destroy a live
+filesystem under itself.
+
+It takes no `force`, and that is a deliberate asymmetry with `create`.
+`create` refuses a member carrying a superblock without one because
+there the damage is *incidental*: somebody asked for a new array and
+would not expect an old one to be eaten. Here destruction is the entire
+request, and a flag confirming a verb that means "destroy" is ceremony.
+
+Where it improves on Salt: the mdadm.conf entry is matched by device
+path **or UUID**, while Salt matches `ARRAY {device} .*` alone.
+`save_config` writes whatever `mdadm --detail --scan` resolved, and that
+is usually `/dev/md/<name>` rather than the `/dev/mdN` a caller passes
+in, so Salt's pattern leaves the line behind on every array that has a
+name. The UUID is the field that does not move.
+
+**`save_config` keeps writing a snapshot, transient fields and all.**
+`mdadm --detail --scan` reports a live `spares=` count, so an array that
+is still rebuilding reports one value and the same array seconds later
+reports another --
+
+    ARRAY /dev/md/halNNN metadata=1.2 spares=2 UUID=...
+    ARRAY /dev/md/halNNN metadata=1.2 spares=1 UUID=...
+
+-- which is how a live test asserting idempotence failed against a
+module doing exactly what it was asked. Filtering the field was
+considered and rejected: this build's mdadm.conf would then disagree
+with the tool that reads it, over a difference that exists only while an
+array rebuilds. Salt writes the same unfiltered output; its only
+filtering is `name=` and `metadata=`, on Ubuntu alone, for an unrelated
+device-naming bug.
+
+What keeps it from mattering is where it is called from. This build has
+no `mdadm` state, so nothing in a convergence loop reaches it. Salt
+arrives at the same place from the other direction: `raid.present` calls
+`save_config` only inside `if not present`, so a converged node never
+calls it either. A tree that calls it on every highstate will see a
+change reported while a resync runs, and the answer is to call it once
+the array has settled -- which the live test now does with
+`mdadm --wait`.
+
+#### What was verified
+
+Against a real mdadm 4.3 on AlmaLinux 8.10, on loop devices: an array
+created, `save_config` writing its ARRAY line beside a hand-added
+MAILADDR line, then `destroy` -- after which `mdadm --detail` fails,
+**`mdadm --examine` fails on each member** (mdadm's own account of a
+device with no superblock, rather than this build's reader agreeing with
+itself), the ARRAY line is gone, the MAILADDR line is not, and a second
+`destroy` reports no change. The unit tests cover the two orderings that
+matter: that a failed stop zeroes nothing, and that test mode runs
+neither command.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -7513,7 +7679,7 @@ What is **not** built in the API:
   The hub counts what reaches it, which is most of SPEC 26.2's state and
   beacon families but not the drops.
 - ~~**Tracing** (SPEC 26.3), the one part of section 26 still unbuilt.~~
-  Built: `doctor` (26.4) ships, see 5.30, and tracing ships with it, see
+  Built: `doctor` (SPEC 26.4) ships, see 5.30, and tracing ships with it, see
   5.34. **Section 26 is complete.**
 - **`mtls` hook authentication.** The mode is implemented and refused
   when no client certificate is presented, but it has never been
