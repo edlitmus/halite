@@ -58,10 +58,12 @@ locals {
 
     # The unversioned row in Vultr's catalogue is the 8 series; `Rocky
     # Linux 9 x64` and `Rocky Linux 10 x64` are listed separately. That
-    # is an assumption about somebody else's naming, so the bootstrap
-    # records /etc/os-release into the facts file and the runner prints
-    # it: if this is not 8, the lab says so rather than reporting an 8
-    # result from a 9 machine.
+    # was an assumption about somebody else's naming when this was
+    # written, which is why the bootstrap records /etc/os-release into
+    # the facts file rather than trusting the label. The first run
+    # settled it: this image reports itself as "AlmaLinux 8.10 (Cerulean
+    # Leopard)". The check stays, because the catalogue entry is still
+    # unversioned and can be repointed without the name changing.
     alma8 = {
       os_name  = "AlmaLinux x64"
       family   = "rhel"

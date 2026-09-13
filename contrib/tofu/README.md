@@ -37,12 +37,29 @@ ref-salt1. This is a gap in the lab, not one it closes.
 **Amazon Linux 2023.** A tier 1 platform, not offered off AWS, and
 therefore still untested anywhere in this estate.
 
-**Nothing has been run yet.** This configuration has been validated
-against the real provider schema and every OS name in it resolves
-against Vultr's live catalogue, but no instance has been raised from it.
-The package lists in `distros.tf` were written from documentation, and
-the first `make lab-test` is what establishes whether the names are
-right — see "package names are recorded, not assumed" below.
+## What the first run established
+
+All seven were raised on 2026-09-13 and every one bootstrapped:
+
+| Row | Reported itself as | Missing packages |
+|---|---|---|
+| `rocky9` | Rocky Linux 9.8 (Blue Onyx) | none |
+| `alma8` | AlmaLinux 8.10 (Cerulean Leopard) | none |
+| `alpine` | Alpine Linux v3.24 | none |
+| `opensuse16` | openSUSE Leap 16.0 | none |
+| `debian13` | Debian GNU/Linux 13 (trixie) | none |
+| `ubuntu2204` | Ubuntu 22.04.5 LTS | none |
+| `ubuntu2604` | Ubuntu 26.04.1 LTS | none |
+
+Go 1.26.6 verified against its pinned checksum on all seven. Two things
+that were assumptions are now facts: the unversioned "AlmaLinux x64" in
+Vultr's catalogue **is** the 8 series, and every package name in
+`distros.tf` — written from documentation, by somebody who had never
+logged into five of these distributions — resolved on its distribution.
+The per-package install loop reported nothing missing anywhere.
+
+The suite itself has not been run across them yet; `make lab-test` is
+the next step.
 
 ## Running it
 
@@ -114,25 +131,68 @@ facts were read out of the provider's own source rather than assumed.
 
 **Package names are recorded, not assumed.** `quota` on Debian is
 `quota-tools` on Alpine; `iptables` on Alma 8 is `iptables-nft` on
-Rocky 9. Nobody here has logged into five of these distributions, so the
-bootstrap installs packages **one at a time** and records any name that
-does not resolve as `packages_missing` in `/var/lib/halite-lab/facts`
-instead of aborting the boot. `make lab-facts` prints it. A wrong guess
-costs a line in a report rather than a machine, and the first run is how
-the real names get learnt.
+Rocky 9. The lists were written from documentation by somebody who had
+logged into two of these seven distributions, so the bootstrap installs
+packages **one at a time** and records any name that does not resolve as
+`packages_missing` in `/var/lib/halite-lab/facts` rather than aborting
+the boot. `make lab-facts` prints it. A wrong guess costs a line in a
+report instead of a machine.
+
+They all resolved, on every row — see the first-run table above. The
+mechanism stays anyway: the cost of it is one `install` call per package
+instead of one per host, and what it buys is that the next row added to
+the matrix, or the next release that renames something, reports the
+problem rather than failing a boot.
 
 The same file records what the machine actually is —
-`/etc/os-release`, kernel, architecture — because one row, `alma8`, is
-an assumption about Vultr's naming (their catalogue lists an unversioned
-"AlmaLinux x64" beside "AlmaLinux 9" and "AlmaLinux 10"). If it turns
-out not to be 8, the facts say so rather than the lab reporting an 8
-result from a 9 machine.
+`/etc/os-release`, kernel, architecture. That is what settled `alma8`,
+whose catalogue entry is an unversioned "AlmaLinux x64" listed beside
+"AlmaLinux 9" and "AlmaLinux 10": it reports itself as AlmaLinux 8.10.
+The entry is still unversioned and can be repointed without its name
+changing, so the check earns its keep.
 
 **A half-provisioned host is refused.** `/var/lib/halite-lab/ready` is
 written last and only on success. `lab.sh` will not ship a tree to a host
 that lacks it, because a test result from a machine with a partial
 package set and no Go is worse than no result at all. A failed Go
 checksum stops the bootstrap for the same reason.
+
+## When `lab-up` fails with a backup schedule 404
+
+```
+Error: error getting backup schedule: {"error":"Invalid instance-id.","status":404}
+  with vultr_instance.node["alma8"]
+```
+
+This happened on the first run and it is not a configuration error.
+Vultr's API returns 404 from `GET /instances/<id>/backup-schedule` for an
+instance it has created but not finished registering, and the provider
+calls that endpoint unconditionally in Read, immediately after Create
+(`resource_vultr_instance.go`, in `resourceVultrInstanceRead`). Nothing
+in this repository can stop it, and `backups = "disabled"` does not:
+the read happens whatever the setting.
+
+What it leaves behind is worth understanding, because it is not obvious:
+
+- **The instance is fine.** The one that failed was `active`, and was
+  answering SSH and finishing its bootstrap a few minutes later. It was
+  simply slower to boot than the other six.
+- **It is marked tainted**, because terraform cannot tell a failed create
+  from a failed read after a successful create. The next plain `apply`
+  would destroy a healthy machine and build another.
+- **The outputs are not written.** `ssh_targets` reads every instance's
+  address, so one unfinished instance leaves the whole output unwritten,
+  while `monthly_cost_if_left_running` — which only counts them —
+  survives. The result is seven machines running and billing with no way
+  for `lab.sh` to address them.
+
+`make lab-repair` is the recovery: it untaints, then applies to converge
+and write the outputs. Untainting wholesale is safe here because taint is
+not what this lab trusts for health — `/var/lib/halite-lab/ready` is, and
+`wait` and `test` both refuse a host that lacks it, so a genuinely broken
+instance still fails loudly at the point it would have been tested.
+
+If an instance really is broken, `make lab-down` and start again.
 
 ## What `make lab-test` runs
 

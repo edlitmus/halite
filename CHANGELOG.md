@@ -52,9 +52,20 @@ one row of the table is an assumption about how the provider names its
 images. A machine that did not finish provisioning is refused rather
 than tested.
 
-Nothing has been run on it yet. The configuration is checked against the
-provider's real schema and every image name in it resolves against the
-live catalogue, but no instance has been raised.
+All seven have now been raised once. Every machine bootstrapped, every
+package name guessed from documentation turned out to be right on its
+own distribution, and the pinned Go toolchain verified its checksum
+everywhere. The suite itself has not yet been run across them.
+
+That first run also found the one rough edge worth knowing about. The
+provider asks the cloud API about an instance's backup schedule the
+instant it has created it, and the API sometimes answers that no such
+instance exists. The machine is fine — the one that failed was answering
+logins minutes later — but the run stops, the instance is recorded as
+suspect, and the addresses of all seven go unwritten, which leaves
+machines running with no convenient way to reach them. `make lab-repair`
+sorts it out without destroying anything, and the reasoning is written
+down beside it.
 
 ### Rebooting a machine, and the flag that rebooted the wrong one
 

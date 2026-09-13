@@ -69,7 +69,7 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
 	fleetcheck fleetcheck-image \
-	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr
+	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair
 
 all: build
 
@@ -817,6 +817,32 @@ lab-down:
 	@test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }
 	$(TOFU) -chdir=$(TOFU_DIR) destroy -input=false -auto-approve \
 		-var 'allowed_ssh_cidrs=["203.0.113.1/32"]' \
+		-var 'distros=$(LAB_DISTROS)'
+
+# Converge a lab that a failed apply left half-finished.
+#
+# The failure this exists for: Vultr's API returns 404 from
+# `GET /instances/<id>/backup-schedule` for an instance it has just
+# created, and the provider calls that unconditionally in Read, right
+# after Create. The apply stops, the instance is marked tainted, and the
+# outputs that read every instance's address are never written -- so the
+# machines are running and billing and `lab.sh` cannot address them.
+#
+# The instance is usually healthy; ours was answering SSH and running its
+# bootstrap minutes later. So this untaints rather than letting the next
+# apply destroy and rebuild it, then applies to converge and write the
+# outputs. Health is not taken on trust either way: `wait` and `test`
+# both refuse a host with no ready file.
+#
+# If an instance really is broken, `make lab-down` and start again.
+lab-repair:
+	@set -e; \
+	test -n "$$VULTR_API_KEY" || { echo "VULTR_API_KEY is not set" >&2; exit 1; }; \
+	$(LAB) untaint; \
+	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
+	echo "converging with SSH open to $$cidr"; \
+	$(TOFU) -chdir=$(TOFU_DIR) apply -input=false -auto-approve \
+		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
 		-var 'distros=$(LAB_DISTROS)'
 
 lab-hosts:

@@ -42,6 +42,7 @@ usage: lab.sh <command> [distro ...]
   facts     print each instance's recorded facts (what it really is)
   test      ship the tree to each instance and run build, unit and live suites
   ssh       open a shell on one instance (exactly one distro required)
+  untaint   clear taint left by a failed post-create read (see lab-repair)
 
 With no distro names, every instance in the state is used.
 EOF
@@ -65,8 +66,17 @@ shift
 # table of machines named "|" which were all "not ready".
 #
 # `output -json` is the form with a machine-readable empty answer: it
-# prints exactly `{}` and nothing else. That is what is checked, and only
-# then is `-raw` asked for the value.
+# prints exactly `{}` and nothing else. That is what is checked first.
+#
+# A *partly* applied lab is the other case, and it is the likely one: an
+# apply that failed on one instance writes the outputs it could evaluate
+# and not the ones it could not. `monthly_cost_if_left_running` only
+# counts instances and survives; `ssh_targets` reads every instance's
+# address, so one unfinished instance leaves it unwritten entirely. The
+# state then has seven running machines and no way to address them, which
+# is exactly when this script is wanted. `output -raw` on a missing
+# output exits 1 and explains itself in terraform's terms; the message
+# below is the same fact in this lab's terms.
 targets() {
     _json="$(tofu -chdir="$TOFU_DIR" output -json -no-color 2>/dev/null || echo '{}')"
     case "$(printf '%s' "$_json" | tr -d '[:space:]')" in
@@ -76,7 +86,19 @@ targets() {
         exit 1
         ;;
     esac
-    tofu -chdir="$TOFU_DIR" output -raw -no-color ssh_targets
+    if ! _t="$(tofu -chdir="$TOFU_DIR" output -raw -no-color ssh_targets 2>/dev/null)"; then
+        echo "the lab state has instances but no ssh_targets output." >&2
+        echo "  That is what a part-finished 'make lab-up' leaves behind: one instance" >&2
+        echo "  that did not complete takes the whole output with it, even though the" >&2
+        echo "  others are running and billing." >&2
+        echo "  'make lab-repair' converges it; 'make lab-down' destroys the lot." >&2
+        exit 1
+    fi
+    [ -n "$_t" ] || {
+        echo "ssh_targets is empty; the state has no instances to address." >&2
+        exit 1
+    }
+    echo "$_t"
 }
 
 # Write the selected targets to a file and echo its path.
@@ -297,6 +319,39 @@ test)
     echo "passed:${passed:- none}"
     echo "failed:${failed:- none}"
     [ -z "$failed" ]
+    ;;
+
+untaint)
+    # Vultr's API 404s on `GET /instances/<id>/backup-schedule` for an
+    # instance it has created but not finished registering, and the
+    # provider calls it unconditionally in Read, straight after Create:
+    #
+    #   Error: error getting backup schedule: {"error":"Invalid
+    #   instance-id.","status":404}
+    #
+    # The instance is fine -- ours was `active`, answering SSH and
+    # running its bootstrap minutes later -- but terraform cannot tell a
+    # failed create from a failed read after a create, so it marks the
+    # resource tainted and the next apply would destroy a healthy machine
+    # and build another.
+    #
+    # Untainting every instance is safe *here* because taint is not what
+    # this lab trusts for health: `/var/lib/halite-lab/ready` is, it is
+    # written only on a complete bootstrap, and `wait` and `test` both
+    # refuse a host that lacks it. A genuinely broken instance therefore
+    # still fails, loudly, at the point where it would have been tested.
+    #
+    # `untaint` is a local state operation and needs no API key.
+    found=0
+    for addr in $(tofu -chdir="$TOFU_DIR" state list 2>/dev/null | grep '^vultr_instance\.node\['); do
+        if tofu -chdir="$TOFU_DIR" untaint "$addr" 2>/dev/null; then
+            echo "untainted $addr"
+            found=$((found + 1))
+        fi
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "nothing was tainted."
+    fi
     ;;
 
 *)
