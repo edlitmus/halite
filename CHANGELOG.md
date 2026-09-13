@@ -18,6 +18,63 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Rebooting a machine, and the flag that rebooted the wrong one
+
+`system` and `reboot` now ship, the last two core execution modules this
+project's own FreeBSD host could be asked to demonstrate. They are two
+halves of one idea. `system` holds the verbs that act now — `halt`,
+`poweroff`, `shutdown`, `reboot` — plus the clock writers and the
+computer description. `reboot` sits above them, for a tree that wants a
+reboot scheduled far enough ahead that a person can countermand it, and
+it answers the questions worth asking first: does this node need one, is
+one already pending, when did it last boot.
+
+"Does this node need a reboot" has a different answer on every platform
+and this says which one it used. FreeBSD compares the installed kernel
+with the running one. Debian and Ubuntu read the file their package
+scripts write. Anywhere else it reports that it cannot tell, rather than
+reporting no — a tree would act on a no.
+
+**The development host was power cycled mid-session while this was being
+written, and that is the only reason a defect here was found before a
+release.** `reboot`'s cancel was built as `shutdown -c` on both
+platforms, because that is the cancel on Linux and the same flag appears
+in FreeBSD's usage line. On FreeBSD `-c` is not a cancel: it power cycles
+the machine, and on any host with the right BMC it is obeyed. FreeBSD cancels a pending shutdown by sending SIGTERM to the
+shutdown process, which is what it does now; it refuses to build a cancel
+command at all without a pid, rather than reaching for anything
+flag-shaped.
+
+Three checks came out of that and outlast it. A test now reads FreeBSD's
+own manual page for what `-c` *means*, not merely whether it is listed —
+the older check asked only that the flag exist, and it passed that
+evening. A second refuses any FreeBSD command containing `-c`, for any
+input. And the unit test that had asserted both platforms were the same
+is gone; it had been named for the belief rather than the behaviour, and
+it passed for exactly the reason the defect existed.
+
+Asking whether a reboot is already pending was broken on FreeBSD too, and
+silently. The module asked `ps` for a pid and a command in the spelling
+Linux uses; FreeBSD's `ps` read it as a request for one column with an
+odd title, printed a list of bare process ids, and exited successfully.
+Every line looked plausible and none of them ever carried a command, so
+the answer was always "nothing is pending" no matter what was. A live
+test that drives the cancel against a harmless stand-in process found it
+on the first run, and that test now covers the whole FreeBSD cancel:
+reading the real process table, finding the process, and signalling it.
+
+Separately, `reboot.scheduled` could not see a shutdown that systemd was
+holding either, because under systemd a scheduled shutdown is not a
+process sitting on a timer. It reads systemd's own record as well now.
+That half has not been run against a real systemd host.
+
+`system` never reached any build at all: it was complete, its tests
+passed, and the one line registering it with the rest was never written.
+Nothing failed — an uncalled function is not an error, and the module's
+tests built their own registry. Every module in the package is now
+checked to be registered by something that ships, and the check was
+confirmed by removing the line again and watching it fail.
+
 ### Seven more of the modules the specification names
 
 `acl`, `at`, `data`, `sudo`, `swap`, `tls` and `tmpfs` now ship. They

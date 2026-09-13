@@ -115,6 +115,8 @@ func New() *Registries {
 	registerTLS(r)
 	registerACL(r)
 	registerTmpfs(r)
+	registerReboot(r)
+	registerSystemModule(r)
 	registerSnap(r)
 	registerJail(r)
 

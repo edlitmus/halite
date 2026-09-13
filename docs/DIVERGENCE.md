@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **84 execution modules / 571 functions** and **45 state
-modules / 121 functions**.
+The build ships **86 execution modules / 585 functions** and **46 state
+modules / 122 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-30 of 56 present.
+32 of 56 present.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -478,21 +478,21 @@ different reason is given.
 | `nfs` | not implemented | 0 | |
 | `pkgrepo` | implemented | 4 | list_repos, get_repo, mod_repo, del_repo; virtual, with providers for apt, dnf/yum and Chocolatey 
 | `ps` | implemented | 7 | reads through the system `ps`, and FreeBSD's own libxo JSON where there is one; `kvm` is C and `sysctl kern.proc` needs golang.org/x/sys, so neither was reachable under SPEC 4.2. `pkill` refuses a pattern matching nothing, because that is a misspelling far more often than a tidy machine |
-| `reboot` | not implemented | 0 | |
+| `reboot` | implemented | 5 | `required`, `scheduled`, `last_boot`, `schedule` and `cancel` — the layer above the immediate verbs, for a tree that wants a reboot it can countermand. `required` has a different answer on every platform and says which it used: FreeBSD compares `freebsd-version -k` against `-r`, Debian and Ubuntu read `/run/reboot-required`, and anywhere else it returns "this build cannot tell" rather than `false`. `uname -r` is used for none of it, because on the FreeBSD development host it reports the Linux compatibility layer's number. `schedule` has no zero delay: an immediate reboot is `system.reboot`, a different function on purpose. **`cancel` is not one command on both platforms** — Linux cancels with `shutdown -c`, and on FreeBSD that flag *power cycles the machine*, so the pending shutdown is found in the process table and sent SIGTERM, which is what FreeBSD's own shutdown(8) documents (5.73) |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
 | `selinux` | not implemented | 0 | Linux only; no host to verify on |
 | `shadow` | not implemented | 0 | |
 | `state` | not implemented | 0 | reachable as `halite-node state`, not as a callable module function |
 | `sudo` | implemented | 4 | `validate` runs the real `visudo -c` over a file that is not yet installed, which is the function the rest exist for; `path` asks `sudo -V` and falls back to the platform convention saying which route it took; plus `version` and `list`. No sudoers parser is written here (5.72). Salt's `sudo.salt_call` is deliberately absent: `cmd.run` already takes a `runas` |
 | `swap` | implemented | 3 | `on`, `off` and `list` over the real `swapon`/`swapoff`, with the argument vector chosen by a platform table so every row is checkable from any host. FreeBSD has no priority flag and the module refuses one rather than dropping it. Persistence is `mount.mounted`'s job (5.72) |
-| `system` | not implemented | 0 | |
+| `system` | implemented | 9 | the four power verbs `halt`, `poweroff`, `shutdown` and `reboot`, the three clock writers `set_system_date`, `set_system_time` and `set_system_date_time`, and `get_computer_desc`/`set_computer_desc`. Linux and FreeBSD only, not the five BSDs `quota` groups: a wrong flag to `edquota` is refused, a wrong flag to `shutdown(8)` is obeyed on hardware nobody is standing in front of. Every command is built by a pure function of `goos` and its arguments, so each row is checkable from any host without running it, and test mode reaches the process zero times for the power verbs. `-h` on Linux and `-p` on FreeBSD are how the two platforms spell the same meaning. No hostname function (`hostname.*` owns that), no clock reader (`status.time` does), and no `hwclock`, which FreeBSD has no equivalent of. `set_computer_desc` writes systemd's `PRETTY_HOSTNAME` in `/etc/machine-info` and is Linux only, because FreeBSD has no convention holding such a label and inventing one would be this build deciding a convention nothing reads |
 | `tls` | implemented | 6 | a CA directory convention, idempotent issuance, an issuance ledger and real CRL generation, all routed through `x509`'s existing certificate helpers rather than a second engine. Four of Salt's functions here are deliberately absent as renames of `x509` calls that already work (5.72) |
 | `tmpfs` | implemented | 3 | `list`, `is_mounted` and `usage`, read-only by design: mounting one is `mount.mount` with a fstype, and a wrapper would duplicate `mount.mounted` for no gain. `usage` joins the mount table with `df`, and degrades to no figures rather than a wrong number when the two disagree (5.72) |
 | `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification |
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-16 of 46 present, plus `sysrc`, which the section does not list.
+17 of 46 present, plus `sysrc`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -532,7 +532,7 @@ different reason is given.
 | `pip` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pkgrepo` | implemented | 2 | managed and absent, both converging on a second run 
 | `pro` | not implemented | 0 | Ubuntu only |
-| `reboot` | not implemented | 0 | |
+| `reboot` | implemented | 1 | `scheduled`, which ensures a reboot is pending on a node that needs one. It defaults to scheduling only where `reboot.required` says one is needed; turning that off schedules a reboot on every node the state reaches, and the parameter's own documentation says so |
 | `schedule` | implemented | 2 | present and absent; absent now persists, which it did not before 
 | `selinux` | not implemented | 0 | Linux only |
 | `ssh_known_hosts` | implemented | 2 | present and absent; a key is either declared outright or scanned and checked against a declared fingerprint, and trust on first use is refused by name rather than performed silently |
@@ -6767,13 +6767,161 @@ line, and one day it will be the real thing. The cleanup asks the
 kernel's mount table first now -- not this module's reader, which would
 skip the unmount precisely when that reader was wrong.
 
-**What is left of §2.2's list: nine.** `blockdev`, `kernelpkg`, `locale`,
-`logrotate`, `nfs`, `reboot`, `selinux`, `shadow` and `system`. Four of
-those are Linux-shaped and wait on the Ubuntu host, `selinux` waits on a
-Red Hat one this project does not have, `shadow` waits on the
-`user.present` ageing question rather than on any machine, and `reboot`
-and `system` can be built here but not fully demonstrated, because their
-real mutation is rebooting the host this is written on.
+**What is left of §2.2's list: seven.** `blockdev`, `kernelpkg`, `locale`,
+`logrotate`, `nfs`, `selinux` and `shadow`. Four of those are
+Linux-shaped and wait on the Ubuntu host, `selinux` waits on a Red Hat
+one this project does not have, and `shadow` waits on the `user.present`
+ageing question rather than on any machine. `reboot` and `system` ship in
+5.73 -- and the sentence that stood here, that they "can be built here
+but not fully demonstrated, because their real mutation is rebooting the
+host this is written on", turned out to be the whole story.
+
+### 5.73 `reboot` and `system`, and the flag that power cycled the development host
+
+The last two modules §2.2 named for this host ship together, because they
+are two halves of one thing: `system` holds the verbs that act now --
+`halt`, `poweroff`, `shutdown`, `reboot` -- and `reboot` is the layer
+above them, for a tree that wants a reboot far enough ahead that somebody
+can countermand it. Fourteen functions between them, one state.
+
+Both were written to the shape `quota` established: the command is a pure
+function of `goos` and its arguments, so every platform's row is
+checkable from any host without running it. `system` holds to that
+completely. Test mode reaches the process zero times for the four power
+verbs, nothing in the package's tests runs `halt`, `poweroff`, `reboot`,
+`shutdown` or a `date` that supplies a value, and the two live tests
+invoke the real `/sbin/shutdown` and `/rescue/date` only in forms their
+own usage lines make refusals. Its `-h` on Linux against `-p` on FreeBSD
+was read off those usage lines rather than recalled.
+
+**`reboot` did not, in one function, and it cost the machine.** Its
+`cancel` was built as `shutdown -c` on both platforms, because `-c` is
+the cancel on Linux and the flag appears in FreeBSD's usage line too.
+The usage line is where the reasoning stopped. On FreeBSD `-c` is not a
+cancel:
+
+    -c  The system is power cycled (power turned off and then back on)
+        at the specified time. If the hardware doesn't support power
+        cycle, the system will be rebooted. At the present time, only
+        systems with BMC supported by the ipmi(4) driver that implement
+        this functionality support this flag.
+
+This fleet's hosts have exactly such a BMC. At 23:28:26 the development
+host logged the only power-cycle in its entire syslog history --
+
+    shutdown[28318]: power-cycle by ed:
+
+-- and went down mid-session, which is how the defect was found at all.
+Which invocation passed the flag is not recoverable from the logs, and
+the module's own argv could not have been it: `shutdown(8)` requires a
+mandatory `time` argument that bare `shutdown -c` never supplied, so
+`/usr/src/sbin/shutdown/shutdown.c:178` would have sent it to `usage()`
+instead of acting. **FreeBSD was carrying two defects in one two-word
+command** -- the wrong flag, and the wrong arity for that flag -- and no
+test could reach either, because both live on the far side of a command
+no test may run.
+
+The fix is the mechanism FreeBSD's own manual names two paragraphs above
+the flag list: "A scheduled shutdown can be canceled by killing the
+shutdown process (a SIGTERM should suffice)." That is a pid rather than a
+flag, so `rebootCancelArgv` now takes one, builds `kill -TERM <pid>` on
+FreeBSD, and **refuses to build any command at all without a pid** rather
+than falling back on something flag-shaped. The pid comes from the
+process table `reboot.scheduled` already reads. Linux keeps
+`shutdown -c`, which is correct there.
+
+Four things came out of it beyond the fix:
+
+1. **A flag's existence is not its meaning, and a test can check which.**
+   `live_system_module_test.go` asserts that `shutdown`'s usage line
+   mentions `-c`, and it passed that evening, because the flag is listed.
+   So the check now reads the sentence *beside* the flag, out of
+   `/usr/share/man/man8/shutdown.8.gz`, which ships on every FreeBSD
+   install -- and asserts both that the manual still calls `-c` a power
+   cycle and that it still documents the SIGTERM route. `man` is not
+   shelled out to: on this host it resolves through the Linux
+   compatibility layer to a binary with no FreeBSD pages, the same
+   shadowing that already forces `/sbin` and `/rescue` to be named by
+   absolute path. If a future FreeBSD makes `-c` a cancel, the test fails
+   and names `rebootCancelArgv`.
+
+2. **A test can assert a defect.** The unit test here was named for the
+   belief rather than the behaviour -- "the cancel command is the same on
+   both families" -- and it checked that both platforms were handed
+   `shutdown -c`. It passed for the same reason the bug existed. It is now
+   `TestTheCancelCommandDiffersByFamily`, beside
+   `TestFreeBSDIsNeverHandedThePowerCycleFlag`, whose only job is that no
+   FreeBSD argv may ever contain `-c`, for any pid -- the
+   one assertion that would have caught this before a real machine did.
+   The instructions the live test prints for an operator cleaning up
+   after it said to run `shutdown -c` too; on FreeBSD that told somebody
+   trying to save the machine to take it down.
+
+3. **`reboot.scheduled` could not see a pending shutdown on FreeBSD
+   either, and that one was silent.** Finding the shutdown process means
+   asking `ps` for two columns with no headers, and this asked with
+   `-o pid=,command=`. That is the Linux spelling. FreeBSD's ps(1) reads
+   an `=` as introducing a replacement header that runs to the end of the
+   argument, so it took the whole of `pid=,command=` as the single
+   keyword `pid`, headed with the literal string `,command=`:
+
+       $ ps -axo pid=,command=
+       ,command=
+               0
+               1
+
+   Nothing failed. `ps` exits 0, every line carries a pid in the field
+   the parser reads, and the command field is simply never there — so the
+   finder matched nothing on any FreeBSD node whatever was pending, and
+   the new cancel, which takes its pid from the same place, would have
+   found nothing to cancel. A separate `-o` per column is read the same
+   way by both platforms.
+
+   This was found by a live test driving the cancel against a stand-in
+   process named `shutdown` — a copy of `sleep`, owned by the test,
+   needing no privilege to signal. That test is now the one part of the
+   FreeBSD cancel demonstrated end to end: a real `ps`, a real parse of
+   what it printed, and a real SIGTERM to a real process that really
+   died. It schedules nothing and needs no root, which is why it runs
+   where the gated test cannot, and it failed on its first run — which is
+   how the `ps` defect surfaced at all.
+
+4. **`reboot.scheduled` was also blind on systemd.** It read the process
+   table alone, which is right for FreeBSD and for a Linux without
+   systemd, where a pending shutdown is a process on a timer. Under
+   systemd `shutdown -r +5` hands the schedule to logind and exits, so
+   `ps` is empty while a reboot is very much pending -- the module would
+   have answered "no shutdown is pending" on the machine it had just
+   scheduled one on. It now also reads
+   `/run/systemd/shutdown/scheduled`, whose presence is itself the answer
+   because systemd removes the file on cancel, and whose `MODE` and
+   `USEC` lines are read for a description only. This half is unverified
+   on hardware: there is no systemd host in this session, and the
+   FreeBSD branch is the one the fleet runs.
+
+**And a whole module was in no build.** `system` was finished --
+735 lines, four power verbs, three clock writers, the computer
+description, its own tests passing -- and `registerSystemModule` was
+never added to `New()`. Nothing failed: Go does not mind an uncalled
+package-level function, and the module's tests passed because they built
+a registry and called the register function directly. `system_module.go`
+even carried a comment saying the wiring "belongs to whoever assembles
+builtin.go", which was true when written and forgotten by morning. The
+thing that eventually noticed was this ledger's own audit complaining
+about a *different* module's totals. `TestEveryRegistrationFunctionIsCalled`
+now walks the package for `register*` functions and fails on any that
+nothing calls, counting calls from non-test files only -- because a call
+from a test is exactly how this one looked wired. It was confirmed by
+removing the line again and watching it fail.
+
+**What is demonstrated, and what is not.** Both modules' readers run
+against the real host. Neither module's mutating path has been watched
+working, and for `system` that is permanent by design -- the evidence
+table says so for each, in those words. The corrected `cancel` has not
+been run on hardware: doing so means scheduling a real reboot on a real
+machine and countermanding it, which is the gated live test
+(`HALITE_SYSTEM_LIVE=1` *and* `HALITE_REBOOT_LIVE=1`) that no run has yet
+set. The first attempt at exactly that is what power cycled this host.
 
 ## 6. Everything else not started
 

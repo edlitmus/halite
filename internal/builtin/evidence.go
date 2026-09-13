@@ -299,6 +299,51 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	// ---- Read from a real system, mutation never watched ----
 
+	"reboot": {Level: exec.Captured, Note: "the readers are demonstrated against the real " +
+		"FreeBSD host this was written on: `required` compares freebsd-version's installed " +
+		"and running kernels, `scheduled` reads the real process table, and `last_boot` " +
+		"reads kern.boottime -- and `scheduled` did **not** read it until a live test drove " +
+		"it against a real process, because it asked ps for `-o pid=,command=`, the Linux " +
+		"idiom, which FreeBSD's ps parses as a single column headed with the literal string " +
+		"`,command=`. It exited 0 and printed bare pids, so the finder matched nothing on " +
+		"every FreeBSD node and nothing ever errored. **The FreeBSD cancel path is now " +
+		"demonstrated end to end** -- a real ps, a real parse of what it printed, and a real " +
+		"SIGTERM to a real process that really died -- against a stand-in named `shutdown` " +
+		"rather than a genuine one. The cancel's platform split is held to FreeBSD's own " +
+		"shutdown(8) manual source, which ships on every install and is read by a test " +
+		"rather than trusted from memory. **The mutating paths have never been watched " +
+		"working.** `schedule` and `cancel` need root on a machine that may be taken down, " +
+		"and the one live test that drives them is gated behind HALITE_SYSTEM_LIVE=1 *and* " +
+		"HALITE_REBOOT_LIVE=1, which no run has yet set, so no genuine `shutdown(8)` has " +
+		"been scheduled or countermanded by this module. What that gap cost once is worth " +
+		"recording: this module shipped `shutdown -c` as the cancel on both platforms, " +
+		"because it is the cancel on Linux and the same flag is listed in FreeBSD's usage " +
+		"line -- where it means *power cycle the machine*, and is honoured on any host with " +
+		"a BMC the ipmi(4) driver supports, which is what this fleet runs. The flag was " +
+		"checked for existence and never for meaning. The only power-cycle in this host's " +
+		"entire syslog history is dated the evening the module was written; which " +
+		"invocation passed the flag is not recoverable from the logs, and notably the " +
+		"module's own argv could not have been it, because bare `shutdown -c` supplies none " +
+		"of the mandatory `time` argument shutdown(8) requires and would have exited with " +
+		"its usage line instead. So FreeBSD was carrying two defects in one command, and " +
+		"neither was reachable by any test that reads a fixture",
+	},
+	"system": {Level: exec.Captured, Note: "the argv table for `halt`, `poweroff`, " +
+		"`shutdown` and `reboot` is derived from the real usage lines of this host's own " +
+		"setuid /sbin/shutdown and /rescue/date, not from memory of what they accept, and " +
+		"two live tests hold it there by invoking each binary in a form that cannot act: " +
+		"`shutdown` with no arguments, which its own mandatory `time` argument makes a " +
+		"usage error, and `date --help`, which BSD date refuses. **Nothing has watched " +
+		"this module change anything, and that is deliberate rather than an omission.** " +
+		"Every mutating path here takes the machine running the test off the network or " +
+		"steps its clock: test mode reaches `c.Run` zero times for the four power verbs, " +
+		"and no test in this package runs `halt`, `poweroff`, `reboot`, `shutdown`, `init` " +
+		"or a `date` that supplies a value, on any host. `set_computer_desc` is the one " +
+		"mutating path here that is safe and reversible, and it is unexercised for a " +
+		"different reason: it writes systemd's /etc/machine-info and is declared Linux " +
+		"only, while the host this module was developed on is FreeBSD",
+	},
+
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
 		"through its API on every Windows run and converges against what it finds, but " +
 		"nothing has watched this module start, stop or re-type a service"},
