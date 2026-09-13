@@ -14,8 +14,7 @@ crash.log
 # to the build that was actually run, which is the same promise go.sum
 # makes about this repository's one dependency.
 
-# A .tfvars would be where somebody eventually writes the API key,
-# whatever the README says. The provider reads VULTR_API_KEY from the
-# environment and nothing here needs a variables file.
-*.tfvars
-*.tfvars.json
+# *.tfvars and *.tfvars.json are ignored tree-wide by the repository
+# root .gitignore, which says why. They are deliberately not repeated
+# here: two copies of one rule drift, and the copy that matters is the
+# one covering the directories nobody has created yet.
