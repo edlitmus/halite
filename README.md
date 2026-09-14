@@ -327,7 +327,7 @@ described in the specification section named.
 | Behaviour | Salt | halite | Section |
 |---|---|---|---|
 | Undefined template names | Render as empty string | Error naming file, line, and identifier | 10.2.6 |
-| `cmd.run` | Shell by default | Argument vector by default; `shell: true` opts in and logs | 15.2 |
+| `cmd.run` | Shell by default | Shell by default too; `cmd_default_shell: false` takes an argument vector | 15.2 |
 | Command line arguments | YAML-parsed, so `1.0` becomes a float | Strings unless the signature says otherwise | 9.2 |
 | Duplicate YAML keys | Silent last-wins | Error naming both lines | 10.1.2 |
 | Compilation errors | First one, then stop | All of them, together | 11.2 |

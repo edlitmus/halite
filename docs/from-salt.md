@@ -66,7 +66,8 @@ Findings
          the attribute to a hub-authoritative node attribute.
     [state] state/plex.sls:10
       cmd.run names a program with arguments in it: "bastille start plex".
-      halite runs a command without a shell, so this is one program name
+      this audit assumed `cmd_default_shell: false`, under which that is
+      one program name rather than a shell line
       -> Put the program in `name` and the rest in `args`, or set
          `shell: true` on this state.
 
@@ -84,11 +85,13 @@ Fix the blocking items now and the review items before you trust the
 first real apply. The two above are the ones almost every Salt tree
 produces, and both are worth understanding rather than silencing:
 
-- **`cmd.run` with arguments.** halite runs a command without a shell,
-  so `bastille start plex` is one program name with spaces in it. Split
-  it into `name` and `args`, which is better anyway, or set
-  `shell: true` on the state to keep Salt's behaviour. `cmd_default_shell:
-  true` restores it everywhere, as a transition.
+- **`cmd.run` with arguments.** These run as they stand, because
+  `cmd.run` goes through a shell by default as Salt's does — the audit
+  counts them rather than reporting each one. They matter the day you
+  take the hardened setting: under `cmd_default_shell: false`,
+  `bastille start plex` is one program name with spaces in it. Splitting
+  each into `name` and `args` is better anyway, and is what lets an
+  estate turn the shell off; `shell: true` opts a single state back in.
 - **Pillar targeting on an untrusted grain.** A node controls its own
   grains, so a node that can name any grain in a pillar top file can ask
   for another node's secrets. Grains used for pillar targeting have to be
@@ -504,8 +507,10 @@ Step 0 report; the fifth is about the estate rather than the tree, so
 the audit cannot see it. [migrating-from-salt.md](migrating-from-salt.md)
 covers them in full:
 
-1. **`cmd.run` does not use a shell.** Pipes, redirections, and `&&`
-   need `shell: true` or splitting into `name` and `args`.
+1. **`cmd.run` uses a shell, as Salt's does.** Pipes, redirections and
+   `&&` work as they stand. `cmd_default_shell: false` is the hardened
+   setting, and under it each of those needs `shell: true` or splitting
+   into `name` and `args`.
 2. **Pillar targeting is restricted to trusted grains.** A node controls
    its own grains, so this is the one place Salt trusts something it
    should not.

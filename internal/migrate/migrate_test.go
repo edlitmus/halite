@@ -663,8 +663,8 @@ converted:
 	if on.ShellLines != 2 {
 		t.Errorf("ShellLines = %d with the setting on, want 2", on.ShellLines)
 	}
-	if !strings.Contains(on.Summary(), "cmd_default_shell was assumed") {
-		t.Errorf("the summary should say the tree depends on the setting:\n%s", on.Summary())
+	if !strings.Contains(on.Summary(), "cmd_default_shell: false") {
+		t.Errorf("the summary should name the setting the tree depends on not being set:\n%s", on.Summary())
 	}
 }
 

@@ -137,7 +137,7 @@ func registerMount(r *Registries) {
 					req("device", signature.String, "What to mount."),
 					opt("mkmnt", signature.Bool, false, "Create the mount point if it is not there."),
 					opt("fstype", signature.String, "", "The filesystem type."),
-					opt("opts", signature.String, "defaults", "Mount options, comma separated."),
+					opt("opts", signature.Any, "defaults", "Mount options: a comma-separated string, or a list of them, which is the form Salt's own first example uses."),
 				},
 				Mutates: true, TestMode: signature.TestReliable,
 				Privileges: []string{"root"},
@@ -160,7 +160,7 @@ func registerMount(r *Registries) {
 					req("device", signature.String, "What is mounted there."),
 					opt("mkmnt", signature.Bool, false, "Create the mount point if it is not there."),
 					opt("fstype", signature.String, "", "The filesystem type."),
-					opt("opts", signature.String, "defaults", "Mount options, comma separated."),
+					opt("opts", signature.Any, "defaults", "Mount options: a comma-separated string, or a list of them, which is the form Salt's own first example uses."),
 				},
 				Mutates: true, TestMode: signature.TestReliable,
 				Privileges: []string{"root"},
@@ -259,7 +259,7 @@ func fstabParams() []signature.Param {
 		req("name", signature.Path, "The mount point."),
 		req("device", signature.String, "What to mount: a path, a UUID= or a LABEL=."),
 		opt("fstype", signature.String, "", "The filesystem type."),
-		opt("opts", signature.String, "defaults", "Mount options, comma separated."),
+		opt("opts", signature.Any, "defaults", "Mount options: a comma-separated string, or a list of them, which is the form Salt's own first example uses."),
 		opt("dump", signature.String, "0", "The dump field."),
 		opt("pass_num", signature.String, "0", "The fsck pass field."),
 	}
@@ -327,7 +327,7 @@ func entryFromArgs(args *value.Map) (fstabEntry, error) {
 		Device: states.Str(args, "device", ""),
 		Point:  states.Str(args, "name", ""),
 		Type:   states.Str(args, "fstype", ""),
-		Opts:   states.Str(args, "opts", "defaults"),
+		Opts:   optsArg(args),
 		Dump:   states.Str(args, "dump", "0"),
 		Pass:   states.Str(args, "pass_num", "0"),
 	}
@@ -620,7 +620,7 @@ func mountArgs(args *value.Map) mountRequest {
 		point:  states.Str(args, "name", ""),
 		device: states.Str(args, "device", ""),
 		fstype: states.Str(args, "fstype", ""),
-		opts:   states.Str(args, "opts", "defaults"),
+		opts:   optsArg(args),
 		mkmnt:  states.Bool(args, "mkmnt", false),
 	}
 }
@@ -677,6 +677,40 @@ func umountFilesystem(c *exec.Context, point string, force bool) error {
 }
 
 // ---- options ----
+
+// optsArg reads `opts`, which Salt accepts in two forms.
+//
+// Salt's own `mount.mounted` takes a list or a comma-separated string
+// and normalises the string to a list -- `if isinstance(opts, str):
+// opts = opts.split(",")` -- and the list is the form its first
+// documented example uses. This took only the string, so the spelling
+// Salt teaches was refused:
+//
+//   - opts:
+//   - defaults
+//   - noexec
+//
+// Everything downstream works in the comma-separated form, so a list is
+// joined into one here rather than changing the representation.
+func optsArg(args *value.Map) string {
+	v, ok := args.Get("opts")
+	if !ok || v == nil {
+		return "defaults"
+	}
+	if list, isList := v.([]any); isList {
+		parts := make([]string, 0, len(list))
+		for _, item := range list {
+			if s := strings.TrimSpace(value.KeyString(item)); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if len(parts) == 0 {
+			return "defaults"
+		}
+		return strings.Join(parts, ",")
+	}
+	return states.Str(args, "opts", "defaults")
+}
 
 func splitOpts(s string) []string {
 	var out []string

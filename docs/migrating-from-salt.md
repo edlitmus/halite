@@ -68,41 +68,51 @@ Fix what the log names, then turn it off. This is the setting most worth
 the trouble: the warnings are, almost every time, real defects that were
 never visible.
 
-### `cmd.run` takes an argument vector, not a shell line
+### `cmd.run` can take an argument vector instead of a shell line
 
 ```yaml
-# Salt, and halite with cmd_default_shell: true
+# Salt, and halite as it ships
 run_it:
   cmd.run:
     - name: systemctl restart nginx && systemctl status nginx
 
-# halite
+# halite under cmd_default_shell: false
 run_it:
   cmd.run:
     - name: /usr/bin/systemctl
     - args: [restart, nginx]
 ```
 
-Salt's default of a shell for `cmd.run` is the root of most of its
-injection findings: any pillar value that reaches a command line is a
-shell injection waiting for the right input. halite inverts the default
-and makes the shell explicit.
+A tree carried over from Salt needs no change here: `cmd.run` runs
+through a shell by default, as Salt's does, and `shell: /bin/bash` names
+a different interpreter the way Salt's does too.
 
-The transition is `cmd_default_shell: true`, which restores Salt's
-reading of `name` as a shell line while a tree is converted. Audit with
-`--cmd-default-shell` once it is set: the states stop being work to do,
-and the report says how many of them the tree now depends on the setting
-for, because a tree that reports no work and stops running the day
-someone turns a setting off is not a tree with no work. A command
-that fails with "no such file" and a path containing a space is this,
-and halite says so in the error.
+**The hardened setting is `cmd_default_shell: false`, and it is worth
+taking.** Salt's default of a shell for `cmd.run` is the root of most of
+its injection findings: any pillar value that reaches a command line is
+a shell injection waiting for the right input. With the setting off,
+`name` is the program and `args` its arguments, and an argument vector
+cannot be reinterpreted by anything — there is no shell to re-read it.
+
+This build inverted the default until 2026-09-14, and the inversion is
+what changed rather than the argument for it. What it cost was a
+migration that could not start: every `cmd.run` in an existing tree is a
+shell line, and reading them all as program names fails loudly at best
+and, where a program of that name exists, quietly runs the wrong one.
+
+So the order is the other way round now. Migrate with the default, then
+convert, then take the setting. Audit with `--no-cmd-default-shell` to
+see the work: the report counts the shell lines whether or not it lists
+them, because a tree that reports no work and stops running the day
+someone turns a setting off is not a tree with no work. A command that
+fails with "no such file" and a path containing a space is this, and
+halite says so in the error.
 
 The setting applies only to a state that has not been converted. One
 that gives `args` is already an argument vector and stays one, so a tree
-can be converted a state at a time with the setting on, and each state
-stops going through a shell the moment it is rewritten. Asking for both
-— `shell: true` beside `args` — is refused rather than resolved in
-either direction.
+can be converted a state at a time, and each state stops going through a
+shell the moment it is rewritten. Asking for both — `shell: true` beside
+`args` — is refused rather than resolved in either direction.
 
 ### Unquoted file modes
 

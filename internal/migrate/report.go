@@ -225,8 +225,10 @@ func (r *Report) shellLineNote() string {
 		return ""
 	}
 	return fmt.Sprintf("\n%d cmd state(s) name a program with arguments in it. They were not\n"+
-		"reported, because cmd_default_shell was assumed: with it on they run as\n"+
-		"they stand, and the day it is turned off they stop. Converting them is\n"+
-		"how the tree stops depending on it. SPEC section 15.2.\n",
+		"reported, because cmd.run runs through a shell by default: as it stands\n"+
+		"they work, and the day a node sets cmd_default_shell: false they stop.\n"+
+		"Converting them to `name` plus `args` is how the tree stops depending on\n"+
+		"the default, and is what lets an estate take the hardened setting.\n"+
+		"SPEC section 15.2.\n",
 		r.ShellLines)
 }

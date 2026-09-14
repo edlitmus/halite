@@ -130,8 +130,10 @@ migrate flags:
   --salt-config <path> also translate a Salt configuration file, repeatable
   --indent <n>         indent for json output
   --fail-on <level>    exit non-zero at blocking (default), review, or note
-  --cmd-default-shell  audit as though the nodes will set cmd_default_shell,
-                       which is the transition of SPEC section 15.2
+  --no-cmd-default-shell  audit as though the nodes will set
+                       cmd_default_shell: false, the argument-vector form of
+                       SPEC section 15.2, which makes every shell line in the
+                       tree work to do
   --bridge-skeleton <dir>  write a Go bridge skeleton for each custom Python
                        module found, one command per module (SPEC 24.6)
 `
@@ -251,7 +253,7 @@ func runMigrate(args *cli.Args) int {
 		// or a reaction and never will.
 		OrchRegistry:   hub.OrchSignatures(),
 		RunnerRegistry: hub.NewRunners().Signatures(),
-		DefaultShell:   args.Bool("cmd-default-shell", false),
+		DefaultShell:   !args.Bool("no-cmd-default-shell", false),
 	})
 	if err != nil {
 		cli.Fatalf("%v", err)

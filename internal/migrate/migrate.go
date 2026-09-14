@@ -156,10 +156,11 @@ type Options struct {
 	// `salt.state` as missing from a build that ships it.
 	OrchRegistry   *signature.Registry
 	RunnerRegistry *signature.Registry
-	// DefaultShell says the nodes applying this tree will set
-	// `cmd_default_shell`, which is the transition of SPEC 15.2. With it
-	// the shell lines a tree carries are not work to do; without it they
-	// are the most common thing an unconverted tree gets wrong.
+	// DefaultShell says the nodes applying this tree run `cmd.run`
+	// through a shell, which is SPEC 15.2's default and Salt's. With it
+	// the shell lines a tree carries are not work to do; an estate
+	// auditing for the hardened `cmd_default_shell: false` sets this
+	// false, and they become the most common thing left to convert.
 	DefaultShell bool
 	// TrustedGrains is the pillar targeting allowlist to check against.
 	// Empty means SPEC section 12.4's default.

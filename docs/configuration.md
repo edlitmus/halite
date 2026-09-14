@@ -1782,11 +1782,11 @@ once.
 
 ### `cmd_default_shell`
 
-*`halite-node` · `false` · SPEC section 15.2*
+*`halite-node` · `true` · SPEC section 15.2*
 
-Run cmd.run through a shell by default, as Salt does.
+Run cmd.run through a shell by default, as Salt does. Off takes an argument vector instead.
 
-Runs `cmd.run` through a shell by default, as Salt does. Off here, because an argument vector cannot be reinterpreted by anything; turn it on for a tree that depends on shell syntax it never quoted.
+Runs `cmd.run` through a shell by default, as Salt does, which is the default here. Turning it off takes an argument vector instead, which cannot be reinterpreted by anything — a command whose arguments come from pillar or a grain is then not a shell line, and the injection findings that follow from one do not apply. An estate that has quoted its `cmd.run` call sites, or converted them to `name` plus `args`, should turn it off; `shell: true` on a single state opts that state back in.
 
 ### `exec_path`
 
@@ -1967,7 +1967,7 @@ Every setting, and which programs read it.
 | `cloud_grains` | `halite-node` | `false` | Grains and the mine |
 | `cloud_grains_exclude` | `halite-node` | — | Grains and the mine |
 | `cloud_grains_timeout` | `halite-node` | `10s` | Grains and the mine |
-| `cmd_default_shell` | `halite-node` | `false` | Node execution controls |
+| `cmd_default_shell` | `halite-node` | `true` | Node execution controls |
 | `config_file` | all three programs | — | Filesystem layout |
 | `enrollment_mode` | `halite-hub` | `manual` | Enrollment and certificates |
 | `env` | all three programs | `base` | The tree: states and pillar |

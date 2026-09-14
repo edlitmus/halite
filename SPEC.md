@@ -1436,11 +1436,16 @@ Notes on the ones that carry the most weight:
   `patch` uses the system `patch` binary.
 - **`cmd`**: `run`, `run_all`, `run_stdout`, `run_stderr`, `retcode`, `script`, `script_retcode`,
   `shell`, `exec_code`, `which`, `has_exec`, `run_chroot`, `run_bg`. Default execution is
-  **without a shell**, taking an argument vector. `shell=True` opts into a shell and logs that it
-  did. Salt's default of a shell for `cmd.run` is the root of most Salt injection findings, and
-  inverting the default is a deliberate compatibility break, with `cmd_default_shell: true` for a
-  transition. `runas` uses `setuid` and `setgid` with the target's full supplementary group set,
-  not `su -c`.
+  **through a shell**, as Salt's is, so an existing tree's call sites mean what they meant.
+  `shell` takes either form: `shell=True` selects the platform's own interpreter, and
+  `shell=/bin/bash` names one, which is Salt's spelling. Every run through a shell is logged as
+  such. `cmd_default_shell: false` takes an **argument vector** instead — `name` is the program and
+  `args` its arguments — and is the hardened setting, because an argv cannot be reinterpreted by
+  anything and most of Salt's injection findings begin with a line that a shell re-read. An estate
+  moves to it once its call sites are quoted or converted; `shell: true` opts a single state back
+  in, and `shell: false` opts one out. This inverted Salt's default until 2026-09-14, which is
+  recorded rather than removed because trees were written against it. `runas` uses `setuid` and
+  `setgid` with the target's full supplementary group set, not `su -c`.
 - **`x509`** covers certificate and key generation, CSR creation, signing, and inspection using
   `crypto/x509` directly, replacing the M2Crypto and `cryptography` dependencies that make Salt's
   `x509` module notoriously hard to install.
@@ -2437,7 +2442,7 @@ migration does not require rewriting configuration management for the configurat
 | Targeting: SECO range | Dropped | |
 | Remote execution, batching, async, job cache | Full | Batching moves hub-side, which is an improvement |
 | CLI argument YAML coercion | Changed | Section 9.2, `--legacy-arg-parse` |
-| `cmd.run` shell by default | Changed | Section 15.2, `cmd_default_shell` |
+| `cmd.run` shell by default | Full | Section 15.2; `cmd_default_shell: false` is the hardened opt-out |
 | Grains, core set | Full | Section 14.1 |
 | Custom grains from Python `_grains/` | Bridged | Executable grains directory covers most cases |
 | Execution modules | Subset | Section 15. Roughly 90 modules against Salt's roughly 400, covering the mainstream estate. |
@@ -2618,9 +2623,14 @@ Recorded rather than resolved, because each needs a decision from someone other 
    the first public commit.
 2. **Compatibility horizon.** How long does the section 28.3 shim live? A date is needed, because a
    shim without a removal date is permanent.
-3. **The `cmd.run` default.** Section 15.2 inverts Salt's shell default. This will break some
-   existing states. Is the break taken at migration, or is `cmd_default_shell: true` the estate-wide
-   setting for a period?
+3. ~~**The `cmd.run` default.**~~ **Answered 2026-09-14: follow Salt.** Section 15.2 inverted
+   Salt's shell default, and the inversion broke existing states in a way a migration could not
+   absorb — an estate's `cmd.run` call sites are all shell lines, and reading them as program names
+   fails loudly at best and, where a program of that name exists, quietly runs the wrong one. The
+   default is Salt's, and `cmd_default_shell: false` is the hardened setting an estate moves to once
+   its call sites are quoted or converted to `name` plus `args`. The security argument for the
+   inversion was not wrong and is not withdrawn; what changed is which way round the default and the
+   opt-in sit.
 4. **Strict undefined.** Section 10.2.6 defaults to strict. Confirm the estate is willing to fix the
    warnings, since permissive-forever means inheriting Salt's silent failures.
 5. **PAM authentication.** Dropping PAM means no local Unix account authentication for the API

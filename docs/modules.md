@@ -537,14 +537,14 @@ cmd.has_exec(name: string)
 Run a command and return only its exit status.
 
 ```
-cmd.retcode(name: string, args: list, shell: bool, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | *required* | The program to run, or the shell line when shell is true. |
 | `args` | list | — | Arguments to the program, when not using a shell. |
-| `shell` | bool | — | Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2. |
+| `shell` | any | — | Which shell, or whether: `true` for the platform's own, the path of one — Salt's `shell: /bin/bash` — or `false` for none, in which case `name` is the program and `args` its arguments. On by default, or per cmd_default_shell; see SPEC section 15.2. |
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as, applied with setuid and setgid. |
 | `umask` | string | `` | Umask for the child. |
@@ -560,14 +560,14 @@ cmd.retcode(name: string, args: list, shell: bool, cwd: path = , runas: string =
 Run a command and return its stdout.
 
 ```
-cmd.run(name: string, args: list, shell: bool, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | *required* | The program to run, or the shell line when shell is true. |
 | `args` | list | — | Arguments to the program, when not using a shell. |
-| `shell` | bool | — | Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2. |
+| `shell` | any | — | Which shell, or whether: `true` for the platform's own, the path of one — Salt's `shell: /bin/bash` — or `false` for none, in which case `name` is the program and `args` its arguments. On by default, or per cmd_default_shell; see SPEC section 15.2. |
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as, applied with setuid and setgid. |
 | `umask` | string | `` | Umask for the child. |
@@ -583,14 +583,14 @@ cmd.run(name: string, args: list, shell: bool, cwd: path = , runas: string = , u
 Run a command and return its stdout, stderr, and exit status.
 
 ```
-cmd.run_all(name: string, args: list, shell: bool, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run_all(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | *required* | The program to run, or the shell line when shell is true. |
 | `args` | list | — | Arguments to the program, when not using a shell. |
-| `shell` | bool | — | Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2. |
+| `shell` | any | — | Which shell, or whether: `true` for the platform's own, the path of one — Salt's `shell: /bin/bash` — or `false` for none, in which case `name` is the program and `args` its arguments. On by default, or per cmd_default_shell; see SPEC section 15.2. |
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as, applied with setuid and setgid. |
 | `umask` | string | `` | Umask for the child. |
@@ -624,14 +624,14 @@ cmd.run_bg(name: string, args: list, cwd: path = , runas: string = , env: map)
 Run a command and return its stderr.
 
 ```
-cmd.run_stderr(name: string, args: list, shell: bool, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | *required* | The program to run, or the shell line when shell is true. |
 | `args` | list | — | Arguments to the program, when not using a shell. |
-| `shell` | bool | — | Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2. |
+| `shell` | any | — | Which shell, or whether: `true` for the platform's own, the path of one — Salt's `shell: /bin/bash` — or `false` for none, in which case `name` is the program and `args` its arguments. On by default, or per cmd_default_shell; see SPEC section 15.2. |
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as, applied with setuid and setgid. |
 | `umask` | string | `` | Umask for the child. |
@@ -647,14 +647,14 @@ cmd.run_stderr(name: string, args: list, shell: bool, cwd: path = , runas: strin
 Run a command and return its stdout, whatever the exit status.
 
 ```
-cmd.run_stdout(name: string, args: list, shell: bool, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run_stdout(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | *required* | The program to run, or the shell line when shell is true. |
 | `args` | list | — | Arguments to the program, when not using a shell. |
-| `shell` | bool | — | Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2. |
+| `shell` | any | — | Which shell, or whether: `true` for the platform's own, the path of one — Salt's `shell: /bin/bash` — or `false` for none, in which case `name` is the program and `args` its arguments. On by default, or per cmd_default_shell; see SPEC section 15.2. |
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as, applied with setuid and setgid. |
 | `umask` | string | `` | Umask for the child. |
@@ -4859,7 +4859,7 @@ mount.is_mounted(name: path)
 Mount a filesystem.
 
 ```
-mount.mount(name: path, device: string, mkmnt: bool = false, fstype: string = , opts: string = defaults)
+mount.mount(name: path, device: string, mkmnt: bool = false, fstype: string = , opts: any = defaults)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -4868,7 +4868,7 @@ mount.mount(name: path, device: string, mkmnt: bool = false, fstype: string = , 
 | `device` | string | *required* | What to mount. |
 | `mkmnt` | bool | `false` | Create the mount point if it is not there. |
 | `fstype` | string | `` | The filesystem type. |
-| `opts` | string | `defaults` | Mount options, comma separated. |
+| `opts` | any | `defaults` | Mount options: a comma-separated string, or a list of them, which is the form Salt's own first example uses. |
 
 *changes the system · honours `--test` · SPEC section 15.2*
 
@@ -4877,7 +4877,7 @@ mount.mount(name: path, device: string, mkmnt: bool = false, fstype: string = , 
 Mount a filesystem again, in place, to pick up changed options.
 
 ```
-mount.remount(name: path, device: string, mkmnt: bool = false, fstype: string = , opts: string = defaults)
+mount.remount(name: path, device: string, mkmnt: bool = false, fstype: string = , opts: any = defaults)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -4886,7 +4886,7 @@ mount.remount(name: path, device: string, mkmnt: bool = false, fstype: string = 
 | `device` | string | *required* | What is mounted there. |
 | `mkmnt` | bool | `false` | Create the mount point if it is not there. |
 | `fstype` | string | `` | The filesystem type. |
-| `opts` | string | `defaults` | Mount options, comma separated. |
+| `opts` | any | `defaults` | Mount options: a comma-separated string, or a list of them, which is the form Salt's own first example uses. |
 
 *changes the system · honours `--test` · SPEC section 15.2*
 
@@ -4911,7 +4911,7 @@ mount.rm_fstab(name: path, device: string = , config: path = )
 Write a mount into the table, and report whether it was new, changed or already there.
 
 ```
-mount.set_fstab(name: path, device: string, fstype: string = , opts: string = defaults, dump: string = 0, pass_num: string = 0, config: path = )
+mount.set_fstab(name: path, device: string, fstype: string = , opts: any = defaults, dump: string = 0, pass_num: string = 0, config: path = )
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -4919,7 +4919,7 @@ mount.set_fstab(name: path, device: string, fstype: string = , opts: string = de
 | `name` | path | *required* | The mount point. |
 | `device` | string | *required* | What to mount: a path, a UUID= or a LABEL=. |
 | `fstype` | string | `` | The filesystem type. |
-| `opts` | string | `defaults` | Mount options, comma separated. |
+| `opts` | any | `defaults` | Mount options: a comma-separated string, or a list of them, which is the form Salt's own first example uses. |
 | `dump` | string | `0` | The dump field. |
 | `pass_num` | string | `0` | The fsck pass field. |
 | `config` | path | `` | The table; defaults to /etc/fstab. |
@@ -8734,14 +8734,14 @@ beacon.present(name: string, beacon_data: map, save: bool = true)
 Run a command. Use unless, onlyif, or creates to make it idempotent.
 
 ```
-cmd.run(name: string, args: list, shell: bool, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | *required* | The program to run, or the shell line when shell is true. |
 | `args` | list | — | Arguments to the program, when not using a shell. |
-| `shell` | bool | — | Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2. |
+| `shell` | any | — | Which shell, or whether: `true` for the platform's own, the path of one — Salt's `shell: /bin/bash` — or `false` for none, in which case `name` is the program and `args` its arguments. On by default, or per cmd_default_shell; see SPEC section 15.2. |
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as, applied with setuid and setgid. |
 | `umask` | string | `` | Umask for the child. |
@@ -8780,14 +8780,14 @@ cmd.script(name: string, source: string = , args: list, shell: string = , cwd: p
 Run a command only when a watch requisite fires. On its own it does nothing, which is the whole point: the reaction is the state.
 
 ```
-cmd.wait(name: string, args: list, shell: bool, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.wait(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | *required* | The program to run, or the shell line when shell is true. |
 | `args` | list | — | Arguments to the program, when not using a shell. |
-| `shell` | bool | — | Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2. |
+| `shell` | any | — | Which shell, or whether: `true` for the platform's own, the path of one — Salt's `shell: /bin/bash` — or `false` for none, in which case `name` is the program and `args` its arguments. On by default, or per cmd_default_shell; see SPEC section 15.2. |
 | `cwd` | path | `` | Working directory. |
 | `runas` | string | `` | Account to run as, applied with setuid and setgid. |
 | `umask` | string | `` | Umask for the child. |
@@ -9804,7 +9804,7 @@ module.wait(name: string, args: list, kwargs: map)
 Ensure a filesystem is mounted now and after a reboot.
 
 ```
-mount.mounted(name: string, device: string, fstype: string = , opts: string = defaults, dump: string = 0, pass_num: string = 0, mkmnt: bool = false, config: path = , persist: bool = true, mount: bool = true)
+mount.mounted(name: string, device: string, fstype: string = , opts: any = defaults, dump: string = 0, pass_num: string = 0, mkmnt: bool = false, config: path = , persist: bool = true, mount: bool = true)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -9812,7 +9812,7 @@ mount.mounted(name: string, device: string, fstype: string = , opts: string = de
 | `name` | string | — | The mount point. Defaults to the state ID. |
 | `device` | string | *required* | What to mount: a path, a UUID= or a LABEL=. |
 | `fstype` | string | `` | The filesystem type. |
-| `opts` | string | `defaults` | Mount options, comma separated. |
+| `opts` | any | `defaults` | Mount options: a comma-separated string, or a list of them, which is the form Salt's own first example uses. |
 | `dump` | string | `0` | The dump field. |
 | `pass_num` | string | `0` | The fsck pass field. |
 | `mkmnt` | bool | `false` | Create the mount point if it is not there. |
@@ -10613,14 +10613,14 @@ user.absent(name: string, purge: bool = false)
 Ensure an account exists with the given attributes.
 
 ```
-user.present(name: string, uid: int, gid: int, home: path = , shell: path = , fullname: string = , groups: list, createhome: bool = true, system: bool = false, password: string = , usergroup: bool)
+user.present(name: string, uid: int, gid: any, home: path = , shell: path = , fullname: string = , groups: list, createhome: bool = true, system: bool = false, password: string = , usergroup: bool)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | — | The account. Defaults to the state ID. |
 | `uid` | int | — | The numeric user id. |
-| `gid` | int | — | The numeric primary group id. |
+| `gid` | any | — | The primary group: a numeric id, or the name of an existing group, which Salt also accepts. |
 | `home` | path | `` | The home directory. |
 | `shell` | path | `` | The login shell. |
 | `fullname` | string | `` | The comment field. |

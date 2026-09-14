@@ -48,7 +48,15 @@ func comspec() string {
 // shellCommand is how a Shell command is handed to an interpreter.
 //
 // /c rather than /k, so the interpreter exits when the command does.
-func shellCommand(script string) []string { return []string{comspec(), "/c", script} }
+//
+// `shell` names it when the caller asked for a particular one -- Salt's
+// `shell:` argument -- and %ComSpec% is the default.
+func shellCommand(script, shell string) []string {
+	if shell == "" {
+		shell = comspec()
+	}
+	return []string{shell, "/c", script}
+}
 
 // shellName is what to call the interpreter in a message.
 func shellName() string { return comspec() }

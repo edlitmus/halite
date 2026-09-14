@@ -13,10 +13,11 @@ import (
 
 // registerCmd installs the cmd module.
 //
-// Default execution is **without a shell**, taking an argument vector.
-// Salt's default of a shell for cmd.run is the root of most Salt injection
-// findings, and inverting the default is a deliberate compatibility break
-// with `cmd_default_shell` for a transition. SPEC section 15.2.
+// Default execution is **through a shell**, as Salt's is, so an existing
+// tree's `cmd.run` call sites mean what they meant. `cmd_default_shell:
+// false` takes an argument vector instead, and is the hardened setting
+// an estate moves to once its call sites are quoted or converted to
+// `name` plus `args`. SPEC section 15.2.
 func registerCmd(r *Registries) {
 	cmdParams := func(extra ...signature.Param) []signature.Param {
 		base := []signature.Param{
@@ -26,7 +27,10 @@ func registerCmd(r *Registries) {
 			// omitted `shell` stays absent from the bound arguments and
 			// can fall back to the `cmd_default_shell` setting, while an
 			// explicit `shell: false` still wins over it.
-			opt("shell", signature.Bool, nil, "Run the command through a shell. Off by default, or per cmd_default_shell; see SPEC section 15.2."),
+			//
+			// The type is `any` because the argument carries two
+			// spellings that do not overlap. See shellRequest.
+			opt("shell", signature.Any, nil, "Which shell, or whether: `true` for the platform's own, the path of one — Salt's `shell: /bin/bash` — or `false` for none, in which case `name` is the program and `args` its arguments. On by default, or per cmd_default_shell; see SPEC section 15.2."),
 			opt("cwd", signature.Path, "", "Working directory."),
 			opt("runas", signature.String, "", "Account to run as, applied with setuid and setgid."),
 			opt("umask", signature.String, "", "Umask for the child."),
@@ -38,16 +42,71 @@ func registerCmd(r *Registries) {
 		return append(base, extra...)
 	}
 
-	// defaultShell is the `cmd_default_shell` transition of SPEC section
-	// 15.2: an estate that cannot rewrite every cmd.run at once turns it
-	// on, and the Salt reading of `name` as a shell line keeps working
-	// until it can.
+	// defaultShell is `cmd_default_shell`, and it is on.
+	//
+	// A `cmd.run` that says nothing runs through a shell, which is what
+	// Salt does and what an existing tree is written against. This build
+	// shipped the inverse for most of its life -- an argument vector
+	// unless a state opted in -- on the reasoning that a shell line is
+	// re-interpreted by the shell and that most of Salt's injection
+	// findings begin there. The reasoning still holds and the default no
+	// longer follows it: a tree carried over from Salt has every one of
+	// its `cmd.run` call sites written as a shell line, and a default
+	// that silently reads those as program names is a migration hazard
+	// of its own -- one that fails loudly at best and, where a program
+	// of that name exists, quietly runs the wrong thing.
+	//
+	// `cmd_default_shell: false` is the hardened setting now, and it is
+	// the one an estate moves to once its call sites are quoted or
+	// converted to `name` plus `args`. A single state still opts either
+	// way with `shell:`.
 	defaultShell := func(c *exec.Context) bool {
 		if c == nil || c.Config == nil {
-			return false
+			return true
 		}
 		v, ok := c.Config.Get("cmd_default_shell")
-		return ok && value.Truthy(v)
+		if !ok {
+			return true
+		}
+		return value.Truthy(v)
+	}
+
+	// shellRequest reads the `shell` argument, which carries two
+	// spellings.
+	//
+	// SPEC 15.2 spells it `shell: true` -- a boolean opting into a
+	// shell, the platform's own. Salt spells it `shell: /bin/bash` -- a
+	// path naming which shell to use, which necessarily opts in as well,
+	// since choosing an interpreter is choosing to have one. The two do
+	// not overlap and both are accepted, so a tree carried over from
+	// Salt keeps its meaning and one written to the spec keeps its own.
+	//
+	// The path is honoured rather than merely tolerated. `shell:
+	// /bin/bash` in an existing tree is a request for bash's syntax, and
+	// accepting the argument while running the line under /bin/sh would
+	// be a different program silently -- the shape of the `cloud_grains`
+	// defect in 5.78, where a setting was read and then dropped.
+	//
+	// `use` is whether to run through a shell at all; `path` is which,
+	// empty meaning the platform's own.
+	shellRequest := func(c *exec.Context, args *value.Map) (use bool, path string, err error) {
+		v, ok := args.Get("shell")
+		if !ok || v == nil {
+			return defaultShell(c), "", nil
+		}
+		switch t := v.(type) {
+		case bool:
+			return t, "", nil
+		case string:
+			if strings.TrimSpace(t) == "" {
+				return defaultShell(c), "", nil
+			}
+			return true, t, nil
+		default:
+			return false, "", fmt.Errorf(
+				"`shell` must be true, false, or the path of a shell such as `/bin/bash`, found %s. "+
+					"SPEC section 15.2", value.TypeName(v))
+		}
 	}
 
 	// argvForm reports whether a declaration gave `args`, which is how a
@@ -65,12 +124,20 @@ func registerCmd(r *Registries) {
 	// line and supplying argument-vector arguments in the same state.
 	conflictingShell := func(args *value.Map) bool {
 		v, ok := args.Get("shell")
-		return ok && v != nil && value.Truthy(v) && argvForm(args)
+		if !ok || v == nil {
+			return false
+		}
+		if s, isStr := v.(string); isStr {
+			return strings.TrimSpace(s) != "" && argvForm(args)
+		}
+		return value.Truthy(v) && argvForm(args)
 	}
 
 	build := func(c *exec.Context, args *value.Map) exec.Command {
+		use, shellPath, _ := shellRequest(c, args)
 		cmd := exec.Command{
-			Shell:          states.Bool(args, "shell", defaultShell(c)),
+			Shell:          use,
+			ShellPath:      shellPath,
 			Dir:            states.Str(args, "cwd", ""),
 			RunAs:          states.Str(args, "runas", ""),
 			Umask:          states.Str(args, "umask", ""),
@@ -89,6 +156,7 @@ func registerCmd(r *Registries) {
 			cmd.Argv = []string{name}
 		} else {
 			cmd.Shell = false
+			cmd.ShellPath = ""
 			cmd.Argv = append([]string{name}, states.Strings(args, "args")...)
 		}
 		if envMap := states.Mapping(args, "env"); envMap != nil {
@@ -107,8 +175,11 @@ func registerCmd(r *Registries) {
 	}
 
 	runAll := func(c *exec.Context, args *value.Map) (*value.Map, error) {
+		if _, _, err := shellRequest(c, args); err != nil {
+			return nil, err
+		}
 		if conflictingShell(args) {
-			return nil, fmt.Errorf("this state asks for `shell: true` and also gives `args`; " +
+			return nil, fmt.Errorf("this state asks for a shell and also gives `args`; " +
 				"a shell line is one string and an argument vector is a list, so pick one. SPEC section 15.2")
 		}
 		cmd := build(c, args)
@@ -224,8 +295,11 @@ func registerCmd(r *Registries) {
 	// a command's effect cannot be predicted, so test mode reports that it
 	// would run the command rather than pretending to know the outcome.
 	runState := func(c *exec.Context, args *value.Map) (states.Result, error) {
+		if _, _, err := shellRequest(c, args); err != nil {
+			return states.False(err.Error()), nil
+		}
 		if conflictingShell(args) {
-			return states.False("This state asks for `shell: true` and also gives `args`; " +
+			return states.False("This state asks for a shell and also gives `args`; " +
 				"a shell line is one string and an argument vector is a list, so pick one. SPEC section 15.2"), nil
 		}
 		cmd := build(c, args)

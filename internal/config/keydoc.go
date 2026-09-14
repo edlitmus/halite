@@ -958,7 +958,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"cmd_default_shell": {
 		Group:  "Node execution controls",
-		Detail: "Runs `cmd.run` through a shell by default, as Salt does. Off here, because an argument vector cannot be reinterpreted by anything; turn it on for a tree that depends on shell syntax it never quoted.",
+		Detail: "Runs `cmd.run` through a shell by default, as Salt does, which is the default here. Turning it off takes an argument vector instead, which cannot be reinterpreted by anything — a command whose arguments come from pillar or a grain is then not a shell line, and the injection findings that follow from one do not apply. An estate that has quoted its `cmd.run` call sites, or converted them to `name` plus `args`, should turn it off; `shell: true` on a single state opts that state back in.",
 	},
 	"legacy_arg_parse": {
 		Group:  "Node execution controls",
