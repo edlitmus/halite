@@ -136,7 +136,7 @@ type excludeRef struct {
 
 // parseSLS reads a rendered SLS value into its parts. It reports every
 // structural problem it finds rather than stopping at the first.
-func parseSLS(v any, sls, env string, diags *Diags) *slsContent {
+func parseSLS(v any, sls, env, filePath string, diags *Diags) *slsContent {
 	out := &slsContent{}
 	if v == nil {
 		return out
@@ -152,7 +152,7 @@ func parseSLS(v any, sls, env string, diags *Diags) *slsContent {
 		id := value.KeyString(e.Key)
 		switch id {
 		case keyInclude:
-			out.Includes = append(out.Includes, parseIncludes(e.Val, sls, env, e.ValPos, diags)...)
+			out.Includes = append(out.Includes, parseIncludes(e.Val, sls, env, isPackage(filePath), e.ValPos, diags)...)
 			continue
 		case keyExtend:
 			m, ok := e.Val.(*value.Map)
@@ -179,7 +179,7 @@ func parseSLS(v any, sls, env string, diags *Diags) *slsContent {
 	return out
 }
 
-func parseIncludes(v any, sls, env string, pos value.Pos, diags *Diags) []includeRef {
+func parseIncludes(v any, sls, env string, pkg bool, pos value.Pos, diags *Diags) []includeRef {
 	items, ok := v.([]any)
 	if !ok {
 		diags.Add(pos, sls, "", "include must hold a list, found %s", value.TypeName(v))
@@ -189,7 +189,7 @@ func parseIncludes(v any, sls, env string, pos value.Pos, diags *Diags) []includ
 	for _, item := range items {
 		switch t := item.(type) {
 		case string:
-			out = append(out, includeRef{Name: resolveRelative(t, sls), Env: env, Pos: pos})
+			out = append(out, includeRef{Name: resolveRelative(t, sls, pkg, sls, pos, diags), Env: env, Pos: pos})
 		case *value.Map:
 			// `- env: [sls1, sls2]` selects a different environment.
 			for _, e := range t.Entries() {
@@ -205,7 +205,7 @@ func parseIncludes(v any, sls, env string, pos value.Pos, diags *Diags) []includ
 						diags.Add(e.ValPos, sls, "", "an SLS name must be a string, found %s", value.TypeName(n))
 						continue
 					}
-					out = append(out, includeRef{Name: resolveRelative(s, sls), Env: otherEnv, Pos: e.ValPos})
+					out = append(out, includeRef{Name: resolveRelative(s, sls, pkg, sls, e.ValPos, diags), Env: otherEnv, Pos: e.ValPos})
 				}
 			}
 		default:
@@ -215,32 +215,58 @@ func parseIncludes(v any, sls, env string, pos value.Pos, diags *Diags) []includ
 	return out
 }
 
-// resolveRelative expands Salt's leading-dot relative include, where `.foo`
-// inside `web.nginx` means `web.foo`.
-func resolveRelative(name, sls string) string {
+// resolveRelative expands Salt's leading-dot relative include, where
+// `.foo` inside `web.nginx` means `web.foo`.
+//
+// `pkg` says whether the including file is an `init.sls`, and it is the
+// whole difficulty. Two files share the SLS name `web.nginx`:
+// `web/nginx.sls` and `web/nginx/init.sls`. In the first, `.foo` means
+// `web.foo` -- a sibling. In the second it means `web.nginx.foo` -- a
+// child, because an `init.sls` *is* its directory rather than a file
+// inside one. Salt spells this by appending an implicit `init`
+// component before counting back, and that is what happens here.
+//
+// This had no `pkg` and always climbed, so every relative include in
+// every `init.sls` resolved one level too high. On a real tree that
+// showed up as `sls "base.datadog" was not found` where the tree means
+// `base.cleanup.datadog` -- and "not found" is the lucky outcome. Where
+// a file of the same name does exist at the parent level, the wrong one
+// is included and nothing says so.
+//
+// Climbing past the root is Salt's error rather than a name, and it is
+// reported as one: silently resolving to a top-level `foo` is how a
+// tree acquires a state nobody meant.
+func resolveRelative(name, sls string, pkg bool, sourceSLS string, pos value.Pos, diags *Diags) string {
 	if !strings.HasPrefix(name, ".") {
 		return name
 	}
-	parent := sls
-	if i := strings.LastIndex(sls, "."); i >= 0 {
-		parent = sls[:i]
-	} else {
-		parent = ""
-	}
-	// Each extra leading dot climbs one more level.
 	rest := strings.TrimLeft(name, ".")
-	up := len(name) - len(rest) - 1
-	for i := 0; i < up; i++ {
-		if j := strings.LastIndex(parent, "."); j >= 0 {
-			parent = parent[:j]
-			continue
-		}
-		parent = ""
+	levels := len(name) - len(rest)
+
+	var comps []string
+	if sls != "" {
+		comps = strings.Split(sls, ".")
 	}
-	if parent == "" {
+	if pkg {
+		comps = append(comps, "init")
+	}
+	if levels > len(comps) {
+		diags.Add(pos, sourceSLS, "",
+			"the relative include %q climbs %d level(s) above %q, which has %d",
+			name, levels, sls, len(comps))
 		return rest
 	}
-	return parent + "." + rest
+	comps = comps[:len(comps)-levels]
+	if len(comps) == 0 {
+		return rest
+	}
+	return strings.Join(comps, ".") + "." + rest
+}
+
+// isPackage reports whether an SLS came from an `init.sls`, which is
+// what decides where its relative includes point.
+func isPackage(filePath string) bool {
+	return strings.HasSuffix(filePath, "/init.sls") || filePath == "init.sls"
 }
 
 func parseExcludes(v any, sls string, pos value.Pos, diags *Diags) []excludeRef {

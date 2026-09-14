@@ -429,7 +429,7 @@ func (c *Compiler) mergeSLS(out *Compiled, env, name string, seen map[string]boo
 	// Includes are merged before the including file, so the including
 	// file's own keys win.
 	if inc, ok := body.Get("include"); ok {
-		for _, n := range includeNames(inc, name) {
+		for _, n := range includeNames(inc, name, path) {
 			// An include names a file the author knew about, so a
 			// missing one is an error even under ignore_missing.
 			c.mergeSLS(out, env, n, seen, append(stack, key), false)
@@ -444,46 +444,62 @@ func (c *Compiler) mergeSLS(out *Compiled, env, name string, seen map[string]boo
 	out.SLS = append(out.SLS, name)
 }
 
-func includeNames(v any, from string) []string {
+func includeNames(v any, from, path string) []string {
+	pkg := isPackage(path)
 	items, ok := v.([]any)
 	if !ok {
 		if s, ok := v.(string); ok {
-			return []string{resolveRelative(s, from)}
+			return []string{resolveRelative(s, from, pkg)}
 		}
 		return nil
 	}
 	var out []string
 	for _, item := range items {
 		if s, ok := item.(string); ok {
-			out = append(out, resolveRelative(s, from))
+			out = append(out, resolveRelative(s, from, pkg))
 		}
 	}
 	return out
 }
 
+// isPackage reports whether a pillar SLS came from an `init.sls`, which
+// is what decides where its relative includes point.
+func isPackage(path string) bool {
+	return strings.HasSuffix(path, "/init.sls") || path == "init.sls"
+}
+
 // resolveRelative expands the leading-dot relative include, where `.foo`
 // inside `web.nginx` means `web.foo`.
-func resolveRelative(name, sls string) string {
+//
+// `pkg` says whether the including file is an `init.sls`. Two files
+// share the SLS name `web.nginx` -- `web/nginx.sls` and
+// `web/nginx/init.sls` -- and `.foo` means `web.foo` in the first and
+// `web.nginx.foo` in the second, because an `init.sls` is its directory
+// rather than a file inside one. Salt appends an implicit `init`
+// component before counting back, and so does this. See the same
+// function in internal/state, where the defect was found.
+func resolveRelative(name, sls string, pkg bool) string {
 	if !strings.HasPrefix(name, ".") {
 		return name
 	}
-	parent := ""
-	if i := strings.LastIndex(sls, "."); i >= 0 {
-		parent = sls[:i]
-	}
 	rest := strings.TrimLeft(name, ".")
-	up := len(name) - len(rest) - 1
-	for i := 0; i < up; i++ {
-		if j := strings.LastIndex(parent, "."); j >= 0 {
-			parent = parent[:j]
-			continue
-		}
-		parent = ""
+	levels := len(name) - len(rest)
+
+	var comps []string
+	if sls != "" {
+		comps = strings.Split(sls, ".")
 	}
-	if parent == "" {
+	if pkg {
+		comps = append(comps, "init")
+	}
+	if levels > len(comps) {
 		return rest
 	}
-	return parent + "." + rest
+	comps = comps[:len(comps)-levels]
+	if len(comps) == 0 {
+		return rest
+	}
+	return strings.Join(comps, ".") + "." + rest
 }
 
 func withoutKey(m *value.Map, key string) *value.Map {
