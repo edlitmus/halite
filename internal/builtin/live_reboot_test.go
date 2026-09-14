@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	oscmd "os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -325,29 +326,62 @@ func TestTheFreeBSDCancelMechanismWorksAgainstARealProcess(t *testing.T) {
 	if c.Which("ps") == "" || c.Which("kill") == "" {
 		t.Skip("this host has no ps or kill")
 	}
-	sleep := c.Which("sleep")
-	if sleep == "" {
-		t.Skip("this host has no sleep to stand in for a shutdown")
-	}
 
-	// The real `sleep`, started under argv[0] "shutdown".
+	// **This test binary**, re-executed under argv[0] "shutdown".
 	//
 	// `rebootFindShutdown` matches the command's own basename, which is
 	// the point of it -- a stray `grep shutdown` must not count as a
-	// pending reboot -- and `ps -o command=` prints argv, so setting
-	// argv[0] is enough and is what this does.
+	// pending reboot -- and `ps -o command=` prints argv, so a process
+	// whose argv[0] is "shutdown" is what this needs.
 	//
-	// The obvious alternative, copying the binary to a file named
-	// `shutdown`, is wrong on two of this project's own platforms.
+	// Getting one is harder than it looks, and both obvious routes fail
+	// on this project's own platforms, for the same underlying reason.
 	// Alpine's coreutils and Ubuntu 26.04's are **multi-call binaries**:
-	// they dispatch on argv[0], so the copy exits immediately with
+	// one executable that decides what to be from argv[0]. So *copying*
+	// `sleep` to a file named `shutdown` fails --
 	//
 	//	coreutils: unknown program 'shutdown'
 	//
-	// and the process this test needs to find is gone before it looks.
-	// That is exactly how this test failed on both, against a
-	// rebootPending that was working correctly.
-	cmd := &oscmd.Cmd{Path: sleep, Args: []string{"shutdown", "600"}}
+	// -- and so does *renaming it through argv[0]*, which is what this
+	// test tried next: the binary reads the name it was called by and
+	// refuses just the same. Both times the process was gone before
+	// `rebootPending` looked, and both times the module was working.
+	//
+	// A Go binary ignores argv[0] entirely, and there is one to hand:
+	// this test binary. Re-executing it with `-test.run` pointed at the
+	// helper below, and an environment variable the helper insists on,
+	// gives a real long-lived process called `shutdown` on every
+	// platform -- including the ones with a multi-call userland.
+	self, err := os.Executable()
+	if err != nil {
+		t.Skipf("this test binary cannot locate itself: %v", err)
+	}
+	// **Copied to a file actually named `shutdown`, not merely started
+	// under that argv[0].**
+	//
+	// Renaming through argv[0] is not enough, because BusyBox's ps is
+	// honest about the difference: where argv[0] disagrees with the
+	// binary's own name it prints `{comm} argv0 args`, so the stand-in
+	// showed up on Alpine as `{sleeper} shutdown 600` and was correctly
+	// *not* taken for a shutdown. Copying makes the executable's own
+	// name `shutdown`, so there is nothing for ps to disagree about.
+	//
+	// Copying works here where copying `sleep` did not, for the reason
+	// that broke that attempt: this is a Go binary, and a Go binary does
+	// not dispatch on argv[0] the way a multi-call coreutils does.
+	body, err := os.ReadFile(self)
+	if err != nil {
+		t.Skipf("this test binary could not be read: %v", err)
+	}
+	stand := filepath.Join(t.TempDir(), "shutdown")
+	if err := os.WriteFile(stand, body, 0o755); err != nil {
+		t.Fatalf("the stand-in could not be written: %v", err)
+	}
+	cmd := &oscmd.Cmd{
+		Path: stand,
+		Args: []string{stand, "-test.run=^TestRebootStandInSleeps$"},
+		Env:  append(os.Environ(), rebootStandInEnv+"=1"),
+	}
 	if err := cmd.Start(); err != nil {
 		t.Skipf("the stand-in could not be started: %v", err)
 	}
@@ -360,7 +394,6 @@ func TestTheFreeBSDCancelMechanismWorksAgainstARealProcess(t *testing.T) {
 	// It has to be visible to the module's own reader, through the real
 	// `ps`, before anything is asserted about cancelling it.
 	var pending rebootPendingShutdown
-	var err error
 	for i := 0; i < 50; i++ {
 		if pending, err = rebootPending(c); err != nil {
 			t.Fatalf("rebootPending: %v", err)
@@ -409,4 +442,26 @@ func TestTheFreeBSDCancelMechanismWorksAgainstARealProcess(t *testing.T) {
 	if after.found && after.pid == int64(cmd.Process.Pid) {
 		t.Errorf("the cancel returned success and pid %d is still pending", cmd.Process.Pid)
 	}
+}
+
+// rebootStandInEnv gates the helper below, so that an ordinary run of
+// this package never sits in it.
+const rebootStandInEnv = "HALITE_REBOOT_STANDIN"
+
+// TestRebootStandInSleeps is not a test. It is the long-lived process
+// TestTheFreeBSDCancelMechanismWorksAgainstARealProcess needs to find
+// and signal, and it exists as a test function because re-executing this
+// binary is the only portable way to get a process whose argv[0] is a
+// name of our choosing -- see that test for why copying or renaming a
+// system binary does not work on a multi-call userland.
+//
+// It does nothing at all unless the parent set the variable, so
+// `go test ./...` runs it as an instant skip.
+func TestRebootStandInSleeps(t *testing.T) {
+	if os.Getenv(rebootStandInEnv) != "1" {
+		t.Skip("not the stand-in process; this runs only when the reboot cancel test re-executes it")
+	}
+	// Longer than the test that starts it will wait, and short enough
+	// that a stranded one goes away on its own.
+	time.Sleep(5 * time.Minute)
 }

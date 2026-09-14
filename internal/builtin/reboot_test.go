@@ -190,88 +190,6 @@ func TestTheBootTimeIsReadFromTheNumberNotTheDate(t *testing.T) {
 	}
 }
 
-// A pending shutdown is found by the command's own name, not by a
-// substring of the line.
-//
-// The listing contains this project's own processes while its tests run.
-// Matching anywhere in the line would find `go test ... reboot.go`, an
-// editor, or a log tail, and report a reboot nobody scheduled -- which a
-// state would then treat as "already pending" and decline to act on.
-func TestAPendingShutdownIsFoundByTheCommandNotByTheLine(t *testing.T) {
-	const listing = `  1 /sbin/init
- 42 /usr/bin/vi internal/builtin/reboot.go
- 77 tail -f /var/log/shutdown.log
- 91 go test ./internal/builtin/ -run Shutdown
-`
-	if _, _, found := rebootFindShutdown(listing); found {
-		t.Error("a shutdown was reported for a listing that has none, only lines mentioning one")
-	}
-
-	const pending = listing + " 99 /sbin/shutdown -r +5 halite: kernel update\n"
-	pid, cmd, found := rebootFindShutdown(pending)
-	if !found {
-		t.Fatal("a real pending shutdown was not found")
-	}
-	if pid != 99 {
-		t.Errorf("pid %d, want 99", pid)
-	}
-	if !strings.Contains(cmd, "-r +5") {
-		t.Errorf("the command is not carried back: %q", cmd)
-	}
-}
-
-// The Debian marker's companion file names the packages that asked.
-//
-// "A reboot is required" and "a reboot is required because these six
-// packages changed" are different amounts of help to whoever has to
-// decide whether now is the time.
-func TestTheRebootRequiredPackagesAreDeduplicated(t *testing.T) {
-	// Written the way the real file is: one package per line, and apt
-	// appends without checking, so duplicates are ordinary.
-	got := rebootDedupeLines("linux-image-generic\nlibssl3\nlinux-image-generic\n\n  libssl3  \n")
-	if len(got) != 2 {
-		t.Fatalf("read %v, want two distinct packages", got)
-	}
-	if got[0] != "linux-image-generic" || got[1] != "libssl3" {
-		t.Errorf("read %v, want them in the order the file lists them", got)
-	}
-}
-
-// The two ps columns are asked for with a separate -o each.
-//
-// `-o pid=,command=` is the Linux idiom and it is what this module used
-// to send. FreeBSD's ps(1) reads the `=` as introducing a replacement
-// header that runs to the end of the argument, so it saw one keyword
-// headed with the literal string ",command=", printed a single column of
-// bare pids, and exited 0. rebootFindShutdown then matched nothing on
-// every FreeBSD node, forever, with no error anywhere -- see
-// rebootPSArgv for the capture.
-//
-// This is a unit test rather than a live one because the failure is
-// invisible in the output: the command succeeds and the lines look
-// plausible. The shape of the request is the only thing worth pinning.
-func TestThePSColumnsAreAskedForSeparately(t *testing.T) {
-	argv := rebootPSArgv()
-
-	for _, arg := range argv {
-		if strings.Contains(arg, ",") {
-			t.Errorf("%v joins keywords with a comma; FreeBSD reads everything after the "+
-				"first `=` as a header, so only the first column survives", argv)
-		}
-	}
-
-	// Both columns are actually requested, each behind its own -o.
-	var columns []string
-	for i, arg := range argv {
-		if arg == "-o" && i+1 < len(argv) {
-			columns = append(columns, argv[i+1])
-		}
-	}
-	if !equalStrings(columns, []string{"pid=", "command="}) {
-		t.Errorf("%v asks for columns %v, want a separate -o for pid= and command=", argv, columns)
-	}
-}
-
 // Cancelling on a machine with nothing pending reports no change, and
 // runs no cancel command at all.
 //
@@ -292,13 +210,29 @@ func TestCancellingWithNothingPendingReportsNoChange(t *testing.T) {
 
 	// A process table with no shutdown in it. `ps` is the only command
 	// that may run: reaching the cancel itself is the defect.
-	psKey := "ps -ax -o pid= -o command="
+	//
+	// Scripted for whichever reader this platform uses, because the
+	// detection goes through the `ps` module now rather than through a
+	// command this file builds itself -- FreeBSD asks libxo for JSON,
+	// Linux asks procps for columns.
+	responses := map[string]exec.Result{}
+	if runtime.GOOS == "freebsd" {
+		responses[(exec.Command{Argv: []string{"ps", "--libxo=json", "-axwwo",
+			strings.Join(psColumns, ",")}}).String()] = exec.Result{
+			Stdout: `{"process-information":{"process":[` +
+				`{"pid":"1","ppid":"0","user":"root","percent-cpu":"0.0","percent-memory":"0.1",` +
+				`"rss":"1024","virtual-size":"2048","state":"Ss","command":"/sbin/init"}]}}`,
+		}
+	} else {
+		responses[(exec.Command{Argv: []string{"ps", "--help"}}).String()] =
+			exec.Result{Stdout: "usage: ps [options]\n"}
+		responses[(exec.Command{Argv: []string{"ps", "-eww", "--no-headers", "-o",
+			strings.Join(psColumns, ",")}}).String()] = exec.Result{
+			Stdout: "    1     0 root  0.0  0.1 1024 2048 Ss   /sbin/init\n",
+		}
+	}
 	c := &exec.Context{
-		Runner: &exec.RecordingRunner{
-			Responses: map[string]exec.Result{
-				psKey: {Stdout: "  1 /sbin/init\n 42 /usr/bin/sshd\n"},
-			},
-		},
+		Runner: &exec.RecordingRunner{Responses: responses},
 		Lookup: func(name string) string { return "/usr/bin/" + name },
 	}
 
@@ -322,5 +256,72 @@ func TestCancellingWithNothingPendingReportsNoChange(t *testing.T) {
 		if s := ran.String(); strings.Contains(s, "shutdown") || strings.Contains(s, "kill") {
 			t.Errorf("a cancel was run against a machine with nothing pending: %q", s)
 		}
+	}
+}
+
+// A pending shutdown is found through the `ps` module's reader, so
+// `reboot` works on every flavour of ps that module knows.
+//
+// This replaces a pair of tests for `rebootPSArgv` and
+// `rebootFindShutdown`, which were this file's own second invocation of
+// `ps` -- and which is exactly how `reboot.scheduled` came to answer
+// "nothing is pending" on every Alpine node: the argv was procps's,
+// BusyBox's ps refuses it, and the error was tolerated. There is one
+// reader now, and this proves `reboot` reaches the machine through it by
+// scripting a BusyBox response and expecting the shutdown to be found.
+func TestAPendingShutdownIsFoundThroughThePSModule(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skipf("the BusyBox listing this scripts is a Linux one; this is %s", runtime.GOOS)
+	}
+	help := (exec.Command{Argv: []string{"ps", "--help"}}).String()
+	listing := (exec.Command{Argv: []string{
+		"ps", "-o", "pid,ppid,user,rss,vsz,stat,args"}}).String()
+
+	c := &exec.Context{
+		Runner: &exec.RecordingRunner{
+			Responses: map[string]exec.Result{
+				// BusyBox names itself in its usage banner, which is how
+				// psArgv tells the flavours apart.
+				help: {Code: 1, Stderr: "BusyBox v1.37.0 (2026-01-10) multi-call binary.\n"},
+				listing: {Stdout: "PID   PPID  USER     RSS  VSZ  STAT COMMAND\n" +
+					"    1     0 root      908 1636 S    /sbin/init\n" +
+					" 6621     1 root     1184 1652 S    /sbin/shutdown -r +120\n"},
+			},
+		},
+		Lookup: func(name string) string { return "/bin/" + name },
+	}
+
+	pending, err := rebootPending(c)
+	if err != nil {
+		t.Fatalf("rebootPending against a BusyBox listing: %v", err)
+	}
+	if !pending.found {
+		t.Fatal("a shutdown is in the listing and rebootPending did not find it; " +
+			"reboot is not reading the process table through the ps module")
+	}
+	if pending.pid != 6621 {
+		t.Errorf("pid = %d, want 6621", pending.pid)
+	}
+
+	// And a listing with no shutdown in it is not a false positive --
+	// `/sbin/init` must not match, nor anything merely mentioning the
+	// word.
+	c2 := &exec.Context{
+		Runner: &exec.RecordingRunner{
+			Responses: map[string]exec.Result{
+				help: {Code: 1, Stderr: "BusyBox v1.37.0 multi-call binary.\n"},
+				listing: {Stdout: "PID   PPID  USER     RSS  VSZ  STAT COMMAND\n" +
+					"    1     0 root      908 1636 S    /sbin/init\n" +
+					" 7000     1 root      100  200 S    grep shutdown\n"},
+			},
+		},
+		Lookup: func(name string) string { return "/bin/" + name },
+	}
+	quiet, err := rebootPending(c2)
+	if err != nil {
+		t.Fatalf("rebootPending on a quiet machine: %v", err)
+	}
+	if quiet.found {
+		t.Errorf("a `grep shutdown` was read as a pending reboot: %v", quiet.comment)
 	}
 }

@@ -214,3 +214,52 @@ func TestTheBusyboxArgvCarriesNoOptionItRefuses(t *testing.T) {
 		}
 	}
 }
+
+// BusyBox abbreviates a size it cannot fit, and `ParseInt` reads that
+// as zero.
+//
+// The fixture pair was captured together on Alpine 3.24 for one process:
+// `ps` reported `rss=3416 vsz=1.1g` where /proc reported `VmRSS 3540 kB`
+// and `VmSize 1226592 kB`. Reading `1.1g` as 0 is what made
+// `TestLivePSReadsTheRealProcessTable` fail there — the test binary's
+// own resident size is large enough to be abbreviated, so a running
+// process appeared to hold no memory at all.
+func TestBusyboxAbbreviatedSizesAreReadRatherThanZeroed(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want int64
+	}{
+		{"3416", 3416},    // plain, as procps always writes
+		{"908", 908},      //
+		{"0", 0},          // a kernel thread really does hold none
+		{"1.1g", 1153433}, // 1.1 * 1024 * 1024
+		{"56.7m", 58060},  // 56.7 * 1024
+		{"2g", 2097152},   //
+		{"512k", 512},     // already KiB
+		{"", 0},           //
+		{"notanumber", 0}, //
+	} {
+		if got := psSize(c.in); got != c.want {
+			t.Errorf("psSize(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+
+	// The property that actually matters: an abbreviated size must not
+	// come back as zero, because zero is a claim about a process that no
+	// running process can make.
+	for _, abbreviated := range []string{"1.1g", "56.7m", "512k", "2g", "1.5t"} {
+		if psSize(abbreviated) == 0 {
+			t.Errorf("psSize(%q) = 0; a running process does not hold zero", abbreviated)
+		}
+	}
+
+	// And it is honestly approximate: 1.1g is not the 1226592 KiB /proc
+	// reported for the same process, and nothing here can recover that.
+	// The test records the gap rather than pretending it is not there.
+	const trueKiB = 1226592
+	got := psSize("1.1g")
+	if got >= trueKiB {
+		t.Errorf("psSize(\"1.1g\") = %d, which is not below the %d KiB /proc reported; "+
+			"the abbreviation rounds down and this test records that it does", got, trueKiB)
+	}
+}

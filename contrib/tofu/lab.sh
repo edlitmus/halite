@@ -158,6 +158,54 @@ selected_targets() {
     done
 }
 
+# labReport prints a run's outcome: every failure in full, then a tally.
+#
+# # Why not just the test lines
+#
+# This used to pipe the result lines through `head -60`, and on a host
+# with many tests that cut the output at exactly sixty -- which is how a
+# `FAIL debian13: live` arrived with **no failing test shown anywhere**,
+# the one line that explained it having been truncated away. A report
+# that says something failed and hides what is worse than no report: it
+# sends the reader to the machine to find out what the run already knew.
+#
+# So failures are never truncated, and their `_test.go:NN:` detail lines
+# come with them. The passes and skips become a count, which is all
+# anyone reads of them -- and a skip *count* that jumps is still a signal
+# worth chasing, because a live test that skipped is not one that ran.
+labReport() {
+    what="$1"
+    file="$2"
+
+    if grep -qE '^--- FAIL' "$file"; then
+        echo "  $what failures:"
+        # The FAIL line and the indented detail beneath it, which is
+        # where the tool's own words are.
+        grep -E '^--- FAIL|^[[:space:]]+[a-z_]+\.go:[0-9]+:' "$file" | sed 's/^/    /'
+    fi
+    # A build or vet error has no --- FAIL line at all, so it is looked
+    # for separately rather than assumed absent.
+    if grep -qE '^(# |.*\[build failed\]|panic:)' "$file"; then
+        echo "  $what did not build, or panicked:"
+        grep -E '^(# |.*\[build failed\]|panic:)' "$file" | head -20 | sed 's/^/    /'
+    fi
+
+    # Per-test lines exist only for a verbose run, which the live suite
+    # is and the unit suite is not. Without them, count packages -- `ok`
+    # and `FAIL` per package -- rather than printing "0 passed" over a
+    # suite that passed entirely.
+    if grep -qE '^--- (PASS|SKIP|FAIL)' "$file"; then
+        printf '  %s: %s passed, %s skipped, %s failed\n' "$what" \
+            "$(grep -cE '^--- PASS' "$file")" \
+            "$(grep -cE '^--- SKIP' "$file")" \
+            "$(grep -cE '^--- FAIL' "$file")"
+    else
+        printf '  %s: %s package(s) ok, %s failed\n' "$what" \
+            "$(grep -cE '^ok  ' "$file")" \
+            "$(grep -cE '^FAIL' "$file")"
+    fi
+}
+
 # A host is usable only once its bootstrap wrote the ready file. Anything
 # earlier is a machine with a partial package set and no Go, and a test
 # result from one is worse than no result.
@@ -307,7 +355,7 @@ test)
             >"$out" 2>&1; then
             host_failed="$host_failed unit"
         fi
-        grep -vE '^ok|no test files' "$out" | head -40
+        labReport unit "$out"
 
         echo "---- live suite (root, HALITE_SYSTEM_LIVE=1)"
         # shellcheck disable=SC2086,SC2029
@@ -316,10 +364,7 @@ test)
             >"$out" 2>&1; then
             host_failed="$host_failed live"
         fi
-        # SKIP lines are kept deliberately. A live test that skipped is
-        # not a live test that ran, and on these rows the skips are the
-        # report: they name what this distribution could not be asked.
-        grep -E '^(--- (PASS|FAIL|SKIP)|FAIL|ok)' "$out" | head -60
+        labReport live "$out"
 
         if [ -n "$host_failed" ]; then
             echo "FAIL $name:$host_failed"

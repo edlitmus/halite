@@ -579,13 +579,29 @@ type rebootPendingShutdown struct {
 // machine it had just scheduled one on, and `reboot.scheduled`'s whole
 // job is to be believed on that question.
 func rebootPending(c *exec.Context) (rebootPendingShutdown, error) {
-	res, err := c.Run(exec.Command{Argv: rebootPSArgv(), IgnoreExitCode: true})
+	// Through `psList`, which is the `ps` module's own reader, rather
+	// than a second invocation of the tool.
+	//
+	// This used to build its own `ps` command, and that is how it broke
+	// on Alpine: the argv was the procps spelling, BusyBox's ps refuses
+	// it, and because the failure was tolerated the answer came back as
+	// "nothing is pending" on every Alpine node rather than as an error.
+	// Two places invoking the same tool with different assumptions is
+	// the commonest defect shape in this repository; the second one is
+	// gone now, so `reboot` inherits whatever flavours `ps` learns --
+	// procps, BSD libxo and BusyBox today.
+	procs, err := psList(c)
 	if err != nil {
-		return rebootPendingShutdown{}, fmt.Errorf("ps could not be run on this node: %w", err)
+		return rebootPendingShutdown{}, fmt.Errorf("the process table could not be read: %w", err)
 	}
-	if pid, cmd, ok := rebootFindShutdown(res.Stdout); ok {
-		return rebootPendingShutdown{found: true, pid: pid,
-			comment: "a shutdown is pending: " + cmd}, nil
+	for _, p := range procs {
+		// `Name` is the command without its path or arguments, which is
+		// the comparison that matters: a `grep shutdown` in somebody's
+		// shell is not a pending reboot.
+		if p.Name() == "shutdown" {
+			return rebootPendingShutdown{found: true, pid: p.PID,
+				comment: "a shutdown is pending: " + p.Command}, nil
+		}
 	}
 	if runtime.GOOS == "linux" {
 		if body, err := os.ReadFile(rebootSystemdScheduledFile); err == nil {
@@ -595,32 +611,6 @@ func rebootPending(c *exec.Context) (rebootPendingShutdown, error) {
 		}
 	}
 	return rebootPendingShutdown{comment: "no shutdown is pending on this node"}, nil
-}
-
-// rebootPSArgv asks for two columns with no headers, in the one spelling
-// both platforms read the same way.
-//
-// **`-o pid=,command=` is not that spelling, and it fails silently.**
-// It is the Linux idiom and it is wrong on FreeBSD, whose ps(1) reads an
-// `=` as introducing *a replacement header that runs to the end of the
-// argument*. So FreeBSD takes the whole of `pid=,command=` as one
-// keyword -- `pid`, headed with the literal string `,command=` -- and
-// prints a single column of bare numbers:
-//
-//	$ ps -axo pid=,command=
-//	,command=
-//	        0
-//	        1
-//
-// Nothing errors. `ps` exits 0, the output is real, and every line has a
-// pid in the field this module parses -- it simply never has a command
-// in the second field, so rebootFindShutdown matches nothing, ever.
-// `reboot.scheduled` answered "no shutdown is pending" on every FreeBSD
-// node whatever was pending, and `reboot.cancel`, which now finds its
-// pid that way, would have had nothing to cancel. A separate `-o` per
-// column is unambiguous on both.
-func rebootPSArgv() []string {
-	return []string{"ps", "-ax", "-o", "pid=", "-o", "command="}
 }
 
 // rebootSystemdScheduledFile is where logind records a shutdown that has
@@ -660,36 +650,6 @@ func rebootDescribeSystemdSchedule(body string) string {
 		return "at " + when
 	}
 	return rebootSystemdScheduledFile + " exists but names neither a mode nor a time"
-}
-
-// rebootFindShutdown looks for a shutdown process in a ps listing.
-//
-// Matched on the command's own first word rather than anywhere in the
-// line, because `grep shutdown` would match this build's own tests, an
-// editor with shutdown.go open, and a log tail.
-func rebootFindShutdown(out string) (pid int64, command string, found bool) {
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		n, err := strconv.ParseInt(fields[0], 10, 64)
-		if err != nil {
-			continue
-		}
-		base := fields[1]
-		if i := strings.LastIndexByte(base, '/'); i >= 0 {
-			base = base[i+1:]
-		}
-		if base == "shutdown" {
-			return n, strings.Join(fields[1:], " "), true
-		}
-	}
-	return 0, "", false
 }
 
 // rebootLastBoot reports when the node came up.

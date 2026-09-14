@@ -238,6 +238,14 @@ func (p psProcess) Name() string {
 	if strings.HasPrefix(field, "[") && strings.HasSuffix(field, "]") {
 		return strings.Trim(field, "[]")
 	}
+	// BusyBox writes `{comm} argv0 args...` when a process was executed
+	// under a name other than its binary's -- a daemon started through a
+	// symlink, say. The braced word is the executable, which is what
+	// `pgrep` matches and what this should answer; without this the name
+	// came back as the literal `{sleeper}`, braces and all.
+	if strings.HasPrefix(field, "{") && strings.HasSuffix(field, "}") {
+		return strings.Trim(field, "{}")
+	}
 	if i := strings.LastIndexByte(field, '/'); i >= 0 {
 		field = field[i+1:]
 	}
@@ -429,8 +437,8 @@ func parsePSColumnsWith(layout psLayout, stdout string) []psProcess {
 			PID:           psInt(at(fields, "pid")),
 			PPID:          psInt(at(fields, "ppid")),
 			User:          at(fields, "user"),
-			RSS:           psInt(at(fields, "rss")),
-			VSZ:           psInt(at(fields, "vsz")),
+			RSS:           psSize(at(fields, "rss")),
+			VSZ:           psSize(at(fields, "vsz")),
 			Command:       strings.Join(fields[len(columns)-1:], " "),
 			PercentsKnown: layout.Percents,
 		}
@@ -536,6 +544,60 @@ func sortByPID(procs []psProcess) {
 func psInt(s string) int64 {
 	n, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	return n
+}
+
+// psSize reads a size column in KiB, including the abbreviations BusyBox
+// writes when a number will not fit.
+//
+// # BusyBox shortens what it cannot fit, and `ParseInt` reads that as 0
+//
+// procps prints these columns as plain integers. BusyBox prints two
+// significant figures and a unit when the value is wide -- a Go
+// process's virtual size comes out as `1.1g` -- so the plain
+// `strconv.ParseInt` this used returned **zero**, and a running process
+// was reported as holding no memory at all. That is how
+// `TestLivePSReadsTheRealProcessTable` failed on Alpine: the test binary
+// is large enough for its own RSS to be abbreviated.
+//
+// # The abbreviation is lossy, and this cannot undo that
+//
+// Captured together on Alpine 3.24, for one process:
+//
+//	ps:    rss=3416      vsz=1.1g
+//	/proc: VmRSS 3540 kB  VmSize 1226592 kB
+//
+// The suffix is 1024-based, so `1.1g` converts to 1153434 KiB against a
+// true 1226592 -- about 6% out, and there is no way to recover the exact
+// figure from this column. A caller that needs an exact number on such a
+// node has to read /proc, which this does not do. An approximate size is
+// still worth far more than a zero, and `ps.top by: memory` orders
+// correctly on it.
+func psSize(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	last := s[len(s)-1]
+	var scale int64
+	switch last {
+	case 'k', 'K':
+		scale = 1
+	case 'm', 'M':
+		scale = 1024
+	case 'g', 'G':
+		scale = 1024 * 1024
+	case 't', 'T':
+		scale = 1024 * 1024 * 1024
+	default:
+		// No suffix: a plain count of KiB, as procps always writes and
+		// BusyBox writes when it fits.
+		return psInt(s)
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(s[:len(s)-1]), 64)
+	if err != nil {
+		return 0
+	}
+	return int64(n * float64(scale))
 }
 
 func psFloat(s string) float64 {
