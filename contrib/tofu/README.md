@@ -58,8 +58,37 @@ Vultr's catalogue **is** the 8 series, and every package name in
 logged into five of these distributions — resolved on its distribution.
 The per-package install loop reported nothing missing anywhere.
 
-The suite itself has not been run across them yet; `make lab-test` is
-the next step.
+### And what the sweeps established
+
+`make lab-test` across all seven, on the branch that added them: **0
+failed anywhere**, 62 unit packages ok on each.
+
+| Row | live |
+|---|---|
+| alma8 | 40 passed, 46 skipped |
+| alpine | 28 passed, 58 skipped |
+| debian13 | 48 passed, 38 skipped |
+| opensuse16 | 42 passed, 44 skipped |
+| rocky9 | 41 passed, 45 skipped |
+| ubuntu2204 | 53 passed, 33 skipped |
+| ubuntu2604 | 53 passed, 33 skipped |
+
+The skip column is the one worth reading. Alpine skips most because it is
+neither systemd nor glibc nor dpkg and its ps cannot answer a CPU sort;
+Ubuntu 22.04 skips fewest because it is closest to the platform the suite
+was written against. Every skip carries its reason, so a count that moves
+can be chased.
+
+It took three sweeps. The first two found fifteen defects between them --
+see DIVERGENCE 5.74, 5.76 and 5.77 -- most of them one platform's
+spelling assumed universal. **This is what the lab is for**, and the
+figure to watch is not that they now pass but that they did not.
+
+**What it has still not established**: the dnf and apk providers have
+still never been driven. The only live `pkg` tests are dpkg-specific and
+skip on RHEL and Alpine, so those rows prove the tree builds and behaves
+there, not that their package providers work. `evidence.go` says so, and
+it remains true.
 
 ## Running it
 

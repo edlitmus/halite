@@ -77,8 +77,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"unexercised on Windows because the binary that runtime resolves there -- " +
 		"Strawberry Perl's patch 2.5.9 -- aborts on an ordinary unified diff"},
 	"ps": {Level: exec.Hardware, Note: "read and signalled against the real process table " +
-		"on every platform the suite runs: the FreeBSD libxo path and the column path " +
-		"the other unixes take are both parsed from what the machine's own `ps` printed, " +
+		"on every platform the suite runs, and there are **three** readers rather than " +
+		"two: FreeBSD's libxo JSON, procps' columns, and BusyBox's, which is neither a " +
+		"dialect of the others nor able to report %cpu or %mem at all. Each is parsed from " +
+		"what the machine's own `ps` printed -- the BusyBox one against Alpine 3.24 in this " +
+		"project's lab, where the procps spelling had been failing outright with " +
+		"`unrecognized option: w`, and where the sizes arrive abbreviated (`1.1g`) and " +
+		"lossy. The percentages come back nil there rather than zero, and `ps.top by: cpu` " +
+		"refuses by name rather than ordering on a number that node cannot measure. Also " +
 		"and the mutating half is demonstrated against processes the test started and " +
 		"marked, killed by pid and by pattern, with test mode shown to change nothing. " +
 		"No root is involved, which is the limit worth naming: signalling *another " +
@@ -301,8 +307,12 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	"reboot": {Level: exec.Captured, Note: "the readers are demonstrated against the real " +
 		"FreeBSD host this was written on: `required` compares freebsd-version's installed " +
-		"and running kernels, `scheduled` reads the real process table, and `last_boot` " +
-		"reads kern.boottime -- and `scheduled` did **not** read it until a live test drove " +
+		"and running kernels, `scheduled` reads the real process table **through the `ps` " +
+		"module's own reader**, and `last_boot` reads kern.boottime. `scheduled` built its " +
+		"own `ps` command until Alpine showed why that is wrong -- a second invocation of a " +
+		"tool another module already wraps, in a spelling BusyBox refuses, answering " +
+		"\"nothing is pending\" on every Alpine node rather than erroring. Before that, " +
+		"`scheduled` did **not** read the table at all until a live test drove " +
 		"it against a real process, because it asked ps for `-o pid=,command=`, the Linux " +
 		"idiom, which FreeBSD's ps parses as a single column headed with the literal string " +
 		"`,command=`. It exited 0 and printed bare pids, so the finder matched nothing on " +

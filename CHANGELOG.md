@@ -18,6 +18,50 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Running the same seven machines until they were all quiet
+
+Fixing the first round of platform problems uncovered a second, and each
+fix had exposed the layer beneath it. It took three passes over the test
+lab before every machine was silent; all seven pass now, and the count
+that matters is not that they do but that they did not.
+
+**Alpine's process listing tool shortens numbers it cannot fit.** The
+first round taught the module which columns that tool offers; it did not
+ask what it writes in them. A large figure arrives as `1.1g` rather than
+as digits, so a running process was reported as holding no memory at all.
+It is read now, and the reading is honestly approximate — the tool
+rounds to two figures, and there is no way to recover the exact number
+from it — which the tests record rather than gloss over.
+
+**The reboot module was reading the process table itself**, with its own
+copy of a command the process module already owns. So Alpine broke a
+second time after the first fix, and on that platform the module reported
+no reboot pending no matter what was. It asks the process module now.
+That is the broader lesson of this whole change: the commonest fault in
+this codebase is two pieces of code that must agree and do not, and it
+applies to *running a program* as much as to reading its output.
+
+**A process can be running under a name that is not its program's**, and
+Alpine's tool says so plainly where others hide it. The module read that
+notation literally and reported the punctuation as part of the name.
+Anything started through a symlink — which is to say a great many
+daemons — would have been mis-named.
+
+**Temporary directories cannot hold swap on three of the seven**, which
+mount them in memory. The test that exercises swap now puts its file
+somewhere that survives a reboot, as the filesystem standard requires.
+
+Two faults in the harness itself, both worth naming. Its report
+truncated, so a machine could be declared failed with nothing shown to
+say why — worse than no report, because it sends the reader to the
+machine to learn what the run already knew. And a test that reads the
+system's shutdown program guarded on the file existing rather than on
+being allowed to run it; that program is deliberately restricted to a
+group, so it worked for a developer who is in that group and failed on a
+build machine that is not. Present is not runnable, which this project
+had already written down about directories and then did not apply to a
+program.
+
 ### Seven machines, four wrong assumptions
 
 The first run of the suite across the whole test lab rather than one

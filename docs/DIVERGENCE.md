@@ -7180,13 +7180,129 @@ host is itself worth reading.
 `/bin/touch`. It looks the tool up now.
 
 And 5.73's own stand-in process -- a copy of `sleep` renamed `shutdown`,
-so that `rebootFindShutdown` would match its basename -- is wrong on two
-platforms here. Alpine's coreutils and Ubuntu 26.04's are **multi-call
-binaries**: they dispatch on `argv[0]`, so the copy exits immediately
-with `coreutils: unknown program 'shutdown'` and the process the test
-needs to find is gone before it looks. It sets `argv[0]` on the real
-binary instead, which is what `ps -o command=` prints anyway, and works
-on every flavour including BusyBox's.
+so that the finder would match its basename -- is wrong on two platforms
+here. Alpine's coreutils and Ubuntu 26.04's are **multi-call binaries**:
+they dispatch on `argv[0]`, so the copy exits immediately with
+`coreutils: unknown program 'shutdown'` and the process the test needs to
+find is gone before it looks.
+
+The fix written here first -- setting `argv[0]` on the real binary rather
+than copying it -- did not survive the next sweep either, for a reason
+5.77 covers: BusyBox is honest about the difference between a binary and
+the name it was invoked under, and correctly declined to call the result
+a shutdown. The stand-in is a copy of the *test binary* now.
+
+### 5.77 The same sweep again, and four defects the first one hid
+
+5.76 fixed four things and the sweep was run again. Each fix had exposed
+the next layer beneath it, and one of them had been wrong.
+
+**BusyBox abbreviates a size it cannot fit.** 5.76 taught the module
+BusyBox's column *names*; it did not ask what BusyBox writes in them.
+procps prints RSS and VSZ as plain integers, BusyBox prints two
+significant figures and a unit, so a Go process's virtual size arrives as
+`1.1g` and `strconv.ParseInt` returned **zero** -- a running process
+reported as holding no memory at all. Captured together on Alpine for one
+process:
+
+	ps:    rss=3416       vsz=1.1g
+	/proc: VmRSS 3540 kB   VmSize 1226592 kB
+
+The suffix is 1024-based and the abbreviation is **lossy**: `1.1g`
+converts back to 1153434 KiB against a true 1226592, about 6% out, and
+nothing can recover the exact figure from that column. The tests record
+that gap rather than pretending it is not there. An approximate size is
+worth far more than a zero, and `ps.top by: memory` orders correctly on
+it.
+
+**`reboot` was reading the process table itself.** This is the one that
+matters. 5.76 fixed `ps`; Alpine broke again anyway, because `reboot.go`
+built its *own* `ps` argv -- in the procps spelling -- rather than going
+through the module that wraps the tool. BusyBox refuses that argv, the
+failure was tolerated, and so `reboot.scheduled` answered "no shutdown is
+pending" on every Alpine node instead of erroring.
+
+It goes through `psList` now, so the second invocation is gone and
+`reboot` inherits whatever flavours `ps` learns. **The lesson is broader
+than the bug**: this repository's commonest defect shape is two paths
+that must agree, and it applies to *tool invocations* and not only to
+data. A module that shells out to a tool another module already wraps
+should route through that module.
+
+**BusyBox is honest about a renamed process, and `Name()` was not.**
+Where `argv[0]` disagrees with the executable, BusyBox prints
+`{comm} argv0 args`. `psProcess.Name()` returned the literal
+`{sleeper}`, braces and all. That matters well beyond the test it broke:
+a daemon started through a symlink renders exactly that way, so
+`ps.pgrep` would have missed it. The braced word is the executable,
+which is what `pgrep` matches, and is what `Name()` answers now -- the
+same treatment `[kworker/0:1]` already got.
+
+It also explains the third attempt at the stand-in process. Copying
+`sleep` failed on multi-call coreutils; renaming through `argv[0]` failed
+because BusyBox correctly refused to call `{sleeper} shutdown 600` a
+shutdown. It copies **this test binary** to a file genuinely named
+`shutdown` now, which works for precisely the reason copying `sleep` did
+not: a Go binary does not dispatch on `argv[0]`.
+
+**/tmp is tmpfs on three of the seven.** Debian 13, Ubuntu 26.04 and
+openSUSE Leap 16 all mount it so, and swap cannot live on tmpfs --
+`swapon` refuses with a bare `Invalid argument` that says nothing about
+why. `t.TempDir()` follows `TMPDIR` there. The backing file goes under
+`/var/tmp`, which the FHS requires to survive a reboot and therefore
+cannot be tmpfs.
+
+#### The report that hid two of these
+
+`lab.sh` piped its results through `head -60`, so on a host with many
+tests the output stopped at exactly sixty lines -- which is how
+`FAIL debian13: live` arrived with **no failing test shown anywhere**,
+sending the reader to the machine to learn what the run already knew. A
+report that says something failed and hides what is worse than no
+report. Failures and their detail lines are never truncated now; passes
+and skips are a tally; and a build failure or a panic, which has no
+`--- FAIL` line at all, is searched for rather than assumed absent.
+
+#### What the third sweep says
+
+Every row, on the final commit: **0 failed everywhere**, 62 unit packages
+ok on each.
+
+| Host | live |
+|---|---|
+| alma8 | 40 passed, 46 skipped |
+| alpine | 28 passed, 58 skipped |
+| debian13 | 48 passed, 38 skipped |
+| opensuse16 | 42 passed, 44 skipped |
+| rocky9 | 41 passed, 45 skipped |
+| ubuntu2204 | 53 passed, 33 skipped |
+| ubuntu2604 | 53 passed, 33 skipped |
+
+The skip column is the one to read. Alpine skips 58 because it is
+neither systemd nor glibc nor dpkg and its ps cannot answer a CPU sort;
+Ubuntu 22.04 skips 33 because it is closest to the platform this suite
+was written against. Every skip now carries its reason, so a count that
+moves can be chased rather than shrugged at.
+
+#### And one the lab could not have found
+
+CI's FreeBSD leg failed on a test that passes on this project's own
+FreeBSD host. `/sbin/shutdown` is shipped setuid root and group
+`operator`, mode `-r-sr-xr--`, with **no world execute bit**, so whether
+it can be run depends on who is asking: the development account is in
+`operator` and the runner's is not. The test guarded with `os.Stat`,
+which answers "is it there" -- a question nobody was asking. Present is
+not runnable, which this ledger already says about a staging directory
+(5.60: "`mkdir -p` succeeding says the directory exists. It does not say
+this account can use it, and the dimension that decides this path is
+execution") and which is just as true of a setuid binary. The lesson was
+written down and then not applied to the very first commit of this
+branch. It skips there now, naming the
+mode.
+
+Seven Linux hosts passing said nothing about this, because the test is
+FreeBSD-only and the one FreeBSD machine in the lab's reach is the one
+where it happens to work.
 
 ## 6. Everything else not started
 
