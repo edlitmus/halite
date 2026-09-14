@@ -7929,6 +7929,188 @@ and the suite would have agreed. It is asserted directly now, in both
 directions, and `shell: false` is asserted beside the two opt-ins so
 that the path form cannot quietly turn the shell on for everybody.
 
+### 5.85 The cloud grains and the secrets pillar, on a real instance
+
+5.78 and 5.79 built both against the AWS APIs and could not run either:
+the metadata service answers only from inside EC2, and Secrets Manager
+needs a role. A node that is an EC2 instance settled both, and the
+second one found a defect that has nothing to do with AWS.
+
+**The credential exclusion is real, and so was the thing it excludes.**
+5.78's claim was that Salt's metadata grain publishes the instance's own
+IAM credentials, and that this build refuses those paths. On this
+instance, with a live instance role, the two grains compared like this:
+
+| | Salt 3007.1 | halite |
+|---|---|---|
+| `meta-data` keys | 24 | 23 |
+| `iam` subtree | `info`, **`security-credentials`** | `info` |
+| top level | includes **`identity-credentials`** | excluded |
+| the other 22 keys | — | byte-identical |
+
+So the estate's Salt is, right now, carrying that instance's access key,
+secret key and session token as grains — which is what the exclusion was
+written for, and it had never been seen happen. The excluded set is
+exactly those two paths and nothing else: every other key agrees, and
+the Salt-shaped indexes an existing tree uses resolve —
+`meta-data:local-ipv4` and `meta-data:services:partition` → `aws`.
+
+**The secrets pillar works end to end, as an extension.** Built, signed,
+published under `_ext/`, fetched by `extensions sync`, pinned by digest,
+loaded, and run out of process with `network` declared and nothing else.
+It read all six of the estate's real secrets over the SigV4 of SPEC 13.4
+using the instance role, and produced an `aws_secrets` tree whose 27
+paths are structurally identical to the one Salt's own
+`_pillar/aws_secrets_manager.py` produces. 5.79's signature-wire fix is
+load-bearing here: the extension is refused and reports no functions
+without it.
+
+**And the values were not identical, which is the defect.** Every leaf
+Salt returned hashed the same; every leaf this returned hashed
+differently. Salt's shared value is `**********` — `REDACT_PLACEHOLDER`
+from `salt/utils/secret.py`, applied by `serial` at exactly the
+`pillar.items`, `pillar.item` and `pillar.get` boundaries. **`halite-node
+pillar items` printed every secret in clear**, to the terminal and to
+whatever scrollback, CI log or ticket the output reached afterwards.
+
+What makes it a gap rather than an omission is that the machinery was
+all present. The redactor exists, it already learns every pillar value
+at the hub boundary, it already uses the identical ten-asterisk
+placeholder, and a test already asserts that `state apply` redacts a
+decrypted pillar. It was wired to the log sink and not to the one
+command whose whole purpose is to print the pillar.
+
+The rule is Salt's, and it is narrower than "mask everything": every
+non-empty **string** leaf is replaced, while numbers, booleans, nulls
+and empty strings pass through, and keys are never touched. That keeps
+what the command is mostly for — a state that cannot find
+`foxpass:api_key` is debugged by seeing the key exist, not by reading
+it. Checked leaf by leaf against the Salt on the same host, the two now
+agree on **every one of the 81 leaves they share**.
+
+**`--reveal` is this build's addition**, and Salt has no equivalent. The
+argument for it is that the remaining reason to run the command is to
+check a value, and an operator who cannot will reach for something
+worse — a `cmd.run` that echoes it, or the pillar file itself. Having to
+ask is the point: it makes the disclosure deliberate and greppable in a
+shell history, where masking-by-default makes the safe path the default
+one. It is a display boundary only: the redactor still learns every
+value, so a log is scrubbed as before, and a template still renders
+against the real pillar exactly as Salt's contextvar arranges.
+
+**What this does not establish.** One instance, one region pair, one
+account. The walk was not tested against IMDSv1-only hosts or a host
+with the hop limit set to 1, and `cloud_grains` remains opt-in for the
+round trip it costs. The signing key sat on the same machine as the hub
+that verified it, which `docs/extensions.md` names as the thing not to
+do — acceptable in a lab, and not a pattern to copy.
+
+### 5.86 What compiling an estate's own tree found, in three passes
+
+5.84 left the estate's real 603-file tree compiling with 33 errors and
+called them an inventory rather than a defect. Working through that
+inventory turned three of its rows into defects here.
+
+**`slspath` was the SLS name, not the directory.** Salt's documentation
+is one line — "slspath: directory containing current sls (same as
+tpldir)" — and this returned the SLS name with its dots turned into
+slashes. That is the directory only when the file is an `init.sls`. For
+`base/users/sudo.sls`, whose SLS name is `base.users.sudo`, it gave
+`base/users/sudo`, so the tree's own
+`{% from slspath ~ "/map.jinja" import users %}` — the ordinary formula
+idiom — went looking for `base/users/sudo/map.jinja` instead of
+`base/users/map.jinja`.
+
+This is the `init.sls` distinction of 5.84 in a second place, which is
+the finding rather than the fix: an `init.sls` *is* its directory and a
+plain `.sls` is a file inside one, and the rule now has one home.
+Meeting it twice also says where to look for a third. Six variables were
+wrong or missing — `slspath`, `slsdotpath`, `slscolonpath`, `tpldir`,
+`tplfile`, and `sls_path`, which did not exist — and `tpldir` and
+`tplfile` were absolute paths on this machine where Salt's are relative
+to the file root, so a tree interpolating either wrote a path no other
+node would have. Every value was read back from `salt-call` on the same
+host, for a module and for a package, and the two agree character for
+character.
+
+**`import_yaml` did not exist.** It is how every formula in the wild
+carries its defaults — a `defaults.yaml` beside `map.jinja`, read and
+merged with pillar — and being a tag, its absence is a *parse* error:
+the whole file fails, and with it everything importing that file. Three
+errors in the report were one missing tag. `import_json` and
+`import_text` land with it.
+
+Two details are worth the words. The file is **parsed, not rendered**,
+which is the difference from `import` and a safety property as much as a
+semantic one: data cannot execute, so a `{%` inside a YAML value stays a
+`{%`. And `import_json` decodes with `UseNumber`, because Go reads every
+JSON number as a float64 by default — a formula's `port: 443` would
+become `443.0`, and a template writing that into a configuration file
+means it. Python's json, which Salt uses, gives an integer.
+
+**`user.present` had none of the password-ageing arguments.** `mindays`,
+`maxdays`, `warndays`, `inactdays` and `expire` are shadow(5) columns
+and chage(1) options, and together they are how a hardened estate states
+its password policy per account. Eleven of the report's errors were
+those names across three declarations. `unique` and `enforce_password`
+came with them.
+
+Three decisions inside that one:
+
+- They are read from the **shadow file**, not from `chage -l`, which
+  renders dates in the caller's locale — a parse that breaks the first
+  time a node runs under a different `LANG`. The columns are integers
+  and the file's layout is fixed.
+- The fields are **pointers**, because chage reads `0` as "immediately"
+  and `-1` as "never" and both are meaningful. A plain integer cannot
+  tell "unmentioned" from "zero", and would have applied `mindays: 0` to
+  every account that never mentioned it.
+- FreeBSD is **refused by name**. Its password policy lives in
+  `login.conf`, keyed by login class, with no per-account equivalent for
+  four of the five. Accepting the argument there and applying nothing is
+  the shape of 5.78's `cloud_grains`.
+
+The live test creates a throwaway account, sets all five, and reads them
+back through `chage -l` — the tool's own report rather than this code's
+parser — then checks the module's reader agrees, then applies the same
+declaration again and requires **no change**, which is the convergence a
+policy state is judged on.
+
+**Four more arguments came out of the same pass.**
+`file.replace`'s `ignore_if_missing` is how one tree covers several
+platforms — a state that hardens `/etc/login.defs` applied to a node
+that has no such file is a no-op, not a failure — and it reports
+success with no changes, which is Salt's wording. `group.present` gained
+`system` and `members`; `members` is the *whole* list rather than an
+addition, which Salt's own documentation fixes by distinguishing it from
+`addusers`, and getting that wrong would leave an account in a
+privileged group a tree had just been edited to empty. `pkg.installed`
+gained `allow_updates`, which turns an exact pin into a floor so a
+package an agent updates itself is left alone rather than being
+downgraded once per highstate; a version it cannot order is *not*
+treated as satisfying the pin, because answering "yes" there leaves a
+pinned package uninstalled. `file.managed` gained `skip_verify`, which
+is logged on every run rather than silently honoured, and `keep_source`,
+which is declared ineffective because this build keeps no separate
+source cache to discard.
+
+**And one error was not a defect at all.** The node had no static
+grains: the estate keeps forty of them in `/etc/salt/grains` — `roles`,
+`envtype`, `aws_partition` and the rest — which the tree branches on
+everywhere, and halite reads its own `/etc/halite/grains`. Copying the
+file across is the migration step, and it is worth recording because the
+failure did not look like a missing file: it surfaced as
+`first.split is undefined (the sequence is empty)` inside a `map.jinja`,
+four frames from the cause. A tree that selects on grains fails in the
+template that reads them, not at the grain that is absent.
+
+**Where the tree stands.** 42 errors before any of this, **7** after —
+and the count fell to 6 before the grains file *raised* it to 7, because
+supplying `roles` selected the `saltmaster` states, which had never been
+reached. What is left: `saltutil` and `kmod` as state modules,
+`defaults.merge` as an execution module (three sites), `cmd.run`'s `bg`,
+and one Jinja tuple unpack, `{% set host, domain = id.split('.', 1) %}`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

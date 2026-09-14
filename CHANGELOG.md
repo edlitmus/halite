@@ -18,6 +18,99 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Compiling the estate's own tree, and the three defects it found
+
+Working through the inventory 5.84 left — the estate's real 603-file
+tree, compiling with 33 errors — turned three of its rows into defects.
+
+**`slspath` was the SLS name, not the directory.** Salt's is "the
+directory containing the current sls"; this gave the SLS name with dots
+turned to slashes, which is the directory only for an `init.sls`. The
+tree's own `{% from slspath ~ "/map.jinja" import users %}` therefore
+looked for `base/users/sudo/map.jinja` rather than
+`base/users/map.jinja`. That is the `init.sls` distinction of the
+relative include in a second place, which is the finding rather than the
+fix. Six variables were wrong or missing, including `tpldir` and
+`tplfile` being absolute paths where Salt's are relative to the file
+root — a tree interpolating either wrote a path no other node would
+have.
+
+**`import_yaml` did not exist**, and being a tag its absence is a parse
+error: the whole file fails, and with it everything importing that file.
+Three report errors were one missing tag. It parses rather than renders,
+so a `{%` inside a YAML value stays text, and `import_json` decodes with
+`UseNumber` so a formula's `port: 443` does not become `443.0`.
+
+**`user.present` had none of the password-ageing arguments** —
+`mindays`, `maxdays`, `warndays`, `inactdays`, `expire` — which are how
+a hardened estate states its password policy per account. Eleven errors
+were those names. They read from the shadow file rather than `chage -l`,
+whose dates are locale-dependent; they are held as pointers, because
+chage reads 0 as "immediately" and -1 as "never" and a plain integer
+cannot tell either from "unmentioned"; and FreeBSD refuses them by name
+rather than accepting and applying nothing, since its policy lives in
+login.conf keyed by login class. `unique` and `enforce_password` came
+with them.
+
+Four more arguments came out of the same pass: `file.replace`'s
+`ignore_if_missing`, `group.present`'s `system` and `members`,
+`pkg.installed`'s `allow_updates`, and `file.managed`'s `skip_verify`
+and `keep_source`. Two of those have a sharp edge worth naming —
+`members` is the *whole* list rather than an addition, so getting it
+wrong leaves an account in a privileged group the tree had just been
+edited to empty; and `allow_updates` treats a version it cannot order as
+*not* satisfying the pin, since answering otherwise leaves a pinned
+package uninstalled.
+
+One error was not a defect. The node had no static grains: the estate
+keeps forty in `/etc/salt/grains` and halite reads `/etc/halite/grains`.
+Copying it across is the migration step — worth recording because the
+failure surfaced as `first.split is undefined` inside a `map.jinja`,
+four frames from the absent grain.
+
+The tree compiles with 7 errors now, from 42.
+
+### `pillar items` printed every secret in clear
+
+The cloud grains and the AWS Secrets Manager pillar were both written
+against APIs that only answer from inside EC2, and neither had been run
+there. A node that is an EC2 instance settled both.
+
+**The credential exclusion is real, and so is what it excludes.** On this
+instance, with a live instance role, Salt's metadata grain carries 24
+keys including `identity-credentials`, and its `iam` subtree holds
+`security-credentials` — the instance's own access key, secret key and
+session token, as grains. halite excludes exactly those two paths; the
+other 22 keys are byte-identical.
+
+**The secrets pillar works end to end as a signed extension**, reading
+six real secrets over SigV4 with the instance role and producing an
+`aws_secrets` tree whose 27 paths match Salt's own Python module.
+
+**But the values differed, and that is the defect.** Salt returned
+`**********` for every secret — `REDACT_PLACEHOLDER`, applied at exactly
+the `pillar.items`, `pillar.item` and `pillar.get` boundaries — and
+halite printed them all in clear, to the terminal and to whatever
+scrollback or CI log the output reached afterwards.
+
+The machinery was already there: the redactor exists, already learns
+every pillar value, already uses the identical placeholder, and a test
+already asserts `state apply` redacts a decrypted pillar. It was wired to
+the log sink and not to the one command whose purpose is to print the
+pillar.
+
+The rule is Salt's and it is narrower than "mask everything": every
+non-empty string leaf is replaced; numbers, booleans, nulls and empty
+strings pass through; keys are never touched. That keeps what the command
+is mostly for — a state that cannot find `foxpass:api_key` is debugged by
+seeing the key exist, not by reading it. Leaf by leaf against the Salt on
+the same host, the two agree on all 81 leaves they share.
+
+`--reveal` prints values, and Salt has no equivalent. The reason to have
+one is that an operator who cannot check a value will reach for something
+worse; having to ask is the point, since it makes the disclosure
+deliberate and the safe path the default.
+
 ### A relative include in an `init.sls` resolved one level too high
 
 A hub and a node, both `-fips` artifacts on arm64, compiling this

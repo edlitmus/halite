@@ -1865,7 +1865,7 @@ file.rename(src: path, dst: path)
 Replace every match of a pattern in a file.
 
 ```
-file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: list, append_if_not_found: bool = false, prepend_if_not_found: bool = false, not_found_content: string = , backup: string = , show_changes: bool = true, bufsize: any)
+file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: list, append_if_not_found: bool = false, prepend_if_not_found: bool = false, not_found_content: string = , backup: string = , show_changes: bool = true, ignore_if_missing: bool = false, bufsize: any)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -1880,6 +1880,7 @@ file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: l
 | `not_found_content` | string | `` | What to add when the pattern is not found; defaults to repl. |
 | `backup` | string | `` | Keep a copy of the previous contents with this suffix. |
 | `show_changes` | bool | `true` | Include a unified diff in the changes. |
+| `ignore_if_missing` | bool | `false` | Report no change instead of failing when the file does not exist. |
 | `bufsize` | any | — | Accepted for compatibility with Salt, which uses it to size a chunked read. |
 
 *changes the system · honours `--test` · **runs arbitrary code** · SPEC section 15.2*
@@ -9033,7 +9034,7 @@ file.line(name: path, content: string = , mode: string = ensure, match: string =
 Ensure a file exists with the given contents, mode, and ownership.
 
 ```
-file.managed(name: path, source: string = , source_hash: string = , contents: any, template: string = , context: map, defaults: map, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, replace: bool = true, backup: string = , show_changes: bool = true)
+file.managed(name: path, source: string = , source_hash: string = , skip_verify: bool = false, keep_source: any, contents: any, template: string = , context: map, defaults: map, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, replace: bool = true, backup: string = , show_changes: bool = true)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -9041,6 +9042,8 @@ file.managed(name: path, source: string = , source_hash: string = , contents: an
 | `name` | path | — | The file to manage. Defaults to the state ID. |
 | `source` | string | `` | A halite:// or salt:// URI, or a local path. |
 | `source_hash` | string | `` | Expected digest of the source, as `algorithm=digest`. |
+| `skip_verify` | bool | `false` | Skip the source_hash check. Only a source that cannot publish a digest justifies it. |
+| `keep_source` | any | — | Accepted for compatibility with Salt, which uses it to decide whether a fetched source stays in the node's cache. |
 | `contents` | any | — | Literal contents, as a string or a list of lines, as an alternative to a source. |
 | `template` | string | `` | Render the source through this engine before writing it. Only jinja is supported. |
 | `context` | map | — | Names added to the source template, overriding defaults. |
@@ -9103,7 +9106,7 @@ file.recurse(name: string, source: string, clean: bool = false, exclude_pat: str
 Ensure every match of a pattern in a file has been replaced.
 
 ```
-file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: list, append_if_not_found: bool = false, prepend_if_not_found: bool = false, not_found_content: string = , backup: string = , show_changes: bool = true, bufsize: any)
+file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: list, append_if_not_found: bool = false, prepend_if_not_found: bool = false, not_found_content: string = , backup: string = , show_changes: bool = true, ignore_if_missing: bool = false, bufsize: any)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -9118,6 +9121,7 @@ file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: l
 | `not_found_content` | string | `` | What to add when the pattern is not found; defaults to repl. |
 | `backup` | string | `` | Keep a copy of the previous contents with this suffix. |
 | `show_changes` | bool | `true` | Include a unified diff in the changes. |
+| `ignore_if_missing` | bool | `false` | Report no change instead of failing when the file does not exist. |
 | `bufsize` | any | — | Accepted for compatibility with Salt, which uses it to size a chunked read. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
@@ -9384,16 +9388,18 @@ group.absent(name: string)
 
 #### `group.present`
 
-Ensure a group exists.
+Ensure a group exists, with the members it names.
 
 ```
-group.present(name: string, gid: int)
+group.present(name: string, gid: int, system: bool = false, members: list)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | — | The group. Defaults to the state ID. |
 | `gid` | int | — | The numeric group id. |
+| `system` | bool | `false` | Create a system group, from the range the platform reserves for them. |
+| `members` | list | — | The accounts the group holds. This is the whole list: anyone not named is removed. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
@@ -10092,7 +10098,7 @@ pip.removed(name: string, pkgs: list, bin_env: path = )
 Ensure packages are installed, optionally at a pinned version.
 
 ```
-pkg.installed(name: string, pkgs: list, version: string = , refresh: bool = false)
+pkg.installed(name: string, pkgs: list, version: string = , refresh: bool = false, allow_updates: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10101,6 +10107,7 @@ pkg.installed(name: string, pkgs: list, version: string = , refresh: bool = fals
 | `pkgs` | list | — | Several packages, optionally with pinned versions. |
 | `version` | string | `` | A version to pin. |
 | `refresh` | bool | `false` | Refresh the package metadata before installing. |
+| `allow_updates` | bool | `false` | Treat a pinned version as a floor rather than an exact match, so a package updated outside halite is left alone. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
@@ -10109,7 +10116,7 @@ pkg.installed(name: string, pkgs: list, version: string = , refresh: bool = fals
 Ensure packages are at their newest available version.
 
 ```
-pkg.latest(name: string, pkgs: list, version: string = , refresh: bool = false)
+pkg.latest(name: string, pkgs: list, version: string = , refresh: bool = false, allow_updates: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10118,6 +10125,7 @@ pkg.latest(name: string, pkgs: list, version: string = , refresh: bool = false)
 | `pkgs` | list | — | Several packages, optionally with pinned versions. |
 | `version` | string | `` | A version to pin. |
 | `refresh` | bool | `false` | Refresh the package metadata before installing. |
+| `allow_updates` | bool | `false` | Treat a pinned version as a floor rather than an exact match, so a package updated outside halite is left alone. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
@@ -10613,7 +10621,7 @@ user.absent(name: string, purge: bool = false)
 Ensure an account exists with the given attributes.
 
 ```
-user.present(name: string, uid: int, gid: any, home: path = , shell: path = , fullname: string = , groups: list, createhome: bool = true, system: bool = false, password: string = , usergroup: bool)
+user.present(name: string, uid: int, gid: any, home: path = , shell: path = , fullname: string = , groups: list, createhome: bool = true, system: bool = false, password: string = , usergroup: bool, unique: bool = true, enforce_password: bool = true, mindays: int, maxdays: int, warndays: int, inactdays: int, expire: int)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10629,6 +10637,13 @@ user.present(name: string, uid: int, gid: any, home: path = , shell: path = , fu
 | `system` | bool | `false` | Create a system account. |
 | `password` | string | `` | The password hash. Passed to the account tool on standard input, never in an argument vector. |
 | `usergroup` | bool | — | Give the account a primary group named after it. Unset follows the platform default. |
+| `unique` | bool | `true` | Require the uid to be unused. False allows a second account to share one, which is useradd's -o. |
+| `enforce_password` | bool | `true` | Reset the password when the stored hash differs. False sets it only when the account has none, so a rotated password is left alone. |
+| `mindays` | int | — | Minimum days between password changes. Linux only; chage -m. |
+| `maxdays` | int | — | Maximum days between password changes. Linux only; chage -M. |
+| `warndays` | int | — | Days of warning before a password expires. Linux only; chage -W. |
+| `inactdays` | int | — | Days after expiry before the account is locked. Linux only; chage -I. |
+| `expire` | int | — | Account expiry, in days since the epoch. Linux only; chage -E. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
