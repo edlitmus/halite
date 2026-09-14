@@ -1000,19 +1000,32 @@ unchanged.
 ## 6. Questions that need a person, not a commit
 
 1. ~~**The `cmd.run` shell default (SPEC 33.3).**~~ **Answered
-   2026-09-12: `cmd_default_shell: true`, estate-wide, for maximum
-   compatibility.** 54 of the estate report's 93 review findings were one
+   2026-09-12 as a setting, and 2026-09-14 as the built-in default:
+   `cmd.run` follows Salt and runs through a shell.** 54 of the estate report's 93 review findings were one
    category -- a `cmd.run` naming a program with arguments, pipes or
    `||`, which this build treats as a single program name because it runs
    without a shell. Those 54 call sites are not rewritten; the setting
    carries them.
 
-   **This is a setting, not a code change, and the distinction matters.**
-   SPEC 15.2 defines the *default* as an argument vector and the shipped
-   default stays `false`. What changes is the estate's own node
-   configuration. Anyone reading this later: do not "fix" the built-in
-   default to match the estate, because that would be a SPEC break made
-   by inference rather than by decision.
+   **Superseded 2026-09-14: the built-in default now follows Salt.**
+   The paragraph that stood here said this was a setting rather than a
+   code change, that SPEC 15.2's default stayed an argument vector, and
+   — in as many words — that nobody should "fix" the built-in default to
+   match the estate, because that would be a SPEC break made by
+   inference rather than by decision. That warning was honoured: this
+   was decided, not inferred, and SPEC 15.2, SPEC 33.3 and the
+   compatibility table were all changed with it.
+
+   What the 2026-09-12 decision demonstrated is why the default was
+   wrong. An estate that turns a setting on fleet-wide on day one, to
+   carry 54 call sites it is never going to rewrite first, is an estate
+   overriding a default that does not fit it — and a default every
+   estate immediately overrides is the wrong default. The security
+   argument for the inversion still stands, and it is now attached to
+   `cmd_default_shell: false`, which is the hardened setting an estate
+   takes *after* converting its call sites rather than before it can run
+   anything at all. The audit flag inverted with it, to
+   `--no-cmd-default-shell`.
 
    Two consequences worth stating where the decision is recorded. A
    command run through a shell is re-interpreted by it, so anything
@@ -1549,13 +1562,17 @@ tool nobody has run against it (DIVERGENCE 5.31).
       three different problems, and the rest configuration. That is the
       real remainder of a migration, measured rather than guessed.
 
-      One of the three needs a person and is §6's: `cmd.run`'s `shell`
-      is *the shell to use* in Salt and a boolean here, so the same
-      argument name means two unrelated things and the ambiguity runs
-      both ways. The other two are ordinary work — `user.present`'s
-      `gid` should resolve a group name as Salt's does, and
-      `mount.mounted`'s `opts` should take the list Salt's own first
-      example uses. DIVERGENCE 5.81.
+      All three are now built and the tree is at 30. `gid` resolves a
+      group name, `opts` takes a list, and `shell` takes both spellings
+      because they do not overlap — a boolean is SPEC 15.2's opt-in, a
+      path is Salt's, and the named shell is the one that runs the line.
+      **And the default is Salt's now too**, which answers SPEC 33's
+      third open question and closes half of §6 item 21. The security
+      argument for the inversion stands; what it cost was a migration
+      that could not start, since every `cmd.run` in an existing tree is
+      a shell line. `cmd_default_shell: false` is the hardened setting
+      an estate takes *after* converting its call sites, and the audit
+      flag is `--no-cmd-default-shell`. DIVERGENCE 5.81.
     - ~~**A CIS Level 2 host will exercise a path that is written and
       unexercised, and probably break it.**~~ **The refusal is built**,
       which is the half that needed no such host. The agentless mode
@@ -1609,8 +1626,8 @@ tool nobody has run against it (DIVERGENCE 5.31).
 
 20. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
     carries and what CI already runs on it.
-21. The `cmd.run` default, the unplanned modules, a `win_registry`
-    state, and job signing (§6).
+21. ~~The `cmd.run` default~~ (answered: follow Salt, DIVERGENCE 5.81),
+    the unplanned modules, a `win_registry` state, and job signing (§6).
 22. Whether a follower that falls behind the event bus should stop or
     resume. `subscriber_lag` refuses the read now; what a *reactor*
     should do with the refusal is the open half (DIVERGENCE 4.12).

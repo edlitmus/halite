@@ -7843,7 +7843,7 @@ estate's tree, worth having written down:
 |---|---|
 | 13 | state arguments that are not implemented: `file.replace`'s `ignore_if_missing` (5), `user.present`'s `mindays`/`maxdays`/`inactdays`/`unique`/`enforce_password` (11 across 4 sites), `file.managed`'s `skip_verify` and `keep_source`, `group.present`'s `members` and `system`, `pkg.installed`'s `allow_updates` |
 | 4 | a template `import` of a file the `base` environment does not serve |
-| 3 | arguments accepted by Salt and refused here — three *different* problems, set out below |
+| 3 | arguments accepted by Salt and refused here — three *different* problems, set out below, now all built |
 | 2 | state modules that are not built: `kmod`, `saltutil` |
 | 2 | template gaps: the `import_yaml` tag, and unpacking a sequence into two names |
 | 1 | a pillar key from an `ext_pillar` this lab hub does not configure |
@@ -7876,9 +7876,58 @@ the three. Checked against Salt's own source on the same host:
   the spelling Salt teaches. That one is a small fix with no decision
   attached.
 
-So the row is one feature to build, one naming collision that needs a
-person, and one refusal to invert. Only the middle one belongs with
-plan.md §6.
+**All three are now built**, and the tree compiles 33 errors down to 30.
+
+- `gid` takes a group name and resolves it, as Salt's does. A name no
+  group has is an error naming it rather than a silent zero: gid 0 is
+  root's, and defaulting to it is the one wrong answer that would look
+  like it had worked.
+- `shell` takes both spellings, because they do not overlap. A boolean
+  is SPEC 15.2's opt-in; a path is Salt's `shell: /bin/bash`, which opts
+  in *and* names the interpreter. The path is honoured rather than
+  tolerated — `exec.Command` carries a `ShellPath` and the interpreter
+  named is the one that runs the line, checked by a test that asks the
+  shell itself (`$BASH_VERSION` is set by bash and empty under the dash
+  that is `/bin/sh` here) rather than by this project's opinion of what
+  should have happened. Accepting the argument and running the line
+  under `/bin/sh` anyway would have been 5.78's `cloud_grains` defect
+  again: a value read and then dropped.
+- `opts` takes a list or a comma-separated string, joining the list into
+  the comma form everything downstream already uses.
+
+**And the default is now Salt's too**, which answers SPEC 33's third
+open question and is the largest deliberate reversal this project has
+made. `cmd.run` with no `shell` argument runs through a shell;
+`cmd_default_shell: false` takes an argument vector instead and is the
+hardened setting.
+
+The security argument for the inversion was never wrong and is not
+withdrawn. Salt's shell default *is* the root of most of its injection
+findings, and an argument vector cannot be reinterpreted by anything
+because there is no shell to re-read it. What the inversion cost was a
+migration that could not start: every `cmd.run` in an existing tree is a
+shell line, and a default that reads them all as program names fails
+loudly at best and, where a program of that name exists, quietly runs
+the wrong one. The 54 call sites this estate's migration report flagged
+were never going to be rewritten before the first apply, which is why
+the estate had already decided on `cmd_default_shell: true` estate-wide
+in 2026-09-12 — the setting was carrying the default's weight, and a
+default that every estate immediately overrides is the wrong default.
+
+So the order is reversed rather than the reasoning. Migrate on Salt's
+default, convert the call sites to `name` plus `args`, then take
+`cmd_default_shell: false`. The audit follows: `--no-cmd-default-shell`
+is the flag that shows the work, and the report counts the shell lines
+whether or not it lists them, because a tree that reports no work and
+stops the day a setting changes is not a tree with no work.
+
+One test is worth naming. The case that mattered — an unset setting and
+no `args` — had never been covered: the test that looked like it checked
+the default passed `args` alongside, and `args` decides the form on its
+own whatever the setting says. So the default could have been anything
+and the suite would have agreed. It is asserted directly now, in both
+directions, and `shell: false` is asserted beside the two opt-ins so
+that the path form cannot quietly turn the shell on for everybody.
 
 ## 6. Everything else not started
 
@@ -8677,7 +8726,7 @@ excavation.
 |---|---|---|---|
 | 1 | Project name | Halite, unchanged | module path, binary names, `HALITE=1` in the child environment, the `#HALITE_CRON_IDENTIFIER:` marker in managed crontabs |
 | 2 | Compatibility horizon | no date set | the config shim has no removal path |
-| 3 | `cmd.run` default | argv in the build, per 15.2; **`cmd_default_shell: true` estate-wide, decided 2026-09-12** | the shipped default is unchanged and the estate turns the setting on, so the 54 call sites the migration report flagged are carried rather than rewritten. A command run through a shell is re-interpreted by it, which is Salt's own exposure and is the compatibility being bought |
+| 3 | `cmd.run` default | **follow Salt, decided 2026-09-14**; `cmd_default_shell: false` is the hardened opt-out | the estate had already set the old setting fleet-wide on 2026-09-12 to carry the 54 call sites the migration report flagged, which is a default being overridden by every estate that meets it. The security argument is unchanged and now attaches to the opt-out: a command run through a shell is re-interpreted by it, so converting call sites to `name` plus `args` is what lets an estate take `false`. 5.81 |
 | 4 | Strict undefined | strict, per 10.2.6 | `--permissive` exists as the transition |
 | 5 | PAM | dropped | no local account authentication; phase 4 concern |
 | 6 | Detached job signing | not implemented | phase 6 |

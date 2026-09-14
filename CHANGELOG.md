@@ -50,11 +50,36 @@ inventory rather than a defect: 13 unimplemented state arguments, 4
 template imports the environment does not serve, 2 unbuilt state modules
 (`kmod`, `saltutil`), 2 template gaps (`import_yaml`, sequence
 unpacking), one pillar key from an `ext_pillar` the lab hub does not
-configure, and three refusals that are three different problems — a
-`user.present` `gid` that Salt resolves from a group name and this
-cannot, a `cmd.run` `shell` that means *the shell to use* in Salt and a
-boolean here, and a `mount.mounted` `opts` where Salt takes a list or a
-string and this takes only the string.
+configure.
+
+Three more refusals in that inventory are now built, and they were three
+different problems rather than one: `user.present`'s `gid` takes a group
+name and resolves it as Salt's does; `mount.mounted`'s `opts` takes a
+list as well as a comma-separated string; and `cmd.run`'s `shell` takes
+both spellings, since they do not overlap — a boolean is SPEC 15.2's
+opt-in and a path is Salt's `shell: /bin/bash`, which opts in and names
+the interpreter. The named shell is the one that runs the line, not
+merely an accepted argument. The tree now compiles 30 errors, from 42.
+
+**And the default now follows Salt as well**, which answers SPEC 33's
+third open question. `cmd.run` with no `shell` argument runs through a
+shell; `cmd_default_shell: false` takes an argument vector and is the
+hardened setting.
+
+The security argument for the old inversion is not withdrawn — Salt's
+shell default is the root of most of its injection findings, and an
+argument vector cannot be reinterpreted because there is no shell to
+re-read it. What the inversion cost was a migration that could not
+start: every `cmd.run` in an existing tree is a shell line, and reading
+them all as program names fails loudly at best and, where a program of
+that name exists, quietly runs the wrong one. This estate had already
+set `cmd_default_shell: true` fleet-wide, which is a default carrying
+its own override.
+
+So the order is reversed, not the reasoning: migrate on Salt's default,
+convert the call sites, then take `cmd_default_shell: false`. The audit
+flag is now `--no-cmd-default-shell`, and it still counts the shell
+lines it does not list.
 
 ### The grains were never compared to Salt, and thirteen were wrong
 
