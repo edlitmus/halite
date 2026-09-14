@@ -383,7 +383,7 @@ func registerUserStates(r *Registries) {
 				Params: []signature.Param{
 					nameParam("The account. Defaults to the state ID."),
 					opt("uid", signature.Int, nil, "The numeric user id."),
-					opt("gid", signature.Int, nil, "The numeric primary group id."),
+					opt("gid", signature.Any, nil, "The primary group: a numeric id, or the name of an existing group, which Salt also accepts."),
 					opt("home", signature.Path, "", "The home directory."),
 					opt("shell", signature.Path, "", "The login shell."),
 					opt("fullname", signature.String, "", "The comment field."),
@@ -445,11 +445,49 @@ func registerUserStates(r *Registries) {
 	)
 }
 
+// resolveGID reads the `gid` argument, which names a group either way.
+//
+// Salt's own documentation says so -- "Either a group name or gid can be
+// used" -- and it resolves a name through `file.group_to_gid`. This took
+// a number only, so the ordinary case of giving a user a primary group
+// by name could not be expressed at all: an estate's tree writing
+// `gid: postfix` was refused rather than looked up.
+//
+// A name that no group has is an error naming it, rather than a silent
+// zero -- gid 0 is root's, and defaulting to it is the one wrong answer
+// that would look like it worked.
+func resolveGID(args *value.Map) (int64, error) {
+	v, ok := args.Get("gid")
+	if !ok || v == nil {
+		return 0, nil
+	}
+	if name, isStr := v.(string); isStr {
+		if trimmed := strings.TrimSpace(name); trimmed != "" {
+			// A group named by its digits is still a gid.
+			if n, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+				return n, nil
+			}
+			g, err := user.LookupGroup(trimmed)
+			if err != nil {
+				return 0, fmt.Errorf("the group %q named by `gid` does not exist: %w", trimmed, err)
+			}
+			n, err := strconv.ParseInt(g.Gid, 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("the group %q has gid %q, which is not a number", trimmed, g.Gid)
+			}
+			return n, nil
+		}
+		return 0, nil
+	}
+	return states.Int(args, "gid", 0), nil
+}
+
 func specFrom(args *value.Map) userSpec {
+	gid, _ := resolveGID(args)
 	return userSpec{
 		Name:       states.Str(args, "name", ""),
 		UID:        states.Int(args, "uid", 0),
-		GID:        states.Int(args, "gid", 0),
+		GID:        gid,
 		Home:       states.Str(args, "home", ""),
 		Shell:      states.Str(args, "shell", ""),
 		Comment:    states.Str(args, "fullname", ""),
@@ -476,6 +514,9 @@ func optionalBool(args *value.Map, name string) *bool {
 func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	if runtime.GOOS == "darwin" {
 		return macUserPresentState(c, args)
+	}
+	if _, err := resolveGID(args); err != nil {
+		return states.False(fmt.Sprintf("%v.", err)), nil
 	}
 	spec := specFrom(args)
 	if spec.Name == "" {

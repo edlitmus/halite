@@ -86,6 +86,18 @@ func liveOpenSSLSetup(t *testing.T) liveOpenSSL {
 	return l
 }
 
+// callErr is call without the fatal, for the paths where a refusal is
+// the thing being tested.
+func (l liveOpenSSL) callErr(t *testing.T, fn string, args *value.Map) (*value.Map, error) {
+	t.Helper()
+	out, err := New().Exec.Call(l.c, fn, args)
+	if err != nil {
+		return nil, err
+	}
+	m, _ := out.(*value.Map)
+	return m, nil
+}
+
 func (l liveOpenSSL) call(t *testing.T, fn string, args *value.Map) *value.Map {
 	t.Helper()
 	out, err := New().Exec.Call(l.c, fn, args)
@@ -231,14 +243,38 @@ func TestAPKCS12BundleThisModuleWritesIsOneOpenSSLReads(t *testing.T) {
 	bundle := filepath.Join(l.dir, "leaf.p12")
 	const passphrase = "halite-live-test"
 
-	create := value.NewMap(6)
+	create := value.NewMap(7)
 	create.Set("path", bundle)
 	create.Set("certificate", l.leaf)
 	create.Set("private_key", l.lkey)
 	create.Set("ca_certs", l.ca)
 	create.Set("password", passphrase)
 	create.Set("friendly_name", "halite-leaf")
-	out := l.call(t, "openssl_cert.pkcs12_create", create)
+
+	// PKCS#12 predates every KDF FIPS approves, and its MAC is keyed by
+	// PKCS12KDF -- which is therefore absent from OpenSSL 3's FIPS
+	// provider. So on a host in FIPS mode the bundle cannot be MACed at
+	// all, and the module refuses rather than quietly dropping the MAC.
+	// The refusal is asserted here, because a message an operator
+	// cannot act on is the failure this found: openssl says
+	// "no PKCS12KDF support?" and never says the word FIPS.
+	// DIVERGENCE 5.83.
+	verifyMAC := true
+	out, err := l.callErr(t, "openssl_cert.pkcs12_create", create)
+	if err != nil {
+		if !strings.Contains(err.Error(), "PKCS12KDF") {
+			t.Fatalf("openssl_cert.pkcs12_create: %v", err)
+		}
+		for _, want := range []string{"FIPS", "mac: false"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal does not mention %q:\n%v", want, err)
+			}
+		}
+		t.Logf("this host cannot MAC a PKCS#12 bundle; continuing with mac: false\n%v", err)
+		create.Set("mac", false)
+		verifyMAC = false
+		out = l.call(t, "openssl_cert.pkcs12_create", create)
+	}
 	if changed, _ := out.GetString("changed"); changed != true {
 		t.Fatalf("writing a bundle reported no change: %v", out.Entries())
 	}
@@ -253,9 +289,20 @@ func TestAPKCS12BundleThisModuleWritesIsOneOpenSSLReads(t *testing.T) {
 		t.Errorf("the bundle is mode %04o, want 0600", mode)
 	}
 
-	read := value.NewMap(2)
+	read := value.NewMap(3)
 	read.Set("path", bundle)
 	read.Set("password", passphrase)
+	// Reading is refused by the same missing KDF, for any bundle at all
+	// -- including one written without a MAC, because openssl still
+	// tries to verify. Same shape, same refusal, its own opt-out.
+	if !verifyMAC {
+		if _, err := l.callErr(t, "openssl_cert.pkcs12_info", read); err == nil {
+			t.Error("a host that cannot MAC a bundle read one back with verification on")
+		} else if !strings.Contains(err.Error(), "verify_mac: false") {
+			t.Errorf("the read refusal does not offer verify_mac: false:\n%v", err)
+		}
+		read.Set("verify_mac", false)
+	}
 	got := l.call(t, "openssl_cert.pkcs12_info", read)
 
 	if name, _ := got.GetString("friendly_name"); name != "halite-leaf" {

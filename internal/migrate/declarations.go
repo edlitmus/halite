@@ -174,10 +174,11 @@ func checkStateFunction(rep *Report, opts Options, rel string, source []string, 
 						Category: CatState, Severity: Review, File: rel, Line: arg.KeyPos.Line, Col: arg.KeyPos.Col,
 						Subject: name,
 						Msg: fmt.Sprintf("%s names a program with arguments in it: %q. "+
-							"halite runs a command without a shell, so this is one program name",
+							"this audit assumed `cmd_default_shell: false`, under which that is one "+
+							"program name rather than a shell line",
 							name, sourceLine(source, arg.ValPos.Line, line)),
 						Action: "Put the program in `name` and the rest in `args`, or set `shell: true` " +
-							"on this state, or `cmd_default_shell: true` for a transition. SPEC section 15.2.",
+							"on this state. SPEC section 15.2.",
 					})
 				}
 			}

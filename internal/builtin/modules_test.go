@@ -934,10 +934,15 @@ func TestStateAndExecModulesAgreeOnNames(t *testing.T) {
 	}
 }
 
-// SPEC section 15.2 inverts Salt's shell default and names
-// `cmd_default_shell` as the transition for an estate that cannot rewrite
-// every cmd.run at once. A declared setting that nothing reads is the same
-// silent failure the inversion exists to prevent.
+// `cmd_default_shell` follows Salt: a `cmd.run` that says nothing runs
+// through a shell, and `false` takes an argument vector instead. A
+// declared setting that nothing reads is a silent failure either way.
+//
+// The first case here used to pass `args` alongside an unset setting and
+// assert that no shell was used — which `args` decides on its own,
+// whatever the setting says. So the case that mattered, an unset setting
+// and *no* `args`, was never covered, and the default could have been
+// anything. It is asserted directly now.
 func TestCmdDefaultShellIsHonoured(t *testing.T) {
 	r := New()
 
@@ -948,19 +953,39 @@ func TestCmdDefaultShellIsHonoured(t *testing.T) {
 		return c
 	}
 
-	// Off, which is the default: `name` is the program, so a name with
-	// arguments in it is one argv element and not a shell line.
+	// Unset, which is Salt's default: a bare `name` is a shell line.
 	c := withConfig(value.NewMap(0))
-	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/echo", "args", []any{"hello"})); err != nil {
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "echo hello")); err != nil {
 		t.Fatal(err)
 	}
 	rec := c.Runner.(*exec.RecordingRunner)
-	if rec.Ran[0].Shell {
-		t.Error("a shell was used with cmd_default_shell unset")
+	if !rec.Ran[0].Shell {
+		t.Error("an unset cmd_default_shell did not run through a shell")
 	}
 
-	// On: the same call runs through a shell, which is what makes an
-	// unconverted `name: some command with args` keep working.
+	// Off: `name` is the program, so a name with arguments in it is one
+	// argv element and not a shell line. This is the hardened setting.
+	c = withConfig(value.MapOf("cmd_default_shell", false))
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/echo", "args", []any{"hello"})); err != nil {
+		t.Fatal(err)
+	}
+	rec = c.Runner.(*exec.RecordingRunner)
+	if rec.Ran[0].Shell {
+		t.Error("a shell was used with cmd_default_shell: false")
+	}
+
+	// And off with no `args` at all, which is the case the setting
+	// actually governs rather than one `args` decides.
+	c = withConfig(value.MapOf("cmd_default_shell", false))
+	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/echo")); err != nil {
+		t.Fatal(err)
+	}
+	rec = c.Runner.(*exec.RecordingRunner)
+	if rec.Ran[0].Shell {
+		t.Error("cmd_default_shell: false did not take effect")
+	}
+
+	// On, stated explicitly: the same as unset.
 	c = withConfig(value.MapOf("cmd_default_shell", true))
 	if _, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "echo hello")); err != nil {
 		t.Fatal(err)

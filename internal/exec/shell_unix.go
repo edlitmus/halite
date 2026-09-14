@@ -20,7 +20,16 @@ func defaultPath() string {
 }
 
 // shellCommand is how a Shell command is handed to an interpreter.
-func shellCommand(script string) []string { return []string{"/bin/sh", "-c", script} }
+//
+// `shell` names it when the caller asked for a particular one -- Salt's
+// `shell: /bin/bash` -- and /bin/sh is the default, because a shell line
+// written for one shell is not the same program under another.
+func shellCommand(script, shell string) []string {
+	if shell == "" {
+		shell = "/bin/sh"
+	}
+	return []string{shell, "-c", script}
+}
 
 // shellName is what to call the interpreter in a message.
 func shellName() string { return "/bin/sh" }

@@ -536,16 +536,26 @@ type CommandRunner interface {
 
 // Command describes one external invocation.
 //
-// Argv rather than a shell string is the default everywhere, and Shell is
-// the opt-in. Salt's default of a shell for cmd.run is the root of most of
-// its injection findings, and inverting the default is a deliberate
-// compatibility break with `cmd_default_shell` for a transition. SPEC
-// section 15.2.
+// Argv is the general form, and Shell runs the first element through an
+// interpreter instead. Every caller inside this tree builds an argv; the
+// one place Shell is set from a tree is `cmd.run`, whose default follows
+// Salt and can be turned off estate-wide with `cmd_default_shell: false`.
+// SPEC section 15.2.
 type Command struct {
 	// Argv is the program and its arguments.
 	Argv []string
 	// Shell runs the first Argv element through a shell instead.
 	Shell bool
+	// ShellPath names the interpreter to use when Shell is set. Empty
+	// means the platform's own -- /bin/sh, or whatever %ComSpec% names.
+	//
+	// This is Salt's `shell` argument, which is a path rather than the
+	// boolean SPEC 15.2 spells `shell: true`: a tree that says
+	// `shell: /bin/bash` is asking for bash's syntax, and running that
+	// line under /bin/sh is a different program. The two are separate
+	// fields because they are separate questions -- whether to use a
+	// shell, and which one.
+	ShellPath string
 	// Dir is the working directory.
 	Dir string
 	// Env replaces the environment entirely when non-nil.
@@ -691,7 +701,7 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 		// %ComSpec% names. This said /bin/sh everywhere, so `shell: true`
 		// and every cmd.shell failed on Windows with "file not found"
 		// naming a path that platform has never had.
-		argv := shellCommand(strings.Join(cmd.Argv, " "))
+		argv := shellCommand(strings.Join(cmd.Argv, " "), cmd.ShellPath)
 		c = exec.CommandContext(ctx, argv[0], argv[1:]...)
 	} else {
 		c = exec.CommandContext(ctx, cmd.Argv[0], cmd.Argv[1:]...)
@@ -783,10 +793,10 @@ func migrationHint(cmd Command, err error) string {
 		return ""
 	}
 	return "\n  the program name contains a space, so it was not split into arguments:" +
-		"\n  halite runs a command without a shell by default, where `name` is the program" +
-		"\n  and `args` is the list of arguments. Pass the arguments in `args`, or set" +
-		"\n  `shell: true` on this state, or `cmd_default_shell: true` for a transition." +
-		"\n  See SPEC section 15.2."
+		"\n  this node has `cmd_default_shell: false`, so `name` is the program and" +
+		"\n  `args` is the list of arguments. Pass the arguments in `args`, or set" +
+		"\n  `shell: true` on this state, or remove `cmd_default_shell: false` to run" +
+		"\n  through a shell as Salt does. See SPEC section 15.2."
 }
 
 // ctxRunError explains a run that ended because its context did. os/exec

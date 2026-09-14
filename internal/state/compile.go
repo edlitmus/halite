@@ -233,7 +233,7 @@ func (c *Compiler) loadSLS(out *Compiled, env, name string, seen map[string]bool
 		return
 	}
 
-	content := parseSLS(res.Value, name, env, &out.Diags)
+	content := parseSLS(res.Value, name, env, filePath, &out.Diags)
 	out.SLS = append(out.SLS, name)
 
 	// Includes are expanded depth-first, so an included file's states are

@@ -4,6 +4,7 @@ package grains
 
 import (
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -25,17 +26,51 @@ func collectOS(g *value.Map) {
 	g.Set("os", osName)
 	g.Set("osfullname", firstNonEmpty(name, osName))
 	g.Set("osrelease", versionID)
-	g.Set("osmajorrelease", majorVersion(versionID))
+	g.Set("osmajorrelease", majorRelease(versionID))
 	g.Set("osrelease_info", releaseInfo(versionID))
 	g.Set("oscodename", firstNonEmpty(rel["VERSION_CODENAME"], rel["UBUNTU_CODENAME"]))
-	g.Set("os_family", osFamily(id, rel["ID_LIKE"]))
-	g.Set("osarch", goarchToCPU())
-	g.Set("osfinger", osName+"-"+majorVersion(versionID))
+	family := osFamily(id, rel["ID_LIKE"])
+	g.Set("os_family", family)
+	g.Set("osarch", packageArch(family))
+	g.Set("osfinger", osFinger(osName, firstNonEmpty(name, osName), versionID))
 
 	// The lsb_ grains are what a tree written before os-release reads.
 	g.Set("lsb_distrib_id", firstNonEmpty(name, osName))
 	g.Set("lsb_distrib_release", versionID)
 	g.Set("lsb_distrib_codename", firstNonEmpty(rel["VERSION_CODENAME"], rel["UBUNTU_CODENAME"]))
+}
+
+// packageArch is the `osarch` grain: the architecture a *package* is
+// named for, which is not the architecture the CPU is called.
+//
+// A Debian machine calls the same processor `arm64` where `uname -m`
+// calls it `aarch64`, and `amd64` where uname says `x86_64`. Salt asks
+// the package manager for this and so does this: `pkg.installed` on a
+// tree that pins an architecture is comparing against whatever dpkg
+// prints, so anything else is a comparison that cannot match.
+//
+// This used to be `goarchToCPU()` -- the `cpuarch` value -- on every
+// family, so `osarch` and `cpuarch` were the same grain twice and the
+// Debian estate this is aimed at got `aarch64` where every one of its
+// Salt trees had been reading `arm64`. A family whose tool is missing
+// falls back to the CPU name, which is what Salt does for the families
+// that have no package architecture of their own.
+func packageArch(family string) string {
+	switch family {
+	case "Debian":
+		if out, err := exec.Command("dpkg", "--print-architecture").Output(); err == nil {
+			if arch := strings.TrimSpace(string(out)); arch != "" {
+				return arch
+			}
+		}
+	case "RedHat", "Suse":
+		if out, err := exec.Command("rpm", "--eval", "%{_host_cpu}").Output(); err == nil {
+			if arch := strings.TrimSpace(string(out)); arch != "" && arch != "%{_host_cpu}" {
+				return arch
+			}
+		}
+	}
+	return goarchToCPU()
 }
 
 func prettyOSName(id, name string) string {
@@ -98,12 +133,68 @@ func collectKernel(g *value.Map) {
 	g.Set("kernelrelease", release)
 	g.Set("kernelversion", firstLineOf("/proc/sys/kernel/version"))
 
-	params := value.NewMap(8)
-	for _, field := range strings.Fields(firstLineOf("/proc/cmdline")) {
+	g.Set("kernelparams", kernelParams(firstLineOf("/proc/cmdline")))
+}
+
+// kernelParams parses /proc/cmdline into the (name, value) pairs Salt
+// reports, in the order the kernel was given them.
+//
+// A mapping is what this used to build, and a mapping cannot hold a
+// command line. Parameters repeat: `console=tty1 console=ttyS0` is how
+// a cloud image asks for both a virtual and a serial console, and
+// hardening guides set `audit_backlog_limit` twice. Keyed by name, the
+// second silently replaced the first -- this host boots with twelve
+// parameters and reported ten -- so a state auditing boot parameters
+// could not see the console it was looking for. A sequence keeps them
+// all, and it is also the shape any tree carried over from Salt is
+// written against: iterating pairs, not indexing a name.
+//
+// A parameter with no value gets an empty string, and one whose value
+// contains an `=` keeps all of it. That second part is deliberately
+// *not* what Salt does: Salt splits on every `=` and discards the value
+// unless there are exactly two fields, so `root=UUID=...` is reported
+// as `root` with no value at all. Reproducing that would mean losing
+// the root filesystem's identity to copy a defect. DIVERGENCE records
+// it.
+func kernelParams(cmdline string) []any {
+	var out []any
+	for _, field := range splitCmdline(cmdline) {
 		k, v, _ := strings.Cut(field, "=")
-		params.Set(k, v)
+		out = append(out, []any{k, strings.Trim(v, `"`)})
 	}
-	g.Set("kernelparams", params)
+	return orEmpty(out)
+}
+
+// splitCmdline splits /proc/cmdline into parameters.
+//
+// Whitespace separates them except inside double quotes, which is how
+// the kernel itself parses the line and how a value containing a space
+// -- `param="a, b"` -- reaches a single parameter. Splitting on
+// whitespace alone tears such a value into two parameters, the second
+// of which has no name.
+func splitCmdline(cmdline string) []string {
+	var fields []string
+	var cur strings.Builder
+	quoted := false
+	flush := func() {
+		if cur.Len() > 0 {
+			fields = append(fields, cur.String())
+			cur.Reset()
+		}
+	}
+	for _, r := range cmdline {
+		switch {
+		case r == '"':
+			quoted = !quoted
+			cur.WriteRune(r)
+		case !quoted && (r == ' ' || r == '\t' || r == '\n' || r == '\r'):
+			flush()
+		default:
+			cur.WriteRune(r)
+		}
+	}
+	flush()
+	return fields
 }
 
 func collectCPU(g *value.Map) {
@@ -112,13 +203,18 @@ func collectCPU(g *value.Map) {
 	b, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		g.Set("num_cpus", int64(0))
-		g.Set("cpu_model", "")
+		g.Set("cpu_model", "Unknown")
 		g.Set("cpu_flags", []any{})
 		return
 	}
 
 	count := 0
-	model := ""
+	// "Unknown" rather than "" is Salt's own default, and it is the
+	// answer on every arm64 machine: /proc/cpuinfo there carries
+	// `CPU implementer` and `CPU part` numbers and no model string at
+	// all, so there is nothing to report and a tree reading the grain
+	// should see that rather than an empty string it may treat as unset.
+	model := "Unknown"
 	var flags []any
 	for _, line := range strings.Split(string(b), "\n") {
 		k, v, ok := strings.Cut(line, ":")
@@ -130,8 +226,8 @@ func collectCPU(g *value.Map) {
 		switch k {
 		case "processor":
 			count++
-		case "model name", "Model", "cpu model":
-			if model == "" {
+		case "model name", "Model", "cpu model", "Processor":
+			if model == "Unknown" {
 				model = v
 			}
 		case "flags", "Features":
@@ -246,7 +342,11 @@ func collectVirtualization(g *value.Map) {
 	case strings.Contains(vendor, "Microsoft"), strings.Contains(product, "Virtual Machine"):
 		virt = "HyperV"
 	case strings.Contains(vendor, "Amazon"):
-		virt = "kvm"
+		// AWS's own hypervisor has a name, and a tree on an AWS estate
+		// branches on it. Salt reports `Nitro` here; this reported
+		// `kvm`, which is what Nitro is built on and not what anything
+		// asks for.
+		virt = "Nitro"
 		subtype = "Amazon EC2"
 	}
 
@@ -287,6 +387,19 @@ func collectHardware(g *value.Map) {
 
 // blockDevices reads /sys/block, which is how the kernel already describes
 // the disks; no lsblk is needed.
+//
+// `disks` and `ssds` partition the devices rather than nesting: a
+// device is in `ssds` when the kernel calls it non-rotational and in
+// `disks` when it calls it rotational, and in neither when it will not
+// say. That is Salt's split, and the difference is not cosmetic -- this
+// used to put every device in `disks` and repeat the solid-state ones
+// in `ssds`, so on an all-NVMe host, which every current cloud instance
+// is, `grains['disks']` listed seven devices where Salt lists none and
+// a tree iterating it to find spinning disks found seven that are not.
+//
+// Devices whose /sys/block entry links into `devices/virtual` are
+// skipped, which is how loop, ram and device-mapper nodes are excluded
+// as a class rather than by a list of name prefixes that has to grow.
 func blockDevices() (disks, ssds []any) {
 	entries, err := os.ReadDir("/sys/block")
 	if err != nil {
@@ -294,12 +407,15 @@ func blockDevices() (disks, ssds []any) {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") {
+		if target, err := os.Readlink("/sys/block/" + name); err == nil &&
+			strings.Contains(target, "devices/virtual/") {
 			continue
 		}
-		disks = append(disks, name)
-		if firstLineOf("/sys/block/"+name+"/queue/rotational") == "0" {
+		switch firstLineOf("/sys/block/" + name + "/queue/rotational") {
+		case "0":
 			ssds = append(ssds, name)
+		case "1":
+			disks = append(disks, name)
 		}
 	}
 	return disks, ssds
@@ -316,11 +432,51 @@ func detectInit() string {
 	return "unknown"
 }
 
+// detectSystemd reports the running init's version and build features,
+// in the shape SPEC 14.1 and Salt both use.
+//
+// It asks `systemctl --version`, which is what Salt's own grain asks,
+// because the value's whole purpose is that an existing tree branching
+// on `grains['systemd']['version']` means the same thing here. The
+// first line is `systemd 249 (249.11-0ubuntu3.22)` and the version is
+// its second field -- the bare series, not the distribution's package
+// string -- and the second line is the `+PAM +AUDIT ...` feature list
+// verbatim.
+//
+// This is the one grain on Linux that runs a program, and it is worth
+// saying why the file sources the rest of this package prefers do not
+// answer it: nothing under /proc or /sys carries the version. What used
+// to be read was /proc/1/comm, which carries the *process name*, so the
+// grain reported the string "systemd" as its version on every Linux
+// host and an empty feature list, and no test had ever looked at the
+// value. systemd's D-Bus `Manager` exposes `Version` and `Features` and
+// would avoid the fork, but it reports the manager's version where Salt
+// reports the binary's, and matching Salt is what this grain is for.
 func detectSystemd() *value.Map {
 	if _, err := os.Stat("/run/systemd/system"); err != nil {
 		return value.MapOf("version", "", "features", "")
 	}
-	return value.MapOf("version", firstLineOf("/proc/1/comm"), "features", "")
+	version, features := systemctlVersion()
+	return value.MapOf("version", version, "features", features)
+}
+
+// systemctlVersion parses `systemctl --version`. A host where it cannot
+// be run gets two empty strings rather than a guess: a template reading
+// the grain gets nothing, which is the honest answer and the one the
+// Windows collector already gives.
+func systemctlVersion() (version, features string) {
+	out, err := exec.Command("systemctl", "--version").Output()
+	if err != nil {
+		return "", ""
+	}
+	lines := strings.Split(string(out), "\n")
+	if fields := strings.Fields(lines[0]); len(fields) >= 2 {
+		version = fields[1]
+	}
+	if len(lines) >= 2 {
+		features = strings.TrimSpace(lines[1])
+	}
+	return version, features
 }
 
 func firstNonEmpty(vals ...string) string {

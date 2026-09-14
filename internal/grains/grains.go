@@ -10,6 +10,7 @@ package grains
 import (
 	"context"
 	"net"
+	"net/netip"
 	"os"
 	"runtime"
 	"sort"
@@ -184,15 +185,48 @@ func collectPlatform(g *value.Map) {
 	}
 	g.Set("systempath", systempath)
 
+	language, encoding := splitLocale(envOr("LANG", ""))
 	locale := value.MapOf(
-		"defaultlanguage", envOr("LANG", ""),
-		"defaultencoding", "UTF-8",
-		"detectedencoding", "UTF-8",
+		"defaultlanguage", language,
+		"defaultencoding", encoding,
+		"detectedencoding", strings.ToLower(encoding),
 		"timezone", localTimezone(),
 	)
 	g.Set("locale_info", locale)
 	g.Set("init", detectInit())
 	g.Set("systemd", detectSystemd())
+}
+
+// splitLocale separates a locale into its language and its codeset.
+//
+// `LANG` holds both -- `en_US.UTF-8`, `C.UTF-8` -- and the two grains
+// are the two halves. What used to be reported was the whole string as
+// the language and a hardcoded "UTF-8" as the encoding, so a tree
+// comparing `grains['locale_info']['defaultlanguage'] == 'C'` on a host
+// whose LANG is `C.UTF-8` got false, and a host in a non-UTF-8 codeset
+// was told it was in UTF-8 regardless.
+//
+// A modifier -- the `@euro` of `de_DE.ISO8859-15@euro` -- belongs to
+// the language, which is where setlocale(3) puts it and where Salt's
+// own split leaves it. A locale with no codeset keeps the UTF-8 default
+// rather than reporting nothing, because that is the encoding a machine
+// with a bare `C` or an unset LANG actually uses here.
+func splitLocale(lang string) (language, encoding string) {
+	language, encoding = lang, "UTF-8"
+	dot := strings.IndexByte(lang, '.')
+	if dot < 0 {
+		return language, encoding
+	}
+	language, encoding = lang[:dot], lang[dot+1:]
+	// The modifier rides with the language.
+	if at := strings.IndexByte(encoding, '@'); at >= 0 {
+		language += encoding[at:]
+		encoding = encoding[:at]
+	}
+	if encoding == "" {
+		encoding = "UTF-8"
+	}
+	return language, encoding
 }
 
 func envOr(key, def string) string {
@@ -249,16 +283,56 @@ func collectNetwork(g *value.Map, warnings *[]Warning) {
 		ipInterfaces.Set(iface.Name, orEmpty(all))
 		ip4Interfaces.Set(iface.Name, orEmpty(v4))
 		ip6Interfaces.Set(iface.Name, orEmpty(v6))
-		hwaddrs.Set(iface.Name, iface.HardwareAddr.String())
+		// The loopback interface has no hardware address, and Go
+		// renders that as an empty string where Salt renders the
+		// all-zero address every other tool prints for it. A tree
+		// reading hwaddr_interfaces['lo'] gets the same answer here as
+		// it did there.
+		hw := iface.HardwareAddr.String()
+		if hw == "" && iface.Flags&net.FlagLoopback != 0 {
+			hw = "00:00:00:00:00:00"
+		}
+		hwaddrs.Set(iface.Name, hw)
 	}
 
-	g.Set("ipv4", orEmpty(ipv4))
-	g.Set("ipv6", orEmpty(ipv6))
+	g.Set("ipv4", orEmpty(sortIPs(ipv4)))
+	g.Set("ipv6", orEmpty(sortIPs(ipv6)))
 	g.Set("ip_interfaces", ipInterfaces)
 	g.Set("ip4_interfaces", ip4Interfaces)
 	g.Set("ip6_interfaces", ip6Interfaces)
 	g.Set("hwaddr_interfaces", hwaddrs)
 	g.Set("dns", resolverConfig())
+}
+
+// sortIPs deduplicates addresses and orders them numerically.
+//
+// The flat `ipv4` and `ipv6` grains are a set, not a per-interface
+// listing, and Salt hands them over sorted as addresses. Two things
+// follow that string ordering does not give: an address held by two
+// interfaces appears once, and 9.0.0.1 sorts before 10.0.0.1 rather
+// than after it. A tree that reads `grains['ipv4'][0]` is reading a
+// position, so the order is part of the answer.
+func sortIPs(addrs []any) []any {
+	seen := make(map[string]bool, len(addrs))
+	parsed := make([]netip.Addr, 0, len(addrs))
+	for _, a := range addrs {
+		s, ok := a.(string)
+		if !ok || seen[s] {
+			continue
+		}
+		ip, err := netip.ParseAddr(s)
+		if err != nil {
+			continue
+		}
+		seen[s] = true
+		parsed = append(parsed, ip)
+	}
+	sort.Slice(parsed, func(i, j int) bool { return parsed[i].Less(parsed[j]) })
+	out := make([]any, len(parsed))
+	for i, ip := range parsed {
+		out[i] = ip.String()
+	}
+	return out
 }
 
 func orEmpty(v []any) []any {
@@ -268,15 +342,43 @@ func orEmpty(v []any) []any {
 	return v
 }
 
-// resolverConfig reads /etc/resolv.conf, which every unix has and which
-// needs no external tool.
+// resolvConfPath is the resolver configuration to read.
+//
+// /etc/resolv.conf is the file every unix has, and on a host running
+// systemd-resolved it is a symlink to a stub that names one nameserver:
+// 127.0.0.53, the local resolver itself. That is a true description of
+// where this machine sends queries and a useless answer to the question
+// the grain is asked, which is which nameservers the estate uses --
+// every systemd-resolved host in a fleet reports the same loopback
+// address and none reports a server anybody configured.
+//
+// systemd-resolved writes the real upstreams to a second file in the
+// same format, and Salt prefers it for this reason. So does this.
+func resolvConfPath() string {
+	const resolved = "/run/systemd/resolve/resolv.conf"
+	if _, err := os.Stat(resolved); err == nil {
+		return resolved
+	}
+	return "/etc/resolv.conf"
+}
+
+// resolverConfig reads the resolver configuration, which every unix has
+// and which needs no external tool.
 func resolverConfig() *value.Map {
-	out := value.MapOf("nameservers", []any{}, "search", []any{}, "domain", "")
-	b, err := os.ReadFile("/etc/resolv.conf")
+	out := value.MapOf(
+		"nameservers", []any{},
+		"ip4_nameservers", []any{},
+		"ip6_nameservers", []any{},
+		"sortlist", []any{},
+		"search", []any{},
+		"options", []any{},
+		"domain", "",
+	)
+	b, err := os.ReadFile(resolvConfPath())
 	if err != nil {
 		return out
 	}
-	var nameservers, search []any
+	var nameservers, ip4, ip6, search, sortlist, options []any
 	domain := ""
 	for _, line := range strings.Split(string(b), "\n") {
 		line = strings.TrimSpace(line)
@@ -290,16 +392,36 @@ func resolverConfig() *value.Map {
 		switch fields[0] {
 		case "nameserver":
 			nameservers = append(nameservers, fields[1])
+			// The two families are split as well as listed together,
+			// because a state that writes a resolver configuration
+			// writes them separately.
+			if ip, err := netip.ParseAddr(fields[1]); err == nil && ip.Is4() {
+				ip4 = append(ip4, fields[1])
+			} else if err == nil {
+				ip6 = append(ip6, fields[1])
+			}
 		case "search":
 			for _, s := range fields[1:] {
 				search = append(search, s)
+			}
+		case "sortlist":
+			for _, s := range fields[1:] {
+				sortlist = append(sortlist, s)
+			}
+		case "options":
+			for _, s := range fields[1:] {
+				options = append(options, s)
 			}
 		case "domain":
 			domain = fields[1]
 		}
 	}
 	out.Set("nameservers", orEmpty(nameservers))
+	out.Set("ip4_nameservers", orEmpty(ip4))
+	out.Set("ip6_nameservers", orEmpty(ip6))
+	out.Set("sortlist", orEmpty(sortlist))
 	out.Set("search", orEmpty(search))
+	out.Set("options", orEmpty(options))
 	out.Set("domain", domain)
 	return out
 }
@@ -467,6 +589,32 @@ func firstLineOf(path string) string {
 	return s
 }
 
+// majorRelease is `osmajorrelease`: the leading component of a release
+// as a *number*.
+//
+// A string is what this returned, on every platform, and it is the
+// wrong type for the only thing the grain is for. `{% if
+// grains['osmajorrelease'] >= 22 %}` is how a tree asks "is this at
+// least jammy", and against a string that comparison is either an error
+// or an alphabetical ordering in which "9" is greater than "22". Salt
+// has reported an integer here since 3001.
+//
+// A release with no leading number -- a rolling distribution whose
+// VERSION_ID is absent or a word -- yields an empty string, which is
+// what Salt does by leaving the grain unset: there is no number, and
+// zero would be a number that compares.
+func majorRelease(release string) any {
+	major := majorVersion(release)
+	if major == "" {
+		return ""
+	}
+	n, err := strconv.ParseInt(major, 10, 64)
+	if err != nil {
+		return ""
+	}
+	return n
+}
+
 // majorVersion returns the leading numeric component of a release string.
 func majorVersion(release string) string {
 	for i, r := range release {
@@ -475,6 +623,32 @@ func majorVersion(release string) string {
 		}
 	}
 	return release
+}
+
+// osFinger is the `os`-and-version pair a tree uses to name a platform
+// in one string, and the two halves are chosen differently.
+//
+// Salt spells the version as the *full* release for Ubuntu, Pop and
+// NixOS, whose releases only mean something with both components --
+// `Ubuntu-22.04`, not `Ubuntu-22`, because 22.04 and 22.10 are
+// different systems -- and as the major alone everywhere else, where
+// the minor is a point release. The name half is the short `os` for the
+// families that have one and `osfullname` otherwise.
+//
+// This build used the major everywhere, so every Ubuntu host answered
+// `Ubuntu-22` to a grain an existing tree matches as `Ubuntu-22.04`.
+func osFinger(osName, osFullName, release string) string {
+	name := osFullName
+	switch osName {
+	case "Debian", "FreeBSD", "OpenBSD", "NetBSD", "Mac", "Raspbian", "AlmaLinux":
+		name = osName
+	}
+	version := majorVersion(release)
+	switch osName {
+	case "Ubuntu", "Pop", "NixOS":
+		version = release
+	}
+	return name + "-" + version
 }
 
 // releaseInfo splits a release string into its numeric components.

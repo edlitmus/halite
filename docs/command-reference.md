@@ -372,10 +372,12 @@ roles:
       functions: ['cmd.run']
 ```
 
-And `cmd.run` takes a program, not a shell line: `args=` carries the
-arguments, `shell=true` is there when a pipe or a redirection is really
-wanted, and `cmd_default_shell: true` restores Salt's reading everywhere
-during a migration.
+And `cmd.run` reads a shell line, as Salt's does — `shell=/bin/bash`
+names a different interpreter. `cmd_default_shell: false` makes `name`
+the program and `args` its arguments instead, which is the hardened
+setting: an argument vector cannot be reinterpreted by a shell. Move to
+it once the call sites are quoted or converted; `shell=true` opts a
+single state back in.
 | no equivalent | `halite-hub jobs missing <jid>` | works |
 | no equivalent | `halite-hub jobs prune` | works |
 | no equivalent | `halite-hub keys operator create <name>` | works |
