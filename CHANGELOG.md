@@ -47,10 +47,14 @@ silent top-level name.
 
 With it fixed the tree compiles 42 errors down to 33, and those are an
 inventory rather than a defect: 13 unimplemented state arguments, 4
-template imports the environment does not serve, 3 argument types Salt
-coerces and this refuses, 2 unbuilt state modules (`kmod`, `saltutil`),
-2 template gaps (`import_yaml`, sequence unpacking), and one pillar key
-from an `ext_pillar` the lab hub does not configure.
+template imports the environment does not serve, 2 unbuilt state modules
+(`kmod`, `saltutil`), 2 template gaps (`import_yaml`, sequence
+unpacking), one pillar key from an `ext_pillar` the lab hub does not
+configure, and three refusals that are three different problems — a
+`user.present` `gid` that Salt resolves from a group name and this
+cannot, a `cmd.run` `shell` that means *the shell to use* in Salt and a
+boolean here, and a `mount.mounted` `opts` where Salt takes a list or a
+string and this takes only the string.
 
 ### The grains were never compared to Salt, and thirteen were wrong
 

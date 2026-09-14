@@ -7843,14 +7843,42 @@ estate's tree, worth having written down:
 |---|---|
 | 13 | state arguments that are not implemented: `file.replace`'s `ignore_if_missing` (5), `user.present`'s `mindays`/`maxdays`/`inactdays`/`unique`/`enforce_password` (11 across 4 sites), `file.managed`'s `skip_verify` and `keep_source`, `group.present`'s `members` and `system`, `pkg.installed`'s `allow_updates` |
 | 4 | a template `import` of a file the `base` environment does not serve |
-| 3 | argument types accepted by Salt and refused here: a `gid` given as a string, a `cmd.run` `shell` given as a string, `mount.mounted` `opts` given as a sequence |
+| 3 | arguments accepted by Salt and refused here — three *different* problems, set out below |
 | 2 | state modules that are not built: `kmod`, `saltutil` |
 | 2 | template gaps: the `import_yaml` tag, and unpacking a sequence into two names |
 | 1 | a pillar key from an `ext_pillar` this lab hub does not configure |
 
-The three type refusals are the interesting row, because they are not
-missing features: Salt coerces where this refuses. Whether to follow it
-is a decision rather than a commit, and it belongs with plan.md §6.
+The three refusals are the interesting row, and reading them as one
+kind of problem — "Salt coerces where this refuses" — is wrong on two of
+the three. Checked against Salt's own source on the same host:
+
+- **`user.present`'s `gid` is a missing lookup, not strictness.** The
+  tree writes `gid: eic-breakglass`, a group *name*. Salt's docstring
+  says so outright — "Either a group name or gid can be used" — and it
+  resolves the name through `file.group_to_gid`. This build demands an
+  integer, so the ordinary case of naming a user's primary group cannot
+  be expressed at all. That is a feature to build, not a check to relax.
+- **`cmd.run`'s `shell` is the same argument name meaning two
+  different things**, and it is not a type problem. Salt's `shell` is
+  *the shell to use* — a path, defaulting to `/bin/sh` or
+  `grains['shell']` — and this build's is a boolean, "run the command
+  through a shell", which is also what `cmd_default_shell` configures.
+  The tree's `shell: /bin/bash` is refused, which is the safe outcome;
+  the collision is the problem, and it runs both ways, because a tree
+  written here saying `shell: true` would read to Salt as a request for
+  a shell named `true`. Renaming one of them is the only fix that
+  removes the ambiguity, and which one is a decision.
+- **`mount.mounted`'s `opts` is the only real coercion, and the
+  refusal is the wrong way round.** Salt takes a list *or* a
+  comma-separated string — `if isinstance(opts, str): opts =
+  opts.split(",")` — and the list is the form in its own first
+  documented example. This build takes only the string, so it refuses
+  the spelling Salt teaches. That one is a small fix with no decision
+  attached.
+
+So the row is one feature to build, one naming collision that needs a
+person, and one refusal to invert. Only the middle one belongs with
+plan.md §6.
 
 ## 6. Everything else not started
 

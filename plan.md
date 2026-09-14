@@ -1545,9 +1545,17 @@ tool nobody has run against it (DIVERGENCE 5.31).
 
       The same run leaves an inventory: with the include fixed the tree
       compiles 42 errors down to 33 — 13 unimplemented state arguments,
-      3 argument types Salt coerces and this refuses, 2 unbuilt state
-      modules, 2 template gaps, and the rest configuration. That is the
+      2 unbuilt state modules, 2 template gaps, three refusals that are
+      three different problems, and the rest configuration. That is the
       real remainder of a migration, measured rather than guessed.
+
+      One of the three needs a person and is §6's: `cmd.run`'s `shell`
+      is *the shell to use* in Salt and a boolean here, so the same
+      argument name means two unrelated things and the ambiguity runs
+      both ways. The other two are ordinary work — `user.present`'s
+      `gid` should resolve a group name as Salt's does, and
+      `mount.mounted`'s `opts` should take the list Salt's own first
+      example uses. DIVERGENCE 5.81.
     - ~~**A CIS Level 2 host will exercise a path that is written and
       unexercised, and probably break it.**~~ **The refusal is built**,
       which is the half that needed no such host. The agentless mode
