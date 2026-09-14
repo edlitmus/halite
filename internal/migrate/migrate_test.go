@@ -963,3 +963,64 @@ func TestForElseIsNotAPairOfAlternatives(t *testing.T) {
 		}
 	}
 }
+
+// A custom module this build has replaced is not a port.
+//
+// The audit is the first thing the migration guide asks an operator to
+// run, and it used to send them to write a bridge for the two modules
+// whose job this build now does — which is worse than saying nothing.
+func TestAReplacedCustomModuleIsNotReportedAsAPort(t *testing.T) {
+	dir := t.TempDir()
+	for path, body := range map[string]string{
+		"_grains/metadata.py":            "def main():\n    return {}\n",
+		"_pillar/aws_secrets_manager.py": "def ext_pillar(minion_id, pillar, *args):\n    return {}\n", // lexicon:allow
+		"_grains/something_else.py":      "def main():\n    return {}\n",
+	} {
+		full := filepath.Join(dir, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rep, err := Run(Options{Root: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byFile := map[string]Finding{}
+	for _, f := range findingsFor(rep, CatCustomModule) {
+		byFile[f.File] = f
+	}
+
+	for _, file := range []string{"_grains/metadata.py", "_pillar/aws_secrets_manager.py"} {
+		f, ok := byFile[file]
+		if !ok {
+			t.Errorf("%s produced no finding at all; it still cannot be loaded", file)
+			continue
+		}
+		if f.Severity != Review {
+			t.Errorf("%s is %s; deleting a file and setting a key is not blocking", file, f.Severity)
+		}
+		if strings.Contains(f.Action, "bridge-skeleton") {
+			t.Errorf("%s is still told to generate a bridge: %s", file, f.Action)
+		}
+		// It has to say what to turn on instead, or the operator is no
+		// better off than being told nothing.
+		if !strings.Contains(f.Action, "cloud_grains") && !strings.Contains(f.Action, "ext_pillar") {
+			t.Errorf("%s does not name its replacement: %s", file, f.Action)
+		}
+	}
+
+	// And a module that merely lives in the same directory is untouched:
+	// the exemption is two files, not two directories.
+	other, ok := byFile["_grains/something_else.py"]
+	if !ok {
+		t.Fatal("_grains/something_else.py produced no finding")
+	}
+	if other.Severity != Blocking || !strings.Contains(other.Action, "bridge-skeleton") {
+		t.Errorf("an unreplaced module in the same directory = %+v", other)
+	}
+}

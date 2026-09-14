@@ -78,6 +78,17 @@ more, which is what the Python module read out of the pillar — one
 pillar file per role carrying the secrets that role needs, selected by
 the pillar top file like anything else.
 
+**The migration audit told operators to build what they no longer
+need.** `halite-hub migrate` is the first command the migration guide
+asks for, and `_grains` and `_pillar` are among the directories it
+reports as unportable — so a tree carrying these two files got two
+blocking findings telling the operator to write a bridge extension for
+each. Both were wrong the moment this landed, and confidently so. The
+audit knows the two paths now and reports them as review rather than
+blocking, naming the setting to turn on instead; a different module in
+the same directory is still a port. `from-salt.md` gains a step for
+each, and the migration reference records the two exceptions.
+
 **And one thing was reproduced deliberately against this project's own
 grain.** The Python module let a node name its own secret ARNs, and this
 estate's tree uses that. A node controls its own grains, so honouring

@@ -105,9 +105,13 @@ type AWSSecretsOptions struct {
 
 // AWSSecrets fetches secrets from AWS Secrets Manager into pillar.
 //
-// SPEC 12.7's compiled-in replacement for the `aws_secrets_manager.py`
-// external pillar: the same `aws_secrets` root, the same dotted-key
-// nesting, the same automatic JSON parsing, and the same cache.
+// A compiled-in replacement for the `aws_secrets_manager.py` external
+// pillar: the same `aws_secrets` root, the same dotted-key nesting, the
+// same automatic JSON parsing, and the same cache.
+//
+// SPEC 12.7's table does not name this source. It is here because a
+// tree being migrated depends on it, which the table was written
+// without knowing. DIVERGENCE 5.78 records that.
 type AWSSecrets struct {
 	opts   AWSSecretsOptions
 	client *secretsClient

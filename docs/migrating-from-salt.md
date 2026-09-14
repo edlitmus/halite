@@ -226,7 +226,12 @@ The larger absences today:
 - **`_modules/` and friends.** A formula carrying custom Python is not
   portable without conversion. `migrate --bridge-skeleton <dir>`
   generates a Go bridge for each one, with the signatures filled in from
-  the source, which makes the job bounded rather than removing it.
+  the source, which makes the job bounded rather than removing it. Two
+  are exceptions and the audit says so rather than sending you to write
+  a bridge: `_grains/metadata.py` is `cloud_grains: true`, and
+  `_pillar/aws_secrets_manager.py` is the `aws_secrets_manager` source
+  in `ext_pillar`. Both keep the pillar and grain paths an existing tree
+  already reads.
 - **`publisher_acl` and friends.** halite has one authorization file
   with one grammar (SPEC 23.5), not five overlapping mechanisms. The
   shape is different enough that an existing Salt ACL is rewritten

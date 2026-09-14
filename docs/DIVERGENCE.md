@@ -7328,9 +7328,12 @@ has been extended by nothing; the defect is recorded here because the
 shape of it — a value read at one layer and ignored at the next — is
 one the audit's question does not reach.
 
-It collects two things now, and they serve different readers. The
-nested `meta-data` and `dynamic` trees are what `_grains/metadata.py`
-produced, rule for rule, because an existing tree indexes into them:
+It collects two things now, and they serve different readers — and only
+one of them is in SPEC 14.1. The nested `meta-data` and `dynamic` trees
+are **beyond what the specification's table lists**, which names the
+flat grains and nothing else. They are what `_grains/metadata.py`
+produced, rule for rule, and they are here because an existing tree
+indexes into them:
 `grains.get('meta-data:local-ipv4')` decides an ASG host's name, and
 `meta-data:services:partition` is how a state knows it is in GovCloud.
 The curated set SPEC 14.1 names — `cloud`, `instance_id`, `region`,
@@ -7380,6 +7383,25 @@ estate needs it, and it is off unless `aws_secrets_node_grain` names
 the grain; `aws_secrets_node_grain_allow` bounds it by pattern, and a
 hub that enables the grain without patterns says so in a startup
 warning rather than leaving it to be discovered.
+
+**And the audit told operators to build the thing they no longer
+need.** `halite-hub migrate` is the first command the migration guide
+asks for, and `_grains` and `_pillar` are in its list of directories
+whose contents cannot be ported without conversion — so a tree carrying
+these two files got two **blocking** findings saying to write a bridge
+extension for each. Both were wrong the moment this landed, and wrongly
+*confident*: an operator following the report would have built the one
+thing the change had just made unnecessary. The audit knows the two
+paths now and reports them as review rather than blocking, naming the
+setting to turn on instead. Matched by path, which is all a static audit
+can honestly match on, so the finding says to check the file is the
+usual one rather than asserting that it is; a different module in the
+same directory is still a port, and a test holds that line.
+
+The general shape is worth naming: a change that replaces a mechanism
+has to be chased into whatever tool advises people about that mechanism,
+and the advice-giver is easy to forget because nothing it says fails a
+build.
 
 **One metric left 5.23's list.** `halite_pillar_ext_failures_total` is
 registered, labelled by source, and it counts an ignored failure as well
@@ -7473,19 +7495,24 @@ What is **not** built, in phase 2:
 - ~~**External pillar**~~ (SPEC 12.7). Partly built. `ext_pillar` takes
   Salt's own shape — a list of single-key mappings — and the sources
   run after the top file, in order, each seeing what the ones before it
-  produced. One source is compiled in: `aws_secrets_manager`, SPEC
-  12.7's replacement for the Python external pillar of that name, which
-  reads AWS Secrets Manager over the in-house SigV4 of SPEC 13.4 into
-  `pillar['aws_secrets']` — the same root key, the same dotted-key
-  nesting, the same automatic JSON parsing, the same cache TTL. A name
-  this build does not know is refused at startup rather than
-  contributing nothing in silence, which is the part Salt cannot do:
-  there, the loader imports whatever file is on the file server.
-  `ext_pillar_fail` is no longer inert — a source that fails fails the
-  compilation, and `fail: ignore` inside a source's own block is the
-  per-source exception — `internal/pillar/ext.go`,
-  `internal/extpillar/`. Every other source in SPEC 12.7's table is
-  still unbuilt.
+  produced. One source is compiled in, and **it is not one SPEC 12.7
+  names**: `aws_secrets_manager`, which reads AWS Secrets Manager over
+  the in-house SigV4 of SPEC 13.4 into `pillar['aws_secrets']` — the
+  same root key, the same dotted-key nesting, the same automatic JSON
+  parsing, the same cache TTL as the Python external pillar of that
+  name. It was built because a tree being migrated here depends on it
+  and the specification's table was written without knowing that; the
+  table is the poorer document for the omission, not this build. Every
+  source the table *does* name — `cmd_json`, `cmd_yaml`, `git`, `s3`,
+  `file_tree`, `http_json`, `http_yaml`, `stack` compiled in, and the
+  bridged set — is still unbuilt, so a tree that uses one of those is no
+  better off than before. A name this build does not know is refused at
+  startup rather than contributing nothing in silence, which is the part
+  Salt cannot do: there, the loader imports whatever file is on the file
+  server. `ext_pillar_fail` is no longer inert — a source that fails
+  fails the compilation, and `fail: ignore` inside a source's own block
+  is the per-source exception — `internal/pillar/ext.go`,
+  `internal/extpillar/`.
 - ~~**`file_ignore_regex`.**~~ Built. Both forms hide paths from
   listing and from fetching, and a pattern that does not compile is
   fatal at startup rather than a rule that silently hides nothing —

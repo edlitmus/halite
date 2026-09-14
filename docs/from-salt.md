@@ -251,6 +251,48 @@ compilation rather than serving a pillar with the secrets missing — and
 a node whose hub cannot compile pillar refuses to render states that
 read it, rather than rendering them against nothing.
 
+### If your pillar comes from AWS Secrets Manager
+
+A tree carrying `_pillar/aws_secrets_manager.py` does not need it. The
+`aws_secrets_manager` source lands everything under the same
+`aws_secrets` key, parses a JSON secret the same way, and nests a dotted
+name the same way, so every `pillar.get('aws_secrets:...')` in the tree
+resolves unchanged. Delete the Python file and configure the source:
+
+```yaml
+# hub.yaml
+ext_pillar:
+  - aws_secrets_manager:
+      - name: database.creds
+        secret_id: arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf
+```
+
+Two things to know before the first compile.
+
+**Only the hub needs the IAM permission.** Pillar compiles on the hub,
+so `secretsmanager:GetSecretValue` belongs on the hub's role and on
+nothing else. If your nodes hold that permission today because something
+on them reads a secret directly, that is now a permission to take away
+rather than one to keep.
+
+**A failed fetch fails the whole compilation.** Salt's module logged the
+failure and returned the secrets it did get, so a state applied with an
+empty password and nothing said so. Here the node gets no pillar and
+says why. Check it before you point a node at it, the same way you would
+a GPG tree:
+
+```sh
+halite-hub runner pillar.show_pillar node=web1.example --as <operator>
+```
+
+If your tree names secrets per machine rather than listing them all on
+the hub, `aws_secrets_pillar_list` reads that list out of the pillar —
+which is what the Python module's own `aws_secrets_ext_pillar` key did.
+There is also `aws_secrets_node_grain`, which reads it from a grain; it
+is what some trees use, and it means a node's own grains decide what the
+hub fetches. Bound it with `aws_secrets_node_grain_allow` if you need
+it, and prefer the pillar form if you have the choice.
+
 ## Step 3: one node, alongside the agent already on it
 
 Pick one machine. Leave `salt-minion` running; the two do not <!-- lexicon:allow -->
@@ -302,6 +344,30 @@ On the hub:
 halite-hub run 'web1.example.com' test.ping
 halite-hub run 'web1.example.com' grains.items
 ```
+
+### If your tree reads instance metadata
+
+A tree carrying `_grains/metadata.py` does not need it either. Set
+`cloud_grains: true` in `node.yaml` and the node collects the same
+`meta-data` and `dynamic` trees, so `grains.get('meta-data:local-ipv4')`
+and `meta-data:services:partition` keep working — plus the flat grains
+`region`, `instance_id`, `account_id` and the rest, which are the same
+names on every provider and are what a new state should read.
+
+`grains.items` above is how you check it arrived. Two differences from
+the Python module:
+
+- **IMDSv2 only**, with no fallback. An instance whose metadata service
+  still requires v1 answers nothing and the node warns once.
+- **The instance's own credentials are never collected.** Salt's module
+  walks into the IAM credentials path and publishes the access key,
+  secret key and session token as grains, where they reach the hub and
+  `grains.items`. If anything in your tree reads them from a grain, it
+  has to get them another way.
+
+It is opt-in because collecting it costs a round trip at every
+collection, which on a machine that is not in a cloud is a timeout
+rather than a fast failure.
 
 ## Step 4: compare a highstate before applying one
 
