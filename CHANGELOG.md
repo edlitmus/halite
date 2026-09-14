@@ -18,6 +18,32 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The one extension this project ships ran unbounded
+
+Found while it was being run against real AWS for the first time, by
+reading it rather than by anything failing.
+
+`cmd/halite-ext-aws-secrets` did not call `ext.Confine()`. The resource
+limits of SPEC 24.3 are applied by the child to itself -- `setrlimit`
+bounds the calling process, so a host cannot set a child's without
+setting its own, and names them in the environment instead. An extension
+that does not apply them runs with none, while `sys.list_extensions`
+reports cpu, open-file and process limits as being in force. A limit
+reported and not applied is worse than one nobody claimed, because
+somebody reads it and stops worrying.
+
+The two test extensions call it and the generated skeleton emits it. The
+one actually shipped was the only one nobody had cause to read, and
+nothing checked -- a host cannot check it, which is the nature of the
+arrangement. There is a source audit for it now.
+
+Two things came with the fix. The extension refuses to start when the
+network was not granted, naming the manifest declaration, rather than
+failing later as a connection that timed out against a link-local
+address. And the Python example applies the limits too: it is the
+reference for an author working outside Go, and one that skipped the
+child's half of the sandbox would teach that the half does not exist.
+
 ### The protocol, as a published interface
 
 The last change closed the conformance gap and left one item: `protocol:

@@ -66,7 +66,31 @@ import (
 const Version = "1.0.0"
 
 func main() {
-	ext := &ext.Extension{
+	// The resource limits of SPEC 24.3, applied by the extension to
+	// itself. `setrlimit` bounds the calling process, so a host cannot
+	// set a child's without setting its own: it names them in the
+	// environment and a cooperating extension applies them here.
+	//
+	// This was missing, which meant the one extension this project
+	// ships ran unbounded while `sys.list_extensions` reported cpu,
+	// open-file and process limits as being in force. The two test
+	// extensions called it and the generated skeleton emits it; the
+	// shipped one did not, and nothing checked.
+	ext.Confine()
+
+	// The network is denied unless the manifest declared it, and the
+	// denial is a declaration honoured rather than a boundary enforced
+	// -- see `Sandbox.Describe`. This source cannot do its job without
+	// it, so it says so now rather than failing later as a connection
+	// that timed out against a link-local address.
+	if ext.NetworkDenied() {
+		fmt.Fprintln(os.Stderr, "aws_secrets_manager: the host did not grant the network, "+
+			"and a secret cannot be fetched without it. The bundle's manifest has to declare "+
+			"`network`; see docs/extensions.md.")
+		os.Exit(1)
+	}
+
+	e := &ext.Extension{
 		Name:    "aws_secrets_manager",
 		Version: Version,
 		Kind:    "pillar",
@@ -79,7 +103,7 @@ func main() {
 		Functions: functions(),
 		Handler:   handle,
 	}
-	if err := ext.Serve(); err != nil {
+	if err := e.Serve(); err != nil {
 		fmt.Fprintln(os.Stderr, "aws_secrets_manager:", err)
 		os.Exit(1)
 	}
