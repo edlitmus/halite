@@ -395,8 +395,8 @@ the rule is there.
   5 pass, 3 fail, 3 skip
 ```
 
-Thirteen rules, in four groups: the handshake, the calls, the lifecycle,
-and what it refuses. `--kind` is worth passing — without it the rules
+Fourteen rules, in four groups: the handshake, the calls, the lifecycle,
+and what it refuses and tolerates. `--kind` is worth passing — without it the rules
 about refusing the wrong kind are skipped, because there is no other
 kind to ask for.
 
@@ -412,18 +412,56 @@ your extension.
 still be entirely wrong about its own job. This is the part that can be
 checked without knowing what the extension is for.
 
-Both extensions in this repository pass all thirteen, and a test asserts
+Both extensions in this repository pass all fourteen, and a test asserts
 it — an example that has quietly stopped conforming teaches the wrong
 thing to everyone who copies it.
 
-## What is not solved yet
+## What you can rely on, and what will break you
 
-**The protocol has no compatibility policy.** `protocol: 1` is offered
-and an extension either speaks it or does not; there is no negotiation,
-and nothing yet says what may change inside version 1 and what forces a
-version 2. That was a private matter while this project was the only
-implementer. It stops being one the moment somebody else writes an
-extension — which is now the point of all of this.
+The protocol is a published interface now, which means the version is a
+promise rather than a constant. SPEC 24.7 is the policy; this is what it
+means for somebody maintaining an extension.
+
+**One version, offered, not negotiated.** The host names a single
+integer in its `hello`. Speak it or refuse and exit non-zero. There is
+no range and no fallback — a host that negotiated down would have a path
+in it that nothing tests, and an extension that answered a version it
+had never seen would be agreeing to a contract it cannot have read.
+
+**Ignore a field you do not recognise.** This is the one rule that costs
+nothing to follow and breaks everybody if you do not. It is what makes a
+field addable at all. A strict decoder is a reasonable instinct and this
+is the one place it is wrong: an extension that refuses an unknown field
+works today and stops working the first time anything is added, on every
+host it is installed on. `extensions verify` checks it.
+
+**Refuse a frame kind you do not recognise.** The other direction, and
+deliberately not symmetric with fields: a receiver that skipped an
+unknown kind would also skip a misspelt one, leaving the sender waiting
+for an answer to a frame that was silently dropped.
+
+These can happen without a new version, and an extension built against
+an earlier one keeps working:
+
+- a new optional field on an existing frame;
+- a new extension kind, parameter type name, or value in an enumerated
+  field — an unknown type name means untyped, not refused;
+- a new function, or a new parameter on one.
+
+These require a new version, and you will be told:
+
+- any change to the framing, the length prefix, or the size limit;
+- a frame kind added, removed, or renamed;
+- a field removed, renamed, or given a new meaning;
+- an optional field made required;
+- a change to the order of the handshake.
+
+**Declaring something new is neither.** An extension that declares a
+permission an older host does not know is refused by it — correctly,
+because the host cannot grant what it cannot enforce, and running as
+though it had is the failure the declaration exists to prevent. Your
+extension will not run there. That is not a break to be fixed; it is a
+permission an older host is right to withhold.
 
 ## Further reading
 

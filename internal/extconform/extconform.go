@@ -133,6 +133,7 @@ func Run(ctx context.Context, opts Options) ([]Result, error) {
 	// above, and these are about how it begins.
 	out = append(out, checkProtocolRefusal(ctx, opts))
 	out = append(out, checkKindRefusal(ctx, opts))
+	out = append(out, checkUnknownFieldTolerance(ctx, opts))
 
 	return out, nil
 }
