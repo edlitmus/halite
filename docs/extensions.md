@@ -98,6 +98,26 @@ to write.
 **`Handler`** runs one call. It gets the function name, the arguments,
 and `Log`, `Progress` and `Event` for the streaming frames.
 
+**`ext.Confine()` is not optional**, and it is the one line that is easy
+to leave out. The resource limits of SPEC 24.3 are applied by the child
+to itself, because `setrlimit` bounds the *calling* process: a host
+cannot set a child's limits without setting its own, so it names them in
+the environment and a cooperating extension applies them.
+
+An extension that skips it runs unbounded while `sys.list_extensions`
+reports cpu, open-file and process limits as being in force — which is
+worse than reporting none, because somebody reads it. Call it first
+thing in `main`. An extension in another language does the same work
+against `HALITE_EXT_RLIMIT_AS`, `_CPU`, `_NOFILE` and `_NPROC`;
+`contrib/extensions/python/example_pillar.py` has it in about fifteen
+lines.
+
+**`ext.NetworkDenied()`** reports whether the host granted the network.
+It is a declaration honoured rather than a boundary enforced, so an
+extension that needs the network should check it and say so, rather than
+failing later as a connection that timed out against a link-local
+address.
+
 ## Writing to stdout will break it
 
 Stdout is the protocol. A stray `fmt.Println` in a handler is a frame

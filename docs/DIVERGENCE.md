@@ -8055,6 +8055,39 @@ fourteenth rule, both shipped extensions pass it, and there is a fixture
 that fails it -- a strict decoder is a reasonable instinct, and this is
 the one place it is wrong.
 
+### 5.87 The one extension this project ships ran unbounded
+
+Found while it was being run against real AWS for the first time, by
+reading it rather than by anything failing.
+
+`cmd/halite-ext-aws-secrets` did not call `ext.Confine()`. The resource
+limits of SPEC 24.3 are applied by the child to itself -- `setrlimit`
+bounds the calling process, so a host cannot set a child's without
+setting its own, and it names them in the environment instead. An
+extension that does not apply them runs with none.
+
+`Sandbox.Describe` has always been honest that these hold "only by an
+extension that honours the declaration", which is what makes this worse
+rather than better: `sys.list_extensions` reported cpu, open-file and
+process limits as being in force on a process that had never applied
+them. A limit reported and not applied is worse than one nobody claimed,
+because somebody reads it and stops worrying.
+
+The two test extensions call it. The generated skeleton emits it. The
+one this project actually ships was the only one nobody had cause to
+read, and nothing checked -- a host cannot check it, which is the whole
+nature of the arrangement. `internal/buildpolicy` checks it now, where
+the source is, and it was confirmed to fail against the shipped
+extension before being kept.
+
+Two things came with the fix. The extension refuses to start when the
+network was not granted, naming the manifest declaration, rather than
+failing thirty seconds later as a connection that timed out against a
+link-local address. And the Python example applies the limits too, in
+about fifteen lines against the same environment variables -- it is the
+reference for an author working outside Go, and one that skipped the
+child's half of the sandbox would teach that the half does not exist.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
