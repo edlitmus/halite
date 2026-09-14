@@ -7929,6 +7929,86 @@ and the suite would have agreed. It is asserted directly now, in both
 directions, and `shell: false` is asserted beside the two opt-ins so
 that the path form cannot quietly turn the shell on for everybody.
 
+### 5.85 A conformance harness, and what it found
+
+5.80 and 5.81 left the same thing open, and `docs/extensions.md` said so
+under its own heading: an extension written in another language was
+checked against a page of documentation and against whatever the host
+happened to complain about. Those are not the same as being checked. A
+host is written to run extensions rather than to diagnose them, and
+every one of its complaints surfaces a long way from its cause -- a
+parameter type sent as a number is refused at the decoder, reported as
+an extension with no functions, and noticed as a pillar source that does
+not provide `ext_pillar`.
+
+`halite-hub extensions verify <path>` drives a candidate through the
+protocol deliberately: a good call, a call that cannot succeed, a
+version it should refuse, a shutdown it should honour. Thirteen rules in
+four groups, each reported by name with what happened and why the rule
+is there -- because a rule an author cannot see the point of is a rule
+they work around.
+
+Two decisions in it are worth stating.
+
+**It speaks the wire directly rather than through the host's pool.** It
+has to send frames a host would never send, which is most of what there
+is to check. And it has to read a malformed answer well enough to
+describe it: the host's own decoder is strict, so a parameter type sent
+as an integer fails the whole frame, and "the frame is not readable" is
+a worse answer than "go(): how_many declares its type as 1, which is not
+a string".
+
+**A skip is never a quiet pass.** Every rule the run could not establish
+says what it could not establish and why, and the summary says out loud
+that a skip is not a pass. A harness that reports thirteen passes when
+it checked nine is worse than one that checks nothing, because somebody
+believes it.
+
+`internal/extconform/testdata/badext` breaks one rule at a time, chosen
+by an environment variable, and there is a test per rule against the
+extension that breaks it -- a harness only ever run against conforming
+extensions establishes nothing, since every check would pass with its
+body deleted. The fixture implements the wire by hand rather than
+through `ext`, which makes it a third implementation of the protocol as
+well as a fixture: a rule only the two cooperating implementations agree
+on is a rule the specification does not really carry. It exits non-zero
+on a mode name it does not know, so a rename in the test breaks loudly
+rather than quietly handing it the conforming behaviour.
+
+Both extensions in this tree are held to it by a test. An example that
+has stopped conforming teaches the wrong thing to everyone who copies
+it, and there is no way to notice by reading.
+
+Two defects of its own.
+
+**`verify` inherited `run`'s sixty-second timeout.** Every exchange it
+makes is one round trip against a process that is already up, and there
+are a dozen of them; the harness was designed around ten seconds and the
+command quietly made it six times slower. Against an extension that
+hangs, a run took over two minutes rather than twenty seconds -- which
+is the difference between a harness people use and one they do not.
+
+**A read that timed out left a goroutine holding the stream.** A second
+read would have started another on the same `bufio.Reader`: two readers
+racing, framing decided by whichever woke first. No check reads after a
+timeout today, so it was unreachable -- and a latent race that is
+unreachable by inspection is one the next check reintroduces. The
+session is marked lost instead, and a later read fails with a sentence
+saying why rather than racing.
+
+**And a third, in this file.** This entry and 5.82 were written at the
+same time on different branches, and both took the number 5.82. The
+files do not touch, so the merge was clean. The citation check of
+section 4 reads headings into a map, so a duplicate was invisible to it.
+The whole suite passed with two sections of the same number, and a
+reference to "5.82" meant whichever one the reader found first.
+
+That is the ledger's own failure mode: it is append-only, every change
+adds at the end, and two changes in flight always want the same number.
+Numbers are checked for being unique and ascending now, so the second
+branch has to notice. The check is in `internal/specaudit`, beside the
+one for citations that could not see this.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
