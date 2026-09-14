@@ -1,8 +1,10 @@
 package builtin
 
 import (
+	"os"
 	osexec "os/exec"
 	"os/user"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -37,13 +39,24 @@ func TestCmdShellTakesSaltsPathAndSPEC152sBoolean(t *testing.T) {
 
 	// Both spellings run the line through a shell, so `echo hi` is a
 	// command rather than the name of a program.
-	for _, tc := range []struct {
+	//
+	// The path is this platform's own rather than a literal `/bin/bash`.
+	// That literal is what this test shipped with, and CI caught it on
+	// two platforms at once: FreeBSD keeps bash at /usr/local/bin/bash
+	// when it has one at all, and Windows has no such path in any form.
+	// A test for "the named interpreter is used" must name one that
+	// exists, or it is testing the error path.
+	cases := []struct {
 		what  string
 		shell any
-	}{
-		{"Salt's path form", "/bin/bash"},
-		{"SPEC 15.2's boolean", true},
-	} {
+	}{{"SPEC 15.2's boolean", true}}
+	if path := aRealShell(); path != "" {
+		cases = append(cases, struct {
+			what  string
+			shell any
+		}{"Salt's path form", path})
+	}
+	for _, tc := range cases {
 		got, err := r.Exec.Call(c, "cmd.run_all",
 			value.MapOf("name", "echo hi", "shell", tc.shell))
 		if err != nil {
@@ -79,26 +92,48 @@ func TestCmdShellTakesSaltsPathAndSPEC152sBoolean(t *testing.T) {
 	}
 }
 
-// The named interpreter has to be the one that runs the line. `$BASH_VERSION`
-// is set by bash and empty under dash, which is what /bin/sh is on Debian,
-// so the two are told apart by the shell itself rather than by this test's
-// opinion of what should have happened.
+// aRealShell is an interpreter that exists on the machine running the
+// test, or "" where none can be named portably.
+//
+// `/bin/sh` is on every unix. On Windows the interpreter is whatever
+// %ComSpec% names, and `echo hi` is a cmd.exe builtin there too.
+func aRealShell() string {
+	if runtime.GOOS == "windows" {
+		return os.Getenv("ComSpec")
+	}
+	return "/bin/sh"
+}
+
+// The named interpreter has to be the one that runs the line.
+// `$BASH_VERSION` is set by bash and empty under dash, which is what
+// /bin/sh is on Debian, so the two are told apart by the shell itself
+// rather than by this test's opinion of what should have happened.
+//
+// bash is located rather than assumed: it is /bin/bash on Debian,
+// /usr/local/bin/bash on FreeBSD, and absent on Windows.
 func TestCmdShellPathIsTheShellThatRuns(t *testing.T) {
-	if _, err := osexec.LookPath("bash"); err != nil {
+	if runtime.GOOS == "windows" {
+		t.Skip("this asks a POSIX shell about itself; Windows runs cmd.exe")
+	}
+	bash, err := osexec.LookPath("bash")
+	if err != nil {
 		t.Skip("no bash here to tell the two shells apart")
+	}
+	if bash == aRealShell() {
+		t.Skip("bash is this machine's /bin/sh, so the two cannot be told apart")
 	}
 	r := New()
 	c := &exec.Context{}
 
 	out, err := r.Exec.Call(c, "cmd.run_all",
-		value.MapOf("name", `echo "${BASH_VERSION:-none}"`, "shell", "/bin/bash"))
+		value.MapOf("name", `echo "${BASH_VERSION:-none}"`, "shell", bash))
 	if err != nil {
-		t.Fatalf("running under bash: %v", err)
+		t.Fatalf("running under %s: %v", bash, err)
 	}
 	m := out.(*value.Map)
 	stdout, _ := m.GetString("stdout")
 	if got := strings.TrimSpace(value.KeyString(stdout)); got == "none" || got == "" {
-		t.Errorf("`shell: /bin/bash` did not run under bash: BASH_VERSION = %q", got)
+		t.Errorf("`shell: %s` did not run under bash: BASH_VERSION = %q", bash, got)
 	}
 }
 
