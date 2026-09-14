@@ -55,7 +55,7 @@ The event bus: follow it, or list the tags it carries.
 Print the Prometheus exposition.
 .It Cm ssh Ar target Ar function Op Ar args ...
 Run on a machine with no agent, by pushing the binary over SSH.
-.It Cm extensions Ar list Ns | Ns Ar sync Ns | Ns Ar run
+.It Cm extensions Ar list Ns | Ns Ar sync Ns | Ns Ar run Ns | Ns Ar verify
 The signed extensions this hub runs, which are the external pillar
 sources of the specification's section 12.7 and nothing else on a hub.
 .Cm list
@@ -77,6 +77,16 @@ applies the confinement a node would and
 .Fl -declare
 says what that grants, which is how to find out whether an extension
 works anywhere but the machine it was written on.
+.Pp
+.Cm verify Ar path
+drives a candidate through the protocol -- a good call, a call that
+cannot succeed, a version it should refuse, a shutdown it should honour
+-- and reports each rule by name with what happened and why the rule is
+there.
+It exits non-zero on a failure, so it belongs in whatever builds the
+extension.
+It checks the protocol and nothing else: a conforming extension can
+still be wrong about its own job.
 .It Cm doctor
 Run the diagnostics of the specification's section 26.4 against this hub.
 Changes nothing, and starts no listener, so it is safe on a hub that is
@@ -161,6 +171,10 @@ Fetch the extensions the tree publishes, then see what will run:
 .Pp
 .Dl halite-hub extensions sync
 .Dl halite-hub extensions list
+.Pp
+Check an extension against the protocol:
+.Pp
+.Dl halite-hub extensions verify ./my-source --kind pillar
 .Pp
 Call an extension you are writing, without packaging it:
 .Pp

@@ -18,6 +18,52 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A conformance harness for extensions
+
+The last two changes left the same thing open: an extension written in
+another language was checked against a page of documentation and against
+whatever the host happened to complain about. Neither is being checked.
+A host is written to run extensions rather than diagnose them, and its
+complaints surface a long way from their cause -- a parameter type sent
+as a number is refused at the decoder, reported as an extension with no
+functions, and noticed as a pillar source that does not provide
+`ext_pillar`.
+
+`halite-hub extensions verify <path>` drives a candidate through the
+protocol: a good call, a call that cannot succeed, a version it should
+refuse, a shutdown it should honour. Thirteen rules, each reported by
+name with what happened and why the rule is there. It exits non-zero on
+a failure, so it belongs in whatever builds the extension.
+
+It speaks the wire directly rather than through the host's pool, because
+it has to send frames a host never would and has to read a malformed
+answer well enough to describe it. And a skip is never a quiet pass:
+every rule it could not establish says so, and the summary says out loud
+that a skip is not a pass.
+
+A fixture breaks one rule at a time and there is a test per rule against
+the extension that breaks it -- a harness only ever run against
+conforming extensions establishes nothing, because every check would
+pass with its body deleted. Both extensions in this tree are held to it
+by a test, since an example that has stopped conforming teaches the
+wrong thing to everyone who copies it.
+
+Two defects of its own. `verify` inherited the development loop's
+sixty-second timeout, which made a run against an extension that hangs
+take over two minutes instead of twenty seconds. And a read that timed
+out left a goroutine holding the stream, so a second read would have
+raced it -- unreachable today, and a latent race that is unreachable by
+inspection is one the next check reintroduces.
+
+A third turned up in the ledger itself. This entry and the grains
+differential were written at the same time on different branches and
+both claimed the same section number; the files do not touch, so the
+merge was clean, and the citation check reads headings into a map, so
+the duplicate was invisible. The whole suite passed with two sections
+numbered 5.82. That is the ledger's own failure mode -- it is
+append-only, so two changes in flight always want the same number -- and
+the numbers are checked for being unique and ascending now.
+
 ### A relative include in an `init.sls` resolved one level too high
 
 A hub and a node, both `-fips` artifacts on arm64, compiling this

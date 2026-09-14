@@ -1462,12 +1462,20 @@ has the same pair of commands for its own cache:
 halite-hub extensions sync          # fetch _ext/ from the tree
 halite-hub extensions list          # what is installed, and what it provides
 halite-hub extensions run <path>    # run one straight from a path, while writing it
+halite-hub extensions verify <path> # check one against the protocol
 ```
 
 `sync` prints the Merkle root of anything it fetched, which is what goes
 into `extension_pins`. `list` starts each extension, so it reports the
 functions the handshake actually announced rather than what a manifest
 claims.
+
+`verify` drives a candidate through the protocol -- a good call, a call
+that cannot succeed, a version it should refuse, a shutdown it should
+honour -- and reports thirteen rules by name with what happened and why
+each one is there. It exits non-zero on a failure, so it belongs in
+whatever builds the extension. Salt has no equivalent and could not:
+there is no protocol to conform to, because the agent imports the file.
 
 `run` is the development loop, and Salt has no equivalent because it
 needs none: there, the file on the file server *is* what runs. Here a

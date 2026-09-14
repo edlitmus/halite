@@ -362,23 +362,68 @@ shebang, so it needs an interpreter on the machine that runs it and it
 is not portable to Windows, which has no such mechanism. A bundle for
 Windows names the interpreter as the executable instead.
 
-## What is not solved yet
+## Checking it against the protocol
 
-**There is no conformance harness.** An extension in another language is
-checked against this page and against whatever the host happens to
-complain about, which is not the same as being checked against the
-protocol. A `halite-hub extensions verify <path>` that drove a candidate
-through the handshake, a good call, a failing call, an oversized frame,
-stdout pollution and a timeout — reporting each against the rule it
-broke — is what would turn this section from a promise into a test. The
-Python example stands in for it today, by being run.
+`run` tells you whether an extension answered. Whether it is *right* is
+a different question, and one an author working outside Go has had no
+way to ask — the host is written to run extensions, not to diagnose
+them, and its complaints surface a long way from their cause.
+
+```sh
+halite-hub extensions verify ./my-source --kind pillar
+```
+
+It drives the candidate through the protocol deliberately: a good call,
+a call that cannot succeed, a version it should refuse, a shutdown it
+should honour. Each rule is reported by name with what happened and why
+the rule is there.
+
+```
+  pass  handshake/answers                    it answers hello with hello_ok
+  fail  handshake/parameters-are-typed       every parameter declares a name and a type
+        go(): how_many declares its type as 1, which is not a string
+        A parameter's type is its name -- "string", "map" -- never a number.
+        A language that serialises an enum as an integer produces exactly
+        this, and the host refuses the whole signature: the extension then
+        reports no functions at all, which is several steps from the cause.
+  fail  call/answers-with-one-result         a call is answered with exactly one result
+        calling go(): nothing arrived within the timeout. A writer that
+        buffers until exit looks exactly like this: flush after every frame.
+  skip  call/the-result-carries-the-call-id  the result carries the id of the call
+        no result arrived
+
+  5 pass, 3 fail, 3 skip
+```
+
+Thirteen rules, in four groups: the handshake, the calls, the lifecycle,
+and what it refuses. `--kind` is worth passing — without it the rules
+about refusing the wrong kind are skipped, because there is no other
+kind to ask for.
+
+Three things to know about what it establishes.
+
+**A skip is not a pass.** Each one says what could not be established
+and why. A run with skips has checked less than it looks like.
+
+**It exits non-zero on a failure**, so it belongs in whatever builds
+your extension.
+
+**It checks the protocol and nothing else.** A conforming extension can
+still be entirely wrong about its own job. This is the part that can be
+checked without knowing what the extension is for.
+
+Both extensions in this repository pass all thirteen, and a test asserts
+it — an example that has quietly stopped conforming teaches the wrong
+thing to everyone who copies it.
+
+## What is not solved yet
 
 **The protocol has no compatibility policy.** `protocol: 1` is offered
 and an extension either speaks it or does not; there is no negotiation,
 and nothing yet says what may change inside version 1 and what forces a
 version 2. That was a private matter while this project was the only
 implementer. It stops being one the moment somebody else writes an
-extension.
+extension — which is now the point of all of this.
 
 ## Further reading
 
