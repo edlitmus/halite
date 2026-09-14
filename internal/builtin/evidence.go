@@ -199,9 +199,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"what establishes that the right one really is being delivered on standard input rather than " +
 		"quietly ignored. A real revocation list is generated and read. That run found a defect: an " +
 		"unreadable trust file was being reported as an untrusted certificate, which is a different " +
-		"problem with a different fix. Not covered: LibreSSL, whose `verify` has no -show_chain and " +
-		"whose failure wording is its own, and OpenSSL 1.1.1, whose spelling is in the fixtures and " +
-		"on no machine here"},
+		"problem with a different fix. Also run against OpenSSL 3.0.2 in FIPS mode on Ubuntu " +
+		"22.04, which found the second: PKCS12KDF is not a FIPS-approved derivation and is absent " +
+		"from the FIPS provider, so such a host can neither MAC a PKCS#12 bundle nor verify one, " +
+		"and both functions now refuse with the reason and the opt-out rather than passing " +
+		"openssl's own unexplained wording through. Not covered: LibreSSL, whose `verify` has no " +
+		"-show_chain and whose failure wording is its own, and OpenSSL 1.1.1, whose spelling is in " +
+		"the fixtures and on no machine here"},
 
 	"journald": {Level: exec.Hardware, Note: "driven against real systemd 255 on Ubuntu 24.04. The reads " +
 		"go through `journalctl -o json` / `-N` / `-F` -- the `jls --libxo=json` precedent (5.32), a machine " +

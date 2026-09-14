@@ -104,6 +104,7 @@ func registerOpenSSLCert(r *Registries) {
 				Params: []signature.Param{
 					req("path", signature.Path, "The bundle."),
 					opt("password", signature.String, "", "The bundle's passphrase. Sent on standard input, never as an argument."),
+					opt("verify_mac", signature.Bool, true, "Verify the bundle's MAC before reading it. A FIPS host cannot — see the refusal — and `false` reads it unverified."),
 				},
 				TestMode:  signature.TestNotApplicable,
 				Platforms: unixOnly,
@@ -122,6 +123,7 @@ func registerOpenSSLCert(r *Registries) {
 					opt("ca_certs", signature.Path, "", "A file of chain certificates to pack alongside it."),
 					opt("password", signature.String, "", "The passphrase to protect the bundle with. Sent on standard input, never as an argument."),
 					opt("friendly_name", signature.String, "", "The name the bundle carries, which is what an importing tool shows."),
+					opt("mac", signature.Bool, true, "Protect the bundle with a MAC. A FIPS host cannot build one — see the refusal — and `false` writes the bundle without integrity protection."),
 				},
 				Mutates:   true,
 				TestMode:  signature.TestReliable,
@@ -536,8 +538,11 @@ func openSSLPKCS12Info(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 
-	argv := append([]string{info.Path, "pkcs12", "-in", path, "-info", "-nokeys", "-nodes"},
-		openSSLPasswordArgv("-passin")...)
+	argv := []string{info.Path, "pkcs12", "-in", path, "-info", "-nokeys", "-nodes"}
+	if !states.Bool(args, "verify_mac", true) {
+		argv = append(argv, "-nomacver")
+	}
+	argv = append(argv, openSSLPasswordArgv("-passin")...)
 	res, err := c.Run(exec.Command{
 		Argv:           argv,
 		Stdin:          states.Str(args, "password", "") + "\n",
@@ -551,8 +556,11 @@ func openSSLPKCS12Info(c *exec.Context, args *value.Map) (any, error) {
 		// corrupt bundle are different problems and openssl already
 		// distinguishes them; restating either here would only be a
 		// second, staler wording of the same thing.
-		return nil, fmt.Errorf("%s could not be opened: %s", path,
-			strings.TrimSpace(firstLine(res.Stderr)))
+		reason := strings.TrimSpace(firstLine(res.Stderr))
+		if hint := pkcs12FIPSHint(res.Stderr); hint != "" {
+			return nil, fmt.Errorf("%s could not be opened: %s. %s", path, reason, hint)
+		}
+		return nil, fmt.Errorf("%s could not be opened: %s", path, reason)
 	}
 
 	// `-info` writes its description to standard error and the
@@ -593,12 +601,49 @@ func openSSLBagLines(text, prefix string) []any {
 	return out
 }
 
+// pkcs12FIPSHint explains the two ways a FIPS host refuses to write a
+// PKCS#12 bundle, neither of which reads as being about FIPS.
+//
+// PKCS#12 predates every KDF the standard approves. Its MAC is keyed by
+// PKCS12KDF, which is not an approved derivation and is therefore
+// absent from OpenSSL 3's FIPS provider -- so `openssl pkcs12 -export`
+// on a host in FIPS mode cannot build the MAC at all, and says
+// "no PKCS12KDF support?" without saying why there is none. And the
+// PBKDF2 that encrypts the bag enforces a minimum key length there, so
+// a passphrase under fourteen characters is refused as an "invalid key
+// length", which sounds like a defect in the caller.
+//
+// Writing the bundle anyway, by adding `-nomac` behind the operator's
+// back, is not the answer: the MAC is what detects a bundle that has
+// been altered, and dropping it silently would weaken an artifact
+// holding a private key without anybody asking for that. So this names
+// the cause and the option, and `mac: false` is how an operator who has
+// weighed it says so.
+func pkcs12FIPSHint(stderr string) string {
+	switch {
+	case strings.Contains(stderr, "verifying PKCS12 MAC"):
+		return "PKCS12KDF is not a FIPS-approved derivation, so a host in FIPS mode " +
+			"cannot verify a PKCS#12 MAC — including one it wrote itself. Set " +
+			"`verify_mac: false` to read the bundle without checking its integrity"
+	case strings.Contains(stderr, "PKCS12KDF"):
+		return "PKCS12KDF is not a FIPS-approved derivation, so a host in FIPS mode " +
+			"cannot MAC a PKCS#12 bundle. Set `mac: false` to write one without " +
+			"integrity protection, which is a choice about the bundle rather than " +
+			"about this node"
+	case strings.Contains(stderr, "invalid key length") && strings.Contains(stderr, "pbkdf2"):
+		return "PBKDF2 in FIPS mode requires a longer passphrase — 14 characters is " +
+			"the usual floor — and the one given is shorter"
+	}
+	return ""
+}
+
 func openSSLPKCS12Create(c *exec.Context, args *value.Map) (any, error) {
 	path := strings.TrimSpace(states.Str(args, "path", ""))
 	cert := strings.TrimSpace(states.Str(args, "certificate", ""))
 	key := strings.TrimSpace(states.Str(args, "private_key", ""))
 	chain := strings.TrimSpace(states.Str(args, "ca_certs", ""))
 	name := strings.TrimSpace(states.Str(args, "friendly_name", ""))
+	mac := states.Bool(args, "mac", true)
 	if path == "" || cert == "" || key == "" {
 		return nil, errors.New("a bundle, a certificate and a private key must all be named")
 	}
@@ -623,6 +668,9 @@ func openSSLPKCS12Create(c *exec.Context, args *value.Map) (any, error) {
 	}
 	if name != "" {
 		argv = append(argv, "-name", name)
+	}
+	if !mac {
+		argv = append(argv, "-nomac")
 	}
 	argv = append(argv, openSSLPasswordArgv("-passout")...)
 
@@ -650,8 +698,11 @@ func openSSLPKCS12Create(c *exec.Context, args *value.Map) (any, error) {
 		return nil, fmt.Errorf("`openssl pkcs12 -export` could not be run: %w", err)
 	}
 	if res.Code != 0 {
-		return nil, fmt.Errorf("%s could not be written: %s", path,
-			strings.TrimSpace(firstLine(res.Stderr)))
+		reason := strings.TrimSpace(firstLine(res.Stderr))
+		if hint := pkcs12FIPSHint(res.Stderr); hint != "" {
+			return nil, fmt.Errorf("%s could not be written: %s. %s", path, reason, hint)
+		}
+		return nil, fmt.Errorf("%s could not be written: %s", path, reason)
 	}
 	// A bundle holds a private key, so it is nobody's business but its
 	// owner's. openssl creates it with the process umask, which on a node

@@ -5359,7 +5359,7 @@ openssl_cert.crl_info(path: path)
 Pack a certificate, its key and any chain into a PKCS#12 bundle.
 
 ```
-openssl_cert.pkcs12_create(path: path, certificate: path, private_key: path, ca_certs: path = , password: string = , friendly_name: string = )
+openssl_cert.pkcs12_create(path: path, certificate: path, private_key: path, ca_certs: path = , password: string = , friendly_name: string = , mac: bool = true)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -5370,6 +5370,7 @@ openssl_cert.pkcs12_create(path: path, certificate: path, private_key: path, ca_
 | `ca_certs` | path | `` | A file of chain certificates to pack alongside it. |
 | `password` | string | `` | The passphrase to protect the bundle with. Sent on standard input, never as an argument. |
 | `friendly_name` | string | `` | The name the bundle carries, which is what an importing tool shows. |
+| `mac` | bool | `true` | Protect the bundle with a MAC. A FIPS host cannot build one — see the refusal — and `false` writes the bundle without integrity protection. |
 
 *changes the system · honours `--test` · SPEC section 15.3*
 
@@ -5378,13 +5379,14 @@ openssl_cert.pkcs12_create(path: path, certificate: path, private_key: path, ca_
 Read what a PKCS#12 bundle holds, without unpacking it.
 
 ```
-openssl_cert.pkcs12_info(path: path, password: string = )
+openssl_cert.pkcs12_info(path: path, password: string = , verify_mac: bool = true)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `path` | path | *required* | The bundle. |
 | `password` | string | `` | The bundle's passphrase. Sent on standard input, never as an argument. |
+| `verify_mac` | bool | `true` | Verify the bundle's MAC before reading it. A FIPS host cannot — see the refusal — and `false` reads it unverified. |
 
 *SPEC section 15.3*
 

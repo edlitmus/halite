@@ -1,56 +1,142 @@
 package render
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/internal/value"
 )
 
-// gpgKeyring builds a throwaway GNUPGHOME with one key in it, and returns
-// the home and the recipient. It skips loudly rather than failing where
-// gpg cannot be driven: this exercises the system binary, and a machine
-// without one is not a defect in the renderer.
+// The keyring is built once for the whole package, not once per test.
+//
+// Generating an OpenPGP key is the most expensive thing in this suite
+// and its cost is wildly machine-dependent: on a 2-CPU arm64 instance
+// with a FIPS kernel it takes about two minutes, against a second or so
+// on a developer's laptop. Three tests each asking for their own
+// keyring is six minutes of that, all of it spent producing three keys
+// that differ in no way any test depends on -- each only encrypts to
+// the key and decrypts with it. Under `go test ./...`, where packages
+// run in parallel and contend for those two cores, the total ran past
+// Go's ten-minute package timeout and took the whole suite down with
+// it, reported as a timeout in `render` rather than as a slow gpg.
+//
+// So it is generated once, under a deadline, and shared.
+var (
+	gpgOnce      sync.Once
+	gpgHomeDir   string
+	gpgRecipient string
+	gpgSkip      string
+)
+
+// gpgKeygenTimeout bounds the one generation.
+//
+// The helper's contract is that a machine where gpg cannot be driven
+// skips rather than fails, and before this it honoured that only for a
+// gpg that *exited* with an error. A gpg that blocks -- waiting on an
+// agent that never answers, or on entropy -- was not covered, and the
+// only thing that ended it was the package timeout, which fails the
+// package and reports nothing about gpg. Ten minutes is far longer than
+// the slowest machine seen here needs and still finite.
+const gpgKeygenTimeout = 10 * time.Minute
+
+// gpgKeyring returns the package's throwaway GNUPGHOME and its
+// recipient. It skips loudly rather than failing where gpg cannot be
+// driven: this exercises the system binary, and a machine without one
+// is not a defect in the renderer.
 func gpgKeyring(t *testing.T) (home, recipient string) {
 	t.Helper()
-	if _, err := exec.LookPath("gpg"); err != nil {
-		t.Skip("gpg differential skipped: no gpg on PATH. SPEC 12.6 drives the system binary.")
+	gpgOnce.Do(buildGPGKeyring)
+	if gpgSkip != "" {
+		t.Skip(gpgSkip)
 	}
-	home = t.TempDir()
-	if err := os.Chmod(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	recipient = "halite-test@example.invalid"
-
-	run := func(args ...string) (string, error) {
-		cmd := exec.Command("gpg", args...)
-		cmd.Env = append(os.Environ(), "GNUPGHOME="+home)
-		out, err := cmd.CombinedOutput()
-		return string(out), err
-	}
-	out, err := run("--batch", "--pinentry-mode", "loopback", "--passphrase", "",
-		"--quick-generate-key", "halite test <"+recipient+">", "default", "default", "never")
-	if err != nil {
-		t.Skipf("gpg differential skipped: a throwaway key could not be generated here: %v\n%s", err, out)
-	}
-	t.Cleanup(func() {
-		// The agent holds the socket open under the temp directory, and
-		// a running one would keep it from being removed.
-		cmd := exec.Command("gpgconf", "--kill", "gpg-agent")
-		cmd.Env = append(os.Environ(), "GNUPGHOME="+home)
-		_ = cmd.Run()
-	})
-	return home, recipient
+	return gpgHomeDir, gpgRecipient
 }
 
+func buildGPGKeyring() {
+	if _, err := exec.LookPath("gpg"); err != nil {
+		gpgSkip = "gpg differential skipped: no gpg on PATH. SPEC 12.6 drives the system binary."
+		return
+	}
+	dir, err := os.MkdirTemp("", "halite-gpg")
+	if err != nil {
+		gpgSkip = "gpg differential skipped: no temporary directory: " + err.Error()
+		return
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		gpgSkip = "gpg differential skipped: " + err.Error()
+		return
+	}
+	recipient := "halite-test@example.invalid"
+
+	ctx, cancel := context.WithTimeout(context.Background(), gpgKeygenTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "gpg", "--batch", "--pinentry-mode", "loopback",
+		"--passphrase", "", "--quick-generate-key", "halite test <"+recipient+">",
+		"default", "default", "never")
+	cmd.Env = append(os.Environ(), "GNUPGHOME="+dir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		reason := err.Error()
+		if ctx.Err() != nil {
+			reason = "it did not finish within " + gpgKeygenTimeout.String()
+		}
+		gpgSkip = "gpg differential skipped: a throwaway key could not be generated here: " +
+			reason + "\n" + string(out)
+		killGPGAgent(dir)
+		_ = os.RemoveAll(dir)
+		return
+	}
+	gpgHomeDir, gpgRecipient = dir, recipient
+}
+
+// killGPGAgent stops the agent gpg started under a home directory. It
+// holds a socket open there, and a running one keeps the directory from
+// being removed.
+func killGPGAgent(home string) {
+	cmd := exec.Command("gpgconf", "--kill", "gpg-agent")
+	cmd.Env = append(os.Environ(), "GNUPGHOME="+home)
+	_ = cmd.Run()
+}
+
+// TestMain removes the shared keyring once every test has finished.
+// t.Cleanup cannot do it: the directory outlives the test that happened
+// to build it.
+func TestMain(m *testing.M) {
+	code := m.Run()
+	if gpgHomeDir != "" {
+		killGPGAgent(gpgHomeDir)
+		_ = os.RemoveAll(gpgHomeDir)
+	}
+	os.Exit(code)
+}
+
+// gpgEncrypt builds a fixture: the ciphertext a real Salt tree carries.
+//
+// `--cipher-algo AES256` is not a preference, it is what lets this run
+// on a host in FIPS mode. Left to itself, GnuPG picks the session
+// cipher from the recipient key's preference list, and on a FIPS kernel
+// libgcrypt refuses the cipher it picks and gpg *aborts* --
+// "Ohhhh jeeee: ... this is a bug (seskey.c:50:make_session_key)",
+// SIGABRT, no ciphertext. The same key generation warns
+// "invalid item 'S2' in preference string" on the way past, S2 being
+// 3DES, which is the preference in question.
+//
+// This is GnuPG's problem rather than halite's, and the distinction
+// matters: it is in *encryption*, which only this fixture does.
+// Decryption -- the thing SPEC 12.6's renderer actually performs -- is
+// unaffected, and forcing an approved cipher here is what lets these
+// tests prove that on a FIPS host instead of skipping.
 func gpgEncrypt(t *testing.T, home, recipient, plaintext string) string {
 	t.Helper()
 	cmd := exec.Command("gpg", "--batch", "--yes", "--trust-model", "always",
-		"--encrypt", "--armor", "-r", recipient)
+		"--cipher-algo", "AES256", "--encrypt", "--armor", "-r", recipient)
 	cmd.Env = append(os.Environ(), "GNUPGHOME="+home)
 	cmd.Stdin = strings.NewReader(plaintext)
 	out, err := cmd.Output()

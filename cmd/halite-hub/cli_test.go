@@ -284,7 +284,13 @@ func TestLintDecryptsAndRedacts(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = exec.Command("gpgconf", "--kill", "gpg-agent").Run() })
 
-	enc := gpg("--batch", "--yes", "--trust-model", "always", "--encrypt", "--armor", "-r", "t@example.invalid")
+	// `--cipher-algo AES256` is what lets this run on a host in FIPS
+	// mode: left to itself GnuPG picks the session cipher from the
+	// recipient key's preferences, and on a FIPS kernel libgcrypt
+	// refuses that cipher and gpg aborts outright. Decryption -- what
+	// SPEC 12.6 actually performs -- is unaffected. DIVERGENCE 5.80.
+	enc := gpg("--batch", "--yes", "--trust-model", "always", "--cipher-algo", "AES256",
+		"--encrypt", "--armor", "-r", "t@example.invalid")
 	enc.Stdin = strings.NewReader(secret)
 	armored, err := enc.Output()
 	if err != nil {
