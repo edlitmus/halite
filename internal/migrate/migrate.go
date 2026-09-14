@@ -181,6 +181,36 @@ var customModuleDirs = []string{
 	"_auth", "_cache", "_fileserver", "_log_handlers", "_wheel",
 }
 
+// replacedModules are Salt custom modules this build has a compiled-in
+// equivalent for, keyed by the path inside the tree.
+//
+// Without this the audit tells an operator to write a bridge for a
+// module whose job is already done, which is worse than saying nothing:
+// it is the first command the migration guide asks them to run, and it
+// would send them to build the one thing they do not need. Matched by
+// path, because that is all a static audit can honestly match on — the
+// finding says to check the file is the usual one rather than asserting
+// that it is.
+var replacedModules = map[string]struct {
+	// What replaces it, and what to turn on.
+	Action string
+}{
+	"_grains/metadata.py": {
+		Action: "This is Salt's metadata grain. `cloud_grains: true` on the node collects the same " +
+			"`meta-data` and `dynamic` trees, over IMDSv2, plus the flat grains of SPEC 14.1 — so " +
+			"`grains.get('meta-data:local-ipv4')` keeps working. Check this file is the usual one, " +
+			"then delete it. Note that the built-in never collects the instance's own credentials, " +
+			"which Salt's does: see DIVERGENCE 5.78.",
+	},
+	"_pillar/aws_secrets_manager.py": {
+		Action: "This is the AWS Secrets Manager external pillar. The `aws_secrets_manager` source " +
+			"in `ext_pillar` does the same thing — same `aws_secrets` root, same dotted-key nesting, " +
+			"same JSON parsing — so `pillar.get('aws_secrets:...')` keeps working. Check this file is " +
+			"the usual one, then delete it and configure the source. A failed fetch fails the " +
+			"compilation here rather than yielding a partial pillar: see DIVERGENCE 5.78.",
+	},
+}
+
 // Run audits a tree.
 func Run(opts Options) (*Report, error) {
 	if opts.Root == "" {
@@ -328,6 +358,22 @@ func auditCustomModuleDir(rep *Report, root, path, rel string) {
 				}
 				rep.PyKinds[file] = extKind
 			}
+		}
+
+		// A module this build has replaced is not a port. Reported
+		// before the bridge advice, and not as blocking, because the
+		// work is deleting a file and setting a key.
+		if replaced, ok := replacedModules[file]; ok {
+			rep.Findings = append(rep.Findings, Finding{
+				Category: CatCustomModule,
+				Severity: Review,
+				File:     file,
+				Subject:  dir,
+				Msg: fmt.Sprintf("a Python %s cannot be loaded, and this one does not need to be: "+
+					"this build has it", strings.TrimPrefix(dir, "_")),
+				Action: replaced.Action,
+			})
+			continue
 		}
 
 		action := "Port it to a signed, pinned, out-of-process bridged extension. " +
