@@ -1,6 +1,8 @@
 package builtin
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"runtime"
 	"strings"
@@ -56,12 +58,32 @@ func TestRealShutdownUsageNamesTheFlagsThisModuleAssumes(t *testing.T) {
 	if runtime.GOOS != "freebsd" {
 		t.Skip("this checks the real FreeBSD /sbin/shutdown")
 	}
-	if _, err := os.Stat(liveShutdownPath); err != nil {
+	info, err := os.Stat(liveShutdownPath)
+	if err != nil {
 		t.Skipf("%s is not on this host: %v", liveShutdownPath, err)
 	}
 
 	c := &exec.Context{}
 	res, err := c.Run(exec.Command{Argv: []string{liveShutdownPath}, IgnoreExitCode: true})
+	// **Present is not runnable.** FreeBSD ships this setuid root and
+	// group `operator`, mode `-r-sr-xr--`, with no world execute bit --
+	// so whether it can be run at all depends on who is asking. It runs
+	// on this project's own FreeBSD host because that account is in
+	// `operator`; it does not run on the FreeBSD CI runner, whose
+	// account is in neither, and this failed there having passed here:
+	//
+	//	/sbin/shutdown could not be run:
+	//	fork/exec /sbin/shutdown: permission denied
+	//
+	// An `os.Stat` answers "is it there", which was never the question.
+	// A machine that will not let this account execute it cannot be
+	// asked what its usage line says, and that is a skip -- named, with
+	// the mode, so a reader can tell it from a broken binary.
+	if errors.Is(err, fs.ErrPermission) {
+		t.Skipf("%s is mode %s and this account may not execute it; on FreeBSD it is "+
+			"setuid root and group `operator`, so only root and that group can run it",
+			liveShutdownPath, info.Mode())
+	}
 	if err != nil {
 		t.Fatalf("%s could not be run: %v", liveShutdownPath, err)
 	}
