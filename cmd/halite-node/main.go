@@ -85,6 +85,8 @@ Common flags:
   --log-fmt <format>   json (default) or console
   --legacy-arg-parse   read every argument as YAML, as Salt does, and log
                        each coercion; SPEC section 9.2
+  --reveal             print pillar values rather than masking them; pillar
+                       output is masked by default, as Salt's is
 
 State subcommands:
   apply [sls...]       apply the highstate, or the named SLS files
