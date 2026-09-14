@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/edlitmus/halite/internal/bridge"
+	"github.com/edlitmus/halite/ext"
 )
 
 func main() {
@@ -26,20 +26,22 @@ func main() {
 	}
 
 	// The limits the host asked for, applied to this process.
-	bridge.Confine()
+	ext.Confine()
 
-	ext := &bridge.Extension{
+	e := &ext.Extension{
 		Name:     "echo",
 		Version:  "1.0.0",
-		Kind:     "module",
+		Kind:     ext.KindModule,
 		Declares: declaresFromEnv(),
-		Functions: []json.RawMessage{
-			json.RawMessage(`{"module":"echo","function":"say","doc":"Return what it was given.",` +
-				`"params":[{"name":"message","type":"string","required":true,"doc":"What to say back."}]}`),
-		},
+		Functions: []ext.Signature{{
+			Module: "echo", Function: "say", Doc: "Return what it was given.",
+			Params: []ext.Param{
+				{Name: "message", Type: ext.TypeString, Required: true, Doc: "What to say back."},
+			},
+		}},
 		Handler: handle,
 	}
-	if err := ext.Serve(); err != nil {
+	if err := e.Serve(); err != nil {
 		fmt.Fprintln(os.Stderr, "echoext:", err)
 		os.Exit(1)
 	}
@@ -52,7 +54,7 @@ func declaresFromEnv() []string {
 	return []string{os.Getenv("ECHOEXT_DECLARES")}
 }
 
-func handle(call bridge.Call) (any, error) {
+func handle(call ext.Call) (any, error) {
 	switch call.Function {
 	case "say":
 		var kwargs map[string]any
@@ -86,7 +88,7 @@ func handle(call bridge.Call) (any, error) {
 	case "environment":
 		return map[string]any{
 			"vars":           os.Environ(),
-			"network_denied": bridge.NetworkDenied(),
+			"network_denied": ext.NetworkDenied(),
 		}, nil
 
 	case "limits":

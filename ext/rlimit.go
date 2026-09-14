@@ -1,6 +1,6 @@
 //go:build unix
 
-package bridge
+package ext
 
 // rlimitAbsent marks one of SPEC 24.3's limits that this platform's
 // kernel does not have.

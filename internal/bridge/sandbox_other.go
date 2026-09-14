@@ -10,8 +10,6 @@ func (s *Sandbox) applyPlatform(cmd *exec.Cmd) (func() error, func(), error) {
 	return func() error { return nil }, func() {}, nil
 }
 
-func limitsAvailable() limitSupport { return limitSupport{} }
-
 func networkEnforcement() string { return "not granted, and not enforced on this platform" }
 
 func sandboxPlatformNotes() []string {

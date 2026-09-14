@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/edlitmus/halite/internal/bridge"
+	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -19,11 +19,11 @@ type fakeCaller struct {
 	// saw records what the extension was handed.
 	saw     request
 	sawFunc string
-	sawCtx  *bridge.CallContext
+	sawCtx  *ext.CallContext
 }
 
 func (f *fakeCaller) Call(_ context.Context, function string, _, kwargs any,
-	callCtx *bridge.CallContext) (json.RawMessage, error) {
+	callCtx *ext.CallContext) (json.RawMessage, error) {
 
 	f.sawFunc = function
 	f.sawCtx = callCtx

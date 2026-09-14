@@ -14,7 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/edlitmus/halite/internal/bridge"
+	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/value"
@@ -31,7 +31,7 @@ const EntryPoint = "ext_pillar"
 // An interface rather than *extension.Loaded so the tests can drive the
 // source without a signed bundle on disk.
 type Caller interface {
-	Call(ctx context.Context, function string, args, kwargs any, callCtx *bridge.CallContext) (json.RawMessage, error)
+	Call(ctx context.Context, function string, args, kwargs any, callCtx *ext.CallContext) (json.RawMessage, error)
 }
 
 // Bridged is one external pillar source running as an extension.
@@ -92,7 +92,7 @@ func (b *Bridged) Pillar(ctx context.Context, req pillar.ExtRequest) (*value.Map
 		Pillar: so_far,
 		Config: b.Config,
 	}
-	raw, err := b.Ext.Call(ctx, EntryPoint, nil, payload, &bridge.CallContext{
+	raw, err := b.Ext.Call(ctx, EntryPoint, nil, payload, &ext.CallContext{
 		NodeID: req.NodeID,
 		Env:    req.Env,
 	})

@@ -1,6 +1,8 @@
 package bridge
 
 import (
+	"github.com/edlitmus/halite/ext"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -45,7 +47,7 @@ func NewPool(opts Options, size int) *Pool {
 // Info is what the extension declared, from the first process started.
 //
 // It needs one to have run: the declarations come from the handshake,
-// and a pool that has started nothing has nothing to report. Call
+// and a pool that has started nothing has nothing to report. ext.Call
 // `Warm` first when the answer is needed before any work.
 func (p *Pool) Info() (Info, bool) {
 	p.mu.Lock()
@@ -64,8 +66,8 @@ func (p *Pool) Warm(ctx context.Context) error {
 	return nil
 }
 
-// Call runs one function on a free process.
-func (p *Pool) Call(ctx context.Context, function string, args, kwargs any, callCtx *CallContext) (json.RawMessage, error) {
+// ext.Call runs one function on a free process.
+func (p *Pool) Call(ctx context.Context, function string, args, kwargs any, callCtx *ext.CallContext) (json.RawMessage, error) {
 	proc, err := p.acquire(ctx)
 	if err != nil {
 		return nil, err

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/edlitmus/halite/ext"
 	"time"
 )
 
@@ -156,8 +158,10 @@ func TestASignedExtensionIsLoadedAndCalled(t *testing.T) {
 // RBAC policy never grants one: SPEC 23.5's rule applied to the thing it
 // most obviously covers.
 func TestAnExtensionFunctionIsMarkedAsArbitraryCode(t *testing.T) {
-	sig, err := parseSignature(json.RawMessage(
-		`{"module":"echo","function":"say","doc":"d","params":[{"name":"message","type":"string","required":true}]}`))
+	sig, err := parseSignature(ext.Signature{
+		Module: "echo", Function: "say", Doc: "d",
+		Params: []ext.Param{{Name: "message", Type: ext.TypeString, Required: true}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

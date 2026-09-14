@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/bridge"
 	"github.com/edlitmus/halite/internal/signature"
 )
@@ -136,7 +137,7 @@ func (l *Loaded) Start(ctx context.Context) error {
 }
 
 // Call invokes a function in an extension.
-func (l *Loaded) Call(ctx context.Context, function string, args, kwargs any, callCtx *bridge.CallContext) (json.RawMessage, error) {
+func (l *Loaded) Call(ctx context.Context, function string, args, kwargs any, callCtx *ext.CallContext) (json.RawMessage, error) {
 	started := time.Now()
 	pool, err := l.ensure(ctx)
 	if err != nil {
@@ -286,20 +287,18 @@ func (l *Loaded) readSignatures() {
 	l.rt.mu.Unlock()
 }
 
-// parseSignature reads the section 15.6 shape an extension sends.
+// parseSignature applies the host's policy to a signature an extension
+// declared.
 //
-// The shape itself lives in `internal/signature`, so that the side that
-// writes it and the side that reads it cannot disagree. They did: this
-// was an anonymous struct here and nothing exported could produce it.
-func parseSignature(raw json.RawMessage) (signature.Signature, error) {
-	var wire signature.Wire
-	if err := json.Unmarshal(raw, &wire); err != nil {
-		return signature.Signature{}, err
-	}
-	if wire.Module == "" || wire.Function == "" {
+// The shape itself is `ext.Signature`, which is the type the extension
+// wrote and this reads — one definition, in the package both import.
+// What is added here is what the host decides rather than what the
+// extension said.
+func parseSignature(raw ext.Signature) (signature.Signature, error) {
+	if raw.Module == "" || raw.Function == "" {
 		return signature.Signature{}, fmt.Errorf("a signature with no module or function")
 	}
-	sig := signature.FromWire(wire)
+	sig := signature.FromWire(raw)
 	// An extension cannot be taken at its word about test-mode honesty
 	// -- the host has no way to check it -- so it is recorded as
 	// unreliable. That makes a bare extension call a compilation

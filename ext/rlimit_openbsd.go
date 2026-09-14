@@ -1,6 +1,6 @@
 //go:build openbsd
 
-package bridge
+package ext
 
 import "syscall"
 

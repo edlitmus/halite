@@ -1,4 +1,4 @@
-package bridge
+package ext
 
 import (
 	"encoding/json"
@@ -25,8 +25,8 @@ type Extension struct {
 	// the hello frame, and an extension asked for a kind it does not
 	// provide refuses rather than pretending.
 	Kind string
-	// Functions are the signatures of section 15.6, already encoded.
-	Functions []json.RawMessage
+	// Functions are what it provides, in the shape of section 15.6.
+	Functions []Signature
 	// Declares is what it needs: `root`, `network`. Anything not
 	// declared is not granted.
 	Declares []string
@@ -73,7 +73,7 @@ func (e *Extension) serve(in io.Reader, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if hello.Kind != KindHello {
+	if hello.Kind != FrameHello {
 		return fmt.Errorf("the host opened with a %q frame", hello.Kind)
 	}
 	if hello.Protocol != ProtocolVersion {
@@ -84,7 +84,7 @@ func (e *Extension) serve(in io.Reader, out io.Writer) error {
 		return fmt.Errorf("the host asked for a %q extension and this one is %q", hello.Ext, e.Kind)
 	}
 	if err := write(Frame{
-		Kind: KindHelloOK, Name: e.Name, Version: e.Version,
+		Kind: FrameHelloOK, Name: e.Name, Version: e.Version,
 		Functions: e.Functions, Declares: e.Declares,
 	}); err != nil {
 		return err
@@ -99,9 +99,9 @@ func (e *Extension) serve(in io.Reader, out io.Writer) error {
 			return err
 		}
 		switch frame.Kind {
-		case KindShutdown:
+		case FrameShutdown:
 			return nil
-		case KindCall:
+		case FrameCall:
 			e.answer(write, frame)
 		default:
 			return fmt.Errorf("the host sent a %q frame", frame.Kind)
@@ -116,11 +116,11 @@ func (e *Extension) serve(in io.Reader, out io.Writer) error {
 // answering", which is true and tells nobody which function did it.
 func (e *Extension) answer(write func(Frame) error, frame Frame) {
 	id := frame.ID
-	result := Frame{Kind: KindResult, ID: id}
+	result := Frame{Kind: FrameResult, ID: id}
 
 	defer func() {
 		if r := recover(); r != nil {
-			result = Frame{Kind: KindResult, ID: id,
+			result = Frame{Kind: FrameResult, ID: id,
 				Error: fmt.Sprintf("%s panicked: %v", frame.Function, r)}
 		}
 		_ = write(result)
@@ -133,17 +133,17 @@ func (e *Extension) answer(write func(Frame) error, frame Frame) {
 	call := Call{
 		Function: frame.Function, Args: frame.Args, Kwargs: frame.Kwargs,
 		Log: func(level, message string) {
-			_ = write(Frame{Kind: KindLog, ID: id, Level: level, Message: message})
+			_ = write(Frame{Kind: FrameLog, ID: id, Level: level, Message: message})
 		},
 		Progress: func(done, total int, message string) {
-			_ = write(Frame{Kind: KindProgress, ID: id, Done: done, Total: total, Message: message})
+			_ = write(Frame{Kind: FrameProgress, ID: id, Done: done, Total: total, Message: message})
 		},
 		Event: func(tag string, data any) {
 			encoded, err := json.Marshal(data)
 			if err != nil {
 				return
 			}
-			_ = write(Frame{Kind: KindEvent, ID: id, Tag: tag, Data: encoded})
+			_ = write(Frame{Kind: FrameEvent, ID: id, Tag: tag, Data: encoded})
 		},
 	}
 	if frame.Context != nil {

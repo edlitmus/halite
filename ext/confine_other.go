@@ -1,6 +1,6 @@
 //go:build !unix
 
-package bridge
+package ext
 
 // Confine does nothing where there is no setrlimit.
 //

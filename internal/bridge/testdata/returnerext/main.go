@@ -12,31 +12,39 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/edlitmus/halite/internal/bridge"
+	"github.com/edlitmus/halite/ext"
 )
 
 func main() {
-	bridge.Confine()
+	ext.Confine()
 
-	ext := &bridge.Extension{
+	e := &ext.Extension{
 		Name:    "filedb",
 		Version: "1.0.0",
-		Kind:    "returner",
-		Functions: []json.RawMessage{
-			json.RawMessage(`{"module":"returner","function":"return","doc":"File one return.",` +
-				`"mutates":true,"params":[{"name":"return","type":"map","required":true,"doc":"The return."}]}`),
-			json.RawMessage(`{"module":"returner","function":"event","doc":"File one event.",` +
-				`"mutates":true,"params":[{"name":"event","type":"map","required":true,"doc":"The event."}]}`),
+		Kind:    ext.KindReturner,
+		Functions: []ext.Signature{
+			{
+				Module: "returner", Function: "return", Doc: "File one return.", Mutates: true,
+				Params: []ext.Param{
+					{Name: "return", Type: ext.TypeMap, Required: true, Doc: "The return."},
+				},
+			},
+			{
+				Module: "returner", Function: "event", Doc: "File one event.", Mutates: true,
+				Params: []ext.Param{
+					{Name: "event", Type: ext.TypeMap, Required: true, Doc: "The event."},
+				},
+			},
 		},
 		Handler: handle,
 	}
-	if err := ext.Serve(); err != nil {
+	if err := e.Serve(); err != nil {
 		fmt.Fprintln(os.Stderr, "returnerext:", err)
 		os.Exit(1)
 	}
 }
 
-func handle(call bridge.Call) (any, error) {
+func handle(call ext.Call) (any, error) {
 	var kwargs map[string]any
 	if err := json.Unmarshal(call.Kwargs, &kwargs); err != nil {
 		return nil, err
