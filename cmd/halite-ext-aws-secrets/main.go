@@ -19,7 +19,7 @@
 // way Salt called `ext_pillar()`.
 //
 // Read it as a template. An extension of any kind is this shape: a
-// `bridge.Extension` with a name, a version, a kind, the signatures of
+// `ext.Extension` with a name, a version, a kind, the signatures of
 // what it provides, what it needs declared, and a handler. Everything
 // below the handler is this extension's own business.
 //
@@ -58,8 +58,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/edlitmus/halite/internal/bridge"
-	"github.com/edlitmus/halite/internal/signature"
+	"github.com/edlitmus/halite/ext"
 )
 
 // Version is what the handshake and `sys.list_extensions` report. It is
@@ -67,7 +66,7 @@ import (
 const Version = "1.0.0"
 
 func main() {
-	ext := &bridge.Extension{
+	ext := &ext.Extension{
 		Name:    "aws_secrets_manager",
 		Version: Version,
 		Kind:    "pillar",
@@ -88,35 +87,30 @@ func main() {
 
 // functions is the machine-readable signature of SPEC 15.6, which the
 // host reads at handshake and `sys.list_extensions` reports.
-func functions() []json.RawMessage {
-	sig := signature.Signature{
+//
+// Declared as `ext.Signature` and nothing else. It used to be
+// `[]json.RawMessage` marshalled by hand, which is how this extension
+// came to send each parameter's type as an integer and have every
+// signature refused; the typed field is the fix, and it is why a new
+// extension cannot make that mistake.
+func functions() []ext.Signature {
+	return []ext.Signature{{
 		Module:   "aws_secrets_manager",
 		Function: "ext_pillar",
 		Doc: "Fetch secrets from AWS Secrets Manager into pillar['aws_secrets'], " +
 			"parsing a JSON secret into a mapping and nesting a dotted name.",
-		Params: []signature.Param{
-			{Name: "node_id", Type: signature.String, Required: true,
+		Params: []ext.Param{
+			{Name: "node_id", Type: ext.TypeString, Required: true,
 				Doc: "The node the pillar is being compiled for."},
-			{Name: "env", Type: signature.String, Doc: "The pillar environment."},
-			{Name: "grains", Type: signature.Map,
+			{Name: "env", Type: ext.TypeString, Doc: "The pillar environment."},
+			{Name: "grains", Type: ext.TypeMap,
 				Doc: "The node's grains. A node controls these; see `node_grain`."},
-			{Name: "pillar", Type: signature.Map,
+			{Name: "pillar", Type: ext.TypeMap,
 				Doc: "The pillar compiled so far, which the tree wrote."},
-			{Name: "config", Type: signature.Map,
+			{Name: "config", Type: ext.TypeMap,
 				Doc: "This source's block from `ext_pillar`."},
 		},
-	}
-	// signature.Encode, not json.Marshal: the wire form names a
-	// parameter's type, and marshalling the Signature directly sends
-	// the integer the type happens to be. The host refuses that, and an
-	// extension whose handshake is refused reports no functions at all.
-	encoded, err := signature.EncodeAll(sig)
-	if err != nil {
-		// Unreachable with a literal, and a handshake that announced
-		// nothing would be a puzzle rather than a failure.
-		panic(err)
-	}
-	return encoded
+	}}
 }
 
 // request is what the host sends, mirroring what Salt handed
@@ -130,7 +124,7 @@ type request struct {
 }
 
 // handle runs one pillar compilation's worth of work.
-func handle(call bridge.Call) (any, error) {
+func handle(call ext.Call) (any, error) {
 	if call.Function != "ext_pillar" {
 		return nil, fmt.Errorf("this extension provides ext_pillar, not %q", call.Function)
 	}

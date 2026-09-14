@@ -1,6 +1,6 @@
 //go:build unix
 
-package bridge
+package ext
 
 import (
 	"os"

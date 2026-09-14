@@ -1,18 +1,48 @@
-// Package bridge is the extension protocol of SPEC section 24.
+// Package ext is what an extension is written against.
 //
-// Salt's extensibility is a Python file dropped in `_modules/` on the
-// file server, which the agent imports and runs in process, as root,
-// with no signature requirement. SPEC 24.1 calls that a code
-// distribution channel, and this package is what replaces it: an
-// extension is a separate executable speaking JSON over stdio, started
-// by the host, bounded by a sandbox, and killed when it misbehaves.
+// SPEC section 24 replaces Salt's dynamic module loading. In Salt, a
+// site drops a Python file in `_modules/`, `_grains/` or `_pillar/` on
+// the file server and the agent imports it in process, as root, with no
+// signature requirement — a code distribution channel with no controls
+// on it, and a load-bearing one, because that is how a site adds what it
+// needs without rebuilding anything.
 //
-// The properties that matter are structural rather than careful. A
-// hung extension cannot hang the agent because it is a process. A
-// crashing extension cannot take the agent down for the same reason. An
-// extension that needs root has to say so, and one that does not runs
-// without it.
-package bridge
+// An extension here is a separate executable speaking JSON over stdio,
+// packaged as a signed bundle, verified on every load, pinned by digest,
+// and run out of process in a sandbox. The properties that matter are
+// structural rather than careful: a hung extension cannot hang the agent
+// because it is a process, a crashing one cannot take it down for the
+// same reason, and one that needs root has to say so.
+//
+// This package is the half an author needs, and it is public for that
+// reason — the rest of the protocol, the process pool and the sandbox,
+// is the host's and stays internal. A complete extension is:
+//
+//	func main() {
+//		ext.Confine()
+//		e := &ext.Extension{
+//			Name: "my_source", Version: "1.0.0", Kind: ext.KindPillar,
+//			Functions: []ext.Signature{{Module: "my_source", Function: "ext_pillar"}},
+//			Handler: func(call ext.Call) (any, error) { return map[string]any{}, nil },
+//		}
+//		if err := e.Serve(); err != nil {
+//			fmt.Fprintln(os.Stderr, err)
+//			os.Exit(1)
+//		}
+//	}
+//
+// An extension need not be written in Go, and need not use this package
+// at all: the wire format is specified in SPEC 24.2 and
+// docs/extensions.md, and `contrib/extensions/python` implements it in
+// about a hundred and fifty lines with nothing but a standard library.
+// This package exists so that a Go author does not have to.
+//
+// # Stdout is the protocol
+//
+// Everything for a person goes to stderr. A stray `fmt.Println` in a
+// handler is a frame the host cannot read, and the host kills a process
+// that violates the protocol rather than failing the call.
+package ext
 
 import (
 	"encoding/json"
@@ -37,17 +67,17 @@ const MaxFrameSize = 16 << 20
 // Frame kinds. The host sends `hello` and `call`; the extension sends
 // everything else.
 const (
-	KindHello    = "hello"
-	KindHelloOK  = "hello_ok"
-	KindCall     = "call"
-	KindLog      = "log"
-	KindProgress = "progress"
-	KindEvent    = "event"
-	KindResult   = "result"
-	// KindShutdown asks an extension to exit. It is a courtesy: the
+	FrameHello    = "hello"
+	FrameHelloOK  = "hello_ok"
+	FrameCall     = "call"
+	FrameLog      = "log"
+	FrameProgress = "progress"
+	FrameEvent    = "event"
+	FrameResult   = "result"
+	// FrameShutdown asks an extension to exit. It is a courtesy: the
 	// host kills it either way, and this only lets a well-behaved one
 	// flush and close cleanly.
-	KindShutdown = "shutdown"
+	FrameShutdown = "shutdown"
 )
 
 // Frame is one message in either direction.
@@ -65,9 +95,9 @@ type Frame struct {
 	Ext      string `json:"extension_kind,omitempty"`
 
 	// hello_ok.
-	Name      string            `json:"name,omitempty"`
-	Version   string            `json:"version,omitempty"`
-	Functions []json.RawMessage `json:"functions,omitempty"`
+	Name      string      `json:"name,omitempty"`
+	Version   string      `json:"version,omitempty"`
+	Functions []Signature `json:"functions,omitempty"`
 	// Declares is what the extension says it needs — `root`, `network`,
 	// or a path it writes outside its working directory. The sandbox
 	// grants nothing that is not declared, and SPEC 24.3 makes the

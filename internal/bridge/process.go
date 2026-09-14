@@ -1,6 +1,8 @@
 package bridge
 
 import (
+	"github.com/edlitmus/halite/ext"
+
 	"bufio"
 	"context"
 	"encoding/json"
@@ -92,7 +94,7 @@ type Info struct {
 	// understand a signature to route a call, and a host that parses
 	// one is a host that can refuse an extension over a field it
 	// happened to spell differently.
-	Functions []json.RawMessage
+	Functions []ext.Signature
 	// Declares is what it says it needs.
 	Declares []string
 }
@@ -166,8 +168,8 @@ func (p *Process) Info() Info {
 
 // handshake exchanges hello frames.
 func (p *Process) handshake(ctx context.Context) error {
-	if err := WriteFrame(p.stdin, Frame{
-		Kind: KindHello, Protocol: ProtocolVersion, Ext: p.opts.Kind,
+	if err := ext.WriteFrame(p.stdin, ext.Frame{
+		Kind: ext.FrameHello, Protocol: ext.ProtocolVersion, Ext: p.opts.Kind,
 	}); err != nil {
 		return fmt.Errorf("greeting %s: %w", p.opts.Path, err)
 	}
@@ -176,7 +178,7 @@ func (p *Process) handshake(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("%s did not answer the handshake: %w", p.opts.Path, err)
 	}
-	if frame.Kind != KindHelloOK {
+	if frame.Kind != ext.FrameHelloOK {
 		return fmt.Errorf("%s answered the handshake with a %q frame", p.opts.Path, frame.Kind)
 	}
 	if frame.Name == "" {
@@ -197,7 +199,7 @@ func (p *Process) handshake(ctx context.Context) error {
 // An extension that sent something the host cannot read has lost track
 // of the stream, and the next frame it sends is a response to a
 // question nobody asked.
-func (p *Process) Call(ctx context.Context, function string, args, kwargs any, callCtx *CallContext) (json.RawMessage, error) {
+func (p *Process) Call(ctx context.Context, function string, args, kwargs any, callCtx *ext.CallContext) (json.RawMessage, error) {
 	p.mu.Lock()
 	if p.dead {
 		reason := p.deadFor
@@ -221,8 +223,8 @@ func (p *Process) Call(ctx context.Context, function string, args, kwargs any, c
 	if err != nil {
 		return nil, err
 	}
-	if err := WriteFrame(p.stdin, Frame{
-		Kind: KindCall, ID: id, Function: function,
+	if err := ext.WriteFrame(p.stdin, ext.Frame{
+		Kind: ext.FrameCall, ID: id, Function: function,
 		Args: encodedArgs, Kwargs: encodedKwargs, Context: callCtx,
 	}); err != nil {
 		p.Kill("the call could not be written")
@@ -243,19 +245,19 @@ func (p *Process) Call(ctx context.Context, function string, args, kwargs any, c
 				p.opts.Path, frame.ID, id)
 		}
 		switch frame.Kind {
-		case KindLog:
+		case ext.FrameLog:
 			if p.opts.OnLog != nil {
 				p.opts.OnLog(frame.Level, frame.Message)
 			}
-		case KindProgress:
+		case ext.FrameProgress:
 			if p.opts.OnProgress != nil {
 				p.opts.OnProgress(frame.Done, frame.Total, frame.Message)
 			}
-		case KindEvent:
+		case ext.FrameEvent:
 			if p.opts.OnEvent != nil {
 				p.opts.OnEvent(frame.Tag, frame.Data)
 			}
-		case KindResult:
+		case ext.FrameResult:
 			if !frame.OK {
 				message := frame.Error
 				if message == "" {
@@ -277,17 +279,17 @@ func (p *Process) Call(ctx context.Context, function string, args, kwargs any, c
 // The read runs in a goroutine because a pipe read cannot be cancelled;
 // what the timeout does is stop waiting, and the kill that follows is
 // what actually ends the read.
-func (p *Process) readWithin(ctx context.Context, timeout time.Duration) (Frame, error) {
+func (p *Process) readWithin(ctx context.Context, timeout time.Duration) (ext.Frame, error) {
 	if timeout <= 0 {
-		return Frame{}, ErrTimeout
+		return ext.Frame{}, ErrTimeout
 	}
 	type outcome struct {
-		frame Frame
+		frame ext.Frame
 		err   error
 	}
 	done := make(chan outcome, 1)
 	go func() {
-		frame, err := ReadFrame(p.stdout)
+		frame, err := ext.ReadFrame(p.stdout)
 		done <- outcome{frame, err}
 	}()
 
@@ -297,15 +299,15 @@ func (p *Process) readWithin(ctx context.Context, timeout time.Duration) (Frame,
 	case got := <-done:
 		if got.err != nil {
 			if errors.Is(got.err, io.EOF) || errors.Is(got.err, io.ErrUnexpectedEOF) {
-				return Frame{}, errors.New("the extension exited without answering")
+				return ext.Frame{}, errors.New("the extension exited without answering")
 			}
-			return Frame{}, got.err
+			return ext.Frame{}, got.err
 		}
 		return got.frame, nil
 	case <-timer.C:
-		return Frame{}, fmt.Errorf("%w: it did not answer within %s", ErrTimeout, timeout)
+		return ext.Frame{}, fmt.Errorf("%w: it did not answer within %s", ErrTimeout, timeout)
 	case <-ctx.Done():
-		return Frame{}, ctx.Err()
+		return ext.Frame{}, ctx.Err()
 	}
 }
 
@@ -350,7 +352,7 @@ func (p *Process) Close() {
 	dead := p.dead
 	p.mu.Unlock()
 	if !dead {
-		_ = WriteFrame(p.stdin, Frame{Kind: KindShutdown})
+		_ = ext.WriteFrame(p.stdin, ext.Frame{Kind: ext.FrameShutdown})
 	}
 	p.Kill("the host is shutting down")
 }

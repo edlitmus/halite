@@ -18,6 +18,48 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Anyone can write an extension now
+
+The previous change made the AWS Secrets Manager pillar an extension
+rather than a built-in, and left one thing undone that undercut most of
+the point: the helper it was written against was `internal/bridge`, so
+an extension outside this repository had to implement the protocol by
+hand. SPEC 24.1's whole argument is that a site adds what it needs
+without rebuilding anything, and a model only its maintainers can use is
+a model with one user.
+
+`github.com/edlitmus/halite/ext` is the half of the protocol an author
+needs, and the first package here that is not `internal`. The host keeps
+the process pool, the sandbox and the store, because none of that is an
+author's business. An extension's module graph is halite and nothing
+else, and one package of it links.
+
+**The bridge skeleton generator was emitting code nobody could
+compile.** `migrate --bridge-skeleton` is what a formula carrying custom
+Python is offered: it reads each module and writes a Go bridge with the
+signatures filled in. Every one imported `internal/bridge`, so the tool
+whose entire purpose is to bootstrap a port produced a file that builds
+only inside this repository — where nobody porting a formula is working.
+Nobody chose that; the generator's tests check the text it writes, and
+nothing had ever built one from outside. Something does now.
+
+**And a Python extension, because the claim needed testing.** "The
+protocol is JSON over stdio and needs no Go" is easy to say and easy to
+be wrong about. `contrib/extensions/python/example_pillar.py` implements
+it in about a hundred and fifty lines with nothing but a standard
+library, and the suite starts it with the real host and asks it for
+pillar. It is not there to be used. It is there so that the claim is run
+rather than asserted — and it turned up the one real limit of packaging
+a script, which is that a bundle runs it by its shebang and Windows has
+none.
+
+Two things are deliberately still open, and `docs/extensions.md` says so
+under its own heading: there is no conformance harness, so an extension
+in another language is checked against a page rather than against the
+protocol; and `protocol: 1` has no compatibility policy, which was a
+private matter for exactly as long as this project was the only
+implementer.
+
 ### The two custom Salt modules an estate cannot migrate without
 
 A tree being migrated here carries two files this build had nowhere to

@@ -11,27 +11,41 @@ a JSON protocol over stdio, packaged as a signed bundle, delivered
 through the same file server, verified on every load, pinned by digest,
 and run out of process in a sandbox.
 
-There is a complete one in this repository:
-[`cmd/halite-ext-aws-secrets`](../cmd/halite-ext-aws-secrets). It is the
-AWS Secrets Manager external pillar, the same job
-`_pillar/aws_secrets_manager.py` does in a Salt tree, and this page
-walks through it end to end. Read the source alongside this; it is about
-four hundred lines and most of them are the AWS part rather than the
-extension part.
+There are two complete ones in this repository.
+[`cmd/halite-ext-aws-secrets`](../cmd/halite-ext-aws-secrets) is the AWS
+Secrets Manager external pillar in Go — the same job
+`_pillar/aws_secrets_manager.py` does in a Salt tree, and what this page
+walks through.
+[`contrib/extensions/python/example_pillar.py`](../contrib/extensions/python/example_pillar.py)
+is a smaller one in Python, written against the wire with nothing but a
+standard library, and it is there to prove the protocol does not need
+Go. Both are driven by the test suite, so neither can drift from the
+protocol without something failing.
 
-## The shape
+## The Go package
+
+`github.com/edlitmus/halite/ext` is the half of the protocol an author
+needs, and it is the only package in this project that is not
+`internal`. Importing it pulls one module with no third-party
+dependencies of its own, and links one package.
 
 ```go
+import "github.com/edlitmus/halite/ext"
+
 func main() {
-	ext := &bridge.Extension{
+	// Applies the resource limits the host asked for. See "What the
+	// sandbox is" below for what this does and does not buy.
+	ext.Confine()
+
+	e := &ext.Extension{
 		Name:      "aws_secrets_manager",
 		Version:   "1.0.0",
-		Kind:      "pillar",
-		Declares:  []string{"network"},
+		Kind:      ext.KindPillar,
+		Declares:  []string{ext.DeclareNetwork},
 		Functions: functions(),
 		Handler:   handle,
 	}
-	if err := ext.Serve(); err != nil {
+	if err := e.Serve(); err != nil {
 		fmt.Fprintln(os.Stderr, "aws_secrets_manager:", err)
 		os.Exit(1)
 	}
@@ -55,10 +69,31 @@ cannot ask for more at handshake than its manifest says. Declare the
 minimum: this one reads a secret over HTTPS and needs no privilege at
 all, so it asks for the network and drops to an unprivileged account.
 
-**`Functions`** is the machine-readable signature of SPEC 15.6, which
+**`Functions`** is what it provides, in the shape of SPEC 15.6, which
 the host reads at handshake and `sys.list_extensions` reports. A pillar
 extension provides exactly one, `ext_pillar` — Salt's name, because a
 person porting one is reading Salt's documentation.
+
+```go
+func functions() []ext.Signature {
+	return []ext.Signature{{
+		Module: "aws_secrets_manager", Function: "ext_pillar",
+		Doc: "Fetch secrets into pillar['aws_secrets'].",
+		Params: []ext.Param{
+			{Name: "node_id", Type: ext.TypeString, Required: true},
+			{Name: "config", Type: ext.TypeMap, Doc: "This source's ext_pillar block."},
+		},
+	}}
+}
+```
+
+A parameter's type is its *name* — `ext.TypeString`, not an integer.
+This field used to be `[]json.RawMessage` and the first extension
+written here marshalled the host's own signature type into it, which
+serialised the types as the integers they are internally. The host
+refused every signature and reported an extension with no functions,
+four steps from the cause. The typed field is why that is now impossible
+to write.
 
 **`Handler`** runs one call. It gets the function name, the arguments,
 and `Log`, `Progress` and `Event` for the streaming frames.
@@ -213,16 +248,93 @@ the ones before it produced. A source that fails fails the whole
 compilation; `fail: ignore` inside a source's own block is the exception
 for one that is genuinely optional.
 
+## Writing one without Go
+
+The protocol is JSON over stdio and nothing about it is Go's. An
+extension in any language that can read a pipe and parse JSON works the
+same way, and
+[`contrib/extensions/python/example_pillar.py`](../contrib/extensions/python/example_pillar.py)
+is one, in about a hundred and fifty lines with no dependencies. The
+test suite starts it with the real host and asks it for pillar, so it
+cannot quietly stop being correct.
+
+The wire is four bytes of big-endian length, then that many bytes of a
+JSON object:
+
+```
++--------+--------+--------+--------+---------------------------+
+|              length (uint32 BE)   |  JSON object, `length` bytes
++--------+--------+--------+--------+---------------------------+
+```
+
+Length-prefixed rather than newline-delimited, so a frame boundary does
+not depend on nobody ever emitting a newline inside a string. A JSON
+encoder that pretty-prints would otherwise break the stream, and it
+would look like a protocol error in the host. A frame larger than 16 MiB
+is refused before anything is allocated for it.
+
+The host opens:
+
+```json
+{"kind": "hello", "protocol": 1, "extension_kind": "pillar"}
+```
+
+Answer, or exit non-zero having written the reason to stderr:
+
+```json
+{"kind": "hello_ok", "name": "example_pillar", "version": "1.0.0",
+ "functions": [{"module": "example_pillar", "function": "ext_pillar",
+                "params": [{"name": "node_id", "type": "string", "required": true}]}],
+ "declares": []}
+```
+
+Then read frames until the stream ends or a `shutdown` arrives. For each
+`call`, write zero or more of `log`, `progress` and `event`, then
+**exactly one** `result`:
+
+```json
+{"kind": "call", "id": "1", "function": "ext_pillar", "kwargs": { … }}
+{"kind": "result", "id": "1", "ok": true, "value": { … }}
+{"kind": "result", "id": "1", "error": "the role cannot read that secret"}
+```
+
+Exactly one, whatever happens. An exception that escapes leaves the host
+waiting for an answer that is not coming until the timeout kills the
+process — a correct outcome reached slowly, and reported as a hang
+rather than as the error it was.
+
+Three things bite:
+
+- **Stdout is the protocol.** A `print()` is a frame the host cannot
+  read. Everything for a person goes to stderr.
+- **A parameter's type is its name**, `"string"`, never a number. An
+  enum serialised as an integer has every signature refused, and the
+  extension then reports no functions at all.
+- **Flush after every frame.** A buffered writer that holds the result
+  until exit is an extension that hangs.
+
+A bundle carrying a script rather than a compiled binary runs by its
+shebang, so it needs an interpreter on the machine that runs it and it
+is not portable to Windows, which has no such mechanism. A bundle for
+Windows names the interpreter as the executable instead.
+
 ## What is not solved yet
 
-**An extension outside this repository has to implement the protocol
-itself.** `internal/bridge` is what makes the example four hundred lines
-instead of a thousand, and `internal` means exactly what it says — the
-helper is not importable from another module. The protocol is specified
-in SPEC 24.2 and an extension may be written in any language, but there
-is no published package for it yet. An extension that lives in this tree
-has no such problem, which is what the reference bridges of SPEC 24.4
-are for.
+**There is no conformance harness.** An extension in another language is
+checked against this page and against whatever the host happens to
+complain about, which is not the same as being checked against the
+protocol. A `halite-hub extensions verify <path>` that drove a candidate
+through the handshake, a good call, a failing call, an oversized frame,
+stdout pollution and a timeout — reporting each against the rule it
+broke — is what would turn this section from a promise into a test. The
+Python example stands in for it today, by being run.
+
+**The protocol has no compatibility policy.** `protocol: 1` is offered
+and an extension either speaks it or does not; there is no negotiation,
+and nothing yet says what may change inside version 1 and what forces a
+version 2. That was a private matter while this project was the only
+implementer. It stops being one the moment somebody else writes an
+extension.
 
 ## Further reading
 

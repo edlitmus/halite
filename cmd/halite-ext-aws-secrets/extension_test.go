@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/awsauth"
-	"github.com/edlitmus/halite/internal/bridge"
 )
 
 // fakeSecrets is a Secrets Manager that answers GetSecretValue from a
@@ -89,7 +89,7 @@ func (f *fakeSecrets) call(t *testing.T, block string, grains, treePillar string
 		t.Fatal(err)
 	}
 
-	out, err := handle(bridge.Call{
+	out, err := handle(ext.Call{
 		Function: "ext_pillar",
 		Kwargs:   kwargs,
 		Log:      func(string, string) {},
@@ -352,19 +352,20 @@ func TestTheEndpointComesFromThePartition(t *testing.T) {
 // The handshake announces `ext_pillar`, which is what the hub checks
 // before it will use the extension as a pillar source.
 func TestTheHandshakeAnnouncesTheEntryPoint(t *testing.T) {
-	encoded := functions()
-	if len(encoded) != 1 {
-		t.Fatalf("it announced %d function(s)", len(encoded))
+	sigs := functions()
+	if len(sigs) != 1 {
+		t.Fatalf("it announced %d function(s)", len(sigs))
 	}
-	var sig struct {
-		Module   string `json:"module"`
-		Function string `json:"function"`
+	if sigs[0].Function != "ext_pillar" {
+		t.Errorf("it announced %q", sigs[0].Function)
 	}
-	if err := json.Unmarshal(encoded[0], &sig); err != nil {
-		t.Fatal(err)
-	}
-	if sig.Function != "ext_pillar" {
-		t.Errorf("it announced %q", sig.Function)
+	// Every parameter names a type rather than carrying a number. The
+	// host reads names, and the first version of this extension sent
+	// numbers and had every signature refused.
+	for _, p := range sigs[0].Params {
+		if p.Type == "" {
+			t.Errorf("the %s parameter declares no type", p.Name)
+		}
 	}
 }
 
@@ -373,7 +374,7 @@ func TestTheHandshakeAnnouncesTheEntryPoint(t *testing.T) {
 func TestItDeclaresOnlyTheNetwork(t *testing.T) {
 	// Read off the same literal main() uses, so this cannot drift from
 	// what is actually served.
-	ext := &bridge.Extension{Declares: []string{"network"}}
+	ext := &ext.Extension{Declares: []string{"network"}}
 	if len(ext.Declares) != 1 || ext.Declares[0] != "network" {
 		t.Errorf("it declares %v", ext.Declares)
 	}

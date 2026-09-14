@@ -1,6 +1,8 @@
 package bridge
 
 import (
+	"github.com/edlitmus/halite/ext"
+
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -110,28 +112,8 @@ func (s *Sandbox) Describe() []string {
 	return out
 }
 
-// limitSupport says which of SPEC 24.3's limits this platform can
-// actually enforce, and what to call the one that bounds memory.
-//
-// The platforms differ in more than "yes" and "no", so a single boolean
-// made the description wrong on one of them: setrlimit bounds virtual
-// address space, a job object bounds committed memory, and the warning
-// that belongs beside the first does not belong beside the second.
-type limitSupport struct {
-	// Memory, CPU, OpenFiles and Processes are whether that limit is
-	// enforced at all.
-	Memory    bool
-	CPU       bool
-	OpenFiles bool
-	Processes bool
-	// MemoryLabel names what the memory limit bounds.
-	MemoryLabel string
-	// MemoryUnbounded is what to say when none is set.
-	MemoryUnbounded string
-}
-
 func (s *Sandbox) describeLimits() []string {
-	sup := limitsAvailable()
+	sup := ext.Limits()
 	if !sup.Memory && !sup.CPU && !sup.OpenFiles && !sup.Processes {
 		return []string{"resource limits: not enforced on this platform"}
 	}

@@ -7470,6 +7470,62 @@ The first two were found by running the thing rather than by a test: a
 signed bundle, published into a tree, fetched by the real binary, whose
 `extensions list` then printed an extension with no functions.
 
+### 5.80 The extension model, made usable from outside
+
+5.79 said the remaining gap plainly: an extension outside this
+repository had to implement the protocol by hand, because the helper was
+`internal/bridge` and `internal` means what it says. That is most of the
+way to not having replaced Salt's extensibility at all — SPEC 24.1's
+whole argument is that a site adds what it needs without rebuilding
+anything, and a model that only works for the maintainers is a model
+with one user.
+
+`github.com/edlitmus/halite/ext` is that half of the protocol, and it is
+the first package in this project that is not `internal`. The host keeps
+the rest — the process pool, the sandbox, the store — because none of it
+is an author's business. An extension's module graph is halite and
+nothing else, and one package of it is linked.
+
+Two things were found by doing it, and one was already broken.
+
+**The bridge skeleton generator emitted code nobody could compile.**
+`migrate --bridge-skeleton` is what SPEC 24.6 offers a formula carrying
+custom Python: it reads each module and writes a Go bridge with the
+signatures filled in. Every one of them imported
+`github.com/edlitmus/halite/internal/bridge` and called
+`bridge.Confine()`. So the tool whose entire purpose is to bootstrap a
+port produced a file that builds only inside this repository — where
+nobody porting a formula is working. It was not a compromise anybody
+chose; it was invisible, because the generator's tests check the text it
+writes and nothing ever built one from outside. There is a test now that
+does exactly that: generate, drop it in a module of its own, compile.
+
+**`Extension.Functions` was `[]json.RawMessage`.** 5.79 records what
+that cost — the first extension written here marshalled the host's own
+signature type into it and had every signature refused. Moving the wire
+shape into `ext` made the field typable, so it is `[]ext.Signature` now
+and the mistake is not available. The skeleton generator emits typed
+literals rather than quoted JSON for the same reason.
+
+**And a Python extension, because the claim needed testing.** The
+protocol is JSON over stdio and nothing about it is Go's, which is easy
+to say and easy to be wrong about.
+`contrib/extensions/python/example_pillar.py` implements it in about a
+hundred and fifty lines with nothing but a standard library, and the
+test suite starts it with the real host and asks it for pillar. It is
+not there to be used; it is there so that "an extension need not be
+written in Go" is a thing that is run rather than a thing that is
+claimed. It also surfaced the one real limit of packaging a script: a
+bundle carrying one runs it by its shebang, which Windows does not have,
+so a Windows bundle names the interpreter instead.
+
+What is still missing is in `docs/extensions.md` under its own heading,
+because it is the next thing an outside author will hit: there is no
+conformance harness, so an extension in another language is checked
+against a page rather than against the protocol; and `protocol: 1` has
+no compatibility policy, which was a private matter for exactly as long
+as this project was the only implementer.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

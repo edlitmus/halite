@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/edlitmus/halite/internal/bridge"
+	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/exec"
@@ -233,8 +233,8 @@ func (n *node) warmExtension(loaded *extension.Loaded) error {
 }
 
 // callContextFor is what an extension is told about the run.
-func callContextFor(c *exec.Context) *bridge.CallContext {
-	return &bridge.CallContext{
+func callContextFor(c *exec.Context) *ext.CallContext {
+	return &ext.CallContext{
 		NodeID: c.NodeID, JobID: c.JobID, Env: c.Env, Test: c.Test,
 	}
 }

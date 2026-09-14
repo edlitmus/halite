@@ -1,6 +1,8 @@
 package bridge
 
 import (
+	"github.com/edlitmus/halite/ext"
+
 	"context"
 	"encoding/json"
 	"os"
@@ -80,7 +82,7 @@ func TestAnExtensionHandshakesAndAnswersACall(t *testing.T) {
 
 	value, err := proc.Call(context.Background(), "say",
 		nil, map[string]any{"message": "hello"},
-		&CallContext{NodeID: "web1.example", Test: true})
+		&ext.CallContext{NodeID: "web1.example", Test: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +328,7 @@ func TestResourceLimitsReachTheExtension(t *testing.T) {
 	// The extension applies this one to itself, from its environment,
 	// so it needs a platform where the extension can: there is no
 	// handle-count limit in a job object and no RLIMIT_NOFILE here.
-	if !limitsAvailable().OpenFiles {
+	if !ext.Limits().OpenFiles {
 		t.Skip("this platform has no open-file limit an extension can apply to itself")
 	}
 	if got.NoFile != "64" {
@@ -407,7 +409,7 @@ func TestAPoolReplacesAProcessThatDied(t *testing.T) {
 // allocated for it.
 func TestAnEnormousFrameIsRefusedBeforeAllocation(t *testing.T) {
 	header := []byte{0x7f, 0xff, 0xff, 0xff}
-	_, err := ReadFrame(strings.NewReader(string(header)))
+	_, err := ext.ReadFrame(strings.NewReader(string(header)))
 	if err == nil {
 		t.Fatal("an enormous frame was accepted")
 	}
@@ -420,11 +422,11 @@ func TestAnEnormousFrameIsRefusedBeforeAllocation(t *testing.T) {
 // newline inside a string.
 func TestAFrameSurvivesAwkwardContent(t *testing.T) {
 	var b strings.Builder
-	awkward := Frame{Kind: KindLog, Message: "line one\nline two\r\n{\"kind\":\"result\"}"}
-	if err := WriteFrame(&b, awkward); err != nil {
+	awkward := ext.Frame{Kind: ext.FrameLog, Message: "line one\nline two\r\n{\"kind\":\"result\"}"}
+	if err := ext.WriteFrame(&b, awkward); err != nil {
 		t.Fatal(err)
 	}
-	got, err := ReadFrame(strings.NewReader(b.String()))
+	got, err := ext.ReadFrame(strings.NewReader(b.String()))
 	if err != nil {
 		t.Fatal(err)
 	}

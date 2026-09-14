@@ -1,6 +1,6 @@
 //go:build darwin || freebsd || netbsd || dragonfly
 
-package bridge
+package ext
 
 import "syscall"
 

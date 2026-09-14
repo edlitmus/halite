@@ -3,7 +3,6 @@ package migrate
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode"
 )
@@ -80,22 +79,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/edlitmus/halite/internal/bridge"
+	"github.com/edlitmus/halite/ext"
 )
 
 func main() {
 	// Applies the resource limits the host asked for.
-	bridge.Confine()
+	ext.Confine()
 
-	ext := &bridge.Extension{
+	e := &ext.Extension{
 		Name:    %q,
 		Version: "0.1.0",
 		Kind:    %q,
 		// Nothing is granted that is not declared here, and a
 		// declaration this build does not understand is refused. The
-		// choices are "root" and "network".
+		// choices are ext.DeclareRoot and ext.DeclareNetwork.
 		Declares: nil,
-		Functions: []json.RawMessage{
+		Functions: []ext.Signature{
 `, bridgeCommandName(module.Name), module.File, module.Name, kind)
 
 	for _, fn := range module.Functions {
@@ -103,20 +102,19 @@ func main() {
 		// a backtick, and a raw string would end there — producing Go
 		// that does not compile, from a formula that is perfectly
 		// ordinary.
-		fmt.Fprintf(&b, "\t\t\tjson.RawMessage(%s),\n",
-			strconv.Quote(signatureJSON(module.Name, fn)))
+		fmt.Fprint(&b, signatureLiteral(module.Name, fn))
 	}
 
 	fmt.Fprintf(&b, `		},
 		Handler: handle,
 	}
-	if err := ext.Serve(); err != nil {
+	if err := e.Serve(); err != nil {
 		fmt.Fprintln(os.Stderr, %q, err)
 		os.Exit(1)
 	}
 }
 
-func handle(call bridge.Call) (any, error) {
+func handle(call ext.Call) (any, error) {
 	var kwargs map[string]any
 	if len(call.Kwargs) > 0 {
 		if err := json.Unmarshal(call.Kwargs, &kwargs); err != nil {
@@ -168,28 +166,48 @@ func handle(call bridge.Call) (any, error) {
 	}
 }
 
-// signatureJSON renders one function's signature in the shape of
-// section 15.6, which is what the extension sends at handshake.
-func signatureJSON(module string, fn PyFunction) string {
-	var params []string
-	for _, p := range fn.Params {
-		if p.Variadic || p.Keywords {
-			// `*args` and `**kwargs` are not parameters the host can
-			// validate. A function that needs them declares its real
-			// arguments; one that genuinely takes anything is a
-			// judgement the porter has to make.
-			continue
-		}
-		params = append(params, fmt.Sprintf(
-			`{"name":%q,"type":"any","required":%t,"doc":%q}`,
-			p.Name, !p.HasDefault, describeDefault(p)))
-	}
+// signatureLiteral renders one function's signature as the Go literal
+// the generated extension declares.
+//
+// A literal rather than a quoted JSON string, which is what this used to
+// emit. The typed field is the difference between a skeleton that
+// compiles into a working handshake and one that hand-marshals a shape
+// it can get wrong — which is exactly how the first extension written
+// here sent its parameter types as integers and had every signature
+// refused.
+func signatureLiteral(module string, fn PyFunction) string {
+	var b strings.Builder
 	doc := fn.Doc
 	if doc == "" {
 		doc = "TODO: describe " + fn.Name + "."
 	}
-	return fmt.Sprintf(`{"module":%q,"function":%q,"doc":%q,"mutates":true,"params":[%s]}`,
-		module, fn.Name, doc, strings.Join(params, ","))
+	fmt.Fprintf(&b, "\t\t\t{\n\t\t\t\tModule: %q, Function: %q,\n", module, fn.Name)
+	fmt.Fprintf(&b, "\t\t\t\tDoc:     %q,\n", doc)
+	// Marked as mutating until the porter says otherwise: a function
+	// assumed harmless and called under `--test` is the wrong way round.
+	fmt.Fprint(&b, "\t\t\t\tMutates: true,\n")
+
+	var params []PyParam
+	for _, p := range fn.Params {
+		// `*args` and `**kwargs` are not parameters the host can
+		// validate. A function that needs them declares its real
+		// arguments; one that genuinely takes anything is a judgement
+		// the porter has to make.
+		if !p.Variadic && !p.Keywords {
+			params = append(params, p)
+		}
+	}
+	if len(params) > 0 {
+		fmt.Fprint(&b, "\t\t\t\tParams: []ext.Param{\n")
+		for _, p := range params {
+			fmt.Fprintf(&b,
+				"\t\t\t\t\t{Name: %q, Type: ext.TypeAny, Required: %t, Doc: %q},\n",
+				p.Name, !p.HasDefault, describeDefault(p))
+		}
+		fmt.Fprint(&b, "\t\t\t\t},\n")
+	}
+	fmt.Fprint(&b, "\t\t\t},\n")
+	return b.String()
 }
 
 func describeDefault(p PyParam) string {

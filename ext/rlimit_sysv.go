@@ -1,6 +1,6 @@
 //go:build aix || solaris || illumos
 
-package bridge
+package ext
 
 import "syscall"
 
