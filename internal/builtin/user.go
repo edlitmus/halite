@@ -39,7 +39,7 @@ type accountTool struct {
 	// DelUser builds the vector that removes one.
 	DelUser func(name string, removeHome bool) []string
 	// AddGroup, DelGroup do the same for groups.
-	AddGroup func(name string, gid int64) []string
+	AddGroup func(name string, gid int64, system bool) []string
 	DelGroup func(name string) []string
 	// Binary is the program the vectors invoke, checked before use.
 	Binary string
@@ -63,6 +63,9 @@ type userSpec struct {
 	// means the platform's default, which is what a tree that does not
 	// mention it wants.
 	UserGroup *bool
+	// Unique requires the uid to be unused. False is useradd's -o, and
+	// is how an estate gives a second name to uid 0 deliberately.
+	Unique bool
 }
 
 // freebsdTool drives pw(8), which is FreeBSD's single account tool.
@@ -73,6 +76,10 @@ var freebsdTool = accountTool{
 		argv := []string{"pw", "useradd", "-n", u.Name}
 		if u.UID > 0 {
 			argv = append(argv, "-u", strconv.FormatInt(u.UID, 10))
+			// pw spells the duplicate-uid permission the same way.
+			if !u.Unique {
+				argv = append(argv, "-o")
+			}
 		}
 		if u.GID > 0 {
 			argv = append(argv, "-g", strconv.FormatInt(u.GID, 10))
@@ -123,11 +130,15 @@ var freebsdTool = accountTool{
 		}
 		return argv
 	},
-	AddGroup: func(name string, gid int64) []string {
+	AddGroup: func(name string, gid int64, system bool) []string {
 		argv := []string{"pw", "groupadd", "-n", name}
 		if gid > 0 {
 			argv = append(argv, "-g", strconv.FormatInt(gid, 10))
 		}
+		// pw has no -r: a system group on FreeBSD is one whose gid is
+		// below 1000, which is the caller's choice of gid rather than a
+		// flag. Nothing is added, and nothing is silently dropped
+		// either, because groupPresent refuses `system` there by name.
 		return argv
 	},
 	DelGroup: func(name string) []string { return []string{"pw", "groupdel", "-n", name} },
@@ -141,6 +152,12 @@ var linuxTool = accountTool{
 		argv := []string{"useradd"}
 		if u.UID > 0 {
 			argv = append(argv, "-u", strconv.FormatInt(u.UID, 10))
+			// -o permits a uid another account already has, which is
+			// how a second name for uid 0 is created deliberately. It
+			// means nothing without -u, so it is only passed with one.
+			if !u.Unique {
+				argv = append(argv, "-o")
+			}
 		}
 		if u.GID > 0 {
 			argv = append(argv, "-g", strconv.FormatInt(u.GID, 10))
@@ -181,6 +198,9 @@ var linuxTool = accountTool{
 		argv := []string{"usermod"}
 		if u.UID > 0 {
 			argv = append(argv, "-u", strconv.FormatInt(u.UID, 10))
+			if !u.Unique {
+				argv = append(argv, "-o")
+			}
 		}
 		if u.GID > 0 {
 			argv = append(argv, "-g", strconv.FormatInt(u.GID, 10))
@@ -206,8 +226,14 @@ var linuxTool = accountTool{
 		}
 		return append(argv, name)
 	},
-	AddGroup: func(name string, gid int64) []string {
+	AddGroup: func(name string, gid int64, system bool) []string {
 		argv := []string{"groupadd"}
+		if system {
+			// -r takes the gid from the system range of login.defs,
+			// which is what keeps a service group out of the range
+			// useradd hands to people.
+			argv = append(argv, "-r")
+		}
 		if gid > 0 {
 			argv = append(argv, "-g", strconv.FormatInt(gid, 10))
 		}
@@ -392,6 +418,13 @@ func registerUserStates(r *Registries) {
 					opt("system", signature.Bool, false, "Create a system account."),
 					opt("password", signature.String, "", "The password hash. Passed to the account tool on standard input, never in an argument vector."),
 					opt("usergroup", signature.Bool, nil, "Give the account a primary group named after it. Unset follows the platform default."),
+					opt("unique", signature.Bool, true, "Require the uid to be unused. False allows a second account to share one, which is useradd's -o."),
+					opt("enforce_password", signature.Bool, true, "Reset the password when the stored hash differs. False sets it only when the account has none, so a rotated password is left alone."),
+					opt("mindays", signature.Int, nil, "Minimum days between password changes. Linux only; chage -m."),
+					opt("maxdays", signature.Int, nil, "Maximum days between password changes. Linux only; chage -M."),
+					opt("warndays", signature.Int, nil, "Days of warning before a password expires. Linux only; chage -W."),
+					opt("inactdays", signature.Int, nil, "Days after expiry before the account is locked. Linux only; chage -I."),
+					opt("expire", signature.Int, nil, "Account expiry, in days since the epoch. Linux only; chage -E."),
 				},
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
@@ -418,10 +451,12 @@ func registerUserStates(r *Registries) {
 		states.Module{
 			Sig: signature.Signature{
 				Module: "group", Function: "present",
-				Doc: "Ensure a group exists.",
+				Doc: "Ensure a group exists, with the members it names.",
 				Params: []signature.Param{
 					nameParam("The group. Defaults to the state ID."),
 					opt("gid", signature.Int, nil, "The numeric group id."),
+					opt("system", signature.Bool, false, "Create a system group, from the range the platform reserves for them."),
+					opt("members", signature.List, nil, "The accounts the group holds. This is the whole list: anyone not named is removed."),
 				},
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
@@ -496,6 +531,7 @@ func specFrom(args *value.Map) userSpec {
 		System:     states.Bool(args, "system", false),
 		Password:   states.Str(args, "password", ""),
 		UserGroup:  optionalBool(args, "usergroup"),
+		Unique:     states.Bool(args, "unique", true),
 	}
 }
 
@@ -517,6 +553,9 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 	if _, err := resolveGID(args); err != nil {
 		return states.False(fmt.Sprintf("%v.", err)), nil
+	}
+	if why := agingUnsupported(args); why != "" {
+		return states.False(why), nil
 	}
 	spec := specFrom(args)
 	if spec.Name == "" {
@@ -552,6 +591,12 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 			return states.False(fmt.Sprintf(
 				"The password for %s could not be compared: %v", spec.Name, err)), nil
 		}
+		// `enforce_password: false` means "set it if there is none, and
+		// otherwise leave whatever is there". An estate uses it where a
+		// password is rotated out of band and the tree only seeds it.
+		if stored != "" && !states.Bool(args, "enforce_password", true) {
+			stored = spec.Password
+		}
 		if stored != spec.Password {
 			passwordDiffers = true
 			// The hashes are not reported. What changed is enough, and a
@@ -559,6 +604,22 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 			// event bus, and log the estate has.
 			changes.Set("password", states.Change("(unchanged)", "(set)"))
 		}
+	}
+
+	// Password ageing lives in the shadow file rather than the account
+	// record, so it is compared separately, like the password.
+	wantAging := agingFrom(args)
+	var haveAging shadowAging
+	if agingRequested(args) && exists {
+		var err error
+		haveAging, _, err = readAging(spec.Name)
+		if err != nil {
+			return states.False(fmt.Sprintf(
+				"The password ageing for %s could not be read: %v", spec.Name, err)), nil
+		}
+	}
+	if agingRequested(args) {
+		diffAging(wantAging, haveAging, changes)
 	}
 
 	if changes.Len() == 0 {
@@ -575,7 +636,7 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	// A change that is only the password does not need the account tool
 	// run at all, and running usermod with no attributes to set is a
 	// needless write to the passwd database.
-	if exists && changes.Len() == 1 && passwordDiffers {
+	if exists && changes.Len() == 1 && passwordDiffers && agingArgv(spec.Name, wantAging, haveAging) == nil {
 		if err := setPassword(c, tool, spec.Name, spec.Password); err != nil {
 			return states.False(fmt.Sprintf("The password for %s could not be set: %v", spec.Name, err)), nil
 		}
@@ -593,6 +654,19 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		if err := setPassword(c, tool, spec.Name, spec.Password); err != nil {
 			return states.False(fmt.Sprintf(
 				"The account %s was %s but its password could not be set: %v", spec.Name, verb, err)), nil
+		}
+	}
+	// Ageing is applied after the account exists, which is why it is not
+	// part of the useradd argument vector: chage needs a shadow entry to
+	// edit, and a new account has one only once useradd has run.
+	if agingRequested(args) {
+		if !exists {
+			haveAging, _, _ = readAging(spec.Name)
+		}
+		if err := applyAging(c, spec.Name, wantAging, haveAging); err != nil {
+			return states.False(fmt.Sprintf(
+				"The account %s was %s but its password ageing could not be set: %v",
+				spec.Name, verb, err)), nil
 		}
 	}
 	return states.Changed(fmt.Sprintf("The account %s was %s.", spec.Name, verb), changes), nil
@@ -705,6 +779,13 @@ func groupPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 	name := states.Str(args, "name", "")
 	gid := states.Int(args, "gid", 0)
+	system := states.Bool(args, "system", false)
+	if system && runtime.GOOS != "linux" {
+		return states.False(fmt.Sprintf(
+			"This state asks for a system group, which is groupadd's -r and has no equivalent on %s; "+
+				"on FreeBSD a system group is one whose gid is below 1000, so give `gid` instead.",
+			runtime.GOOS)), nil
+	}
 	tool, err := pickAccountTool(c)
 	if err != nil {
 		return states.False(fmt.Sprintf("%v", err)), nil
@@ -714,25 +795,120 @@ func groupPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("The group %s could not be read: %v", name, err)), nil
 	}
 
+	wantMembers, hasMembers := groupMembersRequested(args)
+
 	if current.Len() > 0 {
-		if gid <= 0 {
+		if gid > 0 {
+			if cur, _ := current.Get("gid"); cur != gid {
+				return states.False(fmt.Sprintf(
+					"The group %s exists with a different gid; halite does not renumber a group, because every file owned by it would be orphaned.", name)), nil
+			}
+		}
+		if !hasMembers {
 			return states.True(fmt.Sprintf("The group %s already exists.", name)), nil
 		}
-		if cur, _ := current.Get("gid"); cur == gid {
-			return states.True(fmt.Sprintf("The group %s already exists with gid %d.", name, gid)), nil
-		}
-		return states.False(fmt.Sprintf(
-			"The group %s exists with a different gid; halite does not renumber a group, because every file owned by it would be orphaned.", name)), nil
+		return reconcileGroupMembers(c, name, wantMembers)
 	}
 
 	changes := value.MapOf(name, states.Change(nil, "present"))
+	if hasMembers {
+		changes.Set("members", states.Change(nil, wantMembers))
+	}
 	if c.Test {
 		return states.WouldChange(fmt.Sprintf("The group %s would be created.", name), changes), nil
 	}
-	if _, err := c.Run(exec.Command{Argv: tool.AddGroup(name, gid)}); err != nil {
+	if _, err := c.Run(exec.Command{Argv: tool.AddGroup(name, gid, system)}); err != nil {
 		return states.False(fmt.Sprintf("The group %s could not be created: %v", name, err)), nil
 	}
+	if hasMembers {
+		if _, err := reconcileGroupMembers(c, name, wantMembers); err != nil {
+			return states.False(fmt.Sprintf(
+				"The group %s was created but its members could not be set: %v", name, err)), nil
+		}
+	}
 	return states.Changed(fmt.Sprintf("The group %s was created.", name), changes), nil
+}
+
+// groupMembersRequested reads `members`, distinguishing "not mentioned"
+// from "empty". An empty list is a request to have no members, which is
+// different from saying nothing about them.
+func groupMembersRequested(args *value.Map) ([]string, bool) {
+	v, ok := args.Get("members")
+	if !ok || v == nil {
+		return nil, false
+	}
+	return states.Strings(args, "members"), true
+}
+
+// reconcileGroupMembers makes a group's membership exactly the list
+// given.
+//
+// `members` is the whole list, not an addition: Salt's own
+// documentation distinguishes it from `addusers` and `delusers` that
+// way, and a tree that writes `members: [root]` on `wheel` means that
+// nobody else is in wheel. Treating it as an addition would leave an
+// account in a privileged group that the tree had just been edited to
+// remove, which is the failure worth being exact about.
+//
+// gpasswd is the tool, because it is the one that edits a group's member
+// list directly; usermod -G rewrites an *account's* groups and would
+// need a read-modify-write of every member to express this.
+func reconcileGroupMembers(c *exec.Context, name string, want []string) (states.Result, error) {
+	g, err := user.LookupGroup(name)
+	if err != nil {
+		return states.False(fmt.Sprintf("The group %s could not be read: %v", name, err)), nil
+	}
+	have, err := groupMemberNames(g.Gid, name)
+	if err != nil {
+		return states.False(fmt.Sprintf("The members of %s could not be read: %v", name, err)), nil
+	}
+
+	add, remove := membershipDiff(have, want)
+	if len(add) == 0 && len(remove) == 0 {
+		return states.True(fmt.Sprintf("The group %s already has exactly those members.", name)), nil
+	}
+	changes := value.MapOf("members", states.Change(have, want))
+	if c.Test {
+		return states.WouldChange(fmt.Sprintf("The members of %s would be set.", name), changes), nil
+	}
+	if c.Which("gpasswd") == "" {
+		return states.False(fmt.Sprintf(
+			"Setting the members of %s needs gpasswd(1), which is not on this node's PATH.", name)), nil
+	}
+	for _, u := range add {
+		if _, err := c.Run(exec.Command{Argv: []string{"gpasswd", "-a", u, name}}); err != nil {
+			return states.False(fmt.Sprintf("%s could not be added to %s: %v", u, name, err)), nil
+		}
+	}
+	for _, u := range remove {
+		if _, err := c.Run(exec.Command{Argv: []string{"gpasswd", "-d", u, name}}); err != nil {
+			return states.False(fmt.Sprintf("%s could not be removed from %s: %v", u, name, err)), nil
+		}
+	}
+	return states.Changed(fmt.Sprintf("The members of %s were set.", name), changes), nil
+}
+
+// membershipDiff reports who to add and who to remove, as sets.
+func membershipDiff(have, want []string) (add, remove []string) {
+	in := func(list []string, s string) bool {
+		for _, v := range list {
+			if v == s {
+				return true
+			}
+		}
+		return false
+	}
+	for _, w := range want {
+		if !in(have, w) {
+			add = append(add, w)
+		}
+	}
+	for _, h := range have {
+		if !in(want, h) {
+			remove = append(remove, h)
+		}
+	}
+	return add, remove
 }
 
 func groupAbsent(c *exec.Context, args *value.Map) (states.Result, error) {

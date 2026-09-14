@@ -467,7 +467,7 @@ func TestVersionSatisfies(t *testing.T) {
 		{"1.24.0", "1.23.0", false},
 	}
 	for _, c := range cases {
-		if got := versionSatisfies(c.installed, c.want); got != c.ok {
+		if got := versionSatisfies(nil, c.installed, c.want, false); got != c.ok {
 			t.Errorf("versionSatisfies(%q, %q) = %v", c.installed, c.want, got)
 		}
 	}

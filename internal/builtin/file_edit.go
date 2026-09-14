@@ -41,6 +41,7 @@ func replaceParams(nameDoc string) []signature.Param {
 		opt("not_found_content", signature.String, "", "What to add when the pattern is not found; defaults to repl."),
 		opt("backup", signature.String, "", "Keep a copy of the previous contents with this suffix."),
 		opt("show_changes", signature.Bool, true, "Include a unified diff in the changes."),
+		opt("ignore_if_missing", signature.Bool, false, "Report no change instead of failing when the file does not exist."),
 		{
 			Name: "bufsize", Type: signature.Any,
 			Doc: "Accepted for compatibility with Salt, which uses it to size a chunked read.",
@@ -446,8 +447,23 @@ func readEditTarget(args *value.Map) (path string, data []byte, res states.Resul
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// `ignore_if_missing` is Salt's, and it is how one tree
+			// covers several platforms: a state that hardens
+			// /etc/login.defs is written once and applied to a node
+			// that has no such file, where the edit is not a failure
+			// but a no-op. Without it such a tree cannot be shared.
+			//
+			// It reports success with no changes, which is Salt's
+			// wording too -- not a warning, because nothing is wrong:
+			// the file the state was asked to edit is not there, and
+			// the state said that is acceptable.
+			if states.Bool(args, "ignore_if_missing", false) {
+				return path, nil, states.True(fmt.Sprintf(
+					"%s does not exist, and ignore_if_missing is set.", path)), false
+			}
 			return path, nil, states.False(fmt.Sprintf(
-				"%s does not exist; use file.managed to create it before editing it.", path)), false
+				"%s does not exist; use file.managed to create it before editing it, "+
+					"or set ignore_if_missing to treat that as nothing to do.", path)), false
 		}
 		return path, nil, states.False(fmt.Sprintf("%s could not be read: %v", path, err)), false
 	}

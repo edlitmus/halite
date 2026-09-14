@@ -190,6 +190,7 @@ func registerPkg(r *Registries) {
 		opt("pkgs", signature.List, nil, "Several packages, optionally with pinned versions."),
 		opt("version", signature.String, "", "A version to pin."),
 		opt("refresh", signature.Bool, false, "Refresh the package metadata before installing."),
+		opt("allow_updates", signature.Bool, false, "Treat a pinned version as a floor rather than an exact match, so a package updated outside halite is left alone."),
 	}
 
 	r.States.Add(
@@ -299,6 +300,7 @@ func pkgInstalled(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(fmt.Sprintf("No package provider is available: %v", err)), nil
 	}
+	allowUpdates := states.Bool(args, "allow_updates", false)
 	names, versions := packageSpecs(args)
 	if len(names) == 0 {
 		return states.False("This state names no packages to install."), nil
@@ -322,7 +324,7 @@ func pkgInstalled(c *exec.Context, args *value.Map) (states.Result, error) {
 		case !present:
 			missing = append(missing, name)
 			changes.Set(name, states.Change("", displayVersion(want)))
-		case pinned && !versionSatisfies(currentVersion, want):
+		case pinned && !versionSatisfies(c, currentVersion, want, allowUpdates):
 			missing = append(missing, name)
 			changes.Set(name, states.Change(currentVersion, want))
 		}
@@ -365,14 +367,68 @@ func displayVersion(v string) string {
 // versionSatisfies compares an installed version against a requested one.
 // A trailing `*` is a prefix match, which is how a Salt tree pins a minor
 // series.
-func versionSatisfies(installed, want string) bool {
+// versionSatisfies decides whether what is installed meets the pin.
+//
+// `allowUpdates` turns an exact pin into a floor, which is Salt's
+// reading: it allows the package to be updated outside the configuration
+// manager's control, so a node may carry a newer version than the
+// repository offers without that forcing a re-installation. It
+// is what a tree uses for a package that an agent updates itself —
+// without it, every run after such an update sees a mismatch and
+// reinstalls the older pinned version, fighting the agent once per
+// highstate.
+//
+// A wildcard is already a floor of sorts and is unaffected: `1.2.*`
+// means the prefix either way.
+func versionSatisfies(c *exec.Context, installed, want string, allowUpdates bool) bool {
 	if want == "" {
 		return true
 	}
 	if strings.HasSuffix(want, "*") {
 		return strings.HasPrefix(installed, strings.TrimSuffix(want, "*"))
 	}
-	return installed == want
+	if installed == want {
+		return true
+	}
+	if allowUpdates {
+		return installedIsAtLeast(c, installed, want)
+	}
+	return false
+}
+
+// installedIsAtLeast orders two versions with the scheme this node's
+// family uses, and refuses to guess.
+//
+// A comparison it cannot make is *not* satisfaction: answering "yes"
+// there would leave a pinned package silently un-installed, and
+// answering by string comparison would be worse still, since "1.10" sorts
+// below "1.9". So an unorderable pair falls back to the exact match the
+// caller already tried, which reinstalls -- the conservative half.
+func installedIsAtLeast(c *exec.Context, installed, want string) bool {
+	family := ""
+	if c != nil && c.Grains != nil {
+		if v, ok := c.Grains.Get("os_family"); ok {
+			family = value.KeyString(v)
+		}
+	}
+	scheme, err := versionScheme("auto", family)
+	if err != nil {
+		return false
+	}
+	switch scheme {
+	case "debian":
+		return CompareDebian(installed, want) >= 0
+	case "rpm":
+		return CompareRPM(installed, want) >= 0
+	case "freebsd":
+		got, err := compareFreeBSD(c, installed, want)
+		if err != nil {
+			return false
+		}
+		n, ok := got.(int64)
+		return ok && n >= 0
+	}
+	return false
 }
 
 func pkgRemoved(c *exec.Context, args *value.Map) (states.Result, error) {
