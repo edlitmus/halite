@@ -607,7 +607,7 @@ func TestDecryptedPillarNeverReachesTheRun(t *testing.T) {
 	// mode: left to itself GnuPG picks the session cipher from the
 	// recipient key's preferences, and on a FIPS kernel libgcrypt
 	// refuses that cipher and gpg aborts outright. Decryption -- what
-	// SPEC 12.6 actually performs -- is unaffected. DIVERGENCE 5.80.
+	// SPEC 12.6 actually performs -- is unaffected. DIVERGENCE 5.83.
 	enc := gpg("--batch", "--yes", "--trust-model", "always", "--cipher-algo", "AES256",
 		"--encrypt", "--armor", "-r", "t@example.invalid")
 	enc.Stdin = strings.NewReader(secret)

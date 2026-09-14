@@ -1489,36 +1489,65 @@ tool nobody has run against it (DIVERGENCE 5.31).
     provider for the first time, which macOS ships but nothing has
     reached (same evidence.go note as 16 and 17).
 
-19. **A Linux host with a FIPS kernel, and one hardened to CIS Level
-    2.** The newest item here and the one with the most behind it,
-    because an estate that would actually run this is Ubuntu LTS with a
-    FIPS kernel from a vendor channel, and everything below is a claim
-    this project has made against a machine of a different shape.
+19. ~~**A Linux host with a FIPS kernel, and one hardened to CIS Level
+    2.**~~ — **mostly done.** It was the newest item here and the one
+    with the most behind it, because an estate that would actually run
+    this is Ubuntu LTS with a FIPS kernel from a vendor channel, and
+    everything below was a claim this project had made against a machine
+    of a different shape. One host turned out to be all of those shapes
+    at once: Ubuntu 22.04 on **arm64**, kernel `5.15.0-1114-aws-fips`
+    with `fips_enabled` reading 1, `/tmp`, `/var/tmp`, `/var/log` and
+    `/var/log/audit` each on their own partition mounted
+    `nodev,nosuid,noexec`, systemd 249, netplan 0.107.1, apparmor-utils
+    3.0.4. DIVERGENCE 5.83.
 
-    - **The FIPS artifacts have been run nowhere** (DIVERGENCE 4.5).
-      They ship for Linux and no host has executed one.
-    - **`doctor`'s FIPS consistency check has never seen a kernel that
-      says yes.** It compares `/proc/sys/crypto/fips_enabled` against
-      the binary's own mode, and the branch that matters — a compliant
-      kernel under a build that is not one, which reads as compliant
-      and is not — needs a kernel in FIPS mode to reach. §3.2 and
-      DIVERGENCE 5.30.
+    The most useful thing on it was not on this list at all. The host
+    also ran **Salt**, so the grains could be compared against the
+    reference implementation for the first time — 53 grains in common,
+    17 disagreeing, **13 defects**, including an `osarch` that had been
+    reporting the CPU's name instead of the package architecture on
+    every Debian host since the grain existed, and a `systemd` version
+    grain that returned the string `systemd`. SPEC 31's differential
+    compares low state and has never compared a grain. DIVERGENCE 5.82.
+
+    - ~~**The FIPS artifacts have been run nowhere**~~ (DIVERGENCE 4.5).
+      **Built and run here**, which is the first time any has executed
+      anywhere. One host is not the tier 1 matrix and nothing has been
+      assessed, but "shipped and never started" is closed.
+    - ~~**`doctor`'s FIPS consistency check has never seen a kernel that
+      says yes.**~~ **It has now, and it was right.** The branch that
+      matters — a compliant kernel under a build that is not one, which
+      reads as compliant and is not — reports exactly that and names the
+      artifacts to install. No change was needed; what it lacked was a
+      witness. §3.2 and DIVERGENCE 5.30.
     - **A vendor's FIPS channel is two claims and the grain reports
       one.** A certified frozen kernel and a patched one from an
       updates channel both write 1 to that file, and for an assessment
       they are different answers. The natural place to say which is a
       `pro` module, which is not built (§2.3, item 11 above).
-    - **Every Linux evidence note was captured on one release.** The
-      `service` provider over D-Bus and `journald` over its varlink
-      socket were both driven against systemd 255, `netplan` against
-      netplan 1.1.2, and `apparmor` against apparmor-utils 4.0.1. An
-      LTS one version older carries systemd 249, the netplan 0.10x line
-      before its rewrite, and apparmor-utils 3.x. None of the four is
-      known to be broken there; all four are claims about a machine
-      this project does not run, which is the shape of every finding in
-      §1.
-    - **Linux arm64 compiles and nothing more** (DIVERGENCE 4.5), and
-      an estate of this kind is increasingly arm64.
+    - ~~**Every Linux evidence note was captured on one release.**~~
+      **Re-run one LTS older**: systemd 249 rather than 255, netplan
+      0.107.1 rather than 1.1.2, apparmor-utils 3.0.4 rather than 4.0.1.
+      The suite passes on all three. What that establishes is that none
+      of the four readers is broken on the older line — not that each
+      was exercised to the same depth as on the newer one.
+    - ~~**Linux arm64 compiles and nothing more**~~ (DIVERGENCE 4.5).
+      **The suite runs natively on arm64, and so does a hub and a node**
+      — both `-fips` artifacts, enrolled, dispatching jobs over mutual
+      TLS and compiling the estate's real 603-file tree. That is the row
+      SPEC 27.1 reserved for amd64. It found nothing arm64-specific in
+      the tree; what it found instead was `cpu_model`, empty on every
+      arm64 machine (DIVERGENCE 5.82), and a compiler defect that has
+      nothing to do with the architecture: every relative include in
+      every `init.sls` resolved one level too high, in states and pillar
+      alike, which on a tree that has a same-named file at the parent
+      level includes the wrong one silently. DIVERGENCE 5.84.
+
+      The same run leaves an inventory: with the include fixed the tree
+      compiles 42 errors down to 33 — 13 unimplemented state arguments,
+      3 argument types Salt coerces and this refuses, 2 unbuilt state
+      modules, 2 template gaps, and the rest configuration. That is the
+      real remainder of a migration, measured rather than guessed.
     - ~~**A CIS Level 2 host will exercise a path that is written and
       unexercised, and probably break it.**~~ **The refusal is built**,
       which is the half that needed no such host. The agentless mode
@@ -1538,10 +1567,35 @@ tool nobody has run against it (DIVERGENCE 5.31).
       mount has ever refused it, because making one needs root on a
       hardened machine.
 
-    The read half of all of this needs no root and writes nothing, so
-    it is an afternoon rather than a project. The `-fips` artifacts, the
-    grains, `doctor`, and the read paths of those four modules, in FIPS
-    mode and out, is the whole of it.
+    **What is left on this item** is the half a single machine cannot
+    give. A vendor's FIPS channel is still two claims where the grain
+    reports one — a certified frozen kernel and a patched one from an
+    updates channel both write 1 to that file, and saying which needs
+    the `pro` module, which is not built (item 11). And this was one
+    CIS-hardened host rather than a benchmark run: the partition layout
+    is the control that bit, and the rest of Level 2 is untested.
+
+    **One module is genuinely broken on a FIPS host.** `openssl_cert`'s
+    PKCS#12 pair, in both directions: the bundle's MAC is keyed by
+    PKCS12KDF, which is not an approved derivation and is absent from
+    OpenSSL 3's FIPS provider, so such a host can neither build one nor
+    verify one — not even on a bundle it just wrote. Both functions now
+    refuse with a message that names FIPS and the opt-out, rather than
+    passing openssl's "no PKCS12KDF support?" through unexplained.
+    DIVERGENCE 5.83.
+
+    **One thing found here belongs to no platform.** GnuPG cannot
+    *encrypt* on a FIPS host — libgcrypt refuses the cipher GnuPG picks
+    from a recipient key's preferences and gpg aborts — which is not
+    halite's defect, and is not in halite's path either, since SPEC
+    12.6's renderer only decrypts. It was in four test *fixtures*, and
+    those now force an approved cipher. Underneath it was a real one:
+    `internal/render` generated a fresh OpenPGP key per test, which
+    costs two minutes each here, and the package ran past Go's
+    ten-minute timeout and failed the suite — reported as a timeout,
+    which says nothing about gpg. One keyring per package now, under a
+    deadline, so a machine where gpg cannot be driven skips with a
+    reason instead of hanging. DIVERGENCE 5.83.
 
 **Blocked on a decision**
 

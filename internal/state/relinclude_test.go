@@ -24,7 +24,7 @@ import (
 // "Not found" is the lucky outcome. Where a file of that name does
 // exist at the parent level -- and in a tree with `base/init.sls` and
 // `base/cleanup/init.sls` that is ordinary -- the wrong file is
-// included and nothing says so. DIVERGENCE 5.81.
+// included and nothing says so. DIVERGENCE 5.84.
 func TestRelativeIncludesResolveAgainstTheRightPackage(t *testing.T) {
 	for _, c := range []struct {
 		name, sls string

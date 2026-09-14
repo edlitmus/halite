@@ -258,7 +258,7 @@ func TestAPKCS12BundleThisModuleWritesIsOneOpenSSLReads(t *testing.T) {
 	// The refusal is asserted here, because a message an operator
 	// cannot act on is the failure this found: openssl says
 	// "no PKCS12KDF support?" and never says the word FIPS.
-	// DIVERGENCE 5.80.
+	// DIVERGENCE 5.83.
 	verifyMAC := true
 	out, err := l.callErr(t, "openssl_cert.pkcs12_create", create)
 	if err != nil {

@@ -7580,6 +7580,277 @@ text was reported as undocumented — a failure in the check rather than
 in the program, and the kind that gets worked around by moving the
 documentation somewhere it does not belong. It reads the same map the
 program judges an unknown flag against now, so the two cannot disagree.
+### 5.82 The grains, compared against a real Salt for the first time
+
+SPEC 31 makes the Salt differential the primary correctness gate, and
+`internal/saltdiff` has compiled ten trees with both implementations
+since phase 1. What it compares is the **low state** — the chunks a tree
+produces. It has never compared a **grain**, and grains are the other
+half of what a tree reads: every `{% if grains[...] %}` in an estate is
+a branch the differential does not see.
+
+A host that had both on it settled that. Salt 3007.1 and this build ran
+on one machine and every grain the two have in common was compared:
+**53 grains, 17 disagreeing**. Twelve were defects here; the `systemd`
+grain makes thirteen, found by reading the dump before the comparison
+was written. The five that were not defects are the node's own id,
+`$PATH` as two processes happened to inherit it, the version the
+compatibility shim deliberately claims, and one ordering Salt does not
+fix.
+
+Every rule below was then read out of Salt's own `salt/grains/core.py`
+on that machine, rather than remembered.
+
+| grain | was | is |
+|---|---|---|
+| `systemd:version` | `systemd` | `249` |
+| `systemd:features` | empty | the `+PAM +AUDIT …` list |
+| `osarch` | `aarch64` | `arm64` |
+| `osmajorrelease` | `"22"` | `22` |
+| `osfinger` | `Ubuntu-22` | `Ubuntu-22.04` |
+| `locale_info:defaultlanguage` | `C.UTF-8` | `C` |
+| `locale_info:detectedencoding` | `UTF-8` | `utf-8` |
+| `dns:nameservers` | `[127.0.0.53]` | the three real upstreams |
+| `virtual` | `kvm` | `Nitro` |
+| `disks` | all seven devices | `[]`, with the seven in `ssds` |
+| `cpu_model` | empty | `Unknown` |
+| `hwaddr_interfaces:lo` | empty | `00:00:00:00:00:00` |
+| `kernelparams` | a mapping of 10 | a sequence of 12 pairs |
+| `ipv4`, `ipv6` | interface order | sorted, deduplicated |
+
+Four of them are worth the reasoning rather than the row.
+
+**`systemd:version` was the process name.** `detectSystemd` read
+`/proc/1/comm`, which holds `systemd` because that is what the program
+is called. So the grain answered `"systemd"` when asked its version, on
+every Linux host, for as long as it has existed — and `features` was
+always empty. It asks `systemctl --version` now, which is what Salt
+asks, and the two agree exactly on this host.
+
+**`osarch` was `cpuarch` spelled twice.** SPEC 14.1 has both grains
+because they are different questions: `cpuarch` is what the processor is
+called and `osarch` is what a *package* for it is called. Debian calls
+the same chip `arm64` where uname calls it `aarch64`, and `amd64` where
+uname says `x86_64` — so this was wrong on the x86 estate too, and had
+been all along. `pkg.installed` against a tree that pins an
+architecture was comparing against a string dpkg never prints.
+
+**`dns` read the stub resolver.** On any host running
+systemd-resolved — which is most current Ubuntu and Debian —
+`/etc/resolv.conf` is a symlink to a file naming one nameserver,
+`127.0.0.53`, the local resolver itself. That is true and useless: every
+host in such a fleet reports the same loopback address and none reports
+a server anyone configured. systemd-resolved writes the real upstreams
+to `/run/systemd/resolve/resolv.conf`, which Salt prefers and this now
+prefers. `ip4_nameservers`, `ip6_nameservers`, `sortlist` and `options`
+are reported alongside, which Salt has and this did not.
+
+**`kernelparams` could not hold a command line.** It was a mapping, and
+parameters repeat: `console=tty1 console=ttyS0` is how a cloud image
+asks for both consoles, and hardening guides set `audit_backlog_limit`
+twice. Keyed by name the second silently replaced the first — the host
+this was found on boots with twelve parameters and reported ten, and a
+state auditing boot parameters could not see the console it was looking
+for. It is a sequence of pairs now, which is also the shape any tree
+carried over from Salt is written against.
+
+**Two differences are deliberate and remain.** Salt splits each
+parameter on *every* `=` and keeps the value only when there are exactly
+two fields, so it reports `root=UUID=2f3f…` as `root` with no value at
+all; reproducing that would mean losing the root filesystem's identity
+in order to copy a defect. And `ssds` is ordered here and arbitrary
+there — Salt's comes from a glob — so a fixed order is the difference,
+not the contents.
+
+**What has not changed is the shape of the lesson.** Every one of these
+grains was covered by a passing test. `TestCoreGrainsArePresent` asserts
+that a key *exists*; the Windows test asserts that `systemd` is a
+*mapping*. Neither looks at a value, which is DIVERGENCE 5.31 —
+a fixture written from what its author meant proves nothing about the
+tool — one level up, with the reference implementation in the place of
+the command. The tests added with this entry assert values, and each was
+verified by reintroducing the defect it covers and watching it fail.
+One did not: the first `systemd` test called the parser directly rather
+than the grain, and the parser had never been the broken half. That is
+§7's "a live test that passes is not yet a test", caught this time
+before it was believed.
+
+**What this does not do is make the comparison repeatable.** It was run
+by hand, on the one host that has both — `halite-node grains items
+--local --out=json` against `salt-call --local grains.items --out=json`,
+diffed with a throwaway script. A grain differential belongs next to
+`internal/saltdiff` and is not built; until it is, this is a snapshot of
+one machine on one day rather than a gate, and the tests it produced are
+the part that will still be running next week.
+
+### 5.83 A FIPS kernel, an arm64 CPU, an older LTS, and a `noexec` mount
+
+plan.md item 19 asked for "a Linux host with a FIPS kernel, and one
+hardened to CIS Level 2", and listed six claims this project had made
+against machines of a different shape. One host answered five of them at
+once: Ubuntu 22.04 on arm64, kernel `5.15.0-1114-aws-fips` with
+`/proc/sys/crypto/fips_enabled` reading 1, `/tmp`, `/var/tmp`,
+`/var/log` and `/var/log/audit` on their own partitions mounted
+`nodev,nosuid,noexec`, systemd 249, netplan 0.107.1 and apparmor-utils
+3.0.4.
+
+**`doctor`'s FIPS check reached its untested branch and was right.**
+The check compares the kernel's mode against the binary's own, and the
+branch that matters — a compliant kernel under a build that is not
+one, which reads as compliant and is not — had never had a kernel that
+says yes. It reports `the kernel is in FIPS mode and this is not a FIPS
+build`, names halite as the non-compliant component on an otherwise
+compliant host, and says which artifacts to install. No change was
+needed; what it lacked was a witness.
+
+**The `noexec` refusal was demonstrated, and now runs everywhere.** The
+agentless mode caches the pushed binary under `/var/tmp/halite-thin`,
+and this host mounts `/var/tmp` `noexec` — the case 5.60 built the
+refusal for and could not exercise, because making such a mount needs
+root on a hardened machine. Driven against it, the probe is refused with
+exit **126**, which is what the switch in `prepare` falls through on,
+and the message names the directory, `noexec` and `thin_dir`.
+
+The demonstration did not have to stay on this host. A tmpfs mounted
+`noexec` inside a mount namespace entered through
+`unshare --mount --map-root-user` reproduces it exactly and needs no
+privilege at all — the same mechanism, and the same precondition, as
+the iptables and nftables live tests of 5.51. So the live test runs
+wherever unprivileged user namespaces do, with a control case on the
+identical directory mounted *without* `noexec` so the refusal is known
+to be about the mount option rather than about tmpfs, the namespace or
+the directory. The test was verified by making `prepareScript` skip the
+probe and watching it fail.
+
+**GnuPG cannot encrypt on this host, and that is not halite's defect —
+but it was halite's test failure.** In FIPS mode libgcrypt refuses
+ciphers GnuPG selects from a recipient key's preference list, and
+`gpg --encrypt` aborts outright: `Ohhhh jeeee: ... this is a bug
+(seskey.c:50:make_session_key)`, SIGABRT, no ciphertext. Key generation
+warns `invalid item 'S2' in preference string` on the way past — S2
+being 3DES — which is the preference in question.
+
+The distinction that matters is which direction fails. **Decryption is
+unaffected**, and decryption is all SPEC 12.6's `#!yaml|gpg` renderer
+performs; encryption appears in this project only in the test fixtures
+that build the ciphertext. Forcing `--cipher-algo AES256` in those four
+fixtures is what lets them run on a FIPS host and prove the renderer
+works there, instead of skipping and proving nothing.
+
+**And the gpg tests were taking the suite down with them.** Generating
+an OpenPGP key costs about two minutes on this machine against a second
+or so on a laptop, and `internal/render` asked for three of them, one
+per test, for three keyrings that differ in no way any test depends on.
+Under `go test ./...`, where packages contend for two cores, the package
+ran past Go's ten-minute timeout and failed the whole suite — reported
+as a timeout in `render`, which says nothing about gpg. The keyring is
+built once per package now, under a deadline, so a machine where gpg
+genuinely cannot be driven **skips with a reason** rather than hanging
+until the package timeout. The helper had always claimed to do that; it
+honoured the claim only for a gpg that *exited*, never for one that
+blocked.
+
+**PKCS#12 does not work on a FIPS host, in either direction.** This is
+the one defect on this list that is in a module rather than in a test,
+and the suite found it: `openssl_cert.pkcs12_create` failed with
+`Error creating PKCS12 MAC; no PKCS12KDF support?`.
+
+PKCS#12 predates every KDF the standard approves. Its MAC is keyed by
+PKCS12KDF, which is not an approved derivation and is therefore absent
+from OpenSSL 3's FIPS provider — so a host in FIPS mode can neither
+build that MAC nor *verify* one, including on a bundle it wrote itself
+a moment earlier. There is a second, separate refusal underneath it: the
+PBKDF2 that encrypts the bag enforces a minimum key length in FIPS mode,
+so a passphrase under about fourteen characters comes back as an
+`invalid key length`, which reads like a defect in the caller.
+
+Neither message says the word FIPS, and that was the whole problem. The
+fix is not to add `-nomac` behind the operator's back — the MAC is what
+detects a bundle that has been altered, and dropping it silently would
+weaken an artifact holding a private key without anybody asking. So both
+functions **refuse and explain**: the refusal names PKCS12KDF, names
+FIPS, and names the option that proceeds anyway — `mac: false` on the
+writer, `verify_mac: false` on the reader, both defaulting to on. An
+operator who has weighed the trade is the one who makes it.
+
+The live test asserts both halves on whichever host it finds: the
+refusal and its wording where the KDF is missing, then the bundle
+written and read back through the opt-outs; and the ordinary path,
+unchanged, everywhere else.
+
+**What this host does not settle.** The `-fips` artifacts were built and
+run here, which is the first time any has executed anywhere — but one
+host is not the tier 1 matrix, and nothing here has been assessed. A
+vendor's FIPS channel is still two claims where the grain reports one:
+a certified frozen kernel and a patched one from an updates channel both
+write 1 to that file, and saying which needs the `pro` module, which is
+not built. And this is one CIS-hardened machine rather than a benchmark
+run: the partitions are the control that bit, and the rest of Level 2 is
+untested.
+
+### 5.84 A relative include in an `init.sls` resolved one level too high
+
+A hub and a node, both `-fips` artifacts, on arm64, compiling this
+estate's real 603-file tree. That round trip was the point — SPEC 27.1's
+Linux arm64 row said "compiles and nothing more", and DIVERGENCE 4.5
+reserved "a node enrolled with a hub, highstate applied" for amd64 — and
+what it produced was a defect in the compiler that no test had reached.
+
+The compilation reported `sls "base.datadog" was not found in
+environment "base"`, eleven times over with different names. The tree
+means `base.cleanup.datadog`. `base/cleanup/init.sls` opens with
+
+```yaml
+include:
+  - .filebeat
+  - .sophos
+  - .datadog
+```
+
+and Salt resolves a leading dot against the **package**, not the parent.
+Two files share the SLS name `base.cleanup`: `base/cleanup.sls` and
+`base/cleanup/init.sls`. In the first, `.datadog` is a sibling —
+`base.datadog`. In the second it is a child — `base.cleanup.datadog` —
+because an `init.sls` *is* its directory rather than a file inside one.
+Salt spells this by appending an implicit `init` component before
+counting the dots back.
+
+`resolveRelative` knew only the sibling rule and applied it to both, in
+`internal/state` and again in `internal/pillar`. Every relative include
+in every `init.sls`, in states and in pillar alike, resolved one level
+too high.
+
+**"Not found" is the lucky outcome.** Where a file of that name also
+exists at the parent level — and in a tree carrying both `base/init.sls`
+and `base/cleanup/init.sls` that is ordinary rather than contrived — the
+wrong file is included, it compiles, and nothing says so. A silent
+substitution of one state file for another is the most expensive shape a
+defect can take here.
+
+It went unnoticed because every test used flat `.sls` files, where the
+two rules agree. The fixtures were not wrong; they just never contained
+the one arrangement that distinguishes the rules, which is
+DIVERGENCE 5.31's lesson again — with a *tree* in the place of a tool.
+Climbing above the root is now reported rather than silently resolving
+to a top-level name, for the same reason.
+
+**What the same run says about the rest of the migration.** With the
+include fixed, the tree compiles 42 errors down to 33, and those are an
+inventory rather than a defect — real gaps between this build and a real
+estate's tree, worth having written down:
+
+| count | gap |
+|---|---|
+| 13 | state arguments that are not implemented: `file.replace`'s `ignore_if_missing` (5), `user.present`'s `mindays`/`maxdays`/`inactdays`/`unique`/`enforce_password` (11 across 4 sites), `file.managed`'s `skip_verify` and `keep_source`, `group.present`'s `members` and `system`, `pkg.installed`'s `allow_updates` |
+| 4 | a template `import` of a file the `base` environment does not serve |
+| 3 | argument types accepted by Salt and refused here: a `gid` given as a string, a `cmd.run` `shell` given as a string, `mount.mounted` `opts` given as a sequence |
+| 2 | state modules that are not built: `kmod`, `saltutil` |
+| 2 | template gaps: the `import_yaml` tag, and unpacking a sequence into two names |
+| 1 | a pillar key from an `ext_pillar` this lab hub does not configure |
+
+The three type refusals are the interesting row, because they are not
+missing features: Salt coerces where this refuses. Whether to follow it
+is a decision rather than a commit, and it belongs with plan.md §6.
 
 ## 6. Everything else not started
 
