@@ -145,6 +145,50 @@ Every string an extension returns is treated as secret and goes to the
 redactor. The hub cannot tell which of an out-of-process source's values
 are credentials, so it assumes all of them are.
 
+## Running it while you write it
+
+Packaging is six steps, and a one-line change does not deserve six
+steps. `run` starts the file where it lies:
+
+```sh
+halite-hub extensions run ./my-source ext_pillar \
+  --kwargs '{"node_id":"web1.prod","config":{"region":"us-east-1"}}'
+```
+
+No bundle, no signature, no cache, no restart. The result goes to
+stdout, so it pipes; everything else — the handshake, `log`, `progress`
+and `event` frames, and whatever the extension wrote to stderr — goes to
+stderr, so you can see it.
+
+It also reports what the handshake got wrong, which is where the
+mistakes that surface furthest from their cause live:
+
+```
+$ halite-hub extensions run ./broken
+broken  (kind not declared)
+  go()
+  ! go(): the how_many parameter declares no type; a type is its name, "string" and not a number
+  ! it declared no version, so it cannot be pinned
+```
+
+**`--sandbox` is how you find out whether it works anywhere but here.**
+By default `run` applies no confinement at all — your identity, your
+limits, your network — because that is the fast loop. A node applies the
+sandbox of SPEC 24.3, and an extension that has only ever been run
+without one is an extension nobody has tested:
+
+```
+$ halite-hub extensions run ./my-source --sandbox
+my_source 1.0.0 (pillar)
+  declares: network
+  sandbox: process boundary; network not granted; cpu 60s; open files 256; …
+  ! it declares "network" and this run did not grant it; pass --declare network
+```
+
+`--declare network` grants it, the way a signed manifest would. Running
+with less than the extension declares is the useful test: it is what
+happens when somebody signs a bundle whose manifest is out of date.
+
 ## Building and installing it
 
 Four steps. The first is `go build`; the rest are the supply chain.

@@ -89,11 +89,13 @@ type Process struct {
 type Info struct {
 	Name    string
 	Version string
+	// Kind is what the host asked for, carried back so a caller that
+	// did not ask can report it. An extension does not send its kind:
+	// the hello frame names the kind wanted and Serve refuses a
+	// mismatch, so what came back is what was asked for.
+	Kind string
 	// Functions are the signatures of section 15.6, as the extension
-	// sent them. Carried as raw JSON because the host does not need to
-	// understand a signature to route a call, and a host that parses
-	// one is a host that can refuse an extension over a field it
-	// happened to spell differently.
+	// sent them, in the shape both sides import.
 	Functions []ext.Signature
 	// Declares is what it says it needs.
 	Declares []string
@@ -186,7 +188,7 @@ func (p *Process) handshake(ctx context.Context) error {
 	}
 	p.mu.Lock()
 	p.info = Info{
-		Name: frame.Name, Version: frame.Version,
+		Name: frame.Name, Version: frame.Version, Kind: p.opts.Kind,
 		Functions: frame.Functions, Declares: frame.Declares,
 	}
 	p.mu.Unlock()
