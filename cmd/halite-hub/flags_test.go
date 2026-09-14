@@ -38,11 +38,19 @@ func TestEveryFlagIsDocumentedAndParsed(t *testing.T) {
 		source.Write(data)
 	}
 
+	// Every usage text, read out of the same map the program itself
+	// judges an unknown flag against. It used to be this file's own
+	// list of two, which meant a subcommand that grew its own usage was
+	// checked against the main one and its flags reported as
+	// undocumented -- a failure in the check rather than in the
+	// program, and the kind that gets worked around.
+	texts := []string{usage}
+	for _, group := range subUsage {
+		texts = append(texts, group...)
+	}
 	documented := map[string]bool{}
-	// Both usage texts: `keys` has its own, and its flags are
-	// documented there rather than repeated in the main one.
 	for _, f := range regexp.MustCompile(`(?m)^\s+(--[a-z-]+)`).
-		FindAllStringSubmatch(usage+"\n"+keysUsage, -1) {
+		FindAllStringSubmatch(strings.Join(texts, "\n"), -1) {
 		documented[f[1]] = true
 	}
 	parsed := map[string]bool{}

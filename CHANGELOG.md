@@ -18,6 +18,38 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A loop for writing an extension
+
+The previous change made an extension writable from outside this
+repository. It did not make one pleasant to write: seeing whether a
+change worked meant building, bundling, signing, publishing under
+`_ext/`, syncing, and restarting the hub. Six steps for a one-line
+change is where an author stops iterating and starts guessing.
+
+`halite-hub extensions run <path> [<function>]` starts the file where it
+lies. No bundle, no signature, no cache, no restart. The result goes to
+stdout so it pipes; the handshake, the `log`, `progress` and `event`
+frames, and whatever the extension wrote to stderr go to stderr so you
+can watch it. It is deliberately not a path to production — it verifies
+nothing about where the file came from, and says so every time.
+
+It reports what the handshake got wrong, which is where the mistakes
+that surface furthest from their cause live: a version nobody set, a
+kind this build does not have, a parameter with no type. And
+`--sandbox` applies the confinement a node would, with `--declare`
+saying what it grants — because an extension that has only ever been run
+without a sandbox is an extension nobody has tested, and one that
+declares more than was granted is told so by name.
+
+Using it turned up two things. A bare path was looked up on `PATH`, so
+`extensions run myext` went hunting through `/usr/bin` for a file in the
+working directory; it is a path now, checked for existing, for not being
+a directory, and for carrying the execute bit a checked-out bundle may
+not have. And the flag audit was reading two usage texts out of a
+hand-written list, so a flag documented in any other subcommand's text
+was reported as undocumented — a failure in the check rather than the
+program. It reads the same map the program itself uses now.
+
 ### Anyone can write an extension now
 
 The previous change made the AWS Secrets Manager pillar an extension

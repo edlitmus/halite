@@ -12,15 +12,35 @@ import (
 const extensionsUsage = `halite-hub extensions — the signed extensions this hub runs
 
 Usage:
-  halite-hub extensions list     what is installed, and what it provides
-  halite-hub extensions sync     fetch _ext/ from the tree into the cache
+  halite-hub extensions list                 what is installed, and what it provides
+  halite-hub extensions sync                 fetch _ext/ from the tree into the cache
+  halite-hub extensions run <path> [<fn>]    run one straight from a path, for writing it
 
 Synchronization fetches and does not load. What this hub runs does not
 change until it is restarted, so publishing an extension into the tree
-cannot change a running hub's behaviour (SPEC section 24.5).
+cannot change a running hub behaviour (SPEC section 24.5).
 
-Flags:
-  --env <name>   the environment to read _ext/ from, default base
+run starts the file where it lies: no bundle, no signature, no cache,
+no restart. It is the loop for writing an extension, and it is not how
+one reaches a node -- it verifies nothing about where the file came
+from. docs/extensions.md walks through the packaging that does.
+
+Flags for sync and list:
+  --env <name>       the environment to read _ext/ from, default base
+
+Flags for run:
+  --kwargs <json>    keyword arguments for the call
+  --args <json>      positional arguments
+  --kind <kind>      the kind the host asks for; empty accepts any
+  --node-id <id>     what the call context says, default dev
+  --env <name>       what the call context says, default base
+  --test             a run that must change nothing
+  --timeout <dur>    how long one call may take, default 60s
+  --sandbox          apply the confinement a node would
+  --declare <list>   what --sandbox grants: network, root
+  --user <name>      the account --sandbox drops to
+  --group <name>     its group
+  --json             print only the result
 `
 
 // runExtensions is the hub's side of SPEC 24.5.
@@ -34,10 +54,18 @@ func runExtensions(args *cli.Args) int {
 		fmt.Print(extensionsUsage)
 		return 0
 	}
-	// Not openHub: that resolves the enrollment CA, and these two
-	// commands have nothing to do with one. A hub whose CA has not been
-	// created yet -- which is every hub before its first `serve` --
-	// could otherwise not fetch the extensions it is about to need.
+	// run reads no configuration: it starts a file and speaks to it,
+	// which is the whole point of having it. Dispatched before the
+	// configuration is loaded so that an author with no hub.yaml -- who
+	// is most authors -- can use it.
+	if sub == "run" {
+		return runExtensionDirectly(args)
+	}
+
+	// Not openHub: that resolves the enrollment CA, and these commands
+	// have nothing to do with one. A hub whose CA has not been created
+	// yet -- which is every hub before its first `serve` -- could
+	// otherwise not fetch the extensions it is about to need.
 	h := openHubForConfig(args)
 
 	switch sub {

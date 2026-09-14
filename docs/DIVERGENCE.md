@@ -7526,6 +7526,61 @@ against a page rather than against the protocol; and `protocol: 1` has
 no compatibility policy, which was a private matter for exactly as long
 as this project was the only implementer.
 
+### 5.81 The loop for writing an extension
+
+5.80 made an extension writable from outside this repository. It did not
+make one pleasant to write: seeing whether a change worked meant
+building, bundling, signing, publishing under `_ext/`, syncing, and
+restarting the hub. Six steps for a one line change is the point at
+which an author stops iterating and starts guessing.
+
+`halite-hub extensions run <path> [<function>]` starts the file where it
+lies — no bundle, no signature, no cache, no restart — does the
+handshake, calls a function, and prints the result to stdout with the
+handshake, the streaming frames and the extension's own stderr going to
+stderr. It is deliberately not a path to production: it verifies nothing
+about where the file came from, and says so every time it runs.
+
+Two things it does beyond starting a process, because both are failures
+that surface a long way from their cause.
+
+**It reports what the handshake got wrong.** A version nobody set cannot
+be pinned; a kind this build does not have will be refused later; a
+parameter with no type is the defect of 5.79 arriving as silence. Each
+is a line naming the function and the parameter. This is not the
+conformance suite that an extension in another language really needs —
+that is its own piece of work and is still not built — but it is the
+part that fits in a command that already has the extension running.
+
+**`--sandbox` applies the confinement a node would, and `--declare` says
+what it grants.** Without it `run` applies nothing: the author's
+identity, the author's limits, the author's network. That is the right
+default for a loop and the wrong thing to have only ever tested, so the
+run says which it did, every time, and names the flag. An extension run
+under `--sandbox` that declared more than was granted is told so by
+name — which is the "it worked when I ran it" failure, caught before the
+node finds it.
+
+Two defects of its own, found by using it.
+
+**A bare path was looked up on `PATH`.** `extensions run myext` went
+hunting through `/usr/bin` for a file in the working directory and
+reported "executable file not found in $PATH" about it, because
+`exec.Command` treats a name with no separator as a command rather than
+a path. The argument is documented as a path and is one now: resolved,
+and checked for existing, for not being a directory, and for carrying
+the execute bit — which a bundle checked out without it does not, and
+which is otherwise diagnosed as a missing file.
+
+**The flag audit was reading two usage texts out of a hand-written
+list.** `cmd/halite-hub` has seven subcommands with their own usage, and
+the test that holds every parsed flag to being documented knew about
+`keys` and the main one. So a flag documented in any other subcommand's
+text was reported as undocumented — a failure in the check rather than
+in the program, and the kind that gets worked around by moving the
+documentation somewhere it does not belong. It reads the same map the
+program judges an unknown flag against now, so the two cannot disagree.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -1459,12 +1459,21 @@ has the same pair of commands for its own cache:
 ```sh
 halite-hub extensions sync          # fetch _ext/ from the tree
 halite-hub extensions list          # what is installed, and what it provides
+halite-hub extensions run <path>    # run one straight from a path, while writing it
 ```
 
 `sync` prints the Merkle root of anything it fetched, which is what goes
 into `extension_pins`. `list` starts each extension, so it reports the
 functions the handshake actually announced rather than what a manifest
 claims.
+
+`run` is the development loop, and Salt has no equivalent because it
+needs none: there, the file on the file server *is* what runs. Here a
+bundle is built, signed, published, synced and loaded, which is the
+point and is also five steps too many while you are still writing the
+thing. `run` skips all of it and verifies nothing about where the file
+came from, which is why it is not how anything reaches a node.
+[extensions.md](extensions.md) has the walkthrough.
 
 **Synchronizing fetches; it does not load.** That is the behavioural
 difference SPEC 24.5 states plainly, and it is the point of the section:

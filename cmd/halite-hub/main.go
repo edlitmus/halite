@@ -147,6 +147,8 @@ var subUsage = map[string][]string{
 	"runner": {runnerUsage},
 	"orch":   {orchUsage},
 	"ssh":    {sshUsage},
+
+	"extensions": {extensionsUsage},
 }
 
 func main() {
