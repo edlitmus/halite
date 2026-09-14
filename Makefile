@@ -343,6 +343,19 @@ build-all:
 		echo ok; \
 	done
 
+# The reference extensions of SPEC 24.4. Not in BINARIES: they are not
+# one of the three programs, they are not installed with them, and an
+# operator builds one per platform they will run it on before signing a
+# bundle. docs/extensions.md walks through it.
+EXTENSIONS = halite-ext-aws-secrets
+
+extensions:
+	@mkdir -p bin
+	@for e in $(EXTENSIONS); do \
+		echo "building bin/$$e"; \
+		env $(DEV_ENV) go build $(BUILDFLAGS) -o bin/$$e ./cmd/$$e || exit 1; \
+	done
+
 # What to run before calling a change done.
 #
 # fips-test is in here rather than left to CI: the FIPS artifacts are a

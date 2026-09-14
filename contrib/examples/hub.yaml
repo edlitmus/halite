@@ -154,61 +154,73 @@ metrics: true
 #
 # accept_relays: true
 
-# External pillar, SPEC section 12.7. The list keeps Salt's shape: one
-# mapping per source, the key naming it. A source is compiled in, not
-# loaded from a Python file on the file server, so a name this build
-# does not have is refused at startup rather than contributing nothing.
+# External pillar, SPEC section 12.7, which is the extension model of
+# SPEC 24 applied to pillar. A source is a signed, pinned extension of
+# kind `pillar` -- not a Python file the hub imports -- so a name with
+# no extension behind it is refused when the hub starts.
 #
-# `aws_secrets_manager` is the one this build ships. It lands everything
-# under `pillar['aws_secrets']`, parses a JSON secret into a mapping,
-# and nests a dotted key -- so `base.ubuntu_pro` below is read as
-# `pillar.get('aws_secrets:base:ubuntu_pro:token')`.
+# The list keeps Salt's shape: one mapping per source, the key naming
+# it, the value being that source's own configuration. The hub does not
+# read that value; it hands it to the extension, which is the only thing
+# that knows its schema. The one key the hub does read is `fail`.
+#
+# `aws_secrets_manager` is the reference extension in this tree. It
+# lands everything under `pillar['aws_secrets']`, parses a JSON secret
+# into a mapping, and nests a dotted key -- so `base.ubuntu_pro` below
+# is read as `pillar.get('aws_secrets:base:ubuntu_pro:token')`.
+#
+# Build, sign and install it first; docs/extensions.md is the walkthrough.
 #
 # ext_pillar:
 #   - aws_secrets_manager:
-#       # An ARN carries its own region and partition.
-#       - name: base.ubuntu_pro
-#         secret_id: arn:aws:secretsmanager:us-east-1:123456789012:secret:vmop/ubuntu-pro-AbCdEf
-#       # A name needs a region, from here or from aws_secrets_region.
-#       - name: database.creds
-#         secret_id: vmop/prod/database
-#         region: us-east-1
-#       # Per-source, overriding ext_pillar_fail for this source only.
-#       - fail: hard
+#       region: us-east-1
+#       partition: aws
+#       cache_ttl: 5m
+#       secrets:
+#         # An ARN carries its own region and partition.
+#         - name: base.ubuntu_pro
+#           secret_id: arn:aws:secretsmanager:us-east-1:123456789012:secret:vmop/ubuntu-pro-AbCdEf
+#         # A name needs a region, from here or from `region` above.
+#         - name: database.creds
+#           secret_id: vmop/prod/database
+#       # Secrets the tree names rather than this file: a pillar key
+#       # holding a list in the same shape. Hub-controlled, because the
+#       # tree is, so prefer it to node_grain below.
+#       pillar_list: aws_secrets_ext_pillar
+#       # Salt's external pillar let a node name its own secret ARNs,
+#       # and a tree migrating from it may depend on that. Read twice
+#       # before setting, because a node controls its own grains: this
+#       # lets any node ask the hub to fetch any secret the hub's
+#       # credentials can read. The allow list is what bounds it.
+#       # node_grain: aws_secrets_ext_pillar
+#       # node_grain_allow:
+#       #   - 'arn:aws:secretsmanager:*:*:secret:vmop/*'
+#       #   - 'vmop/*'
 
 # A failed source fails the whole compilation. This is the default and
 # it is the right one: a pillar missing the half that held the
 # credentials is worse than no pillar, because the run proceeds with it.
+# Set `fail: ignore` inside a source's own block for one that is
+# genuinely optional.
 # ext_pillar_fail: hard
 
-# The hub reads Secrets Manager with its own instance role by default,
-# which needs nothing here. Set these for a static key, a role in
-# another account, or IRSA.
+# The extension model, SPEC section 24. The hub runs extensions of kind
+# `pillar`; a node runs `module` and `returner`. The settings are the
+# same on both, because an extension trusted differently depending on
+# which program loads it is an extension whose trust nobody can state.
 #
-# aws_secrets_region: us-east-1
-# aws_secrets_partition: aws-us-gov
-# aws_secrets_cache_ttl: 5m
-# aws_secrets_role_arn: arn:aws:iam::123456789012:role/halite-hub-secrets
-# aws_secrets_role_session: halite-hub
-
-# Secrets the tree names rather than this file: a pillar key holding a
-# list in the same shape as the block above. This is what Salt's
-# aws_secrets_manager.py read out of the pillar, and it is the half
-# worth keeping -- which node gets which secret is decided by the pillar
-# top file, which a node has no say in. Prefer it to the grain below.
-#
-# aws_secrets_pillar_list: aws_secrets_ext_pillar
-
-# Salt's external pillar let a node name its own secret ARNs, and a tree
-# migrating from it may depend on that. Read this twice before setting,
-# because a node controls its own grains: this lets any node ask the hub
-# to fetch any secret the hub's credentials can read. The allow list is
-# what makes it defensible; without one the hub warns at startup.
-#
-# aws_secrets_node_grain: aws_secrets_ext_pillar
-# aws_secrets_node_grain_allow:
-#   - 'arn:aws:secretsmanager:*:*:secret:vmop/*'
-#   - 'vmop/*'
+# extension_trust_keys:
+#   - 'release 2FQ8u1kM3xW9...'
+# Pin what runs, so that a tree change cannot swap an extension. The
+# root is printed by `halite-hub extensions sync`.
+# extension_pins:
+#   aws_secrets_manager:
+#     version: 1.0.0
+#     root: 9f2c...
+# The unprivileged account an extension drops to. It needs nothing but
+# its own working directory.
+# extension_user: halite-ext
+# extension_timeout: 60s
 
 log_level: info
 log_format: json

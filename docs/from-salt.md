@@ -254,17 +254,31 @@ read it, rather than rendering them against nothing.
 ### If your pillar comes from AWS Secrets Manager
 
 A tree carrying `_pillar/aws_secrets_manager.py` does not need it. The
-`aws_secrets_manager` source lands everything under the same
+`aws_secrets_manager` extension lands everything under the same
 `aws_secrets` key, parses a JSON secret the same way, and nests a dotted
 name the same way, so every `pillar.get('aws_secrets:...')` in the tree
-resolves unchanged. Delete the Python file and configure the source:
+resolves unchanged.
+
+It is an extension rather than something built into the hub, so there is
+a build-and-sign step the Python file did not have.
+[extensions.md](extensions.md) is the walkthrough; the short version is
+`go build`, `extbundle`, publish under `_ext/` in the tree, trust the
+key, then:
+
+```sh
+halite-hub extensions sync
+```
+
+Delete the Python file and configure the source:
 
 ```yaml
 # hub.yaml
 ext_pillar:
   - aws_secrets_manager:
-      - name: database.creds
-        secret_id: arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf
+      region: us-east-1
+      secrets:
+        - name: database.creds
+          secret_id: arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf
 ```
 
 Two things to know before the first compile.
@@ -286,12 +300,12 @@ halite-hub runner pillar.show_pillar node=web1.example --as <operator>
 ```
 
 If your tree names secrets per machine rather than listing them all on
-the hub, `aws_secrets_pillar_list` reads that list out of the pillar —
+the hub, `pillar_list` in the block reads that list out of the pillar —
 which is what the Python module's own `aws_secrets_ext_pillar` key did.
-There is also `aws_secrets_node_grain`, which reads it from a grain; it
-is what some trees use, and it means a node's own grains decide what the
-hub fetches. Bound it with `aws_secrets_node_grain_allow` if you need
-it, and prefer the pillar form if you have the choice.
+There is also `node_grain`, which reads it from a grain; it is what some
+trees use, and it means a node's own grains decide what the hub fetches.
+Bound it with `node_grain_allow` if you need it, and prefer the pillar
+form if you have the choice.
 
 ## Step 3: one node, alongside the agent already on it
 

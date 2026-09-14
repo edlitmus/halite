@@ -55,6 +55,17 @@ The event bus: follow it, or list the tags it carries.
 Print the Prometheus exposition.
 .It Cm ssh Ar target Ar function Op Ar args ...
 Run on a machine with no agent, by pushing the binary over SSH.
+.It Cm extensions Ar list Ns | Ns Ar sync
+The signed extensions this hub runs, which are the external pillar
+sources of the specification's section 12.7 and nothing else on a hub.
+.Cm list
+reports what is installed, verified, and what each provides;
+.Cm sync
+fetches bundles from
+.Pa _ext/
+in the tree into the cache.
+Synchronization fetches and does not load, so publishing an extension
+cannot change a running hub: restart it to pick one up.
 .It Cm doctor
 Run the diagnostics of the specification's section 26.4 against this hub.
 Changes nothing, and starts no listener, so it is safe on a hub that is
@@ -134,6 +145,11 @@ Accept a node that has asked to enrol:
 Ask what is wrong with this hub:
 .Pp
 .Dl halite-hub doctor
+.Pp
+Fetch the extensions the tree publishes, then see what will run:
+.Pp
+.Dl halite-hub extensions sync
+.Dl halite-hub extensions list
 .Sh SEE ALSO
 .Xr halite-node 8 ,
 .Xr halite-api 8

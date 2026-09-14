@@ -282,7 +282,7 @@ Set `pillar_roots` on the hub.
 | `salt '*' pillar.items` | `halite-hub run '*' pillar.items` | works |
 | `#!yaml|gpg` in a pillar file | works, decrypted on the hub | works |
 | `ext_pillar` | `ext_pillar`, in Salt's own shape | `aws_secrets_manager` only |
-| `_pillar/aws_secrets_manager.py` | the compiled-in `aws_secrets_manager` source | works |
+| `_pillar/aws_secrets_manager.py` | the `aws_secrets_manager` extension, kind `pillar` | works |
 | `_grains/metadata.py` | `cloud_grains: true` | works |
 
 An enrolled node's `pillar items`, `call`, and `state apply` go through
@@ -1446,6 +1446,25 @@ and fetched with `saltutil.sync_all`, or one of the per-kind variants:
 ```sh
 halite-hub run '*' saltutil.sync_all
 ```
+
+The hub runs extensions too — the external pillar sources of SPEC 12.7
+are `pillar`-kind extensions, and pillar compiles on the hub — so it
+has the same pair of commands for its own cache:
+
+| Salt | halite | Status |
+|---|---|---|
+| `salt-run saltutil.sync_all` on the master | `halite-hub extensions sync` | works | <!-- lexicon:allow -->
+| no equivalent | `halite-hub extensions list` | works |
+
+```sh
+halite-hub extensions sync          # fetch _ext/ from the tree
+halite-hub extensions list          # what is installed, and what it provides
+```
+
+`sync` prints the Merkle root of anything it fetched, which is what goes
+into `extension_pins`. `list` starts each extension, so it reports the
+functions the handshake actually announced rather than what a manifest
+claims.
 
 **Synchronizing fetches; it does not load.** That is the behavioural
 difference SPEC 24.5 states plainly, and it is the point of the section:

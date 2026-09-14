@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/edlitmus/halite/internal/extension"
 )
@@ -74,13 +75,21 @@ func loadOrCreateKey(path string) (ed25519.PrivateKey, ed25519.PublicKey) {
 	return private, public
 }
 
+// splitDeclares reads `-declares network,root`.
+//
+// On a comma, as the flag's own help says. This used to use
+// filepath.SplitList, which splits on the operating system's path list
+// separator -- so `network,root` was one declaration named
+// "network,root" on every platform, and the colon form it did accept on
+// unix was silently one declaration on Windows. A declaration that does
+// not parse is a permission the sandbox never grants, which shows up as
+// an extension that cannot reach the network for no stated reason.
 func splitDeclares(v string) []string {
-	if v == "" {
-		return nil
-	}
 	var out []string
-	for _, part := range filepath.SplitList(v) {
-		out = append(out, part)
+	for _, part := range strings.Split(v, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
 	}
 	return out
 }

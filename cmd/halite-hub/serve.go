@@ -53,6 +53,34 @@ type hubContext struct {
 
 // openHub loads configuration and key material. create says whether an
 // absent enrollment CA is an error or something to make.
+// openHubForConfig builds the configuration and the logger, and stops
+// there.
+//
+// For a command that reads settings and touches no key material. The
+// full openHub resolves the enrollment CA, which is the right thing for
+// anything that issues or verifies a certificate and a needless
+// precondition for anything that does not.
+func openHubForConfig(args *cli.Args) *hubContext {
+	cfg, err := config.Load(config.Hub, config.LoadOptions{
+		Path:         args.Flag("config", ""),
+		Root:         args.Flag("root", config.DefaultRoot),
+		AllowMissing: true,
+	})
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	secrets := redact.New()
+	cli.Redact = secrets.Scrub
+	logger, err := buildLogger(args, cfg, secrets)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	for _, w := range cfg.Warnings {
+		logger.Warn(w, "component", "config")
+	}
+	return &hubContext{cfg: cfg, log: logger}
+}
+
 func openHub(args *cli.Args, create bool) *hubContext {
 	cfg, err := config.Load(config.Hub, config.LoadOptions{
 		Path:         args.Flag("config", ""),
@@ -272,6 +300,13 @@ func runServe(args *cli.Args) int {
 	}
 	fetching := &fetchingBackends{git: gitBackend, s3: s3Backend, local: localRoots, files: files}
 
+	// The extension model of SPEC 24, on the hub. Opened before pillar
+	// because an external pillar source is one of these, and a hub
+	// whose configuration names a source it does not have must not
+	// reach the point of serving pillar without it.
+	extensions := h.openExtensions()
+	defer extensions.Close()
+
 	// Hub-side pillar. Without pillar_roots the hub compiles none and
 	// says so to a node that asks, rather than answering with an empty
 	// pillar that looks like a successful compilation of nothing.
@@ -301,7 +336,7 @@ func runServe(args *cli.Args) int {
 			Nondeterministic: h.cfg.String("random_seed", "deterministic") == "nondeterministic",
 			Registry:         builtin.New().Exec,
 			ConfigValues:     h.cfg.Redacted(),
-			Ext:              extPillarSources(h),
+			Ext:              extPillarSources(h, extensions),
 		}
 		// A setting that parses and does nothing is indistinguishable
 		// from one that works, until the thing it was meant to change

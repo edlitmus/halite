@@ -265,15 +265,19 @@ computed.
 
 ### Secrets from AWS Secrets Manager
 
-`ext_pillar` names sources the hub consults after the top file. One
-ships: `aws_secrets_manager`.
+`ext_pillar` names sources the hub consults after the top file. A source
+is a signed extension of kind `pillar`; one ships with this project,
+`aws_secrets_manager`, and [extensions.md](extensions.md) says how to
+install it or write another.
 
 ```yaml
 # on the hub
 ext_pillar:
   - aws_secrets_manager:
-      - name: database.creds
-        secret_id: arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf
+      region: us-east-1
+      secrets:
+        - name: database.creds
+          secret_id: arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf
 ```
 
 A JSON secret is parsed into a mapping and a dotted name nests, so that
@@ -289,11 +293,10 @@ entry, from the machine's `region` grain, or from `aws_secrets_region`,
 in that order, and a secret with none of them is an error rather than a
 guess.
 
-A machine's secrets need not all be listed on the hub. Set
-`aws_secrets_pillar_list` to a pillar key, and a list under that key in
-the tree names more — which is how one pillar file per role carries the
-secrets that role needs, selected by the pillar top file like anything
-else.
+A machine's secrets need not all be listed on the hub. Set `pillar_list`
+in the block to a pillar key, and a list under that key in the tree
+names more — which is how one pillar file per role carries the secrets
+that role needs, selected by the pillar top file like anything else.
 
 A source that fails fails the whole compilation. That is deliberate: a
 pillar missing the half that held the credentials is worse than no
