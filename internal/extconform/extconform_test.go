@@ -42,6 +42,7 @@ const (
 	modeIgnoreShutdwn = "ignores-shutdown"
 	modeUnknownIsOK   = "unknown-is-ok"
 	modePrintsToStdou = "prints-to-stdout"
+	modeStrictFields  = "strict-fields"
 )
 
 var (
@@ -234,6 +235,13 @@ func TestItCatchesAPrintToStdout(t *testing.T) {
 	if !strings.Contains(got.Why, "stdout") {
 		t.Errorf("the reason does not mention stdout: %q", got.Why)
 	}
+}
+
+// The rule the whole compatibility policy of SPEC 24.7 rests on, and
+// the one most likely to be got wrong by accident: a strict decoder is
+// a reasonable instinct, and this is the one place it is wrong.
+func TestItCatchesAnExtensionThatRefusesAnUnknownField(t *testing.T) {
+	mustFail(t, check(t, modeStrictFields, nil), "protocol/ignores-an-unknown-field")
 }
 
 // The kind rules cannot be checked without being told what the kind is,

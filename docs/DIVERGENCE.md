@@ -8009,6 +8009,52 @@ Numbers are checked for being unique and ascending now, so the second
 branch has to notice. The check is in `internal/specaudit`, beside the
 one for citations that could not see this.
 
+### 5.86 The protocol as a published interface
+
+5.85 closed the conformance gap and left one item of the plan, which
+`docs/extensions.md` carried under its own heading: `protocol: 1` had no
+compatibility policy. Nothing said what could change inside version 1,
+what forced a version 2, or what a host did with a version it did not
+speak. That was a private matter for exactly as long as this project was
+the only implementer -- which, after four changes whose whole purpose
+was to stop being that, it no longer is.
+
+SPEC 24.7 is the policy, and SPEC 24.2 now carries the framing it always
+described in prose: four bytes of unsigned big-endian length, one JSON
+object, 16 MiB, stdout is the protocol, exactly one `result` per `call`,
+and a table of which side sends which frame and what it carries.
+
+**The property the policy rests on was true by accident.** Every
+implementation here ignores a field it does not recognise, which is what
+makes a field addable at all -- and it is true because
+`encoding/json` ignores unknown fields by default, not because anybody
+decided it. This project's habits run the other way: a setting that
+parses and does nothing is a defect here, `DisallowUnknownFields`
+appears in the extension's own configuration reader two files away, and
+somebody reaching for it in the frame decoder would be following the
+house style. Doing that would make every additive change a breaking one,
+silently, for every extension already written. There are tests on it
+now, in `ext`, saying why.
+
+The asymmetry is deliberate and is stated rather than left to be
+inferred: an unknown *field* is ignored, an unknown *frame kind* is
+refused. A receiver that skipped a kind it did not know would also skip
+a misspelt one, and the sender would wait for an answer to a frame that
+had been silently dropped.
+
+Adding a declaration under 24.3 is in neither list, which is the one
+case that looks like a compatibility break and is not. An extension
+declaring a permission an older host does not know is refused by it,
+correctly: the host cannot grant what it cannot enforce, and running as
+though it had is the failure the declaration exists to prevent.
+
+**And the harness checks the rule it rests on.**
+`protocol/ignores-an-unknown-field` sends a hello carrying a field from
+no version of anything and expects the handshake to complete. It is the
+fourteenth rule, both shipped extensions pass it, and there is a fixture
+that fails it -- a strict decoder is a reasonable instinct, and this is
+the one place it is wrong.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -35,7 +35,12 @@ const (
 	modeIgnoreShutdwn = "ignores-shutdown"  // keeps running
 	modeUnknownIsOK   = "unknown-is-ok"     // succeeds at a function it lacks
 	modePrintsToStdou = "prints-to-stdout"  // a print() into the protocol
+	modeStrictFields  = "strict-fields"     // refuses a hello field it does not know
 )
+
+// helloFields are the fields a hello is defined to carry. Used only by
+// modeStrictFields, to be wrong in the way SPEC 24.7 forbids.
+var helloFields = map[string]bool{"kind": true, "protocol": true, "extension_kind": true}
 
 // modes is every misbehaviour this understands.
 //
@@ -48,7 +53,7 @@ var modes = map[string]bool{
 	modeNumericType: true, modeUnnamedSig: true, modeNoResult: true,
 	modeTwoResults: true, modeWrongID: true, modeAnyProtocol: true,
 	modeAnyKind: true, modeIgnoreShutdwn: true, modeUnknownIsOK: true,
-	modePrintsToStdou: true,
+	modePrintsToStdou: true, modeStrictFields: true,
 }
 
 func main() {
@@ -83,6 +88,17 @@ func main() {
 		if wanted, _ := hello["extension_kind"].(string); wanted != "" && wanted != "module" {
 			fmt.Fprintln(os.Stderr, "badext: this is a module extension")
 			os.Exit(1)
+		}
+	}
+	if mode == modeStrictFields {
+		// What a strict decoder does, which is a reasonable instinct
+		// and the one place it is wrong: SPEC 24.7 makes tolerance of
+		// an unknown field the basis of every additive change.
+		for field := range hello {
+			if !helloFields[field] {
+				fmt.Fprintf(os.Stderr, "badext: %q is not a field of hello\n", field)
+				os.Exit(1)
+			}
 		}
 	}
 

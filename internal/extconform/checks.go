@@ -170,6 +170,50 @@ func checkShutdown(s *session, opts Options) Result {
 	return passed(rule, title)
 }
 
+// checkUnknownFieldTolerance opens a session whose hello carries a field
+// from some later version of the protocol.
+//
+// SPEC 24.7 requires that an unknown field be ignored, in both
+// directions, and the whole compatibility policy rests on it: an
+// implementation that refuses one breaks the day anything is added, for
+// everybody. It is also the rule most likely to be got wrong by
+// accident, because a strict decoder is a reasonable thing to reach for
+// and this is the one place it is wrong.
+func checkUnknownFieldTolerance(ctx context.Context, opts Options) Result {
+	const rule = "protocol/ignores-an-unknown-field"
+	title := "it ignores a field it does not recognise"
+	why := "SPEC 24.7 makes this the basis of every additive change: a field may be added to a " +
+		"frame without a new version because a receiver ignores what it does not know. An " +
+		"implementation that refuses one works today and stops working the first time anything " +
+		"is added -- not for itself, but for every host it is installed on."
+
+	s, err := start(ctx, opts)
+	if err != nil {
+		return skipped(rule, title, "it could not be started again: "+err.Error())
+	}
+	defer s.close()
+
+	// A well-formed hello with one field nothing has ever defined.
+	hello := fmt.Sprintf(
+		`{"kind":%q,"protocol":%d,"extension_kind":%q,"a_field_from_a_later_version":{"nested":[1,2]}}`,
+		ext.FrameHello, ext.ProtocolVersion, opts.Kind)
+	if err := s.writeRaw([]byte(hello)); err != nil {
+		return skipped(rule, title, "the hello frame could not be written: "+err.Error())
+	}
+
+	frame, readErr := s.read()
+	if readErr != nil {
+		return failed(rule, title,
+			"with one unknown field in the hello: "+describeReadFailure(readErr, s), why)
+	}
+	if frame.Kind != ext.FrameHelloOK {
+		return failed(rule, title,
+			fmt.Sprintf("it answered a hello carrying one unknown field with a %q frame", frame.Kind),
+			why)
+	}
+	return passed(rule, title)
+}
+
 // checkProtocolRefusal opens a session claiming a version nothing
 // speaks.
 func checkProtocolRefusal(ctx context.Context, opts Options) Result {

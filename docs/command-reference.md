@@ -1472,7 +1472,7 @@ claims.
 
 `verify` drives a candidate through the protocol -- a good call, a call
 that cannot succeed, a version it should refuse, a shutdown it should
-honour -- and reports thirteen rules by name with what happened and why
+honour -- and reports fourteen rules by name with what happened and why
 each one is there. It exits non-zero on a failure, so it belongs in
 whatever builds the extension. Salt has no equivalent and could not:
 there is no protocol to conform to, because the agent imports the file.

@@ -2144,6 +2144,29 @@ An extension is a separate executable implementing a JSON-over-stdio protocol.
 Extension kinds: `module`, `state`, `grain`, `beacon`, `returner`, `pillar`, `runner`, `renderer`,
 `auth`, `roster`, `fileserver`, and `signer`.
 
+**The framing.** A frame is four bytes of unsigned big-endian length followed by that many bytes of
+one JSON object. Length-prefixed rather than newline-delimited, so that a frame boundary does not
+depend on no implementation ever emitting a newline inside a string: an encoder that pretty-prints
+would otherwise break the stream in a way that reads as a protocol error in the host. A frame
+larger than 16 MiB is refused before anything is allocated for it, in both directions.
+
+**Stdout is the protocol.** Anything else an extension writes there is a frame the receiver cannot
+read. Diagnostics go to stderr, which the host captures and attributes to the extension, or to a
+`log` frame.
+
+**Exactly one `result` per `call`,** carrying the `id` the call carried, after any streaming frames.
+A handler that answers twice puts the stream out of step and every later answer goes to the wrong
+call; one that never answers is indistinguishable from a hang.
+
+| Frame | Sent by | Carries |
+|---|---|---|
+| `hello` | host | `protocol`, `extension_kind` |
+| `hello_ok` | extension | `name`, `version`, `functions` (section 15.6), `declares` (section 24.3) |
+| `call` | host | `id`, `function`, `args`, `kwargs`, `context` |
+| `log`, `progress`, `event` | extension | `id`, and the fields of that kind |
+| `result` | extension | `id`, and either `ok` with `value` or `error` |
+| `shutdown` | host | nothing |
+
 ### 24.3 Isolation
 
 | Control | Linux | Windows | macOS, BSD |
@@ -2191,6 +2214,52 @@ migration tool in section 28.5 detects them, reports them, and generates a bridg
 the function signatures filled in, which turns an unbounded porting problem into a bounded one.
 
 Formulas that are pure state, pillar, and Jinja — which is the majority — work unchanged.
+
+### 24.7 Protocol versioning
+
+The protocol is a published interface. An extension may be written by somebody who has never read
+this implementation, in a language it was not written in, and shipped without either side knowing
+about the other. That is the point of section 24.1, and it is what makes the version a promise
+rather than a constant.
+
+**One version, offered, not negotiated.** The host names a single integer in its `hello`. An
+extension either speaks it or refuses and exits non-zero. There is no range and no fallback: a host
+that negotiates down is a host with a path in it that nothing tests, and an extension that answers
+a version it has never seen is agreeing to a contract it cannot have read.
+
+**Unknown fields are ignored, in both directions.** This is the property that makes the protocol
+extensible at all, and it is required of every implementation rather than left to whatever a JSON
+library does by default. A receiver that refused a field it did not recognise would break every
+extension already written the first time anything was added.
+
+**Unknown frame kinds are refused, in both directions.** A receiver that skipped a kind it did not
+know would also skip a misspelt one, leaving the sender waiting for an answer to a frame that was
+silently dropped. Refusal is a protocol violation and the process is terminated.
+
+These may be done within a version, and an extension built against an earlier one keeps working:
+
+- adding an optional field to an existing frame;
+- adding an extension kind, a parameter type name, or a value to an existing enumerated field — a
+  receiver that does not know the name treats the thing as untyped rather than refusing it;
+- adding a function to an extension, or a parameter to a function;
+- anything that only changes what a host does with what it already receives.
+
+These require a new version:
+
+- changing the framing, the length prefix, or the size limit;
+- adding, removing, or renaming a frame kind;
+- removing or renaming a field, or changing what one means;
+- making an optional field required;
+- changing the order of the handshake, or what either side may send when.
+
+Adding a **declaration** under section 24.3 is deliberately in neither list. An extension that
+declares something an older host does not know is refused by it, which is the correct outcome — the
+host cannot grant what it cannot enforce, and running as though it had is the failure the
+declaration exists to prevent. The extension does not run there, and that is not a compatibility
+break to be fixed but a permission the older host is right to withhold.
+
+A version is a number in this specification and in `ext.ProtocolVersion`, and the two are the same
+number. Changing it is a decision recorded here, not an implementation detail.
 
 ## 25. Security model
 

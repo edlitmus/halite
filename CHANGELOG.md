@@ -18,6 +18,38 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The protocol, as a published interface
+
+The last change closed the conformance gap and left one item: `protocol:
+1` had no compatibility policy. Nothing said what could change inside
+version 1, what forced a version 2, or what a host did with a version it
+did not speak. That was a private matter for exactly as long as this
+project was the only implementer -- which, after four changes whose
+purpose was to stop being that, it is not.
+
+SPEC 24.7 is the policy. SPEC 24.2 now carries the framing it always
+described in prose: four bytes of unsigned big-endian length, one JSON
+object, 16 MiB, stdout is the protocol, exactly one `result` per `call`,
+and a table of which side sends which frame.
+
+**The property it rests on was true by accident.** Every implementation
+here ignores a field it does not recognise -- which is what makes a
+field addable at all -- and it is true because `encoding/json` ignores
+unknown fields by default, not because anybody decided it. This
+project's habits run the other way, and somebody reaching for
+`DisallowUnknownFields` in the frame decoder would be following the
+house style. It would make every additive change a breaking one,
+silently, for every extension already written. There are tests on it
+now, saying why.
+
+The asymmetry is deliberate: an unknown *field* is ignored, an unknown
+*frame kind* is refused. A receiver that skipped a kind it did not know
+would also skip a misspelt one, leaving the sender waiting for an answer
+to a frame that was silently dropped.
+
+`extensions verify` gained a fourteenth rule for it, both shipped
+extensions pass, and there is a fixture that fails it.
+
 ### A conformance harness for extensions
 
 The last two changes left the same thing open: an extension written in
