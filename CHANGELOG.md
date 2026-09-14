@@ -18,6 +18,77 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The two custom Salt modules an estate cannot migrate without
+
+A tree being migrated here carries two files this build had nowhere to
+put: `_grains/metadata.py` and `_pillar/aws_secrets_manager.py`. Between
+them they supply the instance facts every state branches on and the
+secrets every state reads, so a migration that cannot carry them is not
+a migration. Both are compiled in now, in Go, against the SigV4 and the
+IMDSv2 client this project already had.
+
+**`cloud_grains` was a setting that read itself.** The key was declared,
+the node read it at startup, and it was handed to the grain collector —
+which never looked at it. An operator who set `cloud_grains: true` got
+no warning, no grains, and no way to tell the two apart. The unread-key
+audit could not see it, because the audit asks whether a service reads
+the setting and this one was read, carried across a package boundary,
+and dropped there.
+
+It collects two things now. The nested `meta-data` and `dynamic` trees
+are what Salt's metadata grain produced, rule for rule, because an
+existing tree indexes into them — `grains.get('meta-data:local-ipv4')`
+names an autoscaled host, and `meta-data:services:partition` is how a
+state knows it is in GovCloud. The flat set SPEC 14.1 names — `cloud`,
+`instance_id`, `region`, `account_id`, `tags` and the rest — comes out
+of the same walk rather than a second round of requests.
+
+**Salt's metadata grain publishes the instance's credentials.** The walk
+it describes descends into the IAM security-credentials path, which
+answers with the instance role's live access key, secret key and session
+token; as grains, all three then leave the machine, land in the grain
+cache, and appear in `grains.items` output. That path and
+`identity-credentials` beside it are excluded here, and the exclusion is
+not a setting that can be turned off — `cloud_grains_exclude` adds paths
+and cannot remove these. The test asserts the request is never made,
+rather than that the value is absent: a walk that fetches and discards
+has still put the credential in a process that logs.
+
+**External pillar is a framework and one source.** `ext_pillar` keeps
+Salt's own shape, and the compiler runs the sources after the top file,
+in order, each seeing what the ones before it produced. The difference
+is the loader: Salt imports whatever Python file is on the file server,
+and this refuses a source name it does not have, at startup. One source
+ships — `aws_secrets_manager` — with the same `aws_secrets` root key,
+the same dotted-key nesting, the same automatic JSON parsing and the
+same five-minute cache the Python module had, so
+`pillar.get('aws_secrets:database:password')` resolves in an existing
+tree unchanged.
+
+What differs is the failure. The Python module logged a failed fetch and
+returned the secrets it did get, so a state applied with an empty
+password and nothing said so. Here a failed source fails the
+compilation, and `fail: ignore` inside a source's block is how a
+genuinely optional source opts out. `ext_pillar_fail` is no longer an
+inert setting.
+
+A node's secrets need not all be listed on the hub. Set
+`aws_secrets_pillar_list` and a list under that key in the tree names
+more, which is what the Python module read out of the pillar — one
+pillar file per role carrying the secrets that role needs, selected by
+the pillar top file like anything else.
+
+**And one thing was reproduced deliberately against this project's own
+grain.** The Python module let a node name its own secret ARNs, and this
+estate's tree uses that. A node controls its own grains, so honouring
+such a list lets any node ask the hub to fetch any secret the hub's
+credentials can read — the shape the trusted-grain allowlist exists to
+prevent for targeting. It is built, because the estate needs it. It is
+off unless `aws_secrets_node_grain` names the grain, it is bounded by
+pattern with `aws_secrets_node_grain_allow`, and a hub that enables the
+grain without patterns says so at startup rather than leaving it to be
+found.
+
 ### Running the same seven machines until they were all quiet
 
 Fixing the first round of platform problems uncovered a second, and each
@@ -2049,7 +2120,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 220 settings in the
+The configuration reference explains each of the 237 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

@@ -464,13 +464,7 @@ func (n *node) refreshGrains(ctx context.Context, args *cli.Args) {
 		case <-ticker.C:
 		}
 		root := args.Flag("root", config.DefaultRoot)
-		fresh, warnings := grains.Collect(grains.Options{
-			NodeID:     n.nodeID,
-			StaticFile: root + "/grains",
-			GrainsDir:  root + "/grains.d",
-			Extra:      n.cfg.Map("grains"),
-			Cloud:      n.cfg.Bool("cloud_grains", false),
-		})
+		fresh, warnings := grains.Collect(grainOptions(n.cfg, n.nodeID, root))
 		for _, w := range warnings {
 			n.log.Warn(w.String(), "component", "grains")
 		}

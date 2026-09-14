@@ -35,6 +35,8 @@ type PillarOptions struct {
 	Registry *exec.Registry
 	// ConfigValues is what a template sees as `opts`, redacted.
 	ConfigValues *value.Map
+	// Ext are the external pillar sources of SPEC section 12.7.
+	Ext []pillar.ExtSource
 }
 
 // pillarRequest is POST /v1/pillar: the node sends its grains and the
@@ -142,6 +144,7 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 			YAMLBool11:       opts.YAMLBool11,
 			Nondeterministic: opts.Nondeterministic,
 			TemplateOptions:  opts.TemplateOptions,
+			Ext:              opts.Ext,
 			// Never Local: this is the hub's tree, and SPEC 12.1
 			// reserves that flag for a development compilation from a
 			// local root.
@@ -151,6 +154,12 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 	out := c.Compile()
 	for _, w := range out.Warnings {
 		s.warn(w.String(), "component", "pillar", "node_id", nodeID)
+	}
+	// Counted here rather than beside `pillarFailure`, because a source
+	// whose failure is ignored never reaches that path -- and a node
+	// quietly missing a secret is the case this counter exists for.
+	for _, name := range out.ExtFailed {
+		s.m().pillarExtFail.With("source", name).Inc()
 	}
 	if err := out.Err(); err != nil {
 		return nil, err

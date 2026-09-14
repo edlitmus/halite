@@ -3003,13 +3003,15 @@ here was run on Linux, and the systemd units remain unexercised.
 ### 5.23 Two of SPEC 26.2's metric families are not registered
 
 The specification's table names thirty-two; this build registers
-thirty. Counted mechanically against the source, not read off the
+thirty-one. Counted mechanically against the source, not read off the
 table:
 
 | Not registered | Why it matters |
 |---|---|
 | `halite_pillar_cache_hits_total` | The pillar cache is not instrumented, because there is no pillar cache: every request compiles. The counter waits on the cache. |
-| `halite_pillar_ext_failures_total` | External pillar is not built at all, so this one waits on a feature rather than on the counter. |
+
+The external pillar failure counter has left this list: it is
+registered now that external pillar exists. 5.78 says what it counts.
 
 SPEC 26.2 says "every bounded queue and every drop path in this
 specification has a corresponding counter". That now holds: the
@@ -7304,6 +7306,87 @@ Seven Linux hosts passing said nothing about this, because the test is
 FreeBSD-only and the one FreeBSD machine in the lab's reach is the one
 where it happens to work.
 
+### 5.78 The two custom Salt modules an estate cannot migrate without
+
+A tree being migrated here carries two files that this build had
+nowhere to put: `_grains/metadata.py` and
+`_pillar/aws_secrets_manager.py`. Neither is exotic — between them they
+supply the instance facts every state branches on and every secret
+every state reads — and a migration that cannot carry them is not a
+migration. Both are compiled in now, and both found something on the
+way.
+
+**`cloud_grains` was a setting that read itself.** SPEC 14.1 defines
+the cloud grains and makes them opt-in. The key was declared, the node
+read it at startup, and it was passed to `grains.Collect` as
+`Options.Cloud` — where nothing looked at it. The unread-key audit of
+section 4 could not see this: the audit asks whether a service *reads*
+the setting, and this one was read, carried across a package boundary,
+and dropped on the floor there. An operator who set `cloud_grains: true`
+got no warning, no grains, and no way to tell the two apart. The audit
+has been extended by nothing; the defect is recorded here because the
+shape of it — a value read at one layer and ignored at the next — is
+one the audit's question does not reach.
+
+It collects two things now, and they serve different readers. The
+nested `meta-data` and `dynamic` trees are what `_grains/metadata.py`
+produced, rule for rule, because an existing tree indexes into them:
+`grains.get('meta-data:local-ipv4')` decides an ASG host's name, and
+`meta-data:services:partition` is how a state knows it is in GovCloud.
+The curated set SPEC 14.1 names — `cloud`, `instance_id`, `region`,
+`account_id`, `tags` — is derived from the same walk rather than
+fetched again, because a second round of requests for values already in
+memory is the cost the grain is opt-in to avoid.
+
+**Salt's metadata grain publishes the instance's credentials.** The
+walk it describes descends into `latest/meta-data/iam/security-
+credentials/<role>`, which answers with the instance role's live access
+key, secret key and session token. As a grain, all three then travel off
+the machine, land in the grain cache, and appear in `grains.items`
+output. This build excludes that path and `identity-credentials`
+alongside it, and the exclusion is not a setting that can be turned off:
+`cloud_grains_exclude` adds paths and cannot remove these. A test asserts
+that the request is never made, not merely that the value is absent —
+the difference matters, because a walk that fetches and discards has
+still put the credential in a process that logs.
+
+**The external pillar is a framework and one source.** `ext_pillar`
+keeps Salt's shape and the compiler runs the sources after the top file,
+in order, each seeing what the ones before it produced. The difference
+is the loader: Salt imports whatever Python file is on the file server,
+and this refuses a source name it does not have, at startup. One source
+ships — `aws_secrets_manager`, over the SigV4 of SPEC 13.4, with the
+same `aws_secrets` root, the same dotted-key nesting, the same
+JSON parsing and the same 300-second cache the Python module had. What
+differs is the failure: the Python module logged a failed fetch and
+returned the secrets it *did* get, so a state applied with an empty
+password and nothing said so. Here a failed source fails the
+compilation, and `fail: ignore` is how a genuinely optional source opts
+out. `ext_pillar_fail` has left `InertKeys`.
+
+The Python module also read a per-node list out of the pillar itself,
+and `aws_secrets_pillar_list` is that: a key in the tree the hub has
+already compiled, holding secrets in the same shape. It is the half of
+Salt parity worth keeping, because the tree is the hub's own writing and
+a node has no say in what it asks for.
+
+**And one thing was reproduced deliberately against this project's own
+grain.** The Python module let a node name its own secret ARNs, and
+this estate's tree uses that. A node controls its own grains, so
+honouring such a list lets any node ask the hub to fetch any secret the
+hub's credentials can read — the exact shape SPEC 12.4's trusted-grain
+allowlist exists to prevent for targeting. It is built, because the
+estate needs it, and it is off unless `aws_secrets_node_grain` names
+the grain; `aws_secrets_node_grain_allow` bounds it by pattern, and a
+hub that enables the grain without patterns says so in a startup
+warning rather than leaving it to be discovered.
+
+**One metric left 5.23's list.** `halite_pillar_ext_failures_total` is
+registered, labelled by source, and it counts an ignored failure as well
+as a hard one. An ignored failure never reaches
+`halite_pillar_failures_total` — the compilation succeeded — and a node
+quietly missing a secret is exactly what the counter exists for.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
@@ -7387,9 +7470,22 @@ node go through the hub unless `--local` says otherwise, the way
 
 What is **not** built, in phase 2:
 
-- **External pillar** (SPEC 12.7). `ext_pillar` is read only to warn
-  that the sources it names contribute nothing, and `ext_pillar_fail`
-  is read by nothing at all.
+- ~~**External pillar**~~ (SPEC 12.7). Partly built. `ext_pillar` takes
+  Salt's own shape — a list of single-key mappings — and the sources
+  run after the top file, in order, each seeing what the ones before it
+  produced. One source is compiled in: `aws_secrets_manager`, SPEC
+  12.7's replacement for the Python external pillar of that name, which
+  reads AWS Secrets Manager over the in-house SigV4 of SPEC 13.4 into
+  `pillar['aws_secrets']` — the same root key, the same dotted-key
+  nesting, the same automatic JSON parsing, the same cache TTL. A name
+  this build does not know is refused at startup rather than
+  contributing nothing in silence, which is the part Salt cannot do:
+  there, the loader imports whatever file is on the file server.
+  `ext_pillar_fail` is no longer inert — a source that fails fails the
+  compilation, and `fail: ignore` inside a source's own block is the
+  per-source exception — `internal/pillar/ext.go`,
+  `internal/extpillar/`. Every other source in SPEC 12.7's table is
+  still unbuilt.
 - ~~**`file_ignore_regex`.**~~ Built. Both forms hide paths from
   listing and from fetching, and a pattern that does not compile is
   fatal at startup rather than a rule that silently hides nothing —

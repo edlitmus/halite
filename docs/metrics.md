@@ -588,6 +588,7 @@ themselves, under whatever you call that job.
 | `halite_orch_runs_total` | counter | `result` | Orchestrations, by `complete`, `failed`, or `compile_failed`. |
 | `halite_pillar_compile_duration_seconds` | histogram | — | Time to compile one node's pillar. |
 | `halite_pillar_failures_total` | counter | — | Compilations that failed, so a node got no pillar. |
+| `halite_pillar_ext_failures_total` | counter | `source` | External pillar sources that failed. An ignored failure is counted too: it never reaches the line above, and the node is still missing what that source holds. |
 | `halite_fileserver_requests_total` | counter | `backend` `code` | Tree fetches. |
 | `halite_fileserver_bytes_total` | counter | — | Bytes served. |
 | `halite_events_published_total` | counter | `tag_prefix` | Events reaching the bus. |
@@ -702,14 +703,13 @@ never move on one that serves no git remote.
 
 ### What SPEC 26.2 names and this build does not have
 
-Two of the specification's thirty-two families are not registered, so
-an alert written from its table rather than from this one sits silent:
-`halite_pillar_cache_hits_total` and `halite_pillar_ext_failures_total`.
-[DIVERGENCE 5.23](DIVERGENCE.md) records why: there is no pillar cache
-to count hits in, and external pillar is not built at all. Both wait on
-a feature rather than on a counter.
+One of the specification's thirty-two families is not registered, so an
+alert written from its table rather than from this one sits silent:
+`halite_pillar_cache_hits_total`. [DIVERGENCE 5.23](DIVERGENCE.md)
+records why: there is no pillar cache to count hits in. It waits on a
+feature rather than on a counter.
 
-Nine that were on this list are registered now. An alert written against
+Ten that were on this list are registered now. An alert written against
 one of those before it existed did not error — it stayed silent, which
 is what it would have done if the estate were healthy, and that is the
 reason this section exists at all.

@@ -263,6 +263,47 @@ anything and ask for another machine's secrets.
 file are refused, because the answer would depend on the thing being
 computed.
 
+### Secrets from AWS Secrets Manager
+
+`ext_pillar` names sources the hub consults after the top file. One
+ships: `aws_secrets_manager`.
+
+```yaml
+# on the hub
+ext_pillar:
+  - aws_secrets_manager:
+      - name: database.creds
+        secret_id: arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/db-AbCdEf
+```
+
+A JSON secret is parsed into a mapping and a dotted name nests, so that
+becomes:
+
+```jinja
+{{ pillar.get('aws_secrets:database:creds:password') }}
+```
+
+A secret that is not JSON stays the string it is. An ARN carries its own
+region and partition; a secret given by name takes its region from the
+entry, from the machine's `region` grain, or from `aws_secrets_region`,
+in that order, and a secret with none of them is an error rather than a
+guess.
+
+A machine's secrets need not all be listed on the hub. Set
+`aws_secrets_pillar_list` to a pillar key, and a list under that key in
+the tree names more — which is how one pillar file per role carries the
+secrets that role needs, selected by the pillar top file like anything
+else.
+
+A source that fails fails the whole compilation. That is deliberate: a
+pillar missing the half that held the credentials is worse than no
+pillar, because the run proceeds with it and the state cannot tell an
+absent secret from one that failed to arrive. Set `ext_pillar_fail:
+ignore`, or `- fail: ignore` inside one source's block, only where the
+source is genuinely optional.
+
+A source name this build does not have is refused when the hub starts.
+
 ## Files
 
 `salt://` names a file in the state tree, served by whichever backend the

@@ -350,13 +350,7 @@ func setup(args *cli.Args) *node {
 			"setting", w.Setting, "effect", w.Effect, "section", w.Section)
 	}
 
-	g, warnings := grains.Collect(grains.Options{
-		NodeID:     n.nodeID,
-		StaticFile: root + "/grains",
-		GrainsDir:  root + "/grains.d",
-		Extra:      cfg.Map("grains"),
-		Cloud:      cfg.Bool("cloud_grains", false),
-	})
+	g, warnings := grains.Collect(grainOptions(cfg, n.nodeID, root))
 	for _, w := range warnings {
 		n.log.Warn(w.String(), "component", "grains")
 	}

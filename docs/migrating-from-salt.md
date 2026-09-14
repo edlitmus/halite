@@ -209,8 +209,14 @@ with the reason.
 
 The larger absences today:
 
-- **External pillar.** `ext_pillar` warns that the sources it names
-  contribute nothing, and `ext_pillar_fail` is read by nothing at all.
+- **External pillar, most of it.** `ext_pillar` takes Salt's own shape
+  and one source is compiled in: `aws_secrets_manager`, which reads AWS
+  Secrets Manager into `pillar['aws_secrets']` the way the Python
+  external pillar of that name did. Every other source Salt ships is
+  still absent, and a name this build does not know is refused at
+  startup rather than contributing nothing in silence. `ext_pillar_fail`
+  now governs something: a source that fails fails the compilation
+  unless it is set to `ignore`.
 - **`halite-hub files`**, the push in the other direction from `salt-cp`.
   The file server serves; pushing a file to a node is not built.
 - **Windows and macOS modules.** Phase 5, and the only platform work

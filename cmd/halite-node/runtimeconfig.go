@@ -62,13 +62,7 @@ func (n *node) reloadRuntimeConfig(kind string) error {
 		// merge order between the static file, `grains.d`, and the
 		// configuration is the collector's to decide, not this
 		// function's.
-		fresh, warnings := grains.Collect(grains.Options{
-			NodeID:     n.nodeID,
-			StaticFile: n.root + "/grains",
-			GrainsDir:  n.root + "/grains.d",
-			Extra:      n.cfg.Map("grains"),
-			Cloud:      n.cfg.Bool("cloud_grains", false),
-		})
+		fresh, warnings := grains.Collect(grainOptions(n.cfg, n.nodeID, n.root))
 		for _, w := range warnings {
 			n.log.Warn(w.String(), "component", "grains")
 		}
