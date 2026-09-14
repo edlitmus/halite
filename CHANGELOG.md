@@ -54,51 +54,52 @@ and cannot remove these. The test asserts the request is never made,
 rather than that the value is absent: a walk that fetches and discards
 has still put the credential in a process that logs.
 
-**External pillar is a framework and one source.** `ext_pillar` keeps
-Salt's own shape, and the compiler runs the sources after the top file,
-in order, each seeing what the ones before it produced. The difference
-is the loader: Salt imports whatever Python file is on the file server,
-and this refuses a source name it does not have, at startup. One source
-ships — `aws_secrets_manager` — with the same `aws_secrets` root key,
-the same dotted-key nesting, the same automatic JSON parsing and the
-same five-minute cache the Python module had, so
-`pillar.get('aws_secrets:database:password')` resolves in an existing
-tree unchanged.
+**External pillar is a framework, and one source that is not in the
+binary.** `ext_pillar` keeps Salt's own shape, and the compiler runs the
+sources after the top file, in order, each seeing what the ones before
+it produced. The difference is the loader: Salt imports whatever Python
+file is on the file server, and this takes a signed, pinned extension of
+kind `pillar` — delivered under `_ext/`, verified on every load, run out
+of process in a sandbox with `network` declared and nothing else.
 
-What differs is the failure. The Python module logged a failed fetch and
-returned the secrets it did get, so a state applied with an empty
-password and nothing said so. Here a failed source fails the
+One ships, and it is the worked example rather than a built-in:
+`cmd/halite-ext-aws-secrets`, the same job
+`_pillar/aws_secrets_manager.py` does in a Salt tree, with the same
+`aws_secrets` root key, the same dotted-key nesting, the same automatic
+JSON parsing and the same five-minute cache — so
+`pillar.get('aws_secrets:database:password')` resolves in an existing
+tree unchanged. Its configuration is the `ext_pillar` block, handed over
+untouched: a host that kept an extension's schema would be a second
+place for it to drift, so there are no `aws_secrets_*` settings.
+[docs/extensions.md](docs/extensions.md) walks the whole path, from
+`go build` to a hub that will run it.
+
+What differs from Salt is the failure. The Python module logged a failed
+fetch and returned the secrets it did get, so a state applied with an
+empty password and nothing said so. Here a failed source fails the
 compilation, and `fail: ignore` inside a source's block is how a
 genuinely optional source opts out. `ext_pillar_fail` is no longer an
-inert setting.
+inert setting, and a source naming an extension nobody installed stops
+the hub at startup.
 
-A node's secrets need not all be listed on the hub. Set
-`aws_secrets_pillar_list` and a list under that key in the tree names
-more, which is what the Python module read out of the pillar — one
-pillar file per role carrying the secrets that role needs, selected by
-the pillar top file like anything else.
+A node's secrets need not all be listed on the hub. `pillar_list` in the
+block reads them from the tree, which is what the Python module read out
+of the pillar; `node_grain` reads them from a grain, which is what some
+trees use and which means a node's own grains decide what the hub
+fetches. `node_grain_allow` bounds that by pattern.
 
-**The migration audit told operators to build what they no longer
-need.** `halite-hub migrate` is the first command the migration guide
-asks for, and `_grains` and `_pillar` are among the directories it
-reports as unportable — so a tree carrying these two files got two
-blocking findings telling the operator to write a bridge extension for
-each. Both were wrong the moment this landed, and confidently so. The
-audit knows the two paths now and reports them as review rather than
-blocking, naming the setting to turn on instead; a different module in
-the same directory is still a port. `from-salt.md` gains a step for
-each, and the migration reference records the two exceptions.
-
-**And one thing was reproduced deliberately against this project's own
-grain.** The Python module let a node name its own secret ARNs, and this
-estate's tree uses that. A node controls its own grains, so honouring
-such a list lets any node ask the hub to fetch any secret the hub's
-credentials can read — the shape the trusted-grain allowlist exists to
-prevent for targeting. It is built, because the estate needs it. It is
-off unless `aws_secrets_node_grain` names the grain, it is bounded by
-pattern with `aws_secrets_node_grain_allow`, and a hub that enables the
-grain without patterns says so at startup rather than leaving it to be
-found.
+**Making it an extension found four things, none in the part that was
+rewritten.** The hub had no extension runtime at all — it declared all
+eight `extension_*` settings and read none — so a `pillar` extension had
+nowhere to run, and `halite-hub extensions list` and `sync` are the
+hub's half of that. SPEC 15.6's signature wire format had a reader and
+no writer, so the first extension written against the obvious type sent
+a handshake the host refused and reported no functions. `extbundle
+-declares` split on the platform's path separator despite its own help
+saying comma. And `halite-hub extensions` insisted on an enrollment CA,
+so the command that fetches a hub's extensions could not run before that
+hub's first `serve`. The first two were found by running it, not by a
+test.
 
 ### Running the same seven machines until they were all quiet
 
@@ -2131,7 +2132,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 237 settings in the
+The configuration reference explains each of the 222 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.

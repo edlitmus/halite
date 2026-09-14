@@ -203,11 +203,12 @@ var replacedModules = map[string]struct {
 			"which Salt's does: see DIVERGENCE 5.78.",
 	},
 	"_pillar/aws_secrets_manager.py": {
-		Action: "This is the AWS Secrets Manager external pillar. The `aws_secrets_manager` source " +
-			"in `ext_pillar` does the same thing — same `aws_secrets` root, same dotted-key nesting, " +
-			"same JSON parsing — so `pillar.get('aws_secrets:...')` keeps working. Check this file is " +
-			"the usual one, then delete it and configure the source. A failed fetch fails the " +
-			"compilation here rather than yielding a partial pillar: see DIVERGENCE 5.78.",
+		Action: "This is the AWS Secrets Manager external pillar. The `aws_secrets_manager` extension " +
+			"does the same thing — same `aws_secrets` root, same dotted-key nesting, same JSON parsing " +
+			"— so `pillar.get('aws_secrets:...')` keeps working. It is an extension rather than " +
+			"built in, so it is built and signed first: docs/extensions.md walks through it. Check " +
+			"this file is the usual one, then delete it. A failed fetch fails the compilation here " +
+			"rather than yielding a partial pillar: see DIVERGENCE 5.78 and 5.79.",
 	},
 }
 

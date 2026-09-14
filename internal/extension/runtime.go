@@ -287,49 +287,29 @@ func (l *Loaded) readSignatures() {
 }
 
 // parseSignature reads the section 15.6 shape an extension sends.
+//
+// The shape itself lives in `internal/signature`, so that the side that
+// writes it and the side that reads it cannot disagree. They did: this
+// was an anonymous struct here and nothing exported could produce it.
 func parseSignature(raw json.RawMessage) (signature.Signature, error) {
-	var wire struct {
-		Module     string   `json:"module"`
-		Function   string   `json:"function"`
-		Doc        string   `json:"doc"`
-		Mutates    bool     `json:"mutates"`
-		Platforms  []string `json:"platforms"`
-		Privileges []string `json:"privileges"`
-		Params     []struct {
-			Name     string `json:"name"`
-			Type     string `json:"type"`
-			Required bool   `json:"required"`
-			Doc      string `json:"doc"`
-			Default  any    `json:"default"`
-		} `json:"params"`
-	}
+	var wire signature.Wire
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return signature.Signature{}, err
 	}
 	if wire.Module == "" || wire.Function == "" {
 		return signature.Signature{}, fmt.Errorf("a signature with no module or function")
 	}
-	sig := signature.Signature{
-		Module: wire.Module, Function: wire.Function, Doc: wire.Doc,
-		Mutates: wire.Mutates, Platforms: wire.Platforms, Privileges: wire.Privileges,
-		// An extension cannot be taken at its word about test-mode
-		// honesty — the host has no way to check it — so it is
-		// recorded as unreliable. That makes a bare extension call a
-		// compilation warning as a prereq target, which is the
-		// conservative reading and the right one.
-		TestMode: signature.TestUnreliable,
-		// An extension is arbitrary code by construction, so a wildcard
-		// in the RBAC policy never grants one: the role has to name it.
-		// SPEC 23.5's rule, applied to the thing it most obviously
-		// covers.
-		ArbitraryCode: true,
-	}
-	for _, p := range wire.Params {
-		sig.Params = append(sig.Params, signature.Param{
-			Name: p.Name, Type: namedType(p.Type),
-			Required: p.Required, Doc: p.Doc, Default: p.Default,
-		})
-	}
+	sig := signature.FromWire(wire)
+	// An extension cannot be taken at its word about test-mode honesty
+	// -- the host has no way to check it -- so it is recorded as
+	// unreliable. That makes a bare extension call a compilation
+	// warning as a prereq target, which is the conservative reading and
+	// the right one.
+	sig.TestMode = signature.TestUnreliable
+	// An extension is arbitrary code by construction, so a wildcard in
+	// the RBAC policy never grants one: the role has to name it. SPEC
+	// 23.5's rule, applied to the thing it most obviously covers.
+	sig.ArbitraryCode = true
 	return sig, nil
 }
 
@@ -345,33 +325,4 @@ func (r *Runtime) timeout() time.Duration {
 		return bridge.DefaultTimeout
 	}
 	return r.Timeout
-}
-
-// namedType reads a parameter type an extension declared.
-//
-// An unrecognised name becomes `any` rather than an error: an extension
-// written against a later build of this protocol should lose the
-// validation on one parameter, not the whole function.
-func namedType(name string) signature.Type {
-	switch name {
-	case "string":
-		return signature.String
-	case "int":
-		return signature.Int
-	case "float":
-		return signature.Float
-	case "bool":
-		return signature.Bool
-	case "list":
-		return signature.List
-	case "map":
-		return signature.Map
-	case "path":
-		return signature.Path
-	case "mode":
-		return signature.Mode
-	case "duration":
-		return signature.Duration
-	}
-	return signature.Any
 }

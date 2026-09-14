@@ -7409,6 +7409,67 @@ as a hard one. An ignored failure never reaches
 `halite_pillar_failures_total` — the compilation succeeded — and a node
 quietly missing a secret is exactly what the counter exists for.
 
+### 5.79 The external pillar, moved out of the binary
+
+5.78 compiled `aws_secrets_manager` in. That was the wrong shape, and
+the reason is the one SPEC 24.1 gives for the whole extension model:
+Salt's extensibility is load-bearing because a site can add code
+without rebuilding anything, and a replacement that only works for
+sources the maintainers chose to compile in has not replaced it. A
+worked example matters more than one more built-in source.
+
+So it is an extension now — `cmd/halite-ext-aws-secrets`, kind
+`pillar`, signed, pinned, delivered under `_ext/`, verified on every
+load, run out of process with `network` declared and nothing else. The
+fifteen `aws_secrets_*` settings are gone: an extension's configuration
+is the `ext_pillar` block, handed over untouched, because a host that
+kept an extension's schema would be a second place for it to drift.
+`docs/extensions.md` walks the whole path.
+
+Four things this found, none of them in the part that was rewritten.
+
+**The hub had no extension runtime.** The node has had one since the
+model landed. The hub declared all eight `extension_*` settings and read
+none of them — the same silent acceptance as `cloud_grains` in 5.78, and
+invisible to the unread-key audit for the same reason: the settings are
+read by *a* service, so the audit is satisfied. It matters now, because
+pillar compiles on the hub and a `pillar` extension has nowhere else to
+run. `halite-hub extensions list` and `sync` are the hub's half of SPEC
+24.5.
+
+**The signature wire format had a reader and no writer.** SPEC 15.6's
+shape existed once, as an anonymous struct inside
+`extension.parseSignature`. Nothing exported could produce it, so the
+first extension written against `signature.Signature` marshalled it
+directly — and a parameter's type is an `int` in this package, so the
+handshake carried `"type": 1` where the host wanted `"type": "string"`.
+The host refused every signature, logged one warning, and reported an
+extension with no functions; the hub then refused to use it as a pillar
+source because it did not provide `ext_pillar`. The correct diagnosis
+from that trail is four steps from the cause. `signature.Wire`,
+`Encode`, and `FromWire` now define the shape once and the reader uses
+them. A wire format with only a reader is a wire format nobody can
+write.
+
+**`extbundle -declares` split on the wrong character.** Its own help
+says comma separated; it used `filepath.SplitList`, which splits on the
+platform's path list separator. So `-declares network,root` was a single
+declaration named `network,root` on every platform, and the colon form
+that did work on unix was one declaration on Windows. A declaration that
+does not parse is a permission the sandbox never grants, which surfaces
+as an extension that cannot reach the network for no stated reason.
+
+**`halite-hub extensions` demanded an enrollment CA.** It was built on
+`openHub`, which resolves one — so the command that fetches the
+extensions a hub needs could not run before that hub's first `serve`.
+It takes the configuration and the logger and stops there now. Syncing
+also creates its own cache directory rather than failing with a staging
+error naming a directory two levels above the one the operator set.
+
+The first two were found by running the thing rather than by a test: a
+signed bundle, published into a tree, fetched by the real binary, whose
+`extensions list` then printed an extension with no functions.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

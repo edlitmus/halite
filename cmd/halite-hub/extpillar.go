@@ -1,206 +1,82 @@
 package main
 
 import (
-	"fmt"
-	"time"
-
-	"github.com/edlitmus/halite/internal/awsauth"
 	"github.com/edlitmus/halite/internal/cli"
-	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/extpillar"
 	"github.com/edlitmus/halite/internal/pillar"
-	"github.com/edlitmus/halite/internal/value"
 )
-
-// extPillarSpec is one entry of `ext_pillar`, parsed.
-//
-// Parsing is separated from building so that it can be tested: building
-// a source resolves credentials and ends in `cli.Fatalf`, and a test
-// cannot follow it there.
-type extPillarSpec struct {
-	// Name is the source the entry named.
-	Name string
-	// Secrets is the aws_secrets_manager block, when that is the source.
-	Secrets []extpillar.Secret
-	// FailIgnore is this source's effective `ext_pillar_fail`.
-	FailIgnore bool
-}
 
 // extPillarSources builds the external pillar sources of SPEC 12.7 from
 // `ext_pillar`.
 //
-// The list keeps Salt's shape — a list of single-key mappings, the key
-// naming the source — because that is what an existing Salt
-// configuration holds and there is no value in churning it. What has
-// changed is underneath: a source is compiled in rather than imported
-// from a Python file on the file server, so a name this build does not
-// know is refused at startup. Salt would have loaded whatever file
-// happened to be there.
-func extPillarSources(h *hubContext) []pillar.ExtSource {
+// The list keeps Salt's shape — single-key mappings, the key naming the
+// source — because that is what an existing configuration holds and
+// there is no value in churning it. What changed is underneath: a source
+// is a signed, pinned extension of kind `pillar` rather than a Python
+// file the host imports, so a name with no extension behind it is
+// refused at startup instead of being loaded from whatever happens to
+// be on the file server.
+//
+// Fatal rather than a warning, throughout. A hub that starts without a
+// source its configuration names goes on to serve every node a pillar
+// missing whatever that source held, which is the partial pillar SPEC
+// 12.7 spends a paragraph refusing.
+func extPillarSources(h *hubContext, runtime *extension.Runtime) []pillar.ExtSource {
 	raw, ok := h.cfg.Get("ext_pillar")
 	if !ok || raw == nil {
 		return nil
 	}
-	specs, err := parseExtPillar(raw, h.cfg.String("ext_pillar_fail", "hard") == "ignore")
+	specs, err := extpillar.ParseList(raw, h.cfg.String("ext_pillar_fail", "hard") == "ignore")
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	out := make([]pillar.ExtSource, 0, len(specs))
+	if len(specs) == 0 {
+		return nil
+	}
+
+	sources, err := extpillar.Sources(specs, runtime, nil)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
+	// Started here so that a bundle whose executable will not run is a
+	// hub that does not start, rather than a hub that fails the first
+	// node's pillar. The handshake is also what proves the extension
+	// provides `ext_pillar` at all.
 	for _, spec := range specs {
-		switch spec.Name {
-		case extpillar.AWSSecretsName:
-			out = append(out, awsSecretsSource(h, spec))
-		default:
-			// Unreachable: parseExtPillar refuses an unknown name. Kept
-			// so that adding a source to the parser and forgetting to
-			// build it is a failure rather than a silent omission.
-			cli.Fatalf("`ext_pillar`: %q parsed and has no builder", spec.Name)
+		loaded, _ := runtime.Get(spec.Name)
+		if err := h.warmExtension(loaded); err != nil {
+			cli.Fatalf("the external pillar source %q did not start: %v", spec.Name, err)
 		}
+		if !provides(loaded, extpillar.EntryPoint) {
+			cli.Fatalf("the %q extension is kind `pillar` and does not provide %s(); "+
+				"an external pillar source is asked for that function and nothing else",
+				spec.Name, extpillar.EntryPoint)
+		}
+		h.log.Info("external pillar source ready",
+			"source", spec.Name,
+			"version", loaded.Bundle.Manifest.Version,
+			"fail", failWord(spec.Ignore),
+			"section", "12.7")
 	}
-	return out
+	return sources
 }
 
-// parseExtPillar reads the `ext_pillar` list.
-func parseExtPillar(raw any, defaultFailIgnore bool) ([]extPillarSpec, error) {
-	list, isList := raw.([]any)
-	if !isList {
-		return nil, fmt.Errorf("`ext_pillar` is a list of sources, not %s", value.TypeName(raw))
-	}
-	var out []extPillarSpec
-	for _, item := range list {
-		m, isMap := item.(*value.Map)
-		if !isMap {
-			return nil, fmt.Errorf("`ext_pillar`: an entry is a mapping naming one source, not %s; "+
-				"a source that takes no configuration is written as `- %s: []`",
-				value.TypeName(item), extpillar.AWSSecretsName)
-		}
-		for _, e := range m.Entries() {
-			name := value.KeyString(e.Key)
-			if name != extpillar.AWSSecretsName {
-				return nil, fmt.Errorf("`ext_pillar`: %q is not an external pillar source this build "+
-					"has. This build ships %s; the rest of Salt's are bridged or not built, and are "+
-					"listed in docs/DIVERGENCE.md rather than being loaded from the file server",
-					name, extpillar.AWSSecretsName)
-			}
-			secrets, failIgnore, err := awsSecretsBlock(e.Val, defaultFailIgnore)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, extPillarSpec{Name: name, Secrets: secrets, FailIgnore: failIgnore})
+// provides reports whether a loaded extension declared a function at
+// handshake.
+func provides(loaded *extension.Loaded, name string) bool {
+	for _, sig := range loaded.Functions {
+		if sig.Function == name {
+			return true
 		}
 	}
-	return out, nil
+	return false
 }
 
-// awsSecretsBlock reads the source's own configuration: a list of
-// secrets, optionally with a `fail:` setting among them.
-func awsSecretsBlock(block any, failIgnore bool) ([]extpillar.Secret, bool, error) {
-	if block == nil {
-		return nil, failIgnore, nil
+func failWord(ignore bool) string {
+	if ignore {
+		return "ignore"
 	}
-	list, ok := block.([]any)
-	if !ok {
-		return nil, false, fmt.Errorf("`ext_pillar`: %s takes a list of secrets, not %s",
-			extpillar.AWSSecretsName, value.TypeName(block))
-	}
-	var out []extpillar.Secret
-	for i, item := range list {
-		m, ok := item.(*value.Map)
-		if !ok {
-			return nil, false, fmt.Errorf("`ext_pillar`: %s entry %d is %s, not a mapping",
-				extpillar.AWSSecretsName, i+1, value.TypeName(item))
-		}
-		// `- fail: ignore` among the secrets is the per-source spelling
-		// of ext_pillar_fail that SPEC 12.7 calls for.
-		if m.Len() == 1 {
-			if v, ok := m.Get("fail"); ok {
-				switch value.KeyString(v) {
-				case "ignore":
-					failIgnore = true
-				case "hard":
-					failIgnore = false
-				default:
-					return nil, false, fmt.Errorf("`ext_pillar`: %s: `fail` is hard or ignore, not %q",
-						extpillar.AWSSecretsName, value.KeyString(v))
-				}
-				continue
-			}
-		}
-		s, err := extpillar.SecretFromMap(m)
-		if err != nil {
-			return nil, false, fmt.Errorf("`ext_pillar`: %s entry %d: %v",
-				extpillar.AWSSecretsName, i+1, err)
-		}
-		out = append(out, s)
-	}
-	return out, failIgnore, nil
-}
-
-// awsSecretsSource builds the Secrets Manager source.
-func awsSecretsSource(h *hubContext, spec extPillarSpec) pillar.ExtSource {
-	secret := h.cfg.String("aws_secrets_secret_access_key", "")
-	if path := h.cfg.String("aws_secrets_secret_access_key_file", ""); path != "" {
-		read, err := config.ReadSecretFile(path)
-		if err != nil {
-			cli.Fatalf("%s: %v", extpillar.AWSSecretsName, err)
-		}
-		secret = read
-	}
-	partition := h.cfg.String("aws_secrets_partition", "aws")
-	region := h.cfg.String("aws_secrets_region", "")
-	grain := h.cfg.String("aws_secrets_node_grain", "")
-	allow := h.cfg.StringSlice("aws_secrets_node_grain_allow")
-
-	source, err := extpillar.NewAWSSecrets(extpillar.AWSSecretsOptions{
-		Secrets:   spec.Secrets,
-		Root:      h.cfg.String("aws_secrets_pillar_key", extpillar.DefaultSecretsRoot),
-		Region:    region,
-		Partition: partition,
-		Endpoint:  h.cfg.String("aws_secrets_endpoint", ""),
-		Provider: &awsauth.Provider{
-			Explicit: awsauth.Credentials{
-				AccessKeyID:     h.cfg.String("aws_secrets_access_key_id", ""),
-				SecretAccessKey: secret,
-			},
-			Partition:            partition,
-			Region:               region,
-			RoleARN:              h.cfg.String("aws_secrets_role_arn", ""),
-			RoleSession:          h.cfg.String("aws_secrets_role_session", "halite"),
-			WebIdentityTokenFile: h.cfg.String("aws_secrets_web_identity_token_file", ""),
-		},
-		Timeout:        h.cfg.Duration("aws_secrets_timeout", 30*time.Second),
-		CacheTTL:       h.cfg.Duration("aws_secrets_cache_ttl", extpillar.DefaultCacheTTL),
-		PillarList:     h.cfg.String("aws_secrets_pillar_list", ""),
-		NodeGrain:      grain,
-		NodeGrainAllow: allow,
-		FailIgnore:     spec.FailIgnore,
-		Log: func(level, msg string, kv ...any) {
-			if level == "warn" || level == "error" {
-				h.log.Warn(msg, kv...)
-				return
-			}
-			h.log.Debug(msg, kv...)
-		},
-	})
-	if err != nil {
-		cli.Fatalf("%v", err)
-	}
-
-	// Said once, at startup, rather than left for an operator to work
-	// out from the fact that a node can name its own secrets. The
-	// warning is the point: this is the one place where a node's own
-	// input selects what the hub fetches.
-	if grain != "" {
-		if len(allow) == 0 {
-			h.log.Warn("nodes may name their own secrets and nothing bounds which; "+
-				"a node controls its own grains, so this hub will fetch any secret its credentials "+
-				"can read on any node's say-so. Set aws_secrets_node_grain_allow.",
-				"setting", "aws_secrets_node_grain", "grain", grain, "section", "12.7")
-		} else {
-			h.log.Info("nodes may name their own secrets, bounded by pattern",
-				"setting", "aws_secrets_node_grain", "grain", grain,
-				"patterns", len(allow), "section", "12.7")
-		}
-	}
-	return source
+	return "hard"
 }

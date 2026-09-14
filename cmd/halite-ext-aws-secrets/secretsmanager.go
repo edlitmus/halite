@@ -1,11 +1,10 @@
-// Package extpillar holds the compiled-in external pillar sources of
-// SPEC section 12.7.
+// The Secrets Manager client.
 //
-// Salt loads an external pillar from a Python file on the file server,
-// which is the dynamic module loader this project exists to remove. A
-// source here is compiled in and satisfies pillar.ExtSource; the
-// `ext_pillar` list selects and configures one.
-package extpillar
+// One operation is needed -- GetSecretValue -- which is a JSON 1.1 POST
+// with a target header. That is not a reason to link an SDK, and an
+// extension that linked one would be shipping a dependency tree into
+// the sandbox this model exists to keep small.
+package main
 
 import (
 	"bytes"

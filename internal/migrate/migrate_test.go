@@ -995,7 +995,13 @@ func TestAReplacedCustomModuleIsNotReportedAsAPort(t *testing.T) {
 		byFile[f.File] = f
 	}
 
-	for _, file := range []string{"_grains/metadata.py", "_pillar/aws_secrets_manager.py"} {
+	// Each must name what replaces it, or the operator is no better off
+	// than being told nothing.
+	names := map[string]string{
+		"_grains/metadata.py":            "cloud_grains",
+		"_pillar/aws_secrets_manager.py": "aws_secrets_manager",
+	}
+	for file, replacement := range names {
 		f, ok := byFile[file]
 		if !ok {
 			t.Errorf("%s produced no finding at all; it still cannot be loaded", file)
@@ -1007,10 +1013,8 @@ func TestAReplacedCustomModuleIsNotReportedAsAPort(t *testing.T) {
 		if strings.Contains(f.Action, "bridge-skeleton") {
 			t.Errorf("%s is still told to generate a bridge: %s", file, f.Action)
 		}
-		// It has to say what to turn on instead, or the operator is no
-		// better off than being told nothing.
-		if !strings.Contains(f.Action, "cloud_grains") && !strings.Contains(f.Action, "ext_pillar") {
-			t.Errorf("%s does not name its replacement: %s", file, f.Action)
+		if !strings.Contains(f.Action, replacement) {
+			t.Errorf("%s does not name %s, which replaces it: %s", file, replacement, f.Action)
 		}
 	}
 
