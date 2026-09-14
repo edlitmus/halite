@@ -572,7 +572,23 @@ by_sls:
 	}
 }
 
-func TestAmbiguousRequisiteIsAnError(t *testing.T) {
+// A bare name that several modules declare depends on all of them.
+//
+// Writing several states under one ID is ordinary Salt — an archive
+// fetched by `cmd.run` and unpacked by `archive.extracted` under one
+// name is a shape real trees use — and a requisite naming that ID means
+// all of it. Salt normalises a bare name to an `id` requisite and
+// resolves it against a *set* of chunks, so both halves are waited for.
+//
+// This used to refuse it as ambiguous, on the reasoning that picking one
+// silently is how a requisite guards the wrong state. That reasoning was
+// sound and the conclusion was not: the answer is not one of them, it is
+// all of them, and refusing stopped an estate's tree compiling.
+//
+// Checked against Salt on the same host, by failing only the second of
+// the two chunks: the dependent was blocked with "One or more requisite
+// failed", which is only possible if the requisite bound to both.
+func TestABareRequisiteDependsOnEveryModuleThatDeclaresTheID(t *testing.T) {
 	files := map[string]string{
 		"base|web": `
 nginx:
@@ -588,12 +604,33 @@ dependent:
 `,
 	}
 	out := compile(t, files, "web")
-	msg := errText(out)
-	if !strings.Contains(msg, "more than one module") {
-		t.Fatalf("an ambiguous requisite must be an error:\n%s", msg)
+	if msg := errText(out); msg != "" {
+		t.Fatalf("a bare requisite naming two modules was refused:\n%s", msg)
 	}
-	if !strings.Contains(msg, "pkg") || !strings.Contains(msg, "service") {
-		t.Errorf("the error should name the candidates: %s", msg)
+	var dependent *Chunk
+	for _, ch := range out.Low {
+		if ch.ID == "dependent" {
+			dependent = ch
+		}
+	}
+	if dependent == nil {
+		t.Fatal("the dependent chunk is missing from the low state")
+	}
+	if len(dependent.Reqs) != 1 {
+		t.Fatalf("dependent has %d requisites, want 1", len(dependent.Reqs))
+	}
+	resolved := dependent.Reqs[0].Resolved
+	if len(resolved) != 2 {
+		t.Fatalf("the requisite resolved to %d chunks, want both", len(resolved))
+	}
+	got := map[string]bool{}
+	for _, i := range resolved {
+		got[out.Low[i].State] = true
+	}
+	for _, want := range []string{"pkg", "service"} {
+		if !got[want] {
+			t.Errorf("the requisite does not cover the %s chunk", want)
+		}
 	}
 }
 

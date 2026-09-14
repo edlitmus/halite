@@ -25,6 +25,7 @@ func New() *Registries {
 		States: states.NewRegistry(),
 	}
 	registerTest(r)
+	registerDefaults(r)
 	registerCmd(r)
 	registerFile(r)
 	registerFileEdit(r)

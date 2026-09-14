@@ -68,7 +68,29 @@ Copying it across is the migration step — worth recording because the
 failure surfaced as `first.split is undefined` inside a `map.jinja`,
 four frames from the absent grain.
 
-The tree compiles with 7 errors now, from 42.
+`defaults.merge` is in place, which is the whole of it: every formula's
+map.jinja does `{% do salt['defaults.merge'](defaults, lookup) %}` and
+discards the return, so a copy-returning merge leaves the defaults
+unmerged with no error anywhere.
+
+The tuple unpack was not a defect: this node's id is `ref-salt1` where
+Salt's is the fully-qualified name, so `id.split('.', 1)` yields one
+element and the tree assumes an FQDN. The message now names the count it
+got rather than only the count it wanted.
+
+A bare requisite naming an ID that several modules declare now depends
+on all of them, as Salt's does. Writing several states under one ID is
+ordinary Salt — an archive fetched by `cmd.run` and unpacked by
+`archive.extracted` under one name — and this refused it as ambiguous.
+The reasoning was sound and the conclusion was not: the answer is not one
+of them, it is all of them. Confirmed by applying the same declaration
+under Salt with only the second chunk failing, which blocked the
+dependent.
+
+The tree went from 42 errors to 7, then to 29 — because `defaults.merge`
+let `shared/salt/*.sls` compile past its map.jinja for the first time
+and reach its own — and now to 27. Each layer that starts compiling
+exposes the next.
 
 ### `pillar items` printed every secret in clear
 

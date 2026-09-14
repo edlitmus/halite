@@ -209,12 +209,32 @@ const (
 	langHeading  = "### 2.4 Language and runtime modules"
 )
 
-// ledgerNames is the set of module names mentioned anywhere in the ledger,
-// which is what a bulk gap listing such as the platform table produces.
-func ledgerNames(doc string) map[string]bool {
+// ledgerNames is the set of module names section 2 accounts for: the first
+// column of the three module tables, and the present and absent columns of
+// the platform table. The platform table is read as its own shape because a
+// bulk gap listing puts many names in one cell.
+//
+// A name that appears only in prose does not count, and that is the point.
+// `defaults` is discussed at length in 5.46 as the macOS command driven by
+// `mac_defaults`, and reading the whole document for backticks made that
+// mention enough to satisfy this audit while the execution module of the
+// same name shipped with no row in any table -- exactly the module "added
+// without a row" that TestEveryShippedModuleAppearsInTheLedger exists to
+// catch.
+func ledgerNames(t *testing.T, doc string) map[string]bool {
+	t.Helper()
 	out := map[string]bool{}
-	for _, n := range namesIn(doc) {
-		out[n] = true
+	for _, heading := range []string{execHeading, stateHeading, langHeading} {
+		for name := range ledgerEntries(t, doc, heading) {
+			out[name] = true
+		}
+	}
+	present, absent := ledgerPlatformColumns(t, doc)
+	for name := range present {
+		out[name] = true
+	}
+	for name := range absent {
+		out[name] = true
 	}
 	return out
 }
@@ -268,7 +288,7 @@ func resolve(inv map[string][]string, name string) ([]string, bool) {
 func TestEverySpecModuleIsShippedOrRecordedAsAGap(t *testing.T) {
 	spec := repoFile(t, specFile)
 	doc := repoFile(t, ledgerFile)
-	mentioned := ledgerNames(doc)
+	mentioned := ledgerNames(t, doc)
 	inv := shipped()
 
 	check := func(kind string, want map[string]string, have map[string][]string) {
@@ -388,7 +408,7 @@ func TestReadmeTotalsMatchTheBuild(t *testing.T) {
 // module added without a row cannot hide.
 func TestEveryShippedModuleAppearsInTheLedger(t *testing.T) {
 	doc := repoFile(t, ledgerFile)
-	mentioned := ledgerNames(doc)
+	mentioned := ledgerNames(t, doc)
 	inv := shipped()
 
 	// A module registered under a different name than the spec uses is

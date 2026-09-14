@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **86 execution modules / 586 functions** and **46 state
+The build ships **87 execution modules / 589 functions** and **46 state
 modules / 122 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-32 of 56 present.
+32 of 56 present, plus `defaults`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -469,6 +469,7 @@ different reason is given.
 | `beacons` | implemented | 10 | `list` answers from the registry and the configuration; the nine that change a running node's watchers name the phase they arrive in |
 | `blockdev` | not implemented | 0 | |
 | `data` | implemented | 11 | a node-local key/value store in one JSON file under the cache directory, in SPEC 6.4's canonical form. `load` and `items` both read from disk because there is no in-process session to flush, and `dump` replaces the store rather than flushing a memory this build does not keep (5.72) |
+| `defaults` | implemented | 3 | `merge`, `update` and `deepcopy`, for the `map.jinja` idiom every formula carries. The merge is in place by default because the call site is `{% do %}`, which discards the return value: merging into a new mapping would leave the template with its defaults unmerged and report nothing. `get` is refused by name, because it resolves a file relative to the formula being rendered, which is a file-server question rather than a data one. SPEC 15.2 does not list the module; an estate's tree does not compile without it |
 | `firewall` | implemented | 8 | virtual, with a ufw provider: status, enable, disable, set_default, allow, deny, delete and reload. firewalld, nftables and pf are not built, and the provider interface is shaped by the one provider it has |
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
@@ -8104,12 +8105,66 @@ failure did not look like a missing file: it surfaced as
 four frames from the cause. A tree that selects on grains fails in the
 template that reads them, not at the grain that is absent.
 
+**`defaults.merge` is in-place, and that is the whole of it.** Every
+formula's `map.jinja` carries the same line —
+`{% do salt['defaults.merge'](defaults['salt'], lookup) %}` — and the
+`{% do %}` discards the return value. An implementation that merged into
+a new mapping would leave the template with its defaults unmerged,
+correctly, silently, and with no error anywhere: 5.78's `cloud_grains`
+again, a value computed and dropped. So `in_place` is honoured rather
+than accepted, and the test that covers it was checked by making the
+merge return a copy and watching it fail. `update` and `deepcopy` land
+with it; `defaults.get` does not, because it resolves a file relative to
+the *formula* being rendered, which is a file-server question this does
+not yet answer, and refusing by name beats reading the wrong file.
+
+**The tuple unpack was not a defect either.** `{% set host, domain =
+minion_id.split('.', 1) %}` failed because this node's id is <!-- lexicon:allow -->
+`ref-salt1` and Salt's is the fully-qualified name: with no dot, the
+split yields one element. The tree assumes an FQDN identity. What the
+error said was `cannot unpack sequence into 2 names`, which describes
+the statement — correct — rather than the value, and sends the reader to
+the line that is right. It names the count now, `a sequence of 1 into 2
+names`, which at least points at the value; the cause is still three
+frames above it, in a `node_id` that cannot simply be changed, because
+this node's certificate is issued to the short name.
+
 **Where the tree stands.** 42 errors before any of this, **7** after —
 and the count fell to 6 before the grains file *raised* it to 7, because
 supplying `roles` selected the `saltmaster` states, which had never been
 reached. What is left: `saltutil` and `kmod` as state modules,
 `defaults.merge` as an execution module (three sites), `cmd.run`'s `bg`,
 and one Jinja tuple unpack, `{% set host, domain = id.split('.', 1) %}`.
+
+Then `defaults.merge` took it to **29**, which is the shape of this
+whole exercise rather than a regression: `shared/salt/*.sls` compiles
+past its `map.jinja` for the first time and reaches its own errors —
+`x509.private_key_managed` and `certificate_managed` arguments, three
+`git.latest` fetch options, `archive.extracted`'s ownership arguments, a
+`file.rename` state that does not exist, `file.recurse`'s `template`,
+and a `saltversioninfo` grain. Each layer of the tree that starts
+compiling exposes the next, and the count is a depth gauge rather than a
+score.
+
+**A bare requisite naming several modules depends on all of them.** The
+tree declares `salt-master-gpgkeys-tgz` under both `cmd.run` and <!-- lexicon:allow -->
+`archive.extracted` — an archive fetched and then unpacked, under one
+name — and something later writes `require: [salt-master-gpgkeys-tgz]`. <!-- lexicon:allow -->
+This refused that as ambiguous, on the reasoning that picking one
+silently is how a requisite ends up guarding the wrong state.
+
+The reasoning was sound and the conclusion was not. Salt normalises a
+bare name to an `id` requisite and resolves it against a *set* of
+chunks, so the answer is not one of them, it is all of them — and
+refusing stopped the compilation of a shape that is ordinary rather than
+exotic. Writing several states under one ID is everyday Salt.
+
+It was checked rather than read: the same two-module declaration was
+applied under Salt on this host with the second chunk made to fail, and
+the dependent was blocked with "One or more requisite failed", which is
+only possible if the requisite bound to both. The test that replaced the
+old one asserts both chunks resolve, and was verified by binding only
+the first and watching it fail. 29 errors to 27.
 
 ## 6. Everything else not started
 

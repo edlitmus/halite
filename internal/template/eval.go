@@ -616,8 +616,19 @@ func (r *renderer) renderSet(t *SetNode) error {
 		return nil
 	}
 	parts, ok := untuple(v).([]any)
-	if !ok || len(parts) != len(t.Targets) {
+	if !ok {
 		return errorf(t.Pos(), "cannot unpack %s into %d names", typeName(v), len(t.Targets))
+	}
+	if len(parts) != len(t.Targets) {
+		// The count is the whole diagnosis and it used to be missing.
+		// `{% set host, domain = id.split('.', 1) %}` against an id with
+		// no dot in it produced "cannot unpack sequence into 2 names",
+		// which describes the statement rather than the value and sends
+		// the reader to the line that is correct. Saying how many there
+		// were points at the value instead -- and the cause is usually
+		// several frames above, in whatever produced it.
+		return errorf(t.Pos(), "cannot unpack a sequence of %d into %d names",
+			len(parts), len(t.Targets))
 	}
 	for i, name := range t.Targets {
 		r.scope.set(name, parts[i])
