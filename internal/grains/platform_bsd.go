@@ -75,7 +75,7 @@ func collectBSDOS(g *value.Map) {
 	g.Set("os", name)
 	g.Set("osfullname", name)
 	g.Set("osrelease", numeric)
-	g.Set("osmajorrelease", majorVersion(numeric))
+	g.Set("osmajorrelease", majorRelease(numeric))
 	g.Set("osrelease_info", releaseInfo(numeric))
 	g.Set("oscodename", release)
 	g.Set("os_family", name)
@@ -91,7 +91,7 @@ func collectDarwinOS(g *value.Map) {
 	g.Set("os", "MacOS")
 	g.Set("osfullname", swVers("-productName"))
 	g.Set("osrelease", release)
-	g.Set("osmajorrelease", majorVersion(release))
+	g.Set("osmajorrelease", majorRelease(release))
 	g.Set("osrelease_info", releaseInfo(release))
 	g.Set("oscodename", swVers("-buildVersion"))
 	g.Set("os_family", "MacOS")
@@ -126,7 +126,7 @@ func collectKernel(g *value.Map) {
 	g.Set("kernel", kernel)
 	g.Set("kernelrelease", firstNonEmptyBSD(sysctlString("kern.osrelease"), unameFlag("-r")))
 	g.Set("kernelversion", firstNonEmptyBSD(sysctlString("kern.version"), unameFlag("-v")))
-	g.Set("kernelparams", value.NewMap(0))
+	g.Set("kernelparams", []any{})
 }
 
 func collectCPU(g *value.Map) {

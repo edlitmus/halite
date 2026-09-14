@@ -39,9 +39,12 @@ func TestTheWindowsGrainsAreReadFromTheMachine(t *testing.T) {
 	}
 
 	// osmajorrelease and osrelease_info are derived from it, and a
-	// template uses one or the other to branch.
-	if got := str(t, g, "osmajorrelease"); got != parts[0] {
-		t.Errorf("osmajorrelease = %q, want %q", got, parts[0])
+	// template uses one or the other to branch. The major is a number
+	// rather than a string, because `>= 10` is what a template asks of
+	// it and a string comparison orders "9" above "10".
+	major, _ := strconv.ParseInt(parts[0], 10, 64)
+	if got, _ := g.Get("osmajorrelease"); got != major {
+		t.Errorf("osmajorrelease = %#v, want int64(%d)", got, major)
 	}
 	info, _ := g.Get("osrelease_info")
 	if list, ok := info.([]any); !ok || len(list) != 3 {

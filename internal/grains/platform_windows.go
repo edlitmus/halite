@@ -86,7 +86,7 @@ func collectOS(g *value.Map) {
 	g.Set("os", "Windows")
 	g.Set("osfullname", name)
 	g.Set("osrelease", release)
-	g.Set("osmajorrelease", majorVersion(release))
+	g.Set("osmajorrelease", majorRelease(release))
 	g.Set("osrelease_info", releaseInfo(release))
 	// The marketing name of the half-yearly release — 24H2, 22H2 — which
 	// is the version an operator patches against and the one an estate's
@@ -142,7 +142,7 @@ func collectKernel(g *value.Map) {
 	}
 	// No counterpart to a kernel command line here. Empty rather than
 	// absent, so a template that reads it does not have to guard.
-	g.Set("kernelparams", value.NewMap(0))
+	g.Set("kernelparams", []any{})
 }
 
 func collectCPU(g *value.Map) {
