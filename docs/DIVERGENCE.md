@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **84 execution modules / 571 functions** and **45 state
-modules / 121 functions**.
+The build ships **86 execution modules / 586 functions** and **46 state
+modules / 122 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-30 of 56 present.
+32 of 56 present.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -478,21 +478,21 @@ different reason is given.
 | `nfs` | not implemented | 0 | |
 | `pkgrepo` | implemented | 4 | list_repos, get_repo, mod_repo, del_repo; virtual, with providers for apt, dnf/yum and Chocolatey 
 | `ps` | implemented | 7 | reads through the system `ps`, and FreeBSD's own libxo JSON where there is one; `kvm` is C and `sysctl kern.proc` needs golang.org/x/sys, so neither was reachable under SPEC 4.2. `pkill` refuses a pattern matching nothing, because that is a misspelling far more often than a tidy machine |
-| `reboot` | not implemented | 0 | |
+| `reboot` | implemented | 5 | `required`, `scheduled`, `last_boot`, `schedule` and `cancel` — the layer above the immediate verbs, for a tree that wants a reboot it can countermand. `required` has a different answer on every platform and says which it used: FreeBSD compares `freebsd-version -k` against `-r`, Debian and Ubuntu read `/run/reboot-required`, and anywhere else it returns "this build cannot tell" rather than `false`. `uname -r` is used for none of it, because on the FreeBSD development host it reports the Linux compatibility layer's number. `schedule` has no zero delay: an immediate reboot is `system.reboot`, a different function on purpose. **`cancel` is not one command on both platforms** — Linux cancels with `shutdown -c`, and on FreeBSD that flag *power cycles the machine*, so the pending shutdown is found in the process table and sent SIGTERM, which is what FreeBSD's own shutdown(8) documents (5.73) |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
-| `selinux` | not implemented | 0 | Linux only; no host to verify on |
+| `selinux` | not implemented | 0 | Linux only. A Red Hat machine can now be raised on demand -- `make lab-up LAB_DISTROS='["rocky9"]'`, contrib/tofu -- so this waits on the work rather than on a host |
 | `shadow` | not implemented | 0 | |
 | `state` | not implemented | 0 | reachable as `halite-node state`, not as a callable module function |
 | `sudo` | implemented | 4 | `validate` runs the real `visudo -c` over a file that is not yet installed, which is the function the rest exist for; `path` asks `sudo -V` and falls back to the platform convention saying which route it took; plus `version` and `list`. No sudoers parser is written here (5.72). Salt's `sudo.salt_call` is deliberately absent: `cmd.run` already takes a `runas` |
 | `swap` | implemented | 3 | `on`, `off` and `list` over the real `swapon`/`swapoff`, with the argument vector chosen by a platform table so every row is checkable from any host. FreeBSD has no priority flag and the module refuses one rather than dropping it. Persistence is `mount.mounted`'s job (5.72) |
-| `system` | not implemented | 0 | |
+| `system` | implemented | 9 | the four power verbs `halt`, `poweroff`, `shutdown` and `reboot`, the three clock writers `set_system_date`, `set_system_time` and `set_system_date_time`, and `get_computer_desc`/`set_computer_desc`. Linux and FreeBSD only, not the five BSDs `quota` groups: a wrong flag to `edquota` is refused, a wrong flag to `shutdown(8)` is obeyed on hardware nobody is standing in front of. Every command is built by a pure function of `goos` and its arguments, so each row is checkable from any host without running it, and test mode reaches the process zero times for the power verbs. `-h` on Linux and `-p` on FreeBSD are how the two platforms spell the same meaning. No hostname function (`hostname.*` owns that), no clock reader (`status.time` does), and no `hwclock`, which FreeBSD has no equivalent of. `set_computer_desc` writes systemd's `PRETTY_HOSTNAME` in `/etc/machine-info` and is Linux only, because FreeBSD has no convention holding such a label and inventing one would be this build deciding a convention nothing reads |
 | `tls` | implemented | 6 | a CA directory convention, idempotent issuance, an issuance ledger and real CRL generation, all routed through `x509`'s existing certificate helpers rather than a second engine. Four of Salt's functions here are deliberately absent as renames of `x509` calls that already work (5.72) |
 | `tmpfs` | implemented | 3 | `list`, `is_mounted` and `usage`, read-only by design: mounting one is `mount.mount` with a fstype, and a wrapper would duplicate `mount.mounted` for no gain. `usage` joins the mount table with `df`, and degrades to no figures rather than a wrong number when the two disagree (5.72) |
 | `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification |
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-16 of 46 present, plus `sysrc`, which the section does not list.
+17 of 46 present, plus `sysrc`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -532,7 +532,7 @@ different reason is given.
 | `pip` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `pkgrepo` | implemented | 2 | managed and absent, both converging on a second run 
 | `pro` | not implemented | 0 | Ubuntu only |
-| `reboot` | not implemented | 0 | |
+| `reboot` | implemented | 1 | `scheduled`, which ensures a reboot is pending on a node that needs one. It defaults to scheduling only where `reboot.required` says one is needed; turning that off schedules a reboot on every node the state reaches, and the parameter's own documentation says so |
 | `schedule` | implemented | 2 | present and absent; absent now persists, which it did not before 
 | `selinux` | not implemented | 0 | Linux only |
 | `ssh_known_hosts` | implemented | 2 | present and absent; a key is either declared outright or scanned and checked against a declared fingerprint, and trust on first use is refused by name rather than performed silently |
@@ -556,7 +556,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-40 of 65 present — the rows below total 25 absent.
+42 of 65 present — the rows below total 23 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -574,12 +574,23 @@ rather than a second set of functions, which is what keeps the counts
 honest: `pkg` has eighteen functions whether or not four platforms can
 each reach them under another name.
 
-Only the names whose provider exists are aliased. `zypperpkg` and
-`dnfpkg` stay pending, because SUSE has no provider here and the dnf one
-covers repositories but not packages; aliasing either would turn "not
-built" into "built, and fails when you call it", which is the worse of
-the two answers. `sys.list_aliases` reports the table and says which of
-them this node can use.
+Only the names whose provider exists are aliased. `zypperpkg` stays
+pending, because SUSE has no provider here, and aliasing it would turn
+"not built" into "built, and fails when you call it", which is the worse
+of the two answers. `sys.list_aliases` reports the table and says which
+of them this node can use.
+
+`dnfpkg` and `yumpkg` were pending on the same grounds and should not
+have been. The reason given was that the dnf provider "covers
+repositories but not packages"; it implements ListPkgs, Install, Remove,
+LatestVersion and RefreshDB, and `pkg` has been selecting it on RHEL
+nodes throughout. The sentence outlived the gap it described. What found
+it was the first run on a real AlmaLinux machine (5.74), where an alias
+test failed with "0 aliases matched this node's provider dnfpkg" — a
+node whose package manager no SPEC 15.3 name could reach. There is still
+no `apkpkg`: Alpine has a working provider, but 15.3's table has no
+Alpine row, and inventing the name here would be this build deciding a
+specification it implements.
 
 Of the nineteen that are modules in their own right, four are the
 Windows ones, and they arrived because a Windows host became available:
@@ -630,7 +641,7 @@ specification cannot be quietly missed.
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
-| RHEL family | none | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
+| RHEL family | `yumpkg` and `dnfpkg` (aliases) | `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, `mac_assistive`, and `mac_brew_pkg` and `mac_service` (aliases) | none |
@@ -5356,10 +5367,10 @@ been exercised through a bad path.
 
 ### 5.53 `mdadm`: `--detail` and /proc/mdstat, and a `create` that refuses
 
-SPEC 15.3's Common Linux and Storage rows, module eight. Thirteen
+SPEC 15.3's Common Linux and Storage rows, module eight. Fourteen
 execution functions: `version`, `list`, `detail`, `examine`, `mdstat`,
-`create`, `assemble`, `stop`, `add`, `fail`, `remove`, `grow`,
-`save_config`. No state — SPEC 15.5 names one for `lvm`, `zfs` and
+`create`, `assemble`, `stop`, `destroy`, `add`, `fail`, `remove`,
+`grow`, `save_config`. No state — SPEC 15.5 names one for `lvm`, `zfs` and
 `zpool` and none for this, and that is right: building or reshaping an
 array is a careful, one-time, destructive operation, not a target a
 convergence loop re-checks. `pam` and `journald` have no state for the
@@ -5394,6 +5405,30 @@ refuse both an existing array and a member that already carries a
 superblock. It needs root and the loop driver, so it is gated behind
 `HALITE_SYSTEM_LIVE=1` and runs in the fleet workflow's linux leg, the
 same as `lvm` and `quota`. `evidence.go` records `mdadm` `hardware`.
+
+**`destroy` is the one function here whose purpose is data loss** (5.75).
+It stops the array and zeroes its members' superblocks, matching Salt's
+`raid.destroy`, including the guard that matters: the members are read
+*before* the stop, because `--detail` cannot answer afterwards, and they
+are zeroed **only if the stop succeeded** -- a stop fails when the array
+is mounted, and zeroing a live array's members destroys a filesystem
+under itself. It takes no `force`: unlike `create`, where the damage
+would be incidental, here the verb is the request. It also drops the
+array's line from mdadm.conf, matched by device path *or* UUID where
+Salt matches the path alone -- `save_config` writes the path
+`--detail --scan` resolved, usually `/dev/md/<name>` rather than the
+`/dev/mdN` a caller passes, so matching only the caller's spelling would
+leave the line behind on every named array.
+
+**`save_config` writes a snapshot, transient fields and all.**
+`mdadm --detail --scan` reports a live `spares=` count, so two calls
+seconds apart during a resync write different lines and both report a
+change. That is left alone rather than filtered: the file would
+otherwise disagree with the tool that reads it, over a difference that
+exists only while an array rebuilds. Salt writes the same unfiltered
+output, and avoids the churn the same way this build does -- by never
+calling it from a convergence loop. Salt's `raid.present` calls it only
+inside `if not present`; this build has no state at all.
 
 Not covered: `grow` (a reshape takes hours), `assemble --scan` (it
 reads every superblock on the host), RAID levels other than 1, and
@@ -6767,13 +6802,507 @@ line, and one day it will be the real thing. The cleanup asks the
 kernel's mount table first now -- not this module's reader, which would
 skip the unmount precisely when that reader was wrong.
 
-**What is left of §2.2's list: nine.** `blockdev`, `kernelpkg`, `locale`,
-`logrotate`, `nfs`, `reboot`, `selinux`, `shadow` and `system`. Four of
-those are Linux-shaped and wait on the Ubuntu host, `selinux` waits on a
-Red Hat one this project does not have, `shadow` waits on the
-`user.present` ageing question rather than on any machine, and `reboot`
-and `system` can be built here but not fully demonstrated, because their
-real mutation is rebooting the host this is written on.
+**What is left of §2.2's list: seven.** `blockdev`, `kernelpkg`, `locale`,
+`logrotate`, `nfs`, `selinux` and `shadow`. Four of those are
+Linux-shaped and wait on the Ubuntu host; `shadow` waits on the
+`user.present` ageing question rather than on any machine. `selinux`
+used to wait on "a Red Hat one this project does not have", and that is
+no longer the blocker: contrib/tofu raises Rocky 9 and AlmaLinux on
+demand. What it waits on now is the work. `reboot` and `system` ship in
+5.73 -- and the sentence that stood here, that they "can be built here
+but not fully demonstrated, because their real mutation is rebooting the
+host this is written on", turned out to be the whole story.
+
+### 5.73 `reboot` and `system`, and the flag that power cycled the development host
+
+The last two modules §2.2 named for this host ship together, because they
+are two halves of one thing: `system` holds the verbs that act now --
+`halt`, `poweroff`, `shutdown`, `reboot` -- and `reboot` is the layer
+above them, for a tree that wants a reboot far enough ahead that somebody
+can countermand it. Fourteen functions between them, one state.
+
+Both were written to the shape `quota` established: the command is a pure
+function of `goos` and its arguments, so every platform's row is
+checkable from any host without running it. `system` holds to that
+completely. Test mode reaches the process zero times for the four power
+verbs, nothing in the package's tests runs `halt`, `poweroff`, `reboot`,
+`shutdown` or a `date` that supplies a value, and the two live tests
+invoke the real `/sbin/shutdown` and `/rescue/date` only in forms their
+own usage lines make refusals. Its `-h` on Linux against `-p` on FreeBSD
+was read off those usage lines rather than recalled.
+
+**`reboot` did not, in one function, and it cost the machine.** Its
+`cancel` was built as `shutdown -c` on both platforms, because `-c` is
+the cancel on Linux and the flag appears in FreeBSD's usage line too.
+The usage line is where the reasoning stopped. On FreeBSD `-c` is not a
+cancel:
+
+    -c  The system is power cycled (power turned off and then back on)
+        at the specified time. If the hardware doesn't support power
+        cycle, the system will be rebooted. At the present time, only
+        systems with BMC supported by the ipmi(4) driver that implement
+        this functionality support this flag.
+
+This fleet's hosts have exactly such a BMC. At 23:28:26 the development
+host logged the only power-cycle in its entire syslog history --
+
+    shutdown[28318]: power-cycle by ed:
+
+-- and went down mid-session, which is how the defect was found at all.
+Which invocation passed the flag is not recoverable from the logs, and
+the module's own argv could not have been it: `shutdown(8)` requires a
+mandatory `time` argument that bare `shutdown -c` never supplied, so
+`/usr/src/sbin/shutdown/shutdown.c:178` would have sent it to `usage()`
+instead of acting. **FreeBSD was carrying two defects in one two-word
+command** -- the wrong flag, and the wrong arity for that flag -- and no
+test could reach either, because both live on the far side of a command
+no test may run.
+
+The fix is the mechanism FreeBSD's own manual names two paragraphs above
+the flag list: "A scheduled shutdown can be canceled by killing the
+shutdown process (a SIGTERM should suffice)." That is a pid rather than a
+flag, so `rebootCancelArgv` now takes one, builds `kill -TERM <pid>` on
+FreeBSD, and **refuses to build any command at all without a pid** rather
+than falling back on something flag-shaped. The pid comes from the
+process table `reboot.scheduled` already reads. Linux keeps
+`shutdown -c`, which is correct there.
+
+Four things came out of it beyond the fix:
+
+1. **A flag's existence is not its meaning, and a test can check which.**
+   `live_system_module_test.go` asserts that `shutdown`'s usage line
+   mentions `-c`, and it passed that evening, because the flag is listed.
+   So the check now reads the sentence *beside* the flag, out of
+   `/usr/share/man/man8/shutdown.8.gz`, which ships on every FreeBSD
+   install -- and asserts both that the manual still calls `-c` a power
+   cycle and that it still documents the SIGTERM route. `man` is not
+   shelled out to: on this host it resolves through the Linux
+   compatibility layer to a binary with no FreeBSD pages, the same
+   shadowing that already forces `/sbin` and `/rescue` to be named by
+   absolute path. If a future FreeBSD makes `-c` a cancel, the test fails
+   and names `rebootCancelArgv`.
+
+2. **A test can assert a defect.** The unit test here was named for the
+   belief rather than the behaviour -- "the cancel command is the same on
+   both families" -- and it checked that both platforms were handed
+   `shutdown -c`. It passed for the same reason the bug existed. It is now
+   `TestTheCancelCommandDiffersByFamily`, beside
+   `TestFreeBSDIsNeverHandedThePowerCycleFlag`, whose only job is that no
+   FreeBSD argv may ever contain `-c`, for any pid -- the
+   one assertion that would have caught this before a real machine did.
+   The instructions the live test prints for an operator cleaning up
+   after it said to run `shutdown -c` too; on FreeBSD that told somebody
+   trying to save the machine to take it down.
+
+3. **`reboot.scheduled` could not see a pending shutdown on FreeBSD
+   either, and that one was silent.** Finding the shutdown process means
+   asking `ps` for two columns with no headers, and this asked with
+   `-o pid=,command=`. That is the Linux spelling. FreeBSD's ps(1) reads
+   an `=` as introducing a replacement header that runs to the end of the
+   argument, so it took the whole of `pid=,command=` as the single
+   keyword `pid`, headed with the literal string `,command=`:
+
+       $ ps -axo pid=,command=
+       ,command=
+               0
+               1
+
+   Nothing failed. `ps` exits 0, every line carries a pid in the field
+   the parser reads, and the command field is simply never there — so the
+   finder matched nothing on any FreeBSD node whatever was pending, and
+   the new cancel, which takes its pid from the same place, would have
+   found nothing to cancel. A separate `-o` per column is read the same
+   way by both platforms.
+
+   This was found by a live test driving the cancel against a stand-in
+   process named `shutdown` — a copy of `sleep`, owned by the test,
+   needing no privilege to signal. That test is now the one part of the
+   FreeBSD cancel demonstrated end to end: a real `ps`, a real parse of
+   what it printed, and a real SIGTERM to a real process that really
+   died. It schedules nothing and needs no root, which is why it runs
+   where the gated test cannot, and it failed on its first run — which is
+   how the `ps` defect surfaced at all.
+
+4. **`reboot.scheduled` was also blind on systemd.** It read the process
+   table alone, which is right for FreeBSD and for a Linux without
+   systemd, where a pending shutdown is a process on a timer. Under
+   systemd `shutdown -r +5` hands the schedule to logind and exits, so
+   `ps` is empty while a reboot is very much pending -- the module would
+   have answered "no shutdown is pending" on the machine it had just
+   scheduled one on. It now also reads
+   `/run/systemd/shutdown/scheduled`, whose presence is itself the answer
+   because systemd removes the file on cancel, and whose `MODE` and
+   `USEC` lines are read for a description only. This half is unverified
+   on hardware: there is no systemd host in this session, and the
+   FreeBSD branch is the one the fleet runs.
+
+**And a whole module was in no build.** `system` was finished --
+735 lines, four power verbs, three clock writers, the computer
+description, its own tests passing -- and `registerSystemModule` was
+never added to `New()`. Nothing failed: Go does not mind an uncalled
+package-level function, and the module's tests passed because they built
+a registry and called the register function directly. `system_module.go`
+even carried a comment saying the wiring "belongs to whoever assembles
+builtin.go", which was true when written and forgotten by morning. The
+thing that eventually noticed was this ledger's own audit complaining
+about a *different* module's totals. `TestEveryRegistrationFunctionIsCalled`
+now walks the package for `register*` functions and fails on any that
+nothing calls, counting calls from non-test files only -- because a call
+from a test is exactly how this one looked wired. It was confirmed by
+removing the line again and watching it fail.
+
+**What is demonstrated, and what is not.** Both modules' readers run
+against the real host. Neither module's mutating path has been watched
+working, and for `system` that is permanent by design -- the evidence
+table says so for each, in those words. The corrected `cancel` has not
+been run on hardware: doing so means scheduling a real reboot on a real
+machine and countermanding it, which is the gated live test
+(`HALITE_SYSTEM_LIVE=1` *and* `HALITE_REBOOT_LIVE=1`) that no run has yet
+set. The first attempt at exactly that is what power cycled this host.
+
+### 5.74 What one RHEL machine found in an hour
+
+The first run of the suite on AlmaLinux 8.10, raised by the lab in
+contrib/tofu (5.73's successor in spirit: a platform SPEC 27.1 has
+always listed and no machine here had ever run). Six real defects, none
+of them reachable from the machines this project already had.
+
+**`journald.list_boots` failed on two tier 1 platforms.** The module
+asked for `--list-boots -o json`. systemd before v250 **accepts that
+flag and ignores it**, printing its ordinary table, so the command
+exited 0 and the module could not parse the result:
+
+    `journalctl --list-boots -o json` did not parse:
+    invalid character '0' after top-level value
+
+-- the `0` being the boot index in the table's first column. systemd 239
+is RHEL 8 and systemd 249 is Ubuntu 22.04. Both shapes are read now,
+from fixtures captured on real machines of each kind, behind one set of
+keys so a caller never learns which systemd answered.
+
+The request also carries `--utc`, which is not a formatting preference.
+Without it the old format prints the *local* zone abbreviation, and Go
+parses an abbreviation it cannot resolve as offset zero under a
+fabricated zone of that name -- so a Pacific host's boots would have been
+recorded seven hours from where they happened, silently. The fixture for
+that case is the same machine with `TZ` set.
+
+**`at.at` reported failure for jobs it had queued.** The confirmation
+parser matched the literal `Job `, which is FreeBSD's and Debian's
+wording. at-3.1.20 on RHEL prints `job %ld at %s` -- lower case, after a
+`warning:` line. Both format strings were read out of the real binaries
+with `strings -a`. The job was queued, the module said it had failed,
+and the job stayed in the queue with the caller told it did not exist.
+
+**`at.atq` could not read a Linux queue at all**, which also broke
+`at.present` and `at.absent`, since all three find a job by listing.
+FreeBSD's atq prints `%s\t%-16s%c%s\t%ld` -- job number last -- and
+Linux's prints `%ld\t%s %c %s` -- job number first. The module knew only
+FreeBSD's and read the owner's name where it wanted a number. Linux is
+one of the two platforms `atCheckPlatform` admits.
+
+**`reboot.cancel` reported a change on a quiet machine.** systemd's
+`shutdown -c` exits 0 whether or not anything was pending, and that
+status was the whole answer, so a state built on it would report work
+forever. Both platforms now establish whether anything is pending before
+acting -- which Linux can do because 5.73's `rebootPending` reads
+/run/systemd/shutdown/scheduled. The fix was confirmed by putting the
+bypass back and watching the new test fail.
+
+**`dnfpkg` and `yumpkg` had no name an operator could call.** Covered in
+§2.3: the note declaring them pending said the dnf provider "covers
+repositories but not packages", and it does implement all five package
+operations. The sentence outlived the gap it described.
+
+#### The eleven tests that were Ubuntu-shaped
+
+Eleven live tests failed on RHEL for having no AppArmor, no netplan and
+no dpkg. The gates deliberately **fail rather than skip** when a tool is
+missing, because a live suite that skips its way to green has tested
+nothing -- right while the only machine running it was one Ubuntu
+runner, and wrong the moment a RHEL or Alpine node appeared. They now
+name the `os_family` values a tool belongs to, read through `grains` so
+the test and the product cannot disagree, and skip elsewhere **with the
+reason**, while still failing on a machine that ought to have the tool.
+`systemctl` is in that set: Alpine is OpenRC.
+
+Three others were fixtures rather than gates. `modprobe` asked for
+`netdevsim`, which Alma's 4.18 kernel does not build -- it skips by name
+now, as the CI workflow already allows for the quota formats on Azure
+kernels. The swap test made its backing file with `Truncate`, and
+Linux's `swapon` refuses a sparse file outright. And three `at` unit
+tests fed FreeBSD's atq layout to module code that reads
+`runtime.GOOS`, so the fixture follows the platform now.
+
+**Result: AlmaLinux 8.10 runs 39 live checks, skips 46 for platforms
+they do not apply to, and fails none.** The unit suite is green there and
+on FreeBSD. Six of the seven lab rows are still unrun.
+
+### 5.75 `mdadm.destroy`, and a snapshot left as a snapshot
+
+Salt's `raid` module has one function this build did not: `destroy`.
+Comparing the two also settled an open question about `save_config`.
+
+**`destroy` stops an array and zeroes its members' superblocks**, so
+they stop looking like array members and do not quietly rejoin one at
+the next boot. Two properties are carried over from Salt deliberately.
+The members are read *before* the stop, because `mdadm --detail` cannot
+answer once the array is gone. And they are zeroed **only if the stop
+succeeded** -- a stop fails when the array is mounted or otherwise busy,
+which is exactly when zeroing its members would destroy a live
+filesystem under itself.
+
+It takes no `force`, and that is a deliberate asymmetry with `create`.
+`create` refuses a member carrying a superblock without one because
+there the damage is *incidental*: somebody asked for a new array and
+would not expect an old one to be eaten. Here destruction is the entire
+request, and a flag confirming a verb that means "destroy" is ceremony.
+
+Where it improves on Salt: the mdadm.conf entry is matched by device
+path **or UUID**, while Salt matches `ARRAY {device} .*` alone.
+`save_config` writes whatever `mdadm --detail --scan` resolved, and that
+is usually `/dev/md/<name>` rather than the `/dev/mdN` a caller passes
+in, so Salt's pattern leaves the line behind on every array that has a
+name. The UUID is the field that does not move.
+
+**`save_config` keeps writing a snapshot, transient fields and all.**
+`mdadm --detail --scan` reports a live `spares=` count, so an array that
+is still rebuilding reports one value and the same array seconds later
+reports another --
+
+    ARRAY /dev/md/halNNN metadata=1.2 spares=2 UUID=...
+    ARRAY /dev/md/halNNN metadata=1.2 spares=1 UUID=...
+
+-- which is how a live test asserting idempotence failed against a
+module doing exactly what it was asked. Filtering the field was
+considered and rejected: this build's mdadm.conf would then disagree
+with the tool that reads it, over a difference that exists only while an
+array rebuilds. Salt writes the same unfiltered output; its only
+filtering is `name=` and `metadata=`, on Ubuntu alone, for an unrelated
+device-naming bug.
+
+What keeps it from mattering is where it is called from. This build has
+no `mdadm` state, so nothing in a convergence loop reaches it. Salt
+arrives at the same place from the other direction: `raid.present` calls
+`save_config` only inside `if not present`, so a converged node never
+calls it either. A tree that calls it on every highstate will see a
+change reported while a resync runs, and the answer is to call it once
+the array has settled -- which the live test now does with
+`mdadm --wait`.
+
+#### What was verified
+
+Against a real mdadm 4.3 on AlmaLinux 8.10, on loop devices: an array
+created, `save_config` writing its ARRAY line beside a hand-added
+MAILADDR line, then `destroy` -- after which `mdadm --detail` fails,
+**`mdadm --examine` fails on each member** (mdadm's own account of a
+device with no superblock, rather than this build's reader agreeing with
+itself), the ARRAY line is gone, the MAILADDR line is not, and a second
+`destroy` reports no change. The unit tests cover the two orderings that
+matter: that a failed stop zeroes nothing, and that test mode runs
+neither command.
+
+### 5.76 Four platforms, four assumptions: what the seven-host sweep found
+
+5.74 was one RHEL machine. This is the whole lab: alma8, rocky9,
+alpine, opensuse16, debian13, ubuntu2204 and ubuntu2604, every one of
+them a platform SPEC 27.1 names. Three passed. The other four each
+disproved a different assumption.
+
+**BusyBox's ps is a third flavour, not a dialect of the other two.**
+`psArgv` had two rows -- Linux's `-eww --no-headers -o` and BSD's
+`-axwwo` -- and Alpine's ps is neither. It is BusyBox's, whose entire
+usage is
+
+	ps [-o COL1,COL2=HEADER] [-T]
+
+with no `-e`, no `-ww`, no `--no-headers` and no BSD `-ax`. The Linux
+spelling fails on it outright with `ps: unrecognized option: w`, which
+took nine live tests with it. It also spells two columns differently --
+`stat` for `state`, `args` for `command` -- and **refuses `%cpu` and
+`%mem`**, by name:
+
+	ps: bad -o argument '%cpu', supported arguments: ...
+
+The module detects it by asking the tool rather than the distribution,
+since an Alpine carrying `procps-compat` is not this case and a Debian
+with busybox first on PATH is. The parser now reads against whichever
+column set was requested instead of a package-level constant.
+
+The two percentages come back **nil rather than zero**, because zero is
+a claim that a process is idle and this is the absence of a
+measurement. `ps.top by: cpu` refuses by name on such a node rather than
+returning the first few processes in arrival order and calling them the
+busiest; `by: memory` sorts on RSS, which BusyBox does report, and still
+works. This is the same rule 5.73's `reboot.required` follows in
+answering "this build cannot tell" rather than "no".
+
+The refactor was caught half-finished by this project's own FreeBSD live
+test: the libxo path stopped declaring its percentages known, and
+`TestLivePSTopAnswersInOrder` failed on beastie within the minute.
+
+**Ubuntu 26.04 ships sudo-rs.** Both packages are installed and the
+`sudo` an operator types resolves to `/usr/lib/cargo/bin/sudo`, whose
+`-V` prints one line and stops:
+
+	sudo-rs 0.2.13-0ubuntu1.2
+
+where the original prints `Sudo version 1.9.17p2` and a block of
+settings below it. `sudo.version` read only the original's wording and
+failed on a tier 1 platform for a machine with a perfectly good sudo.
+Both are read now, and the implementation stays in the string a caller
+gets: a bare `0.2.13` would read as a wildly old sudo to anything
+comparing versions, and the two projects' numbering has nothing to do
+with each other. sudo-rs also reports no sudoers path at all, so the
+`sudo.path` fallback to convention -- which already says it is a
+convention and not a statement about the node -- is the only answer
+available there, and the live test no longer demands otherwise.
+
+**netplan is Ubuntu's, not the Debian family's.** 5.74 gave the live
+gates an `os_family` to check, and `grains` deliberately groups Debian
+and Ubuntu together, so Debian 13 -- which ships no netplan, using
+ifupdown or systemd-networkd -- failed four tests for behaving normally.
+The gate reads the `os` grain now, which is the grain that tells them
+apart.
+
+**AppArmor can be compiled in and switched off.** openSUSE Leap 16
+builds it into the kernel and defaults to SELinux, so
+`/sys/module/apparmor/parameters/enabled` exists, reads `N`, and three
+tests failed against a module that had correctly reported "built into
+this kernel and is not enabled". Present is not enabled. The gate skips
+where it is off, on any family rather than just SUSE: a Debian node with
+AppArmor disabled is the same machine state, and a skip naming an Ubuntu
+host is itself worth reading.
+
+#### Two test-only faults, both about assuming a path
+
+`TestUmaskReachesTheChild` ran `/usr/bin/touch`, which on Alpine is
+`/bin/touch`. It looks the tool up now.
+
+And 5.73's own stand-in process -- a copy of `sleep` renamed `shutdown`,
+so that the finder would match its basename -- is wrong on two platforms
+here. Alpine's coreutils and Ubuntu 26.04's are **multi-call binaries**:
+they dispatch on `argv[0]`, so the copy exits immediately with
+`coreutils: unknown program 'shutdown'` and the process the test needs to
+find is gone before it looks.
+
+The fix written here first -- setting `argv[0]` on the real binary rather
+than copying it -- did not survive the next sweep either, for a reason
+5.77 covers: BusyBox is honest about the difference between a binary and
+the name it was invoked under, and correctly declined to call the result
+a shutdown. The stand-in is a copy of the *test binary* now.
+
+### 5.77 The same sweep again, and four defects the first one hid
+
+5.76 fixed four things and the sweep was run again. Each fix had exposed
+the next layer beneath it, and one of them had been wrong.
+
+**BusyBox abbreviates a size it cannot fit.** 5.76 taught the module
+BusyBox's column *names*; it did not ask what BusyBox writes in them.
+procps prints RSS and VSZ as plain integers, BusyBox prints two
+significant figures and a unit, so a Go process's virtual size arrives as
+`1.1g` and `strconv.ParseInt` returned **zero** -- a running process
+reported as holding no memory at all. Captured together on Alpine for one
+process:
+
+	ps:    rss=3416       vsz=1.1g
+	/proc: VmRSS 3540 kB   VmSize 1226592 kB
+
+The suffix is 1024-based and the abbreviation is **lossy**: `1.1g`
+converts back to 1153434 KiB against a true 1226592, about 6% out, and
+nothing can recover the exact figure from that column. The tests record
+that gap rather than pretending it is not there. An approximate size is
+worth far more than a zero, and `ps.top by: memory` orders correctly on
+it.
+
+**`reboot` was reading the process table itself.** This is the one that
+matters. 5.76 fixed `ps`; Alpine broke again anyway, because `reboot.go`
+built its *own* `ps` argv -- in the procps spelling -- rather than going
+through the module that wraps the tool. BusyBox refuses that argv, the
+failure was tolerated, and so `reboot.scheduled` answered "no shutdown is
+pending" on every Alpine node instead of erroring.
+
+It goes through `psList` now, so the second invocation is gone and
+`reboot` inherits whatever flavours `ps` learns. **The lesson is broader
+than the bug**: this repository's commonest defect shape is two paths
+that must agree, and it applies to *tool invocations* and not only to
+data. A module that shells out to a tool another module already wraps
+should route through that module.
+
+**BusyBox is honest about a renamed process, and `Name()` was not.**
+Where `argv[0]` disagrees with the executable, BusyBox prints
+`{comm} argv0 args`. `psProcess.Name()` returned the literal
+`{sleeper}`, braces and all. That matters well beyond the test it broke:
+a daemon started through a symlink renders exactly that way, so
+`ps.pgrep` would have missed it. The braced word is the executable,
+which is what `pgrep` matches, and is what `Name()` answers now -- the
+same treatment `[kworker/0:1]` already got.
+
+It also explains the third attempt at the stand-in process. Copying
+`sleep` failed on multi-call coreutils; renaming through `argv[0]` failed
+because BusyBox correctly refused to call `{sleeper} shutdown 600` a
+shutdown. It copies **this test binary** to a file genuinely named
+`shutdown` now, which works for precisely the reason copying `sleep` did
+not: a Go binary does not dispatch on `argv[0]`.
+
+**/tmp is tmpfs on three of the seven.** Debian 13, Ubuntu 26.04 and
+openSUSE Leap 16 all mount it so, and swap cannot live on tmpfs --
+`swapon` refuses with a bare `Invalid argument` that says nothing about
+why. `t.TempDir()` follows `TMPDIR` there. The backing file goes under
+`/var/tmp`, which the FHS requires to survive a reboot and therefore
+cannot be tmpfs.
+
+#### The report that hid two of these
+
+`lab.sh` piped its results through `head -60`, so on a host with many
+tests the output stopped at exactly sixty lines -- which is how
+`FAIL debian13: live` arrived with **no failing test shown anywhere**,
+sending the reader to the machine to learn what the run already knew. A
+report that says something failed and hides what is worse than no
+report. Failures and their detail lines are never truncated now; passes
+and skips are a tally; and a build failure or a panic, which has no
+`--- FAIL` line at all, is searched for rather than assumed absent.
+
+#### What the third sweep says
+
+Every row, on the final commit: **0 failed everywhere**, 62 unit packages
+ok on each.
+
+| Host | live |
+|---|---|
+| alma8 | 40 passed, 46 skipped |
+| alpine | 28 passed, 58 skipped |
+| debian13 | 48 passed, 38 skipped |
+| opensuse16 | 42 passed, 44 skipped |
+| rocky9 | 41 passed, 45 skipped |
+| ubuntu2204 | 53 passed, 33 skipped |
+| ubuntu2604 | 53 passed, 33 skipped |
+
+The skip column is the one to read. Alpine skips 58 because it is
+neither systemd nor glibc nor dpkg and its ps cannot answer a CPU sort;
+Ubuntu 22.04 skips 33 because it is closest to the platform this suite
+was written against. Every skip now carries its reason, so a count that
+moves can be chased rather than shrugged at.
+
+#### And one the lab could not have found
+
+CI's FreeBSD leg failed on a test that passes on this project's own
+FreeBSD host. `/sbin/shutdown` is shipped setuid root and group
+`operator`, mode `-r-sr-xr--`, with **no world execute bit**, so whether
+it can be run depends on who is asking: the development account is in
+`operator` and the runner's is not. The test guarded with `os.Stat`,
+which answers "is it there" -- a question nobody was asking. Present is
+not runnable, which this ledger already says about a staging directory
+(5.60: "`mkdir -p` succeeding says the directory exists. It does not say
+this account can use it, and the dimension that decides this path is
+execution") and which is just as true of a setuid binary. The lesson was
+written down and then not applied to the very first commit of this
+branch. It skips there now, naming the
+mode.
+
+Seven Linux hosts passing said nothing about this, because the test is
+FreeBSD-only and the one FreeBSD machine in the lab's reach is the one
+where it happens to work.
 
 ## 6. Everything else not started
 
@@ -7352,7 +7881,7 @@ What is **not** built in the API:
   The hub counts what reaches it, which is most of SPEC 26.2's state and
   beacon families but not the drops.
 - ~~**Tracing** (SPEC 26.3), the one part of section 26 still unbuilt.~~
-  Built: `doctor` (26.4) ships, see 5.30, and tracing ships with it, see
+  Built: `doctor` (SPEC 26.4) ships, see 5.30, and tracing ships with it, see
   5.34. **Section 26 is complete.**
 - **`mtls` hook authentication.** The mode is implemented and refused
   when no client certificate is presented, but it has never been

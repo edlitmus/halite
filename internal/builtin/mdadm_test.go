@@ -1,6 +1,8 @@
 package builtin
 
 import (
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -309,5 +311,188 @@ func TestMdadmRefusesOnANonLinuxPlatform(t *testing.T) {
 	_, err := New().Exec.Call(&exec.Context{}, "mdadm.list", value.NewMap(0))
 	if err == nil || !strings.Contains(err.Error(), "this node is "+runtime.GOOS) {
 		t.Errorf("mdadm.list did not refuse by platform: %v", err)
+	}
+}
+
+// ---- destroy ----
+
+// destroy reads the members before stopping, then zeroes them.
+//
+// The order is the whole point: after `--stop` there is no `--detail` to
+// ask what belonged to the array, so a destroy that stopped first would
+// have nothing left to zero.
+func TestMdadmDestroyStopsThenZeroesTheMembersItRead(t *testing.T) {
+	detail := (exec.Command{Argv: []string{"mdadm", "--detail", "/dev/md0"}}).String()
+	c := mdadmCtx(map[string]exec.Result{detail: {Stdout: mdadmDetailSample}})
+
+	out, err := mdadmDestroyFn(c, value.MapOf("device", "/dev/md0", "path", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, _ := out.(*value.Map).GetString("changed"); changed != true {
+		t.Errorf("destroying a real array reported no change: %v", out)
+	}
+
+	var stopped, zeroed string
+	for _, ran := range c.Runner.(*exec.RecordingRunner).RanCommands() {
+		switch {
+		case strings.Contains(ran, "--stop"):
+			stopped = ran
+		case strings.Contains(ran, "--zero-superblock"):
+			zeroed = ran
+		}
+	}
+	if stopped == "" {
+		t.Error("destroy never stopped the array")
+	}
+	if zeroed == "" {
+		t.Fatal("destroy never zeroed any superblock")
+	}
+	// Every member the fixture lists, including the spare: they all
+	// carry a superblock naming this array.
+	for _, member := range []string{"/dev/loop4", "/dev/loop7", "/dev/loop8"} {
+		if !strings.Contains(zeroed, member) {
+			t.Errorf("%q does not zero %s, which is a member of the array", zeroed, member)
+		}
+	}
+}
+
+// A stop that fails zeroes nothing.
+//
+// This is the guard that matters. Zeroing the superblocks of an array
+// that is still running -- because it is mounted, say, which is exactly
+// why a stop fails -- destroys a live filesystem under itself. Salt's
+// `raid.destroy` has the same condition and it is worth keeping.
+func TestMdadmDestroyZeroesNothingWhenTheStopFails(t *testing.T) {
+	detail := (exec.Command{Argv: []string{"mdadm", "--detail", "/dev/md0"}}).String()
+	stop := (exec.Command{Argv: []string{"mdadm", "--stop", "/dev/md0"}}).String()
+	c := mdadmCtx(map[string]exec.Result{
+		detail: {Stdout: mdadmDetailSample},
+		stop:   {Code: 1, Stderr: "mdadm: Cannot get exclusive access to /dev/md0: perhaps a running process, mounted filesystem or active volume group?"},
+	})
+
+	if _, err := mdadmDestroyFn(c, value.MapOf("device", "/dev/md0", "path", "")); err == nil {
+		t.Error("a failed stop was not reported as an error")
+	}
+	for _, ran := range c.Runner.(*exec.RecordingRunner).RanCommands() {
+		if strings.Contains(ran, "--zero-superblock") {
+			t.Errorf("superblocks were zeroed after a stop that failed: %q", ran)
+		}
+	}
+}
+
+// Test mode runs nothing at all.
+func TestMdadmDestroyInTestModeTouchesNothing(t *testing.T) {
+	detail := (exec.Command{Argv: []string{"mdadm", "--detail", "/dev/md0"}}).String()
+	c := mdadmCtx(map[string]exec.Result{detail: {Stdout: mdadmDetailSample}})
+	c.Test = true
+
+	out, err := mdadmDestroyFn(c, value.MapOf("device", "/dev/md0", "path", ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed, _ := out.(*value.Map).GetString("changed"); changed != true {
+		t.Errorf("test mode did not predict a change: %v", out)
+	}
+	for _, ran := range c.Runner.(*exec.RecordingRunner).RanCommands() {
+		if strings.Contains(ran, "--stop") || strings.Contains(ran, "--zero-superblock") {
+			t.Errorf("test mode ran %q", ran)
+		}
+	}
+}
+
+// Destroying an array that is not there converges rather than failing.
+func TestMdadmDestroyOnAnArrayThatIsGoneIsNotAnError(t *testing.T) {
+	detail := (exec.Command{Argv: []string{"mdadm", "--detail", "/dev/md0"}}).String()
+	c := mdadmCtx(map[string]exec.Result{
+		detail: {Code: 1, Stderr: "mdadm: cannot open /dev/md0: No such file or directory"},
+	})
+
+	out, err := mdadmDestroyFn(c, value.MapOf("device", "/dev/md0", "path", ""))
+	if err != nil {
+		t.Fatalf("destroying an absent array was an error: %v", err)
+	}
+	if changed, _ := out.(*value.Map).GetString("changed"); changed != false {
+		t.Errorf("destroying an absent array reported a change: %v", out)
+	}
+}
+
+// The ARRAY line is matched by UUID as well as by device path.
+//
+// `save_config` writes whatever `mdadm --detail --scan` printed, and
+// that names an array by whichever path it resolved -- usually
+// /dev/md/<name> when the array has a name, not the /dev/mdN an operator
+// passes to destroy. Salt matches on the device path alone and would
+// leave this line behind.
+func TestTheConfEntryIsFoundByUUIDWhenThePathDiffers(t *testing.T) {
+	const uuid = "a7c391aa:e9796964:1cb84fce:57ea8d28"
+	line := "ARRAY /dev/md/haltest metadata=1.2 spares=1 UUID=" + uuid
+
+	if !mdadmConfLineNames(line, "/dev/md0", uuid) {
+		t.Error("the line was not matched by its UUID, and its path is not the one destroy was given")
+	}
+	if !mdadmConfLineNames(line, "/dev/md/haltest", "") {
+		t.Error("the line was not matched by its own device path")
+	}
+	// Another array's line stays put.
+	other := "ARRAY /dev/md1 metadata=1.2 UUID=ffffffff:ffffffff:ffffffff:ffffffff"
+	if mdadmConfLineNames(other, "/dev/md0", uuid) {
+		t.Error("a different array's line was matched")
+	}
+	// And non-ARRAY lines are never touched.
+	for _, keep := range []string{"MAILADDR root", "", "# a comment", "DEVICE partitions"} {
+		if mdadmConfLineNames(keep, "/dev/md0", uuid) {
+			t.Errorf("%q was matched as an ARRAY line", keep)
+		}
+	}
+}
+
+// Dropping the entry keeps every other line, and says when there was
+// nothing to drop.
+func TestDroppingTheConfEntryKeepsEverythingElse(t *testing.T) {
+	const uuid = "a7c391aa:e9796964:1cb84fce:57ea8d28"
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mdadm.conf")
+	body := "MAILADDR root\n" +
+		"ARRAY /dev/md/haltest metadata=1.2 UUID=" + uuid + "\n" +
+		"ARRAY /dev/md1 metadata=1.2 UUID=ffffffff:ffffffff:ffffffff:ffffffff\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dropped, err := mdadmDropConfEntry(path, "/dev/md0", uuid, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !dropped {
+		t.Fatal("the entry was not found")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), uuid) {
+		t.Errorf("the array's own line survived:\n%s", got)
+	}
+	for _, keep := range []string{"MAILADDR root", "/dev/md1"} {
+		if !strings.Contains(string(got), keep) {
+			t.Errorf("%q was dropped along with it:\n%s", keep, got)
+		}
+	}
+
+	// A second call finds nothing, which is what makes destroy idempotent.
+	if dropped, err := mdadmDropConfEntry(path, "/dev/md0", uuid, false); err != nil || dropped {
+		t.Errorf("a second drop = %v, %v; want false, nil", dropped, err)
+	}
+}
+
+// A node with no mdadm.conf is not an error.
+func TestDroppingTheConfEntryWithNoConfigAtAll(t *testing.T) {
+	if dropped, err := mdadmDropConfEntry("", "/dev/md0", "", false); err != nil || dropped {
+		t.Errorf("an empty path = %v, %v; want false, nil", dropped, err)
+	}
+	missing := filepath.Join(t.TempDir(), "nothing-here.conf")
+	if dropped, err := mdadmDropConfEntry(missing, "/dev/md0", "", false); err != nil || dropped {
+		t.Errorf("a missing file = %v, %v; want false, nil", dropped, err)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"testing"
 
+	"strings"
+
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -73,6 +75,25 @@ func TestLiveModprobeLoadsAndPersists(t *testing.T) {
 	}
 	r := New()
 	const testModule = "netdevsim"
+
+	// A module this kernel was not built with is a machine that cannot
+	// be asked the question, not a defect in the module under test.
+	// AlmaLinux 8's 4.18 kernel has no netdevsim:
+	//
+	//	modprobe: FATAL: Module netdevsim not found in directory
+	//	          /lib/modules/4.18.0-553.158.1.el8_10.x86_64
+	//
+	// `modprobe -n` answers that without loading anything, and the CI
+	// workflow already makes the same allowance for the quota formats on
+	// Azure kernels. The skip names the kernel, so a reader can tell a
+	// missing build option from a broken loader.
+	if res, err := c.Run(exec.Command{
+		Argv:           []string{"modprobe", "-n", testModule},
+		IgnoreExitCode: true,
+	}); err != nil || res.Code != 0 {
+		t.Skipf("this kernel has no %s to load: %s", testModule,
+			strings.TrimSpace(res.Stderr+res.Stdout))
+	}
 
 	dir := t.TempDir()
 	oldLoad, oldProbe := ModulesLoadDir, ModProbeDir

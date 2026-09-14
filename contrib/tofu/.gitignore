@@ -1,0 +1,20 @@
+# State carries every attribute of every resource, including the public
+# key and the addresses, and a plan file carries the same. Neither is a
+# build artifact and neither belongs in a repository that is published.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# lab.sh pins host keys here; the addresses change every run.
+.known_hosts
+
+# .terraform.lock.hcl is deliberately NOT ignored. It pins the provider
+# to the build that was actually run, which is the same promise go.sum
+# makes about this repository's one dependency.
+
+# *.tfvars and *.tfvars.json are ignored tree-wide by the repository
+# root .gitignore, which says why. They are deliberately not repeated
+# here: two copies of one rule drift, and the copy that matters is the
+# one covering the directories nobody has created yet.

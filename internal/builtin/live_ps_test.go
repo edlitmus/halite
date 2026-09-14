@@ -228,6 +228,16 @@ func TestLivePSTopAnswersInOrder(t *testing.T) {
 	psSkipUnlessUnix(t)
 
 	for _, by := range []string{"cpu", "memory"} {
+		// A ps that cannot report %cpu refuses the cpu sort by name
+		// rather than returning an arbitrary order and calling it the
+		// busiest. BusyBox's is such a ps, so on Alpine this leg is the
+		// refusal, and the memory leg still runs -- RSS is a column
+		// BusyBox does report.
+		if by == "cpu" && psPercentagesAreUnavailable(t) {
+			t.Logf("this node's ps cannot report %%cpu; the cpu sort is refused by name and " +
+				"the memory sort below is the one that answers here")
+			continue
+		}
 		rows, ok := psCall(t, "ps.top", "num_processes", int64(3), "by", by).([]any)
 		if !ok {
 			t.Fatalf("ps.top by %s answered a %T", by, rows)
@@ -380,4 +390,19 @@ func psWaitGone(t *testing.T, pid int) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("process %d was signalled and is still running", pid)
+}
+
+// psPercentagesAreUnavailable reports whether this node's ps can give
+// %cpu and %mem at all.
+//
+// Asked of a real listing rather than of the distribution: an Alpine
+// with procps-compat installed answers yes, and a Debian with
+// busybox-static first on PATH answers no.
+func psPercentagesAreUnavailable(t *testing.T) bool {
+	t.Helper()
+	procs, err := psList(&hexec.Context{})
+	if err != nil || len(procs) == 0 {
+		return false
+	}
+	return !procs[0].PercentsKnown
 }

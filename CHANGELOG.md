@@ -18,6 +18,287 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Running the same seven machines until they were all quiet
+
+Fixing the first round of platform problems uncovered a second, and each
+fix had exposed the layer beneath it. It took three passes over the test
+lab before every machine was silent; all seven pass now, and the count
+that matters is not that they do but that they did not.
+
+**Alpine's process listing tool shortens numbers it cannot fit.** The
+first round taught the module which columns that tool offers; it did not
+ask what it writes in them. A large figure arrives as `1.1g` rather than
+as digits, so a running process was reported as holding no memory at all.
+It is read now, and the reading is honestly approximate — the tool
+rounds to two figures, and there is no way to recover the exact number
+from it — which the tests record rather than gloss over.
+
+**The reboot module was reading the process table itself**, with its own
+copy of a command the process module already owns. So Alpine broke a
+second time after the first fix, and on that platform the module reported
+no reboot pending no matter what was. It asks the process module now.
+That is the broader lesson of this whole change: the commonest fault in
+this codebase is two pieces of code that must agree and do not, and it
+applies to *running a program* as much as to reading its output.
+
+**A process can be running under a name that is not its program's**, and
+Alpine's tool says so plainly where others hide it. The module read that
+notation literally and reported the punctuation as part of the name.
+Anything started through a symlink — which is to say a great many
+daemons — would have been mis-named.
+
+**Temporary directories cannot hold swap on three of the seven**, which
+mount them in memory. The test that exercises swap now puts its file
+somewhere that survives a reboot, as the filesystem standard requires.
+
+Two faults in the harness itself, both worth naming. Its report
+truncated, so a machine could be declared failed with nothing shown to
+say why — worse than no report, because it sends the reader to the
+machine to learn what the run already knew. And a test that reads the
+system's shutdown program guarded on the file existing rather than on
+being allowed to run it; that program is deliberately restricted to a
+group, so it worked for a developer who is in that group and failed on a
+build machine that is not. Present is not runnable, which this project
+had already written down about directories and then did not apply to a
+program.
+
+### Seven machines, four wrong assumptions
+
+The first run of the suite across the whole test lab rather than one
+machine of it. Three of the seven passed. Each of the other four
+disproved something different the build had taken for granted.
+
+**Alpine's process listing tool is a different program.** It is
+BusyBox's, and the options every other Linux accepts are simply not
+there — the command failed outright, taking nine checks with it. It also
+cannot report the two percentage figures at all. The module now
+recognises it and reads what it does offer, and those percentages come
+back as *absent* rather than as zero: zero would be a claim that a
+process is idle, which is a different and wrong answer. Asking for the
+busiest processes by processor time is refused by name on such a
+machine, rather than returning an arbitrary few and calling them the
+busiest; by memory still works, because that figure is available.
+
+**Ubuntu 26.04 ships a different sudo.** It installs the Rust rewrite
+alongside the original and puts the rewrite first, and the rewrite
+reports its version in one line where the original prints a block. The
+version reader knew only the original's wording, so it failed on a
+machine with a perfectly good sudo. Both are read now, and which
+implementation answered stays visible to the caller, because the two
+projects' version numbers mean nothing to each other.
+
+**Netplan belongs to Ubuntu, not to the Debian family.** Debian 13 does
+not ship it, and the checks added last time grouped the two together, so
+four of them failed on a machine behaving normally.
+
+**AppArmor can be built into a kernel and switched off.** openSUSE does
+exactly that, defaulting to SELinux instead, so three checks failed
+against a module that had correctly reported it as present and not
+enabled.
+
+Two of the test harness's own faults surfaced too, both the same
+mistake: assuming where a program lives, and assuming a program can be
+renamed. On Alpine and Ubuntu 26.04 the basic command-line tools are a
+single binary that decides what to do from the name it was called by, so
+a copy under a new name refuses to run at all.
+
+### Destroying a RAID array, and a test lab that tested one machine
+
+`mdadm.destroy` stops an array and wipes the identifying marks from its
+member disks, so they stop looking like part of an array and do not
+quietly rejoin one at the next boot. It is the one function in that
+module whose purpose is to lose data, and it behaves accordingly: it
+reads which disks belong to the array before stopping it, because
+afterwards nothing can say, and it wipes them **only if the stop
+actually worked**. A stop fails when the array is in use, which is
+precisely when wiping its disks would destroy a filesystem out from
+under whatever is using it. It also removes the array from the boot-time
+configuration, found by identity rather than by device name — the name
+in that file is often not the one an operator would type.
+
+Salt is where the function comes from, and comparing the two settled a
+question about its neighbour. Writing the array list to the boot
+configuration records a count of spare disks that changes while an array
+is still rebuilding, so calling it twice during a rebuild writes two
+different files. That is left as it is. Filtering the field would make
+this build's configuration file disagree with the tool that reads it,
+over a difference that exists only for a few seconds. Salt writes the
+same thing unfiltered, and avoids the churn the same way this build
+does: by never calling it from anything that runs repeatedly.
+
+**The test lab was only ever testing one machine.** `make lab-test`
+reported on the first host alphabetically and silently skipped the other
+six. The cause is an old trap: the remote-shell command reads standard
+input whether or not it needs any, and the loop was feeding it the list
+of remaining hosts. The first connection swallowed the rest of the list
+and the loop ended. Fixed twice over — the command is told not to read
+input, and the list is read on a channel it cannot reach.
+
+Two claims in the divergence ledger pointed at sections that did not
+exist, one of them shipped in the previous change. There is now a check
+that every such reference resolves, which found a third: a reference to
+the specification written in the same shorthand the ledger uses for
+itself.
+
+### What a RHEL machine found in an hour
+
+The first run of the suite on AlmaLinux — a platform the specification
+has always listed and no machine here had ever run — found six real
+defects. None of them could have been found by a test on the machines
+this project already had.
+
+**Reading the list of boots did not work on two supported platforms.**
+The module asked systemd for that list as JSON. Versions before 250
+accept the request, ignore it, and print a human table instead, so the
+answer was a parse error rather than a list. That is every RHEL 8 and
+every Ubuntu 22.04 node. Both shapes are read now, and the request is
+made in UTC — without that, the older format carries a local timezone
+abbreviation that would have been read as UTC and placed every boot
+several hours from where it happened, with nothing reporting an error.
+
+**Scheduling a job said it had failed when it had worked.** The `at`
+module recognised one wording of the tool's confirmation. RHEL's `at`
+uses another, in lower case, after a warning line. So the job was
+queued, the module reported failure, and the job stayed queued with the
+caller told it did not exist.
+
+**Listing that queue could not work on Linux at all.** `atq` prints the
+job number in the first column on Linux and the last on FreeBSD. The
+module knew only FreeBSD's layout, so on Linux it read the owner's name
+where it expected a number and every read failed — which also broke
+scheduling and removing a job by name, since both find it by listing.
+
+**Cancelling a reboot on a quiet machine reported success.** On systemd
+the cancel command exits successfully whether or not anything was
+pending, and that status was being trusted. A state built on it would
+have reported work on every run, forever. Both platforms now check
+whether anything is pending before acting, and say so plainly when
+nothing is.
+
+**RHEL's package manager had no name an operator could call.** The
+specification names `dnfpkg` and `yumpkg`; both were listed as not
+built, on the strength of a note saying the provider behind them did not
+handle packages. It does, and has been the provider every RHEL node
+uses. The note outlived the gap it described.
+
+Alongside those, the live tests themselves were Ubuntu-shaped: eleven of
+them failed on RHEL for having no AppArmor, no netplan and no dpkg,
+which is not a fault but a different operating system. They now say
+which platforms a tool belongs to and skip elsewhere, with the reason,
+while still failing on a machine that ought to have it. A test asserting
+that saving a RAID configuration twice changes nothing was asserting it
+while the array was still building, and one creating a swap file was
+making a sparse one, which Linux refuses.
+
+The suite now passes on AlmaLinux: thirty-nine live checks run, forty-six
+skip for platforms they do not apply to, none fail.
+
+### Seven Linux distributions this project could not previously run on
+
+The specification names the platforms halite supports. Between the
+hosted runners and the two development machines, the ones actually
+covered were Ubuntu 24.04, Windows, macOS, FreeBSD and a single arm64
+Linux. Everything else was a claim with no machine behind it, and two of
+those claims were worse than untested: the package providers for `dnf`
+and `apk` are written and had never once been run against the real tool.
+The SELinux module was absent from the build entirely, because there was
+nothing to write it against.
+
+`contrib/tofu` raises the missing machines on a cloud provider and
+destroys them again: the RHEL family, Alpine, openSUSE, and the Debian
+and Ubuntu releases a single runner does not cover. `make lab-up`,
+`make lab-test`, `make lab-down`. They are deliberately short-lived, so
+a full sweep across seven distributions costs a few cents and nothing is
+left running to drift or to bill.
+
+Two things it does not do, stated because a test lab that overstates its
+coverage is worse than none. There is **no arm64 machine**, because the
+provider sells none, so half of what the specification asks for at the
+top tier still rests on one host elsewhere. And **Amazon Linux is not
+offered off its own cloud**, so that platform remains untested anywhere.
+
+The machines report what they are rather than what they were expected to
+be. Package names differ between distributions in ways nobody here has
+verified by hand — the quota tools are one package name on Debian and
+another on Alpine — so the bootstrap installs them one at a time and
+records any name that did not resolve, instead of failing the boot. It
+records the operating system's own account of its version too, because
+one row of the table is an assumption about how the provider names its
+images. A machine that did not finish provisioning is refused rather
+than tested.
+
+All seven have now been raised once. Every machine bootstrapped, every
+package name guessed from documentation turned out to be right on its
+own distribution, and the pinned Go toolchain verified its checksum
+everywhere. The suite itself has not yet been run across them.
+
+That first run also found the one rough edge worth knowing about. The
+provider asks the cloud API about an instance's backup schedule the
+instant it has created it, and the API sometimes answers that no such
+instance exists. The machine is fine — the one that failed was answering
+logins minutes later — but the run stops, the instance is recorded as
+suspect, and the addresses of all seven go unwritten, which leaves
+machines running with no convenient way to reach them. `make lab-repair`
+sorts it out without destroying anything, and the reasoning is written
+down beside it.
+
+### Rebooting a machine, and the flag that rebooted the wrong one
+
+`system` and `reboot` now ship, the last two core execution modules this
+project's own FreeBSD host could be asked to demonstrate. They are two
+halves of one idea. `system` holds the verbs that act now — `halt`,
+`poweroff`, `shutdown`, `reboot` — plus the clock writers and the
+computer description. `reboot` sits above them, for a tree that wants a
+reboot scheduled far enough ahead that a person can countermand it, and
+it answers the questions worth asking first: does this node need one, is
+one already pending, when did it last boot.
+
+"Does this node need a reboot" has a different answer on every platform
+and this says which one it used. FreeBSD compares the installed kernel
+with the running one. Debian and Ubuntu read the file their package
+scripts write. Anywhere else it reports that it cannot tell, rather than
+reporting no — a tree would act on a no.
+
+**The development host was power cycled mid-session while this was being
+written, and that is the only reason a defect here was found before a
+release.** `reboot`'s cancel was built as `shutdown -c` on both
+platforms, because that is the cancel on Linux and the same flag appears
+in FreeBSD's usage line. On FreeBSD `-c` is not a cancel: it power cycles
+the machine, and on any host with the right BMC it is obeyed. FreeBSD cancels a pending shutdown by sending SIGTERM to the
+shutdown process, which is what it does now; it refuses to build a cancel
+command at all without a pid, rather than reaching for anything
+flag-shaped.
+
+Three checks came out of that and outlast it. A test now reads FreeBSD's
+own manual page for what `-c` *means*, not merely whether it is listed —
+the older check asked only that the flag exist, and it passed that
+evening. A second refuses any FreeBSD command containing `-c`, for any
+input. And the unit test that had asserted both platforms were the same
+is gone; it had been named for the belief rather than the behaviour, and
+it passed for exactly the reason the defect existed.
+
+Asking whether a reboot is already pending was broken on FreeBSD too, and
+silently. The module asked `ps` for a pid and a command in the spelling
+Linux uses; FreeBSD's `ps` read it as a request for one column with an
+odd title, printed a list of bare process ids, and exited successfully.
+Every line looked plausible and none of them ever carried a command, so
+the answer was always "nothing is pending" no matter what was. A live
+test that drives the cancel against a harmless stand-in process found it
+on the first run, and that test now covers the whole FreeBSD cancel:
+reading the real process table, finding the process, and signalling it.
+
+Separately, `reboot.scheduled` could not see a shutdown that systemd was
+holding either, because under systemd a scheduled shutdown is not a
+process sitting on a timer. It reads systemd's own record as well now.
+That half has not been run against a real systemd host.
+
+`system` never reached any build at all: it was complete, its tests
+passed, and the one line registering it with the rest was never written.
+Nothing failed — an uncalled function is not an error, and the module's
+tests built their own registry. Every module in the package is now
+checked to be registered by something that ships, and the check was
+confirmed by removing the line again and watching it fail.
+
 ### Seven more of the modules the specification names
 
 `acl`, `at`, `data`, `sudo`, `swap`, `tls` and `tmpfs` now ship. They

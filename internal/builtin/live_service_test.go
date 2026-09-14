@@ -66,7 +66,9 @@ func serviceLive(t *testing.T) *exec.Context {
 		t.Skipf("systemd is Linux's, and this is %s", runtime.GOOS)
 	}
 	if c.Which("systemctl") == "" {
-		t.Fatal("HALITE_SYSTEM_LIVE is set and there is no systemctl; this is not a systemd node")
+		// Alpine is OpenRC, not systemd, and has no systemctl at all.
+		requireToolOfFamilies(t, "systemctl", false, "Debian", "RedHat", "Suse", "Arch")
+		return nil
 	}
 	if _, err := os.Stat("/run/systemd/system"); err != nil {
 		t.Fatalf("HALITE_SYSTEM_LIVE is set and systemd is not running here: %v", err)

@@ -115,14 +115,53 @@ func liveSwapLinuxFile(t *testing.T, c *exec.Context) string {
 	if c.Which("mkswap") == "" {
 		t.Skip("this host has no `mkswap`")
 	}
-	path := filepath.Join(t.TempDir(), "halite-live-swap.img")
+	// **Not `t.TempDir()`.** That follows TMPDIR to /tmp, and /tmp is
+	// tmpfs on Debian 13 and Ubuntu 26.04 -- swap cannot live on tmpfs,
+	// and `swapon` refuses it with a bare `Invalid argument` that says
+	// nothing about why. /var/tmp is disk-backed on every Linux by
+	// definition: the FHS requires it to survive a reboot, which tmpfs
+	// cannot do.
+	backing := "/var/tmp"
+	if _, err := os.Stat(backing); err != nil {
+		t.Skipf("%s is not on this host, and /tmp cannot hold swap: %v", backing, err)
+	}
+	dir, err := os.MkdirTemp(backing, "halite-live-swap-")
+	if err != nil {
+		t.Skipf("a directory for the swap file could not be made under %s: %v", backing, err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Logf("cleanup: %s could not be removed: %v", dir, err)
+		}
+	})
+	path := filepath.Join(dir, "halite-live-swap.img")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Skipf("the swap file could not be created: %v", err)
 	}
-	if err := f.Truncate(64 << 20); err != nil {
+	// Written rather than truncated, because a hole is not swap.
+	//
+	// `f.Truncate` makes a sparse file, and Linux's swapon refuses one
+	// outright -- it needs blocks it can address without asking the
+	// filesystem to allocate them under memory pressure:
+	//
+	//	swapon: .../halite-live-swap.img: skipping - it appears to
+	//	        have holes.
+	//
+	// FreeBSD's md-backed path does not care, which is why a sparse file
+	// served until this ran on a real AlmaLinux node. 64 MiB of zeroes
+	// in 1 MiB writes costs a fraction of a second.
+	const swapSize = 64 << 20
+	zeros := make([]byte, 1<<20)
+	for written := 0; written < swapSize; written += len(zeros) {
+		if _, err := f.Write(zeros); err != nil {
+			f.Close()
+			t.Skipf("the swap file could not be written: %v", err)
+		}
+	}
+	if err := f.Sync(); err != nil {
 		f.Close()
-		t.Skipf("the swap file could not be sized: %v", err)
+		t.Skipf("the swap file could not be flushed: %v", err)
 	}
 	if err := f.Close(); err != nil {
 		t.Skipf("the swap file could not be written: %v", err)

@@ -77,8 +77,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"unexercised on Windows because the binary that runtime resolves there -- " +
 		"Strawberry Perl's patch 2.5.9 -- aborts on an ordinary unified diff"},
 	"ps": {Level: exec.Hardware, Note: "read and signalled against the real process table " +
-		"on every platform the suite runs: the FreeBSD libxo path and the column path " +
-		"the other unixes take are both parsed from what the machine's own `ps` printed, " +
+		"on every platform the suite runs, and there are **three** readers rather than " +
+		"two: FreeBSD's libxo JSON, procps' columns, and BusyBox's, which is neither a " +
+		"dialect of the others nor able to report %cpu or %mem at all. Each is parsed from " +
+		"what the machine's own `ps` printed -- the BusyBox one against Alpine 3.24 in this " +
+		"project's lab, where the procps spelling had been failing outright with " +
+		"`unrecognized option: w`, and where the sizes arrive abbreviated (`1.1g`) and " +
+		"lossy. The percentages come back nil there rather than zero, and `ps.top by: cpu` " +
+		"refuses by name rather than ordering on a number that node cannot measure. Also " +
 		"and the mutating half is demonstrated against processes the test started and " +
 		"marked, killed by pid and by pattern, with test mode shown to change nothing. " +
 		"No root is involved, which is the limit worth naming: signalling *another " +
@@ -298,6 +304,55 @@ var moduleEvidence = map[string]exec.Evidence{
 		"claiming a binary on PATH can do something it cannot"},
 
 	// ---- Read from a real system, mutation never watched ----
+
+	"reboot": {Level: exec.Captured, Note: "the readers are demonstrated against the real " +
+		"FreeBSD host this was written on: `required` compares freebsd-version's installed " +
+		"and running kernels, `scheduled` reads the real process table **through the `ps` " +
+		"module's own reader**, and `last_boot` reads kern.boottime. `scheduled` built its " +
+		"own `ps` command until Alpine showed why that is wrong -- a second invocation of a " +
+		"tool another module already wraps, in a spelling BusyBox refuses, answering " +
+		"\"nothing is pending\" on every Alpine node rather than erroring. Before that, " +
+		"`scheduled` did **not** read the table at all until a live test drove " +
+		"it against a real process, because it asked ps for `-o pid=,command=`, the Linux " +
+		"idiom, which FreeBSD's ps parses as a single column headed with the literal string " +
+		"`,command=`. It exited 0 and printed bare pids, so the finder matched nothing on " +
+		"every FreeBSD node and nothing ever errored. **The FreeBSD cancel path is now " +
+		"demonstrated end to end** -- a real ps, a real parse of what it printed, and a real " +
+		"SIGTERM to a real process that really died -- against a stand-in named `shutdown` " +
+		"rather than a genuine one. The cancel's platform split is held to FreeBSD's own " +
+		"shutdown(8) manual source, which ships on every install and is read by a test " +
+		"rather than trusted from memory. **The mutating paths have never been watched " +
+		"working.** `schedule` and `cancel` need root on a machine that may be taken down, " +
+		"and the one live test that drives them is gated behind HALITE_SYSTEM_LIVE=1 *and* " +
+		"HALITE_REBOOT_LIVE=1, which no run has yet set, so no genuine `shutdown(8)` has " +
+		"been scheduled or countermanded by this module. What that gap cost once is worth " +
+		"recording: this module shipped `shutdown -c` as the cancel on both platforms, " +
+		"because it is the cancel on Linux and the same flag is listed in FreeBSD's usage " +
+		"line -- where it means *power cycle the machine*, and is honoured on any host with " +
+		"a BMC the ipmi(4) driver supports, which is what this fleet runs. The flag was " +
+		"checked for existence and never for meaning. The only power-cycle in this host's " +
+		"entire syslog history is dated the evening the module was written; which " +
+		"invocation passed the flag is not recoverable from the logs, and notably the " +
+		"module's own argv could not have been it, because bare `shutdown -c` supplies none " +
+		"of the mandatory `time` argument shutdown(8) requires and would have exited with " +
+		"its usage line instead. So FreeBSD was carrying two defects in one command, and " +
+		"neither was reachable by any test that reads a fixture",
+	},
+	"system": {Level: exec.Captured, Note: "the argv table for `halt`, `poweroff`, " +
+		"`shutdown` and `reboot` is derived from the real usage lines of this host's own " +
+		"setuid /sbin/shutdown and /rescue/date, not from memory of what they accept, and " +
+		"two live tests hold it there by invoking each binary in a form that cannot act: " +
+		"`shutdown` with no arguments, which its own mandatory `time` argument makes a " +
+		"usage error, and `date --help`, which BSD date refuses. **Nothing has watched " +
+		"this module change anything, and that is deliberate rather than an omission.** " +
+		"Every mutating path here takes the machine running the test off the network or " +
+		"steps its clock: test mode reaches `c.Run` zero times for the four power verbs, " +
+		"and no test in this package runs `halt`, `poweroff`, `reboot`, `shutdown`, `init` " +
+		"or a `date` that supplies a value, on any host. `set_computer_desc` is the one " +
+		"mutating path here that is safe and reversible, and it is unexercised for a " +
+		"different reason: it writes systemd's /etc/machine-info and is declared Linux " +
+		"only, while the host this module was developed on is FreeBSD",
+	},
 
 	"win_service": {Level: exec.Captured, Note: "reads the real service control manager " +
 		"through its API on every Windows run and converges against what it finds, but " +

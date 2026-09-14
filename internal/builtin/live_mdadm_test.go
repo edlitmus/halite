@@ -223,6 +223,32 @@ func TestLiveMdadmBuildsAnArrayARealMdadmReportsBack(t *testing.T) {
 		t.Error("a second add reported a change")
 	}
 
+	// Let the initial resync finish before asking whether save_config is
+	// idempotent.
+	//
+	// `mdadm --detail --scan` reports a `spares=` count, and that count
+	// is *transient*: a freshly created array reports one value while it
+	// is building and another once it has settled. Two calls seconds
+	// apart really did print
+	//
+	//	ARRAY /dev/md/halNNN metadata=1.2 spares=2 UUID=...
+	//	ARRAY /dev/md/halNNN metadata=1.2 spares=1 UUID=...
+	//
+	// so save_config wrote a different file each time and this check
+	// failed against a module that had done exactly what it was asked.
+	// The question it means to ask is whether saving twice over a
+	// *settled* array is a no-op.
+	//
+	// `mdadm --wait` blocks until the resync thread finishes and exits
+	// non-zero when there was nothing to wait for, which is not an
+	// error here.
+	if _, err := c.Run(exec.Command{
+		Argv:           []string{"mdadm", "--wait", rig.array},
+		IgnoreExitCode: true,
+	}); err != nil {
+		t.Fatalf("mdadm --wait %s could not be run: %v", rig.array, err)
+	}
+
 	// save_config keeps non-ARRAY lines and lists the array.
 	conf := filepath.Join(t.TempDir(), "mdadm.conf")
 	if err := os.WriteFile(conf, []byte("MAILADDR root\n"), 0o644); err != nil {
@@ -261,4 +287,81 @@ func mdadmMemberInDetail(d *value.Map, dev string) bool {
 		}
 	}
 	return false
+}
+
+// **destroy really destroys**: a real array, its real superblocks, and
+// its line in a real mdadm.conf.
+//
+// This is the one function in the module whose whole purpose is data
+// loss, so it is checked against the tool rather than against this
+// build's own reader: after it runs, `mdadm --examine` must fail on each
+// member, which is mdadm's own way of saying "this device carries no
+// array superblock". A member that still examines cleanly would be one
+// that quietly rejoins an array on the next boot.
+func TestLiveMdadmDestroyRemovesTheArrayAndItsSuperblocks(t *testing.T) {
+	rig := liveMdadmSetup(t)
+	c, r := rig.c, rig.r
+
+	call := func(fn string, kv ...any) *value.Map {
+		t.Helper()
+		args := value.NewMap(len(kv) / 2)
+		for i := 0; i+1 < len(kv); i += 2 {
+			args.Set(kv[i].(string), kv[i+1])
+		}
+		out, err := r.Exec.Call(c, fn, args)
+		if err != nil {
+			t.Fatalf("%s(%v): %v", fn, kv, err)
+		}
+		m, _ := out.(*value.Map)
+		return m
+	}
+	changed := func(m *value.Map) bool { v, _ := m.GetString("changed"); return v == true }
+
+	call("mdadm.create", "device", rig.array, "level", "1",
+		"devices", []any{rig.devices[0], rig.devices[1]},
+		"metadata", "1.2", "name", "hal"+strconv.Itoa(os.Getpid()))
+	if _, err := r.Exec.Call(c, "mdadm.detail", value.MapOf("device", rig.array)); err != nil {
+		t.Fatalf("the array was not created: %v", err)
+	}
+
+	// A conf carrying this array's line, written by the module itself so
+	// the line is spelled the way `--detail --scan` really spells it --
+	// which is the case that matters, because that spelling is usually
+	// not the device path destroy is given.
+	conf := filepath.Join(t.TempDir(), "mdadm.conf")
+	if err := os.WriteFile(conf, []byte("MAILADDR root\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	call("mdadm.save_config", "path", conf)
+	if body, _ := os.ReadFile(conf); !strings.Contains(string(body), "ARRAY ") {
+		t.Fatalf("save_config wrote no ARRAY line to destroy:\n%s", body)
+	}
+
+	if !changed(call("mdadm.destroy", "device", rig.array, "path", conf)) {
+		t.Error("destroy reported no change against a real array")
+	}
+
+	// Gone, by mdadm's account rather than this build's.
+	if _, err := r.Exec.Call(c, "mdadm.detail", value.MapOf("device", rig.array)); err == nil {
+		t.Error("mdadm.detail still succeeds after destroy")
+	}
+	for _, d := range rig.devices[:2] {
+		if err := liveMdadmRun(c, "mdadm", "--examine", d); err == nil {
+			t.Errorf("%s still carries an md superblock after destroy", d)
+		}
+	}
+
+	// The ARRAY line went and the hand-written line stayed.
+	body, _ := os.ReadFile(conf)
+	if strings.Contains(string(body), "ARRAY ") {
+		t.Errorf("destroy left the ARRAY line behind:\n%s", body)
+	}
+	if !strings.Contains(string(body), "MAILADDR root") {
+		t.Errorf("destroy dropped a line that was not its own:\n%s", body)
+	}
+
+	// And again: nothing there, nothing claimed.
+	if changed(call("mdadm.destroy", "device", rig.array, "path", conf)) {
+		t.Error("a second destroy reported a change")
+	}
 }

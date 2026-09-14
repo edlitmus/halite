@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"sort"
@@ -205,15 +206,21 @@ func registerPS(r *Registries) {
 // whose keys depend on the node is one a tree cannot be written
 // against.
 type psProcess struct {
-	PID     int64
-	PPID    int64
-	User    string
-	CPU     float64
-	Mem     float64
-	RSS     int64
-	VSZ     int64
-	State   string
-	Command string
+	PID  int64
+	PPID int64
+	User string
+	CPU  float64
+	Mem  float64
+	// PercentsKnown is false where this node's ps cannot report them.
+	// BusyBox's refuses `%cpu` and `%mem` outright ("bad -o argument"),
+	// so on Alpine they are absent rather than zero -- and zero is a
+	// claim about an idle process, which is a different and wrong
+	// answer.
+	PercentsKnown bool
+	RSS           int64
+	VSZ           int64
+	State         string
+	Command       string
 }
 
 // Name is the program, without its path or its arguments, which is what
@@ -231,6 +238,14 @@ func (p psProcess) Name() string {
 	if strings.HasPrefix(field, "[") && strings.HasSuffix(field, "]") {
 		return strings.Trim(field, "[]")
 	}
+	// BusyBox writes `{comm} argv0 args...` when a process was executed
+	// under a name other than its binary's -- a daemon started through a
+	// symlink, say. The braced word is the executable, which is what
+	// `pgrep` matches and what this should answer; without this the name
+	// came back as the literal `{sleeper}`, braces and all.
+	if strings.HasPrefix(field, "{") && strings.HasSuffix(field, "}") {
+		return strings.Trim(field, "{}")
+	}
 	if i := strings.LastIndexByte(field, '/'); i >= 0 {
 		field = field[i+1:]
 	}
@@ -243,8 +258,14 @@ func (p psProcess) Map() *value.Map {
 	m.Set("ppid", p.PPID)
 	m.Set("user", p.User)
 	m.Set("name", p.Name())
-	m.Set("cpu_percent", p.CPU)
-	m.Set("mem_percent", p.Mem)
+	if p.PercentsKnown {
+		m.Set("cpu_percent", p.CPU)
+		m.Set("mem_percent", p.Mem)
+	} else {
+		// nil, not 0: "this ps cannot say" is not "idle".
+		m.Set("cpu_percent", nil)
+		m.Set("mem_percent", nil)
+	}
 	m.Set("rss_kb", p.RSS)
 	m.Set("vsz_kb", p.VSZ)
 	m.Set("state", p.State)
@@ -328,6 +349,8 @@ func psListLibxo(c *exec.Context) ([]psProcess, error) {
 			VSZ:     psInt(libxoField(m, "virtual-size")),
 			State:   libxoField(m, "state"),
 			Command: libxoField(m, "command"),
+			// libxo reports both percentages, always.
+			PercentsKnown: true,
 		})
 	}
 	sortByPID(out)
@@ -349,14 +372,15 @@ func libxoField(m *value.Map, key string) string {
 // the terminal width, which is how a long Java command line becomes an
 // unmatchable one.
 func psListColumns(c *exec.Context) ([]psProcess, error) {
-	res, err := c.Run(exec.Command{Argv: psArgv()})
+	layout := psArgv(c)
+	res, err := c.Run(exec.Command{Argv: layout.Argv})
 	if err != nil {
 		return nil, err
 	}
 	if res.Code != 0 {
 		return nil, fmt.Errorf("ps: %s", firstLine(res.Stderr))
 	}
-	return parsePSColumns(res.Stdout), nil
+	return parsePSColumnsWith(layout, res.Stdout), nil
 }
 
 // parsePSColumns is the parsing, separated from the running so that the
@@ -364,6 +388,35 @@ func psListColumns(c *exec.Context) ([]psProcess, error) {
 // is everything after the eighth field, and it is the only column that
 // can hold a space.
 func parsePSColumns(stdout string) []psProcess {
+	return parsePSColumnsWith(psLayout{Columns: psColumns, Header: true, Percents: true}, stdout)
+}
+
+// parsePSColumnsWith reads a listing against the columns that were
+// actually asked for.
+//
+// The column set is no longer a constant: BusyBox's ps takes a different
+// and shorter one (see psArgv), so the positions are looked up in the
+// layout rather than written into the field accesses. The last column is
+// always the command, and everything from it to the end of the line is
+// rejoined on single spaces -- the original spacing inside a command
+// line is not recoverable from a column listing and nothing reads it.
+func parsePSColumnsWith(layout psLayout, stdout string) []psProcess {
+	columns := layout.Columns
+	if len(columns) == 0 {
+		columns = psColumns
+	}
+	at := func(fields []string, name string) string {
+		for i, c := range columns {
+			if c == name {
+				if i < len(fields) {
+					return fields[i]
+				}
+				return ""
+			}
+		}
+		return ""
+	}
+
 	var out []psProcess
 	for i, line := range strings.Split(stdout, "\n") {
 		line = strings.TrimRight(line, "\r")
@@ -371,47 +424,117 @@ func parsePSColumns(stdout string) []psProcess {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < len(psColumns) {
+		if len(fields) < len(columns) {
 			continue
 		}
-		// A header is present on the BSD spelling and absent on the
-		// Linux one, so it is recognised rather than counted out.
+		// A header is present on the BSD and BusyBox spellings and
+		// absent on the Linux one, so it is recognised rather than
+		// counted out.
 		if i == 0 && strings.EqualFold(fields[0], "pid") {
 			continue
 		}
-		// Everything from the ninth field on is the command, rejoined
-		// on single spaces: the original spacing inside a command line
-		// is not recoverable from a column listing and nothing reads
-		// it.
-		command := strings.Join(fields[len(psColumns)-1:], " ")
-		out = append(out, psProcess{
-			PID:     psInt(fields[0]),
-			PPID:    psInt(fields[1]),
-			User:    fields[2],
-			CPU:     psFloat(fields[3]),
-			Mem:     psFloat(fields[4]),
-			RSS:     psInt(fields[5]),
-			VSZ:     psInt(fields[6]),
-			State:   fields[7],
-			Command: command,
-		})
+		p := psProcess{
+			PID:           psInt(at(fields, "pid")),
+			PPID:          psInt(at(fields, "ppid")),
+			User:          at(fields, "user"),
+			RSS:           psSize(at(fields, "rss")),
+			VSZ:           psSize(at(fields, "vsz")),
+			Command:       strings.Join(fields[len(columns)-1:], " "),
+			PercentsKnown: layout.Percents,
+		}
+		// procps spells it `state` and BusyBox spells it `stat`.
+		if s := at(fields, "state"); s != "" {
+			p.State = s
+		} else {
+			p.State = at(fields, "stat")
+		}
+		if layout.Percents {
+			p.CPU = psFloat(at(fields, "%cpu"))
+			p.Mem = psFloat(at(fields, "%mem"))
+		}
+		out = append(out, p)
 	}
 	sortByPID(out)
 	return out
 }
 
+// psLayout is one flavour of ps: what to run, which columns come back,
+// and whether it prints a header.
+type psLayout struct {
+	Argv    []string
+	Columns []string
+	Header  bool
+	// Percents is false for a ps that cannot report %cpu and %mem.
+	Percents bool
+}
+
+// psBusyboxColumns is what BusyBox's ps will accept.
+//
+// Read off the real tool on Alpine 3.24 rather than guessed: `pid`,
+// `ppid`, `user`, `comm`, `args`, `stat`, `rss` and `vsz` are taken, and
+// `%cpu` and `%mem` are refused outright --
+//
+//	ps: bad -o argument '%cpu', supported arguments: ...
+//
+// It also spells two of them differently from procps: `stat` where the
+// standard name is `state`, and `args` where it is `command`.
+var psBusyboxColumns = []string{"pid", "ppid", "user", "rss", "vsz", "stat", "args"}
+
 // psArgv is the command for a platform without libxo.
+//
+// # Three flavours, not two
 //
 // Linux's ps takes the standard syntax and BSD's takes its own, and the
 // difference is not cosmetic: `ps -eo` on a BSD ps is a request for an
-// event, and `ps -axo` on procps warns about the missing dash. Each
-// gets the spelling its own manual documents.
-func psArgv() []string {
-	columns := strings.Join(psColumns, ",")
+// event, and `ps -axo` on procps warns about the missing dash. Each gets
+// the spelling its own manual documents.
+//
+// **BusyBox is a third, and it is not a dialect of either.** Alpine's ps
+// is BusyBox's, whose entire usage is
+//
+//	ps [-o COL1,COL2=HEADER] [-T]
+//
+// -- no `-e`, no `-ww`, no `--no-headers`, no BSD `-ax`. The Linux
+// spelling fails on it with `ps: unrecognized option: w`, which is how
+// nine live tests failed on Alpine against a module that works
+// everywhere else. It prints a header unconditionally and cannot report
+// the two percentages at all, so those come back nil.
+func psArgv(c *exec.Context) psLayout {
 	if runtime.GOOS == "linux" {
-		return []string{"ps", "-eww", "--no-headers", "-o", columns}
+		if psIsBusybox(c) {
+			return psLayout{
+				Argv:    []string{"ps", "-o", strings.Join(psBusyboxColumns, ",")},
+				Columns: psBusyboxColumns,
+				Header:  true,
+			}
+		}
+		return psLayout{
+			Argv:     []string{"ps", "-eww", "--no-headers", "-o", strings.Join(psColumns, ",")},
+			Columns:  psColumns,
+			Percents: true,
+		}
 	}
-	return []string{"ps", "-axwwo", columns}
+	return psLayout{
+		Argv:     []string{"ps", "-axwwo", strings.Join(psColumns, ",")},
+		Columns:  psColumns,
+		Header:   true,
+		Percents: true,
+	}
+}
+
+// psIsBusybox reports whether this node's ps is BusyBox's.
+//
+// Asked of the tool rather than inferred from the distribution: a Debian
+// with busybox-static first on PATH is the same problem, and an Alpine
+// with procps-compat installed is not. BusyBox answers `--help` with a
+// banner naming itself and a non-zero status, so the output is what is
+// read.
+func psIsBusybox(c *exec.Context) bool {
+	res, err := c.Run(exec.Command{Argv: []string{"ps", "--help"}, IgnoreExitCode: true})
+	if err != nil {
+		return false
+	}
+	return strings.Contains(res.Stdout+res.Stderr, "BusyBox")
 }
 
 func sortByPID(procs []psProcess) {
@@ -421,6 +544,60 @@ func sortByPID(procs []psProcess) {
 func psInt(s string) int64 {
 	n, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	return n
+}
+
+// psSize reads a size column in KiB, including the abbreviations BusyBox
+// writes when a number will not fit.
+//
+// # BusyBox shortens what it cannot fit, and `ParseInt` reads that as 0
+//
+// procps prints these columns as plain integers. BusyBox prints two
+// significant figures and a unit when the value is wide -- a Go
+// process's virtual size comes out as `1.1g` -- so the plain
+// `strconv.ParseInt` this used returned **zero**, and a running process
+// was reported as holding no memory at all. That is how
+// `TestLivePSReadsTheRealProcessTable` failed on Alpine: the test binary
+// is large enough for its own RSS to be abbreviated.
+//
+// # The abbreviation is lossy, and this cannot undo that
+//
+// Captured together on Alpine 3.24, for one process:
+//
+//	ps:    rss=3416      vsz=1.1g
+//	/proc: VmRSS 3540 kB  VmSize 1226592 kB
+//
+// The suffix is 1024-based, so `1.1g` converts to 1153434 KiB against a
+// true 1226592 -- about 6% out, and there is no way to recover the exact
+// figure from this column. A caller that needs an exact number on such a
+// node has to read /proc, which this does not do. An approximate size is
+// still worth far more than a zero, and `ps.top by: memory` orders
+// correctly on it.
+func psSize(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	last := s[len(s)-1]
+	var scale int64
+	switch last {
+	case 'k', 'K':
+		scale = 1
+	case 'm', 'M':
+		scale = 1024
+	case 'g', 'G':
+		scale = 1024 * 1024
+	case 't', 'T':
+		scale = 1024 * 1024 * 1024
+	default:
+		// No suffix: a plain count of KiB, as procps always writes and
+		// BusyBox writes when it fits.
+		return psInt(s)
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(s[:len(s)-1]), 64)
+	if err != nil {
+		return 0
+	}
+	return int64(n * float64(scale))
 }
 
 func psFloat(s string) float64 {
@@ -492,6 +669,17 @@ func psTopFn(c *exec.Context, args *value.Map) (any, error) {
 	procs, err := psList(c)
 	if err != nil {
 		return nil, err
+	}
+	// Sorting by a number this node's ps cannot report would return the
+	// first `count` processes in whatever order they arrived and call
+	// them the busiest. BusyBox's ps refuses `%cpu` outright, so on
+	// Alpine this refuses by name instead -- `by: memory` sorts on RSS,
+	// which BusyBox does report, and still works there.
+	if by == "cpu" && len(procs) > 0 && !procs[0].PercentsKnown {
+		return nil, errors.New(
+			"this node's ps cannot report %cpu -- it is BusyBox's, whose ps takes no such " +
+				"column -- so the busiest by CPU cannot be answered here. `by: memory` sorts " +
+				"on RSS, which it does report")
 	}
 	sort.SliceStable(procs, func(i, j int) bool {
 		if by == "cpu" {

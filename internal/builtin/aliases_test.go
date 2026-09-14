@@ -67,11 +67,24 @@ func TestAnAliasRefusesOnTheWrongProvider(t *testing.T) {
 		t.Skipf("this node has no package manager: %v", err)
 	}
 
-	forMine := map[string]string{
-		"aptpkg":       "aptpkg",
-		"freebsdpkg":   "pkgng",
-		"win_pkg":      "chocolatey",
-		"mac_brew_pkg": "mac_brew_pkg",
+	// Read out of the registry rather than written down again. The copy
+	// that used to live here listed four aliases and went stale the
+	// moment `dnfpkg` and `yumpkg` were added -- and before that it was
+	// the reason this test could not be satisfied on a RHEL node at all,
+	// since it demanded exactly one match from a table that had no entry
+	// for the provider such a node has.
+	// The package aliases only: the registry also carries the `service`,
+	// `firewall` and `sysctl` ones, and calling `.list_pkgs` on
+	// `systemd_service` asks a question that module was never meant to
+	// answer.
+	forMine := map[string]string{}
+	for name, a := range r.Exec.Aliases() {
+		if a.Module == "pkg" {
+			forMine[name] = a.Provider
+		}
+	}
+	if len(forMine) == 0 {
+		t.Fatal("no aliases are registered; this test has stopped testing anything")
 	}
 	matched := 0
 	for alias, provider := range forMine {
@@ -95,8 +108,60 @@ func TestAnAliasRefusesOnTheWrongProvider(t *testing.T) {
 				alias, mine.Name(), err)
 		}
 	}
-	if matched != 1 {
-		t.Errorf("%d aliases matched this node's provider %s, want exactly 1", matched, mine.Name())
+	// One alias per provider, where SPEC 15.3 names one at all.
+	//
+	// It does not name one for every provider this build has: Alpine's
+	// `apkpkg` has no row in that table, so an Alpine node legitimately
+	// matches nothing and inventing a name to make this number 1 would
+	// be the test deciding the specification. So the expectation is
+	// derived from the registry too -- at most one, and exactly one when
+	// this node's provider is aliased.
+	want := 0
+	for _, provider := range forMine {
+		if provider == mine.Name() {
+			want = 1
+			break
+		}
+	}
+	if matched != want {
+		t.Errorf("%d aliases matched this node's provider %s, want %d",
+			matched, mine.Name(), want)
+	}
+}
+
+// Every SPEC 15.3 package-module name whose provider this build has is
+// actually aliased.
+//
+// `dnfpkg` and `yumpkg` were missing for as long as the comment in
+// aliases.go claimed the dnf provider did not do packages -- which it
+// does, and which `pkg` has been selecting on RHEL nodes throughout. A
+// provider with no reachable 15.3 name is a gap this names directly,
+// rather than leaving it to be noticed when a node fails a count.
+func TestEverySpecNamedProviderThisBuildHasIsAliased(t *testing.T) {
+	r := New()
+
+	aliased := map[string]bool{}
+	for _, a := range r.Exec.Aliases() {
+		if a.Module == "pkg" {
+			aliased[a.Provider] = true
+		}
+	}
+
+	// The names SPEC 15.3's platform table gives, against the provider
+	// each one would reach. `zypperpkg` is deliberately absent: there is
+	// no SUSE provider to alias yet.
+	for _, c := range []struct{ specName, provider string }{
+		{"aptpkg", "aptpkg"},
+		{"freebsdpkg", "pkgng"},
+		{"win_pkg", "chocolatey"},
+		{"mac_brew_pkg", "mac_brew_pkg"},
+		{"dnfpkg", "dnfpkg"},
+		{"yumpkg", "yumpkg"},
+	} {
+		if !aliased[c.provider] {
+			t.Errorf("SPEC 15.3 names %s and this build has the %s provider, but no alias "+
+				"reaches it", c.specName, c.provider)
+		}
 	}
 }
 

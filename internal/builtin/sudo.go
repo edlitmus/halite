@@ -143,14 +143,47 @@ func sudoVersion(c *exec.Context) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sudo could not be run on this node: %w", err)
 	}
-	// The first line is `Sudo version 1.9.17p2`. Every other line
-	// depends on whether the caller is root, so only this one is read.
+	// The first line is the version. Every other line depends on whether
+	// the caller is root, so only this one is read.
 	first := strings.TrimSpace(firstLine(res.Stdout))
-	if v, ok := strings.CutPrefix(first, "Sudo version "); ok {
-		return strings.TrimSpace(v), nil
+	if v, ok := sudoParseVersion(first); ok {
+		return v, nil
 	}
 	return nil, fmt.Errorf(
 		"`sudo -V` did not begin with a version line; it printed %q", first)
+}
+
+// sudoParseVersion reads the first line of `sudo -V`, from either
+// implementation.
+//
+// # There are two sudos now, and Ubuntu ships the other one
+//
+// The original prints `Sudo version 1.9.17p2` and a block of settings
+// below it. **sudo-rs**, the Rust rewrite, prints one line and nothing
+// else:
+//
+//	sudo-rs 0.2.13-0ubuntu1.2
+//
+// Ubuntu 26.04 installs both packages and puts sudo-rs on PATH -- the
+// `sudo` an operator types there resolves to /usr/lib/cargo/bin/sudo --
+// so `sudo.version` failed on a tier 1 platform for a machine with a
+// perfectly good sudo on it.
+//
+// The implementation is kept, not thrown away: "0.2.13" on its own would
+// be read as a wildly old sudo by anything comparing versions, and the
+// two projects' numbering has nothing to do with each other. Callers get
+// the version as the tool spells it.
+func sudoParseVersion(first string) (string, bool) {
+	if v, ok := strings.CutPrefix(first, "Sudo version "); ok {
+		return strings.TrimSpace(v), true
+	}
+	// sudo-rs: `sudo-rs <version>`, one line.
+	if v, ok := strings.CutPrefix(first, "sudo-rs "); ok {
+		if v = strings.TrimSpace(v); v != "" {
+			return "sudo-rs " + v, true
+		}
+	}
+	return "", false
 }
 
 // sudoDefaultPath is the conventional sudoers location per platform.

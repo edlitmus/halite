@@ -191,6 +191,24 @@ func registerMdadm(r *Registries) {
 		},
 		exec.Module{
 			Sig: signature.Signature{
+				Module: "mdadm", Function: "destroy",
+				Doc: "Stop an array and zero its members' superblocks, so they are no longer part of any array. " +
+					"**This destroys the array and everything on it.**",
+				Params: []signature.Param{
+					req("device", signature.Path, "The array to destroy."),
+					opt("path", signature.Path, "",
+						"The mdadm.conf to drop the array's ARRAY line from. Empty finds this distribution's."),
+				},
+				Mutates:    true,
+				TestMode:   signature.TestReliable,
+				Privileges: []string{"root"},
+				Platforms:  linuxOnly,
+				Section:    "15.3",
+			},
+			Fn: mdadmDestroyFn,
+		},
+		exec.Module{
+			Sig: signature.Signature{
 				Module: "mdadm", Function: "add",
 				Doc: "Add a device to an array, as a spare or as a replacement for a missing member.",
 				Params: []signature.Param{
@@ -781,6 +799,165 @@ func mdadmGrowArgv(device string, raidDevices int64, size string) ([]string, err
 
 // ---- writing ----
 
+// mdadmDestroyFn stops an array and zeroes its members' superblocks.
+//
+// # This is the one function here that destroys data on purpose
+//
+// `create` refuses a member that already carries a superblock unless
+// `force` is set, because there the damage is *incidental*: somebody
+// asked for a new array and would not expect an old one to be eaten.
+// Here it is the whole request. The verb is the confirmation, which is
+// also how Salt's `raid.destroy` treats it, and adding a `force` to a
+// function whose only purpose is destruction would be ceremony rather
+// than a safeguard.
+//
+// # The order matters, and so does the refusal
+//
+// The members are read *before* the array is stopped, because once it is
+// stopped `--detail` can no longer say what belonged to it. The
+// superblocks are zeroed only if the stop actually succeeded -- Salt has
+// the same guard, and it is the important one: zeroing the members of a
+// still-running array is how a mounted filesystem is destroyed under
+// itself. A stop that fails is reported as the error it is, with nothing
+// zeroed.
+//
+// # Idempotence
+//
+// Destroying an array that is not there is not an error. A second run
+// finds no array, finds no ARRAY line left to drop, and reports no
+// change -- which is what lets this be called from a tree that wants an
+// array gone. An array that is already stopped but still has a line in
+// mdadm.conf is a real change: the line goes.
+func mdadmDestroyFn(c *exec.Context, args *value.Map) (any, error) {
+	if err := mdadmToolPresent(c); err != nil {
+		return nil, err
+	}
+	device := strings.TrimSpace(states.Str(args, "device", ""))
+	if device == "" {
+		return nil, errors.New("an array device must be named")
+	}
+	confPath := strings.TrimSpace(states.Str(args, "path", ""))
+	if confPath == "" {
+		confPath = mdadmDefaultConfPath()
+	}
+
+	// Read first: after `--stop` there is nothing left to ask.
+	detail, detailErr := mdadmDetail(c, device)
+
+	if detailErr != nil {
+		// No array. The only thing that can still be stale is the config.
+		dropped, err := mdadmDropConfEntry(confPath, device, "", c.Test)
+		if err != nil {
+			return nil, err
+		}
+		if dropped {
+			return mdadmMutateResult(c, true,
+				fmt.Sprintf("%s is not a running array; its ARRAY line was dropped from %s.", device, confPath),
+				value.MapOf(confPath, states.Change("1 ARRAY line", "0 ARRAY lines"))), nil
+		}
+		return mdadmMutateResult(c, false,
+			fmt.Sprintf("%s is not a running array and no ARRAY line names it.", device), nil), nil
+	}
+
+	members := make([]string, 0, len(detail.Members))
+	for _, m := range detail.Members {
+		// A removed or failed slot has no device path, and there is
+		// nothing to zero for it.
+		if m.Device != "" {
+			members = append(members, m.Device)
+		}
+	}
+
+	change := value.MapOf(device, states.Change("array of "+strings.Join(members, ", "), "destroyed"))
+	if c.Test {
+		return mdadmMutateResult(c, true,
+			fmt.Sprintf("array %s would be stopped and the superblocks on %d member(s) zeroed.",
+				device, len(members)), change), nil
+	}
+
+	if _, err := mdadmRun(c, []string{"mdadm", "--stop", device}); err != nil {
+		return nil, fmt.Errorf("%s was not stopped, so nothing was zeroed: %w", device, err)
+	}
+	if len(members) > 0 {
+		if _, err := mdadmRun(c, append([]string{"mdadm", "--zero-superblock"}, members...)); err != nil {
+			return nil, fmt.Errorf("%s was stopped but its superblocks were not zeroed, so its members "+
+				"still look like array members: %w", device, err)
+		}
+	}
+	if _, err := mdadmDropConfEntry(confPath, device, detail.UUID, false); err != nil {
+		return nil, err
+	}
+	return mdadmMutateResult(c, true,
+		fmt.Sprintf("array %s was destroyed and the superblocks on %d member(s) zeroed.",
+			device, len(members)), change), nil
+}
+
+// mdadmDropConfEntry removes the ARRAY line naming this array from
+// mdadm.conf, and reports whether there was one.
+//
+// Matched on the device path *or* the UUID, where Salt matches on the
+// device path alone (`ARRAY {device} .*`). The extra clause is not
+// decoration: `save_config` writes whatever `mdadm --detail --scan`
+// printed, and that names an array by whichever path it resolved --
+// frequently `/dev/md/<name>` rather than the `/dev/mdN` an operator
+// passed in. Matching only the caller's spelling would leave the line
+// behind on exactly the arrays that have a name. The UUID is the thing
+// that does not change.
+//
+// An empty path, or a file that is not there, is not an error: a node
+// that has never had an mdadm.conf has no stale line in it.
+func mdadmDropConfEntry(path, device, uuid string, test bool) (bool, error) {
+	if path == "" {
+		return false, nil
+	}
+	existing, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("%s could not be read: %w", path, err)
+	}
+	lines := strings.Split(string(existing), "\n")
+	kept := make([]string, 0, len(lines))
+	dropped := false
+	for _, line := range lines {
+		if mdadmConfLineNames(line, device, uuid) {
+			dropped = true
+			continue
+		}
+		kept = append(kept, strings.TrimRight(line, "\r"))
+	}
+	if !dropped || test {
+		return dropped, nil
+	}
+	body := strings.Join(kept, "\n")
+	if err := atomicfile.Write(path, []byte(body), 0o644); err != nil {
+		return false, fmt.Errorf("%s could not be written: %w", path, err)
+	}
+	return true, nil
+}
+
+// mdadmConfLineNames reports whether one mdadm.conf line is the ARRAY
+// entry for this array.
+func mdadmConfLineNames(line, device, uuid string) bool {
+	fields := strings.Fields(strings.TrimSpace(line))
+	if len(fields) < 2 || fields[0] != "ARRAY" {
+		return false
+	}
+	if fields[1] == device {
+		return true
+	}
+	if uuid == "" {
+		return false
+	}
+	for _, f := range fields[2:] {
+		if strings.EqualFold(f, "UUID="+uuid) {
+			return true
+		}
+	}
+	return false
+}
+
 func mdadmMutateResult(c *exec.Context, changed bool, comment string, change *value.Map) *value.Map {
 	out := value.NewMap(3)
 	out.Set("changed", changed)
@@ -1056,6 +1233,38 @@ func mdadmGrowFn(c *exec.Context, args *value.Map) (any, error) {
 
 // mdadmSaveConfigFn writes the running arrays into mdadm.conf, keeping
 // any non-ARRAY lines an operator put there.
+//
+// # The line is a snapshot, and that includes the parts that move
+//
+// What gets written is whatever `mdadm --detail --scan` printed, which
+// is what Salt's `raid.save_config` writes too. Some of that is not
+// stable: `spares=` is a live count, so an array that is still building
+// reports one value and the same array a few seconds later reports
+// another. Two calls really did produce
+//
+//	ARRAY /dev/md/halNNN metadata=1.2 spares=2 UUID=...
+//	ARRAY /dev/md/halNNN metadata=1.2 spares=1 UUID=...
+//
+// on a real AlmaLinux node, so calling this twice during a resync
+// rewrites the file and reports a change both times.
+//
+// **That is left as it is, deliberately.** Filtering fields out of what
+// mdadm printed would make this build's mdadm.conf disagree with the
+// tool that reads it, for the sake of a difference that only exists
+// while an array is rebuilding. Salt does filter -- but only `name=` and
+// `metadata=`, only on Ubuntu, and to work around a device-naming bug
+// rather than for convergence.
+//
+// What keeps it from being a problem is where it is *called from*.
+// There is no `mdadm` state (see the package comment), so nothing in a
+// convergence loop reaches this: it is an operator's command, or one a
+// tree calls deliberately. Salt arrives at the same place from the other
+// direction -- its `raid.present` calls `save_config` only inside
+// `if not present`, so a converged node never calls it either. A tree
+// that does call this on every highstate will see a change reported for
+// as long as a resync is running, and the honest answer is to call it
+// after the array settles, which is what the live test does with
+// `mdadm --wait`.
 func mdadmSaveConfigFn(c *exec.Context, args *value.Map) (any, error) {
 	if err := mdadmToolPresent(c); err != nil {
 		return nil, err

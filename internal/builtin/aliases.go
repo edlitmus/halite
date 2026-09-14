@@ -27,11 +27,24 @@ import (
 // from what it aliases, which a copy would do the first time one of them
 // gained an argument.
 //
-// Only the names whose provider actually exists are aliased. `zypperpkg`
-// and `dnfpkg` stay pending, because SUSE has no provider here and the
-// dnf one covers repositories but not packages: aliasing either would
-// turn "not built" into "built, and fails when you call it", which is
-// the worse of the two answers.
+// Only the names whose provider actually exists are aliased, because
+// aliasing one that does not would turn "not built" into "built, and
+// fails when you call it", which is the worse of the two answers.
+// `zypperpkg` stays pending on those grounds: SUSE has no provider here.
+//
+// `dnfpkg` and `yumpkg` were pending on the same grounds and should not
+// have been. The note here said the dnf provider "covers repositories
+// but not packages", and that stopped being true: `dnfProvider`
+// implements ListPkgs, Install, Remove, LatestVersion and RefreshDB, and
+// `pkg` already selects it on a RHEL node. The stale sentence outlived
+// the gap it described, and what found it was the first run on a real
+// AlmaLinux machine -- where `TestAnAliasRefusesOnTheWrongProvider`
+// failed with "0 aliases matched this node's provider dnfpkg", because
+// the node had a provider that no SPEC 15.3 name could reach.
+//
+// There is no `apkpkg`. Alpine has a working provider, but SPEC 15.3's
+// table has no Alpine row and no such name, and inventing one here would
+// be this build deciding a specification it is meant to implement.
 func registerAliases(r *Registries) {
 	// The package providers, by the name SPEC 15.3 gives them. The
 	// provider's own Name() is what it calls itself, which for two of
@@ -43,6 +56,12 @@ func registerAliases(r *Registries) {
 		"freebsdpkg":   "pkgng",
 		"win_pkg":      "chocolatey",
 		"mac_brew_pkg": "mac_brew_pkg",
+		// The dnf provider names itself after the binary it found, so a
+		// node with `dnf` reports `dnfpkg` and one with only `yum`
+		// reports `yumpkg`. SPEC 15.3 names both, and exactly one of
+		// them is usable on any given RHEL-family node.
+		"dnfpkg": "dnfpkg",
+		"yumpkg": "yumpkg",
 	} {
 		r.Exec.Alias(alias, exec.Alias{
 			Module:   "pkg",

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -476,4 +477,96 @@ func TestLiveSysctlRefusesAParameterThisKernelDoesNotHave(t *testing.T) {
 	if _, err := os.Stat(conf); err == nil {
 		t.Error("a refused parameter was written to the configuration file anyway")
 	}
+}
+
+// liveOSFamily is this node's `os_family` grain, as the build computes
+// it: Debian, RedHat, Suse, Alpine, Arch, FreeBSD, Windows, MacOS.
+//
+// Read through `grains` rather than from /etc/os-release directly, so a
+// test and the product cannot disagree about what family a machine is
+// in. An empty string means the grain could not be collected, and every
+// caller below treats that as "do not know", which skips rather than
+// fails.
+func liveOSFamily(t *testing.T) string {
+	t.Helper()
+	g, _ := grains.Collect(grains.Options{})
+	if g == nil {
+		return ""
+	}
+	fam, _ := g.GetString("os_family")
+	s, _ := fam.(string)
+	return s
+}
+
+// liveOSName is this node's `os` grain -- Ubuntu, Debian, CentOS Stream,
+// AlmaLinux, and so on. Where `liveOSFamily` groups Ubuntu and Debian
+// together, this tells them apart, which some tools need: netplan is
+// Ubuntu's and Debian does not ship it.
+func liveOSName(t *testing.T) string {
+	t.Helper()
+	g, _ := grains.Collect(grains.Options{})
+	if g == nil {
+		return ""
+	}
+	name, _ := g.GetString("os")
+	s, _ := name.(string)
+	return s
+}
+
+// requireToolOfDistros is requireToolOfFamilies one level finer, for a
+// tool that one distribution in a family ships and another does not.
+func requireToolOfDistros(t *testing.T, tool string, present bool, distros ...string) {
+	t.Helper()
+	if present {
+		return
+	}
+	os := liveOSName(t)
+	for _, d := range distros {
+		if os == d {
+			t.Fatalf("this is %s and it has no %s; HALITE_SYSTEM_LIVE says the tools are here", os, tool)
+		}
+	}
+	t.Skipf("%s is %s's and this node's os grain is %q; there is nothing here to drive",
+		tool, strings.Join(distros, " or "), os)
+}
+
+// requireToolOfFamilies decides whether a tool this node does not have
+// is a failure or a reason to skip.
+//
+// # Why a missing tool is normally a failure here
+//
+// Setting `HALITE_SYSTEM_LIVE=1` is a claim: this machine has the tools
+// and you may drive them. The gates in this package have always treated
+// a missing tool as a *failure* rather than a skip, deliberately,
+// because a live suite that skips its way to green has tested nothing
+// and says so nowhere -- the whole point of these is that they run.
+//
+// # Why that was wrong as written
+//
+// It was right while the only machines running it were Ubuntu. It stops
+// being right the moment the suite meets a RHEL or an Alpine node, and
+// the Vultr lab (contrib/tofu) made that the normal case: `netplan` is
+// Debian's, `apparmor` is Debian's and SUSE's, `dpkg` is Debian's, and
+// `systemctl` is not on Alpine at all. A RHEL node that has no netplan
+// is not a broken runner, and eleven tests failing to say so buries the
+// two genuine defects the same run found.
+//
+// So the families that own the tool are named. On one of them a missing
+// tool still fails, exactly as before. Anywhere else the test skips and
+// the message says which families it needed -- which is a skip that
+// carries a reason, not a silent one.
+func requireToolOfFamilies(t *testing.T, tool string, present bool, families ...string) {
+	t.Helper()
+	if present {
+		return
+	}
+	family := liveOSFamily(t)
+	for _, f := range families {
+		if family == f {
+			t.Fatalf("this is a %s node and it has no %s; HALITE_SYSTEM_LIVE says the tools are here",
+				family, tool)
+		}
+	}
+	t.Skipf("%s belongs to %s and this node's os_family is %q; there is nothing here to drive",
+		tool, strings.Join(families, " or "), family)
 }

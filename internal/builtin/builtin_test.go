@@ -595,3 +595,113 @@ func skipOffPlatform(t *testing.T, platforms []string) {
 	t.Skipf("this module is declared for %s and this node is %s; the registry refuses it here",
 		strings.Join(platforms, ", "), runtime.GOOS)
 }
+
+// Every registration function in this package is actually called.
+//
+// # The defect this exists to catch
+//
+// `system_module.go` was written complete -- four power verbs, the clock
+// writer, the computer description, 735 lines with its own tests passing
+// -- and `registerSystemModule` was never added to `New()`. Nothing
+// failed. The package compiled, because an uncalled package-level
+// function is not an error in Go; the module's own tests passed, because
+// they built a registry and called `registerSystemModule` directly; and
+// the file even carried a comment saying the wiring "belongs to whoever
+// assembles builtin.go", which is exactly the kind of note that is true
+// when written and forgotten by morning. A whole module of SPEC 15.2 was
+// absent from every build and from `sys.list`, and the only thing that
+// eventually noticed was the ledger audit in internal/specaudit
+// complaining about a *different* module's totals.
+//
+// So this walks the package's own source for registration functions and
+// checks each one is called somewhere -- by `New()` directly, or by
+// another registration function that `New()` reaches. It does not try to
+// prove reachability from `New()` transitively, which would want a call
+// graph; "defined and called by nobody at all" is the shape that
+// actually happened and it is cheap to be certain about.
+func TestEveryRegistrationFunctionIsCalled(t *testing.T) {
+	defined, called := registrationFunctionsInThisPackage(t)
+
+	for name := range defined {
+		if !called[name] {
+			t.Errorf("%s is defined and never called, so whatever it registers is in no build. "+
+				"Add it to New(), or to the register function that owns it.", name)
+		}
+	}
+	// A floor, so that a change which breaks the scan shows up as a
+	// failure rather than as a pass over an empty set.
+	if len(defined) < 50 {
+		t.Fatalf("only %d registration functions were found in this package, which means the "+
+			"scan below stopped matching them rather than that they were deleted", len(defined))
+	}
+}
+
+// registrationFunctionsInThisPackage reads the package's .go files and
+// returns the register* functions it defines and the ones it calls.
+//
+// Test files are excluded from the *called* side on purpose: a test that
+// calls `registerSystemModule` into a registry of its own is how the
+// unwired module looked covered, so a call from a test must not count as
+// the module being wired into anything that ships.
+func registrationFunctionsInThisPackage(t *testing.T) (defined, called map[string]bool) {
+	t.Helper()
+	defined, called = map[string]bool{}, map[string]bool{}
+
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("this package's own directory could not be read: %v", err)
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatalf("%s could not be read: %v", name, err)
+		}
+		for _, line := range strings.Split(string(body), "\n") {
+			trimmed := strings.TrimSpace(line)
+			// A definition: `func registerX(` at the start of a line.
+			if fn, ok := registrationName(trimmed, "func register"); ok {
+				defined[fn] = true
+				continue
+			}
+			// A call: `registerX(` anywhere a statement can start. Comments
+			// are skipped so that prose naming a function does not count as
+			// wiring it -- system_module.go's own comment named
+			// registerSystemModule while nothing called it.
+			if strings.HasPrefix(trimmed, "//") {
+				continue
+			}
+			if i := strings.Index(trimmed, "register"); i >= 0 {
+				if fn, ok := registrationName(trimmed[i:], "register"); ok {
+					called[fn] = true
+				}
+			}
+		}
+	}
+	return defined, called
+}
+
+// registrationName pulls `registerX` out of a line beginning with the
+// given prefix, returning false unless an open parenthesis follows the
+// name.
+func registrationName(line, prefix string) (string, bool) {
+	if !strings.HasPrefix(line, prefix) {
+		return "", false
+	}
+	rest := line[len("func "):]
+	if prefix == "register" {
+		rest = line
+	}
+	open := strings.IndexByte(rest, '(')
+	if open <= 0 {
+		return "", false
+	}
+	name := rest[:open]
+	if !strings.HasPrefix(name, "register") || strings.ContainsAny(name, " \t.,){") {
+		return "", false
+	}
+	return name, true
+}

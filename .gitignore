@@ -14,3 +14,28 @@ cover.out
 # migrate reports: they quote a real tree's file paths and service names,
 # which belong to whoever owns that estate and not in this repository.
 complex-tree.txt
+
+# OpenTofu and Terraform variable files, anywhere in the tree.
+#
+# A .tfvars is where a credential ends up, whatever the surrounding
+# README says: it is the file the tooling reads by default, and
+# `terraform.tfvars` and `*.auto.tfvars` are both loaded with no flag to
+# say so. contrib/tofu takes its token from VULTR_API_KEY in the
+# environment and needs no variables file at all, so one appearing
+# anywhere is either a mistake or a secret, and neither is worth the
+# chance that it is committed from a directory nobody thought to cover.
+#
+# Tree-wide rather than per-directory on purpose. This lived only in
+# contrib/tofu/.gitignore, which left `terraform.tfvars` at the
+# repository root, or under any infra directory added later, perfectly
+# committable.
+*.tfvars
+*.tfvars.json
+
+# And `.env`, for the same reason and more so: it is the filename
+# `git add -A` sweeps up, and nothing in this repository reads one. The
+# lab reads its token from the environment, or from a file under $HOME
+# that no commit here can reach -- see LAB_ENV in the Makefile.
+.env
+.env.*
+*.env

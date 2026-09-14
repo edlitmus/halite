@@ -22,8 +22,26 @@ const atqSampleFixture = "Date\t\t\t\tOwner\t\tQueue\tJob#\n" +
 	"Sat Sep 12 16:05:00 2026\ted              a\t5\n" +
 	"Sat Sep 12 17:00:00 2026\troot            b\t12\n"
 
+// atqFixtureForThisPlatform is the same queue -- job 5 for `ed`, job 12
+// for `root` -- written the way the running platform's own atq writes
+// it.
+//
+// The tests below feed a fixture to a recording runner and then drive
+// the real module code, which reads `runtime.GOOS`. A single fixture
+// therefore cannot serve both: handing FreeBSD's layout to a build
+// running on Linux makes the parser read the weekday as a job number and
+// three otherwise-unrelated tests fail on the platform, not on the code.
+// That is what running this suite on a real AlmaLinux node showed.
+func atqFixtureForThisPlatform() string {
+	if runtime.GOOS == "linux" {
+		return "5\tSat Sep 12 16:05:00 2026 a ed\n" +
+			"12\tSat Sep 12 17:00:00 2026 b root\n"
+	}
+	return atqSampleFixture
+}
+
 func TestAtqParsesTheJobNumberAsTheLastColumn(t *testing.T) {
-	jobs, err := atParseQueueList(atqSampleFixture)
+	jobs, err := atParseQueueList("freebsd", atqSampleFixture)
 	if err != nil {
 		t.Fatalf("atParseQueueList: %v", err)
 	}
@@ -39,7 +57,7 @@ func TestAtqParsesTheJobNumberAsTheLastColumn(t *testing.T) {
 }
 
 func TestAtqSkipsTheHeaderRow(t *testing.T) {
-	jobs, err := atParseQueueList(atqSampleFixture)
+	jobs, err := atParseQueueList("freebsd", atqSampleFixture)
 	if err != nil {
 		t.Fatalf("atParseQueueList: %v", err)
 	}
@@ -55,7 +73,7 @@ func TestAtqToleratesSpacesInsteadOfTabs(t *testing.T) {
 	// layout captured on this host; the job number is trusted because it
 	// is the last whitespace-separated field, whatever separates it from
 	// the rest.
-	jobs, err := atParseQueueList("Date  Owner  Queue  Job#\nSat Sep 12 16:05:00 2026 ed a 7\n")
+	jobs, err := atParseQueueList("freebsd", "Date  Owner  Queue  Job#\nSat Sep 12 16:05:00 2026 ed a 7\n")
 	if err != nil {
 		t.Fatalf("atParseQueueList: %v", err)
 	}
@@ -65,7 +83,7 @@ func TestAtqToleratesSpacesInsteadOfTabs(t *testing.T) {
 }
 
 func TestAtqTreatsAnEmptyQueueAsNoJobsNotAnError(t *testing.T) {
-	jobs, err := atParseQueueList("Date\t\t\t\tOwner\t\tQueue\tJob#\n")
+	jobs, err := atParseQueueList("freebsd", "Date\t\t\t\tOwner\t\tQueue\tJob#\n")
 	if err != nil {
 		t.Fatalf("an empty queue was reported as an error: %v", err)
 	}
@@ -75,22 +93,59 @@ func TestAtqTreatsAnEmptyQueueAsNoJobsNotAnError(t *testing.T) {
 }
 
 func TestAtqRefusesARowWithNoTrailingNumber(t *testing.T) {
-	_, err := atParseQueueList("Date\t\t\t\tOwner\t\tQueue\tJob#\nsomething went wrong here\n")
+	_, err := atParseQueueList("freebsd", "Date\t\t\t\tOwner\t\tQueue\tJob#\nsomething went wrong here\n")
 	if err == nil {
 		t.Error("a row with no job number at the end was accepted")
 	}
 }
 
+// at's confirmation is not one sentence, and the second one is lowercase.
+//
+// Both fixtures below came off real machines. The RHEL one is why this
+// test grew: the parser matched the literal "Job " from Debian's at, so
+// on AlmaLinux 8 it read `job 2 at Sun Sep 13 18:30:00 2026` as no
+// confirmation at all -- and the module reported a failure for a job it
+// had just successfully queued, leaving one behind that the caller was
+// told did not exist.
 func TestAtParseScheduledJobNumberReadsTheConfirmation(t *testing.T) {
-	job, ok := atParseScheduledJobNumber("Job 5 will be executed using /bin/sh\n")
-	if !ok || job != 5 {
-		t.Errorf("atParseScheduledJobNumber = %d, %v, want 5, true", job, ok)
+	for _, c := range []struct {
+		name string
+		text string
+		want int64
+	}{
+		{
+			"Debian's at",
+			"Job 5 will be executed using /bin/sh\n",
+			5,
+		},
+		{
+			// Captured from at-3.1.20-12.el8 on AlmaLinux 8.10, warning
+			// line and all: the warning arrives first and must not be
+			// mistaken for the confirmation or stop the search.
+			"at 3.1.20 on AlmaLinux 8, which is lowercase and warns first",
+			"warning: commands will be executed using /bin/sh\njob 2 at Sun Sep 13 18:30:00 2026\n",
+			2,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			job, ok := atParseScheduledJobNumber(c.text)
+			if !ok || job != c.want {
+				t.Errorf("atParseScheduledJobNumber = %d, %v, want %d, true", job, ok, c.want)
+			}
+		})
 	}
-	if _, ok := atParseScheduledJobNumber("you do not have permission to use this program\n"); ok {
-		t.Error("a permission refusal was read as a job confirmation")
-	}
-	if _, ok := atParseScheduledJobNumber(""); ok {
-		t.Error("empty text was read as a job confirmation")
+
+	for _, c := range []struct{ name, text string }{
+		{"a permission refusal", "you do not have permission to use this program\n"},
+		{"nothing at all", ""},
+		{"the warning on its own, with no job queued", "warning: commands will be executed using /bin/sh\n"},
+		{"a line that says job but names no number", "job scheduling is disabled\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if job, ok := atParseScheduledJobNumber(c.text); ok {
+				t.Errorf("read as job %d, want no confirmation", job)
+			}
+		})
 	}
 }
 
@@ -222,7 +277,7 @@ func TestAtFindByIdentifierMatchesTheMarkerLine(t *testing.T) {
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	showKey := (exec.Command{Argv: []string{"at", "-c", "5"}}).String()
 	c := atTestCtx(map[string]exec.Result{
-		listKey: {Stdout: atqSampleFixture},
+		listKey: {Stdout: atqFixtureForThisPlatform()},
 		showKey: {Stdout: "#!/bin/sh\n#HALITE_AT_IDENTIFIER: nightly-backup\ncd /\nbackup.sh\n"},
 	})
 	job, found, err := atFindByIdentifier(c, "nightly-backup")
@@ -237,7 +292,7 @@ func TestAtFindByIdentifierMatchesTheMarkerLine(t *testing.T) {
 func TestAtFindByIdentifierReportsNotFoundRatherThanError(t *testing.T) {
 	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
-	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqSampleFixture}})
+	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqFixtureForThisPlatform()}})
 	_, found, err := atFindByIdentifier(c, "no-such-identifier")
 	if err != nil {
 		t.Fatalf("atFindByIdentifier: %v", err)
@@ -252,7 +307,7 @@ func TestAtPresentSkipsWhenAlreadyQueued(t *testing.T) {
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
 	showKey := (exec.Command{Argv: []string{"at", "-c", "5"}}).String()
 	c := atTestCtx(map[string]exec.Result{
-		listKey: {Stdout: atqSampleFixture},
+		listKey: {Stdout: atqFixtureForThisPlatform()},
 		showKey: {Stdout: "#HALITE_AT_IDENTIFIER: nightly-backup\nbackup.sh\n"},
 	})
 	result, err := atPresent(c, value.MapOf("name", "backup.sh", "timespec", "now + 1 hour", "identifier", "nightly-backup"))
@@ -310,7 +365,7 @@ func TestAtAbsentRemovesTheMatchingJob(t *testing.T) {
 	showKey := (exec.Command{Argv: []string{"at", "-c", "5"}}).String()
 	rmKey := (exec.Command{Argv: []string{"atrm", "5"}}).String()
 	c := atTestCtx(map[string]exec.Result{
-		listKey: {Stdout: atqSampleFixture},
+		listKey: {Stdout: atqFixtureForThisPlatform()},
 		showKey: {Stdout: "#HALITE_AT_IDENTIFIER: nightly-backup\nbackup.sh\n"},
 		rmKey:   {},
 	})
@@ -335,7 +390,7 @@ func TestAtAbsentRemovesTheMatchingJob(t *testing.T) {
 func TestAtAbsentIsTrueWhenNothingMatches(t *testing.T) {
 	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
-	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqSampleFixture}})
+	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqFixtureForThisPlatform()}})
 	result, err := atAbsent(c, value.MapOf("name", "no-such-job"))
 	if err != nil {
 		t.Fatalf("atAbsent: %v", err)
@@ -348,7 +403,7 @@ func TestAtAbsentIsTrueWhenNothingMatches(t *testing.T) {
 func TestAtAtrmSkipsAJobThatIsNotQueued(t *testing.T) {
 	atRunsHere(t)
 	listKey := (exec.Command{Argv: []string{"at", "-l"}}).String()
-	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqSampleFixture}})
+	c := atTestCtx(map[string]exec.Result{listKey: {Stdout: atqFixtureForThisPlatform()}})
 	out, err := atAtrmFn(c, value.MapOf("job", int64(999)))
 	if err != nil {
 		t.Fatalf("atAtrmFn: %v", err)
@@ -402,5 +457,55 @@ func TestAtRefusesOnAPlatformItIsNotDeclaredFor(t *testing.T) {
 	_, err := New().Exec.Call(&exec.Context{}, "at.atq", value.NewMap(0))
 	if err == nil || !strings.Contains(err.Error(), "this node is "+runtime.GOOS) {
 		t.Errorf("at.atq did not refuse by platform: %v", err)
+	}
+}
+
+// atqLinuxFixture is what `atq` really printed on AlmaLinux 8.10, with
+// three jobs queued by the live test. The format string behind it,
+// `%ld\t%s %c %s` from at-3.1.20-12.el8's own binary, is the reverse of
+// FreeBSD's: the job number comes first and the owner last.
+const atqLinuxFixture = "1\tSun Sep 13 18:24:00 2026 a root\n" +
+	"2\tSun Sep 13 18:30:00 2026 a root\n" +
+	"3\tSun Sep 13 18:37:00 2026 a root\n"
+
+// The two platforms put the job number at opposite ends of the row.
+//
+// Reading FreeBSD's rule on Linux parsed the owner as the job number and
+// failed every row -- `at.atq`, `at.present` and `at.absent` all go
+// through here, so the module was unusable on a platform it claims. The
+// FreeBSD fixture above and the Linux one here both came off real
+// binaries, which is the only reason the disagreement is visible.
+func TestAtqReadsTheJobNumberFromWhicheverEndThePlatformPutsItOn(t *testing.T) {
+	linux, err := atParseQueueList("linux", atqLinuxFixture)
+	if err != nil {
+		t.Fatalf("linux: %v", err)
+	}
+	if len(linux) != 3 {
+		t.Fatalf("linux: got %d jobs, want 3", len(linux))
+	}
+	for i, want := range []int64{1, 2, 3} {
+		if linux[i].Job != want {
+			t.Errorf("linux job %d = %d, want %d", i, linux[i].Job, want)
+		}
+	}
+
+	// The same rows read with FreeBSD's rule take the owner for a job
+	// number, which is the defect this pair exists to hold shut.
+	if _, err := atParseQueueList("freebsd", atqLinuxFixture); err == nil {
+		t.Error("FreeBSD's rule read a Linux queue without complaint; it should have found " +
+			"the owner where it expected a number")
+	}
+	// And the reverse: FreeBSD's rows start with a weekday.
+	if _, err := atParseQueueList("linux", atqSampleFixture); err == nil {
+		t.Error("Linux's rule read a FreeBSD queue without complaint")
+	}
+}
+
+// A platform this build has not read an atq on gets an error, not a guess.
+func TestAtqRefusesAPlatformItHasNoFormatFor(t *testing.T) {
+	for _, goos := range []string{"darwin", "windows", "openbsd"} {
+		if _, err := atParseQueueList(goos, atqLinuxFixture); err == nil {
+			t.Errorf("%s was given a queue parse this build has never checked there", goos)
+		}
 	}
 }

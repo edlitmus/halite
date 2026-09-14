@@ -76,9 +76,11 @@ func netplanLive(t *testing.T) *exec.Context {
 	if runtime.GOOS != "linux" {
 		t.Skipf("netplan is Linux's, and this is %s", runtime.GOOS)
 	}
-	if c.Which("netplan") == "" {
-		t.Fatal("this machine has no netplan; HALITE_SYSTEM_LIVE says it is available")
-	}
+	// netplan is **Ubuntu's**, not the Debian family's. Debian 13 ships
+	// none -- it uses ifupdown or systemd-networkd -- so gating on the
+	// family failed four tests on a machine that was behaving normally.
+	// The os grain is what tells the two apart.
+	requireToolOfDistros(t, "netplan", c.Which("netplan") != "", "Ubuntu")
 	return c
 }
 

@@ -1,0 +1,207 @@
+#!/bin/sh
+# First boot for a halite lab instance: ${distro} (${family}).
+#
+# Closes: ${closes}
+#
+# This is a cloud-init *user-data script* rather than a cloud-config
+# document on purpose. cloud-config's package handling is a per-distro
+# module, and this file has to behave the same on apt, dnf, apk and
+# zypper -- four package managers whose only shared property is that they
+# are all reachable from /bin/sh. Written to POSIX sh, because Alpine's
+# /bin/sh is ash and bash is one of the things this installs.
+#
+# # Nothing here may fail quietly
+#
+# The lab's whole value is that what it reports about a distribution is
+# true. A half-provisioned machine that still answers SSH is worse than
+# one that never booted, because the test run against it produces
+# results. So every step records what it did into the facts file, the
+# ready file is written last and only on success, and `make lab-test`
+# refuses a host that has no ready file.
+#
+# # Package names are recorded, not assumed
+#
+# The package lists in distros.tf were written from documentation, not
+# from these machines -- `quota` on Debian is `quota-tools` on Alpine,
+# `iptables` on Alma 8 is `iptables-nft` on Rocky 9, and nobody here has
+# ever logged into five of these distributions. So packages are
+# installed one at a time and a name that does not resolve is recorded as
+# missing rather than aborting the boot. The first run of this lab is how
+# the real names get learnt, and a wrong guess costs a line in a report
+# instead of a machine.
+
+set -eu
+
+FACTS=/var/lib/halite-lab/facts
+READY=/var/lib/halite-lab/ready
+LOG=/var/log/halite-lab-bootstrap.log
+
+mkdir -p /var/lib/halite-lab
+exec >>"$LOG" 2>&1
+echo "=== halite lab bootstrap: ${distro} at $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+
+: >"$FACTS"
+fact() { printf '%s=%s\n' "$1" "$2" >>"$FACTS"; }
+
+fact distro "${distro}"
+fact family "${family}"
+fact closes "${closes}"
+
+# ---- what this machine actually is ----
+#
+# Recorded before anything is installed, because every later line is only
+# meaningful next to it -- and because one row of the matrix, alma8, is
+# a guess about Vultr's naming that this is the check for.
+if [ -r /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    fact os_id "$${ID:-unknown}"
+    fact os_version "$${VERSION_ID:-unknown}"
+    fact os_pretty "$${PRETTY_NAME:-unknown}"
+fi
+fact kernel "$(uname -r)"
+fact arch "$(uname -m)"
+
+# ---- the package manager for this family ----
+
+install_one=""
+refresh=""
+case "${family}" in
+    debian)
+        export DEBIAN_FRONTEND=noninteractive
+        refresh="apt-get update -qq"
+        install_one="apt-get install -y -qq --no-install-recommends"
+        ;;
+    rhel)
+        refresh="true"
+        install_one="dnf install -y -q"
+        ;;
+    alpine)
+        refresh="apk update --quiet"
+        install_one="apk add --no-cache --quiet"
+        ;;
+    suse)
+        refresh="zypper --non-interactive --quiet refresh"
+        install_one="zypper --non-interactive --quiet install --no-recommends"
+        ;;
+    *)
+        echo "no package manager is known for family ${family}" >&2
+        exit 1
+        ;;
+esac
+
+fact package_manager "$install_one"
+
+echo "--- refreshing package metadata"
+if ! $refresh; then
+    # A refresh that fails is worth recording but is not fatal: some of
+    # these images ship a usable cache and the per-package loop below is
+    # what actually decides whether anything is missing.
+    fact package_refresh failed
+else
+    fact package_refresh ok
+fi
+
+echo "--- installing packages one at a time"
+installed=""
+missing=""
+for pkg in ${packages}; do
+    if $install_one "$pkg"; then
+        installed="$installed $pkg"
+    else
+        echo "MISSING: $pkg is not a package name on this distribution"
+        missing="$missing $pkg"
+    fi
+done
+fact packages_installed "$(echo "$installed" | sed 's/^ //')"
+fact packages_missing "$(echo "$missing" | sed 's/^ //')"
+
+# ---- the Go toolchain ----
+#
+# From go.dev rather than the distribution, and checked against a
+# checksum pinned in variables.tf. A distribution's Go is whatever that
+# distribution froze, which for the older rows of this matrix is years
+# behind the toolchain go.mod pins -- and a lab that compiles this tree
+# with a different compiler than every other machine here is measuring
+# the compiler.
+GO_TARBALL="go${go_version}.linux-amd64.tar.gz"
+GO_URL="https://go.dev/dl/$GO_TARBALL"
+
+# curl or wget, whichever this image shipped. `curl` is in the package
+# list, but the list is installed best-effort by design, and a row whose
+# package name turns out to be wrong should still be able to fetch a
+# toolchain -- the missing package is already recorded above.
+echo "--- fetching $GO_URL"
+if command -v curl >/dev/null 2>&1; then
+    fetch_ok=0
+    curl -fsSL -o "/tmp/$GO_TARBALL" "$GO_URL" && fetch_ok=1
+elif command -v wget >/dev/null 2>&1; then
+    fetch_ok=0
+    wget -q -O "/tmp/$GO_TARBALL" "$GO_URL" && fetch_ok=1
+else
+    echo "neither curl nor wget is on this image" >&2
+    fact go no_fetcher
+    exit 1
+fi
+if [ "$fetch_ok" -ne 1 ]; then
+    echo "the Go toolchain could not be fetched; this machine cannot build" >&2
+    fact go failed_download
+    exit 1
+fi
+
+# The checksum is the reason this is a pinned download rather than a
+# convenience. A tarball that is not the one variables.tf names stops the
+# boot: no ready file is written, and `make lab-test` skips the host by
+# name rather than testing whatever arrived.
+echo "--- verifying $GO_TARBALL"
+got="$(sha256sum "/tmp/$GO_TARBALL" | cut -d' ' -f1)"
+if [ "$got" != "${go_sha256}" ]; then
+    echo "checksum mismatch for $GO_TARBALL" >&2
+    echo "  expected ${go_sha256}" >&2
+    echo "  got      $got" >&2
+    fact go checksum_mismatch
+    fact go_sha256_got "$got"
+    exit 1
+fi
+fact go_sha256_verified "${go_sha256}"
+
+rm -rf /usr/local/go
+tar -C /usr/local -xzf "/tmp/$GO_TARBALL"
+rm -f "/tmp/$GO_TARBALL"
+
+# On the login shell and on every non-interactive ssh command, which are
+# not the same path: ssh with a command does not read /etc/profile.
+printf 'export PATH=$PATH:/usr/local/go/bin\n' >/etc/profile.d/go.sh
+chmod 0644 /etc/profile.d/go.sh
+ln -sf /usr/local/go/bin/go /usr/local/bin/go
+ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
+fact go_version "$(/usr/local/go/bin/go version 2>&1 || echo unavailable)"
+
+# ---- close the door the key opened ----
+#
+# Vultr mails a root password for every instance. The key is installed by
+# now, so the password is only a way in for somebody else.
+echo "--- disabling password authentication"
+if [ -d /etc/ssh/sshd_config.d ]; then
+    printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\n' \
+        >/etc/ssh/sshd_config.d/99-halite-lab.conf
+else
+    # Older and non-systemd images have no drop-in directory.
+    sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config || true
+    sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config || true
+fi
+# The service is called sshd nearly everywhere and ssh on Debian's
+# systemd; on Alpine it is an OpenRC service. Any of them failing to
+# reload is not fatal -- the config is already on disk for the next boot
+# and the instance is reachable either way.
+(rc-service sshd reload || systemctl reload sshd || systemctl reload ssh || service sshd reload) 2>/dev/null || \
+    fact sshd_reload failed
+
+# ---- ready ----
+#
+# Written last. Its presence is the only thing that means this machine
+# finished, and `make lab-test` reads it before it ships anything.
+fact bootstrap_finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cp "$FACTS" "$READY"
+echo "=== bootstrap complete for ${distro} ==="

@@ -219,3 +219,47 @@ func TestANodeWithoutSudoReportsNoVersion(t *testing.T) {
 		t.Errorf("version=%q, want empty", got)
 	}
 }
+
+// `sudo -V` has two first lines, because there are two sudos.
+//
+// The fixtures are what each really printed: the original on FreeBSD and
+// Debian, sudo-rs on Ubuntu 26.04, which installs both packages and puts
+// sudo-rs on PATH. Reading only the original's wording made
+// `sudo.version` fail on a tier 1 platform.
+func TestSudoVersionReadsBothImplementations(t *testing.T) {
+	for _, c := range []struct {
+		name, line, want string
+	}{
+		{"the original sudo", "Sudo version 1.9.17p2", "1.9.17p2"},
+		{"sudo-rs on Ubuntu 26.04", "sudo-rs 0.2.13-0ubuntu1.2", "sudo-rs 0.2.13-0ubuntu1.2"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, ok := sudoParseVersion(c.line)
+			if !ok {
+				t.Fatalf("%q was not read as a version line", c.line)
+			}
+			if got != c.want {
+				t.Errorf("sudoParseVersion(%q) = %q, want %q", c.line, got, c.want)
+			}
+		})
+	}
+
+	// The implementation stays in the string on purpose: bare "0.2.13"
+	// would read as an ancient sudo to anything comparing versions, and
+	// the two projects' numbering is unrelated.
+	got, _ := sudoParseVersion("sudo-rs 0.2.13")
+	if !strings.HasPrefix(got, "sudo-rs ") {
+		t.Errorf("sudoParseVersion dropped the implementation: %q", got)
+	}
+
+	for _, line := range []string{
+		"",
+		"bash: sudo: command not found",
+		"sudo-rs",
+		"Sudo version",
+	} {
+		if v, ok := sudoParseVersion(line); ok {
+			t.Errorf("%q was read as version %q", line, v)
+		}
+	}
+}

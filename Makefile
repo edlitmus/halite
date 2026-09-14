@@ -68,7 +68,8 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
-	fleetcheck fleetcheck-image
+	fleetcheck fleetcheck-image \
+	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair
 
 all: build
 
@@ -721,3 +722,179 @@ racecheck: racecheck-image
 		-v halite-gomodcache:/gomodcache \
 		-w /src \
 		$(RACECHECK_IMAGE)
+
+
+# ---- The Vultr lab, SPEC 27.1's platforms that nothing here runs ----
+#
+# Seven Linux distributions this estate has no machine for -- the RHEL
+# family, Alpine, openSUSE, and the Debian and Ubuntu releases the single
+# ubuntu-24.04 runner does not cover. contrib/tofu/distros.tf says what
+# each row is for; contrib/tofu/README.md says what a run costs and what
+# it cannot do.
+#
+# They are **ephemeral**. `lab-up` raises them, `lab-test` drives them,
+# `lab-down` destroys them, and nothing is meant to survive between
+# sessions. `lab-down` is the important one: an instance nobody destroys
+# bills at its plan's monthly cap forever.
+TOFU      ?= tofu
+TOFU_DIR   = contrib/tofu
+LAB        = $(TOFU_DIR)/lab.sh
+
+# Where the API token may live, when it is not already in the
+# environment.
+#
+# **Outside the repository, deliberately.** A `.env` at the root would be
+# the obvious place and is the wrong one: it is the filename `git add -A`
+# sweeps up, and a token in a git worktree is a token one careless commit
+# from being published. `*.tfvars` is ignored tree-wide and would at
+# least be safe from that, but it would make the key a tofu *variable* --
+# visible in a saved plan file and in `tofu console` -- and would not
+# help `vultr-cli`, which reads the environment.
+#
+# A file under $HOME serves both, cannot be committed from here, and
+# keeps versions.tf's claim true: the token lives in exactly one place,
+# and nothing in this repository can carry it.
+#
+# Format is one `KEY=value` per line, as `sh` would read it:
+#
+#	VULTR_API_KEY=...
+#
+# The environment always wins, so an exported key needs no file at all.
+LAB_ENV ?= $(HOME)/.config/halite/lab.env
+
+# Load it if the environment has no key, then insist on one either way.
+# Used inside a single chained recipe, since each recipe line is its own
+# shell and an export in one does not reach the next.
+LAB_LOAD_KEY = if [ -z "$$VULTR_API_KEY" ] && [ -r "$(LAB_ENV)" ]; then \
+		. "$(LAB_ENV)"; export VULTR_API_KEY; \
+	fi; \
+	test -n "$$VULTR_API_KEY" || { \
+		echo "VULTR_API_KEY is not set, and $(LAB_ENV) does not supply it." >&2; \
+		echo "  Export it, or put VULTR_API_KEY=... in that file (chmod 600)." >&2; \
+		exit 1; \
+	}
+
+# The address SSH is opened to. Vultr's firewall needs a CIDR, and the
+# one that should be in it is wherever this command is being run from --
+# not a value committed to a file, which is why variables.tf has no
+# default for it. Override for a fixed address:
+#
+#	make lab-up LAB_SSH_CIDR=203.0.113.7/32
+#
+# Left empty here and worked out inside the recipes rather than with
+# `!=`. `!=` is evaluated when the Makefile is *parsed*, so this would
+# call out to a public address service on every `make build`; and
+# `$(shell ...)` is not an option at all, because BSD make has none and
+# this project is developed on FreeBSD -- it would expand to nothing and
+# open the firewall to "/32".
+LAB_SSH_CIDR ?=
+
+# The rows to raise. Empty means every row of the matrix:
+#
+#	make lab-up LAB_DISTROS='["rocky9","alpine"]'
+LAB_DISTROS ?= []
+
+lab-distros:
+	@echo "rows of the matrix in $(TOFU_DIR)/distros.tf:"
+	@grep -oE '^    [a-z0-9]+ = \{' $(TOFU_DIR)/distros.tf | sed 's/ *= *{//;s/^ */  /'
+
+# A plan, which is also the only offline-ish check that the OS names in
+# distros.tf still resolve: the data sources query the real catalogue.
+lab-plan:
+	@set -e; \
+	$(LAB_LOAD_KEY); \
+	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
+	echo "opening SSH to $$cidr"; \
+	$(TOFU) -chdir=$(TOFU_DIR) init -input=false; \
+	$(TOFU) -chdir=$(TOFU_DIR) plan -input=false \
+		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
+		-var 'distros=$(LAB_DISTROS)'
+
+lab-up:
+	@set -e; \
+	$(LAB_LOAD_KEY); \
+	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
+	echo "opening SSH to $$cidr"; \
+	$(TOFU) -chdir=$(TOFU_DIR) init -input=false; \
+	$(TOFU) -chdir=$(TOFU_DIR) apply -input=false -auto-approve \
+		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
+		-var 'distros=$(LAB_DISTROS)'
+	@echo
+	@echo "instances are booting; 'make lab-wait' blocks until they have provisioned."
+	@echo "REMEMBER: 'make lab-down' when you are finished, or they bill until you do."
+
+# The operator's current public address, or whatever LAB_SSH_CIDR said.
+# Its own target so that lab-up and lab-plan cannot drift apart, and so
+# the failure when the address cannot be worked out is one message in one
+# place rather than a firewall rule quietly built from an empty string.
+lab-cidr:
+	@if [ -n "$(LAB_SSH_CIDR)" ]; then \
+		echo "$(LAB_SSH_CIDR)"; \
+	else \
+		ip=`curl -fsS https://api.ipify.org 2>/dev/null || true`; \
+		if [ -z "$$ip" ]; then \
+			echo "your public address could not be determined; pass LAB_SSH_CIDR=a.b.c.d/32" >&2; \
+			exit 1; \
+		fi; \
+		echo "$$ip/32"; \
+	fi
+
+# Destroy has to pass the variables too, because variable validation runs
+# on a destroy as well and `allowed_ssh_cidrs` refuses an empty list.
+#
+# The address below is from TEST-NET-3, the documentation range, and is
+# deliberately not the operator's. Nothing is created by a destroy, so
+# the value never builds a rule -- and a destroy must not depend on
+# working out a public address, because the run that most needs to
+# succeed is the one cleaning up after something already went wrong.
+lab-down:
+	@set -e; \
+	$(LAB_LOAD_KEY); \
+	$(TOFU) -chdir=$(TOFU_DIR) destroy -input=false -auto-approve \
+		-var "allowed_ssh_cidrs=[\"203.0.113.1/32\"]" \
+		-var 'distros=$(LAB_DISTROS)'
+
+# Converge a lab that a failed apply left half-finished.
+#
+# The failure this exists for: Vultr's API returns 404 from
+# `GET /instances/<id>/backup-schedule` for an instance it has just
+# created, and the provider calls that unconditionally in Read, right
+# after Create. The apply stops, the instance is marked tainted, and the
+# outputs that read every instance's address are never written -- so the
+# machines are running and billing and `lab.sh` cannot address them.
+#
+# The instance is usually healthy; ours was answering SSH and running its
+# bootstrap minutes later. So this untaints rather than letting the next
+# apply destroy and rebuild it, then applies to converge and write the
+# outputs. Health is not taken on trust either way: `wait` and `test`
+# both refuse a host with no ready file.
+#
+# If an instance really is broken, `make lab-down` and start again.
+lab-repair:
+	@set -e; \
+	$(LAB_LOAD_KEY); \
+	$(LAB) untaint; \
+	cidr=`$(MAKE) -s lab-cidr LAB_SSH_CIDR="$(LAB_SSH_CIDR)"`; \
+	echo "converging with SSH open to $$cidr"; \
+	$(TOFU) -chdir=$(TOFU_DIR) apply -input=false -auto-approve \
+		-var "allowed_ssh_cidrs=[\"$$cidr\"]" \
+		-var 'distros=$(LAB_DISTROS)'
+
+lab-hosts:
+	@$(LAB) hosts $(DISTRO)
+
+lab-wait:
+	@$(LAB) wait $(DISTRO)
+
+lab-facts:
+	@$(LAB) facts $(DISTRO)
+
+# Build, unit suite and live suite on every instance. Keeps going after a
+# host fails and names the ones that did.
+lab-test:
+	@$(LAB) test $(DISTRO)
+
+# make lab-ssh DISTRO=rocky9
+lab-ssh:
+	@test -n "$(DISTRO)" || { echo "usage: make lab-ssh DISTRO=<name>; 'make lab-distros' lists them" >&2; exit 1; }
+	@$(LAB) ssh $(DISTRO)

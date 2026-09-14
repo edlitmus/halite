@@ -148,6 +148,14 @@ var ExemptPaths = []string{
 	// Vendored allowlist code is not ours to reword.
 	"vendor/",
 	".git/",
+	// A provider cache `tofu init` downloaded into contrib/tofu. It is
+	// third-party, untracked and not ours to reword, in the same way
+	// `vendor/` is -- the Vultr provider's own README carries a
+	// HashiCorp logo URL with a branch name in it, which is what found
+	// this. The `tofu` lock file beside it *is* tracked and is not
+	// exempt, because that one is this project's own statement of which
+	// provider build it uses.
+	"contrib/tofu/.terraform/",
 	// Build output is not source.
 	"bin/",
 	"dist/",

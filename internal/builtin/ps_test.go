@@ -127,3 +127,139 @@ func TestASignalIsNormalisedOrRefused(t *testing.T) {
 		}
 	}
 }
+
+// BusyBox's ps is a third flavour, not a dialect of the other two.
+//
+// Alpine's ps is BusyBox's, whose whole usage is `ps [-o COLS] [-T]`.
+// The Linux spelling this module sent it -- `-eww --no-headers -o ...`
+// -- failed with `ps: unrecognized option: w`, taking nine live tests
+// with it on a module that works everywhere else. The fixture below is
+// what that ps really printed on Alpine 3.24.
+func TestBusyboxPSIsParsedAgainstItsOwnColumns(t *testing.T) {
+	layout := psLayout{Columns: psBusyboxColumns, Header: true}
+	const real = "PID   PPID  USER     RSS  VSZ  STAT COMMAND\n" +
+		"    1     0 root      884 1636 S    /sbin/init\n" +
+		"    2     0 root        0    0 SW   [kthreadd]\n" +
+		"  842     1 nobody   4096 123456 S  /usr/sbin/sshd -D\n"
+
+	got := parsePSColumnsWith(layout, real)
+	if len(got) != 3 {
+		t.Fatalf("parsed %d processes, want 3: %+v", len(got), got)
+	}
+
+	if got[0].PID != 1 || got[0].PPID != 0 || got[0].User != "root" {
+		t.Errorf("init row = %+v", got[0])
+	}
+	if got[0].RSS != 884 || got[0].VSZ != 1636 {
+		t.Errorf("init memory = rss %d vsz %d, want 884 and 1636", got[0].RSS, got[0].VSZ)
+	}
+	// BusyBox spells it `stat`; the module's field is State either way.
+	if got[0].State != "S" {
+		t.Errorf("init state = %q, want S", got[0].State)
+	}
+	if got[0].Command != "/sbin/init" {
+		t.Errorf("init command = %q", got[0].Command)
+	}
+	// The command runs to the end of the line, arguments included.
+	if got[2].Command != "/usr/sbin/sshd -D" {
+		t.Errorf("sshd command = %q, want the arguments kept", got[2].Command)
+	}
+
+	// **The percentages are absent, not zero.** BusyBox refuses `%cpu`
+	// and `%mem` outright, and reporting 0 would be a claim that these
+	// processes are idle.
+	for _, p := range got {
+		if p.PercentsKnown {
+			t.Errorf("pid %d claims to know its percentages on a BusyBox listing", p.PID)
+		}
+		m := p.Map()
+		for _, k := range []string{"cpu_percent", "mem_percent"} {
+			if v, _ := m.GetString(k); v != nil {
+				t.Errorf("pid %d reports %s = %v; want nil, because this ps cannot say", p.PID, k, v)
+			}
+		}
+	}
+}
+
+// The procps listing still reports its percentages, and still parses.
+func TestProcpsPercentagesSurviveTheBusyboxChange(t *testing.T) {
+	layout := psLayout{Columns: psColumns, Percents: true}
+	got := parsePSColumnsWith(layout,
+		"  842     1 www   1.5  2.5 4096 123456 S    /usr/sbin/sshd -D\n")
+	if len(got) != 1 {
+		t.Fatalf("parsed %d, want 1", len(got))
+	}
+	p := got[0]
+	if !p.PercentsKnown || p.CPU != 1.5 || p.Mem != 2.5 {
+		t.Errorf("percentages = %v %v (known %v), want 1.5 and 2.5", p.CPU, p.Mem, p.PercentsKnown)
+	}
+	if v, _ := p.Map().GetString("cpu_percent"); v != 1.5 {
+		t.Errorf("cpu_percent = %v, want 1.5", v)
+	}
+	if p.Command != "/usr/sbin/sshd -D" {
+		t.Errorf("command = %q", p.Command)
+	}
+}
+
+// The Linux argv is only sent to a ps that understands it.
+func TestTheBusyboxArgvCarriesNoOptionItRefuses(t *testing.T) {
+	busybox := psLayout{
+		Argv:    []string{"ps", "-o", strings.Join(psBusyboxColumns, ",")},
+		Columns: psBusyboxColumns,
+	}
+	joined := strings.Join(busybox.Argv, " ")
+	for _, refused := range []string{"-eww", "--no-headers", "-axwwo", "%cpu", "%mem"} {
+		if strings.Contains(joined, refused) {
+			t.Errorf("%q carries %q, which BusyBox's ps refuses", joined, refused)
+		}
+	}
+}
+
+// BusyBox abbreviates a size it cannot fit, and `ParseInt` reads that
+// as zero.
+//
+// The fixture pair was captured together on Alpine 3.24 for one process:
+// `ps` reported `rss=3416 vsz=1.1g` where /proc reported `VmRSS 3540 kB`
+// and `VmSize 1226592 kB`. Reading `1.1g` as 0 is what made
+// `TestLivePSReadsTheRealProcessTable` fail there — the test binary's
+// own resident size is large enough to be abbreviated, so a running
+// process appeared to hold no memory at all.
+func TestBusyboxAbbreviatedSizesAreReadRatherThanZeroed(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		want int64
+	}{
+		{"3416", 3416},    // plain, as procps always writes
+		{"908", 908},      //
+		{"0", 0},          // a kernel thread really does hold none
+		{"1.1g", 1153433}, // 1.1 * 1024 * 1024
+		{"56.7m", 58060},  // 56.7 * 1024
+		{"2g", 2097152},   //
+		{"512k", 512},     // already KiB
+		{"", 0},           //
+		{"notanumber", 0}, //
+	} {
+		if got := psSize(c.in); got != c.want {
+			t.Errorf("psSize(%q) = %d, want %d", c.in, got, c.want)
+		}
+	}
+
+	// The property that actually matters: an abbreviated size must not
+	// come back as zero, because zero is a claim about a process that no
+	// running process can make.
+	for _, abbreviated := range []string{"1.1g", "56.7m", "512k", "2g", "1.5t"} {
+		if psSize(abbreviated) == 0 {
+			t.Errorf("psSize(%q) = 0; a running process does not hold zero", abbreviated)
+		}
+	}
+
+	// And it is honestly approximate: 1.1g is not the 1226592 KiB /proc
+	// reported for the same process, and nothing here can recover that.
+	// The test records the gap rather than pretending it is not there.
+	const trueKiB = 1226592
+	got := psSize("1.1g")
+	if got >= trueKiB {
+		t.Errorf("psSize(\"1.1g\") = %d, which is not below the %d KiB /proc reported; "+
+			"the abbreviation rounds down and this test records that it does", got, trueKiB)
+	}
+}

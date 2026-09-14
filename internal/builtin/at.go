@@ -311,7 +311,39 @@ type atJobLine struct {
 // its first word and skipped; an empty queue is an empty slice and not
 // an error, the same as an unconfigured filesystem is an empty quota
 // report and not an error.
-func atParseQueueList(out string) ([]atJobLine, error) {
+//
+// # The job number is the last column on FreeBSD and the first on Linux
+//
+// Everything above describes FreeBSD, which is where this was derived,
+// and it is only true there. Both format strings were read out of the
+// real `/usr/bin/atq` on each platform:
+//
+//	%s\t%-16s%c%s\t%ld    FreeBSD-at-15.1  -- date, owner, queue, job
+//	%ld\t%s %c %s          at-3.1.20-12.el8 -- job, date, queue, owner
+//
+// They are reversed. Linux's at prints the job number first and the
+// *owner* last, so reading "the last field" on a Linux node parsed the
+// word `root` as a job number and `at.atq` failed on every row:
+//
+//	atq's row "1\tSun Sep 13 18:24:00 2026 a root" does not end in a
+//	job number; "root" is not one
+//
+// which also broke `at.present`, `at.absent` and the cleanup in the live
+// test, since all three find a job by listing the queue. Linux is one of
+// the two platforms `atCheckPlatform` admits, so this module claimed a
+// platform on which its only reader could not read anything. Nothing
+// caught it because the fixture was FreeBSD's and no live run had ever
+// happened on Linux.
+//
+// The split is on `goos` rather than on the shape of the row, so that
+// every platform's parse is checkable from any host -- the same reason
+// `systemPowerArgv` is a table -- and so that a row this build cannot
+// read is an error naming the platform rather than a guess that happens
+// to work on one layout.
+func atParseQueueList(goos, out string) ([]atJobLine, error) {
+	if err := atCheckPlatform(goos); err != nil {
+		return nil, err
+	}
 	var jobs []atJobLine
 	for _, line := range strings.Split(out, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -319,10 +351,21 @@ func atParseQueueList(out string) ([]atJobLine, error) {
 			continue
 		}
 		fields := strings.Fields(trimmed)
-		last := fields[len(fields)-1]
-		job, err := strconv.ParseInt(last, 10, 64)
+		// Guarded because a row of only whitespace survives TrimSpace as
+		// "" and is skipped above, but a row of one field does not.
+		if len(fields) == 0 {
+			continue
+		}
+		var token, where string
+		if goos == "linux" {
+			token, where = fields[0], "begin with"
+		} else {
+			token, where = fields[len(fields)-1], "end in"
+		}
+		job, err := strconv.ParseInt(token, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("atq's row %q does not end in a job number; %q is not one", trimmed, last)
+			return nil, fmt.Errorf("atq's row %q does not %s a job number; %q is not one",
+				trimmed, where, token)
 		}
 		jobs = append(jobs, atJobLine{Job: job, Raw: trimmed})
 	}
@@ -345,7 +388,7 @@ func atListJobs(c *exec.Context, queue string) ([]atJobLine, error) {
 		return nil, fmt.Errorf("`%s` exited %d: %s", exec.Command{Argv: argv}.String(), res.Code,
 			strings.TrimSpace(res.Stderr+res.Stdout))
 	}
-	return atParseQueueList(res.Stdout)
+	return atParseQueueList(runtime.GOOS, res.Stdout)
 }
 
 func atShowScript(c *exec.Context, job int64) (string, error) {
@@ -416,27 +459,42 @@ func atFindByIdentifier(c *exec.Context, identifier string) (int64, bool, error)
 // ---- mutating ----
 
 // atParseScheduledJobNumber reads the job number out of at's own
-// confirmation, "Job %ld will be executed using /bin/sh" -- the format
-// string `strings -a /usr/bin/at` shows this build printing on stderr.
+// confirmation.
+//
+// # Two builds of at, two sentences, and one of them is lowercase
+//
+// There is no single wording. Both of these were read out of the real
+// binary with `strings -a /usr/bin/at`, not from a manual:
+//
+//	Job %ld will be executed using %s   -- Debian's at
+//	job %ld at %s                       -- at 3.1.20-12.el8, AlmaLinux 8
+//
+// The first is what this function was written against and the match was
+// the literal "Job ", so on a RHEL-family node it found nothing: `at`
+// scheduled the job, exited 0, printed `job 2 at Sun Sep 13 18:30:00
+// 2026` -- and this module reported that nothing had been scheduled,
+// having just scheduled something it then had no number for. A job left
+// in the queue that the caller is told does not exist is the worst shape
+// this could fail in, which is why the match below is on the *structure*
+// of the line rather than on either sentence.
+//
+// So: the first field is the word "job" in any case, and the second
+// parses as a number. RHEL's own `warning: commands will be executed
+// using /bin/sh`, which precedes the confirmation, has neither and is
+// skipped; so is a permission refusal, which has no such line at all.
 func atParseScheduledJobNumber(text string) (int64, bool) {
-	const prefix = "Job "
-	i := strings.Index(text, prefix)
-	if i < 0 {
-		return 0, false
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || !strings.EqualFold(fields[0], "job") {
+			continue
+		}
+		job, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		return job, true
 	}
-	rest := text[i+len(prefix):]
-	digits := 0
-	for digits < len(rest) && rest[digits] >= '0' && rest[digits] <= '9' {
-		digits++
-	}
-	if digits == 0 {
-		return 0, false
-	}
-	job, err := strconv.ParseInt(rest[:digits], 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	return job, true
+	return 0, false
 }
 
 func atRunSchedule(c *exec.Context, argv []string, script string) (*value.Map, error) {
