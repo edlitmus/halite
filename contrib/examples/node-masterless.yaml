@@ -60,5 +60,27 @@ grains:
   roles:
     - webserver
 
+# Cloud grains, SPEC section 14.1. Opt-in, because collecting them costs
+# a round trip to a link-local address at every collection -- which on a
+# machine that is not in a cloud is a timeout, not a fast failure.
+#
+# Two things arrive. The whole `latest/meta-data` and `latest/dynamic`
+# trees, nested, which is the shape Salt's `_grains/metadata.py`
+# produced and which an existing tree indexes into -- so
+# `grains.get('meta-data:local-ipv4')` keeps working. And the flat set
+# SPEC 14.1 names: cloud, instance_id, instance_type, region,
+# availability_zone, account_id, image_id, vpc_id, subnet_id, tags.
+#
+# IMDSv2 only, with no fallback to v1. The instance's own credential
+# paths are never read: Salt's metadata grain walked into them and
+# published the access key, secret key and session token as grains.
+#
+# cloud_grains: true
+# cloud_grains_timeout: 10s
+# Extra paths to skip, beyond the credential paths that are always
+# excluded and cannot be re-enabled here.
+# cloud_grains_exclude:
+#   - latest/meta-data/public-keys
+
 log_level: info
 log_format: console

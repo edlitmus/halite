@@ -10,6 +10,7 @@
 package pillar
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -79,6 +80,13 @@ type Config struct {
 	// SPEC 25.4 is titled for the node.
 	Engine render.Engine
 
+	// Ext are the external pillar sources of SPEC section 12.7, run
+	// after the top file's own SLS in the order they are configured.
+	Ext []ExtSource
+	// Context bounds what an external source may do. Nil is
+	// context.Background().
+	Context context.Context
+
 	// Local marks a development compilation from a local pillar root.
 	// `halite-node call pillar.items --local` sets it; it never runs
 	// against the hub's roots. SPEC section 12.1.
@@ -108,9 +116,15 @@ type Compiled struct {
 	Pillar *value.Map
 	Audit  []AuditEntry
 	// SLS lists the pillar files that contributed, in merge order.
-	SLS      []string
-	Diags    state.Diags
-	Warnings []render.Warning
+	SLS []string
+	// Ext lists the external pillar sources that contributed.
+	Ext []string
+	// ExtFailed lists the external pillar sources that failed, whether
+	// the failure was hard or ignored. An ignored one is still a source
+	// that did not answer, and the metric of SPEC 26.2 counts it.
+	ExtFailed []string
+	Diags     state.Diags
+	Warnings  []render.Warning
 }
 
 // Err reports the compilation errors as one error, or nil.
@@ -146,6 +160,10 @@ func (c *Compiler) Compile() *Compiled {
 	for _, name := range matched {
 		c.mergeSLS(out, env, name, seen, nil, optional[name])
 	}
+	// After the tree, so that an external source sees what the tree
+	// produced and wins over it where they collide -- which is what a
+	// source consulted for a live secret has to do.
+	c.mergeExt(out)
 	return out
 }
 

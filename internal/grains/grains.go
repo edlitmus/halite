@@ -37,6 +37,9 @@ type Options struct {
 	// Cloud enables the cloud metadata grains, which are opt-in because
 	// they cost a metadata round trip on every refresh.
 	Cloud bool
+	// CloudOptions configure that walk. The zero value is the real
+	// metadata service with the default timeout.
+	CloudOptions CloudOptions
 	// ProviderTimeout bounds one executable grain provider.
 	ProviderTimeout time.Duration
 }
@@ -73,6 +76,13 @@ func Collect(opts Options) (*value.Map, []Warning) {
 	collectVirtualization(g)
 	collectHardware(g)
 	collectVersion(g)
+	// Before the custom grains, so that a static file or a grains.d
+	// fragment can still override a collected fact -- and after the
+	// core ones, because `region` and `cloud` are facts about this
+	// machine like any other.
+	if opts.Cloud {
+		warnings = append(warnings, collectCloud(g, opts.CloudOptions)...)
+	}
 
 	// Custom grains are merged last, in the order SPEC section 14.2
 	// gives, so a static file can override a collected fact.

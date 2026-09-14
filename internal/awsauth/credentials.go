@@ -203,13 +203,8 @@ func (p *Provider) fetchContainerCredentials(ctx context.Context, endpoint strin
 // harder, and falling back to v1 when v2 does not answer would give the
 // hardening away for a convenience nobody asked for.
 func (p *Provider) fetchInstanceCredentials(ctx context.Context) (Credentials, error) {
-	token, err := p.imdsToken(ctx)
-	if err != nil {
-		return Credentials{}, err
-	}
-	headers := map[string]string{"X-aws-ec2-metadata-token": token}
-
-	role, err := p.get(ctx, IMDSAddress+"/latest/meta-data/iam/security-credentials/", headers)
+	md := &IMDS{Client: p.client(), Now: p.Now}
+	role, err := md.Get(ctx, "latest/meta-data/iam/security-credentials/")
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -217,7 +212,7 @@ func (p *Provider) fetchInstanceCredentials(ctx context.Context) (Credentials, e
 	if name == "" {
 		return Credentials{}, fmt.Errorf("this instance has no role")
 	}
-	body, err := p.get(ctx, IMDSAddress+"/latest/meta-data/iam/security-credentials/"+url.PathEscape(name), headers)
+	body, err := md.Get(ctx, "latest/meta-data/iam/security-credentials/"+url.PathEscape(name))
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -226,28 +221,6 @@ func (p *Provider) fetchInstanceCredentials(ctx context.Context) (Credentials, e
 		return Credentials{}, err
 	}
 	return parsed.toCredentials()
-}
-
-func (p *Provider) imdsToken(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, IMDSAddress+"/latest/api/token", nil)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("X-aws-ec2-metadata-token-ttl-seconds", "300")
-	res, err := p.client().Do(req)
-	if err != nil {
-		return "", fmt.Errorf("the instance metadata service did not answer: %w", err)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("the instance metadata service answered %d to a token request; "+
-			"IMDSv1 is not used", res.StatusCode)
-	}
-	token, err := io.ReadAll(io.LimitReader(res.Body, 4096))
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(token)), nil
 }
 
 func (p *Provider) get(ctx context.Context, endpoint string, headers map[string]string) ([]byte, error) {

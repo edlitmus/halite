@@ -281,7 +281,9 @@ Set `pillar_roots` on the hub.
 | `salt-call --local pillar.items` | `halite-node pillar items --local` | works |
 | `salt '*' pillar.items` | `halite-hub run '*' pillar.items` | works |
 | `#!yaml|gpg` in a pillar file | works, decrypted on the hub | works |
-| `ext_pillar` | not built; the setting warns that it does nothing | not built |
+| `ext_pillar` | `ext_pillar`, in Salt's own shape | `aws_secrets_manager` only |
+| `_pillar/aws_secrets_manager.py` | the compiled-in `aws_secrets_manager` source | works |
+| `_grains/metadata.py` | `cloud_grains: true` | works |
 
 An enrolled node's `pillar items`, `call`, and `state apply` go through
 the hub unless `--local` says otherwise, which is what `salt-call` does. <!-- lexicon:allow -->

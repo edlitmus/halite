@@ -234,11 +234,71 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"ext_pillar": {
 		Group:  "The tree: states and pillar",
-		Detail: "Named and not built. The setting warns at startup that the sources it lists contribute nothing, rather than silently compiling pillar without them.",
+		Detail: "External pillar sources, as a list of single-key mappings in Salt's own shape. A source is compiled in rather than loaded from a Python file on the file server; `aws_secrets_manager` is the one this build ships, and a name it does not know is refused at startup rather than contributing nothing in silence. Sources run after the top file, in the order listed, and each sees what the ones before it produced.",
 	},
 	"ext_pillar_fail": {
 		Group:  "The tree: states and pillar",
-		Detail: "`hard` fails the whole compilation when an external source fails, which is the right default: a pillar missing the half that holds the credentials is worse than no pillar, because the run proceeds with it.",
+		Detail: "`hard` fails the whole compilation when an external source fails, which is the right default: a pillar missing the half that holds the credentials is worse than no pillar, because the run proceeds with it. `ignore` turns the failure into a warning, for a source that is genuinely optional; set it per source with `fail: ignore` inside that source's own block.",
+	},
+	"aws_secrets_region": {
+		Group:  "The tree: states and pillar",
+		Detail: "Where a secret is read from when it is named rather than given as an ARN. An ARN carries its own region and wins; after that comes the node's `region` grain, which is what the Salt module reached for; this is the last fallback. A secret with none of the three is an error rather than a guess at us-east-1.",
+	},
+	"aws_secrets_partition": {
+		Group:  "The tree: states and pillar",
+		Detail: "The endpoint hostname and the signing scope both come from this. A secret ARN that names a partition overrides it, so one hub can read a GovCloud secret and a commercial one without being told twice.",
+	},
+	"aws_secrets_endpoint": {
+		Group:  "The tree: states and pillar",
+		Detail: "Replaces the Secrets Manager host entirely, for a compatible service or a VPC endpoint. It also stops the partition in an ARN from selecting a host, because you have named one.",
+	},
+	"aws_secrets_pillar_key": {
+		Group:  "The tree: states and pillar",
+		Detail: "Where the secrets land. The default matches Salt's `aws_secrets_manager.py`, so `pillar.get('aws_secrets:database:password')` in an existing tree resolves unchanged.",
+	},
+	"aws_secrets_cache_ttl": {
+		Group:  "The tree: states and pillar",
+		Detail: "How long a fetched value is reused, keyed by secret and region. The default is the Salt module's 300 seconds. It bounds how stale a rotated secret can be on this hub, so an estate that rotates hourly should not leave it long; 0 fetches on every compilation, which is a Secrets Manager call per node per run.",
+	},
+	"aws_secrets_timeout": {
+		Group:  "The tree: states and pillar",
+		Detail: "One call, not the whole source. A hub that cannot reach Secrets Manager fails pillar compilation for every node that needs a secret, so this is the delay before that is reported rather than a delay that hides it.",
+	},
+	"aws_secrets_pillar_list": {
+		Group:  "The tree: states and pillar",
+		Detail: "A key in the pillar the tree has already produced, holding a list of secrets in the same shape as the `ext_pillar` block. This is what Salt's `aws_secrets_manager.py` read out of the pillar, and it is the half worth keeping: which node gets which secret is decided by the pillar top file, which the node has no say in. `aws_secrets_ext_pillar` is the name an existing tree uses. Prefer this to `aws_secrets_node_grain` wherever the choice is open.",
+	},
+	"aws_secrets_node_grain": {
+		Group:  "The tree: states and pillar",
+		Detail: "Salt parity, and worth reading twice before setting. A node controls its own grains, so a grain naming secrets to fetch lets any node ask the hub to read any secret the hub's credentials can reach — which is every secret, unless `aws_secrets_node_grain_allow` bounds it. `aws_secrets_ext_pillar` is the name Salt's shared-state tree uses. Leave it empty and select secrets with pillar top targeting instead, which the node cannot influence.",
+	},
+	"aws_secrets_node_grain_allow": {
+		Group:  "The tree: states and pillar",
+		Detail: "Glob patterns, matched whole, against the secret ID a node asks for. This is what makes `aws_secrets_node_grain` safe to set: `arn:aws:secretsmanager:*:*:secret:vmop/*` confines a node to one path however its grains are written. Empty allows anything, which is the Salt behaviour and is only defensible where every node is already as trusted as the hub.",
+	},
+	"aws_secrets_access_key_id": {
+		Group:  "The tree: states and pillar",
+		Detail: "A static key, used only when it and the secret are both set. Prefer the hub's instance role, which needs nothing here and rotates itself.",
+	},
+	"aws_secrets_secret_access_key": {
+		Group:  "The tree: states and pillar",
+		Detail: "In the configuration file, where anything that can read the file can read it. The file form exists so it does not have to be.",
+	},
+	"aws_secrets_secret_access_key_file": {
+		Group:  "The tree: states and pillar",
+		Detail: "A file holding nothing but the secret key, readable only by the hub's account. The loader refuses one that is group- or world-readable.",
+	},
+	"aws_secrets_role_arn": {
+		Group:  "The tree: states and pillar",
+		Detail: "Assumed after the base credentials resolve, which is how a hub in one account reads secrets in another. The trust policy on that role is where the real control lives.",
+	},
+	"aws_secrets_role_session": {
+		Group:  "The tree: states and pillar",
+		Detail: "What appears in CloudTrail against every secret this hub reads. Name it after the hub, because that is the question CloudTrail will be asked.",
+	},
+	"aws_secrets_web_identity_token_file": {
+		Group:  "The tree: states and pillar",
+		Detail: "IRSA's projected token, for a hub running as a pod. With `aws_secrets_role_arn` it is the whole credential chain and no key is needed.",
 	},
 	"render_sandbox": {
 		Group:  "The tree: states and pillar",
@@ -522,7 +582,15 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"cloud_grains": {
 		Group:  "Grains and the mine",
-		Detail: "Collects instance metadata from the cloud provider. Opt-in because it costs a round trip to a link-local address at every collection, which on a machine that is not in a cloud is a timeout.",
+		Detail: "Collects instance metadata from the cloud provider, over IMDSv2 only. Two things arrive: the whole `latest/meta-data` and `latest/dynamic` trees nested under the `meta-data` and `dynamic` grains, which is the shape Salt's `_grains/metadata.py` produced and which existing states index into; and the flat set SPEC 14.1 names — `cloud`, `instance_id`, `region`, `account_id`, `tags` and their neighbours — derived from the same walk rather than fetched again. The instance's own credential paths are never read. Opt-in because it costs a round trip to a link-local address at every collection, which on a machine that is not in a cloud is a timeout.",
+	},
+	"cloud_grains_timeout": {
+		Group:  "Grains and the mine",
+		Detail: "Bounds the whole walk, not one request. The walk is one request per node of the tree — roughly 120 on a plain instance — so a service answering slowly costs more than a single timeout would suggest. Exceeding it leaves the grains collected so far and a warning, never a node with no grains at all.",
+	},
+	"cloud_grains_exclude": {
+		Group:  "Grains and the mine",
+		Detail: "Metadata path prefixes to skip, such as `latest/meta-data/public-keys`. The instance's live access key, secret key and session token are excluded already and cannot be re-enabled here: Salt's metadata grain published all three as grains, where they reached the Salt master, the grain cache and `grains.items` output. <!-- lexicon:allow --> This is for the rest — a path your estate puts something sensitive behind, or one large enough to be worth not walking.",
 	},
 	"mine_functions": {
 		Group:  "Grains and the mine",

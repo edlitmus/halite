@@ -36,6 +36,7 @@ type hubMetrics struct {
 
 	pillarCompile *metrics.Histogram
 	pillarFailure *metrics.Counter
+	pillarExtFail *metrics.Counter
 
 	fileRequests *metrics.Counter
 	fileBytes    *metrics.Counter
@@ -112,6 +113,10 @@ func (s *Server) setupMetrics() {
 			"Time to compile one node's pillar on the hub.", nil),
 		pillarFailure: r.Counter("halite_pillar_failures_total",
 			"Pillar compilations that failed."),
+		pillarExtFail: r.Counter("halite_pillar_ext_failures_total",
+			"External pillar sources that failed, by source. Counted whether the "+
+				"failure stopped the compilation or was ignored: an ignored one is "+
+				"still a node whose pillar is missing what that source holds.", "source"),
 
 		fileRequests: r.Counter("halite_fileserver_requests_total",
 			"File server requests, by backend and status code.", "backend", "code"),
