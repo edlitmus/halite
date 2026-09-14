@@ -373,6 +373,45 @@ func renderJinja(src string, opts Options, res *Result) (*template.Result, error
 }
 
 // buildContext assembles the names of SPEC section 10.2.7.
+// slsPaths gives Salt's `slspath` and `tplfile`: the directory holding
+// the current SLS, relative to the file root, and the file's own path
+// within it.
+//
+// Salt's documentation is one line -- "slspath: directory containing
+// current sls (same as tpldir)" -- and the word that carries it is
+// *directory*. This returned the SLS name with its dots turned into
+// slashes, which is the directory only when the file is an `init.sls`.
+// For `base/users/sudo.sls`, whose SLS name is `base.users.sudo`, that
+// gave `base/users/sudo`, and the tree's own
+// `{% from slspath ~ "/map.jinja" import users %}` went looking for
+// `base/users/sudo/map.jinja` rather than `base/users/map.jinja`.
+//
+// That is the `init.sls` distinction of 5.84 in a second place: an
+// `init.sls` *is* its directory, and a plain `.sls` is a file inside
+// one. Meeting it twice is the argument for the rule being written down
+// once, which is what this is.
+//
+// `tpldir` is the same value, "." when empty as Salt has it, and
+// `slsdotpath`, `slscolonpath` and `sls_path` are its separators
+// swapped. `tplpath` stays the full path on disk, which is what Salt
+// means by that one.
+func slsPaths(sls, file string) (slsPath, tplFile string) {
+	base := path.Base(file)
+	dotted := strings.ReplaceAll(sls, ".", "/")
+	if base == "init.sls" {
+		// A package: the SLS name is the directory.
+		return dotted, path.Join(dotted, base)
+	}
+	// A module: the directory is the SLS name without its last part.
+	if i := strings.LastIndex(dotted, "/"); i >= 0 {
+		slsPath = dotted[:i]
+	}
+	if base == "." || base == "/" || base == "" {
+		base = path.Base(dotted) + ".sls"
+	}
+	return slsPath, path.Join(slsPath, base)
+}
+
 func buildContext(opts Options) map[string]any {
 	grains := opts.Grains
 	if grains == nil {
@@ -387,10 +426,10 @@ func buildContext(opts Options) map[string]any {
 		config = value.NewMap(0)
 	}
 
-	slsPath := strings.ReplaceAll(opts.SLS, ".", "/")
-	tplDir := path.Dir(opts.File)
-	if tplDir == "." {
-		tplDir = ""
+	slsPath, tplFile := slsPaths(opts.SLS, opts.File)
+	tplDir := slsPath
+	if tplDir == "" {
+		tplDir = "."
 	}
 
 	ctx := map[string]any{
@@ -403,13 +442,17 @@ func buildContext(opts Options) map[string]any {
 		"sls":       opts.SLS,
 		"id":        opts.NodeID,
 
-		// Path helpers, Salt-compatible.
+		// Path helpers, Salt-compatible. Each of these describes the
+		// *directory* holding the current file rather than the file
+		// itself; see slsPaths.
 		"slspath":      slsPath,
-		"slsdotpath":   opts.SLS,
-		"slscolonpath": strings.ReplaceAll(opts.SLS, ".", ":"),
+		"slsdotpath":   strings.ReplaceAll(slsPath, "/", "."),
+		"slscolonpath": strings.ReplaceAll(slsPath, "/", ":"),
+		"sls_path":     strings.ReplaceAll(slsPath, "/", "_"),
 		"tplpath":      opts.File,
-		"tplfile":      opts.File,
+		"tplfile":      tplFile,
 		"tpldir":       tplDir,
+		"tpldot":       strings.ReplaceAll(slsPath, "/", "."),
 
 		"haliteversion": version.Version,
 		"saltversion":   version.SaltCompat,

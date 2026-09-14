@@ -169,6 +169,12 @@ func (p *parser) parseStatement() (Node, error) {
 		return p.parseImport(start)
 	case "from":
 		return p.parseFromImport(start)
+	case "import_yaml":
+		return p.parseDataImport(start, "yaml")
+	case "import_json":
+		return p.parseDataImport(start, "json")
+	case "import_text":
+		return p.parseDataImport(start, "text")
 	case "extends":
 		return p.parseExtends(start)
 	case "block":
@@ -483,6 +489,29 @@ func (p *parser) parseImport(start Pos) (Node, error) {
 	if ctx, ok := p.parseContextModifier(); ok {
 		n.WithContext = ctx
 	}
+	_, err = p.expect(tokTagEnd, "")
+	return n, err
+}
+
+// parseDataImport reads `{% import_yaml "f.yaml" as name %}`.
+//
+// The shape is `import`'s, and deliberately not more: Salt takes no
+// `with context` here, because there is no template to give a context
+// to.
+func (p *parser) parseDataImport(start Pos, format string) (Node, error) {
+	n := &DataImportNode{baseNode: baseNode{start}, Format: format}
+	var err error
+	if n.Name, err = p.parseExpr(); err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(tokName, "as"); err != nil {
+		return nil, err
+	}
+	as, err := p.expect(tokName, "")
+	if err != nil {
+		return nil, err
+	}
+	n.As = as.val
 	_, err = p.expect(tokTagEnd, "")
 	return n, err
 }

@@ -1,13 +1,40 @@
 package template
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/value"
+	"github.com/edlitmus/halite/internal/yaml"
 )
+
+// parseData turns an imported file into a value, by the format the tag
+// named. `import_text` is the identity: the file is its own content.
+func parseData(src, format, name string) (any, error) {
+	switch format {
+	case "yaml":
+		v, _, err := yaml.Parse([]byte(src), yaml.DefaultOptions(name))
+		return v, err
+	case "json":
+		// UseNumber, so that an integer stays one. Go decodes every
+		// JSON number as a float64 by default, which would turn the
+		// `port: 443` of a formula's defaults into `443.0` -- and a
+		// template that prints it into a config file writes that.
+		// Python's json, which Salt uses, gives an int.
+		dec := json.NewDecoder(strings.NewReader(src))
+		dec.UseNumber()
+		var raw any
+		if err := dec.Decode(&raw); err != nil {
+			return nil, err
+		}
+		return value.FromJSON(raw), nil
+	default:
+		return src, nil
+	}
+}
 
 // scope is one level of the variable chain. A for body, a with block, a
 // macro invocation, and an included template each get one.
@@ -191,7 +218,7 @@ func collectBlocks(body []Node) []*BlockNode {
 func (r *renderer) runDefinitions(body []Node) error {
 	for _, n := range body {
 		switch n.(type) {
-		case *SetNode, *MacroNode, *ImportNode, *FromImportNode:
+		case *SetNode, *MacroNode, *ImportNode, *FromImportNode, *DataImportNode:
 			sub := r.sub()
 			sub.scope = r.scope
 			if err := sub.renderNode(n); err != nil {
@@ -320,6 +347,9 @@ func (r *renderer) renderNode(n Node) error {
 
 	case *FromImportNode:
 		return r.renderFromImport(t)
+
+	case *DataImportNode:
+		return r.renderDataImport(t)
 
 	case *ExtendsNode:
 		// Handled by renderRoot before any body runs.
@@ -793,6 +823,45 @@ func (r *renderer) renderImport(t *ImportNode) error {
 	}
 	r.scope.set(t.As, m)
 	return nil
+}
+
+// renderDataImport loads a file as data rather than as a template.
+//
+// Salt's `import_yaml` is how every formula in the wild carries its
+// defaults: a `defaults.yaml` beside `map.jinja`, read and merged with
+// pillar. Without it a tree does not compile at all -- the tag is a
+// parse error, so the whole file fails, and with it everything that
+// imports the file.
+//
+// The file is read and parsed, never rendered. That is the difference
+// from `import`, and it is a safety property as much as a semantic one:
+// data cannot execute, so a `{%` inside a YAML value is a `{%`.
+func (r *renderer) renderDataImport(t *DataImportNode) error {
+	names, err := r.templateNames(t.Name, t.Pos())
+	if err != nil {
+		return err
+	}
+	var lastErr error
+	for _, name := range names {
+		src, _, err := r.env.Loader.Load(name)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				lastErr = err
+				continue
+			}
+			return errorf(t.Pos(), "%s %q: %v", "import_"+t.Format, name, err)
+		}
+		v, err := parseData(src, t.Format, name)
+		if err != nil {
+			return errorf(t.Pos(), "%s %q: %v", "import_"+t.Format, name, err)
+		}
+		r.scope.set(t.As, v)
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = ErrNotFound
+	}
+	return errorf(t.Pos(), "%s %q: %v", "import_"+t.Format, names[0], lastErr)
 }
 
 func (r *renderer) renderFromImport(t *FromImportNode) error {

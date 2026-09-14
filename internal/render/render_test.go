@@ -98,12 +98,17 @@ dunder_env: {{ __env__ }}
 	})
 	m := res.Value.(*value.Map)
 	want := map[string]string{
-		"id":           "web1.prod",
-		"env":          "prod",
-		"saltenv":      "prod",
-		"sls":          "webserver.nginx",
-		"slspath":      "webserver/nginx",
-		"slscolonpath": "webserver:nginx",
+		"id":      "web1.prod",
+		"env":     "prod",
+		"saltenv": "prod",
+		"sls":     "webserver.nginx",
+		// The *directory*, not the SLS name. `webserver/nginx.sls` sits
+		// in `webserver`, and Salt's own `salt-call` on the same tree
+		// answers `webserver` here. This test asserted the SLS name,
+		// which is the directory only for an `init.sls`, and so agreed
+		// with the defect it was covering. See DIVERGENCE.
+		"slspath":      "webserver",
+		"slscolonpath": "webserver",
 		"dunder_env":   "prod",
 	}
 	for k, v := range want {
