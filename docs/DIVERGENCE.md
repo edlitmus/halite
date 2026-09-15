@@ -8791,6 +8791,27 @@ One function wrote the comment for both modes and wrote it in the past
 tense. The tense is an argument now. A dry run must never need a second
 command to prove it was dry.
 
+### 5.99 A cross-platform test that only ever ran on one platform
+
+5.88's fix -- one shape for a planned ownership change -- came with a
+test, and that test failed on Windows in CI while passing everywhere it
+had been run by hand.
+
+It asserted that the planned change carries a top-level `new`. That is
+the unix payload. Windows reports the same fact per attribute, as
+`{"user": {old, new}}`, and both nest correctly under the caller's
+`ownership` key; the implementation was right and the assertion was
+parochial. Cross-compiling had said nothing, because it compiles and does
+not run -- the practice that catches a hardcoded `/bin/bash` does not
+catch a payload shape.
+
+What it asserts now is the invariant the original defect was about: the
+change is not wrapped in a second `ownership` key, and it describes a
+change somewhere -- directly, or one level down. **Both platforms' shapes
+are asserted on every platform**, so a Windows shape that breaks fails on
+a Linux run rather than waiting for CI. A cross-platform invariant
+checked on one platform is not a cross-platform invariant.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
