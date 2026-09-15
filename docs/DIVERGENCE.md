@@ -8229,6 +8229,23 @@ for, so deleting the `keyUsage` handling left the test green. It was
 checked, it was green, and the test now asks for usages no default
 produces.
 
+**27 errors to 15**, and no `x509` error remains. Twelve went rather than
+the ten this was scoped at: the whole of `api.sls` compiles now, and
+`shared/foxpass/init.sls` never reaches its own x509 states at all,
+because the `{% if %}` around them asks the mine for a certificate
+authority that this environment does not have. Its v1 arguments are
+unreachable rather than accepted.
+
+What is left is eleven pieces of work and four deliberate refusals. The
+refusals: `saltutil` twice (syncing Python to nodes has no meaning in
+this model), `kmod` (a module SPEC never planned for, plan.md section 6),
+and `{% set host, domain = id.split('.', 1) %}`, which fails because
+`node_id` is `ref-salt1` where Salt's id is the FQDN -- changing that
+needs re-enrolment, since the node certificate is `CN=ref-salt1`. The
+work: four `git.latest: fetch_tags`, three `archive.extracted` ownership
+arguments, `cmd.run`'s `bg`, `file.recurse`'s `template`, a `file.rename`
+state that does not exist, and a `saltversioninfo` grain.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
