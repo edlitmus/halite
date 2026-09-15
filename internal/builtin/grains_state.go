@@ -42,11 +42,17 @@ func registerGrainsStates(r *Registries) {
 		states.Module{
 			Sig: signature.Signature{
 				Module: "grains", Function: "absent",
-				Doc: "Ensure a grain this node set for itself is gone.",
+				Doc: "Clear a grain: set it to null, or delete it outright with `destructive`.",
 				Params: []signature.Param{
 					nameParam("The grain. Defaults to the state ID."),
 					opt("delimiter", signature.String, ":",
 						"Separator for a nested grain, as in `a:b:c`."),
+					opt("destructive", signature.Bool, false,
+						"Delete the grain rather than setting it to null. Salt's default is false, "+
+							"so the default here is too: `absent` usually means the name stays with no value."),
+					opt("force", signature.Bool, false,
+						"Clear a grain whose value is a list or a mapping. Without it those are refused, "+
+							"because clearing a structure by accident loses more than a scalar does."),
 				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
@@ -88,53 +94,106 @@ func grainsPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	return states.Changed(fmt.Sprintf("%s was set to %v in %s.", name, want, written), changes), nil
 }
 
-// grainsAbsent removes a grain this node set for itself.
+// grainsAbsent clears a grain, as Salt's does.
+//
+// This used to refuse any grain the node had not set for itself, on the
+// reasoning that a grain from the platform or the operator's file cannot
+// be removed by editing the file this state owns, and that reporting a
+// change the next run undoes is worse than refusing. The reasoning was
+// sound about *deleting* and wrong about the state: Salt's `absent` does
+// not delete by default, it sets the value to null, and a null written
+// where this node's own grains live wins over the file underneath it --
+// `99-runtime.yaml` is merged last precisely so that a runtime change
+// beats the file it was made against.
+//
+// So the observable result matches Salt's without this state ever
+// editing the operator's file. The estate that found it writes
+// `grains.absent: node_exporter` against a grain its static file defines
+// as null already, where Salt answers "Grain is already set" and this
+// answered with a failure.
 func grainsAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 	name := states.Str(args, "name", "")
 	if name == "" {
 		return states.False("This state needs a grain name."), nil
 	}
 	path := grainPath(name, states.Str(args, "delimiter", ":"))
+	destructive := states.Bool(args, "destructive", false)
 
+	// The collected grains, which is what Salt reads: a grain is present
+	// if the node reports it, wherever it came from.
 	current, had := lookupGrain(c.Grains, path)
+	if !had {
+		return states.True(fmt.Sprintf("Grain %s does not exist.", name)), nil
+	}
 
-	// Whether this is removable is decided from the file this state
-	// owns, not from the collected grains, and before anything is
-	// written. A grain that came from the platform or from the
-	// configuration file is not removable by editing that file, and
-	// reporting a change the next run finds undone is worse than
-	// refusing.
-	//
-	// Checking c.Grains afterwards does not work: it is the snapshot the
-	// job started with, and reloading updates the node's grains rather
-	// than this copy — so every removal looked like it had failed.
+	// A structure is not cleared by accident. Salt refuses a list or a
+	// mapping without `force` and names the argument that would allow it.
+	if !states.Bool(args, "force", false) && isGrainCollection(current) {
+		return states.False(fmt.Sprintf(
+			"The key %q exists but is a dict or a list. Use `force: True` to overwrite.", name)), nil
+	}
+
 	held, err := heldGrains(c)
 	if err != nil {
 		return states.False(fmt.Sprintf("%s could not be read back: %v", name, err)), nil
 	}
 	_, ours := lookupGrain(held, path)
 
-	if !ours {
-		if !had {
-			return states.True(fmt.Sprintf("%s is not set.", name)), nil
-		}
-		return states.False(fmt.Sprintf(
-			"%s is not a grain this node set for itself, so there is nothing here "+
-				"to remove. It comes from the platform or from the configuration "+
-				"file, and neither is this state's to edit.", name)), nil
+	// Already null, and nothing of this node's own to delete: there is
+	// nothing to do. Salt says "Grain is already set" here, which reads
+	// oddly and means "already in the state you asked for".
+	if current == nil && !(destructive && ours) {
+		return states.True(fmt.Sprintf("Grain %s is already set.", name)), nil
 	}
 
 	changes := value.NewMap(1)
-	changes.Set(name, states.Change(current, nil))
-	if c.Test {
-		return states.WouldChange(fmt.Sprintf("%s would be removed.", name), changes), nil
+	if destructive {
+		changes.Set("deleted", name)
+	} else {
+		changes.Set(name, states.Change(current, nil))
 	}
 
-	written, err := saveGrain(c, path, nil)
-	if err != nil {
-		return states.False(fmt.Sprintf("%s could not be removed: %v", name, err)), nil
+	if c.Test {
+		if destructive {
+			return states.WouldChange(fmt.Sprintf("Grain %s is set to be deleted.", name), changes), nil
+		}
+		return states.WouldChange(
+			fmt.Sprintf("Value for grain %s is set to be deleted (None).", name), changes), nil
 	}
-	return states.Changed(fmt.Sprintf("%s was removed from %s.", name, written), changes), nil
+
+	if destructive {
+		if _, err := deleteGrain(c, path); err != nil {
+			return states.False(fmt.Sprintf("%s could not be deleted: %v", name, err)), nil
+		}
+		// Deleting this node's own entry uncovers whatever is underneath
+		// it. Where that is the operator's file or the platform, the
+		// grain is still there -- so it is masked with a null and said
+		// so, rather than reporting a deletion that did not happen.
+		if remaining, still := lookupGrain(c.Grains, path); still && remaining != nil && !ours {
+			if _, err := saveGrain(c, path, nil); err != nil {
+				return states.False(fmt.Sprintf("%s could not be cleared: %v", name, err)), nil
+			}
+			return states.Changed(fmt.Sprintf(
+				"Grain %s was set to null rather than deleted: its value comes from a file "+
+					"this state does not own, and a null here masks it.", name), changes), nil
+		}
+		return states.Changed(fmt.Sprintf("Grain %s was deleted.", name), changes), nil
+	}
+
+	if _, err := saveGrain(c, path, nil); err != nil {
+		return states.False(fmt.Sprintf("%s could not be cleared: %v", name, err)), nil
+	}
+	return states.Changed(fmt.Sprintf("Value for grain %s was set to None.", name), changes), nil
+}
+
+// isGrainCollection reports whether a grain holds a structure rather
+// than a scalar.
+func isGrainCollection(v any) bool {
+	switch v.(type) {
+	case *value.Map, []any:
+		return true
+	}
+	return false
 }
 
 // grainPath splits a delimited grain name into its parts.
@@ -180,6 +239,24 @@ func saveGrain(c *exec.Context, path []string, want any) (string, error) {
 	if err := setNested(held, path, want); err != nil {
 		return "", err
 	}
+	return persistGrains(c, held)
+}
+
+// deleteGrain removes a grain from the node's own grains file.
+func deleteGrain(c *exec.Context, path []string) (string, error) {
+	if c.SaveConfig == nil || c.ReloadConfig == nil {
+		return "", fmt.Errorf("this invocation has nowhere to write grains; " +
+			"a grain is persisted by the agent, not by a one-shot command")
+	}
+	held, err := heldGrains(c)
+	if err != nil {
+		return "", err
+	}
+	deleteNested(held, path)
+	return persistGrains(c, held)
+}
+
+func persistGrains(c *exec.Context, held *value.Map) (string, error) {
 	written, err := c.SaveConfig("grains", held)
 	if err != nil {
 		return "", err
@@ -209,12 +286,29 @@ func setNested(m *value.Map, path []string, want any) error {
 		m = child
 	}
 	last := path[len(path)-1]
-	if want == nil {
-		m.Delete(last)
-		return nil
-	}
 	m.Set(last, want)
 	return nil
+}
+
+// deleteNested removes a grain rather than setting it.
+//
+// Setting null and deleting are different outcomes -- `grains.absent`
+// does the first by default and the second only with `destructive` --
+// so they cannot share a nil argument. They used to, which made "set
+// this grain to null" impossible to express.
+func deleteNested(m *value.Map, path []string) {
+	for _, part := range path[:len(path)-1] {
+		child, ok := m.Get(part)
+		if !ok {
+			return
+		}
+		next, ok := child.(*value.Map)
+		if !ok {
+			return
+		}
+		m = next
+	}
+	m.Delete(path[len(path)-1])
 }
 
 // sameGrain reports whether two grain values are the same.

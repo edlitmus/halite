@@ -8896,6 +8896,52 @@ asserts the bytes it writes.
 behind them: `defaults.conf` calls `.append()` on a list, which Jinja
 allows because Python lists have the method and this engine does not
 implement it.
+### 5.102 `grains.absent` refused what Salt clears
+
+An estate writes `grains.absent: node_exporter` to retire a grain. This
+answered with a failure: *"node_exporter is not a grain this node set for
+itself, so there is nothing here to remove."*
+
+The reasoning behind that refusal was that a grain from the platform or
+from the operator's file cannot be removed by editing the file this state
+owns, and that reporting a change the next run undoes is worse than
+refusing. Sound about *deleting*, and wrong about the state, because
+**Salt's `absent` does not delete by default -- it sets the value to
+null**, and a null in the file this node owns beats the file underneath
+it. `99-runtime.yaml` is merged last precisely so a runtime change wins.
+
+So the observable result matches Salt's without this state ever editing
+the operator's file.
+
+The behaviour was captured from the Salt on the reference host rather
+than read off its docstring, against a throwaway `--config-dir` so the
+live configuration was not disturbed:
+
+| the grain | Salt | now |
+|---|---|---|
+| absent | true, "does not exist" | same |
+| already null | true, "Grain is already set" | same |
+| a value, default | true, set to null | same |
+| a value, `destructive` | true, deleted | same |
+| a list or mapping, no `force` | **false**, names the argument | same |
+| a list or mapping, `force` | true, set to null | same |
+
+`destructive` and `force` did not exist here at all. `destructive`
+defaulting to false is the one most likely to surprise: `absent` usually
+leaves the name in place with no value.
+
+**One place this cannot match, and says so instead of pretending.**
+`destructive` against a grain that comes from the operator's file would,
+in Salt, delete it from the one grains file Salt has. This build will not
+edit that file, so it removes its own entry, sees the value still
+resolving underneath, writes a null to mask it, and reports *that* rather
+than claiming a deletion that did not happen.
+
+A separate defect found on the way: `setNested` treated a nil value as a
+removal, which made "set this grain to null" impossible to express.
+Setting and deleting are different outcomes -- this state does the first
+by default and the second only when asked -- so they no longer share an
+argument.
 
 ## 6. Everything else not started
 
