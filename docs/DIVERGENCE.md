@@ -501,7 +501,7 @@ different reason is given.
 | `cmd` | implemented | 3 | `script` takes its source as the state's name, as Salt's does |
 | `cron` | implemented | 2 | |
 | `file` | implemented | 15 | |
-| `git` | implemented | 1 | |
+| `git` | implemented | 1 | `latest`, with Salt's `fetch_tags` -- true by default, as Salt has it, so a tag no branch reaches is fetched. `sync_tags`, which Salt also defaults to true and which *deletes* local tags the remote no longer has, is not built and is refused by name (5.88) |
 | `group` | implemented | 2 | |
 | `host` | implemented | 2 | |
 | `module` | implemented | 2 | |
@@ -8245,6 +8245,46 @@ needs re-enrolment, since the node certificate is `CN=ref-salt1`. The
 work: four `git.latest: fetch_tags`, three `archive.extracted` ownership
 arguments, `cmd.run`'s `bg`, `file.recurse`'s `template`, a `file.rename`
 state that does not exist, and a `saltversioninfo` grain.
+
+### 5.88 `git.latest: fetch_tags`, and a default that lives in one place
+
+Four of the estate tree's fifteen remaining errors were one argument.
+`shared/salt/saltrepos.sls` is how the hub keeps its own state tree
+current, and it writes `fetch_tags: True` on every one of its four
+repositories.
+
+A plain `git fetch` brings down only the tags reachable from the branches
+it fetched, so a tree pinning a release tag that no branch points at gets
+nothing. `--tags` is what reaches the rest. Checked against the git on
+the reference host rather than read off the flag's name: a tag pushed to
+a detached commit *after* the clone is absent following
+`git fetch origin` and present following `git fetch --tags origin`. A
+plain clone fetches every tag, so the first attempt at that experiment
+proved nothing -- the tag has to arrive after the checkout exists, which
+is also the only case the argument matters in.
+
+`sync_tags` is **not** built. Salt defaults it to true, and it *deletes*
+local tags that the remote no longer has. Defaulting to Salt's behaviour
+would mean this build deleting tags nobody asked it to; refusing the
+argument by name says so at the line that writes it. The estate's tree
+does not use it.
+
+**Where a default actually lives.** Breaking this on purpose found that
+flipping the fallback in `states.Bool(args, "fetch_tags", true)` changes
+nothing: the signature's declared default is filled in before the
+function runs, so the Go-side fallback never sees a missing key. The
+declared default is the one that governs, and it is the one a test has to
+break to mean anything. The fallback is kept because every neighbouring
+argument has one, and it is kept equal to the declared value.
+
+**`git.latest` had no tests at all** before this -- a state that clones,
+fetches, and force-resets repositories. It has two now, and they answer
+different questions: one drives a real git repository end to end, and one
+records the argument vector so the flag is asserted on platforms with no
+git. The shared `newCtx` installs a `RecordingRunner`, which reports
+success without running anything; a first attempt at the real-git test
+used it by accident and watched the state report `was cloned from` over a
+directory that did not exist.
 
 ## 6. Everything else not started
 

@@ -9375,7 +9375,7 @@ gem.removed(name: string, pkgs: list)
 Ensure a checkout exists and is at the requested revision.
 
 ```
-git.latest(name: string, target: path, rev: string = , remote: string = origin, depth: int, branch: string = , force_reset: bool = false, force_checkout: bool = false, force_clone: bool = false, force_fetch: bool = false, user: string = )
+git.latest(name: string, target: path, rev: string = , remote: string = origin, depth: int, branch: string = , force_reset: bool = false, force_checkout: bool = false, force_clone: bool = false, force_fetch: bool = false, fetch_tags: bool = true, user: string = )
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -9390,6 +9390,7 @@ git.latest(name: string, target: path, rev: string = , remote: string = origin, 
 | `force_checkout` | bool | `false` | Check out even when it would discard local changes. |
 | `force_clone` | bool | `false` | Clone into a target directory that already has files in it. |
 | `force_fetch` | bool | `false` | Fetch even when it would overwrite a local ref. |
+| `fetch_tags` | bool | `true` | Fetch every tag on the remote, including ones no branch reaches. True by default, as Salt has it. |
 | `user` | string | `` | Run git as this account. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
