@@ -8812,6 +8812,90 @@ are asserted on every platform**, so a Windows shape that breaks fails on
 a Linux run rather than waiting for CI. A cross-platform invariant
 checked on one platform is not a cross-platform invariant.
 
+### 5.100 A rendered file source could not import anything
+
+With the tree compiling, its states ran for the first time, and two
+failed on the same thing:
+
+```
+the template for salt://shared/salt/files/master.d/defaults.conf failed: <!-- lexicon:allow -->
+  import "shared/salt/map.jinja": no template loader is configured
+```
+
+The SLS compiler configures a loader -- `Loader: c.Loader.Templates(env)`
+-- and the path that renders a *file source* never did. So
+`{% import "shared/salt/map.jinja" %}` inside a managed file could not
+resolve, and a `map.jinja` import from a managed file is about as common
+as Salt idioms get. The estate does it in two separate files, a master <!-- lexicon:allow -->
+configuration and a shell script.
+
+The fix needed no new plumbing, which is worth recording because the
+first guess was that it would. Both file servers already offer the
+loader: `fileserver.Fetcher` embeds `Roots`, `Remote` has its own, and
+the tracing wrapper was already forwarding `Templates`. The context
+carries the file server; taking the loader from it by interface means a
+fetcher that cannot resolve templates still serves files and says so at
+the line that imported one, rather than a new field that every
+construction site has to remember to set.
+
+**20 runtime failures to 15**, and 274 of 328 states succeed. The two
+that closed took three cascading skips with them.
+
+### 5.101 The `yaml` filter, and the YAML this build writes
+
+`{{ beacons | yaml(False) | indent(2) }}` is how an estate puts a pillar
+mapping into a configuration file. There was no `yaml` filter, so two of
+its files failed with `unknown filter "yaml"` once the tree compiled far
+enough to render them.
+
+Salt's filter is `safe_dump(value, default_flow_style=flow_style)`,
+stripped -- flow style by default, block when the tree passes false. That
+part is small. The part worth recording is what it turned up underneath.
+
+**This build's block YAML was not the YAML Salt writes.** It indented a
+sequence under the key that owns it and broke the line after a dash,
+where PyYAML puts the sequence in the same column and inlines the first
+element:
+
+```
+this build            PyYAML, and now this build
+memusage:             memusage:
+  -                   - percent: 75%
+    percent: 75%
+```
+
+Both are valid and parse identically, so nothing was *wrong* -- and every
+file `file.serialize` manages would have been rewritten on the first run
+after a migration, which is the same argument the `tojson` filter settled
+years of this project ago. SPEC 10.1 pins the parser to PyYAML's dialect;
+this is that argument applied to the other direction. The encoder is held
+to `safe_dump` by a differential over twenty-five shapes, beside the one
+that already holds the parser to PyYAML's loader.
+
+**The scalars moved too.** PyYAML prefers single quotes and this build
+preferred double, so every quoted scalar in every file differed. Single
+now, with double kept for the strings a single-quoted scalar cannot carry
+-- a tab, a newline, a control character -- which is the same line PyYAML
+draws.
+
+**`yaml_encode` is not the dumper and must not share its rules.** Salt's
+calls `yaml_dquote` directly, so a string is *always* double-quoted there,
+even one needing no quoting at all: `'plain' | yaml_encode` is
+`"plain"`. This build left it bare, which two tests asserted. They were
+asserting a divergence, checked against the running Salt and corrected.
+
+**The tests did not notice any of it.** The block rewrite moved every
+nested sequence in every file this build writes, and the whole suite
+passed: `file.serialize`'s YAML case asserted `listen: 9090`, a flat
+single-key mapping, which is the one shape that cannot tell two YAML
+writers apart. `netplan`'s fixtures nest mappings and no sequences, and
+compare no bytes at all. A state whose whole job is writing YAML now
+asserts the bytes it writes.
+
+**15 runtime failures to 12**, and the next layer is already visible
+behind them: `defaults.conf` calls `.append()` on a list, which Jinja
+allows because Python lists have the method and this engine does not
+implement it.
 ### 5.102 `grains.absent` refused what Salt clears
 
 An estate writes `grains.absent: node_exporter` to retire a grain. This

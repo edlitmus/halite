@@ -49,7 +49,7 @@
   "template": "{{ nope.attr }}"
  },
  {
-  "expected": "a b",
+  "expected": "\"a b\"",
   "id": "filter/yaml_encode-plain",
   "template": "{{ 'a b' | yaml_encode }}"
  },

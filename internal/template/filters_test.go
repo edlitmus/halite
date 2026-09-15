@@ -110,7 +110,10 @@ func TestSaltSerializationFilters(t *testing.T) {
 	cases := []struct{ src, want string }{
 		{`{{ m | tojson }}`, `{"b": 2, "a": 1}`},
 		{`{{ 'yes' | yaml_encode }}`, `"yes"`},
-		{`{{ 'plain' | yaml_encode }}`, `plain`},
+		// Salt double-quotes a string here always, even one needing no
+		// quoting: yaml_encode calls yaml_dquote directly. Checked against
+		// the real Salt, which renders this as "plain".
+		{`{{ 'plain' | yaml_encode }}`, `"plain"`},
 		{`{{ list | yaml_encode }}`, `[x, y]`},
 		{`{{ 'a"b' | yaml_dquote }}`, `"a\"b"`},
 		{`{{ "it's" | yaml_squote }}`, `'it''s'`},
