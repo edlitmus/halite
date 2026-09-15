@@ -8770,6 +8770,27 @@ was never checked against the registry it was a claim about -- one
 A gap recorded as a decision stops anyone looking at it again, which is
 why it survived being written into three documents and a pull request.
 
+### 5.98 A dry run that read as though it had acted
+
+With the tree compiling, 328 states ran in test mode for the first time,
+and one of them reported:
+
+```
+ID: salt-minion   <!-- lexicon:allow -->
+Result: None
+Comment: The service salt-minion was started.   <!-- lexicon:allow -->
+```
+
+`Result: None` is test mode and nothing was started -- `systemctl
+is-active` confirmed it, and the compilers that service purges as a CIS
+control were still installed. But the sentence says otherwise, and on
+that host it is an alarming sentence: the service is stopped on purpose
+because its highstate deletes `make`, `gcc` and `gh`.
+
+One function wrote the comment for both modes and wrote it in the past
+tense. The tense is an argument now. A dry run must never need a second
+command to prove it was dry.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
