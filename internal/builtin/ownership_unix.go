@@ -44,7 +44,13 @@ func plannedOwnership(path string, exists bool, wantUser, wantGroup string) (*va
 		return nil, false, err
 	}
 	if !exists {
-		return value.MapOf("ownership", states.Change(nil, ownerLabel(wantUser, wantGroup))), true, nil
+		// The bare change, not one wrapped in another "ownership" key.
+		// Every caller does changes.Set("ownership", this), so wrapping
+		// it here produced changes.ownership.ownership for a file that
+		// did not exist yet, and the plain old/new pair for one that
+		// did -- the same state reporting two shapes depending on
+		// whether the file happened to be there.
+		return states.Change(nil, ownerLabel(wantUser, wantGroup)), true, nil
 	}
 
 	info, err := os.Lstat(path)
@@ -61,17 +67,6 @@ func plannedOwnership(path string, exists bool, wantUser, wantGroup string) (*va
 	}
 	current := fmt.Sprintf("%d:%d", st.Uid, st.Gid)
 	return states.Change(current, ownerLabel(wantUser, wantGroup)), true, nil
-}
-
-func ownerLabel(u, g string) string {
-	switch {
-	case u != "" && g != "":
-		return u + ":" + g
-	case u != "":
-		return u
-	default:
-		return ":" + g
-	}
 }
 
 // applyOwnership sets the owner and group of a path.
