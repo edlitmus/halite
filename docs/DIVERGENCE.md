@@ -8277,6 +8277,12 @@ declared default is the one that governs, and it is the one a test has to
 break to mean anything. The fallback is kept because every neighbouring
 argument has one, and it is kept equal to the declared value.
 
+**15 errors to 11.** What remains is seven pieces of work and four
+deliberate refusals, in three files: `archive.extracted`'s `user`,
+`group` and `keep_source` and a `file.rename` state that does not exist
+(both in `shared/salt/pgpkeys.sls`), `file.recurse`'s `template`,
+`cmd.run`'s `bg`, and a `saltversioninfo` grain.
+
 **`git.latest` had no tests at all** before this -- a state that clones,
 fetches, and force-resets repositories. It has two now, and they answer
 different questions: one drives a real git repository end to end, and one
