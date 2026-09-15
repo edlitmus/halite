@@ -8341,19 +8341,25 @@ win_task.stop(name: string)
 Create a certificate, self-signed or signed by a CA.
 
 ```
-x509.create_certificate(private_key: string, path: path = , signing_cert: string = , signing_private_key: string = , days_valid: int = 365, ca: bool = false, key_usage: list, ext_key_usage: list, CN: string = , O: string = , OU: string = , C: string = , ST: string = , L: string = , subject_alt_names: list)
+x509.create_certificate(private_key: string = , public_key: string = , path: path = , signing_cert: string = , signing_private_key: string = , days_valid: int = 365, ca: bool = false, key_usage: list, ext_key_usage: list, basicConstraints: string = , keyUsage: string = , extendedKeyUsage: string = , subjectKeyIdentifier: string = , subjectAltName: string = , CN: string = , O: string = , OU: string = , C: string = , ST: string = , L: string = , subject_alt_names: list)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `private_key` | string | *required* | The subject's key, as a path or as PEM. Its public half goes into the certificate. |
+| `private_key` | string | `` | The subject's key, as a path or as PEM. Its public half goes into the certificate. |
+| `public_key` | string | `` | The subject's public key, when this node holds no private half of it. |
 | `path` | path | `` | Where to write it. Empty returns the PEM. |
 | `signing_cert` | string | `` | The CA certificate. Empty makes the certificate self-signed. |
-| `signing_private_key` | string | `` | The CA's key. Defaults to private_key for a self-signed certificate. |
+| `signing_private_key` | string | `` | The key that signs. Also the subject's key when nothing else names one. |
 | `days_valid` | int | `365` | How long it lasts. |
 | `ca` | bool | `false` | Mark it a CA, with basic constraints and a path length of zero. |
 | `key_usage` | list | — | Key usages, such as digitalSignature and keyEncipherment. |
 | `ext_key_usage` | list | — | Extended key usages, such as serverAuth. |
+| `basicConstraints` | string | `` | OpenSSL's form, as in "critical, CA:false" or "critical, CA:true, pathlen:1". Overrides `ca`. |
+| `keyUsage` | string | `` | OpenSSL's form, as in "critical, digitalSignature, keyEncipherment". |
+| `extendedKeyUsage` | string | `` | One name or several, as in "serverAuth, clientAuth". |
+| `subjectKeyIdentifier` | string | `` | Only "hash", which is the SHA-1 of the subject public key that RFC 5280 specifies. |
+| `subjectAltName` | string | `` | Salt's single-string form, as in "DNS:localhost, IP:127.0.0.1". Adds to `subject_alt_names`. |
 | `CN` | string | `` | Common name. |
 | `O` | string | `` | Organization. |
 | `OU` | string | `` | Organizational unit. |
@@ -10827,21 +10833,29 @@ win_task.present(name: string, command: string = , arguments: string = , working
 Ensure a certificate exists, is signed by the expected CA, and is not close to expiry.
 
 ```
-x509.certificate_managed(name: path, private_key: string, signing_cert: string = , signing_private_key: string = , days_valid: int = 365, days_remaining: int = 30, ca: bool = false, key_usage: list, ext_key_usage: list, mode: string = 0644, CN: string = , O: string = , OU: string = , C: string = , ST: string = , L: string = , subject_alt_names: list)
+x509.certificate_managed(name: path, private_key: string = , public_key: string = , signing_cert: string = , signing_private_key: string = , days_valid: int = 365, days_remaining: int = 30, ca: bool = false, key_usage: list, ext_key_usage: list, mode: string = 0644, user: string = , group: string = , basicConstraints: string = , keyUsage: string = , extendedKeyUsage: string = , subjectKeyIdentifier: string = , subjectAltName: string = , CN: string = , O: string = , OU: string = , C: string = , ST: string = , L: string = , subject_alt_names: list)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | path | *required* | Where the certificate lives. |
-| `private_key` | string | *required* | The subject's key, as a path or PEM. |
+| `private_key` | string | `` | The subject's key, as a path or PEM. |
+| `public_key` | string | `` | The subject's public key, when this node holds no private half of it. |
 | `signing_cert` | string | `` | The CA certificate. Empty means self-signed. |
-| `signing_private_key` | string | `` | The CA's key. |
+| `signing_private_key` | string | `` | The key that signs. Also the subject's key when nothing else names one. |
 | `days_valid` | int | `365` | How long a new certificate lasts. |
 | `days_remaining` | int | `30` | Re-issue when fewer than this many days remain. Zero re-issues only when the certificate is missing or wrong. |
 | `ca` | bool | `false` | Mark it a CA. |
 | `key_usage` | list | — | Key usages. |
 | `ext_key_usage` | list | — | Extended key usages. |
 | `mode` | string | `0644` | The file mode. |
+| `user` | string | `` | The owner. |
+| `group` | string | `` | The group. |
+| `basicConstraints` | string | `` | OpenSSL's form, as in "critical, CA:false" or "critical, CA:true, pathlen:1". Overrides `ca`. |
+| `keyUsage` | string | `` | OpenSSL's form, as in "critical, digitalSignature, keyEncipherment". |
+| `extendedKeyUsage` | string | `` | One name or several, as in "serverAuth, clientAuth". |
+| `subjectKeyIdentifier` | string | `` | Only "hash", which is the SHA-1 of the subject public key that RFC 5280 specifies. |
+| `subjectAltName` | string | `` | Salt's single-string form, as in "DNS:localhost, IP:127.0.0.1". Adds to `subject_alt_names`. |
 | `CN` | string | `` | Common name. |
 | `O` | string | `` | Organization. |
 | `OU` | string | `` | Organizational unit. |
@@ -10857,7 +10871,7 @@ x509.certificate_managed(name: path, private_key: string, signing_cert: string =
 Ensure a private key exists with the requested algorithm and size.
 
 ```
-x509.private_key_managed(name: path, mode: string = 0600, new: bool = false, algo: string = rsa, keysize: int = 0)
+x509.private_key_managed(name: path, mode: string = 0600, new: bool = false, user: string = , group: string = , algo: string = rsa, keysize: int = 0)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10865,6 +10879,8 @@ x509.private_key_managed(name: path, mode: string = 0600, new: bool = false, alg
 | `name` | path | *required* | Where the key lives. |
 | `mode` | string | `0600` | The file mode. A key should not be readable by anyone else. |
 | `new` | bool | `false` | Replace the key even when the existing one already matches. |
+| `user` | string | `` | The owner. |
+| `group` | string | `` | The group. |
 | `algo` | string | `rsa` | The key algorithm. |
 | `keysize` | int | `0` | RSA bits, refused below 2048 and defaulting to 4096; or the EC curve size 256, 384 or 521, defaulting to 256. Zero takes the algorithm's default, as Salt's None does. |
 

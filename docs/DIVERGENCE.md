@@ -489,7 +489,7 @@ different reason is given.
 | `system` | implemented | 9 | the four power verbs `halt`, `poweroff`, `shutdown` and `reboot`, the three clock writers `set_system_date`, `set_system_time` and `set_system_date_time`, and `get_computer_desc`/`set_computer_desc`. Linux and FreeBSD only, not the five BSDs `quota` groups: a wrong flag to `edquota` is refused, a wrong flag to `shutdown(8)` is obeyed on hardware nobody is standing in front of. Every command is built by a pure function of `goos` and its arguments, so each row is checkable from any host without running it, and test mode reaches the process zero times for the power verbs. `-h` on Linux and `-p` on FreeBSD are how the two platforms spell the same meaning. No hostname function (`hostname.*` owns that), no clock reader (`status.time` does), and no `hwclock`, which FreeBSD has no equivalent of. `set_computer_desc` writes systemd's `PRETTY_HOSTNAME` in `/etc/machine-info` and is Linux only, because FreeBSD has no convention holding such a label and inventing one would be this build deciding a convention nothing reads |
 | `tls` | implemented | 6 | a CA directory convention, idempotent issuance, an issuance ledger and real CRL generation, all routed through `x509`'s existing certificate helpers rather than a second engine. Four of Salt's functions here are deliberately absent as renames of `x509` calls that already work (5.72) |
 | `tmpfs` | implemented | 3 | `list`, `is_mounted` and `usage`, read-only by design: mounting one is `mount.mount` with a fstype, and a wrapper would duplicate `mount.mounted` for no gain. `usage` joins the mount table with `df`, and degrades to no figures rather than a wrong number when the two disagree (5.72) |
-| `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification |
+| `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification. Keys and extensions take Salt's x509_v2 spelling -- `algo`, `keysize`, and the OpenSSL one-line extension strings -- and the twelve extensions this build does not write are refused by name rather than dropped (5.87) |
 
 ### 2.2 Core state modules (SPEC 15.5)
 
@@ -542,7 +542,7 @@ different reason is given.
 | `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
 | `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
 | `win_wua` | not implemented | 0 | Windows only |
-| `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run |
+| `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run. Neither has a required key argument, as Salt's do not, and wrong ownership is fixed in place rather than by re-issuing, which would give a new serial on every run (5.87) |
 | `zpool` | implemented | 2 | `present` creates a pool that is not there and manages the properties of one that is; it does **not** reshape an existing pool, and reports a layout that does not match as a warning instead. `absent` exports by default and destroys only when told |
 
 `file.accumulated`, which SPEC 15.5 requires, is not implemented.
@@ -8165,6 +8165,69 @@ the dependent was blocked with "One or more requisite failed", which is
 only possible if the requisite bound to both. The test that replaced the
 old one asserts both chunks resolve, and was verified by binding only
 the first and watching it fail. 29 errors to 27.
+
+### 5.87 The x509 states, against the certificate Salt actually issues
+
+The estate's `shared/salt/api.sls` is salt-api's own TLS certificate, and
+it is the same job `halite-api` has. It did not compile, in ten separate
+ways, and every one of them was this build having invented a spelling.
+
+**Salt has two x509 modules and the newer one wins by default.**
+`x509_v2.py` and `x509.py` both claim the virtualname `x509`; v2's
+`__virtual__` reads `features.get("x509_v2", True)`, which defaults to
+*true*, and nothing in the estate's Salt configuration disables it. So
+`x509` here means x509_v2, and v2's spelling is the one a tree is
+written in. The estate's tree is written in both: `api.sls` uses v2's
+`algo`/`keysize`, and `shared/foxpass/init.sls` uses v1's nested
+`managed_private_key`, which v2 has no parameter for. **That foxpass
+state is already broken against the Salt that serves the estate**, and is
+worth reporting to whoever owns the tree rather than designing for.
+
+**Key arguments.** `algorithm`, `bits` and `curve` became `algo` and
+`keysize`, which is what both the v2 state and the v2 execution module
+take. `keysize` carries Salt's double meaning -- RSA bits, or the size of
+an EC curve where 256, 384 and 521 select P-256, P-384 and P-521. The
+`tls` module keeps `bits`, because `salt.modules.tls.create_ca` takes
+`bits` and is RSA only; the two modules are spelled differently in Salt
+and so are spelled differently here.
+
+**Extensions are not parameters in Salt at all.** They reach
+`create_certificate` through `**kwargs` and are checked against
+`CERT_EXTS` in `salt/utils/x509.py`, in OpenSSL's spelling and OpenSSL's
+one-line encoding: `basicConstraints: "critical, CA:false"`,
+`keyUsage: "critical, digitalSignature, keyEncipherment"`,
+`extendedKeyUsage: serverAuth`, `subjectKeyIdentifier: hash`,
+`subjectAltName: "DNS:localhost, IP:127.0.0.1"`. This build declares them
+as parameters, because a declared parameter is what its documentation and
+its argument checking are built on, and an undeclared one cannot be
+refused by name when it is misspelled. The twelve extensions this build
+does not write are refused rather than dropped: an extension silently
+missing is not a cosmetic difference, it is a different certificate.
+
+Criticality is honoured where Go can express it and **refused where it
+cannot**, rather than written differently from what was asked.
+
+**There is no required key argument.** `public_key`, `private_key` and
+`signing_private_key` are alternatives; this build had `private_key`
+required, so `api.sls`, which names only `signing_private_key`, was told
+a key was missing that it did not need. Confirmed against the running
+Salt, which issues that certificate self-signed from the signing key
+alone.
+
+**`pathlen` was being ignored.** Every CA this build issued got a path
+length of zero, whatever `basicConstraints` said, so a tree asking for a
+CA that can sign intermediates silently got one that cannot. That is the
+accept-but-ignore shape, in a certificate.
+
+**What the expectations are checked against.** A real Salt on the
+reference host was given `api.sls`'s exact arguments and its certificate
+read back with `openssl x509 -text`; the test asserts those values. One
+of those assertions was worthless when written and is worth recording:
+this build's default key usage for a leaf is
+`digitalSignature|keyEncipherment`, which is exactly what `api.sls` asks
+for, so deleting the `keyUsage` handling left the test green. It was
+checked, it was green, and the test now asks for usages no default
+produces.
 
 ## 6. Everything else not started
 

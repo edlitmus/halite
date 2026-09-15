@@ -185,15 +185,16 @@ func registerX509(r *Registries) {
 				Module: "x509", Function: "create_certificate",
 				Doc: "Create a certificate, self-signed or signed by a CA.",
 				Params: append([]signature.Param{
-					req("private_key", signature.String, "The subject's key, as a path or as PEM. Its public half goes into the certificate."),
+					opt("private_key", signature.String, "", "The subject's key, as a path or as PEM. Its public half goes into the certificate."),
+					opt("public_key", signature.String, "", "The subject's public key, when this node holds no private half of it."),
 					opt("path", signature.Path, "", "Where to write it. Empty returns the PEM."),
 					opt("signing_cert", signature.String, "", "The CA certificate. Empty makes the certificate self-signed."),
-					opt("signing_private_key", signature.String, "", "The CA's key. Defaults to private_key for a self-signed certificate."),
+					opt("signing_private_key", signature.String, "", "The key that signs. Also the subject's key when nothing else names one."),
 					opt("days_valid", signature.Int, int64(defaultCertDays), "How long it lasts."),
 					opt("ca", signature.Bool, false, "Mark it a CA, with basic constraints and a path length of zero."),
 					opt("key_usage", signature.List, nil, "Key usages, such as digitalSignature and keyEncipherment."),
 					opt("ext_key_usage", signature.List, nil, "Extended key usages, such as serverAuth."),
-				}, subjectParams()...),
+				}, append(certExtensionParams(), subjectParams()...)...),
 				Mutates:  true,
 				TestMode: signature.TestReliable,
 				Section:  "15.2",
@@ -396,33 +397,85 @@ func publicKeyOf(source string) (crypto.PublicKey, error) {
 // so the certificate was created afresh on every run and never appeared
 // on disk. An empty path returns the PEM.
 func createCertificate(args *value.Map, path string, mode os.FileMode) (any, error) {
-	subjectKey, err := loadPrivateKey(states.Str(args, "private_key", ""))
+	subjectPub, subjectKey, err := resolveSubjectKey(args)
 	if err != nil {
-		return nil, fmt.Errorf("the subject's private key: %w", err)
+		return nil, err
 	}
 
 	days := states.Int(args, "days_valid", defaultCertDays)
 	if days <= 0 {
 		return nil, fmt.Errorf("days_valid must be positive, found %d", days)
 	}
-	dns, ips, emails, uris, err := parseSANs(states.Strings(args, "subject_alt_names"))
+
+	// The SANs a tree gives as a list, plus the ones it gives as Salt's
+	// single `subjectAltName` string. Both are read, because a tree that
+	// came from Salt writes the second and one written for this build
+	// writes the first.
+	sanEntries := states.Strings(args, "subject_alt_names")
+	if s := states.Str(args, "subjectAltName", ""); s != "" {
+		sanEntries = append(sanEntries, splitSANString(s)...)
+	}
+	dns, ips, emails, uris, err := parseSANs(sanEntries)
 	if err != nil {
 		return nil, err
 	}
+
 	usage, err := parseKeyUsage(states.Strings(args, "key_usage"))
 	if err != nil {
 		return nil, err
 	}
+	if s := states.Str(args, "keyUsage", ""); s != "" {
+		u, critical, err := parseKeyUsageString(s)
+		if err != nil {
+			return nil, err
+		}
+		if !critical {
+			// Go writes the key usage extension critical and offers no
+			// way to write it otherwise. Refused rather than written
+			// critical anyway, because a certificate that differs from
+			// what the tree asked for is the one thing worse than a
+			// certificate that was not issued.
+			return nil, fmt.Errorf("keyUsage must be marked critical; this build writes that extension " +
+				"critical, as RFC 5280 requires when it is present, and cannot write it any other way")
+		}
+		usage |= u
+	}
+
 	extUsage, err := parseExtKeyUsage(states.Strings(args, "ext_key_usage"))
 	if err != nil {
 		return nil, err
 	}
+	if s := states.Str(args, "extendedKeyUsage", ""); s != "" {
+		e, critical, err := parseExtKeyUsageString(s)
+		if err != nil {
+			return nil, err
+		}
+		if critical {
+			return nil, fmt.Errorf("extendedKeyUsage cannot be marked critical here; this build writes " +
+				"that extension non-critical and cannot write it any other way")
+		}
+		extUsage = append(extUsage, e...)
+	}
+
 	serial, err := serialNumber()
 	if err != nil {
 		return nil, err
 	}
 
 	isCA := states.Bool(args, "ca", false)
+	pathLen, hasPathLen := 0, false
+	if s := states.Str(args, "basicConstraints", ""); s != "" {
+		bc, err := parseBasicConstraints(s)
+		if err != nil {
+			return nil, err
+		}
+		if !bc.Critical {
+			return nil, fmt.Errorf("basicConstraints must be marked critical; this build writes that " +
+				"extension critical and cannot write it any other way")
+		}
+		isCA, pathLen, hasPathLen = bc.IsCA, bc.PathLen, bc.HasPath
+	}
+
 	if usage == 0 {
 		// A certificate with no key usage is usable for everything, which
 		// no tree means. The default follows what the certificate is for.
@@ -451,9 +504,35 @@ func createCertificate(args *value.Map, path string, mode os.FileMode) (any, err
 		EmailAddresses:        emails,
 		URIs:                  uris,
 	}
-	if isCA {
+	switch {
+	case !isCA:
+	case hasPathLen:
+		// What basicConstraints actually said. Salt writes pathlen
+		// through, and a CA issued with a path length it did not ask for
+		// cannot sign the intermediates the tree expects it to.
+		tmpl.MaxPathLen = pathLen
+		tmpl.MaxPathLenZero = pathLen == 0
+	default:
+		// No pathlen named: a leaf-signing CA, which is what `ca: true`
+		// has always meant here.
 		tmpl.MaxPathLen = 0
 		tmpl.MaxPathLenZero = true
+	}
+
+	if ski := states.Str(args, "subjectKeyIdentifier", ""); ski != "" {
+		if strings.Contains(strings.ToLower(ski), "critical") {
+			// Salt raises on this too: RFC 5280 says the extension is
+			// always non-critical.
+			return nil, fmt.Errorf("subjectKeyIdentifier must be non-critical")
+		}
+		if !strings.EqualFold(strings.TrimSpace(ski), "hash") {
+			return nil, fmt.Errorf("subjectKeyIdentifier must be \"hash\", found %q", ski)
+		}
+		id, err := subjectKeyID(subjectPub)
+		if err != nil {
+			return nil, fmt.Errorf("the subject key identifier could not be computed: %w", err)
+		}
+		tmpl.SubjectKeyId = id
 	}
 
 	parent := tmpl
@@ -475,9 +554,22 @@ func createCertificate(args *value.Map, path string, mode os.FileMode) (any, err
 		if err != nil {
 			return nil, fmt.Errorf("the signing private key: %w", err)
 		}
+	} else if caKey := states.Str(args, "signing_private_key", ""); caKey != "" {
+		// A signing key with no signing certificate. The result is
+		// self-issued rather than CA-issued, and the key that signs it is
+		// the one the tree named -- which is only the subject's key when
+		// the tree gave no other.
+		signer, err = loadPrivateKey(caKey)
+		if err != nil {
+			return nil, fmt.Errorf("the signing private key: %w", err)
+		}
 	}
 
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, subjectKey.Public(), signer)
+	if signer == nil {
+		return nil, fmt.Errorf("this certificate names a public key but no key to sign with; " +
+			"give signing_private_key, or private_key for a self-signed certificate")
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, subjectPub, signer)
 	if err != nil {
 		return nil, err
 	}
