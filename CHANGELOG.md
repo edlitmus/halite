@@ -18,11 +18,14 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
-### The estate's tree, from 27 errors to 4
+### The estate's tree, from 27 errors to 3
 
-Continuing the exercise above. What is left is two modules: `saltutil`,
-which is a decision rather than a gap, and nothing else that is halite's
-to fix.
+Continuing the exercise above. All three that remain are
+`saltutil.sync_all`, which is a decision rather than a gap: it ships
+Python to a node for the node to import, and this build's extensions are
+signed, versioned artefacts verified against a key, so there is no step
+for it to name. Closing it means editing three lines of that tree.
+Nothing halite-shaped is left.
 
 **`x509` was spelled wrong throughout.** Salt has two x509 modules and
 the newer wins by default, so a tree is written against v2: `algo` and
@@ -62,6 +65,23 @@ took one address where Salt takes a list.
 **`kmod` is built**, seven execution functions and both states, for the
 CIS controls an estate uses to unload the uncommon network protocols.
 SPEC names no such module, which had been the reason not to build one.
+
+**`kmod` is built**, seven execution functions and both states, for the
+CIS controls an estate uses to unload the uncommon network protocols.
+SPEC names no such module, which had been the reason not to build one.
+It reads `/proc/modules` rather than parsing `lsmod`, which is a
+formatter over that same file, and unloads with `modprobe -r` rather than
+`rmmod`, which refuses a module with dependants and leaves them loaded.
+Compared against the Salt on the reference host function for function:
+the same 94 loaded modules and the same 1440 available. The one
+difference found is Salt's -- it normalises hyphens for loadable modules
+and not for built-in ones, so `check_available` disagrees with itself
+about a module the kernel treats as one name.
+
+**`dnsutil.hosts_file` was invented.** Salt's three are `parse_hosts`,
+`hosts_append` and `hosts_remove`; there has never been a `hosts_file`.
+The same defect as the lower-case `dnsutil.a` above -- a name no tree can
+call.
 
 **Two diagnostics were wrong rather than missing.** One bad argument
 produced two errors, the second of them a false "is required" that sent
@@ -187,6 +207,109 @@ the same host, the two agree on all 81 leaves they share.
 one is that an operator who cannot check a value will reach for something
 worse; having to ask is the point, since it makes the disclosure
 deliberate and the safe path the default.
+### The one extension this project ships ran unbounded
+
+Found while it was being run against real AWS for the first time, by
+reading it rather than by anything failing.
+
+`cmd/halite-ext-aws-secrets` did not call `ext.Confine()`. The resource
+limits of SPEC 24.3 are applied by the child to itself -- `setrlimit`
+bounds the calling process, so a host cannot set a child's without
+setting its own, and names them in the environment instead. An extension
+that does not apply them runs with none, while `sys.list_extensions`
+reports cpu, open-file and process limits as being in force. A limit
+reported and not applied is worse than one nobody claimed, because
+somebody reads it and stops worrying.
+
+The two test extensions call it and the generated skeleton emits it. The
+one actually shipped was the only one nobody had cause to read, and
+nothing checked -- a host cannot check it, which is the nature of the
+arrangement. There is a source audit for it now.
+
+Two things came with the fix. The extension refuses to start when the
+network was not granted, naming the manifest declaration, rather than
+failing later as a connection that timed out against a link-local
+address. And the Python example applies the limits too: it is the
+reference for an author working outside Go, and one that skipped the
+child's half of the sandbox would teach that the half does not exist.
+
+### The protocol, as a published interface
+
+The last change closed the conformance gap and left one item: `protocol:
+1` had no compatibility policy. Nothing said what could change inside
+version 1, what forced a version 2, or what a host did with a version it
+did not speak. That was a private matter for exactly as long as this
+project was the only implementer -- which, after four changes whose
+purpose was to stop being that, it is not.
+
+SPEC 24.7 is the policy. SPEC 24.2 now carries the framing it always
+described in prose: four bytes of unsigned big-endian length, one JSON
+object, 16 MiB, stdout is the protocol, exactly one `result` per `call`,
+and a table of which side sends which frame.
+
+**The property it rests on was true by accident.** Every implementation
+here ignores a field it does not recognise -- which is what makes a
+field addable at all -- and it is true because `encoding/json` ignores
+unknown fields by default, not because anybody decided it. This
+project's habits run the other way, and somebody reaching for
+`DisallowUnknownFields` in the frame decoder would be following the
+house style. It would make every additive change a breaking one,
+silently, for every extension already written. There are tests on it
+now, saying why.
+
+The asymmetry is deliberate: an unknown *field* is ignored, an unknown
+*frame kind* is refused. A receiver that skipped a kind it did not know
+would also skip a misspelt one, leaving the sender waiting for an answer
+to a frame that was silently dropped.
+
+`extensions verify` gained a fourteenth rule for it, both shipped
+extensions pass, and there is a fixture that fails it.
+
+### A conformance harness for extensions
+
+The last two changes left the same thing open: an extension written in
+another language was checked against a page of documentation and against
+whatever the host happened to complain about. Neither is being checked.
+A host is written to run extensions rather than diagnose them, and its
+complaints surface a long way from their cause -- a parameter type sent
+as a number is refused at the decoder, reported as an extension with no
+functions, and noticed as a pillar source that does not provide
+`ext_pillar`.
+
+`halite-hub extensions verify <path>` drives a candidate through the
+protocol: a good call, a call that cannot succeed, a version it should
+refuse, a shutdown it should honour. Thirteen rules, each reported by
+name with what happened and why the rule is there. It exits non-zero on
+a failure, so it belongs in whatever builds the extension.
+
+It speaks the wire directly rather than through the host's pool, because
+it has to send frames a host never would and has to read a malformed
+answer well enough to describe it. And a skip is never a quiet pass:
+every rule it could not establish says so, and the summary says out loud
+that a skip is not a pass.
+
+A fixture breaks one rule at a time and there is a test per rule against
+the extension that breaks it -- a harness only ever run against
+conforming extensions establishes nothing, because every check would
+pass with its body deleted. Both extensions in this tree are held to it
+by a test, since an example that has stopped conforming teaches the
+wrong thing to everyone who copies it.
+
+Two defects of its own. `verify` inherited the development loop's
+sixty-second timeout, which made a run against an extension that hangs
+take over two minutes instead of twenty seconds. And a read that timed
+out left a goroutine holding the stream, so a second read would have
+raced it -- unreachable today, and a latent race that is unreachable by
+inspection is one the next check reintroduces.
+
+A third turned up in the ledger itself. This entry and the grains
+differential were written at the same time on different branches and
+both claimed the same section number; the files do not touch, so the
+merge was clean, and the citation check reads headings into a map, so
+the duplicate was invisible. The whole suite passed with two sections
+numbered 5.82. That is the ledger's own failure mode -- it is
+append-only, so two changes in flight always want the same number -- and
+the numbers are checked for being unique and ascending now.
 
 ### A relative include in an `init.sls` resolved one level too high
 

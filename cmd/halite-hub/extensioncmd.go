@@ -15,6 +15,7 @@ Usage:
   halite-hub extensions list                 what is installed, and what it provides
   halite-hub extensions sync                 fetch _ext/ from the tree into the cache
   halite-hub extensions run <path> [<fn>]    run one straight from a path, for writing it
+  halite-hub extensions verify <path>        check one against the protocol
 
 Synchronization fetches and does not load. What this hub runs does not
 change until it is restarted, so publishing an extension into the tree
@@ -28,7 +29,14 @@ from. docs/extensions.md walks through the packaging that does.
 Flags for sync and list:
   --env <name>       the environment to read _ext/ from, default base
 
-Flags for run:
+verify drives a candidate through the protocol deliberately -- a good
+call, a call that cannot succeed, a version it should refuse, a shutdown
+it should honour -- and reports each rule by name with what happened and
+why the rule is there. It is what an extension written in another
+language has to be checked against, because the host is written to run
+extensions rather than to diagnose them.
+
+Flags for run and verify:
   --kwargs <json>    keyword arguments for the call
   --args <json>      positional arguments
   --kind <kind>      the kind the host asks for; empty accepts any
@@ -40,7 +48,8 @@ Flags for run:
   --declare <list>   what --sandbox grants: network, root
   --user <name>      the account --sandbox drops to
   --group <name>     its group
-  --json             print only the result
+  --json             print only the result, or the rules as JSON
+  --function <name>  the function verify calls; empty takes the first announced
 `
 
 // runExtensions is the hub's side of SPEC 24.5.
@@ -60,6 +69,9 @@ func runExtensions(args *cli.Args) int {
 	// is most authors -- can use it.
 	if sub == "run" {
 		return runExtensionDirectly(args)
+	}
+	if sub == "verify" {
+		return verifyExtension(args)
 	}
 
 	// Not openHub: that resolves the enrollment CA, and these commands

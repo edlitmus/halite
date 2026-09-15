@@ -7932,6 +7932,165 @@ and the suite would have agreed. It is asserted directly now, in both
 directions, and `shell: false` is asserted beside the two opt-ins so
 that the path form cannot quietly turn the shell on for everybody.
 
+### 5.85 A conformance harness, and what it found
+
+5.80 and 5.81 left the same thing open, and `docs/extensions.md` said so
+under its own heading: an extension written in another language was
+checked against a page of documentation and against whatever the host
+happened to complain about. Those are not the same as being checked. A
+host is written to run extensions rather than to diagnose them, and
+every one of its complaints surfaces a long way from its cause -- a
+parameter type sent as a number is refused at the decoder, reported as
+an extension with no functions, and noticed as a pillar source that does
+not provide `ext_pillar`.
+
+`halite-hub extensions verify <path>` drives a candidate through the
+protocol deliberately: a good call, a call that cannot succeed, a
+version it should refuse, a shutdown it should honour. Thirteen rules in
+four groups, each reported by name with what happened and why the rule
+is there -- because a rule an author cannot see the point of is a rule
+they work around.
+
+Two decisions in it are worth stating.
+
+**It speaks the wire directly rather than through the host's pool.** It
+has to send frames a host would never send, which is most of what there
+is to check. And it has to read a malformed answer well enough to
+describe it: the host's own decoder is strict, so a parameter type sent
+as an integer fails the whole frame, and "the frame is not readable" is
+a worse answer than "go(): how_many declares its type as 1, which is not
+a string".
+
+**A skip is never a quiet pass.** Every rule the run could not establish
+says what it could not establish and why, and the summary says out loud
+that a skip is not a pass. A harness that reports thirteen passes when
+it checked nine is worse than one that checks nothing, because somebody
+believes it.
+
+`internal/extconform/testdata/badext` breaks one rule at a time, chosen
+by an environment variable, and there is a test per rule against the
+extension that breaks it -- a harness only ever run against conforming
+extensions establishes nothing, since every check would pass with its
+body deleted. The fixture implements the wire by hand rather than
+through `ext`, which makes it a third implementation of the protocol as
+well as a fixture: a rule only the two cooperating implementations agree
+on is a rule the specification does not really carry. It exits non-zero
+on a mode name it does not know, so a rename in the test breaks loudly
+rather than quietly handing it the conforming behaviour.
+
+Both extensions in this tree are held to it by a test. An example that
+has stopped conforming teaches the wrong thing to everyone who copies
+it, and there is no way to notice by reading.
+
+Two defects of its own.
+
+**`verify` inherited `run`'s sixty-second timeout.** Every exchange it
+makes is one round trip against a process that is already up, and there
+are a dozen of them; the harness was designed around ten seconds and the
+command quietly made it six times slower. Against an extension that
+hangs, a run took over two minutes rather than twenty seconds -- which
+is the difference between a harness people use and one they do not.
+
+**A read that timed out left a goroutine holding the stream.** A second
+read would have started another on the same `bufio.Reader`: two readers
+racing, framing decided by whichever woke first. No check reads after a
+timeout today, so it was unreachable -- and a latent race that is
+unreachable by inspection is one the next check reintroduces. The
+session is marked lost instead, and a later read fails with a sentence
+saying why rather than racing.
+
+**And a third, in this file.** This entry and 5.82 were written at the
+same time on different branches, and both took the number 5.82. The
+files do not touch, so the merge was clean. The citation check of
+section 4 reads headings into a map, so a duplicate was invisible to it.
+The whole suite passed with two sections of the same number, and a
+reference to "5.82" meant whichever one the reader found first.
+
+That is the ledger's own failure mode: it is append-only, every change
+adds at the end, and two changes in flight always want the same number.
+Numbers are checked for being unique and ascending now, so the second
+branch has to notice. The check is in `internal/specaudit`, beside the
+one for citations that could not see this.
+
+### 5.86 The protocol as a published interface
+
+5.85 closed the conformance gap and left one item of the plan, which
+`docs/extensions.md` carried under its own heading: `protocol: 1` had no
+compatibility policy. Nothing said what could change inside version 1,
+what forced a version 2, or what a host did with a version it did not
+speak. That was a private matter for exactly as long as this project was
+the only implementer -- which, after four changes whose whole purpose
+was to stop being that, it no longer is.
+
+SPEC 24.7 is the policy, and SPEC 24.2 now carries the framing it always
+described in prose: four bytes of unsigned big-endian length, one JSON
+object, 16 MiB, stdout is the protocol, exactly one `result` per `call`,
+and a table of which side sends which frame and what it carries.
+
+**The property the policy rests on was true by accident.** Every
+implementation here ignores a field it does not recognise, which is what
+makes a field addable at all -- and it is true because
+`encoding/json` ignores unknown fields by default, not because anybody
+decided it. This project's habits run the other way: a setting that
+parses and does nothing is a defect here, `DisallowUnknownFields`
+appears in the extension's own configuration reader two files away, and
+somebody reaching for it in the frame decoder would be following the
+house style. Doing that would make every additive change a breaking one,
+silently, for every extension already written. There are tests on it
+now, in `ext`, saying why.
+
+The asymmetry is deliberate and is stated rather than left to be
+inferred: an unknown *field* is ignored, an unknown *frame kind* is
+refused. A receiver that skipped a kind it did not know would also skip
+a misspelt one, and the sender would wait for an answer to a frame that
+had been silently dropped.
+
+Adding a declaration under 24.3 is in neither list, which is the one
+case that looks like a compatibility break and is not. An extension
+declaring a permission an older host does not know is refused by it,
+correctly: the host cannot grant what it cannot enforce, and running as
+though it had is the failure the declaration exists to prevent.
+
+**And the harness checks the rule it rests on.**
+`protocol/ignores-an-unknown-field` sends a hello carrying a field from
+no version of anything and expects the handshake to complete. It is the
+fourteenth rule, both shipped extensions pass it, and there is a fixture
+that fails it -- a strict decoder is a reasonable instinct, and this is
+the one place it is wrong.
+
+### 5.87 The one extension this project ships ran unbounded
+
+Found while it was being run against real AWS for the first time, by
+reading it rather than by anything failing.
+
+`cmd/halite-ext-aws-secrets` did not call `ext.Confine()`. The resource
+limits of SPEC 24.3 are applied by the child to itself -- `setrlimit`
+bounds the calling process, so a host cannot set a child's without
+setting its own, and it names them in the environment instead. An
+extension that does not apply them runs with none.
+
+`Sandbox.Describe` has always been honest that these hold "only by an
+extension that honours the declaration", which is what makes this worse
+rather than better: `sys.list_extensions` reported cpu, open-file and
+process limits as being in force on a process that had never applied
+them. A limit reported and not applied is worse than one nobody claimed,
+because somebody reads it and stops worrying.
+
+The two test extensions call it. The generated skeleton emits it. The
+one this project actually ships was the only one nobody had cause to
+read, and nothing checked -- a host cannot check it, which is the whole
+nature of the arrangement. `internal/buildpolicy` checks it now, where
+the source is, and it was confirmed to fail against the shipped
+extension before being kept.
+
+Two things came with the fix. The extension refuses to start when the
+network was not granted, naming the manifest declaration, rather than
+failing thirty seconds later as a connection that timed out against a
+link-local address. And the Python example applies the limits too, in
+about fifteen lines against the same environment variables -- it is the
+reference for an author working outside Go, and one that skipped the
+child's half of the sandbox would teach that the half does not exist.
+
 ### 5.88 The cloud grains and the secrets pillar, on a real instance
 
 5.78 and 5.79 built both against the AWS APIs and could not run either:

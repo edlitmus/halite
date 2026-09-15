@@ -29,7 +29,9 @@ protocol. It merges three things into pillar:
               role: web
 
 It declares nothing: no network, no root, no filesystem. Run it as an
-extension and it can do nothing but answer.
+extension and it can do nothing but answer. It still applies the
+resource limits the host asked for, because that is the child's job and
+not the host's -- see confine() below.
 
 Packaging is the same as for a Go extension, and docs/extensions.md is
 the walkthrough. The one difference is that the bundle carries a script
@@ -38,6 +40,8 @@ that runs it, and it is not portable to a platform without one.
 """
 
 import json
+import os
+import resource
 import struct
 import sys
 
@@ -47,6 +51,59 @@ MAX_FRAME_SIZE = 16 << 20
 NAME = "example_pillar"
 VERSION = "1.0.0"
 KIND = "pillar"
+
+
+def confine():
+    """Apply the resource limits the host asked for.
+
+    SPEC 24.3 puts these on the child rather than the host, and the
+    reason is mechanical: setrlimit bounds the *calling* process, so a
+    host cannot set a child's limits without setting its own. It names
+    them in the environment and a cooperating extension applies them
+    here.
+
+    "Cooperating" is doing real work in that sentence, and the host is
+    honest about it -- `sys.list_extensions` says the limits hold for an
+    extension built to honour them and not for any other. An extension
+    that skips this runs unbounded while the host reports limits as
+    being in force, which is worse than reporting none.
+
+    A limit this kernel does not have is skipped rather than guessed at;
+    a failure is ignored, because an unprivileged process cannot raise a
+    limit and refusing to start over a bound already in place would be
+    worse than running under the tighter one.
+    """
+    limits = {
+        "HALITE_EXT_RLIMIT_AS": "RLIMIT_AS",
+        "HALITE_EXT_RLIMIT_CPU": "RLIMIT_CPU",
+        "HALITE_EXT_RLIMIT_NOFILE": "RLIMIT_NOFILE",
+        "HALITE_EXT_RLIMIT_NPROC": "RLIMIT_NPROC",
+    }
+    for variable, name in limits.items():
+        raw = os.environ.get(variable)
+        if not raw:
+            continue
+        which = getattr(resource, name, None)
+        if which is None:
+            # Not every unix has all four: OpenBSD has no RLIMIT_AS,
+            # and the SysV family has no RLIMIT_NPROC.
+            continue
+        try:
+            value = int(raw)
+            resource.setrlimit(which, (value, value))
+        except (ValueError, OSError):
+            pass
+
+
+def network_denied():
+    """Whether the host declined to grant the network.
+
+    A declaration honoured rather than a boundary enforced. An extension
+    that needs the network checks this and says so, instead of failing
+    later as a connection that timed out. This one needs nothing, so it
+    only reports.
+    """
+    return os.environ.get("HALITE_EXT_NETWORK") == "deny"
 
 
 def read_frame(stream):
@@ -214,6 +271,7 @@ def main():
     # cannot read, and the host kills a process that violates the
     # protocol rather than failing the call. Everything for a person
     # goes to stderr.
+    confine()
     try:
         return serve(sys.stdin.buffer, sys.stdout.buffer)
     except Exception as err:  # noqa: BLE001

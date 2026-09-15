@@ -98,6 +98,26 @@ to write.
 **`Handler`** runs one call. It gets the function name, the arguments,
 and `Log`, `Progress` and `Event` for the streaming frames.
 
+**`ext.Confine()` is not optional**, and it is the one line that is easy
+to leave out. The resource limits of SPEC 24.3 are applied by the child
+to itself, because `setrlimit` bounds the *calling* process: a host
+cannot set a child's limits without setting its own, so it names them in
+the environment and a cooperating extension applies them.
+
+An extension that skips it runs unbounded while `sys.list_extensions`
+reports cpu, open-file and process limits as being in force — which is
+worse than reporting none, because somebody reads it. Call it first
+thing in `main`. An extension in another language does the same work
+against `HALITE_EXT_RLIMIT_AS`, `_CPU`, `_NOFILE` and `_NPROC`;
+`contrib/extensions/python/example_pillar.py` has it in about fifteen
+lines.
+
+**`ext.NetworkDenied()`** reports whether the host granted the network.
+It is a declaration honoured rather than a boundary enforced, so an
+extension that needs the network should check it and say so, rather than
+failing later as a connection that timed out against a link-local
+address.
+
 ## Writing to stdout will break it
 
 Stdout is the protocol. A stray `fmt.Println` in a handler is a frame
@@ -362,23 +382,106 @@ shebang, so it needs an interpreter on the machine that runs it and it
 is not portable to Windows, which has no such mechanism. A bundle for
 Windows names the interpreter as the executable instead.
 
-## What is not solved yet
+## Checking it against the protocol
 
-**There is no conformance harness.** An extension in another language is
-checked against this page and against whatever the host happens to
-complain about, which is not the same as being checked against the
-protocol. A `halite-hub extensions verify <path>` that drove a candidate
-through the handshake, a good call, a failing call, an oversized frame,
-stdout pollution and a timeout — reporting each against the rule it
-broke — is what would turn this section from a promise into a test. The
-Python example stands in for it today, by being run.
+`run` tells you whether an extension answered. Whether it is *right* is
+a different question, and one an author working outside Go has had no
+way to ask — the host is written to run extensions, not to diagnose
+them, and its complaints surface a long way from their cause.
 
-**The protocol has no compatibility policy.** `protocol: 1` is offered
-and an extension either speaks it or does not; there is no negotiation,
-and nothing yet says what may change inside version 1 and what forces a
-version 2. That was a private matter while this project was the only
-implementer. It stops being one the moment somebody else writes an
-extension.
+```sh
+halite-hub extensions verify ./my-source --kind pillar
+```
+
+It drives the candidate through the protocol deliberately: a good call,
+a call that cannot succeed, a version it should refuse, a shutdown it
+should honour. Each rule is reported by name with what happened and why
+the rule is there.
+
+```
+  pass  handshake/answers                    it answers hello with hello_ok
+  fail  handshake/parameters-are-typed       every parameter declares a name and a type
+        go(): how_many declares its type as 1, which is not a string
+        A parameter's type is its name -- "string", "map" -- never a number.
+        A language that serialises an enum as an integer produces exactly
+        this, and the host refuses the whole signature: the extension then
+        reports no functions at all, which is several steps from the cause.
+  fail  call/answers-with-one-result         a call is answered with exactly one result
+        calling go(): nothing arrived within the timeout. A writer that
+        buffers until exit looks exactly like this: flush after every frame.
+  skip  call/the-result-carries-the-call-id  the result carries the id of the call
+        no result arrived
+
+  5 pass, 3 fail, 3 skip
+```
+
+Fourteen rules, in four groups: the handshake, the calls, the lifecycle,
+and what it refuses and tolerates. `--kind` is worth passing — without it the rules
+about refusing the wrong kind are skipped, because there is no other
+kind to ask for.
+
+Three things to know about what it establishes.
+
+**A skip is not a pass.** Each one says what could not be established
+and why. A run with skips has checked less than it looks like.
+
+**It exits non-zero on a failure**, so it belongs in whatever builds
+your extension.
+
+**It checks the protocol and nothing else.** A conforming extension can
+still be entirely wrong about its own job. This is the part that can be
+checked without knowing what the extension is for.
+
+Both extensions in this repository pass all fourteen, and a test asserts
+it — an example that has quietly stopped conforming teaches the wrong
+thing to everyone who copies it.
+
+## What you can rely on, and what will break you
+
+The protocol is a published interface now, which means the version is a
+promise rather than a constant. SPEC 24.7 is the policy; this is what it
+means for somebody maintaining an extension.
+
+**One version, offered, not negotiated.** The host names a single
+integer in its `hello`. Speak it or refuse and exit non-zero. There is
+no range and no fallback — a host that negotiated down would have a path
+in it that nothing tests, and an extension that answered a version it
+had never seen would be agreeing to a contract it cannot have read.
+
+**Ignore a field you do not recognise.** This is the one rule that costs
+nothing to follow and breaks everybody if you do not. It is what makes a
+field addable at all. A strict decoder is a reasonable instinct and this
+is the one place it is wrong: an extension that refuses an unknown field
+works today and stops working the first time anything is added, on every
+host it is installed on. `extensions verify` checks it.
+
+**Refuse a frame kind you do not recognise.** The other direction, and
+deliberately not symmetric with fields: a receiver that skipped an
+unknown kind would also skip a misspelt one, leaving the sender waiting
+for an answer to a frame that was silently dropped.
+
+These can happen without a new version, and an extension built against
+an earlier one keeps working:
+
+- a new optional field on an existing frame;
+- a new extension kind, parameter type name, or value in an enumerated
+  field — an unknown type name means untyped, not refused;
+- a new function, or a new parameter on one.
+
+These require a new version, and you will be told:
+
+- any change to the framing, the length prefix, or the size limit;
+- a frame kind added, removed, or renamed;
+- a field removed, renamed, or given a new meaning;
+- an optional field made required;
+- a change to the order of the handshake.
+
+**Declaring something new is neither.** An extension that declares a
+permission an older host does not know is refused by it — correctly,
+because the host cannot grant what it cannot enforce, and running as
+though it had is the failure the declaration exists to prevent. Your
+extension will not run there. That is not a break to be fixed; it is a
+permission an older host is right to withhold.
 
 ## Further reading
 
