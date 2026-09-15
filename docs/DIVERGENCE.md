@@ -8335,6 +8335,11 @@ relies on that: it writes `keep_source: False` against
 read. Deleting it would break the tree in a way no test of the argument
 in isolation would notice.
 
+**11 errors to 7**, and what is left is three pieces of work against four
+deliberate refusals: `cmd.run`'s `bg`, `file.recurse`'s `template`, and a
+`saltversioninfo` grain. The refusals are `saltutil` twice, `kmod`, and
+the node id that is not an FQDN.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
