@@ -417,7 +417,7 @@ change makes.
 ## 2. Module coverage
 
 The build ships **87 execution modules / 589 functions** and **46 state
-modules / 122 functions**.
+modules / 123 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -500,7 +500,7 @@ different reason is given.
 | `archive` | implemented | 1 | |
 | `cmd` | implemented | 3 | `script` takes its source as the state's name, as Salt's does |
 | `cron` | implemented | 2 | |
-| `file` | implemented | 15 | |
+| `file` | implemented | 16 | `rename` moves something into place once and converges: a source already gone is a success, as Salt has it (5.89) |
 | `git` | implemented | 1 | `latest`, with Salt's `fetch_tags` -- true by default, as Salt has it, so a tag no branch reaches is fetched. `sync_tags`, which Salt also defaults to true and which *deletes* local tags the remote no longer has, is not built and is refused by name (5.88) |
 | `group` | implemented | 2 | |
 | `host` | implemented | 2 | |
@@ -8291,6 +8291,49 @@ git. The shared `newCtx` installs a `RecordingRunner`, which reports
 success without running anything; a first attempt at the real-git test
 used it by accident and watched the state report `was cloned from` over a
 directory that did not exist.
+
+### 5.89 `pgpkeys.sls`: four errors in one file, and two quiet successes
+
+`shared/salt/pgpkeys.sls` fetches an archive of GPG keys, unpacks it, and
+renames the directory it produced. It held four of the tree's seven
+remaining errors.
+
+**`file.rename` did not exist here.** Its convergence is the whole point
+of the state: a tree uses it to move something into place once, and every
+later highstate meets a source that is already gone. Two of Salt's
+outcomes are therefore successes that change nothing, and both read like
+errors --- a source that has already moved, and a destination that exists
+when `force` was not given. Writing either as a failure makes a highstate
+fail forever after the first run. Checked against the Salt on this host
+rather than inferred: both return `result: true`.
+
+A symlink is recreated rather than followed, as Salt's does. A rename
+across a mount boundary falls back to a copy; the errno for that is
+spelled differently on each platform, so it is not tested for --- the
+copy is simply attempted after any failed rename, and the rename's error
+is the one reported if the copy fails too.
+
+**`archive.extracted` gained `user`, `group` and `keep_source`.**
+Ownership is enforced on every run rather than only on the run that
+extracts, because re-extracting an archive to correct a group would
+rewrite every file in it each time. The entries come from listing the
+archive, which is what Salt does: a state unpacking into `/etc` must not
+take ownership of everything already in `/etc`.
+
+That listing is the part worth recording. The obvious source for it is
+the dry run the state already does, and it is the wrong one: once
+everything is extracted the dry run reports nothing left to write, so it
+names none of the entries whose ownership is in question. The test caught
+it on the first run --- the owner changed and the state said "already
+extracted".
+
+**`keep_source` is about the cache, not the archive.** Only a `halite://`
+or `salt://` source is fetched anywhere, so `keep_source: False` against
+a local path does nothing at all --- in Salt, and now here. This file
+relies on that: it writes `keep_source: False` against
+`/etc/salt/gpgkeys.tar.gz`, a local file that its own later states still
+read. Deleting it would break the tree in a way no test of the argument
+in isolation would notice.
 
 ## 6. Everything else not started
 
