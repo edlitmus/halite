@@ -8474,6 +8474,21 @@ reported it missing as well. The reader is then looking for an argument
 that is already there. Marked as seen now, and one mistake is one
 message.
 
+**8 errors to 4, and 42 to 4 over the whole exercise.** What is left is
+two modules and nothing else:
+
+- **`kmod`, three-quarters of what remains as one error.** SPEC names no
+  such module and the estate's CIS controls need it, which plan.md §6
+  carried as an open question and §2.6 now carries as agreed work.
+- **`saltutil.sync_all`, three errors.** The only one that is a decision
+  rather than a gap. It ships Python to a node for the node to import;
+  halite's extensions are signed, versioned artefacts verified against a
+  key, so there is no step for `sync_all` to name. This needs an edit to
+  the tree, not to this build.
+
+No unrecognised error remains. Every one of the forty-two either
+compiles, or is one of those two.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
