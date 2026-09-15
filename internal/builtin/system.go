@@ -102,20 +102,39 @@ func registerNetworkModule(r *Registries) {
 				return value.MapOf("result", true, "comment", "connected to "+addr), nil
 			},
 		},
+		// `A` and `AAAA` carry Salt's capitals, because they are DNS
+		// record types and Salt's functions are named for them. This
+		// shipped as `dnsutil.a`, which no tree written for Salt can
+		// reach: `salt['dnsutil.A'](id)` is what an estate writes, and it
+		// resolved to nothing.
+		//
+		// They are one family each, as the record types are. The single
+		// function this replaces returned whatever the resolver had, so a
+		// tree asking for an A record could be handed an IPv6 address and
+		// use it as an IPv4 one -- which is the shape of defect that
+		// makes the wrong thing happen rather than an error.
 		exec.Module{
 			Sig: signature.Signature{
-				Module: "dnsutil", Function: "a",
-				Doc:      "Resolve a name to its addresses.",
+				Module: "dnsutil", Function: "A",
+				Doc:      "Resolve a name to its IPv4 addresses, as an A record lookup does.",
 				Params:   []signature.Param{req("host", signature.String, "The name.")},
 				TestMode: signature.TestNotApplicable,
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				addrs, err := net.LookupHost(states.Str(args, "host", ""))
-				if err != nil {
-					return []any{}, nil
-				}
-				return toAnyList(addrs), nil
+				return lookupAddressFamily(states.Str(args, "host", ""), true), nil
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "dnsutil", Function: "AAAA",
+				Doc:      "Resolve a name to its IPv6 addresses, as an AAAA record lookup does.",
+				Params:   []signature.Param{req("host", signature.String, "The name.")},
+				TestMode: signature.TestNotApplicable,
+				Section:  "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				return lookupAddressFamily(states.Str(args, "host", ""), false), nil
 			},
 		},
 		exec.Module{
@@ -130,6 +149,29 @@ func registerNetworkModule(r *Registries) {
 			},
 		},
 	)
+}
+
+// lookupAddressFamily resolves a name to one address family.
+//
+// An empty list on failure rather than an error, which is what this
+// module already did. Salt returns the *string* "Unable to resolve
+// <host>" from a function it documents as always returning a list, and
+// reproducing that would hand a tree a string where it indexes a list.
+func lookupAddressFamily(host string, wantIPv4 bool) []any {
+	if host == "" {
+		return []any{}
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return []any{}
+	}
+	out := []any{}
+	for _, ip := range ips {
+		if (ip.To4() != nil) == wantIPv4 {
+			out = append(out, ip.String())
+		}
+	}
+	return out
 }
 
 // nodeAddresses filters the address grains, which is cheaper and more

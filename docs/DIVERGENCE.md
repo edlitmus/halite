@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **87 execution modules / 589 functions** and **46 state
+The build ships **87 execution modules / 590 functions** and **46 state
 modules / 123 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -438,7 +438,7 @@ different reason is given.
 | `config` | implemented | 3 | |
 | `cron` | implemented | 2 | |
 | `disk` | implemented | 1 | |
-| `dnsutil` | implemented | 2 | |
+| `dnsutil` | implemented | 3 | `A` and `AAAA` carry Salt's capitals, because they are record types, and each answers with one address family. This shipped as `dnsutil.a`, which no tree written for Salt could reach (5.91) |
 | `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
 | `file` | implemented | 46 | `patch` runs the system patch with `--forward`, because left to itself it reverses an already-applied patch and exits 0; `sed` is done in Go rather than by an editor, and its `limit` is a real per-line filter; `list_backups` and `restore_backup` read the cache a state fills with `backup: node` |
@@ -8381,6 +8381,68 @@ Every element has to be a number. Jinja cannot order a list mixing
 strings and integers, so a version with a suffix would turn the tree's
 comparison into an error rather than a false; the list stops at the first
 part that is not a number.
+
+### 5.91 The node's own name, and the two errors that were hiding behind it
+
+The estate's tree failed on
+`{% set host, domain = id.split('.', 1) %}`, and this was recorded as a
+lab artefact: the node had enrolled as `ref-salt1` where Salt's id is the
+FQDN, so the split had nothing to split. That was the wrong conclusion,
+and the right one is worse.
+
+**SPEC 7.2 step 5 was not implemented.** The resolution order it states
+is config, environment, the pinned file, a cloud identifier, *the fully
+qualified domain name*, and then the hostname. The resolver went from the
+pinned file straight to `os.Hostname()`, which on Linux is the short
+name. Step 5 was missing altogether, and `node_id_source` is declared
+inert on the grounds that "the resolution order of SPEC 7.2 is
+implemented" -- which was not true.
+
+Salt's `generate_minion_id` asks `socket.getfqdn` first and takes the <!-- lexicon:allow -->
+bare hostname only when nothing qualifies it, so a fleet enrolled by Salt
+is named by FQDN, and a tree written for that fleet splits on the dot.
+The estate's Terraform enforces the qualified form. Every part of that
+agreed with SPEC and disagreed with the build.
+
+The lookup has a two-second deadline and falls to the hostname when it
+expires, so a slow resolver cannot hold up a node starting. The identity
+is pinned at enrollment anyway, so it runs once in a node's life.
+
+**`node_id_remove_domain` had nothing to remove.** Salt's
+`minion_id_remove_domain` strips the domain from a *detected* identity, <!-- lexicon:allow -->
+and the detected identity here never had one.
+
+**Two errors were hiding behind the first.** The tree stopped at line 6,
+so nothing past it had ever been compiled. With the identity right, line
+13 asks for `dnsutil.A` and line 148 of another file compares two lists:
+
+- **`dnsutil.a` should have been `dnsutil.A`.** They are DNS record
+  types and Salt names the functions for them -- `A`, `AAAA`, `NS`,
+  `SPF`. A lower-case `a` is a function no tree can call. It also
+  answered with whatever the resolver returned rather than one address
+  family, so a tree asking for an A record could be handed an IPv6
+  address and use it where it wanted an IPv4 one. `A` and `AAAA` now
+  answer one family each, as the record types do.
+
+- **Two sequences could not be compared.** `{% if
+  grains['saltversioninfo'] >= [2016, 3] %}` is how a tree gates on a
+  version, and it failed with "cannot compare sequence with sequence".
+  Python compares sequences element by element, with the shorter the
+  smaller where one runs out, so Jinja does, so this does now. Filling in
+  the `saltversioninfo` grain in 5.90 is what exposed it: while the grain
+  was missing the comparison never ran.
+
+  A test asserted the old behaviour as correct. `{{ [1] < [2] }}` sat in
+  the list of pairs with no order, beside `'a' < 1` and `-'a'`, with no
+  reasoning given -- a limitation written down as though it were a
+  decision. `[1] < [2]` is True in Python and in Jinja. The examples
+  that genuinely have no order are a sequence against a scalar and
+  elements of different kinds, and those are what the test asks for now.
+
+That is the pattern this whole exercise keeps producing, and it is worth
+stating plainly: **a fixed error is not a closed error until the line
+after it has compiled.** Each of these was invisible while something
+earlier failed.
 
 ## 6. Everything else not started
 

@@ -580,6 +580,45 @@ question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
 
+### 2.6 `kmod`, which SPEC does not name and the estate needs
+
+Agreed on 2026-09-15: build it. SPEC 15.2 and 15.5 do not list `kmod`,
+and §6 used to carry that as an open question. The question is settled --
+not naming a module is not a reason to leave a fleet's kernel-module
+controls uncompilable, and this is the last thing standing between the
+estate's tree and a clean compile that is halite's to fix.
+
+What the estate actually writes, in
+`base/security/network/init.sls`, is one state implementing CIS Ubuntu
+benchmark 3.5.1--3.5.4:
+
+```yaml
+base security network unload-protocols:
+  kmod.absent:
+    - name: modules_to_unload     # a placeholder; `mods` is the real list
+    - persist: True
+    - mods: [dccp, dccp_diag, sctp, tipc, rds, ...]
+```
+
+Three things that shape the work:
+
+- **`mods` is the argument, and `name` is a placeholder.** The tree says
+  so in its own comment. A single-module form has to keep working, since
+  that is what Salt's own documentation shows, so `name` is the module
+  when `mods` is absent and ignored when it is not.
+- **`persist` writes `/etc/modules`**, which is what makes the control
+  survive a reboot. Unloading without persisting passes a scan today and
+  fails it after the next restart, so the two halves are one feature.
+- **Linux only.** FreeBSD's `kldunload` is a different model with
+  different names, and the fleet is four FreeBSD hosts to one Ubuntu --
+  so this is Linux-first on purpose, declared and refused elsewhere
+  rather than silently absent.
+
+`kmod.present` and the execution side (`available`, `check_available`,
+`load`, `remove`, `lsmod`, `mod_list`) come with it: a state that can
+only remove is half a module, and `absent` needs the list of loaded
+modules anyway.
+
 ### 2.3 Platform modules: 40 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
@@ -1039,8 +1078,13 @@ unchanged.
    turn this on deliberately rather than quietly.
 2. **Modules SPEC never planned for** but the estate uses:
    `alternatives` (3 references), `docker_container`/`docker_image` (2),
-   `rabbitmq_policy`/`user`/`vhost` (3), `kmod` (1), `macpackage` (1).
+   `rabbitmq_policy`/`user`/`vhost` (3), `macpackage` (1).
    Amend SPEC, bridge them, or rewrite the tree.
+
+   ~~`kmod` (1)~~ is **answered and moved to §2.6**: it is to be built.
+   It was listed here on the reasoning that SPEC does not name it, which
+   is true and is not a reason to leave an estate's CIS controls
+   uncompilable.
 3. **A `win_registry` state.** SPEC 15.5 does not name one, so none
    ships — the `win_registry` *execution* module does. Salt has
    `reg.present` and an estate migrating from it will want the same; a
