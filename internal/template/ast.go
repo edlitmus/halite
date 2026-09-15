@@ -121,6 +121,22 @@ type ImportNode struct {
 	WithContext bool
 }
 
+// DataImportNode is Salt's `{% import_yaml expr as name %}`, and its
+// `import_json` and `import_text` siblings.
+//
+// Unlike `import`, the named file is *data*: it is read and parsed, not
+// rendered as a template, so nothing in it is executed and a `{%` inside
+// it is text like any other. That is the whole point of the tag -- a
+// `defaults.yaml` beside a formula's `map.jinja` is configuration, and
+// rendering it would make it code.
+type DataImportNode struct {
+	baseNode
+	Name Expr
+	As   string
+	// Format is "yaml", "json" or "text".
+	Format string
+}
+
 // FromImportNode is `{% from expr import a, b as c %}`.
 type FromImportNode struct {
 	baseNode

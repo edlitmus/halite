@@ -180,6 +180,13 @@ func registerFileStates(r *Registries) {
 		pathParam("The file to manage. Defaults to the state ID."),
 		opt("source", signature.String, "", "A halite:// or salt:// URI, or a local path."),
 		opt("source_hash", signature.String, "", "Expected digest of the source, as `algorithm=digest`."),
+		opt("skip_verify", signature.Bool, false, "Skip the source_hash check. Only a source that cannot publish a digest justifies it."),
+		{
+			Name: "keep_source", Type: signature.Any,
+			Doc: "Accepted for compatibility with Salt, which uses it to decide whether a fetched source stays in the node's cache.",
+			Ineffective: "this implementation does not keep a separate source cache for file.managed, " +
+				"so there is nothing to discard after the file is written",
+		},
 		// Salt accepts a list of lines here as well as a string, and
 		// desiredContents has always handled both; only the signature
 		// refused the list.
@@ -354,7 +361,14 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if expected := states.Str(args, "source_hash", ""); expected != "" && want != nil {
-		if err := verifySourceHash(c, want, expected); err != nil {
+		// `skip_verify` is Salt's, for a source that publishes no
+		// digest. It is logged rather than silent: a state that fetches
+		// a file over the network and does not check it is worth being
+		// able to find later, and an operator who set it once on one
+		// state should still see it on every run.
+		if states.Bool(args, "skip_verify", false) {
+			c.Logf("warn", "skip_verify is set for %s, so its source_hash was not checked", path)
+		} else if err := verifySourceHash(c, want, expected); err != nil {
 			return states.False(fmt.Sprintf("The source for %s failed its hash check: %v", path, err)), nil
 		}
 	}

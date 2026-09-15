@@ -76,6 +76,11 @@ func registerArchive(r *Registries) {
 				opt("if_missing", signature.Path, "", "Skip when this path already exists."),
 				opt("overwrite", signature.Bool, false, "Replace files that already exist."),
 				opt("makedirs", signature.Bool, true, "Create the destination directory."),
+				opt("user", signature.String, "", "Own every extracted entry."),
+				opt("group", signature.String, "", "The group for every extracted entry."),
+				opt("keep_source", signature.Bool, true,
+					"Keep a fetched archive in the cache after extracting it. Only a `halite://` or `salt://` "+
+						"source is fetched, so this does nothing for a local path -- as in Salt."),
 			},
 			Mutates:  true,
 			TestMode: signature.TestReliable,
@@ -388,8 +393,34 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 		}
 	}
 
+	wantUser, wantGroup := states.Str(args, "user", ""), states.Str(args, "group", "")
+
 	if len(missing) == 0 && !states.Bool(args, "overwrite", false) {
-		return states.True(fmt.Sprintf("The archive %s is already extracted into %s.", source, dest)), nil
+		// Everything is there. Ownership is still enforced, because Salt
+		// enforces it on every run, and re-extracting an archive to
+		// correct a group would rewrite every file each time.
+		// listArchive, not the dry run: once everything is extracted the
+		// dry run reports nothing to write, so it names none of the
+		// entries whose ownership is in question. Salt enforces ownership
+		// on what `archive.list` reports, which is this.
+		entries, err := listArchive(local)
+		if err != nil {
+			return states.False(fmt.Sprintf("The archive %s could not be listed: %v", source, err)), nil
+		}
+		fixed, err := enforceArchiveOwnership(c, dest, entries, wantUser, wantGroup)
+		if err != nil {
+			return states.False(fmt.Sprintf("The ownership under %s could not be set: %v", dest, err)), nil
+		}
+		if fixed == 0 {
+			return states.True(fmt.Sprintf("The archive %s is already extracted into %s.", source, dest)), nil
+		}
+		changes := value.MapOf("ownership", states.Change(nil, ownerLabel(wantUser, wantGroup)))
+		if c.Test {
+			return states.WouldChange(fmt.Sprintf(
+				"%d entries under %s would be given to %s.", fixed, dest, ownerLabel(wantUser, wantGroup)), changes), nil
+		}
+		return states.Changed(fmt.Sprintf(
+			"%d entries under %s were given to %s.", fixed, dest, ownerLabel(wantUser, wantGroup)), changes), nil
 	}
 
 	changes := value.MapOf("extracted", toAnyList(truncateList(missing, 20)))
@@ -406,8 +437,59 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(fmt.Sprintf("The archive %s could not be extracted: %v", source, err)), nil
 	}
+	if _, err := enforceArchiveOwnership(c, dest, written, wantUser, wantGroup); err != nil {
+		return states.False(fmt.Sprintf(
+			"The archive was extracted but the ownership under %s could not be set: %v", dest, err)), nil
+	}
+	// keep_source is about the *cache*, not the archive a tree points at:
+	// only a fetched source was copied here, so a local path is untouched
+	// whatever this says. Salt draws the same line.
+	if local != source && !states.Bool(args, "keep_source", true) {
+		if err := os.Remove(local); err != nil && !os.IsNotExist(err) {
+			return states.False(fmt.Sprintf(
+				"The archive was extracted but the fetched copy could not be removed: %v", err)), nil
+		}
+	}
 	return states.Changed(
 		fmt.Sprintf("%d entries from %s were extracted into %s.", len(written), source, dest), changes), nil
+}
+
+// enforceArchiveOwnership gives every entry the archive names to the
+// requested owner, and reports how many needed it.
+//
+// The entries come from the archive rather than from a walk of the
+// destination, which is what Salt does too: a directory that already held
+// files keeps them, and a state that unpacks into /etc does not take
+// ownership of everything already in /etc.
+func enforceArchiveOwnership(c *exec.Context, dest string, entries []string, wantUser, wantGroup string) (int, error) {
+	if wantUser == "" && wantGroup == "" {
+		return 0, nil
+	}
+	fixed := 0
+	for _, name := range entries {
+		target, err := containedEntry(mustAbs(dest), name)
+		if err != nil {
+			return fixed, err
+		}
+		_, differs, err := plannedOwnership(target, true, wantUser, wantGroup)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return fixed, err
+		}
+		if !differs {
+			continue
+		}
+		fixed++
+		if c.Test {
+			continue
+		}
+		if err := applyOwnership(target, wantUser, wantGroup); err != nil {
+			return fixed, err
+		}
+	}
+	return fixed, nil
 }
 
 func mustAbs(p string) string {

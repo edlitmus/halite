@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **86 execution modules / 586 functions** and **46 state
-modules / 122 functions**.
+The build ships **88 execution modules / 599 functions** and **48 state
+modules / 132 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-32 of 56 present.
+48 of 56 present, plus `defaults` and `kmod`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -438,7 +438,7 @@ different reason is given.
 | `config` | implemented | 3 | |
 | `cron` | implemented | 2 | |
 | `disk` | implemented | 1 | |
-| `dnsutil` | implemented | 2 | |
+| `dnsutil` | implemented | 5 | `A` and `AAAA` carry Salt's capitals, because they are record types, and each answers with one address family. `parse_hosts`, `hosts_append` and `hosts_remove` are Salt's three hosts functions. This shipped `dnsutil.a` and a `hosts_file` Salt has never had -- both names no tree could call (5.94, 5.96) |
 | `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
 | `file` | implemented | 46 | `patch` runs the system patch with `--forward`, because left to itself it reverses an already-applied patch and exits 0; `sed` is done in Go rather than by an editor, and its `limit` is a real per-line filter; `list_backups` and `restore_backup` read the cache a state fills with `backup: node` |
@@ -469,10 +469,12 @@ different reason is given.
 | `beacons` | implemented | 10 | `list` answers from the registry and the configuration; the nine that change a running node's watchers name the phase they arrive in |
 | `blockdev` | not implemented | 0 | |
 | `data` | implemented | 11 | a node-local key/value store in one JSON file under the cache directory, in SPEC 6.4's canonical form. `load` and `items` both read from disk because there is no in-process session to flush, and `dump` replaces the store rather than flushing a memory this build does not keep (5.72) |
+| `defaults` | implemented | 3 | `merge`, `update` and `deepcopy`, for the `map.jinja` idiom every formula carries. The merge is in place by default because the call site is `{% do %}`, which discards the return value: merging into a new mapping would leave the template with its defaults unmerged and report nothing. `get` is refused by name, because it resolves a file relative to the formula being rendered, which is a file-server question rather than a data one. SPEC 15.2 does not list the module; an estate's tree does not compile without it |
 | `firewall` | implemented | 8 | virtual, with a ufw provider: status, enable, disable, set_default, allow, deny, delete and reload. firewalld, nftables and pf are not built, and the provider interface is shaped by the one provider it has |
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
+| `kmod` | implemented | 7 | Linux kernel modules: `available`, `check_available`, `lsmod`, `mod_list`, `is_loaded`, `load`, `remove`. SPEC names no such module and an estate's CIS controls need one (5.96). Linux only; FreeBSD's kldload is a different model and is refused by name |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `nfs` | not implemented | 0 | |
@@ -488,23 +490,24 @@ different reason is given.
 | `system` | implemented | 9 | the four power verbs `halt`, `poweroff`, `shutdown` and `reboot`, the three clock writers `set_system_date`, `set_system_time` and `set_system_date_time`, and `get_computer_desc`/`set_computer_desc`. Linux and FreeBSD only, not the five BSDs `quota` groups: a wrong flag to `edquota` is refused, a wrong flag to `shutdown(8)` is obeyed on hardware nobody is standing in front of. Every command is built by a pure function of `goos` and its arguments, so each row is checkable from any host without running it, and test mode reaches the process zero times for the power verbs. `-h` on Linux and `-p` on FreeBSD are how the two platforms spell the same meaning. No hostname function (`hostname.*` owns that), no clock reader (`status.time` does), and no `hwclock`, which FreeBSD has no equivalent of. `set_computer_desc` writes systemd's `PRETTY_HOSTNAME` in `/etc/machine-info` and is Linux only, because FreeBSD has no convention holding such a label and inventing one would be this build deciding a convention nothing reads |
 | `tls` | implemented | 6 | a CA directory convention, idempotent issuance, an issuance ledger and real CRL generation, all routed through `x509`'s existing certificate helpers rather than a second engine. Four of Salt's functions here are deliberately absent as renames of `x509` calls that already work (5.72) |
 | `tmpfs` | implemented | 3 | `list`, `is_mounted` and `usage`, read-only by design: mounting one is `mount.mount` with a fstype, and a wrapper would duplicate `mount.mounted` for no gain. `usage` joins the mount table with `df`, and degrades to no figures rather than a wrong number when the two disagree (5.72) |
-| `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification |
+| `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification. Keys and extensions take Salt's x509_v2 spelling -- `algo`, `keysize`, and the OpenSSL one-line extension strings -- and the twelve extensions this build does not write are refused by name rather than dropped (5.90) |
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-17 of 46 present, plus `sysrc`, which the section does not list.
+38 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
 | `archive` | implemented | 1 | |
 | `cmd` | implemented | 3 | `script` takes its source as the state's name, as Salt's does |
 | `cron` | implemented | 2 | |
-| `file` | implemented | 15 | |
-| `git` | implemented | 1 | |
+| `file` | implemented | 16 | `rename` moves something into place once and converges: a source already gone is a success, as Salt has it (5.92) |
+| `git` | implemented | 1 | `latest`, with Salt's `fetch_tags` -- true by default, as Salt has it, so a tag no branch reaches is fetched. `sync_tags`, which Salt also defaults to true and which *deletes* local tags the remote no longer has, is not built and is refused by name (5.91) |
 | `group` | implemented | 2 | |
 | `host` | implemented | 2 | |
 | `module` | implemented | 2 | |
 | `pkg` | implemented | 4 | |
+| `saltutil` | implemented | 7 | the `sync_*` states, matching the execution functions SPEC 24.5 already defines: they fetch signed, pinned bundles rather than shipping Python to a node. They were recorded here as a refusal and were a gap -- the reasoning described Salt's meaning rather than this build's (5.97) |
 | `service` | implemented | 4 | |
 | `ssh_auth` | implemented | 2 | |
 | `sysctl` | implemented | 1 | |
@@ -522,6 +525,7 @@ different reason is given.
 | `hostname` | implemented | 1 | `system`; the running name and the persistent one are read and reported separately, because a node where they disagree renames itself at the next boot |
 | `iptables` | implemented | 7 | Linux only; `chain_present`, `chain_absent`, `append`, `insert`, `delete`, `set_policy`, `flush`. Idempotence is `iptables -C`, not a re-parse of `iptables-save`. `flush` refuses a built-in chain that is holding traffic out, and a whole-table flush, without force. Not a `firewall` provider -- it is the layer under ufw |
 | `kernelpkg` | not implemented | 0 | |
+| `kmod` | implemented | 2 | `present` and `absent`. `mods` is the real argument and `name` a placeholder when it is given, as the estate's own tree says in a comment beside the state. `persist` writes the modules configuration, because a module unloaded but left in it comes back at the next boot (5.96) |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `lvm` | implemented | 6 | Linux only; `pv_present`, `pv_absent`, `vg_present`, `vg_absent`, `lv_present`, `lv_absent`. `vg_present` extends a group with named devices but never removes one, and `lv_present` grows a volume but never shrinks it — a shrink that outruns the filesystem loses data, and `lvm.lvresize` with `force` is the deliberate path for it. Reports read LVM's `--reportformat json`, not the padded table |
@@ -541,7 +545,7 @@ different reason is given.
 | `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
 | `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
 | `win_wua` | not implemented | 0 | Windows only |
-| `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run |
+| `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run. Neither has a required key argument, as Salt's do not, and wrong ownership is fixed in place rather than by re-issuing, which would give a new serial on every run (5.90) |
 | `zpool` | implemented | 2 | `present` creates a pool that is not there and manages the properties of one that is; it does **not** reshape an existing pool, and reports a layout that does not match as a warning instead. `absent` exports by default and destroys only when told |
 
 `file.accumulated`, which SPEC 15.5 requires, is not implemented.
@@ -8087,6 +8091,726 @@ link-local address. And the Python example applies the limits too, in
 about fifteen lines against the same environment variables -- it is the
 reference for an author working outside Go, and one that skipped the
 child's half of the sandbox would teach that the half does not exist.
+
+### 5.88 The cloud grains and the secrets pillar, on a real instance
+
+5.78 and 5.79 built both against the AWS APIs and could not run either:
+the metadata service answers only from inside EC2, and Secrets Manager
+needs a role. A node that is an EC2 instance settled both, and the
+second one found a defect that has nothing to do with AWS.
+
+**The credential exclusion is real, and so was the thing it excludes.**
+5.78's claim was that Salt's metadata grain publishes the instance's own
+IAM credentials, and that this build refuses those paths. On this
+instance, with a live instance role, the two grains compared like this:
+
+| | Salt 3007.1 | halite |
+|---|---|---|
+| `meta-data` keys | 24 | 23 |
+| `iam` subtree | `info`, **`security-credentials`** | `info` |
+| top level | includes **`identity-credentials`** | excluded |
+| the other 22 keys | — | byte-identical |
+
+So the estate's Salt is, right now, carrying that instance's access key,
+secret key and session token as grains — which is what the exclusion was
+written for, and it had never been seen happen. The excluded set is
+exactly those two paths and nothing else: every other key agrees, and
+the Salt-shaped indexes an existing tree uses resolve —
+`meta-data:local-ipv4` and `meta-data:services:partition` → `aws`.
+
+**The secrets pillar works end to end, as an extension.** Built, signed,
+published under `_ext/`, fetched by `extensions sync`, pinned by digest,
+loaded, and run out of process with `network` declared and nothing else.
+It read all six of the estate's real secrets over the SigV4 of SPEC 13.4
+using the instance role, and produced an `aws_secrets` tree whose 27
+paths are structurally identical to the one Salt's own
+`_pillar/aws_secrets_manager.py` produces. 5.79's signature-wire fix is
+load-bearing here: the extension is refused and reports no functions
+without it.
+
+**And the values were not identical, which is the defect.** Every leaf
+Salt returned hashed the same; every leaf this returned hashed
+differently. Salt's shared value is `**********` — `REDACT_PLACEHOLDER`
+from `salt/utils/secret.py`, applied by `serial` at exactly the
+`pillar.items`, `pillar.item` and `pillar.get` boundaries. **`halite-node
+pillar items` printed every secret in clear**, to the terminal and to
+whatever scrollback, CI log or ticket the output reached afterwards.
+
+What makes it a gap rather than an omission is that the machinery was
+all present. The redactor exists, it already learns every pillar value
+at the hub boundary, it already uses the identical ten-asterisk
+placeholder, and a test already asserts that `state apply` redacts a
+decrypted pillar. It was wired to the log sink and not to the one
+command whose whole purpose is to print the pillar.
+
+The rule is Salt's, and it is narrower than "mask everything": every
+non-empty **string** leaf is replaced, while numbers, booleans, nulls
+and empty strings pass through, and keys are never touched. That keeps
+what the command is mostly for — a state that cannot find
+`foxpass:api_key` is debugged by seeing the key exist, not by reading
+it. Checked leaf by leaf against the Salt on the same host, the two now
+agree on **every one of the 81 leaves they share**.
+
+**`--reveal` is this build's addition**, and Salt has no equivalent. The
+argument for it is that the remaining reason to run the command is to
+check a value, and an operator who cannot will reach for something
+worse — a `cmd.run` that echoes it, or the pillar file itself. Having to
+ask is the point: it makes the disclosure deliberate and greppable in a
+shell history, where masking-by-default makes the safe path the default
+one. It is a display boundary only: the redactor still learns every
+value, so a log is scrubbed as before, and a template still renders
+against the real pillar exactly as Salt's contextvar arranges.
+
+**What this does not establish.** One instance, one region pair, one
+account. The walk was not tested against IMDSv1-only hosts or a host
+with the hop limit set to 1, and `cloud_grains` remains opt-in for the
+round trip it costs. The signing key sat on the same machine as the hub
+that verified it, which `docs/extensions.md` names as the thing not to
+do — acceptable in a lab, and not a pattern to copy.
+
+### 5.89 What compiling an estate's own tree found, in three passes
+
+5.84 left the estate's real 603-file tree compiling with 33 errors and
+called them an inventory rather than a defect. Working through that
+inventory turned three of its rows into defects here.
+
+**`slspath` was the SLS name, not the directory.** Salt's documentation
+is one line — "slspath: directory containing current sls (same as
+tpldir)" — and this returned the SLS name with its dots turned into
+slashes. That is the directory only when the file is an `init.sls`. For
+`base/users/sudo.sls`, whose SLS name is `base.users.sudo`, it gave
+`base/users/sudo`, so the tree's own
+`{% from slspath ~ "/map.jinja" import users %}` — the ordinary formula
+idiom — went looking for `base/users/sudo/map.jinja` instead of
+`base/users/map.jinja`.
+
+This is the `init.sls` distinction of 5.84 in a second place, which is
+the finding rather than the fix: an `init.sls` *is* its directory and a
+plain `.sls` is a file inside one, and the rule now has one home.
+Meeting it twice also says where to look for a third. Six variables were
+wrong or missing — `slspath`, `slsdotpath`, `slscolonpath`, `tpldir`,
+`tplfile`, and `sls_path`, which did not exist — and `tpldir` and
+`tplfile` were absolute paths on this machine where Salt's are relative
+to the file root, so a tree interpolating either wrote a path no other
+node would have. Every value was read back from `salt-call` on the same
+host, for a module and for a package, and the two agree character for
+character.
+
+**`import_yaml` did not exist.** It is how every formula in the wild
+carries its defaults — a `defaults.yaml` beside `map.jinja`, read and
+merged with pillar — and being a tag, its absence is a *parse* error:
+the whole file fails, and with it everything importing that file. Three
+errors in the report were one missing tag. `import_json` and
+`import_text` land with it.
+
+Two details are worth the words. The file is **parsed, not rendered**,
+which is the difference from `import` and a safety property as much as a
+semantic one: data cannot execute, so a `{%` inside a YAML value stays a
+`{%`. And `import_json` decodes with `UseNumber`, because Go reads every
+JSON number as a float64 by default — a formula's `port: 443` would
+become `443.0`, and a template writing that into a configuration file
+means it. Python's json, which Salt uses, gives an integer.
+
+**`user.present` had none of the password-ageing arguments.** `mindays`,
+`maxdays`, `warndays`, `inactdays` and `expire` are shadow(5) columns
+and chage(1) options, and together they are how a hardened estate states
+its password policy per account. Eleven of the report's errors were
+those names across three declarations. `unique` and `enforce_password`
+came with them.
+
+Three decisions inside that one:
+
+- They are read from the **shadow file**, not from `chage -l`, which
+  renders dates in the caller's locale — a parse that breaks the first
+  time a node runs under a different `LANG`. The columns are integers
+  and the file's layout is fixed.
+- The fields are **pointers**, because chage reads `0` as "immediately"
+  and `-1` as "never" and both are meaningful. A plain integer cannot
+  tell "unmentioned" from "zero", and would have applied `mindays: 0` to
+  every account that never mentioned it.
+- FreeBSD is **refused by name**. Its password policy lives in
+  `login.conf`, keyed by login class, with no per-account equivalent for
+  four of the five. Accepting the argument there and applying nothing is
+  the shape of 5.78's `cloud_grains`.
+
+The live test creates a throwaway account, sets all five, and reads them
+back through `chage -l` — the tool's own report rather than this code's
+parser — then checks the module's reader agrees, then applies the same
+declaration again and requires **no change**, which is the convergence a
+policy state is judged on.
+
+**Four more arguments came out of the same pass.**
+`file.replace`'s `ignore_if_missing` is how one tree covers several
+platforms — a state that hardens `/etc/login.defs` applied to a node
+that has no such file is a no-op, not a failure — and it reports
+success with no changes, which is Salt's wording. `group.present` gained
+`system` and `members`; `members` is the *whole* list rather than an
+addition, which Salt's own documentation fixes by distinguishing it from
+`addusers`, and getting that wrong would leave an account in a
+privileged group a tree had just been edited to empty. `pkg.installed`
+gained `allow_updates`, which turns an exact pin into a floor so a
+package an agent updates itself is left alone rather than being
+downgraded once per highstate; a version it cannot order is *not*
+treated as satisfying the pin, because answering "yes" there leaves a
+pinned package uninstalled. `file.managed` gained `skip_verify`, which
+is logged on every run rather than silently honoured, and `keep_source`,
+which is declared ineffective because this build keeps no separate
+source cache to discard.
+
+**And one error was not a defect at all.** The node had no static
+grains: the estate keeps forty of them in `/etc/salt/grains` — `roles`,
+`envtype`, `aws_partition` and the rest — which the tree branches on
+everywhere, and halite reads its own `/etc/halite/grains`. Copying the
+file across is the migration step, and it is worth recording because the
+failure did not look like a missing file: it surfaced as
+`first.split is undefined (the sequence is empty)` inside a `map.jinja`,
+four frames from the cause. A tree that selects on grains fails in the
+template that reads them, not at the grain that is absent.
+
+**`defaults.merge` is in-place, and that is the whole of it.** Every
+formula's `map.jinja` carries the same line —
+`{% do salt['defaults.merge'](defaults['salt'], lookup) %}` — and the
+`{% do %}` discards the return value. An implementation that merged into
+a new mapping would leave the template with its defaults unmerged,
+correctly, silently, and with no error anywhere: 5.78's `cloud_grains`
+again, a value computed and dropped. So `in_place` is honoured rather
+than accepted, and the test that covers it was checked by making the
+merge return a copy and watching it fail. `update` and `deepcopy` land
+with it; `defaults.get` does not, because it resolves a file relative to
+the *formula* being rendered, which is a file-server question this does
+not yet answer, and refusing by name beats reading the wrong file.
+
+**The tuple unpack was not a defect either.** `{% set host, domain =
+minion_id.split('.', 1) %}` failed because this node's id is <!-- lexicon:allow -->
+`ref-salt1` and Salt's is the fully-qualified name: with no dot, the
+split yields one element. The tree assumes an FQDN identity. What the
+error said was `cannot unpack sequence into 2 names`, which describes
+the statement — correct — rather than the value, and sends the reader to
+the line that is right. It names the count now, `a sequence of 1 into 2
+names`, which at least points at the value; the cause is still three
+frames above it, in a `node_id` that cannot simply be changed, because
+this node's certificate is issued to the short name.
+
+**Where the tree stands.** 42 errors before any of this, **7** after —
+and the count fell to 6 before the grains file *raised* it to 7, because
+supplying `roles` selected the `saltmaster` states, which had never been
+reached. What is left: `saltutil` and `kmod` as state modules,
+`defaults.merge` as an execution module (three sites), `cmd.run`'s `bg`,
+and one Jinja tuple unpack, `{% set host, domain = id.split('.', 1) %}`.
+
+Then `defaults.merge` took it to **29**, which is the shape of this
+whole exercise rather than a regression: `shared/salt/*.sls` compiles
+past its `map.jinja` for the first time and reaches its own errors —
+`x509.private_key_managed` and `certificate_managed` arguments, three
+`git.latest` fetch options, `archive.extracted`'s ownership arguments, a
+`file.rename` state that does not exist, `file.recurse`'s `template`,
+and a `saltversioninfo` grain. Each layer of the tree that starts
+compiling exposes the next, and the count is a depth gauge rather than a
+score.
+
+**A bare requisite naming several modules depends on all of them.** The
+tree declares `salt-master-gpgkeys-tgz` under both `cmd.run` and <!-- lexicon:allow -->
+`archive.extracted` — an archive fetched and then unpacked, under one
+name — and something later writes `require: [salt-master-gpgkeys-tgz]`. <!-- lexicon:allow -->
+This refused that as ambiguous, on the reasoning that picking one
+silently is how a requisite ends up guarding the wrong state.
+
+The reasoning was sound and the conclusion was not. Salt normalises a
+bare name to an `id` requisite and resolves it against a *set* of
+chunks, so the answer is not one of them, it is all of them — and
+refusing stopped the compilation of a shape that is ordinary rather than
+exotic. Writing several states under one ID is everyday Salt.
+
+It was checked rather than read: the same two-module declaration was
+applied under Salt on this host with the second chunk made to fail, and
+the dependent was blocked with "One or more requisite failed", which is
+only possible if the requisite bound to both. The test that replaced the
+old one asserts both chunks resolve, and was verified by binding only
+the first and watching it fail. 29 errors to 27.
+
+### 5.90 The x509 states, against the certificate Salt actually issues
+
+The estate's `shared/salt/api.sls` is salt-api's own TLS certificate, and
+it is the same job `halite-api` has. It did not compile, in ten separate
+ways, and every one of them was this build having invented a spelling.
+
+**Salt has two x509 modules and the newer one wins by default.**
+`x509_v2.py` and `x509.py` both claim the virtualname `x509`; v2's
+`__virtual__` reads `features.get("x509_v2", True)`, which defaults to
+*true*, and nothing in the estate's Salt configuration disables it. So
+`x509` here means x509_v2, and v2's spelling is the one a tree is
+written in. The estate's tree is written in both: `api.sls` uses v2's
+`algo`/`keysize`, and `shared/foxpass/init.sls` uses v1's nested
+`managed_private_key`, which v2 has no parameter for. **That foxpass
+state is already broken against the Salt that serves the estate**, and is
+worth reporting to whoever owns the tree rather than designing for.
+
+**Key arguments.** `algorithm`, `bits` and `curve` became `algo` and
+`keysize`, which is what both the v2 state and the v2 execution module
+take. `keysize` carries Salt's double meaning -- RSA bits, or the size of
+an EC curve where 256, 384 and 521 select P-256, P-384 and P-521. The
+`tls` module keeps `bits`, because `salt.modules.tls.create_ca` takes
+`bits` and is RSA only; the two modules are spelled differently in Salt
+and so are spelled differently here.
+
+**Extensions are not parameters in Salt at all.** They reach
+`create_certificate` through `**kwargs` and are checked against
+`CERT_EXTS` in `salt/utils/x509.py`, in OpenSSL's spelling and OpenSSL's
+one-line encoding: `basicConstraints: "critical, CA:false"`,
+`keyUsage: "critical, digitalSignature, keyEncipherment"`,
+`extendedKeyUsage: serverAuth`, `subjectKeyIdentifier: hash`,
+`subjectAltName: "DNS:localhost, IP:127.0.0.1"`. This build declares them
+as parameters, because a declared parameter is what its documentation and
+its argument checking are built on, and an undeclared one cannot be
+refused by name when it is misspelled. The twelve extensions this build
+does not write are refused rather than dropped: an extension silently
+missing is not a cosmetic difference, it is a different certificate.
+
+Criticality is honoured where Go can express it and **refused where it
+cannot**, rather than written differently from what was asked.
+
+**There is no required key argument.** `public_key`, `private_key` and
+`signing_private_key` are alternatives; this build had `private_key`
+required, so `api.sls`, which names only `signing_private_key`, was told
+a key was missing that it did not need. Confirmed against the running
+Salt, which issues that certificate self-signed from the signing key
+alone.
+
+**`pathlen` was being ignored.** Every CA this build issued got a path
+length of zero, whatever `basicConstraints` said, so a tree asking for a
+CA that can sign intermediates silently got one that cannot. That is the
+accept-but-ignore shape, in a certificate.
+
+**What the expectations are checked against.** A real Salt on the
+reference host was given `api.sls`'s exact arguments and its certificate
+read back with `openssl x509 -text`; the test asserts those values. One
+of those assertions was worthless when written and is worth recording:
+this build's default key usage for a leaf is
+`digitalSignature|keyEncipherment`, which is exactly what `api.sls` asks
+for, so deleting the `keyUsage` handling left the test green. It was
+checked, it was green, and the test now asks for usages no default
+produces.
+
+**27 errors to 15**, and no `x509` error remains. Twelve went rather than
+the ten this was scoped at: the whole of `api.sls` compiles now, and
+`shared/foxpass/init.sls` never reaches its own x509 states at all,
+because the `{% if %}` around them asks the mine for a certificate
+authority that this environment does not have. Its v1 arguments are
+unreachable rather than accepted.
+
+What is left is eleven pieces of work and four deliberate refusals. The
+refusals: `saltutil` twice (syncing Python to nodes has no meaning in
+this model), `kmod` (a module SPEC never planned for, plan.md section 6),
+and `{% set host, domain = id.split('.', 1) %}`, which fails because
+`node_id` is `ref-salt1` where Salt's id is the FQDN -- changing that
+needs re-enrolment, since the node certificate is `CN=ref-salt1`. The
+work: four `git.latest: fetch_tags`, three `archive.extracted` ownership
+arguments, `cmd.run`'s `bg`, `file.recurse`'s `template`, a `file.rename`
+state that does not exist, and a `saltversioninfo` grain.
+
+### 5.91 `git.latest: fetch_tags`, and a default that lives in one place
+
+Four of the estate tree's fifteen remaining errors were one argument.
+`shared/salt/saltrepos.sls` is how the hub keeps its own state tree
+current, and it writes `fetch_tags: True` on every one of its four
+repositories.
+
+A plain `git fetch` brings down only the tags reachable from the branches
+it fetched, so a tree pinning a release tag that no branch points at gets
+nothing. `--tags` is what reaches the rest. Checked against the git on
+the reference host rather than read off the flag's name: a tag pushed to
+a detached commit *after* the clone is absent following
+`git fetch origin` and present following `git fetch --tags origin`. A
+plain clone fetches every tag, so the first attempt at that experiment
+proved nothing -- the tag has to arrive after the checkout exists, which
+is also the only case the argument matters in.
+
+`sync_tags` is **not** built. Salt defaults it to true, and it *deletes*
+local tags that the remote no longer has. Defaulting to Salt's behaviour
+would mean this build deleting tags nobody asked it to; refusing the
+argument by name says so at the line that writes it. The estate's tree
+does not use it.
+
+**Where a default actually lives.** Breaking this on purpose found that
+flipping the fallback in `states.Bool(args, "fetch_tags", true)` changes
+nothing: the signature's declared default is filled in before the
+function runs, so the Go-side fallback never sees a missing key. The
+declared default is the one that governs, and it is the one a test has to
+break to mean anything. The fallback is kept because every neighbouring
+argument has one, and it is kept equal to the declared value.
+
+**15 errors to 11.** What remains is seven pieces of work and four
+deliberate refusals, in three files: `archive.extracted`'s `user`,
+`group` and `keep_source` and a `file.rename` state that does not exist
+(both in `shared/salt/pgpkeys.sls`), `file.recurse`'s `template`,
+`cmd.run`'s `bg`, and a `saltversioninfo` grain.
+
+**`git.latest` had no tests at all** before this -- a state that clones,
+fetches, and force-resets repositories. It has two now, and they answer
+different questions: one drives a real git repository end to end, and one
+records the argument vector so the flag is asserted on platforms with no
+git. The shared `newCtx` installs a `RecordingRunner`, which reports
+success without running anything; a first attempt at the real-git test
+used it by accident and watched the state report `was cloned from` over a
+directory that did not exist.
+
+### 5.92 `pgpkeys.sls`: four errors in one file, and two quiet successes
+
+`shared/salt/pgpkeys.sls` fetches an archive of GPG keys, unpacks it, and
+renames the directory it produced. It held four of the tree's seven
+remaining errors.
+
+**`file.rename` did not exist here.** Its convergence is the whole point
+of the state: a tree uses it to move something into place once, and every
+later highstate meets a source that is already gone. Two of Salt's
+outcomes are therefore successes that change nothing, and both read like
+errors --- a source that has already moved, and a destination that exists
+when `force` was not given. Writing either as a failure makes a highstate
+fail forever after the first run. Checked against the Salt on this host
+rather than inferred: both return `result: true`.
+
+A symlink is recreated rather than followed, as Salt's does. A rename
+across a mount boundary falls back to a copy; the errno for that is
+spelled differently on each platform, so it is not tested for --- the
+copy is simply attempted after any failed rename, and the rename's error
+is the one reported if the copy fails too.
+
+**`archive.extracted` gained `user`, `group` and `keep_source`.**
+Ownership is enforced on every run rather than only on the run that
+extracts, because re-extracting an archive to correct a group would
+rewrite every file in it each time. The entries come from listing the
+archive, which is what Salt does: a state unpacking into `/etc` must not
+take ownership of everything already in `/etc`.
+
+That listing is the part worth recording. The obvious source for it is
+the dry run the state already does, and it is the wrong one: once
+everything is extracted the dry run reports nothing left to write, so it
+names none of the entries whose ownership is in question. The test caught
+it on the first run --- the owner changed and the state said "already
+extracted".
+
+**`keep_source` is about the cache, not the archive.** Only a `halite://`
+or `salt://` source is fetched anywhere, so `keep_source: False` against
+a local path does nothing at all --- in Salt, and now here. This file
+relies on that: it writes `keep_source: False` against
+`/etc/salt/gpgkeys.tar.gz`, a local file that its own later states still
+read. Deleting it would break the tree in a way no test of the argument
+in isolation would notice.
+
+**11 errors to 7**, and what is left is three pieces of work against four
+deliberate refusals: `cmd.run`'s `bg`, `file.recurse`'s `template`, and a
+`saltversioninfo` grain. The refusals are `saltutil` twice, `kmod`, and
+the node id that is not an FQDN.
+
+### 5.93 The last three, and a grain that had to pick a side
+
+What remained of the estate tree, once `pgpkeys.sls` was done, was three
+arguments in three files.
+
+**`cmd.run: bg`.** The aide state rebuilds a database that takes minutes
+and does not want the run held open for it. `Background` is a field on
+the command rather than something the caller arranges, because the
+interpreter, the umask and the environment are all decided by the runner:
+a caller building its own process to start in the background would be a
+second and quietly different implementation of all three. The tree's
+command is a shell line with a redirect and an `||`, so the shell has to
+survive the trip.
+
+`bg` together with `timeout` is refused. Nothing waits for the process,
+so nothing can stop it at a deadline, and a tree that asked for a bounded
+run and got an unbounded one has been told the opposite of the truth.
+
+**`file.recurse: template`.** The rendering is easy and the comparison is
+the whole state: a template compared against the file it produced differs
+from it on every run, so the state would rewrite the file forever and
+never converge. The rendered bytes are therefore produced during planning
+and carried to the write, so that what is compared and what is written
+are the same thing.
+
+**`saltversioninfo`.** This one had to decide what to claim. An estate's
+`shared/salt/minion.sls` writes <!-- lexicon:allow -->
+`{% if grains['saltversioninfo'] >= [2016, 3] %}` to choose between two
+restart commands, so the grain is a version gate, and there is no answer
+that is simply true: this build is not Salt. Reporting halite's own
+version makes the comparison false and sends the tree down its
+old-Salt branch --- checked, and it produces `[0, 0, 0]`. So it is the
+list form of the same claim `saltversion` already makes, derived from
+`SaltCompat` rather than stated separately so the two cannot drift into
+claiming different versions. Salt's own grain is a list of integers,
+checked against the Salt on this host.
+
+Every element has to be a number. Jinja cannot order a list mixing
+strings and integers, so a version with a suffix would turn the tree's
+comparison into an error rather than a false; the list stops at the first
+part that is not a number.
+
+### 5.94 The node's own name, and the two errors that were hiding behind it
+
+The estate's tree failed on
+`{% set host, domain = id.split('.', 1) %}`, and this was recorded as a
+lab artefact: the node had enrolled as `ref-salt1` where Salt's id is the
+FQDN, so the split had nothing to split. That was the wrong conclusion,
+and the right one is worse.
+
+**SPEC 7.2 step 5 was not implemented.** The resolution order it states
+is config, environment, the pinned file, a cloud identifier, *the fully
+qualified domain name*, and then the hostname. The resolver went from the
+pinned file straight to `os.Hostname()`, which on Linux is the short
+name. Step 5 was missing altogether, and `node_id_source` is declared
+inert on the grounds that "the resolution order of SPEC 7.2 is
+implemented" -- which was not true.
+
+Salt's `generate_minion_id` asks `socket.getfqdn` first and takes the <!-- lexicon:allow -->
+bare hostname only when nothing qualifies it, so a fleet enrolled by Salt
+is named by FQDN, and a tree written for that fleet splits on the dot.
+The estate's Terraform enforces the qualified form. Every part of that
+agreed with SPEC and disagreed with the build.
+
+The lookup has a two-second deadline and falls to the hostname when it
+expires, so a slow resolver cannot hold up a node starting. The identity
+is pinned at enrollment anyway, so it runs once in a node's life.
+
+**`node_id_remove_domain` had nothing to remove.** Salt's
+`minion_id_remove_domain` strips the domain from a *detected* identity, <!-- lexicon:allow -->
+and the detected identity here never had one.
+
+**Two errors were hiding behind the first.** The tree stopped at line 6,
+so nothing past it had ever been compiled. With the identity right, line
+13 asks for `dnsutil.A` and line 148 of another file compares two lists:
+
+- **`dnsutil.a` should have been `dnsutil.A`.** They are DNS record
+  types and Salt names the functions for them -- `A`, `AAAA`, `NS`,
+  `SPF`. A lower-case `a` is a function no tree can call. It also
+  answered with whatever the resolver returned rather than one address
+  family, so a tree asking for an A record could be handed an IPv6
+  address and use it where it wanted an IPv4 one. `A` and `AAAA` now
+  answer one family each, as the record types do.
+
+- **Two sequences could not be compared.** `{% if
+  grains['saltversioninfo'] >= [2016, 3] %}` is how a tree gates on a
+  version, and it failed with "cannot compare sequence with sequence".
+  Python compares sequences element by element, with the shorter the
+  smaller where one runs out, so Jinja does, so this does now. Filling in
+  the `saltversioninfo` grain in 5.93 is what exposed it: while the grain
+  was missing the comparison never ran.
+
+  A test asserted the old behaviour as correct. `{{ [1] < [2] }}` sat in
+  the list of pairs with no order, beside `'a' < 1` and `-'a'`, with no
+  reasoning given -- a limitation written down as though it were a
+  decision. `[1] < [2]` is True in Python and in Jinja. The examples
+  that genuinely have no order are a sequence against a scalar and
+  elements of different kinds, and those are what the test asks for now.
+
+That is the pattern this whole exercise keeps producing, and it is worth
+stating plainly: **a fixed error is not a closed error until the line
+after it has compiled.** Each of these was invisible while something
+earlier failed.
+
+### 5.95 `host.present` takes a list, and one wrong argument is one error
+
+Fixing the node's own name (5.94) took the tree from five errors to
+**eight**, and that is the exercise working rather than failing. The
+hostname state had been stopping at line 6 since the beginning; with the
+identity right it reaches lines 16 and 21, and `minion.sls` compiles far <!-- lexicon:allow -->
+enough to reveal a third `saltutil` that had never been reached.
+
+**`ip` takes one address or several.** Salt's `host.present` documents it
+as "a single IP or a list of IP addresses", and a tree reaches for the
+list as soon as it resolves a name, because `dnsutil.A` returns one. The
+estate writes `- ip: {{ ipv4 | default('127.0.1.1', true) }}` where
+`ipv4` came from exactly that call, so the list is the ordinary case.
+Each address gets the name, and the state converges.
+
+**One wrong argument was two errors.** Every one of those four failures
+came back twice:
+
+```
+host.present: argument "ip": must be a string, found sequence
+host.present: argument "ip": is required
+```
+
+The second is not true. When a value fails its type check the binder
+recorded the error and moved on without marking the argument as seen, so
+the pass that looks for missing parameters found the name unused and
+reported it missing as well. The reader is then looking for an argument
+that is already there. Marked as seen now, and one mistake is one
+message.
+
+**8 errors to 4, and 42 to 4 over the whole exercise.** What is left is
+two modules and nothing else:
+
+- **`kmod`, three-quarters of what remains as one error.** SPEC names no
+  such module and the estate's CIS controls need it, which plan.md §6
+  carried as an open question and §2.6 now carries as agreed work.
+- **`saltutil.sync_all`, three errors.** The only one that is a decision
+  rather than a gap. It ships Python to a node for the node to import;
+  halite's extensions are signed, versioned artefacts verified against a
+  key, so there is no step for `sync_all` to name. This needs an edit to
+  the tree, not to this build.
+
+No unrecognised error remains. Every one of the forty-two either
+compiles, or is one of those two.
+
+### 5.96 `kmod`, and two more names no tree could call
+
+**`kmod` is built.** SPEC names no such module, and plan.md §6 carried
+that as a reason not to build one. The reason did not survive contact
+with a real tree: an estate's CIS controls unload the uncommon network
+protocols -- `dccp`, `sctp`, `tipc`, `rds` -- with a single `kmod.absent`,
+and not naming a module in a specification is no reason to leave a
+fleet's hardening uncompilable. Agreed 2026-09-15; plan.md §2.6.
+
+`mods` is the real argument and `name` is a placeholder when it is given.
+The estate's tree says so in a comment beside the state, and getting it
+backwards would unload a module called `modules_to_unload` and nothing
+else -- silently, because no such module is loaded.
+
+`persist` is half the feature rather than an extra. A module unloaded
+from the running kernel but left in the modules configuration comes back
+at the next boot, so the control passes a scan today and fails the same
+scan tomorrow. `absent` with `persist` therefore treats a module as
+present if it is loaded *or* written down.
+
+Three choices worth stating:
+
+- **`/proc/modules`, not `lsmod`.** lsmod is a formatter over that file
+  and nothing else, so parsing its columns would be parsing a rendering
+  of something the kernel already offers in a stable documented format.
+- **`modprobe -r`, not `rmmod`.** Salt uses `rmmod`, which refuses a
+  module that has dependants and leaves them loaded. A control that
+  unloads `sctp` means its dependants too.
+- **`halite_managed.conf`, not `salt_managed.conf`.** Salt writes
+  `/etc/modules-load.d/salt_managed.conf` under systemd and `/etc/modules`
+  otherwise; this picks the same two places for the same reasons, under
+  its own name. A file called `salt_managed.conf` written by something
+  that is not Salt is a lie to the next person reading the directory.
+
+**A difference from Salt, in Salt's favour of being wrong.** Salt's
+`kmod.available` normalises hyphens to underscores for loadable modules
+and not for built-in ones, so on this host
+`check_available('amba-pl011')` is **True** and
+`check_available('amba_pl011')` is **False** -- for the same module,
+which the kernel treats as one name. Both are true here. Checked
+differentially: the two builds list the same 1440 modules and the same 94
+loaded ones, and differ only in that spelling.
+
+**`dnsutil.hosts_file` was invented.** Salt's three hosts functions on
+that module are `parse_hosts`, `hosts_append` and `hosts_remove`; there
+has never been a `hosts_file`. It is the same defect as the lower-case
+`dnsutil.a` of 5.94 -- a name no tree written for Salt can call -- and it
+was found the same way, by reading Salt's module rather than this build's
+own documentation. The three now share the `hosts` module's parser, so a
+comment or a blank line survives a rewrite, and `hosts_remove` drops a
+line left holding only an address, as Salt's does. `parse_hosts` was
+checked against Salt's on this host's real `/etc/hosts`: same addresses,
+same names.
+
+**4 errors to 3, and 42 to 3 over the whole exercise.** Every remaining
+error is `saltutil.sync_all`, at three call sites: line 58 of
+`shared/salt/extmods.sls`, line 63 of `shared/salt/master.sls`, and line <!-- lexicon:allow -->
+4 of `shared/salt/minion.sls`. <!-- lexicon:allow -->
+
+This section said those three were a decision rather than a gap, and that
+closing them meant editing that tree rather than writing anything here.
+**That was wrong, and 5.97 corrects it.**
+
+### 5.97 `saltutil`'s states, and a refusal that was never one
+
+Three errors stood in the estate's tree at the end of 5.96, all
+`saltutil.sync_all` written as a state, and this ledger recorded them as
+the one thing in the whole exercise that was a decision rather than a
+gap: `sync_all` ships Python to a node for the node to import, this
+build's extensions are signed and pinned, so there is no step for it to
+name.
+
+**Every part of that is true about Salt and none of it was true here.**
+SPEC 24.5 already maps those names onto fetching signed, pinned bundles,
+and this build has shipped `saltutil.sync_all`, `sync_modules`,
+`sync_states`, `sync_grains`, `sync_beacons`, `sync_returners` and
+`sync_renderers` as *execution* functions since that section was written.
+What was missing was the state form, and nothing else. The refusal
+described the semantics of the tool being replaced rather than the
+behaviour of the thing doing the replacing, and then it was repeated --
+into this ledger, the changelog, and a pull request -- until somebody
+asked whether the error could at least be downgraded to a warning.
+
+It could have been. Warning and ignoring is a real tool here and the
+parameter-level form of it, `Ineffective`, exists for exactly the case
+where refusing something harmless stops a tree compiling. It would also
+have been the wrong answer, and the estate's own tree says why:
+
+```yaml
+{{ sls }} sync all:
+  saltutil.sync_all:
+    - refresh: True
+    - onchanges:
+      - file: /var/cache/salt/minion/extmods/pillar/aws_secrets_manager.py  <!-- lexicon:allow -->
+```
+
+That `onchanges` is the point. A state that is accepted and does nothing
+reports no change, so a requisite hung on it never fires. A tree whose
+extensions are fetched *when their definition changes* would have
+compiled, run green, and quietly stopped fetching them. Accept-and-ignore
+is safe for an argument that makes no difference and unsafe for a state
+something else depends on.
+
+So the states are built, one per kind, each calling the execution
+function that was already there. Fetching is the change, which is what
+makes the requisite work and also what makes test mode unable to predict
+it: there is no way to find out whether a bundle differs without
+fetching it, so `--test` says so rather than guessing. The state declares
+its test mode unreliable for that reason, which is the honest answer
+rather than a convenient one.
+
+**The tree compiles with no errors.** Forty-two to zero.
+
+The lesson is not about `saltutil`. A refusal is a claim, and this one
+was never checked against the registry it was a claim about -- one
+`sys.list_modules` would have shown `saltutil.sync_all` sitting there.
+A gap recorded as a decision stops anyone looking at it again, which is
+why it survived being written into three documents and a pull request.
+
+### 5.98 A dry run that read as though it had acted
+
+With the tree compiling, 328 states ran in test mode for the first time,
+and one of them reported:
+
+```
+ID: salt-minion   <!-- lexicon:allow -->
+Result: None
+Comment: The service salt-minion was started.   <!-- lexicon:allow -->
+```
+
+`Result: None` is test mode and nothing was started -- `systemctl
+is-active` confirmed it, and the compilers that service purges as a CIS
+control were still installed. But the sentence says otherwise, and on
+that host it is an alarming sentence: the service is stopped on purpose
+because its highstate deletes `make`, `gcc` and `gh`.
+
+One function wrote the comment for both modes and wrote it in the past
+tense. The tense is an argument now. A dry run must never need a second
+command to prove it was dry.
+
+### 5.99 A cross-platform test that only ever ran on one platform
+
+5.88's fix -- one shape for a planned ownership change -- came with a
+test, and that test failed on Windows in CI while passing everywhere it
+had been run by hand.
+
+It asserted that the planned change carries a top-level `new`. That is
+the unix payload. Windows reports the same fact per attribute, as
+`{"user": {old, new}}`, and both nest correctly under the caller's
+`ownership` key; the implementation was right and the assertion was
+parochial. Cross-compiling had said nothing, because it compiles and does
+not run -- the practice that catches a hardcoded `/bin/bash` does not
+catch a payload shape.
+
+What it asserts now is the invariant the original defect was about: the
+change is not wrapped in a second `ownership` key, and it describes a
+change somewhere -- directly, or one level down. **Both platforms' shapes
+are asserted on every platform**, so a Windows shape that breaks fails on
+a Linux run rather than waiting for CI. A cross-platform invariant
+checked on one platform is not a cross-platform invariant.
 
 ## 6. Everything else not started
 

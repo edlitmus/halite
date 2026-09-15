@@ -69,14 +69,25 @@ func (k keySpec) describe() string {
 
 // parseKeySpec reads the algorithm arguments a tree may write, and
 // refuses the combinations that are wrong rather than guessing at them.
-func parseKeySpec(algorithm string, bits int64, curve string) (keySpec, error) {
-	k := keySpec{Algorithm: strings.ToLower(strings.TrimSpace(algorithm))}
+//
+// `algo` and `keysize` are Salt's names, and `keysize` carries Salt's
+// double meaning: the bit length of an RSA key, and the size of the
+// curve for an EC one, where 256, 384 and 521 select P-256, P-384 and
+// P-521 (`salt/utils/x509.py`, generate_rsa_privkey and
+// generate_ec_privkey). There is one size argument because Salt has one,
+// and a tree written for Salt says `keysize: 4096`.
+//
+// Zero means "whatever the algorithm's default is", which is how Salt
+// spells it as None. It cannot be a fixed default on the parameter,
+// because the default differs by algorithm.
+func parseKeySpec(algo string, keysize int64) (keySpec, error) {
+	k := keySpec{Algorithm: strings.ToLower(strings.TrimSpace(algo))}
 	if k.Algorithm == "" {
 		k.Algorithm = "rsa"
 	}
 	switch k.Algorithm {
 	case "rsa":
-		k.Bits = int(bits)
+		k.Bits = int(keysize)
 		if k.Bits == 0 {
 			k.Bits = 4096
 		}
@@ -89,23 +100,34 @@ func parseKeySpec(algorithm string, bits int64, curve string) (keySpec, error) {
 		}
 	case "ec", "ecdsa":
 		k.Algorithm = "ec"
-		k.Curve = strings.ToLower(strings.TrimSpace(curve))
-		if k.Curve == "" {
+		switch keysize {
+		case 0, 256:
 			k.Curve = "p256"
-		}
-		if _, err := curveByName(k.Curve); err != nil {
-			return k, err
+		case 384:
+			k.Curve = "p384"
+		case 521:
+			k.Curve = "p521"
+		case 512:
+			// The one wrong number worth naming. P-521 is not a typo for
+			// 512, and a tree that says 512 means the curve it cannot
+			// have rather than a curve half the size.
+			return k, fmt.Errorf("there is no 512-bit curve; keysize: 521 is P-521, which is the one you want")
+		default:
+			return k, fmt.Errorf("an EC keysize of %d has no curve; halite generates 256, 384, and 521", keysize)
 		}
 	case "ed25519":
+		if keysize != 0 {
+			return k, fmt.Errorf("ed25519 keys have one size, so keysize: %d cannot be honoured; remove it", keysize)
+		}
 		// SPEC 27.4: Ed25519 is not approved under FIPS 140-3. Refused
 		// by name rather than left to fail somewhere inside the module,
 		// so the operator is told which setting to change.
 		if fips.Restricted() {
 			return k, fmt.Errorf("ed25519 is not approved under FIPS 140-3 and this process " +
-				"is in FIPS mode; use algorithm: ec with curve p256 or p384 (SPEC 27.4)")
+				"is in FIPS mode; use algo: ec with keysize 256 or 384 (SPEC 27.4)")
 		}
 	default:
-		return k, fmt.Errorf("unknown key algorithm %q; halite generates rsa, ec, and ed25519 keys", algorithm)
+		return k, fmt.Errorf("unknown key algorithm %q; halite generates rsa, ec, and ed25519 keys", algo)
 	}
 	return k, nil
 }

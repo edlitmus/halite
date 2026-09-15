@@ -384,7 +384,7 @@ is already on the hub, so issue there and copy the result out:
 
 ```sh
 halite-node call x509.create_private_key \
-    path=/tmp/node1-metrics.key algorithm=ec curve=p256
+    path=/tmp/node1-metrics.key algo=ec keysize=256
 
 halite-node call x509.create_certificate \
     private_key=/tmp/node1-metrics.key \
@@ -436,7 +436,7 @@ Make it once, on the hub or wherever you keep such things:
 
 ```sh
 halite-node call x509.create_private_key \
-    path=/usr/local/etc/halite/pki/metrics-ca.key algorithm=ec curve=p256
+    path=/usr/local/etc/halite/pki/metrics-ca.key algo=ec keysize=256
 halite-node call x509.create_certificate \
     private_key=/usr/local/etc/halite/pki/metrics-ca.key \
     path=/usr/local/etc/halite/pki/metrics-ca.crt \
@@ -450,8 +450,8 @@ state becomes:
 # states/metrics_cert.sls
 /usr/local/etc/halite/pki/metrics.key:
   x509.private_key_managed:
-    - algorithm: ec
-    - curve: p256
+    - algo: ec
+    - keysize: 256
     - mode: '0600'
 
 /usr/local/etc/halite/pki/metrics.crt:

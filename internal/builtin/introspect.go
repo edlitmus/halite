@@ -377,6 +377,20 @@ func registerModuleState(r *Registries) {
 	}
 
 	r.States.Add(
+		syncExtensionsState("sync_all", nil,
+			"Fetch every signed extension bundle this node is entitled to."),
+		syncExtensionsState("sync_modules", []string{"module"},
+			"Fetch the module extensions this node is entitled to."),
+		syncExtensionsState("sync_states", []string{"state"},
+			"Fetch the state extensions this node is entitled to."),
+		syncExtensionsState("sync_grains", []string{"grain"},
+			"Fetch the grain extensions this node is entitled to."),
+		syncExtensionsState("sync_beacons", []string{"beacon"},
+			"Fetch the beacon extensions this node is entitled to."),
+		syncExtensionsState("sync_returners", []string{"returner"},
+			"Fetch the returner extensions this node is entitled to."),
+		syncExtensionsState("sync_renderers", []string{"renderer"},
+			"Fetch the renderer extensions this node is entitled to."),
 		states.Module{
 			Sig: signature.Signature{
 				Module: "module", Function: "run",
@@ -543,6 +557,82 @@ func sendEvent(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	return true, nil
+}
+
+// syncExtensionsState is the state form of one `saltutil.sync_*`.
+//
+// An estate's tree writes these -- `shared/salt/extmods.sls` hangs one on
+// an `onchanges` against the file it just wrote -- and this build had the
+// execution functions without the states, so such a tree did not compile.
+// It was recorded here as a refusal on the reasoning that `sync_all`
+// ships Python to a node and this model has no such step. That reasoning
+// described Salt's meaning rather than this build's: SPEC 24.5 already
+// maps these names onto fetching signed, pinned bundles, and the
+// execution half has done exactly that since it was written. The state
+// was a gap, not a decision.
+//
+// The `onchanges` is the reason the state has to be real rather than
+// accepted and ignored. A no-op reports no change, so a requisite hung
+// on it never fires, and a tree whose extensions are fetched only when
+// their definition changes would quietly stop fetching them.
+func syncExtensionsState(function string, kinds []string, doc string) states.Module {
+	return states.Module{
+		Sig: signature.Signature{
+			Module: "saltutil", Function: function,
+			Doc: doc + " It fetches and does not load: what is running does not change until the node restarts.",
+			Params: []signature.Param{
+				nameParam("Unused; Salt's sync states take a name and ignore it."),
+				opt("refresh", signature.Bool, true,
+					"Accepted for Salt's spelling. This build has no separate module cache to invalidate, "+
+						"so a fetch is the whole of it."),
+			},
+			Mutates: true,
+			// Fetching is the change, so there is no way to find out what
+			// would happen without doing it.
+			TestMode: signature.TestUnreliable,
+			Section:  "24.5",
+		},
+		Fn: func(c *exec.Context, args *value.Map) (states.Result, error) {
+			return syncExtensionsResult(c, function, kinds)
+		},
+		ModWatch: func(c *exec.Context, args *value.Map) (states.Result, error) {
+			return syncExtensionsResult(c, function, kinds)
+		},
+	}
+}
+
+func syncExtensionsResult(c *exec.Context, function string, kinds []string) (states.Result, error) {
+	if c.SyncExtensions == nil {
+		return states.False("This node has no file server to synchronize extensions from."), nil
+	}
+	if c.Test {
+		return states.WouldChange(fmt.Sprintf(
+			"saltutil.%s would fetch this node's extension bundles. Whether any of them differ "+
+				"cannot be known without fetching them, so this reports a change either way.", function),
+			value.MapOf("extensions", "would be fetched")), nil
+	}
+
+	out, err := c.SyncExtensions(kinds)
+	if err != nil {
+		return states.False(fmt.Sprintf("The extensions could not be synchronized: %v", err)), nil
+	}
+	report, ok := out.(*value.Map)
+	if !ok {
+		return states.False(fmt.Sprintf("The synchronization returned %T rather than a report.", out)), nil
+	}
+
+	changed, _ := report.Get("changed")
+	entries, _ := report.Get("extensions")
+	list, _ := entries.([]any)
+
+	if b, _ := changed.(bool); !b {
+		return states.True(fmt.Sprintf(
+			"Every extension bundle this node is entitled to is already fetched (%d).", len(list))), nil
+	}
+	// The report names each bundle and what happened to it, including the
+	// refused ones, which is the half an operator most needs.
+	return states.Changed(fmt.Sprintf("%d extension bundle(s) were fetched. They load when the node restarts.",
+		len(list)), value.MapOf("extensions", list)), nil
 }
 
 // syncExtensions builds one `saltutil.sync_*` function.

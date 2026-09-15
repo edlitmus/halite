@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,6 +39,8 @@ func registerCmd(r *Registries) {
 			opt("stdin", signature.String, "", "Text written to the process."),
 			opt("timeout", signature.Duration, nil, "How long the command may run."),
 			opt("ignore_retcode", signature.Bool, false, "Treat a non-zero exit as success."),
+			opt("bg", signature.Bool, false,
+				"Start the command and do not wait for it. Nothing collects its output or its exit status."),
 		}
 		return append(base, extra...)
 	}
@@ -303,10 +306,35 @@ func registerCmd(r *Registries) {
 				"a shell line is one string and an argument vector is a list, so pick one. SPEC section 15.2"), nil
 		}
 		cmd := build(c, args)
+		background := states.Bool(args, "bg", false)
+		if background && cmd.Timeout > 0 {
+			// Nothing is waiting for the process, so nothing can stop it
+			// at a deadline. Refused rather than dropped, because a tree
+			// that asked for a bounded run and got an unbounded one has
+			// been told the opposite of the truth.
+			return states.False("This state gives both `bg` and `timeout`, and a command nobody waits for " +
+				"cannot be timed out. Drop one."), nil
+		}
 		if c.Test {
+			verb := "would be run"
+			if background {
+				verb = "would be started in the background"
+			}
 			return states.WouldChange(
-				fmt.Sprintf("The command %q would be run.", cmd.String()),
+				fmt.Sprintf("The command %q %s.", cmd.String(), verb),
 				value.MapOf("cmd", states.Change("not run", cmd.String())),
+			), nil
+		}
+		if background {
+			cmd.Background = true
+			res, err := c.Run(cmd)
+			if err != nil {
+				return states.False(fmt.Sprintf("The command could not be started: %v", err)), nil
+			}
+			pid, _ := strconv.ParseInt(strings.TrimSpace(res.Stdout), 10, 64)
+			return states.Changed(
+				fmt.Sprintf("The command %q was started in the background.", cmd.String()),
+				value.MapOf("pid", pid),
 			), nil
 		}
 		if cmd.Shell {

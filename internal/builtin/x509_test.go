@@ -29,10 +29,10 @@ func x509Call(t *testing.T, r *Registries, fn string, args *value.Map) any {
 func TestWeakKeysAreRefused(t *testing.T) {
 	r := New()
 	for _, args := range []*value.Map{
-		value.MapOf("algorithm", "rsa", "bits", int64(1024)),
-		value.MapOf("algorithm", "rsa", "bits", int64(2047)),
-		value.MapOf("algorithm", "ec", "curve", "p224"),
-		value.MapOf("algorithm", "dsa"),
+		value.MapOf("algo", "rsa", "keysize", int64(1024)),
+		value.MapOf("algo", "rsa", "keysize", int64(2047)),
+		value.MapOf("algo", "ec", "keysize", int64(224)),
+		value.MapOf("algo", "dsa"),
 	} {
 		if _, err := r.Exec.Call(newCtx(false), "x509.create_private_key", args); err == nil {
 			t.Errorf("%v was accepted; it should be refused", args.StringKeys())
@@ -41,7 +41,7 @@ func TestWeakKeysAreRefused(t *testing.T) {
 
 	// And the floor is a floor, not a ceiling.
 	if _, err := r.Exec.Call(newCtx(false), "x509.create_private_key",
-		value.MapOf("algorithm", "rsa", "bits", int64(2048))); err != nil {
+		value.MapOf("algo", "rsa", "keysize", int64(2048))); err != nil {
 		t.Errorf("2048 bits is the minimum and should be accepted: %v", err)
 	}
 }
@@ -50,7 +50,7 @@ func TestPrivateKeyIsWrittenUnreadableToOthers(t *testing.T) {
 	r := New()
 	path := filepath.Join(t.TempDir(), "key.pem")
 	x509Call(t, r, "x509.create_private_key",
-		value.MapOf("path", path, "algorithm", "ec", "curve", "p256"))
+		value.MapOf("path", path, "algo", "ec", "keysize", int64(256)))
 
 	// A private key must not be readable by anyone else, asked in the
 	// platform's own terms.
@@ -68,13 +68,13 @@ func TestPrivateKeyIsWrittenUnreadableToOthers(t *testing.T) {
 func TestEveryAlgorithmRoundTrips(t *testing.T) {
 	r := New()
 	for _, args := range []*value.Map{
-		value.MapOf("algorithm", "rsa", "bits", int64(2048)),
-		value.MapOf("algorithm", "ec", "curve", "p256"),
-		value.MapOf("algorithm", "ec", "curve", "p384"),
-		value.MapOf("algorithm", "ed25519"),
+		value.MapOf("algo", "rsa", "keysize", int64(2048)),
+		value.MapOf("algo", "ec", "keysize", int64(256)),
+		value.MapOf("algo", "ec", "keysize", int64(384)),
+		value.MapOf("algo", "ed25519"),
 	} {
-		algorithm, _ := args.Get("algorithm")
-		if algorithm == "ed25519" && fips.Restricted() {
+		algo, _ := args.Get("algo")
+		if algo == "ed25519" && fips.Restricted() {
 			// SPEC 27.4: not approved, and refused by name rather than
 			// left to fail inside the module. The refusal is the
 			// assertion, and it has to name the setting to change.
@@ -105,14 +105,14 @@ func TestCASignedCertificate(t *testing.T) {
 
 	caKey := filepath.Join(dir, "ca.key")
 	caCert := filepath.Join(dir, "ca.pem")
-	x509Call(t, r, "x509.create_private_key", value.MapOf("path", caKey, "algorithm", "ec"))
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", caKey, "algo", "ec"))
 	x509Call(t, r, "x509.create_certificate", value.MapOf(
 		"path", caCert, "private_key", caKey, "CN", "Test CA", "O", "halite",
 		"ca", true, "days_valid", int64(3650)))
 
 	leafKey := filepath.Join(dir, "leaf.key")
 	leafCert := filepath.Join(dir, "leaf.pem")
-	x509Call(t, r, "x509.create_private_key", value.MapOf("path", leafKey, "algorithm", "ec"))
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", leafKey, "algo", "ec"))
 	x509Call(t, r, "x509.create_certificate", value.MapOf(
 		"path", leafCert, "private_key", leafKey,
 		"signing_cert", caCert, "signing_private_key", caKey,
@@ -165,7 +165,7 @@ func TestSigningWithANonCAIsRefused(t *testing.T) {
 	dir := t.TempDir()
 	key := filepath.Join(dir, "k.pem")
 	leaf := filepath.Join(dir, "leaf.pem")
-	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algorithm", "ec"))
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algo", "ec"))
 	x509Call(t, r, "x509.create_certificate", value.MapOf("path", leaf, "private_key", key, "CN", "not-a-ca"))
 
 	_, err := r.Exec.Call(newCtx(false), "x509.create_certificate", value.MapOf(
@@ -193,7 +193,7 @@ func TestCSRRoundTrip(t *testing.T) {
 	r := New()
 	dir := t.TempDir()
 	key := filepath.Join(dir, "k.pem")
-	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algorithm", "ec"))
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algo", "ec"))
 
 	csrPEM := x509Call(t, r, "x509.create_csr", value.MapOf(
 		"private_key", key, "CN", "req.example.com",
@@ -219,7 +219,7 @@ func TestExpiresAndPublicKey(t *testing.T) {
 	dir := t.TempDir()
 	key := filepath.Join(dir, "k.pem")
 	cert := filepath.Join(dir, "c.pem")
-	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algorithm", "ec"))
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algo", "ec"))
 	x509Call(t, r, "x509.create_certificate",
 		value.MapOf("path", cert, "private_key", key, "CN", "x", "days_valid", int64(10)))
 
@@ -284,7 +284,7 @@ func TestDefaultKeyUsageFollowsThePurpose(t *testing.T) {
 	r := New()
 	dir := t.TempDir()
 	key := filepath.Join(dir, "k.pem")
-	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algorithm", "ec"))
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algo", "ec"))
 
 	caPEM := x509Call(t, r, "x509.create_certificate",
 		value.MapOf("private_key", key, "CN", "ca", "ca", true)).(string)
@@ -311,7 +311,7 @@ func TestSerialsAreUnguessable(t *testing.T) {
 	r := New()
 	dir := t.TempDir()
 	key := filepath.Join(dir, "k.pem")
-	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algorithm", "ec"))
+	x509Call(t, r, "x509.create_private_key", value.MapOf("path", key, "algo", "ec"))
 
 	seen := map[string]bool{}
 	for i := 0; i < 8; i++ {
@@ -336,7 +336,7 @@ func TestSerialsAreUnguessable(t *testing.T) {
 func TestRSAKeyIsTheRequestedSize(t *testing.T) {
 	r := New()
 	pemText := x509Call(t, r, "x509.create_private_key",
-		value.MapOf("algorithm", "rsa", "bits", int64(2048))).(string)
+		value.MapOf("algo", "rsa", "keysize", int64(2048))).(string)
 	key, err := loadPrivateKey(pemText)
 	if err != nil {
 		t.Fatal(err)
@@ -361,7 +361,7 @@ func TestX509StatesConvergeOnASecondRun(t *testing.T) {
 	key := filepath.Join(dir, "key.pem")
 	cert := filepath.Join(dir, "cert.pem")
 
-	keyArgs := value.MapOf("name", key, "algorithm", "ec", "curve", "p256")
+	keyArgs := value.MapOf("name", key, "algo", "ec", "keysize", int64(256))
 	certArgs := func() *value.Map {
 		return value.MapOf("name", cert, "private_key", key, "CN", "web.example.com",
 			"days_valid", int64(365), "days_remaining", int64(30))
@@ -424,11 +424,11 @@ func TestPrivateKeyManagedNoticesTheWrongKey(t *testing.T) {
 
 	// An RSA key where the tree asked for EC is not the tree's key.
 	if _, err := r.States.Call(newCtx(false), "x509.private_key_managed",
-		value.MapOf("name", path, "algorithm", "rsa", "bits", int64(2048))); err != nil {
+		value.MapOf("name", path, "algo", "rsa", "keysize", int64(2048))); err != nil {
 		t.Fatal(err)
 	}
 	res, err := r.States.Call(newCtx(true), "x509.private_key_managed",
-		value.MapOf("name", path, "algorithm", "ec", "curve", "p256"))
+		value.MapOf("name", path, "algo", "ec", "keysize", int64(256)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -446,7 +446,7 @@ func TestPrivateKeyManagedNoticesTheWrongKey(t *testing.T) {
 
 	// An RSA key of the wrong size is also wrong.
 	res, _ = r.States.Call(newCtx(true), "x509.private_key_managed",
-		value.MapOf("name", path, "algorithm", "rsa", "bits", int64(3072)))
+		value.MapOf("name", path, "algo", "rsa", "keysize", int64(3072)))
 	if res.Result != nil {
 		t.Errorf("a 2048-bit key where 3072 was asked for should be replaced: %+v", res)
 	}
@@ -461,12 +461,12 @@ func TestCertificateManagedNoticesAKeyChange(t *testing.T) {
 	cert := filepath.Join(dir, "cert.pem")
 	certArgs := value.MapOf("name", cert, "private_key", key, "CN", "x", "days_remaining", int64(0))
 
-	r.States.Call(newCtx(false), "x509.private_key_managed", value.MapOf("name", key, "algorithm", "ec"))
+	r.States.Call(newCtx(false), "x509.private_key_managed", value.MapOf("name", key, "algo", "ec"))
 	r.States.Call(newCtx(false), "x509.certificate_managed", certArgs)
 
 	// Replace the key underneath it.
 	r.States.Call(newCtx(false), "x509.private_key_managed",
-		value.MapOf("name", key, "algorithm", "ec", "new", true))
+		value.MapOf("name", key, "algo", "ec", "new", true))
 
 	res, err := r.States.Call(newCtx(true), "x509.certificate_managed", certArgs)
 	if err != nil {
@@ -488,7 +488,7 @@ func TestCertificateManagedRenewsBeforeExpiry(t *testing.T) {
 	dir := t.TempDir()
 	key := filepath.Join(dir, "key.pem")
 	cert := filepath.Join(dir, "cert.pem")
-	r.States.Call(newCtx(false), "x509.private_key_managed", value.MapOf("name", key, "algorithm", "ec"))
+	r.States.Call(newCtx(false), "x509.private_key_managed", value.MapOf("name", key, "algo", "ec"))
 	r.States.Call(newCtx(false), "x509.certificate_managed", value.MapOf(
 		"name", cert, "private_key", key, "CN", "x", "days_valid", int64(10), "days_remaining", int64(0)))
 
@@ -507,5 +507,132 @@ func TestCertificateManagedRenewsBeforeExpiry(t *testing.T) {
 		"name", cert, "private_key", key, "CN", "x", "days_remaining", int64(5)))
 	if res.Result == nil || res.HasChanges() {
 		t.Errorf("a certificate outside the renewal window should be left alone: %+v", res)
+	}
+}
+
+// `keysize` carries Salt's double meaning -- RSA bits, or the size of an
+// EC curve -- and the danger in one argument meaning two things is that a
+// wrong reading still produces a key. So this asserts the key that comes
+// back, not that the call succeeded.
+func TestKeysizeSelectsTheRSASizeAndTheECCurve(t *testing.T) {
+	r := New()
+	for _, tc := range []struct {
+		algo    string
+		keysize int64
+		want    string
+	}{
+		{"rsa", 2048, "rsa 2048"},
+		{"rsa", 3072, "rsa 3072"},
+		{"rsa", 0, "rsa 4096"}, // the algorithm's default, Salt's None
+		{"ec", 0, "ec p256"},   // likewise, and a different number
+		{"ec", 256, "ec p256"},
+		{"ec", 384, "ec p384"},
+		{"ec", 521, "ec p521"},
+	} {
+		args := value.MapOf("algo", tc.algo)
+		if tc.keysize != 0 {
+			args.Set("keysize", tc.keysize)
+		}
+		out := x509Call(t, r, "x509.create_private_key", args)
+		key, err := loadPrivateKey(out.(string))
+		if err != nil {
+			t.Fatalf("%s/%d: %v", tc.algo, tc.keysize, err)
+		}
+		if got := describeKey(key); got != tc.want {
+			t.Errorf("algo %s keysize %d produced %s, want %s", tc.algo, tc.keysize, got, tc.want)
+		}
+	}
+}
+
+// The two ways a tree can write a keysize that cannot mean what it says.
+// Both are refused by name: a curve chosen by rounding, or a size
+// silently dropped, is the accept-but-ignore defect with a key at the end
+// of it.
+func TestAKeysizeThatCannotBeHonouredIsRefused(t *testing.T) {
+	r := New()
+	for _, tc := range []struct {
+		args *value.Map
+		want string
+	}{
+		{value.MapOf("algo", "ec", "keysize", int64(512)), "there is no 512-bit curve"},
+		{value.MapOf("algo", "ec", "keysize", int64(2048)), "has no curve"},
+		{value.MapOf("algo", "ed25519", "keysize", int64(256)), "ed25519 keys have one size"},
+	} {
+		_, err := r.Exec.Call(newCtx(false), "x509.create_private_key", tc.args)
+		if err == nil {
+			t.Errorf("%v was accepted", tc.args.StringKeys())
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%v was refused with %q, which does not say %q", tc.args.StringKeys(), err, tc.want)
+		}
+	}
+}
+
+// The x509 and tls modules spell a key size differently, and both
+// spellings are Salt's. salt.modules.tls.create_ca takes `bits`;
+// salt.states.x509_v2.private_key_managed takes `keysize` and `algo`.
+// Sharing one parameter set between them looks like tidying and silently
+// breaks whichever module does not get its own name -- which is a way of
+// refusing a tree that is written correctly.
+func TestTheTwoModulesKeepSaltsTwoSpellings(t *testing.T) {
+	r := New()
+	params := func(fn string) map[string]bool {
+		t.Helper()
+		sig, ok := r.Exec.Signatures().Lookup(fn)
+		if !ok {
+			if s, sok := r.States.Signatures().Lookup(fn); sok {
+				sig = s
+			} else {
+				t.Fatalf("%s is not registered", fn)
+			}
+		}
+		out := map[string]bool{}
+		for _, p := range sig.Params {
+			out[p.Name] = true
+		}
+		return out
+	}
+
+	for _, fn := range []string{"x509.create_private_key", "x509.private_key_managed"} {
+		p := params(fn)
+		for _, want := range []string{"algo", "keysize"} {
+			if !p[want] {
+				t.Errorf("%s has no %q; that is Salt's x509 spelling", fn, want)
+			}
+		}
+		for _, unwanted := range []string{"bits", "curve", "algorithm"} {
+			if p[unwanted] {
+				t.Errorf("%s has %q, which is the tls module's spelling, not x509's", fn, unwanted)
+			}
+		}
+	}
+
+	for _, fn := range []string{"tls.create_ca", "tls.create_ca_signed_cert"} {
+		p := params(fn)
+		if !p["bits"] {
+			t.Errorf("%s has no \"bits\"; that is what Salt's tls module takes", fn)
+		}
+		if p["keysize"] {
+			t.Errorf("%s has \"keysize\", which Salt's tls module does not take", fn)
+		}
+	}
+}
+
+// And the tls spelling has to reach the key, not merely be accepted.
+func TestTlsBitsReachesTheGeneratedKey(t *testing.T) {
+	spec, err := tlsKeySpecFrom(value.MapOf("algorithm", "rsa", "bits", int64(2048)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := spec.describe(); got != "rsa 2048" {
+		t.Errorf("tls bits 2048 produced %s", got)
+	}
+	spec, err = tlsKeySpecFrom(value.MapOf("algorithm", "ec", "curve", "p384"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := spec.describe(); got != "ec p384" {
+		t.Errorf("tls curve p384 produced %s", got)
 	}
 }

@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,6 +41,10 @@ func registerFileTreeCopy(r *Registries) {
 				opt("user", signature.String, "", "Owner for what it writes."),
 				opt("group", signature.String, "", "Group for what it writes."),
 				opt("makedirs", signature.Bool, true, "Create the destination if it is absent."),
+				opt("template", signature.String, "",
+					"Render every file through this engine before writing it. Only jinja is supported."),
+				opt("context", signature.Map, nil, "Names added to each template, overriding defaults."),
+				opt("defaults", signature.Map, nil, "Names added to each template, overridden by context."),
 			},
 			Mutates:  true,
 			TestMode: signature.TestReliable,
@@ -75,7 +80,7 @@ func fileRecurse(c *exec.Context, args *value.Map) (states.Result, error) {
 				"empty directory, so this is reported rather than passed.", source)), nil
 	}
 
-	plan, err := planTreeCopy(c, dest, source, paths)
+	plan, err := planTreeCopy(c, args, dest, source, paths)
 	if err != nil {
 		return states.False(err.Error()), nil
 	}
@@ -110,8 +115,12 @@ type treeCopyPlan struct {
 }
 
 type treeCopyFile struct {
-	rel   string
-	local string
+	rel string
+	// body is what will be written: the source file, rendered if the
+	// state names a template engine. It is carried from planning rather
+	// than re-read at write time so that the comparison deciding whether
+	// to write and the bytes actually written are the same thing.
+	body  []byte
 	isNew bool
 }
 
@@ -146,7 +155,7 @@ func (p *treeCopyPlan) describe(dest, source string, would bool) string {
 
 // planTreeCopy decides what has to be written, comparing each source file
 // with what is already on the node.
-func planTreeCopy(c *exec.Context, dest, source string, paths []string) (*treeCopyPlan, error) {
+func planTreeCopy(c *exec.Context, args *value.Map, dest, source string, paths []string) (*treeCopyPlan, error) {
 	plan := &treeCopyPlan{}
 	for _, rel := range paths {
 		uri := strings.TrimSuffix(source, "/") + "/" + rel
@@ -156,7 +165,19 @@ func planTreeCopy(c *exec.Context, dest, source string, paths []string) (*treeCo
 		}
 		target := filepath.Join(dest, filepath.FromSlash(rel))
 
-		same, err := sameFileContents(local, target)
+		body, err := os.ReadFile(local)
+		if err != nil {
+			return nil, err
+		}
+		// Rendered before the comparison, not after it. A template
+		// compared unrendered differs from its own output on every run,
+		// so the state would rewrite the file forever and never converge.
+		body, err = renderSourceTemplate(c, args, body, uri)
+		if err != nil {
+			return nil, fmt.Errorf("the template for %s failed: %w", uri, err)
+		}
+
+		same, err := sameContents(body, target)
 		if err != nil {
 			return nil, err
 		}
@@ -165,10 +186,22 @@ func planTreeCopy(c *exec.Context, dest, source string, paths []string) (*treeCo
 		}
 		_, statErr := os.Lstat(target)
 		plan.write = append(plan.write, treeCopyFile{
-			rel: rel, local: local, isNew: os.IsNotExist(statErr),
+			rel: rel, body: body, isNew: os.IsNotExist(statErr),
 		})
 	}
 	return plan, nil
+}
+
+// sameContents compares bytes already in hand with a file on disk.
+func sameContents(body []byte, target string) (bool, error) {
+	have, err := os.ReadFile(target)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return bytes.Equal(have, body), nil
 }
 
 // apply writes the plan.
@@ -186,11 +219,7 @@ func (p *treeCopyPlan) apply(args *value.Map, dest string) error {
 		if err := os.MkdirAll(filepath.Dir(target), dirMode); err != nil {
 			return err
 		}
-		body, err := os.ReadFile(f.local)
-		if err != nil {
-			return err
-		}
-		if err := writeAtomic(target, body, fileMode); err != nil {
+		if err := writeAtomic(target, f.body, fileMode); err != nil {
 			return err
 		}
 		if err := applyOwnership(target, states.Str(args, "user", ""),

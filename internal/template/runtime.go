@@ -602,6 +602,33 @@ func compare(a, b any) (int, error) {
 		}
 		return strings.Compare(as, bs), nil
 	}
+	// Two sequences compare element by element, and where one runs out
+	// first the shorter is the smaller. This is Python's rule, so it is
+	// Jinja's, and a tree relies on it to gate on a version:
+	// `{% if grains['saltversioninfo'] >= [2016, 3] %}` is an ordinary
+	// thing for an estate's tree to write.
+	if as, ok := a.([]any); ok {
+		bs, ok := b.([]any)
+		if !ok {
+			return 0, fmt.Errorf("cannot compare a sequence with %s", typeName(b))
+		}
+		for i := 0; i < len(as) && i < len(bs); i++ {
+			c, err := compare(as[i], bs[i])
+			if err != nil {
+				return 0, fmt.Errorf("comparing element %d: %w", i, err)
+			}
+			if c != 0 {
+				return c, nil
+			}
+		}
+		switch {
+		case len(as) < len(bs):
+			return -1, nil
+		case len(as) > len(bs):
+			return 1, nil
+		}
+		return 0, nil
+	}
 	af, aok := asFloat(a)
 	bf, bok := asFloat(b)
 	if !aok || !bok {

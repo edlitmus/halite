@@ -641,7 +641,7 @@ silently substituted:
 
 | Behaviour | What to do instead |
 |---|---|
-| `x509.create_private_key` refuses `algorithm: ed25519` | Use `ec` with `p256` or `p384` |
+| `x509.create_private_key` refuses `algo: ed25519` | Use `algo: ec` with `keysize: 256` or `384` |
 | TLS key exchange is P-256 or P-384; X25519 is refused | Nothing — both ends of a halite connection agree |
 | TOTP cannot be checked, so accounts with a second factor cannot log in | `halite-api` names them at startup; remove the `totp` field or run those operators on a non-FIPS API |
 

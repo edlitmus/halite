@@ -9,6 +9,7 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/exec"
 	hlog "github.com/edlitmus/halite/internal/log"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/runner"
 	"github.com/edlitmus/halite/internal/state"
@@ -352,13 +353,14 @@ func runPillar(args *cli.Args) int {
 	n := setup(args)
 	n.useHubIfConfigured(args)
 	p := n.compilePillar()
+	reveal := args.Bool("reveal", false)
 	sub := "items"
 	if len(args.Positional) > 0 {
 		sub = args.Positional[0]
 	}
 	switch sub {
 	case "items":
-		n.out(value.MapOf(n.nodeID, p))
+		n.out(value.MapOf(n.nodeID, maskPillar(p, reveal)))
 	case "get":
 		if len(args.Positional) != 2 {
 			cli.Fatalf("pillar get takes exactly one key; use `pillar item` for several")
@@ -367,16 +369,79 @@ func runPillar(args *cli.Args) int {
 		if !ok {
 			v = ""
 		}
-		n.out(value.MapOf(n.nodeID, v))
+		n.out(value.MapOf(n.nodeID, maskPillar(v, reveal)))
 	case "item":
 		if len(args.Positional) < 2 {
 			cli.Fatalf("pillar item needs a key")
 		}
-		n.out(value.MapOf(n.nodeID, traverseAll(p, args.Positional[1:])))
+		n.out(value.MapOf(n.nodeID, maskPillar(traverseAll(p, args.Positional[1:]), reveal)))
 	default:
 		cli.Fatalf("pillar has no subcommand %q; try items, item, or get", sub)
 	}
 	return 0
+}
+
+// maskPillar redacts the pillar on its way to the screen, which is what
+// Salt does and what this did not.
+//
+// `pillar items` is the command an operator reaches for while debugging,
+// and it printed every secret the tree carries in clear -- to the
+// terminal, and to whatever scrollback, CI log or ticket the output was
+// pasted into afterwards. Running it against a real estate's pillar is
+// how this was found: sixteen live credentials, against Salt's sixteen
+// `**********`.
+//
+// The rule is Salt's, from `salt/utils/secret.py`'s `serial`, which is
+// applied at exactly these boundaries -- `pillar.items`, `pillar.item`,
+// `pillar.get`: **every non-empty string leaf is replaced**, and
+// numbers, booleans, nulls and empty strings pass through. Keys are
+// never touched. That keeps the shape of the tree, which is most of what
+// the command is for: a state that cannot find `foxpass:api_key` is
+// debugged by seeing the key exist, not by reading it.
+//
+// Salt has no way to unmask. `--reveal` is this build's, because the
+// remaining reason to run the command is to check a value, and an
+// operator who cannot will reach for something worse -- a `cmd.run` that
+// echoes it, or the pillar file itself. Asking for it is the point: it
+// makes the disclosure deliberate and greppable in shell history, where
+// masking-by-default makes the safe path the default one.
+//
+// Note this is a display boundary and nothing else. The redactor still
+// learns every value, so anything that reaches a log is scrubbed there
+// as before; and a template still renders against the real pillar,
+// exactly as Salt's contextvar arranges.
+func maskPillar(v any, reveal bool) any {
+	if reveal {
+		return v
+	}
+	return maskValue(v)
+}
+
+func maskValue(v any) any {
+	switch t := v.(type) {
+	case string:
+		if t == "" {
+			return t
+		}
+		return redact.Placeholder
+	case *value.Map:
+		out := value.NewMap(t.Len())
+		for _, e := range t.Entries() {
+			out.Set(e.Key, maskValue(e.Val))
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = maskValue(item)
+		}
+		return out
+	default:
+		// Numbers, booleans and nulls carry no secret on their own and
+		// are what a tree branches on, so they are left alone. Salt
+		// passes them through for the same reason.
+		return v
+	}
 }
 
 // runLint renders and parses without executing, and reports unsupported

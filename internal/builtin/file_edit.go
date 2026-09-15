@@ -2,7 +2,10 @@ package builtin
 
 import (
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -41,6 +44,7 @@ func replaceParams(nameDoc string) []signature.Param {
 		opt("not_found_content", signature.String, "", "What to add when the pattern is not found; defaults to repl."),
 		opt("backup", signature.String, "", "Keep a copy of the previous contents with this suffix."),
 		opt("show_changes", signature.Bool, true, "Include a unified diff in the changes."),
+		opt("ignore_if_missing", signature.Bool, false, "Report no change instead of failing when the file does not exist."),
 		{
 			Name: "bufsize", Type: signature.Any,
 			Doc: "Accepted for compatibility with Salt, which uses it to size a chunked read.",
@@ -358,7 +362,165 @@ func registerFileEditStates(r *Registries) {
 			},
 			Fn: fileCopyState,
 		},
+		states.Module{
+			Sig: signature.Signature{
+				Module: "file", Function: "rename",
+				Doc: "Move a file or directory into place, if the source is still there.",
+				Params: []signature.Param{
+					pathParam("Where it should end up. Defaults to the state ID."),
+					req("source", signature.Path, "What to move."),
+					opt("force", signature.Bool, false, "Replace the destination if it already exists."),
+					opt("makedirs", signature.Bool, false, "Create the destination's parent directories."),
+				},
+				Mutates:  true,
+				TestMode: signature.TestReliable,
+				Section:  "15.5",
+			},
+			Fn: fileRenameState,
+		},
 	)
+}
+
+// fileRenameState is Salt's file.rename, whose convergence is the whole
+// point of it: the second run finds the source gone and says so, rather
+// than failing. A tree uses it to move something into place once -- the
+// estate's own `shared/salt/pgpkeys.sls` unpacks an archive and then
+// renames the directory it produced -- and every later highstate has to
+// be a no-op.
+//
+// Two of Salt's outcomes are successes that change nothing, and both
+// would be easy to write as errors by mistake: a source that is already
+// gone, and a destination that exists when `force` was not asked for.
+func fileRenameState(c *exec.Context, args *value.Map) (states.Result, error) {
+	dest := states.Str(args, "name", "")
+	source := states.Str(args, "source", "")
+	if dest == "" || source == "" {
+		return states.False("This state needs a destination and a source."), nil
+	}
+	if !filepath.IsAbs(dest) {
+		return states.False(fmt.Sprintf("%s is not an absolute path.", dest)), nil
+	}
+
+	if _, err := os.Lstat(source); err != nil {
+		// Lstat, not Stat: a dangling symlink is still something to move.
+		return states.True(fmt.Sprintf("%s has already been moved out of place.", source)), nil
+	}
+
+	_, destErr := os.Lstat(dest)
+	destExists := destErr == nil
+	force := states.Bool(args, "force", false)
+	if destExists && !force {
+		return states.True(fmt.Sprintf("%s exists and will not be overwritten.", dest)), nil
+	}
+
+	changes := value.MapOf(dest, states.Change(source, dest))
+	if c.Test {
+		return states.WouldChange(fmt.Sprintf("%s would be moved to %s.", source, dest), changes), nil
+	}
+
+	if destExists {
+		if err := os.RemoveAll(dest); err != nil {
+			return states.False(fmt.Sprintf("%s could not be removed to make way for the move: %v", dest, err)), nil
+		}
+	}
+
+	parent := filepath.Dir(dest)
+	if _, err := os.Stat(parent); err != nil {
+		if !states.Bool(args, "makedirs", false) {
+			return states.False(fmt.Sprintf("The destination directory %s is not there. "+
+				"Set makedirs to create it.", parent)), nil
+		}
+		if err := os.MkdirAll(parent, 0o755); err != nil {
+			return states.False(fmt.Sprintf("%s could not be created: %v", parent, err)), nil
+		}
+	}
+
+	if err := movePath(source, dest); err != nil {
+		return states.False(fmt.Sprintf("%s could not be moved to %s: %v", source, dest, err)), nil
+	}
+	return states.Changed(fmt.Sprintf("%s was moved to %s.", source, dest), changes), nil
+}
+
+// movePath moves a path, recreating a symlink rather than following it,
+// as Salt's file.rename does.
+//
+// A rename across a mount boundary fails, and /etc and /var are separate
+// filesystems often enough that a state moving a file between them is
+// ordinary. The failure is not distinguished by errno here: the EXDEV
+// constant is spelled differently on each platform, and falling back to a
+// copy on any rename failure costs one failed syscall and works
+// everywhere. If the copy fails too, the rename's error is the one
+// reported, because it is the one that describes the real problem.
+func movePath(source, dest string) error {
+	if info, err := os.Lstat(source); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(source)
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(target, dest); err != nil {
+			return err
+		}
+		return os.Remove(source)
+	}
+	renameErr := os.Rename(source, dest)
+	if renameErr == nil {
+		return nil
+	}
+	if err := copyTree(source, dest); err != nil {
+		return renameErr
+	}
+	return os.RemoveAll(source)
+}
+
+// copyTree copies a file or a directory recursively, preserving modes and
+// recreating symlinks. It exists for movePath's cross-filesystem case.
+func copyTree(source, dest string) error {
+	return filepath.WalkDir(source, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(source, path)
+		if err != nil {
+			return err
+		}
+		target := dest
+		if rel != "." {
+			target = filepath.Join(dest, rel)
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		switch {
+		case d.IsDir():
+			return os.MkdirAll(target, info.Mode().Perm())
+		case info.Mode()&os.ModeSymlink != 0:
+			link, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			return os.Symlink(link, target)
+		default:
+			return copyOneFile(path, target, info.Mode().Perm())
+		}
+	})
+}
+
+func copyOneFile(source, dest string, mode fs.FileMode) error {
+	in, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // withPathFromName lets one implementation back both the exec form, which
@@ -446,8 +608,23 @@ func readEditTarget(args *value.Map) (path string, data []byte, res states.Resul
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// `ignore_if_missing` is Salt's, and it is how one tree
+			// covers several platforms: a state that hardens
+			// /etc/login.defs is written once and applied to a node
+			// that has no such file, where the edit is not a failure
+			// but a no-op. Without it such a tree cannot be shared.
+			//
+			// It reports success with no changes, which is Salt's
+			// wording too -- not a warning, because nothing is wrong:
+			// the file the state was asked to edit is not there, and
+			// the state said that is acceptable.
+			if states.Bool(args, "ignore_if_missing", false) {
+				return path, nil, states.True(fmt.Sprintf(
+					"%s does not exist, and ignore_if_missing is set.", path)), false
+			}
 			return path, nil, states.False(fmt.Sprintf(
-				"%s does not exist; use file.managed to create it before editing it.", path)), false
+				"%s does not exist; use file.managed to create it before editing it, "+
+					"or set ignore_if_missing to treat that as nothing to do.", path)), false
 		}
 		return path, nil, states.False(fmt.Sprintf("%s could not be read: %v", path, err)), false
 	}

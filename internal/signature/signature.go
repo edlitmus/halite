@@ -306,6 +306,14 @@ func (s Signature) Bind(args []any, kwargs *value.Map) (*value.Map, []error) {
 			v, err := coerce(s, p, e.Val)
 			if err != nil {
 				errs = append(errs, err)
+				// Seen, though not usable. Without this the required-
+				// parameter loop below finds the name unused and reports
+				// it missing as well, so one wrong argument produced two
+				// errors -- `ip: must be a string, found sequence` and
+				// `ip: is required`, the second of which is not true and
+				// sends the reader looking for an argument that is
+				// already there.
+				used[name] = true
 				continue
 			}
 			out.Set(name, v)

@@ -260,3 +260,37 @@ func TestModeAdviceSuggestsWhatWasTyped(t *testing.T) {
 		t.Errorf("modeAdvice(888) = %q, want the single octal spelling", got)
 	}
 }
+
+// One wrong argument is one error. A value of the wrong type used to
+// produce two: the coercion failure, and then "is required" from the
+// pass that looks for missing parameters, because the argument was never
+// marked as seen. The second is not true -- the argument is right there
+// -- and it sends the reader looking for something that is not the
+// problem.
+func TestAWrongTypeIsOneErrorNotTwo(t *testing.T) {
+	sig := Signature{
+		Module: "host", Function: "present",
+		Params: []Param{
+			{Name: "name", Type: String, Required: true},
+			{Name: "ip", Type: String, Required: true},
+		},
+	}
+	args := value.MapOf("name", "web1", "ip", []any{"10.0.0.1"})
+
+	_, errs := sig.Bind(nil, args)
+	if len(errs) == 0 {
+		t.Fatal("a sequence was accepted for a string parameter")
+	}
+	var mentioning int
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "ip") {
+			mentioning++
+		}
+		if strings.Contains(err.Error(), "is required") {
+			t.Errorf("an argument that was given is reported missing: %v", err)
+		}
+	}
+	if mentioning != 1 {
+		t.Errorf("one wrong argument produced %d errors: %v", mentioning, errs)
+	}
+}

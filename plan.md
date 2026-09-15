@@ -27,7 +27,7 @@ in its **Common Linux row** — every one but `authselect`. `pam`/`quota`/
 state; `journald` is the one §7.12 flagged for a design decision;
 `mdadm`, `modprobe` and `udev` are exec-only (SPEC 15.5 names no state
 for any of them). `authselect` is left **pending on purpose** — see
-§2.3's row for why. 40 of 65 platform modules now ship. One consequence a reader should not have to hunt for:
+§2.3's row for why. 42 of 65 platform modules now ship. One consequence a reader should not have to hunt for:
 the release gate is red on **ten** modules rather than two, all of them
 `apparmor`, `snap` or the eight-strong macOS row — every other new
 module has been driven against its real tool. `iptables`/`nftables`
@@ -73,7 +73,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD and macOS rows of SPEC 15.3 now ship entirely. **32 of SPEC 15.3's 65 platform modules, 18 of SPEC 15.2's core execution modules and 14 of SPEC 15.5's core state modules remain.** |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD and macOS rows of SPEC 15.3 now ship entirely. **23 of SPEC 15.3's 65 platform modules, 8 of SPEC 15.2's core execution modules and 8 of SPEC 15.5's core state modules remain.** Re-measured against the registry on 2026-09-15; the row had said 32, 18 and 14, and §2.2 had said 9 and 10 at the same time -- two counts of the same thing, both wrong, in one document. |
 | 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Outstanding: the scale harness the other eleven performance rows need, no packaging, no node evidence, no detached signing; the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
 
 ### 0.1 What the previous revision listed and what has closed
@@ -436,14 +436,19 @@ This is the largest block of work left, and it is the one that decides
 whether the estate can migrate. The registries answer:
 
 ```
-halite-node call sys.list_modules        # 50
-halite-node call sys.list_state_modules  # 32
+halite-node call sys.list_modules        # 88
+halite-node call sys.list_state_modules  # 47
 ```
 
-against SPEC 15.2's 56 core execution modules, 15.5's 47 core state
-modules, and 15.3's 65 platform modules. Both counts are what a
-*Windows* build registers; the platform rows differ per target and the
-core rows do not.
+against SPEC 15.2's 56 core execution modules, 15.5's 46 core state
+modules, and 15.3's 65 platform modules.
+
+Re-measured on 2026-09-15, on Linux. The numbers here had been 50 and 32
+and the state denominator 47, all three wrong. The platform rows differ
+per target, so a Windows build registers a different total; the core rows
+do not. `internal/specaudit` holds the ledger's tables to the registry in
+both directions, so §2.2's lists are the ones to trust when this prose
+and those tables disagree.
 
 ### 2.1 Closed: the five states whose execution side was half there
 
@@ -494,8 +499,10 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 9 of SPEC 15.2**: `blockdev`, `kernelpkg`, `locale`,
-`logrotate`, `nfs`, `reboot`, `selinux`, `shadow`, `system`.
+**Execution, 8 of SPEC 15.2**: `blockdev`, `kernelpkg`, `locale`,
+`logrotate`, `nfs`, `selinux`, `shadow`, and `state` -- which is struck
+rather than missing, for the reason below. `reboot` and `system` have
+shipped since this row was written (DIVERGENCE 5.73).
 
 Re-measured against the registry on 2026-09-12. This row said 17. Seven
 shipped together as the block this fleet's own FreeBSD host can
@@ -510,8 +517,10 @@ already reachable three ways. Registering a module for them would be a
 second, thinner copy of the pipeline the node actually runs. The row is
 struck rather than filled. `ps` shipped earlier (DIVERGENCE 5.61).
 
-**State, 10 of SPEC 15.5**: `acl`, `at`, `kernelpkg`, `locale`,
-`logrotate`, `pro`, `reboot`, `selinux`, `sudo`, `win_wua`.
+**State, 8 of SPEC 15.5**: `acl`, `kernelpkg`, `locale`, `logrotate`,
+`pro`, `selinux`, `sudo`, `win_wua`. `at` and `reboot` have shipped since
+this row was written. The execution halves of `acl` and `sudo` ship; it
+is their states that do not.
 
 Re-measured against the registry on 2026-09-12: this row had said 14 and
 still listed `iptables`, `lvm`, `mac_defaults` and `nftables`, all four
@@ -579,6 +588,47 @@ to block. §7 has the consequences.
 question, and building it before that is answered would mean building it
 twice. `state` as an execution module is `state.apply` callable from a
 reaction, which the reactor already reaches another way.
+
+### 2.6 `kmod`: closed
+
+**Built on 2026-09-15** (DIVERGENCE 5.96), the same day it was agreed.
+SPEC 15.2 and 15.5 do not list `kmod`, and §6 carried that as an open
+question; the question is settled, because not naming a module is no
+reason to leave a fleet's kernel-module controls uncompilable.
+
+Seven execution functions and both states ship. What follows is the scope
+as it was agreed, and it is what was built.
+
+What the estate actually writes, in
+`base/security/network/init.sls`, is one state implementing CIS Ubuntu
+benchmark 3.5.1--3.5.4:
+
+```yaml
+base security network unload-protocols:
+  kmod.absent:
+    - name: modules_to_unload     # a placeholder; `mods` is the real list
+    - persist: True
+    - mods: [dccp, dccp_diag, sctp, tipc, rds, ...]
+```
+
+Three things that shape the work:
+
+- **`mods` is the argument, and `name` is a placeholder.** The tree says
+  so in its own comment. A single-module form has to keep working, since
+  that is what Salt's own documentation shows, so `name` is the module
+  when `mods` is absent and ignored when it is not.
+- **`persist` writes `/etc/modules`**, which is what makes the control
+  survive a reboot. Unloading without persisting passes a scan today and
+  fails it after the next restart, so the two halves are one feature.
+- **Linux only.** FreeBSD's `kldunload` is a different model with
+  different names, and the fleet is four FreeBSD hosts to one Ubuntu --
+  so this is Linux-first on purpose, declared and refused elsewhere
+  rather than silently absent.
+
+`kmod.present` and the execution side (`available`, `check_available`,
+`load`, `remove`, `lsmod`, `mod_list`) come with it: a state that can
+only remove is half a module, and `absent` needs the list of loaded
+modules anyway.
 
 ### 2.3 Platform modules: 40 of 65
 
@@ -1039,8 +1089,13 @@ unchanged.
    turn this on deliberately rather than quietly.
 2. **Modules SPEC never planned for** but the estate uses:
    `alternatives` (3 references), `docker_container`/`docker_image` (2),
-   `rabbitmq_policy`/`user`/`vhost` (3), `kmod` (1), `macpackage` (1).
+   `rabbitmq_policy`/`user`/`vhost` (3), `macpackage` (1).
    Amend SPEC, bridge them, or rewrite the tree.
+
+   ~~`kmod` (1)~~ is **answered and moved to §2.6**: it is to be built.
+   It was listed here on the reasoning that SPEC does not name it, which
+   is true and is not a reason to leave an estate's CIS controls
+   uncompilable.
 3. **A `win_registry` state.** SPEC 15.5 does not name one, so none
    ships — the `win_registry` *execution* module does. Salt has
    `reg.present` and an estate migrating from it will want the same; a
@@ -1049,12 +1104,21 @@ unchanged.
 4. **Detached job signing (33.6) and node-side evidence.** Both answer
    the compromised-hub threat. Decide together, and before the API
    surface sets any harder.
-5. **Seven state functions reject arguments Salt accepts**: `user.present`
-   (`mindays`, `maxdays`, `inactdays`, `unique`, `optional_groups`,
-   `enforce_password`), `archive.extracted` (5), `group.present`
-   (`system`, `members`), `file.managed` (`skip_verify`, `keep_source`),
-   `file.replace`, `pkg.installed`, `git.latest`. The `user.present` row
-   is one coherent feature — shadow ageing policy — not six oversights.
+5. **State functions that reject arguments Salt accepts.** Re-measured
+   2026-09-15, because this row named several that have since been
+   closed. What remains: `user.present` (`mindays`, `maxdays`,
+   `inactdays`, `unique`, `optional_groups`, `enforce_password`),
+   `group.present` (`system`, `members`), `file.managed` (`skip_verify`,
+   `keep_source`), `file.replace`, and `pkg.installed`. The
+   `user.present` row is one coherent feature — shadow ageing policy —
+   not six oversights.
+
+   ~~`archive.extracted` (5)~~ and ~~`git.latest`~~ are closed:
+   `archive.extracted` took `user`, `group` and `keep_source` (5.92) and
+   `git.latest` took `fetch_tags` (5.91), all of them found by compiling
+   the estate's own tree. `x509`'s arguments closed the same way (5.90),
+   as did `cmd.run`'s `bg`, `file.recurse`'s `template` and
+   `host.present`'s list of addresses (5.93, 5.95).
 8. **`module.run` argument pass-through.** Salt passes unknown kwargs
    through to the function being run; this build validates against a
    fixed parameter list. Strict validation is right for every other state

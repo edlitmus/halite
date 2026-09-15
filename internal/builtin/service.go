@@ -220,7 +220,7 @@ func serviceRunning(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.True(fmt.Sprintf("The service %s is already in the requested state.", name)), nil
 	}
 	if c.Test {
-		return states.WouldChange(describeServiceChange(name, !running, manageBoot && enabledNow != wantEnabled, wantEnabled, true), changes), nil
+		return states.WouldChange(describeServiceChange(name, !running, manageBoot && enabledNow != wantEnabled, wantEnabled, true, true), changes), nil
 	}
 
 	if !running {
@@ -233,7 +233,7 @@ func serviceRunning(c *exec.Context, args *value.Map) (states.Result, error) {
 			return states.False(fmt.Sprintf("The boot state of %s could not be set: %v", name, err)), nil
 		}
 	}
-	return states.Changed(describeServiceChange(name, !running, manageBoot && enabledNow != wantEnabled, wantEnabled, true), changes), nil
+	return states.Changed(describeServiceChange(name, !running, manageBoot && enabledNow != wantEnabled, wantEnabled, true, false), changes), nil
 }
 
 func serviceDead(c *exec.Context, args *value.Map) (states.Result, error) {
@@ -268,7 +268,7 @@ func serviceDead(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.True(fmt.Sprintf("The service %s is already stopped.", name)), nil
 	}
 	if c.Test {
-		return states.WouldChange(describeServiceChange(name, running, manageBoot && enabledNow != wantEnabled, wantEnabled, false), changes), nil
+		return states.WouldChange(describeServiceChange(name, running, manageBoot && enabledNow != wantEnabled, wantEnabled, false, true), changes), nil
 	}
 	if running {
 		if err := p.Stop(c, name); err != nil {
@@ -280,7 +280,7 @@ func serviceDead(c *exec.Context, args *value.Map) (states.Result, error) {
 			return states.False(fmt.Sprintf("The boot state of %s could not be set: %v", name, err)), nil
 		}
 	}
-	return states.Changed(describeServiceChange(name, running, manageBoot && enabledNow != wantEnabled, wantEnabled, false), changes), nil
+	return states.Changed(describeServiceChange(name, running, manageBoot && enabledNow != wantEnabled, wantEnabled, false, false), changes), nil
 }
 
 func serviceBootState(c *exec.Context, args *value.Map, want bool) (states.Result, error) {
@@ -344,7 +344,13 @@ func serviceModWatch(c *exec.Context, args *value.Map) (states.Result, error) {
 		fmt.Sprintf("The service %s was %s because a watched state changed.", name, verb), changes), nil
 }
 
-func describeServiceChange(name string, runState, bootState, wantEnabled, wantRunning bool) string {
+// describeServiceChange says what happened, or what would. The tense is
+// an argument because this backs both, and it said "was" for both: a
+// `--test` run reported "The service salt-minion was started" for a // lexicon:allow — a real service name
+// service it had not touched. A dry run that reads like it acted is the
+// one sentence a test mode must not produce -- it was read that way on a
+// host where starting that service purges the compilers.
+func describeServiceChange(name string, runState, bootState, wantEnabled, wantRunning, would bool) string {
 	var parts []string
 	if runState {
 		if wantRunning {
@@ -362,6 +368,9 @@ func describeServiceChange(name string, runState, bootState, wantEnabled, wantRu
 	}
 	if len(parts) == 0 {
 		return fmt.Sprintf("The service %s is already in the requested state.", name)
+	}
+	if would {
+		return fmt.Sprintf("The service %s would be %s.", name, strings.Join(parts, " and "))
 	}
 	return fmt.Sprintf("The service %s was %s.", name, strings.Join(parts, " and "))
 }

@@ -203,6 +203,11 @@ engine is refused by name rather than ignored.
 Rendering happens after `source_hash` is checked, so the digest verifies
 the file that was fetched rather than what was made from it.
 
+`file.recurse` takes the same three arguments and renders every file it
+copies. What it compares is the *rendered* output rather than the
+template, which is what lets a tree of templates converge: a template
+compared against the file it produced differs from it on every run.
+
 ### Undefined names are an error
 
 This is halite's most visible departure from Salt. In Salt,

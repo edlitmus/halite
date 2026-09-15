@@ -102,34 +102,136 @@ func registerNetworkModule(r *Registries) {
 				return value.MapOf("result", true, "comment", "connected to "+addr), nil
 			},
 		},
+		// `A` and `AAAA` carry Salt's capitals, because they are DNS
+		// record types and Salt's functions are named for them. This
+		// shipped as `dnsutil.a`, which no tree written for Salt can
+		// reach: `salt['dnsutil.A'](id)` is what an estate writes, and it
+		// resolved to nothing.
+		//
+		// They are one family each, as the record types are. The single
+		// function this replaces returned whatever the resolver had, so a
+		// tree asking for an A record could be handed an IPv6 address and
+		// use it as an IPv4 one -- which is the shape of defect that
+		// makes the wrong thing happen rather than an error.
 		exec.Module{
 			Sig: signature.Signature{
-				Module: "dnsutil", Function: "a",
-				Doc:      "Resolve a name to its addresses.",
+				Module: "dnsutil", Function: "A",
+				Doc:      "Resolve a name to its IPv4 addresses, as an A record lookup does.",
 				Params:   []signature.Param{req("host", signature.String, "The name.")},
 				TestMode: signature.TestNotApplicable,
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				addrs, err := net.LookupHost(states.Str(args, "host", ""))
-				if err != nil {
-					return []any{}, nil
-				}
-				return toAnyList(addrs), nil
+				return lookupAddressFamily(states.Str(args, "host", ""), true), nil
 			},
 		},
 		exec.Module{
 			Sig: signature.Signature{
-				Module: "dnsutil", Function: "hosts_file",
-				Doc:      "Return the hosts file as a mapping of address to names.",
+				Module: "dnsutil", Function: "AAAA",
+				Doc:      "Resolve a name to its IPv6 addresses, as an AAAA record lookup does.",
+				Params:   []signature.Param{req("host", signature.String, "The name.")},
 				TestMode: signature.TestNotApplicable,
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return c.Call("hosts.list_hosts", value.NewMap(0))
+				return lookupAddressFamily(states.Str(args, "host", ""), false), nil
+			},
+		},
+		// `parse_hosts`, `hosts_append` and `hosts_remove` are Salt's
+		// three. This shipped one called `hosts_file`, which Salt has
+		// never had -- an invented name is a function no tree can call,
+		// the same defect as the lower-case `dnsutil.a` beside it.
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "dnsutil", Function: "parse_hosts",
+				Doc: "Read a hosts file as a mapping of address to names.",
+				Params: []signature.Param{
+					opt("hostsfile", signature.Path, "", "The file to read. Defaults to the system's."),
+				},
+				TestMode: signature.TestNotApplicable,
+				Section:  "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				entries, err := readHostsFrom(states.Str(args, "hostsfile", ""))
+				if err != nil {
+					return nil, err
+				}
+				out := value.NewMap(len(entries))
+				for _, e := range entries {
+					if e.Address == "" {
+						continue
+					}
+					existing, _ := out.Get(e.Address)
+					names, _ := existing.([]any)
+					for _, n := range e.Names {
+						names = append(names, n)
+					}
+					out.Set(e.Address, names)
+				}
+				return out, nil
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "dnsutil", Function: "hosts_append",
+				Doc: "Add names to an address in a hosts file, skipping any it already has.",
+				Params: []signature.Param{
+					opt("hostsfile", signature.Path, "", "The file to write. Defaults to the system's."),
+					req("ip_addr", signature.String, "The address."),
+					req("entries", signature.Any,
+						"The names, comma separated as Salt takes them, or as a list."),
+				},
+				Mutates:    true,
+				TestMode:   signature.TestUnreliable,
+				Privileges: []string{"root"},
+				Section:    "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				return hostsAppend(args)
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "dnsutil", Function: "hosts_remove",
+				Doc: "Remove names from a hosts file, leaving comments and blank lines alone.",
+				Params: []signature.Param{
+					opt("hostsfile", signature.Path, "", "The file to write. Defaults to the system's."),
+					req("entries", signature.Any,
+						"The names, comma separated as Salt takes them, or as a list."),
+				},
+				Mutates:    true,
+				TestMode:   signature.TestUnreliable,
+				Privileges: []string{"root"},
+				Section:    "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				return hostsRemove(args)
 			},
 		},
 	)
+}
+
+// lookupAddressFamily resolves a name to one address family.
+//
+// An empty list on failure rather than an error, which is what this
+// module already did. Salt returns the *string* "Unable to resolve
+// <host>" from a function it documents as always returning a list, and
+// reproducing that would hand a tree a string where it indexes a list.
+func lookupAddressFamily(host string, wantIPv4 bool) []any {
+	if host == "" {
+		return []any{}
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return []any{}
+	}
+	out := []any{}
+	for _, ip := range ips {
+		if (ip.To4() != nil) == wantIPv4 {
+			out = append(out, ip.String())
+		}
+	}
+	return out
 }
 
 // nodeAddresses filters the address grains, which is cheaper and more

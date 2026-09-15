@@ -572,6 +572,16 @@ type Command struct {
 	// IgnoreExitCode stops a non-zero exit from being an error, which is
 	// what `unless` and `onlyif` need: the exit code is the answer.
 	IgnoreExitCode bool
+	// Background starts the process and does not wait for it. Nothing
+	// collects its output or its exit status, and it is reparented away
+	// from this run rather than held as a zombie.
+	//
+	// It is a property of the command rather than something a caller
+	// arranges for itself, because the interpreter, the umask and the
+	// environment are all decided here: a caller that built its own
+	// os/exec.Cmd to run something in the background would be a second,
+	// quietly different implementation of all three.
+	Background bool
 }
 
 // String renders the command for a log line or a comment.
@@ -680,6 +690,22 @@ func quoteAll(argv []string) []string {
 }
 
 // Run implements CommandRunner.
+// startAndRelease starts a process and lets go of it. The child gets no
+// pipes, because there is nothing left to read them, and it is released
+// rather than waited on, so it is reparented to init instead of becoming
+// a zombie held by a run that has finished.
+func startAndRelease(c *exec.Cmd) (Result, error) {
+	c.Stdin, c.Stdout, c.Stderr = nil, nil, nil
+	if err := c.Start(); err != nil {
+		return Result{}, err
+	}
+	pid := c.Process.Pid
+	if err := c.Process.Release(); err != nil {
+		return Result{}, err
+	}
+	return Result{Stdout: fmt.Sprintf("%d", pid)}, nil
+}
+
 func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	if len(cmd.Argv) == 0 {
 		return Result{}, fmt.Errorf("no command given")
@@ -716,6 +742,9 @@ func (r *OSRunner) Run(ctx context.Context, cmd Command) (Result, error) {
 	}
 	if cmd.Stdin != "" {
 		c.Stdin = strings.NewReader(cmd.Stdin)
+	}
+	if cmd.Background {
+		return startAndRelease(c)
 	}
 	// Confine the child so a fired Timeout can kill the whole tree, and
 	// bound how long Wait may block after that kill on a pipe some

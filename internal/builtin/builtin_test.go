@@ -109,7 +109,7 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 		},
 		{
 			Name:  "x509.private_key_managed",
-			Args:  value.MapOf("name", filepath.Join(dir, "conf.key"), "algorithm", "ec", "curve", "p256"),
+			Args:  value.MapOf("name", filepath.Join(dir, "conf.key"), "algo", "ec", "keysize", int64(256)),
 			Probe: probePath(filepath.Join(dir, "conf.key")),
 			Setup: func() error { return os.RemoveAll(filepath.Join(dir, "conf.key")) },
 		},
@@ -467,7 +467,7 @@ func TestVersionSatisfies(t *testing.T) {
 		{"1.24.0", "1.23.0", false},
 	}
 	for _, c := range cases {
-		if got := versionSatisfies(c.installed, c.want); got != c.ok {
+		if got := versionSatisfies(nil, c.installed, c.want, false); got != c.ok {
 			t.Errorf("versionSatisfies(%q, %q) = %v", c.installed, c.want, got)
 		}
 	}

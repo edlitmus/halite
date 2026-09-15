@@ -248,27 +248,31 @@ func resolveOneRef(
 				req.Resolved = append(req.Resolved, i)
 
 			default:
+				// A bare name, with no module. Salt normalises this to
+				// an `id` requisite and resolves it against every chunk
+				// carrying that id -- its lookup maps an id to a *set*
+				// of nodes, and a requisite takes the whole set.
+				//
+				// So an id declared under two modules is depended on
+				// twice, not refused. That is not an edge case: writing
+				// several states under one id is ordinary Salt, and
+				// one id carrying a `cmd.run` that fetches an archive and
+				// an `archive.extracted` that unpacks it is exactly the
+				// shape a real tree uses. This refused it as ambiguous and
+				// stopped the compilation.
+				//
+				// Refusing was the conservative reading and it was the
+				// wrong one. The ambiguity it worried about -- a
+				// requisite guarding the wrong state -- does not arise
+				// when the answer is *all* of them: waiting for both
+				// halves of an id is what the tree means by naming it.
 				matches := byID[ref.ID]
-				switch len(matches) {
-				case 0:
+				if len(matches) == 0 {
 					diags.Add(ref.Pos, c.SLS, c.ID,
 						"%s names %q, which is not declared in this run", req.Kind, ref.ID)
-				case 1:
-					req.Resolved = append(req.Resolved, matches[0])
-				default:
-					// An ID that resolves to more than one module is
-					// ambiguous, and picking one silently is how a
-					// requisite ends up guarding the wrong state.
-					var related []Related
-					var names []string
-					for _, m := range matches {
-						related = append(related, Related{Pos: chunks[m].Pos, Msg: "declared by " + chunks[m].State})
-						names = append(names, chunks[m].State)
-					}
-					diags.AddRelated(ref.Pos, c.SLS, c.ID, related,
-						"%s names %q, which is declared by more than one module (%s); write it as `%s: %s`",
-						req.Kind, ref.ID, strings.Join(names, ", "), names[0], ref.ID)
+					return
 				}
+				req.Resolved = append(req.Resolved, matches...)
 			}
 		}
 	}

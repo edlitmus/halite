@@ -131,6 +131,8 @@ func registerGit(r *Registries) {
 				opt("force_checkout", signature.Bool, false, "Check out even when it would discard local changes."),
 				opt("force_clone", signature.Bool, false, "Clone into a target directory that already has files in it."),
 				opt("force_fetch", signature.Bool, false, "Fetch even when it would overwrite a local ref."),
+				opt("fetch_tags", signature.Bool, true,
+					"Fetch every tag on the remote, including ones no branch reaches. True by default, as Salt has it."),
 				opt("user", signature.String, "", "Run git as this account."),
 			},
 			Mutates:  true,
@@ -226,6 +228,15 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	fetch := []string{"fetch", "--quiet"}
 	if states.Bool(args, "force_fetch", false) {
 		fetch = append(fetch, "--force")
+	}
+	// A plain fetch brings down only the tags reachable from the branches
+	// it fetched. `--tags` is what reaches the rest, and a tree pinning a
+	// release tag that no branch points at gets nothing without it.
+	// Checked against the git on this host: a tag pushed after the clone,
+	// on a detached commit, is absent after `git fetch origin` and
+	// present after `git fetch --tags origin`.
+	if states.Bool(args, "fetch_tags", true) {
+		fetch = append(fetch, "--tags")
 	}
 	if _, err := gitRun(c, target, append(fetch, remote)...); err != nil {
 		return states.False(fmt.Sprintf("%s could not be fetched: %v", remote, err)), nil

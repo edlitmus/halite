@@ -35,7 +35,9 @@ func registerX509States(r *Registries) {
 					req("name", signature.Path, "Where the key lives."),
 					opt("mode", signature.String, "0600", "The file mode. A key should not be readable by anyone else."),
 					opt("new", signature.Bool, false, "Replace the key even when the existing one already matches."),
-				}, keyParams()...),
+					opt("user", signature.String, "", "The owner."),
+					opt("group", signature.String, "", "The group."),
+				}, x509KeyParams()...),
 				Mutates:  true,
 				TestMode: signature.TestReliable,
 				Section:  "15.5",
@@ -48,9 +50,10 @@ func registerX509States(r *Registries) {
 				Doc: "Ensure a certificate exists, is signed by the expected CA, and is not close to expiry.",
 				Params: append([]signature.Param{
 					req("name", signature.Path, "Where the certificate lives."),
-					req("private_key", signature.String, "The subject's key, as a path or PEM."),
+					opt("private_key", signature.String, "", "The subject's key, as a path or PEM."),
+					opt("public_key", signature.String, "", "The subject's public key, when this node holds no private half of it."),
 					opt("signing_cert", signature.String, "", "The CA certificate. Empty means self-signed."),
-					opt("signing_private_key", signature.String, "", "The CA's key."),
+					opt("signing_private_key", signature.String, "", "The key that signs. Also the subject's key when nothing else names one."),
 					opt("days_valid", signature.Int, int64(defaultCertDays), "How long a new certificate lasts."),
 					opt("days_remaining", signature.Int, int64(30),
 						"Re-issue when fewer than this many days remain. Zero re-issues only when the certificate is missing or wrong."),
@@ -58,7 +61,9 @@ func registerX509States(r *Registries) {
 					opt("key_usage", signature.List, nil, "Key usages."),
 					opt("ext_key_usage", signature.List, nil, "Extended key usages."),
 					opt("mode", signature.String, "0644", "The file mode."),
-				}, subjectParams()...),
+					opt("user", signature.String, "", "The owner."),
+					opt("group", signature.String, "", "The group."),
+				}, append(certExtensionParams(), subjectParams()...)...),
 				Mutates:  true,
 				TestMode: signature.TestReliable,
 				Section:  "15.5",
@@ -73,15 +78,16 @@ func privateKeyManaged(c *exec.Context, args *value.Map) (states.Result, error) 
 	if path == "" {
 		return states.False("This state needs a path."), nil
 	}
-	spec, err := keySpecFrom(args)
+	spec, err := x509KeySpecFrom(args)
 	if err != nil {
 		return states.False(capitalizeFirst(err.Error()) + "."), nil
 	}
 
 	reason := ""
+	exists := true
 	switch existing, err := loadPrivateKey(path); {
 	case os.IsNotExist(err):
-		reason = "it does not exist"
+		reason, exists = "it does not exist", false
 	case err != nil:
 		reason = "the existing file is not a private key halite reads"
 	case states.Bool(args, "new", false):
@@ -92,11 +98,36 @@ func privateKeyManaged(c *exec.Context, args *value.Map) (states.Result, error) 
 		}
 	}
 
-	if reason == "" {
+	wantUser, wantGroup := states.Str(args, "user", ""), states.Str(args, "group", "")
+	ownerChange, ownerDiffers, err := plannedOwnership(path, exists, wantUser, wantGroup)
+	if err != nil {
+		return states.False(fmt.Sprintf("The ownership for %s could not be resolved: %v", path, err)), nil
+	}
+
+	if reason == "" && !ownerDiffers {
 		return states.True(fmt.Sprintf("The %s private key at %s is already in place.", spec.describe(), path)), nil
 	}
 
+	// Ownership alone is fixed where it stands. Generating a new key
+	// because the group was wrong would throw away the key every
+	// certificate already issued against it depends on.
+	if reason == "" {
+		changes := value.MapOf("ownership", ownerChange)
+		if c.Test {
+			return states.WouldChange(
+				fmt.Sprintf("The ownership of %s would be set to %s.", path, ownerLabel(wantUser, wantGroup)), changes), nil
+		}
+		if err := applyOwnership(path, wantUser, wantGroup); err != nil {
+			return states.False(fmt.Sprintf("The ownership of %s could not be set: %v", path, err)), nil
+		}
+		return states.Changed(
+			fmt.Sprintf("The ownership of %s was set to %s.", path, ownerLabel(wantUser, wantGroup)), changes), nil
+	}
+
 	changes := value.MapOf(path, states.Change(nil, spec.describe()))
+	if ownerDiffers && ownerChange != nil {
+		changes.Set("ownership", ownerChange)
+	}
 	if c.Test {
 		return states.WouldChange(
 			fmt.Sprintf("A %s private key would be written to %s, because %s.", spec.describe(), path, reason),
@@ -118,6 +149,9 @@ func privateKeyManaged(c *exec.Context, args *value.Map) (states.Result, error) 
 	if err := writeAtomic(path, encoded, mode); err != nil {
 		return states.False(fmt.Sprintf("The key could not be written: %v", err)), nil
 	}
+	if err := applyOwnership(path, wantUser, wantGroup); err != nil {
+		return states.False(fmt.Sprintf("The key was written but its ownership could not be set: %v", err)), nil
+	}
 	return states.Changed(
 		fmt.Sprintf("A %s private key was written to %s, because %s.", spec.describe(), path, reason),
 		changes), nil
@@ -131,10 +165,11 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 	window := states.Int(args, "days_remaining", 30)
 
 	reason := ""
+	exists := true
 	var old any
 	switch existing, err := loadCertificate(path); {
 	case os.IsNotExist(err):
-		reason = "it does not exist"
+		reason, exists = "it does not exist", false
 	case err != nil:
 		reason = "the existing file is not a certificate halite reads"
 	default:
@@ -149,11 +184,38 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 		}
 	}
 
-	if reason == "" {
+	wantUser, wantGroup := states.Str(args, "user", ""), states.Str(args, "group", "")
+	ownerChange, ownerDiffers, err := plannedOwnership(path, exists, wantUser, wantGroup)
+	if err != nil {
+		return states.False(fmt.Sprintf("The ownership for %s could not be resolved: %v", path, err)), nil
+	}
+
+	if reason == "" && !ownerDiffers {
 		return states.True(fmt.Sprintf("The certificate at %s is already in place.", path)), nil
 	}
 
+	// Ownership alone never re-issues. A certificate gets a new serial
+	// and a new expiry every time it is written, so re-issuing because
+	// the group was wrong is a state that reports a change on every run
+	// for as long as it is left in the tree -- the non-convergence this
+	// whole file exists to avoid.
+	if reason == "" {
+		changes := value.MapOf("ownership", ownerChange)
+		if c.Test {
+			return states.WouldChange(
+				fmt.Sprintf("The ownership of %s would be set to %s.", path, ownerLabel(wantUser, wantGroup)), changes), nil
+		}
+		if err := applyOwnership(path, wantUser, wantGroup); err != nil {
+			return states.False(fmt.Sprintf("The ownership of %s could not be set: %v", path, err)), nil
+		}
+		return states.Changed(
+			fmt.Sprintf("The ownership of %s was set to %s.", path, ownerLabel(wantUser, wantGroup)), changes), nil
+	}
+
 	changes := value.MapOf(path, states.Change(old, "reissued"))
+	if ownerDiffers && ownerChange != nil {
+		changes.Set("ownership", ownerChange)
+	}
 	if c.Test {
 		return states.WouldChange(
 			fmt.Sprintf("A certificate would be written to %s, because %s.", path, reason), changes), nil
@@ -166,6 +228,9 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 	if _, err := createCertificate(args, path, mode); err != nil {
 		return states.False(fmt.Sprintf("The certificate could not be created: %v", err)), nil
 	}
+	if err := applyOwnership(path, wantUser, wantGroup); err != nil {
+		return states.False(fmt.Sprintf("The certificate was written but its ownership could not be set: %v", err)), nil
+	}
 	return states.Changed(
 		fmt.Sprintf("A certificate was written to %s, because %s.", path, reason), changes), nil
 }
@@ -174,11 +239,11 @@ func certificateManaged(c *exec.Context, args *value.Map) (states.Result, error)
 // of the configured private key. A certificate that does not is not the
 // tree's certificate, whatever else is right about it.
 func publicKeyMatches(cert *x509.Certificate, args *value.Map) bool {
-	key, err := loadPrivateKey(states.Str(args, "private_key", ""))
+	pub, _, err := resolveSubjectKey(args)
 	if err != nil {
 		return false
 	}
-	return samePublicKey(cert.PublicKey, key.Public())
+	return samePublicKey(cert.PublicKey, pub)
 }
 
 // signerMatches reports whether a certificate was signed by the CA the
