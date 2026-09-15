@@ -8444,6 +8444,36 @@ stating plainly: **a fixed error is not a closed error until the line
 after it has compiled.** Each of these was invisible while something
 earlier failed.
 
+### 5.92 `host.present` takes a list, and one wrong argument is one error
+
+Fixing the node's own name (5.91) took the tree from five errors to
+**eight**, and that is the exercise working rather than failing. The
+hostname state had been stopping at line 6 since the beginning; with the
+identity right it reaches lines 16 and 21, and `minion.sls` compiles far <!-- lexicon:allow -->
+enough to reveal a third `saltutil` that had never been reached.
+
+**`ip` takes one address or several.** Salt's `host.present` documents it
+as "a single IP or a list of IP addresses", and a tree reaches for the
+list as soon as it resolves a name, because `dnsutil.A` returns one. The
+estate writes `- ip: {{ ipv4 | default('127.0.1.1', true) }}` where
+`ipv4` came from exactly that call, so the list is the ordinary case.
+Each address gets the name, and the state converges.
+
+**One wrong argument was two errors.** Every one of those four failures
+came back twice:
+
+```
+host.present: argument "ip": must be a string, found sequence
+host.present: argument "ip": is required
+```
+
+The second is not true. When a value fails its type check the binder
+recorded the error and moved on without marking the argument as seen, so
+the pass that looks for missing parameters found the name unused and
+reported it missing as well. The reader is then looking for an argument
+that is already there. Marked as seen now, and one mistake is one
+message.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

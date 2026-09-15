@@ -109,7 +109,9 @@ func registerHosts(r *Registries) {
 				Params: []signature.Param{
 					nameParam("The name. Defaults to the state ID."),
 					opt("names", signature.List, nil, "Several names for one address."),
-					req("ip", signature.String, "The address."),
+					req("ip", signature.Any,
+						"The address, or several. Salt takes \"a single IP or a list of IP addresses\", and a "+
+							"tree reaches for the list form as soon as it resolves a name: `dnsutil.A` returns one."),
 					opt("clean", signature.Bool, false, "Remove the names from any other address first."),
 				},
 				Mutates:    true,
@@ -220,9 +222,9 @@ func hostNames(args *value.Map) []string {
 }
 
 func hostPresent(c *exec.Context, args *value.Map) (states.Result, error) {
-	ip := states.Str(args, "ip", "")
+	addresses := hostAddresses(args)
 	names := hostNames(args)
-	if ip == "" || len(names) == 0 {
+	if len(addresses) == 0 || len(names) == 0 {
 		return states.False("This state needs an address and at least one name."), nil
 	}
 
@@ -236,38 +238,68 @@ func hostPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		entries = removeNamesFrom(entries, names, "")
 	}
 
-	found := false
-	for i := range entries {
-		if entries[i].Address != ip {
-			continue
-		}
-		found = true
-		for _, n := range names {
-			if !containsString(entries[i].Names, n) {
-				entries[i].Names = append(entries[i].Names, n)
+	for _, ip := range addresses {
+		found := false
+		for i := range entries {
+			if entries[i].Address != ip {
+				continue
 			}
+			found = true
+			for _, n := range names {
+				if !containsString(entries[i].Names, n) {
+					entries[i].Names = append(entries[i].Names, n)
+				}
+			}
+			break
 		}
-		break
-	}
-	if !found {
-		entries = append(entries, hostEntry{Address: ip, Names: names})
+		if !found {
+			entries = append(entries, hostEntry{Address: ip, Names: names})
+		}
 	}
 
 	after := renderHosts(entries)
+	shown := strings.Join(addresses, ", ")
 	if before == after {
-		return states.True(fmt.Sprintf("%s already maps %s to %s.", HostsPath, ip, strings.Join(names, ", "))), nil
+		return states.True(fmt.Sprintf("%s already maps %s to %s.", HostsPath, shown, strings.Join(names, ", "))), nil
 	}
 
-	changes := value.MapOf(ip, states.Change(addressNames(parseHosts(before), ip), addressNames(entries, ip)))
+	changes := value.NewMap(len(addresses))
+	for _, ip := range addresses {
+		changes.Set(ip, states.Change(addressNames(parseHosts(before), ip), addressNames(entries, ip)))
+	}
 	if c.Test {
 		return states.WouldChange(
-			fmt.Sprintf("%s would map %s to %s.", HostsPath, ip, strings.Join(names, ", ")), changes), nil
+			fmt.Sprintf("%s would map %s to %s.", HostsPath, shown, strings.Join(names, ", ")), changes), nil
 	}
 	if err := writeAtomic(HostsPath, []byte(after), 0o644); err != nil {
 		return states.False(fmt.Sprintf("%s could not be written: %v", HostsPath, err)), nil
 	}
 	return states.Changed(
-		fmt.Sprintf("%s now maps %s to %s.", HostsPath, ip, strings.Join(names, ", ")), changes), nil
+		fmt.Sprintf("%s now maps %s to %s.", HostsPath, shown, strings.Join(names, ", ")), changes), nil
+}
+
+// hostAddresses reads `ip` in both the forms Salt accepts: one address,
+// or a list of them. A tree reaches for the list as soon as it resolves a
+// name, because `dnsutil.A` returns one -- which is exactly how the
+// estate's own hostname state writes it.
+func hostAddresses(args *value.Map) []string {
+	v, ok := args.Get("ip")
+	if !ok {
+		return nil
+	}
+	if s, ok := v.(string); ok {
+		if s = strings.TrimSpace(s); s != "" {
+			return []string{s}
+		}
+		return nil
+	}
+	var out []string
+	for _, item := range states.Strings(args, "ip") {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func hostAbsent(c *exec.Context, args *value.Map) (states.Result, error) {

@@ -9528,14 +9528,14 @@ host.absent(name: string, names: list, ip: string = )
 Ensure the hosts file maps an address to one or more names.
 
 ```
-host.present(name: string, names: list, ip: string, clean: bool = false)
+host.present(name: string, names: list, ip: any, clean: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | — | The name. Defaults to the state ID. |
 | `names` | list | — | Several names for one address. |
-| `ip` | string | *required* | The address. |
+| `ip` | any | *required* | The address, or several. Salt takes "a single IP or a list of IP addresses", and a tree reaches for the list form as soon as it resolves a name: `dnsutil.A` returns one. |
 | `clean` | bool | `false` | Remove the names from any other address first. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
