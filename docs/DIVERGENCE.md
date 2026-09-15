@@ -8812,6 +8812,35 @@ are asserted on every platform**, so a Windows shape that breaks fails on
 a Linux run rather than waiting for CI. A cross-platform invariant
 checked on one platform is not a cross-platform invariant.
 
+### 5.100 A rendered file source could not import anything
+
+With the tree compiling, its states ran for the first time, and two
+failed on the same thing:
+
+```
+the template for salt://shared/salt/files/master.d/defaults.conf failed: <!-- lexicon:allow -->
+  import "shared/salt/map.jinja": no template loader is configured
+```
+
+The SLS compiler configures a loader -- `Loader: c.Loader.Templates(env)`
+-- and the path that renders a *file source* never did. So
+`{% import "shared/salt/map.jinja" %}` inside a managed file could not
+resolve, and a `map.jinja` import from a managed file is about as common
+as Salt idioms get. The estate does it in two separate files, a master <!-- lexicon:allow -->
+configuration and a shell script.
+
+The fix needed no new plumbing, which is worth recording because the
+first guess was that it would. Both file servers already offer the
+loader: `fileserver.Fetcher` embeds `Roots`, `Remote` has its own, and
+the tracing wrapper was already forwarding `Templates`. The context
+carries the file server; taking the loader from it by interface means a
+fetcher that cannot resolve templates still serves files and says so at
+the line that imported one, rather than a new field that every
+construction site has to remember to set.
+
+**20 runtime failures to 15**, and 274 of 328 states succeed. The two
+that closed took three cascading skips with them.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
