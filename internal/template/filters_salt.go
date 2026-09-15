@@ -35,9 +35,39 @@ func addSaltFilters(f map[string]FilterFunc) {
 }
 
 func addSerializationFilters(f map[string]FilterFunc) {
+	// Salt's yaml_encode double-quotes a string always, even one that
+	// needs no quoting at all: it calls yaml_dquote directly rather than
+	// asking the dumper (salt/utils/yamlencoding.py). `'plain' |
+	// yaml_encode` is `"plain"` there, and this build used to leave it
+	// bare -- the filter exists to produce a scalar safe to paste into a
+	// YAML document, and a bare one is only safe until the value changes.
+	//
+	// This is why it cannot share the dumper's rules, which prefer single
+	// quotes and no quotes: the two filters answer different questions.
 	f["yaml_encode"] = func(fc *FilterContext, v any, _ []any, _ map[string]any) (any, error) {
+		if s, ok := v.(string); ok {
+			return yaml.Quote(s), nil
+		}
 		return strings.TrimRight(yaml.Encode(v, yaml.EncodeOptions{Flow: true}), "\n"), nil
 	}
+	// Salt's `yaml` filter is safe_dump: flow style by default, block
+	// when the tree passes false. An estate writes
+	// `{{ beacons | yaml(False) | indent(2) }}` to put a pillar mapping
+	// into a configuration file, which is what found this missing.
+	//
+	// The argument is `flow_style` and it defaults to true, which reads
+	// backwards until you notice that Salt's default is the inline form.
+	f["yaml"] = func(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
+		flow := true
+		if a, ok := arg(args, kwargs, 0, "flow_style"); ok {
+			flow = truthy(a)
+		}
+		out := yaml.Encode(stripUndefined(v), yaml.EncodeOptions{Flow: flow})
+		// safe_dump ends with a newline and Salt strips it, because the
+		// filter's output is being put in the middle of a line.
+		return strings.TrimRight(out, "\n"), nil
+	}
+
 	f["yaml_dquote"] = func(fc *FilterContext, v any, _ []any, _ map[string]any) (any, error) {
 		s, err := fc.Str(v)
 		if err != nil {

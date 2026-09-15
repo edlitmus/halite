@@ -54,6 +54,42 @@ func TestFileSerializeWritesJSONAndYAML(t *testing.T) {
 	if strings.TrimSpace(string(body)) != "listen: 9090" {
 		t.Errorf("yaml = %q", body)
 	}
+
+	// A flat single-key mapping is the one shape that cannot tell one
+	// YAML writer from another, and until this was added it was the only
+	// shape asserted here: the block encoder was rewritten to PyYAML's
+	// layout -- every nested sequence moved column -- and this test
+	// passed untouched. A state whose whole job is writing YAML has to
+	// assert the bytes it writes.
+	nestedPath := filepath.Join(dir, "nested.yaml")
+	nested := value.MapOf(
+		"beacons", value.MapOf(
+			"memusage", []any{value.MapOf("percent", "75%")},
+			"status", []any{value.MapOf("interval", int64(30))},
+		),
+		"engines", []any{"slack", "napalm"},
+	)
+	if _, ok := serializeTo(t, nestedPath, "serializer", "yaml", "dataset", nested); !ok {
+		t.Fatal("the nested yaml write failed")
+	}
+	body, err = os.ReadFile(nestedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// PyYAML's layout: a sequence sits in the same column as the key that
+	// owns it, and the first key of a mapping in a sequence shares the
+	// dash's line. internal/yaml holds this to PyYAML itself.
+	want := "beacons:\n" +
+		"  memusage:\n" +
+		"  - percent: 75%\n" +
+		"  status:\n" +
+		"  - interval: 30\n" +
+		"engines:\n" +
+		"- slack\n" +
+		"- napalm\n"
+	if string(body) != want {
+		t.Errorf("yaml =\n%s\nwant\n%s", body, want)
+	}
 }
 
 func TestFileSerializeConverges(t *testing.T) {

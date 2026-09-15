@@ -38,14 +38,37 @@ func Encode(v any, opts EncodeOptions) string {
 }
 
 // EncodeScalar renders a single scalar, quoting it when a plain rendering
-// would resolve to a different type. It backs the yaml_dquote, yaml_squote,
-// and yaml_encode filters.
+// would resolve to a different type, in the dumper's own style.
+//
+// It does *not* back yaml_dquote, yaml_squote or yaml_encode, whatever
+// this comment used to say: each of those calls Quote or SingleQuote
+// directly, because each answers a different question. yaml_encode in
+// particular double-quotes a string always, as Salt's does.
 func EncodeScalar(v any) string {
 	var b strings.Builder
 	writeScalar(&b, v)
 	return b.String()
 }
 
+// writeBlock renders block-style YAML the way PyYAML's safe_dump does,
+// because that is the YAML every existing Salt tree has seen.
+//
+// Two rules carry all of it, and the first is the one this build used to
+// get wrong:
+//
+//   - A sequence sits at the same indentation as the key that owns it.
+//     `beacons:` is followed by `- percent: 75%` in the same column, not
+//     indented under it.
+//   - The first element of a mapping or a sequence inside a sequence item
+//     goes on the dash's own line, and the rest align under it: `- a: 1`
+//     then `  b: 2`.
+//
+// Both are legal either way and parse identically, so this is about the
+// bytes in a file rather than the meaning. SPEC 10.1 pins the *parser* to
+// PyYAML's dialect; writing what PyYAML writes is the same argument
+// applied to the other direction, and it is what keeps `file.serialize`
+// from rewriting every file it manages on the first run after a
+// migration.
 func writeBlock(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 	pad := strings.Repeat(" ", indent)
 	switch t := v.(type) {
@@ -54,10 +77,8 @@ func writeBlock(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 			b.WriteString("{}\n")
 			return
 		}
-		for i, e := range t.Entries() {
-			if i > 0 || indent > 0 {
-				b.WriteString(pad)
-			}
+		for _, e := range t.Entries() {
+			b.WriteString(pad)
 			writeKey(b, e.Key)
 			b.WriteByte(':')
 			writeChild(b, e.Val, indent, opts)
@@ -67,12 +88,10 @@ func writeBlock(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 			b.WriteString("[]\n")
 			return
 		}
-		for i, item := range t {
-			if i > 0 || indent > 0 {
-				b.WriteString(pad)
-			}
+		for _, item := range t {
+			b.WriteString(pad)
 			b.WriteByte('-')
-			writeChild(b, item, indent, opts)
+			writeSeqItem(b, item, indent, opts)
 		}
 	default:
 		writeScalar(b, v)
@@ -80,8 +99,10 @@ func writeBlock(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 	}
 }
 
-// writeChild renders the value that follows a "key:" or a "-", choosing
-// between the same line and the lines below.
+// writeChild renders the value that follows a "key:".
+//
+// A nested mapping is indented; a nested sequence is *not*, which is the
+// rule that makes this PyYAML's output rather than merely valid YAML.
 func writeChild(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 	switch t := v.(type) {
 	case *value.Map:
@@ -90,14 +111,14 @@ func writeChild(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 			return
 		}
 		b.WriteByte('\n')
-		writeBlockIndented(b, v, indent+opts.Indent, opts)
+		writeBlock(b, v, indent+opts.Indent, opts)
 	case []any:
 		if len(t) == 0 {
 			b.WriteString(" []\n")
 			return
 		}
 		b.WriteByte('\n')
-		writeBlockIndented(b, v, indent+opts.Indent, opts)
+		writeBlock(b, v, indent, opts)
 	default:
 		b.WriteByte(' ')
 		writeScalar(b, v)
@@ -105,22 +126,46 @@ func writeChild(b *strings.Builder, v any, indent int, opts EncodeOptions) {
 	}
 }
 
-func writeBlockIndented(b *strings.Builder, v any, indent int, opts EncodeOptions) {
-	pad := strings.Repeat(" ", indent)
+// writeSeqItem renders the value that follows a "-". The first element
+// shares the dash's line and the rest are indented past it, so a mapping
+// in a list reads `- a: 1` / `  b: 2`.
+func writeSeqItem(b *strings.Builder, v any, indent int, opts EncodeOptions) {
+	inner := indent + opts.Indent
+	pad := strings.Repeat(" ", inner)
 	switch t := v.(type) {
 	case *value.Map:
-		for _, e := range t.Entries() {
-			b.WriteString(pad)
+		if t.Len() == 0 {
+			b.WriteString(" {}\n")
+			return
+		}
+		for i, e := range t.Entries() {
+			if i == 0 {
+				b.WriteByte(' ')
+			} else {
+				b.WriteString(pad)
+			}
 			writeKey(b, e.Key)
 			b.WriteByte(':')
-			writeChild(b, e.Val, indent, opts)
+			writeChild(b, e.Val, inner, opts)
 		}
 	case []any:
-		for _, item := range t {
-			b.WriteString(pad)
-			b.WriteByte('-')
-			writeChild(b, item, indent, opts)
+		if len(t) == 0 {
+			b.WriteString(" []\n")
+			return
 		}
+		for i, item := range t {
+			if i == 0 {
+				b.WriteByte(' ')
+			} else {
+				b.WriteString(pad)
+			}
+			b.WriteByte('-')
+			writeSeqItem(b, item, inner, opts)
+		}
+	default:
+		b.WriteByte(' ')
+		writeScalar(b, v)
+		b.WriteByte('\n')
 	}
 }
 
@@ -241,12 +286,36 @@ func writeScalar(b *strings.Builder, v any) {
 
 // writeString renders a string, quoting it whenever a plain rendering
 // would parse back as something other than this string.
+//
+// Single quotes are preferred, because that is what PyYAML reaches for
+// and therefore what every file a Salt tree has written looks like:
+// `'yes'`, not `"yes"`. Double quotes are for the strings a single-quoted
+// scalar cannot carry literally -- a tab, a newline, a control character
+// -- which is the same line PyYAML draws.
 func writeString(b *strings.Builder, s string) {
-	if needsQuoting(s) {
+	if !needsQuoting(s) {
+		b.WriteString(s)
+		return
+	}
+	if needsEscaping(s) {
 		b.WriteString(Quote(s))
 		return
 	}
-	b.WriteString(s)
+	b.WriteString(SingleQuote(s))
+}
+
+// needsEscaping reports whether a string holds something that only a
+// double-quoted scalar can render. A single-quoted scalar carries every
+// printable character literally -- doubling an apostrophe is its one
+// escape -- so this is the control characters and the whitespace that
+// would otherwise fold.
+func needsEscaping(s string) bool {
+	for _, r := range s {
+		if r == '\n' || r == '\r' || r == '\t' || r < 0x20 || r == 0x7f {
+			return true
+		}
+	}
+	return false
 }
 
 // Quote renders a string as a double-quoted YAML scalar with the escapes

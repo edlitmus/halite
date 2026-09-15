@@ -7,24 +7,51 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
+// The quote character is PyYAML's -- single, unless the string holds
+// something only a double-quoted scalar can carry. What matters more than
+// the character is the property below it: whatever comes out has to parse
+// back as the string that went in, which is asserted here rather than
+// left to the spelling.
 func TestEncodeQuotesWhatWouldChangeType(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"plain", "plain"},
-		{"yes", `"yes"`},
-		{"true", `"true"`},
-		{"0644", `"0644"`},
-		{"42", `"42"`},
-		{"1.5", `"1.5"`},
-		{"", `""`},
-		{"has: colon", `"has: colon"`},
-		{"# hash", `"# hash"`},
-		{"trailing ", `"trailing "`},
-		{"1:30", `"1:30"`},
+		{"yes", `'yes'`},
+		{"true", `'true'`},
+		{"0644", `'0644'`},
+		{"42", `'42'`},
+		{"1.5", `'1.5'`},
+		{"", `''`},
+		{"has: colon", `'has: colon'`},
+		{"# hash", `'# hash'`},
+		{"trailing ", `'trailing '`},
+		{"1:30", `'1:30'`},
 		{"nginx-1.0", "nginx-1.0"},
+		// Only an escape sends it to double quotes.
+		{"a\tb", `"a\tb"`},
+		{"line\nbreak", `"line\nbreak"`},
+		// An apostrophe needs no quoting on its own -- PyYAML leaves both
+		// of these plain, because neither resolves to anything but a
+		// string. Checked against it.
+		{"it's fine", "it's fine"},
+		{"yes it's", "yes it's"},
 	}
 	for _, c := range cases {
-		if got := EncodeScalar(c.in); got != c.want {
+		got := EncodeScalar(c.in)
+		if got != c.want {
 			t.Errorf("EncodeScalar(%q) = %s, want %s", c.in, got, c.want)
+		}
+		back, _, err := Parse([]byte("k: "+got+"\n"), Options{})
+		if err != nil {
+			t.Errorf("EncodeScalar(%q) = %s, which does not parse: %v", c.in, got, err)
+			continue
+		}
+		m, ok := back.(*value.Map)
+		if !ok {
+			t.Errorf("EncodeScalar(%q) = %s, which parsed back as %T", c.in, got, back)
+			continue
+		}
+		if v, _ := m.Get("k"); v != any(c.in) {
+			t.Errorf("EncodeScalar(%q) = %s, which parsed back as %#v", c.in, got, v)
 		}
 	}
 }
