@@ -591,7 +591,7 @@ reaction, which the reactor already reaches another way.
 
 ### 2.6 `kmod`: closed
 
-**Built on 2026-09-15** (DIVERGENCE 5.93), the same day it was agreed.
+**Built on 2026-09-15** (DIVERGENCE 5.96), the same day it was agreed.
 SPEC 15.2 and 15.5 do not list `kmod`, and §6 carried that as an open
 question; the question is settled, because not naming a module is no
 reason to leave a fleet's kernel-module controls uncompilable.
@@ -1114,11 +1114,11 @@ unchanged.
    not six oversights.
 
    ~~`archive.extracted` (5)~~ and ~~`git.latest`~~ are closed:
-   `archive.extracted` took `user`, `group` and `keep_source` (5.89) and
-   `git.latest` took `fetch_tags` (5.88), all of them found by compiling
-   the estate's own tree. `x509`'s arguments closed the same way (5.87),
+   `archive.extracted` took `user`, `group` and `keep_source` (5.92) and
+   `git.latest` took `fetch_tags` (5.91), all of them found by compiling
+   the estate's own tree. `x509`'s arguments closed the same way (5.90),
    as did `cmd.run`'s `bg`, `file.recurse`'s `template` and
-   `host.present`'s list of addresses (5.90, 5.92).
+   `host.present`'s list of addresses (5.93, 5.95).
 8. **`module.run` argument pass-through.** Salt passes unknown kwargs
    through to the function being run; this build validates against a
    fixed parameter list. Strict validation is right for every other state

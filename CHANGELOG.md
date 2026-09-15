@@ -69,7 +69,7 @@ the reader after an argument already present — in a binder every module
 shares. And a planned ownership change reported one shape for a file that
 existed and another for one that did not.
 
-The lesson, recorded in DIVERGENCE 5.91: **a fixed error is not a closed
+The lesson, recorded in DIVERGENCE 5.94: **a fixed error is not a closed
 error until the line after it has compiled.** The count went up once, 5
 to 8, and that was the exercise working.
 

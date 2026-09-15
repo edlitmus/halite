@@ -549,7 +549,7 @@ func TestComparisonErrorsNameBothTypes(t *testing.T) {
 	// `[1] < [2]` was here, as an example of a pair with no order. It is
 	// not one: Python orders sequences element by element and so does
 	// Jinja, `[1] < [2]` is True in both, and a tree gates on a version
-	// with exactly that (5.91). The examples that genuinely have no order
+	// with exactly that (5.94). The examples that genuinely have no order
 	// are a sequence against a scalar, and elements of different kinds.
 	err = renderErr(t, `{{ [1] < 1 }}`, nil)
 	mustContain(t, err.Error(), "cannot compare")

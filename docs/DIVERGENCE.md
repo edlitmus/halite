@@ -438,7 +438,7 @@ different reason is given.
 | `config` | implemented | 3 | |
 | `cron` | implemented | 2 | |
 | `disk` | implemented | 1 | |
-| `dnsutil` | implemented | 5 | `A` and `AAAA` carry Salt's capitals, because they are record types, and each answers with one address family. `parse_hosts`, `hosts_append` and `hosts_remove` are Salt's three hosts functions. This shipped `dnsutil.a` and a `hosts_file` Salt has never had -- both names no tree could call (5.91, 5.93) |
+| `dnsutil` | implemented | 5 | `A` and `AAAA` carry Salt's capitals, because they are record types, and each answers with one address family. `parse_hosts`, `hosts_append` and `hosts_remove` are Salt's three hosts functions. This shipped `dnsutil.a` and a `hosts_file` Salt has never had -- both names no tree could call (5.94, 5.96) |
 | `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
 | `file` | implemented | 46 | `patch` runs the system patch with `--forward`, because left to itself it reverses an already-applied patch and exits 0; `sed` is done in Go rather than by an editor, and its `limit` is a real per-line filter; `list_backups` and `restore_backup` read the cache a state fills with `backup: node` |
@@ -474,7 +474,7 @@ different reason is given.
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
-| `kmod` | implemented | 7 | Linux kernel modules: `available`, `check_available`, `lsmod`, `mod_list`, `is_loaded`, `load`, `remove`. SPEC names no such module and an estate's CIS controls need one (5.93). Linux only; FreeBSD's kldload is a different model and is refused by name |
+| `kmod` | implemented | 7 | Linux kernel modules: `available`, `check_available`, `lsmod`, `mod_list`, `is_loaded`, `load`, `remove`. SPEC names no such module and an estate's CIS controls need one (5.96). Linux only; FreeBSD's kldload is a different model and is refused by name |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `nfs` | not implemented | 0 | |
@@ -490,7 +490,7 @@ different reason is given.
 | `system` | implemented | 9 | the four power verbs `halt`, `poweroff`, `shutdown` and `reboot`, the three clock writers `set_system_date`, `set_system_time` and `set_system_date_time`, and `get_computer_desc`/`set_computer_desc`. Linux and FreeBSD only, not the five BSDs `quota` groups: a wrong flag to `edquota` is refused, a wrong flag to `shutdown(8)` is obeyed on hardware nobody is standing in front of. Every command is built by a pure function of `goos` and its arguments, so each row is checkable from any host without running it, and test mode reaches the process zero times for the power verbs. `-h` on Linux and `-p` on FreeBSD are how the two platforms spell the same meaning. No hostname function (`hostname.*` owns that), no clock reader (`status.time` does), and no `hwclock`, which FreeBSD has no equivalent of. `set_computer_desc` writes systemd's `PRETTY_HOSTNAME` in `/etc/machine-info` and is Linux only, because FreeBSD has no convention holding such a label and inventing one would be this build deciding a convention nothing reads |
 | `tls` | implemented | 6 | a CA directory convention, idempotent issuance, an issuance ledger and real CRL generation, all routed through `x509`'s existing certificate helpers rather than a second engine. Four of Salt's functions here are deliberately absent as renames of `x509` calls that already work (5.72) |
 | `tmpfs` | implemented | 3 | `list`, `is_mounted` and `usage`, read-only by design: mounting one is `mount.mount` with a fstype, and a wrapper would duplicate `mount.mounted` for no gain. `usage` joins the mount table with `df`, and degrades to no figures rather than a wrong number when the two disagree (5.72) |
-| `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification. Keys and extensions take Salt's x509_v2 spelling -- `algo`, `keysize`, and the OpenSSL one-line extension strings -- and the twelve extensions this build does not write are refused by name rather than dropped (5.87) |
+| `x509` | implemented | 8 | key and CSR generation, certificate creation self-signed or CA-signed, inspection, expiry, and signature verification. Keys and extensions take Salt's x509_v2 spelling -- `algo`, `keysize`, and the OpenSSL one-line extension strings -- and the twelve extensions this build does not write are refused by name rather than dropped (5.90) |
 
 ### 2.2 Core state modules (SPEC 15.5)
 
@@ -501,8 +501,8 @@ different reason is given.
 | `archive` | implemented | 1 | |
 | `cmd` | implemented | 3 | `script` takes its source as the state's name, as Salt's does |
 | `cron` | implemented | 2 | |
-| `file` | implemented | 16 | `rename` moves something into place once and converges: a source already gone is a success, as Salt has it (5.89) |
-| `git` | implemented | 1 | `latest`, with Salt's `fetch_tags` -- true by default, as Salt has it, so a tag no branch reaches is fetched. `sync_tags`, which Salt also defaults to true and which *deletes* local tags the remote no longer has, is not built and is refused by name (5.88) |
+| `file` | implemented | 16 | `rename` moves something into place once and converges: a source already gone is a success, as Salt has it (5.92) |
+| `git` | implemented | 1 | `latest`, with Salt's `fetch_tags` -- true by default, as Salt has it, so a tag no branch reaches is fetched. `sync_tags`, which Salt also defaults to true and which *deletes* local tags the remote no longer has, is not built and is refused by name (5.91) |
 | `group` | implemented | 2 | |
 | `host` | implemented | 2 | |
 | `module` | implemented | 2 | |
@@ -524,7 +524,7 @@ different reason is given.
 | `hostname` | implemented | 1 | `system`; the running name and the persistent one are read and reported separately, because a node where they disagree renames itself at the next boot |
 | `iptables` | implemented | 7 | Linux only; `chain_present`, `chain_absent`, `append`, `insert`, `delete`, `set_policy`, `flush`. Idempotence is `iptables -C`, not a re-parse of `iptables-save`. `flush` refuses a built-in chain that is holding traffic out, and a whole-table flush, without force. Not a `firewall` provider -- it is the layer under ufw |
 | `kernelpkg` | not implemented | 0 | |
-| `kmod` | implemented | 2 | `present` and `absent`. `mods` is the real argument and `name` a placeholder when it is given, as the estate's own tree says in a comment beside the state. `persist` writes the modules configuration, because a module unloaded but left in it comes back at the next boot (5.93) |
+| `kmod` | implemented | 2 | `present` and `absent`. `mods` is the real argument and `name` a placeholder when it is given, as the estate's own tree says in a comment beside the state. `persist` writes the modules configuration, because a module unloaded but left in it comes back at the next boot (5.96) |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `lvm` | implemented | 6 | Linux only; `pv_present`, `pv_absent`, `vg_present`, `vg_absent`, `lv_present`, `lv_absent`. `vg_present` extends a group with named devices but never removes one, and `lv_present` grows a volume but never shrinks it — a shrink that outruns the filesystem loses data, and `lvm.lvresize` with `force` is the deliberate path for it. Reports read LVM's `--reportformat json`, not the padded table |
@@ -544,7 +544,7 @@ different reason is given.
 | `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
 | `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
 | `win_wua` | not implemented | 0 | Windows only |
-| `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run. Neither has a required key argument, as Salt's do not, and wrong ownership is fixed in place rather than by re-issuing, which would give a new serial on every run (5.87) |
+| `x509` | implemented | 2 | private_key_managed and certificate_managed, both of which converge on a second run. Neither has a required key argument, as Salt's do not, and wrong ownership is fixed in place rather than by re-issuing, which would give a new serial on every run (5.90) |
 | `zpool` | implemented | 2 | `present` creates a pool that is not there and manages the properties of one that is; it does **not** reshape an existing pool, and reports a layout that does not match as a warning instead. `absent` exports by default and destroys only when told |
 
 `file.accumulated`, which SPEC 15.5 requires, is not implemented.
@@ -7932,7 +7932,7 @@ and the suite would have agreed. It is asserted directly now, in both
 directions, and `shell: false` is asserted beside the two opt-ins so
 that the path form cannot quietly turn the shell on for everybody.
 
-### 5.85 The cloud grains and the secrets pillar, on a real instance
+### 5.88 The cloud grains and the secrets pillar, on a real instance
 
 5.78 and 5.79 built both against the AWS APIs and could not run either:
 the metadata service answers only from inside EC2, and Secrets Manager
@@ -8008,7 +8008,7 @@ round trip it costs. The signing key sat on the same machine as the hub
 that verified it, which `docs/extensions.md` names as the thing not to
 do — acceptable in a lab, and not a pattern to copy.
 
-### 5.86 What compiling an estate's own tree found, in three passes
+### 5.89 What compiling an estate's own tree found, in three passes
 
 5.84 left the estate's real 603-file tree compiling with 33 errors and
 called them an inventory rather than a defect. Working through that
@@ -8168,7 +8168,7 @@ only possible if the requisite bound to both. The test that replaced the
 old one asserts both chunks resolve, and was verified by binding only
 the first and watching it fail. 29 errors to 27.
 
-### 5.87 The x509 states, against the certificate Salt actually issues
+### 5.90 The x509 states, against the certificate Salt actually issues
 
 The estate's `shared/salt/api.sls` is salt-api's own TLS certificate, and
 it is the same job `halite-api` has. It did not compile, in ten separate
@@ -8248,7 +8248,7 @@ work: four `git.latest: fetch_tags`, three `archive.extracted` ownership
 arguments, `cmd.run`'s `bg`, `file.recurse`'s `template`, a `file.rename`
 state that does not exist, and a `saltversioninfo` grain.
 
-### 5.88 `git.latest: fetch_tags`, and a default that lives in one place
+### 5.91 `git.latest: fetch_tags`, and a default that lives in one place
 
 Four of the estate tree's fifteen remaining errors were one argument.
 `shared/salt/saltrepos.sls` is how the hub keeps its own state tree
@@ -8294,7 +8294,7 @@ success without running anything; a first attempt at the real-git test
 used it by accident and watched the state report `was cloned from` over a
 directory that did not exist.
 
-### 5.89 `pgpkeys.sls`: four errors in one file, and two quiet successes
+### 5.92 `pgpkeys.sls`: four errors in one file, and two quiet successes
 
 `shared/salt/pgpkeys.sls` fetches an archive of GPG keys, unpacks it, and
 renames the directory it produced. It held four of the tree's seven
@@ -8342,7 +8342,7 @@ deliberate refusals: `cmd.run`'s `bg`, `file.recurse`'s `template`, and a
 `saltversioninfo` grain. The refusals are `saltutil` twice, `kmod`, and
 the node id that is not an FQDN.
 
-### 5.90 The last three, and a grain that had to pick a side
+### 5.93 The last three, and a grain that had to pick a side
 
 What remained of the estate tree, once `pgpkeys.sls` was done, was three
 arguments in three files.
@@ -8384,7 +8384,7 @@ strings and integers, so a version with a suffix would turn the tree's
 comparison into an error rather than a false; the list stops at the first
 part that is not a number.
 
-### 5.91 The node's own name, and the two errors that were hiding behind it
+### 5.94 The node's own name, and the two errors that were hiding behind it
 
 The estate's tree failed on
 `{% set host, domain = id.split('.', 1) %}`, and this was recorded as a
@@ -8431,7 +8431,7 @@ so nothing past it had ever been compiled. With the identity right, line
   version, and it failed with "cannot compare sequence with sequence".
   Python compares sequences element by element, with the shorter the
   smaller where one runs out, so Jinja does, so this does now. Filling in
-  the `saltversioninfo` grain in 5.90 is what exposed it: while the grain
+  the `saltversioninfo` grain in 5.93 is what exposed it: while the grain
   was missing the comparison never ran.
 
   A test asserted the old behaviour as correct. `{{ [1] < [2] }}` sat in
@@ -8446,9 +8446,9 @@ stating plainly: **a fixed error is not a closed error until the line
 after it has compiled.** Each of these was invisible while something
 earlier failed.
 
-### 5.92 `host.present` takes a list, and one wrong argument is one error
+### 5.95 `host.present` takes a list, and one wrong argument is one error
 
-Fixing the node's own name (5.91) took the tree from five errors to
+Fixing the node's own name (5.94) took the tree from five errors to
 **eight**, and that is the exercise working rather than failing. The
 hostname state had been stopping at line 6 since the beginning; with the
 identity right it reaches lines 16 and 21, and `minion.sls` compiles far <!-- lexicon:allow -->
@@ -8491,7 +8491,7 @@ two modules and nothing else:
 No unrecognised error remains. Every one of the forty-two either
 compiles, or is one of those two.
 
-### 5.93 `kmod`, and two more names no tree could call
+### 5.96 `kmod`, and two more names no tree could call
 
 **`kmod` is built.** SPEC names no such module, and plan.md §6 carried
 that as a reason not to build one. The reason did not survive contact
@@ -8537,7 +8537,7 @@ loaded ones, and differ only in that spelling.
 **`dnsutil.hosts_file` was invented.** Salt's three hosts functions on
 that module are `parse_hosts`, `hosts_append` and `hosts_remove`; there
 has never been a `hosts_file`. It is the same defect as the lower-case
-`dnsutil.a` of 5.91 -- a name no tree written for Salt can call -- and it
+`dnsutil.a` of 5.94 -- a name no tree written for Salt can call -- and it
 was found the same way, by reading Salt's module rather than this build's
 own documentation. The three now share the `hosts` module's parser, so a
 comment or a blank line survives a rewrite, and `hosts_remove` drops a
