@@ -161,6 +161,13 @@ func collectVersion(g *value.Map) {
 	// that `{% if saltversion >= ... %}` guards in an existing tree
 	// evaluate sensibly. SPEC section 10.2.7.
 	g.Set("saltversion", version.SaltCompat)
+	// saltversioninfo is the same claim as a list of integers, because a
+	// tree compares it as one: `{% if grains['saltversioninfo'] >= [2016,
+	// 3] %}` is how an estate's own minion.sls picks which restart // lexicon:allow — Salt's own filename
+	// command to write. Derived from SaltCompat rather than stated
+	// separately, so the two cannot drift into claiming different
+	// versions.
+	g.Set("saltversioninfo", versionInfoList(version.SaltCompat))
 	parts := strings.SplitN(version.Version, ".", 3)
 	info := make([]any, 0, 3)
 	for _, p := range parts {
@@ -171,6 +178,22 @@ func collectVersion(g *value.Map) {
 		info = append(info, p)
 	}
 	g.Set("haliteversioninfo", info)
+}
+
+// versionInfoList splits a dotted version into the list of integers a
+// tree compares against. A part that is not a number stops the list
+// rather than appearing in it: `>=` against a list containing a string
+// is an error in Jinja, and a version with a suffix is common.
+func versionInfoList(v string) []any {
+	out := []any{}
+	for _, part := range strings.Split(v, ".") {
+		n, err := strconv.ParseInt(strings.SplitN(part, "-", 2)[0], 10, 64)
+		if err != nil {
+			break
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 func collectPlatform(g *value.Map) {

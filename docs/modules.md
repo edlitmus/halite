@@ -537,7 +537,7 @@ cmd.has_exec(name: string)
 Run a command and return only its exit status.
 
 ```
-cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -552,6 +552,7 @@ cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = 
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
+| `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
@@ -560,7 +561,7 @@ cmd.retcode(name: string, args: list, shell: any, cwd: path = , runas: string = 
 Run a command and return its stdout.
 
 ```
-cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -575,6 +576,7 @@ cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , um
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
+| `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
@@ -583,7 +585,7 @@ cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , um
 Run a command and return its stdout, stderr, and exit status.
 
 ```
-cmd.run_all(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run_all(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -598,6 +600,7 @@ cmd.run_all(name: string, args: list, shell: any, cwd: path = , runas: string = 
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
+| `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
@@ -624,7 +627,7 @@ cmd.run_bg(name: string, args: list, cwd: path = , runas: string = , env: map)
 Run a command and return its stderr.
 
 ```
-cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -639,6 +642,7 @@ cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
+| `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
@@ -647,7 +651,7 @@ cmd.run_stderr(name: string, args: list, shell: any, cwd: path = , runas: string
 Run a command and return its stdout, whatever the exit status.
 
 ```
-cmd.run_stdout(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run_stdout(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -662,6 +666,7 @@ cmd.run_stdout(name: string, args: list, shell: any, cwd: path = , runas: string
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
+| `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.2*
 
@@ -8795,7 +8800,7 @@ beacon.present(name: string, beacon_data: map, save: bool = true)
 Run a command. Use unless, onlyif, or creates to make it idempotent.
 
 ```
-cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -8810,6 +8815,7 @@ cmd.run(name: string, args: list, shell: any, cwd: path = , runas: string = , um
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
+| `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.5*
 
@@ -8841,7 +8847,7 @@ cmd.script(name: string, source: string = , args: list, shell: string = , cwd: p
 Run a command only when a watch requisite fires. On its own it does nothing, which is the whole point: the reaction is the state.
 
 ```
-cmd.wait(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false)
+cmd.wait(name: string, args: list, shell: any, cwd: path = , runas: string = , umask: string = , env: map, stdin: string = , timeout: duration, ignore_retcode: bool = false, bg: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -8856,6 +8862,7 @@ cmd.wait(name: string, args: list, shell: any, cwd: path = , runas: string = , u
 | `stdin` | string | `` | Text written to the process. |
 | `timeout` | duration | — | How long the command may run. |
 | `ignore_retcode` | bool | `false` | Treat a non-zero exit as success. |
+| `bg` | bool | `false` | Start the command and do not wait for it. Nothing collects its output or its exit status. |
 
 *changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 15.5*
 
@@ -9143,7 +9150,7 @@ file.prepend(name: path, text: list, backup: string = , show_changes: bool = tru
 Copy a directory from the file server, creating what is missing and replacing what differs.
 
 ```
-file.recurse(name: string, source: string, clean: bool = false, exclude_pat: string = , include_pat: string = , dir_mode: string = , file_mode: string = , user: string = , group: string = , makedirs: bool = true)
+file.recurse(name: string, source: string, clean: bool = false, exclude_pat: string = , include_pat: string = , dir_mode: string = , file_mode: string = , user: string = , group: string = , makedirs: bool = true, template: string = , context: map, defaults: map)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -9158,6 +9165,9 @@ file.recurse(name: string, source: string, clean: bool = false, exclude_pat: str
 | `user` | string | `` | Owner for what it writes. |
 | `group` | string | `` | Group for what it writes. |
 | `makedirs` | bool | `true` | Create the destination if it is absent. |
+| `template` | string | `` | Render every file through this engine before writing it. Only jinja is supported. |
+| `context` | map | — | Names added to each template, overriding defaults. |
+| `defaults` | map | — | Names added to each template, overridden by context. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 

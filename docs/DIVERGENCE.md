@@ -8340,6 +8340,48 @@ deliberate refusals: `cmd.run`'s `bg`, `file.recurse`'s `template`, and a
 `saltversioninfo` grain. The refusals are `saltutil` twice, `kmod`, and
 the node id that is not an FQDN.
 
+### 5.90 The last three, and a grain that had to pick a side
+
+What remained of the estate tree, once `pgpkeys.sls` was done, was three
+arguments in three files.
+
+**`cmd.run: bg`.** The aide state rebuilds a database that takes minutes
+and does not want the run held open for it. `Background` is a field on
+the command rather than something the caller arranges, because the
+interpreter, the umask and the environment are all decided by the runner:
+a caller building its own process to start in the background would be a
+second and quietly different implementation of all three. The tree's
+command is a shell line with a redirect and an `||`, so the shell has to
+survive the trip.
+
+`bg` together with `timeout` is refused. Nothing waits for the process,
+so nothing can stop it at a deadline, and a tree that asked for a bounded
+run and got an unbounded one has been told the opposite of the truth.
+
+**`file.recurse: template`.** The rendering is easy and the comparison is
+the whole state: a template compared against the file it produced differs
+from it on every run, so the state would rewrite the file forever and
+never converge. The rendered bytes are therefore produced during planning
+and carried to the write, so that what is compared and what is written
+are the same thing.
+
+**`saltversioninfo`.** This one had to decide what to claim. An estate's
+`shared/salt/minion.sls` writes <!-- lexicon:allow -->
+`{% if grains['saltversioninfo'] >= [2016, 3] %}` to choose between two
+restart commands, so the grain is a version gate, and there is no answer
+that is simply true: this build is not Salt. Reporting halite's own
+version makes the comparison false and sends the tree down its
+old-Salt branch --- checked, and it produces `[0, 0, 0]`. So it is the
+list form of the same claim `saltversion` already makes, derived from
+`SaltCompat` rather than stated separately so the two cannot drift into
+claiming different versions. Salt's own grain is a list of integers,
+checked against the Salt on this host.
+
+Every element has to be a number. Jinja cannot order a list mixing
+strings and integers, so a version with a suffix would turn the tree's
+comparison into an error rather than a false; the list stops at the first
+part that is not a number.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -3,6 +3,7 @@ package grains
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -260,5 +261,51 @@ func TestASlowProviderTimesOutAndTheRestStillLand(t *testing.T) {
 	}
 	if !g.Has("os") {
 		t.Error("a hung provider took the core grains down with it")
+	}
+}
+
+// saltversioninfo is the list form of the claim saltversion makes,
+// because a tree compares it as a list: an estate's own minion.sls writes // lexicon:allow — Salt's own filename
+// `{% if grains['saltversioninfo'] >= [2016, 3] %}` to choose which
+// restart command to use. Salt's own grain is a list of integers, checked
+// against the Salt on the reference host.
+func TestSaltVersionInfoIsTheListFormOfSaltVersion(t *testing.T) {
+	g := collect(t, Options{})
+
+	version, _ := g.Get("saltversion")
+	infoAny, ok := g.Get("saltversioninfo")
+	if !ok {
+		t.Fatal("there is no saltversioninfo grain")
+	}
+	info, ok := infoAny.([]any)
+	if !ok {
+		t.Fatalf("saltversioninfo is %T, and a tree compares it against a list", infoAny)
+	}
+	if len(info) == 0 {
+		t.Fatal("saltversioninfo is empty")
+	}
+
+	// Every element must be a number. Jinja cannot order a list that
+	// mixes strings and integers, so one stray element turns the tree's
+	// comparison into an error rather than a false.
+	var parts []string
+	for i, part := range info {
+		n, ok := part.(int64)
+		if !ok {
+			t.Fatalf("saltversioninfo[%d] is %T, not a number", i, part)
+		}
+		parts = append(parts, strconv.FormatInt(n, 10))
+	}
+
+	// It has to agree with saltversion, or the two claim different
+	// versions of the same thing.
+	if got, want := strings.Join(parts, "."), value.KeyString(version); got != want {
+		t.Errorf("saltversioninfo is %v and saltversion is %q", info, want)
+	}
+
+	// And the comparison the estate's tree actually makes.
+	if first := info[0].(int64); first < 2016 {
+		t.Errorf("saltversioninfo starts at %d, so `>= [2016, 3]` is false "+
+			"and a tree takes its old-Salt branch", first)
 	}
 }
