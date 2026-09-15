@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-32 of 56 present, plus `defaults`, which the section does not list.
+48 of 56 present, plus `defaults`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -493,7 +493,7 @@ different reason is given.
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-17 of 46 present, plus `sysrc`, which the section does not list.
+38 of 46 present, plus `sysrc`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|

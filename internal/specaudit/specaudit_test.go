@@ -80,13 +80,7 @@ func specExecModules(t *testing.T, spec string) map[string]string {
 	t.Helper()
 	out := map[string]string{}
 
-	core := section(t, spec, "15.2")
-	if i := strings.Index(core, "Notes on the ones"); i > 0 {
-		core = core[:i]
-	} else {
-		t.Fatal("SPEC 15.2 no longer separates its module list from its notes; the audit cannot tell them apart")
-	}
-	for _, n := range namesIn(core) {
+	for _, n := range specCoreExecModules(t, spec) {
 		out[n] = "core"
 	}
 
@@ -112,15 +106,39 @@ func specExecModules(t *testing.T, spec string) map[string]string {
 // specStateModules is every state module section 15.5 names.
 func specStateModules(t *testing.T, spec string) map[string]string {
 	t.Helper()
+	out := map[string]string{}
+	for _, n := range specCoreStateModules(t, spec) {
+		out[n] = "core state"
+	}
+	return out
+}
+
+// specCoreExecModules and specCoreStateModules are the two core lists on
+// their own, in order and without repeats.
+//
+// specExecModules merges the three tiers into one map, and a module named
+// in both 15.2 and 15.3 -- `apparmor` is in the core list and in the
+// Debian row -- keeps only the tier written last. That map is the right
+// shape for asking which tier a name belongs to and the wrong one for
+// counting a list, which it undercounts by one.
+func specCoreExecModules(t *testing.T, spec string) []string {
+	t.Helper()
+	core := section(t, spec, "15.2")
+	if i := strings.Index(core, "Notes on the ones"); i > 0 {
+		core = core[:i]
+	} else {
+		t.Fatal("SPEC 15.2 no longer separates its module list from its notes; the audit cannot tell them apart")
+	}
+	return namesIn(core)
+}
+
+func specCoreStateModules(t *testing.T, spec string) []string {
+	t.Helper()
 	body := section(t, spec, "15.5")
 	if i := strings.Index(body, "`file.accumulated`"); i > 0 {
 		body = body[:i]
 	}
-	out := map[string]string{}
-	for _, n := range namesIn(body) {
-		out[n] = "core state"
-	}
-	return out
+	return namesIn(body)
 }
 
 // tableRows splits the pipe-delimited rows of a markdown table, skipping
@@ -392,6 +410,82 @@ func TestLedgerTotalsMatchTheBuild(t *testing.T) {
 	if !strings.Contains(doc, want) {
 		t.Errorf("%s does not state the shipped totals; it should read:\n%s", ledgerFile, want)
 	}
+}
+
+// Each module table opens with a sentence saying how many of its
+// section's modules are present, and that sentence is what a reader takes
+// from the table without reading it. Nothing counted it, and both had gone
+// stale by a wide margin: 2.1 said "32 of 56" when forty-eight were
+// present, and 2.2 said "17 of 46" against thirty-eight. The rows are held
+// to the build above; this holds the opening sentence to the rows.
+func TestLedgerPreamblesCountTheirSections(t *testing.T) {
+	spec := repoFile(t, specFile)
+	doc := repoFile(t, ledgerFile)
+	inv := shipped()
+
+	for _, table := range []struct {
+		heading string
+		listed  []string
+		have    map[string][]string
+	}{
+		{execHeading, specCoreExecModules(t, spec), inv.exec},
+		{stateHeading, specCoreStateModules(t, spec), inv.state},
+	} {
+		present := 0
+		for _, name := range table.listed {
+			if _, ok := resolve(table.have, name); ok {
+				present++
+			}
+		}
+		listed := len(table.listed)
+		gotPresent, gotListed, line := preambleCount(t, doc, table.heading)
+		if gotPresent != present || gotListed != listed {
+			t.Errorf("%s:%d: %s opens \"%d of %d present\"; the section lists %d and the build ships %d of them",
+				ledgerFile, line, table.heading, gotPresent, gotListed, listed, present)
+		}
+	}
+}
+
+var preambleCountRe = regexp.MustCompile(`([0-9]+) of ([0-9]+) present`)
+
+// preambleCount reads the "N of M present" sentence between a table's
+// heading and its first row. A missing sentence is fatal rather than
+// skipped: a count deleted instead of corrected is the same failure with
+// nothing left to report it against.
+func preambleCount(t *testing.T, doc, heading string) (present, listed, line int) {
+	t.Helper()
+	lines := strings.Split(doc, "\n")
+	start := -1
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), heading) {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("%s has no heading %q; the audit is reading a document it was not written for", ledgerFile, heading)
+	}
+	for i := start + 1; i < len(lines); i++ {
+		l := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(l, "|") || strings.HasPrefix(l, "## ") {
+			break
+		}
+		m := preambleCountRe.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		p, err := strconv.Atoi(m[1])
+		if err != nil {
+			t.Fatalf("%s:%d: %q is not a number", ledgerFile, i+1, m[1])
+		}
+		n, err := strconv.Atoi(m[2])
+		if err != nil {
+			t.Fatalf("%s:%d: %q is not a number", ledgerFile, i+1, m[2])
+		}
+		return p, n, i + 1
+	}
+	t.Fatalf("%s: %s has no \"N of M present\" sentence before its table; the count was removed rather than corrected", ledgerFile, heading)
+	return 0, 0, 0
 }
 
 // The README states the same totals, and it is what a reader sees first.
