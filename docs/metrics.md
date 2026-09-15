@@ -450,8 +450,8 @@ state becomes:
 # states/metrics_cert.sls
 /usr/local/etc/halite/pki/metrics.key:
   x509.private_key_managed:
-    - algorithm: ec
-    - curve: p256
+    - algo: ec
+    - keysize: 256
     - mode: '0600'
 
 /usr/local/etc/halite/pki/metrics.crt:

@@ -19,7 +19,33 @@ import (
 
 // keyParams are the algorithm arguments every key-producing function
 // takes, so a tree writes them the same way wherever they appear.
-func keyParams() []signature.Param {
+// x509KeyParams is how the x509 modules spell a key, which is how Salt's
+// x509_v2 spells it: `algo` and `keysize`.
+//
+// The tls module spells the same idea differently, and that is not an
+// inconsistency to tidy away -- see tlsKeyParams.
+func x509KeyParams() []signature.Param {
+	return []signature.Param{
+		choice("algo", "rsa", "The key algorithm.", "rsa", "ec", "ed25519"),
+		opt("keysize", signature.Int, int64(0),
+			"RSA bits, refused below 2048 and defaulting to 4096; or the EC curve size 256, 384 or 521, "+
+				"defaulting to 256. Zero takes the algorithm's default, as Salt's None does."),
+	}
+}
+
+// tlsKeyParams is how the tls module spells a key, which is how Salt's
+// tls module spells it: `bits`.
+//
+// salt.modules.tls.create_ca takes `bits` and is RSA only; `algo`,
+// `keysize` and `curve` appear nowhere in it, and create_ca_signed_cert
+// takes no key argument at all. So a tree writing `bits:` to
+// `tls.create_ca` and `keysize:` to `x509.private_key_managed` is writing
+// correct Salt both times, and halite has to answer to both. Spelling
+// these two the same would make one of them wrong.
+//
+// `algorithm` and `curve` are halite's own, for the EC keys Salt's tls
+// cannot make at all.
+func tlsKeyParams() []signature.Param {
 	return []signature.Param{
 		choice("algorithm", "rsa", "The key algorithm.", "rsa", "ec", "ed25519"),
 		opt("bits", signature.Int, int64(4096), "RSA key size. Refused below 2048."),
@@ -40,12 +66,32 @@ func subjectParams() []signature.Param {
 	}
 }
 
-func keySpecFrom(args *value.Map) (keySpec, error) {
+func x509KeySpecFrom(args *value.Map) (keySpec, error) {
 	return parseKeySpec(
-		states.Str(args, "algorithm", "rsa"),
-		states.Int(args, "bits", 4096),
-		states.Str(args, "curve", "p256"),
+		states.Str(args, "algo", "rsa"),
+		states.Int(args, "keysize", 0),
 	)
+}
+
+// tlsKeySpecFrom reads tls's spelling onto the same spec. `curve` is a
+// name here and a size in x509, so it is translated rather than passed.
+func tlsKeySpecFrom(args *value.Map) (keySpec, error) {
+	algorithm := states.Str(args, "algorithm", "rsa")
+	keysize := states.Int(args, "bits", 4096)
+	if strings.EqualFold(strings.TrimSpace(algorithm), "ec") {
+		switch states.Str(args, "curve", "p256") {
+		case "p256":
+			keysize = 256
+		case "p384":
+			keysize = 384
+		case "p521":
+			keysize = 521
+		default:
+			return keySpec{}, fmt.Errorf("unknown curve %q; halite generates p256, p384, and p521",
+				states.Str(args, "curve", ""))
+		}
+	}
+	return parseKeySpec(algorithm, keysize)
 }
 
 func registerX509(r *Registries) {
@@ -56,13 +102,13 @@ func registerX509(r *Registries) {
 				Doc: "Generate a private key and write it, or return its PEM when no path is given.",
 				Params: append([]signature.Param{
 					opt("path", signature.Path, "", "Where to write it. Empty returns the PEM instead."),
-				}, keyParams()...),
+				}, x509KeyParams()...),
 				Mutates:  true,
 				TestMode: signature.TestReliable,
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				spec, err := keySpecFrom(args)
+				spec, err := x509KeySpecFrom(args)
 				if err != nil {
 					return nil, err
 				}

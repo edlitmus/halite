@@ -8391,15 +8391,14 @@ x509.create_csr(private_key: string, path: path = , CN: string = , O: string = ,
 Generate a private key and write it, or return its PEM when no path is given.
 
 ```
-x509.create_private_key(path: path = , algorithm: string = rsa, bits: int = 4096, curve: string = p256)
+x509.create_private_key(path: path = , algo: string = rsa, keysize: int = 0)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `path` | path | `` | Where to write it. Empty returns the PEM instead. |
-| `algorithm` | string | `rsa` | The key algorithm. |
-| `bits` | int | `4096` | RSA key size. Refused below 2048. |
-| `curve` | string | `p256` | The elliptic curve, when the algorithm is ec. |
+| `algo` | string | `rsa` | The key algorithm. |
+| `keysize` | int | `0` | RSA bits, refused below 2048 and defaulting to 4096; or the EC curve size 256, 384 or 521, defaulting to 256. Zero takes the algorithm's default, as Salt's None does. |
 
 *changes the system · honours `--test` · SPEC section 15.2*
 
@@ -10858,7 +10857,7 @@ x509.certificate_managed(name: path, private_key: string, signing_cert: string =
 Ensure a private key exists with the requested algorithm and size.
 
 ```
-x509.private_key_managed(name: path, mode: string = 0600, new: bool = false, algorithm: string = rsa, bits: int = 4096, curve: string = p256)
+x509.private_key_managed(name: path, mode: string = 0600, new: bool = false, algo: string = rsa, keysize: int = 0)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10866,9 +10865,8 @@ x509.private_key_managed(name: path, mode: string = 0600, new: bool = false, alg
 | `name` | path | *required* | Where the key lives. |
 | `mode` | string | `0600` | The file mode. A key should not be readable by anyone else. |
 | `new` | bool | `false` | Replace the key even when the existing one already matches. |
-| `algorithm` | string | `rsa` | The key algorithm. |
-| `bits` | int | `4096` | RSA key size. Refused below 2048. |
-| `curve` | string | `p256` | The elliptic curve, when the algorithm is ec. |
+| `algo` | string | `rsa` | The key algorithm. |
+| `keysize` | int | `0` | RSA bits, refused below 2048 and defaulting to 4096; or the EC curve size 256, 384 or 521, defaulting to 256. Zero takes the algorithm's default, as Salt's None does. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 

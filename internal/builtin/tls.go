@@ -170,7 +170,7 @@ func tlsCreateCAParams() []signature.Param {
 			"Replace an existing CA even though every certificate it already signed "+
 				"would stop verifying against the new one."),
 	)
-	p = append(p, keyParams()...)
+	p = append(p, tlsKeyParams()...)
 	p = append(p, subjectParams()...)
 	return p
 }
@@ -180,7 +180,7 @@ func tlsCreateCASignedCertParams() []signature.Param {
 		opt("days", signature.Int, int64(defaultCertDays), "How long the certificate lasts."),
 		opt("overwrite", signature.Bool, false, "Reissue even though this common name already has a certificate."),
 	)
-	p = append(p, keyParams()...)
+	p = append(p, tlsKeyParams()...)
 	p = append(p, subjectParams()...)
 	return p
 }
@@ -304,7 +304,7 @@ func tlsCreateCAFn(c *exec.Context, args *value.Map) (any, error) {
 			value.MapOf("certificate", certPath, "private_key", keyPath)), nil
 	}
 
-	spec, err := keySpecFrom(args)
+	spec, err := tlsKeySpecFrom(args)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +398,7 @@ func tlsCreateCASignedCertFn(c *exec.Context, args *value.Map) (any, error) {
 			value.MapOf("certificate", certPath, "private_key", keyPath)), nil
 	}
 
-	spec, err := keySpecFrom(args)
+	spec, err := tlsKeySpecFrom(args)
 	if err != nil {
 		return nil, err
 	}

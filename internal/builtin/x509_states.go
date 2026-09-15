@@ -35,7 +35,7 @@ func registerX509States(r *Registries) {
 					req("name", signature.Path, "Where the key lives."),
 					opt("mode", signature.String, "0600", "The file mode. A key should not be readable by anyone else."),
 					opt("new", signature.Bool, false, "Replace the key even when the existing one already matches."),
-				}, keyParams()...),
+				}, x509KeyParams()...),
 				Mutates:  true,
 				TestMode: signature.TestReliable,
 				Section:  "15.5",
@@ -73,7 +73,7 @@ func privateKeyManaged(c *exec.Context, args *value.Map) (states.Result, error) 
 	if path == "" {
 		return states.False("This state needs a path."), nil
 	}
-	spec, err := keySpecFrom(args)
+	spec, err := x509KeySpecFrom(args)
 	if err != nil {
 		return states.False(capitalizeFirst(err.Error()) + "."), nil
 	}
