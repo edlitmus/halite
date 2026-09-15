@@ -7,6 +7,7 @@ import (
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/render"
 	"github.com/edlitmus/halite/internal/states"
+	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -66,6 +67,23 @@ func renderSourceTemplate(c *exec.Context, args *value.Map, src []byte, from str
 		Pillar:    pillar,
 		Config:    c.Config,
 		Extra:     templateExtras(args),
+	}
+	// A rendered file source may import another template, and until this
+	// was here it could not: the SLS compiler configured a loader and
+	// this path did not, so `{% import "shared/salt/map.jinja" %}` inside
+	// a managed file failed with "no template loader is configured".
+	// That import is one of the most common things in a Salt tree -- the
+	// estate this was found on does it in two separate files.
+	//
+	// The loader is the file server the source itself came from, which
+	// both implementations already offer: `Fetcher` embeds `Roots` and
+	// `Remote` has its own. Taking it by interface rather than by a new
+	// field on the context means a fetcher that cannot resolve templates
+	// still serves files, and says so at the line that imported one.
+	if src, ok := c.Files.(interface {
+		Templates(env string) template.Loader
+	}); ok {
+		opts.Loader = src.Templates(c.Env)
 	}
 	if c.Dispatch != nil {
 		opts.Salt = dispatchAdapter{c}
