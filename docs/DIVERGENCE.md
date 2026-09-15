@@ -8545,6 +8545,18 @@ line left holding only an address, as Salt's does. `parse_hosts` was
 checked against Salt's on this host's real `/etc/hosts`: same addresses,
 same names.
 
+**4 errors to 3, and 42 to 3 over the whole exercise.** Every remaining
+error is `saltutil.sync_all`, at three call sites: line 58 of
+`shared/salt/extmods.sls`, line 63 of `shared/salt/master.sls`, and line <!-- lexicon:allow -->
+4 of `shared/salt/minion.sls`. <!-- lexicon:allow -->
+
+**Nothing halite-shaped is left.** `saltutil.sync_all` ships Python to a
+node for the node to import; this build's extensions are signed,
+versioned artefacts verified against a key, so there is no step for it to
+name. Closing it means editing three lines of that tree, not writing
+anything here. It is the only one of the forty-two that was ever a
+decision rather than a gap.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
