@@ -26,6 +26,7 @@ func New() *Registries {
 	}
 	registerTest(r)
 	registerDefaults(r)
+	registerKmod(r)
 	registerCmd(r)
 	registerFile(r)
 	registerFileEdit(r)

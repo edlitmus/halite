@@ -137,15 +137,75 @@ func registerNetworkModule(r *Registries) {
 				return lookupAddressFamily(states.Str(args, "host", ""), false), nil
 			},
 		},
+		// `parse_hosts`, `hosts_append` and `hosts_remove` are Salt's
+		// three. This shipped one called `hosts_file`, which Salt has
+		// never had -- an invented name is a function no tree can call,
+		// the same defect as the lower-case `dnsutil.a` beside it.
 		exec.Module{
 			Sig: signature.Signature{
-				Module: "dnsutil", Function: "hosts_file",
-				Doc:      "Return the hosts file as a mapping of address to names.",
+				Module: "dnsutil", Function: "parse_hosts",
+				Doc: "Read a hosts file as a mapping of address to names.",
+				Params: []signature.Param{
+					opt("hostsfile", signature.Path, "", "The file to read. Defaults to the system's."),
+				},
 				TestMode: signature.TestNotApplicable,
 				Section:  "15.2",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
-				return c.Call("hosts.list_hosts", value.NewMap(0))
+				entries, err := readHostsFrom(states.Str(args, "hostsfile", ""))
+				if err != nil {
+					return nil, err
+				}
+				out := value.NewMap(len(entries))
+				for _, e := range entries {
+					if e.Address == "" {
+						continue
+					}
+					existing, _ := out.Get(e.Address)
+					names, _ := existing.([]any)
+					for _, n := range e.Names {
+						names = append(names, n)
+					}
+					out.Set(e.Address, names)
+				}
+				return out, nil
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "dnsutil", Function: "hosts_append",
+				Doc: "Add names to an address in a hosts file, skipping any it already has.",
+				Params: []signature.Param{
+					opt("hostsfile", signature.Path, "", "The file to write. Defaults to the system's."),
+					req("ip_addr", signature.String, "The address."),
+					req("entries", signature.Any,
+						"The names, comma separated as Salt takes them, or as a list."),
+				},
+				Mutates:    true,
+				TestMode:   signature.TestUnreliable,
+				Privileges: []string{"root"},
+				Section:    "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				return hostsAppend(args)
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "dnsutil", Function: "hosts_remove",
+				Doc: "Remove names from a hosts file, leaving comments and blank lines alone.",
+				Params: []signature.Param{
+					opt("hostsfile", signature.Path, "", "The file to write. Defaults to the system's."),
+					req("entries", signature.Any,
+						"The names, comma separated as Salt takes them, or as a list."),
+				},
+				Mutates:    true,
+				TestMode:   signature.TestUnreliable,
+				Privileges: []string{"root"},
+				Section:    "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
+				return hostsRemove(args)
 			},
 		},
 	)

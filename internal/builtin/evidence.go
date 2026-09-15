@@ -309,6 +309,26 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	// ---- Read from a real system, mutation never watched ----
 
+	"kmod": {Level: exec.Captured, Note: "the readers were compared against the Salt on " +
+		"this project's reference host, function for function: `mod_list` returned the same " +
+		"94 loaded modules and `available` the same 1440, from /proc/modules and " +
+		"/lib/modules directly rather than by parsing lsmod's columns. The comparison found " +
+		"one difference and it is Salt's: Salt normalises hyphens to underscores for " +
+		"loadable modules and not for built-in ones, so its `check_available('amba-pl011')` " +
+		"is true and `check_available('amba_pl011')` is false for the same module. " +
+		"**Nothing has watched this module change anything.** No module has been loaded or " +
+		"unloaded by it -- `modprobe` and `modprobe -r` are unrun, on the reasoning that " +
+		"unloading a protocol module on the host serving this project's own Salt is not a " +
+		"test, it is an outage. The persistence half writes real files, but only ones a " +
+		"test made; neither /etc/modules nor /etc/modules-load.d has been touched"},
+
+	"dnsutil": {Level: exec.Captured, Note: "`parse_hosts` was compared against Salt's on " +
+		"this host's real /etc/hosts and returned the same eight addresses with the same " +
+		"names, and `A` and `AAAA` resolve through the real resolver. The mutating half -- " +
+		"`hosts_append` and `hosts_remove` -- has written only files a test made, never the " +
+		"machine's own /etc/hosts. It shares the `hosts` module's parser and writer, which " +
+		"is where the comment and blank-line handling is demonstrated"},
+
 	"reboot": {Level: exec.Captured, Note: "the readers are demonstrated against the real " +
 		"FreeBSD host this was written on: `required` compares freebsd-version's installed " +
 		"and running kernels, `scheduled` reads the real process table **through the `ps` " +

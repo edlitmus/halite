@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **87 execution modules / 590 functions** and **46 state
-modules / 123 functions**.
+The build ships **88 execution modules / 599 functions** and **47 state
+modules / 125 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-48 of 56 present, plus `defaults`, which the section does not list.
+48 of 56 present, plus `defaults` and `kmod`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -438,7 +438,7 @@ different reason is given.
 | `config` | implemented | 3 | |
 | `cron` | implemented | 2 | |
 | `disk` | implemented | 1 | |
-| `dnsutil` | implemented | 3 | `A` and `AAAA` carry Salt's capitals, because they are record types, and each answers with one address family. This shipped as `dnsutil.a`, which no tree written for Salt could reach (5.91) |
+| `dnsutil` | implemented | 5 | `A` and `AAAA` carry Salt's capitals, because they are record types, and each answers with one address family. `parse_hosts`, `hosts_append` and `hosts_remove` are Salt's three hosts functions. This shipped `dnsutil.a` and a `hosts_file` Salt has never had -- both names no tree could call (5.91, 5.93) |
 | `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
 | `file` | implemented | 46 | `patch` runs the system patch with `--forward`, because left to itself it reverses an already-applied patch and exits 0; `sed` is done in Go rather than by an editor, and its `limit` is a real per-line filter; `list_backups` and `restore_backup` read the cache a state fills with `backup: node` |
@@ -474,6 +474,7 @@ different reason is given.
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
+| `kmod` | implemented | 7 | Linux kernel modules: `available`, `check_available`, `lsmod`, `mod_list`, `is_loaded`, `load`, `remove`. SPEC names no such module and an estate's CIS controls need one (5.93). Linux only; FreeBSD's kldload is a different model and is refused by name |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `nfs` | not implemented | 0 | |
@@ -493,7 +494,7 @@ different reason is given.
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-38 of 46 present, plus `sysrc`, which the section does not list.
+38 of 46 present, plus `sysrc` and `kmod`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -523,6 +524,7 @@ different reason is given.
 | `hostname` | implemented | 1 | `system`; the running name and the persistent one are read and reported separately, because a node where they disagree renames itself at the next boot |
 | `iptables` | implemented | 7 | Linux only; `chain_present`, `chain_absent`, `append`, `insert`, `delete`, `set_policy`, `flush`. Idempotence is `iptables -C`, not a re-parse of `iptables-save`. `flush` refuses a built-in chain that is holding traffic out, and a whole-table flush, without force. Not a `firewall` provider -- it is the layer under ufw |
 | `kernelpkg` | not implemented | 0 | |
+| `kmod` | implemented | 2 | `present` and `absent`. `mods` is the real argument and `name` a placeholder when it is given, as the estate's own tree says in a comment beside the state. `persist` writes the modules configuration, because a module unloaded but left in it comes back at the next boot (5.93) |
 | `locale` | not implemented | 0 | |
 | `logrotate` | not implemented | 0 | |
 | `lvm` | implemented | 6 | Linux only; `pv_present`, `pv_absent`, `vg_present`, `vg_absent`, `lv_present`, `lv_absent`. `vg_present` extends a group with named devices but never removes one, and `lv_present` grows a volume but never shrinks it — a shrink that outruns the filesystem loses data, and `lvm.lvresize` with `force` is the deliberate path for it. Reports read LVM's `--reportformat json`, not the padded table |
@@ -8488,6 +8490,60 @@ two modules and nothing else:
 
 No unrecognised error remains. Every one of the forty-two either
 compiles, or is one of those two.
+
+### 5.93 `kmod`, and two more names no tree could call
+
+**`kmod` is built.** SPEC names no such module, and plan.md §6 carried
+that as a reason not to build one. The reason did not survive contact
+with a real tree: an estate's CIS controls unload the uncommon network
+protocols -- `dccp`, `sctp`, `tipc`, `rds` -- with a single `kmod.absent`,
+and not naming a module in a specification is no reason to leave a
+fleet's hardening uncompilable. Agreed 2026-09-15; plan.md §2.6.
+
+`mods` is the real argument and `name` is a placeholder when it is given.
+The estate's tree says so in a comment beside the state, and getting it
+backwards would unload a module called `modules_to_unload` and nothing
+else -- silently, because no such module is loaded.
+
+`persist` is half the feature rather than an extra. A module unloaded
+from the running kernel but left in the modules configuration comes back
+at the next boot, so the control passes a scan today and fails the same
+scan tomorrow. `absent` with `persist` therefore treats a module as
+present if it is loaded *or* written down.
+
+Three choices worth stating:
+
+- **`/proc/modules`, not `lsmod`.** lsmod is a formatter over that file
+  and nothing else, so parsing its columns would be parsing a rendering
+  of something the kernel already offers in a stable documented format.
+- **`modprobe -r`, not `rmmod`.** Salt uses `rmmod`, which refuses a
+  module that has dependants and leaves them loaded. A control that
+  unloads `sctp` means its dependants too.
+- **`halite_managed.conf`, not `salt_managed.conf`.** Salt writes
+  `/etc/modules-load.d/salt_managed.conf` under systemd and `/etc/modules`
+  otherwise; this picks the same two places for the same reasons, under
+  its own name. A file called `salt_managed.conf` written by something
+  that is not Salt is a lie to the next person reading the directory.
+
+**A difference from Salt, in Salt's favour of being wrong.** Salt's
+`kmod.available` normalises hyphens to underscores for loadable modules
+and not for built-in ones, so on this host
+`check_available('amba-pl011')` is **True** and
+`check_available('amba_pl011')` is **False** -- for the same module,
+which the kernel treats as one name. Both are true here. Checked
+differentially: the two builds list the same 1440 modules and the same 94
+loaded ones, and differ only in that spelling.
+
+**`dnsutil.hosts_file` was invented.** Salt's three hosts functions on
+that module are `parse_hosts`, `hosts_append` and `hosts_remove`; there
+has never been a `hosts_file`. It is the same defect as the lower-case
+`dnsutil.a` of 5.91 -- a name no tree written for Salt can call -- and it
+was found the same way, by reading Salt's module rather than this build's
+own documentation. The three now share the `hosts` module's parser, so a
+comment or a blank line survives a rewrite, and `hosts_remove` drops a
+line left holding only an address, as Salt's does. `parse_hosts` was
+checked against Salt's on this host's real `/etc/hosts`: same addresses,
+same names.
 
 ## 6. Everything else not started
 

@@ -18,6 +18,61 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The estate's tree, from 27 errors to 4
+
+Continuing the exercise above. What is left is two modules: `saltutil`,
+which is a decision rather than a gap, and nothing else that is halite's
+to fix.
+
+**`x509` was spelled wrong throughout.** Salt has two x509 modules and
+the newer wins by default, so a tree is written against v2: `algo` and
+`keysize`, not the `algorithm`, `bits` and `curve` this had invented, and
+the extensions in OpenSSL's own one-line form — `basicConstraints:
+"critical, CA:false"` and its like. There is no required key argument
+either, so a state naming only `signing_private_key` was refused for
+missing one it did not need. `pathlen` was being ignored outright: every
+CA came out able to sign leaves only, whatever the tree asked for.
+
+The `tls` module keeps `bits`, because Salt's `tls` takes `bits` and is
+RSA only. Two modules, two spellings, both Salt's; sharing one parameter
+set between them would have fixed one by breaking the other.
+
+**Six state arguments an estate writes were absent**: `git.latest`'s
+`fetch_tags`, `archive.extracted`'s `user`, `group` and `keep_source`,
+`cmd.run`'s `bg`, and `file.recurse`'s `template`. `file.rename` did not
+exist at all. Two are worth naming for the shape of them: `keep_source`
+is about the cache rather than the archive, so implementing it the
+obvious way would have deleted the tree's own tarball; and
+`file.recurse`'s template has to be compared *rendered*, or the state
+rewrites the file for ever and never converges.
+
+**A node named itself by the short hostname.** SPEC 7.2 puts the fully
+qualified domain name at step 5 and the hostname at step 6, and step 5
+was not implemented — so every Linux node halite enrolled took the short
+name, where Salt's takes the FQDN. A tree that splits the id on a dot
+failed, which had been written off as a lab artefact and was not one.
+
+Three defects were hiding behind that single line, because the file
+stopped there and nothing past it had ever compiled: `dnsutil.a` should
+have been `dnsutil.A` (and answered with the wrong address family),
+sequences could not be compared at all — so `{% if
+grains['saltversioninfo'] >= [2016, 3] %}` failed — and `host.present`
+took one address where Salt takes a list.
+
+**`kmod` is built**, seven execution functions and both states, for the
+CIS controls an estate uses to unload the uncommon network protocols.
+SPEC names no such module, which had been the reason not to build one.
+
+**Two diagnostics were wrong rather than missing.** One bad argument
+produced two errors, the second of them a false "is required" that sent
+the reader after an argument already present — in a binder every module
+shares. And a planned ownership change reported one shape for a file that
+existed and another for one that did not.
+
+The lesson, recorded in DIVERGENCE 5.91: **a fixed error is not a closed
+error until the line after it has compiled.** The count went up once, 5
+to 8, and that was the exercise working.
+
 ### Compiling the estate's own tree, and the three defects it found
 
 Working through the inventory 5.84 left — the estate's real 603-file

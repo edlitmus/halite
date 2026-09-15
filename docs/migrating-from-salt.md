@@ -211,8 +211,8 @@ configuration file; a tree needs the same edits:
 ## What is not there
 
 halite ships a subset of Salt's roughly 400 modules, chosen by what a
-real estate applies. This build has 590 execution functions across 87
-modules and 123 state functions across 46. The [module
+real estate applies. This build has 599 execution functions across 88
+modules and 125 state functions across 47. The [module
 reference](modules.md) lists all of them and
 [DIVERGENCE.md](DIVERGENCE.md) lists what is missing, module by module,
 with the reason.
@@ -268,7 +268,10 @@ The larger absences today:
   most common reason a Salt install fails. And `certificate_managed` here
   converges: it re-issues only when the certificate is missing, no longer
   matches its key, was not signed by the configured CA, or has entered
-  the renewal window. Salt's re-issues on every highstate.
+  the renewal window. A wrong owner or group is corrected where it
+  stands, because re-issuing gives a new serial and a new expiry and so
+  reports a change on every run for ever. Salt's re-issues on every
+  highstate.
 - **Templates are deterministically seeded**, so `random` and `shuffle`
   give the same answer in a `--test` run and the real run that follows,
   and on the run after that. Salt's do not, which produces phantom

@@ -380,3 +380,115 @@ func readLines(path string) []string {
 	}
 	return strings.Split(strings.TrimRight(string(b), "\n"), "\n")
 }
+
+// ---- dnsutil's view of the same file ----
+//
+// Salt puts three hosts functions on `dnsutil` as well as the `hosts`
+// module, and they take a path rather than assuming the system's. They
+// share this file's parser, so a comment or a blank line survives a
+// rewrite here exactly as it does there.
+
+// readHostsFrom reads a named hosts file, or the system's when the name
+// is empty.
+func readHostsFrom(path string) ([]hostEntry, error) {
+	if path == "" {
+		return readHosts()
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return parseHosts(string(b)), nil
+}
+
+// hostsEntryNames reads the `entries` argument in both the forms Salt's
+// callers use: its own comma-separated string, and the list a tree is
+// more likely to have in hand.
+func hostsEntryNames(args *value.Map) []string {
+	v, ok := args.Get("entries")
+	if !ok {
+		return nil
+	}
+	var raw []string
+	if s, isString := v.(string); isString {
+		raw = strings.Split(s, ",")
+	} else {
+		raw = states.Strings(args, "entries")
+	}
+	var out []string
+	for _, n := range raw {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+func hostsTarget(args *value.Map) string {
+	if p := states.Str(args, "hostsfile", ""); p != "" {
+		return p
+	}
+	return HostsPath
+}
+
+func hostsAppend(args *value.Map) (any, error) {
+	path := hostsTarget(args)
+	addr := strings.TrimSpace(states.Str(args, "ip_addr", ""))
+	names := hostsEntryNames(args)
+	if addr == "" || len(names) == 0 {
+		return nil, fmt.Errorf("dnsutil.hosts_append needs an address and at least one name")
+	}
+
+	entries, err := readHostsFrom(path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Names this address already has are not added again, which is what
+	// keeps a second call from doubling the line.
+	var have []string
+	for _, e := range entries {
+		if e.Address == addr {
+			have = append(have, e.Names...)
+		}
+	}
+	var adding []string
+	for _, n := range names {
+		if !containsString(have, n) && !containsString(adding, n) {
+			adding = append(adding, n)
+		}
+	}
+	if len(adding) == 0 {
+		return fmt.Sprintf("No additional hosts were added to %s", path), nil
+	}
+
+	entries = append(entries, hostEntry{Address: addr, Names: adding})
+	if err := writeAtomic(path, []byte(renderHosts(entries)), 0o644); err != nil {
+		return nil, err
+	}
+	return fmt.Sprintf("The following line was added to %s:\n%s %s",
+		path, addr, strings.Join(adding, " ")), nil
+}
+
+func hostsRemove(args *value.Map) (any, error) {
+	path := hostsTarget(args)
+	names := hostsEntryNames(args)
+	if len(names) == 0 {
+		return nil, fmt.Errorf("dnsutil.hosts_remove needs at least one name")
+	}
+	entries, err := readHostsFrom(path)
+	if err != nil {
+		return nil, err
+	}
+	// removeNamesFrom drops an address left with no names, which is what
+	// Salt means by "if doing so will leave a line containing only an IP
+	// address, then the line will be deleted".
+	entries = removeNamesFrom(entries, names, "")
+	if err := writeAtomic(path, []byte(renderHosts(entries)), 0o644); err != nil {
+		return nil, err
+	}
+	return true, nil
+}
