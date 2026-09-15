@@ -18,14 +18,29 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
-### The estate's tree, from 27 errors to 3
+### The estate's tree, from 27 errors to none
 
-Continuing the exercise above. All three that remain are
-`saltutil.sync_all`, which is a decision rather than a gap: it ships
-Python to a node for the node to import, and this build's extensions are
-signed, versioned artefacts verified against a key, so there is no step
-for it to name. Closing it means editing three lines of that tree.
-Nothing halite-shaped is left.
+Continuing the exercise above. The tree compiles.
+
+The last three were `saltutil.sync_all` written as a state, and they were
+recorded as the one thing in the exercise that was a decision rather than
+a gap: `sync_all` ships Python to a node for the node to import, and this
+build's extensions are signed and pinned, so there was no step for it to
+name.
+
+That is true about Salt and was never true here. SPEC 24.5 maps those
+names onto fetching signed bundles, and the execution functions have done
+exactly that all along; only the state form was missing. The refusal
+described the tool being replaced rather than the thing replacing it, and
+it survived into three documents and a pull request before anyone asked
+whether the error could at least be a warning.
+
+It could have been, and it would still have been wrong. The estate hangs
+an `onchanges` on that state, and a state that is accepted and does
+nothing reports no change -- so the requisite never fires and a tree
+whose extensions are fetched when their definition changes quietly stops
+fetching them. The states are built instead, one per kind, each calling
+the execution function that was already there.
 
 **`x509` was spelled wrong throughout.** Salt has two x509 modules and
 the newer wins by default, so a tree is written against v2: `algo` and

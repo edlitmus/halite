@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **88 execution modules / 599 functions** and **47 state
-modules / 125 functions**.
+The build ships **88 execution modules / 599 functions** and **48 state
+modules / 132 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -494,7 +494,7 @@ different reason is given.
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-38 of 46 present, plus `sysrc` and `kmod`, which the section does not list.
+38 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -507,6 +507,7 @@ different reason is given.
 | `host` | implemented | 2 | |
 | `module` | implemented | 2 | |
 | `pkg` | implemented | 4 | |
+| `saltutil` | implemented | 7 | the `sync_*` states, matching the execution functions SPEC 24.5 already defines: they fetch signed, pinned bundles rather than shipping Python to a node. They were recorded here as a refusal and were a gap -- the reasoning described Salt's meaning rather than this build's (5.97) |
 | `service` | implemented | 4 | |
 | `ssh_auth` | implemented | 2 | |
 | `sysctl` | implemented | 1 | |
@@ -8709,12 +8710,65 @@ error is `saltutil.sync_all`, at three call sites: line 58 of
 `shared/salt/extmods.sls`, line 63 of `shared/salt/master.sls`, and line <!-- lexicon:allow -->
 4 of `shared/salt/minion.sls`. <!-- lexicon:allow -->
 
-**Nothing halite-shaped is left.** `saltutil.sync_all` ships Python to a
-node for the node to import; this build's extensions are signed,
-versioned artefacts verified against a key, so there is no step for it to
-name. Closing it means editing three lines of that tree, not writing
-anything here. It is the only one of the forty-two that was ever a
-decision rather than a gap.
+This section said those three were a decision rather than a gap, and that
+closing them meant editing that tree rather than writing anything here.
+**That was wrong, and 5.97 corrects it.**
+
+### 5.97 `saltutil`'s states, and a refusal that was never one
+
+Three errors stood in the estate's tree at the end of 5.96, all
+`saltutil.sync_all` written as a state, and this ledger recorded them as
+the one thing in the whole exercise that was a decision rather than a
+gap: `sync_all` ships Python to a node for the node to import, this
+build's extensions are signed and pinned, so there is no step for it to
+name.
+
+**Every part of that is true about Salt and none of it was true here.**
+SPEC 24.5 already maps those names onto fetching signed, pinned bundles,
+and this build has shipped `saltutil.sync_all`, `sync_modules`,
+`sync_states`, `sync_grains`, `sync_beacons`, `sync_returners` and
+`sync_renderers` as *execution* functions since that section was written.
+What was missing was the state form, and nothing else. The refusal
+described the semantics of the tool being replaced rather than the
+behaviour of the thing doing the replacing, and then it was repeated --
+into this ledger, the changelog, and a pull request -- until somebody
+asked whether the error could at least be downgraded to a warning.
+
+It could have been. Warning and ignoring is a real tool here and the
+parameter-level form of it, `Ineffective`, exists for exactly the case
+where refusing something harmless stops a tree compiling. It would also
+have been the wrong answer, and the estate's own tree says why:
+
+```yaml
+{{ sls }} sync all:
+  saltutil.sync_all:
+    - refresh: True
+    - onchanges:
+      - file: /var/cache/salt/minion/extmods/pillar/aws_secrets_manager.py  <!-- lexicon:allow -->
+```
+
+That `onchanges` is the point. A state that is accepted and does nothing
+reports no change, so a requisite hung on it never fires. A tree whose
+extensions are fetched *when their definition changes* would have
+compiled, run green, and quietly stopped fetching them. Accept-and-ignore
+is safe for an argument that makes no difference and unsafe for a state
+something else depends on.
+
+So the states are built, one per kind, each calling the execution
+function that was already there. Fetching is the change, which is what
+makes the requisite work and also what makes test mode unable to predict
+it: there is no way to find out whether a bundle differs without
+fetching it, so `--test` says so rather than guessing. The state declares
+its test mode unreliable for that reason, which is the honest answer
+rather than a convenient one.
+
+**The tree compiles with no errors.** Forty-two to zero.
+
+The lesson is not about `saltutil`. A refusal is a claim, and this one
+was never checked against the registry it was a claim about -- one
+`sys.list_modules` would have shown `saltutil.sync_all` sitting there.
+A gap recorded as a decision stops anyone looking at it again, which is
+why it survived being written into three documents and a pull request.
 
 ## 6. Everything else not started
 
