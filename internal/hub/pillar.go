@@ -37,6 +37,16 @@ type PillarOptions struct {
 	ConfigValues *value.Map
 	// Ext are the external pillar sources of SPEC section 12.7.
 	Ext []pillar.ExtSource
+	// OnSecret receives every value the hub decrypts while compiling a
+	// node's pillar, for the redactor of SPEC section 26.1.
+	//
+	// The hub is where hub-side pillar is decrypted, so it is where the
+	// redactor has to learn the values: a hub that opens a GPG block
+	// and then writes a compilation warning naming what was in it has
+	// redacted nothing. The node seeds its own set from the pillar it
+	// receives, which covers the node's output and says nothing about
+	// the hub's. DIVERGENCE 5.110.
+	OnSecret func(string)
 }
 
 // pillarRequest is POST /v1/pillar: the node sends its grains and the
@@ -115,41 +125,7 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 	opts := s.Pillar
 	c := &pillar.Compiler{
 		Loader: opts.Roots,
-		Config: pillar.Config{
-			NewSalt: func(partial *value.Map) template.Dispatcher {
-				if opts.Registry == nil {
-					return nil
-				}
-				return exec.TemplateDispatcher{
-					Registry: opts.Registry,
-					Context: &exec.Context{
-						Grains: grains,
-						Pillar: partial,
-						NodeID: nodeID,
-						Env:    env,
-						Config: opts.ConfigValues,
-					},
-				}
-			},
-			Env:              env,
-			NodeID:           nodeID,
-			Grains:           grains,
-			ConfigValues:     opts.ConfigValues,
-			TrustedGrains:    opts.TrustedGrains,
-			Strategy:         opts.Strategy,
-			MergeLists:       opts.MergeLists,
-			Undefined:        opts.Undefined,
-			GPG:              opts.GPG,
-			Renderer:         opts.Renderer,
-			YAMLBool11:       opts.YAMLBool11,
-			Nondeterministic: opts.Nondeterministic,
-			TemplateOptions:  opts.TemplateOptions,
-			Ext:              opts.Ext,
-			// Never Local: this is the hub's tree, and SPEC 12.1
-			// reserves that flag for a development compilation from a
-			// local root.
-			Local: false,
-		},
+		Config: pillarConfigFor(opts, nodeID, env, grains),
 	}
 	out := c.Compile()
 	for _, w := range out.Warnings {
@@ -165,4 +141,52 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 		return nil, err
 	}
 	return out, nil
+}
+
+// pillarConfigFor turns the hub's options into the compiler's
+// configuration for one node.
+//
+// Split out so that the seam has a test. What it is guarding against is
+// a field that exists on both sides and is never assigned between them:
+// `OnSecret` was declared on the compiler, wired on the node, and left
+// off the hub entirely, so a hub decrypted values and told its redactor
+// nothing. Nothing failed, because nothing looks at a callback that is
+// never called. DIVERGENCE 5.110.
+func pillarConfigFor(opts *PillarOptions, nodeID, env string, grains *value.Map) pillar.Config {
+	return pillar.Config{
+		NewSalt: func(partial *value.Map) template.Dispatcher {
+			if opts.Registry == nil {
+				return nil
+			}
+			return exec.TemplateDispatcher{
+				Registry: opts.Registry,
+				Context: &exec.Context{
+					Grains: grains,
+					Pillar: partial,
+					NodeID: nodeID,
+					Env:    env,
+					Config: opts.ConfigValues,
+				},
+			}
+		},
+		Env:              env,
+		NodeID:           nodeID,
+		Grains:           grains,
+		ConfigValues:     opts.ConfigValues,
+		TrustedGrains:    opts.TrustedGrains,
+		Strategy:         opts.Strategy,
+		MergeLists:       opts.MergeLists,
+		Undefined:        opts.Undefined,
+		GPG:              opts.GPG,
+		Renderer:         opts.Renderer,
+		YAMLBool11:       opts.YAMLBool11,
+		Nondeterministic: opts.Nondeterministic,
+		TemplateOptions:  opts.TemplateOptions,
+		Ext:              opts.Ext,
+		OnSecret:         opts.OnSecret,
+		// Never Local: this is the hub's tree, and SPEC 12.1
+		// reserves that flag for a development compilation from a
+		// local root.
+		Local: false,
+	}
 }

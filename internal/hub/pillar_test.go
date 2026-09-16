@@ -177,3 +177,64 @@ func TestABrokenPillarIsAnErrorAndNotAnEmptyOne(t *testing.T) {
 		t.Errorf("the refusal carried the tree's contents: %v", err)
 	}
 }
+
+// The hub is where hub-side pillar is decrypted, so it is where the
+// redactor has to learn the values. `OnSecret` was declared on the
+// compiler, wired on the node, and left off the hub, so a hub opened
+// GPG blocks and told its own redactor nothing -- and a compilation
+// warning naming what was inside one went out unredacted.
+//
+// Nothing failed, because nothing looks at a callback that is never
+// called. This asserts the seam instead: what the hub is given is what
+// the compiler gets.
+func TestTheHubPassesOnSecretToTheCompiler(t *testing.T) {
+	var seen []string
+	opts := &PillarOptions{
+		OnSecret: func(v string) { seen = append(seen, v) },
+	}
+	cfg := pillarConfigFor(opts, "web1.prod", "base", value.NewMap(0))
+	if cfg.OnSecret == nil {
+		t.Fatal("the compiler was given no OnSecret, so nothing the hub decrypts is recorded")
+	}
+	cfg.OnSecret("a-decrypted-value")
+	if len(seen) != 1 || seen[0] != "a-decrypted-value" {
+		t.Errorf("the callback that arrived is not the one given: %v", seen)
+	}
+}
+
+// And a hub with no redactor stays workable: the compiler takes a nil
+// callback and the render path checks it.
+func TestTheHubMayHaveNoOnSecret(t *testing.T) {
+	cfg := pillarConfigFor(&PillarOptions{}, "web1.prod", "base", value.NewMap(0))
+	if cfg.OnSecret != nil {
+		t.Error("an OnSecret appeared from nowhere")
+	}
+}
+
+// The rest of the options travel too. A seam test that only checked the
+// field it was written for would pass while the next one went missing.
+func TestThePillarOptionsReachTheCompiler(t *testing.T) {
+	opts := &PillarOptions{
+		TrustedGrains:    []string{"role"},
+		MergeLists:       true,
+		Nondeterministic: true,
+		Renderer:         []string{"jinja", "yaml"},
+	}
+	cfg := pillarConfigFor(opts, "web1.prod", "prod", value.NewMap(0))
+	if cfg.NodeID != "web1.prod" || cfg.Env != "prod" {
+		t.Errorf("node or env lost: %q %q", cfg.NodeID, cfg.Env)
+	}
+	if len(cfg.TrustedGrains) != 1 || cfg.TrustedGrains[0] != "role" {
+		t.Errorf("TrustedGrains = %v", cfg.TrustedGrains)
+	}
+	if !cfg.MergeLists || !cfg.Nondeterministic {
+		t.Error("a boolean option was dropped")
+	}
+	if strings.Join(cfg.Renderer, "|") != "jinja|yaml" {
+		t.Errorf("Renderer = %v", cfg.Renderer)
+	}
+	// The hub never compiles as though it were a node's own tree.
+	if cfg.Local {
+		t.Error("the hub compiled as Local")
+	}
+}

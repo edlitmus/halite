@@ -49,6 +49,11 @@ type hubContext struct {
 	// command it is nowhere near a handshake, and the running hub picks
 	// the decision up from the store; see hub.Server.Reconcile.
 	denied *transport.Denylist
+	// secrets is this process's redactor, the same one behind the
+	// logger and `cli.Redact`. It is held here so that the pillar the
+	// hub compiles can seed it: a hub that decrypts a value and then
+	// logs it has redacted nothing. DIVERGENCE 5.110.
+	secrets *redact.Set
 }
 
 // openHub loads configuration and key material. create says whether an
@@ -78,7 +83,7 @@ func openHubForConfig(args *cli.Args) *hubContext {
 	for _, w := range cfg.Warnings {
 		logger.Warn(w, "component", "config")
 	}
-	return &hubContext{cfg: cfg, log: logger}
+	return &hubContext{cfg: cfg, log: logger, secrets: secrets}
 }
 
 func openHub(args *cli.Args, create bool) *hubContext {
@@ -146,11 +151,12 @@ func openHub(args *cli.Args, create bool) *hubContext {
 	}
 	denied := transport.NewDenylist()
 	return &hubContext{
-		cfg:    cfg,
-		log:    logger,
-		files:  files,
-		store:  store,
-		denied: denied,
+		cfg:     cfg,
+		log:     logger,
+		files:   files,
+		store:   store,
+		denied:  denied,
+		secrets: secrets,
 		auth: &keystore.Authority{
 			Store:    store,
 			CA:       ca,
@@ -337,6 +343,7 @@ func runServe(args *cli.Args) int {
 			Registry:         builtin.New().Exec,
 			ConfigValues:     h.cfg.Redacted(),
 			Ext:              extPillarSources(h, extensions),
+			OnSecret:         h.secrets.Add,
 		}
 		// A setting that parses and does nothing is indistinguishable
 		// from one that works, until the thing it was meant to change
