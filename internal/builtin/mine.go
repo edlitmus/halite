@@ -57,8 +57,27 @@ func registerMine(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "mine", Function: "update",
-				Doc: "Recompute everything `mine_functions` names and publish it, " +
-					"replacing what this node published before.",
+				Doc: "Recompute what `mine_functions` names and publish it, merging " +
+					"over what this node published before.",
+				Params: []signature.Param{
+					// Any rather than Bool, and the reason is the tree this
+					// was found in: `salt['mine.update']('')` is what
+					// `mine.conf` writes, and Salt takes it because
+					// `if not clear` is Python truthiness and `''` is
+					// false. A declared Bool is coerced before the
+					// function runs and refuses an empty string, which
+					// is the right answer for a boolean argument
+					// everywhere except the one place Salt's own
+					// looseness is the compatibility target.
+					opt("clear", signature.Any, false,
+						"Replace this node's mine with what is published now, rather than "+
+							"merging over it. A function dropped from `mine_functions` keeps "+
+							"being served until something clears it."),
+					opt("mine_functions", signature.Any, nil,
+						"Refresh only these, instead of everything configured. A mapping in "+
+							"the shape of `mine_functions`, or a list of function names. For a "+
+							"function that needs a different interval from the rest."),
+				},
 				Mutates:  true,
 				TestMode: signature.TestReliable,
 				Section:  "19.5",
@@ -159,12 +178,26 @@ func mineUpdate(c *exec.Context, args *value.Map) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	configured, err := MineFunctions(c)
+	// `mine_functions` refreshes a subset on its own schedule; without
+	// it, everything this node is configured to publish.
+	configured := map[string]MineSpec{}
+	if raw, ok := args.Get("mine_functions"); ok && raw != nil {
+		configured, err = parseMineFunctions(raw)
+	} else {
+		configured, err = MineFunctions(c)
+	}
 	if err != nil {
 		return nil, err
 	}
 	if c.Test {
 		return value.MapOf("would_publish", int64(len(configured))), nil
+	}
+	// Nothing to publish is not the same as publishing nothing. Salt
+	// returns early here, and it matters more than it looks: with
+	// `clear` set, an empty set would take the node's whole mine with
+	// it, on a node whose `mine_functions` had simply not been read.
+	if len(configured) == 0 {
+		return int64(0), nil
 	}
 
 	published := map[string]exec.MineValue{}
@@ -181,12 +214,48 @@ func mineUpdate(c *exec.Context, args *value.Map) (any, error) {
 			Data: got, AllowTgt: spec.AllowTgt, AllowTgtType: spec.AllowTgtType,
 		}
 	}
-	// Replacing, so a function taken out of `mine_functions` stops
-	// being served rather than lingering for ever.
-	if err := mine.Publish(published, true); err != nil {
+	// Merging unless asked to clear, which is Salt's default and the
+	// behaviour `mine.update(clear=False)` is written against: what was
+	// published before and is not recomputed now stays.
+	//
+	// The cost is Salt's too. A function taken out of `mine_functions`
+	// goes on being served until something clears it -- `mine.delete`
+	// names one, `mine.flush` takes them all, and `clear: true` here
+	// replaces the lot. Replacing by default was the tidier rule and
+	// the wrong one: it made `mine_functions` on `mine.update` destroy
+	// every entry it did not name. DIVERGENCE 5.111.
+	if err := mine.Publish(published, truthyArg(args, "clear")); err != nil {
 		return nil, err
 	}
 	return int64(len(published)), nil
+}
+
+// truthyArg reads an argument the way Python's `if not x` would.
+//
+// Salt's `mine.update(clear=False)` tests its argument for truth rather
+// than for type, so a tree that writes `mine.update(”)` means false and
+// gets it. Confined to the arguments where that is the compatibility
+// target; `signature.Bool` stays strict everywhere else.
+func truthyArg(args *value.Map, name string) bool {
+	v, ok := args.Get(name)
+	if !ok || v == nil {
+		return false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return t != ""
+	case int64:
+		return t != 0
+	case float64:
+		return t != 0
+	case []any:
+		return len(t) > 0
+	case *value.Map:
+		return t.Len() > 0
+	}
+	return true
 }
 
 func mineDelete(c *exec.Context, args *value.Map) (any, error) {
@@ -284,6 +353,27 @@ func MineFunctions(c *exec.Context) (map[string]MineSpec, error) {
 	raw, ok := c.Config.Get("mine_functions")
 	if !ok || raw == nil {
 		return map[string]MineSpec{}, nil
+	}
+	return parseMineFunctions(raw)
+}
+
+// parseMineFunctions reads a `mine_functions` mapping, wherever it came
+// from: this node's configuration, or the argument `mine.update` takes
+// to refresh a subset on its own schedule.
+func parseMineFunctions(raw any) (map[string]MineSpec, error) {
+	// Salt's `mine.update` also accepts a bare list of function names,
+	// each with no arguments, and it is the shape a scheduled refresh
+	// is usually written in.
+	if list, ok := raw.([]any); ok {
+		out := map[string]MineSpec{}
+		for _, item := range list {
+			name := value.KeyString(item)
+			if name == "" {
+				return nil, fmt.Errorf("mine_functions lists something that is not a function name")
+			}
+			out[name] = MineSpec{Function: name, Args: value.NewMap(0)}
+		}
+		return out, nil
 	}
 	m, ok := raw.(*value.Map)
 	if !ok {

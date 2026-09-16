@@ -4858,11 +4858,16 @@ mine.send(name: string, mine_function: string = , allow_tgt: string = , allow_tg
 
 #### `mine.update`
 
-Recompute everything `mine_functions` names and publish it, replacing what this node published before.
+Recompute what `mine_functions` names and publish it, merging over what this node published before.
 
 ```
-mine.update()
+mine.update(clear: any = false, mine_functions: any)
 ```
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `clear` | any | `false` | Replace this node's mine with what is published now, rather than merging over it. A function dropped from `mine_functions` keeps being served until something clears it. |
+| `mine_functions` | any | — | Refresh only these, instead of everything configured. A mapping in the shape of `mine_functions`, or a list of function names. For a function that needs a different interval from the rest. |
 
 *changes the system · honours `--test` · SPEC section 19.5*
 

@@ -9585,6 +9585,67 @@ which values will later be printed is not a decision this build can make
 correctly, and the failure mode of guessing wrong is the one this entry
 is about.
 
+### 5.111 `mine.update` took no arguments, and replaced what Salt merges
+
+`shared/salt/files/minion.d/mine.conf` opens with <!-- lexicon:allow -->
+
+```jinja
+{%- set mine_update = salt['mine.update']('') -%}
+```
+
+and answered *"mine.update: takes at most 0 positional arguments, got
+1"*. Salt's is `def update(clear=False, mine_functions=None)`; this
+build declared no parameters at all.
+
+Found only once the `node:` mine binding of the lab's policy let the
+layer above it through -- 5.91's rule again, that a fixed error is not a
+closed error until the line after it has run.
+
+**The signature was the smaller half.** `clear=False` is Salt's default
+and it means *merge*: `masterapi._mine` fetches what the node already
+published and calls `data.update(new_data)` over it, so a function that
+is not recomputed keeps the value it had. This build always replaced.
+
+Replacing was the tidier rule and the wrong one. It is defensible on its
+own -- a function dropped from `mine_functions` stops being served
+rather than lingering -- but it makes the *other* new argument
+destructive: `mine.update(mine_functions={'net.lldp': []})` exists to
+refresh one entry on its own schedule, and under a replacing update it
+would delete every entry it did not name. The two arguments only make
+sense together.
+
+The cost of merging is Salt's cost too, and it is real: a function taken
+out of `mine_functions` goes on being served until something clears it.
+`mine.delete` names one, `mine.flush` takes them all, and `clear: true`
+here replaces the lot.
+
+**`clear` is declared `Any` rather than `Bool`, and that is deliberate.**
+Salt's test is `if not clear` -- Python truthiness -- so `''` is false
+and the tree above means false. A declared `Bool` is coerced before the
+function runs and refuses an empty string, which is the right answer for
+a boolean argument everywhere except the one place Salt's own looseness
+is the compatibility target. The looseness is confined to this argument;
+`signature.Bool` stays strict everywhere else.
+
+**An empty configuration publishes nothing**, which Salt also does by
+returning early. It matters more than it looks: with `clear` set, an
+empty set would otherwise take the node's whole mine with it, on a node
+whose `mine_functions` had simply not been read.
+
+**One place the documented behaviour is implemented and Salt's code is
+not.** `masterapi._mine` assigns `data` only inside its `if not clear`
+branch and then stores it unconditionally, so `clear=True` against a
+master-backed mine raises `UnboundLocalError` before it can clear <!-- lexicon:allow -->
+anything, and a `clear=False` whose cache read returns a non-dict stores
+that instead of the mine. This build does what the docstring says both
+mean.
+
+**Measured on the estate's tree**, hub and node restarted on the new
+binaries: **7 failures to 6**, and the six that remain are four
+`git.latest` on a GitLab deploy key this lab does not have, plus the two
+states skipped behind them. Nothing in the run is a defect in this
+build.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
