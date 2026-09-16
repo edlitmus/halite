@@ -588,28 +588,10 @@ func describeFileChange(path string, exists, contents, mode, owner bool, source 
 // verifySourceHash checks a fetched source against the digest the state
 // declared, before anything is written.
 func verifySourceHash(c *exec.Context, data []byte, expected string) error {
-	algorithm, digest, found := strings.Cut(expected, "=")
-	if !found {
-		// A bare digest is interpreted by its length, which is how Salt
-		// trees write it.
-		digest = expected
-		switch len(digest) {
-		case 64:
-			algorithm = "sha256"
-		case 96:
-			algorithm = "sha384"
-		case 128:
-			algorithm = "sha512"
-		case 32:
-			algorithm = "md5"
-		case 40:
-			algorithm = "sha1"
-		default:
-			return fmt.Errorf("source_hash %q has no algorithm and its length does not identify one", expected)
-		}
+	algorithm, digest, err := parseSourceHash(expected)
+	if err != nil {
+		return err
 	}
-	algorithm = strings.ToLower(strings.TrimSpace(algorithm))
-	digest = strings.ToLower(strings.TrimSpace(digest))
 
 	if algorithm == "md5" || algorithm == "sha1" {
 		// These exist only to verify an upstream that publishes nothing
@@ -633,6 +615,35 @@ func verifySourceHash(c *exec.Context, data []byte, expected string) error {
 		return fmt.Errorf("%s digest is %s, expected %s", algorithm, got, digest)
 	}
 	return nil
+}
+
+// parseSourceHash splits a `source_hash` into its algorithm and digest.
+//
+// Salt trees write both `algorithm=digest` and a bare digest whose
+// length identifies the algorithm, and both appear in the estate's tree.
+func parseSourceHash(expected string) (algorithm, digest string, err error) {
+	algorithm, digest, found := strings.Cut(expected, "=")
+	if !found {
+		// A bare digest is interpreted by its length, which is how Salt
+		// trees write it.
+		digest = expected
+		switch len(digest) {
+		case 64:
+			algorithm = "sha256"
+		case 96:
+			algorithm = "sha384"
+		case 128:
+			algorithm = "sha512"
+		case 32:
+			algorithm = "md5"
+		case 40:
+			algorithm = "sha1"
+		default:
+			return "", "", fmt.Errorf("source_hash %q has no algorithm and its length does not identify one", expected)
+		}
+	}
+	return strings.ToLower(strings.TrimSpace(algorithm)),
+		strings.ToLower(strings.TrimSpace(digest)), nil
 }
 
 func fileDirectory(c *exec.Context, args *value.Map) (states.Result, error) {

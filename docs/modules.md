@@ -8853,20 +8853,21 @@ apparmor.mode(name: string, mode: string)
 Ensure an archive has been extracted into a directory.
 
 ```
-archive.extracted(name: path, source: path, source_hash: string = , if_missing: path = , overwrite: bool = false, makedirs: bool = true, user: string = , group: string = , keep_source: bool = true)
+archive.extracted(name: path, source: path, source_hash: string = , skip_verify: bool = false, if_missing: path = , overwrite: bool = false, makedirs: bool = true, user: string = , group: string = , keep_source: bool = true)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | path | — | The destination directory. Defaults to the state ID. |
-| `source` | path | *required* | The archive: a local path, or a halite:// or salt:// URI. |
-| `source_hash` | string | `` | Expected digest of the archive, as `algorithm=digest`. |
+| `source` | path | *required* | The archive: a local path, a halite:// or salt:// URI, or an http(s) URL. |
+| `source_hash` | string | `` | Expected digest of the archive, as `algorithm=digest`. Required for an http(s) source unless skip_verify is set. |
+| `skip_verify` | bool | `false` | Skip the source_hash check. Only a source that cannot publish a digest justifies it. |
 | `if_missing` | path | `` | Skip when this path already exists. |
 | `overwrite` | bool | `false` | Replace files that already exist. |
 | `makedirs` | bool | `true` | Create the destination directory. |
 | `user` | string | `` | Own every extracted entry. |
 | `group` | string | `` | The group for every extracted entry. |
-| `keep_source` | bool | `true` | Keep a fetched archive in the cache after extracting it. Only a `halite://` or `salt://` source is fetched, so this does nothing for a local path -- as in Salt. |
+| `keep_source` | bool | `true` | Keep a fetched archive in the cache after extracting it. Only a fetched source is cached, so this does nothing for a local path -- as in Salt. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
