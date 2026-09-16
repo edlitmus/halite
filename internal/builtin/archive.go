@@ -71,16 +71,19 @@ func registerArchive(r *Registries) {
 			Doc: "Ensure an archive has been extracted into a directory.",
 			Params: []signature.Param{
 				pathParam("The destination directory. Defaults to the state ID."),
-				req("source", signature.Path, "The archive: a local path, or a halite:// or salt:// URI."),
-				opt("source_hash", signature.String, "", "Expected digest of the archive, as `algorithm=digest`."),
+				req("source", signature.Path, "The archive: a local path, a halite:// or salt:// URI, or an http(s) URL."),
+				opt("source_hash", signature.String, "", "Expected digest of the archive, as `algorithm=digest`. "+
+					"Required for an http(s) source unless skip_verify is set."),
+				opt("skip_verify", signature.Bool, false,
+					"Skip the source_hash check. Only a source that cannot publish a digest justifies it."),
 				opt("if_missing", signature.Path, "", "Skip when this path already exists."),
 				opt("overwrite", signature.Bool, false, "Replace files that already exist."),
 				opt("makedirs", signature.Bool, true, "Create the destination directory."),
 				opt("user", signature.String, "", "Own every extracted entry."),
 				opt("group", signature.String, "", "The group for every extracted entry."),
 				opt("keep_source", signature.Bool, true,
-					"Keep a fetched archive in the cache after extracting it. Only a `halite://` or `salt://` "+
-						"source is fetched, so this does nothing for a local path -- as in Salt."),
+					"Keep a fetched archive in the cache after extracting it. Only a fetched source is cached, "+
+						"so this does nothing for a local path -- as in Salt."),
 			},
 			Mutates:  true,
 			TestMode: signature.TestReliable,
@@ -357,8 +360,21 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 		}
 	}
 
-	local := source
-	if c.Files != nil && strings.Contains(source, "://") {
+	local, verified, tempDir := source, false, ""
+	switch scheme, remote, supported := remoteScheme(source); {
+	case remote && !supported:
+		return states.False(fmt.Sprintf(
+			"%s sources are not implemented; Salt fetches them and this build does not yet.", scheme)), nil
+	case remote:
+		got, err := fetchRemoteArchive(c, args, source)
+		if err != nil {
+			return states.False(fmt.Sprintf("The archive %s could not be fetched: %v",
+				redactedURL(source), err)), nil
+		}
+		// fetchRemoteArchive checks the digest before it puts the file
+		// in place, so a cached copy is one that already matched.
+		local, verified, tempDir = got.Path, got.Verified, got.Temp
+	case c.Files != nil && strings.Contains(source, "://"):
 		fetched, err := c.Files.Fetch(c.Env, source)
 		if err != nil {
 			return states.False(fmt.Sprintf("The archive %s could not be fetched: %v", source, err)), nil
@@ -366,13 +382,22 @@ func archiveExtracted(c *exec.Context, args *value.Map) (states.Result, error) {
 		local = fetched
 	}
 
-	if expected := states.Str(args, "source_hash", ""); expected != "" {
-		data, err := os.ReadFile(local)
-		if err != nil {
-			return states.False(fmt.Sprintf("The archive %s could not be read: %v", local, err)), nil
-		}
-		if err := verifySourceHash(c, data, expected); err != nil {
-			return states.False(fmt.Sprintf("The archive %s failed its hash check: %v", source, err)), nil
+	// A node with no cache_dir got a directory of this state's own to
+	// hold the archive under its real name. There is no cache for
+	// keep_source to keep it in, so it goes either way -- and a
+	// highstate every twenty minutes would otherwise leave one behind
+	// each time.
+	if tempDir != "" {
+		defer func() { _ = os.RemoveAll(tempDir) }()
+	}
+
+	if expected := states.Str(args, "source_hash", ""); expected != "" && !verified {
+		// Streamed rather than read whole: an archive is the one source
+		// that can be far larger than the memory it is worth spending,
+		// and the estate's is a JDK.
+		if err := verifySourceHashFile(c, local, expected); err != nil {
+			return states.False(fmt.Sprintf("The archive %s failed its hash check: %v",
+				redactedURL(source), err)), nil
 		}
 	}
 

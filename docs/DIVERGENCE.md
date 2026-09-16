@@ -8489,10 +8489,11 @@ names none of the entries whose ownership is in question. The test caught
 it on the first run --- the owner changed and the state said "already
 extracted".
 
-**`keep_source` is about the cache, not the archive.** `archive.extracted`
-fetches only a `halite://` or `salt://` source (5.104 added http(s) to
-`file.managed`, not to this state), so `keep_source: False` against a
-local path does nothing at all --- in Salt, and now here. This file
+**`keep_source` is about the cache, not the archive.** Only a *fetched*
+source is cached, so `keep_source: False` against a local path does
+nothing at all --- in Salt, and now here. (When this was written the
+only fetched sources were `halite://` and `salt://`; 5.106 added
+http(s), which is what finally gave the argument something to do.) This file
 relies on that: it writes `keep_source: False` against
 `/etc/salt/gpgkeys.tar.gz`, a local file that its own later states still
 read. Deleting it would break the tree in a way no test of the argument
@@ -9119,13 +9120,9 @@ a node's own grains or pillar cannot be steered at a metadata address --
 the check is on the address dialled, every hop and every resolver
 answer.
 
-**`archive.extracted` is not covered by this and still cannot.** It
-routes anything containing `://` to the file server, so an http(s)
-archive fails with "is not served from the base environment". That is
-the estate's `base/openjdk/init.sls`, the state whose URL 5.103 is
-about. The fetch here returns bytes, which is what `file.managed` wants
-and what an archive does not -- extraction works from a path -- so the
-two need different plumbing and it was not folded in blind.
+`archive.extracted` was not covered by this and needed its own
+plumbing, because the fetch here returns bytes and an archive is
+extracted from a path. 5.106 has it.
 
 Verified against the estate's real state and the real server: 2475
 bytes, matching the digest in their tree.
@@ -9189,6 +9186,81 @@ instead.
 One claim elsewhere in this document went stale with 5.104 and has been
 corrected: `archive.extracted` fetches only `halite://` and `salt://`,
 which is no longer true of `file.managed`.
+
+### 5.106 `archive.extracted` fetches http(s), and keeps what it fetched
+
+`base/openjdk/init.sls` is the state whose URL 5.103 is about: an
+`archive.extracted` pointing at an artifact server, with the credentials
+templated in from pillar.
+
+```yaml
+{{ sls }} Fetch OpenJava Source:
+  archive.extracted:
+    - name: /usr/lib
+    - source: https://{{ ausername }}:{{ atoken }}@{{ ahost }}/...
+    - source_hash: {{ hash }}
+```
+
+5.104 gave `file.managed` remote sources and deliberately left this
+alone, because the two cannot share an implementation: `file.managed`
+diffs its source against what is on disk and so must hold it in memory,
+while an archive is extracted from a *path* and should never be in
+memory at all. This state's archive is a JDK. A 64 MiB in-memory bound
+that is generous for a configuration file would have refused the one
+case this exists for.
+
+So the fetch here **streams to a file**, and everything else follows
+from that.
+
+**It is cached, under `cache_dir/extrn_files/<env>/<host>/<path>`** --
+the layout of Salt's `_extrn_path`, so an operator who knows where Salt
+put things can find these. A cached copy whose digest already matches is
+the download not made, which is what Salt's cache buys: on a highstate
+every twenty minutes against an unchanged JDK, the difference between
+one request and a few hundred megabytes. **This is also the first time
+`keep_source` has had anything to do** -- it was accurate but inert
+while nothing remote was ever fetched, and the ledger entry above it has
+been corrected.
+
+A node with no `cache_dir` gets a directory of this state's own instead,
+removed with the archive whatever `keep_source` says: there is no cache
+to keep anything in, and a highstate every twenty minutes would
+otherwise leave one behind each time.
+
+**The file keeps the source's name, and that is not cosmetic.** The
+extractor chooses tar, gzip or zip by suffix -- as Salt guesses the
+format from the source's basename -- so a download written to a random
+temporary name is read as an uncompressed tar and fails with
+`unexpected EOF` on the first gzip byte. That is a confusing way to say
+"the name was thrown away", and it is exactly what the first version of
+this did; the test that caught it is the one that extracts a `.tar.gz`
+on a node with no `cache_dir`.
+
+**Verified before it is put in place.** The download goes to `<name>.part`
+and is renamed only after its digest matches, so a cache never holds a
+file that failed verification and no later run can pick one up as though
+it had. The status is checked before the body is touched, for the reason
+it is checked in 5.104 and more so: an error page written to a file is
+one bad file, and an error page *unpacked* is an archive choosing its
+own paths.
+
+The rest follows 5.104 exactly, and for the same reasons: an
+unverifiable remote source is refused rather than fetched -- Salt
+applies the same rule to this state through `file.cached` -- credentials
+in the URL become an `Authorization` header, no message built here names
+one, and `ftp`, `s3` and `swift` are named and refused rather than
+handed to the file server. `skip_verify` did not exist on this state at
+all and now does, as it does in Salt.
+
+**One thing found by trying to break it.** The cache path strips no
+credentials, and does not need to: `url.Parse` puts userinfo in
+`u.User` and leaves `u.Host` with the host alone. Salt strips it by
+hand, with `netloc.split("@")[-1]`, because it works on the raw netloc.
+The code that copied Salt here was doing nothing, and a comment saying
+it kept credentials out of the cache path was claiming credit for the
+parser. It is gone; the property still has a test, because the property
+is what matters and the next person to touch this might reach for
+strings.
 
 ## 6. Everything else not started
 
