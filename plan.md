@@ -961,6 +961,103 @@ four hours after the argument stopped being necessary — and the last of
 them is silent data loss in a property `docs/DIVERGENCE.md` advertises
 as something Salt's syndic does not do.
 
+### 3.6 Building the artifacts: an order, and four decisions
+
+Asked for 2026-09-16. §3.5 says no artifact in SPEC 27.2 is built; this
+says in what order they should be, and what has to be decided by a person
+first.
+
+**The thing to understand before ordering anything: nothing is emitted
+today.** `make build-all` compiles and *discards* — it runs `go build
+./...` with no `-o`, so it proves seventeen targets compile and leaves
+nothing behind. `make release` builds the three binaries for the host
+into `bin/`. The release workflow builds on two runners and compares
+digests. So the first step is not a package, it is a producer.
+
+**Reproducibility is the constraint that shapes all of it.** SPEC 4.3
+requires two builders to agree on every tag, and an archive is much
+easier to make unreproducible than a binary: tar and zip embed mtimes,
+entry order, uid, gid and mode; `.deb` and `.rpm` embed build timestamps
+of their own. Every step below has to pin those the way `SOURCE_DATE_EPOCH`
+already pins the binaries, and the existing "two builders agree" job is
+the natural gate to extend — it should compare *artifact* digests, not
+only binary ones. Getting that wrong is discovered late and is tedious
+to unpick, which is the argument for doing the machinery before the
+variety.
+
+**The order.** By what this estate actually uses, and by what each step
+unblocks rather than by how hard it is.
+
+1. **Emit and checksum the binaries.** A `dist/` producer over SPEC
+   27.1's target list, with a `SHA256SUMS`. It is the precondition for
+   every item below, it makes a tag downloadable for the first time, and
+   it converts `build-all`'s compile-and-discard into something whose
+   output can be compared across builders.
+2. **Tarballs.** SPEC 27.2 describes them as "static binaries plus
+   example configuration and the manual pages, for air-gapped and
+   container use", and every one of those inputs already exists in
+   `contrib/`. This is the artifact this fleet would actually use, since
+   §0 records that it installs from source, and it is the cheapest place
+   to get the reproducible-archive discipline right before anything more
+   elaborate depends on it.
+3. **SBOM, signatures and provenance.** SPEC 4.3 requires all three per
+   artifact, and doing them *now* rather than after the artifact kinds
+   multiply means each later kind inherits the machinery instead of
+   retrofitting it. The SBOM is specified as CycloneDX generated from
+   `go version -m` on the *shipped binary* — "what linked, not what was
+   declared" — which is a small in-repo tool over output this project
+   already parses, and therefore does not need a new external dependency.
+4. **The FreeBSD package.** Tier 1 as of §6.12, 80% of this estate's
+   production, and the rc.d scripts are already written. It is the
+   native package with the highest value here and the smallest gap
+   between what exists and what ships.
+5. **`.deb` and `.rpm`.** The largest surface, and the one with real
+   missing *contents*: SPEC 27.2 says these carry a systemd unit,
+   sysusers, tmpfiles, logrotate, the manual page, default configuration
+   and a postinstall that creates the account and directories **but does
+   not start a service with a default configuration**. Only the units and
+   the manual pages exist; sysusers, tmpfiles, logrotate and the
+   postinstall are unwritten, and SPEC 27.3's "every packaged file and
+   directory has an explicit mode and owner. No file is created with a
+   mode derived from the process umask" is a property that has to be
+   asserted somewhere rather than hoped for.
+6. **Container images.** `FROM scratch`, one per binary, static binary
+   plus CA bundle and tzdata. Straightforward once 1 and 3 exist.
+7. **`.msi` and `.pkg`.** Last: the most platform-specific tooling and
+   the least use here. Windows and macOS are tier 1 and tier 2
+   respectively, and neither is run in this estate.
+
+**Four decisions that need a person.**
+
+- **How `nfpm` is obtained.** SPEC 27.2 names it for `.deb` and `.rpm`,
+  but SPEC 4.3 disables the build network and pins the Go toolchain *by
+  digest from an internal mirror*. Adding nfpm to `go.mod` would put a
+  module outside the section 4.2 allowlist into the graph, which CI
+  fails on by design. So it is a pinned external binary fetched by
+  digest, on the same terms as the toolchain — or the packages are
+  written without it. That is a decision, not an inference.
+- **Where the signing key lives.** A detached signature per artifact and
+  an in-toto/SLSA attestation naming the source commit, the toolchain
+  digest and the builder identity. This estate already keeps PGP keys
+  for pillar; whether release signing shares that custody, and whether
+  a GitHub-hosted runner is allowed to hold the key at all, is Ed's
+  call. §3.5 already notes that hosted runners are a dependency SPEC
+  does not discuss, and this is where that stops being academic.
+- **How far the `-fips` set goes.** SPEC 27.4 describes a parallel
+  artifact set suffixed `-fips` and does not limit it by platform. Taken
+  literally that doubles every row above. Linux-only is the defensible
+  reading — it is where a FIPS kernel exists — but the specification
+  should say so rather than the build quietly deciding.
+- **Whether tier 3 ships packages or only binaries.** §3.5 records that
+  `cross` now publishes tier 3, nine more binaries that nothing has run.
+  Tier 3 promises "compiles and is published", which binaries satisfy;
+  packaging them would be a promise the tier does not make.
+
+**What this does not change.** `make install` from source keeps working
+and stays the path this fleet uses. Packaging is for other people's
+machines and for air-gapped copies of this one, which is the honest
+framing §0 already gives it.
+
 ---
 
 ## 4. Settings that are accepted and do nothing
