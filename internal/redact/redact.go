@@ -18,9 +18,12 @@
 package redact
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // Placeholder replaces a secret. It is the same string Salt uses, so an
@@ -35,6 +38,43 @@ const Placeholder = "**********"
 // destroys the diagnostics without protecting anything, because a
 // one-character secret was never secret. Salt draws a similar line.
 const minLength = 6
+
+// URLPlaceholder replaces the credentials inside a URL. It is the token
+// Salt writes, so an operator who has read one comment recognises the
+// other.
+const URLPlaceholder = "<redacted>"
+
+// urlCredentials matches the userinfo of a URL: a scheme, "://", and
+// everything up to the "@" that ends it.
+//
+// The character class is what keeps this honest. Salt's own regex is
+// `(https?)://.*@`, which is greedy and unanchored, so a line holding a
+// URL and a later "@" — a second source, an address in the same
+// sentence — is eaten from the first "://" to the last "@", taking the
+// diagnostic with it. Excluding "/", "?", "#", whitespace and a second
+// "@" bounds the match to the authority component, where userinfo is
+// the only thing that can live. See DIVERGENCE 5.103.
+var urlCredentials = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9+.\-]*)://[^/?#\s@]*@`)
+
+// URLCredentials removes the user and password from every URL in text.
+//
+// This is the half of redaction that no set of known values can cover:
+// a credential embedded in a `source:` URL was never a pillar value, so
+// nothing ever handed it to Add, and it travels in the one place a
+// failing state is certain to print — its own comment, which goes on
+// into the job return, the job cache, and the logs.
+//
+// Every scheme is covered, not just http and https as Salt does: a
+// credential in a `git+ssh://` or an `ftp://` URL is the same
+// credential, and the cost of the wider match is a "<redacted>" in
+// front of an "@" that was never secret.
+func URLCredentials(text string) string {
+	// The common case is text with no URL in it at all.
+	if !strings.Contains(text, "@") {
+		return text
+	}
+	return urlCredentials.ReplaceAllString(text, "${1}://"+URLPlaceholder+"@")
+}
 
 // Set is a collection of secret values, safe for concurrent use: values
 // are added while a tree renders and read while it logs.
@@ -70,6 +110,15 @@ func (s *Set) Add(v string) {
 // what a decrypted pillar file is handed to: which of its values are
 // secret is not knowable from here, and everything that arrived
 // encrypted was encrypted for a reason.
+//
+// *value.Map is listed explicitly, and the import it costs is the point.
+// A pillar arrives as a *value.Map and nothing else: it is what the hub
+// sends and what `DecodeJSON` returns. For as long as this switch knew
+// only `map[string]any`, the node handed its whole pillar over and the
+// set recorded nothing at all, silently — every decrypted value stayed
+// printable, and the redactor reported itself empty rather than wrong.
+// Naming the type means a change to it is a compile error here instead
+// of a quiet return to that. See DIVERGENCE 5.103.
 func (s *Set) AddTree(v any) {
 	switch t := v.(type) {
 	case string:
@@ -81,6 +130,10 @@ func (s *Set) AddTree(v any) {
 	case map[string]any:
 		for _, item := range t {
 			s.AddTree(item)
+		}
+	case *value.Map:
+		for _, e := range t.Entries() {
+			s.AddTree(e.Val)
 		}
 	}
 }
@@ -96,9 +149,19 @@ func (s *Set) Len() int {
 	return len(s.values)
 }
 
-// Scrub replaces every known secret in a string.
+// Scrub replaces every known secret in a string, and the credentials
+// inside any URL it holds.
+//
+// The URL pass runs whatever the set holds, including on a nil set. A
+// hub with no encrypted pillar registers no values at all, and that hub
+// is not the one that may print an operator's credentialed source URL —
+// it is exactly the one that will.
 func (s *Set) Scrub(text string) string {
-	if s == nil || text == "" {
+	if text == "" {
+		return text
+	}
+	text = URLCredentials(text)
+	if s == nil {
 		return text
 	}
 	s.mu.RLock()
@@ -114,9 +177,6 @@ func (s *Set) Scrub(text string) string {
 // ScrubValue scrubs the strings inside a parsed value, leaving its shape
 // alone.
 func (s *Set) ScrubValue(v any) any {
-	if s == nil {
-		return v
-	}
 	switch t := v.(type) {
 	case string:
 		return s.Scrub(t)

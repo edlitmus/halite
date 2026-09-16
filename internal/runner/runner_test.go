@@ -1111,3 +1111,82 @@ succeeds:
 		t.Errorf("a succeeding state should get no note: %q", byID["succeeds"])
 	}
 }
+
+// A credential inside a `source:` URL is not a pillar value, so the
+// secret set never holds it — and on a hub with no encrypted pillar the
+// set is nil or empty, which is exactly when a scrub that shortcuts on
+// an empty set does nothing at all. The state's own name carries the
+// URL into the return key, the `name` field, the job cache and the logs.
+func TestCredentialsInAURLAreScrubbedWithNoKnownSecrets(t *testing.T) {
+	const url = "https://deploy:hunter2sekrit@artifacts.example.com/vmop/agent.tgz"
+	sls := "'" + url + "':\n  probe.run:\n    - fail: true\n"
+
+	for _, tc := range []struct {
+		name string
+		set  *redact.Set
+	}{
+		{"nil set", nil},
+		{"empty set", redact.New()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, _ := compileAndRun(t, sls)
+			out.Secrets = tc.set
+
+			returns := out.Returns()
+			for _, key := range returns.StringKeys() {
+				if strings.Contains(key, "hunter2sekrit") {
+					t.Errorf("the return key carries the credential: %q", key)
+				}
+			}
+			entry, ok := returns.Get(returns.StringKeys()[0])
+			if !ok {
+				t.Fatalf("no return: %v", returns.StringKeys())
+			}
+			name, _ := entry.(*value.Map).Get("name")
+			if s, _ := name.(string); strings.Contains(s, "hunter2sekrit") {
+				t.Errorf("the `name` field carries the credential: %q", s)
+			}
+			// The host is what makes the diagnostic worth printing, and
+			// it must survive.
+			if s, _ := name.(string); !strings.Contains(s, "artifacts.example.com") {
+				t.Errorf("the diagnostic was lost: %q", s)
+			}
+
+			// Both renderers: the local one works from the chunks, the
+			// wire one from the return schema, and an operator sees
+			// whichever their command reached for.
+			if got := out.Nested(false); strings.Contains(got, "hunter2sekrit") {
+				t.Errorf("Nested printed the credential:\n%s", got)
+			}
+			if got := NestedFromReturns(returns, tc.set); strings.Contains(got, "hunter2sekrit") {
+				t.Errorf("NestedFromReturns printed the credential:\n%s", got)
+			}
+		})
+	}
+}
+
+// The hub renders a node's return with `NestedFromReturns(m, nil)`: the
+// map came off the wire, and the hub has no secret set for another
+// machine's pillar. A scrub that skips on a nil set prints whatever the
+// node sent, which is the whole argument for redacting at the sink —
+// this renderer must not depend on the sender having done it.
+func TestNestedFromReturnsScrubsURLsOffTheWire(t *testing.T) {
+	const url = "https://deploy:hunter2sekrit@artifacts.example.com/vmop/agent.tgz"
+	returns := value.NewMap(1)
+	returns.Set("file_|-agent_|-/opt/agent.tgz_|-managed", value.MapOf(
+		"__id__", "agent",
+		"__run_num__", int64(0),
+		"name", "/opt/agent.tgz",
+		"result", false,
+		"comment", "Source file "+url+" could not be fetched",
+		"changes", value.NewMap(0),
+	))
+
+	got := NestedFromReturns(returns, nil)
+	if strings.Contains(got, "hunter2sekrit") {
+		t.Errorf("the credential reached the operator's terminal:\n%s", got)
+	}
+	if !strings.Contains(got, "artifacts.example.com") {
+		t.Errorf("the diagnostic was lost:\n%s", got)
+	}
+}

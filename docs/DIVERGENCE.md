@@ -8943,6 +8943,110 @@ Setting and deleting are different outcomes -- this state does the first
 by default and the second only when asked -- so they no longer share an
 argument.
 
+### 5.103 A credential in a `source:` URL, printed in full
+
+`base/openjdk/init.sls` in the estate's tree points at an artifact
+server with basic-auth credentials in the URL, templated in from pillar:
+
+```yaml
+{{ sls }} Fetch OpenJava Source:
+  archive.extracted:
+    - source: https://{{ ausername }}:{{ atoken }}@{{ ahost }}/...
+```
+
+where `atoken` is `pillar['base.repo']['repo']['artifactory']['authorization']`.
+
+The state failed -- because this build cannot yet fetch an `http(s)`
+source at all, which is its own defect and not this one -- and the
+comment it failed with was the error verbatim, credentials and all.
+A state comment is not a local thing. It goes into the return schema of
+SPEC 9.4, over the wire to the hub, into the job cache, and into every
+returner and log record configured behind it. One run put an operator's
+token in four places that persist.
+
+**Pulling on it found the larger defect.** The token *is* a pillar
+value, so the value-based redactor of SPEC 26.1 should have held it. A
+node that gets its pillar from a hub seeds the redactor with all of it,
+because it cannot tell which values arrived encrypted:
+
+```go
+decoded, err := value.DecodeJSON(res.Pillar)
+m, ok := decoded.(*value.Map)
+n.secrets.AddTree(m)
+```
+
+`AddTree` switched on `string`, `[]any` and `map[string]any`. **A
+decoded pillar is a `*value.Map` and has never been any of them**, so
+the call matched nothing, recorded nothing, and returned. Every node
+taking pillar from a hub ran with an empty redactor: not one decrypted
+pillar value was scrubbed from any comment, job return or log record,
+anywhere.
+
+Nothing could have noticed. There was no error and no warning; the set
+reported itself *empty*, which is indistinguishable from a node whose
+pillar holds no secrets, and the one diagnostic about the redactor
+counts exactly that number. The local-pillar path was fine throughout --
+it seeds through the compiler's `OnSecret` hook, one decrypted value at
+a time -- so the tests that existed all passed.
+
+`*value.Map` is now a case in the switch, named explicitly rather than
+matched structurally, so that a change to that type is a compile error
+here instead of a silent return to an empty set.
+
+**The URL pass is still needed, and is not a duplicate of it.** Seeding
+only ever covers values the redactor was told about. A credential typed
+into a URL literally in the tree, or one assembled by a template from
+parts none of which is secret on its own, is not a pillar value at all.
+So redaction gained a second, value-independent pass as well: the
+userinfo of any URL is removed wherever text reaches a sink, whatever
+the set holds.
+
+**Two shortcuts had to go with it**, and they were the dangerous half.
+`scrubReturn` returned early when the set was empty, and
+`NestedFromReturns` skipped the scrub entirely on a nil set. Both read as
+free optimisations -- nothing to scrub, nothing to do -- and both are
+exactly inverted: a hub with no encrypted pillar holds no values, and it
+is not the safe case, it is the one with nothing standing in the way. The
+hub renders a node's return with `NestedFromReturns(m, nil)` because it
+has no secret set for another machine's pillar; redacting at the sink
+means that renderer must not depend on the sender having done it.
+
+**Where this diverges from Salt.** Salt redacts per call site --
+`salt/utils/url.py:redact_http_basic_auth`, invoked by hand in
+`states/file.py`, `states/archive.py`, `states/git.py` and
+`states/win_wusa.py`. A state module that forgets the call, or a new one,
+leaks. This build redacts at the sink instead, so there is no call to
+forget.
+
+Salt's regex is `(https?)://.*@`. The `.*` is greedy and unanchored, so
+it runs to the *last* `@` in the text rather than the end of the
+authority. On a comment holding a URL and anything later with an `@` in
+it, Salt eats the span between:
+
+| input | Salt | now |
+|---|---|---|
+| `https://u:pw@a.example.com/x` | `https://<redacted>@a.example.com/x` | same |
+| `https://u:pw@a/x failed, see https://c/y, mail ops@example.com` | `https://<redacted>@example.com` | only the userinfo replaced |
+| `open https://a.example.com/x then mail ops@example.com` | `open https://<redacted>@example.com` | unchanged |
+
+The last row is the one that matters: no credential was present at all,
+and Salt destroys the diagnostic anyway. Bounding the match to characters
+that cannot cross out of the authority -- no `/`, `?`, `#`, whitespace or
+a second `@` -- keeps the rest of the message.
+
+Two smaller widenings, both deliberate: every scheme is covered rather
+than http and https alone, because a credential in a `git+ssh://` or an
+`ftp://` URL is the same credential; and the placeholder is Salt's
+`<redacted>` rather than this package's `**********`, so an operator who
+has read one comment recognises the other.
+
+**This does not un-expose what already travelled**, and the seeding
+defect widens what that means: on a hub-pillar node it was not only this
+token, but every secret the pillar carried, unredacted in every job
+return and log record this build has written. The artifactory token is
+the one known to have reached a comment. Rotation is the operator's
+call, not this build's.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

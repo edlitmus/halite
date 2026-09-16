@@ -34,9 +34,10 @@ func (r *RunResult) Returns() *value.Map {
 // schema, not data — while every value is scrubbed. The outer key is
 // handled by the caller, because it carries the state's name.
 func scrubReturn(secrets *redact.Set, m *value.Map) *value.Map {
-	if secrets == nil || secrets.Len() == 0 {
-		return m
-	}
+	// No early return on an empty set. Scrub also strips the credentials
+	// out of a URL, which no set ever holds, and a hub with no encrypted
+	// pillar holds nothing at all — so the one shortcut that looks free
+	// is the one that lets an operator's `source:` URL through.
 	for _, e := range m.Entries() {
 		switch t := e.Val.(type) {
 		case string:
@@ -392,10 +393,10 @@ func NestedFromReturns(returns *value.Map, secrets *redact.Set) string {
 		Duration:  time.Duration(elapsedMS * float64(time.Millisecond)),
 	})
 
-	if secrets != nil {
-		return secrets.Scrub(b.String())
-	}
-	return b.String()
+	// Scrub is nil-safe, and on a nil set it still strips URL
+	// credentials. Calling it unconditionally is what makes that true
+	// here.
+	return secrets.Scrub(b.String())
 }
 
 // functionFromKey reads the module and function out of the compound key
