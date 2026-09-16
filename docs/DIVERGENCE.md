@@ -9436,6 +9436,96 @@ rescue. Letting a command overrule a state that reported failure is a
 worse default than not having it, and no tree has been seen to rely on
 it.
 
+### 5.109 The redactor ate the schema
+
+Running the estate's tree after 5.103, with the redactor seeded for the
+first time, produced a run of diagnostics that could not say which
+states they were about:
+
+```
+              ID: **********
+        Function: file.**********
+          Result: False
+```
+
+Twenty state IDs and function names out of one 328-state run, and the
+state that had actually failed was among them. Its `Name` line came
+through intact, which is the wrong way round: the name is the one field
+of the four that really is data.
+
+**The cause is 5.103 working.** A node seeds the redactor with every
+string in the pillar the hub sends -- it cannot tell which arrived
+encrypted -- and `minLength` is six. A pillar that mentions `recurse`
+anywhere, in any value, turns `file.recurse` into `file.**********`
+everywhere it is printed. Until 5.103 the set was empty and none of this
+happened; the defect was always there and had nothing to bite.
+
+**The schema is not data.** `state_|-id_|-name_|-fun`, `__id__`,
+`__sls__`, `__run_num__` and the function name address a declaration in
+the tree. They are how an operator finds the state that failed, and
+every dashboard in an estate parses them. `name` is not one of them: for
+a `cmd.run` it is the command, secrets and all, and it stays scrubbed.
+
+Two distinctions were needed to make that honest.
+
+**The exemption is from the value set, not from redaction.** An
+identifier is not a promise. This estate declares an
+`archive.extracted` whose source URL carries credentials, and the test
+written for 5.103 puts exactly that URL in a state's ID -- so an
+exemption that turned scrubbing off would have put the credential back
+into every job return. It caught the first version of this change. A
+spared span still goes through `URLCredentials`; it is spared the pillar
+values, not the credential scanner.
+
+**A defaulted name is the ID wearing another field's name.** A state
+that names nothing takes its ID as its name, so scrubbing the copy while
+sparing the original hides nothing and leaves a key no dashboard can
+read -- `probe_|-nginx_config_|-**********_|-run`. The name is scrubbed
+only when it differs from the ID, which is the line `Nested` already
+drew when deciding whether to print a `Name` line at all.
+
+**`ScrubExcept` protects spans rather than fields**, so the sink stays a
+sink: a comment, a change, a warning and whatever line is added to the
+renderer next all still go through one call, and only the identifiers
+the renderer just wrote are spared. Sparing by field would have meant
+scrubbing each field by hand, which is the arrangement SPEC 26.1 exists
+to avoid.
+
+**And the first version of that switched redaction off.** It split the
+text at every protected span and scrubbed the pieces between them. An
+SLS named `s` -- which the node's own end-to-end test uses -- protects
+every "s" in the output, so the pieces were fragments, a decrypted
+pillar value split across two of them matched nothing, and the run
+printed the token in full. Nothing in the redact package noticed;
+`TestDecryptedPillarNeverReachesTheRun` did, which is exactly what a
+test that encrypts a token and then looks for it in the output is for.
+
+The rule that replaced it is **containment, matched against the whole
+text**: every occurrence of a secret is found in the complete string,
+and one is spared only where a kept identifier *wholly contains* it. A
+secret that merely touches an identifier wins, and damages the
+identifier, which is the safe direction to fail in. That is also the
+only rule under which a short identifier cannot matter: "s" contains
+nothing.
+
+Measured on the estate's tree, the same run before and after:
+
+| | before | after |
+|---|---|---|
+| lines carrying a redaction | 44 | 37 |
+| **IDs and function names redacted** | **20** | **0** |
+
+The 37 that remain are pillar values inside comments and changes, which
+is the redactor doing its job.
+
+**What this does not claim.** An ID built from a pillar value is now
+printed. That is a deliberate narrowing: an ID is written in the tree
+rather than derived from the node, the tree is served to every node that
+asks, and a credential inside one is still stripped. A tree that builds
+a state ID out of a decrypted secret and relies on the return schema to
+hide it would be exposed here, and is not a shape any tree seen so far
+uses.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
