@@ -968,12 +968,17 @@ says in what order they should be, and what has to be decided by a person
 first. The first of the four is answered, in the same sitting: the
 Makefile stays the producer.
 
-**The thing to understand before ordering anything: nothing is emitted
-today.** `make build-all` compiles and *discards* — it runs `go build
-./...` with no `-o`, so it proves seventeen targets compile and leaves
-nothing behind. `make release` builds the three binaries for the host
-into `bin/`. The release workflow builds on two runners and compares
-digests. So the first step is not a package, it is a producer.
+**What is emitted today, precisely.** `make cross` already
+cross-compiles all three binaries for all seventeen targets into `dist/`
+— fifty-one artifacts — with the release environment and build flags.
+`make build-all` is a different thing: it runs `go build ./...` with no
+`-o` to prove the targets compile, and discards. `make release` builds
+the three binaries for the *host* into `bin/`.
+
+An earlier revision of this paragraph said nothing was emitted, which was
+wrong and would have sent the first step off to build a producer that
+exists. What is missing is not the binaries; it is a manifest over them,
+and a gate that reads it.
 
 **Reproducibility is the constraint that shapes all of it.** SPEC 4.3
 requires two builders to agree on every tag, and an archive is much
@@ -989,11 +994,18 @@ variety.
 **The order.** By what this estate actually uses, and by what each step
 unblocks rather than by how hard it is.
 
-1. **Emit and checksum the binaries.** A `dist/` producer over SPEC
-   27.1's target list, with a `SHA256SUMS`. It is the precondition for
-   every item below, it makes a tag downloadable for the first time, and
-   it converts `build-all`'s compile-and-discard into something whose
-   output can be compared across builders.
+1. ~~**Emit and checksum the binaries.**~~ **Done 2026-09-16.**
+   `make cross` already emitted them; `make dist` adds
+   `dist/SHA256SUMS` over the fifty-one, sorted under `LC_ALL=C` and in
+   `sha256sum -c` format on both FreeBSD and Linux. `release.yml` now
+   builds with `make dist` and compares *that* between its two builders,
+   where it previously compared the three host binaries in `bin/` — three
+   of fifty-one, all one platform, so a cross-compile that was not
+   reproducible for windows/arm64 could not have been caught by the job
+   whose purpose is catching it. The manifest is also what every later
+   artifact kind attaches to: a tarball, a package or an image is
+   reproducible against a line in it, and SPEC 27.2's SBOM and signature
+   are per artifact, which is per line.
 2. **Tarballs.** SPEC 27.2 describes them as "static binaries plus
    example configuration and the manual pages, for air-gapped and
    container use", and every one of those inputs already exists in

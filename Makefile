@@ -68,7 +68,7 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
-	fleetcheck fleetcheck-image \
+	fleetcheck fleetcheck-image dist \
 	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair
 
 all: build
@@ -433,6 +433,41 @@ cross:
 				go build $(BUILDFLAGS) -o dist/$$b-$$os-$$arch$$ext ./cmd/$$b || exit 1; \
 		done; \
 	done
+
+# The release manifest: every artifact `cross` produced, with its digest.
+#
+# # Why this exists, and why the gate reads it rather than `bin/`
+#
+# SPEC 4.3 requires two builders on two machines to produce identical
+# digests, and `release.yml` checked that by sha256-ing the three host
+# binaries `make release` leaves in `bin/`. That is three of the fifty-one
+# artifacts a tag actually produces, all for one platform -- so a
+# cross-compile that was not reproducible for windows/arm64, or for any
+# of the sixteen other targets, could not have been caught by the job
+# whose whole purpose is catching it.
+#
+# The manifest is also the thing every later artifact kind attaches to:
+# a tarball, a package or an image is reproducible or not against a line
+# in here, and SPEC 27.2's SBOM and signature are per artifact, which
+# means per line.
+#
+# # Determinism is the point, so the manifest is deterministic too
+#
+# `LC_ALL=C sort` fixes the order regardless of the builder's locale, and
+# the digests are taken from inside `dist/` so the manifest carries bare
+# names rather than whichever path the build happened to run from. The
+# output is `sha256sum -c` format on every platform: FreeBSD's `sha256
+# -r` separates with one space and GNU's `sha256sum` with two, and awk
+# normalises both to two rather than this depending on which host cut the
+# release.
+dist: cross
+	@cd dist && rm -f SHA256SUMS && \
+	if command -v sha256sum >/dev/null 2>&1; then \
+		sha256sum *; \
+	else \
+		sha256 -r *; \
+	fi | awk '{ printf "%s  %s\n", $$1, $$2 }' | LC_ALL=C sort > SHA256SUMS
+	@echo "dist/SHA256SUMS: `wc -l < dist/SHA256SUMS | tr -d ' '` artifacts"
 
 # Installation. The paths follow the platform the way the binaries do,
 # and internal/config's TestTheMakefileInstallsWhereTheBinariesLook holds
