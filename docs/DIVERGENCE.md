@@ -9262,6 +9262,89 @@ parser. It is gone; the property still has a test, because the property
 is what matters and the next person to touch this might reach for
 strings.
 
+### 5.107 Jinja's list methods, and why a slice cannot have them
+
+`shared/salt/files/minion.d/defaults.conf` builds a list of the keys it <!-- lexicon:allow -->
+has emitted and appends to it from inside a macro:
+
+```jinja
+{% set default_keys = [] %}
+{%- macro get_config(configname, default_value) -%}
+{%- do default_keys.append(configname) %}
+```
+
+This answered *"append is undefined (sequence has no attribute
+append)"*. Jinja allows it because a Jinja list is a Python list, and
+the estate's tree leans on that in six files.
+
+**A Go `[]any` is not a Python list, and that is the whole problem.**
+Appending produces a new slice header; nothing holding the old one sees
+the change. Mappings never had this defect because `*value.Map` is a
+pointer, which is why `.update()` and `.pop()` have worked here since
+they were written.
+
+The shape a tree uses makes it worse rather than easier. **`{% set %}`
+inside a loop body does not survive the loop** -- that is Jinja, and it
+is the reason `append` is reached for at all. So an implementation that
+resolved `append` to "rebind the name" would reproduce exactly the bug
+the tree was avoiding: the appends would be discarded with the loop
+body, and the list would be empty afterwards. The estate's own uses are
+all of this shape, in a `for` body or a macro, with the list read after.
+
+So the method is only half of it. The call site resolves the *place* the
+receiver was read from and stores the result back:
+
+- a name is assigned **where it is bound**, walking out through the
+  enclosing scopes, which is what makes a macro's append visible to the
+  template that declared the list -- a macro's scope chains to the one
+  it was defined in;
+- a mapping key, a namespace attribute or a list element is written into
+  the container, which is shared, so a list nested in pillar behaves the
+  way Python's would;
+- anything else -- a literal, a function's return value -- is mutated
+  and discarded, which is what Python does with a temporary too.
+
+`append`, `extend`, `insert`, `remove`, `pop`, `clear`, `reverse` and
+`sort` are implemented; `count` and `index` were already here and do not
+mutate. `sort` is the `sort` filter's ordering, so `items|sort` and
+`items.sort()` cannot disagree about what sorted means.
+
+**What this does not reproduce is aliasing.** Two names bound to one
+Python list both see an append through either. Here only the name the
+call was written against is updated, and a macro that appends to a list
+it received as a *parameter* updates its own binding rather than the
+caller's. Both are rare in a state tree -- the pattern is always
+"declare, accumulate, read" -- and both are a wrong answer rather than
+an error, which is why they are recorded here rather than left to be
+discovered.
+
+**Two things found on the way.**
+
+`sortAny` took a key function and called it on every comparison without
+checking it. Passing the zero value -- which is what a caller wanting
+"no key" reaches for -- panicked, and a panic inside a render is a node
+crash rather than an error an operator can read. It treats nil as the
+identity now.
+
+And the layer behind this one, which is 5.91's lesson again: with the
+appends working, `defaults.conf` stopped at **`unknown filter "json"`**.
+Salt's `json` is not Jinja's `tojson` --
+`salt/utils/jinja.py`'s `format_json` is
+`json.dumps(value, sort_keys=True, indent=None).strip()`, and the
+`sort_keys=True` is the difference. A tree rendering a config file
+through `|json` produced key-ordered output under Salt, so writing
+insertion order here would make the file differ on the first run after a
+migration, which is the same argument the `tojson` separators settled.
+Both filters exist now because both exist in Salt. The estate uses
+`|json` nine times.
+
+Every expectation for it was taken from the Salt on the reference host
+rather than read off its source, and all six cases agreed --
+including that `sort_keys` orders mappings and leaves sequences alone,
+because a list is a document's order and not a set of keys.
+
+`defaults.conf` renders.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

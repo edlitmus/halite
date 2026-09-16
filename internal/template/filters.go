@@ -367,6 +367,7 @@ func addCoreFilters(f map[string]FilterFunc) {
 	}
 
 	f["tojson"] = jsonFilter
+	f["json"] = saltJSONFilter
 	f["to_json"] = jsonFilter
 
 	f["urlencode"] = func(fc *FilterContext, v any, _ []any, _ map[string]any) (any, error) {
@@ -435,6 +436,62 @@ func jsonFilter(fc *FilterContext, v any, args []any, kwargs map[string]any) (an
 		return nil, fc.Errorf("tojson: %v", err)
 	}
 	return string(b), nil
+}
+
+// saltJSONFilter is Salt's `json`, which is not Jinja's `tojson`.
+//
+// `salt/utils/jinja.py`'s `format_json` is
+// `json.dumps(value, sort_keys=True, indent=None).strip()`, and the
+// `sort_keys=True` is the whole difference: `tojson` writes a mapping in
+// the order it was built, this one writes it in key order. A tree that
+// renders a config file through `|json` produced sorted output under
+// Salt, so writing insertion order here would make the file differ on
+// the first run after a migration -- for the same reason `tojson` spaces
+// its separators. Both are reachable, because both exist in Salt.
+//
+// `sort_keys` and `indent` are parameters there, so they are here.
+func saltJSONFilter(fc *FilterContext, v any, args []any, kwargs map[string]any) (any, error) {
+	indent := int64(0)
+	if i, ok := arg(args, kwargs, 1, "indent"); ok {
+		indent, _ = asInt(i)
+	}
+	sortKeys := true
+	if sk, ok := arg(args, kwargs, 0, "sort_keys"); ok {
+		sortKeys = truthy(sk)
+	}
+	out := stripUndefined(v)
+	if sortKeys {
+		out = sortMapKeys(out)
+	}
+	b, err := value.EncodeJSONSpaced(out, int(indent), true)
+	if err != nil {
+		return nil, fc.Errorf("json: %v", err)
+	}
+	// Salt strips the result, which matters only with an indent.
+	return strings.TrimSpace(string(b)), nil
+}
+
+// sortMapKeys rewrites every mapping in key order, leaving sequences in
+// the order they were built -- `sort_keys` is about mappings, and a list
+// that reordered itself would be a different document.
+func sortMapKeys(v any) any {
+	switch t := v.(type) {
+	case *value.Map:
+		out := value.NewMap(t.Len())
+		for _, k := range t.SortedKeys() {
+			if e, ok := t.Entry(k); ok {
+				out.SetAt(e.Key, sortMapKeys(e.Val), e.KeyPos, e.ValPos)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = sortMapKeys(item)
+		}
+		return out
+	}
+	return v
 }
 
 // stripUndefined replaces undefined markers with null, so that a partly
@@ -662,6 +719,13 @@ func sprintfPython(format string, args []any) (string, error) {
 // sortAny orders a mixed sequence the way Jinja's sort does: numbers
 // numerically, strings lexically, everything else by rendered form.
 func sortAny(items []any, reverse, caseSensitive bool, key func(any) any) {
+	// A nil key means the item itself. Without this the zero value of
+	// the parameter is a nil func that is called on every comparison,
+	// and a panic inside a render is a node crash rather than an error
+	// an operator can read.
+	if key == nil {
+		key = func(v any) any { return v }
+	}
 	sort.SliceStable(items, func(i, j int) bool {
 		a, b := key(items[i]), key(items[j])
 		less := lessValue(a, b, caseSensitive)
