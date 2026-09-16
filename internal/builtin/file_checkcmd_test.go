@@ -147,7 +147,12 @@ func TestCheckCmdSeesThePendingContents(t *testing.T) {
 	out := filepath.Join(dir, "seen")
 
 	// The checker copies what it was handed, so the test can read it.
-	check := `sh -c 'cp "$1" ` + out + `' --`
+	//
+	// The word after the script is $0, and it must be a plain name
+	// rather than `--`: FreeBSD's sh takes `--` as an end-of-options
+	// marker and consumes it, so the appended path lands in $0 and $1
+	// is empty. Linux's dash leaves `--` as $0 and this passed there.
+	check := `sh -c 'cp "$1" ` + out + `' checker`
 	res := runCheck(t, r, "file.managed", value.MapOf(
 		"name", path, "contents", "the-pending-contents\n",
 	), []string{check}, false)
@@ -186,7 +191,7 @@ func TestCheckCmdTmpDirAndTmpExt(t *testing.T) {
 
 	// The check passes only if the path it was handed is inside tmp_dir
 	// and ends in .conf.
-	check := `sh -c 'case "$1" in ` + tmpDir + `/*.conf) exit 0 ;; *) echo "got $1" ; exit 1 ;; esac' --`
+	check := `sh -c 'case "$1" in ` + tmpDir + `/*.conf) exit 0 ;; *) echo "got $1" ; exit 1 ;; esac' checker`
 	res := runCheck(t, r, "file.managed", value.MapOf(
 		"name", path, "contents", "x\n",
 		"tmp_dir", tmpDir, "tmp_ext", ".conf",
