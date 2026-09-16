@@ -1280,3 +1280,62 @@ func TestCheckCmdReachesTheStateThatOwnsIt(t *testing.T) {
 		t.Errorf("the state saw %v", seen)
 	}
 }
+
+// The schema of a return is not data. Once the redactor was actually
+// seeded it began replacing the fields an operator reads a diagnostic
+// by: against the estate's tree, 20 state IDs and function names came
+// back as `file.**********`, because a node's pillar holds ordinary
+// words and the floor is six characters.
+func TestTheReturnSchemaSurvivesRedaction(t *testing.T) {
+	out, _ := compileAndRun(t, "nginx_config:\n  probe.run:\n    - changes: true\n")
+	// A pillar value that is also an ordinary word, which is the whole
+	// shape of the problem.
+	out.Secrets = redact.New()
+	out.Secrets.Add("nginx_config")
+	out.Secrets.Add("probe")
+
+	returns := out.Returns()
+	key := returns.StringKeys()[0]
+	if key != "probe_|-nginx_config_|-nginx_config_|-run" {
+		t.Errorf("the return key lost its schema: %q", key)
+	}
+	entry, _ := returns.Get(key)
+	m := entry.(*value.Map)
+	if id, _ := m.Get("__id__"); id != "nginx_config" {
+		t.Errorf("__id__ = %v", id)
+	}
+
+	if got := out.Nested(false); !strings.Contains(got, "ID: nginx_config") ||
+		!strings.Contains(got, "Function: probe.run") {
+		t.Errorf("Nested lost the identifiers:\n%s", got)
+	}
+	if got := NestedFromReturns(returns, out.Secrets); !strings.Contains(got, "ID: nginx_config") ||
+		!strings.Contains(got, "Function: probe.run") {
+		t.Errorf("NestedFromReturns lost the identifiers:\n%s", got)
+	}
+}
+
+// And `name` is not schema. For a `cmd.run` it is the command, so it
+// stays scrubbed even though it sits beside the fields that do not.
+func TestTheStatesNameIsStillScrubbed(t *testing.T) {
+	out, _ := compileAndRun(t,
+		"run_it:\n  probe.run:\n    - name: a-secret-command-line\n    - changes: true\n")
+	out.Secrets = redact.New()
+	out.Secrets.Add("a-secret-command-line")
+
+	returns := out.Returns()
+	key := returns.StringKeys()[0]
+	if strings.Contains(key, "a-secret-command-line") {
+		t.Errorf("the name reached the key: %q", key)
+	}
+	if !strings.Contains(key, "run_it") || !strings.HasSuffix(key, "_|-run") {
+		t.Errorf("the key lost its schema while hiding the name: %q", key)
+	}
+	entry, _ := returns.Get(key)
+	if name, _ := entry.(*value.Map).Get("name"); name != redact.Placeholder {
+		t.Errorf("name = %v, want it scrubbed", name)
+	}
+	if got := out.Nested(false); strings.Contains(got, "a-secret-command-line") {
+		t.Errorf("Nested printed the name:\n%s", got)
+	}
+}

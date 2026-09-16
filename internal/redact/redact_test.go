@@ -243,3 +243,146 @@ func TestAddTreeRecordsAPillarAsItActuallyArrives(t *testing.T) {
 		}
 	}
 }
+
+// Once the redactor was actually seeded, it began eating the schema: a
+// node's pillar holds ordinary words, the floor is six characters, and
+// a pillar value of "recurse" turns `file.recurse` into
+// `file.**********` in every diagnostic that names the state.
+func TestScrubExceptSparesTheIdentifiersItIsGiven(t *testing.T) {
+	s := New()
+	s.Add("recurse")
+	s.Add("a-real-secret-value")
+
+	text := "          ID: salt-minion-config\n" + // lexicon:allow — a state ID
+		"    Function: file.recurse\n" +
+		"     Comment: wrote a-real-secret-value, and recurse was asked for\n"
+	got := s.ScrubExcept(text, []string{"salt-minion-config", "file.recurse"}) // lexicon:allow — a state ID
+
+	if !strings.Contains(got, "Function: file.recurse") {
+		t.Errorf("the function name was scrubbed: %q", got)
+	}
+	if strings.Contains(got, "a-real-secret-value") {
+		t.Errorf("a secret survived: %q", got)
+	}
+	// The exemption is a span, not the word: the same value outside a
+	// kept identifier is still a secret.
+	if !strings.Contains(got, "and "+Placeholder+" was asked for") {
+		t.Errorf("a secret was spared outside the identifiers: %q", got)
+	}
+}
+
+// The exemption is from the value set, not from redaction. This estate
+// declares a state whose ID *is* a credentialed URL, so an exemption
+// that turned scrubbing off entirely would put the credential back into
+// every job return.
+func TestScrubExceptStillStripsURLCredentials(t *testing.T) {
+	s := New()
+	id := "https://deploy:hunter2sekrit@artifacts.example.com/agent.tgz"
+	got := s.ScrubExcept("ID: "+id+"\n", []string{id})
+	if strings.Contains(got, "hunter2sekrit") {
+		t.Errorf("a kept span carried a credential through: %q", got)
+	}
+	if !strings.Contains(got, "artifacts.example.com/agent.tgz") {
+		t.Errorf("the identifier was lost: %q", got)
+	}
+}
+
+func TestScrubExceptWithNothingKeptIsScrub(t *testing.T) {
+	s := New()
+	s.Add("the-secret-value")
+	text := "saw the-secret-value here"
+	if got := s.ScrubExcept(text, nil); got != s.Scrub(text) {
+		t.Errorf("got %q", got)
+	}
+	// An empty literal must not protect everything.
+	if got := s.ScrubExcept(text, []string{""}); strings.Contains(got, "the-secret-value") {
+		t.Errorf("an empty keep protected the whole text: %q", got)
+	}
+}
+
+// Overlapping and repeated identifiers are ordinary: the same function
+// name appears on every state in a run.
+func TestScrubExceptHandlesRepeatedAndOverlappingSpans(t *testing.T) {
+	s := New()
+	s.Add("recurse")
+	text := "file.recurse file.recurse recurse"
+	got := s.ScrubExcept(text, []string{"file.recurse", "recurse"})
+	// Every occurrence is inside a kept span here, so nothing goes.
+	if got != text {
+		t.Errorf("got %q, want %q", got, text)
+	}
+	// And with only the longer one kept, the bare word still goes.
+	got = s.ScrubExcept(text, []string{"file.recurse"})
+	if !strings.HasPrefix(got, "file.recurse file.recurse ") {
+		t.Errorf("a kept span was damaged: %q", got)
+	}
+	if strings.HasSuffix(got, "recurse") {
+		t.Errorf("the bare secret was spared: %q", got)
+	}
+}
+
+// A short identifier must not be able to switch redaction off.
+//
+// The first version of ScrubExcept split the text at every kept span
+// and scrubbed the pieces. An SLS named `s` -- which the node's own
+// end-to-end test uses -- protected every "s" in the output, so a
+// decrypted pillar value split across two fragments matched nothing and
+// was printed in full. A secret that merely touches an identifier has
+// to win.
+func TestAShortIdentifierCannotDisableScrubbing(t *testing.T) {
+	s := New()
+	s.Add("s3cret-bearer-token-value")
+
+	text := `Comment: The command "/bin/echo s3cret-bearer-token-value" ran.`
+	got := s.ScrubExcept(text, []string{"s", "call_the_api", "cmd.run"})
+
+	if strings.Contains(got, "s3cret-bearer-token-value") {
+		t.Errorf("a one-character identifier spared the secret: %q", got)
+	}
+	if !strings.Contains(got, Placeholder) {
+		t.Errorf("nothing was replaced: %q", got)
+	}
+}
+
+// Containment, not overlap: only a secret the identifier wholly
+// contains is spared.
+func TestOnlyAWhollyContainedSecretIsSpared(t *testing.T) {
+	s := New()
+	s.Add("recurse")
+
+	// Wholly inside `file.recurse` -- spared.
+	if got := s.ScrubExcept("file.recurse", []string{"file.recurse"}); got != "file.recurse" {
+		t.Errorf("a contained secret was scrubbed: %q", got)
+	}
+	// Overlapping a kept span by a character -- the secret wins, and the
+	// identifier is damaged, which is the safe direction.
+	if got := s.ScrubExcept("xrecurse", []string{"xrecur"}); strings.Contains(got, "recurse") {
+		t.Errorf("an overlapping secret was spared: %q", got)
+	}
+}
+
+// Two secrets in one line, neither inside an identifier, both replaced
+// and neither swallowing the other.
+func TestScrubExceptReplacesEveryOccurrence(t *testing.T) {
+	s := New()
+	s.Add("first-secret-value")
+	s.Add("second-secret-value")
+	got := s.ScrubExcept(
+		"a first-secret-value b second-secret-value c first-secret-value",
+		[]string{"file.recurse"})
+	want := "a " + Placeholder + " b " + Placeholder + " c " + Placeholder
+	if got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
+// A secret that contains another is still replaced whole.
+func TestScrubExceptReplacesTheLongerSecretWhole(t *testing.T) {
+	s := New()
+	s.Add("secret-value")
+	s.Add("secret-value-with-more")
+	got := s.ScrubExcept("here is secret-value-with-more", []string{"nothing"})
+	if got != "here is "+Placeholder {
+		t.Errorf("got %q", got)
+	}
+}

@@ -195,3 +195,147 @@ func (s *Set) ScrubValue(v any) any {
 	}
 	return v
 }
+
+// Keep marks text that must survive scrubbing.
+//
+// The schema of a state return is not data. `file.recurse`, a state's
+// ID and the SLS it came from are how an operator finds the
+// declaration; they are written in the tree, not derived from pillar.
+// Once the redactor was actually seeded (see DIVERGENCE 5.103) it began
+// replacing them, because a node's pillar holds ordinary words and
+// `minLength` is six: a pillar value of "recurse" turns `file.recurse`
+// into `file.**********`, and a whole run of diagnostics stops naming
+// which states they are about.
+//
+// The exemption is from the *value set* only. URLCredentials still runs
+// over a kept span, because an identifier is not a promise: the
+// estate's own `archive.extracted` is declared with a credentialed URL
+// as its state ID, so an exemption that turned redaction off entirely
+// would put that credential back in every job return. A kept span is
+// spared the pillar values, not the credential scanner.
+type span struct{ start, end int }
+
+// protectedSpans finds every occurrence of every kept literal.
+func protectedSpans(text string, keep []string) []span {
+	var out []span
+	for _, k := range keep {
+		if k == "" {
+			continue
+		}
+		for from := 0; ; {
+			i := strings.Index(text[from:], k)
+			if i < 0 {
+				break
+			}
+			at := from + i
+			out = append(out, span{at, at + len(k)})
+			from = at + len(k)
+		}
+	}
+	if len(out) < 2 {
+		return out
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].start < out[j].start })
+	merged := make([]span, 0, len(out))
+	merged = append(merged, out[0])
+	for _, s := range out[1:] {
+		last := &merged[len(merged)-1]
+		if s.start <= last.end {
+			if s.end > last.end {
+				last.end = s.end
+			}
+			continue
+		}
+		merged = append(merged, s)
+	}
+	return merged
+}
+
+// containedBy reports whether [start,end) lies wholly inside one span.
+func containedBy(spans []span, start, end int) bool {
+	for _, sp := range spans {
+		if start >= sp.start && end <= sp.end {
+			return true
+		}
+	}
+	return false
+}
+
+// ScrubExcept scrubs text, sparing a secret only where it sits wholly
+// inside one of the kept identifiers.
+//
+// Containment rather than overlap, and matching against the whole text
+// rather than the pieces between kept spans, are both load-bearing. The
+// first version split the text at every kept span and scrubbed the
+// pieces, which meant a short identifier destroyed redaction entirely:
+// an SLS named `s` protected every "s" in the output, the pieces
+// between them were fragments, and a decrypted pillar value split
+// across two of them matched nothing and was printed in full. The node
+// test that encrypts a token and looks for it in the run output caught
+// that, which is what it is for.
+//
+// So a secret that merely touches an identifier still wins. Only one
+// that the identifier entirely contains is spared, which is the case
+// this exists for -- "recurse" inside `file.recurse`.
+func (s *Set) ScrubExcept(text string, keep []string) string {
+	if text == "" {
+		return text
+	}
+	spans := protectedSpans(text, keep)
+	if len(spans) == 0 {
+		return s.Scrub(text)
+	}
+	return URLCredentials(s.replaceOutside(text, spans))
+}
+
+// replaceOutside applies the value set to every occurrence that is not
+// wholly inside a protected span, longest secret first so that a secret
+// containing another is replaced whole.
+func (s *Set) replaceOutside(text string, spans []span) string {
+	if s == nil {
+		return text
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// done marks bytes already replaced, so two secrets cannot overlap.
+	done := make([]bool, len(text))
+	type edit struct{ start, end int }
+	var edits []edit
+	for _, v := range s.values {
+		for from := 0; from <= len(text)-len(v); {
+			i := strings.Index(text[from:], v)
+			if i < 0 {
+				break
+			}
+			at := from + i
+			from = at + len(v)
+			if containedBy(spans, at, at+len(v)) {
+				continue
+			}
+			if done[at] {
+				continue
+			}
+			for j := at; j < at+len(v); j++ {
+				done[j] = true
+			}
+			edits = append(edits, edit{at, at + len(v)})
+		}
+	}
+	if len(edits) == 0 {
+		return text
+	}
+	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
+	var b strings.Builder
+	at := 0
+	for _, e := range edits {
+		if e.start < at {
+			continue
+		}
+		b.WriteString(text[at:e.start])
+		b.WriteString(Placeholder)
+		at = e.end
+	}
+	b.WriteString(text[at:])
+	return b.String()
+}

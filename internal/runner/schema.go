@@ -19,26 +19,61 @@ import (
 func (r *RunResult) Returns() *value.Map {
 	out := value.NewMap(len(r.Results))
 	for _, res := range r.Results {
-		// The key of SPEC 11.8 is `state_|-id_|-name_|-fun`, and the
-		// name is whatever the state was pointed at — which for a
-		// `cmd.run` is the command, secrets and all. It is scrubbed like
-		// any other text; every occurrence of one value becomes the same
-		// placeholder, so a dashboard parsing the key still parses it.
-		out.Set(r.Secrets.Scrub(res.Chunk.Key()), scrubReturn(r.Secrets, res.Return()))
+		// The key of SPEC 11.8 is `state_|-id_|-name_|-fun`. Only the
+		// *name* is data: it is whatever the state was pointed at, and
+		// for a `cmd.run` that is the command, secrets and all. The
+		// module, the ID and the function are the schema an operator
+		// reads the key by, and scrubbing them made a run of
+		// diagnostics that could not say which states they were about.
+		// DIVERGENCE 5.109.
+		ch := res.Chunk
+		// The ID keeps its pillar values and loses its credentials, for
+		// the reason redact.ScrubExcept gives: this estate declares a
+		// state whose ID *is* a credentialed URL.
+		//
+		// The name is scrubbed only when it is its own value. A state
+		// that names nothing takes its ID as its name, and scrubbing
+		// the copy while sparing the original hides nothing and leaves
+		// a key no dashboard can read. `Nested` draws the same line
+		// when it decides whether to print a Name at all.
+		name := redact.URLCredentials(ch.Name)
+		if ch.Name != ch.ID {
+			name = r.Secrets.Scrub(ch.Name)
+		}
+		key := fmt.Sprintf("%s_|-%s_|-%s_|-%s",
+			ch.State, redact.URLCredentials(ch.ID), name, ch.Fun)
+		out.Set(key, scrubReturn(r.Secrets, res.Return()))
 	}
 	return out
 }
 
-// scrubReturn removes known secrets from a rendered return. The inner
-// keys are left alone — `comment`, `changes`, and the rest are the
-// schema, not data — while every value is scrubbed. The outer key is
-// handled by the caller, because it carries the state's name.
+// scrubReturn removes known secrets from a rendered return.
+//
+// The inner keys are left alone — `comment`, `changes`, and the rest
+// are the schema, not data — and so now are the values of the three
+// fields that are *also* schema: `__id__`, `__sls__` and `__run_num__`
+// address the declaration in the tree rather than describing the node.
+// `name` is not among them and is scrubbed, because for a `cmd.run` it
+// is the command. DIVERGENCE 5.109.
+//
+// The outer key is handled by the caller, because it carries the
+// state's name.
 func scrubReturn(secrets *redact.Set, m *value.Map) *value.Map {
 	// No early return on an empty set. Scrub also strips the credentials
 	// out of a URL, which no set ever holds, and a hub with no encrypted
 	// pillar holds nothing at all — so the one shortcut that looks free
 	// is the one that lets an operator's `source:` URL through.
+	id, _ := m.Get("__id__")
 	for _, e := range m.Entries() {
+		// `name` is data, except when it is the ID wearing another
+		// field's name -- see the key above.
+		if schemaField(e.Key) || (value.KeyString(e.Key) == "name" && e.Val == id) {
+			// Spared the value set, not the credential scanner.
+			if str, ok := e.Val.(string); ok {
+				m.Set(e.Key, redact.URLCredentials(str))
+			}
+			continue
+		}
 		switch t := e.Val.(type) {
 		case string:
 			m.Set(e.Key, secrets.Scrub(t))
@@ -61,6 +96,19 @@ func scrubReturn(secrets *redact.Set, m *value.Map) *value.Map {
 		}
 	}
 	return m
+}
+
+// schemaField names the return fields that address the declaration
+// rather than describing the node, and are therefore not scrubbed.
+//
+// `name` is deliberately absent: it is the one field whose value is
+// whatever the state was pointed at.
+func schemaField(key any) bool {
+	switch value.KeyString(key) {
+	case "__id__", "__sls__", "__run_num__":
+		return true
+	}
+	return false
 }
 
 // Return renders one state's result.
@@ -205,8 +253,12 @@ func (s Summary) String() string {
 // in run order, with changes indented beneath.
 func (r *RunResult) Nested(colour bool) string {
 	var b strings.Builder
+	// The identifiers this rendering prints, spared from scrubbing at
+	// the end. See DIVERGENCE 5.109.
+	var keep []string
 	for _, res := range r.Results {
 		ch := res.Chunk
+		keep = append(keep, ch.ID, ch.Func(), ch.SLS)
 		fmt.Fprintf(&b, "----------\n")
 		fmt.Fprintf(&b, "          ID: %s\n", ch.ID)
 		fmt.Fprintf(&b, "    Function: %s\n", ch.Func())
@@ -228,8 +280,10 @@ func (r *RunResult) Nested(colour bool) string {
 	fmt.Fprintf(&b, "\nSummary\n----------\n%s\n", r.Summarise())
 	// The whole rendering rather than each field: a comment, a change, a
 	// warning, and whatever line is added to this function next all go
-	// through one call that nobody has to remember.
-	return r.Secrets.Scrub(b.String())
+	// through one call that nobody has to remember. The identifiers
+	// collected above are the only spans spared, and sparing them by
+	// span rather than by field keeps that property.
+	return r.Secrets.ScrubExcept(b.String(), keep)
 }
 
 func writeChanges(b *strings.Builder, m *value.Map, indent string) {
@@ -323,11 +377,18 @@ func NestedFromReturns(returns *value.Map, secrets *redact.Set) string {
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].order < rows[j].order })
 
 	var b strings.Builder
+	// As in Nested: the identifiers this prints are the schema, and the
+	// hub reads them to find the declaration in the tree. 5.109.
+	var keep []string
 	succeeded, failed, changed, unknown := 0, 0, 0, 0
 	elapsedMS := 0.0
 	for _, r := range rows {
 		id, _ := r.entry.Get("__id__")
 		name, _ := r.entry.Get("name")
+		keep = append(keep, fmt.Sprint(scalarOr(id, r.key)), functionFromKey(r.key))
+		if sls, ok := r.entry.Get("__sls__"); ok {
+			keep = append(keep, fmt.Sprint(sls))
+		}
 		result, _ := r.entry.Get("result")
 		comment, _ := r.entry.Get("comment")
 		started, _ := r.entry.Get("start_time")
@@ -396,7 +457,7 @@ func NestedFromReturns(returns *value.Map, secrets *redact.Set) string {
 	// Scrub is nil-safe, and on a nil set it still strips URL
 	// credentials. Calling it unconditionally is what makes that true
 	// here.
-	return secrets.Scrub(b.String())
+	return secrets.ScrubExcept(b.String(), keep)
 }
 
 // functionFromKey reads the module and function out of the compound key
