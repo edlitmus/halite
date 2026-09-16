@@ -615,11 +615,29 @@ func bytesOf(n uint64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTP"[exp])
 }
 
+// firstLine reduces a multi-line error to one line for the table.
+//
+// A header is not an answer. A state or pillar compilation error reads
+//
+//	state compilation failed with 1 error(s):
+//	  base/x.sls:12: <what is actually wrong>
+//
+// so taking the first line alone reported the count and dropped the
+// error, every time, for the one check whose whole job is to say what
+// is wrong. A first line ending in ":" is a header, and the line under
+// it is what the operator needs.
 func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
+	head, rest, found := strings.Cut(s, "\n")
+	head = strings.TrimRight(head, " \t")
+	if !found || !strings.HasSuffix(head, ":") {
+		return head
 	}
-	return s
+	for _, line := range strings.Split(rest, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return head + " " + line
+		}
+	}
+	return head
 }
 
 // DirsOf is the set of directories a role writes to, for DiskFree.

@@ -178,8 +178,9 @@ func fileStats(path string) (*value.Map, error) {
 func registerFileStates(r *Registries) {
 	managedParams := []signature.Param{
 		pathParam("The file to manage. Defaults to the state ID."),
-		opt("source", signature.String, "", "A halite:// or salt:// URI, or a local path."),
-		opt("source_hash", signature.String, "", "Expected digest of the source, as `algorithm=digest`."),
+		opt("source", signature.String, "", "A halite:// or salt:// URI, an http(s) URL, or a local path."),
+		opt("source_hash", signature.String, "", "Expected digest of the source, as `algorithm=digest`. "+
+			"Required for an http(s) source unless skip_verify is set."),
 		opt("skip_verify", signature.Bool, false, "Skip the source_hash check. Only a source that cannot publish a digest justifies it."),
 		{
 			Name: "keep_source", Type: signature.Any,
@@ -334,6 +335,24 @@ func desiredContents(c *exec.Context, args *value.Map) (data []byte, from string
 		}
 		return b, source, nil
 	}
+	// A scheme Salt fetches over the network must not reach the
+	// filesystem. It used to: `source: https://...` was handed to
+	// os.ReadFile, which answered `open https://...: no such file or
+	// directory` -- an error about a path, for something that was never
+	// a path, and with the URL's credentials in it.
+	if scheme, remote, supported := remoteScheme(source); remote {
+		if !supported {
+			return nil, "", fmt.Errorf(
+				"%s sources are not implemented; Salt fetches them and this build does not yet",
+				scheme)
+		}
+		b, err := fetchRemoteSource(c, args, source)
+		if err != nil {
+			return nil, "", err
+		}
+		return b, redactedURL(source), nil
+	}
+
 	b, err := os.ReadFile(source)
 	if err != nil {
 		return nil, "", fmt.Errorf("reading source %s: %w", source, err)

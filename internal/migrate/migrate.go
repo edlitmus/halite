@@ -371,8 +371,8 @@ func auditCustomModuleDir(rep *Report, root, path, rel string) {
 				Severity: Review,
 				File:     file,
 				Subject:  dir,
-				Msg: fmt.Sprintf("a Python %s cannot be loaded, and this one does not need to be: "+
-					"this build has it", strings.TrimPrefix(dir, "_")),
+				Msg: fmt.Sprintf("a Python file in %s/ cannot be loaded, and this one does not need to be: "+
+					"this build has it", dir),
 				Action: replaced.Action,
 			})
 			continue
@@ -387,8 +387,12 @@ func auditCustomModuleDir(rep *Report, root, path, rel string) {
 			action = fmt.Sprintf("%s is not an extension point; whatever imports it has to carry "+
 				"what it does. SPEC section 24.6.", dir)
 		}
-		msg := fmt.Sprintf("a Python %s cannot be loaded; halite has no in-process plugin loading",
-			strings.TrimPrefix(dir, "_"))
+		// The directory is named rather than a noun derived from it:
+		// TrimPrefix("_modules", "_") is "modules", which read "a
+		// Python modules cannot be loaded", and trimming a trailing "s"
+		// to fix that turns "_pillar" into "_pilla".
+		msg := fmt.Sprintf("a Python file in %s/ cannot be loaded; halite has no in-process plugin loading",
+			dir)
 		if len(module.Functions) > 0 {
 			msg += fmt.Sprintf(" (%d function(s): %s)",
 				len(module.Functions), functionNames(module))

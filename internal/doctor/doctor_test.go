@@ -354,3 +354,50 @@ func TestSizesAndDurationsReadTheWayAPersonSaysThem(t *testing.T) {
 		}
 	}
 }
+
+// A state or pillar compilation error is a header and then the errors:
+//
+//	state compilation failed with 1 error(s):
+//	  top.sls:11:24: salt[grains.get] is undefined
+//
+// Taking the first line alone reported the count and dropped the error,
+// on the one check whose whole job is to say what is wrong. Against a
+// real estate this printed "...failed with 1 error(s):" and nothing
+// else, every time.
+func TestPillarFailureNamesTheErrorAndNotJustTheCount(t *testing.T) {
+	err := errors.New("state compilation failed with 1 error(s):" +
+		"\n  /srv/pillar/top.sls:11:24: salt[grains.get] is undefined")
+	res := PillarCompiles(err, 0).Run(context.Background())
+
+	if res.Status != Fail {
+		t.Fatalf("status = %v", res.Status)
+	}
+	if !strings.Contains(res.Detail, "salt[grains.get] is undefined") {
+		t.Errorf("the detail does not name the error: %q", res.Detail)
+	}
+	if !strings.Contains(res.Detail, "top.sls:11:24") {
+		t.Errorf("the detail does not say where: %q", res.Detail)
+	}
+	// Still one line: the table has a column, not a paragraph.
+	if strings.Contains(res.Detail, "\n") {
+		t.Errorf("the detail is more than one line: %q", res.Detail)
+	}
+}
+
+func TestFirstLineKeepsOrdinaryErrorsAlone(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"top.sls: no such file", "top.sls: no such file"},
+		{"top.sls: no such file\nsecond line", "top.sls: no such file"},
+		// A header, so the line under it is the answer.
+		{"failed with 2 error(s):\n  a.sls:1: first\n  b.sls:2: second",
+			"failed with 2 error(s): a.sls:1: first"},
+		// A header with nothing under it stays a header rather than
+		// growing a trailing space.
+		{"failed with 0 error(s):\n\n", "failed with 0 error(s):"},
+		{"", ""},
+	} {
+		if got := firstLine(tc.in); got != tc.want {
+			t.Errorf("firstLine(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

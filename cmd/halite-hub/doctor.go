@@ -13,11 +13,13 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/doctor"
+	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/fips"
 	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -151,13 +153,38 @@ func hubPillarCheck(cfg *config.Config) doctor.Check {
 	// two together are the answer; this half is the one an operator can
 	// run without leaving the hub.
 	strategy, _ := value.ParseStrategy(cfg.String("pillar_source_merging_strategy", "smart"))
+	registry := builtin.New().Exec
 	c := &pillar.Compiler{
 		Loader: fileserver.NewRoots(map[string][]string{env: roots}),
 		Config: pillar.Config{
-			Env:      env,
-			NodeID:   "halite-hub-doctor",
-			Grains:   value.NewMap(0),
-			Strategy: strategy,
+			// The same dispatcher the hub uses when it compiles pillar
+			// for a real node. Without it `salt['grains.get']` is
+			// undefined, and a pillar top that branches on a grain --
+			// which is what a top file is for -- failed this check on
+			// every estate that has one, reporting a broken pillar that
+			// compiles perfectly well when a node asks for it.
+			NewSalt: func(partial *value.Map) template.Dispatcher {
+				return exec.TemplateDispatcher{
+					Registry: registry,
+					Context: &exec.Context{
+						Ctx:    context.Background(),
+						Grains: value.NewMap(0),
+						Pillar: partial,
+						Config: value.NewMap(0),
+						NodeID: "halite-hub-doctor",
+						Env:    env,
+					},
+				}
+			},
+			Env:    env,
+			NodeID: "halite-hub-doctor",
+			Grains: value.NewMap(0),
+			// The allowlist this hub actually serves with. Judging the
+			// tree against SPEC 12.4's default instead would report
+			// targeting as unsafe on an estate that has deliberately
+			// widened it, and miss it on one that has narrowed it.
+			TrustedGrains: cfg.StringSlice("pillar_trusted_grains"),
+			Strategy:      strategy,
 		},
 	}
 	compiled := c.Compile()

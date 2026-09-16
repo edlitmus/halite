@@ -9251,8 +9251,8 @@ file.managed(name: path, source: string = , source_hash: string = , skip_verify:
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | path | — | The file to manage. Defaults to the state ID. |
-| `source` | string | `` | A halite:// or salt:// URI, or a local path. |
-| `source_hash` | string | `` | Expected digest of the source, as `algorithm=digest`. |
+| `source` | string | `` | A halite:// or salt:// URI, an http(s) URL, or a local path. |
+| `source_hash` | string | `` | Expected digest of the source, as `algorithm=digest`. Required for an http(s) source unless skip_verify is set. |
 | `skip_verify` | bool | `false` | Skip the source_hash check. Only a source that cannot publish a digest justifies it. |
 | `keep_source` | any | — | Accepted for compatibility with Salt, which uses it to decide whether a fetched source stays in the node's cache. |
 | `contents` | any | — | Literal contents, as a string or a list of lines, as an alternative to a source. |
