@@ -2422,11 +2422,23 @@ checks, and making them a single command is worth more than it appears.
 
 | Tier | Platforms | Meaning |
 |---|---|---|
-| 1 | Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky, Alma 8 and 9; Amazon Linux 2023; Windows Server 2019, 2022, 2025; all on amd64 and arm64 | Full CI, functional tests, and packages |
-| 2 | SUSE 15, Alpine 3.19 and later, macOS 14 and later, FreeBSD 14 | Built and unit-tested; functional tests on a subset |
+| 1 | Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky, Alma 8 and 9; Amazon Linux 2023; FreeBSD 14 and 15; Windows Server 2019, 2022, 2025; all on amd64 and arm64 | Full CI, functional tests, and packages |
+| 2 | SUSE 15, Alpine 3.19 and later, macOS 14 and later | Built and unit-tested; functional tests on a subset |
 | 3 | OpenBSD, NetBSD, Solaris and illumos, Linux on riscv64, ppc64le, s390x | Compiles and is published; community-supported |
 
-The hub and the API are supported on tier 1 Linux only. Nodes are supported on everything.
+The hub and the API are supported on tier 1 Linux and FreeBSD. Nodes are supported on everything.
+
+FreeBSD is tier 1 because it is where this project is developed, and the promise the tier makes is
+already kept there: it has both CI legs, and the functional coverage is the broadest of any platform
+— `jail`, `pf`, `zfs`, UFS quotas, `sysrc` and the rc.d scripts are exercised against the real tools
+on a real machine, several of them on no other platform at all. The tier is a statement about what is
+tested, not about how many people run it.
+
+Two honest qualifications. **The architecture clause is a goal, not a description**: tier 1 CI runs
+on amd64 for every platform in it, and the only arm64 machine this project has is a single Ubuntu
+host. **Packages are unbuilt for every tier 1 platform**, FreeBSD included; section 27.2 describes
+what a release will carry, and the release workflow currently verifies reproducibility rather than
+producing artifacts.
 
 ### 27.2 Artifacts
 

@@ -1157,6 +1157,49 @@ unchanged.
    recorded. It is a security control, so the third is not obviously
    wrong; that is why it is here rather than in §7.
 
+12. ~~**Should FreeBSD be SPEC 27.1 tier 1?**~~ **Answered 2026-09-16:
+    yes, and the table has moved.** §0 raised it and deferred it here.
+    The reasoning it was deferred *with* turned out to be the reasoning
+    that settles it: FreeBSD carries 80% of this estate's production, it
+    is four hosts against one Ubuntu, and it was already past tier 2's
+    promise in both directions — CI runs the whole unit suite *and* a
+    functional leg on every change.
+
+    **What the move obliges, and what it does not.** Tier 1 promises
+    full CI, functional tests, and packages.
+
+    - *Full CI* — kept. `test (freebsd)` and the fleet's `freebsd` leg
+      both run on every change.
+    - *Functional tests* — kept, and more broadly than any other
+      platform: `jail`, `pf`, `zfs`, UFS quotas, `sysrc` and the rc.d
+      scripts run against the real tools, several on no other platform
+      at all.
+    - *Packages* — **not kept, and not FreeBSD's problem alone.** No
+      packaging exists for any platform: there is no nfpm configuration
+      in the tree and the release workflow verifies reproducibility
+      rather than producing artifacts. The consequence below discounts
+      it twice, since this fleet installs from source.
+
+    Two things the move makes it honest to state plainly, both of which
+    were true before and unsaid:
+
+    - **The architecture clause is a goal.** Tier 1 says "all on amd64
+      and arm64" and every tier 1 CI leg runs on amd64; the project's
+      only arm64 machine is one Ubuntu host. That was already true of
+      Windows and Linux and is now also true of FreeBSD. FreeBSD/arm64
+      is cross-built and untested, like the rest.
+    - **The hub already runs on FreeBSD.** SPEC 27.1 said "the hub and
+      the API are supported on tier 1 Linux only" while this project's
+      own hub has been serving from a FreeBSD host throughout. The
+      sentence now says Linux and FreeBSD, which is a description rather
+      than a new promise.
+
+    The real cost of the move is not in this list: tier 1 is a promise
+    about what *stays* tested. The FreeBSD legs were already the ones
+    most likely to be waved through, because the development host makes
+    them feel covered — §5.77's `/sbin/shutdown` failure passed locally
+    and failed in CI for exactly that reason.
+
 Question 9 of the previous revision — strict undefined (33.4) — is
 answered and struck: `CatUndefined` is implemented and the migration
 report emits the undefined-reference row SPEC 28.5 requires.
@@ -1178,14 +1221,20 @@ moved, and two of them moved a long way.
 
 Three consequences, before the list:
 
-- **FreeBSD carries 80% of production and is SPEC 27.1 tier 2.** Tier 2
-  promises "built and unit-tested; functional tests on a subset"; tier 1
-  promises full CI, functional tests and packages. CI already runs the
-  whole unit suite on FreeBSD on every change, which is more than tier 2
-  asks for and less than tier 1 describes. Whether the table should move
-  is a question for §6 rather than a commit — but ranking Linux work
-  above FreeBSD work, which this document did, was ranking one host
-  above four.
+- **FreeBSD carries 80% of production and is SPEC 27.1 tier 1**, as of
+  2026-09-16. This paragraph used to end "whether the table should move
+  is a question for §6 rather than a commit"; it has been decided and the
+  table has moved. Tier 2 promised "built and unit-tested; functional
+  tests on a subset", and FreeBSD was already past that in both
+  directions: CI runs the whole unit suite *and* a functional leg on
+  every change, and the live coverage — `jail`, `pf`, `zfs`, UFS quotas,
+  `sysrc`, the rc.d scripts — is the broadest of any platform, several
+  of those on no other platform at all. Ranking Linux work above FreeBSD
+  work, which this document did, was ranking one host above four.
+
+  What the move obliges is in §6. Two of tier 1's three promises are
+  already kept; the third, packages, is unbuilt for **every** tier 1
+  platform and is discounted twice over here by the consequence below.
 - **Deploying from source demotes packaging and promotes upgrades.**
   SPEC 27.2's `.deb`, `.rpm`, `.msi` and `.pkg` serve nobody on this
   fleet. What `make install` from source *guarantees* is that a hub and

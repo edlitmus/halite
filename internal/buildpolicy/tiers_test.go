@@ -41,18 +41,27 @@ var supportTiers = []tierRow{
 	{
 		tier: "1",
 		platforms: "Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky, " +
-			"Alma 8 and 9; Amazon Linux 2023; Windows Server 2019, 2022, 2025; " +
-			"all on amd64 and arm64",
-		targets: []string{"linux/amd64", "linux/arm64", "windows/amd64", "windows/arm64"},
+			"Alma 8 and 9; Amazon Linux 2023; FreeBSD 14 and 15; " +
+			"Windows Server 2019, 2022, 2025; all on amd64 and arm64",
+		// FreeBSD moved up from tier 2. The build targets do not change
+		// -- freebsd/amd64 and freebsd/arm64 were already cross-built
+		// for the tier 2 row -- which is part of why the move costs
+		// nothing to make and everything to *keep*: what tier 1 adds is
+		// a promise about CI and functional tests, and those are the
+		// rows to watch rather than this one.
+		targets: []string{
+			"linux/amd64", "linux/arm64",
+			"freebsd/amd64", "freebsd/arm64",
+			"windows/amd64", "windows/arm64",
+		},
 	},
 	{
 		tier:      "2",
-		platforms: "SUSE 15, Alpine 3.19 and later, macOS 14 and later, FreeBSD 14",
+		platforms: "SUSE 15, Alpine 3.19 and later, macOS 14 and later",
 		// SUSE and Alpine are linux, already covered by tier 1's row.
 		targets: []string{
 			"linux/amd64", "linux/arm64",
 			"darwin/amd64", "darwin/arm64",
-			"freebsd/amd64", "freebsd/arm64",
 		},
 	},
 	{
