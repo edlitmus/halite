@@ -9,6 +9,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/doctor"
+	"github.com/edlitmus/halite/internal/redact"
 )
 
 // hubDoctorPillar runs the hub's pillar check against a tree written
@@ -16,6 +17,7 @@ import (
 // to tell whether the check compiles the way the hub itself does.
 func hubDoctorPillar(t *testing.T, hubYAML, top string, files map[string]string) doctor.Result {
 	t.Helper()
+	secrets := redact.New()
 	base := t.TempDir()
 	pillarRoot := filepath.Join(base, "pillar")
 	if err := os.MkdirAll(pillarRoot, 0o755); err != nil {
@@ -45,7 +47,7 @@ func hubDoctorPillar(t *testing.T, hubYAML, top string, files map[string]string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return hubPillarCheck(cfg).Run(context.Background())
+	return hubPillarCheck(cfg, secrets.Add).Run(context.Background())
 }
 
 // A pillar top branches on a grain -- that is what a top file is for --

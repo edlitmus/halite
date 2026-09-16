@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/ext"
+	"github.com/edlitmus/halite/internal/extension"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -171,5 +172,45 @@ func TestAnUnloadedExtensionIsAnError(t *testing.T) {
 	src := &Bridged{SourceName: "gone"}
 	if _, err := src.Pillar(context.Background(), pillar.ExtRequest{}); err == nil {
 		t.Fatal("a source with no extension behind it answered")
+	}
+}
+
+// Every source `Sources` builds carries the callback it was given.
+//
+// The hub passed nil here for as long as external pillar has existed,
+// so every string an external source returned -- which for
+// `aws_secrets_manager` is the whole point of the source -- reached the
+// hub's logs and comments unrecorded. DIVERGENCE 5.110.
+func TestSourcesAttachTheRedactorCallback(t *testing.T) {
+	// No executable is needed: Sources reads the manifest and builds a
+	// source, and nothing here runs the extension.
+	rt := &extension.Runtime{PoolSize: 1}
+	t.Cleanup(rt.Close)
+	err := rt.Add(&extension.Bundle{
+		Dir:      t.TempDir(),
+		Manifest: &extension.Manifest{Name: "vault", Version: "1.0.0", Kind: "pillar"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var seen []string
+	sources, err := Sources([]Spec{{Name: "vault"}}, rt, func(v string) { seen = append(seen, v) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 1 {
+		t.Fatalf("built %d sources", len(sources))
+	}
+	b, ok := sources[0].(*Bridged)
+	if !ok {
+		t.Fatalf("a source is %T", sources[0])
+	}
+	if b.OnSecret == nil {
+		t.Fatal("the source records nothing it returns")
+	}
+	b.OnSecret("a-value-from-the-source")
+	if len(seen) != 1 || seen[0] != "a-value-from-the-source" {
+		t.Errorf("the callback that arrived is not the one given: %v", seen)
 	}
 }

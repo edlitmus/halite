@@ -9526,6 +9526,65 @@ a state ID out of a decrypted secret and relies on the return schema to
 hide it would be exposed here, and is not a shape any tree seen so far
 uses.
 
+### 5.110 The hub decrypted pillar and told its redactor nothing
+
+SPEC 26.1 seeds the redactor with "every decrypted pillar value". 5.103
+found that the *node* was seeding nothing at all, and fixed it. The hub
+was never seeding anything either, and that is a separate hole in the
+same wall: hub-side pillar is decrypted **on the hub**, which is where
+the values have to be recorded.
+
+Three places, all of them a callback that existed on one side of a seam
+and was never assigned across it.
+
+**The pillar it serves.** `pillar.Config` has had `OnSecret` since the
+redactor did; the node passes `n.secrets.Add`; `hub.PillarOptions` had
+no such field, so the hub's compiler was handed nil. A hub that opens a
+GPG block and then logs a compilation warning naming what was inside it
+has redacted nothing.
+
+**The external sources.** `extpillar.Sources` takes an `onSecret` and
+attaches it to every `Bridged` source it builds. The hub passed `nil`.
+This is the larger of the three: an external source exists to fetch
+secrets -- the estate's is `aws_secrets_manager`, answering out of AWS
+with production credentials -- and *every string it returned* was
+unknown to the hub's redactor.
+
+**`doctor`.** Its pillar check compiles the same tree with the same GPG
+settings, and reports what went wrong when it does not compile. An error
+naming what was inside a GPG block is exactly the kind of detail that
+check exists to print. It also printed its report with `fmt.Print`
+straight to the terminal, through no redactor at all, so it now builds
+one, seeds it, and scrubs on the way out.
+
+**None of this could fail visibly.** A callback that is never called
+raises nothing, and the set reporting itself empty is indistinguishable
+from a hub whose pillar holds no secrets -- the same shape as 5.103, for
+the same reason.
+
+**What was done about testing a seam.** The construction of the
+compiler's configuration is now `pillarConfigFor`, which exists to be
+called by a test: the assertion is that the callback the hub is given is
+the callback the compiler gets, made by invoking it and watching where
+it arrives. A test of the render layer -- which already exists, and
+already proves a decrypted value reaches `OnSecret` -- says nothing
+about whether anything upstream passes one. That distinction is what
+5.103 was.
+
+**The growth this introduces, stated plainly.** The hub's set is
+process-lifetime and shared across every node it serves, where a node's
+covers only itself. What accumulates is the estate's distinct decrypted
+values and whatever its external sources return, and `Scrub` walks the
+whole set for every line it is given. That is the cost of the hub
+holding these values at all; the alternative on offer was the hub
+printing them.
+
+One thing deliberately not changed: the values are still recorded
+whether or not anything ever prints them. Deciding at decryption time
+which values will later be printed is not a decision this build can make
+correctly, and the failure mode of guessing wrong is the one this entry
+is about.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

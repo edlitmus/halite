@@ -35,7 +35,10 @@ func extPillarSources(h *hubContext, runtime *extension.Runtime) []pillar.ExtSou
 		return nil
 	}
 
-	sources, err := extpillar.Sources(specs, runtime, nil)
+	// Every string an external source returns is a secret as far as
+	// this hub can tell -- `aws_secrets_manager` exists to fetch them --
+	// and nothing was recording them. DIVERGENCE 5.110.
+	sources, err := extpillar.Sources(specs, runtime, h.secrets.Add)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}

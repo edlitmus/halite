@@ -19,6 +19,7 @@ import (
 	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -40,6 +41,10 @@ func runDoctor(args *cli.Args) int {
 	cfg, loadErr := config.Load(config.Hub, config.LoadOptions{
 		Path: path, Root: root, AllowMissing: true,
 	})
+	// The redactor this invocation seeds while it compiles pillar. A
+	// doctor run holds no other secrets, so it builds its own rather
+	// than reaching for a hub context it does not need.
+	secrets := redact.New()
 	if cfg == nil {
 		// Without a configuration there is nothing to check against,
 		// and reporting nine skips would hide the one fact that
@@ -56,7 +61,7 @@ func runDoctor(args *cli.Args) int {
 		doctor.ConfigValidity(shown, loadErr, cfg.Warnings, true),
 		hubCertificateCheck(args, cfg),
 		hubFileServerCheck(cfg),
-		hubPillarCheck(cfg),
+		hubPillarCheck(cfg, secrets.Add),
 		hubDiskCheck(cfg),
 		hubQueueCheck(cfg),
 		doctor.ModuleVerification(builtin.New().Trust()),
@@ -64,7 +69,10 @@ func runDoctor(args *cli.Args) int {
 	})
 
 	fmt.Printf("halite-hub doctor — %s\n\n", shown)
-	fmt.Print(report.Text())
+	// Scrubbed on the way out. `doctor` prints what a check found, and
+	// the pillar check's finding is a compilation error that can name a
+	// decrypted value; nothing else here writes to the terminal.
+	fmt.Print(secrets.Scrub(report.Text()))
 	return report.ExitCode()
 }
 
@@ -139,7 +147,7 @@ func hubFileServerCheck(cfg *config.Config) doctor.Check {
 // estate out at once, and it takes it out at the moment a node asks
 // rather than at the moment somebody edits the tree. Compiling it here
 // moves the discovery to where an operator is already looking.
-func hubPillarCheck(cfg *config.Config) doctor.Check {
+func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
 	env := cfg.String("pillarenv", cfg.String("env", "base"))
 	roots := cfg.StringSlice("pillar_roots:" + env)
 	if len(roots) == 0 {
@@ -184,7 +192,13 @@ func hubPillarCheck(cfg *config.Config) doctor.Check {
 			// targeting as unsafe on an estate that has deliberately
 			// widened it, and miss it on one that has narrowed it.
 			TrustedGrains: cfg.StringSlice("pillar_trusted_grains"),
-			Strategy:      strategy,
+			// This check decrypts the same pillar the hub serves, and
+			// reports what went wrong when it does not compile. An
+			// error naming what was inside a GPG block is exactly the
+			// kind of detail this check exists to print. DIVERGENCE
+			// 5.110.
+			OnSecret: onSecret,
+			Strategy: strategy,
 		},
 	}
 	compiled := c.Compile()
