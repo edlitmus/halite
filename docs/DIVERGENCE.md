@@ -8489,9 +8489,10 @@ names none of the entries whose ownership is in question. The test caught
 it on the first run --- the owner changed and the state said "already
 extracted".
 
-**`keep_source` is about the cache, not the archive.** Only a `halite://`
-or `salt://` source is fetched anywhere, so `keep_source: False` against
-a local path does nothing at all --- in Salt, and now here. This file
+**`keep_source` is about the cache, not the archive.** `archive.extracted`
+fetches only a `halite://` or `salt://` source (5.104 added http(s) to
+`file.managed`, not to this state), so `keep_source: False` against a
+local path does nothing at all --- in Salt, and now here. This file
 relies on that: it writes `keep_source: False` against
 `/etc/salt/gpgkeys.tar.gz`, a local file that its own later states still
 read. Deleting it would break the tree in a way no test of the argument
@@ -9046,6 +9047,148 @@ token, but every secret the pillar carried, unredacted in every job
 return and log record this build has written. The artifactory token is
 the one known to have reached a comment. Rotation is the operator's
 call, not this build's.
+
+### 5.104 `file.managed` handed an `https://` source to the filesystem
+
+`shared/salt/pkgrepo/debian/init.sls` manages the Salt repository key
+from an artifact server, with the digest its own tree records:
+
+```yaml
+/etc/apt/keyrings/salt-archive-keyring.pgp:
+  file.managed:
+    - source: https://packages.broadcom.com/artifactory/api/security/keypair/SaltProjectKey/public
+    - source_hash: 36decef986477acb8ba2a1fc4041bcf9f22229ef6c939d0317c9e36a9d142b34
+```
+
+It failed with `open https://...: no such file or directory`. Anything
+that was not a `halite://` or `salt://` URI went to `os.ReadFile`, so a
+URL was read as a path -- an error about a filesystem, for something
+that was never on one. `source` now recognises the schemes Salt treats
+as remote (`salt/utils/files.py`'s `REMOTE_PROTOS`) and fetches the two
+this build implements.
+
+**`http` and `https` are implemented; `ftp`, `s3` and `swift` are named
+and refused.** Salt fetches all five. The three that are not here now
+fail saying they are not implemented, rather than being handed to the
+filesystem and answering about a missing path -- a state that cannot do
+what it was asked should say which thing it cannot do.
+
+**An unverifiable source is refused rather than fetched**, which is
+Salt's rule from `salt/modules/file.py`: with no `source_hash` and no
+`skip_verify`, Salt answers *"Unable to verify upstream hash of source
+file ..., please set source_hash or set skip_verify to True"* and
+fetches nothing. The reasoning is worth keeping: whatever comes back
+becomes the contents of a managed file, and a state that cannot say what
+it is about to write should not write it. `use_etag`, Salt's third way
+out, is not implemented -- a source relying on it is refused with the
+other two named.
+
+**The status is checked before the body is used.** A 404 body is a
+perfectly valid body, and the failure mode without this is an HTML error
+page installed into `/etc` and reported as a successful convergence.
+
+**Credentials in the URL become an `Authorization` header**, as Salt
+does in `fileclient.py`. Go never puts userinfo in a request line, so
+without this the server is sent no credential at all and answers 401 --
+and the estate's `base/openjdk/init.sls` is written exactly this way.
+The URL this build puts in its *own* messages has the userinfo removed
+too. The sink redactor of 5.103 would catch it, but the message has no
+reason to carry a credential in the first place, and this is the state
+whose comment put a live token in the job cache.
+
+**Two things Salt does that this does not.**
+
+*No source cache.* Salt writes a fetched source into the node's own
+cache and skips the download when the cached digest already matches
+`source_hash`. Here every run fetches. The result converges either way;
+a highstate against an unchanged remote source costs a request it need
+not.
+
+*A size limit, where Salt streams.* Salt writes the body to a cache file
+and has no limit. This implementation reads a managed file's contents
+into memory -- it has to, because reporting what changed means diffing
+what it is about to write against what is there, and a local source is
+read the same way. What is new with a remote fetch is that the far end
+is not the operator's, so a server that answers forever should fail
+rather than take the node's memory with it. The bound is 64 MiB.
+
+`verify_ssl: False` remains refused, as `internal/safehttp` has always
+refused it: certificate verification is reached past exactly when it is
+working. The fetch goes through that client, so a source URL built from
+a node's own grains or pillar cannot be steered at a metadata address --
+the check is on the address dialled, every hop and every resolver
+answer.
+
+**`archive.extracted` is not covered by this and still cannot.** It
+routes anything containing `://` to the file server, so an http(s)
+archive fails with "is not served from the base environment". That is
+the estate's `base/openjdk/init.sls`, the state whose URL 5.103 is
+about. The fetch here returns bytes, which is what `file.managed` wants
+and what an archive does not -- extraction works from a path -- so the
+two need different plumbing and it was not folded in blind.
+
+Verified against the estate's real state and the real server: 2475
+bytes, matching the digest in their tree.
+
+### 5.105 `doctor` reported a broken pillar that compiles
+
+Running `halite-hub doctor` against the lab hub failed the pillar check.
+The pillar compiles: `halite-node pillar items` returns it, the hub
+serves it to every node, and the estate runs on it. Three defects, each
+hiding the next.
+
+**The detail was a header.** The check rendered
+`firstLine(err.Error())`, and a compilation error is
+
+```
+state compilation failed with 1 error(s):
+  /srv/salt/shared-pillar/top.sls:11:24: <what is wrong>
+```
+
+so the first line is the *count* and the error is on the second. The one
+check whose whole purpose is to say what is wrong printed
+`...failed with 1 error(s):` and stopped. `firstLine` now treats a line
+ending in ":" as a header and carries the first line under it, still on
+one line, because the table has a column rather than a paragraph.
+
+**Then the real error appeared: `salt[grains.get] is undefined`.** The
+check built a `pillar.Compiler` with no `NewSalt`, so the dispatcher a
+pillar template renders against did not exist. A pillar top branches on
+a grain -- that is what a top file is for, and the estate's writes
+`- base.repo.{{ salt['grains.get']("envtype", "dev") }}` -- so the check
+failed on every estate whose top file does this, while the hub's own
+serving path in `internal/hub/pillar.go` had the dispatcher all along.
+The check now builds the same one.
+
+**Then twelve errors about untrusted grains.** With the top file
+rendering, targeting was judged against SPEC 12.4's default allowlist,
+because the check passed no `TrustedGrains`. This hub's configuration
+deliberately widens it -- `nodename`, `roles`, `foxpass`, `qualys`,
+`cortex`, `meta-data` beside the eight defaults -- and the serving path
+reads that key. So an estate that had made the decision was told its
+targeting was unsafe, and one that had *narrowed* the list would have
+been told nothing. The check now reads the same key the hub serves with.
+
+With the three fixed, the check passes: *compiles, 13 top-level key(s)*.
+
+What this cost is the point. A diagnostic that cries wolf on a healthy
+estate is worse than no diagnostic: the operator learns to skip the line,
+and the check is there for the day it is right. Each of the three alone
+would have produced a confident, specific, wrong answer.
+
+**`migrate` needed nothing structural.** It judges a tree against the
+registries this build ships -- `builtin.New()`, passed in at the call
+site -- so module and state coverage tracks the build and cannot go
+stale; `grains.absent` and `kmod.absent` are in the estate's inventory
+and absent from its blocking list, which is the recent work showing up
+on its own. One string was wrong: `strings.TrimPrefix("_modules", "_")`
+produced *"a Python modules cannot be loaded"*, and trimming a trailing
+"s" to fix it would turn `_pillar` into `_pilla`. It names the directory
+instead.
+
+One claim elsewhere in this document went stale with 5.104 and has been
+corrected: `archive.extracted` fetches only `halite://` and `salt://`,
+which is no longer true of `file.managed`.
 
 ## 6. Everything else not started
 
