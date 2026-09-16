@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -122,48 +123,183 @@ func TestGrainsStatesInTestModeWriteNothing(t *testing.T) {
 // c.Grains afterwards does not work — it is the snapshot the job started
 // with, and reloading updates the node's grains rather than that copy,
 // so every successful removal reported itself as a failure.
-func TestGrainsAbsentRefusesAGrainItDoesNotOwn(t *testing.T) {
-	g := newGrainStateContext()
-	g.collected.Set("kernel", "FreeBSD")
+// `grains.absent` is Salt's, and Salt's does not delete by default: it
+// sets the value to null. Every expectation here was captured from the
+// Salt on this project's reference host, against a throwaway config so
+// the live one was not disturbed.
+//
+// This state used to refuse any grain the node had not set for itself,
+// which is what an estate's `grains.absent: node_exporter` hit -- a
+// grain its static file defines as null already, where Salt answers
+// "Grain is already set" and this answered with a failure.
+func TestGrainsAbsentFollowsSalt(t *testing.T) {
+	t.Run("a grain that does not exist is a success", func(t *testing.T) {
+		g := newGrainStateContext()
+		res, err := grainsAbsent(g.context(false), value.MapOf("name", "nothing"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Succeeded() || res.HasChanges() {
+			t.Fatalf("%+v", res)
+		}
+		if !strings.Contains(res.Comment, "does not exist") {
+			t.Errorf("comment = %q", res.Comment)
+		}
+	})
 
-	res, err := grainsAbsent(g.context(false), value.MapOf("name", "kernel"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Succeeded() {
-		t.Error("removing a platform grain should fail rather than report a " +
-			"change the next run finds undone")
-	}
-	if g.written != 0 {
-		t.Errorf("the file was written %d times for a grain the state does not own", g.written)
-	}
-}
+	t.Run("a grain already null is already in the state asked for", func(t *testing.T) {
+		g := newGrainStateContext()
+		g.collected.Set("node_exporter", nil)
 
-func TestGrainsAbsentRemovesWhatItOwns(t *testing.T) {
-	g := newGrainStateContext()
-	g.held.Set("role", "web")
-	g.collected.Set("role", "web")
+		res, err := grainsAbsent(g.context(false), value.MapOf("name", "node_exporter"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Succeeded() {
+			t.Fatalf("the estate's own case failed: %+v", res)
+		}
+		if res.HasChanges() {
+			t.Errorf("it reported a change for a grain already null: %+v", res.Changes)
+		}
+		if g.written != 0 {
+			t.Errorf("it wrote the file %d times with nothing to do", g.written)
+		}
+	})
 
-	res, err := grainsAbsent(g.context(false), value.MapOf("name", "role"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !res.Succeeded() || !res.HasChanges() {
-		t.Fatalf("removing an owned grain should change: %+v", res)
-	}
-	if _, still := g.held.Get("role"); still {
-		t.Error("the grain is still in the file")
-	}
+	t.Run("a platform grain is set to null rather than refused", func(t *testing.T) {
+		g := newGrainStateContext()
+		g.collected.Set("kernel", "FreeBSD")
 
-	// Converges: gone from both.
-	g.collected = value.NewMap(0)
-	res, err = grainsAbsent(g.context(false), value.MapOf("name", "role"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !res.Succeeded() || res.HasChanges() {
-		t.Errorf("the second removal should converge: %+v", res)
-	}
+		res, err := grainsAbsent(g.context(false), value.MapOf("name", "kernel"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Succeeded() || !res.HasChanges() {
+			t.Fatalf("%+v", res)
+		}
+		// The node's own file wins over the one underneath it, so a null
+		// written here is what makes the grain null.
+		v, ok := g.held.Get("kernel")
+		if !ok || v != nil {
+			t.Errorf("held = %v, %v; want an explicit null", v, ok)
+		}
+		if !strings.Contains(res.Comment, "set to None") {
+			t.Errorf("comment = %q", res.Comment)
+		}
+	})
+
+	t.Run("destructive deletes what this node owns", func(t *testing.T) {
+		g := newGrainStateContext()
+		g.held.Set("role", "web")
+		g.collected.Set("role", "web")
+
+		res, err := grainsAbsent(g.context(false),
+			value.MapOf("name", "role", "destructive", true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Succeeded() || !res.HasChanges() {
+			t.Fatalf("%+v", res)
+		}
+		if _, still := g.held.Get("role"); still {
+			t.Error("the grain is still in the file")
+		}
+		if !strings.Contains(res.Comment, "was deleted") {
+			t.Errorf("comment = %q", res.Comment)
+		}
+	})
+
+	t.Run("the default sets null rather than deleting", func(t *testing.T) {
+		g := newGrainStateContext()
+		g.held.Set("role", "web")
+		g.collected.Set("role", "web")
+
+		if _, err := grainsAbsent(g.context(false), value.MapOf("name", "role")); err != nil {
+			t.Fatal(err)
+		}
+		v, ok := g.held.Get("role")
+		if !ok {
+			t.Fatal("the default deleted the grain; Salt's sets it to null")
+		}
+		if v != nil {
+			t.Errorf("held role = %v, want null", v)
+		}
+	})
+
+	t.Run("a list or a mapping needs force", func(t *testing.T) {
+		for _, v := range []any{[]any{"a"}, value.MapOf("k", "v")} {
+			g := newGrainStateContext()
+			g.collected.Set("structured", v)
+
+			res, err := grainsAbsent(g.context(false), value.MapOf("name", "structured"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if res.Succeeded() {
+				t.Errorf("%T was cleared without force", v)
+			}
+			if !strings.Contains(res.Comment, "force") {
+				t.Errorf("the refusal does not name the argument: %q", res.Comment)
+			}
+
+			res, err = grainsAbsent(g.context(false),
+				value.MapOf("name", "structured", "force", true))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !res.Succeeded() {
+				t.Errorf("force did not clear %T: %q", v, res.Comment)
+			}
+		}
+	})
+
+	t.Run("test mode writes nothing and says which it would do", func(t *testing.T) {
+		for _, tc := range []struct {
+			name       string
+			args       *value.Map
+			wantPhrase string
+		}{
+			{"default", value.MapOf("name", "role"), "set to be deleted (None)"},
+			{"destructive", value.MapOf("name", "role", "destructive", true), "is set to be deleted"},
+		} {
+			g := newGrainStateContext()
+			g.held.Set("role", "web")
+			g.collected.Set("role", "web")
+
+			res, err := grainsAbsent(g.context(true), tc.args)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !res.HasChanges() {
+				t.Errorf("%s: test mode predicted no change", tc.name)
+			}
+			if g.written != 0 {
+				t.Errorf("%s: test mode wrote the file", tc.name)
+			}
+			if !strings.Contains(res.Comment, tc.wantPhrase) {
+				t.Errorf("%s: comment = %q, want %q in it", tc.name, res.Comment, tc.wantPhrase)
+			}
+		}
+	})
+
+	t.Run("it converges", func(t *testing.T) {
+		g := newGrainStateContext()
+		g.held.Set("role", "web")
+		g.collected.Set("role", "web")
+
+		if _, err := grainsAbsent(g.context(false), value.MapOf("name", "role")); err != nil {
+			t.Fatal(err)
+		}
+		// The next run sees what the write produced.
+		g.collected.Set("role", nil)
+		res, err := grainsAbsent(g.context(false), value.MapOf("name", "role"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Succeeded() || res.HasChanges() {
+			t.Errorf("the second run should converge: %+v", res)
+		}
+	})
 }
 
 // A one-shot command line has nowhere to persist a grain, and says so

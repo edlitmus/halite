@@ -9573,16 +9573,18 @@ git.latest(name: string, target: path, rev: string = , remote: string = origin, 
 
 #### `grains.absent`
 
-Ensure a grain this node set for itself is gone.
+Clear a grain: set it to null, or delete it outright with `destructive`.
 
 ```
-grains.absent(name: string, delimiter: string = :)
+grains.absent(name: string, delimiter: string = :, destructive: bool = false, force: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | — | The grain. Defaults to the state ID. |
 | `delimiter` | string | `:` | Separator for a nested grain, as in `a:b:c`. |
+| `destructive` | bool | `false` | Delete the grain rather than setting it to null. Salt's default is false, so the default here is too: `absent` usually means the name stays with no value. |
+| `force` | bool | `false` | Clear a grain whose value is a list or a mapping. Without it those are refused, because clearing a structure by accident loses more than a scalar does. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
