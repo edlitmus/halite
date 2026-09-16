@@ -965,7 +965,8 @@ as something Salt's syndic does not do.
 
 Asked for 2026-09-16. §3.5 says no artifact in SPEC 27.2 is built; this
 says in what order they should be, and what has to be decided by a person
-first.
+first. The first of the four is answered, in the same sitting: the
+Makefile stays the producer.
 
 **The thing to understand before ordering anything: nothing is emitted
 today.** `make build-all` compiles and *discards* — it runs `go build
@@ -1029,20 +1030,68 @@ unblocks rather than by how hard it is.
 
 **Four decisions that need a person.**
 
-- **How a packaging tool is obtained, whichever one it is.** SPEC 27.2
-  used to name `nfpm`; it no longer names anything, because the table
-  specifies contents and the tooling should stay open. The constraint is
-  the same whatever is picked: SPEC 4.3 disables the build network and
-  pins the Go toolchain *by digest from an internal mirror*, and a Go
-  packaging tool added to `go.mod` would put a module outside the
-  section 4.2 allowlist into the dependency graph, which CI fails on by
-  design. So the options are a pinned external binary fetched by digest
-  on the same terms as the toolchain, or writing the archive formats
-  directly — `.deb` is an `ar` archive of two tarballs and `.rpm` is a
-  documented header plus a cpio payload, both of which this project
-  could emit from the standard library with no new dependency at all.
-  The second is more work and removes a moving part; neither should be
-  chosen by inference.
+- ~~**How a packaging tool is obtained.**~~ **Answered 2026-09-16: the
+  Makefile stays the producer.** SPEC 27.2 no longer names a tool,
+  because the table specifies contents; what follows is which shape was
+  chosen and what was rejected.
+
+  The constraint applies to anything picked: SPEC 4.3 disables the build
+  network and pins the Go toolchain *by digest from an internal mirror*,
+  and a Go packaging tool added to `go.mod` would put a module outside
+  the section 4.2 allowlist into the dependency graph, which CI fails on
+  by design. So any such tool is a pinned external binary fetched by
+  digest, on the toolchain's terms — never a module.
+
+  **GoReleaser was evaluated and is not the fit here**, for one specific
+  reason rather than a general objection. Its clean shape for this
+  project would be `builder: prebuilt` — the Makefile builds, GoReleaser
+  only assembles — and that is **GoReleaser Pro**. Checked against
+  v2.18.1: `internal/builders` carries `golang`, `rust`, `zig`, `bun`,
+  `deno`, `node`, `poetry` and `uv`, and no `prebuilt`; the documentation
+  page for it is marked Pro. With the OSS build (MIT), GoReleaser *owns*
+  `go build`, which puts `-trimpath`, `-buildvcs=true`, `CGO_ENABLED=0`,
+  `-mod=vendor`, `GOPROXY=off` and the version ldflags in a second file
+  alongside the Makefile. Those flags are not incidental — they are what
+  SPEC 4.3's guarantees rest on — and two lists that must agree is this
+  repository's commonest defect. It is neutralisable with a test holding
+  the two together, in the idiom of `TestEveryPlatformTheSpecTiersIsBuilt`,
+  so this is a cost rather than a disqualification.
+
+  What tips it is that the two things SPEC specifies most *precisely* are
+  the two GoReleaser delegates onward. The SBOM is required to be
+  CycloneDX from `go version -m` **on the shipped binary** — "what
+  linked, not what was declared" — and GoReleaser's `sboms` shells out to
+  syft, which produces a different and richer document. Signing delegates
+  to cosign or gpg. So adopting it wholesale means three pinned externals
+  where one or none will do. In its favour, and worth recording because
+  it is the part that is hard: reproducibility is supported, with
+  `mod_timestamp` on builds and `mtime`, `mode` and deterministic
+  ordering on archives.
+
+  **The shape chosen.** The Makefile stays the single source of build
+  truth — it already emits reproducible binaries and is what the
+  two-builder gate verifies — and everything else is assembled around it:
+
+  - *Archives and checksums*: `archive/tar`, `compress/gzip`,
+    `archive/zip` and `crypto/sha256`. Standard library, no tool, and
+    the place where reproducible-archive discipline gets established
+    once (fixed mtime from `SOURCE_DATE_EPOCH`, sorted entries, fixed
+    uid, gid and mode).
+  - *SBOM*: a small in-repo tool, because the specification describes a
+    transform of `go version -m` output this project already parses.
+  - *`.deb` and `.rpm`*: the only place an external tool earns its keep,
+    and even there it is optional — `.deb` is an `ar` archive of two
+    tarballs and `.rpm` a documented header plus a cpio payload, both
+    emittable from the standard library. Start with a pinned tool if it
+    is quicker; the format is the fallback, not a rewrite.
+  - *Containers and `.msi`/`.pkg`*: unchanged in the order below, and
+    each can take its own tool on the same terms.
+
+  Net new external dependencies: at most one, possibly none, and none of
+  them in `go.mod`. **Before any of it is committed to, the two-builder
+  gate has to compare artifact digests rather than only binary ones, and
+  archive reproducibility has to be proven on a throwaway tag** — cheap
+  now, expensive to discover after five artifact kinds depend on it.
 - **Where the signing key lives.** A detached signature per artifact and
   an in-toto/SLSA attestation naming the source commit, the toolchain
   digest and the builder identity. This estate already keeps PGP keys
