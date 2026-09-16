@@ -9345,6 +9345,97 @@ because a list is a document's order and not a set of keys.
 
 `defaults.conf` renders.
 
+### 5.108 `check_cmd` ran the wrong one of Salt's two check_cmds
+
+`base/security/breakglass/init.sls` manages a sudoers file and validates
+it the way every sudoers example does:
+
+```yaml
+  file.managed:
+    - name: /etc/sudoers.d/{{ user }}
+    - mode: '0440'
+    - check_cmd: /usr/sbin/visudo -c -f
+```
+
+It failed on every run. The command has no file argument because Salt
+appends one, and nothing appended it here, so the shell got a bare
+`visudo -c -f` -- and visudo exits 1 when `-f` has no argument:
+
+```
+/usr/sbin/visudo: option requires an argument -- 'f'
+usage: visudo [-chqsV] [[-f] sudoers ]
+```
+
+Running `visudo -c -f /etc/sudoers` by hand parsed fine, which is what
+made this look like an environment problem. It was not; the argument was
+never there.
+
+**Salt has two different `check_cmd`s, and its own documentation says
+so** -- *"This `check_cmd` functions differently than the requisite
+`check_cmd`."* This build had implemented one of them and applied it to
+everything.
+
+*The requisite form*, in `salt/state.py`, runs the command verbatim after
+the state and lets its exit code decide the result. It is for a state
+with no file to validate, and the estate uses it too --
+`base/openjdk/init.sls` writes
+`check_cmd: update-alternatives --list java | grep ...` on
+`alternatives.install`, where there is nothing to hand the command and
+nothing to hold back.
+
+*The state's own form* is a parameter of `file.managed` and
+`file.serialize`. Salt writes what it is about to install to a temporary
+file, hands **that** to the command, and installs only if it passes. The
+point is the ordering: a sudoers file that fails `visudo` must never
+reach `/etc/sudoers.d`. This build's generic check ran *after* the state,
+so even once the argument was fixed it would have validated a file it
+had already written -- and reported a failure with the broken file in
+place. On a sudoers file that is how an estate locks itself out of sudo.
+
+`salt/state.py` tells the two apart by asking whether the state function
+declares a `check_cmd` parameter, and runs the generic form only when it
+does not. `Registry.OwnsCheckCmd` is that test. The parameter is declared
+on `file.managed` and `file.serialize` and is never read out of the
+arguments -- the compiler strips `check_cmd` into the chunk's options
+beside `unless` and `onlyif`, and it reaches the state on the context --
+but declaring it is what makes the ownership visible in one place, to
+the runner and to the argument table an operator reads.
+
+**What the temporary file is.** The pending contents when they differ,
+and the current contents when only the mode or the owner does, which is
+Salt's effect: it copies the destination to the temporary file and then
+writes the desired contents over it, so the check always sees what will
+be in place. `tmp_dir` and `tmp_ext` come with it, for a checker confined
+by an AppArmor policy and for one that insists on a suffix; both are
+Salt's, and both are only observable in the path the command is handed.
+
+**A test run does not reach it**, which is Salt's ordering too -- its
+test branch returns before the check. The command is the operator's and
+may do anything, and a run that promised to change nothing must not run
+it.
+
+**The checker's own output is the comment.** `visudo` answers
+`>>> syntax error near line 3 <<<`, and a state that reported only an
+exit status would send an operator to run the command by hand to find
+out what this already knows.
+
+**One thing the tests nearly missed.** The first version of them used
+`RecordingRunner`, which records commands and answers from a table
+rather than running them -- so every check "passed", including the ones
+asserting that invalid sudoers is rejected. They ran against a real
+`visudo` after that, and the rejection tests failed immediately. The
+runner-level tests kept the recording runner and had to script it with
+a failing default, for the same reason: a fake that succeeds by default
+makes a test about failure prove nothing.
+
+**Not changed, and worth recording.** Salt's generic form runs whatever
+the state returned -- `ret.update(self._run_check_cmd(low))` -- so a
+`check_cmd` exiting 0 turns a *failed* state into a successful one. This
+build runs it only when the state succeeded, so it can refuse but not
+rescue. Letting a command overrule a state that reported failure is a
+worse default than not having it, and no tree has been seen to rely on
+it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

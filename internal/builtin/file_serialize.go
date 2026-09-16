@@ -25,7 +25,7 @@ func registerFileSerialize(r *Registries) {
 		Sig: signature.Signature{
 			Module: "file", Function: "serialize",
 			Doc: "Write a data structure to a file as JSON or YAML.",
-			Params: []signature.Param{
+			Params: append([]signature.Param{
 				nameParam("The file to write. Defaults to the state ID."),
 				opt("dataset", signature.Any, nil, "The data to write."),
 				opt("dataset_pillar", signature.String, "",
@@ -43,7 +43,7 @@ func registerFileSerialize(r *Registries) {
 				opt("makedirs", signature.Bool, false, "Create the parent directory."),
 				opt("create", signature.Bool, true,
 					"Write the file when it does not exist. False updates only what is there."),
-			},
+			}, checkCmdParams()...),
 			Mutates:  true,
 			TestMode: signature.TestReliable,
 			Section:  "15.5",
@@ -111,6 +111,16 @@ func fileSerialize(c *exec.Context, args *value.Map) (states.Result, error) {
 			verb = "would be rewritten"
 		}
 		return states.WouldChange(fmt.Sprintf("%s %s as %s.", path, verb, format), changes), nil
+	}
+
+	// Salt owns check_cmd on this state too, and for the same reason:
+	// what this writes is a configuration file, and a checker exists to
+	// stop a bad one being installed rather than to report it
+	// afterwards. DIVERGENCE 5.108.
+	if len(c.CheckCmd) > 0 {
+		if res, ok := runFileCheckCmd(c, args, path, want); !ok {
+			return res, nil
+		}
 	}
 
 	if states.Bool(args, "makedirs", false) {

@@ -99,6 +99,13 @@ func registries(p *probe) (*states.Registry, *exec.Registry) {
 			s.Privileges = []string{"root"}
 			return s
 		}(), Fn: run},
+		// A state that declares check_cmd owns it, the way file.managed
+		// does, and the runner must not also run the generic form.
+		states.Module{Sig: func() signature.Signature {
+			s := sig("probe", "owns_check")
+			s.Params = append(s.Params, signature.Param{Name: "check_cmd", Type: signature.Any})
+			return s
+		}(), Fn: run},
 	)
 	er.Add(exec.Module{
 		Sig: signature.Signature{
@@ -1188,5 +1195,88 @@ func TestNestedFromReturnsScrubsURLsOffTheWire(t *testing.T) {
 	}
 	if !strings.Contains(got, "artifacts.example.com") {
 		t.Errorf("the diagnostic was lost:\n%s", got)
+	}
+}
+
+// Salt has two different `check_cmd`s and says so in its own
+// documentation. The generic one is a requisite: it runs the command
+// verbatim after the state and lets the exit code decide the result.
+// `file.managed`'s is a parameter of the state: it writes what it is
+// about to install to a temporary file and hands *that* to the command,
+// so a file that fails its check is never installed.
+//
+// `salt/state.py` tells them apart by asking whether the state function
+// declares a `check_cmd` parameter, and runs the generic form only when
+// it does not. This build ran the generic form for everything, so
+// `check_cmd: /usr/sbin/visudo -c -f` reached the shell with no
+// filename appended -- and visudo exits 1 when `-f` has no argument.
+func TestTheGenericCheckCmdSkipsAStateThatOwnsIt(t *testing.T) {
+	// Every command this runner is handed fails, so whether the state
+	// fails says whether the generic check_cmd ran at all.
+	failing := func(r *Runner) {
+		ctx := *r.Ctx
+		ctx.Runner = &exec.RecordingRunner{Default: exec.Result{Code: 1}}
+		r.Ctx = &ctx
+	}
+
+	// `probe.plain` declares no check_cmd, so the generic form runs and
+	// its exit code decides the result.
+	out, _ := compileAndRun(t, "a:\n  probe.plain:\n    - check_cmd: 'false'\n", failing)
+	if !out.Failed() {
+		t.Error("the generic check_cmd did not decide the result for a state that does not own it")
+	}
+
+	// `probe.owns_check` declares one, so the runner leaves it to the
+	// state -- which here does nothing with it. The same failing
+	// command must not touch the result.
+	out, _ = compileAndRun(t, "a:\n  probe.owns_check:\n    - check_cmd: 'false'\n", failing)
+	if out.Failed() {
+		t.Errorf("the generic check_cmd ran for a state that owns it: %v", out.Results[0].Result.Comment)
+	}
+}
+
+// And the option reaches the state, which is how a state that owns it
+// can do anything with it at all.
+func TestCheckCmdReachesTheStateThatOwnsIt(t *testing.T) {
+	var seen []string
+	sr, er := registries(&probe{})
+	sr.Add(states.Module{
+		Sig: signature.Signature{
+			Module: "probe", Function: "records_check",
+			Doc: "Records the check_cmd it was given.",
+			Params: []signature.Param{
+				{Name: "name", Type: signature.String},
+				{Name: "check_cmd", Type: signature.Any},
+			},
+			Mutates: true, TestMode: signature.TestReliable, Section: "test",
+		},
+		Fn: func(c *exec.Context, _ *value.Map) (states.Result, error) {
+			seen = append(seen, c.CheckCmd...)
+			return states.True("noted"), nil
+		},
+	})
+
+	c := &state.Compiler{
+		Loader:   memLoader{"base|web": "a:\n  probe.records_check:\n    - check_cmd: /usr/sbin/visudo -c -f\n"},
+		Registry: sr.Signatures(),
+		Config:   state.Config{NodeID: "n", Grains: value.NewMap(0)},
+	}
+	compiled := c.CompileSLS([]string{"web"})
+	if err := compiled.Err(); err != nil {
+		t.Fatalf("compilation failed:\n%v", err)
+	}
+	r := &Runner{
+		States: sr, Exec: er,
+		Ctx: &exec.Context{
+			Ctx: context.Background(), Grains: value.NewMap(0),
+			Pillar: value.NewMap(0), Config: value.NewMap(0),
+			Runner: &exec.RecordingRunner{},
+		},
+		Sleep: func(time.Duration) {},
+	}
+	r.Run(compiled.Low)
+
+	if len(seen) != 1 || seen[0] != "/usr/sbin/visudo -c -f" {
+		t.Errorf("the state saw %v", seen)
 	}
 }

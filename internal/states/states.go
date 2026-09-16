@@ -198,6 +198,30 @@ func (r *Registry) CallWatch(c *exec.Context, name string, args *value.Map) (Res
 // SupportsWatch reports whether a module defines a mod_watch reaction, so
 // that a `watch` on a module without one can be reported rather than
 // silently behaving as `require`.
+// OwnsCheckCmd reports whether a state handles `check_cmd` itself
+// rather than leaving it to the runner.
+//
+// The test is Salt's: `salt/state.py` asks whether the state function
+// has a `check_cmd` parameter, and runs the generic form only when it
+// does not. The two forms are genuinely different, and Salt's own
+// documentation says so -- the generic one runs the command verbatim
+// after the state and lets its exit code decide the result, while
+// `file.managed` writes what it is about to install to a temporary file
+// and hands *that* to the command, so a file that fails its check is
+// never installed at all. See DIVERGENCE 5.108.
+func (r *Registry) OwnsCheckCmd(name string) bool {
+	mod, ok := r.Lookup(name)
+	if !ok {
+		return false
+	}
+	for _, p := range mod.Sig.Params {
+		if p.Name == "check_cmd" {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *Registry) SupportsWatch(name string) bool {
 	m, ok := r.fns[name]
 	return ok && m.ModWatch != nil

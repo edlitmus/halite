@@ -158,6 +158,17 @@ type Context struct {
 	// is a deliberate choice about that one command.
 	RunAs string
 	Umask string
+
+	// CheckCmd is the per-state `check_cmd` of SPEC section 11.7, for
+	// the states that own it.
+	//
+	// It is on the context rather than in the module's arguments
+	// because the state compiler strips it into the chunk's options
+	// alongside `unless` and `onlyif`, which is where the runner reads
+	// it for every other state. A state that declares a `check_cmd`
+	// parameter takes it over instead and reads it here -- see
+	// `Registry.OwnsCheckCmd` and DIVERGENCE 5.108.
+	CheckCmd []string
 }
 
 // FileFetcher resolves a managed URI to a local path.

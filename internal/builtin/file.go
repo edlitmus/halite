@@ -209,6 +209,7 @@ func registerFileStates(r *Registries) {
 			"written beside the file."),
 		opt("show_changes", signature.Bool, true, "Include a unified diff in the changes."),
 	}
+	managedParams = append(managedParams, checkCmdParams()...)
 
 	r.States.Add(states.Module{
 		Sig: signature.Signature{
@@ -488,7 +489,29 @@ func fileManaged(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 
 	if c.Test {
+		// A test run does not reach check_cmd, which is Salt's ordering
+		// too: its test branch returns before the check. The command is
+		// the operator's and may do anything, and a run that promised
+		// to change nothing must not run it. SPEC section 11.6.
 		return withWarnings(states.WouldChange(describeFileChange(path, exists, contentsDiffer, modeDiffers, ownerDiffers, source, true), changes), modeWarnings), nil
+	}
+
+	// Validated before anything is written, against what is about to be
+	// written. A check that runs afterwards has already installed the
+	// file it was meant to reject. DIVERGENCE 5.108.
+	if len(c.CheckCmd) > 0 {
+		// What will be in place: the new contents when they differ, and
+		// what is already there when only the mode or the owner does.
+		// Salt runs the check on either, because it builds its
+		// temporary file from a copy of the destination and then writes
+		// the desired contents over it.
+		pending := want
+		if !contentsDiffer {
+			pending = current
+		}
+		if res, ok := runFileCheckCmd(c, args, path, pending); !ok {
+			return withWarnings(res, modeWarnings), nil
+		}
 	}
 
 	if states.Bool(args, "makedirs", false) {
