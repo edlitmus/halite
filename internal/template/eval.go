@@ -58,6 +58,26 @@ func (s *scope) lookup(name string) (any, bool) {
 
 func (s *scope) set(name string, v any) { s.vars[name] = v }
 
+// assign updates an existing binding where it was made, rather than
+// shadowing it here.
+//
+// This is what makes `{% do items.append(x) %}` behave the way a tree
+// expects. Python's append mutates the list object, so every name bound
+// to it sees the change -- including the one in the enclosing template
+// while the append happens inside a `for` body or a macro. A plain
+// `set` writes to the innermost scope, so the appends would be
+// discarded with the loop body, which is the exact bug `append` is
+// reached for to avoid. SPEC section 10.2.
+func (s *scope) assign(name string, v any) bool {
+	for cur := s; cur != nil; cur = cur.parent {
+		if _, ok := cur.vars[name]; ok {
+			cur.vars[name] = v
+			return true
+		}
+	}
+	return false
+}
+
 type renderer struct {
 	env    *Environment
 	opts   Options
@@ -1281,6 +1301,18 @@ func (r *renderer) evalSlice(t *SliceExpr) (any, error) {
 }
 
 func (r *renderer) evalCall(t *CallExpr) (any, error) {
+	// A mutating list method is resolved here rather than through
+	// getAttr, because it needs the *place* the receiver came from and
+	// not only its value: a Go slice cannot be appended to in a way the
+	// holder of the old header can see. See listmutate.go.
+	if attr, ok := t.Fn.(*AttrExpr); ok {
+		if mutate, ok := mutatingListMethod(attr.Attr); ok {
+			if done, v, err := r.callListMutator(t, attr, mutate); done {
+				return v, err
+			}
+		}
+	}
+
 	fn, err := r.eval(t.Fn)
 	if err != nil {
 		return nil, err
@@ -1290,6 +1322,38 @@ func (r *renderer) evalCall(t *CallExpr) (any, error) {
 		return nil, err
 	}
 	return r.callValue(fn, args, kwargs, t.Pos())
+}
+
+// callListMutator runs a mutating list method and stores the result
+// back where the receiver was read from.
+//
+// It reports whether it handled the call at all. A receiver that is not
+// a list is not this: `mapping.pop(k)` and `string.split(...)` share
+// names with list methods and must reach their own implementations.
+func (r *renderer) callListMutator(t *CallExpr, attr *AttrExpr, mutate listMutator) (bool, any, error) {
+	ref, err := r.listRefFor(attr.Obj)
+	if err != nil {
+		return true, nil, err
+	}
+	current, err := ref.get()
+	if err != nil {
+		return true, nil, err
+	}
+	list, ok := untuple(current).([]any)
+	if !ok {
+		return false, nil, nil
+	}
+
+	args, kwargs, err := r.evalCallArgs(t)
+	if err != nil {
+		return true, nil, err
+	}
+	next, result, err := mutate(r, t.Pos(), list, args, kwargs)
+	if err != nil {
+		return true, nil, errorf(t.Pos(), "%s", err)
+	}
+	ref.set(next)
+	return true, result, nil
 }
 
 // evalCallArgs evaluates a call site's positional arguments, keyword
