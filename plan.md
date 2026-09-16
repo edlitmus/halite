@@ -872,9 +872,9 @@ Unchanged since the last revision, and verified again here.
 
 ### 3.5 Packaging, release and CI (SPEC 4.3, 27.2)
 
-- **No artifact in SPEC 27.2 is built.** No nfpm config, no `.msi`, no
-  `.pkg`, no container image for the product itself, no SBOM, no
-  provenance attestation. `make release` builds bare binaries into `bin/`
+- **No artifact in SPEC 27.2 is built.** No packaging configuration of
+  any kind, no `.msi`, no `.pkg`, no container image for the product
+  itself, no SBOM, no provenance attestation. `make release` builds bare binaries into `bin/`
   and has never been run. `contrib/` has systemd units, FreeBSD rc.d
   scripts and example configuration, and that is the whole packaging
   story.
@@ -1029,13 +1029,20 @@ unblocks rather than by how hard it is.
 
 **Four decisions that need a person.**
 
-- **How `nfpm` is obtained.** SPEC 27.2 names it for `.deb` and `.rpm`,
-  but SPEC 4.3 disables the build network and pins the Go toolchain *by
-  digest from an internal mirror*. Adding nfpm to `go.mod` would put a
-  module outside the section 4.2 allowlist into the graph, which CI
-  fails on by design. So it is a pinned external binary fetched by
-  digest, on the same terms as the toolchain — or the packages are
-  written without it. That is a decision, not an inference.
+- **How a packaging tool is obtained, whichever one it is.** SPEC 27.2
+  used to name `nfpm`; it no longer names anything, because the table
+  specifies contents and the tooling should stay open. The constraint is
+  the same whatever is picked: SPEC 4.3 disables the build network and
+  pins the Go toolchain *by digest from an internal mirror*, and a Go
+  packaging tool added to `go.mod` would put a module outside the
+  section 4.2 allowlist into the dependency graph, which CI fails on by
+  design. So the options are a pinned external binary fetched by digest
+  on the same terms as the toolchain, or writing the archive formats
+  directly — `.deb` is an `ar` archive of two tarballs and `.rpm` is a
+  documented header plus a cpio payload, both of which this project
+  could emit from the standard library with no new dependency at all.
+  The second is more work and removes a moving part; neither should be
+  chosen by inference.
 - **Where the signing key lives.** A detached signature per artifact and
   an in-toto/SLSA attestation naming the source commit, the toolchain
   digest and the builder identity. This estate already keeps PGP keys
@@ -1272,9 +1279,9 @@ unchanged.
       scripts run against the real tools, several on no other platform
       at all.
     - *Packages* — **not kept, and not FreeBSD's problem alone.** No
-      packaging exists for any platform: there is no nfpm configuration
-      in the tree and the release workflow verifies reproducibility
-      rather than producing artifacts. The consequence below discounts
+      packaging exists for any platform: there is no packaging
+      configuration in the tree and the release workflow verifies
+      reproducibility rather than producing artifacts. The consequence below discounts
       it twice, since this fleet installs from source.
 
     Two things the move makes it honest to state plainly, both of which
