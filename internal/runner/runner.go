@@ -412,6 +412,7 @@ func (r *Runner) chunkContext(ch *state.Chunk) *exec.Context {
 	c.StateID = ch.ID
 	c.RunAs = ch.Opts.RunAs
 	c.Umask = ch.Opts.Umask
+	c.CheckCmd = ch.Opts.CheckCmd
 	return &c
 }
 
@@ -485,7 +486,14 @@ func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
 		}
 	}
 
-	if len(ch.Opts.CheckCmd) > 0 && res.Succeeded() {
+	// A state that owns `check_cmd` has already run it, against the
+	// contents it was about to install rather than against whatever is
+	// on disk afterwards. Running the generic form as well would run
+	// the operator's command a second time, with no filename, which is
+	// the defect this replaced: `check_cmd: /usr/sbin/visudo -c -f`
+	// became a bare `visudo -c -f`, and visudo exits 1 when `-f` has no
+	// argument. See DIVERGENCE 5.108.
+	if len(ch.Opts.CheckCmd) > 0 && res.Succeeded() && !r.States.OwnsCheckCmd(ch.Func()) {
 		res = r.applyCheckCmd(ch, res)
 	}
 	if res.Name == "" {

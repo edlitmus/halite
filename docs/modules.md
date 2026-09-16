@@ -9246,7 +9246,7 @@ file.line(name: path, content: string = , mode: string = ensure, match: string =
 Ensure a file exists with the given contents, mode, and ownership.
 
 ```
-file.managed(name: path, source: string = , source_hash: string = , skip_verify: bool = false, keep_source: any, contents: any, template: string = , context: map, defaults: map, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, replace: bool = true, backup: string = , show_changes: bool = true)
+file.managed(name: path, source: string = , source_hash: string = , skip_verify: bool = false, keep_source: any, contents: any, template: string = , context: map, defaults: map, contents_pillar: string = , mode: mode = , user: string = , group: string = , makedirs: bool = false, dir_mode: mode = , create: bool = true, replace: bool = true, backup: string = , show_changes: bool = true, check_cmd: any, tmp_dir: path, tmp_ext: string)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -9270,6 +9270,9 @@ file.managed(name: path, source: string = , source_hash: string = , skip_verify:
 | `replace` | bool | `true` | Rewrite the file when its contents differ. |
 | `backup` | string | `` | Keep a copy of the previous contents. `node` keeps a timestamped one in the cache, which `file.list_backups` enumerates, and Salt's own spelling of that value is accepted beside it. Anything else is a suffix written beside the file. |
 | `show_changes` | bool | `true` | Include a unified diff in the changes. |
+| `check_cmd` | any | — | Validate the contents before installing them. The path of a temporary file holding what would be written is appended to each command, and the file is installed only if every command exits 0. |
+| `tmp_dir` | path | — | Directory for the temporary file check_cmd is given. For a checker that is confined to a directory by an AppArmor or SELinux policy. |
+| `tmp_ext` | string | — | Suffix for the temporary file check_cmd is given. For a checker that insists on an extension. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
@@ -9363,7 +9366,7 @@ file.replace(name: path, pattern: string, repl: string, count: int = 0, flags: l
 Write a data structure to a file as JSON or YAML.
 
 ```
-file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer: string = , formatter: string = , merge_if_exists: bool = false, mode: string = , user: string = , group: string = , makedirs: bool = false, create: bool = true)
+file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer: string = , formatter: string = , merge_if_exists: bool = false, mode: string = , user: string = , group: string = , makedirs: bool = false, create: bool = true, check_cmd: any, tmp_dir: path, tmp_ext: string)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -9379,6 +9382,9 @@ file.serialize(name: string, dataset: any, dataset_pillar: string = , serializer
 | `group` | string | `` | The group. |
 | `makedirs` | bool | `false` | Create the parent directory. |
 | `create` | bool | `true` | Write the file when it does not exist. False updates only what is there. |
+| `check_cmd` | any | — | Validate the contents before installing them. The path of a temporary file holding what would be written is appended to each command, and the file is installed only if every command exits 0. |
+| `tmp_dir` | path | — | Directory for the temporary file check_cmd is given. For a checker that is confined to a directory by an AppArmor or SELinux policy. |
+| `tmp_ext` | string | — | Suffix for the temporary file check_cmd is given. For a checker that insists on an extension. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
