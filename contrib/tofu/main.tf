@@ -59,7 +59,15 @@ resource "vultr_instance" "node" {
 
   tags = [var.label_prefix, each.key, each.value.family]
 
-  user_data = local.bootstrap[each.key]
+  # Two delivery mechanisms, because Vultr has two.
+  #
+  # cloud-init runs on the Linux images and **not on the BSD ones**,
+  # where the equivalent is a Vultr startup script attached to the
+  # instance. Both carry the same rendered script from local.bootstrap;
+  # only the route differs, so a row gets exactly one of these and null
+  # for the other.
+  user_data = each.value.family == "freebsd" ? null : local.bootstrap[each.key]
+  script_id = each.value.family == "freebsd" ? vultr_startup_script.bootstrap[each.key].id : null
 
   # An edited bootstrap has to mean a rebuilt machine.
   #
@@ -76,16 +84,38 @@ resource "vultr_instance" "node" {
   }
 }
 
+# The startup script a BSD row boots from.
+#
+# Only BSD rows have one. `script` is base64 per the API -- the provider
+# does not encode it -- and plain text here would be run as a shell
+# script consisting of one very long unknown command.
+resource "vultr_startup_script" "bootstrap" {
+  for_each = { for name, d in local.selected : name => d if d.family == "freebsd" }
+
+  name   = "${var.label_prefix}-${each.key}"
+  type   = "boot"
+  script = base64encode(local.bootstrap[each.key])
+}
+
 locals {
+  # One script per row, from the template its family boots. The FreeBSD
+  # template is a separate file rather than a branch; its header says
+  # why.
   bootstrap = {
-    for name, d in local.selected : name => templatefile("${path.module}/bootstrap.sh.tftpl", {
-      distro     = name
-      family     = d.family
-      packages   = d.packages
-      closes     = d.closes
-      go_version = var.go_version
-      go_sha256  = var.go_sha256
-    })
+    for name, d in local.selected : name => templatefile(
+      d.family == "freebsd" ? "${path.module}/bootstrap-freebsd.sh.tftpl" : "${path.module}/bootstrap.sh.tftpl",
+      {
+        distro     = name
+        family     = d.family
+        packages   = d.packages
+        closes     = d.closes
+        go_version = var.go_version
+        # Same toolchain, different tarball, so a different checksum.
+        # Pinning one and downloading the other is how a lab silently
+        # stops verifying anything.
+        go_sha256 = d.family == "freebsd" ? var.go_sha256_freebsd : var.go_sha256
+      }
+    )
   }
 }
 

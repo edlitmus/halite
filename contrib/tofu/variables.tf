@@ -82,6 +82,19 @@ variable "go_sha256" {
   default     = "708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89"
 }
 
+# The FreeBSD rows download a different tarball, so they check a
+# different digest. One variable covering both would have meant the
+# FreeBSD rows verifying nothing, which is worse than not verifying
+# visibly.
+#
+# From https://go.dev/dl/?mode=json&include=all for
+# go1.26.6.freebsd-amd64.tar.gz.
+variable "go_sha256_freebsd" {
+  description = "SHA-256 of go<go_version>.freebsd-amd64.tar.gz."
+  type        = string
+  default     = "9c805b762d9cd33c04c0dd414c1f4e86065a6ddce06e97e194e9bc806b120fc7"
+}
+
 variable "label_prefix" {
   description = "Prefix for instance labels and tags, so these are distinguishable from anything else on the account."
   type        = string

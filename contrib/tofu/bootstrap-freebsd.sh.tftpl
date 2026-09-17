@@ -1,0 +1,209 @@
+#!/bin/sh
+# First boot for a halite lab instance: ${distro} (${family}).
+#
+# Closes: ${closes}
+#
+# # Why this is a second file rather than another branch of bootstrap.sh
+#
+# The Linux template is one script because apt, dnf, apk and zypper
+# differ only in the command that installs a package. FreeBSD differs in
+# how the script arrives at all: **Vultr does not run cloud-init on its
+# BSD images**, so this is delivered as a Vultr *startup script* keyed to
+# the instance rather than as user-data. main.tf base64-encodes it,
+# because that is the form the API takes.
+#
+# Underneath that, nearly every line the Linux script ends on is a
+# different line here:
+#
+#   - `sha256sum` is a GNU coreutils program. The base system has
+#     `sha256`, which prints the digest with `-q` and nothing else.
+#   - `sed -i` takes a mandatory backup suffix in BSD sed, so the Linux
+#     spelling is a syntax error rather than an in-place edit.
+#   - There is no `/etc/profile.d`.
+#   - `fetch` is in base, so unlike the Linux rows this never depends on
+#     a package having installed before the toolchain can be downloaded.
+#
+# A conditional for each of those inside one script would leave the
+# common path harder to read in order to share a `for` loop.
+#
+# # The one line that makes the rest of the lab work
+#
+# `pw usermod root -s /bin/sh` near the end. root's login shell here is
+# tcsh, and `ssh host "cd dir && VAR=value cmd"` runs through the login
+# shell -- csh has no leading-assignment syntax, so every command lab.sh
+# sends would fail on this row alone and on none of the others. Changing
+# the shell is a smaller and more honest fix than teaching lab.sh to
+# quote for two shells.
+
+set -eu
+
+FACTS=/var/lib/halite-lab/facts
+READY=/var/lib/halite-lab/ready
+LOG=/var/log/halite-lab-bootstrap.log
+
+# /var/lib is not a FreeBSD path, and it is used anyway: lab.sh reads
+# this file by absolute path on every row, and one lab-wide location is
+# worth more than each row being idiomatic on its own.
+mkdir -p /var/lib/halite-lab
+exec >>"$LOG" 2>&1
+echo "=== halite lab bootstrap: ${distro} at $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+
+: >"$FACTS"
+fact() { printf '%s=%s\n' "$1" "$2" >>"$FACTS"; }
+
+fact distro "${distro}"
+fact family "${family}"
+fact closes "${closes}"
+fact boot_mechanism "vultr startup script (cloud-init does not run on Vultr BSD images)"
+
+# ---- what this machine actually is ----
+#
+# /etc/os-release is a symlink to /var/run/os-release, which an rc
+# service writes at boot -- and on the first run of this row **it was not
+# yet populated when this script ran**, so no os_* fact was recorded on
+# either machine. The startup script fires earlier in boot than
+# cloud-init does on the Linux rows. It is read anyway, for the boot
+# where it is there.
+#
+# `freebsd-version` is the fact that actually answers the question, and
+# it needs nothing from rc. It reports the userland and the kernel
+# separately, which is a distinction no Linux row has -- the two differ
+# on a machine that has been patched and not rebooted.
+if [ -r /etc/os-release ]; then
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    fact os_id "$${ID:-unknown}"
+    fact os_version "$${VERSION_ID:-unknown}"
+    fact os_pretty "$${PRETTY_NAME:-unknown}"
+fi
+fact freebsd_version_userland "$(freebsd-version -u 2>/dev/null || echo unknown)"
+fact freebsd_version_kernel "$(freebsd-version -k 2>/dev/null || echo unknown)"
+fact kernel "$(uname -r)"
+fact arch "$(uname -m)"
+
+# ---- packages ----
+#
+# `pkg` on a fresh image is a stub that fetches the real thing on first
+# use. `pkg -N` asks whether it is already installed without triggering
+# that, so the bootstrap step is only taken when it is actually needed.
+export ASSUME_ALWAYS_YES=yes
+
+if pkg -N >/dev/null 2>&1; then
+    fact pkg_bootstrap already_installed
+elif pkg bootstrap -f; then
+    fact pkg_bootstrap ok
+else
+    fact pkg_bootstrap failed
+fi
+
+if pkg update -f; then
+    fact package_refresh ok
+else
+    # Recorded, not fatal, for the reason the Linux template gives: the
+    # per-package loop below is what decides whether anything is missing.
+    fact package_refresh failed
+fi
+
+fact package_manager "pkg install -y"
+
+echo "--- installing packages one at a time"
+installed=""
+missing=""
+for pkg_name in ${packages}; do
+    if pkg install -y "$pkg_name"; then
+        installed="$installed $pkg_name"
+    else
+        echo "MISSING: $pkg_name is not a package name on this system"
+        missing="$missing $pkg_name"
+    fi
+done
+fact packages_installed "$(echo "$installed" | sed 's/^ //')"
+fact packages_missing "$(echo "$missing" | sed 's/^ //')"
+
+# ---- the Go toolchain ----
+#
+# The same pinned-and-verified download the Linux rows take, for the same
+# reason: a lab that compiles this tree with whatever Go a port froze is
+# measuring the compiler. `fetch` and `sha256` are both in base, so this
+# step does not depend on anything installed above.
+GO_TARBALL="go${go_version}.freebsd-amd64.tar.gz"
+GO_URL="https://go.dev/dl/$GO_TARBALL"
+
+echo "--- fetching $GO_URL"
+if ! fetch -q -o "/tmp/$GO_TARBALL" "$GO_URL"; then
+    echo "the Go toolchain could not be fetched; this machine cannot build" >&2
+    fact go failed_download
+    exit 1
+fi
+
+echo "--- verifying $GO_TARBALL"
+got="$(sha256 -q "/tmp/$GO_TARBALL")"
+if [ "$got" != "${go_sha256}" ]; then
+    echo "checksum mismatch for $GO_TARBALL" >&2
+    echo "  expected ${go_sha256}" >&2
+    echo "  got      $got" >&2
+    fact go checksum_mismatch
+    fact go_sha256_got "$got"
+    exit 1
+fi
+fact go_sha256_verified "${go_sha256}"
+
+rm -rf /usr/local/go
+tar -C /usr/local -xzf "/tmp/$GO_TARBALL"
+rm -f "/tmp/$GO_TARBALL"
+
+# There is no /etc/profile.d here. The symlinks are the mechanism
+# instead, and they are enough: /usr/local/bin is on the default PATH of
+# every shell on this system, including the non-interactive one `ssh
+# host command` runs.
+ln -sf /usr/local/go/bin/go /usr/local/bin/go
+ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
+fact go_version "$(/usr/local/go/bin/go version 2>&1 || echo unavailable)"
+
+# ---- root's login shell ----
+#
+# See the header. This is what lets lab.sh send one command line to
+# every row of the matrix.
+if pw usermod root -s /bin/sh; then
+    fact root_shell /bin/sh
+else
+    fact root_shell "unchanged (tcsh); lab.sh commands will fail on this host"
+fi
+
+# ---- close the door the key opened ----
+#
+# Only once the key is demonstrably in place. On the Linux rows this
+# ordering is settled by cloud-init; here the script is run by a boot
+# mechanism this lab has not watched before, and turning off password
+# authentication before the key lands would leave a machine nothing can
+# reach. Vultr mails a root password for every instance, so leaving it on
+# is recorded loudly rather than hidden.
+if [ -s /root/.ssh/authorized_keys ]; then
+    echo "--- disabling password authentication"
+    if [ -d /etc/ssh/sshd_config.d ]; then
+        printf 'PasswordAuthentication no\nPermitRootLogin prohibit-password\n' \
+            >/etc/ssh/sshd_config.d/99-halite-lab.conf
+    else
+        # BSD sed: -i takes a mandatory suffix, and '' means no backup.
+        sed -i '' 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+        sed -i '' 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+    fi
+    if service sshd reload; then
+        fact password_auth disabled
+    else
+        # The config is on disk for the next boot and the instance is
+        # reachable either way.
+        fact password_auth "disabled_on_disk_reload_failed"
+    fi
+else
+    fact password_auth "LEFT ENABLED: /root/.ssh/authorized_keys is empty or absent"
+fi
+
+# ---- ready ----
+#
+# Written last. Its presence is the only thing that means this machine
+# finished, and `make lab-test` reads it before it ships anything.
+fact bootstrap_finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cp "$FACTS" "$READY"
+echo "=== bootstrap complete for ${distro} ==="
