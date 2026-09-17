@@ -18,6 +18,25 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A dying extension's reason lost to a race between its own pipes
+
+An extension that fails writes the reason to stderr and exits, and the
+host's error now carries that reason rather than only "the extension
+exited without answering". It carried it *usually*: stdout and stderr
+are two pipes read by two goroutines, with nothing ordering them
+against each other, so the EOF on stdout could be seen before the
+reason had been scanned. The error was then built from an empty tail —
+the same diagnosis-free message the tail was added to replace, arriving
+by a race instead of by omission. The FIPS leg caught it the day it
+merged.
+
+The error now waits for the stderr drain to finish before it is built,
+bounded in case something the extension spawned inherited the pipe.
+The test that flaked still passes whenever the scheduler is kind, so it
+is not the one guarding this: the extension gained a death that closes
+stdout *first* and writes its reason afterwards, which makes the losing
+order the only order.
+
 ### The estate's tree, from 27 errors to none
 
 Continuing the exercise above. The tree compiles.
