@@ -4260,31 +4260,29 @@ mac_shadow.set_password(name: string, password: string)
 
 #### `mac_softwareupdate.download`
 
-Download update <name> without installing it.
+Download update <name> without installing it. This module downloads and never installs; see `mac_softwareupdate.update` for why.
 
 ```
-mac_softwareupdate.download(name: string, restart: bool = false)
+mac_softwareupdate.download(name: string)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | *required* | The update label, as `list_available` returns it. |
-| `restart` | bool | `false` | Pass -R, so the machine restarts or shuts down if an update needs it. |
 
 *changes the system · honours `--test` · SPEC section 15.3*
 
 #### `mac_softwareupdate.download_all`
 
-Download every available update without installing.
+Download every available update without installing. This module downloads and never installs; see `mac_softwareupdate.update` for why.
 
 ```
-mac_softwareupdate.download_all(recommended: bool = false, restart: bool = false)
+mac_softwareupdate.download_all(recommended: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
 | `recommended` | bool | `false` | Only the updates macOS marks Recommended. |
-| `restart` | bool | `false` | Pass -R, so the machine restarts or shuts down if an update needs it. |
 
 *changes the system · honours `--test` · SPEC section 15.3*
 
@@ -4293,8 +4291,12 @@ mac_softwareupdate.download_all(recommended: bool = false, restart: bool = false
 Refused: this would add an update to the per-update ignore list, which `softwareupdate --ignore` did on older macOS. That option was removed; deferring updates is an MDM control now.
 
 ```
-mac_softwareupdate.ignore()
+mac_softwareupdate.ignore(name: string = )
 ```
+
+| Parameter | Type | Default | Meaning |
+|---|---|---|---|
+| `name` | string | `` | The update label. Accepted so a tree carrying this from Salt reaches the explanation. |
 
 *SPEC section 15.3*
 
@@ -4369,22 +4371,22 @@ mac_softwareupdate.schedule_enabled()
 
 #### `mac_softwareupdate.update`
 
-Install update <name>.
+Refused: this would install update <name>. This module downloads updates and never installs them, because installing restarts the machine. Use `download`/`download_all` and apply through MDM or by hand.
 
 ```
-mac_softwareupdate.update(name: string, restart: bool = false)
+mac_softwareupdate.update(name: string = , restart: bool = false)
 ```
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `name` | string | *required* | The update label, as `list_available` returns it. |
-| `restart` | bool | `false` | Pass -R, so the machine restarts or shuts down if an update needs it. |
+| `name` | string | `` | The update label. Accepted so a tree carrying this from Salt reaches the explanation. |
+| `restart` | bool | `false` | Accepted so a tree carrying this from Salt reaches the explanation. |
 
-*changes the system · honours `--test` · SPEC section 15.3*
+*SPEC section 15.3*
 
 #### `mac_softwareupdate.update_all`
 
-Install every available update.
+Refused: this would install every available update. This module downloads updates and never installs them, because installing restarts the machine. Use `download`/`download_all` and apply through MDM or by hand.
 
 ```
 mac_softwareupdate.update_all(recommended: bool = false, restart: bool = false)
@@ -4392,10 +4394,10 @@ mac_softwareupdate.update_all(recommended: bool = false, restart: bool = false)
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `recommended` | bool | `false` | Only the updates macOS marks Recommended. |
-| `restart` | bool | `false` | Pass -R, so the machine restarts or shuts down if an update needs it. |
+| `recommended` | bool | `false` | Accepted so a tree carrying this from Salt reaches the explanation. |
+| `restart` | bool | `false` | Accepted so a tree carrying this from Salt reaches the explanation. |
 
-*changes the system · honours `--test` · SPEC section 15.3*
+*SPEC section 15.3*
 
 #### `mac_softwareupdate.update_available`
 

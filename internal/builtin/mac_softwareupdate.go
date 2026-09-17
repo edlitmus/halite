@@ -18,6 +18,20 @@ import (
 // ships as execution functions; a tree that wants updates applied on a
 // schedule reaches them from a `schedule` job or a reactor.
 //
+// **This module downloads updates and never installs them.** `download`
+// and `download_all` run `softwareupdate --download`; `update` and
+// `update_all` are registered and refuse, naming this decision as
+// halite's own rather than a limitation of the tool. `softwareupdate
+// --install` works fine — installing restarts the machine, can take it
+// through a firmware update on the way, and leaves a hub unable to tell
+// a converging estate from a bricked node. It is also undemonstrable by
+// this project's standard, since nothing can watch an install path
+// without a Mac willing to reboot in the middle of its own test suite.
+// Downloading is a real mutation, is worth having on its own — the
+// payload is local when somebody does apply it — and can be driven.
+// Applying is left to whatever owns reboots: an MDM configuration
+// profile, or a person. See DIVERGENCE 5.116.
+//
 // **Three of Salt's functions describe a mechanism macOS removed.**
 // `softwareupdate --ignore`, `--reset-ignored` and the per-update ignore
 // list were deprecated years ago and are gone from the binary on current
@@ -37,8 +51,12 @@ import (
 func registerMacSoftwareUpdate(r *Registries) {
 	recommended := opt("recommended", signature.Bool, false,
 		"Only the updates macOS marks Recommended.")
-	restart := opt("restart", signature.Bool, false,
-		"Pass -R, so the machine restarts or shuts down if an update needs it.")
+
+	// Accepted by the refused install functions so a tree carrying them
+	// from Salt lands on the explanation rather than on an argument
+	// error, which reads as a typo.
+	refusedRestart := opt("restart", signature.Bool, false,
+		"Accepted so a tree carrying this from Salt reaches the explanation.")
 
 	r.Exec.Add(
 		exec.Module{
@@ -106,10 +124,16 @@ func registerMacSoftwareUpdate(r *Registries) {
 				return macSoftwareUpdateDownloads()
 			},
 		},
-		macSoftwareUpdateActionModule("download", []string{"--download"}, recommended, restart, false),
-		macSoftwareUpdateActionModule("download_all", []string{"--download", "--all"}, recommended, restart, true),
-		macSoftwareUpdateActionModule("update", []string{"--install"}, recommended, restart, false),
-		macSoftwareUpdateActionModule("update_all", []string{"--install", "--all"}, recommended, restart, true),
+		macSoftwareUpdateDownloadModule("download", []string{"--download"}, recommended, false),
+		macSoftwareUpdateDownloadModule("download_all", []string{"--download", "--all"}, recommended, true),
+		macSoftwareUpdateInstallRefusedModule("update", "install update <name>",
+			opt("name", signature.String, "", "The update label. Accepted so a tree "+
+				"carrying this from Salt reaches the explanation."),
+			refusedRestart),
+		macSoftwareUpdateInstallRefusedModule("update_all", "install every available update",
+			opt("recommended", signature.Bool, false, "Accepted so a tree carrying this "+
+				"from Salt reaches the explanation."),
+			refusedRestart),
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "mac_softwareupdate", Function: "schedule_enabled",
@@ -147,7 +171,9 @@ func registerMacSoftwareUpdate(r *Registries) {
 			},
 		},
 		macSoftwareUpdateGoneModule("ignore",
-			"add an update to the per-update ignore list"),
+			"add an update to the per-update ignore list",
+			opt("name", signature.String, "", "The update label. Accepted so a tree "+
+				"carrying this from Salt reaches the explanation.")),
 		macSoftwareUpdateGoneModule("list_ignored",
 			"read the per-update ignore list"),
 		macSoftwareUpdateGoneModule("reset_ignored",
@@ -159,12 +185,13 @@ const macSoftwareUpdateDomain = "/Library/Preferences/com.apple.SoftwareUpdate"
 
 // macSoftwareUpdateGoneModule is a function whose Salt behaviour macOS
 // removed. It registers so the name resolves, and answers with why.
-func macSoftwareUpdateGoneModule(fn, what string) exec.Module {
+func macSoftwareUpdateGoneModule(fn, what string, params ...signature.Param) exec.Module {
 	return exec.Module{
 		Sig: signature.Signature{
 			Module: "mac_softwareupdate", Function: fn,
 			Doc: "Refused: this would " + what + ", which `softwareupdate --ignore` did on " +
 				"older macOS. That option was removed; deferring updates is an MDM control now.",
+			Params:    params,
 			TestMode:  signature.TestNotApplicable,
 			Platforms: macOnly,
 			Section:   "15.3",
@@ -180,25 +207,24 @@ func macSoftwareUpdateGoneModule(fn, what string) exec.Module {
 	}
 }
 
-// macSoftwareUpdateActionModule builds a download/install function. `all`
+// macSoftwareUpdateDownloadModule builds a download function. `all`
 // means it takes no label.
-func macSoftwareUpdateActionModule(fn string, verb []string, recommended, restart signature.Param, all bool) exec.Module {
+//
+// There is no `restart` parameter. It existed for the install path, and
+// `softwareupdate --download` has nothing to restart for.
+func macSoftwareUpdateDownloadModule(fn string, verb []string, recommended signature.Param, all bool) exec.Module {
 	params := []signature.Param{}
 	if !all {
 		params = append(params, req("name", signature.String, "The update label, as `list_available` returns it."))
 	} else {
 		params = append(params, recommended)
 	}
-	params = append(params, restart)
 
-	doc := "Download update <name> without installing it."
-	switch fn {
-	case "download_all":
-		doc = "Download every available update without installing."
-	case "update":
-		doc = "Install update <name>."
-	case "update_all":
-		doc = "Install every available update."
+	doc := "Download update <name> without installing it. This module downloads and " +
+		"never installs; see `mac_softwareupdate.update` for why."
+	if all {
+		doc = "Download every available update without installing. This module downloads " +
+			"and never installs; see `mac_softwareupdate.update` for why."
 	}
 
 	return exec.Module{
@@ -228,11 +254,62 @@ func macSoftwareUpdateActionModule(fn string, verb []string, recommended, restar
 				}
 				argv = append(argv, name)
 			}
-			if states.Bool(args, "restart", false) {
-				argv = append(argv, "--restart")
-			}
 			err := macRun(c, argv, strings.Join(argv, " "))
 			return err == nil, err
+		},
+	}
+}
+
+// macSoftwareUpdateInstallRefusedModule is an install function this
+// module does not drive, registered so the name resolves and answers
+// with why.
+//
+// # This is halite's decision, not a macOS limitation
+//
+// Worth stating in those words, because the three `ignore` refusals
+// next to it are the other kind — macOS took those options away and a
+// tree calling them cannot have what it asks for from anybody.
+// `softwareupdate --install` works. This module declines to run it.
+//
+// Installing a macOS update restarts the machine, and can take it
+// through a firmware update on the way. A configuration management
+// agent that can do that has a failure mode no state file expresses:
+// the run does not end, the node does not answer, and whether the
+// estate is converging or has bricked a machine is not knowable from
+// the hub. It is also untestable by this project's own standard — the
+// release gate exists to stop a module shipping on a claim nobody
+// demonstrated, and nothing can demonstrate an install path without a
+// Mac it is willing to reboot mid-suite and a way to watch what happens
+// after.
+//
+// So the mutating surface here is `--download` alone, which is a real
+// mutation worth having — it fetches the payload, so the install is a
+// local operation whenever it is done — and which can be driven and
+// demonstrated. Applying the update is left to the mechanism that owns
+// reboots: an MDM configuration profile, or a person.
+func macSoftwareUpdateInstallRefusedModule(fn, what string, params ...signature.Param) exec.Module {
+	return exec.Module{
+		Sig: signature.Signature{
+			Module: "mac_softwareupdate", Function: fn,
+			Doc: "Refused: this would " + what + ". This module downloads updates and " +
+				"never installs them, because installing restarts the machine. Use " +
+				"`download`/`download_all` and apply through MDM or by hand.",
+			Params:    params,
+			TestMode:  signature.TestNotApplicable,
+			Platforms: macOnly,
+			Section:   "15.3",
+		},
+		Fn: func(c *exec.Context, args *value.Map) (any, error) {
+			return nil, fmt.Errorf(
+				"mac_softwareupdate.%s: halite does not install macOS updates. "+
+					"`softwareupdate --install` works -- this is halite's decision, not a "+
+					"macOS limitation. Installing restarts the machine and can take it "+
+					"through a firmware update, which is a failure mode no state file "+
+					"expresses and which this project cannot demonstrate on any machine it "+
+					"has. Download with `mac_softwareupdate.download` or `download_all`, "+
+					"which is the half that can be driven, and apply through an MDM "+
+					"configuration profile or by hand",
+				fn)
 		},
 	}
 }
