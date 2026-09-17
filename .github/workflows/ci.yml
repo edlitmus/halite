@@ -79,7 +79,7 @@ jobs:
       code: ${{ steps.what.outputs.code }}
       test-os: ${{ steps.what.outputs.test-os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The whole history, because the comparison needs the base
           # commit and a shallow clone does not have it.
@@ -142,8 +142,8 @@ jobs:
     name: fmt, vet, policy
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # The toolchain version, not go.mod's `go` directive.
           #
@@ -160,6 +160,15 @@ jobs:
           # GOTOOLCHAIN=auto with nothing to download. internal/buildpolicy
           # holds this version to go.mod's `toolchain` directive in both
           # directions, so the two cannot drift.
+          #
+          # setup-go v6 began exporting GOTOOLCHAIN=local itself, which
+          # collides with the workflow-level `auto` above. It does not
+          # matter which of the two wins: the toolchain installed here
+          # *is* the pin, so `auto` has nothing to fetch and `local` has
+          # nothing to refuse. The one case they differ on is the pin
+          # drifting below go.mod's -- `auto` would download and say
+          # nothing, `local` would fail -- and buildpolicy already makes
+          # that drift impossible.
           go-version: "1.26.6"
           cache: true
       - run: make fmt-check
@@ -176,8 +185,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.26.6"
@@ -211,8 +220,8 @@ jobs:
         # by platform.
         os: ${{ fromJSON(needs.changes.outputs.test-os) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.26.6"
@@ -300,8 +309,8 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-15]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.26.6"
@@ -383,10 +392,10 @@ jobs:
     # measurement behind it.
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Start the virtual machine
-        uses: cross-platform-actions/action@v1.5.0
+        uses: cross-platform-actions/action@v1.6.0
         with:
           operating_system: freebsd
           version: '15.1'
@@ -448,8 +457,8 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.26.6"
@@ -473,7 +482,7 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: make saltdiff
 
   # Two builds of the same source on one machine, from two paths.
@@ -487,13 +496,13 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # `make release` stamps the commit through -buildvcs, and a
           # shallow clone with no tags makes `git describe` answer
           # differently than it will anywhere else.
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # The pin, not go.mod's floor. See the first setup-go step.
           go-version: "1.26.6"
