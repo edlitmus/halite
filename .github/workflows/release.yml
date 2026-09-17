@@ -55,8 +55,8 @@ jobs:
     name: no unverified root-mutating module
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.26.6"
           cache: false
@@ -87,7 +87,7 @@ jobs:
       matrix:
         builder: [ubuntu-24.04, ubuntu-22.04]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The tag itself is an input: version.Version comes from `git
           # describe` and SOURCE_DATE_EPOCH from the commit date. A
@@ -95,7 +95,7 @@ jobs:
           # would disagree for a reason that is not the one being
           # tested.
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # The toolchain version, not go.mod's `go` directive.
           #
@@ -112,6 +112,15 @@ jobs:
           # GOTOOLCHAIN=auto with nothing to download. internal/buildpolicy
           # holds this version to go.mod's `toolchain` directive in both
           # directions, so the two cannot drift.
+          #
+          # setup-go v6 began exporting GOTOOLCHAIN=local itself, which
+          # collides with the workflow-level `auto` above. It does not
+          # matter which of the two wins: the toolchain installed here
+          # *is* the pin, so `auto` has nothing to fetch and `local` has
+          # nothing to refuse. The one case they differ on is the pin
+          # drifting below go.mod's -- `auto` would download and say
+          # nothing, `local` would fail -- and buildpolicy already makes
+          # that drift impossible.
           go-version: "1.26.6"
           cache: false
 
@@ -141,7 +150,7 @@ jobs:
           cp dist/SHA256SUMS digests-${{ matrix.builder }}.txt
           echo "$(wc -l < digests-${{ matrix.builder }}.txt) artifacts"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: digests-${{ matrix.builder }}
           path: digests-${{ matrix.builder }}.txt
@@ -153,7 +162,7 @@ jobs:
     if: ${{ always() && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: digests-*
           merge-multiple: true
