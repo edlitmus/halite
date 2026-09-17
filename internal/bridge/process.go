@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -83,7 +84,31 @@ type Process struct {
 	// Windows the handle it closes is the job object, and closing that
 	// while the extension is running is what kills it.
 	releaseSandbox func()
+
+	// stderrTail is the last few lines the extension wrote to stderr,
+	// kept so that a process which dies can say why.
+	//
+	// The Stderr callback above already forwards every line, but a
+	// callback is somewhere *else* -- a log, if the host wired one, and
+	// nowhere if it did not. What a caller gets is the error, and the
+	// error said only "the extension exited without answering". An
+	// extension that fails says why on stderr and then exits, so the
+	// explanation and the error were arriving by different routes and
+	// only one of them reached whoever had to act on it.
+	//
+	// `internal/extconform` has kept a tail and appended it for exactly
+	// this reason since it was written; this is the same thing on the
+	// path that production and the tests actually use.
+	stderrMu   sync.Mutex
+	stderrTail []string
 }
+
+// stderrTailLines is how much of the extension's stderr is kept for the
+// error message. Enough for a Go runtime fatal error, which is the
+// shape most likely to be worth reading, and bounded because an
+// extension that fails in a loop must not be able to grow this without
+// limit.
+const stderrTailLines = 12
 
 // Info is what an extension declared about itself.
 type Info struct {
@@ -300,14 +325,17 @@ func (p *Process) readWithin(ctx context.Context, timeout time.Duration) (ext.Fr
 	select {
 	case got := <-done:
 		if got.err != nil {
-			if errors.Is(got.err, io.EOF) || errors.Is(got.err, io.ErrUnexpectedEOF) {
-				return ext.Frame{}, errors.New("the extension exited without answering")
+			if errors.Is(got.err, io.EOF) {
+				return ext.Frame{}, fmt.Errorf("the extension exited without answering%s", p.said())
+			}
+			if errors.Is(got.err, io.ErrUnexpectedEOF) {
+				return ext.Frame{}, fmt.Errorf("the extension exited part-way through a frame%s", p.said())
 			}
 			return ext.Frame{}, got.err
 		}
 		return got.frame, nil
 	case <-timer.C:
-		return ext.Frame{}, fmt.Errorf("%w: it did not answer within %s", ErrTimeout, timeout)
+		return ext.Frame{}, fmt.Errorf("%w: it did not answer within %s%s", ErrTimeout, timeout, p.said())
 	case <-ctx.Done():
 		return ext.Frame{}, ctx.Err()
 	}
@@ -370,10 +398,36 @@ func (p *Process) drainStderr(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 4096), 64<<10)
 	for scanner.Scan() {
+		line := scanner.Text()
+		p.recordStderr(line)
 		if p.opts.Stderr != nil {
-			p.opts.Stderr(scanner.Text())
+			p.opts.Stderr(line)
 		}
 	}
+}
+
+// recordStderr keeps the most recent lines, dropping the oldest.
+func (p *Process) recordStderr(line string) {
+	if strings.TrimSpace(line) == "" {
+		return
+	}
+	p.stderrMu.Lock()
+	defer p.stderrMu.Unlock()
+	p.stderrTail = append(p.stderrTail, line)
+	if len(p.stderrTail) > stderrTailLines {
+		p.stderrTail = p.stderrTail[len(p.stderrTail)-stderrTailLines:]
+	}
+}
+
+// said renders what the extension wrote to stderr, for an error message,
+// or "" if it wrote nothing.
+func (p *Process) said() string {
+	p.stderrMu.Lock()
+	defer p.stderrMu.Unlock()
+	if len(p.stderrTail) == 0 {
+		return ""
+	}
+	return "; it wrote to stderr: " + strings.Join(p.stderrTail, " | ")
 }
 
 func encodeOrNull(v any) (json.RawMessage, error) {

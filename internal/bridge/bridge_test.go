@@ -459,3 +459,37 @@ func TestTheDefaultSandboxDoesNotSetAnAddressSpaceLimit(t *testing.T) {
 		t.Errorf("a set limit is not described: %v", sandbox.Describe())
 	}
 }
+
+// An extension that dies says why, and the reason reaches the caller.
+//
+// # Why this is a test rather than a log line
+//
+// `Options.Stderr` has always forwarded every stderr line, and the
+// runtime wires it to a log. But a callback delivers the explanation
+// *somewhere else*, and the thing a caller acts on is the error — which
+// said only "the extension exited without answering". So an extension
+// that failed for a stated reason produced a failure with the reason
+// stripped out, and the two travelled by different routes.
+//
+// That is not hypothetical. `internal/extpillar`'s end-to-end test has
+// flaked twice on Linux CI with exactly that message and nothing else,
+// and the cause is still unknown *because* the message carries nothing:
+// the extension's own account of why it stopped was written, forwarded
+// to a nil callback, and dropped. `internal/extconform` has appended a
+// stderr tail since it was written; this is the same on the path
+// production uses.
+func TestAnExtensionThatDiesSaysWhyInTheError(t *testing.T) {
+	proc := startEcho(t, nil)
+	_, err := proc.Call(context.Background(), "die", nil, nil, nil)
+	if err == nil {
+		t.Fatal("an extension that died reported success")
+	}
+	if !strings.Contains(err.Error(), "exited") {
+		t.Errorf("the failure does not say it exited: %v", err)
+	}
+	// The part that matters: the extension's own words.
+	if !strings.Contains(err.Error(), "the reason this extension could not continue") {
+		t.Errorf("the error does not carry what the extension wrote to stderr, "+
+			"which is the whole diagnosis: %v", err)
+	}
+}
