@@ -235,8 +235,9 @@ func macDefaultsExport(c *exec.Context, domain, user string) (*value.Map, error)
 		return nil, err
 	}
 	res, err := c.Run(exec.Command{
-		Argv:  []string{"defaults", "export", domain, "-"},
-		RunAs: user,
+		Argv:           []string{"defaults", "export", domain, "-"},
+		RunAs:          user,
+		IgnoreExitCode: true,
 	})
 	if err != nil {
 		return nil, err
@@ -260,8 +261,9 @@ func macDefaultsReadType(c *exec.Context, domain, key, user string) (string, err
 		return "", err
 	}
 	res, err := c.Run(exec.Command{
-		Argv:  []string{"defaults", "read-type", domain, key},
-		RunAs: user,
+		Argv:           []string{"defaults", "read-type", domain, key},
+		RunAs:          user,
+		IgnoreExitCode: true,
 	})
 	if err != nil {
 		return "", err
@@ -281,7 +283,7 @@ func macDefaultsWrite(c *exec.Context, domain, key, vtype string, v any, user st
 	if err != nil {
 		return err
 	}
-	res, err := c.Run(exec.Command{Argv: argv, RunAs: user})
+	res, err := c.Run(exec.Command{Argv: argv, RunAs: user, IgnoreExitCode: true})
 	if err != nil {
 		return err
 	}
@@ -299,17 +301,45 @@ func macDefaultsDelete(c *exec.Context, domain, key, user string) error {
 	if key != "" {
 		argv = append(argv, key)
 	}
-	res, err := c.Run(exec.Command{Argv: argv, RunAs: user})
+	res, err := c.Run(exec.Command{Argv: argv, RunAs: user, IgnoreExitCode: true})
 	if err != nil {
 		return err
 	}
 	// `defaults delete` on a key or domain that is not there exits
-	// non-zero with "does not exist". That is the state we wanted, so it
-	// is not an error here; anything else is.
-	if res.Code != 0 && !strings.Contains(res.Stderr+res.Stdout, "does not exist") {
+	// non-zero, and that is the state we wanted, so it is not an error
+	// here; anything else is.
+	if res.Code != 0 && !macDefaultsAlreadyGone(res.Stderr+res.Stdout) {
 		return fmt.Errorf("defaults delete %s %s: %s", domain, key, firstLine(res.Stderr+res.Stdout))
 	}
 	return nil
+}
+
+// macDefaultsAlreadyGone reports whether a failing `defaults delete`
+// failed only because there was nothing there to remove.
+//
+// # Why these strings and not "does not exist"
+//
+// That is what this function used to look for, and `defaults` does not
+// say it. Nothing caught it because nothing ran it: no fixture in
+// mac_defaults_test.go carried a failing delete, so the branch was
+// written from what the author expected the tool to print and stayed
+// that way. Driven against the real `defaults` on macOS 27.0 (build
+// 26A5425a) it prints, on stderr and exiting 1:
+//
+//	Domain 'com.example.gone' not found.
+//	Could not find key 'NoSuchKey' in domain 'com.example.here'.
+//
+// for the two cases, and never the string the check was matching. So
+// every delete of something already absent was an error, which is why
+// `mac_defaults.delete`'s own documentation -- "Removing a key that is
+// not there is not an error" -- was false on every Mac.
+//
+// `mac_defaults.absent` mostly escaped it by reading the domain first
+// and returning converged without calling delete, so the damage landed
+// on the exec function and on the race between the read and the delete.
+func macDefaultsAlreadyGone(out string) bool {
+	return strings.Contains(out, "not found") ||
+		strings.Contains(out, "Could not find key")
 }
 
 // macDefaultsWriteArgv builds the `defaults write` invocation for a
