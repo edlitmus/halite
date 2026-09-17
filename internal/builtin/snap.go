@@ -312,14 +312,96 @@ func snapList(c *exec.Context) (map[string]snapInfo, error) {
 		}
 		return nil, fmt.Errorf("snap list: %s", firstLine(res.Stderr+res.Stdout))
 	}
-	return parseSnapList(res.Stdout), nil
+	snaps := parseSnapList(res.Stdout)
+	snapResolveTruncatedChannels(c, snaps)
+	return snaps, nil
+}
+
+// snapChannelTruncated reports whether `snap list` shortened a channel
+// rather than printing it.
+//
+// It marks a truncated cell with U+2026, and **`--unicode=never` does
+// not stop it** -- captured from snapd 2.76.3 on Ubuntu 22.04, which
+// prints, byte for byte:
+//
+//	lxd  5.0.3-80aeff7  29351  5.0/stable/…  canonical**  -
+//
+// where `snap info lxd` says the channel is `5.0/stable/ubuntu-22.04`.
+// The ASCII form is accepted too rather than assumed absent, since the
+// flag says it should be the one used.
+func snapChannelTruncated(channel string) bool {
+	return strings.HasSuffix(channel, "\u2026") || strings.HasSuffix(channel, "...")
+}
+
+// snapResolveTruncatedChannels replaces a shortened channel with the
+// real one, asking `snap info` for the snaps that need it.
+//
+// # Why this is not a cosmetic fix
+//
+// `snap.installed` compares the channel a tree declares against the one
+// this reports, and refreshes when they differ. A tree asking for
+// `5.0/stable/ubuntu-22.04` was being compared against
+// `5.0/stable/…`, which never matches -- so the state ran a real
+// `snap refresh` on every run and reported a change every time, on a
+// node that was already exactly as asked. A state that cannot converge
+// is worse than one that fails, because nothing about it looks wrong.
+//
+// `snap list` has no option to turn truncation off: `--all`, `--color`
+// and `--unicode` are the whole of it. So the shortened value cannot be
+// avoided, only noticed and replaced.
+//
+// The extra command runs only for the snaps that need it, which on the
+// machines this was captured from is one of three. A failure to resolve
+// leaves the truncated value rather than inventing one: a wrong channel
+// that looks whole is worse than one that visibly is not.
+func snapResolveTruncatedChannels(c *exec.Context, snaps map[string]snapInfo) {
+	for name, s := range snaps {
+		if !snapChannelTruncated(s.Channel) {
+			continue
+		}
+		if full, ok := snapTrackingFromInfo(c, name); ok {
+			s.Channel = full
+			snaps[name] = s
+		}
+	}
+}
+
+// snapTrackingFromInfo reads one snap's channel from `snap info`, which
+// prints it whole.
+//
+// The line is `tracking:     5.0/stable/ubuntu-22.04`, captured from the
+// same host as the table above.
+func snapTrackingFromInfo(c *exec.Context, name string) (string, bool) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"snap", "info", "--color=never", "--unicode=never", name},
+		IgnoreExitCode: true,
+	})
+	if err != nil || res.Code != 0 {
+		return "", false
+	}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "tracking:")
+		if !ok {
+			continue
+		}
+		if rest = strings.TrimSpace(rest); rest != "" && !snapChannelTruncated(rest) {
+			return rest, true
+		}
+	}
+	return "", false
 }
 
 // parseSnapList reads the table `snap list` prints:
 //
-//	Name    Version   Rev    Tracking       Publisher   Notes
-//	core22  20240408  1380   latest/stable  canonical*  base
-//	lxd     5.0.3     28373  5.0/stable     canonical*  -
+// Captured from snapd 2.76.3 on Ubuntu 22.04 rather than written from
+// the documentation, which is how the publisher came to be shown here
+// with one asterisk where a real one prints two, and the channel whole
+// where a real one truncates it:
+//
+//	Name    Version        Rev    Tracking       Publisher    Notes
+//	core20  20240416       2318   latest/stable  canonical**  base
+//	lxd     5.0.3-80aeff7  29351  5.0/stable/…   canonical**  -
+//	snapd   2.63           21759  latest/stable  canonical**  snapd
 //
 // The columns are read from the header rather than assumed by position.
 // snapd has changed this table — `Tracking` used to be `Channel`, and

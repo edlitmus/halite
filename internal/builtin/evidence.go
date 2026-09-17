@@ -501,9 +501,22 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	// ---- Never pointed at the tool it drives ----
 
-	"snap": {Level: exec.Assumed, Note: "nothing here has run against a real snapd, and " +
-		"the `snap list` fixtures were written from its documented columns rather than " +
-		"captured (DIVERGENCE 5.28)"},
+	"snap": {Level: exec.Captured, Note: "read against the real snapd 2.76.3 on Ubuntu " +
+		"22.04 and 26.04, which is what the fixtures had never been: they were written " +
+		"from the documented columns, and the documentation is wrong about two of them. " +
+		"A real `snap list` prints the publisher with **two** asterisks, and it " +
+		"**truncates a long channel with U+2026 -- which `--unicode=never` does not " +
+		"stop**, and for which `snap list` offers no option at all. `lxd` on 22.04 " +
+		"reported `5.0/stable/\u2026` where its channel is `5.0/stable/ubuntu-22.04`, so " +
+		"`snap.installed` compared a declared channel against a prefix, never matched, " +
+		"and would have run a real refresh on every run while reporting a change every " +
+		"time -- a state that cannot converge. The channel is resolved through `snap " +
+		"info` now, and `live_snap_test.go` checks every row against what snapd itself " +
+		"says rather than against this build's own reader. **The mutating half is still " +
+		"unwatched**: install, remove and refresh pull from the store, take a squashfs " +
+		"mount and a service, and removal can take data with it, so no test drives them " +
+		"on an unattended machine. What is demonstrated is the reading, which is where " +
+		"the defect was (DIVERGENCE 5.28)"},
 	"mac_power": {Level: exec.Assumed, Note: "the `pmset -g custom` parser was built against " +
 		"output captured by hand on macOS 26, and `live_mac_power_test.go` reads the real " +
 		"`pmset` -- but the setters run `pmset -a`, which needs root and changes a real Mac's " +
