@@ -306,7 +306,7 @@ func psUsesLibxo() bool { return runtime.GOOS == "freebsd" }
 // whole reason for preferring this interface.
 func psListLibxo(c *exec.Context) ([]psProcess, error) {
 	res, err := c.Run(exec.Command{Argv: []string{"ps", "--libxo=json", "-axwwo",
-		strings.Join(psColumns, ",")}})
+		strings.Join(psColumns, ",")}, IgnoreExitCode: true})
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +373,7 @@ func libxoField(m *value.Map, key string) string {
 // unmatchable one.
 func psListColumns(c *exec.Context) ([]psProcess, error) {
 	layout := psArgv(c)
-	res, err := c.Run(exec.Command{Argv: layout.Argv})
+	res, err := c.Run(exec.Command{Argv: layout.Argv, IgnoreExitCode: true})
 	if err != nil {
 		return nil, err
 	}
@@ -766,7 +766,8 @@ func psPkillFn(c *exec.Context, args *value.Map) (any, error) {
 // where a permission failure comes back in the words an operator will
 // recognise.
 func psSignalPID(c *exec.Context, pid int64, signal string) (any, error) {
-	res, err := c.Run(exec.Command{Argv: []string{"kill", "-" + signal, strconv.FormatInt(pid, 10)}})
+	res, err := c.Run(exec.Command{Argv: []string{"kill", "-" + signal, strconv.FormatInt(pid, 10)},
+		IgnoreExitCode: true})
 	if err != nil {
 		return nil, err
 	}
