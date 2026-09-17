@@ -138,6 +138,14 @@ func handle(call ext.Call) (any, error) {
 
 	case "exit":
 		os.Exit(3)
+
+	// Dies the way a real extension does: says why on stderr, then
+	// exits. The shipped aws_secrets_manager has exactly two failure
+	// paths and both are this shape, so the host's error has to carry
+	// the reason or the reason is lost.
+	case "die":
+		fmt.Fprintln(os.Stderr, "echo: the reason this extension could not continue")
+		os.Exit(1)
 	}
 	return nil, fmt.Errorf("echo has no function %q", call.Function)
 }
