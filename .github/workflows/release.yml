@@ -22,6 +22,16 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Run it without minting a tag.
+  #
+  # The reproducibility check -- the part of this workflow that is
+  # expensive to be wrong about -- could previously only be exercised by
+  # tagging, and a tag is not free: it is an object other people fetch,
+  # it changes what `git describe` reports for everything downstream of
+  # it, and its workflow run stays attached to the commit even after the
+  # tag is deleted. Verifying a build should not require pretending to
+  # release one.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -52,9 +62,25 @@ jobs:
           cache: false
       - run: make release-gate
 
+  # On a tag, this waits for the gate and does not run if it failed. On a
+  # manual run it proceeds either way -- and that is a narrower statement
+  # than it looks, so it is worth being exact about.
+  #
+  # The gate refuses to *release* an unverified root-mutating module, and
+  # nothing here publishes: this workflow builds and compares digests.
+  # What a manual run answers is "do two builders agree", which is a
+  # question about the build and not about what is fit to ship. Making it
+  # unanswerable until ten macOS modules have been driven on a Mac would
+  # tie a check on the build to work that has nothing to do with it.
+  #
+  # The gate still runs on a manual dispatch, and still reports. What it
+  # does not do is stop a question it was not written to answer. A tag --
+  # the only thing that is a release -- is unchanged: gate first, and
+  # nothing is built if it fails.
   build:
     name: build (${{ matrix.builder }})
     needs: gate
+    if: ${{ always() && (needs.gate.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: ${{ matrix.builder }}
     strategy:
       fail-fast: false
@@ -124,6 +150,7 @@ jobs:
   compare:
     name: two builders agree
     needs: build
+    if: ${{ always() && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
