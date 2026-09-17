@@ -218,6 +218,9 @@ func macKeychainPaths(c *exec.Context, verb string, extra ...string) ([]any, err
 		return nil, err
 	}
 	if res.Code != 0 {
+		if macKeychainNoDefault(res.Stderr + res.Stdout) {
+			return []any{}, nil
+		}
 		return nil, fmt.Errorf("security %s: %s", verb, firstLine(res.Stderr+res.Stdout))
 	}
 	var out []any
@@ -239,6 +242,34 @@ func macKeychainList(c *exec.Context, domain string) ([]any, error) {
 		extra = append(extra, "-d", domain)
 	}
 	return macKeychainPaths(c, "list-keychains", extra...)
+}
+
+// macKeychainNoDefault reports whether `security default-keychain`
+// failed only because this account has none, which is an answer rather
+// than a failure.
+//
+// # Why this matters more than it looks
+//
+// An account that has never signed in graphically has no default
+// keychain, and `security` treats asking as an error, exiting non-zero
+// with:
+//
+//	security: SecKeychainCopyDefault: A default keychain could not be
+//	found.
+//
+// **root is such an account on a stock Mac**, and root is what
+// halite-node runs as. So `mac_keychain.default_keychain` failed on
+// every real node, while working perfectly for the developer running
+// the tests from a login session. It was found by running this
+// package's existing read test under `sudo` for the first time --
+// nothing about the module changed, only the account asking.
+//
+// The function already meant to handle "there is no default": it
+// returns "" for an empty list. That branch was unreachable, because
+// the error above fired first. DIVERGENCE 5.117.
+func macKeychainNoDefault(out string) bool {
+	return strings.Contains(out, "A default keychain could not be found") ||
+		strings.Contains(out, "SecKeychainCopyDefault")
 }
 
 // keychainCert is one certificate read from `security find-certificate`.
@@ -359,10 +390,42 @@ func macKeychainUninstall(c *exec.Context, name, keychain string) error {
 	if err != nil {
 		return err
 	}
-	if res.Code != 0 && !strings.Contains(res.Stderr+res.Stdout, "could not be found") {
+	if res.Code != 0 && !macKeychainNothingToDelete(res.Stderr+res.Stdout) {
 		return fmt.Errorf("security delete-certificate -c %s: %s", name, firstLine(res.Stderr+res.Stdout))
 	}
 	return nil
+}
+
+// macKeychainNothingToDelete reports whether a failing
+// `security delete-certificate` failed only because the certificate was
+// not there, which is the state `uninstall` was asked for.
+//
+// # Two subcommands, two different sentences
+//
+// This used to look for "could not be found", which is the right string
+// for the *wrong* command. `security find-certificate` says it, exiting
+// 44:
+//
+//	security: SecKeychainSearchCopyNext: The specified item could not be
+//	found in the keychain.
+//
+// and `macKeychainCerts` reads that correctly. `security
+// delete-certificate` says something else entirely, exiting 1:
+//
+//	Unable to delete certificate matching "halite-no-such-cert"
+//
+// Both captured from the real `security` on macOS 27.0 (build
+// 26A5425a). So `uninstall` on a certificate that was already gone
+// returned an error, and a tree carrying `mac_keychain.uninstall` under
+// `module.run` failed on every run after the first -- a state that
+// cannot converge, which is the shape DIVERGENCE 5.113 found in
+// `mac_defaults` and 5.112 found in `snap`. DIVERGENCE 5.117.
+//
+// The find spelling is kept as well. It costs nothing, and this is a
+// message that has differed between macOS releases before.
+func macKeychainNothingToDelete(out string) bool {
+	return strings.Contains(out, "Unable to delete certificate matching") ||
+		strings.Contains(out, "could not be found")
 }
 
 func macKeychainFriendlyName(c *exec.Context, path, password string) (any, error) {
