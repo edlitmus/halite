@@ -2422,17 +2422,29 @@ checks, and making them a single command is worth more than it appears.
 
 | Tier | Platforms | Meaning |
 |---|---|---|
-| 1 | Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky, Alma 8 and 9; Amazon Linux 2023; Windows Server 2019, 2022, 2025; all on amd64 and arm64 | Full CI, functional tests, and packages |
-| 2 | SUSE 15, Alpine 3.19 and later, macOS 14 and later, FreeBSD 14 | Built and unit-tested; functional tests on a subset |
+| 1 | Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky, Alma 8 and 9; Amazon Linux 2023; FreeBSD 14 and 15; Windows Server 2019, 2022, 2025; all on amd64 and arm64 | Full CI, functional tests, and packages |
+| 2 | SUSE 15, Alpine 3.19 and later, macOS 14 and later | Built and unit-tested; functional tests on a subset |
 | 3 | OpenBSD, NetBSD, Solaris and illumos, Linux on riscv64, ppc64le, s390x | Compiles and is published; community-supported |
 
-The hub and the API are supported on tier 1 Linux only. Nodes are supported on everything.
+The hub and the API are supported on tier 1 Linux and FreeBSD. Nodes are supported on everything.
+
+FreeBSD is tier 1 because it is where this project is developed, and the promise the tier makes is
+already kept there: it has both CI legs, and the functional coverage is the broadest of any platform
+— `jail`, `pf`, `zfs`, UFS quotas, `sysrc` and the rc.d scripts are exercised against the real tools
+on a real machine, several of them on no other platform at all. The tier is a statement about what is
+tested, not about how many people run it.
+
+Two honest qualifications. **The architecture clause is a goal, not a description**: tier 1 CI runs
+on amd64 for every platform in it, and the only arm64 machine this project has is a single Ubuntu
+host. **Packages are unbuilt for every tier 1 platform**, FreeBSD included; section 27.2 describes
+what a release will carry, and the release workflow currently verifies reproducibility rather than
+producing artifacts.
 
 ### 27.2 Artifacts
 
 | Artifact | Contents |
 |---|---|
-| `.deb`, `.rpm` | Per binary, built with nfpm: systemd unit, sysusers, tmpfiles, logrotate, the manual page, default configuration under `/etc/halite/`, and a postinstall that creates the account and directories but does not start a service with a default configuration |
+| `.deb`, `.rpm` | Per binary: systemd unit, sysusers, tmpfiles, logrotate, the manual page, default configuration under `/etc/halite/`, and a postinstall that creates the account and directories but does not start a service with a default configuration |
 | `.msi` | Windows service registration, an event log source, and configuration under `%PROGRAMDATA%\Halite` |
 | `.pkg` | macOS with a launchd plist and the manual page |
 | FreeBSD package | rc.d script and the manual page |
@@ -2440,6 +2452,13 @@ The hub and the API are supported on tier 1 Linux only. Nodes are supported on e
 | Container image | `FROM scratch` with the static binary, CA bundle, and time zone data. No shell, no package manager. Separate images per binary. |
 | SBOM and provenance | Per artifact, section 4.3 |
 | Manual pages | `halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc. Section 8 because each command administers a machine and most need root. They are a deliverable in their own right and not only a package's contents: a machine built from source and installed with `make install` gets them and does not get `docs/`. Every subcommand appears in the page for its binary, held there by a test. |
+
+**This table specifies contents, not tooling.** What a `.deb` or a container image must *contain*
+is a promise to whoever installs it; which program assembles it is an implementation choice, and
+naming one here would freeze a decision that should stay open as better tools appear or the
+constraints change. Section 4.3's requirements — reproducibility, no cgo, no network at build time,
+an SBOM taken from the shipped binary, a signature and an attestation per artifact — bind whatever
+is used, and are the part that is not negotiable.
 
 ### 27.3 Filesystem layout
 

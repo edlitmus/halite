@@ -99,12 +99,21 @@ jobs:
       # Vendored and offline, which is the point: the build must not be
       # able to fetch anything, so that what it produces depends on the
       # tree alone.
-      - run: make release
+      #
+      # `dist` rather than `release`: `make release` builds the three
+      # binaries for the *host*, and this job used to compare those three
+      # digests. A tag produces fifty-one artifacts across seventeen
+      # targets, so that checked three of them, all for one platform --
+      # and a cross-compile that was not reproducible for windows/arm64
+      # could not have been caught by the job whose whole purpose is
+      # catching it. `make dist` cross-compiles the lot and writes
+      # dist/SHA256SUMS.
+      - run: make dist
 
       - name: digests
         run: |
-          cd bin
-          sha256sum halite-node halite-hub halite-api | tee ../digests-${{ matrix.builder }}.txt
+          cp dist/SHA256SUMS digests-${{ matrix.builder }}.txt
+          echo "$(wc -l < digests-${{ matrix.builder }}.txt) artifacts"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -123,16 +132,29 @@ jobs:
           merge-multiple: true
 
       # Compared by digest rather than by artifact, because the question
-      # is whether the bytes match and a diff of two short files says
-      # exactly which binary did not.
+      # is whether the bytes match and a diff of two manifests says
+      # exactly which of the fifty-one did not.
+      #
+      # An empty or truncated manifest has to fail rather than compare
+      # equal to another empty one: two builders that both produced
+      # nothing agree, and that is the one way this check could pass
+      # while testing nothing.
       - name: compare
         run: |
           set -e
           ls -l digests-*.txt
           a=digests-ubuntu-24.04.txt
           b=digests-ubuntu-22.04.txt
+          # Seventeen targets in SPEC 27.1's list, three binaries each.
+          expected=51
           for f in "$a" "$b"; do
             test -s "$f" || { echo "$f is missing or empty"; exit 1; }
+            n=$(wc -l < "$f")
+            if [ "$n" -lt "$expected" ]; then
+              echo "$f lists $n artifacts, fewer than the $expected this build produces."
+              echo "A short manifest would compare equal to another short one."
+              exit 1
+            fi
           done
           if diff -u "$a" "$b"; then
             echo "two builders produced identical binaries"

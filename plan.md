@@ -872,9 +872,9 @@ Unchanged since the last revision, and verified again here.
 
 ### 3.5 Packaging, release and CI (SPEC 4.3, 27.2)
 
-- **No artifact in SPEC 27.2 is built.** No nfpm config, no `.msi`, no
-  `.pkg`, no container image for the product itself, no SBOM, no
-  provenance attestation. `make release` builds bare binaries into `bin/`
+- **No artifact in SPEC 27.2 is built.** No packaging configuration of
+  any kind, no `.msi`, no `.pkg`, no container image for the product
+  itself, no SBOM, no provenance attestation. `make release` builds bare binaries into `bin/`
   and has never been run. `contrib/` has systemd units, FreeBSD rc.d
   scripts and example configuration, and that is the whole packaging
   story.
@@ -960,6 +960,171 @@ developed on. That is the argument for CI restated as a measurement,
 four hours after the argument stopped being necessary — and the last of
 them is silent data loss in a property `docs/DIVERGENCE.md` advertises
 as something Salt's syndic does not do.
+
+### 3.6 Building the artifacts: an order, and four decisions
+
+Asked for 2026-09-16. §3.5 says no artifact in SPEC 27.2 is built; this
+says in what order they should be, and what has to be decided by a person
+first. The first of the four is answered, in the same sitting: the
+Makefile stays the producer.
+
+**What is emitted today, precisely.** `make cross` already
+cross-compiles all three binaries for all seventeen targets into `dist/`
+— fifty-one artifacts — with the release environment and build flags.
+`make build-all` is a different thing: it runs `go build ./...` with no
+`-o` to prove the targets compile, and discards. `make release` builds
+the three binaries for the *host* into `bin/`.
+
+An earlier revision of this paragraph said nothing was emitted, which was
+wrong and would have sent the first step off to build a producer that
+exists. What is missing is not the binaries; it is a manifest over them,
+and a gate that reads it.
+
+**Reproducibility is the constraint that shapes all of it.** SPEC 4.3
+requires two builders to agree on every tag, and an archive is much
+easier to make unreproducible than a binary: tar and zip embed mtimes,
+entry order, uid, gid and mode; `.deb` and `.rpm` embed build timestamps
+of their own. Every step below has to pin those the way `SOURCE_DATE_EPOCH`
+already pins the binaries, and the existing "two builders agree" job is
+the natural gate to extend — it should compare *artifact* digests, not
+only binary ones. Getting that wrong is discovered late and is tedious
+to unpick, which is the argument for doing the machinery before the
+variety.
+
+**The order.** By what this estate actually uses, and by what each step
+unblocks rather than by how hard it is.
+
+1. ~~**Emit and checksum the binaries.**~~ **Done 2026-09-16.**
+   `make cross` already emitted them; `make dist` adds
+   `dist/SHA256SUMS` over the fifty-one, sorted under `LC_ALL=C` and in
+   `sha256sum -c` format on both FreeBSD and Linux. `release.yml` now
+   builds with `make dist` and compares *that* between its two builders,
+   where it previously compared the three host binaries in `bin/` — three
+   of fifty-one, all one platform, so a cross-compile that was not
+   reproducible for windows/arm64 could not have been caught by the job
+   whose purpose is catching it. The manifest is also what every later
+   artifact kind attaches to: a tarball, a package or an image is
+   reproducible against a line in it, and SPEC 27.2's SBOM and signature
+   are per artifact, which is per line.
+2. **Tarballs.** SPEC 27.2 describes them as "static binaries plus
+   example configuration and the manual pages, for air-gapped and
+   container use", and every one of those inputs already exists in
+   `contrib/`. This is the artifact this fleet would actually use, since
+   §0 records that it installs from source, and it is the cheapest place
+   to get the reproducible-archive discipline right before anything more
+   elaborate depends on it.
+3. **SBOM, signatures and provenance.** SPEC 4.3 requires all three per
+   artifact, and doing them *now* rather than after the artifact kinds
+   multiply means each later kind inherits the machinery instead of
+   retrofitting it. The SBOM is specified as CycloneDX generated from
+   `go version -m` on the *shipped binary* — "what linked, not what was
+   declared" — which is a small in-repo tool over output this project
+   already parses, and therefore does not need a new external dependency.
+4. **The FreeBSD package.** Tier 1 as of §6.12, 80% of this estate's
+   production, and the rc.d scripts are already written. It is the
+   native package with the highest value here and the smallest gap
+   between what exists and what ships.
+5. **`.deb` and `.rpm`.** The largest surface, and the one with real
+   missing *contents*: SPEC 27.2 says these carry a systemd unit,
+   sysusers, tmpfiles, logrotate, the manual page, default configuration
+   and a postinstall that creates the account and directories **but does
+   not start a service with a default configuration**. Only the units and
+   the manual pages exist; sysusers, tmpfiles, logrotate and the
+   postinstall are unwritten, and SPEC 27.3's "every packaged file and
+   directory has an explicit mode and owner. No file is created with a
+   mode derived from the process umask" is a property that has to be
+   asserted somewhere rather than hoped for.
+6. **Container images.** `FROM scratch`, one per binary, static binary
+   plus CA bundle and tzdata. Straightforward once 1 and 3 exist.
+7. **`.msi` and `.pkg`.** Last: the most platform-specific tooling and
+   the least use here. Windows and macOS are tier 1 and tier 2
+   respectively, and neither is run in this estate.
+
+**Four decisions that need a person.**
+
+- ~~**How a packaging tool is obtained.**~~ **Answered 2026-09-16: the
+  Makefile stays the producer.** SPEC 27.2 no longer names a tool,
+  because the table specifies contents; what follows is which shape was
+  chosen and what was rejected.
+
+  The constraint applies to anything picked: SPEC 4.3 disables the build
+  network and pins the Go toolchain *by digest from an internal mirror*,
+  and a Go packaging tool added to `go.mod` would put a module outside
+  the section 4.2 allowlist into the dependency graph, which CI fails on
+  by design. So any such tool is a pinned external binary fetched by
+  digest, on the toolchain's terms — never a module.
+
+  **GoReleaser was evaluated and is not the fit here**, for one specific
+  reason rather than a general objection. Its clean shape for this
+  project would be `builder: prebuilt` — the Makefile builds, GoReleaser
+  only assembles — and that is **GoReleaser Pro**. Checked against
+  v2.18.1: `internal/builders` carries `golang`, `rust`, `zig`, `bun`,
+  `deno`, `node`, `poetry` and `uv`, and no `prebuilt`; the documentation
+  page for it is marked Pro. With the OSS build (MIT), GoReleaser *owns*
+  `go build`, which puts `-trimpath`, `-buildvcs=true`, `CGO_ENABLED=0`,
+  `-mod=vendor`, `GOPROXY=off` and the version ldflags in a second file
+  alongside the Makefile. Those flags are not incidental — they are what
+  SPEC 4.3's guarantees rest on — and two lists that must agree is this
+  repository's commonest defect. It is neutralisable with a test holding
+  the two together, in the idiom of `TestEveryPlatformTheSpecTiersIsBuilt`,
+  so this is a cost rather than a disqualification.
+
+  What tips it is that the two things SPEC specifies most *precisely* are
+  the two GoReleaser delegates onward. The SBOM is required to be
+  CycloneDX from `go version -m` **on the shipped binary** — "what
+  linked, not what was declared" — and GoReleaser's `sboms` shells out to
+  syft, which produces a different and richer document. Signing delegates
+  to cosign or gpg. So adopting it wholesale means three pinned externals
+  where one or none will do. In its favour, and worth recording because
+  it is the part that is hard: reproducibility is supported, with
+  `mod_timestamp` on builds and `mtime`, `mode` and deterministic
+  ordering on archives.
+
+  **The shape chosen.** The Makefile stays the single source of build
+  truth — it already emits reproducible binaries and is what the
+  two-builder gate verifies — and everything else is assembled around it:
+
+  - *Archives and checksums*: `archive/tar`, `compress/gzip`,
+    `archive/zip` and `crypto/sha256`. Standard library, no tool, and
+    the place where reproducible-archive discipline gets established
+    once (fixed mtime from `SOURCE_DATE_EPOCH`, sorted entries, fixed
+    uid, gid and mode).
+  - *SBOM*: a small in-repo tool, because the specification describes a
+    transform of `go version -m` output this project already parses.
+  - *`.deb` and `.rpm`*: the only place an external tool earns its keep,
+    and even there it is optional — `.deb` is an `ar` archive of two
+    tarballs and `.rpm` a documented header plus a cpio payload, both
+    emittable from the standard library. Start with a pinned tool if it
+    is quicker; the format is the fallback, not a rewrite.
+  - *Containers and `.msi`/`.pkg`*: unchanged in the order below, and
+    each can take its own tool on the same terms.
+
+  Net new external dependencies: at most one, possibly none, and none of
+  them in `go.mod`. **Before any of it is committed to, the two-builder
+  gate has to compare artifact digests rather than only binary ones, and
+  archive reproducibility has to be proven on a throwaway tag** — cheap
+  now, expensive to discover after five artifact kinds depend on it.
+- **Where the signing key lives.** A detached signature per artifact and
+  an in-toto/SLSA attestation naming the source commit, the toolchain
+  digest and the builder identity. This estate already keeps PGP keys
+  for pillar; whether release signing shares that custody, and whether
+  a GitHub-hosted runner is allowed to hold the key at all, is Ed's
+  call. §3.5 already notes that hosted runners are a dependency SPEC
+  does not discuss, and this is where that stops being academic.
+- **How far the `-fips` set goes.** SPEC 27.4 describes a parallel
+  artifact set suffixed `-fips` and does not limit it by platform. Taken
+  literally that doubles every row above. Linux-only is the defensible
+  reading — it is where a FIPS kernel exists — but the specification
+  should say so rather than the build quietly deciding.
+- **Whether tier 3 ships packages or only binaries.** §3.5 records that
+  `cross` now publishes tier 3, nine more binaries that nothing has run.
+  Tier 3 promises "compiles and is published", which binaries satisfy;
+  packaging them would be a promise the tier does not make.
+
+**What this does not change.** `make install` from source keeps working
+and stays the path this fleet uses. Packaging is for other people's
+machines and for air-gapped copies of this one, which is the honest
+framing §0 already gives it.
 
 ---
 
@@ -1157,6 +1322,49 @@ unchanged.
    recorded. It is a security control, so the third is not obviously
    wrong; that is why it is here rather than in §7.
 
+12. ~~**Should FreeBSD be SPEC 27.1 tier 1?**~~ **Answered 2026-09-16:
+    yes, and the table has moved.** §0 raised it and deferred it here.
+    The reasoning it was deferred *with* turned out to be the reasoning
+    that settles it: FreeBSD carries 80% of this estate's production, it
+    is four hosts against one Ubuntu, and it was already past tier 2's
+    promise in both directions — CI runs the whole unit suite *and* a
+    functional leg on every change.
+
+    **What the move obliges, and what it does not.** Tier 1 promises
+    full CI, functional tests, and packages.
+
+    - *Full CI* — kept. `test (freebsd)` and the fleet's `freebsd` leg
+      both run on every change.
+    - *Functional tests* — kept, and more broadly than any other
+      platform: `jail`, `pf`, `zfs`, UFS quotas, `sysrc` and the rc.d
+      scripts run against the real tools, several on no other platform
+      at all.
+    - *Packages* — **not kept, and not FreeBSD's problem alone.** No
+      packaging exists for any platform: there is no packaging
+      configuration in the tree and the release workflow verifies
+      reproducibility rather than producing artifacts. The consequence below discounts
+      it twice, since this fleet installs from source.
+
+    Two things the move makes it honest to state plainly, both of which
+    were true before and unsaid:
+
+    - **The architecture clause is a goal.** Tier 1 says "all on amd64
+      and arm64" and every tier 1 CI leg runs on amd64; the project's
+      only arm64 machine is one Ubuntu host. That was already true of
+      Windows and Linux and is now also true of FreeBSD. FreeBSD/arm64
+      is cross-built and untested, like the rest.
+    - **The hub already runs on FreeBSD.** SPEC 27.1 said "the hub and
+      the API are supported on tier 1 Linux only" while this project's
+      own hub has been serving from a FreeBSD host throughout. The
+      sentence now says Linux and FreeBSD, which is a description rather
+      than a new promise.
+
+    The real cost of the move is not in this list: tier 1 is a promise
+    about what *stays* tested. The FreeBSD legs were already the ones
+    most likely to be waved through, because the development host makes
+    them feel covered — §5.77's `/sbin/shutdown` failure passed locally
+    and failed in CI for exactly that reason.
+
 Question 9 of the previous revision — strict undefined (33.4) — is
 answered and struck: `CatUndefined` is implemented and the migration
 report emits the undefined-reference row SPEC 28.5 requires.
@@ -1178,14 +1386,20 @@ moved, and two of them moved a long way.
 
 Three consequences, before the list:
 
-- **FreeBSD carries 80% of production and is SPEC 27.1 tier 2.** Tier 2
-  promises "built and unit-tested; functional tests on a subset"; tier 1
-  promises full CI, functional tests and packages. CI already runs the
-  whole unit suite on FreeBSD on every change, which is more than tier 2
-  asks for and less than tier 1 describes. Whether the table should move
-  is a question for §6 rather than a commit — but ranking Linux work
-  above FreeBSD work, which this document did, was ranking one host
-  above four.
+- **FreeBSD carries 80% of production and is SPEC 27.1 tier 1**, as of
+  2026-09-16. This paragraph used to end "whether the table should move
+  is a question for §6 rather than a commit"; it has been decided and the
+  table has moved. Tier 2 promised "built and unit-tested; functional
+  tests on a subset", and FreeBSD was already past that in both
+  directions: CI runs the whole unit suite *and* a functional leg on
+  every change, and the live coverage — `jail`, `pf`, `zfs`, UFS quotas,
+  `sysrc`, the rc.d scripts — is the broadest of any platform, several
+  of those on no other platform at all. Ranking Linux work above FreeBSD
+  work, which this document did, was ranking one host above four.
+
+  What the move obliges is in §6. Two of tier 1's three promises are
+  already kept; the third, packages, is unbuilt for **every** tier 1
+  platform and is discounted twice over here by the consequence below.
 - **Deploying from source demotes packaging and promotes upgrades.**
   SPEC 27.2's `.deb`, `.rpm`, `.msi` and `.pkg` serve nobody on this
   fleet. What `make install` from source *guarantees* is that a hub and
