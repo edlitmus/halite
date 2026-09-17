@@ -419,3 +419,98 @@ func TestSnapRefusesOffLinux(t *testing.T) {
 		t.Error("snap.installed was accepted off linux")
 	}
 }
+
+// `snap list` truncates a long channel, and `--unicode=never` does not
+// stop it.
+//
+// The fixture is byte-for-byte what snapd 2.76.3 printed on Ubuntu
+// 22.04, ellipsis included. `snap info lxd` on the same host reports
+// `tracking: 5.0/stable/ubuntu-22.04`, so the table's value is not the
+// channel — it is a prefix of it with U+2026 on the end.
+//
+// This matters because `snap.installed` compares a declared channel
+// against this one and refreshes when they differ: a tree asking for
+// `5.0/stable/ubuntu-22.04` was compared against `5.0/stable/…`, never
+// matched, and ran a real refresh on every run while reporting a change
+// every time. The module's own doc fixture said `5.0/stable`, whole and
+// with one asterisk on the publisher, because it was written from the
+// documentation rather than captured.
+func TestSnapListTruncatesALongChannel(t *testing.T) {
+	const real = "Name    Version        Rev    Tracking       Publisher    Notes\n" +
+		"core20  20240416       2318   latest/stable  canonical**  base\n" +
+		"lxd     5.0.3-80aeff7  29351  5.0/stable/…   canonical**  -\n" +
+		"snapd   2.63           21759  latest/stable  canonical**  snapd\n"
+
+	got := parseSnapList(real)
+	if len(got) != 3 {
+		t.Fatalf("parsed %d snaps, want 3: %v", len(got), got)
+	}
+
+	// The rows that are not truncated read whole, publisher asterisks
+	// and all.
+	if c := got["core20"].Channel; c != "latest/stable" {
+		t.Errorf("core20 channel = %q, want latest/stable", c)
+	}
+	if p := got["core20"].Publisher; p != "canonical**" {
+		t.Errorf("core20 publisher = %q; a real snapd prints two asterisks", p)
+	}
+	if v := got["lxd"].Version; v != "5.0.3-80aeff7" {
+		t.Errorf("lxd version = %q", v)
+	}
+
+	// And the truncated one is recognised as truncated rather than
+	// taken for a channel.
+	if !snapChannelTruncated(got["lxd"].Channel) {
+		t.Errorf("lxd's channel %q was not recognised as truncated, so it would be "+
+			"compared against a declared channel and never match", got["lxd"].Channel)
+	}
+	for _, whole := range []string{"latest/stable", "5.0/stable/ubuntu-22.04", ""} {
+		if snapChannelTruncated(whole) {
+			t.Errorf("%q was called truncated and is not", whole)
+		}
+	}
+	// The ASCII spelling counts too, since --unicode=never says it
+	// should be the one used.
+	if !snapChannelTruncated("5.0/stable/...") {
+		t.Error("the ASCII ellipsis was not recognised")
+	}
+}
+
+// The whole channel is read out of `snap info`.
+//
+// Captured from the same host: the line is `tracking:` followed by the
+// channel, and it is not truncated there.
+func TestTheWholeChannelComesFromSnapInfo(t *testing.T) {
+	const info = "name:      lxd\n" +
+		"summary:   LXD - container and VM manager\n" +
+		"publisher: Canonical**\n" +
+		"license:   unset\n" +
+		"snap-id:   J60k4JY0HppjwOjW8dZdYc8obXKxujRu\n" +
+		"tracking:     5.0/stable/ubuntu-22.04\n" +
+		"refresh-date: today at 09:12 UTC\n"
+
+	key := (exec.Command{Argv: []string{
+		"snap", "info", "--color=never", "--unicode=never", "lxd"}}).String()
+	c := &exec.Context{
+		Runner: &exec.RecordingRunner{Responses: map[string]exec.Result{key: {Stdout: info}}},
+		Lookup: func(name string) string { return "/usr/bin/" + name },
+	}
+
+	got, ok := snapTrackingFromInfo(c, "lxd")
+	if !ok {
+		t.Fatal("the tracking line was not found")
+	}
+	if got != "5.0/stable/ubuntu-22.04" {
+		t.Errorf("tracking = %q, want 5.0/stable/ubuntu-22.04", got)
+	}
+
+	// A snap whose info cannot be read leaves the truncated value
+	// rather than inventing one.
+	empty := &exec.Context{
+		Runner: &exec.RecordingRunner{Default: exec.Result{Code: 1}},
+		Lookup: func(name string) string { return "/usr/bin/" + name },
+	}
+	if v, ok := snapTrackingFromInfo(empty, "lxd"); ok {
+		t.Errorf("a failed `snap info` produced %q rather than nothing", v)
+	}
+}

@@ -18,6 +18,38 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A snap state that could never have settled
+
+The snap module had never been run against a real snapd; its test
+fixtures were written from the documented output rather than captured
+from a machine. Two Ubuntu hosts settled it in an hour, and the
+documentation is wrong about the thing that matters.
+
+`snap list` **shortens a long channel**, printing a prefix and an
+ellipsis where the channel should be — and the flag that exists to keep
+its output plain does not stop it, nor is there any way to ask for the
+whole value. On one host the channel read as `5.0/stable/…` where it is
+really `5.0/stable/ubuntu-22.04`.
+
+The state that keeps a snap on a channel compares what a tree asks for
+against what that table reports. Those could never match for a channel
+long enough to be shortened, so the state would have refreshed the snap
+on **every run**, reporting a change every time, on a machine already in
+exactly the state asked for. A state that cannot settle is worse than
+one that fails: the run is green, the change is reported, and the
+machine was right before and after.
+
+The channel is now read from a command that prints it whole, for the
+snaps that need it and no others. A snap whose channel cannot be
+resolved keeps the shortened value rather than gaining an invented one —
+a wrong answer that looks complete is worse than one that visibly is not.
+
+The live test checks each channel against what snapd itself reports
+rather than against this build's own reader, so the two cannot agree by
+sharing a mistake. Installing and removing snaps is still untested and
+recorded as such: it pulls from the store, and removal can take data
+with it, which is not something to do on an unattended machine.
+
 ### A dying extension's reason lost to a race between its own pipes
 
 An extension that fails writes the reason to stderr and exits, and the
@@ -36,6 +68,7 @@ The test that flaked still passes whenever the scheduler is kind, so it
 is not the one guarding this: the extension gained a death that closes
 stdout *first* and writes its reason afterwards, which makes the losing
 order the only order.
+
 
 ### The estate's tree, from 27 errors to none
 

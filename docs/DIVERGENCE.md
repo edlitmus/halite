@@ -3327,11 +3327,10 @@ as one on an older node and reports every snap as tracking `canonical*`.
 A row whose field count does not match the header is skipped rather than
 guessed at.
 
-None of this has been run against a real snapd. The tests supply
-`snap list`'s output and record what would be run; whether `snap refresh
---channel=` switches a channel the way this expects is a question for a
-node with snapd on it, which CI's Ubuntu runners have and this build
-does not yet ask them.
+~~None of this has been run against a real snapd.~~ **It has now, and
+the fixtures were wrong** — see 5.112. Whether `snap refresh --channel=`
+switches a channel the way this expects is still a question for a node
+somebody is willing to change, and remains unanswered.
 
 ### 5.29 The chaos layer, and what building it cost
 
@@ -9645,6 +9644,71 @@ binaries: **7 failures to 6**, and the six that remain are four
 `git.latest` on a GitLab deploy key this lab does not have, plus the two
 states skipped behind them. Nothing in the run is a defect in this
 build.
+
+### 5.112 `snap list` truncates a channel, and `--unicode=never` does not stop it
+
+`evidence.go` recorded `snap` as `Assumed` in these words: "nothing here
+has run against a real snapd, and the `snap list` fixtures were written
+from its documented columns rather than captured". That is 5.31's shape
+exactly, and it cost the same way again. Two Ubuntu hosts in the lab
+(contrib/tofu) settled it in an hour.
+
+**The table is not what the documentation describes.** The module's own
+doc comment carried this, written from the documented columns:
+
+	Name    Version   Rev    Tracking       Publisher   Notes
+	core22  20240408  1380   latest/stable  canonical*  base
+	lxd     5.0.3     28373  5.0/stable     canonical*  -
+
+snapd 2.76.3 on Ubuntu 22.04 prints this:
+
+	Name    Version        Rev    Tracking       Publisher    Notes
+	core20  20240416       2318   latest/stable  canonical**  base
+	lxd     5.0.3-80aeff7  29351  5.0/stable/…   canonical**  -
+	snapd   2.63           21759  latest/stable  canonical**  snapd
+
+Two differences. The publisher carries **two** asterisks, which is
+cosmetic. The channel is **truncated**, which is not: the cell holds a
+prefix and a U+2026, and `snap info lxd` on the same host reports the
+channel as `5.0/stable/ubuntu-22.04`.
+
+**`--unicode=never` does not suppress it**, which is the part that makes
+this hard to anticipate — the module passes that flag precisely to keep
+the output ASCII, and snapd emits the ellipsis anyway. Nor is there a way
+to ask for the whole value: `--all`, `--color` and `--unicode` are the
+whole of `snap list`'s options.
+
+**What it cost.** `snap.installed` compares the channel a tree declares
+against the one `snap list` reports and refreshes when they differ. A
+tree asking for `5.0/stable/ubuntu-22.04` was compared against
+`5.0/stable/…`, never matched, and would have run a real `snap refresh`
+on every run while reporting a change every time — on a node already in
+exactly the state asked for. **A state that cannot converge is worse
+than one that fails**, because nothing about it looks wrong: the run is
+green, the change is reported, and the node is correct before and after.
+
+The channel is resolved through `snap info` now, for the rows that need
+it and no others, and a row that cannot be resolved keeps its truncated
+value rather than gaining an invented one — a wrong channel that looks
+whole is worse than one that visibly is not.
+
+#### What was verified, and what still is not
+
+`live_snap_test.go` reads the real `snap list` on Ubuntu 22.04 and 26.04,
+checks that no row comes back truncated, and — the part that matters —
+checks each channel against what `snap info` says rather than against
+this build's own reader, so the two cannot agree by sharing a mistake.
+It found `lxd=5.0/stable/ubuntu-22.04` on 22.04 and
+`hwctl=latest/stable/ubuntu-26.04` on 26.04, both of which the table had
+shortened. Confirmed by removing the resolution on the live host and
+watching both tests fail with the truncated value in the message.
+
+`evidence.go` moves `snap` from `Assumed` to `Captured`, and **not
+further**: install, remove and refresh pull from the store, take a
+squashfs mount and a service, and removal can take data with it, so
+nothing drives them on an unattended machine. What is demonstrated is the
+reading, which is where the defect was. That leaves the release gate of
+SPEC 4.3 naming nine modules rather than ten, all of them macOS.
 
 ## 6. Everything else not started
 
