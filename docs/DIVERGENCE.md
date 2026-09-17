@@ -1062,7 +1062,9 @@ the real `defaults` against a throwaway domain, and `mac_power`, whose
 `live_mac_power_test.go` reads the real `pmset` — both on a developer's
 Mac, and no CI leg is one. `mac_defaults`'s live leg needs
 `HALITE_SYSTEM_LIVE=1` because it writes; `mac_power`'s reads only and
-runs on any `go test` on a Mac.
+runs on any `go test` on a Mac. `mac_defaults` has since been driven
+under `sudo` as well, which is what moved it to `Hardware` (5.113); the
+rest of the row is unchanged.
 
 OpenBSD still does not build — `syscall.RLIMIT_AS` does not exist there
 — and is not in the shipped target list, so nothing claims it does.
@@ -9708,7 +9710,476 @@ further**: install, remove and refresh pull from the store, take a
 squashfs mount and a service, and removal can take data with it, so
 nothing drives them on an unattended machine. What is demonstrated is the
 reading, which is where the defect was. That leaves the release gate of
-SPEC 4.3 naming nine modules rather than ten, all of them macOS.
+SPEC 4.3 naming eight modules rather than nine, all of them macOS.
+
+(Those two numbers read "nine rather than ten" until 5.113 counted them
+against the gate's own output. `apparmor` had closed on 2026-09-11, six
+days before this entry was written, and the count was taken from the
+paragraph above rather than from `make release-gate`. The sentence also
+contradicted itself: nine could only be reached by including `snap`,
+which this entry had just removed. It is corrected here rather than
+quietly, because a ledger that rounds its own arithmetic is the thing
+this section exists to argue against.)
+
+### 5.113 A `defaults delete` that could not report convergence, and the flag that hid it
+
+`mac_defaults` was the one macOS module with a live test that already
+wrote — `live_mac_defaults_test.go` drives the real `defaults` against a
+throwaway domain behind `HALITE_SYSTEM_LIVE=1`. It was still `Assumed`,
+because the paths that make every mutating function here declare root
+had never been run: `user`, which becomes another account, and a
+machine-wide domain under `/Library/Preferences`. Driving those two on a
+real Mac (macOS 27.0, build 26A5425a) took an hour and found two
+defects, neither of which any unit test in this package could have
+reached.
+
+**The string the module waited for is not one `defaults` says.**
+`macDefaultsDelete` treated a failing delete as success when the output
+contained `does not exist`, on the reasoning that deleting something
+already gone is the state that was wanted. `defaults` does not print
+that. It prints, exiting 1:
+
+	Error: Domain 'com.example.gone' not found.
+	Could not find key 'NoSuchKey' in domain 'com.example.here'.
+
+So `mac_defaults.delete`'s own documentation — "Removing a key that is
+not there is not an error" — was false on every Mac since the module
+shipped. `mac_defaults.absent` mostly escaped it by reading the domain
+first and returning converged without calling delete at all, which is
+why the state's idempotence test passed throughout; the damage landed on
+the execution function and on the window between that read and the
+delete.
+
+**And the branch that read the string never ran.** This is the part
+worth the section. `OSRunner` turns a non-zero exit into a Go error
+unless the command sets `IgnoreExitCode`; `mac_defaults` set it at none
+of its four call sites, so `c.Run` returned an error and every
+`res.Code != 0` branch in the module was unreachable against a real
+`defaults`. The tolerance check was wrong *and* dead. Two other
+consequences came with it: `read_type` on an unset key returned the raw
+runner error rather than its intended "%q is not set in domain %q", and
+so did a failed `write`.
+
+#### Why the fixtures could not have caught either
+
+`RecordingRunner` returns the scripted `Result` — exit code and all —
+with a **nil error**. `OSRunner` would have returned an error. A module
+that omits `IgnoreExitCode` therefore passes every unit test in this
+package and fails on hardware, and the first fix written for the string
+above passed its own new tests while still being unreachable on the Mac
+that had just rejected it.
+
+That is 5.31's lesson at one remove. There the fixture was written in
+the module's own spelling; here the *harness* was, and the divergence is
+not in what the tool prints but in how a non-zero exit arrives. So the
+guard added is not a behavioural test, which the fake cannot express:
+`TestMacDefaultsCallsAskForTheirExitCode` asserts that all four commands
+carry `IgnoreExitCode`, on the grounds that a test which cannot fail for
+the real reason is the thing being guarded against.
+
+#### What was verified, and what still is not
+
+`live_mac_defaults_root_test.go`, under `sudo` on macOS 27.0 (build
+26A5425a):
+
+- A write with `user` set lands in **that account's** preference store
+  and not in root's, and the backing plist belongs to that account. This
+  is the setuid/setgid path of `internal/exec/credential_unix.go`, and
+  the failure it rules out is the silent one — the write succeeds,
+  reports a change, converges on a second run, and changes the wrong
+  account's preferences. Every assertion would have passed.
+- A machine-wide domain under `/Library/Preferences` is written, read
+  back, and emptied, with the file owned by root.
+- Deleting a domain that is already gone is not an error, which is the
+  assertion that failed twice before the module was right.
+
+One expectation of the test was wrong rather than the module: deleting a
+path domain does **not** remove the file. macOS leaves an empty binary
+plist where the domain was and `defaults export` prints `<dict/>`. The
+test asserts the domain holds nothing, which is what a tree asked for,
+rather than a file removal `defaults` never promised.
+
+`evidence.go` moves `mac_defaults` from `Assumed` to `Hardware`. What is
+still unwatched is `user` naming an account other than the invoking one:
+it was driven as the account behind `sudo`, which exercises the same
+setuid path but not a second real login. The release gate of SPEC 4.3
+now names seven modules, all macOS, all of them the rest of that row.
+
+#### The sweep, and the rule that replaced it
+
+`mac_defaults` set `IgnoreExitCode` nowhere while 75 other files in
+`internal/builtin` set it somewhere, which made the obvious question
+whether anything else read an exit code it had not asked for. An AST
+pass over `internal/` — the assignment and its later use are in
+different statements, so a grep cannot answer this — found **five** more
+sites in two modules:
+
+| site | what the dead branch was |
+|---|---|
+| `mac_power.go` `macPowerReadSource` | `pmset -g custom: <first line of stderr+stdout>` |
+| `mac_power.go` `macPowerSet` | `pmset -a <key> <arg>: <first line>` |
+| `ps.go` `psListLibxo` | `ps: <first line of stderr>` |
+| `ps.go` `psListColumns` | `ps: <first line of stderr>` |
+| `ps.go` `psSignalPID` | `signalling <pid>: <first line of stderr>` |
+
+**These cost less than the `mac_defaults` one and are not the same
+class.** Every one of them still returns an error; what was lost is the
+module's own message, replaced by the runner's `"<command> exited N:
+<stderr>"`. That is not nothing. The runner reads `Stderr` alone, and
+`mac_power` deliberately reads `Stderr+Stdout` — so a `pmset` that
+explains itself on stdout gave an operator `pmset -g custom exited 1:`
+and no reason at all. `ps` and `kill` were merely less specific. None of
+them could diverge a node's state, which is the line between this and
+the delete above.
+
+All five now set the flag. The rule is `TestEveryExitCodeReadAsksForIt`
+in `internal/exec`, which is where it belongs: the package that defines
+`IgnoreExitCode` is the one that should hold callers to what it means. It
+walks the tree, pairs each `Run`/`RunArgv` result with its later `.Code`
+reads, and fails on a read the command never asked for. A caller that
+never reads `Code` is untouched; the rule is only that reading it means
+asking for it. Confirmed to fail by putting one of the five back and
+watching it name the file, the line and the function.
+
+### 5.114 The account arc: three modules closed, and nothing found
+
+`mac_user`, `mac_group` and `mac_shadow` are one module's worth of
+machinery in three registrations, and what each was missing was the
+same: their reads had a live test and their writes had never been run.
+`dscl . -create`, `dseditgroup` and `dscl . -passwd` all need root and
+all change Open Directory rather than a file a test could put back.
+
+Driven as one arc under `sudo` on macOS 27.0 (build 26A5425a), against a
+throwaway `halitet<pid>` and `halitetg<pid>`, every subtest passed on
+the first run. **Nothing was found, and that is worth writing down as
+plainly as a defect would be.** 5.113 closed `mac_defaults` by finding
+two; if only the entries that find something get written, the ledger
+stops being a record of what was done and becomes a record of what went
+wrong, which are different things and only one of them supports a claim
+about evidence.
+
+#### Why it is one test and not three
+
+Splitting the arc would mean either three throwaway accounts or an
+ordering dependency between test functions that Go does not promise. So
+it runs in subtests, in order, against a single account, and refuses to
+start at all if that account already exists — a cleanup that removes
+somebody else's record is worse than a test that does not run.
+
+#### What it established
+
+- The `dscl . -create` sequence and `createhomedir` produce an account
+  **this module's own reader then finds**, carrying the uid, home,
+  shell, real name and supplementary group that were asked for. The
+  group membership is the part worth naming: it is written with
+  `dseditgroup` and read back through `macUserGroups`, so the two halves
+  of the module agree about a real directory rather than about a
+  fixture.
+- A second `user.present` with the same spec **changes nothing**. This
+  is the convergence question, and it is the one a fixture cannot
+  answer — a state that reports a change every run on a node already in
+  the requested state is the defect 5.112 found in `snap` and 5.113
+  found in `mac_defaults`'s delete. Here it converged.
+- A shell change is seen as a change, applied, and then converges.
+- `mac_shadow.set_password` sets a password Open Directory reports as
+  set where it had not been before.
+- `user.absent` with `purge` removes the record **and** the home
+  directory, and is then a no-op.
+
+#### What it does not cover, and two things worth knowing
+
+Not exercised: the `system`/`IsHidden` path, an explicit uid and the
+`unique` refusal, `usergroup`, an explicitly requested gid, and
+`group.present`'s refusal to renumber a group that already exists with a
+different gid — which is the branch protecting every file that group
+owns, and the one most worth driving next.
+
+Two observations that are not defects and are not nothing:
+
+**Group membership is append-only.** `diffAccount` flags the `groups`
+key only when the spec names a group the account lacks, and
+`macUserSetGroups` is called with `appendOnly` true. A group *removed*
+from a tree's list is never taken off the account. That is deliberate
+and it is also invisible: a tree that drops a group from the list gets a
+converged run and an account that still has it.
+
+**The password is an argv.** `dscl . -passwd` takes it as a command-line
+argument, so it is visible in `ps` for as long as the call runs — in
+production, not only in this test. Nothing in `internal/exec` logs or
+traces an argv, so the exposure stops at the process table. `dscl`
+prompts when the password is omitted and `exec.Command` has a `Stdin`
+field, so closing this is possible; it has not been done here because
+changing how the module authenticates is not a thing to do in the same
+pass that establishes it works.
+
+`evidence.go` moves all three from `Assumed` to `Hardware`. The release
+gate of SPEC 4.3 now names **four**, all macOS: `mac_power`,
+`mac_softwareupdate`, `mac_keychain`, `mac_assistive`. (Counted from the
+gate's own output, for the reason 5.112 gives.)
+
+### 5.115 A setting `pmset` reports and has no key to write
+
+`mac_power`'s setters run `pmset -a`, which needs root and rewrites a
+real Mac's power policy, so nothing had driven them. Driven under `sudo`
+on an Apple M1 running macOS 27.0 (build 26A5425a), six of the seven
+settings round-tripped on the first try. The seventh did not, and what
+it found is not a halite defect at all — which is why it took some care
+to handle honestly.
+
+**`pmset -g custom` prints `Sleep On Power Button`. `pmset` will not
+write it.** `pmset -a powerbutton 0` answers:
+
+	Usage: pmset <options>
+	See pmset(1) for details: 'man pmset'
+
+and the word "button" appears nowhere in that machine's `pmset(1)`. The
+settable keys it documents are `womp`, `ring`, `powernap`,
+`proximitywake`, `autorestart`, `autorestartatconnect`, `lidwake`,
+`acwake`, `lessbright`, `halfdim`, `sms`, `hibernatemode`,
+`hibernatefile`, `ttyskeepawake`, `networkoversleep`, `displaysleep`,
+`disksleep`, `sleep` and a few more — no `powerbutton`.
+
+**It is argument rejection, not a refused change**, and the two are
+easy to confuse because both come back non-zero. Told apart without
+root, which is where the difference is visible: a valid key answers
+`'pmset' must be run as root`, because the usage failure happens at
+argument parsing and the privilege check never runs.
+
+	$ pmset -a womp 1
+	'pmset' must be run as root...
+	$ pmset -a powerbutton 1
+	Usage: pmset <options>
+
+#### What the module does about it, and what it deliberately does not
+
+The obvious fix was the one `mac_softwareupdate` already uses: register
+the name, refuse by name, say why. That fits an option Apple documented
+as removed. It does not fit here. `pmset -a powerbutton` worked on the
+Intel Macs this table was written from, and `pmset`'s options differ by
+model as well as by release — `ring` wants a modem, `sms` wants a motion
+sensor, and this Mac reports neither. **"Does this Mac take this key" is
+a question only that Mac can answer**, and one machine's answer is not
+grounds for a refusal compiled into every build.
+
+So `macPowerSet` reads the answer instead of predicting it. A usage
+rejection becomes an error that names the key, says the getter still
+works, and does not pass the usage dump through — which is what an
+operator got before, and which tells them nothing about whether the
+fault is the Mac's or halite's. Every other failure keeps saying what
+`pmset` said. Two unit tests hold the halves apart, on output captured
+from the real tool.
+
+The live test asks rather than assumes: if the key is taken it asserts
+the round trip, and if it is rejected it asserts the refusal is legible
+**and that the value did not move**. The restore learned the same
+lesson — a key the Mac will not write is a key it never wrote, so
+reporting `RESTORE FAILED` for it would send somebody looking for damage
+that cannot exist.
+
+#### What is demonstrated, and one thing that is weaker
+
+Round-tripped against the real `pmset`: `display_sleep` and
+`wake_on_network` individually, and `computer_sleep`, `display_sleep`
+and `harddisk_sleep` through the combined `set_sleep` — driven with 0,
+"never", because that is the one value for a sleep timer that cannot put
+the machine to sleep in the middle of its own test.
+
+`set_sleep_on_power_button` is demonstrated **only as refusing
+correctly**. Its write path is demonstrated nowhere, and on Apple
+silicon there may be no way to demonstrate it. That is a weaker claim
+than the other settings get and it is in the evidence note rather than
+rounded up into them.
+
+Not driven at all: `restart_power_failure`, which is reported and
+writable and simply was not worth a second privileged run for a third
+instance of the same 0/1 path; and `wake_on_modem`, which this Mac does
+not report.
+
+The capture-and-restore is per power source — `pmset -c`, `-b`, `-u` —
+and deliberately does not go through the module, because `pmset -a`
+writes every source at once and a restore through it would leave a
+laptop's differing AC and battery profiles both holding whichever value
+was captured last. This machine is a desktop with AC alone, which is
+exactly the condition under which that would not have been noticed.
+
+`evidence.go` moves `mac_power` from `Assumed` to `Hardware`. The
+release gate of SPEC 4.3 now names **three**: `mac_softwareupdate`,
+`mac_keychain`, `mac_assistive`. (From the gate's own output.)
+
+### 5.116 Two modules that will not be closed the usual way, and a refusal nobody could reach
+
+Five of the macOS row closed by being driven on a real Mac (5.113,
+5.114, 5.115). The last three do not all have that route, and pretending
+otherwise would leave the release gate red indefinitely with no record
+of why. Two decisions, taken deliberately.
+
+#### `mac_softwareupdate` downloads and never installs
+
+The module registered `update` and `update_all` against `softwareupdate
+--install`. Those are now registered refusals, and the refusal says in
+its first clause whose decision it is:
+
+	mac_softwareupdate.update: halite does not install macOS updates.
+	`softwareupdate --install` works -- this is halite's decision, not a
+	macOS limitation.
+
+That wording is load-bearing. The three `ignore` refusals beside it are
+the *other* kind: macOS took those options away, and no tool can give a
+tree what it asks for. An operator who cannot tell the two apart goes
+looking for an Apple release note that does not exist.
+
+The reasons are a pair. Installing a macOS update restarts the machine
+and can take it through a firmware update on the way — a configuration
+management agent that does that has a failure mode no state file
+expresses, where the run does not end, the node does not answer, and the
+hub cannot tell a converging estate from a bricked one. And it is
+undemonstrable by this project's own standard: the release gate exists
+to stop a module shipping on a claim nobody checked, and nothing can
+check an install path without a Mac willing to reboot in the middle of
+its own test suite.
+
+**What this buys is that the rest becomes demonstrable.** `--download`
+is a real mutation worth having on its own — it fetches the payload, so
+whenever the update is applied it is a local operation — and it reboots
+nothing. So `mac_softwareupdate` is now the one module in this row that
+is `Assumed` for want of doing the work rather than for want of a way to
+do it. `download` also lost its `restart` parameter, which only ever
+meant anything to the install path.
+
+#### `mac_assistive` is deferred, and says so
+
+Closing it needs Full Disk Access granted by hand to the compiled test
+binary, and granted again whenever `go test` rebuilds to a new path,
+which it does routinely. That is a standing manual step attached to a
+test that otherwise skips in silence — a worse property than being
+honestly `Assumed`, because a skipping test reads as a passing one at a
+glance. It stays `Assumed` on purpose, its note says "deferred future
+work, deliberately", and the gate stays red on it knowingly rather than
+by neglect.
+
+#### The refusal a tree could not reach
+
+Writing the `update` refusal found that the existing ones did not work.
+
+A refusal registers so a tree carrying the name from Salt gets an
+explanation rather than `unknown function`, which reads as a typo. But
+the refusal modules declared **no parameters**, and Salt's
+`mac_softwareupdate.ignore` takes a label. So `mac_softwareupdate.ignore
+name=...` was rejected during argument validation, one layer above the
+refusal, with:
+
+	argument "name": is not a parameter of this function
+
+Which also reads as a typo. The refusal existed, was correct, said
+everything it needed to, and no caller passing the argument Salt
+requires could ever see it.
+
+`TestMacSoftwareUpdateGoneFunctionsRefuse` passed throughout, because it
+calls `m.Fn` directly — and `Fn` is *past* the validation. **A test that
+enters below the layer where the defect lives cannot see it**, which is
+the same shape as 5.113's harness problem one module over: there the
+fake delivered a non-zero exit differently than the real runner, here
+the test skipped the validation a real call goes through.
+
+Every refusal now declares the parameters its Salt counterpart takes, and
+`TestMacSoftwareUpdateRefusalsAreReachableAsATreeCallsThem` goes through
+the registry — the path a tree takes — and fails specifically if the
+answer is an argument error rather than an explanation.
+
+### 5.117 A removal that could not converge, and a read that failed only for root
+
+`mac_keychain` closed on a real Mac, and found two defects on the way.
+The second is the more serious, and it could not have been found by
+anyone running the tests the way they had always been run.
+
+#### `uninstall` on a certificate already gone was an error
+
+`macKeychainUninstall` treated a failing `security delete-certificate`
+as success when the output held `could not be found`. That is the right
+string for the **wrong subcommand**. `security find-certificate` says
+it, exiting 44:
+
+	security: SecKeychainSearchCopyNext: The specified item could not be
+	found in the keychain.
+
+and `macKeychainCerts` reads that correctly, which is presumably where
+the spelling came from. `security delete-certificate` says something
+else, exiting 1:
+
+	Unable to delete certificate matching "halite-no-such-cert"
+
+So removing a certificate that was already absent returned an error, and
+a tree carrying `mac_keychain.uninstall` under `module.run` failed on
+every run after the first. That is the shape 5.112 found in `snap` and
+5.113 found in `mac_defaults`, for the third time: a tolerance branch
+written from a plausible sentence rather than from the one the tool
+prints. Both spellings are matched now — the find one costs nothing and
+these messages have differed between releases before.
+
+#### `default_keychain` failed for root, and root is what a node is
+
+`security default-keychain` exits non-zero for an account that has no
+default keychain:
+
+	security: SecKeychainCopyDefault: A default keychain could not be
+	found.
+
+An account has one after it signs in graphically. **root, on a stock
+Mac, does not.** And root is what `halite-node` runs as.
+
+So `mac_keychain.default_keychain` failed on every real node, and worked
+perfectly every time anybody tested it — because a developer runs the
+suite from a login session, where the answer exists. The module already
+meant to handle the other case: `default_keychain` returns `""` for an
+empty list. That branch was unreachable, because `macKeychainPaths`
+returned the error first.
+
+**Nothing about the module changed to expose this. Only the account
+asking did.** `TestLiveMacKeychainReadsThisMac` has been in the tree
+since the module shipped and passed on every run; it failed the first
+time it was run under `sudo`, which happened only because the System
+keychain half of the new test needed root and the two run together.
+
+That is worth stating as a method rather than an anecdote: **a live test
+demonstrates the module against the tool, and also against the account,
+and those are two different claims.** This row's other modules were
+driven as root throughout, so the question did not arise for them. It
+should be asked of anything that reads per-user state.
+
+#### What was verified
+
+`live_mac_keychain_root_test.go`, in two halves. The round trip runs in
+a keychain the test makes and **needs no root** — `friendly_name`
+through the real `openssl`, `install`, `find-certificate`, a second
+`install` that neither errors nor leaves a duplicate, `uninstall`, and
+`uninstall` again on what is already gone. That half could run on a Mac
+in CI if there is ever one. The second half imports into and removes
+from the real `/Library/Keychains/System.keychain` under `sudo`, which
+is the path that makes these functions declare root. The certificate is
+self-signed and is given no trust settings, so nothing new is trusted at
+any point.
+
+Getting a certificate `security` would accept was itself not a
+formality. OpenSSL 3 defaults to a SHA-256 PKCS#12 MAC that Apple's
+Security framework cannot verify, and `security import` reports it as
+
+	MAC verification failed during PKCS12 import (wrong password?)
+
+which blames the password for an algorithm mismatch. `-macalg sha1`
+alone then fails differently, with "Unknown format in import". The test
+names `-keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1`
+rather than passing `-legacy`, because a stock Mac's `/usr/bin/openssl`
+is LibreSSL 3.3 and has no such flag; that form was checked against both
+it and Homebrew's OpenSSL 3.6.
+
+Both defects were confirmed by putting the old code back and watching
+the live test name them. `evidence.go` moves `mac_keychain` from
+`Assumed` to `Hardware`. Not covered: the `-T` application access list,
+and `install` into a keychain that is locked.
+
+The release gate of SPEC 4.3 now names **two**, for two different
+reasons: `mac_softwareupdate`, which can be closed and has not been, and
+`mac_assistive`, which is deferred deliberately (5.116).
 
 ## 6. Everything else not started
 
@@ -10440,10 +10911,15 @@ What is **not** built in phase 5:
   `mac_power`, the `dscl`-driven `mac_user`, `mac_group` and
   `mac_shadow` (with which `user.present` and `group.present` work on a
   Mac), `mac_softwareupdate`, `mac_keychain` and `mac_assistive`. What
-  is missing is a Mac in CI: every one of these is `assumed` in the
-  evidence table because its read side has a live test but its mutating
-  side changes a real Mac and no CI leg is one, and `make
-  release-gate` is red on the set.
+  is missing is a Mac in CI: two of the eight are `assumed`, for two
+  different reasons — `mac_softwareupdate`, whose mutating surface is
+  now `--download` alone and so can be closed but has not been, and
+  `mac_assistive`, deferred deliberately (5.116). `make release-gate`
+  is red on those two, knowingly. The other six are `hardware` —
+  `mac_defaults` (5.113), the `mac_user`/`mac_group`/`mac_shadow`
+  account arc (5.114), `mac_power` (5.115) and `mac_keychain` (5.117),
+  all driven by hand under `sudo` on macOS 27.0, which is the only
+  route this row has.
 - **Windows parity, in part.** The suite now runs natively there and
   passes: see 4.6. What is built is the platform-neutral half — grains,
   the file states, `cmd`, the Chocolatey provider, the extension
