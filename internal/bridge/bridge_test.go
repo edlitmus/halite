@@ -493,3 +493,24 @@ func TestAnExtensionThatDiesSaysWhyInTheError(t *testing.T) {
 			"which is the whole diagnosis: %v", err)
 	}
 }
+
+// The same, with the reason arriving after the host has already seen
+// the extension go.
+//
+// The test above passes whenever the stderr drain happens to have run
+// first, which is almost always and was not always: it failed on the
+// FIPS leg the day the tail merged, with the diagnosis stripped out
+// again. Two pipes, two goroutines, nothing ordering them. Here the
+// extension closes stdout before writing its reason, so the losing
+// order is the only order, and a host that reads the tail without
+// waiting for the drain fails every time rather than once a week.
+func TestTheReasonSurvivesArrivingAfterTheExit(t *testing.T) {
+	proc := startEcho(t, nil)
+	_, err := proc.Call(context.Background(), "die-after-stdout", nil, nil, nil)
+	if err == nil {
+		t.Fatal("an extension that died reported success")
+	}
+	if !strings.Contains(err.Error(), "the reason this extension could not continue") {
+		t.Errorf("the error lost the reason to the race between the pipes: %v", err)
+	}
+}

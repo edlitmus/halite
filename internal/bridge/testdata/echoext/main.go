@@ -146,6 +146,19 @@ func handle(call ext.Call) (any, error) {
 	case "die":
 		fmt.Fprintln(os.Stderr, "echo: the reason this extension could not continue")
 		os.Exit(1)
+
+	// The same death with the two pipes deliberately out of order:
+	// stdout closes first, so the host sees EOF and starts building its
+	// error, and the reason is written only afterwards. A real
+	// extension does not do this on purpose -- but the scheduler can
+	// produce the same order at any time, and did on CI. A host that
+	// reads its stderr tail without waiting for the drain gets an empty
+	// one here every time.
+	case "die-after-stdout":
+		os.Stdout.Close()
+		time.Sleep(100 * time.Millisecond)
+		fmt.Fprintln(os.Stderr, "echo: the reason this extension could not continue")
+		os.Exit(1)
 	}
 	return nil, fmt.Errorf("echo has no function %q", call.Function)
 }

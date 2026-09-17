@@ -101,6 +101,9 @@ type Process struct {
 	// path that production and the tests actually use.
 	stderrMu   sync.Mutex
 	stderrTail []string
+	// stderrDone is closed once the stderr pipe has reached EOF and
+	// every line it carried has been recorded.
+	stderrDone chan struct{}
 }
 
 // stderrTailLines is how much of the extension's stderr is kept for the
@@ -109,6 +112,12 @@ type Process struct {
 // extension that fails in a loop must not be able to grow this without
 // limit.
 const stderrTailLines = 12
+
+// stderrGrace bounds how long an error message waits for the last of an
+// extension's stderr. It is only ever reached when something the
+// extension spawned inherited the write end of the pipe and is still
+// holding it open; the extension itself is already gone by then.
+const stderrGrace = 2 * time.Second
 
 // Info is what an extension declared about itself.
 type Info struct {
@@ -176,6 +185,7 @@ func Start(ctx context.Context, opts Options) (*Process, error) {
 	p := &Process{
 		opts: opts, cmd: cmd, stdin: stdin, stdout: bufio.NewReader(stdout),
 		releaseSandbox: releaseSandbox,
+		stderrDone:     make(chan struct{}),
 	}
 	go p.drainStderr(stderr)
 
@@ -326,10 +336,10 @@ func (p *Process) readWithin(ctx context.Context, timeout time.Duration) (ext.Fr
 	case got := <-done:
 		if got.err != nil {
 			if errors.Is(got.err, io.EOF) {
-				return ext.Frame{}, fmt.Errorf("the extension exited without answering%s", p.said())
+				return ext.Frame{}, fmt.Errorf("the extension exited without answering%s", p.saidAfterExit())
 			}
 			if errors.Is(got.err, io.ErrUnexpectedEOF) {
-				return ext.Frame{}, fmt.Errorf("the extension exited part-way through a frame%s", p.said())
+				return ext.Frame{}, fmt.Errorf("the extension exited part-way through a frame%s", p.saidAfterExit())
 			}
 			return ext.Frame{}, got.err
 		}
@@ -395,6 +405,7 @@ func (p *Process) Dead() (bool, string) {
 }
 
 func (p *Process) drainStderr(r io.Reader) {
+	defer close(p.stderrDone)
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 4096), 64<<10)
 	for scanner.Scan() {
@@ -417,6 +428,27 @@ func (p *Process) recordStderr(line string) {
 	if len(p.stderrTail) > stderrTailLines {
 		p.stderrTail = p.stderrTail[len(p.stderrTail)-stderrTailLines:]
 	}
+}
+
+// saidAfterExit is said() for a process that has already gone.
+//
+// stdout and stderr are two pipes drained by two goroutines, and
+// nothing orders them against each other. An extension that writes its
+// reason and then exits can have the EOF on stdout observed before the
+// drain has scanned that reason, and the error is then built from an
+// empty tail -- the diagnosis missing again, arriving by a race rather
+// than by omission. The FIPS leg caught it the day the tail merged.
+//
+// Waiting is safe here because the extension is gone: its end of the
+// pipe is closed, so the drain reaches EOF and returns.
+func (p *Process) saidAfterExit() string {
+	timer := time.NewTimer(stderrGrace)
+	defer timer.Stop()
+	select {
+	case <-p.stderrDone:
+	case <-timer.C:
+	}
+	return p.said()
 }
 
 // said renders what the extension wrote to stderr, for an error message,
