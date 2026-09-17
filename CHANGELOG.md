@@ -18,6 +18,32 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The lab grew a FreeBSD row, and it found something on its first boot
+
+FreeBSD became tier 1 and had exactly two machines: the development host
+and a CI leg that is an emulated VM. Neither is a plain FreeBSD machine
+somebody else installed, and the development host in particular makes
+every FreeBSD leg feel covered. The lab now raises FreeBSD 14 and 15 on
+demand alongside its seven Linux rows.
+
+Vultr does not run cloud-init on BSD images, so those rows boot from a
+Vultr startup script instead — base64 per the API, which the provider
+does not do for you. It fires earlier in boot than cloud-init does, early
+enough that `/etc/os-release` has not been written yet. And root's login
+shell there is tcsh, which has no leading-assignment syntax, so the
+bootstrap moves it to `/bin/sh` rather than teaching the lab's driver to
+quote for two shells.
+
+The first boot found **DIVERGENCE 5.113**: `getfacl -s` was added in
+FreeBSD 15, and `acl.is_extended` passes it unconditionally. On every
+FreeBSD 14 host it answers no path at all — `getfacl: illegal option --
+s`, naming a flag the operator never wrote. The comment beside the call
+said the behaviour was verified live, and it had been, on a machine
+running 15. So did CI. The row that earned its keep was the one running
+the version nothing else in this estate runs.
+
+That defect is recorded, not yet fixed.
+
 ### A snap state that could never have settled
 
 The snap module had never been run against a real snapd; its test
