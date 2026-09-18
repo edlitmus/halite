@@ -9752,6 +9752,48 @@ to see it, which is what that row was added for.
 This is the shape of 5.77 again: a flag that exists on the machine in
 front of you is not a flag the platform has.
 
+#### Fixed: `ls` carries the same answer, and both releases have it
+
+`is_extended` no longer asks `getfacl` the question at all.
+
+`ls` marks a file whose ACL says more than its mode with a **`+` after
+the mode**, from the same `acl_is_trivial_np(3)` the flag uses, and it
+does so on both releases. Checked against `getfacl -s` on 15.1 across a
+trivial file, an extended file, a symlink to each, an extended
+directory, and a path with a space in it — the two agreed on all six,
+and on 14.5 the mark answers where the flag cannot.
+
+Two things were learned from the machines rather than assumed, and both
+would have shipped as defects:
+
+**Counting the entries does not work.** It is the obvious substitute and
+it is wrong. A file whose `owner@` permissions have been widened carries
+the same three canonical entries a trivial file carries — `owner@`,
+`group@`, `everyone@`, all `allow` — and is extended:
+
+```
+  4 owner@ perms widened, 3 entries   ls=-rwxr--r--+  -s says=extended  entries=3
+```
+
+Had the fix counted entries it would have answered "trivial" there,
+confidently and wrongly, which is worse than the error it replaced.
+
+**`ls` does not follow a symlink for this mark, even under `-L`.** A
+link to an extended file lists *unmarked*, while `getfacl`, which
+follows by default, calls it extended:
+
+```
+  symlink -> extended    ls -ld= lrwxr-xr-x    ls -ldL= -rw-r--r--    getfacl -s= extended
+```
+
+So `follow_symlink` resolves through `realpath(1)` first and marks the
+target. Without that the default path would have reported every symlink
+trivial.
+
+The POSIX.1e refusal is a refusal again: `is_extended` now reads the ACL
+through the same `readACL` every other function here uses, which names
+the family it will not parse instead of complaining about a flag.
+
 ### 5.114 A `defaults delete` that could not report convergence, and the flag that hid it
 
 `mac_defaults` was the one macOS module with a live test that already

@@ -429,7 +429,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`mount` output on the platforms CI runs, and nothing has been mounted or " +
 		"unmounted by this module"},
 	"acl": {Level: exec.Hardware, Note: "driven against the real getfacl and setfacl on this " +
-		"fleet's FreeBSD 15.1 host. The mutating half needs no root -- an ACL is set on a file " +
+		"fleet's FreeBSD 15.1 host, and on 14.5 and 15.1 in the lab. The mutating half needs no root -- an ACL is set on a file " +
 		"the test owns -- so the round trip runs wherever the suite does. Two things were " +
 		"learned from the tool rather than assumed, and both are in the module's comment: " +
 		"`setfacl -m` on a new (tag, qualifier) pair inserts at the **front** rather than " +

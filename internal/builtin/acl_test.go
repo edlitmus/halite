@@ -488,10 +488,22 @@ func TestGetReturnsOwnerGroupAndEveryEntry(t *testing.T) {
 	}
 }
 
-func TestIsExtendedReadsAnEmptyAnswerAsTrivial(t *testing.T) {
-	path := "/home/ed/aclcapture/testfile"
+// Captured from FreeBSD 14.5-RELEASE on a ZFS dataset, byte for byte.
+// The `+` after the mode is the whole signal, and it is the difference
+// between these two lines.
+const (
+	aclLsTrivial  = "-rw-r--r--  1 root wheel 0 Sep 18 01:15 /labpool/plain\n"
+	aclLsExtended = "-rw-r--r--+ 1 root wheel 0 Sep 18 01:15 /labpool/ext\n"
+	aclLsDirExt   = "drwxr-xr-x+ 2 root wheel 2 Sep 18 01:15 /labpool/d\n"
+	aclLsLink     = "lrwxr-xr-x  1 root wheel 12 Sep 18 01:15 /labpool/link -> /labpool/ext\n"
+)
+
+// An unmarked `ls` line is a trivial ACL.
+func TestIsExtendedReadsAnUnmarkedModeAsTrivial(t *testing.T) {
+	path := "/labpool/plain"
 	c := aclContext(map[string]exec.Result{
-		"getfacl -sq " + path: {Code: 0, Stdout: "\n"},
+		"realpath " + path: {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:   {Code: 0, Stdout: aclLsTrivial},
 	})
 	out, err := aclIsExtendedFn(c, aclArgs("name", path))
 	if err != nil {
@@ -502,10 +514,12 @@ func TestIsExtendedReadsAnEmptyAnswerAsTrivial(t *testing.T) {
 	}
 }
 
-func TestIsExtendedReadsAnyOutputAsExtended(t *testing.T) {
-	path := "/home/ed/aclcapture/testfile"
+// A `+` after the mode is an extended one.
+func TestIsExtendedReadsAMarkedModeAsExtended(t *testing.T) {
+	path := "/labpool/ext"
 	c := aclContext(map[string]exec.Result{
-		"getfacl -sq " + path: {Code: 0, Stdout: aclRealCapture},
+		"realpath " + path: {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:   {Code: 0, Stdout: aclLsExtended},
 	})
 	out, err := aclIsExtendedFn(c, aclArgs("name", path))
 	if err != nil {
@@ -513,6 +527,85 @@ func TestIsExtendedReadsAnyOutputAsExtended(t *testing.T) {
 	}
 	if out != true {
 		t.Errorf("an extended ACL was reported trivial: %v", out)
+	}
+}
+
+// A directory's mark sits in the same column behind a `d`.
+func TestIsExtendedReadsADirectorysMark(t *testing.T) {
+	path := "/labpool/d"
+	c := aclContext(map[string]exec.Result{
+		"realpath " + path: {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:   {Code: 0, Stdout: aclLsDirExt},
+	})
+	out, err := aclIsExtendedFn(c, aclArgs("name", path))
+	if err != nil {
+		t.Fatalf("aclIsExtendedFn: %v", err)
+	}
+	if out != true {
+		t.Errorf("an extended directory was reported trivial: %v", out)
+	}
+}
+
+// Following a symlink asks about the target, not the link.
+//
+// This is the case that makes `realpath` necessary rather than tidy.
+// `ls` computes the mark on the path it is handed and does not move it
+// across a symlink even under -L, so the link below lists unmarked
+// while the file it points at is extended. Reading the link's own line
+// would answer "trivial" about a file that is not.
+func TestIsExtendedFollowsASymlinkBeforeReadingTheMark(t *testing.T) {
+	link, target := "/labpool/link", "/labpool/ext"
+	c := aclContext(map[string]exec.Result{
+		"realpath " + link: {Code: 0, Stdout: target + "\n"},
+		"ls -ld " + target: {Code: 0, Stdout: aclLsExtended},
+		// Present so that reading the link instead of the target is a
+		// wrong answer rather than a missing command.
+		"ls -ld " + link: {Code: 0, Stdout: aclLsLink},
+	})
+	out, err := aclIsExtendedFn(c, aclArgs("name", link))
+	if err != nil {
+		t.Fatalf("aclIsExtendedFn: %v", err)
+	}
+	if out != true {
+		t.Errorf("the link's own line was read instead of its target's: %v", out)
+	}
+}
+
+// follow_symlink=false asks about the link itself and runs no realpath.
+func TestIsExtendedWithoutFollowingReadsTheLinkItself(t *testing.T) {
+	link := "/labpool/link"
+	c := aclContext(map[string]exec.Result{
+		"ls -ld " + link: {Code: 0, Stdout: aclLsLink},
+	})
+	out, err := aclIsExtendedFn(c, aclArgs("name", link, "follow_symlink", false))
+	if err != nil {
+		t.Fatalf("aclIsExtendedFn: %v", err)
+	}
+	if out != false {
+		t.Errorf("the link itself was reported extended: %v", out)
+	}
+}
+
+// A POSIX.1e path gets a real answer, not the family refusal.
+//
+// Every other function here refuses one by name, because this build
+// parses NFSv4 entries only. is_extended parses no entry at all, so
+// that split does not reach it and the mark means the same thing on
+// either family. An earlier cut of this fix read the ACL first for its
+// error handling and turned this into a refusal on both releases --
+// which the live suite caught, having passed on 15 before the change.
+func TestIsExtendedAnswersForAPOSIXACLRatherThanRefusingIt(t *testing.T) {
+	path := "/mnt/posixfile"
+	c := aclContext(map[string]exec.Result{
+		"realpath " + path: {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:   {Code: 0, Stdout: "-rwxr-xr-x+ 1 root wheel 6 Sep 18 01:15 " + path + "\n"},
+	})
+	out, err := aclIsExtendedFn(c, aclArgs("name", path))
+	if err != nil {
+		t.Fatalf("a POSIX.1e path was refused rather than answered: %v", err)
+	}
+	if out != true {
+		t.Errorf("a POSIX.1e ACL carrying a mask entry read as trivial: %v", out)
 	}
 }
 
