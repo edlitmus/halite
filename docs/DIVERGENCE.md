@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **88 execution modules / 599 functions** and **48 state
+The build ships **87 execution modules / 593 functions** and **48 state
 modules / 132 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -608,9 +608,10 @@ state), `mac_power` (`pmset(8)`), `mac_user`, `mac_group` and
 `mac_shadow`, which drive `dscl(1)` and `dseditgroup(1)` and are what
 `user.present` and `group.present` branch to on a Mac — the same
 "nothing to reach" gap this document records for Windows, closed here —
-`mac_softwareupdate` (`softwareupdate(8)`), `mac_keychain`
-(`security(1)`), and `mac_assistive`, which drives `sqlite3(1)` against
-the SIP-protected `TCC.db` to manage the Accessibility grant list.
+`mac_softwareupdate` (`softwareupdate(8)`) and `mac_keychain`
+(`security(1)`). `mac_assistive`, which drove `sqlite3(1)` against the
+SIP-protected `TCC.db` to manage the Accessibility grant list, shipped
+here too and has since been taken out of the build (5.119).
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -648,7 +649,7 @@ specification cannot be quietly missed.
 | RHEL family | `yumpkg` and `dnfpkg` (aliases) | `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
-| macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, `mac_assistive`, and `mac_brew_pkg` and `mac_service` (aliases) | none |
+| macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_assistive` (5.119) |
 
 Notes on this table:
 
@@ -10210,6 +10211,41 @@ and `install` into a keychain that is locked.
 The release gate of SPEC 4.3 now names **two**, for two different
 reasons: `mac_softwareupdate`, which can be closed and has not been, and
 `mac_assistive`, which is deferred deliberately (5.117).
+
+### 5.119 `mac_assistive` is out of the build
+
+The release gate offers two ways past a module that changes a machine as
+root and has never been driven: demonstrate it, or take it out. For
+`mac_assistive` the first is not available on any terms worth paying, so
+it has been taken out.
+
+Its reads were real — `live_mac_assistive_test.go` parsed this fleet's
+own `TCC.db` through the real `sqlite3`, field by field, and 5.46
+records what that found about the schema Salt's module missed. The
+writes are the problem. `install`, `enable` and `remove` go to a
+database System Integrity Protection makes readonly to **every process
+without Full Disk Access, root included**. Granting it is not a
+configuration step: a person grants it to the *compiled test binary*, by
+hand, through System Settings — and `go test` rebuilds that binary to a
+new path routinely, so the grant has to be given again, and a run where
+nobody noticed is a test that skipped in silence.
+
+That is a standing manual ceremony attached to a test whose failure mode
+is quietness. 5.117 recorded it as deferred and left the module
+`Assumed`, which kept the release gate red on a module nobody intended
+to close — so the gate stopped being a thing to act on and became a
+thing to explain.
+
+So: the module is gone, SPEC 15.3 still names it, and
+`exec.PendingPlatformModules` now carries it with the reason, which is
+where an operator who types `mac_assistive` is told what happened rather
+than that they made a typo. Restoring it is a revert and a Full Disk
+Access grant, in that order.
+
+**What this costs.** Nothing on this fleet — no node here manages
+Accessibility grants — and the honest general answer is that a tree
+which needs them has no module now. The alternative was shipping one
+that had never been watched do the thing it exists to do.
 
 ## 6. Everything else not started
 

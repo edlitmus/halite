@@ -92,7 +92,6 @@ func New() *Registries {
 	registerMacUser(r)
 	registerMacSoftwareUpdate(r)
 	registerMacKeychain(r)
-	registerMacAssistive(r)
 
 	// The core modules of SPEC section 15.2 that were absent.
 	registerHTTP(r)

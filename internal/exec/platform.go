@@ -64,7 +64,18 @@ var pendingPlatformModules = map[string]PendingModule{
 	// fixtures for a tool nobody here has run is the mistake DIVERGENCE
 	// 5.31 exists to warn against. It waits for the same reason the
 	// other RHEL-only modules below do.
-	"authselect": {Platform: "rhel", When: "needs a RHEL 8+ host to verify against, which this project does not have"}}
+	"authselect": {Platform: "rhel", When: "needs a RHEL 8+ host to verify against, which this project does not have"},
+	// mac_assistive shipped, and was taken back out (DIVERGENCE 5.119).
+	// It was written, tested and driven against a real Mac's TCC
+	// database -- for reading. Its writes go to a file System Integrity
+	// Protection makes readonly to every process without Full Disk
+	// Access, root included, so the only way to demonstrate them is for
+	// a person to grant that to the compiled test binary by hand and to
+	// do it again on every rebuild. Nobody intends to, which made it a
+	// module that would sit `Assumed` and hold the release gate red
+	// forever. Out of the build is the honest state, and it is the
+	// second of the two ways past the gate that the gate itself offers.
+	"mac_assistive": {Platform: "darwin", When: "its writes need Full Disk Access granted by hand to each rebuilt test binary; see DIVERGENCE 5.119"}}
 
 // PendingPlatform reports why a module SPEC 15.3 names is not in this
 // build, and whether it is one of them at all.
