@@ -494,6 +494,46 @@ func TestAnExtensionThatDiesSaysWhyInTheError(t *testing.T) {
 	}
 }
 
+// A Go fatal says why in its first line, and the error carries it.
+//
+// # The end that matters is not the end
+//
+// The tail was first written to keep the last twelve lines, on the
+// stated grounds that this was enough for a Go runtime fatal error. It
+// is the wrong end of one. A fatal prints the message and the crashing
+// goroutine and *then* dumps every other goroutine, so the last twelve
+// lines of a real dump are something parked in `selectgo` -- true, and
+// about nothing.
+//
+// `internal/extpillar`'s end-to-end test flaked three times after the
+// tail was added and produced exactly that each time: sixty columns of
+// an idle `net/http` goroutine, and no sign of what died.
+//
+// So this fails if the first line is missing, which is what a
+// tail-only buffer does to it, and it checks that the gap between the
+// ends is stated rather than joined up silently.
+func TestAFatalsFirstLineSurvivesItsOwnGoroutineDump(t *testing.T) {
+	proc := startEcho(t, nil)
+	_, err := proc.Call(context.Background(), "die-with-a-dump", nil, nil, nil)
+	if err == nil {
+		t.Fatal("an extension that died reported success")
+	}
+	got := err.Error()
+
+	// The whole point: the reason is in the first line of four hundred.
+	if !strings.Contains(got, "fatal error: the reason this extension could not continue") {
+		t.Errorf("the error lost the fatal to the goroutine dump behind it: %v", got)
+	}
+	// And the last line is kept too, which is the other shape's evidence.
+	if !strings.Contains(got, "created by net/http.(*Transport).dialConn") {
+		t.Errorf("the error kept no tail: %v", got)
+	}
+	// A head joined straight onto a tail reads as consecutive lines.
+	if !strings.Contains(got, "more lines") {
+		t.Errorf("the error does not say that anything was dropped between the ends: %v", got)
+	}
+}
+
 // The same, with the reason arriving after the host has already seen
 // the extension go.
 //

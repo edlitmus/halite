@@ -85,8 +85,9 @@ type Process struct {
 	// while the extension is running is what kills it.
 	releaseSandbox func()
 
-	// stderrTail is the last few lines the extension wrote to stderr,
-	// kept so that a process which dies can say why.
+	// stderrHead and stderrTail are the beginning and the end of what
+	// the extension wrote to stderr, kept so that a process which dies
+	// can say why.
 	//
 	// The Stderr callback above already forwards every line, but a
 	// callback is somewhere *else* -- a log, if the host wired one, and
@@ -96,22 +97,53 @@ type Process struct {
 	// explanation and the error were arriving by different routes and
 	// only one of them reached whoever had to act on it.
 	//
-	// `internal/extconform` has kept a tail and appended it for exactly
-	// this reason since it was written; this is the same thing on the
-	// path that production and the tests actually use.
-	stderrMu   sync.Mutex
-	stderrTail []string
+	// # Why both ends, and not just the last lines
+	//
+	// The first cut kept only the last twelve, on the stated grounds
+	// that this was "enough for a Go runtime fatal error, which is the
+	// shape most likely to be worth reading". It was the wrong end of
+	// exactly that shape. A Go fatal prints its message and the
+	// crashing goroutine **first** and then dumps every other
+	// goroutine, so the last twelve lines of a real one are an idle
+	// `net/http` goroutine parked in `selectgo` -- true, and about
+	// nothing.
+	//
+	// That is not a guess. `internal/extpillar`'s end-to-end test has
+	// flaked for weeks with "the extension exited without answering",
+	// and the three times it flaked after the tail was added it
+	// produced precisely that: sixty columns of a goroutine that was
+	// waiting, and no sign of what died.
+	//
+	// So the head is kept whole and the tail is a ring, and what fell
+	// between them is counted rather than passed over in silence.
+	//
+	// `internal/extconform` keeps the first twenty lines and no tail,
+	// which is the right end for this shape and the wrong one for an
+	// extension that logs its way to a quiet death.
+	stderrMu    sync.Mutex
+	stderrHead  []string
+	stderrTail  []string
+	stderrCount int
 	// stderrDone is closed once the stderr pipe has reached EOF and
 	// every line it carried has been recorded.
 	stderrDone chan struct{}
 }
 
-// stderrTailLines is how much of the extension's stderr is kept for the
-// error message. Enough for a Go runtime fatal error, which is the
-// shape most likely to be worth reading, and bounded because an
-// extension that fails in a loop must not be able to grow this without
-// limit.
-const stderrTailLines = 12
+// stderrHeadLines and stderrTailLines are how much of each end is kept.
+//
+// The head is the larger because it is where the answer is: a Go fatal
+// spends its first line on the message, a blank line, and then the
+// crashing goroutine, so fourteen lines reaches the message and the
+// frames under it. The tail is smaller and is for the other shape --
+// an extension that logs its way along and dies without a dump, where
+// the last thing it managed to say is the whole of the evidence.
+//
+// Both are bounded because an extension that fails in a loop must not
+// be able to grow this without limit.
+const (
+	stderrHeadLines = 14
+	stderrTailLines = 6
+)
 
 // stderrGrace bounds how long an error message waits for the last of an
 // extension's stderr. It is only ever reached when something the
@@ -417,13 +449,19 @@ func (p *Process) drainStderr(r io.Reader) {
 	}
 }
 
-// recordStderr keeps the most recent lines, dropping the oldest.
+// recordStderr fills the head first and then rolls the tail, counting
+// everything so that what fell between them can be named.
 func (p *Process) recordStderr(line string) {
 	if strings.TrimSpace(line) == "" {
 		return
 	}
 	p.stderrMu.Lock()
 	defer p.stderrMu.Unlock()
+	p.stderrCount++
+	if len(p.stderrHead) < stderrHeadLines {
+		p.stderrHead = append(p.stderrHead, line)
+		return
+	}
 	p.stderrTail = append(p.stderrTail, line)
 	if len(p.stderrTail) > stderrTailLines {
 		p.stderrTail = p.stderrTail[len(p.stderrTail)-stderrTailLines:]
@@ -453,13 +491,25 @@ func (p *Process) saidAfterExit() string {
 
 // said renders what the extension wrote to stderr, for an error message,
 // or "" if it wrote nothing.
+//
+// A gap between the two ends is stated rather than elided. An error
+// that silently joins a first line to a last one reads as consecutive,
+// and somebody will eventually reason about two lines that had a
+// thousand between them.
 func (p *Process) said() string {
 	p.stderrMu.Lock()
 	defer p.stderrMu.Unlock()
-	if len(p.stderrTail) == 0 {
+	kept := len(p.stderrHead) + len(p.stderrTail)
+	if kept == 0 {
 		return ""
 	}
-	return "; it wrote to stderr: " + strings.Join(p.stderrTail, " | ")
+	parts := make([]string, 0, kept+1)
+	parts = append(parts, p.stderrHead...)
+	if dropped := p.stderrCount - kept; dropped > 0 {
+		parts = append(parts, fmt.Sprintf("... %d more lines ...", dropped))
+	}
+	parts = append(parts, p.stderrTail...)
+	return "; it wrote to stderr: " + strings.Join(parts, " | ")
 }
 
 func encodeOrNull(v any) (json.RawMessage, error) {
