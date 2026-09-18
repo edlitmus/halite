@@ -32,12 +32,14 @@ import (
 // closed since (DIVERGENCE 5.37's route 1 — a machine whose `aa-*`
 // tools actually parse its own profile tree, unlike the one 5.37
 // found), and `snap`'s reading closed with it (DIVERGENCE 5.28). What
-// is still `Assumed` is one of the macOS row's modules.
-// `mac_softwareupdate` is `Assumed` for want of doing the work rather
-// than for want of a way: its mutating surface is `--download` alone
-// now, which reboots nothing and can be driven (5.117).
+// is still `Assumed` is nothing: **no module that changes a machine as
+// root is unverified**, and the release gate passes for the first time.
+// `mac_softwareupdate` was the last, and it closed the way its note
+// says -- `--download` against Apple's real service on the `macos` leg,
+// with the machine's version unchanged afterwards, which is the claim
+// that module is built around.
 //
-// `mac_assistive` used to be the other, deferred deliberately because
+// `mac_assistive` was the other, deferred deliberately because
 // the only way to close it is a standing manual grant. It is no longer
 // here: a module nobody can demonstrate and nobody intends to is not
 // something to ship red forever, so it was taken out of the build
@@ -595,17 +597,19 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	// ---- Never pointed at the tool it drives ----
 
-	"mac_softwareupdate": {Level: exec.Assumed, Note: "the `softwareupdate --list` parser was " +
-		"built against real output captured on macOS 26, and `live_mac_softwareupdate_test.go` " +
-		"reads the real schedule state and the downloaded-updates plist. **The mutating " +
-		"surface is now `--download` alone**: `update` and `update_all` are registered and " +
-		"refuse, because installing restarts the machine and this project cannot demonstrate " +
-		"an install path on any Mac it has (DIVERGENCE 5.117). That makes what is left " +
-		"demonstrable -- a download fetches a payload and reboots nothing -- and it has not " +
-		"been demonstrated yet: no test has run `softwareupdate --download` against Apple's " +
-		"service, and no CI leg is a Mac. This is the one still `Assumed` for want of doing " +
-		"it rather than for want of a way. `ignore`, `list_ignored` and `reset_ignored` " +
-		"describe a `softwareupdate` option macOS removed and refuse by name"},
+	"mac_softwareupdate": {Level: exec.Hardware, Note: "**the mutating surface is `--download` " +
+		"alone**: `update` and `update_all` are registered and refuse, because installing " +
+		"restarts the machine and this project cannot demonstrate an install path on any Mac " +
+		"it has (DIVERGENCE 5.117). What is left was demonstrated on 2026-09-18 on macOS " +
+		"15.7.9 (build 24G830, arm64), under `sudo` on the `macos` leg of `fleet.yml`: " +
+		"`list_available` asked Apple's real service, `mac_softwareupdate.download` fetched " +
+		"`Safari27.0SequoiaAuto-27.0` in 20 seconds, and `sw_vers -productVersion` reported " +
+		"the same version afterwards -- which is the claim the module is built around, a " +
+		"download not being an install. The reads were demonstrated with it: the real " +
+		"schedule state and the /Library/Updates index. What is *not* demonstrated is an " +
+		"install, deliberately and permanently; nothing here drives one. `ignore`, " +
+		"`list_ignored` and `reset_ignored` describe a `softwareupdate` option macOS removed " +
+		"and refuse by name"},
 }
 
 // Trust renders this registry's evidence for `doctor`.
