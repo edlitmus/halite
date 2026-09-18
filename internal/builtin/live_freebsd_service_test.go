@@ -33,8 +33,11 @@ import (
 // which defaults to `$command`; the pid `daemon -p` writes is the
 // *child's*, so without `procname` the status check compares a `sleep`
 // against `/usr/sbin/daemon`, finds no match, and reports a running
-// service as stopped. That is the same family of trap as this project's
-// own rc.d script hitting `${name}_program`.
+// service as stopped. DIVERGENCE 5.21 records exactly that trap against
+// this project's own rc.d scripts -- "rc looked for `daemon` at a pid
+// belonging to `halite-hub` and reported a running service as stopped"
+// -- so this script was written from that row rather than by finding it
+// again.
 //
 // # What is checked against what
 //

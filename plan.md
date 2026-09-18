@@ -2027,12 +2027,32 @@ somebody would otherwise rediscover.
     `user/` domains: every command this provider runs names `system/`,
     which is what a node running as root manages.
 
-19c. **A FreeBSD row for `fleetcheck`, or an honest note that there is
-    not one.** The `freebsd` leg of `fleet.yml` drives `hostname` and
-    `sysctl` and nothing else, inside an emulated VM. The lab now has
-    real FreeBSD 14 and 15, and the estate is 80% FreeBSD. The gap
-    between "tier 1" and "two live functions" is worth either closing or
-    writing down.
+19c. ~~**A FreeBSD row for `fleetcheck`, or an honest note that there
+    is not one.**~~ — **done**, and the answer is the second thing
+    written down and the first thing closed somewhere else. `fleetcheck`
+    stays Debian: its container is a real Debian with real dpkg, and
+    there is no FreeBSD container to make a row from. **FreeBSD's row is
+    the `freebsd` leg of `fleet.yml`**, which now drives the whole live
+    suite as root rather than `hostname` and `sysctl` alone.
+
+    **38 live tests run there where six did**, and the gap was not
+    missing code: `quota` on real UFS, `swap`, `sudo`, `ps`, the process
+    beacons, `at` and `tmpfs` were all written and ran automatically
+    nowhere. Two more were closed by making the test bring what a stock
+    machine lacks — `jail` skipped on all five for want of an
+    `/etc/jail.conf`, and `acl`'s NFSv4 round trip skipped because
+    `t.TempDir()` is only ZFS on one host in the world — and the rc
+    provider, which `evidence.go` said "still only reads", was driven
+    for the first time. DIVERGENCE 5.123.
+
+    It found a defect of the worst shape immediately: `service.start` on
+    a service rc.conf has not enabled **did nothing and reported
+    success**, because rc.subr refuses a disabled service by exiting 0.
+    `service.dead` had it in the other direction.
+
+    Still uncovered automatically, and named rather than implied: `pf`
+    (it manages a real firewall, which is why it is not in an unattended
+    suite), `zfs` (its own `make zfscheck`), and `pkg`'s pkgng provider.
 
 19d. **`extconform` keeps only a head.** The bridge now keeps both ends
     of an extension's stderr; `internal/extconform` keeps the first
