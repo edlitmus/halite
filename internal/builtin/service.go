@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -694,9 +696,116 @@ func (launchdProvider) Enabled(c *exec.Context, name string) (bool, error) {
 	return launchdProvider{}.Status(c, name)
 }
 
+// launchdSpawnLimit bounds the wait for launchd to honour a start. It
+// matches the systemd provider's D-Bus deadline rather than being tuned
+// to the throttle below, because the two providers are answering the
+// same question -- has the init system finished doing what it was asked
+// -- and a node whose job deadline is shorter caps it either way.
+const launchdSpawnLimit = 90 * time.Second
+
 func (launchdProvider) Start(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"launchctl", "start", name}})
-	return err
+	// The spawn count is read *before* the start, because it is the only
+	// thing that distinguishes "launchd has run this job again" from
+	// "this job was already running" and from "it ran and exited before
+	// anybody looked". A pid cannot: an on-demand job that does its work
+	// in fifty milliseconds is never observed with one.
+	before, haveBaseline := launchdSpawnCount(c, name)
+	if _, err := c.Run(exec.Command{Argv: []string{"launchctl", "start", name}}); err != nil {
+		return err
+	}
+	if !haveBaseline {
+		// No baseline, no wait. `launchctl print` needs root and the
+		// system domain, and inventing a wait without something to
+		// compare against would either return at once -- which is what
+		// not waiting does anyway -- or block on a job that is already
+		// where it should be.
+		return nil
+	}
+	return launchdAwaitSpawn(c, name, before)
+}
+
+// launchdAwaitSpawn waits until launchd has actually spawned the job
+// again.
+//
+// **`launchctl start` returns when the request is queued, not when the
+// job is running**, and launchd throttles a respawn: a job asked to
+// start again within ten seconds of its last spawn is held until that
+// window passes, with `launchctl print` reporting `state = spawn
+// scheduled` in the meantime. Measured on macOS 15 on the `macos` leg:
+// `service.restart` returned in five milliseconds and the job came back
+// 10.03 seconds later (DIVERGENCE 5.122).
+//
+// Without this, `service.restart` reports a service restarted while it
+// is down, for ten seconds -- which is the same shape as a state whose
+// "make it converge" and "is it converged?" disagree, one layer out: the
+// module's answer and the machine's differ for long enough that anything
+// reading the node in between is told the wrong thing.
+func launchdAwaitSpawn(c *exec.Context, name string, before int) error {
+	deadline := time.Now().Add(launchdSpawnLimit)
+	if c.Ctx != nil {
+		if jobDeadline, ok := c.Ctx.Deadline(); ok && jobDeadline.Before(deadline) {
+			deadline = jobDeadline
+		}
+	}
+	for {
+		runs, ok := launchdSpawnCount(c, name)
+		if !ok {
+			// launchd answered a moment ago and does not now: the job
+			// has been unloaded under us, and no respawn is coming.
+			return fmt.Errorf("launchd stopped reporting %s while waiting for it to start", name)
+		}
+		if runs > before {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("launchd scheduled %s to start and had not done so after %s; "+
+				"it throttles a respawn to ten seconds and this was longer",
+				name, launchdSpawnLimit)
+		}
+		if c.Ctx != nil {
+			select {
+			case <-c.Ctx.Done():
+				return c.Ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+			}
+			continue
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// launchdSpawnCount reads how many times launchd has spawned a job out
+// of `launchctl print`, which is the only place it is reported --
+// `launchctl list <label>`, which the rest of this provider reads, has
+// no such key. A label launchd does not know, or a domain this account
+// cannot print, answers false rather than zero, because "never spawned"
+// and "cannot see it" are different facts.
+func launchdSpawnCount(c *exec.Context, name string) (int, bool) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"launchctl", "print", "system/" + name},
+		IgnoreExitCode: true,
+	})
+	if err != nil || res.Code != 0 {
+		return 0, false
+	}
+	for _, ln := range strings.Split(res.Stdout, "\n") {
+		ln = strings.TrimSpace(ln)
+		if !strings.HasPrefix(ln, "runs = ") {
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(ln, "runs = ")))
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	}
+	// No `runs` line is *not* a readable zero. It is a job launchd has
+	// never spawned, or a release that words this differently, and
+	// either way there is nothing to compare a later reading against --
+	// so the caller does not wait, which is what it did before this
+	// existed. A job that has never run is also the one job that cannot
+	// be throttled, so nothing is lost by it.
+	return 0, false
 }
 
 func (launchdProvider) Stop(c *exec.Context, name string) error {

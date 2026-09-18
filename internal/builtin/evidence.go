@@ -201,8 +201,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"stopped, restarted, enabled, disabled, masked and unmasked, each checked against " +
 		"`systemctl` directly rather than the module's own read-back, and the `JobRemoved` " +
 		"wait shown to be awaited (DIVERGENCE 5.39). The `systemctl` fallback was driven " +
-		"against the same unit. Not covered: the launchd, sysvinit and openrc providers, " +
-		"which have not been run at all, and the FreeBSD rc branch, which still only reads"},
+		"against the same unit. The launchd provider was driven against a real launchctl " +
+		"on a macOS 15 runner as root, on a LaunchDaemon the test bootstraps: started, " +
+		"stopped, restarted, enabled, disabled and listed, each checked against " +
+		"`launchctl print` rather than the `launchctl list` the module reads, which found " +
+		"restart reporting success while launchd had only scheduled the respawn " +
+		"(DIVERGENCE 5.122). Not covered: launchd's `gui/` and `user/` domains, since " +
+		"every command here names `system/`; the sysvinit and openrc providers, which " +
+		"have not been run at all; and the FreeBSD rc branch, which still only reads"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a

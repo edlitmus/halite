@@ -1840,8 +1840,9 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     its repositories) and neither has been run against a real apk — and
     runs the `service` module's openrc provider for the first time,
     which Alpine also ships as its default init (evidence.go's
-    `service` note: "the launchd, sysvinit and openrc providers ...
-    have not been run at all").
+    `service` note: "the sysvinit and openrc providers ... have not
+    been run at all" — launchd came off that list on 2026-09-18, item
+    19b).
 17. **A non-systemd Linux with sysvinit** (Devuan, or Debian/Ubuntu
     with `sysvinit-core` in place of systemd). Runs the `service`
     module's sysvinit provider for the first time — same gap as 16,
@@ -1860,10 +1861,13 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     It found `RunAs` broken on its first run (5.120) and demonstrated
     `mac_softwareupdate` on its second (5.121). See item 5.
 
-    **What it does not close:** the `service` module's launchd provider,
-    which this item also claimed. macOS ships launchd and nothing has
-    reached it; `mac_service` is an alias rather than an exercise of
-    that provider. Still open, and now cheap — the machine exists.
+    ~~**What it does not close:** the `service` module's launchd
+    provider, which this item also claimed.~~ **Closed on 2026-09-18**
+    by item 19b, on this leg, and it found a restart that reported
+    success while the service was down (DIVERGENCE 5.122). The
+    prediction in this paragraph held exactly: `mac_service` is an alias
+    rather than an exercise of that provider, and nothing had reached
+    it.
 
 19. ~~**A Linux host with a FIPS kernel, and one hardened to CIS Level
     2.**~~ — **mostly done.** It was the newest item here and the one
@@ -2002,10 +2006,26 @@ somebody would otherwise rediscover.
     in the tree.
 
 19b. **The `service` module's launchd, sysvinit and openrc providers.**
-    Three inits, none ever run. `evidence.go` says so in those words.
-    launchd is now the cheapest of the three: the `macos` leg is a Mac
-    that already runs as root. openrc needs the lab's Alpine row (16),
-    sysvinit a row that does not exist yet (17).
+    Three inits, none ever run. ~~**launchd**~~ is **done**, on the
+    `macos` leg, and it found the defect this item was ranked for: a
+    restart that reported success while launchd had only *scheduled* the
+    respawn, leaving the service down for the ten seconds launchd
+    throttles a respawn by. The provider now waits on launchd's own
+    spawn counter, which is what the systemd provider has done with
+    `JobRemoved` since it was written. DIVERGENCE 5.122.
+
+    Two things that item is worth carrying. The **first run passed** —
+    six green tests, one of them 10.19 seconds against a ten-second
+    deadline — and the pass was the finding: a bound somebody guessed
+    hid a measurement worth having. And the useful assertion was not
+    "the job is running afterwards" but **"the job is running when the
+    call returns"**, which is the assertion the systemd test already
+    made and the one nothing else here would have caught.
+
+    openrc still needs the lab's Alpine row (16), sysvinit a row that
+    does not exist yet (17). What launchd leaves open is its `gui/` and
+    `user/` domains: every command this provider runs names `system/`,
+    which is what a node running as root manages.
 
 19c. **A FreeBSD row for `fleetcheck`, or an honest note that there is
     not one.** The `freebsd` leg of `fleet.yml` drives `hostname` and

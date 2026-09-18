@@ -375,9 +375,9 @@ jobs:
   # # Why a hosted runner is the right machine and not a compromise
   #
   # These tests create an account, rewrite a power policy, import a
-  # certificate into the System keychain and write another account's
-  # preferences. What they need is root on a machine whose state nobody
-  # depends on afterwards -- and a hosted runner is exactly that, more
+  # certificate into the System keychain, write another account's
+  # preferences and bootstrap a system-wide LaunchDaemon. What they need
+  # is root on a machine whose state nobody depends on afterwards -- and a hosted runner is exactly that, more
   # completely than any Mac somebody owns. It is also already paid for:
   # `test (macos-15)` and `race (macos-15)` run on every push.
   #
@@ -385,7 +385,7 @@ jobs:
   # read it to know which account to become, so these have to arrive
   # through `sudo` rather than as an already-root shell.
   macos:
-    name: macos (real dscl, defaults, security, pmset)
+    name: macos (real dscl, defaults, security, pmset, launchctl)
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -430,3 +430,25 @@ jobs:
           echo "halite* accounts remaining: $leftover"
           test "$leftover" -eq 0 || {
             echo "the tests left an account behind"; exit 1; }
+
+          # The service tests bootstrap a LaunchDaemon and write
+          # launchd's persistent disable store, which outlives the plist
+          # and is keyed by label. Both are checked for the same reason
+          # the account is: the removal path is the half that is easiest
+          # to get wrong, and a leg that cannot say it ran would not
+          # notice it breaking.
+          daemons=$(ls /Library/LaunchDaemons | grep -c '^org\.halite\.' || true)
+          echo "org.halite.* LaunchDaemons remaining: $daemons"
+          test "$daemons" -eq 0 || {
+            echo "the tests left a LaunchDaemon behind"; exit 1; }
+          # `launchctl enable` clears an override by writing "enabled"
+          # rather than by removing the key, so an entry that says
+          # enabled is the cleanup having worked. One that still says
+          # disabled is a job this leg would refuse to start on a
+          # machine that was not thrown away.
+          sudo launchctl print-disabled system | grep 'org\.halite\.' || \
+            echo "no org.halite.* entries in the disable store"
+          stuck=$(sudo launchctl print-disabled system |
+            grep 'org\.halite\.' | grep -c -E '=> (disabled|true)' || true)
+          test "$stuck" -eq 0 || {
+            echo "the tests left a job disabled in launchd's store"; exit 1; }
