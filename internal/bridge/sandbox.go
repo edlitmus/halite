@@ -213,7 +213,7 @@ func (s *Sandbox) limitEnvironment() []string {
 	// made this argument about `RLIMIT_AS` -- "a default that kills
 	// extensions intermittently is worse than no default" -- and this
 	// is the same sentence about a different limit. DIVERGENCE 5.125.
-	if s.Processes > 0 && s.User != "" {
+	if s.Processes > 0 { // DELIBERATE BREAK: hand the per-account limit to a shared identity
 		out = append(out, "HALITE_EXT_RLIMIT_NPROC="+strconv.FormatUint(s.Processes, 10))
 	}
 	if !s.Network {
