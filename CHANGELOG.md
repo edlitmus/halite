@@ -18,6 +18,22 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### An extension's process limit bounds the account, and is applied only where it can
+
+`RLIMIT_NPROC` is per account, not per process: the kernel counts every
+process — on Linux every thread — that the account already has anywhere
+on the machine. The default sandbox's limit of 32, applied to an
+extension running as the agent's own identity, therefore bounded the
+whole account rather than the extension, and killed extensions
+intermittently on a busy node. It is what `internal/extpillar`'s
+end-to-end test had been failing on for weeks.
+
+The limit is now applied only to an extension with an account of its own
+(`run_as`), where it means what it says. `sys.list_extensions`, and the
+hub's `extension run`, report which of the two applies rather than
+printing a number that is not in force. On Windows nothing changes: there it is a job
+object, set by the host and enforced by the kernel.
+
 ### OpenRC is a provider of its own
 
 `service` on Alpine, Gentoo or any other OpenRC machine used to be

@@ -10669,6 +10669,77 @@ Both are the lesson the Debian container's first run recorded, where six
 defects were found and every one was in the test.
 
 
+### 5.125 A limit that bounded the account, and the flake that was it
+
+plan.md §7 item 19a, *"the oldest unexplained thing in the tree"*.
+`internal/extpillar`'s end-to-end test had flaked for weeks with "the
+extension exited without answering", three times on 2026-09-17 alone,
+and sixty local runs never reproduced it. The item said what to do about
+it: **wait and read**, because 5.104 had just made the bridge keep both
+ends of a dying extension's stderr.
+
+It was read on 2026-09-18, on a `fips-test` leg of an unrelated pull
+request:
+
+```
+runtime: failed to create new OS thread (have 5 already; errno=11)
+runtime: may need to increase max user processes (ulimit -u)
+fatal error: newosproc
+```
+
+**`RLIMIT_NPROC` is per real UID, not per process.** The kernel counts
+every process — on Linux every *thread* — that the account already has
+anywhere on the machine. So `DefaultSandbox`'s `Processes: 32`, handed
+to an extension sharing the agent's identity, never meant "this
+extension may have 32 threads". It meant "this account may have 32
+threads in total", and the extension was the one that found out, at
+whatever moment the rest of the machine happened to be busy. Five
+threads against a limit of 32 is what the fatal reports, and
+intermittency is exactly what a shared budget produces.
+
+**The argument against it was already written in this file, about a
+different limit.** `DefaultSandbox`'s comment explains why `MemoryBytes`
+is unset: RLIMIT_AS bounds virtual address space, a Go extension under a
+512 MiB limit dies at about 160 MiB, and *"a default that kills
+extensions intermittently is worse than no default"*. That sentence is
+true of the process limit for a different reason, and the same author
+did not carry it across.
+
+The limit is now carried only where it means what it says: an extension
+with **an account of its own**. `Describe` says which of the two applies,
+because an operator who reads "processes 32" and gets no limit at all
+has been told something untrue. Windows is untouched — there the limit
+is a job object, set by the host and enforced by the kernel whatever the
+extension's identity, which is the half of SPEC 24.3 that platform does
+better and 5.58 already recorded.
+
+#### The reproduction that reproduced nothing
+
+The first test written for this held more OS threads than the limit in
+the test process — so the account was over budget before the extension
+started — and then asserted that the extension could still answer. **It
+passed on the deliberately broken branch.** The echo extension is small
+enough that it never asks the runtime for another thread after
+`Confine`; the extension that flaked in production was doing HTTP and
+did.
+
+A test that passes before and after the fix is not testing the fix, and
+one that reads as a reproduction is worse than none, because the next
+person believes it. It now asks the extension to `spawn` a child, which
+is the request a per-account limit refuses outright, and on the break
+branch's Linux leg it says so:
+
+```
+the extension started 0 of 2 children while this account held 40 threads:
+fork/exec /tmp/halite-bridge-3289734733/echoext: resource temporarily unavailable
+```
+
+It is Linux-only and says so: RLIMIT_NPROC counts threads there and
+processes on the BSDs, so on the development host it would pass by
+reproducing nothing — which is the failure above, repeated on a
+platform instead of in an extension.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

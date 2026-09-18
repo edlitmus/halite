@@ -52,6 +52,14 @@ type Sandbox struct {
 // and a default that kills extensions intermittently is worse than no
 // default. An operator who wants the limit sets it, with a number that
 // suits the language the extension is written in.
+//
+// `Processes` is kept, and **applies only to an extension with an
+// account of its own**. RLIMIT_NPROC is per real UID: for an extension
+// sharing the agent's identity the number bounds the whole account
+// rather than the extension, and what that produced was the same
+// intermittent death the paragraph above describes -- for weeks, in
+// this project's own end-to-end test. `limitEnvironment` carries the
+// measurement. DIVERGENCE 5.125.
 func DefaultSandbox() *Sandbox {
 	return &Sandbox{
 		CPUSeconds: 60,
@@ -132,7 +140,14 @@ func (s *Sandbox) describeLimits() []string {
 		out = append(out, fmt.Sprintf("open files %d", s.OpenFiles))
 	}
 	if sup.Processes && s.Processes > 0 {
-		out = append(out, fmt.Sprintf("processes %d", s.Processes))
+		if s.User != "" {
+			out = append(out, fmt.Sprintf("processes %d for the account %s, which anything else running as it shares", s.Processes, s.User))
+		} else {
+			// Said out loud for the same reason the unenforced limits
+			// below are: an operator who reads "processes 32" and gets
+			// no limit at all has been told something untrue.
+			out = append(out, fmt.Sprintf("processes %d not applied: the limit is per account and this extension runs as the host's identity", s.Processes))
+		}
 	}
 	// A limit that was asked for and cannot be enforced here is said so
 	// out loud. Silently dropping it is how an operator comes to believe
@@ -171,7 +186,34 @@ func (s *Sandbox) limitEnvironment() []string {
 	if s.OpenFiles > 0 {
 		out = append(out, "HALITE_EXT_RLIMIT_NOFILE="+strconv.FormatUint(s.OpenFiles, 10))
 	}
-	if s.Processes > 0 {
+	// **`RLIMIT_NPROC` is per real UID, not per process**, and that is
+	// the whole of why it is conditional here. The kernel counts every
+	// process -- on Linux, every *thread* -- that account already has
+	// anywhere on the machine, so a limit of 32 handed to an extension
+	// sharing the agent's identity is not "this extension may have 32
+	// threads". It is "this account may have 32 threads in total", and
+	// the extension is the one that finds out, by dying at whatever
+	// point the rest of the machine happens to have reached.
+	//
+	// That is not a hypothesis. `internal/extpillar`'s end-to-end test
+	// flaked for weeks with "the extension exited without answering",
+	// and once the stderr tail kept both ends of a Go fatal (5.104) the
+	// next occurrence said what it was:
+	//
+	//	runtime: failed to create new OS thread (have 5 already; errno=11)
+	//	runtime: may need to increase max user processes (ulimit -u)
+	//	fatal error: newosproc
+	//
+	// Five threads, against a limit of 32, on a CI runner whose account
+	// was already near its own cap. Intermittent exactly as a shared
+	// budget would be.
+	//
+	// So it is set only where it means what it says: when the extension
+	// has an account of its own. `DefaultSandbox`'s comment already
+	// made this argument about `RLIMIT_AS` -- "a default that kills
+	// extensions intermittently is worse than no default" -- and this
+	// is the same sentence about a different limit. DIVERGENCE 5.125.
+	if s.Processes > 0 && s.User != "" {
 		out = append(out, "HALITE_EXT_RLIMIT_NPROC="+strconv.FormatUint(s.Processes, 10))
 	}
 	if !s.Network {
