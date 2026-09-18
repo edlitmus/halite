@@ -311,9 +311,16 @@ func TestLiveMacServiceKnowsALoadedJobIsNotRunning(t *testing.T) {
 	installProbeDaemon(t, c)
 	r := New()
 
-	if pid, out := launchdRunningPID(t, c); pid != 0 {
+	pid, out := launchdRunningPID(t, c)
+	if pid != 0 {
 		t.Fatalf("the probe daemon started itself at load; RunAtLoad is false:\n%s", out)
 	}
+	// Printed in full, and on purpose. `launchdSpawnCount` reads this
+	// output and the fixture behind its unit test has to be captured
+	// from a real launchd rather than written from the manual page --
+	// which is what this log line is for. It is the job at rest, before
+	// anything below has started it.
+	t.Logf("`launchctl print system/%s` on a loaded, never-run job:\n%s", liveLaunchdLabel, out)
 	// The exit code says "known to launchd" and the module must not read
 	// it as "running".
 	res, err := c.Run(exec.Command{
@@ -353,38 +360,56 @@ func TestLiveMacServiceKnowsALoadedJobIsNotRunning(t *testing.T) {
 // The restart assertion is the pid changing rather than the job merely
 // being up afterwards: a Restart that did nothing at all would leave a
 // running job running, and pass a test that only asked whether it was.
+//
+// And each call is asserted to have **finished what it asked for by the
+// time it returns**, which is the assertion the systemd provider's test
+// makes about `ActiveState` and the reason that provider awaits its job.
+// This is where launchd differs and where the first run of this file
+// found a defect: `launchctl start` returns as soon as the request is
+// queued, and launchd throttles a respawn to ten seconds, so a restart
+// reported a service restarted while it was down for 10.03 seconds
+// (DIVERGENCE 5.122). The elapsed times are logged rather than bounded
+// by a number somebody chose, because the number wanted here is a
+// measurement.
 func TestLiveMacServiceStartsStopsAndRestarts(t *testing.T) {
 	c := launchdLive(t)
 	installProbeDaemon(t, c)
 	r := New()
 
+	callStarted := time.Now()
 	if _, err := r.Exec.Call(c, "service.start", value.MapOf("name", liveLaunchdLabel)); err != nil {
 		t.Fatalf("service.start: %v", err)
 	}
-	// Measured rather than asserted: unlike the systemd provider, which
-	// awaits `JobRemoved`, launchd's `start` returns as soon as the
-	// request is queued. What this run saw is worth reporting either
-	// way; what the test then asserts is the settled state.
-	if immediate, err := r.Exec.Call(c, "service.status", value.MapOf("name", liveLaunchdLabel)); err == nil {
-		t.Logf("service.status the instant service.start returned: %v", immediate)
+	t.Logf("service.start returned after %s", time.Since(callStarted))
+	// The job is running **now**, not eventually. Read from the tool
+	// rather than from the module, so that a provider which returned too
+	// early cannot agree with itself about it.
+	first, out := launchdRunningPID(t, c)
+	if first == 0 {
+		t.Errorf("service.start returned and the job is not running; `launchctl print` says: %s",
+			launchdStateLines(out))
+		first, _ = waitForLaunchdPID(t, c, "service.start", true)
 	}
-	first, startWait := waitForLaunchdPID(t, c, "service.start", true)
-	t.Logf("service.start: the job was running %s after the call returned", startWait)
-
-	running, err := r.Exec.Call(c, "service.status", value.MapOf("name", liveLaunchdLabel))
-	if err != nil {
-		t.Fatalf("service.status: %v", err)
-	}
-	if running != true {
-		_, out := launchdRunningPID(t, c)
-		t.Errorf("service.status = %v while pid %d is running:\n%s", running, first, out)
+	if running, err := r.Exec.Call(c, "service.status", value.MapOf("name", liveLaunchdLabel)); err != nil || running != true {
+		t.Errorf("service.status = %v, %v while pid %d is running", running, err, first)
 	}
 
+	callStarted = time.Now()
 	if _, err := r.Exec.Call(c, "service.restart", value.MapOf("name", liveLaunchdLabel)); err != nil {
 		t.Fatalf("service.restart on a running job: %v", err)
 	}
-	second, restartWait := waitForLaunchdPID(t, c, "service.restart", true)
-	t.Logf("service.restart: the job was running again %s after the call returned", restartWait)
+	restartCall := time.Since(callStarted)
+	// This is the measurement that matters: how long the call took, and
+	// whether the job was really back when it returned. Before the
+	// provider awaited the respawn the call took five milliseconds and
+	// the job was down for ten seconds afterwards.
+	second, out := launchdRunningPID(t, c)
+	t.Logf("service.restart returned after %s with the job at pid %d", restartCall, second)
+	if second == 0 {
+		t.Errorf("service.restart returned and the job is not running; `launchctl print` says: %s",
+			launchdStateLines(out))
+		second, _ = waitForLaunchdPID(t, c, "service.restart", true)
+	}
 	if second == first {
 		t.Errorf("service.restart left pid %d in place; the job was never restarted", first)
 	}
@@ -392,6 +417,9 @@ func TestLiveMacServiceStartsStopsAndRestarts(t *testing.T) {
 	if _, err := r.Exec.Call(c, "service.stop", value.MapOf("name", liveLaunchdLabel)); err != nil {
 		t.Fatalf("service.stop: %v", err)
 	}
+	// `launchctl stop` is asynchronous in the other direction and
+	// nothing here waits on it, so the reaping is polled and timed
+	// rather than asserted at the instant of return.
 	_, stopWait := waitForLaunchdPID(t, c, "service.stop", false)
 	t.Logf("service.stop: the job was reaped %s after the call returned", stopWait)
 	if stopped, err := r.Exec.Call(c, "service.status", value.MapOf("name", liveLaunchdLabel)); err != nil || stopped != false {
@@ -417,8 +445,11 @@ func TestLiveMacServiceRestartsAJobThatIsNotRunning(t *testing.T) {
 	if _, err := r.Exec.Call(c, "service.restart", value.MapOf("name", liveLaunchdLabel)); err != nil {
 		t.Fatalf("service.restart on a stopped job: %v", err)
 	}
-	_, wait := waitForLaunchdPID(t, c, "service.restart on a stopped job", true)
-	t.Logf("service.restart on a stopped job: running %s after the call returned", wait)
+	if pid, out := launchdRunningPID(t, c); pid == 0 {
+		t.Errorf("service.restart returned on a stopped job and it is not running; `launchctl print` says: %s",
+			launchdStateLines(out))
+		waitForLaunchdPID(t, c, "service.restart on a stopped job", true)
+	}
 }
 
 // **enable / disable, against launchd's own disable store.**
