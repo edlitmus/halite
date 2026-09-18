@@ -27,7 +27,8 @@ in its **Common Linux row** — every one but `authselect`. `pam`/`quota`/
 state; `journald` is the one §7.12 flagged for a design decision;
 `mdadm`, `modprobe` and `udev` are exec-only (SPEC 15.5 names no state
 for any of them). `authselect` is left **pending on purpose** — see
-§2.3's row for why. 42 of 65 platform modules now ship. One consequence a reader should not have to hunt for:
+§2.3's row for why. 42 of 65 platform modules ship as of this
+amendment; the 2026-09-18 one below takes it to 41. One consequence a reader should not have to hunt for:
 the release gate is red on **ten** modules rather than two, all of them
 `apparmor`, `snap` or the eight-strong macOS row — every other new
 module has been driven against its real tool. `iptables`/`nftables`
@@ -50,6 +51,29 @@ on the `aa-*` tools so the module also works on a node that *does* have
 an unparseable profile somewhere — is still open and still a decision
 rather than an afternoon; it is just no longer the blocking one. The
 gate drops from ten to **nine**: `snap` and the eight-strong macOS row.
+
+**Amended again 2026-09-18, and this one changes a headline: the release
+gate passes.** `make release-gate` now reports *every module that
+changes a machine as root has been run against its tool*, where the
+amendments above tracked it from ten to nine. `snap` closed against a
+real snapd in the lab (DIVERGENCE 5.112) — the no-network rule §7.5
+named as its obstacle applies to `fleetcheck`, not to the lab. Six of
+the macOS row closed by hand on a real Mac (5.114–5.118), `mac_assistive`
+was **taken out of the build** because nothing could ever demonstrate it
+(5.119), and `mac_softwareupdate` closed on a CI leg that is now a Mac
+(5.121). SPEC 15.3's macOS row therefore ships **seven** modules rather
+than eight, and **41 of 65** platform modules ship rather than 42 —
+measured, not inferred: `TestPendingPlatformModulesMatchTheSpec` logs
+"SPEC 15.3 names 65 modules, 24 pending".
+
+Three other things landed with it, each worth finding from here rather
+than from `git log`: FreeBSD 14 and 15 joined the lab and 14 immediately
+found `acl.is_extended` broken on every host of that release (5.113);
+`fleet.yml` gained a `macos` leg, which found `RunAs` broken for an
+account in more than sixteen groups (5.120); and the ledger's ordering
+audit gained a chapter check, after 5.113 was filed past the end of the
+document where the ordering rule could not see it. §7 items 5 and 18 are
+the detail; §7's new 19a–19d are what the day left open.
 
 **A note on this file.** Nothing enforces it. `internal/specaudit`
 guards SPEC.md, `docs/DIVERGENCE.md` and README.md against the
@@ -1492,17 +1516,54 @@ place.
 
 **Then — closing the gate, which this fleet can do**
 
-5. **Demonstrate the modules the gate is still red on.** It was nine,
-   then two; it is now **eleven**, and the arithmetic is worth stating
-   plainly rather than buried. `make fleetcheck` closed four, the two
-   live CI legs closed two more, `netplan` closed on this fleet's Ubuntu
-   host (DIVERGENCE 5.38), `quota` closed on a runner (5.48), and `lvm`
-   closed on this fleet's Ubuntu host (5.50) — but the macOS row added
-   eight, because a module arrives undemonstrated and that is the
-   correct state for new work. `apparmor` has since closed too (line 40
-   above, DIVERGENCE 5.55); `snap` needs the network the no-network rule
-   refuses; the eight macOS modules need a CI leg that is a Mac and
-   writes to it, which none is.
+5. ~~**Demonstrate the modules the gate is still red on.**~~ —
+   **done, 2026-09-18. `make release-gate` passes:** *every module that
+   changes a machine as root has been run against its tool.*
+
+   The arithmetic is worth stating plainly rather than buried, because
+   the count went up before it went down. It was nine, then two, then
+   **eleven** when the macOS row arrived — a module arrives
+   undemonstrated and that is the correct state for new work. `make
+   fleetcheck` closed four, the two live CI legs closed two more,
+   `netplan` (DIVERGENCE 5.38), `quota` (5.48) and `lvm` (5.50) closed
+   on real hosts, `apparmor` followed (5.55), and `snap` closed against
+   a real snapd in the lab (5.112) — where the no-network rule turned
+   out not to be the obstacle, since the lab is not `fleetcheck`.
+
+   That left the eight macOS modules, and all eight closed in a day:
+
+   - **Six driven by hand** on a real Mac under `sudo` — `mac_defaults`
+     first, finding two defects no unit test could reach (5.114); then
+     `mac_user`/`mac_group`/`mac_shadow` as one account arc (5.115);
+     then `mac_power` (5.116) and `mac_keychain` (5.118).
+   - **`mac_assistive` taken out of the build** (5.119). Its writes go
+     to a database SIP keeps readonly to root, and the only way to
+     demonstrate them is a person granting Full Disk Access to the
+     compiled test binary and doing it again on every rebuild. A module
+     nobody can demonstrate and nobody intends to would have held the
+     gate red forever, which turns a gate into a thing to explain rather
+     than a thing to act on. Taking it out is the second of the two ways
+     past the gate that the gate's own text offers.
+   - **`mac_softwareupdate` demonstrated on CI** (5.121). Its mutating
+     surface is `--download` alone, because installing restarts the
+     machine and no state file expresses that failure mode. It fetched
+     a real payload from Apple and the machine reported the same version
+     afterwards.
+
+   **The lesson of the whole item is the last step rather than the
+   first.** Driving six modules by hand made them `hardware` and made
+   the evidence decay-prone: a run that happened once, on somebody's
+   laptop, is not a run that happens again when the module changes. The
+   `macos` leg of `fleet.yml` (item 18) is what makes the six stay
+   closed, and it found a defect on its first run that the hand-driven
+   passes never could — `RunAs` fails for an account in more than
+   sixteen groups, which a CI account is and a personal one is not
+   (5.120).
+
+   **Nothing here demonstrates an install path, deliberately and
+   permanently.** An agent that restarts a machine mid-run has a failure
+   mode the hub cannot tell from a node that has bricked itself. The
+   refusals say so by name.
 
    ~~**`quota`**~~ — **done**, and it cost six CI runs of which five
    were about the machine rather than the module. The leg makes an ext4
@@ -1583,11 +1644,17 @@ place.
       question — teaching the module to change a persisted mode without
       the `aa-*` tools, for the host that *does* have an unparseable
       profile — is still open; DIVERGENCE 5.37 and 5.55 have the detail.
-   2. **`snap`** — snapd is already on an Ubuntu runner and the obstacle
-      is the network: `snap install` fetches, and there is no offline
-      equivalent of the local apt repository `fleetcheck` uses. Either a
-      pre-seeded snap or an exception to the no-network rule, and the
-      exception is the wrong answer.
+   2. ~~**`snap`**~~ — **done**, and the obstacle named here was the
+      wrong one. `fleetcheck` has a no-network rule; the **lab** does
+      not, and two Ubuntu instances settled it in an hour. What it found
+      was worse than an unverified parser: `snap list` truncates a long
+      channel with an ellipsis, `--unicode=never` does not stop it, and
+      no option asks for the whole value — so `snap.installed` compared
+      a declared channel against a prefix, never matched, and would have
+      run a real `snap refresh` on every run while reporting a change,
+      on a node already in exactly the state asked for. A state that
+      cannot converge is worse than one that fails, because nothing
+      about it looks wrong. DIVERGENCE 5.112.
 
    Two lessons from doing the first seven, both worth carrying.
 
@@ -1748,6 +1815,13 @@ skipped; each is written and waiting on a machine this project has
 never had. The pattern items 1-13 set holds: don't ship a fixture for a
 tool nobody has run against it (DIVERGENCE 5.31).
 
+**The next four used to say "get a host". The hosts exist.**
+`contrib/tofu` raises seven Linux distributions and FreeBSD 14 and 15 on
+demand, all of them passing a full sweep, so RHEL 9, Alma 8, Alpine and
+openSUSE are a `make lab-up` away and the work is now writing the
+modules rather than acquiring the machine. What none of them is, is
+arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
+
 14. **A RHEL or Fedora 8+ host.** Closes `authselect` and the RHEL
     row's other six modules — `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
     `subscription_manager`, `dnf_module`, `chattr` (§2.3, all seven
@@ -1771,14 +1845,25 @@ tool nobody has run against it (DIVERGENCE 5.31).
 17. **A non-systemd Linux with sysvinit** (Devuan, or Debian/Ubuntu
     with `sysvinit-core` in place of systemd). Runs the `service`
     module's sysvinit provider for the first time — same gap as 16,
-    different init.
-18. **A Mac that writes preferences, with a CI leg that is one.**
-    Already the largest item on the release gate by count — the eight
-    macOS row modules (§2.3, DIVERGENCE 5.41-5.46), each read-verified
-    but mutating unwatched because no CI leg is a Mac that changes its
-    own state. The same host also runs the `service` module's launchd
-    provider for the first time, which macOS ships but nothing has
-    reached (same evidence.go note as 16 and 17).
+    different init. The lab has no such row; adding one is an entry in
+    `distros.tf`, not an acquisition.
+18. ~~**A Mac that writes preferences, with a CI leg that is one.**~~ —
+    **done**, and in that order: a real Mac closed six modules by hand,
+    and then `fleet.yml` gained a `macos` leg so they stay closed. The
+    leg is a hosted `macos-15` runner, which is a better machine for
+    this than any Mac somebody owns — these tests create an account,
+    rewrite a power policy and import into the System keychain, and what
+    that needs is root on a machine whose state nobody depends on
+    afterwards. It is also already paid for, and cannot be forgotten and
+    left billing.
+
+    It found `RunAs` broken on its first run (5.120) and demonstrated
+    `mac_softwareupdate` on its second (5.121). See item 5.
+
+    **What it does not close:** the `service` module's launchd provider,
+    which this item also claimed. macOS ships launchd and nothing has
+    reached it; `mac_service` is an alias rather than an exercise of
+    that provider. Still open, and now cheap — the machine exists.
 
 19. ~~**A Linux host with a FIPS kernel, and one hardened to CIS Level
     2.**~~ — **mostly done.** It was the newest item here and the one
@@ -1900,10 +1985,48 @@ tool nobody has run against it (DIVERGENCE 5.31).
     deadline, so a machine where gpg cannot be driven skips with a
     reason instead of hanging. DIVERGENCE 5.83.
 
+**Opened by the work of 2026-09-17/18, and small**
+
+These are not phases. They are the loose ends of a day that closed the
+release gate, listed because each one is cheap and each one is a thing
+somebody would otherwise rediscover.
+
+19a. **Find out what kills the `extpillar` extension.** Its end-to-end
+    test has flaked for weeks with "the extension exited without
+    answering", and three times on 2026-09-17 alone. The diagnostic
+    added to explain it was keeping the wrong end of a Go fatal's
+    goroutine dump and reported an idle `net/http` goroutine each time;
+    it now keeps both ends, so **the next occurrence should name the
+    cause**. 60 local runs did not reproduce it. This is a wait-and-read
+    rather than an investigation, but it is the oldest unexplained thing
+    in the tree.
+
+19b. **The `service` module's launchd, sysvinit and openrc providers.**
+    Three inits, none ever run. `evidence.go` says so in those words.
+    launchd is now the cheapest of the three: the `macos` leg is a Mac
+    that already runs as root. openrc needs the lab's Alpine row (16),
+    sysvinit a row that does not exist yet (17).
+
+19c. **A FreeBSD row for `fleetcheck`, or an honest note that there is
+    not one.** The `freebsd` leg of `fleet.yml` drives `hostname` and
+    `sysctl` and nothing else, inside an emulated VM. The lab now has
+    real FreeBSD 14 and 15, and the estate is 80% FreeBSD. The gap
+    between "tier 1" and "two live functions" is worth either closing or
+    writing down.
+
+19d. **`extconform` keeps only a head.** The bridge now keeps both ends
+    of an extension's stderr; `internal/extconform` keeps the first
+    twenty lines and no tail, which is the right end for a fatal and the
+    wrong one for an extension that logs its way to a quiet death. Left
+    deliberately, noted here so it is a decision rather than drift.
+
 **Blocked on a decision**
 
-20. Whether FreeBSD belongs in SPEC 27.1 tier 1, given what it now
-    carries and what CI already runs on it.
+20. ~~Whether FreeBSD belongs in SPEC 27.1 tier 1~~ — **answered
+    2026-09-16: it does**, and SPEC 27.1 has moved. It carries 80% of
+    production, is four hosts to one, and CI already ran the whole unit
+    suite and a functional leg on it — more than tier 2 asks for. §6
+    item 12 records the reasoning.
 21. ~~The `cmd.run` default~~ (answered: follow Salt, DIVERGENCE 5.81),
     the unplanned modules, a `win_registry` state, and job signing (§6).
 22. Whether a follower that falls behind the event bus should stop or
