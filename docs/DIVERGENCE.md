@@ -10381,6 +10381,97 @@ the hub cannot distinguish from a node that has bricked itself, and the
 refusals say so by name. A tree that needs updates applied gets them
 from the mechanism that owns reboots — an MDM profile, or a person.
 
+### 5.122 launchd schedules a spawn, and halite said it had started it
+
+plan.md §7 item 19b: the `service` module ships four providers and
+`evidence.go` said in these words that three of them — launchd, sysvinit
+and openrc — "have not been run at all". launchd was the cheapest of the
+three to close, because the `macos` leg added in 5.120 is a Mac that
+already runs as root.
+
+**`mac_service` is not this code path.** It is an alias module; nothing
+had ever asked `service.start` on a Mac which provider answered it.
+
+The test brings its own LaunchDaemon — `org.halite.live-probe`, a
+sleeping shell loop with `RunAtLoad` and `KeepAlive` both false, so that
+loading it does not start it and stopping it does not restart it. That
+combination makes launchd's two separate facts observable: a job can be
+*known* to launchd and not running, which is the distinction `Status`
+claims to draw and which nothing had watched it draw. It is loaded with
+`launchctl bootstrap`, not `load -w`, because `load -w` writes the same
+persistent disable store the enable/disable half is about to measure.
+
+**The first run passed, and the pass was the finding.** Six tests green
+on a real Mac, one of them taking 10.19 seconds against a ten-second
+deadline. A pass that close to its own timeout is a test that passes on
+timing, so the next run replaced the guessed bound with a measurement
+and logged launchd's own account of the job while it waited:
+
+```
+service.start returned after 12.310583ms
+service.restart: while waiting, `launchctl print` says: state = spawn scheduled; runs = 1
+service.restart: the job was running again 10.028410333s after the call returned
+service.stop: the job was reaped 5.06125ms after the call returned
+```
+
+**`launchctl start` returns when the request is queued, not when the job
+is running**, and launchd throttles a respawn: a job asked to start
+again within ten seconds of its last spawn is held until that window
+passes. The tool says so itself, in the `launchctl print` this parser
+now reads — `minimum runtime = 10`.
+
+So `service.restart` on a Mac reported a service restarted, in five
+milliseconds, while it was **down for the next ten seconds**. It is the
+same disagreement this chapter keeps recording, one layer out from a
+state whose "make it converge" and "is it converged?" differ: the
+module's answer and the machine's, for long enough that anything reading
+the node in between is told the wrong thing. The systemd provider has
+awaited `JobRemoved` since it was written (5.39); this one waited for
+nothing.
+
+**The fix is launchd's own spawn counter.** `Start` reads `runs` out of
+`launchctl print` before it starts the job and waits until it moves.
+The counter rather than a pid, because an on-demand job that does its
+work in fifty milliseconds is never observed with one and a wait on a
+pid would block for the whole deadline on exactly the jobs that are
+working. No counter means no wait — `launchctl print` needs root and the
+system domain, and a job that has never run is also the one job that
+cannot be throttled. The bound is the systemd provider's ninety seconds,
+capped by the surrounding job's deadline.
+
+Afterwards, on the same leg:
+
+```
+service.restart returned after 10.108045625s with the job at pid 4176
+```
+
+**Broken on purpose, both ways.** With the wait removed the live test
+fails and names the cause in launchd's words — *"service.restart
+returned and the job is not running; `launchctl print` says: state =
+spawn scheduled"* — and the unit test, whose fixture is a real
+`launchctl print` captured from that leg, fails saying `Start` returned
+without reading the counter again.
+
+**What this does not cover**, and each is a different machine or a
+different afternoon:
+
+- **The user domains.** Every command here is `system/<label>`, which is
+  what a node running as root manages. `gui/<uid>` and `user/<uid>` are
+  untouched, and a per-user agent is a different domain, not a different
+  spelling.
+- **`Reload` is `Restart`**, because launchd has no reload, so on a Mac
+  `service.reload` now inherits the ten-second wait too. Nothing
+  measured what a tree that reloads in a loop makes of that.
+- **The disable store's wording on older releases.** macOS 15 prints
+  `=> enabled` and the module matches on exactly that suffix; the test
+  accepts the older `=> true`/`=> false` spelling as well, deliberately,
+  so that a release that uses it shows up as a disagreement between the
+  two readers rather than as two readers wrong together. No such release
+  has been run.
+- **sysvinit and openrc are still unrun.** Item 19b's other two: openrc
+  needs the lab's Alpine row, sysvinit a row that does not exist yet.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

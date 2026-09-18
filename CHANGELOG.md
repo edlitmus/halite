@@ -18,6 +18,26 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A restart on macOS waits for the service to come back
+
+`service.restart` on a Mac reported a service restarted while it was
+still down. `launchctl start` returns when the request is queued, and
+launchd throttles a respawn — a job asked to start again within ten
+seconds of its last spawn is held until that window passes. Measured on
+a macOS 15 runner: the call returned in five milliseconds and the job
+came back 10.03 seconds later, with `launchctl print` saying `state =
+spawn scheduled` throughout.
+
+An operator sees two changes. A restart, reload or `force_reload` of a
+launchd job now **takes as long as launchd actually takes** — up to ten
+seconds where it used to return at once — and a job that never comes
+back is an error naming the throttle instead of a success. Nothing else
+changes: the wait needs `launchctl print`, so a node that cannot read
+launchd's spawn counter behaves exactly as before.
+
+This is the first time any of the `service` module's launchd provider
+has been run. sysvinit and openrc still have not been.
+
 ### The stderr an error carries keeps both ends
 
 A dying extension's error carries what the extension wrote to stderr.
