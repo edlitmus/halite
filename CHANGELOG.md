@@ -18,6 +18,33 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The macOS row: one module out, the rest under CI, and a limit of sixteen
+
+`mac_assistive` is out of the build. Its writes go to a database System
+Integrity Protection keeps readonly to every process without Full Disk
+Access, root included, and the only way to demonstrate them is a person
+granting that to the compiled test binary and doing it again on every
+rebuild. That kept the release gate red on a module nobody intended to
+close, which makes a gate a thing to explain rather than a thing to act
+on. SPEC still names it and the build says where it went. DIVERGENCE
+5.119.
+
+The six modules that *were* driven on a real Mac had a different
+problem: they were driven **by hand, once**. `fleet.yml` now has a macOS
+leg, so they are driven as root on every change to them — on a hosted
+runner, which is a machine whose state nobody depends on afterwards more
+completely than any Mac somebody owns.
+
+It found something on its first run. `RunAs` switches a child to another
+account with that account's full supplementary group set, and **macOS
+refuses more than sixteen**. The refusal arrives as `fork/exec
+/usr/bin/defaults: invalid argument` — naming a binary that is present,
+executable and innocent, with nothing in it about groups. A personal
+Mac's account is in a handful of groups; the runner's was in seventeen,
+one over. DIVERGENCE 5.120.
+
+The release gate is down to one module.
+
 ### The lab grew a FreeBSD row, and it found something on its first boot
 
 FreeBSD became tier 1 and had exactly two machines: the development host

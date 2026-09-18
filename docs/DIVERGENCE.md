@@ -10247,6 +10247,51 @@ Accessibility grants — and the honest general answer is that a tree
 which needs them has no module now. The alternative was shipping one
 that had never been watched do the thing it exists to do.
 
+### 5.120 macOS takes sixteen groups, and the seventeenth fails as `fork/exec`
+
+`RunAs` switches a child to another account with setuid, setgid and
+that account's full supplementary group set. macOS will not take the
+full set: `setgroups(2)` refuses a list longer than `NGROUPS_MAX`,
+which is **16** there, and resolves the rest through Open Directory
+instead of carrying it in the process credential.
+
+What the refusal looks like is the reason this survived:
+
+```
+live_mac_defaults_root_test.go:104: write as runner:
+fork/exec /usr/bin/defaults: invalid argument
+```
+
+The error names `/usr/bin/defaults` — a program that is present,
+executable, and entirely innocent — and says *invalid argument* about
+the arguments, which were fine. Nothing in it contains the word
+"group". A reader follows it to `defaults`, or to the path, or to the
+arguments, and finds nothing wrong with any of them.
+
+**Why nobody had seen it.** A personal Mac's account is in a handful of
+groups. A build account is in dozens. `mac_defaults` had been driven
+under `sudo` on a real Mac and passed (5.114), because that Mac's
+account fitted. The first machine to run it that did not was the new
+`macos` leg of `fleet.yml`, on its first run, and the margin was one:
+
+```
+groups for runner:  17
+```
+
+Seventeen against a limit of sixteen. A Mac whose account is in fifteen
+groups never sees this, which is every Mac anybody had tried.
+
+The list is trimmed to the cap on darwin and nowhere else — the other
+platforms this build runs on allow far more, and dropping groups there
+would remove access the account has. Dropping is the safe direction, a
+child getting fewer privileges rather than more, but it is a real
+difference from that account's own login session, so `capGroups` is a
+named function with the reason on it rather than a slice expression.
+
+The leg now prints the account's group count and `NGROUPS_MAX` before
+it writes anything, because that number is a property of the machine
+and it decides whether this path works at all.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
