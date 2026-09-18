@@ -308,18 +308,34 @@ jobs:
           test ! -e /run/systemd/system/halite-live-probe.service || {
             echo "the tests left the probe unit in /run/systemd/system"; exit 1; }
 
-  # The same two modules on FreeBSD, which is the platform four of the
-  # five hosts in this project's own fleet run.
+  # The live suite on FreeBSD, which is the platform four of the five
+  # hosts in this project's own fleet run and SPEC 27.1 tier 1.
   #
-  # It is a different pair of branches rather than the same code on
-  # another kernel: `hostname` reads and writes rc.conf through `sysrc`
-  # here, and that branch had no test at all behind a fixture that looked
-  # like one (plan.md 1.4). `sysctl` persists to /etc/sysctl.conf rather
-  # than a drop-in, and `sysctlAssign` tries two spellings because BSD
-  # and Linux disagree about `-w` -- which has never been checked on the
-  # side that is not Linux.
+  # # Why this drives everything rather than two modules
+  #
+  # It used to run `hostname` and `sysctl` alone -- six tests, a quarter
+  # of a second -- on the reasoning that those two had FreeBSD branches
+  # nothing else covered. That was true and it was also the whole of
+  # this platform's automated live coverage, on the platform carrying
+  # 80% of production. Every other FreeBSD live test in the tree ran
+  # only when somebody raised the lab by hand, which is evidence that
+  # decays in exactly the way the `macos` leg was built to stop.
+  #
+  # `hostname` reads and writes rc.conf through `sysrc` here, and that
+  # branch had no test at all behind a fixture that looked like one
+  # (plan.md 1.4). `sysctl` persists to /etc/sysctl.conf rather than a
+  # drop-in, and `sysctlAssign` tries two spellings because BSD and
+  # Linux disagree about `-w`. Those reasons still hold; they are now
+  # the reason two of these tests exist rather than the reason the leg
+  # runs only two.
+  #
+  # The VM is disposable and the suite is destructive on purpose: it
+  # attaches memory disks, makes filesystems on them, starts jails and
+  # signals processes it started itself. `reboot` is the one thing it
+  # does not reach, and cannot: those tests need `HALITE_REBOOT_LIVE=1`
+  # as well, a variable nothing here sets.
   freebsd:
-    name: freebsd (real kernel, sysrc)
+    name: freebsd (real kernel, the live suite)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -345,12 +361,49 @@ jobs:
           fetch -q -o /tmp/go.tar.gz "https://go.dev/dl/${version}.freebsd-amd64.tar.gz"
           tar -C "$HOME/toolchain" -xzf /tmp/go.tar.gz
 
-      - name: drive hostname and sysctl
+      # What this machine is, before anything writes to it, for the same
+      # reason the macOS leg prints `sw_vers`: an evidence note names a
+      # release, and a leg that does not say which one it ran on cannot
+      # be compared to it.
+      - name: what this FreeBSD is
+        shell: cpa.sh {0}
+        run: |
+          freebsd-version -kru || true
+          uname -a
+          mount
+          sysctl -n kern.features.ufs_quota 2>/dev/null || echo "kern.features.ufs_quota: absent"
+          kldstat || true
+
+      - name: drive the live suite as root
         shell: cpa.sh {0}
         run: |
           set -e
           export PATH="$HOME/toolchain/go/bin:$PATH"
-          sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl' ./internal/builtin/
+          # The status is carried through a file rather than through
+          # $PIPESTATUS: this shell is FreeBSD's /bin/sh, which has no
+          # such variable, and a pipeline's status is `tee`'s -- which
+          # always succeeds. The output is teed rather than redirected
+          # so that a suite which hangs is still readable before the
+          # job's timeout kills it.
+          { sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 \
+              go test -count=1 -v -timeout 20m -run TestLive ./internal/builtin/ 2>&1;
+            echo $? > /tmp/live.status; } | tee /tmp/live.txt
+          exit "$(cat /tmp/live.status)"
+
+      # A test that skips is not a test that ran, and this leg exists to
+      # make that visible rather than to be green. Every skip is printed
+      # with its reason, so that a FreeBSD branch quietly stopping to run
+      # here is something a person reads rather than something a filter
+      # hides.
+      - name: what ran, and what skipped and why
+        shell: cpa.sh {0}
+        if: always()
+        run: |
+          test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
+          echo "--- ran:"
+          grep -c '^--- PASS' /tmp/live.txt || true
+          echo "--- skipped, with the reason each gave:"
+          awk '/^--- SKIP/ {name=$3; getline; print name": "$0}' /tmp/live.txt || true
 
       - name: the machine was put back
         shell: cpa.sh {0}
