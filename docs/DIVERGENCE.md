@@ -10334,6 +10334,53 @@ The leg now prints the account's group count and `NGROUPS_MAX` before
 it writes anything, because that number is a property of the machine
 and it decides whether this path works at all.
 
+### 5.121 The last `Assumed` module, and a release gate that passes
+
+`mac_softwareupdate` was the one module left that changes a machine as
+root and had never been run against the tool it drives. Its note said
+what made it different from every module before it:
+
+> This is the one still `Assumed` for want of doing it rather than for
+> want of a way.
+
+`update` and `update_all` are registered **refusals** — installing
+restarts the machine and can take it through a firmware update on the
+way, which is a failure mode no state file expresses (5.117). So
+`--download` is the whole mutating surface, and unlike an install it can
+be demonstrated: it fetches a payload and reboots nothing.
+
+It has been. On 2026-09-18, on macOS 15.7.9 (build 24G830, arm64), under
+`sudo` on the new `macos` leg of `fleet.yml`:
+
+```
+downloading "Safari27.0SequoiaAuto-27.0" from Apple
+--- PASS: TestLiveMacSoftwareUpdateDownloadsWithoutInstalling
+```
+
+`list_available` asked Apple's real service; `download` fetched the
+payload in twenty seconds; and `sw_vers -productVersion` reported the same version
+afterwards. That last assertion is the point rather than a flourish —
+the module is built around a download not being an install, and a test
+that only watched the command succeed would have shown that *something*
+ran.
+
+**The release gate passes.** For the first time:
+
+> every module that changes a machine as root has been run against its
+> tool
+
+It named eight modules at the start of the day and none at the end of
+it. Six closed by being driven by hand on a real Mac (5.114–5.118), one
+was taken out of the build because nothing could ever demonstrate it
+(5.119), and this is the eighth.
+
+**What is still not demonstrated, deliberately.** No install path, on
+any platform, ever runs here. That is not a gap waiting to be filled: a
+configuration agent that restarts a machine mid-run has a failure mode
+the hub cannot distinguish from a node that has bricked itself, and the
+refusals say so by name. A tree that needs updates applied gets them
+from the mechanism that owns reboots — an MDM profile, or a person.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

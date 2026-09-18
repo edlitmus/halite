@@ -18,6 +18,32 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The release gate passes
+
+It refuses a release while any module that changes a machine as root has
+never been run against the tool it drives. This morning it named
+**eight**. It now names none:
+
+> every module that changes a machine as root has been run against its
+> tool
+
+Six of the eight closed by being driven by hand on a real Mac under
+`sudo`, and then gained a CI leg so that evidence stops being a run that
+happened once on somebody's laptop. One, `mac_assistive`, was taken out
+of the build — SIP keeps its writes unreachable without a manual grant
+re-given on every rebuild, so it would have held the gate red forever
+for no one's benefit.
+
+The last was `mac_softwareupdate`, whose mutating surface is
+`--download` alone because installing restarts the machine. It fetched
+`Safari27.0SequoiaAuto-27.0` from Apple's real service on macOS 15.7.9,
+and the machine reported the same version afterwards — which is the
+claim the module is built around, a download not being an install.
+DIVERGENCE 5.121.
+
+No install path is demonstrated, on any platform, and none ever will be
+here: the refusals say why by name.
+
 ### `acl.is_extended` works on FreeBSD 14 again, by not asking for a flag
 
 `getfacl -s` was added in FreeBSD 15, and `acl.is_extended` passed it
