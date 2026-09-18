@@ -469,6 +469,10 @@ func TestLiveMacServiceEnablesAndDisablesInTheStore(t *testing.T) {
 		t.Fatalf("service.disable: %v", err)
 	}
 	disabled, present, raw := launchdDisableStore(t, c)
+	// Logged because the ledger claims a spelling, and a claim about
+	// another program's output is worth having that program's own words
+	// behind it in the run this release was cut from.
+	t.Logf("`launchctl print-disabled system` after service.disable: %q (present: %v)", raw, present)
 	if !present {
 		t.Fatal("service.disable wrote nothing `launchctl print-disabled system` reports for the label")
 	}
@@ -490,6 +494,7 @@ func TestLiveMacServiceEnablesAndDisablesInTheStore(t *testing.T) {
 		t.Fatalf("service.enable: %v", err)
 	}
 	disabled, present, raw = launchdDisableStore(t, c)
+	t.Logf("`launchctl print-disabled system` after service.enable: %q (present: %v)", raw, present)
 	if present && disabled {
 		t.Errorf("after service.enable the store still says %q", raw)
 	}
