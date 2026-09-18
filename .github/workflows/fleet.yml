@@ -405,6 +405,13 @@ jobs:
           uname -m
           csrutil status || true
           pmset -g custom || true
+          # macOS caps a process credential at NGROUPS_MAX groups, and
+          # an account's real membership can exceed it -- which is the
+          # difference between a CI account and a personal one, and the
+          # difference RunAs trips over. Printed because it is a
+          # property of the machine, not of the test.
+          echo "groups for ${SUDO_USER:-$USER}: $(id -G "${SUDO_USER:-$USER}" | wc -w)"
+          getconf NGROUPS_MAX || true
 
       - name: drive the macOS row as root
         run: |
