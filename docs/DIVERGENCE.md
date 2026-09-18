@@ -10472,6 +10472,114 @@ different afternoon:
   needs the lab's Alpine row, sysvinit a row that does not exist yet.
 
 
+### 5.123 The tier 1 platform's live leg drove two functions
+
+plan.md §7 item 19c. `fleet.yml`'s `freebsd` leg ran `hostname` and
+`sysctl` and nothing else — **six tests, a quarter of a second** — on
+the platform SPEC 27.1 calls tier 1 and that carries 80% of production.
+Every other FreeBSD live test in the tree ran only when somebody raised
+the lab by hand, which is evidence of the kind that decays and exactly
+what the `macos` leg (5.120) was built to stop.
+
+The leg now runs `-run TestLive` as root, prints what the machine is
+before anything writes to it, and prints every skip with the reason it
+gave. What that measured, in order:
+
+**29 tests ran where six had.** `quota` on a real UFS filesystem,
+`swap` on a memory disk, `sudo` against a real `visudo`, `ps`, the
+process beacons, `at`, `tmpfs`, and the original six. None of that was
+new code; all of it was already written and ran nowhere automatically.
+
+**Two more closed for a property of the machine rather than of the
+module.**
+
+- **`jail` skipped all five.** A host that has never run a jail has no
+  `/etc/jail.conf`, and the test skipped when it could not read one — so
+  the mutating half of a FreeBSD-only module ran only on machines that
+  already had jails. An absent file is an empty one to append to. The
+  test now creates it, says so in the log, and removes the whole file
+  again rather than leaving an empty one behind.
+- **`acl`'s NFSv4 round trip skipped.** Which ACL family a path speaks
+  is a property of the filesystem, and `t.TempDir()` is ZFS only on the
+  host this was written on; everywhere else it is UFS, which answers in
+  POSIX.1e. So the mutating half of that module had run on **one machine
+  in the world** and in no CI leg. UFS speaks NFSv4 when mounted `-o
+  nfsv4acls`, and the sibling test already built a filesystem for the
+  other family, so that setup is now a helper both use.
+
+**The rc provider had never been run at all**, which `evidence.go` said
+in those words: "the FreeBSD rc branch, which still only reads". It has
+its own test now, with its own rc.d script — and the script is the
+careful part. `command` is `/usr/sbin/daemon`, rc.subr checks a pidfile
+against `procname` which defaults to `$command`, and `daemon -p` writes
+the **child's** pid; without an explicit `procname` the status check
+compares a `sleep` against `/usr/sbin/daemon` and reports a running
+service as stopped. That is the same family of trap as this project's
+own rc.d script (5.21), which records this trap in the same words:
+*"daemon's `-p` records the child's pid, and rc.subr matches it against
+`procname`, which defaults to `command`"*. The test was written from
+that row rather than rediscovering it.
+
+#### What it found: start and stop did nothing, and said nothing
+
+```
+service.start on a service rc.conf has not enabled:
+no error, and it is running = false (haliteprobe is not running.)
+```
+
+**An rcvar is a permission as well as a boot setting.** An rc.d script
+that declares one refuses a plain `start` until rc.conf says YES — and
+it refuses it the way rc expects at boot, by printing an explanation and
+**exiting 0**, because a disabled service being skipped is the normal
+case there rather than a failure.
+
+So on FreeBSD `service.running` reported a service started, reported a
+change, and started nothing, on every run. That is worse than a state
+that fails, for the reason 5.112 gives about `snap`: nothing about it
+looks wrong. `stop` has the identical shape, so `service.dead` on a
+running-but-disabled service reported it stopped and left it running.
+
+rc.subr's own answer to "now, whatever rc.conf says" is the `one`
+prefix, which is what its refusal tells the operator to use. Start,
+stop, restart and reload take it where `service <name> enabled` says the
+service is not enabled — decided from that command's **exit status**
+rather than from the refusal's prose, and a script with no rcvar at all
+is always startable and takes the `one` verbs happily, so guessing wrong
+in that direction costs nothing. It is also what `service.running` means
+on every other platform: systemd starts a unit that is disabled when it
+is asked to.
+
+Afterwards, on the same leg: `service.start on a service rc.conf has not
+enabled: started it, pid 2265`. Broken on purpose, the test fails with
+the machine's own words — *"the probe never became running within thirty
+seconds; `service haliteprobe status` says: haliteprobe is not
+running."*
+
+#### And one failure in the workflow itself, demonstrated by accident
+
+The commit that added the rc test **started no Fleet run**. The trigger
+paths named eighteen live test files one at a time and the new one was
+not among them — the exact failure `CLAUDE.md` warns about in its own
+words: *"If you add a live test, add it to the right leg's `-run` filter
+and to the trigger paths, or it will never run again."* It took one
+commit to demonstrate. The list is now one pattern, `live_*_test.go`,
+plus the FreeBSD row's modules.
+
+#### What FreeBSD still has no automated live coverage for
+
+- **`pf`**, demonstrated by hand on `mail.edlitmus.info` in 5.31 and
+  never since. It manages a real firewall, which is why it is not in a
+  suite that runs unattended, and that is a reason rather than an excuse.
+- **`zfs`**, which has `make zfscheck` of its own and no leg.
+- **`pkg`'s pkgng provider**: `live_pkg_test.go` is dpkg's, and it skips
+  here saying so.
+- **`fleetcheck` stays Debian.** Its container is a real Debian with
+  real dpkg, and there is no FreeBSD container to make a row from; the
+  jail this project would need is not what a GitHub runner gives.
+  FreeBSD's row is this leg, not that target — which is what item 19c
+  asked to have settled either way.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

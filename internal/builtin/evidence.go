@@ -208,7 +208,12 @@ var moduleEvidence = map[string]exec.Evidence{
 		"restart reporting success while launchd had only scheduled the respawn " +
 		"(DIVERGENCE 5.122). Not covered: launchd's `gui/` and `user/` domains, since " +
 		"every command here names `system/`; the sysvinit and openrc providers, which " +
-		"have not been run at all; and the FreeBSD rc branch, which still only reads"},
+		"have not been run at all. The FreeBSD rc provider is driven on the `freebsd` leg " +
+		"against a real `service(8)` and `sysrc(8)`, on an rc.d script the test installs: " +
+		"enabled, started, restarted (checked by the pid changing), stopped and disabled, " +
+		"each read back from `sysrc -n` and the pidfile rather than from this module. That " +
+		"first run found start and stop doing nothing at all, without error, on any service " +
+		"rc.conf had not enabled (DIVERGENCE 5.123)"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a
@@ -432,7 +437,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"a binary from inside the jail rather than from the host, so nothing had ever been " +
 		"running in it, and `ps -J` was catching the short-lived `jexec` process itself. Not " +
 		"covered: `jail.conf` includes and variables, a jail with a vnet of its own rather than " +
-		"an address alias, and `jail -m` to modify a running jail in place"},
+		"an address alias, and `jail -m` to modify a running jail in place. **All five of " +
+		"those live tests now run on every `freebsd` leg** rather than only on a host somebody " +
+		"raised by hand: they used to skip on a machine with no /etc/jail.conf, which is every " +
+		"fresh FreeBSD, so the mutating half ran only where jails already existed " +
+		"(DIVERGENCE 5.123)"},
 	"mount": {Level: exec.Captured, Note: "reads the real /proc/self/mounts and the real " +
 		"`mount` output on the platforms CI runs, and nothing has been mounted or " +
 		"unmounted by this module"},
@@ -449,8 +458,12 @@ var moduleEvidence = map[string]exec.Evidence{
 		"guessing. **This is NFSv4 only**: ZFS is what this fleet has, Linux's tool of the same " +
 		"name speaks a different grammar, and a POSIX.1e-shaped entry is refused by name rather " +
 		"than misread -- confirmed as root against a real UFS filesystem built on a memory disk " +
-		"and mounted with `-o acls`. Not covered: Linux, which needs its own captured fixtures " +
-		"and a host to take them from"},
+		"and mounted with `-o acls`. **The NFSv4 round trip runs on every `freebsd` leg** now, " +
+		"rather than only where the temp directory happens to be ZFS: which family a path " +
+		"speaks is a property of the filesystem, so the test builds a UFS filesystem mounted " +
+		"`-o nfsv4acls` when it needs one, and before that the mutating half ran on one " +
+		"machine and in no CI leg (DIVERGENCE 5.123). Not covered: Linux, which needs its own " +
+		"captured fixtures and a host to take them from"},
 	"tmpfs": {Level: exec.Captured, Note: "read against the real `mount` and `df` on this " +
 		"fleet's FreeBSD 15.1 host, both against the tmpfs the host already had and against one " +
 		"the test mounted as root and then unmounted, with the reader shown to flip in both " +

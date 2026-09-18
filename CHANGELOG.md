@@ -18,6 +18,24 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A FreeBSD service that rc.conf has not enabled now starts
+
+`service.running` on FreeBSD reported a service started, reported a
+change, and started nothing — on every run, for any service whose
+`_enable` line rc.conf does not carry. An rc.d script with an rcvar
+refuses a plain `start` until rc.conf says YES, and refuses it by
+printing an explanation and exiting 0, so halite was told it had
+worked. `service.dead` had the same hole in the other direction: it
+reported a running service stopped and left it running.
+
+halite now uses rc.subr's own `onestart`, `onestop`, `onerestart` and
+`onereload` where `service <name> enabled` says the service is not
+enabled. That is what the refusal itself tells an operator to use, and
+it makes `service.running` mean on FreeBSD what it already meant
+everywhere else: the service is running when the state has run, whatever
+rc.conf says about boot. A tree that also wants it to survive a reboot
+says `enable: true`, exactly as before.
+
 ### A restart on macOS waits for the service to come back
 
 `service.restart` on a Mac reported a service restarted while it was
