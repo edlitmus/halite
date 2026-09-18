@@ -528,23 +528,54 @@ func (freebsdRCProvider) Enabled(c *exec.Context, name string) (bool, error) {
 	return res.Code == 0, nil
 }
 
+// freebsdRCVerb picks between `start` and `onestart`, and between their
+// stop, restart and reload counterparts.
+//
+// **An rcvar is a permission as well as a boot setting.** An rc.d script
+// that declares one refuses a plain `start` until rc.conf says YES --
+// and it refuses it the way rc expects at boot, by printing an
+// explanation and **exiting 0**, because a disabled service being
+// skipped is the normal case there rather than a failure. Measured on
+// the FreeBSD leg: `service.start` on a service rc.conf had not enabled
+// returned no error and started nothing, so halite reported a service
+// started, reported a change, and changed nothing -- on every run.
+// DIVERGENCE 5.123.
+//
+// rc.subr's own answer to "do it now, whatever rc.conf says" is the
+// `one` prefix, which is what its refusal tells the operator to use. So
+// that is what this runs where rc.conf has not enabled the service, and
+// it is what `service.running` means on every other platform: systemd
+// starts a disabled unit when it is asked to.
+//
+// The decision is made from `service <name> enabled`'s exit status
+// rather than from the refusal's prose. A script with no rcvar at all
+// is always startable, and `one`-prefixed verbs work on those too, so
+// guessing wrong in that direction costs nothing.
+func freebsdRCVerb(c *exec.Context, name, verb string) string {
+	enabled, err := freebsdRCProvider{}.Enabled(c, name)
+	if err == nil && !enabled {
+		return "one" + verb
+	}
+	return verb
+}
+
 func (freebsdRCProvider) Start(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"service", name, "start"}})
+	_, err := c.Run(exec.Command{Argv: []string{"service", name, freebsdRCVerb(c, name, "start")}})
 	return err
 }
 
 func (freebsdRCProvider) Stop(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"service", name, "stop"}})
+	_, err := c.Run(exec.Command{Argv: []string{"service", name, freebsdRCVerb(c, name, "stop")}})
 	return err
 }
 
 func (freebsdRCProvider) Restart(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"service", name, "restart"}})
+	_, err := c.Run(exec.Command{Argv: []string{"service", name, freebsdRCVerb(c, name, "restart")}})
 	return err
 }
 
 func (freebsdRCProvider) Reload(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"service", name, "reload"}})
+	_, err := c.Run(exec.Command{Argv: []string{"service", name, freebsdRCVerb(c, name, "reload")}})
 	return err
 }
 

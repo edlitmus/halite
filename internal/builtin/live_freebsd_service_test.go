@@ -219,13 +219,36 @@ func TestLiveFreeBSDServiceDrivesTheWholeArc(t *testing.T) {
 		t.Errorf("service.enabled = %v, %v on a service rc.conf does not mention", enabled, err)
 	}
 
-	// Measured, not asserted: this is what a tree that says
-	// `service.running` without `enable: true` gets on FreeBSD.
+	// **A service rc.conf has not enabled still starts.** This is what
+	// a tree that says `service.running` without `enable: true` gets,
+	// and it is what found the defect: rc.subr refuses a plain `start`
+	// for a service whose rcvar is not YES, and refuses it by exiting
+	// 0, so halite reported a service started while nothing had
+	// started. It is `service.running`'s meaning on every other
+	// platform, and rc.subr's own `one`-prefixed verbs are how FreeBSD
+	// spells it. DIVERGENCE 5.123.
 	if _, err := r.Exec.Call(c, "service.start", value.MapOf("name", liveRCName)); err != nil {
-		t.Logf("service.start on a service rc.conf has not enabled: %v", err)
-	} else {
-		running, out := liveRCStatus(t, c)
-		t.Logf("service.start on a service rc.conf has not enabled: no error, and it is running = %v (%s)", running, out)
+		t.Fatalf("service.start on a service rc.conf has not enabled: %v", err)
+	}
+	disabledPID := waitForRCPID(t, c, true)
+	if running, out := liveRCStatus(t, c); !running {
+		t.Fatalf("service.start returned and `service %s status` says: %s", liveRCName, out)
+	}
+	t.Logf("service.start on a service rc.conf has not enabled: started it, pid %d", disabledPID)
+	if status, err := r.Exec.Call(c, "service.status", value.MapOf("name", liveRCName)); err != nil || status != true {
+		t.Errorf("service.status = %v, %v while pid %d is running", status, err, disabledPID)
+	}
+
+	// And stopping one has the same shape: `stop` is refused for a
+	// disabled service exactly as `start` is, so a `service.dead` on a
+	// running-but-disabled service would have reported it stopped and
+	// left it running.
+	if _, err := r.Exec.Call(c, "service.stop", value.MapOf("name", liveRCName)); err != nil {
+		t.Fatalf("service.stop on a service rc.conf has not enabled: %v", err)
+	}
+	waitForRCPID(t, c, false)
+	if running, out := liveRCStatus(t, c); running {
+		t.Fatalf("service.stop returned and `service %s status` says: %s", liveRCName, out)
 	}
 
 	// Enable, and check rc.conf itself rather than the module.
