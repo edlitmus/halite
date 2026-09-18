@@ -132,11 +132,13 @@ func liveOpenRCPID(t *testing.T, c *exec.Context) int {
 	if err != nil {
 		return 0
 	}
-	res, err := c.Run(exec.Command{
-		Argv:           []string{"ps", "-p", strconv.Itoa(pid)},
-		IgnoreExitCode: true,
-	})
-	if err != nil || res.Code != 0 {
+	// `/proc/<pid>` rather than `ps -p`, and this is the second version
+	// of this helper: Alpine's `ps` is busybox's, which has no `-p` at
+	// all and exits 1 saying "unrecognized option". The first run of
+	// this test failed for thirty seconds on that while `rc-service
+	// status` was cheerfully reporting "started" -- the probe was
+	// wrong, not the machine.
+	if _, err := os.Stat("/proc/" + strconv.Itoa(pid)); err != nil {
 		return 0
 	}
 	return pid
@@ -293,6 +295,42 @@ func TestLiveOpenRCServiceDisableLeavesNoRunlevelBehind(t *testing.T) {
 	}
 	if len(after) != 0 {
 		t.Errorf("service.disable left the probe in %v, having found it in %v", after, before)
+	}
+}
+
+// **OpenRC is not the sysvinit provider with different words**, and this
+// machine is the proof rather than the argument.
+//
+// Alpine has `/etc/init.d` *and* a `/sbin/service` shim, which is
+// exactly what `sysvProvider.Available` looks for -- so before this
+// provider existed, `pickServiceProvider` picked sysvinit here. Start
+// and stop happened to work through the shim. The boot state did not:
+// there is no `update-rc.d`, no `chkconfig` and no `/etc/rc3.d` on this
+// host, so `service.enabled` failed outright and `service.enable` ran a
+// program that is not installed. DIVERGENCE 5.124.
+func TestLiveOpenRCIsPickedOverSysvinitWhichWouldMatchToo(t *testing.T) {
+	c := openrcLive(t)
+
+	if !(sysvProvider{}).Available(c) {
+		t.Skip("the sysvinit provider does not match this host, so the ordering this test is about does not arise")
+	}
+	t.Log("the sysvinit provider matches this host too; the provider order is what decides")
+
+	p, err := pickServiceProvider(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Name() != "openrc_service" {
+		t.Fatalf("the %s provider was picked on an OpenRC host", p.Name())
+	}
+
+	// What a node used to get, measured rather than described: the boot
+	// state through the provider that would have answered.
+	if _, err := (sysvProvider{}).Enabled(c, "sshd"); err == nil {
+		t.Error("the sysvinit provider answered the boot state on an OpenRC host; " +
+			"this test's account of what was broken is wrong and the ledger should be corrected")
+	} else {
+		t.Logf("the sysvinit provider on this host answers the boot state with: %v", err)
 	}
 }
 
