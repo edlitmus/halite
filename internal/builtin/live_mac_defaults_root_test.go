@@ -1,3 +1,16 @@
+//go:build unix
+
+// `syscall.Stat_t` does not exist on Windows, and `make build-all` vets
+// every shipped target including windows/amd64 -- so without this tag
+// the whole package failed to vet there. Every other file in this tree
+// that names `syscall.Stat_t` carries the same tag, test files
+// included; this one was the exception.
+//
+// `unix` rather than `darwin`: the test skips itself off a Mac at run
+// time like its neighbours do, and keeping it compiled on Linux and
+// FreeBSD keeps that skip line in a lab sweep's output, which is where
+// somebody reads what was not exercised.
+
 package builtin
 
 import (

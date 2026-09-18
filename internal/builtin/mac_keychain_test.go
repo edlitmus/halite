@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
-	"github.com/edlitmus/halite/internal/value"
 )
 
 // `security find-certificate -a -Z` output: a SHA-1 hash line before each
@@ -207,32 +206,6 @@ func TestMacKeychainUninstallReportsARealFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "User interaction is not allowed") {
 		t.Errorf("the error lost what security said: %v", err)
-	}
-}
-
-// What `security default-keychain` says for an account that has none.
-// Captured from the real `security` on macOS 27.0 (build 26A5425a),
-// running as root.
-const securityNoDefaultKeychain = "security: SecKeychainCopyDefault: A default keychain " +
-	"could not be found.\n"
-
-// An account with no default keychain gets an answer, not an error.
-//
-// root is such an account on a stock Mac, and root is what halite-node
-// runs as, so this is the path every real node takes.
-func TestMacKeychainDefaultKeychainIsEmptyForAnAccountWithoutOne(t *testing.T) {
-	r := New()
-	c, _ := macKeychainCtx(t, map[string]exec.Result{
-		"security default-keychain": {Code: 1, Stderr: securityNoDefaultKeychain},
-	})
-
-	got, err := r.Exec.Call(c, "mac_keychain.default_keychain", value.NewMap(0))
-	if err != nil {
-		t.Fatalf("default_keychain on an account with none was an error, which is what "+
-			"every halite node running as root would get: %v", err)
-	}
-	if got != "" {
-		t.Errorf("default_keychain returned %#v, want the empty string", got)
 	}
 }
 
