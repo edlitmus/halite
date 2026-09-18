@@ -221,7 +221,18 @@ func liveJailConfWith(t *testing.T, name, root, extra string) {
 	block := fmt.Sprintf("\n%s {\n\tpath = \"%s\";\n\tmount.devfs = 0;\n\tmount.fstab = \"\";\n%s\tpersist;\n}\n",
 		name, root, extra)
 
+	// A host that has never run a jail has no jail.conf at all, which is
+	// every fresh FreeBSD and was every CI runner: this used to skip
+	// there, so `jail`'s mutating half ran only on a machine that
+	// already had jails on it. An absent file is an empty one to append
+	// to, and the cleanup below takes the whole file away again rather
+	// than leaving an empty one behind. DIVERGENCE 5.123.
+	created := false
 	before, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		created, before, err = true, nil, nil
+		t.Logf("%s does not exist on this host; this test creates it and removes it again", path)
+	}
 	if err != nil {
 		t.Skipf("%s could not be read: %v", path, err)
 	}
@@ -233,6 +244,15 @@ func liveJailConfWith(t *testing.T, name, root, extra string) {
 	}
 
 	t.Cleanup(func() {
+		if created {
+			// Nothing here owned this file before the test did, so put
+			// the machine back to having no jail.conf rather than to
+			// having an empty one.
+			if err := os.Remove(path); err != nil {
+				t.Errorf("%s was created by this test and could not be removed: %v", path, err)
+			}
+			return
+		}
 		current, err := os.ReadFile(path)
 		if err != nil {
 			t.Errorf("%s could not be read back, so the test's entry may still be in it: %v", path, err)

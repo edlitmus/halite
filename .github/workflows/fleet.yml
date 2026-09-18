@@ -400,10 +400,13 @@ jobs:
         if: always()
         run: |
           test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
-          echo "--- ran:"
-          grep -c '^--- PASS' /tmp/live.txt || true
+          printf 'tests that ran:     %s\n' "$(grep -c '^--- PASS' /tmp/live.txt || true)"
+          printf 'tests that skipped: %s\n' "$(grep -c '^--- SKIP' /tmp/live.txt || true)"
           echo "--- skipped, with the reason each gave:"
-          awk '/^--- SKIP/ {name=$3; getline; print name": "$0}' /tmp/live.txt || true
+          # `go test -v` prints the reason on the line *before* the
+          # SKIP, so this keeps the previous line rather than reading
+          # the next one, which is the following test's RUN.
+          awk '/^--- SKIP/ { print $3": "prev } { prev=$0 }' /tmp/live.txt || true
 
       - name: the machine was put back
         shell: cpa.sh {0}

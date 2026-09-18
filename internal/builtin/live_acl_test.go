@@ -24,18 +24,95 @@ func liveACLRegistry() *Registries {
 	return r
 }
 
+// liveUFSWithACLs builds a throwaway UFS filesystem on a memory disk and
+// mounts it with one of the two mutually exclusive ACL options `mount`
+// takes -- `acls` for POSIX.1e, `nfsv4acls` for NFSv4 -- returning where
+// it mounted it.
+//
+// **Which ACL family a path speaks is a property of the filesystem, not
+// of the operating system**, which is the whole reason this exists: on
+// the host these tests were written on `/tmp` is ZFS and answers in
+// NFSv4, and on a stock FreeBSD it is UFS and answers in POSIX.1e. A
+// test that wants one family has to build a filesystem that speaks it
+// rather than hope for the machine it is on.
+//
+// Everything it makes is detached and unmounted in cleanup whatever the
+// test did, the same shape live_quota_ufs_test.go uses: nothing here
+// should still exist after `go test` exits.
+func liveUFSWithACLs(t *testing.T, c *exec.Context, option string) string {
+	t.Helper()
+	if runtime.GOOS != "freebsd" {
+		t.Skipf("this makes a UFS filesystem with a memory disk; this is %s", runtime.GOOS)
+	}
+	if os.Getenv("HALITE_SYSTEM_LIVE") != "1" {
+		t.Skip("set HALITE_SYSTEM_LIVE=1 to let this attach a memory disk")
+	}
+	if os.Geteuid() != 0 {
+		t.Skip("attaching a memory disk and mounting it both need root")
+	}
+	for _, tool := range []string{"mdconfig", "newfs", "mount", "umount", "getfacl", "setfacl"} {
+		if c.Which(tool) == "" {
+			t.Skipf("this host has no `%s`", tool)
+		}
+	}
+
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"mdconfig", "-a", "-t", "swap", "-s", "32m"},
+		IgnoreExitCode: true,
+	})
+	if err != nil || res.Code != 0 {
+		t.Skipf("a memory disk could not be attached: %v (exit %d: %s)", err, res.Code, strings.TrimSpace(res.Stderr))
+	}
+	unit := strings.TrimSpace(res.Stdout)
+	if unit == "" || !strings.HasPrefix(unit, "md") {
+		t.Skipf("mdconfig did not name the unit it attached; it said %q", unit)
+	}
+	dev := "/dev/" + unit
+	t.Cleanup(func() {
+		if _, err := c.Run(exec.Command{Argv: []string{"mdconfig", "-d", "-u", unit}, IgnoreExitCode: true}); err != nil {
+			t.Logf("the memory disk %s could not be detached, which leaks 32 MiB of swap: %v", unit, err)
+		}
+	})
+
+	if res, err := c.Run(exec.Command{Argv: []string{"newfs", "-U", dev}, IgnoreExitCode: true}); err != nil || res.Code != 0 {
+		t.Skipf("a UFS filesystem could not be made on %s: %v (%s)", dev, err, strings.TrimSpace(res.Stderr))
+	}
+
+	mount := filepath.Join(t.TempDir(), "mnt")
+	if err := os.MkdirAll(mount, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := c.Run(exec.Command{Argv: []string{"mount", "-o", option, dev, mount}, IgnoreExitCode: true}); err != nil || res.Code != 0 {
+		t.Skipf("%s could not be mounted with -o %s: %v (%s)", dev, option, err, strings.TrimSpace(res.Stderr))
+	}
+	t.Cleanup(func() {
+		if res, err := c.Run(exec.Command{Argv: []string{"umount", mount}, IgnoreExitCode: true}); err != nil || res.Code != 0 {
+			t.Logf("%s could not be unmounted: %v (%s)", mount, err, strings.TrimSpace(res.Stderr))
+		}
+	})
+	return mount
+}
+
 // TestLiveACLRoundTripsAnNFSv4EntryOnARealFile drives `acl.set`,
 // `acl.get`, `acl.is_extended`, `acl.remove` and `acl.wipe` against a
 // real getfacl/setfacl and a throwaway file on whatever filesystem
 // t.TempDir() lands on — ZFS on the host this was written against,
 // hence NFSv4 ACLs.
 //
-// No root and no HALITE_SYSTEM_LIVE gate: every mutation here is on a
-// file this process owns inside its own temp directory, the same
-// standing every non-live unit test in acl_test.go already assumes
-// setfacl needs (verified live while writing this module — see
-// acl.go's doc comment). What a fixture-based test cannot exercise is
-// the real binary and its exit codes, which is what this proves.
+// **On a filesystem that already speaks NFSv4 it needs no gate at all**:
+// every mutation is on a file this process owns inside its own temp
+// directory, the same standing every non-live unit test in acl_test.go
+// already assumes setfacl needs (verified live while writing this
+// module — see acl.go's doc comment). What a fixture-based test cannot
+// exercise is the real binary and its exit codes, which is what this
+// proves.
+//
+// Where the temp directory does *not* speak NFSv4 — a stock FreeBSD,
+// where /tmp is UFS — it builds a filesystem that does, and that needs
+// root and `HALITE_SYSTEM_LIVE=1` for the memory disk. Before that it
+// simply skipped, which meant the mutating half of this module ran on
+// one machine in the world and in no CI leg, on SPEC 27.1's tier 1
+// platform. DIVERGENCE 5.123.
 func TestLiveACLRoundTripsAnNFSv4EntryOnARealFile(t *testing.T) {
 	if runtime.GOOS != "freebsd" {
 		t.Skipf("this module speaks the FreeBSD getfacl/setfacl grammar; this is %s", runtime.GOOS)
@@ -50,7 +127,8 @@ func TestLiveACLRoundTripsAnNFSv4EntryOnARealFile(t *testing.T) {
 	}
 
 	r := liveACLRegistry()
-	path := filepath.Join(t.TempDir(), "aclfile")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "aclfile")
 	if err := os.WriteFile(path, []byte("hello\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +146,24 @@ func TestLiveACLRoundTripsAnNFSv4EntryOnARealFile(t *testing.T) {
 	// inferred from GOOS. The refusal itself is covered by its own test
 	// against a UFS filesystem built for the purpose.
 	if !liveACLIsNFSv4(t, c, path) {
-		t.Skipf("%s is on a filesystem whose ACLs are not NFSv4; this module manages those "+
-			"only, and TestLivePOSIXOneACLIsRefusedByNameAgainstARealUFSFilesystem covers "+
-			"the refusal", path)
+		// **And so it builds one.** This used to skip here, which meant
+		// the mutating half of this module ran on exactly one machine in
+		// the world -- the ZFS host it was written on -- and nowhere in
+		// CI, on the platform SPEC 27.1 calls tier 1. UFS speaks NFSv4
+		// ACLs when it is mounted with `-o nfsv4acls`, so the family the
+		// module manages is a `mount` option away on any FreeBSD, and
+		// the sibling test below already made a filesystem for the
+		// other family.
+		t.Logf("%s does not speak NFSv4 ACLs; building a UFS filesystem that does", dir)
+		path = filepath.Join(liveUFSWithACLs(t, c, "nfsv4acls"), "aclfile")
+		if err := os.WriteFile(path, []byte("hello\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if !liveACLIsNFSv4(t, c, path) {
+			out, _ := c.Run(exec.Command{Argv: []string{"getfacl", "-q", path}, IgnoreExitCode: true})
+			t.Fatalf("a UFS filesystem mounted -o nfsv4acls does not answer in NFSv4; `getfacl -q` says:\n%s",
+				out.Stdout)
+		}
 	}
 
 	set := value.MapOf("name", path, "tag", "user", "qualifier", me.Username, "perms", "rw", "type", "allow")
@@ -170,46 +263,7 @@ func TestLivePOSIXOneACLIsRefusedByNameAgainstARealUFSFilesystem(t *testing.T) {
 		t.Skip("attaching a memory disk and mounting it both need root")
 	}
 	c := &exec.Context{}
-	for _, tool := range []string{"mdconfig", "newfs", "mount", "umount", "getfacl", "setfacl"} {
-		if c.Which(tool) == "" {
-			t.Skipf("this host has no `%s`", tool)
-		}
-	}
-
-	res, err := c.Run(exec.Command{
-		Argv:           []string{"mdconfig", "-a", "-t", "swap", "-s", "32m"},
-		IgnoreExitCode: true,
-	})
-	if err != nil || res.Code != 0 {
-		t.Skipf("a memory disk could not be attached: %v (exit %d: %s)", err, res.Code, strings.TrimSpace(res.Stderr))
-	}
-	unit := strings.TrimSpace(res.Stdout)
-	if unit == "" || !strings.HasPrefix(unit, "md") {
-		t.Skipf("mdconfig did not name the unit it attached; it said %q", unit)
-	}
-	dev := "/dev/" + unit
-	t.Cleanup(func() {
-		if _, err := c.Run(exec.Command{Argv: []string{"mdconfig", "-d", "-u", unit}, IgnoreExitCode: true}); err != nil {
-			t.Logf("the memory disk %s could not be detached, which leaks 32 MiB of swap: %v", unit, err)
-		}
-	})
-
-	if res, err := c.Run(exec.Command{Argv: []string{"newfs", "-U", dev}, IgnoreExitCode: true}); err != nil || res.Code != 0 {
-		t.Skipf("a UFS filesystem could not be made on %s: %v (%s)", dev, err, strings.TrimSpace(res.Stderr))
-	}
-
-	mount := filepath.Join(t.TempDir(), "mnt")
-	if err := os.MkdirAll(mount, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if res, err := c.Run(exec.Command{Argv: []string{"mount", "-o", "acls", dev, mount}, IgnoreExitCode: true}); err != nil || res.Code != 0 {
-		t.Skipf("%s could not be mounted with POSIX.1e ACLs: %v (%s)", dev, err, strings.TrimSpace(res.Stderr))
-	}
-	t.Cleanup(func() {
-		if res, err := c.Run(exec.Command{Argv: []string{"umount", mount}, IgnoreExitCode: true}); err != nil || res.Code != 0 {
-			t.Logf("%s could not be unmounted: %v (%s)", mount, err, strings.TrimSpace(res.Stderr))
-		}
-	})
+	mount := liveUFSWithACLs(t, c, "acls")
 
 	path := filepath.Join(mount, "posixfile")
 	if err := os.WriteFile(path, []byte("hello\n"), 0o644); err != nil {
