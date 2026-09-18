@@ -369,7 +369,7 @@ func macPowerSet(c *exec.Context, s macPowerSetting, raw any) error {
 // Without this, `mac_power.set_sleep_on_power_button` failed with the
 // first line of a usage message, which tells an operator nothing about
 // which of the two happened: a Mac that will not take the setting, or a
-// halite defect. DIVERGENCE 5.115.
+// halite defect. DIVERGENCE 5.116.
 //
 // It is deliberately not a list of keys. `pmset`'s options differ by
 // model and by release -- `ring` wants a modem, `sms` wants a motion

@@ -30,7 +30,7 @@ import (
 // Downloading is a real mutation, is worth having on its own — the
 // payload is local when somebody does apply it — and can be driven.
 // Applying is left to whatever owns reboots: an MDM configuration
-// profile, or a person. See DIVERGENCE 5.116.
+// profile, or a person. See DIVERGENCE 5.117.
 //
 // **Three of Salt's functions describe a mechanism macOS removed.**
 // `softwareupdate --ignore`, `--reset-ignored` and the per-update ignore

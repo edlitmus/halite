@@ -35,7 +35,7 @@ import (
 // it made unreachable was the one that treated "there was nothing to
 // delete" as success — so `mac_defaults.delete` on a key that was
 // already gone was an error, which is the opposite of what the function
-// documented. DIVERGENCE 5.113. The sweep that followed found five more
+// documented. DIVERGENCE 5.114. The sweep that followed found five more
 // in `mac_power` and `ps`, where the cost was smaller but the same
 // shape: the module's own error message, which names the tool and reads
 // both streams, lost to the runner's generic one.
@@ -80,7 +80,7 @@ func TestEveryExitCodeReadAsksForIt(t *testing.T) {
 	for _, p := range problems {
 		t.Errorf("%s\n\tthis reads the command's exit code, but the command does not set "+
 			"IgnoreExitCode, so OSRunner has already returned an error and the branch "+
-			"cannot run on a real machine (DIVERGENCE 5.113)", p)
+			"cannot run on a real machine (DIVERGENCE 5.114)", p)
 	}
 }
 

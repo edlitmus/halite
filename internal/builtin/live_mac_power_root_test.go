@@ -55,7 +55,7 @@ import (
 // says which of the two happened and changes nothing. `Sleep On Power
 // Button` is the second kind on Apple silicon; it was the first kind on
 // the Intel Macs this table was written from, which is why the test
-// asks the machine rather than assuming either. DIVERGENCE 5.115.
+// asks the machine rather than assuming either. DIVERGENCE 5.116.
 
 // macPowerSourceFlags maps a `pmset -g custom` section to the flag that
 // writes that source alone.

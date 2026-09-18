@@ -36,17 +36,17 @@ import (
 // different reasons. `mac_softwareupdate` is `Assumed` for want of
 // doing the work rather than for want of a way: its mutating surface
 // is `--download` alone now, which reboots nothing and can be driven
-// (5.116). `mac_assistive` is deferred deliberately, and its note says
+// (5.117). `mac_assistive` is deferred deliberately, and its note says
 // so. The release gate refuses to ship while either is, knowingly.
 //
 // The six that closed did so the only way this row can: by hand on a
 // real Mac under `sudo`. `mac_defaults` went first and found two
-// defects no unit test could reach (5.113); `mac_user`, `mac_group`
+// defects no unit test could reach (5.114); `mac_user`, `mac_group`
 // and `mac_shadow` followed as one account arc and found none, which
-// is its own kind of result (5.114); `mac_power` found a setting the
-// tool reports and cannot write (5.115); `mac_keychain` found a
+// is its own kind of result (5.115); `mac_power` found a setting the
+// tool reports and cannot write (5.116); `mac_keychain` found a
 // removal that could not converge and a read that failed for root and
-// nobody else (5.117).
+// nobody else (5.118).
 // `exec.Registry` appends the note to a *failing* mutation, and
 // `sys.evidence` and `doctor` answer it on request.
 //
@@ -537,7 +537,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"what is already gone -- and that half **needs no root**, so a Mac in CI could run " +
 		"it; and a second test imports into and removes from the real " +
 		"`/Library/Keychains/System.keychain` under sudo, which is the path that makes these " +
-		"functions declare root. Running it found two defects (DIVERGENCE 5.117), one of " +
+		"functions declare root. Running it found two defects (DIVERGENCE 5.118), one of " +
 		"which only appears when the caller is root -- which is what a node is. Not covered: " +
 		"the `-T` application access list, and `install` into a keychain that is locked"},
 
@@ -552,7 +552,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"correctly*. `pmset -g custom` prints `Sleep On Power Button`, this `pmset` documents " +
 		"no key to write it and rejects `-a powerbutton` at argument parsing, and the write " +
 		"path for that setting is demonstrated nowhere -- on Apple silicon there may be no " +
-		"way to demonstrate it (DIVERGENCE 5.115). Not driven at all: `restart_power_failure`, " +
+		"way to demonstrate it (DIVERGENCE 5.116). Not driven at all: `restart_power_failure`, " +
 		"and `wake_on_modem`, which this Mac does not report"},
 
 	"mac_user": {Level: exec.Hardware, Note: "an account was created, converged on, changed " +
@@ -564,16 +564,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`purge` removed the record and the home and was then a no-op. Not covered: the " +
 		"`system`/IsHidden path, an explicit uid and the `unique` refusal, `usergroup`, and " +
 		"group *removal* -- `diffAccount` is append-only by design, so a group dropped from a " +
-		"tree's list is never taken off the account (DIVERGENCE 5.114)"},
+		"tree's list is never taken off the account (DIVERGENCE 5.115)"},
 	"mac_group": {Level: exec.Hardware, Note: "created through the real `dseditgroup` on macOS " +
 		"27.0 (build 26A5425a) under sudo, read back with a gid, converged on a second " +
-		"`group.present`, then removed and converged again (DIVERGENCE 5.114). Not covered: " +
+		"`group.present`, then removed and converged again (DIVERGENCE 5.115). Not covered: " +
 		"an explicitly requested gid, and the refusal to renumber a group that exists with a " +
 		"different one -- which is the branch that protects every file the group owns"},
 	"mac_shadow": {Level: exec.Hardware, Note: "`dscl . -passwd` set a real password on a real " +
 		"account on macOS 27.0 (build 26A5425a) under sudo, and Open Directory reported the " +
 		"account's password as set afterwards where it had not been before (DIVERGENCE " +
-		"5.114). The standing limit is not a gap in testing: `info` can report whether a hash " +
+		"5.115). The standing limit is not a gap in testing: `info` can report whether a hash " +
 		"is present and can never compare one, because dscl does not expose it. The password " +
 		"is passed as an argv and is visible in `ps` while the call runs"},
 
@@ -584,14 +584,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`RunAs`, checked to have landed in *that* account's preference store and not " +
 		"in root's; and a machine-wide domain under `/Library/Preferences`, written, " +
 		"read back, and emptied. Running it found two defects a unit test could not " +
-		"(DIVERGENCE 5.113). What is still unwatched is `user` naming an account other " +
+		"(DIVERGENCE 5.114). What is still unwatched is `user` naming an account other " +
 		"than the invoking one -- it was driven as the account behind `sudo`, which " +
 		"exercises the same setuid path but not a second real login"},
 
 	// ---- Never pointed at the tool it drives ----
 
 	"mac_assistive": {Level: exec.Assumed, Note: "**deferred future work, deliberately** " +
-		"(DIVERGENCE 5.116). `live_mac_assistive_test.go` reads the real `access` table of " +
+		"(DIVERGENCE 5.117). `live_mac_assistive_test.go` reads the real `access` table of " +
 		"this host's `/Library/Application Support/com.apple.TCC/TCC.db` through the real " +
 		"`sqlite3` and parses the Accessibility rows field by field. The writes -- `install`, " +
 		"`enable`, `remove` -- go to a database System Integrity Protection makes readonly " +
@@ -606,7 +606,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"reads the real schedule state and the downloaded-updates plist. **The mutating " +
 		"surface is now `--download` alone**: `update` and `update_all` are registered and " +
 		"refuse, because installing restarts the machine and this project cannot demonstrate " +
-		"an install path on any Mac it has (DIVERGENCE 5.116). That makes what is left " +
+		"an install path on any Mac it has (DIVERGENCE 5.117). That makes what is left " +
 		"demonstrable -- a download fetches a payload and reboots nothing -- and it has not " +
 		"been demonstrated yet: no test has run `softwareupdate --download` against Apple's " +
 		"service, and no CI leg is a Mac. This is the one still `Assumed` for want of doing " +

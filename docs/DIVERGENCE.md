@@ -1063,7 +1063,7 @@ the real `defaults` against a throwaway domain, and `mac_power`, whose
 Mac, and no CI leg is one. `mac_defaults`'s live leg needs
 `HALITE_SYSTEM_LIVE=1` because it writes; `mac_power`'s reads only and
 runs on any `go test` on a Mac. `mac_defaults` has since been driven
-under `sudo` as well, which is what moved it to `Hardware` (5.113); the
+under `sudo` as well, which is what moved it to `Hardware` (5.114); the
 rest of the row is unchanged.
 
 OpenBSD still does not build — `syscall.RLIMIT_AS` does not exist there
@@ -9712,7 +9712,7 @@ nothing drives them on an unattended machine. What is demonstrated is the
 reading, which is where the defect was. That leaves the release gate of
 SPEC 4.3 naming eight modules rather than nine, all of them macOS.
 
-(Those two numbers read "nine rather than ten" until 5.113 counted them
+(Those two numbers read "nine rather than ten" until 5.114 counted them
 against the gate's own output. `apparmor` had closed on 2026-09-11, six
 days before this entry was written, and the count was taken from the
 paragraph above rather than from `make release-gate`. The sentence also
@@ -9721,7 +9721,7 @@ which this entry had just removed. It is corrected here rather than
 quietly, because a ledger that rounds its own arithmetic is the thing
 this section exists to argue against.)
 
-### 5.113 A `defaults delete` that could not report convergence, and the flag that hid it
+### 5.114 A `defaults delete` that could not report convergence, and the flag that hid it
 
 `mac_defaults` was the one macOS module with a live test that already
 wrote — `live_mac_defaults_test.go` drives the real `defaults` against a
@@ -9841,7 +9841,7 @@ never reads `Code` is untouched; the rule is only that reading it means
 asking for it. Confirmed to fail by putting one of the five back and
 watching it name the file, the line and the function.
 
-### 5.114 The account arc: three modules closed, and nothing found
+### 5.115 The account arc: three modules closed, and nothing found
 
 `mac_user`, `mac_group` and `mac_shadow` are one module's worth of
 machinery in three registrations, and what each was missing was the
@@ -9852,7 +9852,7 @@ all change Open Directory rather than a file a test could put back.
 Driven as one arc under `sudo` on macOS 27.0 (build 26A5425a), against a
 throwaway `halitet<pid>` and `halitetg<pid>`, every subtest passed on
 the first run. **Nothing was found, and that is worth writing down as
-plainly as a defect would be.** 5.113 closed `mac_defaults` by finding
+plainly as a defect would be.** 5.114 closed `mac_defaults` by finding
 two; if only the entries that find something get written, the ledger
 stops being a record of what was done and becomes a record of what went
 wrong, which are different things and only one of them supports a claim
@@ -9878,7 +9878,7 @@ somebody else's record is worse than a test that does not run.
 - A second `user.present` with the same spec **changes nothing**. This
   is the convergence question, and it is the one a fixture cannot
   answer — a state that reports a change every run on a node already in
-  the requested state is the defect 5.112 found in `snap` and 5.113
+  the requested state is the defect 5.112 found in `snap` and 5.114
   found in `mac_defaults`'s delete. Here it converged.
 - A shell change is seen as a change, applied, and then converges.
 - `mac_shadow.set_password` sets a password Open Directory reports as
@@ -9917,7 +9917,7 @@ gate of SPEC 4.3 now names **four**, all macOS: `mac_power`,
 `mac_softwareupdate`, `mac_keychain`, `mac_assistive`. (Counted from the
 gate's own output, for the reason 5.112 gives.)
 
-### 5.115 A setting `pmset` reports and has no key to write
+### 5.116 A setting `pmset` reports and has no key to write
 
 `mac_power`'s setters run `pmset -a`, which needs root and rewrites a
 real Mac's power policy, so nothing had driven them. Driven under `sudo`
@@ -10006,10 +10006,10 @@ exactly the condition under which that would not have been noticed.
 release gate of SPEC 4.3 now names **three**: `mac_softwareupdate`,
 `mac_keychain`, `mac_assistive`. (From the gate's own output.)
 
-### 5.116 Two modules that will not be closed the usual way, and a refusal nobody could reach
+### 5.117 Two modules that will not be closed the usual way, and a refusal nobody could reach
 
-Five of the macOS row closed by being driven on a real Mac (5.113,
-5.114, 5.115). The last three do not all have that route, and pretending
+Five of the macOS row closed by being driven on a real Mac (5.114,
+5.115, 5.116). The last three do not all have that route, and pretending
 otherwise would leave the release gate red indefinitely with no record
 of why. Two decisions, taken deliberately.
 
@@ -10077,7 +10077,7 @@ requires could ever see it.
 `TestMacSoftwareUpdateGoneFunctionsRefuse` passed throughout, because it
 calls `m.Fn` directly — and `Fn` is *past* the validation. **A test that
 enters below the layer where the defect lives cannot see it**, which is
-the same shape as 5.113's harness problem one module over: there the
+the same shape as 5.114's harness problem one module over: there the
 fake delivered a non-zero exit differently than the real runner, here
 the test skipped the validation a real call goes through.
 
@@ -10086,7 +10086,7 @@ Every refusal now declares the parameters its Salt counterpart takes, and
 the registry — the path a tree takes — and fails specifically if the
 answer is an argument error rather than an explanation.
 
-### 5.117 A removal that could not converge, and a read that failed only for root
+### 5.118 A removal that could not converge, and a read that failed only for root
 
 `mac_keychain` closed on a real Mac, and found two defects on the way.
 The second is the more serious, and it could not have been found by
@@ -10111,7 +10111,7 @@ else, exiting 1:
 So removing a certificate that was already absent returned an error, and
 a tree carrying `mac_keychain.uninstall` under `module.run` failed on
 every run after the first. That is the shape 5.112 found in `snap` and
-5.113 found in `mac_defaults`, for the third time: a tolerance branch
+5.114 found in `mac_defaults`, for the third time: a tolerance branch
 written from a plausible sentence rather than from the one the tool
 prints. Both spellings are matched now — the find one costs nothing and
 these messages have differed between releases before.
@@ -10179,7 +10179,7 @@ and `install` into a keychain that is locked.
 
 The release gate of SPEC 4.3 now names **two**, for two different
 reasons: `mac_softwareupdate`, which can be closed and has not been, and
-`mac_assistive`, which is deferred deliberately (5.116).
+`mac_assistive`, which is deferred deliberately (5.117).
 
 ## 6. Everything else not started
 
@@ -10914,10 +10914,10 @@ What is **not** built in phase 5:
   is missing is a Mac in CI: two of the eight are `assumed`, for two
   different reasons — `mac_softwareupdate`, whose mutating surface is
   now `--download` alone and so can be closed but has not been, and
-  `mac_assistive`, deferred deliberately (5.116). `make release-gate`
+  `mac_assistive`, deferred deliberately (5.117). `make release-gate`
   is red on those two, knowingly. The other six are `hardware` —
-  `mac_defaults` (5.113), the `mac_user`/`mac_group`/`mac_shadow`
-  account arc (5.114), `mac_power` (5.115) and `mac_keychain` (5.117),
+  `mac_defaults` (5.114), the `mac_user`/`mac_group`/`mac_shadow`
+  account arc (5.115), `mac_power` (5.116) and `mac_keychain` (5.118),
   all driven by hand under `sudo` on macOS 27.0, which is the only
   route this row has.
 - **Windows parity, in part.** The suite now runs natively there and

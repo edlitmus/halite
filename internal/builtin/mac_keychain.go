@@ -266,7 +266,7 @@ func macKeychainList(c *exec.Context, domain string) ([]any, error) {
 //
 // The function already meant to handle "there is no default": it
 // returns "" for an empty list. That branch was unreachable, because
-// the error above fired first. DIVERGENCE 5.117.
+// the error above fired first. DIVERGENCE 5.118.
 func macKeychainNoDefault(out string) bool {
 	return strings.Contains(out, "A default keychain could not be found") ||
 		strings.Contains(out, "SecKeychainCopyDefault")
@@ -418,8 +418,8 @@ func macKeychainUninstall(c *exec.Context, name, keychain string) error {
 // 26A5425a). So `uninstall` on a certificate that was already gone
 // returned an error, and a tree carrying `mac_keychain.uninstall` under
 // `module.run` failed on every run after the first -- a state that
-// cannot converge, which is the shape DIVERGENCE 5.113 found in
-// `mac_defaults` and 5.112 found in `snap`. DIVERGENCE 5.117.
+// cannot converge, which is the shape DIVERGENCE 5.114 found in
+// `mac_defaults` and 5.112 found in `snap`. DIVERGENCE 5.118.
 //
 // The find spelling is kept as well. It costs nothing, and this is a
 // message that has differed between macOS releases before.
