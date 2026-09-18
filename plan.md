@@ -2008,15 +2008,32 @@ These are not phases. They are the loose ends of a day that closed the
 release gate, listed because each one is cheap and each one is a thing
 somebody would otherwise rediscover.
 
-19a. **Find out what kills the `extpillar` extension.** Its end-to-end
-    test has flaked for weeks with "the extension exited without
-    answering", and three times on 2026-09-17 alone. The diagnostic
-    added to explain it was keeping the wrong end of a Go fatal's
-    goroutine dump and reported an idle `net/http` goroutine each time;
-    it now keeps both ends, so **the next occurrence should name the
-    cause**. 60 local runs did not reproduce it. This is a wait-and-read
-    rather than an investigation, but it is the oldest unexplained thing
-    in the tree.
+19a. ~~**Find out what kills the `extpillar` extension.**~~ — **done,
+    2026-09-18, and the wait-and-read worked exactly as this item said
+    it would.** The next occurrence named the cause, on a `fips-test`
+    leg of an unrelated pull request:
+
+        runtime: failed to create new OS thread (have 5 already; errno=11)
+        fatal error: newosproc
+
+    `RLIMIT_NPROC` is **per real UID, not per process**. The default
+    sandbox's `Processes: 32`, handed to an extension sharing the
+    agent's identity, bounded the whole account — so the extension died
+    at whatever moment the rest of the machine was busy, which is
+    exactly the intermittency nobody could reproduce. Sixty local runs
+    could not, because this development host is idle.
+
+    The limit is applied now only to an extension with an account of its
+    own. DIVERGENCE 5.125.
+
+    **Two lessons rather than one.** The first is that the diagnostic
+    was worth more than the investigation: three commits spent on a
+    stderr tail (5.104) paid for an answer nobody could find by looking.
+    The second is that the first test written for the fix **passed on
+    the break branch** — it held threads and then asked only whether the
+    extension could still answer, which the echo extension can. A
+    reproduction that reproduces nothing reads as evidence and is worse
+    than none.
 
 19b. **The `service` module's launchd, sysvinit and openrc providers.**
     Three inits, none ever run. ~~**launchd**~~ is **done**, on the
