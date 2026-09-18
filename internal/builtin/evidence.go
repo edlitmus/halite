@@ -84,7 +84,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`download` and `list_downloaded` were checked field by field against real " +
 		"dpkg-query and dpkg-deb, and `autoremove` really reclaimed a package in the " +
 		"fleet container (5.40). The Chocolatey provider has only been read from, and " +
-		"dnf, yum, zypper, apk, pacman and pkgng have not been driven at all"},
+		"dnf, yum, zypper, pacman and pkgng have not been driven at all. **apk has**: " +
+		"on Alpine 3.24 in the lab a package was installed through `pkg.install`, read " +
+		"back through `list_pkgs`, `version` and `file_list` -- the owner capability's " +
+		"first run anywhere -- and removed, each answer checked against apk itself rather " +
+		"than against another reader here, and the install broken on purpose to watch the " +
+		"test fail. Not covered there: `list_upgrades` parsed an empty answer because the " +
+		"instance had nothing to upgrade, and `pkg.upgrade` was not run at all " +
+		"(DIVERGENCE 5.124)"},
 	"file": {Level: exec.Hardware, Note: "writes, reads, moves, links and removes real files " +
 		"on a real filesystem throughout this package's tests, and `patch` drives the real " +
 		"`patch` binary -- which is where running it found that an already-applied patch is " +
@@ -206,14 +213,21 @@ var moduleEvidence = map[string]exec.Evidence{
 		"stopped, restarted, enabled, disabled and listed, each checked against " +
 		"`launchctl print` rather than the `launchctl list` the module reads, which found " +
 		"restart reporting success while launchd had only scheduled the respawn " +
-		"(DIVERGENCE 5.122). Not covered: launchd's `gui/` and `user/` domains, since " +
-		"every command here names `system/`; the sysvinit and openrc providers, which " +
-		"have not been run at all. The FreeBSD rc provider is driven on the `freebsd` leg " +
+		"(DIVERGENCE 5.122). The **OpenRC** provider is driven against a real " +
+		"`rc-service` and `rc-update` on Alpine 3.24 in the lab, on an init script the test " +
+		"installs: started, restarted (checked by the pid changing), stopped, enabled and " +
+		"disabled, each read back from `rc-update show` and the pidfile rather than from " +
+		"this module -- including a disable that has to clear two runlevels, and a check " +
+		"that the sysvinit provider matches that host too and is not the one picked " +
+		"(DIVERGENCE 5.124). The FreeBSD rc provider is driven on the `freebsd` leg " +
 		"against a real `service(8)` and `sysrc(8)`, on an rc.d script the test installs: " +
 		"enabled, started, restarted (checked by the pid changing), stopped and disabled, " +
 		"each read back from `sysrc -n` and the pidfile rather than from this module. That " +
 		"first run found start and stop doing nothing at all, without error, on any service " +
-		"rc.conf had not enabled (DIVERGENCE 5.123)"},
+		"rc.conf had not enabled (DIVERGENCE 5.123). Not covered: the sysvinit provider, " +
+		"which has not been run at all and wants a Devuan or a Debian with " +
+		"`sysvinit-core`; and launchd's `gui/` and `user/` domains, since every command " +
+		"there names `system/`"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a

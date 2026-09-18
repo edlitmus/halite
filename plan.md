@@ -1834,15 +1834,28 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
 15. **A SUSE host.** Closes `zypperpkg`, the SUSE row's one missing
     module (§2.3) — nothing built yet, not merely unverified, since
     this project has never had a SUSE machine to write it against.
-16. **An Alpine host.** Verifies the `pkg` module's apk provider — it
-    implements the upgrader and owner capabilities (not holder or
-    repos: apk has no hold in the dpkg sense and no command that lists
-    its repositories) and neither has been run against a real apk — and
-    runs the `service` module's openrc provider for the first time,
-    which Alpine also ships as its default init (evidence.go's
-    `service` note: "the sysvinit and openrc providers ... have not
-    been run at all" — launchd came off that list on 2026-09-18, item
-    19b).
+16. ~~**An Alpine host.**~~ — **done, 2026-09-18**, on the lab's Alpine
+    row (3.24, kernel 6.18), and it was two jobs rather than one.
+
+    The `service` module's **openrc provider did not exist**, though
+    SPEC 15.2 has always listed it. What an Alpine node got instead was
+    decided by a detail of the machine: OpenRC keeps its scripts in
+    /etc/init.d and ships a `service` shim, so the *sysvinit* provider
+    matched and half worked — start and stop through the shim, and a
+    boot state that could not work at all, since `chkconfig`,
+    `update-rc.d` and `/etc/rc3.d` are none of them there. The new
+    provider is asked before sysvinit, and the live test asserts both
+    that sysvinit matches the host and that it is not what gets picked.
+
+    The `pkg` module's **apk provider ran for the first time**: install,
+    `list_pkgs`, `version`, `file_list` — the owner capability's first
+    run anywhere — and remove, each checked against apk itself. Not
+    covered there: `list_upgrades` parsed an empty answer because the
+    instance had nothing to upgrade, and `pkg.upgrade` was not run.
+
+    DIVERGENCE 5.124. Two of that day's three test defects were the
+    test's own assumptions rather than the module's behaviour, which is
+    the shape the Debian container's first run recorded.
 17. **A non-systemd Linux with sysvinit** (Devuan, or Debian/Ubuntu
     with `sysvinit-core` in place of systemd). Runs the `service`
     module's sysvinit provider for the first time — same gap as 16,
@@ -2022,10 +2035,12 @@ somebody would otherwise rediscover.
     call returns"**, which is the assertion the systemd test already
     made and the one nothing else here would have caught.
 
-    openrc still needs the lab's Alpine row (16), sysvinit a row that
-    does not exist yet (17). What launchd leaves open is its `gui/` and
-    `user/` domains: every command this provider runs names `system/`,
-    which is what a node running as root manages.
+    ~~openrc still needs the lab's Alpine row (16)~~ — **done the same
+    day** (item 16, DIVERGENCE 5.124), and the provider had to be
+    written before it could be run. **sysvinit is the one left**, and it
+    wants a row that does not exist yet (17). What launchd leaves open
+    is its `gui/` and `user/` domains: every command that provider runs
+    names `system/`, which is what a node running as root manages.
 
 19c. ~~**A FreeBSD row for `fleetcheck`, or an honest note that there
     is not one.**~~ — **done**, and the answer is the second thing

@@ -10580,6 +10580,95 @@ plus the FreeBSD row's modules.
   asked to have settled either way.
 
 
+### 5.124 The provider SPEC named, the machine that matched the wrong one
+
+SPEC 15.2 lists `openrc` among the `service` module's providers. There
+was none — and what an Alpine or Gentoo node got instead was decided by
+a detail of the machine rather than by anything this project had
+chosen.
+
+**Measured on a real Alpine 3.24 in the lab**, before the provider
+existed:
+
+```
+--- is there a service(8) shim?   /sbin/service
+--- /etc/init.d exists?           yes
+--- update-rc.d / chkconfig?      no update-rc.d, no chkconfig
+--- /etc/rc3.d?                   no
+```
+
+`sysvProvider.Available` looks for `/etc/init.d` and a `service`
+command, and OpenRC ships both. So **the sysvinit provider was picked on
+every Alpine node**, and it half worked, which is the worst of the
+options: `start`, `stop` and `status` went through OpenRC's `service`
+shim and did the right thing, while the boot state — the half a state
+file most often asks for — could not work at all. `service.enabled`
+reads `chkconfig` or `/etc/rc3.d` and Alpine has neither;
+`service.enable` runs `update-rc.d`, which is not installed. The live
+test now measures that rather than describing it:
+
+```
+the sysvinit provider matches this host too; the provider order is what decides
+the sysvinit provider on this host answers the boot state with:
+  no tool to read the boot state of sshd was found
+```
+
+So the new provider is registered **before** sysvinit, and that order is
+load-bearing. Broken on purpose by swapping the two, the gate fails:
+*"the service module picked the sysvinit_service provider on an OpenRC
+host"*.
+
+**Runlevels are the other half.** sysvinit's boot state is a symlink in
+`/etc/rc3.d`; OpenRC's is membership of a named runlevel, which
+`rc-update` maintains and prints:
+
+```
+                chronyd |      default
+                  devfs |                                 sysinit
+               hostname | boot
+```
+
+`Enable` adds to `default`, which is OpenRC's spelling of the runlevel a
+machine reaches when it has finished booting. **`Disable` removes the
+service from every runlevel it is in**, not from `default` alone: "does
+not start at boot" is what `service.disabled` promises, and a service in
+`boot` starts at boot as surely as one in `default`. That one has its
+own test, and breaking `Disable` to drop only the first runlevel fails
+it — *"service.disable left the probe in [default], having found it in
+[boot default]"*.
+
+#### The apk provider, driven for the first time
+
+`evidence.go` said of `pkg` that "dnf, yum, zypper, apk, pacman and
+pkgng have not been driven at all". apk is no longer among them: the
+same instance installed `tree` through `pkg.install`, read it back
+through `list_pkgs`, `version` and `file_list`, and removed it — every
+answer checked against apk itself rather than against another of this
+module's readers. Broken on purpose, with `apk add` replaced by `apk
+info`, the test says *"pkg.install returned true and apk does not have
+the package"*.
+
+Two things it does **not** establish, named rather than implied.
+`list_upgrades` parses `apk version -l '<'` and this instance had
+nothing to upgrade, so the parser was exercised against an empty answer
+— which is a real answer and not the interesting one. And `pkg.upgrade`
+was not run: upgrading the world on a machine that exists to test one
+thing tells you about the mirror, not about the module.
+
+#### What the test's own first run cost, and it is the usual shape
+
+It failed for thirty seconds while `rc-service status` was cheerfully
+reporting `started`. **The probe was wrong, not the machine**: Alpine's
+`ps` is busybox's, which has no `-p` at all and exits 1 with
+"unrecognized option", so the helper that read the pidfile decided
+nothing was running. It reads `/proc/<pid>` now. The second failure was
+the same family — the test asserted `pkg.install` returns a change map,
+and it answers `true`.
+
+Both are the lesson the Debian container's first run recorded, where six
+defects were found and every one was in the test.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

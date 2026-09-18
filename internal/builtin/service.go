@@ -33,6 +33,12 @@ type serviceProvider interface {
 var serviceProviders = []serviceProvider{
 	systemdProvider{},
 	freebsdRCProvider{},
+	// OpenRC before sysvinit, and the order is load-bearing: OpenRC
+	// keeps its init scripts in /etc/init.d too, so the sysvinit
+	// provider's "is there an /etc/init.d" test matches an Alpine or
+	// Gentoo machine as readily as a Devuan one -- and would then drive
+	// it with `update-rc.d`, which is Debian's and is not there.
+	openrcProvider{},
 	sysvProvider{},
 	launchdProvider{},
 }
@@ -674,6 +680,147 @@ func (sysvProvider) Disable(c *exec.Context, name string) error {
 	}
 	_, err := c.Run(exec.Command{Argv: []string{"update-rc.d", name, "disable"}})
 	return err
+}
+
+// openrcProvider is OpenRC, which is Alpine's init and Gentoo's, and an
+// option on Devuan and on Artix.
+//
+// # Why it is not the sysvinit provider with different words
+//
+// OpenRC keeps init *scripts* in /etc/init.d, which is what
+// `sysvProvider.Available` looks for — so before this existed, an Alpine
+// node either fell through to that provider, whose `update-rc.d` and
+// `chkconfig` are Debian's and RedHat's and exist on neither Alpine nor
+// Gentoo, or found no provider at all and every `service.*` function
+// failed with "no init system was recognised on this node". Which of the
+// two it was depended on whether the machine happened to have a
+// `service` shim.
+//
+// Runlevels are the other half. sysvinit's boot state is a symlink in
+// /etc/rc3.d and OpenRC's is membership of a named runlevel, which
+// `rc-update` maintains and prints. This provider asks `rc-update`
+// rather than reading /etc/runlevels, for the reason the ledger keeps
+// giving: the tool's own answer is the one that stays true when the
+// layout changes.
+type openrcProvider struct{}
+
+func (openrcProvider) Name() string { return "openrc_service" }
+
+func (openrcProvider) Available(c *exec.Context) bool {
+	return c.Which("rc-service") != "" && c.Which("rc-update") != ""
+}
+
+func (openrcProvider) Status(c *exec.Context, name string) (bool, error) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"rc-service", name, "status"},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return false, err
+	}
+	// OpenRC exits 0 for a started service and something else for every
+	// other state it knows -- stopped, crashed, inactive -- and a
+	// crashed service is not a running one.
+	return res.Code == 0, nil
+}
+
+// openrcRunlevels reports which runlevels a service is in, out of
+// `rc-update show`'s own listing.
+//
+// The format is the service name, right-aligned in a column of spaces,
+// then `|`, then the runlevels it belongs to:
+//
+//	crond |      default
+//	devfs | sysinit
+//
+// A service that is in no runlevel is absent from the default listing
+// entirely, so an empty answer and "not enabled" are the same fact.
+func openrcRunlevels(c *exec.Context, name string) ([]string, error) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"rc-update", "show"},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, ln := range strings.Split(res.Stdout, "\n") {
+		service, levels, found := strings.Cut(ln, "|")
+		if !found || strings.TrimSpace(service) != name {
+			continue
+		}
+		return strings.Fields(levels), nil
+	}
+	return nil, nil
+}
+
+func (openrcProvider) Enabled(c *exec.Context, name string) (bool, error) {
+	levels, err := openrcRunlevels(c, name)
+	if err != nil {
+		return false, err
+	}
+	return len(levels) > 0, nil
+}
+
+func (openrcProvider) Start(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"rc-service", name, "start"}})
+	return err
+}
+
+func (openrcProvider) Stop(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"rc-service", name, "stop"}})
+	return err
+}
+
+func (openrcProvider) Restart(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"rc-service", name, "restart"}})
+	return err
+}
+
+func (openrcProvider) Reload(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"rc-service", name, "reload"}})
+	return err
+}
+
+// Enable puts the service in `default`, which is OpenRC's spelling of
+// the runlevel a machine reaches when it has finished booting --
+// systemd's multi-user.target, and what `rc-update add` assumes when
+// nobody names one. It is named here anyway, because a state file that
+// says "start at boot" should not depend on which runlevel the shell
+// running halite happens to be in.
+func (openrcProvider) Enable(c *exec.Context, name string) error {
+	_, err := c.Run(exec.Command{Argv: []string{"rc-update", "add", name, "default"}})
+	return err
+}
+
+// Disable takes the service out of **every** runlevel it is in, rather
+// than out of `default` alone.
+//
+// "Does not start at boot" is the promise `service.disabled` makes, and
+// a service in `boot` or `sysinit` starts at boot just as surely as one
+// in `default`. Removing only the runlevel Enable adds would leave a
+// state that reported success and changed nothing on any machine where
+// the service had been enabled by hand somewhere else.
+func (openrcProvider) Disable(c *exec.Context, name string) error {
+	levels, err := openrcRunlevels(c, name)
+	if err != nil {
+		return err
+	}
+	for _, level := range levels {
+		if _, err := c.Run(exec.Command{Argv: []string{"rc-update", "del", name, level}}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// List is every init script OpenRC knows, which is what `rc-service
+// --list` prints, one per line.
+func (openrcProvider) List(c *exec.Context) ([]string, error) {
+	res, err := c.Run(exec.Command{Argv: []string{"rc-service", "--list"}})
+	if err != nil {
+		return nil, err
+	}
+	return sortedLines(res.Stdout), nil
 }
 
 // launchdProvider is macOS.

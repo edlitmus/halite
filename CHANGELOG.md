@@ -18,6 +18,25 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### OpenRC is a provider of its own
+
+`service` on Alpine, Gentoo or any other OpenRC machine used to be
+driven by the sysvinit provider, because OpenRC keeps its init scripts
+in /etc/init.d and that is what the sysvinit provider looks for. Half of
+it worked. `start`, `stop` and `status` went through OpenRC's own
+`service` shim; the boot state could not work at all, because
+`service.enabled` reads `chkconfig` or `/etc/rc3.d` and `service.enable`
+runs `update-rc.d`, none of which exist there.
+
+There is an OpenRC provider now, asked before the sysvinit one. It
+reads and writes runlevels through `rc-update`, and `service.disabled`
+takes a service out of **every** runlevel it is in rather than out of
+`default` alone — a service in `boot` starts at boot just as surely.
+
+`pkg` on Alpine gained no features and some confidence: its apk provider
+had never been run against a real apk, and now installs, reads back and
+removes on a real Alpine.
+
 ### A FreeBSD service that rc.conf has not enabled now starts
 
 `service.running` on FreeBSD reported a service started, reported a
