@@ -193,27 +193,69 @@ func launchdRunningPID(t *testing.T, c *exec.Context) (int, string) {
 	return 0, out
 }
 
+// launchdSettleLimit is deliberately far longer than anything this test
+// expects to wait, because it is measuring how long launchd actually
+// takes rather than asserting a number somebody guessed. launchd
+// throttles a job's respawn — a job asked to start again within ten
+// seconds of its last start is held until that window passes — so a
+// deadline anywhere near ten seconds is a test that passes on timing.
+const launchdSettleLimit = 60 * time.Second
+
 // waitForLaunchdPID polls the tool — not the module — until the job is
-// running or is not, and returns the pid it settled on. launchd's
-// `start` and `stop` are asynchronous: they ask, and the answer arrives
-// when the process has actually been spawned or reaped.
-func waitForLaunchdPID(t *testing.T, c *exec.Context, wantRunning bool) int {
+// running or is not, and returns the pid it settled on together with how
+// long the machine took to get there. launchd's `start` and `stop` are
+// asynchronous: they ask, and the answer arrives when the process has
+// actually been spawned or reaped. The caller logs the wait, because
+// "the module returned" and "the job is running" being different
+// moments is the thing this file exists to establish.
+func waitForLaunchdPID(t *testing.T, c *exec.Context, what string, wantRunning bool) (int, time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	started := time.Now()
+	deadline := started.Add(launchdSettleLimit)
+	logged := false
 	for {
 		pid, out := launchdRunningPID(t, c)
 		if (pid != 0) == wantRunning {
-			return pid
+			return pid, time.Since(started)
+		}
+		if !logged {
+			// What launchd says about the job while it is not yet where
+			// the caller asked it to be. A wait nobody can explain is
+			// worth less than a wait with the machine's own account of
+			// it beside it.
+			logged = true
+			t.Logf("%s: while waiting, `launchctl print` says: %s", what, launchdStateLines(out))
 		}
 		if time.Now().After(deadline) {
 			state := "running"
 			if !wantRunning {
 				state = "stopped"
 			}
-			t.Fatalf("the probe daemon never became %s within ten seconds; `launchctl print` says:\n%s", state, out)
+			t.Fatalf("after %s the probe daemon never became %s within %s; `launchctl print` says:\n%s",
+				what, state, launchdSettleLimit, out)
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// launchdStateLines keeps the handful of lines of `launchctl print` that
+// say what a job is doing, out of the hundred or so that say how it is
+// configured.
+func launchdStateLines(out string) string {
+	var kept []string
+	for _, ln := range strings.Split(out, "\n") {
+		ln = strings.TrimSpace(ln)
+		for _, want := range []string{"state = ", "pid = ", "runs = ", "last exit", "throttle"} {
+			if strings.HasPrefix(ln, want) || strings.Contains(ln, want) {
+				kept = append(kept, ln)
+				break
+			}
+		}
+	}
+	if len(kept) == 0 {
+		return "nothing about its state"
+	}
+	return strings.Join(kept, "; ")
 }
 
 // launchdDisableStore reads the persistent override for the probe label
@@ -326,7 +368,8 @@ func TestLiveMacServiceStartsStopsAndRestarts(t *testing.T) {
 	if immediate, err := r.Exec.Call(c, "service.status", value.MapOf("name", liveLaunchdLabel)); err == nil {
 		t.Logf("service.status the instant service.start returned: %v", immediate)
 	}
-	first := waitForLaunchdPID(t, c, true)
+	first, startWait := waitForLaunchdPID(t, c, "service.start", true)
+	t.Logf("service.start: the job was running %s after the call returned", startWait)
 
 	running, err := r.Exec.Call(c, "service.status", value.MapOf("name", liveLaunchdLabel))
 	if err != nil {
@@ -340,7 +383,8 @@ func TestLiveMacServiceStartsStopsAndRestarts(t *testing.T) {
 	if _, err := r.Exec.Call(c, "service.restart", value.MapOf("name", liveLaunchdLabel)); err != nil {
 		t.Fatalf("service.restart on a running job: %v", err)
 	}
-	second := waitForLaunchdPID(t, c, true)
+	second, restartWait := waitForLaunchdPID(t, c, "service.restart", true)
+	t.Logf("service.restart: the job was running again %s after the call returned", restartWait)
 	if second == first {
 		t.Errorf("service.restart left pid %d in place; the job was never restarted", first)
 	}
@@ -348,7 +392,8 @@ func TestLiveMacServiceStartsStopsAndRestarts(t *testing.T) {
 	if _, err := r.Exec.Call(c, "service.stop", value.MapOf("name", liveLaunchdLabel)); err != nil {
 		t.Fatalf("service.stop: %v", err)
 	}
-	waitForLaunchdPID(t, c, false)
+	_, stopWait := waitForLaunchdPID(t, c, "service.stop", false)
+	t.Logf("service.stop: the job was reaped %s after the call returned", stopWait)
 	if stopped, err := r.Exec.Call(c, "service.status", value.MapOf("name", liveLaunchdLabel)); err != nil || stopped != false {
 		t.Errorf("service.status = %v, %v after the job was reaped", stopped, err)
 	}
@@ -372,7 +417,8 @@ func TestLiveMacServiceRestartsAJobThatIsNotRunning(t *testing.T) {
 	if _, err := r.Exec.Call(c, "service.restart", value.MapOf("name", liveLaunchdLabel)); err != nil {
 		t.Fatalf("service.restart on a stopped job: %v", err)
 	}
-	waitForLaunchdPID(t, c, true)
+	_, wait := waitForLaunchdPID(t, c, "service.restart on a stopped job", true)
+	t.Logf("service.restart on a stopped job: running %s after the call returned", wait)
 }
 
 // **enable / disable, against launchd's own disable store.**
