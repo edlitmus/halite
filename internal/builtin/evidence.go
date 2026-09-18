@@ -32,12 +32,17 @@ import (
 // closed since (DIVERGENCE 5.37's route 1 — a machine whose `aa-*`
 // tools actually parse its own profile tree, unlike the one 5.37
 // found), and `snap`'s reading closed with it (DIVERGENCE 5.28). What
-// is still `Assumed` is two of the eight macOS modules, for two
-// different reasons. `mac_softwareupdate` is `Assumed` for want of
-// doing the work rather than for want of a way: its mutating surface
-// is `--download` alone now, which reboots nothing and can be driven
-// (5.117). `mac_assistive` is deferred deliberately, and its note says
-// so. The release gate refuses to ship while either is, knowingly.
+// is still `Assumed` is one of the macOS row's modules.
+// `mac_softwareupdate` is `Assumed` for want of doing the work rather
+// than for want of a way: its mutating surface is `--download` alone
+// now, which reboots nothing and can be driven (5.117).
+//
+// `mac_assistive` used to be the other, deferred deliberately because
+// the only way to close it is a standing manual grant. It is no longer
+// here: a module nobody can demonstrate and nobody intends to is not
+// something to ship red forever, so it was taken out of the build
+// (5.119). That is the second of the two ways past this gate, and the
+// one the gate's own text offers alongside doing the work.
 //
 // The six that closed did so the only way this row can: by hand on a
 // real Mac under `sudo`. `mac_defaults` went first and found two
@@ -590,17 +595,6 @@ var moduleEvidence = map[string]exec.Evidence{
 
 	// ---- Never pointed at the tool it drives ----
 
-	"mac_assistive": {Level: exec.Assumed, Note: "**deferred future work, deliberately** " +
-		"(DIVERGENCE 5.117). `live_mac_assistive_test.go` reads the real `access` table of " +
-		"this host's `/Library/Application Support/com.apple.TCC/TCC.db` through the real " +
-		"`sqlite3` and parses the Accessibility rows field by field. The writes -- `install`, " +
-		"`enable`, `remove` -- go to a database System Integrity Protection makes readonly " +
-		"for any process without Full Disk Access, root included. Closing this needs a person " +
-		"to grant Full Disk Access to the compiled test binary by hand, and to do it again " +
-		"whenever `go test` rebuilds to a new path, which it does routinely -- a standing " +
-		"manual step attached to a test that otherwise skips in silence. That is a worse " +
-		"property than being honestly `Assumed`, so this stays `Assumed` on purpose until " +
-		"somebody decides the ceremony is worth it, and the gate stays red on it knowingly"},
 	"mac_softwareupdate": {Level: exec.Assumed, Note: "the `softwareupdate --list` parser was " +
 		"built against real output captured on macOS 26, and `live_mac_softwareupdate_test.go` " +
 		"reads the real schedule state and the downloaded-updates plist. **The mutating " +

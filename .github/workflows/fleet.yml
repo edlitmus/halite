@@ -76,6 +76,8 @@ on:
       - "internal/builtin/live_quota*_test.go"
       - "internal/builtin/live_service_test.go"
       - "internal/builtin/live_system_test.go"
+      - "internal/builtin/mac_*.go"
+      - "internal/builtin/live_mac_*_test.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
       - ".github/workflows/fleet.yml"
@@ -358,3 +360,73 @@ jobs:
           echo "rc.conf:  $(sysrc -n hostname 2>/dev/null || echo unset)"
           test "$(hostname)" != "halite-live-probe" || {
             echo "the tests left this machine renamed"; exit 1; }
+
+  # The macOS row, as root, on a machine nobody minds breaking.
+  #
+  # # Why this leg did not exist until now
+  #
+  # Six of these modules moved to `Hardware` by being driven **by hand**
+  # on a real Mac under `sudo`. That is evidence, and it is the kind that
+  # decays: a run that happened once, on somebody's laptop, is not a run
+  # that happens again when the module changes. Every `TestLiveMac*` in
+  # the tree skipped on all three existing legs, because none of them is
+  # a Mac.
+  #
+  # # Why a hosted runner is the right machine and not a compromise
+  #
+  # These tests create an account, rewrite a power policy, import a
+  # certificate into the System keychain and write another account's
+  # preferences. What they need is root on a machine whose state nobody
+  # depends on afterwards -- and a hosted runner is exactly that, more
+  # completely than any Mac somebody owns. It is also already paid for:
+  # `test (macos-15)` and `race (macos-15)` run on every push.
+  #
+  # `SUDO_USER` is load-bearing here, not incidental: the account tests
+  # read it to know which account to become, so these have to arrive
+  # through `sudo` rather than as an already-root shell.
+  macos:
+    name: macos (real dscl, defaults, security, pmset)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # The pin, not go.mod's floor. See ci.yml's first setup-go step.
+          go-version: "1.26.6"
+          cache: true
+
+      # What this machine is, before anything writes to it. The row's
+      # evidence names a macOS version, and a leg that does not say
+      # which one it ran on cannot be compared to it.
+      - name: what this Mac is
+        run: |
+          sw_vers
+          uname -m
+          csrutil status || true
+          pmset -g custom || true
+          # macOS caps a process credential at NGROUPS_MAX groups, and
+          # an account's real membership can exceed it -- which is the
+          # difference between a CI account and a personal one, and the
+          # difference RunAs trips over. Printed because it is a
+          # property of the machine, not of the test.
+          echo "groups for ${SUDO_USER:-$USER}: $(id -G "${SUDO_USER:-$USER}" | wc -w)"
+          getconf NGROUPS_MAX || true
+
+      - name: drive the macOS row as root
+        run: |
+          set -e
+          sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 \
+            go test -count=1 -v -run 'TestLiveMac' ./internal/builtin/
+
+      # The account tests create and remove a real account. If one is
+      # left behind the machine is thrown away anyway, but a leg that
+      # cannot say so is a leg that would not notice the removal path
+      # breaking -- which is the half that is easiest to get wrong.
+      - name: the machine was put back
+        if: always()
+        run: |
+          leftover=$(dscl . -list /Users | grep -c '^halite' || true)
+          echo "halite* accounts remaining: $leftover"
+          test "$leftover" -eq 0 || {
+            echo "the tests left an account behind"; exit 1; }

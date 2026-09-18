@@ -87,7 +87,7 @@ Delivery follows the phases in SPEC section 32.
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Done**: authentication, the execution and event endpoints, webhooks, OIDC, LDAP, returners, and the bridge protocol with its extension model |
-| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship. macOS has the package and service providers and all eight of its modules, including `mac_user`/`mac_group`/`mac_shadow` so `user.present` works there, though two of the eight `mac_*` modules are still `assumed`, for two different reasons — `mac_softwareupdate`, whose mutating surface is now `--download` alone and so can be closed but has not been, and `mac_assistive`, deferred deliberately. The other six are `hardware`, driven by hand on a real Mac. |
+| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship. macOS has the package and service providers and seven `mac_*` modules, including `mac_user`/`mac_group`/`mac_shadow` so `user.present` works there. Six are `hardware`, driven by hand on a real Mac; the seventh, `mac_softwareupdate`, is still `assumed` — its mutating surface is `--download` alone now, which can be demonstrated and has not been. An eighth, `mac_assistive`, was taken out of the build: its writes go to a database SIP keeps readonly to root, and the only way to demonstrate them is a manual grant re-given on every rebuild (DIVERGENCE 5.119). |
 | 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | **Started**: the chaos suite and SPEC 31's upgrade layer are built, CI runs every leg of `make check` on Linux, Windows, macOS and FreeBSD, metrics are nearly complete, and `doctor` ships. The scale harness, external review, detached signing, tracing, packaging and the backtracking regex engine are not. |
 
 A node manages its own tree today — Salt's masterless mode — and that is
@@ -292,8 +292,8 @@ had not.
 
 Phases 0 and 1 are done in the sense that their contents are implemented
 and exercised, not that SPEC section 15's module inventory is complete:
-this build ships 88 execution modules and 48 state modules against a
-specification naming roughly 90 and 46 — 599 execution functions across 88
+this build ships 87 execution modules and 48 state modules against a
+specification naming roughly 90 and 46 — 593 execution functions across 87
 modules and 132 state functions across 48. FreeBSD is the development
 platform; Linux and Windows have each been verified against a real host,
 and macOS has run only the read-side live tests of its `mac_*` modules
