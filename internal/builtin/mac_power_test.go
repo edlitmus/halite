@@ -254,3 +254,57 @@ func TestMacPowerIsRegisteredAndRestricted(t *testing.T) {
 		t.Errorf("mac_power registers %d functions, want 16", got)
 	}
 }
+
+// What `pmset` prints when it will not take a key at all, against what
+// it prints when the key is fine and the caller is not root.
+//
+// Captured from a real Apple M1 running macOS 27.0, unprivileged --
+// which is where the difference is visible, because the usage failure
+// happens at argument parsing and the privilege check never runs.
+const (
+	macPmsetUsage  = "Usage: pmset <options>\nSee pmset(1) for details: 'man pmset'\n"
+	macPmsetAsRoot = "'pmset' must be run as root...\n"
+)
+
+// A key this Mac will not take is a different answer from a change it
+// refused, and the operator needs to be told which.
+func TestMacPowerSetDistinguishesARejectedKey(t *testing.T) {
+	s := macPowerByName("sleep_on_power_button")
+
+	c, _ := macPowerCtx(t, "")
+	c.Runner = &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"pmset -a powerbutton 0": {Code: 1, Stderr: macPmsetUsage},
+	}}
+	err := macPowerSet(c, s, false)
+	if err == nil {
+		t.Fatal("a usage failure was reported as success")
+	}
+	for _, want := range []string{"does not accept the key", "powerbutton", "get_sleep_on_power_button"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error does not mention %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "Usage: pmset") {
+		t.Errorf("the error passes the usage dump through instead of explaining it: %v", err)
+	}
+}
+
+// Every other failure keeps saying what `pmset` said.
+func TestMacPowerSetKeepsARealFailure(t *testing.T) {
+	s := macPowerByName("wake_on_network")
+
+	c, _ := macPowerCtx(t, "")
+	c.Runner = &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"pmset -a womp 1": {Code: 1, Stderr: macPmsetAsRoot},
+	}}
+	err := macPowerSet(c, s, true)
+	if err == nil {
+		t.Fatal("a failing pmset was reported as success")
+	}
+	if !strings.Contains(err.Error(), "must be run as root") {
+		t.Errorf("the error lost what pmset said: %v", err)
+	}
+	if strings.Contains(err.Error(), "does not accept the key") {
+		t.Errorf("a privilege failure was reported as a rejected key: %v", err)
+	}
+}

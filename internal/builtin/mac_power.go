@@ -235,7 +235,7 @@ func macPowerReadSource(c *exec.Context, source string) (map[string]string, erro
 	if err := macPowerRequire(c); err != nil {
 		return nil, err
 	}
-	res, err := c.Run(exec.Command{Argv: []string{"pmset", "-g", "custom"}})
+	res, err := c.Run(exec.Command{Argv: []string{"pmset", "-g", "custom"}, IgnoreExitCode: true})
 	if err != nil {
 		return nil, err
 	}
@@ -333,14 +333,51 @@ func macPowerSet(c *exec.Context, s macPowerSetting, raw any) error {
 	if c.Test {
 		return nil
 	}
-	res, err := c.Run(exec.Command{Argv: []string{"pmset", "-a", s.key, arg}})
+	res, err := c.Run(exec.Command{Argv: []string{"pmset", "-a", s.key, arg}, IgnoreExitCode: true})
 	if err != nil {
 		return err
 	}
 	if res.Code != 0 {
-		return fmt.Errorf("pmset -a %s %s: %s", s.key, arg, firstLine(res.Stderr+res.Stdout))
+		out := res.Stderr + res.Stdout
+		if macPmsetRejectedTheKey(out) {
+			return fmt.Errorf(
+				"mac_power.set_%s: this Mac's `pmset` does not accept the key %q -- it "+
+					"rejected the arguments rather than refusing the change, and `man pmset` "+
+					"on this machine documents no such option. `pmset -g custom` may still "+
+					"report the value, so `mac_power.get_%s` can be read and not written here",
+				s.name, s.key, s.name)
+		}
+		return fmt.Errorf("pmset -a %s %s: %s", s.key, arg, firstLine(out))
 	}
 	return nil
+}
+
+// macPmsetRejectedTheKey reports whether `pmset` refused the arguments
+// themselves rather than the change.
+//
+// # Why this is worth telling apart
+//
+// `pmset -g custom` prints settings `pmset` has no documented key to
+// write, and which it rejects at argument parsing. `Sleep On Power
+// Button` is one: it is reported on an Apple M1 running macOS 27, the
+// word "button" appears nowhere in that machine's `pmset(1)`, and
+// `pmset -a powerbutton 1` answers with a usage dump. A valid key
+// answers "'pmset' must be run as root", which is how the two were told
+// apart -- the usage failure happens before the privilege check, so it
+// reproduces unprivileged.
+//
+// Without this, `mac_power.set_sleep_on_power_button` failed with the
+// first line of a usage message, which tells an operator nothing about
+// which of the two happened: a Mac that will not take the setting, or a
+// halite defect. DIVERGENCE 5.116.
+//
+// It is deliberately not a list of keys. `pmset`'s options differ by
+// model and by release -- `ring` wants a modem, `sms` wants a motion
+// sensor -- so the question "does this Mac take this key" is one only
+// that Mac can answer, and this reads its answer rather than predicting
+// it.
+func macPmsetRejectedTheKey(out string) bool {
+	return strings.Contains(out, "Usage: pmset")
 }
 
 // macPowerRender turns a setter argument into the token `pmset -a` takes:

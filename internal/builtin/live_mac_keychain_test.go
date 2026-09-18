@@ -1,9 +1,13 @@
 package builtin
 
 import (
+	"os"
 	"regexp"
 	"runtime"
+	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // mac_keychain reads, against the real `security` on this Mac.
@@ -43,9 +47,22 @@ func TestLiveMacKeychainReadsThisMac(t *testing.T) {
 		t.Fatal("the keychain search list is empty")
 	}
 
+	// An account with no default keychain is an answer, not a failure --
+	// and root is such an account on a stock Mac, which is what this
+	// test found the first time it was run under sudo. A login session
+	// has one; root does not; neither is an error.
 	def, err := macKeychainPaths(c, "default-keychain")
-	if err != nil || len(def) == 0 {
-		t.Fatalf("default-keychain: %v (%v)", def, err)
+	if err != nil {
+		t.Fatalf("default-keychain: %v", err)
+	}
+	if os.Geteuid() != 0 && len(def) == 0 {
+		t.Error("this account has no default keychain, and it is signed in")
+	}
+	for _, d := range def {
+		if !strings.HasSuffix(value.KeyString(d), ".keychain-db") &&
+			!strings.HasSuffix(value.KeyString(d), ".keychain") {
+			t.Errorf("the default keychain reads back as %#v, which is not a keychain path", d)
+		}
 	}
 
 	const system = "/Library/Keychains/System.keychain"

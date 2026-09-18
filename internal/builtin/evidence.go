@@ -31,11 +31,22 @@ import (
 // modules against their real tools on real machines, and `apparmor`
 // closed since (DIVERGENCE 5.37's route 1 — a machine whose `aa-*`
 // tools actually parse its own profile tree, unlike the one 5.37
-// found). What is still `Assumed` — `snap` and the macOS row
-// (`mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`,
-// `mac_softwareupdate`, `mac_keychain`, `mac_assistive`) — says why in its own note, and the release gate refuses to ship while any is. The
-// macOS modules each have a live test that reads the real tool, but
-// their mutating paths change a Mac's own state and no CI leg is a Mac.
+// found), and `snap`'s reading closed with it (DIVERGENCE 5.28). What
+// is still `Assumed` is two of the eight macOS modules, for two
+// different reasons. `mac_softwareupdate` is `Assumed` for want of
+// doing the work rather than for want of a way: its mutating surface
+// is `--download` alone now, which reboots nothing and can be driven
+// (5.117). `mac_assistive` is deferred deliberately, and its note says
+// so. The release gate refuses to ship while either is, knowingly.
+//
+// The six that closed did so the only way this row can: by hand on a
+// real Mac under `sudo`. `mac_defaults` went first and found two
+// defects no unit test could reach (5.114); `mac_user`, `mac_group`
+// and `mac_shadow` followed as one account arc and found none, which
+// is its own kind of result (5.115); `mac_power` found a setting the
+// tool reports and cannot write (5.116); `mac_keychain` found a
+// removal that could not converge and a read that failed for root and
+// nobody else (5.118).
 // `exec.Registry` appends the note to a *failing* mutation, and
 // `sys.evidence` and `doctor` answer it on request.
 //
@@ -499,8 +510,6 @@ var moduleEvidence = map[string]exec.Evidence{
 		"account database, and no account has been created, changed or removed on a real " +
 		"machine by this module"},
 
-	// ---- Never pointed at the tool it drives ----
-
 	"snap": {Level: exec.Captured, Note: "read against the real snapd 2.76.3 on Ubuntu " +
 		"22.04 and 26.04, which is what the fixtures had never been: they were written " +
 		"from the documented columns, and the documentation is wrong about two of them. " +
@@ -517,47 +526,92 @@ var moduleEvidence = map[string]exec.Evidence{
 		"mount and a service, and removal can take data with it, so no test drives them " +
 		"on an unattended machine. What is demonstrated is the reading, which is where " +
 		"the defect was (DIVERGENCE 5.28)"},
-	"mac_power": {Level: exec.Assumed, Note: "the `pmset -g custom` parser was built against " +
-		"output captured by hand on macOS 26, and `live_mac_power_test.go` reads the real " +
-		"`pmset` -- but the setters run `pmset -a`, which needs root and changes a real Mac's " +
-		"power policy, so no test drives them and no CI leg is a Mac. Nothing has watched a " +
-		"`set_*` converge"},
-	"mac_keychain": {Level: exec.Assumed, Note: "`security list-keychains`, `default-keychain` " +
-		"and `find-certificate -a -Z` are read against the real `security` in " +
-		"`live_mac_keychain_test.go`, field by field on this host's own keychains. `import` " +
-		"and `delete-certificate` change a keychain and need root for a system one, so nothing " +
-		"has watched a certificate go in or out; `friendly_name` shells to `openssl` and has " +
-		"only been read"},
-	"mac_assistive": {Level: exec.Assumed, Note: "`live_mac_assistive_test.go` reads the real " +
-		"`access` table of this host's `/Library/Application Support/com.apple.TCC/TCC.db` through " +
-		"the real `sqlite3` and parses the Accessibility rows field by field. The writes -- " +
-		"`install`, `enable`, `remove` -- go to a database System Integrity Protection makes " +
-		"readonly for any process without Full Disk Access, root included, so nothing here has " +
-		"watched a grant be added or removed and no CI leg is a Mac with the entitlement"},
+
+	// ---- Mutated a real Mac, by hand, because no CI leg is one ----
+
+	"mac_keychain": {Level: exec.Hardware, Note: "a real self-signed certificate was imported, " +
+		"found, and removed against the real `security` on macOS 27.0 (build 26A5425a). Two " +
+		"halves: `live_mac_keychain_root_test.go` round-trips a keychain the test makes -- " +
+		"`friendly_name` through the real `openssl`, `install`, `find-certificate`, a second " +
+		"`install` that neither errors nor duplicates, `uninstall`, and `uninstall` again on " +
+		"what is already gone -- and that half **needs no root**, so a Mac in CI could run " +
+		"it; and a second test imports into and removes from the real " +
+		"`/Library/Keychains/System.keychain` under sudo, which is the path that makes these " +
+		"functions declare root. Running it found two defects (DIVERGENCE 5.118), one of " +
+		"which only appears when the caller is root -- which is what a node is. Not covered: " +
+		"the `-T` application access list, and `install` into a keychain that is locked"},
+
+	"mac_power": {Level: exec.Hardware, Note: "the setters were driven against the real " +
+		"`pmset` on an Apple M1 running macOS 27.0 (build 26A5425a) under sudo, capturing " +
+		"the machine's own policy first and restoring every value after -- per power source " +
+		"with `pmset -c`/`-b`/`-u`, because the module writes `pmset -a` and a restore " +
+		"through it would flatten a laptop's differing AC and battery profiles. Round-tripped: " +
+		"`display_sleep` and `wake_on_network` individually, and `computer_sleep`, " +
+		"`display_sleep` and `harddisk_sleep` through the combined `set_sleep`. **Weaker for " +
+		"one setting**: `set_sleep_on_power_button` is demonstrated only as *refusing " +
+		"correctly*. `pmset -g custom` prints `Sleep On Power Button`, this `pmset` documents " +
+		"no key to write it and rejects `-a powerbutton` at argument parsing, and the write " +
+		"path for that setting is demonstrated nowhere -- on Apple silicon there may be no " +
+		"way to demonstrate it (DIVERGENCE 5.116). Not driven at all: `restart_power_failure`, " +
+		"and `wake_on_modem`, which this Mac does not report"},
+
+	"mac_user": {Level: exec.Hardware, Note: "an account was created, converged on, changed " +
+		"and removed on a real Mac (macOS 27.0, build 26A5425a) under sudo in " +
+		"`live_mac_account_test.go`: the `dscl . -create` sequence and `createhomedir` made " +
+		"an account this module's own reader then found with the uid, home, shell, real name " +
+		"and supplementary group asked for, a second `user.present` with the same spec " +
+		"changed nothing, a shell change was seen and then converged, and `user.absent` with " +
+		"`purge` removed the record and the home and was then a no-op. Not covered: the " +
+		"`system`/IsHidden path, an explicit uid and the `unique` refusal, `usergroup`, and " +
+		"group *removal* -- `diffAccount` is append-only by design, so a group dropped from a " +
+		"tree's list is never taken off the account (DIVERGENCE 5.115)"},
+	"mac_group": {Level: exec.Hardware, Note: "created through the real `dseditgroup` on macOS " +
+		"27.0 (build 26A5425a) under sudo, read back with a gid, converged on a second " +
+		"`group.present`, then removed and converged again (DIVERGENCE 5.115). Not covered: " +
+		"an explicitly requested gid, and the refusal to renumber a group that exists with a " +
+		"different one -- which is the branch that protects every file the group owns"},
+	"mac_shadow": {Level: exec.Hardware, Note: "`dscl . -passwd` set a real password on a real " +
+		"account on macOS 27.0 (build 26A5425a) under sudo, and Open Directory reported the " +
+		"account's password as set afterwards where it had not been before (DIVERGENCE " +
+		"5.115). The standing limit is not a gap in testing: `info` can report whether a hash " +
+		"is present and can never compare one, because dscl does not expose it. The password " +
+		"is passed as an argv and is visible in `ps` while the call runs"},
+
+	"mac_defaults": {Level: exec.Hardware, Note: "driven end to end against the real " +
+		"`defaults` on macOS 27.0 (build 26A5425a), including the two paths that made " +
+		"every mutating function here declare root and that nothing had ever run: a " +
+		"write as another account, which is setuid/setgid through the command's " +
+		"`RunAs`, checked to have landed in *that* account's preference store and not " +
+		"in root's; and a machine-wide domain under `/Library/Preferences`, written, " +
+		"read back, and emptied. Running it found two defects a unit test could not " +
+		"(DIVERGENCE 5.114). What is still unwatched is `user` naming an account other " +
+		"than the invoking one -- it was driven as the account behind `sudo`, which " +
+		"exercises the same setuid path but not a second real login"},
+
+	// ---- Never pointed at the tool it drives ----
+
+	"mac_assistive": {Level: exec.Assumed, Note: "**deferred future work, deliberately** " +
+		"(DIVERGENCE 5.117). `live_mac_assistive_test.go` reads the real `access` table of " +
+		"this host's `/Library/Application Support/com.apple.TCC/TCC.db` through the real " +
+		"`sqlite3` and parses the Accessibility rows field by field. The writes -- `install`, " +
+		"`enable`, `remove` -- go to a database System Integrity Protection makes readonly " +
+		"for any process without Full Disk Access, root included. Closing this needs a person " +
+		"to grant Full Disk Access to the compiled test binary by hand, and to do it again " +
+		"whenever `go test` rebuilds to a new path, which it does routinely -- a standing " +
+		"manual step attached to a test that otherwise skips in silence. That is a worse " +
+		"property than being honestly `Assumed`, so this stays `Assumed` on purpose until " +
+		"somebody decides the ceremony is worth it, and the gate stays red on it knowingly"},
 	"mac_softwareupdate": {Level: exec.Assumed, Note: "the `softwareupdate --list` parser was " +
 		"built against real output captured on macOS 26, and `live_mac_softwareupdate_test.go` " +
-		"reads the real schedule state and the downloaded-updates plist. Nothing has installed " +
-		"or downloaded an update through it: `softwareupdate --install` needs root, reboots the " +
-		"machine, and no CI leg is a Mac. `ignore`, `list_ignored` and `reset_ignored` describe " +
-		"a `softwareupdate` option macOS removed and refuse by name"},
-	"mac_user": {Level: exec.Assumed, Note: "reads are demonstrated -- `live_mac_user_test.go` " +
-		"parses a real `dscl -plist . -read` and `dscl . -list` on this host, and the virtual " +
-		"`user.present` predicts a creation in test mode against it. The writes -- the " +
-		"`dscl . -create` sequence, `createhomedir`, the recursive home removal -- need root " +
-		"and change Open Directory, so nothing has watched an account be created or removed"},
-	"mac_group": {Level: exec.Assumed, Note: "`macGroupInfo` reads a real group through " +
-		"`dscl -plist . -read` in `live_mac_user_test.go`; the `dseditgroup` writes need root " +
-		"and have not been run"},
-	"mac_shadow": {Level: exec.Assumed, Note: "`dscl . -passwd` is documented and matches what " +
-		"Salt runs, but nothing here has set a real password, and `info` can only ever report " +
-		"whether a hash is present, not compare one -- dscl does not expose it"},
-	"mac_defaults": {Level: exec.Assumed, Note: "the plist reader and writer were built " +
-		"against `defaults export` and `defaults write` output captured by hand on macOS " +
-		"26, and `live_mac_defaults_test.go` drives the real `defaults` against a private " +
-		"throwaway domain -- but only behind HALITE_SYSTEM_LIVE=1, and no CI leg runs on " +
-		"a Mac that writes preferences, so nothing has watched this module converge " +
-		"unattended. The `user` path, which becomes another account to reach its domain, " +
-		"has not been run at all"},
+		"reads the real schedule state and the downloaded-updates plist. **The mutating " +
+		"surface is now `--download` alone**: `update` and `update_all` are registered and " +
+		"refuse, because installing restarts the machine and this project cannot demonstrate " +
+		"an install path on any Mac it has (DIVERGENCE 5.117). That makes what is left " +
+		"demonstrable -- a download fetches a payload and reboots nothing -- and it has not " +
+		"been demonstrated yet: no test has run `softwareupdate --download` against Apple's " +
+		"service, and no CI leg is a Mac. This is the one still `Assumed` for want of doing " +
+		"it rather than for want of a way. `ignore`, `list_ignored` and `reset_ignored` " +
+		"describe a `softwareupdate` option macOS removed and refuse by name"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -158,5 +159,62 @@ func TestMacKeychainRegisteredAndRestricted(t *testing.T) {
 		if len(sig.Platforms) != 1 || sig.Platforms[0] != "darwin" {
 			t.Errorf("%s platforms = %v", name, sig.Platforms)
 		}
+	}
+}
+
+// What `security` says when there is nothing to delete, and what it says
+// when there is nothing to find. They are different sentences from
+// different subcommands, and the module used to confuse them.
+//
+// Captured from the real `security` on macOS 27.0 (build 26A5425a).
+const (
+	securityDeleteMissing = "Unable to delete certificate matching \"halite-no-such-cert\"\n"
+	securityFindMissing   = "security: SecKeychainSearchCopyNext: The specified item " +
+		"could not be found in the keychain.\n"
+)
+
+// Uninstalling a certificate that is already gone is the state that was
+// asked for, not a failure -- or `mac_keychain.uninstall` under
+// `module.run` fails on every run after the first.
+func TestMacKeychainUninstallToleratesAnAbsentCertificate(t *testing.T) {
+	for name, out := range map[string]string{
+		"what delete-certificate actually says": securityDeleteMissing,
+		"the find spelling, kept as well":       securityFindMissing,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, _ := macKeychainCtx(t, map[string]exec.Result{
+				"security delete-certificate -c halite-no-such-cert": {Code: 1, Stderr: out},
+			})
+			if err := macKeychainUninstall(c, "halite-no-such-cert", ""); err != nil {
+				t.Errorf("uninstalling an absent certificate was an error: %v", err)
+			}
+		})
+	}
+}
+
+// Any other failure is still a failure, and still says what `security`
+// said.
+func TestMacKeychainUninstallReportsARealFailure(t *testing.T) {
+	c, _ := macKeychainCtx(t, map[string]exec.Result{
+		"security delete-certificate -c halite-selftest /Library/Keychains/System.keychain": {
+			Code: 1, Stderr: "SecKeychainDeleteItem: User interaction is not allowed.\n",
+		},
+	})
+	err := macKeychainUninstall(c, "halite-selftest", "/Library/Keychains/System.keychain")
+	if err == nil {
+		t.Fatal("a delete that failed on permissions was reported as success")
+	}
+	if !strings.Contains(err.Error(), "User interaction is not allowed") {
+		t.Errorf("the error lost what security said: %v", err)
+	}
+}
+
+// A `default-keychain` that fails for any other reason still fails.
+func TestMacKeychainDefaultKeychainReportsARealFailure(t *testing.T) {
+	c, _ := macKeychainCtx(t, map[string]exec.Result{
+		"security default-keychain": {Code: 1, Stderr: "security: something else went wrong\n"},
+	})
+	if _, err := macKeychainPaths(c, "default-keychain"); err == nil {
+		t.Fatal("an unrelated failure was reported as an empty answer")
 	}
 }

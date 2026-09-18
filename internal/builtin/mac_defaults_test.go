@@ -336,3 +336,104 @@ func TestMacDefaultsIsRegisteredAndRestricted(t *testing.T) {
 		}
 	}
 }
+
+// What `defaults delete` prints when there was nothing to delete.
+//
+// Captured from the real `defaults` on macOS 27.0 (build 26A5425a),
+// stderr, exit 1. The strings are the fixture: this is the branch that
+// was written from belief and never run, and the point of holding the
+// tool's own words here is that the next person changing the check has
+// to change what the tool said too.
+const (
+	macDefaultsDomainGone = "Error: Domain 'com.halite.selftest.gone' not found.\n" +
+		"Defaults have not been changed.\n"
+	macDefaultsKeyGone = "Error: Could not find key 'NoSuchKey' in domain " +
+		"'com.halite.selftest.here'.\nDefaults have not been changed.\n"
+)
+
+// Deleting something already gone is the state that was wanted, not an
+// error -- which is what `mac_defaults.delete` has always documented and
+// did not do.
+func TestMacDefaultsDeleteToleratesWhatIsAlreadyGone(t *testing.T) {
+	cases := []struct {
+		name, domain, key, stderr string
+	}{
+		{"domain", "com.halite.selftest.gone", "", macDefaultsDomainGone},
+		{"key", "com.halite.selftest.here", "NoSuchKey", macDefaultsKeyGone},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			argv := "defaults delete " + tc.domain
+			if tc.key != "" {
+				argv += " " + tc.key
+			}
+			c, _ := macDefaultsCtx(t, nil)
+			c.Runner = &exec.RecordingRunner{Responses: map[string]exec.Result{
+				argv: {Code: 1, Stderr: tc.stderr},
+			}}
+			if err := macDefaultsDelete(c, tc.domain, tc.key, ""); err != nil {
+				t.Errorf("delete of an absent %s was an error: %v", tc.name, err)
+			}
+		})
+	}
+}
+
+// A delete that failed for any other reason is still an error.
+func TestMacDefaultsDeleteReportsARealFailure(t *testing.T) {
+	c, _ := macDefaultsCtx(t, nil)
+	c.Runner = &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"defaults delete /Library/Preferences/com.halite.selftest": {
+			Code: 1, Stderr: "Permission denied\n",
+		},
+	}}
+	err := macDefaultsDelete(c, "/Library/Preferences/com.halite.selftest", "", "")
+	if err == nil {
+		t.Fatal("a delete that failed on permissions was reported as success")
+	}
+	if !strings.Contains(err.Error(), "Permission denied") {
+		t.Errorf("the error lost what `defaults` said: %v", err)
+	}
+}
+
+// Every `defaults` call that reads its own exit code has to ask for it.
+//
+// # Why this test exists at all
+//
+// `OSRunner` turns a non-zero exit into a Go error unless the command
+// sets `IgnoreExitCode`, so a function that inspects `res.Code` without
+// it never reaches its own branch on a real Mac -- `c.Run` has already
+// returned. `RecordingRunner` does not do that: it hands back the
+// scripted `Result` with a nil error, exit code and all. So a module
+// that forgets the flag passes every unit test and fails on hardware,
+// which is what `mac_defaults` did on all four of these until a live
+// test under sudo found it.
+//
+// Asserting on the flag rather than on the behaviour is deliberate. The
+// behaviour cannot be reproduced through the fake, and a test that
+// cannot fail for the real reason is the thing being guarded against.
+func TestMacDefaultsCallsAskForTheirExitCode(t *testing.T) {
+	c, runner := macDefaultsCtx(t, map[string]string{"com.apple.dock": macDefaultsExportFixture})
+
+	if _, err := macDefaultsExport(c, "com.apple.dock", ""); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if _, err := macDefaultsReadType(c, "com.apple.dock", "AutoHide", ""); err != nil {
+		t.Fatalf("read-type: %v", err)
+	}
+	if err := macDefaultsWrite(c, "com.apple.dock", "AutoHide", "bool", true, ""); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := macDefaultsDelete(c, "com.apple.dock", "AutoHide", ""); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	if len(runner.Ran) != 4 {
+		t.Fatalf("ran %d commands, want 4: %v", len(runner.Ran), runner.RanCommands())
+	}
+	for _, ran := range runner.Ran {
+		if !ran.IgnoreExitCode {
+			t.Errorf("%q does not set IgnoreExitCode, so its own exit-code branch "+
+				"is unreachable against the real `defaults`", ran.String())
+		}
+	}
+}
