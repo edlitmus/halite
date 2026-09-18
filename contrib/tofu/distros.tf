@@ -1,11 +1,11 @@
 # The matrix: which machines this lab can raise, and what each one is for.
 #
-# # Why these seven
+# # Why these rows
 #
 # SPEC 27.1 names the platforms this project claims to support. Between
 # GitHub's runners, beastie and ref-salt1, the estate already covers
-# Ubuntu 24.04, Windows, macOS, FreeBSD and one arm64 Linux. Every row
-# below is a platform SPEC 27.1 lists and **nothing here has ever run
+# Ubuntu 24.04, Windows, macOS, FreeBSD and one arm64 Linux. Most rows
+# below are a platform SPEC 27.1 lists and **nothing here has ever run
 # on**, ordered by what it unlocks in the code rather than by how easy it
 # is to boot:
 #
@@ -25,6 +25,16 @@
 #     rows and the lowest yield, because apt is the best-verified
 #     provider in the build. They are here for version drift, which a
 #     single ubuntu-24.04 runner cannot show.
+#   - The two FreeBSD rows are the exception to "nothing here has ever
+#     run on it", and they are here because of how it *is* covered.
+#     FreeBSD became tier 1 on 2026-09-16, and its two existing machines
+#     are the two least trustworthy kinds: beastie, which is the
+#     development host and therefore makes every FreeBSD leg feel
+#     covered, and CI's leg, which is an emulated VM booted inside an
+#     Ubuntu runner. Neither is a plain FreeBSD machine somebody else
+#     installed. DIVERGENCE 5.77's `/sbin/shutdown` failure passed on
+#     beastie and failed in CI for exactly this reason. FreeBSD 14 is
+#     also the line nothing in this estate runs at all.
 #
 # # What is not here, and why
 #
@@ -110,6 +120,26 @@ locals {
       family   = "debian"
       packages = "at quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
       closes   = "Ubuntu 26.04, the newest tier 1 Ubuntu; SPEC 27.1 tier 1"
+    }
+
+    # The FreeBSD rows carry almost no package list, and that is the
+    # point rather than an omission: `pf`, `jail`, `zfs`, `sysrc`, the
+    # rc.d scripts, UFS quotas, `fetch` and `sha256` are all in base.
+    # What a Linux row installs a package manager to obtain, these
+    # machines boot with -- so the list is the handful of things genuinely
+    # not in base that a module might drive.
+    freebsd14 = {
+      os_name  = "FreeBSD 14 x64"
+      family   = "freebsd"
+      packages = "bash curl git rsync sudo"
+      closes   = "FreeBSD 14, which nothing in this estate runs; SPEC 27.1 tier 1"
+    }
+
+    freebsd15 = {
+      os_name  = "FreeBSD 15 x64"
+      family   = "freebsd"
+      packages = "bash curl git rsync sudo"
+      closes   = "FreeBSD 15 on real hardware rather than beastie or CI's emulated VM; SPEC 27.1 tier 1"
     }
   }
 

@@ -11050,3 +11050,33 @@ changed: see 3.
    real ones are closed** (5.68). The 9 that remain all need a Python
    callable or a scoping construct the corpus extractor cannot carry,
    so none of them is an engine gap.
+
+### 5.113 `getfacl -s` does not exist on FreeBSD 14
+
+`acl.is_extended` asks `getfacl` whether a file's ACL says anything its
+mode does not, and it asked with `-s` (`--skip-base`), which prints
+nothing for a trivial ACL and the full listing otherwise.
+
+**That option was added in FreeBSD 15.** On 14 the usage line is
+`getfacl [-dhnqv]`, and the call fails:
+
+```
+14.5-RELEASE:  getfacl: illegal option -- s
+15.1-RELEASE:  -s, --skip-base
+```
+
+So on every FreeBSD 14 host `acl.is_extended` answers no path at all —
+not a wrong answer, but an error naming an option the operator never
+wrote. The ACL module refuses POSIX.1e paths by name deliberately, and
+on 14 that refusal came back as `illegal option -- s` instead, which
+sends the reader to entirely the wrong place.
+
+The comment beside the call said the behaviour was "verified live in
+both states", and it had been — on beastie. **beastie is FreeBSD 15,
+and so is the CI leg**, which is an emulated VM of the same release.
+Between them they made a FreeBSD claim feel covered on the one version
+neither of them runs. It took the first boot of the lab's FreeBSD 14 row
+to see it, which is what that row was added for.
+
+This is the shape of 5.77 again: a flag that exists on the machine in
+front of you is not a flag the platform has.

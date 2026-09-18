@@ -1,8 +1,9 @@
 # The Vultr lab
 
-Seven Linux distributions that SPEC 27.1 names as supported and that
-nothing in this project has ever run on, raised on demand and destroyed
-afterwards.
+Nine machines that SPEC 27.1 names as supported and that nothing in this
+project runs, raised on demand and destroyed afterwards: seven Linux
+distributions nothing here has ever booted, and two FreeBSD releases
+that are covered only by machines too close to home to trust.
 
 ## Why it exists
 
@@ -36,6 +37,12 @@ ref-salt1. This is a gap in the lab, not one it closes.
 
 **Amazon Linux 2023.** A tier 1 platform, not offered off AWS, and
 therefore still untested anywhere in this estate.
+
+**macOS.** Nothing in this estate runs the eight `mac_*` modules the
+release gate names, and no cloud offers a Mac the way Vultr offers a
+Linux box. EC2 Mac is the only rentable one and its dedicated hosts have
+a minimum allocation of 24 hours. That gap is closed by a real Mac, not
+by this lab.
 
 ## What the first run established
 
@@ -142,9 +149,9 @@ created them.
 
 ## Cost
 
-Seven `vc2-1c-2gb` instances. Vultr bills hourly against a monthly cap,
+Nine `vc2-1c-2gb` instances. Vultr bills hourly against a monthly cap,
 so a sweep that raises them, runs the suite and destroys them costs a
-few cents; leaving all seven running costs the sum of their monthly caps.
+few cents; leaving them all running costs the sum of their monthly caps.
 `vultr-cli plans list` has the current numbers, and
 `tofu output monthly_cost_if_left_running` prints what is up.
 
@@ -166,6 +173,56 @@ packet filters.
 - State files and `*.tfvars` are ignored by git. `.terraform.lock.hcl` is
   **not** ignored: it pins the provider the way `go.sum` pins this
   project's one dependency.
+
+## The FreeBSD rows, and why a covered platform is on this list
+
+Every other row is here because nothing in this estate has booted it.
+The two FreeBSD rows are here because of *how* FreeBSD is covered.
+
+It became tier 1 on 2026-09-16, and it has exactly two machines: beastie,
+which is the development host, and CI's leg, which is an emulated VM
+booted inside an Ubuntu runner. Neither is a plain FreeBSD machine
+somebody else installed, and the development host in particular makes
+every FreeBSD leg *feel* covered. DIVERGENCE 5.77's `/sbin/shutdown`
+failure passed on beastie and failed in CI for that reason.
+
+The first boot, 2026-09-17, made the point on its own:
+
+| Row | Reported itself as | Missing packages | live suite |
+|---|---|---|---|
+| `freebsd14` | 14.5-RELEASE | none | 28 passed, 59 skipped, **1 failed** |
+| `freebsd15` | 15.1-RELEASE-p3 | none | 29 passed, 59 skipped, 0 failed |
+
+The failure is DIVERGENCE 5.113: **`getfacl -s` was added in FreeBSD
+15**, and `acl.is_extended` passes it unconditionally, so on 14 it
+answers every path with `getfacl: illegal option -- s`. beastie is 15 and
+so is the CI leg, so neither could ever have found it — and note that
+`freebsd15` here reports 15.1, the same release CI emulates, and passes.
+The row that earned its keep was the one running the version nothing
+else in the estate runs.
+
+Both rows carry almost no package list, which is the point rather than
+an omission: `pf`, `jail`, `zfs`, `sysrc`, the rc.d scripts, UFS quotas,
+`fetch` and `sha256` are all in base.
+
+### Two things about FreeBSD that the Linux rows do not need
+
+**Vultr does not run cloud-init on its BSD images.** `user_data` is
+silently inert there; the supported mechanism is a Vultr *startup
+script* attached to the instance, and `main.tf` creates one per BSD row.
+The API takes it base64-encoded and the provider does not encode it for
+you, so plain text would have been run as one very long unknown command.
+It also fires *earlier* in boot than cloud-init does: `/etc/os-release`
+is a symlink into `/var/run` that an rc service had not yet written when
+the script ran, so no `os_*` fact is recorded on these rows and
+`freebsd-version` is the fact that answers the question.
+
+**root's login shell is tcsh.** `ssh host "cd dir && VAR=value cmd"` runs
+through the login shell, and csh has no leading-assignment syntax, so
+every command `lab.sh` sends would fail on these two rows and on no
+others. The bootstrap runs `pw usermod root -s /bin/sh`, which is a
+smaller and more honest fix than teaching `lab.sh` to quote for two
+shells.
 
 ## How it is built, and the two traps in it
 
