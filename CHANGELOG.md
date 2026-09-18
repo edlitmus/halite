@@ -18,6 +18,26 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The stderr an error carries keeps both ends
+
+A dying extension's error carries what the extension wrote to stderr.
+It kept the last twelve lines, on the stated grounds that this was
+"enough for a Go runtime fatal error, which is the shape most likely to
+be worth reading" — and it was the wrong end of exactly that shape. A
+Go fatal prints its message and the crashing goroutine **first** and
+then dumps every other goroutine, so the last twelve lines of a real
+one are an idle `net/http` goroutine parked in `selectgo`: true, and
+about nothing.
+
+`internal/extpillar`'s end-to-end test has flaked for weeks with "the
+extension exited without answering". It flaked three times after the
+tail was added, and each time produced sixty columns of that parked
+goroutine and no sign of what died.
+
+The head is now kept whole, the tail rolls, and the lines that fell
+between them are counted in the message rather than joined up silently
+— two lines printed a thousand apart should not read as consecutive.
+
 ### The release gate passes
 
 It refuses a release while any module that changes a machine as root has

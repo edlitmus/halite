@@ -154,6 +154,24 @@ func handle(call ext.Call) (any, error) {
 	// produce the same order at any time, and did on CI. A host that
 	// reads its stderr tail without waiting for the drain gets an empty
 	// one here every time.
+	// Dies the way the extpillar flake dies: the reason first, then a
+	// goroutine dump long enough to push it out of any tail. The
+	// filler is shaped like the real thing -- parked goroutines that
+	// are true and say nothing -- because a host keeping only the last
+	// lines of this reports those and not the fatal.
+	case "die-with-a-dump":
+		fmt.Fprintln(os.Stderr, "fatal error: the reason this extension could not continue")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "goroutine 1 [running]:")
+		fmt.Fprintln(os.Stderr, "main.handle(...)")
+		fmt.Fprintln(os.Stderr, "\t/build/echoext/main.go:1")
+		for i := 0; i < 200; i++ {
+			fmt.Fprintf(os.Stderr, "goroutine %d [select]:\n", i+10)
+			fmt.Fprintln(os.Stderr, "net/http.(*persistConn).writeLoop()")
+		}
+		fmt.Fprintln(os.Stderr, "created by net/http.(*Transport).dialConn")
+		os.Exit(2)
+
 	case "die-after-stdout":
 		os.Stdout.Close()
 		time.Sleep(100 * time.Millisecond)
