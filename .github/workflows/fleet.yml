@@ -61,23 +61,25 @@ on:
       - "internal/builtin/journald*.go"
       - "internal/varlink/**"
       - "internal/dbus/**"
-      - "internal/builtin/live_apparmor_test.go"
-      - "internal/builtin/live_debian_test.go"
-      - "internal/builtin/live_iptables_test.go"
-      - "internal/builtin/live_nftables_test.go"
-      - "internal/builtin/live_netfilter_test.go"
-      - "internal/builtin/live_journald_test.go"
-      - "internal/builtin/live_lvm*_test.go"
-      - "internal/builtin/live_mdadm_test.go"
-      - "internal/builtin/live_modprobe_test.go"
-      - "internal/builtin/live_udev_test.go"
-      - "internal/builtin/live_netplan_test.go"
-      - "internal/builtin/live_pkg_test.go"
-      - "internal/builtin/live_quota*_test.go"
-      - "internal/builtin/live_service_test.go"
-      - "internal/builtin/live_system_test.go"
+      # **Every live test, by one pattern rather than by name.** This was
+      # a list of eighteen files, and a new one was added to the tree and
+      # not to the list on the day this was written -- so the leg that
+      # existed to run it never ran, which is the failure mode this
+      # workflow's own instructions warn about. A test that cannot
+      # trigger the leg that drives it is a test nobody runs.
+      - "internal/builtin/live_*_test.go"
+      # The FreeBSD row's modules, which the freebsd leg now drives in
+      # full: `jail` and `acl` are FreeBSD-only, and the rest are
+      # cross-platform modules whose BSD branch runs nowhere else.
+      - "internal/builtin/jail*.go"
+      - "internal/builtin/acl*.go"
+      - "internal/builtin/swap*.go"
+      - "internal/builtin/sudo*.go"
+      - "internal/builtin/ps*.go"
+      - "internal/builtin/at*.go"
+      - "internal/builtin/tmpfs*.go"
+      - "internal/builtin/reboot*.go"
       - "internal/builtin/mac_*.go"
-      - "internal/builtin/live_mac_*_test.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
       - ".github/workflows/fleet.yml"
