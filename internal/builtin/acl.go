@@ -318,25 +318,79 @@ func aclIsExtendedFn(c *exec.Context, args *value.Map) (any, error) {
 	if path == "" {
 		return nil, errors.New("an ACL needs a path")
 	}
-	if err := aclToolPresent(c, "getfacl"); err != nil {
-		return nil, err
+	return aclExtendedMark(c, path, states.Bool(args, "follow_symlink", true))
+}
+
+// aclExtendedMark reports whether a file's ACL says anything its mode
+// does not.
+//
+// # Why this does not ask getfacl
+//
+// `getfacl -s` answers exactly this question, and **it was added in
+// FreeBSD 15**. On 14 it is not an option at all -- `getfacl [-dhnqv]`
+// -- so the call failed with `getfacl: illegal option -- s` for every
+// path on every 14 host, including the POSIX.1e paths this module
+// refuses by name, whose refusal arrived as that instead. DIVERGENCE
+// 5.113.
+//
+// `ls` marks a file carrying such an ACL with a `+` after the mode, on
+// both releases, from the same acl_is_trivial_np(3) the flag uses.
+// Checked against `getfacl -s` on 15.1 across a trivial file, an
+// extended file, a symlink to each, an extended directory and a path
+// with a space in it: they agreed on all six, and on 14.5 the mark
+// answers where the flag cannot.
+//
+// # Why this does not read the ACL first
+//
+// Every other function here goes through readACL, which refuses a
+// POSIX.1e entry by name because this build parses NFSv4 only. This one
+// must not: it never parses an entry, so the family split does not
+// reach it, and the mark is the same mark whichever family the
+// filesystem speaks. A POSIX.1e path carrying a mask entry gets a real
+// answer rather than a refusal -- `live_acl_test.go` asserts exactly
+// that, and an earlier cut of this fix failed it on both releases by
+// reading the ACL for its errors.
+//
+// # Why the entries cannot answer instead
+//
+// Counting them looks like it would work and does not. A file whose
+// `owner@` permissions have been widened carries the same three
+// canonical entries a trivial file carries -- owner@, group@,
+// everyone@, all allow -- and is extended. Measured on both releases,
+// which is the only reason this is not a count.
+//
+// # Why following a symlink resolves it first
+//
+// ls computes the mark on the path it is handed and does not move it
+// across a symlink, **not even under -L**: a link to an extended file
+// lists unmarked while `getfacl`, which follows by default, calls it
+// extended. So `follow_symlink` resolves with realpath(1) and marks
+// the target, which is what makes the two agree.
+func aclExtendedMark(c *exec.Context, path string, follow bool) (bool, error) {
+	target := path
+	if follow {
+		res, err := c.Run(exec.Command{Argv: []string{"realpath", path}, IgnoreExitCode: true})
+		if err != nil {
+			return false, fmt.Errorf("realpath could not be run: %w", err)
+		}
+		if res.Code != 0 {
+			return false, fmt.Errorf("realpath could not resolve %s: %s",
+				path, strings.TrimSpace(firstLine(res.Stderr)))
+		}
+		if resolved := strings.TrimSpace(res.Stdout); resolved != "" {
+			target = resolved
+		}
 	}
-	argv := []string{"getfacl", "-sq"}
-	if !states.Bool(args, "follow_symlink", true) {
-		argv = append(argv, "-h")
-	}
-	argv = append(argv, path)
-	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+	res, err := c.Run(exec.Command{Argv: []string{"ls", "-ld", target}, IgnoreExitCode: true})
 	if err != nil {
-		return nil, fmt.Errorf("getfacl could not be run: %w", err)
+		return false, fmt.Errorf("ls could not be run: %w", err)
 	}
 	if res.Code != 0 {
-		return nil, fmt.Errorf("getfacl could not read %s: %s", path, strings.TrimSpace(firstLine(res.Stderr)))
+		return false, fmt.Errorf("ls could not read %s: %s",
+			target, strings.TrimSpace(firstLine(res.Stderr)))
 	}
-	// -s prints nothing at all for a file whose ACL is exactly what its
-	// mode already implies (acl_is_trivial_np(3)), and the full listing
-	// otherwise. Verified live in both states; see acl_test.go.
-	return strings.TrimSpace(res.Stdout) != "", nil
+	mode, _, _ := strings.Cut(strings.TrimSpace(res.Stdout), " ")
+	return strings.HasSuffix(mode, "+"), nil
 }
 
 // ---- comparing ----

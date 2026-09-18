@@ -18,6 +18,32 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `acl.is_extended` works on FreeBSD 14 again, by not asking for a flag
+
+`getfacl -s` was added in FreeBSD 15, and `acl.is_extended` passed it
+unconditionally -- so on every FreeBSD 14 host it answered no path at
+all, with `getfacl: illegal option -- s` naming a flag the operator
+never wrote. DIVERGENCE 5.113.
+
+`ls` marks a file whose ACL says more than its mode with a `+` after the
+mode, from the same `acl_is_trivial_np(3)` the flag uses, on both
+releases. Checked against `getfacl -s` on 15.1 across six states and
+they agreed on all of them.
+
+Three things came from the machines rather than from reasoning, and each
+would have shipped as a defect:
+
+- **Counting the entries does not work**, though it is the obvious
+  substitute. A file whose `owner@` permissions were widened has the
+  same three canonical entries a trivial file has and is extended.
+- **`ls` does not carry the mark across a symlink, even under `-L`** --
+  a link to an extended file lists unmarked. Following one resolves
+  through `realpath` first, or every symlink would read as trivial.
+- **Reading the ACL first for its error handling broke FreeBSD 15**,
+  which had been passing: it reintroduced the NFSv4-only refusal into
+  the one function that parses no entry and so must answer for either
+  family. The lab caught that regression because it runs both releases.
+
 ### The macOS row: one module out, the rest under CI, and a limit of sixteen
 
 `mac_assistive` is out of the build. Its writes go to a database System
