@@ -105,10 +105,11 @@ locals {
     for name, d in local.selected : name => templatefile(
       d.family == "freebsd" ? "${path.module}/bootstrap-freebsd.sh.tftpl" : "${path.module}/bootstrap.sh.tftpl",
       {
-        distro     = name
-        family     = d.family
-        packages   = d.packages
-        closes     = d.closes
+        distro       = name
+        family       = d.family
+        packages     = d.packages
+        closes       = d.closes
+        convert_init = d.convert_init
         go_version = var.go_version
         # Same toolchain, different tarball, so a different checksum.
         # Pinning one and downloading the other is how a lab silently

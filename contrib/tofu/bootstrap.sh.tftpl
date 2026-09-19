@@ -34,6 +34,9 @@ set -eu
 
 FACTS=/var/lib/halite-lab/facts
 READY=/var/lib/halite-lab/ready
+# Only the one row that converts its init uses this; it is here so that
+# every path this script writes is declared in one place.
+READY_SCRIPT=/etc/init.d/halite-lab-ready
 LOG=/var/log/halite-lab-bootstrap.log
 
 mkdir -p /var/lib/halite-lab
@@ -197,6 +200,110 @@ fi
 # and the instance is reachable either way.
 (rc-service sshd reload || systemctl reload sshd || systemctl reload ssh || service sshd reload) 2>/dev/null || \
     fact sshd_reload failed
+
+# ---- the init system, for the one row that asks for a different one ----
+#
+# **Vultr sells no Devuan.** `vultr-cli os list` offers Debian and Ubuntu
+# and nothing else that is not systemd, so the only way this lab can
+# raise a machine with sysvinit as PID 1 is to convert a Debian and
+# reboot it -- which is the second spelling plan.md section 7 item 17
+# gave.
+#
+# Three things make that safe enough to automate, and all three were
+# measured on a real instance before this was written (DIVERGENCE 5.126):
+#
+#   - **Networking survives.** This image configures its interface
+#     through ifupdown -- /etc/network/interfaces.d/50-cloud-init -- and
+#     ifupdown is what a sysvinit machine uses. An image whose network
+#     came up through systemd-networkd could not be converted this way
+#     at all, and would be unreachable after the reboot rather than
+#     broken in a way somebody could see.
+#   - **cloud-init keeps its init scripts.** /etc/init.d carries
+#     cloud-init-local, cloud-init-main, cloud-config and cloud-final.
+#   - **`systemd-sysv` is Essential on trixie**, so apt refuses to remove
+#     it without `--allow-remove-essential`. The simulation was read
+#     before the flag was used: what it removes is systemd-sysv,
+#     libpam-systemd and dbus-user-session.
+#
+# The ready file is written **after** the reboot, by an init script this
+# installs for the purpose. A machine that has converted and not yet
+# rebooted is still running systemd, and reporting it ready would hand
+# `make lab-test` the machine this row exists to avoid.
+case "${convert_init}" in
+    "")
+        fact init "as shipped"
+        ;;
+    sysvinit)
+        echo "--- converting this machine to sysvinit"
+        fact init_conversion requested
+        if [ -f /etc/network/interfaces.d/50-cloud-init ]; then
+            fact init_network_renderer ifupdown
+        else
+            # Recorded rather than fatal: the conversion may still work,
+            # and a machine that does not come back says so by never
+            # writing a ready file. But this is the fact to read first
+            # when one does not.
+            fact init_network_renderer "not ifupdown"
+        fi
+
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            --allow-remove-essential sysvinit-core systemd-sysv-; then
+            fact init_conversion failed
+            echo "the sysvinit conversion failed; no ready file is written" >&2
+            exit 1
+        fi
+
+        # Written by the machine itself, once it is running the init this
+        # row is about. It removes its own links and itself, so what a
+        # test then looks at carries nothing this bootstrap left behind
+        # except the facts.
+        cat >"$READY_SCRIPT" <<'READYSCRIPT'
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          halite-lab-ready
+# Required-Start:    $all
+# Required-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:
+# Short-Description: report that this lab instance finished its bootstrap
+### END INIT INFO
+case "$1" in
+  start)
+    {
+        printf 'init_pid1=%s\n' "$(ps -p 1 -o comm= 2>/dev/null)"
+        printf 'init_runlevel=%s\n' "$(runlevel 2>/dev/null)"
+        printf 'init_conversion=%s\n' complete
+        printf 'bootstrap_finished=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } >>/var/lib/halite-lab/facts
+    cp /var/lib/halite-lab/facts /var/lib/halite-lab/ready
+    update-rc.d -f halite-lab-ready remove >/dev/null 2>&1 || true
+    rm -f "$0"
+    ;;
+esac
+exit 0
+READYSCRIPT
+        chmod 0755 "$READY_SCRIPT"
+        if ! update-rc.d halite-lab-ready defaults >/dev/null 2>&1; then
+            fact init_conversion "the ready script could not be enabled"
+            echo "the post-reboot ready script could not be enabled" >&2
+            exit 1
+        fi
+
+        echo "--- rebooting into sysvinit"
+        reboot
+        # `reboot` returns as soon as it has asked. Without this the
+        # script would fall through and write the ready file from the
+        # machine that is still running systemd, which is the one thing
+        # this whole case exists to prevent.
+        sleep 120
+        exit 0
+        ;;
+    *)
+        echo "convert_init=${convert_init} is not a conversion this bootstrap knows" >&2
+        fact init_conversion "unknown: ${convert_init}"
+        exit 1
+        ;;
+esac
 
 # ---- ready ----
 #
