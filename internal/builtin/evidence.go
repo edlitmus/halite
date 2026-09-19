@@ -224,10 +224,16 @@ var moduleEvidence = map[string]exec.Evidence{
 		"enabled, started, restarted (checked by the pid changing), stopped and disabled, " +
 		"each read back from `sysrc -n` and the pidfile rather than from this module. That " +
 		"first run found start and stop doing nothing at all, without error, on any service " +
-		"rc.conf had not enabled (DIVERGENCE 5.123). Not covered: the sysvinit provider, " +
-		"which has not been run at all and wants a Devuan or a Debian with " +
-		"`sysvinit-core`; and launchd's `gui/` and `user/` domains, since every command " +
-		"there names `system/`"},
+		"rc.conf had not enabled (DIVERGENCE 5.123). The sysvinit provider is driven on the lab's " +
+		"`debian13sysv` row -- a Debian 13 converted to sysvinit and rebooted into it -- " +
+		"against a real `service(8)` and `update-rc.d`, on an LSB init script the test " +
+		"installs: started, restarted (checked by the pid changing), stopped, enabled and " +
+		"disabled, each read back from the runlevel links on disk rather than from this " +
+		"module. That run found the boot state being read from /etc/rc3.d on a machine " +
+		"that boots to runlevel 2 (DIVERGENCE 5.126). Not covered: the `chkconfig` branch " +
+		"of the same provider, which wants a RHEL of the sysvinit era and which no machine " +
+		"here has; and launchd's `gui/` and `user/` domains, since every command there " +
+		"names `system/`"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a
