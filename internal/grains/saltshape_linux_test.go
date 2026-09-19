@@ -3,6 +3,7 @@
 package grains
 
 import (
+	"os"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -63,6 +64,21 @@ func TestSystemdVersionIsWhatSystemctlReports(t *testing.T) {
 	sd := detectSystemd()
 	version, _ := sd.Get("version")
 	features, _ := sd.Get("features")
+
+	// **systemctl installed and systemd not running is a real machine**,
+	// not a broken one: the lab's `debian13sysv` row converts a Debian
+	// to sysvinit and leaves every systemd binary in place. The grain is
+	// empty there on purpose -- Salt reports it only where systemd is
+	// the init -- so that is what gets asserted, and this test used to
+	// fail on such a host because it took `systemctl --version` working
+	// as proof that systemd was running. DIVERGENCE 5.126.
+	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		if version != "" || features != "" {
+			t.Errorf("systemd is not the init here and the grain still reports version %v, features %v",
+				version, features)
+		}
+		return
+	}
 	if version != fields[1] {
 		t.Errorf("the systemd version grain is %v, want %q", version, fields[1])
 	}
