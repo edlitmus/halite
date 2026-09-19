@@ -323,6 +323,98 @@ func TestLiveSysvinitServiceDrivesTheWholeArc(t *testing.T) {
 	}
 }
 
+// The probe that starts in the machine's **default runlevel only**,
+// which is what an LSB header saying `Default-Start: 2` produces on a
+// Debian that boots to runlevel 2 — the common case for a distribution
+// whose default is not 3.
+const liveSysvDefaultOnlyName = "haliterlprobe"
+
+const liveSysvDefaultOnlyScript = `#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          ` + liveSysvDefaultOnlyName + `
+# Required-Start:    $remote_fs
+# Required-Stop:     $remote_fs
+# Default-Start:     2
+# Default-Stop:      0 1 6
+# Short-Description: halite live-test runlevel probe
+### END INIT INFO
+exit 0
+`
+
+// **"Starts at boot" is a question about the runlevel this machine
+// boots to**, and the provider was asking a different one.
+//
+// `sysvProvider.Enabled` read `/etc/rc3.d`. Debian boots to runlevel 2,
+// and `update-rc.d` places links from the script's own LSB header — so a
+// service declaring `Default-Start: 2` is started at boot by this
+// machine and had no rc3.d link at all to be found by. The arc above
+// does not catch it because `Default-Start: 2 3 4 5` is what most
+// scripts declare, and then rc3.d happens to agree.
+//
+// A `service.enabled` state on such a service reported "not enabled",
+// ran `update-rc.d defaults`, and reported a change — on every run, on a
+// machine that was already doing what was asked. DIVERGENCE 5.126.
+func TestLiveSysvinitReadsTheRunlevelThisMachineBootsTo(t *testing.T) {
+	c := sysvinitLive(t)
+	r := New()
+
+	path := "/etc/init.d/" + liveSysvDefaultOnlyName
+	if _, err := os.Stat(path); err == nil {
+		t.Fatalf("%s already exists; this test will not overwrite it", path)
+	}
+	if err := os.WriteFile(path, []byte(liveSysvDefaultOnlyScript), 0o755); err != nil {
+		t.Fatalf("writing the runlevel probe: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = c.Run(exec.Command{
+			Argv:           []string{"update-rc.d", "-f", liveSysvDefaultOnlyName, "remove"},
+			IgnoreExitCode: true,
+		})
+		_ = os.Remove(path)
+	})
+
+	// Enabled through the real tool, not through the module, so what is
+	// being tested is the reader rather than the writer.
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"update-rc.d", liveSysvDefaultOnlyName, "defaults"},
+		IgnoreExitCode: true,
+	})
+	if err != nil || res.Code != 0 {
+		t.Skipf("`update-rc.d %s defaults` could not run: %v (%s)", liveSysvDefaultOnlyName, err, res.Stderr)
+	}
+
+	starts := sysvStartLinks(t, liveSysvDefaultOnlyName)
+	t.Logf("update-rc.d placed start links in %v; this machine's default runlevel is %q",
+		starts, sysvDefaultRunlevel(c))
+	if len(starts) == 0 {
+		t.Skip("update-rc.d placed no start links at all, so there is nothing to disagree about")
+	}
+
+	// The question the machine answers: does this service start in the
+	// runlevel this machine boots to?
+	level := sysvDefaultRunlevel(c)
+	wanted := "/etc/rc" + level + ".d/"
+	startsAtBoot := false
+	for _, link := range starts {
+		if strings.HasPrefix(link, wanted) {
+			startsAtBoot = true
+		}
+	}
+	if !startsAtBoot {
+		t.Skipf("this machine boots to runlevel %s and update-rc.d placed no link there (%v); "+
+			"the disagreement this test is about cannot arise here", level, starts)
+	}
+
+	enabled, err := r.Exec.Call(c, "service.enabled", value.MapOf("name", liveSysvDefaultOnlyName))
+	if err != nil {
+		t.Fatalf("service.enabled: %v", err)
+	}
+	if enabled != true {
+		t.Errorf("service.enabled = %v for a service that starts in runlevel %s, which is the runlevel "+
+			"this machine boots to; its links are %v", enabled, level, starts)
+	}
+}
+
 // **The systemd provider declines a machine that still has
 // `systemctl`.**
 //
