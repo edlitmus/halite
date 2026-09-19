@@ -632,6 +632,7 @@ func (sysvProvider) Enabled(c *exec.Context, name string) (bool, error) {
 	}
 	// Debian's update-rc.d has no query mode, so the runlevel links are
 	// read directly, which is what the tool would write anyway.
+	//
 	entries, err := os.ReadDir("/etc/rc3.d")
 	if err != nil {
 		return false, err
