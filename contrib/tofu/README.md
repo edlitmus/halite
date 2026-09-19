@@ -23,10 +23,21 @@ against.
 | `alpine` | the apk provider; the only musl and OpenRC machine here | 2 |
 | `opensuse16` | zypper, which is not implemented yet | 2 |
 | `debian13` | Debian 13 | 1 |
+| `debian13sysv` | the sysvinit service provider, on a Debian converted to it | 1 |
 | `ubuntu2204` | the oldest tier 1 Ubuntu | 1 |
 | `ubuntu2604` | the newest tier 1 Ubuntu | 1 |
 
 `distros.tf` carries the same table with the reasoning next to each row.
+
+**One row changes the machine it was given.** `debian13sysv` is the same
+image as `debian13` with `sysvinit-core` in place of `systemd-sysv`,
+converted at first boot and rebooted into it, because Vultr's catalogue
+has no Devuan and nothing else on it is not systemd. Its ready file is
+written *after* the reboot by an init script the bootstrap installs and
+which removes itself — a machine that has converted and not rebooted is
+still running systemd, and is not the machine that row is for. The facts
+say which one answered: `init_pid1`, `init_runlevel`,
+`init_conversion`.
 
 ## What it deliberately does not cover
 

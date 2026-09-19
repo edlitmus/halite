@@ -71,6 +71,18 @@ func serviceLive(t *testing.T) *exec.Context {
 		return nil
 	}
 	if _, err := os.Stat("/run/systemd/system"); err != nil {
+		// **systemctl installed and systemd not running is a real
+		// machine**, and the module already knows it: the systemd
+		// provider tests for this directory for exactly this reason. So
+		// the gate asks the module which init it would drive rather
+		// than assuming the binary implies the daemon -- the lab's
+		// `debian13sysv` row is a Debian converted to sysvinit with
+		// every systemd binary still in place, and these five tests
+		// failed there on the assumption rather than on anything about
+		// the code. DIVERGENCE 5.126.
+		if p, perr := pickServiceProvider(c); perr == nil && p.Name() != "systemd_service" {
+			t.Skipf("systemctl is installed here and systemd is not running; this node's init is %s", p.Name())
+		}
 		t.Fatalf("HALITE_SYSTEM_LIVE is set and systemd is not running here: %v", err)
 	}
 	return c

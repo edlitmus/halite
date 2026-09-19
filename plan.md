@@ -1856,11 +1856,32 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     DIVERGENCE 5.124. Two of that day's three test defects were the
     test's own assumptions rather than the module's behaviour, which is
     the shape the Debian container's first run recorded.
-17. **A non-systemd Linux with sysvinit** (Devuan, or Debian/Ubuntu
-    with `sysvinit-core` in place of systemd). Runs the `service`
-    module's sysvinit provider for the first time — same gap as 16,
-    different init. The lab has no such row; adding one is an entry in
-    `distros.tf`, not an acquisition.
+17. ~~**A non-systemd Linux with sysvinit**~~ — **done 2026-09-19**, and
+    the row had to be made rather than chosen: there is no Devuan in
+    Vultr's catalogue, so `debian13sysv` is the same Debian 13 image as
+    `debian13`, converted with `sysvinit-core` at first boot and
+    rebooted into it. The two rows differ in PID 1 and nothing else.
+    **All four `service` providers have now been driven on a machine
+    that uses them.**
+
+    The provider's own arc passed first time. What the machine found was
+    two things around it:
+
+    - **The boot state was read from the wrong runlevel.** Debian boots
+      to 2 and the provider asked `/etc/rc3.d`, so a service declaring
+      `Default-Start: 2` — which has a link in rc2.d and nowhere else —
+      read as not starting at boot when it does. Fixed; the runlevel is
+      asked now. DIVERGENCE 5.126.
+    - **Two tests took `systemctl`'s presence for systemd running**, and
+      one of them was in the *unit* suite: `go test ./...` failed on any
+      sysvinit Linux. A converted Debian keeps every systemd binary and
+      changes only PID 1, which is the case the module itself always
+      handled and no machine had been able to contradict.
+
+    That second pair is the row's real yield, and the argument for the
+    lab in one line: the suite's assumptions are only visible on a
+    machine that violates them.
+
 18. ~~**A Mac that writes preferences, with a CI leg that is one.**~~ —
     **done**, and in that order: a real Mac closed six modules by hand,
     and then `fleet.yml` gained a `macos` leg so they stay closed. The
@@ -2035,8 +2056,10 @@ somebody would otherwise rediscover.
     reproduction that reproduces nothing reads as evidence and is worse
     than none.
 
-19b. **The `service` module's launchd, sysvinit and openrc providers.**
-    Three inits, none ever run. ~~**launchd**~~ is **done**, on the
+19b. ~~**The `service` module's launchd, sysvinit and openrc
+    providers.**~~ — **done.** Three inits, none ever run when this was
+    written; all three driven within two days, each on the machine that
+    uses it. ~~**launchd**~~ is **done**, on the
     `macos` leg, and it found the defect this item was ranked for: a
     restart that reported success while launchd had only *scheduled* the
     respawn, leaving the service down for the ten seconds launchd
@@ -2054,8 +2077,10 @@ somebody would otherwise rediscover.
 
     ~~openrc still needs the lab's Alpine row (16)~~ — **done the same
     day** (item 16, DIVERGENCE 5.124), and the provider had to be
-    written before it could be run. **sysvinit is the one left**, and it
-    wants a row that does not exist yet (17). What launchd leaves open
+    written before it could be run. ~~**sysvinit is the one left**~~ —
+    **done 2026-09-19** on a lab row that had to be built rather than
+    chosen (item 17, DIVERGENCE 5.126). **This item is closed: all four
+    providers have been driven.** What launchd leaves open
     is its `gui/` and `user/` domains: every command that provider runs
     names `system/`, which is what a node running as root manages.
 

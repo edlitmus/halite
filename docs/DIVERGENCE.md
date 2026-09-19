@@ -10740,6 +10740,99 @@ reproducing nothing — which is the failure above, repeated on a
 platform instead of in an extension.
 
 
+### 5.126 The init nothing had run, and the machine that had to be made
+
+plan.md §7 item 17: sysvinit was the last of the `service` module's four
+providers that nothing had ever run — launchd closed on the macOS leg
+(5.122) and OpenRC on the lab's Alpine row (5.124). The item said what
+it needed and that the lab did not have it: *"a non-systemd Linux with
+sysvinit (Devuan, or Debian/Ubuntu with `sysvinit-core` in place of
+systemd). The lab has no such row; adding one is an entry in
+`distros.tf`, not an acquisition."*
+
+**There is no Devuan to acquire.** `vultr-cli os list` offers Debian and
+Ubuntu and nothing else that is not systemd, so the row is the second
+spelling: the same Debian 13 image as `debian13`, converted at first
+boot and rebooted into sysvinit. The two rows differ in PID 1 and in
+nothing else, which is what makes a disagreement between them mean
+something.
+
+Three properties were measured on a real instance before the conversion
+was automated, because one that goes wrong leaves an unreachable machine
+rather than a failing one:
+
+- **Networking survives**, because this image configures its interface
+  through ifupdown — `/etc/network/interfaces.d/50-cloud-init` — and
+  ifupdown is what a sysvinit machine uses. An image rendering
+  systemd-networkd could not be converted this way at all.
+- **cloud-init keeps its init scripts**: `/etc/init.d` carries
+  `cloud-init-local`, `cloud-init-main`, `cloud-config` and
+  `cloud-final`.
+- **`systemd-sysv` is Essential on trixie**, so apt refuses to remove it
+  without `--allow-remove-essential`. The simulation was read before the
+  flag was used: it removes systemd-sysv, libpam-systemd and
+  dbus-user-session, and nothing else.
+
+The ready file is written **after** the reboot, by an init script the
+bootstrap installs and which removes itself. A machine that has
+converted and not rebooted is still running systemd, and calling it
+ready would hand `make lab-test` the machine this row exists to avoid.
+The facts say which machine answered: `init_pid1=init`,
+`init_runlevel=N 2`, `init_conversion=complete`.
+
+#### What it found: a boot state read from the wrong runlevel
+
+```
+update-rc.d placed start links in [/etc/rc2.d/S02haliterlprobe];
+this machine's default runlevel is "2"
+service.enabled = false for a service that starts in runlevel 2
+```
+
+`sysvProvider.Enabled` read `/etc/rc3.d`. **Debian boots to runlevel
+2**, and `update-rc.d` places links from the init script's own
+`Default-Start` header — so a service declaring `Default-Start: 2` has a
+link in rc2.d and in no other runlevel, and the provider reported a
+service that does start at boot as one that does not. A
+`service.enabled` state on such a service would have rewritten the links
+and reported a change on every run, on a machine already doing what was
+asked: the shape 5.112 recorded for `snap` and 5.123 for FreeBSD's rc,
+for the third time.
+
+The runlevel is asked now rather than assumed — `/etc/inittab`'s
+`initdefault`, then the runlevel the machine is in, then 3 as the last
+resort because that is what the code assumed before it asked.
+
+**Why the arc test did not catch it.** `Default-Start: 2 3 4 5` is what
+most init scripts declare, and then rc3.d happens to agree with rc2.d.
+The case has a test of its own, with a probe declaring runlevel 2 alone,
+and it failed before the change and passed after it on the instance —
+and failed again when the old read was put back on that same machine.
+
+#### And two tests that took systemctl's presence for systemd running
+
+Both failed on this row, and neither was about the code it covers.
+
+- **`serviceLive` failed the run** where `/run/systemd/system` was
+  missing and systemctl was installed, so five live tests reported
+  failures on a machine that simply runs a different init. It asks the
+  module which init it would drive now, and skips naming it — which ties
+  the test's gate to the rule the module already applies, since
+  `systemdProvider.Available` tests for that directory for exactly this
+  reason.
+- **`TestSystemdVersionIsWhatSystemctlReports`** took `systemctl
+  --version` working as proof that the grain should be populated. The
+  grain is empty on such a host on purpose, because Salt reports it only
+  where systemd is the init, so the test asserts that instead. **This
+  one is in the unit suite**, which means `go test ./...` failed on any
+  sysvinit Linux until now.
+
+That second pair is the row's real yield. The provider's own arc passed
+first time; what the machine broke was the suite's assumption that a
+Linux with `systemctl` on it is a Linux running systemd — which the
+module itself never assumed, and which nothing had been able to
+contradict.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

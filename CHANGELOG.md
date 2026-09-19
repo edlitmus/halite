@@ -18,6 +18,23 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `service.enabled` reads the runlevel the machine boots to
+
+On a sysvinit node halite asked `/etc/rc3.d` whether a service starts at
+boot. Debian boots to runlevel 2, and `update-rc.d` places links from
+the init script's own `Default-Start` header — so a service declaring
+`Default-Start: 2` was reported as not starting at boot when it does,
+and a `service.enabled` state rewrote its links and reported a change on
+every run.
+
+The runlevel is now read from `/etc/inittab`'s `initdefault`, falling
+back to the runlevel the machine is in. Nothing changes for a service
+whose script declares the usual `2 3 4 5`.
+
+This is the first release in which the sysvinit provider has been run
+against a real sysvinit at all; all four of the `service` module's
+providers have now been driven on a machine that uses them.
+
 ### An extension's process limit bounds the account, and is applied only where it can
 
 `RLIMIT_NPROC` is per account, not per process: the kernel counts every

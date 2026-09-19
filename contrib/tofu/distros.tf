@@ -108,6 +108,25 @@ locals {
       closes   = "Debian 13; SPEC 27.1 tier 1"
     }
 
+    # **The only row that changes the machine it was given.** Vultr's
+    # catalogue has no Devuan — `vultr-cli os list` offers Debian and
+    # Ubuntu and nothing else that is not systemd — so plan.md §7 item
+    # 17's other spelling is what this is: a Debian with
+    # `sysvinit-core` in place of `systemd-sysv`, converted at first
+    # boot and rebooted into it.
+    #
+    # It is the same image as `debian13`, deliberately: the difference
+    # between the two rows is PID 1 and nothing else, which is what
+    # makes a disagreement between them about the `service` module mean
+    # something.
+    debian13sysv = {
+      os_name      = "Debian 13 x64 (trixie)"
+      family       = "debian"
+      convert_init = "sysvinit"
+      packages     = "at quota lvm2 mdadm iptables nftables rsync tar git curl e2fsprogs util-linux"
+      closes       = "the sysvinit service provider, which nothing has ever run; SPEC 27.1 tier 1"
+    }
+
     ubuntu2204 = {
       os_name  = "Ubuntu 22.04 LTS x64"
       family   = "debian"
@@ -145,8 +164,18 @@ locals {
 
   # An empty `distros` means all of them; naming a subset builds only
   # those rows.
-  selected = length(var.distros) == 0 ? local.distro_catalog : {
-    for name in var.distros : name => local.distro_catalog[name]
+  # `convert_init` is empty for every row that boots the init its
+  # distribution ships, which is all of them but one. The default is
+  # supplied here rather than written into nine rows, and `selected`
+  # builds a map -- whose values must all be the same shape -- so a row
+  # that simply omitted the field would be a planning error rather than
+  # a default.
+  catalog = {
+    for name, d in local.distro_catalog : name => merge({ convert_init = "" }, d)
+  }
+
+  selected = length(var.distros) == 0 ? local.catalog : {
+    for name in var.distros : name => local.catalog[name]
   }
 }
 

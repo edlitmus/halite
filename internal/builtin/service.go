@@ -632,7 +632,17 @@ func (sysvProvider) Enabled(c *exec.Context, name string) (bool, error) {
 	}
 	// Debian's update-rc.d has no query mode, so the runlevel links are
 	// read directly, which is what the tool would write anyway.
-	entries, err := os.ReadDir("/etc/rc3.d")
+	//
+	// **In the runlevel this machine boots to**, which is not always 3.
+	// This read rc3.d unconditionally and was demonstrated wrong on a
+	// Debian booting to runlevel 2: `update-rc.d` places links from the
+	// script's own `Default-Start` header, so a service declaring
+	// `Default-Start: 2` has a link in rc2.d and nowhere else, and this
+	// reported a service that does start at boot as one that does not.
+	// A `service.enabled` state then rewrote the links and reported a
+	// change on every run. DIVERGENCE 5.126.
+	dir := "/etc/rc" + sysvDefaultRunlevel(c) + ".d"
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return false, err
 	}
@@ -642,6 +652,45 @@ func (sysvProvider) Enabled(c *exec.Context, name string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// sysvDefaultRunlevel is the runlevel this machine boots to, which is
+// the only runlevel "does it start at boot" can be a question about.
+//
+// It is asked rather than assumed because distributions disagree: Debian
+// boots to 2 and RHEL's sysvinit era booted to 3, and `update-rc.d`
+// places links from the init script's own `Default-Start` header — so a
+// script declaring `Default-Start: 2` has a link in rc2.d and in no
+// other, and a reader looking anywhere else finds nothing and reports a
+// service that does start at boot as one that does not.
+//
+// `/etc/inittab` is the authority where there is one. Where there is
+// not, the runlevel the machine is in now is the best available answer,
+// and `runlevel` prints it as "<previous> <current>". Three is the last
+// resort because it is what this code assumed before it asked.
+func sysvDefaultRunlevel(c *exec.Context) string {
+	if data, err := os.ReadFile("/etc/inittab"); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			fields := strings.Split(line, ":")
+			if len(fields) >= 3 && fields[2] == "initdefault" && fields[1] != "" {
+				return fields[1]
+			}
+		}
+	}
+	if c.Which("runlevel") != "" {
+		res, err := c.Run(exec.Command{Argv: []string{"runlevel"}, IgnoreExitCode: true})
+		if err == nil && res.Code == 0 {
+			fields := strings.Fields(res.Stdout)
+			if len(fields) == 2 && fields[1] != "unknown" {
+				return fields[1]
+			}
+		}
+	}
+	return "3"
 }
 
 func (sysvProvider) Start(c *exec.Context, name string) error {
