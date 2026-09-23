@@ -104,18 +104,21 @@ func Verify(dir string) (*Result, error) {
 
 			switch {
 			case prev == nil:
-				if r.Prev != "" {
+				// One break rather than two for the same fact. A chain
+				// that starts later than record 1 and follows a hash
+				// that is not here is one thing -- its earlier segments
+				// are gone -- and reporting it twice reads like two
+				// problems. It is deliberate when an operator has
+				// archived them, which docs/operations.md says to do,
+				// and the message is phrased so that such a reader can
+				// tell it is the answer to what they did.
+				if r.Prev != "" || r.Seq != 1 {
 					res.Breaks = append(res.Breaks, Break{
 						Segment: segment, Line: lineNo, Seq: r.Seq,
 						Reason: fmt.Sprintf(
-							"this is the first record and it follows %s, so the records before it are missing",
-							r.Prev),
-					})
-				}
-				if r.Seq != 1 {
-					res.Breaks = append(res.Breaks, Break{
-						Segment: segment, Line: lineNo, Seq: r.Seq,
-						Reason: fmt.Sprintf("the chain starts at record %d rather than 1", r.Seq),
+							"this chain begins at record %d, following %s, so the records before it "+
+								"are not here; they were archived, or they were removed",
+							r.Seq, orNothing(r.Prev)),
 					})
 				}
 			default:
@@ -181,4 +184,12 @@ func Tail(dir string) (*Record, int, error) {
 		}
 	}
 	return nil, len(segments), nil
+}
+
+// orNothing renders an absent previous hash for a message.
+func orNothing(hash string) string {
+	if hash == "" {
+		return "nothing"
+	}
+	return hash
 }

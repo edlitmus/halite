@@ -171,15 +171,54 @@ func TestRemovingTheTailIsNotDetectableFromTheFileAlone(t *testing.T) {
 	}
 
 	res := verify(t, dir)
+	// The point of the test: verification is happy, because every record
+	// that remains is intact and correctly linked.
 	if !res.OK() {
-		t.Fatalf("expected a truncated chain to verify, which is the point of this test: %v", res.Breaks)
+		t.Fatalf("expected a truncated chain to verify, which is what this test is about: %v",
+			res.Breaks)
 	}
-	if res.Last.Hash == head {
-		t.Fatal("the test did not truncate anything")
+	if res.Records != 2 {
+		t.Fatalf("the test truncated to %d records, expected 2", res.Records)
 	}
-	// What does catch it: comparing the head an operator kept.
+	// And what does catch it: the head an operator kept somewhere this
+	// node cannot reach no longer matches the end of the file. That
+	// comparison is the whole value of Head, and nothing in this build
+	// does it for you.
 	if res.Last.Hash == head {
-		t.Error("the truncation is invisible even to the head hash")
+		t.Error("the head hash still matches, so this test truncated nothing")
+	}
+}
+
+// Removing the *start* of a chain is reported, once, in words an operator
+// who archived it can recognise.
+//
+// It is a break: the records before this one are not here, and saying so
+// is the honest answer. It is one break rather than two, because a chain
+// that begins at record 412 following a hash that is not present is one
+// fact, and docs/operations.md tells operators to ship sealed segments
+// off -- so this is a message somebody will meet on purpose.
+func TestAChainMissingItsStartSaysSoOnce(t *testing.T) {
+	dir := t.TempDir()
+	l := open(t, dir, Options{})
+	appendJobs(t, l, 4)
+	l.Close()
+
+	path := filepath.Join(dir, currentName)
+	lines := readLines(t, path)
+	if err := os.WriteFile(path, []byte(strings.Join(lines[2:], "\n")+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	res := verify(t, dir)
+	if len(res.Breaks) != 1 {
+		t.Fatalf("expected one break for a chain missing its start, got %d: %v",
+			len(res.Breaks), res.Breaks)
+	}
+	if !strings.Contains(res.Breaks[0].Reason, "archived") {
+		t.Errorf("the break does not offer the ordinary explanation: %s", res.Breaks[0])
+	}
+	if res.Breaks[0].Seq != 3 {
+		t.Errorf("the break names record %d, expected the first one present", res.Breaks[0].Seq)
 	}
 }
 

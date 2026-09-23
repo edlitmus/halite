@@ -1228,7 +1228,11 @@ not yet ship anything that keeps that copy for you.
 
 **Disk.** Nothing prunes it: the current file is sealed at
 `evidence_max_bytes` (64 MiB by default) and a new one started, and
-sealed segments stay until somebody moves them. A busy node writes two to
+sealed segments stay until somebody moves them. Once you have moved some,
+`verify-evidence` reports one break saying the chain begins later than
+record 1 and that the earlier records are not there — which is the honest
+answer and is what an archived chain looks like. A monitoring check should
+expect it on a node whose segments have been shipped off. A busy node writes two to
 four records per job. Ship the sealed segments off if you keep machines
 for years, and remember that removing one is a deliberate act — the point
 of the record is that the audited system does not prune it.
