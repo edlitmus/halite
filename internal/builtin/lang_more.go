@@ -41,6 +41,9 @@ func registerVirtualenv(r *Registries) {
 					argv = append(argv, "--system-site-packages")
 				}
 				argv = append(argv, path)
+				if c.Test {
+					return wouldRun("virtualenv", argv...), nil
+				}
 				res, err := langRun(c, "virtualenv", "", argv...)
 				if err != nil {
 					return nil, err
@@ -134,6 +137,9 @@ func npmChange(c *exec.Context, args *value.Map, verb string) (any, error) {
 	if c.Which("npm") == "" {
 		return nil, fmt.Errorf("npm was not found on this node; the npm module drives the system binary")
 	}
+	if c.Test {
+		return wouldRun("npm", argv...), nil
+	}
 	res, err := c.Run(exec.Command{Argv: append([]string{"npm"}, argv...), Dir: dir})
 	if err != nil {
 		return nil, err
@@ -215,6 +221,9 @@ func registerGem(r *Registries) {
 					argv = append(argv, "--version", v)
 				}
 				argv = append(argv, states.Strings(args, "gems")...)
+				if c.Test {
+					return wouldRun("gem", argv...), nil
+				}
 				res, err := langRun(c, "gem", "", argv...)
 				if err != nil {
 					return nil, err
@@ -235,6 +244,9 @@ func registerGem(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				argv := append([]string{"uninstall", "--executables", "--all"}, states.Strings(args, "gems")...)
+				if c.Test {
+					return wouldRun("gem", argv...), nil
+				}
 				res, err := langRun(c, "gem", "", argv...)
 				if err != nil {
 					return nil, err
