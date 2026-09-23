@@ -654,7 +654,8 @@ func (n *node) gpgOptions() render.GPGOptions {
 	}
 }
 
-// compilePillar assembles this node's pillar from the local roots.
+// compilePillarOrErr produces this node's pillar, from the hub where
+// there is one and from the local roots otherwise.
 func (n *node) compilePillarOrErr() (*value.Map, error) {
 	// A node with a hub gets its pillar from the hub: SPEC 12.1 puts
 	// the compilation there so that the node holds none of it and
@@ -662,6 +663,16 @@ func (n *node) compilePillarOrErr() (*value.Map, error) {
 	if n.hubPillar != nil {
 		return n.hubPillar(n.pillarEnv)
 	}
+	return n.compileLocalPillar()
+}
+
+// compileLocalPillar assembles this node's pillar from its own roots.
+//
+// Separate from the function above so that the hub fetcher can reach it:
+// a hub that turns out to compile no pillar leaves the node on its own
+// tree, and that answer can arrive at the first read rather than at the
+// probe.
+func (n *node) compileLocalPillar() (*value.Map, error) {
 	strategy, _ := value.ParseStrategy(n.cfg.String("pillar_source_merging_strategy", "smart"))
 	c := &pillar.Compiler{
 		Loader: n.pillars,

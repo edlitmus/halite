@@ -11114,6 +11114,97 @@ asserts a job signed for another host is refused; leaving the expiry out
 of the signed payload made the "a hub cannot extend a signed job's life"
 case fail. Both were put back and both suites are green.
 
+### 5.129 A moment's error, cached until somebody restarted the node
+
+Found while driving a hub and a node as real processes for 5.128, and
+unrelated to that work: **a node that reconnects while its hub is
+restarting loses pillar until the agent is restarted.**
+
+```
+warn: this node's pillar did not compile; functions that read it will fail
+  error=/v1/pillar: Post "https://127.0.0.1:14510/v1/pillar":
+        dial tcp 127.0.0.1:14510: connect: connection refused
+```
+
+That line then repeated on every pillar read, with the hub healthy,
+listening, and answering that node's subscribe stream throughout. Three
+attempts, minutes apart, identical message, identical timestamp in the
+error.
+
+#### The mechanism
+
+`useHubPillar` probes the hub once to find out whether it compiles pillar
+at all. On a transport failure it did this:
+
+```go
+failure := err
+n.hubPillar = func(string) (*value.Map, error) { return nil, failure }
+```
+
+A moment turned into a permanent state. And `attachToHub`, which runs on
+every reconnect, could not undo it, because its guard asks whether
+`hubPillar` is set -- and a closure that returns a captured error for ever
+is set:
+
+```go
+if n.hubPillar == nil {
+    n.useHubPillar(client)
+}
+```
+
+The conditions line up in the worst possible way: the probe happens on
+reconnect, the likeliest reason for a reconnect is that the hub
+restarted, and the likeliest moment to probe is while it is still coming
+up. So the case is not exotic -- it is what an ordinary hub upgrade does
+to a node, and the estate installs from source, which means every hub
+upgrade is a restart.
+
+What made it hard to see rather than hard to hit is that the node is
+otherwise perfectly healthy. `test.ping` answers, the stream is
+connected, `doctor`'s connectivity check passes, and only the functions
+that read pillar fail. That last part is deliberate and documented in
+`runFunction`: a node whose pillar is broken should still answer
+`test.ping` and report its grains rather than going silent. It worked
+exactly as intended, on an error that should never have been carried.
+
+#### The fix, and the gap it opened
+
+The closure does the work now instead of holding an answer: the probe
+decides only whether to fall back to the node's own roots, and the
+fetcher re-asks the hub on every read. A node that could not fetch
+pillar at 14:59 fetches it at 15:00 without anybody doing anything, and
+the error an operator reads is the one happening now rather than one from
+a moment they cannot find.
+
+That opened a smaller version of the same fault, which is worth
+recording because it is the same shape. The fallback to local roots is
+decided by the probe, on the hub's `CodeNoPillar` answer -- so a node
+whose probe *failed* would never fall back even against a hub that
+genuinely compiles no pillar, and would report an error per read for
+ever. The fetcher now recognises that answer when it arrives late, says
+so once, and compiles locally. Demonstrated: a node restarted while its
+hub was down logged the transient failure, then logged *"the hub compiles
+no pillar; this node will compile its own"* on the first read and
+compiled its own tree.
+
+**A decision taken once, from a question nobody could answer at the time,
+is the shape to look for.** It is a cousin of the pair this ledger keeps
+finding -- two paths that must agree -- and the difference is the axis:
+here the two things that disagree are the same path at two moments, and
+the older moment wins for ever. No other entry is cited for it, because
+nothing was checked against one; this is the first time it has been
+written down under that description.
+
+#### What is not established
+
+There is no test for either half on a real machine. Both were
+demonstrated by hand, by restarting a hub under a connected node and
+reading the log; the unit suite has nothing that stops the closure being
+turned back into a constant, because the reproduction needs two processes
+and a restart between them. A test that would catch it belongs in the
+chaos suite (SPEC 31's hub-restart row), which does not exercise pillar.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

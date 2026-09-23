@@ -58,6 +58,27 @@ signed, no hardware token or KMS has produced a signature this build
 accepted, and the bridged `signer` extension SPEC 25.6 mentions is not
 built.
 
+### A node that reconnects during a hub restart no longer loses pillar
+
+`halite-node` probes its hub once to learn whether the hub compiles
+pillar. If that probe failed because the hub was unreachable, the node
+kept the error and returned it for every pillar read afterwards — for
+ever, because the reconnect that would have retried skips the probe when
+one is already attached. The window is the ordinary one: the probe happens
+on reconnect, the usual reason to reconnect is that the hub restarted, and
+the usual moment to probe is while it is still coming up.
+
+The node looked healthy throughout. The stream reconnected, `test.ping`
+answered, `doctor` passed, and only states and functions that read pillar
+failed — with a message naming a moment minutes or days in the past.
+Restarting the agent was the only cure.
+
+The fetch is retried per read now, so a node recovers by itself and the
+error an operator sees is the current one. A hub that turns out to compile
+no pillar is also recognised late: the node says so once and compiles its
+own tree, instead of reporting an error for ever because the question
+could not be asked at startup.
+
 ### A node keeps its own record of what it was asked to do
 
 New: an append-only, hash-chained local record on every node, of every
