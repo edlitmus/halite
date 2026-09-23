@@ -11241,6 +11241,67 @@ turned back into a constant, because the reproduction needs two processes
 and a restart between them. A test that would catch it belongs in the
 chaos suite (SPEC 31's hub-restart row), which does not exercise pillar.
 
+### 5.130 `schedule.add` runs arbitrary code, later, and said neither thing
+
+Two defects in one module, found while asking a question SPEC 25.6 makes
+unavoidable: **what stops a hub scheduling the work it is not allowed to
+send?**
+
+The scheduler runs its jobs by calling `executeJob` directly, not through
+the executor, so a scheduled job is not checked against
+`require_job_signature`. That is right, and it is right for a reason
+worth stating: the schedule comes from the node's own configuration --
+`schedule` in node.yaml and the drop-ins under `schedule.d` -- which is
+the same authority that sets the requirement. A hub cannot write it.
+
+What a hub *could* do is call `schedule.add`.
+
+#### It declares what it is now
+
+`schedule.run_job` has declared `ArbitraryCode: true` since it was
+written, with the comment "the job runs whatever function it names".
+`schedule.add` and `schedule.modify` name the function a job will run and
+declared nothing, so:
+
+- SPEC 23.5 refuses to grant an arbitrary-code function by a wildcard,
+  and could not refuse these: a role granted `schedule.*` was granted
+  `cmd.run` with a minute's delay.
+- Under SPEC 25.6's recommended `[arbitrary_code, state]`, a job calling
+  `schedule.add` needed no signature, and the job it scheduled would run
+  unsigned from the scheduler. The control had a documented-looking way
+  around it that nobody had documented.
+
+Both declare it now, and `TestArbitraryCodeIsMarked` holds them to it.
+The delay is the whole difference from `run_job`, and a delay is not a
+mitigation.
+
+#### And a dry run that acted
+
+The same signature helper declared `TestMode: TestReliable` for every
+function built from it, and seven of them ignored `c.Test` entirely:
+`add`, `modify`, `delete`, `enable`, `disable`, `enable_job` and
+`disable_job` changed a running node's schedule under `--test` while
+`docs/modules.md` printed *"honours `--test`"* beside each.
+
+`run_job`, `save` and `reload` in the same file checked it, which is what
+makes this the ordinary shape rather than an oversight of principle:
+somebody added the check where they were thinking about it and the shared
+signature claimed it for everybody.
+
+A dry run that acts is worse than one that fails, because the operator
+has been told nothing happened. The seven answer with what they would do
+now, and the test walks every mutating function in the module rather than
+the seven that were wrong -- a list of the known-bad ones would not have
+caught the eighth.
+
+#### What this does not cover
+
+`schedule.save` writes the running schedule to disk, so a hub that gets
+one unsigned `schedule.add` in before this fix could have made it
+permanent. Nothing audits an existing `schedule.d` for entries that
+arrived that way, and nothing here can tell one from an entry an operator
+wrote.
+
 
 ## 6. Everything else not started
 

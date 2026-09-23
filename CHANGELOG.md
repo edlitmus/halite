@@ -18,6 +18,24 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `schedule.add` is arbitrary code, and the schedule functions honour `--test`
+
+Two fixes in the scheduling module, both found while asking what stops a
+compromised hub scheduling work it may not send directly.
+
+`schedule.add` and `schedule.modify` name the function a job will run, so
+they can run anything the caller asks — a minute later. They now declare
+`arbitrary_code`, which means SPEC 23.5 no longer grants them through a
+`schedule.*` wildcard, and SPEC 25.6's recommended
+`require_job_signature: [arbitrary_code, state]` now covers them. Without
+that, scheduling `cmd.run` was a way round both controls.
+
+And seven of the module's functions changed a running node's schedule
+under `--test` while their signature said they honoured it: `add`,
+`modify`, `delete`, and the four enable/disable pairs. They report what
+they would do now. `run_job`, `save` and `reload` in the same file always
+did check, which is how the claim came to be believed.
+
 ### Detached job signing
 
 New: a node can be told to run nothing that an operator key did not sign.

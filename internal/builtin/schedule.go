@@ -26,6 +26,14 @@ func registerSchedule(r *Registries) {
 			TestMode: signature.TestReliable,
 			Section:  "20.1",
 			Params:   params,
+			// TestReliable is a claim about every function built from
+			// this, and it was false for seven of them: `add`,
+			// `modify`, `delete` and the four enable/disable pairs all
+			// acted under `--test` while their signature said they
+			// honoured it, and docs/modules.md printed "honours
+			// `--test`" beside each. They answer with what they would
+			// do now.
+			//
 			// A job definition is an open set of keys -- every timing
 			// form and every modifier of SPEC 20.1 -- and an operator
 			// types them inline: `schedule.add name=nightly
@@ -34,6 +42,29 @@ func registerSchedule(r *Registries) {
 			// and the parser is what refuses one it does not know.
 			AnyKwargs: true,
 		}
+	}
+	// `add` and `modify` name the function a scheduled job will run, so
+	// they run whatever the caller asks -- later, rather than now.
+	//
+	// `run_job` has said so since it was written, on exactly that
+	// reasoning, and these two are the same thing with a delay: an
+	// operator granted `schedule.*` by a wildcard could write
+	// `schedule.add name=x function=cmd.run args='["..."]'` and have the
+	// node run it a minute later. SPEC 23.5 refuses to grant an
+	// arbitrary-code function by wildcard and can only do that if the
+	// signature says so.
+	//
+	// It matters twice over now that SPEC 25.6 exists: the scheduler runs
+	// its jobs from the node's own configuration and does not check a
+	// signature, so a job that can put work into that configuration is a
+	// job that must be signed wherever `cmd.run` must be.
+	arbitrary := func(s signature.Signature) signature.Signature {
+		s.ArbitraryCode = true
+		// The scheduled function may be anything, so this build cannot
+		// know whether it honours test mode -- the same reasoning
+		// run_job carries.
+		s.TestMode = signature.TestUnreliable
+		return s
 	}
 	name := req("name", signature.String, "The scheduled job.")
 
@@ -58,50 +89,71 @@ func registerSchedule(r *Registries) {
 			Fn: showNextFireTime,
 		},
 		exec.Module{
-			Sig: sig("add", "Add a job to a running node's schedule.",
+			Sig: arbitrary(sig("add", "Add a job to a running node's schedule.",
 				name,
 				opt("job", signature.Map, nil, "The job definition."),
-			),
+			)),
 			Fn: withSchedule(func(c *exec.Context, args *value.Map, ctl exec.ScheduleControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_add", jobName(args)), nil
+				}
 				return trueOr(ctl.Add(jobName(args), jobDefinition(args)))
 			}),
 		},
 		exec.Module{
-			Sig: sig("modify", "Change a running node's scheduled job.",
+			Sig: arbitrary(sig("modify", "Change a running node's scheduled job.",
 				name,
 				opt("job", signature.Map, nil, "The job definition."),
-			),
+			)),
 			Fn: withSchedule(func(c *exec.Context, args *value.Map, ctl exec.ScheduleControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_modify", jobName(args)), nil
+				}
 				return trueOr(ctl.Modify(jobName(args), jobDefinition(args)))
 			}),
 		},
 		exec.Module{
 			Sig: sig("delete", "Remove a job from a running node's schedule.", name),
 			Fn: withSchedule(func(c *exec.Context, args *value.Map, ctl exec.ScheduleControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_delete", jobName(args)), nil
+				}
 				return trueOr(ctl.Delete(jobName(args)))
 			}),
 		},
 		exec.Module{
 			Sig: sig("enable", "Let the schedule run again."),
 			Fn: withSchedule(func(c *exec.Context, args *value.Map, ctl exec.ScheduleControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_enable", "the whole schedule"), nil
+				}
 				return trueOr(ctl.SetEnabled("", true))
 			}),
 		},
 		exec.Module{
 			Sig: sig("disable", "Hold the whole schedule without forgetting any job."),
 			Fn: withSchedule(func(c *exec.Context, args *value.Map, ctl exec.ScheduleControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_disable", "the whole schedule"), nil
+				}
 				return trueOr(ctl.SetEnabled("", false))
 			}),
 		},
 		exec.Module{
 			Sig: sig("enable_job", "Let one scheduled job run again.", name),
 			Fn: withSchedule(func(c *exec.Context, args *value.Map, ctl exec.ScheduleControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_enable", jobName(args)), nil
+				}
 				return trueOr(ctl.SetEnabled(jobName(args), true))
 			}),
 		},
 		exec.Module{
 			Sig: sig("disable_job", "Hold one scheduled job.", name),
 			Fn: withSchedule(func(c *exec.Context, args *value.Map, ctl exec.ScheduleControl) (any, error) {
+				if c.Test {
+					return value.MapOf("would_disable", jobName(args)), nil
+				}
 				return trueOr(ctl.SetEnabled(jobName(args), false))
 			}),
 		},
