@@ -21,6 +21,31 @@ const ReturnSchema = "halite.ret/1"
 // Job.Schema.
 const JobSchema = "halite.job/1"
 
+// SignedJobSchema is the shape of a record that carries SPEC 25.6's
+// detached signature.
+//
+// A second version rather than a field added under the first, because
+// the schema's job is to say what a build must understand to write the
+// record back -- and a build that does not know about signatures would
+// read a signed record, write it back, and drop the signature, which is
+// exactly the truncation JobSchema exists to prevent. A node would then
+// refuse the job as unsigned, which is loud; the record losing it
+// silently is not.
+//
+// It is stamped per record rather than per build. An unsigned job's
+// record is still `halite.job/1` and an older build can still write it,
+// because an older build can represent it faithfully. The version
+// describes the record, not who wrote it.
+const SignedJobSchema = "halite.job/2"
+
+// SchemaFor is the lowest schema that can represent this record.
+func SchemaFor(j *Job) string {
+	if j != nil && j.Signature != "" {
+		return SignedJobSchema
+	}
+	return JobSchema
+}
+
 // Offline is the per-job policy of SPEC 9.5 for a node that is not
 // connected.
 type Offline string

@@ -123,10 +123,10 @@ func (e *ForeignRecordError) Is(target error) bool { return target == ErrForeign
 // is not this build's is refused.
 func checkSchema(j *Job) error {
 	switch j.Schema {
-	case "", JobSchema:
+	case "", JobSchema, SignedJobSchema:
 		return nil
 	default:
-		return &ForeignRecordError{JID: j.JID, Schema: j.Schema, Known: JobSchema}
+		return &ForeignRecordError{JID: j.JID, Schema: j.Schema, Known: SchemaFor(j)}
 	}
 }
 
@@ -140,7 +140,10 @@ func (c *Cache) Put(j *Job) error {
 	if err := checkSchema(j); err != nil {
 		return err
 	}
-	j.Schema = JobSchema
+	// The lowest schema that can represent it, so that a record an older
+	// build could write back faithfully stays writable by one. See
+	// SchemaFor.
+	j.Schema = SchemaFor(j)
 	dir, err := c.jobDir(j.JID)
 	if err != nil {
 		return err

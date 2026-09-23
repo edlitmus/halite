@@ -11043,6 +11043,35 @@ writes a number by value rather than by spelling, and the signer puts its
 arguments through the JSON round trip the node will see before signing
 them.
 
+#### The record grew a field, which is a rollback question
+
+The signature is on the job record as well as on the wire, because a
+queued or batched job is delivered from the record long after it was
+submitted -- so a signature kept only in the dispatching call would be
+lost by `jobs resume` and by SPEC 9.5's spool, and every node reached
+that way would refuse a job that was properly signed.
+
+A field added to that record under the same schema is the defect 4.13
+exists to have fixed: an older build reads the record, writes it back,
+and drops what it does not know. Here that is the signature, and the node
+then refuses the job as unsigned -- loud at the node, silent in the
+record, which is the half that matters.
+
+So there is a second schema, `halite.job/2`, and it is stamped **per
+record rather than per build**: a record carrying a signature gets it and
+an unsigned one stays `halite.job/1`. The version says what a build must
+understand to write the record back, not who wrote it. Bumping the whole
+build would have stopped a rolled-back hub updating any job at all, which
+is a worse answer than the problem; this way an older build writes back
+everything it can represent faithfully and is refused exactly what it
+would truncate.
+
+It cost a change to a test, and the change is worth noting: the existing
+rollback test used `halite.job/2` as its stand-in for "a schema from the
+future". That version is now real, so the stand-in is `halite.job/3`. A
+fixture that names a version somebody may take is a fixture with an
+expiry date on it.
+
 #### ECDSA here, Ed25519 for extensions
 
 `internal/extension` signs bundles with Ed25519 and documents why: one
