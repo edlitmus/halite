@@ -11827,6 +11827,102 @@ never produce an existing repository. The `check_cmd` finding in the same
 review is in `internal/runner` rather than in a module, and is outside
 what this audit looks at. Neither is contradicted here.
 
+### 5.132 A nodegroup carried an untrusted grain past SPEC 12.4
+
+Found by a code review running in a parallel session, verified here, and
+the verification is worth recording because the first three attempts to
+reproduce it all failed for reasons that had nothing to do with the
+defect.
+
+SPEC 12.4 says a pillar top file may target only on trusted grains: a
+node controls its own grains, so targeting pillar on an untrusted one
+lets a node ask for another node's secrets by renaming itself. The rule
+was enforced by scanning the expression's text for `G@`, `P@`, `I@` and
+`J@`.
+
+**A nodegroup carries no sigil of its own, and its expansion happens
+inside the compiler -- after the text was read.** So:
+
+```yaml
+# refused, correctly
+'G@role:db':
+  - secret
+
+# permitted, with dbservers defined as G@role:db
+'N@dbservers':
+  - secret
+```
+
+#### The negation is the one that hurt
+
+A pillar target evaluates against the trusted grains alone -- that is the
+point of `targetNode`. So an untrusted term is not merely unchecked, it is
+always **false**. Which makes its negation always **true**:
+
+```yaml
+# notdb: "not G@role:db"
+'N@notdb':
+  - secret
+```
+
+An operator writing "everything except the database hosts" delivered the
+secret **to the database hosts**, and to every other node as well, with no
+diagnostic anywhere. Reproduced: a node with `role: db` receives
+`password: hunter2`. Spelled directly, the same expression is refused.
+
+#### The fix is to stop reading the text
+
+The two things that had to agree were a hand-rolled scan over the
+expression and a parser that expands nodegroups, and they could not be
+made to agree by improving the scan -- a scan cannot see an expansion that
+has not happened yet.
+
+`internal/target` records the terms it compiles: `target.Term` is a kind
+and a key, appended where each leaf is built, with a nodegroup's own terms
+merged in from the sub-parser. `Matcher.Terms()` reports them, the pillar
+compiler asks the matcher what the expression consults, and the check
+happens *after* compilation rather than before it.
+
+That also closed two smaller defects, both of them consequences of the
+scan rather than separate mistakes:
+
+- **A grain name ended at `:` or a space**, so `not (G@fips_mode)` named
+  the grain `fips_mode)`, which is in no allowlist -- a legitimate
+  expression refused with a message naming a grain nobody wrote.
+  `fips_mode` is in the default trusted set, so this refused exactly the
+  expression the rule was written to permit.
+- **The audit record filed a grain-based delivery as `glob`**, because
+  the text carried no sigil. The record of which nodes were handed which
+  pillar, and on what basis, said "name match" for a delivery decided by a
+  grain.
+
+#### Three probes that failed before one worked
+
+Worth writing down, because each produced a *negative* result that looked
+like a finding:
+
+1. The first probe keyed its in-memory files `base|top.sls`, and the test
+   loader expects `base|top`. The top file was never found, `resolveTop`
+   took its "a tree with no top file delivers nothing" path, and all three
+   cases came back inert -- which read as "the review is wrong, nothing is
+   delivered".
+2. Before that, a reading of `CompileAuto` suggested `N@...` would be
+   treated as a glob without an explicit `- match:`. It is not:
+   `looksCompound` recognises any registered sigil, `N@` among them.
+3. The audit basis was read from a case that matched nothing, so no audit
+   entry existed to inspect.
+
+Each was a probe that measured something other than what it claimed. The
+same shape as the `| tail` that reported `tail`'s exit code in 5.127, on
+the same day.
+
+#### What this does not change
+
+The **state** top file has no trusted-grain rule and should not: SPEC 12.4
+is about pillar, where the hazard is a node obtaining another node's
+secrets. A node choosing which states it applies is a different and much
+smaller thing, and Salt behaves the same way.
+
 
 ## 6. Everything else not started
 

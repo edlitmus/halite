@@ -26,6 +26,8 @@ type compoundToken struct {
 }
 
 type parser struct {
+	// terms is every leaf compiled, in order, with nodegroups expanded.
+	terms  []Term
 	src    string
 	toks   []compoundToken
 	i      int
@@ -205,6 +207,7 @@ func (p *parser) compileTerm(t compoundToken) (node, error) {
 		if err != nil {
 			return nil, withCol(err, t.col)
 		}
+		p.terms = append(p.terms, Term{Kind: Glob})
 		return leaf, nil
 	}
 
@@ -219,6 +222,7 @@ func (p *parser) compileTerm(t compoundToken) (node, error) {
 		if err != nil {
 			return nil, withCol(err, t.col)
 		}
+		p.terms = append(p.terms, Term{Kind: Glob})
 		return leaf, nil
 	}
 	if rest == "" {
@@ -235,6 +239,10 @@ func (p *parser) compileTerm(t compoundToken) (node, error) {
 		if err != nil {
 			return nil, err
 		}
+		// The group's own terms are this expression's terms. Without
+		// this line a nodegroup is a hole in anything that judges a
+		// target by what it consults, which is what it was: see Term.
+		p.terms = append(p.terms, sub.terms...)
 		return n, nil
 	}
 
@@ -242,6 +250,7 @@ func (p *parser) compileTerm(t compoundToken) (node, error) {
 	if err != nil {
 		return nil, withCol(err, t.col)
 	}
+	p.terms = append(p.terms, Term{Kind: kind, Key: leafKey(kind, rest)})
 	return leaf, nil
 }
 

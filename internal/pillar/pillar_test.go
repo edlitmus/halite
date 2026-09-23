@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/state"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -370,16 +371,42 @@ func TestMalformedPillarIsReported(t *testing.T) {
 	}
 }
 
-func TestGrainNamesInExtractsEveryTarget(t *testing.T) {
+// The grains a target consults come from the compiler, not from reading
+// the expression's text.
+//
+// The text reader this replaces got two of these wrong: it ended a name
+// at `:` or a space, so the parenthesised case named the grain
+// `fips_mode)`, and it could not see inside a nodegroup at all.
+// DIVERGENCE 5.132.
+func TestTheGrainsATargetConsultsComeFromTheCompiler(t *testing.T) {
+	groups := target.Nodegroups{
+		"dbservers": "G@role:db",
+		"nested":    "N@dbservers and G@env:prod",
+	}
 	cases := map[string][]string{
 		"G@os_family:Debian":         {"os_family"},
 		"P@osrelease:^22":            {"osrelease"},
 		"G@a:1 and G@b:2":            {"a", "b"},
 		"web*":                       nil,
 		"G@custom and not P@other:x": {"custom", "other"},
+		"not (G@fips_mode)":          {"fips_mode"},
+		"N@dbservers":                {"role"},
+		"not N@dbservers":            {"role"},
+		"N@nested":                   {"role", "env"},
 	}
 	for expr, want := range cases {
-		got := grainNamesIn(expr)
+		matcher, err := target.CompileAuto(expr, groups)
+		if err != nil {
+			t.Errorf("%q: %v", expr, err)
+			continue
+		}
+		var got []string
+		for _, term := range matcher.Terms() {
+			switch term.Kind {
+			case target.Grain, target.GrainRegex:
+				got = append(got, term.Key)
+			}
+		}
 		if len(got) != len(want) {
 			t.Errorf("%q -> %v, want %v", expr, got, want)
 			continue
@@ -541,5 +568,89 @@ base:
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the error should mention %q: %v", want, err)
 		}
+	}
+}
+
+// A nodegroup cannot smuggle an untrusted grain past SPEC 12.4.
+//
+// The rule was enforced against the expression's text, and a nodegroup's
+// expansion happens inside the compiler, after the text was read. So
+// `G@role:db` was refused and `N@dbservers` -- defined as exactly that --
+// was not.
+//
+// The negated form is the one that hurt. A pillar target evaluates against
+// the trusted grains alone, so an untrusted term is always false and `not
+// <false>` is true everywhere: a secret written for everything *except*
+// the database hosts was delivered to the database hosts, with no
+// diagnostic. Both directions are asserted here, because a fix that
+// refused the group but still allowed the negation would pass a test that
+// only checked the first. DIVERGENCE 5.132.
+func TestANodegroupCannotHideAnUntrustedGrain(t *testing.T) {
+	secret := map[string]string{
+		"base|secret": "password: hunter2\n",
+	}
+	withTop := func(top string) map[string]string {
+		files := map[string]string{"base|top": top}
+		for k, v := range secret {
+			files[k] = v
+		}
+		return files
+	}
+	dbNode := Config{
+		NodeID:     "db1.prod",
+		Grains:     value.MapOf("role", "db", "os", "Ubuntu"),
+		Nodegroups: target.Nodegroups{"dbservers": "G@role:db", "notdb": "not G@role:db"},
+	}
+
+	// Spelled directly: refused, as it always was.
+	direct := compile(t, withTop("base:\n  'G@role:db':\n    - secret\n"), dbNode)
+	if direct.Err() == nil {
+		t.Fatal("an untrusted grain spelled directly was permitted")
+	}
+
+	// Through a nodegroup: must be refused the same way, and must name
+	// the grain rather than the group, because the grain is what the
+	// operator has to act on.
+	group := compile(t, withTop("base:\n  'N@dbservers':\n    - secret\n"), dbNode)
+	if group.Err() == nil {
+		t.Fatal("a nodegroup carried an untrusted grain past the check")
+	}
+	if !strings.Contains(group.Err().Error(), "role") {
+		t.Errorf("the refusal does not name the grain: %v", group.Err())
+	}
+
+	// Negated, which is the case that delivered the secret.
+	negated := compile(t, withTop("base:\n  'N@notdb':\n    - secret\n"), dbNode)
+	if negated.Err() == nil {
+		t.Fatal("a negated untrusted grain inside a nodegroup was permitted")
+	}
+	if _, ok := value.Traverse(negated.Pillar, "password", ":"); ok {
+		t.Error("the excluded host received the secret")
+	}
+}
+
+// A nodegroup made of trusted grains still works, and is filed as a grain
+// match rather than as a glob.
+func TestANodegroupOfTrustedGrainsIsPermittedAndFiledAsOne(t *testing.T) {
+	files := map[string]string{
+		"base|top":    "base:\n  'N@ubuntu':\n    - common\n",
+		"base|common": "shared: delivered\n",
+	}
+	out := mustCompile(t, files, Config{
+		NodeID:     "web1.prod",
+		Grains:     value.MapOf("os", "Ubuntu", "os_family", "Debian"),
+		Nodegroups: target.Nodegroups{"ubuntu": "G@os:Ubuntu"},
+	})
+	if got := get(t, out, "shared"); got != "delivered" {
+		t.Errorf("shared = %#v", got)
+	}
+	if len(out.Audit) != 1 {
+		t.Fatalf("expected one audit entry, got %d", len(out.Audit))
+	}
+	// The basis is what the delivery was actually decided by. It read
+	// "glob" for a nodegroup, because the text carried no sigil -- so the
+	// record of a grain-based delivery said it was a name match.
+	if out.Audit[0].Basis != "grain" {
+		t.Errorf("a delivery decided by a grain is filed as %q", out.Audit[0].Basis)
 	}
 }
