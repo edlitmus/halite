@@ -500,7 +500,16 @@ func TestSysDocReadsTheBuildTimeSignatures(t *testing.T) {
 // the signature says so.
 func TestArbitraryCodeIsMarked(t *testing.T) {
 	r := New()
-	for _, name := range []string{"cmd.run", "cmd.run_all", "cmd.run_stdout", "cmd.retcode"} {
+	// `schedule.add` and `schedule.modify` are on this list for the same
+	// reason `schedule.run_job` always was: they name the function a job
+	// will run. The delay does not change what they can do -- it only
+	// means the arbitrary code runs a minute later, from the scheduler,
+	// which does not check SPEC 25.6's signature because it runs the
+	// node's own configuration.
+	for _, name := range []string{
+		"cmd.run", "cmd.run_all", "cmd.run_stdout", "cmd.retcode",
+		"schedule.add", "schedule.modify", "schedule.run_job",
+	} {
 		sig, ok := r.Exec.Signatures().Lookup(name)
 		if !ok {
 			t.Errorf("%s is missing", name)
@@ -511,7 +520,7 @@ func TestArbitraryCodeIsMarked(t *testing.T) {
 		}
 	}
 	// A function that does not run arbitrary code must not claim to.
-	for _, name := range []string{"test.ping", "file.read", "sys.doc"} {
+	for _, name := range []string{"test.ping", "file.read", "sys.doc", "schedule.list", "schedule.delete"} {
 		sig, ok := r.Exec.Signatures().Lookup(name)
 		if !ok {
 			t.Errorf("%s is missing", name)

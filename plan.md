@@ -1716,6 +1716,48 @@ unbuilt item here is number 7.
 9. **Node evidence and detached signing** (§6). Supply chain, and it
    matters more now that the thing being supplied runs everything.
 
+   **Node evidence is done, 2026-09-23** (DIVERGENCE 5.127).
+   `internal/nodeevidence` is the hash-chained record; the node writes a
+   record for every job it accepts, refuses and finishes, for every
+   extension bundle that changes, and for the configuration in effect at
+   each start; `halite-node verify-evidence` checks it and `doctor`
+   reports whether it is being kept at all. Demonstrated with a hub and a
+   node as real processes, including a restart and two kinds of
+   tampering, because `connect` is the only path that opens the chain and
+   no unit test reaches it.
+
+   It found the defect the item was worth doing for: **the job message
+   carried no principal.** SPEC 25.7 requires the record to name who
+   asked, the hub has kept `submitter` and `on_behalf_of` on the job
+   record since the audit trail was written, and `messageFor` sent
+   neither — so a node's own account of what it ran could say only that a
+   hub had asked. Both are on the wire now, recorded as *claimed*,
+   because the comparison with the hub's copy is the whole value and a
+   field that read as fact would be believed as one.
+
+   **Detached job signing is done too, the same day** (DIVERGENCE
+   5.128). `internal/jobsign` signs and verifies, `halite-hub keys signer
+   create` makes the key, `halite-hub run --sign-key` signs, and
+   `require_job_signature` takes SPEC 25.6's per-function-class form —
+   `[arbitrary_code, state]` is the recommendation and it works. Both
+   settings are out of `UnreadKeys`. Demonstrated on real processes:
+   unsigned refused, signed accepted, an untrusted key refused, and the
+   per-class rule letting `test.ping` through while refusing `cmd.run`.
+
+   It found the thing worth finding, which SPEC does not ask for: **a
+   signature that covers the target is worth nothing unless the node
+   checks the target against itself.** The hub chooses who a job is
+   written to, so without that check a signed job for one host is equally
+   good delivered to every other, and the section's own promise does not
+   hold. A node evaluates it now, and a nodegroup target — which a node
+   cannot resolve — is refused rather than waved through.
+
+   **What is left on this item**, and it is the same shape at both ends:
+   nothing anchors an evidence head hash off the node, and nothing has
+   produced a signature from a hardware token or a KMS. Orchestration is
+   not signed, and the bridged `signer` extension SPEC 25.6 mentions is
+   not built. Those four are the remainder; the mechanism is in.
+
 **Demoted, with the reason**
 
 10. **Packaging** (§3.5) — was fifth, on the argument that the fleet

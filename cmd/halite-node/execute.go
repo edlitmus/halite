@@ -313,11 +313,34 @@ func newExecutor(n *node, depth int, returns func(*job.Return)) *executor {
 var ErrQueueFull = errors.New("this node's job queue is full")
 
 // Offer puts a job on the queue after the replay checks of SPEC 6.3.
+//
+// SPEC 25.7's acceptance record is written here, and the position is the
+// whole of it: after the replay checks, so that a job refused as a replay
+// is not recorded as accepted, and before the job reaches the queue, so
+// that the record exists before anything can run. A record written after
+// execution is missing exactly the jobs that stopped the node, which are
+// the ones an investigation is about.
+//
+// The refusals are recorded by node.refuse, which every path that will
+// not run a job goes through -- including a queue that is full, which is
+// a job recorded as accepted and then refused. Two records rather than
+// one amended record, because a chain that went back and changed an entry
+// would not be append-only.
 func (e *executor) Offer(j *job.Job) error {
 	if err := e.guard.Admit(j); err != nil {
 		e.node.metrics.countRefusal(err)
 		return err
 	}
+	// SPEC 25.6, after the replay checks and before the record: a job
+	// this node will not run unsigned is refused rather than accepted,
+	// and the evidence record says which key authorised the ones it did
+	// run.
+	signer, err := e.node.checkJobSignature(j)
+	if err != nil {
+		e.node.metrics.countRefusal(err)
+		return err
+	}
+	e.node.recordJobAccepted(j, signer)
 	select {
 	case e.queue <- j:
 		return nil
@@ -345,6 +368,10 @@ func (e *executor) Run(done <-chan struct{}) {
 			e.node.log.Info("job finished",
 				"jid", string(j.JID), "fun", j.Fun,
 				"success", ret.Success, "retcode", ret.RetCode, "duration_ms", ret.DurationMS)
+			// Before the return goes to the hub, so that the node's
+			// account of the outcome exists whether or not the hub ever
+			// receives one.
+			e.node.recordJobResult(ret)
 			e.returns(ret)
 		}
 	}

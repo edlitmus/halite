@@ -10832,6 +10832,497 @@ Linux with `systemctl` on it is a Linux running systemd — which the
 module itself never assumed, and which nothing had been able to
 contradict.
 
+### 5.127 The record a node keeps, and the principal it was never told
+
+plan.md §7 item 9 and SPEC 25.7: an append-only, hash-chained local
+record of every job a node accepted, its principal, its result, and every
+configuration and extension change, verifiable with `halite-node
+verify-evidence`. It is the compromised-hub row of SPEC 25.1's threat
+model, and the half of it that does not depend on the hub being honest.
+
+`internal/nodeevidence` is the chain; the node writes to it from
+`executor.Offer` and `node.refuse`; `evidence`, `evidence_dir` and
+`evidence_max_bytes` configure it, on by default. `doctor` gains an
+**evidence chain** check, which SPEC 26.4's sentence now names.
+
+#### The finding: the job message carried no principal
+
+SPEC 25.7 requires the record to hold a job's principal, and a node had
+no way to know it. The hub has kept `Submitter` and `OnBehalfOf` on the
+job record since the audit trail was written -- `jobs show` prints them
+-- and `messageFor` sent neither, so what a node could honestly record
+was that *a hub* had asked for something. That is this project's
+commonest defect shape: two records that are supposed to say the same
+thing, where one has a field the other has never been given.
+
+The wire carries both now, and the record spells them
+`claimed_submitter` and `claimed_on_behalf_of` rather than `submitter`.
+A node authenticates its hub and nothing behind it, so the value is the
+hub's assertion about a person; a field that read as established fact
+would be read as one by whoever finds the file years later. Its worth is
+the comparison — the hub's job cache holds the same two fields, and a
+disagreement is the finding. An older hub sends neither and an older
+node ignores both, which is 4.13's wire tolerance being relied on rather
+than rediscovered.
+
+#### What the chain establishes, and what it does not
+
+Stated here because the package comment, the manual page and the
+command's own output all say it, and it would be easy to read the feature
+as stronger than it is.
+
+- **Editing a record is detectable**, because the hash covers the
+  record's contents including its link.
+- **Removing or reordering a record from the middle is detectable**,
+  because the next record's `prev` no longer matches. Both are
+  demonstrated on a real chain below.
+- **Truncating the end is not**, from the file alone: every remaining
+  record is still perfectly valid. `Log.Head` and the last line of
+  `verify-evidence` exist for that — a head hash kept somewhere the node
+  cannot reach is what contradicts a truncation. A test asserts the
+  limitation rather than leaving it to the prose.
+- **A node with root on it can rewrite the whole chain** from the
+  genesis record. This is evidence about a compromised hub, not about a
+  compromised node, and **nothing in this build anchors a head hash off
+  the node**. That is the remaining half of item 9 and it is unbuilt.
+
+#### Three decisions worth recording
+
+**The configuration record is a digest and the file list, never a
+value.** A record meant to be read by somebody investigating a breach is
+the last file that should hold a bootstrap token, and a redacted copy
+would have the opposite fault -- a change confined to a secret-bearing
+key would not show at all. Hashing the whole effective configuration
+catches every change and writes none of it down; the files named on the
+same record are where an investigator goes to see what changed. One
+record per run is a *complete* account rather than a sample, because
+nothing here re-reads configuration while running: a node's configuration
+changes when it restarts.
+
+**A record that could not be written is counted, not skipped.** The
+`Lost` field on the next record that does get written says how many did
+not, because a chain with a silent hole in it is the one thing an audit
+record must not have. A failed append never fails the job either: a node
+that refused to run work it could not record would be a node whose full
+disk stops the highstate that would have cleared the disk. What reports the gap instead is
+`doctor`, the node's log, and two metric families -- one of which is the
+absence of records rather than a count of failures, because a chain that
+has stopped being written emits no signal of its own.
+
+**Segments are sealed and never pruned.** One file that grows for the
+life of a host is a file nobody can read and eventually a full disk, so
+the current segment is sealed at `evidence_max_bytes` and a new one
+started; the chain crosses the boundary on `prev` alone, with no record
+saying "a file ended here" that could be forged to hide one. Nothing in
+this package deletes a segment, because a record the audited system
+prunes on its own is not one an investigator can rely on. An estate that
+keeps machines for years ships them off itself.
+
+#### What was actually run
+
+A hub and a node as **real processes on `beastie`**, on a private port
+and private directories, because `runConnect` is the only path that opens
+the chain and no unit test reaches it:
+
+- Enrollment, acceptance, `connect`, and `halite-hub run '*' test.ping`.
+  The chain came out as `node.start`, `config`, `job.accepted`,
+  `job.result`, and the acceptance carried
+  `claimed_submitter=cert:CN=ed-lab` — the field that could not exist
+  before this change.
+- **Verified empty first.** Before the agent had ever run,
+  `verify-evidence` reported no record and exited 0, which is the state
+  of every node the day this ships.
+- **A restart**: SIGTERM wrote `node.stop`, and the next process resumed
+  from its hash rather than starting a second chain. Seven records over
+  two processes, verifying.
+- **Tampered with twice**: `test.ping` edited to `cmd.rm!!` in place was
+  reported as an altered record, and a record cut out of the middle was
+  reported as both a broken link and a break in the numbering. Both
+  exited 1, text and `--out json`.
+
+**One measurement was wrong before it was right**, and it is the reason
+the exit codes above are stated separately: the first reading was taken
+through `| tail -6`, so `$?` was `tail`'s status and the run reported a
+broken chain exiting 0. The probe was wrong, not the code -- and a
+diagnosis published from a probe nobody checked is worse than no
+diagnosis, because it is written down.
+
+#### Not demonstrated
+
+- **Agentless mode keeps no record.** `halite-node oneshot` runs a job
+  from stdin on a machine whose staging directory is discarded
+  afterwards, so there is nowhere durable to write and the hub's own
+  record is the only one. Deliberate, and named rather than implied.
+- **A command line that changes extensions opens the chain lazily**, and
+  that path was exercised only by unit tests, not on a machine where the
+  directory needs root.
+- **Nothing has filled a disk**, so the `Lost` counter has never
+  incremented outside a test that wrote a partial line by hand.
+- **No live leg runs any of this.** The two-process run above was by
+  hand.
+
+#### Two tests that took a mode for a permission
+
+CI's Windows legs failed on the first run, both of them on the same
+mistake in the tests rather than in the code: a directory created with
+mode `0500` to prove that an unusable evidence directory is refused. On
+Windows access is decided by the ACL, Go does not translate a mode into
+one, and the directory was perfectly writable -- so the refusal did not
+happen and the tests that expected it failed.
+
+They skip there now, with the reason, and what is skipped is worth
+naming precisely: it is *arranging* the refusal, not the refusal. Both
+the log's own probe and `doctor`'s write a file and remove it, which is
+the same code on every platform and reports an ACL denial on Windows
+exactly as it reports a mode denial here. Denying write properly would
+mean revoking it for the test's own account through `internal/winsec`,
+after which the temporary directory could not be cleaned up either.
+
+The same shape as the sysvinit row's two tests (5.126): an assumption
+about the machine, held by a test rather than by the code it covers, and
+visible only on a machine that violates it.
+
+#### Four breaks, and a test that panicked instead of failing
+
+Each assertion was watched to fail with the code broken on purpose:
+leaving `Detail` out of the hash made the tamper test pass a forgery;
+spelling a sealed segment `evidence.%d.jsonl` instead of zero-padded made
+twelve segments verify out of order; removing the acceptance record and
+removing the refusal record each failed exactly the tests that name them.
+
+The third of those produced an **odd failure rather than a clean one**: a
+test indexed `recs[0]` on an empty slice and panicked, which takes the
+whole test binary down and loses every other test's result at the moment
+something is broken. The count is asserted before the index now. A break
+that fails in the wrong way is worth as much as the break itself.
+
+### 5.128 Detached job signing, and the two things a signature has to say
+
+plan.md §7 item 9's second half, and SPEC 25.6: an operator or a CI
+signer holds an ECDSA key the hub does not have, a node with
+`require_job_signature` refuses anything that key did not authorise, and
+a hub that has been taken over can therefore dispatch nothing such a node
+will act on. `internal/jobsign` is the mechanism, `halite-hub keys signer
+create` makes the key, `halite-hub run --sign-key` signs, and the node
+checks. `require_job_signature` and `job_signer_keys` are out of
+`UnreadKeys` after three phases in it.
+
+#### A signature that says what but not where is half a control
+
+SPEC 25.6 lists what the signature covers -- jid, target, function,
+arguments, environment, expiry -- and does not say that a node should
+check the target against itself. Without that check it must: the hub
+chooses which nodes a job is written to, so a signed `state.apply` for
+`web*` delivered to a database server verifies perfectly, and the
+guarantee the section is named for ("hub compromise must not equal fleet
+compromise") buys only that the hub cannot invent a job it does not
+already hold a signature for. It can still aim one.
+
+So a node evaluates the signed target against its own ID, grains and
+pillar, with the matcher it already has. The cost is a real constraint,
+and it is refused rather than fudged: a **nodegroup is resolved from the
+hub's configuration**, so a node cannot know whether it is in one, and a
+signed job targeted that way is refused by name. "I could not check"
+must not mean "accepted" in the one control whose purpose is to take
+nothing on the hub's word.
+
+The target kind is signed alongside the target for the same family of
+reason: `web*` is a glob and also a perfectly good single-element list,
+and they select different machines.
+
+#### The identifier has to be the signer's
+
+The signature covers the jid and the hub assigns the jid, which cannot
+both be true. The alternatives were a second round trip -- the hub hands
+out an identifier, the operator signs it, the operator submits -- or the
+caller choosing it. The second was taken: a signed submission carries its
+own identifier and its own absolute expiry, and the hub checks what it
+can without a key (the identifier is well formed, it is not one this hub
+already has a job for, the expiry has not passed). The first would have
+let the hub choose what was about to be signed, which is the wrong
+direction for this mechanism.
+
+#### `--test` is a field here and an argument there
+
+The job record carries `test` as a boolean and the wire carries it as a
+keyword argument, which the hub's `messageFor` used to add inline. Under
+a signature that is a defect waiting: the operator would sign the
+arguments they typed, the node would verify the arguments it received,
+and the two would differ by exactly one key on exactly the runs that set
+it -- every signed `--test` job refused as unsigned, with a message
+saying nothing about `test`.
+
+One function builds them now (`job.WireKwargs`), and one function builds
+the signed payload from a job record (`job.SigningPayload`), used by the
+signer and by the verifier. Two encoders would have been two things to
+keep in step, which is the shape of nearly every defect in this ledger.
+
+The same problem in miniature is numbers. The operator's command line,
+the hub and the node each decode the arguments separately, so `1` is an
+int64 in one and a `json.Number` in the next; the canonical encoding
+writes a number by value rather than by spelling, and the signer puts its
+arguments through the JSON round trip the node will see before signing
+them.
+
+#### The record grew a field, which is a rollback question
+
+The signature is on the job record as well as on the wire, because a
+queued or batched job is delivered from the record long after it was
+submitted -- so a signature kept only in the dispatching call would be
+lost by `jobs resume` and by SPEC 9.5's spool, and every node reached
+that way would refuse a job that was properly signed.
+
+A field added to that record under the same schema is the defect 4.13
+exists to have fixed: an older build reads the record, writes it back,
+and drops what it does not know. Here that is the signature, and the node
+then refuses the job as unsigned -- loud at the node, silent in the
+record, which is the half that matters.
+
+So there is a second schema, `halite.job/2`, and it is stamped **per
+record rather than per build**: a record carrying a signature gets it and
+an unsigned one stays `halite.job/1`. The version says what a build must
+understand to write the record back, not who wrote it. Bumping the whole
+build would have stopped a rolled-back hub updating any job at all, which
+is a worse answer than the problem; this way an older build writes back
+everything it can represent faithfully and is refused exactly what it
+would truncate.
+
+It cost a change to a test, and the change is worth noting: the existing
+rollback test used `halite.job/2` as its stand-in for "a schema from the
+future". That version is now real, so the stand-in is `halite.job/3`. A
+fixture that names a version somebody may take is a fixture with an
+expiry date on it.
+
+#### ECDSA here, Ed25519 for extensions
+
+`internal/extension` signs bundles with Ed25519 and documents why: one
+key size, no parameters to get wrong. This is ECDSA because SPEC 25.6
+says ECDSA, because the same section allows a hardware token or a KMS and
+those sign P-256 long before they sign Ed25519, and because this estate's
+PKI is already ECDSA. The keys are `<name> <base64 DER SubjectPublicKeyInfo>`,
+which is what `openssl ec -pubout -outform DER` and a KMS both produce,
+and the configuration line has the same shape as
+`extension_trust_keys` so an operator has one spelling to remember. Every
+trusted key is tried rather than the job naming which to use, which is
+`internal/extension`'s reasoning unchanged: a signature that says which
+key checks it can ask to be checked against a key the attacker chose.
+
+#### Checked against a foreign implementation
+
+SPEC 25.6 allows the signer to be something else entirely, so the format
+is checked against something else: a test signs with this package and
+verifies with `openssl dgst -verify`, and signs with `openssl dgst -sign`
+against a key `openssl ecparam` generated and verifies here. Both ran;
+neither skipped. A signature format checked only by the code that
+produced it establishes that the code agrees with itself.
+
+#### What was run
+
+A hub and a node as real processes on `beastie`, on a private port:
+
+- **Unsigned, with `require_job_signature: true`**: refused with *"this
+  node requires a signature for test.ping (every job): the job carries no
+  signature"*.
+- **Signed**: ran.
+- **Signed by an untrusted key**: refused with *"the signature does not
+  verify against any of this node's 1 trusted signer key(s)"*. The key
+  was made with `keys signer create rogue` and never added to the node.
+- **`require_job_signature: [arbitrary_code, state]`**, which is SPEC
+  25.6's own recommendation: unsigned `test.ping` ran, unsigned `cmd.run`
+  was refused naming `arbitrary_code`, signed `cmd.run` ran, unsigned
+  `state.apply` was refused naming `state`, and unsigned
+  `state.show_highstate` ran -- rendering is not applying.
+- The evidence chain (5.127) recorded `verified_signer=ops` on the
+  accepted job and the refusal beside it.
+
+#### Not covered, and named
+
+- **Orchestration is not signed.** SPEC 25.6 says "a job, or an
+  orchestration"; an orchestration runs on the hub, and signing it is a
+  hub-side check that does not exist here.
+- **Agentless mode checks nothing, structurally.** `halite-node oneshot`
+  reads a job on stdin from a caller that has just pushed this binary
+  over SSH and is running it, so that caller can run anything on the
+  machine without halite's help and a signature would establish nothing.
+  It is not left silent: a node whose configuration requires a signature
+  logs which function and why the check does not apply, because a control
+  that quietly does not hold is how an estate comes to believe it has one.
+- **No hardware token or KMS has produced a signature.** The format is
+  checked against `openssl`, which is a different implementation and is
+  not a PKCS#11 device.
+- **The bridged `signer` extension of SPEC 25.6 is not built.**
+- **Nothing signs by nodegroup**, deliberately; see above.
+- The target check uses this node's pillar for a pillar-matching target,
+  and a node whose pillar does not compile matches nothing rather than
+  failing the check -- which refuses the job, and is the safe direction,
+  and has no test on a real machine.
+
+  It compiles pillar **only for the kinds that read it** — `pillar`,
+  `pillar_pcre`, and a compound expression carrying `I@` or `J@`. The
+  first cut compiled it for every signed job, which on a node with a hub
+  is a round trip to the hub in front of each one, for a target that in
+  almost every case is a name, a glob or a grain and never looks at
+  pillar. Caught in review rather than by a measurement, and the test
+  counts compilations rather than timing them.
+
+#### Two breaks, watched
+
+Removing the target check made three tests fail, including the one that
+asserts a job signed for another host is refused; leaving the expiry out
+of the signed payload made the "a hub cannot extend a signed job's life"
+case fail. Both were put back and both suites are green.
+
+### 5.129 A moment's error, cached until somebody restarted the node
+
+Found while driving a hub and a node as real processes for 5.128, and
+unrelated to that work: **a node that reconnects while its hub is
+restarting loses pillar until the agent is restarted.**
+
+```
+warn: this node's pillar did not compile; functions that read it will fail
+  error=/v1/pillar: Post "https://127.0.0.1:14510/v1/pillar":
+        dial tcp 127.0.0.1:14510: connect: connection refused
+```
+
+That line then repeated on every pillar read, with the hub healthy,
+listening, and answering that node's subscribe stream throughout. Three
+attempts, minutes apart, identical message, identical timestamp in the
+error.
+
+#### The mechanism
+
+`useHubPillar` probes the hub once to find out whether it compiles pillar
+at all. On a transport failure it did this:
+
+```go
+failure := err
+n.hubPillar = func(string) (*value.Map, error) { return nil, failure }
+```
+
+A moment turned into a permanent state. And `attachToHub`, which runs on
+every reconnect, could not undo it, because its guard asks whether
+`hubPillar` is set -- and a closure that returns a captured error for ever
+is set:
+
+```go
+if n.hubPillar == nil {
+    n.useHubPillar(client)
+}
+```
+
+The conditions line up in the worst possible way: the probe happens on
+reconnect, the likeliest reason for a reconnect is that the hub
+restarted, and the likeliest moment to probe is while it is still coming
+up. So the case is not exotic -- it is what an ordinary hub upgrade does
+to a node, and the estate installs from source, which means every hub
+upgrade is a restart.
+
+What made it hard to see rather than hard to hit is that the node is
+otherwise perfectly healthy. `test.ping` answers, the stream is
+connected, `doctor`'s connectivity check passes, and only the functions
+that read pillar fail. That last part is deliberate and documented in
+`runFunction`: a node whose pillar is broken should still answer
+`test.ping` and report its grains rather than going silent. It worked
+exactly as intended, on an error that should never have been carried.
+
+#### The fix, and the gap it opened
+
+The closure does the work now instead of holding an answer: the probe
+decides only whether to fall back to the node's own roots, and the
+fetcher re-asks the hub on every read. A node that could not fetch
+pillar at 14:59 fetches it at 15:00 without anybody doing anything, and
+the error an operator reads is the one happening now rather than one from
+a moment they cannot find.
+
+That opened a smaller version of the same fault, which is worth
+recording because it is the same shape. The fallback to local roots is
+decided by the probe, on the hub's `CodeNoPillar` answer -- so a node
+whose probe *failed* would never fall back even against a hub that
+genuinely compiles no pillar, and would report an error per read for
+ever. The fetcher now recognises that answer when it arrives late, says
+so once, and compiles locally. Demonstrated: a node restarted while its
+hub was down logged the transient failure, then logged *"the hub compiles
+no pillar; this node will compile its own"* on the first read and
+compiled its own tree.
+
+**A decision taken once, from a question nobody could answer at the time,
+is the shape to look for.** It is a cousin of the pair this ledger keeps
+finding -- two paths that must agree -- and the difference is the axis:
+here the two things that disagree are the same path at two moments, and
+the older moment wins for ever. No other entry is cited for it, because
+nothing was checked against one; this is the first time it has been
+written down under that description.
+
+#### What is not established
+
+There is no test for either half on a real machine. Both were
+demonstrated by hand, by restarting a hub under a connected node and
+reading the log; the unit suite has nothing that stops the closure being
+turned back into a constant, because the reproduction needs two processes
+and a restart between them. A test that would catch it belongs in the
+chaos suite (SPEC 31's hub-restart row), which does not exercise pillar.
+
+### 5.130 `schedule.add` runs arbitrary code, later, and said neither thing
+
+Two defects in one module, found while asking a question SPEC 25.6 makes
+unavoidable: **what stops a hub scheduling the work it is not allowed to
+send?**
+
+The scheduler runs its jobs by calling `executeJob` directly, not through
+the executor, so a scheduled job is not checked against
+`require_job_signature`. That is right, and it is right for a reason
+worth stating: the schedule comes from the node's own configuration --
+`schedule` in node.yaml and the drop-ins under `schedule.d` -- which is
+the same authority that sets the requirement. A hub cannot write it.
+
+What a hub *could* do is call `schedule.add`.
+
+#### It declares what it is now
+
+`schedule.run_job` has declared `ArbitraryCode: true` since it was
+written, with the comment "the job runs whatever function it names".
+`schedule.add` and `schedule.modify` name the function a job will run and
+declared nothing, so:
+
+- SPEC 23.5 refuses to grant an arbitrary-code function by a wildcard,
+  and could not refuse these: a role granted `schedule.*` was granted
+  `cmd.run` with a minute's delay.
+- Under SPEC 25.6's recommended `[arbitrary_code, state]`, a job calling
+  `schedule.add` needed no signature, and the job it scheduled would run
+  unsigned from the scheduler. The control had a documented-looking way
+  around it that nobody had documented.
+
+Both declare it now, and `TestArbitraryCodeIsMarked` holds them to it.
+The delay is the whole difference from `run_job`, and a delay is not a
+mitigation.
+
+#### And a dry run that acted
+
+The same signature helper declared `TestMode: TestReliable` for every
+function built from it, and seven of them ignored `c.Test` entirely:
+`add`, `modify`, `delete`, `enable`, `disable`, `enable_job` and
+`disable_job` changed a running node's schedule under `--test` while
+`docs/modules.md` printed *"honours `--test`"* beside each.
+
+`run_job`, `save` and `reload` in the same file checked it, which is what
+makes this the ordinary shape rather than an oversight of principle:
+somebody added the check where they were thinking about it and the shared
+signature claimed it for everybody.
+
+A dry run that acts is worse than one that fails, because the operator
+has been told nothing happened. The seven answer with what they would do
+now, and the test walks every mutating function in the module rather than
+the seven that were wrong -- a list of the known-bad ones would not have
+caught the eighth.
+
+#### What this does not cover
+
+`schedule.save` writes the running schedule to disk, so a hub that gets
+one unsigned `schedule.add` in before this fix could have made it
+permanent. Nothing audits an existing `schedule.d` for entries that
+arrived that way, and nothing here can tell one from an entry an operator
+wrote.
+
 
 ## 6. Everything else not started
 

@@ -52,6 +52,12 @@ func all(t *testing.T) []Check {
 		QueueDepths(map[string]QueueDepth{"reactor": {Depth: 1, Limit: 10000}}),
 		ExtensionSignatures(true, []ExtensionTrust{{Name: "ext", Signed: true}}),
 		ModuleVerification([]ModuleTrust{{Module: "pkg", Demonstrated: true, Root: true}}),
+		EvidenceChain(EvidenceState{
+			Enabled:  true,
+			Dir:      "/var/lib/halite/evidence",
+			Segments: 1,
+			Last:     &EvidenceRecord{Seq: 12, Kind: "job.accepted", TS: "2026-09-23T07:00:00.000000Z"},
+		}),
 		FIPSConsistency(FIPSState{Kernel: &kernel, Platform: "linux"}),
 	}
 }
@@ -197,6 +203,15 @@ func everyOutcome(t *testing.T) []Result {
 		ModuleVerification([]ModuleTrust{{Module: "apparmor", Root: true}, {Module: "pkg", Demonstrated: true, Root: true}}),
 		ModuleVerification([]ModuleTrust{{Module: "environ"}, {Module: "pkg", Demonstrated: true, Root: true}}),
 		ModuleVerification([]ModuleTrust{{Module: "pkg", Demonstrated: true, Root: true}}),
+
+		// Every branch of the evidence check, including the quiet one:
+		// `evidence` on, nothing recording, and a node that looks fine.
+		EvidenceChain(EvidenceState{Enabled: false, Dir: "/var/lib/halite/evidence"}),
+		EvidenceChain(EvidenceState{Enabled: true, Dir: "/d", OpenErr: errors.New("permission denied")}),
+		EvidenceChain(EvidenceState{Enabled: true, Dir: "/d", ReadErr: errors.New("is a directory")}),
+		EvidenceChain(EvidenceState{Enabled: true, Dir: "/d"}),
+		EvidenceChain(EvidenceState{Enabled: true, Dir: "/d", Segments: 2,
+			Last: &EvidenceRecord{Seq: 9, Kind: "job.result", TS: "2026-09-23T07:00:00.000000Z", Lost: 2}}),
 	)
 
 	var out []Result

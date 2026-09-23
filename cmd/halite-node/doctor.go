@@ -43,6 +43,7 @@ func runDoctor(args *cli.Args) int {
 		nodeDiskCheck(n),
 		nodeExtensionCheck(n),
 		doctor.ModuleVerification(builtin.New().Trust()),
+		nodeEvidenceCheck(n),
 		nodeFIPSCheck(n),
 	})
 

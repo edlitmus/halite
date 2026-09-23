@@ -86,9 +86,6 @@ func sectionOf(name string) string {
 // it. A reason naming a phase that has since shipped is an excuse that
 // expired, which is how twelve settings came to be accepted in silence.
 var UnreadKeys = map[string]string{
-	"job_signer_keys":       "phase 6: detached job signing",
-	"require_job_signature": "phase 6: detached job signing",
-
 	"log_level_file": "SPEC 26.1's per-sink level; the file sink takes the global one",
 	"regex_engine":   "re2 is the only engine, so the setting has one value",
 	"node_id_source": "the resolution order of SPEC 7.2 is implemented; naming one source is not",

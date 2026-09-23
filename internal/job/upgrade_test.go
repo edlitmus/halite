@@ -73,8 +73,13 @@ func TestARecordFromANewerHaliteIsReadButNotWritten(t *testing.T) {
 
 	// What a newer halite left behind: a schema this build does not
 	// know, and two fields it has never heard of.
+	//
+	// `halite.job/3` rather than `/2`, because `/2` is now a schema this
+	// build does know -- the shape of a record carrying SPEC 25.6's
+	// signature. The stand-in for the future has to be a version nobody
+	// has taken.
 	setFields(t, path, map[string]any{
-		"schema":        "halite.job/2",
+		"schema":        "halite.job/3",
 		"policy_digest": "sha256:deadbeef",
 		"future_thing":  []any{"a", "b"},
 	})
@@ -85,7 +90,7 @@ func TestARecordFromANewerHaliteIsReadButNotWritten(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a newer record could not be read: %v", err)
 	}
-	if got.Schema != "halite.job/2" {
+	if got.Schema != "halite.job/3" {
 		t.Errorf("the schema read as %q", got.Schema)
 	}
 	if got.Fun != "test.ping" {
@@ -114,7 +119,7 @@ func TestARecordFromANewerHaliteIsReadButNotWritten(t *testing.T) {
 			t.Errorf("%s was dropped anyway; the refusal did not protect the record", field)
 		}
 	}
-	if s := rawField(t, path, "schema"); s != "halite.job/2" {
+	if s := rawField(t, path, "schema"); s != "halite.job/3" {
 		t.Errorf("the schema was overwritten with %v", s)
 	}
 }
@@ -126,7 +131,7 @@ func TestARecordFromANewerHaliteIsReadButNotWritten(t *testing.T) {
 func TestTheForeignRecordRefusalNamesEverythingNeeded(t *testing.T) {
 	c := newCache(t)
 	j := dispatched(t, c, time.Now())
-	setFields(t, recordPath(t, c, j.JID), map[string]any{"schema": "halite.job/2"})
+	setFields(t, recordPath(t, c, j.JID), map[string]any{"schema": "halite.job/3"})
 
 	_, err := c.Update(j.JID, func(*Job) error { return nil })
 	if err == nil {
@@ -136,10 +141,10 @@ func TestTheForeignRecordRefusalNamesEverythingNeeded(t *testing.T) {
 	if !errors.As(err, &foreign) {
 		t.Fatalf("the error carries no detail: %v", err)
 	}
-	if foreign.JID != j.JID || foreign.Schema != "halite.job/2" || foreign.Known != JobSchema {
+	if foreign.JID != j.JID || foreign.Schema != "halite.job/3" || foreign.Known != JobSchema {
 		t.Errorf("the error is missing something: %+v", foreign)
 	}
-	for _, want := range []string{string(j.JID), "halite.job/2", JobSchema, "read"} {
+	for _, want := range []string{string(j.JID), "halite.job/3", JobSchema, "read"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the message does not mention %q: %v", want, err)
 		}
@@ -240,5 +245,55 @@ func writeRaw(t *testing.T, path string, m map[string]any) {
 	}
 	if err := os.WriteFile(path, append(out, '\n'), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A signed record is stamped with the schema that describes it, and an
+// unsigned one is not.
+//
+// The point of the pair: an older build can still write back every record
+// it can represent faithfully, and is refused exactly the records it
+// would truncate. A single version bump for the whole build would have
+// stopped a rolled-back hub updating any job at all, which is a worse
+// answer than the problem.
+func TestOnlyASignedRecordCarriesTheSignedSchema(t *testing.T) {
+	c := newCache(t)
+
+	unsigned := dispatched(t, c, time.Now(), "web1.example")
+	if unsigned.Schema != JobSchema {
+		t.Errorf("an unsigned record is stamped %q, want %q", unsigned.Schema, JobSchema)
+	}
+
+	signed := &Job{
+		JID:       ID("20260923T090000000001"),
+		Fun:       "state.apply",
+		Nonce:     "n",
+		Expires:   time.Now().Add(time.Minute),
+		Signature: "a-signature",
+	}
+	if err := c.Put(signed); err != nil {
+		t.Fatal(err)
+	}
+	if signed.Schema != SignedJobSchema {
+		t.Errorf("a signed record is stamped %q, want %q", signed.Schema, SignedJobSchema)
+	}
+	if got := rawField(t, recordPath(t, c, signed.JID), "schema"); got != SignedJobSchema {
+		t.Errorf("the file says %v, want %q", got, SignedJobSchema)
+	}
+
+	// And this build reads and writes both, or a hub could not update a
+	// job it had just signed.
+	back, err := c.Update(signed.JID, func(cur *Job) error {
+		if cur.Signature != "a-signature" {
+			t.Errorf("the signature did not survive the round trip: %q", cur.Signature)
+		}
+		cur.State = Complete
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("this build refused its own signed record: %v", err)
+	}
+	if back.Schema != SignedJobSchema {
+		t.Errorf("the rewritten record is stamped %q", back.Schema)
 	}
 }

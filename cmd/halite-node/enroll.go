@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -346,6 +347,19 @@ func runConnect(args *cli.Args) int {
 	// one holding whatever went wrong just before it stopped.
 	n.startTracing()
 
+	// Said at startup rather than only when a job is refused: an estate
+	// that has configured this needs to be able to see that a node
+	// agrees, without dispatching something to find out.
+	n.log.Info(n.signatureSummary(), "component", "jobsign",
+		"require_job_signature", n.signatureRequired.String(),
+		"signer_keys", len(n.signerKeyList))
+
+	// SPEC 25.7's record, opened before anything can be accepted and
+	// closed on the way out. A failure to open is loud and is not fatal:
+	// see startEvidence.
+	n.startEvidence()
+	defer n.stopEvidence("the agent stopped")
+
 	// The executor runs jobs; the loop below reads the stream. They are
 	// separate goroutines with a bounded queue between them, per SPEC
 	// 9.6, so a state run that takes ten minutes does not stop the node
@@ -633,22 +647,43 @@ func (n *node) useHubPillar(client *transport.Client) {
 				"error", err.Error())
 			return
 		}
-		// The hub does do pillar, and this node's did not compile.
-		// Falling back here would substitute an empty local pillar for
-		// the real one and let every state that reads pillar render
-		// against nothing — a file written with no users in it, an
-		// authorized_keys with no keys, reported as a successful
-		// convergence. The error is carried instead, so `test.ping`
-		// still answers and anything reading pillar fails saying why.
-		n.log.Error("the hub could not compile this node's pillar; "+
-			"pillar is unavailable and states that read it will fail",
+		// The hub does do pillar, and this probe did not get any.
+		// Falling back to this node's own roots would substitute an
+		// empty local pillar for the real one and let every state that
+		// reads pillar render against nothing — a file written with no
+		// users in it, an authorized_keys with no keys, reported as a
+		// successful convergence. So the node is still pointed at the
+		// hub, and anything reading pillar fails saying why while
+		// `test.ping` keeps answering.
+		//
+		// It is pointed at the *fetcher* rather than at this error.
+		//
+		// It used to be the error: `failure := err` and a closure
+		// returning it for ever. That turned a moment into a permanent
+		// state. The probe happens on reconnect, the likeliest reason
+		// for a reconnect is that the hub restarted, and the likeliest
+		// moment to probe is while it is still coming up — so a node
+		// would attach a "connection refused" from 14:59 and report it
+		// on every pillar read until somebody restarted the agent, with
+		// the hub healthy the whole time. Reproduced by restarting a
+		// hub under a connected node.
+		//
+		// `attachToHub` does not help, because its guard asks whether
+		// `hubPillar` is set and a permanent-failure closure is set.
+		// Making the closure do the work means the next job recovers on
+		// its own and the error an operator reads is the one happening
+		// now.
+		n.log.Error("this node's pillar could not be fetched from the hub; "+
+			"states that read pillar will fail until it can be",
 			"error", err.Error())
-		failure := err
-		n.hubPillar = func(string) (*value.Map, error) { return nil, failure }
-		return
+	} else {
+		n.log.Info("pillar comes from the hub", "env", probe.Env, "sls", len(probe.SLS))
 	}
-	n.log.Info("pillar comes from the hub", "env", probe.Env, "sls", len(probe.SLS))
 
+	// Said once rather than on every read, for the case below: a node
+	// that has fallen back to its own roots should say so, and should
+	// not say so once a minute for ever.
+	var saidNoPillar sync.Once
 	n.hubPillar = func(env string) (*value.Map, error) {
 		// Asked again for every run rather than cached: pillar is
 		// where an operator changes a value expecting the next
@@ -657,6 +692,20 @@ func (n *node) useHubPillar(client *transport.Client) {
 			NodeID: n.nodeID, Env: env, Grains: grains,
 		})
 		if err != nil {
+			if transport.CodeOf(err) == transport.CodeNoPillar {
+				// The answer the probe would have acted on, arriving
+				// later because the probe could not be made. Without
+				// this, a node that reconnected while its hub was
+				// restarting would report an error on every pillar read
+				// against a hub that simply does not do pillar — the
+				// fallback above having been decided, once, on a
+				// question nobody could answer at the time.
+				saidNoPillar.Do(func() {
+					n.log.Warn("the hub compiles no pillar; this node will compile its own",
+						"error", err.Error())
+				})
+				return n.compileLocalPillar()
+			}
 			return nil, err
 		}
 		decoded, err := value.DecodeJSON(res.Pillar)
@@ -693,6 +742,18 @@ func (n *node) acceptJob(msg transport.Message) {
 		// not tracing, or one older than this field, and an empty parent
 		// starts a root -- which is what an untraced hub should produce.
 		TraceParent: msg.TraceParent,
+		// What the hub says about who asked, for the evidence record.
+		// Claimed, never authenticated: a node authenticates the hub and
+		// nothing behind it.
+		Submitter:  msg.Submitter,
+		OnBehalfOf: msg.OnBehalfOf,
+		// What the operator asked for and the signature covers. A hub
+		// older than signed targeting sends neither, and a node that
+		// requires a signature refuses by name rather than silently
+		// verifying against an empty target.
+		Target:     msg.Target,
+		TargetKind: msg.TargetKind,
+		Signature:  msg.Signature,
 	}
 	if msg.Expires != "" {
 		expires, err := time.Parse(time.RFC3339Nano, msg.Expires)
@@ -712,9 +773,20 @@ func (n *node) acceptJob(msg transport.Message) {
 	}
 }
 
-// refuse files a refusal as a return.
+// refuse files a refusal as a return, and records it.
+//
+// Every path that will not run a job arrives here, which is why the
+// evidence record is written here rather than at each of them: a job with
+// an unparseable expiry, a node that is not running jobs, a replay, and a
+// full queue are four different refusals and all four are things a hub
+// asked this node to do.
+//
+// Recorded before the two early returns below. A malformed job carrying no
+// identifier cannot be answered and is exactly the kind of thing worth
+// having a record of.
 func (n *node) refuse(j *job.Job, err error) {
 	n.log.Warn("refusing a job", "jid", string(j.JID), "fun", j.Fun, "reason", err.Error())
+	n.recordJobRefused(j, err)
 	if n.executor == nil || j.JID == "" {
 		return
 	}

@@ -6569,7 +6569,7 @@ schedule.add(name: string, job: map)
 | `name` | string | *required* | The scheduled job. |
 | `job` | map | — | The job definition. |
 
-*changes the system · honours `--test` · SPEC section 20.1*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 20.1*
 
 #### `schedule.delete`
 
@@ -6656,7 +6656,7 @@ schedule.modify(name: string, job: map)
 | `name` | string | *required* | The scheduled job. |
 | `job` | map | — | The job definition. |
 
-*changes the system · honours `--test` · SPEC section 20.1*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · **runs arbitrary code** · SPEC section 20.1*
 
 #### `schedule.reload`
 

@@ -80,9 +80,11 @@ halite-node doctor — web1.example
                                          not ruled out as the cause.
                                          `sys.evidence` says what is assumed for each, and docs/DIVERGENCE.md
                                          records why.
+  pass  evidence chain                   1284 records in 1 segment(s) in /var/lib/halite/evidence; the
+                                         last is job.result at 2026-09-23T07:31:04.118201Z
   pass  FIPS mode consistency            neither the kernel nor this build is in FIPS mode
 
-  7 pass, 2 warn, 1 skip
+  8 pass, 2 warn, 1 skip
 ```
 
 Salt has no equivalent. Most of what these checks look at is why a
@@ -94,6 +96,8 @@ knowing which of a dozen things to look at by hand.
 | — | `halite-node doctor` | works |
 | — | `halite-hub doctor` | works |
 | — | `halite-node doctor --out json` | works |
+| — | `halite-node verify-evidence` | works |
+| — | `halite-node verify-evidence --out json` | works |
 
 **The exit code is 0 unless something is broken.** A warning does not
 fail the command: a certificate three weeks from expiry is a thing to do
@@ -199,6 +203,108 @@ checks:
 Nothing `doctor` does changes anything. It is meant to be run on a
 machine that is already misbehaving, and a diagnostic with a side effect
 is one nobody dares run twice.
+
+## Asking a node what it ran
+
+A node keeps its own append-only record of every job it accepted, every
+job it refused, the outcome of each, every extension bundle that changed,
+and the configuration in effect at each start. Each entry carries the
+hash of the one before it, so altering an entry — or removing one from
+the middle — breaks every entry after it. SPEC section 25.7.
+
+`halite-node verify-evidence` checks it:
+
+```
+$ halite-node verify-evidence
+halite-node verify-evidence — web1.example
+
+directory: /var/lib/halite/evidence
+segments:  1
+records:   1284
+from:      record 1 at 2026-09-21T09:14:02.881204Z
+to:        record 1284 at 2026-09-23T07:31:04.118201Z
+head:      sha256:0161cef460efe1a765f99c598d0d3aa3bcef8533884308c3d313168ba25738ab
+
+The chain holds: every record's contents match its hash and every record
+follows the one before it.
+```
+
+| Salt | halite | Status |
+|---|---|---|
+| no equivalent | `halite-node verify-evidence` | works |
+| no equivalent | `halite-node verify-evidence --out json` | works |
+
+It exits non-zero on a break, so a monitoring job can run it, and it
+changes nothing — including a chain it finds broken, because a verifier
+that repaired what it found would destroy the thing it was asked about.
+
+**What the record answers.** Who the hub said asked for a job, which is
+the field to compare against the hub's own job cache: the node records it
+as *claimed*, because a node authenticates its hub and nothing behind it.
+A disagreement between the two records is the finding.
+
+**What it does not.** Anything with root on the node can delete the
+chain, or recompute it from the first record and produce a consistent
+forgery. It is evidence about a compromised hub, not about a compromised
+node. What closes that gap is keeping the head hash somewhere the node
+cannot reach — the last line of the output above — and comparing it
+later; halite does not yet ship anything that does that for you.
+
+Nothing deletes a segment. The current file is sealed at
+`evidence_max_bytes` and a new one started, and an estate that keeps
+machines for years ships the sealed segments off itself.
+
+## Signing a job
+
+For estates where a compromised hub must not equal a compromised fleet.
+An operator or a CI signer holds a key the hub does not have; a node set
+to require a signature will run nothing that key did not authorise. SPEC
+section 25.6.
+
+```sh
+# once, anywhere but the hub
+halite-hub keys signer create ops
+
+# on each node, in node.yaml
+require_job_signature: [arbitrary_code, state]
+job_signer_keys:
+  - 'ops MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...'
+
+# from then on
+halite-hub run '*' state.apply --sign-key ~/.halite/signer-ops.key
+```
+
+| Salt | halite | Status |
+|---|---|---|
+| no equivalent | `halite-hub keys signer create <name>` | works |
+| no equivalent | `halite-hub run ... --sign-key <path>` | works |
+| no equivalent | `require_job_signature: true` | works |
+| no equivalent | `require_job_signature: [arbitrary_code, state]` | works |
+
+`require_job_signature` takes `true`, `false`, or a list of function
+classes. The recommended list is the one above: `arbitrary_code` covers
+the functions a wildcard never grants, such as `cmd.run`, and `state`
+covers applying a state rather than rendering one — so a node can still
+be asked what is wrong with it without a signing step.
+
+The signature covers the job's identifier, its target and the kind of
+target, the function, the arguments, the environment and the expiry.
+Changing any of them in flight invalidates it, and the hub cannot make a
+new one: it holds no signer key, which is the point.
+
+**A signed job is checked against the node as well as the signature.**
+A node verifies that it is one the signed target selects, using its own
+ID, grains and pillar. Without that, a signature authorising a job for
+`web*` would be equally good delivered to a database server. The
+consequence is that a signed job must be targeted by something a node can
+evaluate about itself: a nodegroup is defined in the hub's configuration,
+so a node cannot know whether it is in one, and a signed job targeted
+that way is refused by name.
+
+The signature is ECDSA over SHA-256, ASN.1 DER, base64 on the wire — the
+format `openssl dgst -sign` produces, so a signer backed by a KMS or a
+hardware token can produce one without this program. The exact bytes that
+are signed are in [Operations](operations.md#signing-a-job).
 
 ## Checking a tree without running it
 

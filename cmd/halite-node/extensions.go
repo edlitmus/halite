@@ -288,6 +288,11 @@ func (n *node) syncExtensions(kinds []string) (any, error) {
 			entry.Set("root", change.Root)
 		}
 		changes = append(changes, entry)
+		// SPEC 25.7 asks for every extension change, and an extension is
+		// code this node will run: a bundle arriving, changing version or
+		// being refused belongs in the record beside the jobs rather than
+		// in a log line that rotates away.
+		n.recordExtensionChange(change.Name, change.Version, change.Status, change.Reason)
 		if change.Status == "refused" {
 			n.log.Warn("an extension bundle was refused",
 				"extension", change.Name, "version", change.Version, "reason", change.Reason)

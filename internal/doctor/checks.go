@@ -673,3 +673,104 @@ func blocks[C int64 | uint64 | int32 | uint32, S int64 | uint64 | int32 | uint32
 	}
 	return uint64(count) * uint64(size)
 }
+
+// EvidenceState is what a node knows about its own SPEC 25.7 record.
+type EvidenceState struct {
+	// Enabled is the `evidence` setting.
+	Enabled bool
+	// Dir is where the chain lives, named in every message: a diagnostic
+	// about a file is no use without the path.
+	Dir string
+	// OpenErr is why the chain could not be opened, if it could not. A
+	// node whose record cannot be written keeps running -- one that
+	// refused to start over its audit log would be a node no highstate
+	// could reach to fix the audit log -- so this is the only place the
+	// operator finds out.
+	OpenErr error
+	// Last is the most recent record, or nil where there is none.
+	Last *EvidenceRecord
+	// Segments is how many files hold the chain.
+	Segments int
+	// ReadErr is why the chain could not be read back.
+	ReadErr error
+}
+
+// EvidenceRecord is the tail of the chain, as much of it as a diagnostic
+// needs.
+type EvidenceRecord struct {
+	Seq  uint64
+	Kind string
+	TS   string
+	// Lost is what the chain itself declares it failed to write before
+	// this record.
+	Lost int
+}
+
+// EvidenceChain reports whether this node is keeping SPEC 25.7's record.
+//
+// It does not verify the chain. Verification reads every segment, which
+// is right for an investigation and wrong for a command an operator runs
+// while something else is broken, so this answers the questions that are
+// cheap -- is it on, can it be read, when did it last record anything --
+// and names `verify-evidence` for the rest.
+//
+// The interesting failure is the quiet one. A node with `evidence: true`
+// whose directory it cannot write keeps working perfectly and records
+// nothing, and the record's whole value is that it was being kept before
+// anybody wanted it. So an unusable directory is a failure here rather
+// than a warning, and an empty chain on a node that is meant to be
+// keeping one is a warning rather than a pass.
+func EvidenceChain(state EvidenceState) Check {
+	return Check{
+		Name:  "evidence chain",
+		Roles: []string{RoleNode},
+		Run: func(context.Context) Result {
+			res := Result{Name: "evidence chain"}
+			if !state.Enabled {
+				res.Status = Warn
+				res.Detail = "this node keeps no local record of the jobs it accepts: `evidence` is off"
+				res.Remedy = "SPEC 25.7's record is what an investigator has when the hub cannot " +
+					"be trusted, and it is the node's only account of what it ran.\n" +
+					"Set `evidence: true` unless something else keeps that record."
+				return res
+			}
+			if state.OpenErr != nil {
+				res.Status = Fail
+				res.Detail = fmt.Sprintf("`evidence` is on and nothing is being recorded: %v", state.OpenErr)
+				res.Remedy = fmt.Sprintf(
+					"The node is running and its record is not being written, which is the "+
+						"failure that looks like nothing at all.\nCheck that %s exists and "+
+						"is writable by the account the agent runs as.", state.Dir)
+				return res
+			}
+			if state.ReadErr != nil {
+				res.Status = Fail
+				res.Detail = fmt.Sprintf("the record in %s cannot be read: %v", state.Dir, state.ReadErr)
+				res.Remedy = "`halite-node verify-evidence` reports what it can read of the chain."
+				return res
+			}
+			if state.Last == nil {
+				res.Status = Warn
+				res.Detail = fmt.Sprintf("the record in %s is empty", state.Dir)
+				res.Remedy = "An agent writes a record when it starts, so an empty chain means " +
+					"no agent has run since this was turned on.\nThis is expected on a node " +
+					"that has only ever been used from the command line."
+				return res
+			}
+			res.Status = Pass
+			res.Detail = fmt.Sprintf("%d records in %d segment(s) in %s; the last is %s at %s",
+				state.Last.Seq, state.Segments, state.Dir, state.Last.Kind, state.Last.TS)
+			if state.Last.Lost > 0 {
+				// The chain's own account of its holes, which is worth
+				// more than silence and is not a pass: a record that
+				// could not be written is a job nobody can account for.
+				res.Status = Warn
+				res.Detail += fmt.Sprintf("; the chain declares %d record(s) it could not write",
+					state.Last.Lost)
+				res.Remedy = "A record that could not be appended is a job with no entry. " +
+					"The node's log says why each one failed, and a full disk is the usual reason."
+			}
+			return res
+		},
+	}
+}

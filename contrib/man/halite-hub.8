@@ -36,10 +36,23 @@ client.
 .It Cm keys Ar subcommand
 The enrollment and key lifecycle: list requests, accept, reject, revoke,
 and read a node's fingerprint.
+.Cm keys signer create Ar name
+makes an ECDSA key for signing jobs, per the specification's section
+25.6, and prints the line to add to
+.Sy job_signer_keys
+on each node.
+Keep the private half off the hub: a signature the hub can produce
+protects nobody from the hub.
 .It Cm run Ar target Ar function Op Ar args ...
 Run a function across the fleet.
 .Fl -batch
 makes the hub own the batch, so closing the terminal does not stop it.
+.Fl -sign-key
+signs the job with a signer key, for nodes that set
+.Sy require_job_signature .
+The signature covers the job's identifier, target, function, arguments,
+environment and expiry, so nothing between here and the node can change
+any of them.
 .It Cm runner Ar function Op Ar args ...
 Run a function on the hub itself rather than on a node.
 .It Cm orch Ar subcommand

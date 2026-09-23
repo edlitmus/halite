@@ -79,6 +79,18 @@ for the same answer per module, with the assumption named.
 Exits non-zero only on a failure, so a warning does not fail a cron job
 or a state's
 .Sy onlyif .
+.It Cm verify-evidence
+Check this node's own append-only record of the jobs it accepted, as the
+specification's section 25.7 describes.
+Every entry carries the hash of the entry before it, so altering an entry
+or removing one from the middle breaks every entry after it.
+Prints the record count, the span of time it covers and the head hash,
+and exits non-zero if the chain does not hold.
+It changes nothing, including a chain it finds broken.
+The head hash is worth keeping somewhere this machine cannot reach:
+anything with root here could recompute the whole chain, so what the
+record establishes on its own is what a compromised hub did, not what a
+compromised node did.
 .It Cm enroll
 Ask a hub for a certificate.
 The first request is pending until an operator accepts it; the second

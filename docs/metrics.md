@@ -638,6 +638,8 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_return_queue_depth` | gauge | — | Returns waiting to be posted. |
 | `halite_node_returns_dropped_total` | counter | — | Returns discarded because that queue was full. |
 | `halite_node_schedule_runs_total` | counter | `name` | Scheduled jobs started, by schedule entry. |
+| `halite_node_evidence_records_total` | counter | `kind` | Records appended to the node's SPEC 25.7 chain: `job.accepted`, `job.refused`, `job.result`, `config`, `extension`, `node.start`, `node.stop`. |
+| `halite_node_evidence_failures_total` | counter | — | Evidence records that could not be written, which are jobs with no entry in the record. |
 | `halite_state_compile_duration_seconds` | histogram | — | Time to turn the tree into a low state. |
 | `halite_state_run_duration_seconds` | histogram | — | Time to apply it, not counting the line above. |
 | `halite_ext_invocations_total` | counter | `name` `result` | Extension calls: `succeeded`, `failed`, `timed_out`. |
@@ -984,10 +986,11 @@ you want to know about before the cap is reached:
           summary: "The relay is connected upstream and its spool is not draining"
 ```
 
-On an estate scraping its nodes, three more. These read the nodes'
+On an estate scraping its nodes, five more. These read the nodes'
 own job rather than the hub's, and they are the
 only place their subject appears at all — a return a node discarded
-never reached the hub to be counted there:
+never reached the hub to be counted there, and neither did a record it
+failed to write:
 
 ```yaml
       - alert: HaliteNodeReturnsDropped
@@ -1008,9 +1011,32 @@ never reached the hub to be counted there:
         labels: {severity: warning}
         annotations:
           summary: "The extension {{ $labels.name }} ran out of time on {{ $labels.instance }}"
+
+      - alert: HaliteNodeEvidenceNotWritten
+        expr: increase(halite_node_evidence_failures_total[10m]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} could not write its evidence record; those jobs have no entry"
+
+      - alert: HaliteNodeEvidenceStopped
+        expr: |
+          increase(halite_node_jobs_total[1h]) > 0
+          and increase(halite_node_evidence_records_total[1h]) == 0
+        for: 30m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} is running jobs and recording none of them"
 ```
 
-`reason!="replayed"` on the middle one is deliberate: a replayed job is
+The second evidence alert is the shape that matters, and it is the one
+worth copying elsewhere. A node whose record has quietly stopped being
+written emits no signal of its own: nothing fails, nothing is refused,
+and the failure counter above stays at zero because nothing is even being
+attempted. What contradicts it is another series that is still moving —
+jobs are being run, and no records are appearing — which is alerting on
+an absence rather than on a badness.
+
+`reason!="replayed"` on the second one is deliberate: a replayed job is
 the guard of SPEC 6.3 doing its work, and a hub retrying a delivery is
 the ordinary cause. The other three reasons are not.
 

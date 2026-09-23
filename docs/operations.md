@@ -1123,6 +1123,133 @@ there is none. That is the old behaviour and it still works; it is just
 not reproducible between one way of starting the node and another.
 
 
+## Signing a job
+
+SPEC 25.6. A node with `require_job_signature` runs nothing that a key in
+its own `job_signer_keys` did not sign, and the hub holds no such key —
+so a hub that has been taken over can dispatch nothing that node will
+act on.
+
+```sh
+halite-hub keys signer create ops        # prints the line for node.yaml
+halite-hub run '*' state.apply --sign-key /path/to/signer-ops.key
+```
+
+Keep the private half off the hub. A signature the hub can produce
+protects nobody from the hub; the command prints the reminder because
+generating it on the hub is the convenient thing to do and the wrong one.
+
+**What the requirement can say.** `true` for every job, `false` for none,
+or a list of function classes — `arbitrary_code`, `state`, `mutating`.
+SPEC 25.6 recommends `[arbitrary_code, state]`. A setting this build
+cannot parse stops the node at startup rather than being ignored: a node
+that quietly required nothing would be worse than one that required
+nothing loudly.
+
+**Agentless mode does not check a signature.** `halite-hub ssh` pushes
+this binary to a machine and runs it over SSH, so the caller already has a
+shell there: a hub that can do that can run anything without going
+through halite, and a signature check would establish nothing. A node
+whose configuration requires one logs a line saying so when a job arrives
+that way, rather than leaving it to be assumed.
+
+**Targets.** A node checks that it matches the signed target, so the
+signature says where as well as what. Sign by node ID, glob, grain,
+pillar, list, regex or CIDR — anything a node can evaluate about itself.
+A nodegroup is resolved from the hub's configuration, so a node cannot
+check it and refuses a signed job targeted that way.
+
+### What is signed
+
+For a signer that is not this program — a CI job, a KMS, a hardware
+token — the bytes are these, and nothing else:
+
+```
+"halite-job-v1\x00"
+jid:<len>:<value>;
+target:<len>:<value>;
+target_kind:<len>:<value>;
+fun:<len>:<value>;
+argc:<n>;  arg:<len>:<value>;  (once per positional argument, in order)
+kwargc:<n>; kwarg:<len>:<name>; value:<len>:<value>;  (sorted by name)
+env:<len>:<value>;
+expires:<len>:<RFC 3339 with nanoseconds, UTC>;
+```
+
+The length before each value is in bytes, and it is what stops two
+adjacent fields being re-cut into one. A keyword argument's value is its
+text if it is a string, `true`/`false`, `null`, a decimal number, or its
+JSON encoding if it is a mapping or a list — with every number inside
+written by value rather than by the spelling it arrived in, so that `1`
+and `1.0` sign identically and a 64-bit integer keeps its last digits.
+`--test` is a keyword argument named `test` on the wire, so a signer must
+include it.
+
+The digest is SHA-256 and the signature is ECDSA, ASN.1 DER, base64.
+`openssl dgst -sha256 -sign key.pem` over exactly those bytes produces
+one this build accepts; the test that says so runs `openssl` rather than
+trusting that it would.
+
+## The record a node keeps of what it ran
+
+Every node keeps an append-only, hash-chained record under
+`<state_dir>/evidence`: every job it accepted, every job it refused, the
+outcome of each, every extension bundle that changed, and the
+configuration in effect each time the agent started. It is on by default.
+SPEC section 25.7.
+
+```sh
+halite-node verify-evidence            # on the node
+halite-node verify-evidence --out json # for a monitoring check
+```
+
+It exits non-zero if the chain does not hold, and changes nothing —
+including a chain it finds broken.
+
+**Why it exists.** It is the account of what a node did that does not
+depend on the hub being honest. A hub that has been taken over can
+dispatch anything and then rewrite its own job cache; this record is on
+the node, written before the job runs, and linked so that altering an
+entry or removing one from the middle breaks every entry after it.
+
+**The two records to compare.** The record holds who the hub *said* asked
+for each job. A node authenticates its hub and nothing behind it, so that
+is a claim, and the hub's job cache holds the same field:
+`halite-hub jobs show <jid>`. Agreement means little on its own;
+disagreement is a finding.
+
+**Keep the head hash somewhere the node cannot reach.** The last line of
+the output is the head. Truncating the end of the chain leaves every
+remaining record valid, and a head hash you recorded a week ago is what
+contradicts it. Anything with root on the node could recompute the whole
+chain, so without an off-node copy this record establishes what a
+compromised hub did rather than what a compromised node did. halite does
+not yet ship anything that keeps that copy for you.
+
+**Disk.** Nothing prunes it: the current file is sealed at
+`evidence_max_bytes` (64 MiB by default) and a new one started, and
+sealed segments stay until somebody moves them. Once you have moved some,
+`verify-evidence` reports one break saying the chain begins later than
+record 1 and that the earlier records are not there — which is the honest
+answer and is what an archived chain looks like. A monitoring check should
+expect it on a node whose segments have been shipped off. A busy node writes two to
+four records per job. Ship the sealed segments off if you keep machines
+for years, and remember that removing one is a deliberate act — the point
+of the record is that the audited system does not prune it.
+
+**When it is not being kept.** A node whose evidence directory it cannot
+write keeps running and says so at startup, loudly, because a node that
+refused to start over its audit log would be one no highstate could reach
+to fix. `halite-node doctor` reports the same thing on demand, and
+`halite_node_evidence_failures_total` counts the records that were
+attempted and lost. The quieter case — a node running jobs and recording
+none — is an absence rather than a failure, and
+[Metrics](metrics.md#alerting) has the alert for it.
+
+**Agentless mode keeps no record.** `halite-hub ssh` pushes a binary to a
+machine, runs one job and discards the staging directory, so there is
+nowhere durable to write; the hub's own record is the only one.
+
 ## Backups
 
 There are none yet. Salt's `backup:` option, which keeps a copy of a file

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/jobsign"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/pki"
 )
@@ -26,6 +27,12 @@ var keysUsage = `halite-hub keys — enrollment and the key lifecycle (SPEC sect
   keys token list                  every token, and what it admitted
   keys token revoke <id>           withdraw a token
   keys operator create <name>      issue a certificate for an operator
+  keys signer create <name>        make a job signing key (SPEC 25.6)
+
+signer create flags:
+  --out <path>         where to write the key, default
+                       <pki_dir>/signer-<name>.key and .pub
+  --key-algorithm <a>  ecdsa-p256 (default) or ecdsa-p384
 
 operator create flags:
   --out <path>         where to write the certificate and key, default
@@ -62,6 +69,8 @@ func runKeys(args *cli.Args) int {
 		return runKeysToken(args)
 	case "operator":
 		return runKeysOperator(args)
+	case "signer":
+		return runKeysSigner(args)
 	}
 
 	h := openHub(args, false)
@@ -522,5 +531,72 @@ func writeOut(args *cli.Args, v any) int {
 	if err := cli.Write(os.Stdout, v, format, indent); err != nil {
 		cli.Fatalf("%v", err)
 	}
+	return 0
+}
+
+// runKeysSigner makes the key SPEC 25.6 signs jobs with.
+//
+// It is generated here for convenience and it is not the hub's key. The
+// whole mechanism rests on the hub not holding it, so the key is written
+// where the operator asked and the hub keeps nothing: an estate that
+// means it generates this on a workstation, or in a hardware token, and
+// never lets the private half near the machine that dispatches jobs. The
+// output says so rather than leaving it implied.
+func runKeysSigner(args *cli.Args) int {
+	if len(args.Positional) < 2 || args.Positional[1] != "create" {
+		fmt.Fprint(os.Stderr, keysUsage)
+		return 2
+	}
+	if len(args.Positional) < 3 {
+		cli.Fatalf("signer create needs a name; it is what a node records when a signature verifies")
+	}
+	name := args.Positional[2]
+	if strings.ContainsAny(name, " \t") {
+		// The configuration line is `<name> <base64 key>`, split on
+		// spaces, so a name with one in it would produce a line no node
+		// can read -- and the failure would arrive later, on the node,
+		// as a key that does not parse.
+		cli.Fatalf("a signer name may not contain spaces: %q", name)
+	}
+
+	key, err := jobsign.GenerateKey(args.Flag("key-algorithm", "ecdsa-p256"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	keyPEM, err := jobsign.EncodePrivateKey(key)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	line, err := jobsign.FormatSignerKey(name, &key.PublicKey)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+
+	base := args.Flag("out", "")
+	if base == "" {
+		h := openHub(args, false)
+		base = h.files.Path("signer-" + name)
+	}
+	// 0600 and the private half first, for the reason `operator create`
+	// gives: a public key written beside a private one that failed to
+	// write is an invitation to configure a node to trust a key nobody
+	// holds.
+	if err := os.WriteFile(base+".key", keyPEM, 0o600); err != nil {
+		cli.Fatalf("%v", err)
+	}
+	if err := os.WriteFile(base+".pub", []byte(line+"\n"), 0o644); err != nil {
+		cli.Fatalf("%v", err)
+	}
+
+	fmt.Printf("signer    %s\n", name)
+	fmt.Printf("key       %s\n", base+".key")
+	fmt.Printf("public    %s\n", base+".pub")
+	fmt.Println()
+	fmt.Println("Put this line in job_signer_keys on every node that should accept it:")
+	fmt.Println()
+	fmt.Printf("  %s\n", line)
+	fmt.Println()
+	fmt.Println("Sign with `halite-hub run --sign-key " + base + ".key`, and keep the private")
+	fmt.Println("half off the hub: a signature the hub can produce protects nobody from a hub.")
 	return 0
 }
