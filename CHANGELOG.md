@@ -98,6 +98,31 @@ The macOS branch had never been run, and running it found four defects:
 
 A Mac cannot be set to `UTC` through `systemsetup`. Use `GMT`.
 DIVERGENCE 5.131.
+### A nodegroup could hide an untrusted grain from the pillar rule
+
+**Security.** A pillar top file may target only on trusted grains — a node
+controls its own grains, so targeting pillar on an untrusted one lets a
+node ask for another node's secrets. The rule was enforced by reading the
+expression's text, and a nodegroup's expansion happens afterwards, inside
+the compiler. `G@role:db` was refused; `N@dbservers`, defined as exactly
+that, was not.
+
+The negated form is the one to check your trees for. A pillar target
+evaluates against the trusted grains alone, so an untrusted term is always
+false and its negation is always true: a top file saying "everything
+except the database hosts", written as a nodegroup, delivered the secret
+**to the database hosts** and to everything else, silently.
+
+The pillar compiler now asks the compiled target what it consults instead
+of reading its text, so an expansion is covered by construction. Two
+smaller faults went with it: a grain name that ended at `:` or a space, so
+`not (G@fips_mode)` was refused as the grain `fips_mode)`; and the audit
+record filing a grain-based delivery as a name match.
+
+If you use nodegroups in a pillar top file, a compile will now tell you
+which grains they rely on and refuse the ones that are not in
+`pillar_trusted_grains`.
+
 ### Twenty-one functions that said they honoured `--test` and did not
 
 `--test` must change nothing, and 271 execution functions carried that

@@ -128,6 +128,38 @@ type Node struct {
 	GrainsStale bool
 }
 
+// Term is one leaf of a compiled target: what it consults, and by what
+// key where it has one.
+//
+// It exists because a caller that has to *judge* a target cannot judge the
+// text it was written as. `internal/pillar` enforces SPEC 12.4 -- a
+// pillar top file may target only on trusted grains, and never on pillar
+// -- and it did that by scanning the expression for `G@`, `I@` and `J@`.
+// Two things escaped the scan.
+//
+// A nodegroup: `N@dbservers` carries no sigil of its own, and the
+// expansion happens in here, after the scan. So `dbservers: G@role:db`
+// made an untrusted grain target that the rule never saw. The worst shape
+// of it was a negation -- `not G@role:db` inside a nodegroup -- because a
+// pillar target evaluates against the trusted grains alone, so the term
+// is always false, the negation is always true, and the secret intended
+// for everything *except* the database hosts went to them with no
+// diagnostic at all. DIVERGENCE 5.132.
+//
+// And a closing parenthesis: the scan ended a grain name at `:` or a
+// space, so `not (G@fips_mode)` named the grain `fips_mode)`, which is in
+// nobody's allowlist, and a legitimate expression was refused.
+//
+// A term is recorded where it is compiled, so an expansion is included by
+// construction and a name is whatever the parser decided it was rather
+// than whatever a second reader of the text guessed.
+type Term struct {
+	Kind Kind
+	// Key is the grain or pillar path for the kinds that read one, and
+	// empty for the kinds that match the node's identity.
+	Key string
+}
+
 // Nodegroups resolves a nodegroup name to its expression. A nodegroup may
 // reference another with N@name, to a depth of 10, and a cycle is a
 // configuration error detected at load rather than at use.
@@ -155,6 +187,9 @@ type Matcher struct {
 	expr  string
 	ast   node
 	group Nodegroups
+	// terms is every leaf the expression compiled to, nodegroups
+	// expanded. See Term.
+	terms []Term
 }
 
 // Compile prepares a target expression of the given kind. Compilation is
@@ -170,7 +205,7 @@ func Compile(kind Kind, expr string, groups Nodegroups) (*Matcher, error) {
 		if err != nil {
 			return nil, err
 		}
-		m.ast = ast
+		m.ast, m.terms = ast, p.terms
 		return m, nil
 
 	case Nodegroup:
@@ -183,7 +218,7 @@ func Compile(kind Kind, expr string, groups Nodegroups) (*Matcher, error) {
 		if err != nil {
 			return nil, err
 		}
-		m.ast = ast
+		m.ast, m.terms = ast, p.terms
 		return m, nil
 
 	default:
@@ -191,9 +226,22 @@ func Compile(kind Kind, expr string, groups Nodegroups) (*Matcher, error) {
 		if err != nil {
 			return nil, err
 		}
-		m.ast = leaf
+		m.ast, m.terms = leaf, []Term{{Kind: kind, Key: leafKey(kind, expr)}}
 		return m, nil
 	}
+}
+
+// leafKey is the grain or pillar path a leaf consults, or empty.
+func leafKey(kind Kind, expr string) string {
+	switch kind {
+	case Grain, GrainRegex, Pillar, PillarRegex:
+		key, _, err := splitKeyValue(expr)
+		if err != nil {
+			return ""
+		}
+		return key
+	}
+	return ""
 }
 
 // CompileAuto guesses the kind from the expression, which is how a top
@@ -234,6 +282,15 @@ func (m *Matcher) Match(n Node) bool {
 
 // Expr returns the source expression, for a diagnostic.
 func (m *Matcher) Expr() string { return m.expr }
+
+// Terms is every leaf this matcher compiled to, with nodegroups already
+// expanded. See Term: a caller that has to decide whether a target is
+// permitted must read this rather than the expression's text.
+func (m *Matcher) Terms() []Term {
+	out := make([]Term, len(m.terms))
+	copy(out, m.terms)
+	return out
+}
 
 // resolveNodegroup expands a nodegroup name into its expression, following
 // N@ references and refusing a cycle.
