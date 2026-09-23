@@ -11420,6 +11420,40 @@ predict, and a function that *acts anyway*. Nothing distinguishes them,
 so an operator reading `unreliable` cannot tell whether a dry run will
 leave the machine alone. Also in plan.md §6.
 
+#### And the one only Linux could see
+
+The audit is as broad as the machine it runs on, so it was taken to the
+lab: an Ubuntu 26.04 row and an Alpine 3.24 row, raised for the purpose.
+They judged **32 of the 248** where this FreeBSD host judges 14, and found
+one more violation.
+
+**`kmod.load` ran `modprobe <name>` under a dry run**, and `kmod.remove`
+ran `modprobe -r`. It is the fourth instance of the pattern this ledger
+has now recorded four times in two days: the *state* forms,
+`kmod.present` and `kmod.absent`, check test mode forty lines above in the
+same file, and the execution functions they delegate to did not.
+
+The guard went into `loadModule` and `removeModule` — the helpers both the
+states and the execution functions share — rather than into the two
+registrations, so that any later caller gets it too. `persistModule` and
+`unpersistModule` write the modules configuration and were guarded in the
+same place for the same reason: the write is there, so the check belongs
+there.
+
+Neither row found anything else, which is worth as much as the finding: 31
+functions judged on Linux after the fix, all of them honouring the claim.
+Both rows then passed the whole lab suite -- build, unit and the live
+tests as root -- and were destroyed in the same session.
+
+**What the lab cannot reach either.** The two rows judge the Linux-gated
+set. The `mac_*` and `win_*` modules are judged by the macOS and Windows
+CI legs, because this is an ordinary unit test and those legs run
+`go test ./...` — read by hand for this entry, all of them honour test
+mode through shared helpers. What remains unjudged anywhere is a function
+whose tool is absent from every machine the suite runs on: `composer`,
+`gem`, `maven` and `cpan` are not installed on any of them, so their
+guards are held by the source read alone.
+
 #### The state side, measured and mostly unreached
 
 The same differential over the 116 mutating state functions that claim

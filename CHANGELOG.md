@@ -94,6 +94,13 @@ Each now answers with what it would have done and runs nothing. The seven
 form of the same operation has always said: what a sync would change
 depends on what the file server has.
 
+`kmod.load` and `kmod.remove` were the same fault and were found the same
+way, on Linux: a dry run loaded or unloaded the kernel module. A FreeBSD
+host cannot reach that code, so the audit that caught the other twenty-one
+could only catch these two on a machine that runs modprobe. The guard is
+in the helpers the states and the execution functions share, along with
+the two that write the modules configuration.
+
 An audit holds all 248 of them from now on. It calls every mutating
 function twice, with and without `--test`, and compares what each run did
 — and separately reads the source for the check — because neither
