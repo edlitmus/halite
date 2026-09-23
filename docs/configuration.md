@@ -1788,6 +1788,30 @@ Run cmd.run through a shell by default, as Salt does. Off takes an argument vect
 
 Runs `cmd.run` through a shell by default, as Salt does, which is the default here. Turning it off takes an argument vector instead, which cannot be reinterpreted by anything — a command whose arguments come from pillar or a grain is then not a shell line, and the injection findings that follow from one do not apply. An estate that has quoted its `cmd.run` call sites, or converted them to `name` plus `args`, should turn it off; `shell: true` on a single state opts that state back in.
 
+### `evidence`
+
+*`halite-node` · `true` · SPEC section 25.7*
+
+Keep the append-only, hash-chained local record of what this node accepted.
+
+SPEC 25.7's node-side record: every job this node accepted, refused or finished, every extension bundle that changed, and the configuration in effect at each start, written before the job runs and hash-chained so that altering or removing an entry breaks every entry after it. On by default, because a record that is kept only where somebody remembered to turn it on is not a record. `halite-node verify-evidence` checks the chain. It is unrelated to `sys.evidence`, which is how much anybody has demonstrated about a module. Note what it is not: anything with root on the node can rewrite the whole chain, so it is evidence about a compromised hub rather than about a compromised node, and what closes that gap is keeping the head hash somewhere the node cannot reach.
+
+### `evidence_dir`
+
+*`halite-node` · no default · SPEC section 25.7*
+
+Where that record lives; empty is <state_dir>/evidence.
+
+Empty puts the chain under `<state_dir>/evidence`, which SPEC 27.3 allocates it. Point it at a filesystem with room: nothing here deletes a sealed segment, because a record the audited system prunes on its own is not one an investigator can rely on.
+
+### `evidence_max_bytes`
+
+*`halite-node` · `67108864` · SPEC section 25.7*
+
+Seal the current chain segment once it reaches this size.
+
+The current segment is sealed at this size and a new one started; the chain continues across the boundary, so this changes how the record is filed and not what it contains. Sealed segments are named for the record they start at and nothing removes them.
+
 ### `exec_path`
 
 *`halite-node`, `halite-hub` · no default · SPEC section 25.4*
@@ -1810,7 +1834,7 @@ How many jobs may wait before the node refuses more. Refusing is the honest answ
 
 Public keys whose detached job signatures this node accepts.
 
-The public keys whose detached job signatures this node would accept.
+The public keys whose detached job signatures this node accepts, as `<name> <base64 key>` — the same shape as `extension_trust_keys`, and what `halite-hub keys signer create` prints. The key is a DER SubjectPublicKeyInfo, which is what `openssl ec -pubout -outform DER` and a KMS both produce. Every key is tried, so the job does not say which one checks it. A key that will not parse stops the node at startup: trusting fewer keys than were written means refusing jobs that were properly signed, and finding that out from a refused job is finding out too late.
 
 ### `legacy_arg_parse`
 
@@ -1848,9 +1872,9 @@ What is still permitted while quiesced. Keep `test.ping` and the grains readers 
 
 *`halite-node` · `false` · SPEC section 25.6*
 
-Refuse a job without a valid detached operator signature.
+Refuse a job without a valid detached operator signature: true, false, or a list of function classes.
 
-Refuses a job without a valid detached operator signature. Not built; the setting is named and refused rather than accepted and ignored.
+SPEC 25.6's detached signing, for estates where a compromised hub must not equal a compromised fleet: the signature is made by a key the hub does not hold, so a hub that has been taken over can dispatch nothing this node will run. `true` requires one on every job and `false` on none; a list requires one per function class — `arbitrary_code` (the functions a wildcard never grants, such as `cmd.run`), `state` (applying a state, as opposed to rendering it), and `mutating` (anything that changes the machine). SPEC 25.6 recommends `[arbitrary_code, state]`, which leaves read-only functions unsigned so that a node can still be asked what is wrong with it without a signing step. A signed job must also be targeted by something this node can evaluate about itself, so a nodegroup target is refused: the node has no way to know whether it is in one, and this is the control whose whole purpose is to not take the hub's word for anything.
 
 ## Logging and diagnostics
 
@@ -1980,6 +2004,9 @@ Every setting, and which programs read it.
 | `event_return_from` | `halite-hub` | `latest` | Returners |
 | `event_return_tags` | `halite-hub` | — | Returners |
 | `event_tag_compat` | `halite-hub` | `false` | The event bus |
+| `evidence` | `halite-node` | `true` | Node execution controls |
+| `evidence_dir` | `halite-node` | — | Node execution controls |
+| `evidence_max_bytes` | `halite-node` | `67108864` | Node execution controls |
 | `exec_path` | `halite-node`, `halite-hub` | — | Node execution controls |
 | `ext_pillar` | `halite-hub` | — | The tree: states and pillar |
 | `ext_pillar_fail` | `halite-hub` | `hard` | The tree: states and pillar |

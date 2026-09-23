@@ -346,6 +346,19 @@ func runConnect(args *cli.Args) int {
 	// one holding whatever went wrong just before it stopped.
 	n.startTracing()
 
+	// Said at startup rather than only when a job is refused: an estate
+	// that has configured this needs to be able to see that a node
+	// agrees, without dispatching something to find out.
+	n.log.Info(n.signatureSummary(), "component", "jobsign",
+		"require_job_signature", n.signatureRequired.String(),
+		"signer_keys", len(n.signerKeyList))
+
+	// SPEC 25.7's record, opened before anything can be accepted and
+	// closed on the way out. A failure to open is loud and is not fatal:
+	// see startEvidence.
+	n.startEvidence()
+	defer n.stopEvidence("the agent stopped")
+
 	// The executor runs jobs; the loop below reads the stream. They are
 	// separate goroutines with a bounded queue between them, per SPEC
 	// 9.6, so a state run that takes ten minutes does not stop the node
@@ -693,6 +706,18 @@ func (n *node) acceptJob(msg transport.Message) {
 		// not tracing, or one older than this field, and an empty parent
 		// starts a root -- which is what an untraced hub should produce.
 		TraceParent: msg.TraceParent,
+		// What the hub says about who asked, for the evidence record.
+		// Claimed, never authenticated: a node authenticates the hub and
+		// nothing behind it.
+		Submitter:  msg.Submitter,
+		OnBehalfOf: msg.OnBehalfOf,
+		// What the operator asked for and the signature covers. A hub
+		// older than signed targeting sends neither, and a node that
+		// requires a signature refuses by name rather than silently
+		// verifying against an empty target.
+		Target:     msg.Target,
+		TargetKind: msg.TargetKind,
+		Signature:  msg.Signature,
 	}
 	if msg.Expires != "" {
 		expires, err := time.Parse(time.RFC3339Nano, msg.Expires)
@@ -712,9 +737,20 @@ func (n *node) acceptJob(msg transport.Message) {
 	}
 }
 
-// refuse files a refusal as a return.
+// refuse files a refusal as a return, and records it.
+//
+// Every path that will not run a job arrives here, which is why the
+// evidence record is written here rather than at each of them: a job with
+// an unparseable expiry, a node that is not running jobs, a replay, and a
+// full queue are four different refusals and all four are things a hub
+// asked this node to do.
+//
+// Recorded before the two early returns below. A malformed job carrying no
+// identifier cannot be answered and is exactly the kind of thing worth
+// having a record of.
 func (n *node) refuse(j *job.Job, err error) {
 	n.log.Warn("refusing a job", "jid", string(j.JID), "fun", j.Fun, "reason", err.Error())
+	n.recordJobRefused(j, err)
 	if n.executor == nil || j.JID == "" {
 		return
 	}

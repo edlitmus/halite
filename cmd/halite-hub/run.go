@@ -13,8 +13,10 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/job"
+	"github.com/edlitmus/halite/internal/jobsign"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/runner"
+	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -146,7 +148,7 @@ func runRun(args *cli.Args) int {
 
 	client := operatorClient(args)
 	ctx := context.Background()
-	res, err := client.Submit(ctx, transport.SubmitRequest{
+	req := transport.SubmitRequest{
 		Target:           target,
 		TargetKind:       kind,
 		Fun:              fun,
@@ -161,7 +163,11 @@ func runRun(args *cli.Args) int {
 		BatchSafeLimit:   safeLimit,
 		BatchTimeoutSecs: seconds(args.Flag("batch-timeout", ""), "batch-timeout"),
 		Subset:           subset,
-	})
+	}
+	if path := args.Flag("sign-key", ""); path != "" {
+		signJob(&req, path, ttl)
+	}
+	res, err := client.Submit(ctx, req)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -424,4 +430,66 @@ func isBoolWord(v string) bool {
 		return true
 	}
 	return false
+}
+
+// signJob attaches SPEC 25.6's detached signature to a submission.
+//
+// Three things are settled here rather than by the hub, because the
+// signature covers them and a signer cannot sign what it has not chosen:
+// the job's identifier, its absolute expiry, and the exact arguments.
+// The hub checks the first two and relays the third.
+//
+// The arguments go through jobsign.WireValues first, so that what is
+// signed is what the node will decode rather than what this command line
+// happens to hold. Without it a structured argument signs in the order it
+// was typed and verifies against one sorted by `encoding/json`, and every
+// signed job carrying a mapping would be refused.
+func signJob(req *transport.SubmitRequest, path string, ttlSeconds int) {
+	pem, err := os.ReadFile(path)
+	if err != nil {
+		cli.Fatalf("--sign-key %s: %v", path, err)
+	}
+	key, err := jobsign.DecodePrivateKey(pem)
+	if err != nil {
+		cli.Fatalf("--sign-key %s: %v", path, err)
+	}
+
+	kind, ok := target.KindFromFlag(req.TargetKind)
+	if !ok {
+		cli.Fatalf("%q is not a target kind", req.TargetKind)
+	}
+	wire, err := jobsign.WireValues(req.Kwarg)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	req.Kwarg = wire
+
+	ttl := time.Duration(ttlSeconds) * time.Second
+	if ttl <= 0 {
+		ttl = job.DefaultTTL
+	}
+	expires := time.Now().UTC().Add(ttl)
+	req.JID = string(job.NewID(time.Now()))
+	req.ExpiresAt = expires.Format(time.RFC3339Nano)
+
+	// Built from a job record rather than from these fields directly,
+	// because job.SigningPayload is what the node will use to rebuild it
+	// -- including the rule that `--test` becomes a keyword argument on
+	// the wire. Two encoders would be two things to keep in step.
+	signed := &job.Job{
+		JID:        job.ID(req.JID),
+		Fun:        req.Fun,
+		Arg:        req.Arg,
+		Kwarg:      req.Kwarg,
+		Env:        req.Env,
+		Expires:    expires,
+		Target:     req.Target,
+		TargetKind: kind.String(),
+		Test:       req.Test,
+	}
+	signature, err := jobsign.Sign(key, job.SigningPayload(signed))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	req.Signature = signature
 }

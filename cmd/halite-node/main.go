@@ -28,6 +28,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/job"
+	"github.com/edlitmus/halite/internal/jobsign"
 	hlog "github.com/edlitmus/halite/internal/log"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/redact"
@@ -55,6 +56,7 @@ Usage:
   halite-node connect                            hold the stream open to the hub
   halite-node event send <tag> [json]            put an event on the hub's bus
   halite-node doctor                            check this node and say what to fix
+  halite-node verify-evidence                   check this node's local job record
 
 enroll and connect flags:
   --hub <address>      the hub to dial, default from the hub setting
@@ -155,6 +157,8 @@ func main() {
 		exitWith(runEvent(args))
 	case "doctor":
 		exitWith(runDoctor(args))
+	case "verify-evidence":
+		exitWith(runVerifyEvidence(args))
 	default:
 		fmt.Fprintf(os.Stderr, "halite-node: unknown subcommand %q\n\n%s", sub, usage)
 		os.Exit(2)
@@ -239,6 +243,22 @@ type node struct {
 	// and a module growing a span parameter. Nil outside a job, which
 	// yields a nil span, which every method accepts.
 	jobCtx context.Context
+	// signatureRequired and signerKeyList are SPEC 25.6's detached job
+	// signing, read once at startup.
+	//
+	// Read once because they are the node's own decision: a requirement
+	// re-read per job from a file the hub can serve would be a control
+	// the hub could turn off. Nothing in this build lets a hub write
+	// node configuration, and keeping them here makes that structural
+	// rather than incidental.
+	signatureRequired signatureRequirement
+	signerKeyList     []jobsign.SignerKey
+	// evidence is SPEC 25.7's hash-chained local record. A pointer,
+	// because a job runs against a shallow copy of the node and both
+	// halves must append to the same chain. Never nil; whether anything
+	// is recorded depends on the `evidence` setting and on the directory
+	// being usable.
+	evidence *evidenceState
 	// statesRunning counts the state runs in progress, which is what
 	// `disable_during_state_run` reads. SPEC 16.3.
 	//
@@ -295,6 +315,7 @@ func setup(args *cli.Args) *node {
 
 	n := &node{
 		statesRunning: new(atomic.Int64),
+		evidence:      &evidenceState{},
 		metrics:       newNodeMetrics(cfg),
 		cfg:           cfg,
 		log:           logger,
@@ -314,6 +335,17 @@ func setup(args *cli.Args) *node {
 	// being discovered by the first job that had somewhere to send a
 	// span.
 	n.buildTracer()
+
+	// SPEC 25.6's requirement, read before anything can be accepted. A
+	// setting this build cannot parse stops the node here: a security
+	// control that silently required nothing would be worse than not
+	// having one, because an operator would believe they had it.
+	required, err := parseSignatureRequirement(cfg.Get("require_job_signature"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	n.signatureRequired = required
+	n.signerKeyList = n.signerKeys()
 
 	// SPEC 28.3's environment controls, the pair to state_allowlist and
 	// state_denylist. They were declared, documented, and enforced by

@@ -111,6 +111,39 @@ type Message struct {
 	// to the job. An older node ignores it, which is the wire tolerance
 	// 4.13 turned from an accident into a guarantee.
 	TraceParent string `json:"traceparent,omitempty"`
+	// Submitter and OnBehalfOf are who the hub says asked for this job.
+	//
+	// They exist for SPEC 25.7's node-side record, which is required to
+	// hold a job's principal and could not: the hub has kept both on the
+	// job record since the audit trail was written and has never told the
+	// node either, so a node's own account of what it ran said only that
+	// a hub had asked.
+	//
+	// Claimed rather than authenticated, and the evidence record spells
+	// them that way. A node authenticates the hub and nothing else; a hub
+	// that has been taken over can write whatever it likes here. What
+	// they are worth is the comparison — the hub's job cache and the
+	// node's chain hold the same two fields, and a disagreement is the
+	// finding. An older node ignores them and an older hub sends neither,
+	// which is the wire tolerance 4.13 turned from an accident into a
+	// guarantee.
+	Submitter  string `json:"submitter,omitempty"`
+	OnBehalfOf string `json:"on_behalf_of,omitempty"`
+	// Target and TargetKind are what the operator asked for, which a
+	// node was never told either.
+	//
+	// They are here for SPEC 25.6: the signature covers the target, so a
+	// node that cannot see it cannot check the signature at all. Having
+	// them, it also checks that it matches the target itself -- without
+	// that, a signature authorising a job for `web*` would be equally
+	// good delivered to a database server, and "hub compromise must not
+	// equal fleet compromise" would buy very little.
+	Target     string `json:"target,omitempty"`
+	TargetKind string `json:"target_kind,omitempty"`
+	// Signature is SPEC 25.6's detached operator signature over the
+	// job, base64 of ASN.1 DER. Empty on an unsigned job, which is every
+	// job until an estate sets up a signer.
+	Signature string `json:"signature,omitempty"`
 	// Event.
 	Tag  string         `json:"tag,omitempty"`
 	Data map[string]any `json:"data,omitempty"`
@@ -227,6 +260,23 @@ type SubmitRequest struct {
 	BatchSafeLimit   int    `json:"batch_safe_limit,omitempty"`
 	BatchTimeoutSecs int    `json:"batch_timeout_seconds,omitempty"`
 	Subset           int    `json:"subset,omitempty"`
+
+	// JID, ExpiresAt and Signature are SPEC 25.6's detached signing.
+	//
+	// The identifier is the caller's here, and only here. The signature
+	// covers the jid, and the jid is assigned by the hub -- so a signer
+	// that did not choose it would have to be handed one by the hub and
+	// sign afterwards, which is a second round trip and a hub that gets
+	// to pick what is about to be signed. The hub checks the identifier
+	// is well formed, is not one it has already seen, and carries an
+	// expiry that has not passed; an unsigned submission may not set
+	// any of the three and is given a jid as before.
+	JID string `json:"jid,omitempty"`
+	// ExpiresAt is absolute and RFC 3339, for the same reason: a TTL is
+	// resolved against the hub's clock, and the signature is over the
+	// instant, not the interval.
+	ExpiresAt string `json:"expires_at,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
 
 // SubmitResponse is the hub's acknowledgement: the jid and who is

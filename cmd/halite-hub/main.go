@@ -82,6 +82,8 @@ run flags:
   --env <name>         the environment the job names
   --ttl <dur>          how long the job may be run, default 15m
   --offline <policy>   skip (default), queue, or require
+  --sign-key <path>    sign the job with this key, for nodes that set
+                       require_job_signature (SPEC section 25.6)
   --as <name>          which operator certificate to present
   --cert <path>        an operator certificate, instead of --as
   --key <path>         its key

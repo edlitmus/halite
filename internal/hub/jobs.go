@@ -182,6 +182,19 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed, err)
 		return
 	}
+	// SPEC 25.6: a signed submission brings its own identifier and
+	// expiry, because the signature covers both. Parsed here and
+	// checked in Dispatch, which is also where an unsigned request that
+	// tries to set either is refused.
+	var expires time.Time
+	if req.ExpiresAt != "" {
+		expires, err = time.Parse(time.RFC3339Nano, req.ExpiresAt)
+		if err != nil {
+			transport.WriteError(w, http.StatusBadRequest, transport.CodeMalformed,
+				fmt.Errorf("the expiry %q is not an RFC 3339 timestamp: %w", req.ExpiresAt, err))
+			return
+		}
+	}
 
 	// SPEC 9.1 step 2, and SPEC 23.5: every decision is logged, allowed
 	// or denied, with the rule that matched. A denial that is not
@@ -219,6 +232,9 @@ func (s *Server) submit(w http.ResponseWriter, r *http.Request, principal string
 		OnBehalfOf: req.OnBehalfOf,
 		BatchSpec:  req.Batch,
 		Subset:     req.Subset,
+		JID:        job.ID(req.JID),
+		Expires:    expires,
+		Signature:  req.Signature,
 		Batch: job.Batch{
 			Wait:      time.Duration(req.BatchWaitSeconds) * time.Second,
 			SafeLimit: req.BatchSafeLimit,

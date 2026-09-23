@@ -39,6 +39,18 @@ type Submission struct {
 	// OnBehalfOf is who asked the submitter to submit it, recorded for
 	// the audit and never used to authorize.
 	OnBehalfOf string
+	// JID, Expires and Signature are SPEC 25.6's detached signing, and
+	// are set together or not at all.
+	//
+	// A signer has to know the identifier and the expiry before it signs,
+	// because the signature covers both, so on a signed submission they
+	// come from the caller and this hub checks them rather than choosing
+	// them. It cannot check the signature itself: it holds no signer key,
+	// which is the whole point, so a forged signature reaches the node
+	// and the node refuses it.
+	JID       job.ID
+	Expires   time.Time
+	Signature string
 	// Correlation is the causality chain this job belongs to, carried
 	// into the events it produces. A reaction sets it to the chain of
 	// the event it reacted to, which is what makes a beacon that fires
@@ -118,15 +130,20 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 			ttl = QueuedTTL
 		}
 	}
+	jid, expires, err := s.identify(sub, now, ttl)
+	if err != nil {
+		return nil, err
+	}
 	j := &job.Job{
-		JID:         s.clock().Next(),
+		JID:         jid,
 		Fun:         sub.Fun,
 		Arg:         sub.Arg,
 		Kwarg:       sub.Kwarg,
 		Env:         sub.Env,
 		Nonce:       nonce,
 		Created:     now,
-		Expires:     now.Add(ttl),
+		Expires:     expires,
+		Signature:   sub.Signature,
 		Submitter:   sub.Submitter,
 		OnBehalfOf:  sub.OnBehalfOf,
 		Correlation: sub.Correlation,
@@ -283,20 +300,11 @@ func (s *Server) resolve(matcher *target.Matcher) ([]string, error) {
 // messageFor is the wire form of a job. One function, so that a batch
 // resumed after a restart sends exactly what the first slice did.
 func messageFor(j *job.Job) transport.Message {
-	// The kwargs are copied rather than shared. Setting `test` on the
-	// message used to write into the job's own map, so the record on
-	// disk grew an argument the operator never passed -- and a resumed
-	// batch would have sent a different message from the first slice.
-	kwargs := make(map[string]any, len(j.Kwarg)+1)
-	for k, v := range j.Kwarg {
-		kwargs[k] = v
-	}
-	if j.Test {
-		kwargs["test"] = true
-	}
-	if len(kwargs) == 0 {
-		kwargs = nil
-	}
+	// job.WireKwargs rather than an assembly here, because SPEC 25.6's
+	// signature covers the arguments a node receives: if this function
+	// and the one the operator signs with disagreed about a single key,
+	// every signed `--test` job would be refused as unsigned.
+	kwargs := job.WireKwargs(j)
 	return transport.Message{
 		T:       transport.MsgJob,
 		JID:     string(j.JID),
@@ -311,7 +319,61 @@ func messageFor(j *job.Job) transport.Message {
 		// byte-for-byte identical to the one this build sent before
 		// tracing existed.
 		TraceParent: j.TraceParent,
+		// Who asked, for the node's own record of what it ran. SPEC
+		// 25.7 requires the principal and the node had no way to know
+		// it. Empty on a job with no authenticated submitter, which is
+		// one the hub raised itself.
+		Submitter:  j.Submitter,
+		OnBehalfOf: j.OnBehalfOf,
+		// What the operator asked for, which the signature covers and
+		// which a node checks itself against. SPEC 25.6.
+		Target:     j.Target,
+		TargetKind: j.TargetKind,
+		Signature:  j.Signature,
 	}
+}
+
+// identify settles a job's identifier and expiry.
+//
+// Unsigned, they are the hub's: the next identifier from its clock and
+// now plus the time to live, as they have always been. Signed, they are
+// the caller's, because the signature covers both and a signer cannot
+// sign an identifier the hub has not issued yet without a second round
+// trip -- one in which the hub chooses what is about to be signed.
+//
+// What the hub checks instead is everything about them that does not need
+// a key: the identifier is well formed, it is not one this hub already
+// has a job for, and the expiry is in the future. The first two are what
+// stop a caller replaying a signed submission at the hub; the node's own
+// guard of SPEC 6.3 stops it being replayed at the node.
+func (s *Server) identify(sub Submission, now time.Time, ttl time.Duration) (job.ID, time.Time, error) {
+	if sub.Signature == "" {
+		if sub.JID != "" || !sub.Expires.IsZero() {
+			return "", time.Time{}, errors.New(
+				"a job identifier and an expiry may only be given with a signature")
+		}
+		return s.clock().Next(), now.Add(ttl), nil
+	}
+	if !sub.JID.Valid() {
+		return "", time.Time{}, fmt.Errorf(
+			"a signed job must carry its own identifier and %q is not one", sub.JID)
+	}
+	if sub.Expires.IsZero() {
+		return "", time.Time{}, errors.New("a signed job must carry an absolute expiry")
+	}
+	if !sub.Expires.After(now) {
+		return "", time.Time{}, fmt.Errorf(
+			"this job expired at %s and it is now %s",
+			sub.Expires.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339))
+	}
+	if s.Jobs != nil {
+		if _, err := s.Jobs.Get(sub.JID); err == nil {
+			return "", time.Time{}, fmt.Errorf("this hub already has a job %s", sub.JID)
+		} else if !errors.Is(err, job.ErrNoJob) {
+			return "", time.Time{}, fmt.Errorf("checking whether %s has been submitted before: %w", sub.JID, err)
+		}
+	}
+	return sub.JID, sub.Expires, nil
 }
 
 // batchContext is what a batch goroutine lives inside: the server's

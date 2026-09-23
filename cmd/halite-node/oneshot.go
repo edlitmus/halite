@@ -102,6 +102,27 @@ func runOneshot(args *cli.Args) int {
 	if jid == "" {
 		jid = string(newJobID())
 	}
+	// SPEC 25.6 does not reach agentless mode, and saying so is the
+	// point.
+	//
+	// The job arrives on stdin from a caller that already has a shell on
+	// this machine: `halite-hub ssh` pushed this binary here and is
+	// running it. A hub that has been taken over and can do that can run
+	// anything it likes without going through halite at all, so checking
+	// a signature here would protect nothing -- and refusing the job
+	// would break agentless mode on every machine configured for
+	// signing, for no gain.
+	//
+	// What it must not do is be silent. A node whose configuration asks
+	// for a control that does not apply here should say which and why,
+	// once, rather than leaving an operator to assume it held.
+	if n.signatureRequired.any() {
+		if required, why := n.signatureRequired.requires(n, req.Fun); required {
+			n.log.Warn("this node requires a signature for this function and agentless mode does not check one",
+				"component", "jobsign", "fun", req.Fun, "class", why,
+				"reason", "the caller already has a shell on this machine, so a signature here would establish nothing")
+		}
+	}
 	ret := n.executeJob(&job.Job{
 		JID:   job.ID(jid),
 		Fun:   req.Fun,

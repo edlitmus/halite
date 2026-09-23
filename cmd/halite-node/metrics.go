@@ -66,6 +66,9 @@ type nodeMetrics struct {
 	connected   *metrics.Gauge
 
 	scheduleRuns *metrics.Counter
+
+	evidenceRecords  *metrics.Counter
+	evidenceFailures *metrics.Counter
 }
 
 // newNodeMetrics reads the settings and declares the families.
@@ -143,6 +146,15 @@ func newNodeMetrics(cfg *config.Config) *nodeMetrics {
 	m.scheduleRuns = r.Counter("halite_node_schedule_runs_total",
 		"Scheduled jobs this node started, by schedule entry.", "name")
 
+	// SPEC 25.7's record, counted both ways round. The failures are the
+	// alarm; the records are what makes a node that has stopped writing
+	// them visible at all, since a chain that is not being written
+	// produces no signal of its own.
+	m.evidenceRecords = r.Counter("halite_node_evidence_records_total",
+		"Records appended to this node's evidence chain, by kind.", "kind")
+	m.evidenceFailures = r.Counter("halite_node_evidence_failures_total",
+		"Evidence records that could not be written, which are jobs with no entry.")
+
 	return m
 }
 
@@ -185,6 +197,18 @@ func (m *nodeMetrics) countRefusal(err error) {
 func (m *nodeMetrics) countDroppedReturn() {
 	if m.on() {
 		m.returnsDrop.Inc()
+	}
+}
+
+func (m *nodeMetrics) countEvidenceRecord(kind string) {
+	if m.on() {
+		m.evidenceRecords.With(kind).Inc()
+	}
+}
+
+func (m *nodeMetrics) countEvidenceFailure() {
+	if m.on() {
+		m.evidenceFailures.Inc()
 	}
 }
 

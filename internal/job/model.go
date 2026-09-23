@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/edlitmus/halite/internal/jobsign"
 )
 
 // ReturnSchema is the version of the return shape. SPEC 9.4 freezes it,
@@ -134,6 +136,21 @@ type Job struct {
 	// were matched, were not connected, and are to be given the job
 	// when they next appear -- if it has not expired by then.
 	Queued []string `json:"queued,omitempty"`
+
+	// Signature is SPEC 25.6's detached operator signature, base64 of
+	// ASN.1 DER, empty on an unsigned job.
+	//
+	// On the record as well as on the wire because a queued or batched
+	// job is delivered long after it was submitted, from the record: a
+	// signature kept only in the dispatching call would be lost by
+	// `jobs resume` and by SPEC 9.5's spool, and every node reached that
+	// way would refuse a job that was properly signed.
+	//
+	// The hub stores it and relays it and can do nothing else with it.
+	// It holds no signer key -- that is the point of the mechanism -- so
+	// it cannot tell a valid signature from a forged one, and does not
+	// try. The node decides.
+	Signature string `json:"signature,omitempty"`
 
 	// Schema is the version of this record's shape.
 	//
@@ -281,4 +298,51 @@ type Return struct {
 // posting the same chunk of the same job twice is one return.
 func (r *Return) Key() string {
 	return fmt.Sprintf("%s/%s/%d", r.JID, r.NodeID, r.Chunk)
+}
+
+// WireKwargs is the keyword arguments as a node will receive them.
+//
+// `test` is a field on the record and a keyword argument on the wire, and
+// this is the one function that knows it. It used to be inline in the
+// hub's messageFor, which was fine until a signature covered the
+// arguments: an operator signing what they typed and a node verifying
+// what arrived would disagree about exactly one key, on exactly the runs
+// that set it, and every `--test` job would be refused as unsigned.
+//
+// The copy is not an optimisation. Setting `test` on the message used to
+// write into the job's own map, so the record on disk grew an argument
+// the operator never passed, and a resumed batch sent a different message
+// from the first slice.
+func WireKwargs(j *Job) map[string]any {
+	kwargs := make(map[string]any, len(j.Kwarg)+1)
+	for k, v := range j.Kwarg {
+		kwargs[k] = v
+	}
+	if j.Test {
+		kwargs["test"] = true
+	}
+	if len(kwargs) == 0 {
+		return nil
+	}
+	return kwargs
+}
+
+// SigningPayload is what SPEC 25.6's signature covers.
+//
+// Built from the job by both ends -- the operator signs it before the
+// hub has seen the job, and the node rebuilds it from the message it
+// received -- so this function is the agreement between them. Anything
+// it leaves out is something the hub can change on a signed job without
+// the signature noticing.
+func SigningPayload(j *Job) jobsign.Payload {
+	return jobsign.Payload{
+		JID:        string(j.JID),
+		Target:     j.Target,
+		TargetKind: j.TargetKind,
+		Fun:        j.Fun,
+		Arg:        j.Arg,
+		Kwarg:      WireKwargs(j),
+		Env:        j.Env,
+		Expires:    j.Expires,
+	}
 }

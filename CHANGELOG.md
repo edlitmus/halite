@@ -18,6 +18,92 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Detached job signing
+
+New: a node can be told to run nothing that an operator key did not sign.
+The key is not the hub's — that is the whole mechanism — so a hub that has
+been taken over can dispatch nothing such a node will act on. SPEC
+section 25.6, and `require_job_signature` and `job_signer_keys` are read
+at last rather than accepted and ignored.
+
+```sh
+halite-hub keys signer create ops     # prints the line for node.yaml
+halite-hub run '*' state.apply --sign-key ~/signer-ops.key
+```
+
+`require_job_signature` takes `true`, `false`, or a list of function
+classes: `arbitrary_code` (the functions a wildcard never grants, such as
+`cmd.run`), `state` (applying a state, not rendering one), and `mutating`.
+SPEC 25.6's recommendation, `[arbitrary_code, state]`, leaves read-only
+functions unsigned so a node can still be asked what is wrong with it
+without a signing step. A value this build cannot parse stops the node,
+rather than leaving it quietly requiring nothing.
+
+The signature covers the job's identifier, its target and target kind, the
+function, the arguments, the environment and the expiry. **A node also
+checks that it matches the signed target**, against its own ID, grains and
+pillar: without that, a signature authorising a job for `web*` would be
+equally good delivered to a database server. One consequence is a real
+constraint — a nodegroup is resolved from the hub's configuration, so a
+node cannot check it, and a signed job targeted that way is refused by
+name.
+
+It is ECDSA over SHA-256 in ASN.1 DER, the format `openssl dgst -sign`
+produces, so a CI signer or a KMS can produce one without this program;
+the exact bytes are written down in Operations. Keys are
+`<name> <base64 DER>`, the same shape as `extension_trust_keys`.
+
+Not covered, and said here rather than found later: orchestration is not
+signed, no hardware token or KMS has produced a signature this build
+accepted, and the bridged `signer` extension SPEC 25.6 mentions is not
+built.
+
+### A node keeps its own record of what it was asked to do
+
+New: an append-only, hash-chained local record on every node, of every
+job it accepted, every job it refused, the outcome of each, every
+extension bundle that changed, and the configuration in effect at each
+start. `halite-node verify-evidence` checks it, `doctor` reports whether
+it is being kept, and `evidence: false` turns it off. SPEC section 25.7.
+
+It is the record an investigator has when the hub cannot be trusted. Each
+entry carries the hash of the entry before it, so altering an entry, or
+removing one from the middle, breaks every entry after it — and it is
+written before the job runs, so a job that stopped the node is still in
+the record.
+
+**The job message now carries who asked.** A node was required to record
+a job's principal and had never been told it: the hub has kept the
+submitter on the job record all along and sent the node neither it nor
+`on_behalf_of`. Both are on the wire now. The node records them as
+*claimed*, because a node authenticates its hub and nothing behind it —
+their value is that the hub's job cache holds the same two fields, so a
+disagreement between the two records is a finding.
+
+**What it does not do**, said plainly because it would be easy to assume
+otherwise. Truncating the end of the chain is not detectable from the
+file alone; the head hash in the command's output is what contradicts
+that, and keeping it somewhere the node cannot reach is left to the
+operator. Anything with root on the node can recompute the whole chain,
+so this is evidence about a compromised hub rather than about a
+compromised node. Agentless mode keeps no record at all — there is
+nowhere durable to write on a machine whose staging directory is
+discarded — and the hub's own record is the only one for an
+`halite-hub ssh` job.
+
+A failed append never fails the job: a node that would not run work it
+could not record is a node whose full disk stops the highstate that
+would have cleared the disk. The next record that is written says how
+many were lost, `doctor` reports it, and two new metric families count
+records written and records lost — one of them alerting on records not
+appearing rather than on failures, since a record that has stopped being
+written produces no signal of its own.
+
+Three settings: `evidence`, `evidence_dir` and `evidence_max_bytes`. The
+current segment is sealed at that size and a new one started; nothing
+deletes a sealed segment, because a record the audited system prunes on
+its own is not one to rely on.
+
 ### `service.enabled` reads the runlevel the machine boots to
 
 On a sysvinit node halite asked `/etc/rc3.d` whether a service starts at
@@ -2946,7 +3032,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 222 settings in the
+The configuration reference explains each of the 225 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.
