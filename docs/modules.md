@@ -6492,7 +6492,7 @@ Fetch the signed, pinned extension bundles this node is entitled to. It fetches 
 saltutil.sync_all()
 ```
 
-*changes the system · SPEC section 24.5*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 24.5*
 
 #### `saltutil.sync_beacons`
 
@@ -6502,7 +6502,7 @@ Fetch the beacon extensions this node is entitled to. It fetches and does not lo
 saltutil.sync_beacons()
 ```
 
-*changes the system · SPEC section 24.5*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 24.5*
 
 #### `saltutil.sync_grains`
 
@@ -6512,7 +6512,7 @@ Fetch the grain extensions this node is entitled to. It fetches and does not loa
 saltutil.sync_grains()
 ```
 
-*changes the system · SPEC section 24.5*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 24.5*
 
 #### `saltutil.sync_modules`
 
@@ -6522,7 +6522,7 @@ Fetch the module extensions this node is entitled to. It fetches and does not lo
 saltutil.sync_modules()
 ```
 
-*changes the system · SPEC section 24.5*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 24.5*
 
 #### `saltutil.sync_renderers`
 
@@ -6532,7 +6532,7 @@ Fetch the renderer extensions this node is entitled to. It fetches and does not 
 saltutil.sync_renderers()
 ```
 
-*changes the system · SPEC section 24.5*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 24.5*
 
 #### `saltutil.sync_returners`
 
@@ -6542,7 +6542,7 @@ Fetch the returner extensions this node is entitled to. It fetches and does not 
 saltutil.sync_returners()
 ```
 
-*changes the system · SPEC section 24.5*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 24.5*
 
 #### `saltutil.sync_states`
 
@@ -6552,7 +6552,7 @@ Fetch the state extensions this node is entitled to. It fetches and does not loa
 saltutil.sync_states()
 ```
 
-*changes the system · SPEC section 24.5*
+*changes the system · **test mode is unreliable here**: what the function does depends on something halite cannot predict · SPEC section 24.5*
 
 ### `schedule`
 

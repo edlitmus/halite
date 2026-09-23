@@ -1290,9 +1290,16 @@ unchanged.
    `reg.present` and an estate migrating from it will want the same; a
    registry value that can only be set through `module.run` reports a
    change on every run.
-4. **Detached job signing (33.6) and node-side evidence.** Both answer
-   the compromised-hub threat. Decide together, and before the API
-   surface sets any harder.
+4. ~~**Detached job signing (33.6) and node-side evidence.**~~ **Both
+   built, 2026-09-23** (DIVERGENCE 5.127 and 5.128), and this item's own
+   advice is what decided the shape: they were done together, and the
+   thing that came out of doing so was that a signature has to cover the
+   target *and* the node has to check that target against itself, which
+   neither feature would have produced alone.
+
+   What is left of the threat is named in §7 item 9: nothing anchors an
+   evidence head hash off the node, and no hardware token or KMS has
+   produced a signature this build accepted.
 5. **State functions that reject arguments Salt accepts.** Re-measured
    2026-09-15, because this row named several that have since been
    closed. What remains: `user.present` (`mindays`, `maxdays`,
@@ -1308,6 +1315,29 @@ unchanged.
    the estate's own tree. `x509`'s arguments closed the same way (5.90),
    as did `cmd.run`'s `bg`, `file.recurse`'s `template` and
    `host.present`'s list of addresses (5.93, 5.95).
+7. **What `TestMode`'s levels should mean, and what its default should
+   be.** Raised by the audit in DIVERGENCE 5.131, which found 21 functions
+   breaking the `--test` promise, and both halves of this are a decision
+   rather than a defect.
+
+   `signature.TestReliable` — "makes no change, and predicts the change
+   accurately" — is the **zero value**. A module that never considered test
+   mode makes the strongest promise in the system by saying nothing, which
+   is the exact inverse of the evidence model in the same package, where
+   `Assumed` is the zero value on purpose so that "nobody looked" cannot
+   read as "this is fine". Every one of the 21 was a signature nobody had
+   thought about. Making the zero value the weakest claim would mean
+   classifying all 271 mutating functions deliberately, which is the work
+   the evidence table already did once for modules.
+
+   And `signature.TestUnreliable` is carrying two meanings: "cannot
+   honestly predict what it would change", which is what it is documented
+   as, and "runs anyway under a dry run", which is what `cmd.run` and its
+   family actually do — deliberately, because `onlyif`, `unless` and
+   `creates` are built on them. An operator reading `unreliable` cannot
+   tell which they have. A fourth level would say it; so would a sentence
+   in each affected function's documentation.
+
 8. **`module.run` argument pass-through.** Salt passes unknown kwargs
    through to the function being run; this build validates against a
    fixed parameter list. Strict validation is right for every other state

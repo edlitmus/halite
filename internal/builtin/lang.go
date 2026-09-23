@@ -99,6 +99,26 @@ func pkgList(pairs [][2]string) *value.Map {
 
 // ---- pip ----
 
+// wouldRun is what a mutating language-manager function answers under
+// `--test`.
+//
+// These functions answer with the tool's own output, which a dry run does
+// not have, so the honest answer is the command that was withheld --
+// phrased as a prediction rather than a report, because an operator
+// scanning a `--test` log for what is about to happen reads a past tense
+// as something that already did.
+//
+// Every one of them declared `TestReliable` and ran the tool anyway:
+// `pip install`, `npm install --global`, `cargo install`, `gem install`,
+// `go install`, `cpan -i`, `composer require`, `mvn`, and
+// `virtualenv <path>` all executed under a dry run. The claim was the
+// zero value of TestMode, which is the strongest of the three, so a
+// module that never thought about test mode declared the strongest
+// promise by saying nothing.
+func wouldRun(tool string, argv ...string) any {
+	return value.MapOf("would_run", exec.Command{Argv: append([]string{tool}, argv...)}.String())
+}
+
 func registerPip(r *Registries) {
 	r.Exec.Add(
 		langVersion("pip", "pip", []string{"--version"}, firstWordAfter("pip")),
@@ -143,6 +163,9 @@ func registerPip(r *Registries) {
 					argv = append(argv, "--index-url", u)
 				}
 				argv = append(argv, states.Strings(args, "pkgs")...)
+				if c.Test {
+					return wouldRun("pip", argv...), nil
+				}
 				res, err := pipRun(c, args, argv...)
 				if err != nil {
 					return nil, err
@@ -164,6 +187,9 @@ func registerPip(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				argv := append([]string{"uninstall", "--yes"}, states.Strings(args, "pkgs")...)
+				if c.Test {
+					return wouldRun("pip", argv...), nil
+				}
 				res, err := pipRun(c, args, argv...)
 				if err != nil {
 					return nil, err

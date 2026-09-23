@@ -97,6 +97,12 @@ func registerPkgMore(r *Registries) {
 				if err != nil {
 					return nil, err
 				}
+				if c.Test {
+					// The installed set is read first, so a dry run
+					// answers with the packages that are actually there
+					// rather than with everything that was asked for.
+					return pkgPresent(before, names), nil
+				}
 				if err := p.Remove(c, names, true); err != nil {
 					return nil, err
 				}
@@ -118,6 +124,15 @@ func registerPkgMore(r *Registries) {
 				p, u, err := pickUpgrader(c)
 				if err != nil {
 					return nil, err
+				}
+				if c.Test {
+					// `list_upgrades` is the read-only half of this
+					// function, and it is on the same interface: a dry
+					// run answers with the packages an upgrade would
+					// move, which is the prediction TestReliable
+					// promises rather than a bare "something would
+					// change".
+					return u.ListUpgrades(c, states.Bool(args, "refresh", true))
 				}
 				_ = p
 				return u.Upgrade(c, states.Bool(args, "refresh", true))
@@ -400,6 +415,20 @@ func pickAutoremover(c *exec.Context) (pkgAutoremover, error) {
 	return a, nil
 }
 
+// pkgPresent narrows a requested set to the packages that are actually
+// installed, which is what a dry run of a removal can promise: naming a
+// package that is not there would predict a change that would not
+// happen.
+func pkgPresent(installed *value.Map, names []string) []any {
+	out := make([]any, 0, len(names))
+	for _, name := range names {
+		if installed != nil && installed.Has(name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 func holdModule(name, doc string, run func(pkgHolder, *exec.Context, string) error) exec.Module {
 	return exec.Module{
 		Sig: signature.Signature{
@@ -416,6 +445,13 @@ func holdModule(name, doc string, run func(pkgHolder, *exec.Context, string) err
 			h, err := pickHolder(c)
 			if err != nil {
 				return nil, err
+			}
+			if c.Test {
+				// The provider is picked first so that a node whose
+				// package manager cannot hold anything still says so
+				// under a dry run rather than reporting a change it
+				// could never make.
+				return states.Str(args, "name", ""), nil
 			}
 			if err := run(h, c, states.Str(args, "name", "")); err != nil {
 				return nil, err

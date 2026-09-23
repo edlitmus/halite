@@ -57,6 +57,9 @@ func registerCargo(r *Registries) {
 					argv = append(argv, "--version", v)
 				}
 				argv = append(argv, states.Strings(args, "crates")...)
+				if c.Test {
+					return wouldRun("cargo", argv...), nil
+				}
 				res, err := langRun(c, "cargo", "", argv...)
 				if err != nil {
 					return nil, err
@@ -75,6 +78,9 @@ func registerCargo(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				argv := append([]string{"uninstall"}, states.Strings(args, "crates")...)
+				if c.Test {
+					return wouldRun("cargo", argv...), nil
+				}
 				res, err := langRun(c, "cargo", "", argv...)
 				if err != nil {
 					return nil, err
@@ -147,6 +153,9 @@ func registerGoTool(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				argv := append([]string{"install"}, states.Strings(args, "pkgs")...)
+				if c.Test {
+					return wouldRun("go", argv...), nil
+				}
 				res, err := langRun(c, "go", states.Str(args, "cwd", ""), argv...)
 				if err != nil {
 					return nil, err
@@ -215,6 +224,9 @@ func registerComposer(r *Registries) {
 				if states.Bool(args, "no_dev", true) {
 					argv = append(argv, "--no-dev")
 				}
+				if c.Test {
+					return wouldRun("composer", argv...), nil
+				}
 				res, err := langRun(c, "composer", states.Str(args, "dir", ""), argv...)
 				if err != nil {
 					return nil, err
@@ -236,6 +248,9 @@ func registerComposer(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				argv := append([]string{"require", "--no-ansi", "--no-interaction"}, states.Strings(args, "pkgs")...)
+				if c.Test {
+					return wouldRun("composer", argv...), nil
+				}
 				res, err := langRun(c, "composer", states.Str(args, "dir", ""), argv...)
 				if err != nil {
 					return nil, err
@@ -322,6 +337,9 @@ func registerCpan(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				argv := append([]string{"-i"}, states.Strings(args, "modules")...)
+				if c.Test {
+					return wouldRun("cpan", argv...), nil
+				}
 				res, err := langRun(c, "cpan", "", argv...)
 				if err != nil {
 					return nil, err
@@ -383,6 +401,13 @@ func registerMaven(r *Registries) {
 					}
 				}
 				argv = append(argv, states.Strings(args, "goals")...)
+				if c.Test {
+					// A build with `deploy` or `release:perform` among its
+					// goals changes something outside this machine, which
+					// is why this one is TestUnreliable -- and a dry run
+					// must still not start it.
+					return wouldRun("mvn", argv...), nil
+				}
 				res, err := langRun(c, "mvn", states.Str(args, "dir", ""), argv...)
 				if err != nil {
 					return nil, err
