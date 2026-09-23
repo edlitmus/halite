@@ -10961,6 +10961,27 @@ diagnosis, because it is written down.
 - **No live leg runs any of this.** The two-process run above was by
   hand.
 
+#### Two tests that took a mode for a permission
+
+CI's Windows legs failed on the first run, both of them on the same
+mistake in the tests rather than in the code: a directory created with
+mode `0500` to prove that an unusable evidence directory is refused. On
+Windows access is decided by the ACL, Go does not translate a mode into
+one, and the directory was perfectly writable -- so the refusal did not
+happen and the tests that expected it failed.
+
+They skip there now, with the reason, and what is skipped is worth
+naming precisely: it is *arranging* the refusal, not the refusal. Both
+the log's own probe and `doctor`'s write a file and remove it, which is
+the same code on every platform and reports an ACL denial on Windows
+exactly as it reports a mode denial here. Denying write properly would
+mean revoking it for the test's own account through `internal/winsec`,
+after which the temporary directory could not be cleaned up either.
+
+The same shape as the sysvinit row's two tests (5.126): an assumption
+about the machine, held by a test rather than by the code it covers, and
+visible only on a machine that violates it.
+
 #### Four breaks, and a test that panicked instead of failing
 
 Each assertion was watched to fail with the code broken on purpose:

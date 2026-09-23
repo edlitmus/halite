@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -410,6 +411,12 @@ func wantRecords(t *testing.T, n *node, want int) []nodeevidence.Record {
 func TestDoctorReportsADirectoryItCannotWriteTo(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write to a directory with no write bit, so this proves nothing as root")
+	}
+	if runtime.GOOS == "windows" {
+		// See the same skip in internal/nodeevidence: a mode does not
+		// make a directory unwritable there, and the check's probe is
+		// the same code on every platform.
+		t.Skip("a mode cannot make a directory unwritable on Windows; the probe itself is not platform-specific")
 	}
 	n := nodeForEvidence(t, "")
 	dir := n.evidenceDir()

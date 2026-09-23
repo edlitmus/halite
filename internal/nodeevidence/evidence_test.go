@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -436,6 +437,19 @@ func TestOpeningRefusesToExtendANewerChain(t *testing.T) {
 func TestAnUnusableDirectoryIsRefusedAtOpen(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write to a directory with no write bit, so this proves nothing as root")
+	}
+	if runtime.GOOS == "windows" {
+		// A directory created with mode 0500 is writable on Windows:
+		// access is decided by the ACL and Go does not translate the
+		// mode into one. Denying it properly means revoking write for
+		// this account through internal/winsec, and then the temporary
+		// directory cannot be cleaned up either.
+		//
+		// What is skipped is arranging the refusal, not the refusal.
+		// Open probes by writing a file and removing it, which is the
+		// same code on every platform and reports an ACL denial on
+		// Windows exactly as it reports a mode denial here.
+		t.Skip("a mode cannot make a directory unwritable on Windows; the probe itself is not platform-specific")
 	}
 	dir := filepath.Join(t.TempDir(), "evidence")
 	if err := os.Mkdir(dir, 0o500); err != nil {
