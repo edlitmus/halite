@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/ecdsa"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -352,5 +353,47 @@ func TestAnUnknownFunctionIsNotTreatedAsReadOnly(t *testing.T) {
 
 	if n.executor.Depth() != 0 {
 		t.Fatal("a function this build does not ship was accepted unsigned")
+	}
+}
+
+// A signed job targeted by name, glob or grain must not compile pillar.
+//
+// Pillar on a node with a hub is a request to the hub, and on a node
+// without one a full render; doing it for every signed job would put one
+// of those in front of nearly all of them, since almost no target reads
+// pillar. The check counts calls rather than timing them.
+func TestCheckingASignedTargetCompilesPillarOnlyWhenItIsRead(t *testing.T) {
+	calls := 0
+	n, key := signedNode(t, "true")
+	n.grains.Set("os", "FreeBSD")
+	n.hubPillar = func(string) (*value.Map, error) {
+		calls++
+		p := value.NewMap(1)
+		p.Set("role", "web")
+		return p, nil
+	}
+
+	cases := []struct {
+		target, kind string
+		want         int
+	}{
+		{"web1.example", "glob", 0},
+		{"os:FreeBSD", "grain", 0},
+		{"web1.example", "list", 0},
+		{"role:web", "pillar", 1},
+		{"I@role:web", "compound", 1},
+		{"G@os:FreeBSD", "compound", 0},
+	}
+	jid := 20
+	for _, c := range cases {
+		calls = 0
+		jid++
+		msg := signedMessage(t, key, fmt.Sprintf("20260923T0800000000%d", jid),
+			"test.ping", c.target, c.kind, nil)
+		n.acceptJob(msg)
+		if calls != c.want {
+			t.Errorf("a %s target %q compiled pillar %d time(s), expected %d",
+				c.kind, c.target, calls, c.want)
+		}
 	}
 }

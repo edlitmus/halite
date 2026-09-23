@@ -11107,6 +11107,14 @@ A hub and a node as real processes on `beastie`, on a private port:
   failing the check -- which refuses the job, and is the safe direction,
   and has no test on a real machine.
 
+  It compiles pillar **only for the kinds that read it** — `pillar`,
+  `pillar_pcre`, and a compound expression carrying `I@` or `J@`. The
+  first cut compiled it for every signed job, which on a node with a hub
+  is a round trip to the hub in front of each one, for a target that in
+  almost every case is a name, a glob or a grain and never looks at
+  pillar. Caught in review rather than by a measurement, and the test
+  counts compilations rather than timing them.
+
 #### Two breaks, watched
 
 Removing the target check made three tests fail, including the one that

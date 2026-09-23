@@ -259,7 +259,7 @@ func (n *node) matchesSignedTarget(j *job.Job) error {
 				"sign jobs with a target a node can evaluate about itself",
 			j.Target, j.TargetKind, err)
 	}
-	if !matcher.Match(target.Node{ID: n.nodeID, Grains: n.grains, Pillar: n.signedTargetPillar()}) {
+	if !matcher.Match(target.Node{ID: n.nodeID, Grains: n.grains, Pillar: n.signedTargetPillar(kind, j.Target)}) {
 		return fmt.Errorf(
 			"this job is signed for %q (%s) and this node is %s, which does not match it",
 			j.Target, j.TargetKind, n.nodeID)
@@ -268,18 +268,45 @@ func (n *node) matchesSignedTarget(j *job.Job) error {
 }
 
 // signedTargetPillar is the pillar a pillar-matching target is checked
-// against, or nil when it does not compile.
+// against, or nil.
 //
-// Nil rather than an error: a pillar target on a node whose pillar is
-// broken should refuse the job, and it does -- a nil pillar matches
-// nothing -- rather than failing the whole check with a message about
-// compilation that hides what was actually being decided.
-func (n *node) signedTargetPillar() *value.Map {
+// Compiled only for the kinds that read it. Pillar compilation on this
+// node is a round trip to the hub, or a full local render, so doing it
+// unconditionally would put one of those in front of every signed job --
+// including the overwhelming majority, which are targeted by name, glob
+// or grain and never look at pillar. SPEC 30's latency targets are the
+// reason to notice; a needless hub request per job is the reason to care.
+//
+// Nil rather than an error where it does not compile: a pillar target on
+// a node whose pillar is broken should refuse the job, and it does -- a
+// nil pillar matches nothing -- rather than failing the whole check with
+// a message about compilation that hides what was being decided.
+func (n *node) signedTargetPillar(kind target.Kind, expr string) *value.Map {
+	if !targetReadsPillar(kind, expr) {
+		return nil
+	}
 	p, err := n.compilePillarOrErr()
 	if err != nil {
 		return nil
 	}
 	return p
+}
+
+// targetReadsPillar reports whether an expression can consult pillar.
+//
+// A compound expression is asked by looking for the two sigils that mean
+// pillar, `I@` and `J@`, which is what target.compileLeaf dispatches on.
+// Erring towards compiling is the safe direction: a target that reads
+// pillar and is handed none matches nothing, which would refuse a job
+// that should have run.
+func targetReadsPillar(kind target.Kind, expr string) bool {
+	switch kind {
+	case target.Pillar, target.PillarRegex:
+		return true
+	case target.Compound:
+		return strings.Contains(expr, "I@") || strings.Contains(expr, "J@")
+	}
+	return false
 }
 
 // signatureSummary is what the agent logs at startup, so that an estate
