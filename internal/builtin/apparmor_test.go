@@ -192,27 +192,69 @@ func TestStatusCountsEveryMode(t *testing.T) {
 // and cannot read the set Ubuntu itself ships. `tools: true` there was
 // an answer an operator would have acted on. DIVERGENCE 5.37.
 //
-// The three shapes below are the ones seen: two different unparseable
-// mount rules, and the `Include file not found` that came of moving one
-// of them out of the way.
+// # Every answer here was captured, including the one that means yes
+//
+// The broken shapes are what the real tool printed, blank first line
+// and all. The first three are 5.37's. The rest are from the
+// ubuntu-24.04 runner image 20260920.314 (DIVERGENCE 5.133), where one
+// tree had three separate faults and each was only visible once the one
+// in front of it was moved out of the way; the last is a conflict built
+// on purpose on that runner, to see the shape the tools give for two
+// profiles attached to one path when nothing else is wrong.
+//
+// Until 5.133 the *working* answer here was written rather than
+// captured -- exit 1 and "profile ... does not exist" -- and the module
+// was built to agree with it. The real one is exit 0 and a sentence on
+// stdout about the system path list.
+var (
+	apparmorProbeWorks = exec.Result{Code: 0, Stdout: "" +
+		"Can't find halite-probe-does-not-exist in the system path list. If the name of the application\n" +
+		"is correct, please run 'which halite-probe-does-not-exist' as a user with correct PATH\n" +
+		"environment set up in order to find the fully-qualified path and\n" +
+		"use the full path as parameter.\n"}
+
+	apparmorProbeFirefox = exec.Result{Code: 1, Stderr: "\n" +
+		"ERROR: Conflicting profiles for firefox defined in two files:\n" +
+		"- /etc/apparmor.d/usr.bin.firefox\n" +
+		"- /etc/apparmor.d/firefox\n"}
+)
+
 func TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist(t *testing.T) {
 	loaded := "/usr/bin/man (enforce)\n"
 
 	for _, tc := range []struct {
-		name, stderr string
+		name  string
+		probe exec.Result
+		// cites is a fragment of the tool's own words the reason must
+		// carry, because it is the part that says which file to fix.
+		cites []string
 	}{
-		{"a mount rule the python parser rejects",
-			"ERROR: Operation {'runbindable'} cannot have a source. Source = AARE('/')"},
-		{"a mount rule it cannot parse at all",
-			`ERROR: Can't parse mount rule mount "" -> "/tmp/",`},
-		{"an include it cannot find",
-			"ERROR: Include file /etc/apparmor.d/abstractions/passt not found"},
+		{"a mount rule the python parser rejects (5.37)", exec.Result{Code: 1,
+			Stderr: "\nERROR: Operation {'runbindable'} cannot have a source. Source = AARE('/')\n"},
+			[]string{"runbindable"}},
+		{"a mount rule it cannot parse at all (5.37)", exec.Result{Code: 1,
+			Stderr: "\nERROR: Can't parse mount rule mount \"\" -> \"/tmp/\",\n"},
+			[]string{"Can't parse mount rule"}},
+		{"an include it cannot find (5.37)", exec.Result{Code: 1,
+			Stderr: "\nERROR: Include file /etc/apparmor.d/abstractions/passt not found\n"},
+			[]string{"abstractions/passt"}},
+		{"two Edge profiles attached to one path (5.133)", exec.Result{Code: 1,
+			Stderr: "\nERROR: Profile for /opt/microsoft/msedge/msedge exists in /etc/apparmor.d/msedge and " +
+				"{'f': '/etc/apparmor.d/microsoft-edge-stable', 'p': 'microsoft-edge-stable', " +
+				"'re': AARE('/opt/microsoft/msedge/msedge')}\n"},
+			[]string{"/etc/apparmor.d/msedge", "/etc/apparmor.d/microsoft-edge-stable"}},
+		// The one firstLine got wrong: the files are on lines two and
+		// three, and a reason cut at the first line names neither.
+		{"two Firefox files defining one profile (5.133)", apparmorProbeFirefox,
+			[]string{"/etc/apparmor.d/usr.bin.firefox", "/etc/apparmor.d/firefox"}},
+		{"a duplicate attachment built on purpose (5.133)", exec.Result{Code: 1,
+			Stderr: "\nERROR: Profile for /halite/dup/target exists in /etc/apparmor.d/halite-dup-a and " +
+				"{'f': '/etc/apparmor.d/halite-dup-b', 'p': 'halite-dup-b', 're': AARE('/halite/dup/target')}\n"},
+			[]string{"halite-dup-a", "halite-dup-b"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, runner := apparmorFixture(t, "Y\n", loaded)
-			runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
-				Code: 1, Stderr: tc.stderr,
-			}
+			runner.Responses["aa-enforce "+apparmorProbeProfile] = tc.probe
 			st, err := apparmorStatus(c)
 			if err != nil {
 				t.Fatal(err)
@@ -228,37 +270,19 @@ func TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist(t *testing.T) {
 			if !strings.Contains(reason, "no mode") {
 				t.Errorf("tools_reason does not say what it means for the operator: %q", reason)
 			}
+			for _, want := range tc.cites {
+				if !strings.Contains(reason, want) {
+					t.Errorf("tools_reason does not carry %q from what the tool said: %q", want, reason)
+				}
+			}
 		})
 	}
 
-	// The reason carries the tool's own words, and it survives the blank
-	// line the aa-* tools print before their error. That looked like a
-	// defect in a CI log and was not -- the log line was being read
-	// through a grep that stopped at the first line -- but the property
-	// is worth holding, because the reason is the only thing explaining
-	// a skip to whoever reads it next.
+	// The probe comes back the way a working tool really answers -- exit
+	// 0, "Can't find" on stdout -- and the tools are usable.
 	c, runner := apparmorFixture(t, "Y\n", loaded)
-	runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
-		Code:   1,
-		Stderr: "\nERROR: Can't parse mount rule mount " + `""` + " -> " + `"/tmp/"` + ",",
-	}
+	runner.Responses["aa-enforce "+apparmorProbeProfile] = apparmorProbeWorks
 	st, err := apparmorStatus(c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	why, _ := st.Get("tools_reason")
-	reason, _ := why.(string)
-	if !strings.Contains(reason, "Can't parse mount rule") {
-		t.Errorf("the reason does not carry what the tool said: %q", reason)
-	}
-
-	// And where the probe comes back the way a working tool answers --
-	// it did not find the profile -- the tools are usable.
-	c, runner = apparmorFixture(t, "Y\n", loaded)
-	runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{
-		Code: 1, Stderr: "ERROR: profile halite-probe-does-not-exist does not exist",
-	}
-	st, err = apparmorStatus(c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,6 +291,24 @@ func TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist(t *testing.T) {
 	}
 	if _, present := st.Get("tools_reason"); present {
 		t.Error("a working node carries a reason it does not need")
+	}
+
+	// An answer that is neither is not taken as a yes. This one is not a
+	// capture and does not need to be: it stands for whatever a future
+	// apparmor-utils prints, and the property is only that an answer the
+	// module has never seen does not become "a mode can be changed".
+	c, runner = apparmorFixture(t, "Y\n", loaded)
+	runner.Responses["aa-enforce "+apparmorProbeProfile] = exec.Result{Code: 0}
+	st, err = apparmorStatus(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tools, _ := st.Get("tools"); tools != false {
+		t.Errorf("tools = %v for an answer this module does not recognise", tools)
+	}
+	why, _ := st.Get("tools_reason")
+	if reason, _ := why.(string); !strings.Contains(reason, "does not recognise") {
+		t.Errorf("the reason does not say the answer was unrecognised: %q", reason)
 	}
 
 	// A node with no apparmor-utils at all names the package, because
@@ -283,6 +325,62 @@ func TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist(t *testing.T) {
 	why, _ = st.Get("tools_reason")
 	if reason, _ := why.(string); !strings.Contains(reason, "apparmor-utils") {
 		t.Errorf("the reason does not name the package: %q", reason)
+	}
+}
+
+// **A mode change that fails over the tree says it is not the profile's
+// fault, and names the files that are.**
+//
+// On the 20260920.314 runner image, `aa-complain halite-live-probe`
+// failed with an error about Microsoft Edge. That is true and, read
+// alone, useless: the operator asked about one profile and is told about
+// another, on a server with no browser. The tools fail the same way for
+// every name, and the error has to say so.
+func TestAModeChangeOnAnUnreadableTreeBlamesTheTree(t *testing.T) {
+	c, runner := apparmorFixture(t, "Y\n", "/usr/sbin/tcpdump (complain)\n")
+	runner.Responses["aa-enforce /usr/sbin/tcpdump"] = apparmorProbeFirefox
+	runner.Responses["aa-enforce "+apparmorProbeProfile] = apparmorProbeFirefox
+
+	res, err := apparmorModeState(c, value.MapOf("name", "/usr/sbin/tcpdump", "mode", "enforce"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() {
+		t.Fatal("a mode change the tool refused reported success")
+	}
+	for _, want := range []string{
+		"not this profile",
+		"/etc/apparmor.d/usr.bin.firefox",
+		"/etc/apparmor.d/firefox",
+	} {
+		if !strings.Contains(res.Comment, want) {
+			t.Errorf("the failure does not say %q: %s", want, res.Comment)
+		}
+	}
+}
+
+// **A mode change on a name the tools cannot find is a failure, though
+// the tools exit 0 for it.**
+//
+// The response is the captured one, verbatim: `aa-enforce` against a
+// name that is not there, on a tree it can read, exits 0 and says so on
+// stdout. The execution functions used to trust the status and return
+// true. DIVERGENCE 5.133.
+func TestAModeChangeOnAProfileThatIsNotThereFails(t *testing.T) {
+	for _, fn := range []string{"enforce", "complain", "disable"} {
+		t.Run(fn, func(t *testing.T) {
+			c, runner := apparmorFixture(t, "Y\n", "/usr/bin/man (enforce)\n")
+			runner.Responses["aa-"+fn+" "+apparmorProbeProfile] = apparmorProbeWorks
+			// Directly rather than through the registry, which refuses
+			// the apparmor module off Linux.
+			err := apparmorRunTool(c, "aa-"+fn, apparmorProbeProfile)
+			if err == nil {
+				t.Fatalf("aa-%s was reported as success for a profile the tool could not find", fn)
+			}
+			if !strings.Contains(err.Error(), "nothing was changed") {
+				t.Errorf("the failure does not say nothing changed: %v", err)
+			}
+		})
 	}
 }
 

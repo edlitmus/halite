@@ -363,7 +363,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"finding stands as a fact about that other machine, not about this module: the " +
 		"`aa-*` tools remain unusable on any host with that package installed, and " +
 		"`apparmor.status` still reports `tools: false` with the reason there rather than " +
-		"claiming a binary on PATH can do something it cannot"},
+		"claiming a binary on PATH can do something it cannot. Also run end to end, all five " +
+		"live tests and none skipped, on the GitHub ubuntu-24.04 runner image 20260920.314.1 " +
+		"(Fleet run 36042192549, 2026-09-24), once that image's three unparseable profile " +
+		"faults were removed by the workflow; the module now detects such a tree by the one " +
+		"answer a working tool gives rather than by a list of failures (DIVERGENCE 5.133)"},
 
 	// ---- Read from a real system, mutation never watched ----
 

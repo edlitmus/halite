@@ -27,6 +27,31 @@ as converged. The name did not survive a reboot. They now set the
 reports, and check that it took. `LocalHostName` and `ComputerName` are
 not changed. DIVERGENCE 5.132.
 
+### `apparmor.status` no longer says `tools: true` when no mode can change
+
+`tools` is meant to answer "can a mode be changed on this node". It
+said yes on a node where `aa-enforce`, `aa-complain` and `aa-disable`
+all failed. On that node, two profiles were attached to one path (the
+Edge profile Ubuntu ships and a second Edge profile), and the check
+only knew the error messages from the last time this happened. It now
+says yes only for the answer a working tool gives, and says no for
+anything else.
+
+- `tools_reason` now carries the tool's whole error, which includes
+  the file names. Before, it carried only the first line, which does
+  not always name them.
+- When a mode change fails because the tools cannot read the profile
+  tree, the error now says that the fault is not with the profile you
+  named.
+
+- `apparmor.enforce`, `apparmor.complain` and `apparmor.disable` now
+  fail for a profile name that does not exist. Before, they returned
+  success, because the `aa-*` tools exit 0 in that case. The
+  `apparmor.mode` state always refused such a name.
+
+halite does not remove the conflicting files. Removing them is the
+operator's decision. DIVERGENCE 5.133.
+
 ### `timezone` on macOS, run for the first time
 
 The macOS branch had never been run, and running it found four defects:

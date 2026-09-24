@@ -258,27 +258,56 @@ jobs:
           echo "lvm json report:  $(sudo pvs --reportformat json >/dev/null 2>&1 && echo yes || echo no)"
           echo "device-mapper:    $(test -e /dev/mapper/control && echo present || echo missing)"
 
-      # No workaround here, and that is the conclusion rather than a
-      # gap.
+      # The runner's profile tree is one the aa-* tools cannot read, so it
+      # is given one they can, and then the step checks that it worked.
       #
       # The `aa-*` tools are Python and parse every profile under
-      # /etc/apparmor.d with their own parser before doing anything.
-      # Ubuntu 24.04's apparmor-utils 4.0.1 cannot parse the profile set
-      # Ubuntu itself ships: first a mount rule in `abstractions/passt`,
-      # and with that one commented out, another one straight after. So
-      # every `aa-*` invocation fails on every profile, including
-      # /usr/bin/man.
+      # /etc/apparmor.d with their own parser before doing anything. One
+      # file they reject breaks every mode change on the machine. The
+      # ubuntu-24.04 image 20260920.314.1 has three independent faults,
+      # each hidden behind the one before it (DIVERGENCE 5.133):
       #
-      # Two workarounds were tried and both are recorded in DIVERGENCE
-      # 5.37 rather than kept: moving the file aside produced `Include
-      # file not found` because other profiles include it, and commenting
-      # out the offending rule produced the next unparseable rule. At
-      # that point the workaround is the story, and the story is that
-      # this platform's own tools do not work.
+      #   - `microsoft-edge-stable`, owned by no package, attaches to the
+      #     same path as the `msedge` profile Ubuntu's `apparmor` package
+      #     ships;
+      #   - `abstractions/passt`, from the `passt` package, has a mount rule
+      #     the parser cannot read (5.37). Purged, not moved, because
+      #     `usr.bin.passt` includes it and moving it only changes the
+      #     error;
+      #   - `firefox`, from `apparmor`, and `usr.bin.firefox` define one
+      #     profile twice.
       #
-      # The tests below say so and skip the mode changes. What keeps that
-      # from being a silent pass is the release gate, which still refuses
-      # to ship `apparmor` as demonstrated.
+      # This set was found by removing each fault in turn on a throwaway
+      # runner until the probe gave the answer a working tool gives. 5.37
+      # recorded no workaround because the one it tried only exposed the
+      # next fault. The difference here is the number: there were three.
+      #
+      # This is done here and not by the module. On a real node, choosing
+      # which of two packages' profiles to delete is the operator's
+      # decision, and `apparmor.status` reports the conflict with the file
+      # names. The module's side of it runs anyway:
+      # TestLiveAppArmorStatusSeesATreeTheToolsCannotRead builds a conflict
+      # of its own on the tree cleaned here.
+      #
+      # **The check is what matters.** The tests skip when the tools cannot
+      # run. Since 5.55 the release gate no longer backs that skip up,
+      # because `apparmor` is `hardware`. So if a future image adds a
+      # fourth fault, this step fails the job and names it, instead of
+      # the mutating tests going quietly back to skipping. The success
+      # answer it matches is the one `apparmorToolsUsable` matches.
+      - name: give the aa-* tools a profile tree they can read
+        run: |
+          sudo apt-get purge -y passt
+          sudo rm -f /etc/apparmor.d/microsoft-edge-stable /etc/apparmor.d/firefox
+          set +e
+          out=$(sudo aa-enforce halite-probe-does-not-exist 2>&1); code=$?
+          set -e
+          echo "exit=$code"
+          echo "$out"
+          if [ "$code" -ne 0 ] || ! printf '%s\n' "$out" | grep -qF "Can't find halite-probe-does-not-exist in the system path list"; then
+            echo "::error::the aa-* tools still cannot read this runner's profile tree; the image has a fault this step does not remove (DIVERGENCE 5.133)"
+            exit 1
+          fi
 
       # `sudo -E` alone loses PATH, and the toolchain setup-go installed
       # is on PATH rather than in a standard location -- so root would

@@ -121,17 +121,20 @@ func apparmorLive(t *testing.T) *exec.Context {
 // *every* profile under /etc/apparmor.d with their own parser — not
 // with `apparmor_parser`. One profile that parser does not understand
 // therefore breaks every mode change on the machine, whatever profile
-// was asked about.
+// was asked about. DIVERGENCE 5.37 found the first such file, and 5.133
+// found that one runner image had three.
 //
-// That is not hypothetical. Ubuntu 24.04's own apparmor-utils 4.0.1
-// cannot parse `abstractions/passt`, shipped by Ubuntu's own `passt`
-// package, and on a machine with it installed `aa-enforce`,
-// `aa-complain` and `aa-disable` all fail — including on stock profiles
-// like /usr/bin/man. DIVERGENCE 5.37.
+// # It asks the module, not a copy of the module
 //
-// Without this check, three tests fail with the same confusing message
-// and none of them says that the fault is neither halite's nor the
-// profile's.
+// This used to carry its own probe, with its own list of error messages
+// that meant "broken" — a second copy of `apparmorToolsUsable`, written
+// separately and kept in step by hand. They were in step, and both were
+// wrong in the same way on the day the runner image started failing on
+// an Edge profile neither list named: the check waved the tests
+// through, and three of them failed with an error about a browser. Two
+// paths that must agree are best made one path, so this now asks the
+// module's own probe, and a probe that is wrong shows up as a test that
+// fails instead of a skip that was never needed.
 func requireModeChanges(t *testing.T, c *exec.Context) {
 	t.Helper()
 	for _, tool := range []string{"aa-enforce", "aa-complain", "aa-disable"} {
@@ -140,39 +143,14 @@ func requireModeChanges(t *testing.T, c *exec.Context) {
 				"which Ubuntu does not install by default", tool)
 		}
 	}
-	res, err := c.Run(exec.Command{
-		// `--help` does not parse the tree; a real invocation against a
-		// profile that does not exist does, and fails at the parse
-		// before it gets as far as not finding it.
-		Argv:           []string{"aa-complain", "halite-no-such-profile-probe"},
-		IgnoreExitCode: true,
-	})
-	if err != nil {
-		t.Fatalf("running aa-complain at all: %v", err)
+	if usable, why := apparmorToolsUsable(c); !usable {
+		t.Skipf("%s\n"+
+			"That is a fault in this node's profile tree or in apparmor-utils rather "+
+			"than in halite or in the profile asked about. DIVERGENCE 5.37 and 5.133 "+
+			"record what was found. On the fleet leg this cannot happen quietly: the "+
+			"workflow step that prepares the tree runs the same probe and fails the job "+
+			"if the tools still cannot read it.", why)
 	}
-	out := res.Stderr + res.Stdout
-	if !strings.Contains(out, "cannot have a source") && !strings.Contains(out, "Traceback") {
-		return
-	}
-	var offenders []string
-	if entries, err := os.ReadDir(filepath.Join(liveAppArmorDir, "abstractions")); err == nil {
-		for _, e := range entries {
-			p := filepath.Join(liveAppArmorDir, "abstractions", e.Name())
-			if b, err := os.ReadFile(p); err == nil && strings.Contains(string(b), "runbindable") {
-				offenders = append(offenders, p)
-			}
-		}
-	}
-	t.Skipf("this machine's aa-* tools cannot parse its own profile tree, so no mode "+
-		"change can be made on it by any means:\n  %s\n"+
-		"Profiles using syntax they reject: %v\n"+
-		"That is a defect in apparmor-utils rather than in halite or in the profile "+
-		"asked about — it fails the same way on /usr/bin/man. DIVERGENCE 5.37 records "+
-		"what was tried. This skips rather than fails because a nightly that is "+
-		"permanently red is a nightly nobody reads; what keeps it from being a silent "+
-		"pass is the release gate, which still refuses to ship `apparmor` as "+
-		"demonstrated.",
-		strings.TrimSpace(firstLine(out)), offenders)
 }
 
 // writeLiveProfile puts the profile on disk and removes every trace of
@@ -450,6 +428,99 @@ func TestLiveAppArmorRefusesAProfileThatIsNotThere(t *testing.T) {
 	}
 	if !strings.Contains(out.Comment, "halite-no-such-profile") {
 		t.Errorf("the refusal does not name the profile: %q", out.Comment)
+	}
+
+	// The execution functions do not read securityfs first, so they are
+	// the ones exposed to the tools exiting 0 for a name they cannot
+	// find. DIVERGENCE 5.133.
+	for _, fn := range []string{"enforce", "complain", "disable"} {
+		if _, err := r.Exec.Call(c, "apparmor."+fn, value.MapOf("name", "halite-no-such-profile")); err == nil {
+			t.Errorf("apparmor.%s reported success for a profile this machine does not have", fn)
+		} else if !strings.Contains(err.Error(), "nothing was changed") {
+			t.Errorf("apparmor.%s failed, but not by saying nothing changed: %v", fn, err)
+		}
+	}
+}
+
+// **`apparmor.status` sees a tree the tools cannot read**, on a real
+// machine, by building one.
+//
+// Everything `apparmorToolsUsable` knows about a broken tree came from
+// broken trees somebody else shipped, and those change under it: 5.37's
+// was `passt`, 5.133's was Edge and Firefox. This makes its own, the
+// smallest one the runner showed the tools refuse -- two profiles, in two
+// files, attached to one path that does not exist -- and checks that the
+// module says `tools: false`, names both files, and that a mode change
+// blames the tree rather than the profile it was asked about. Then it
+// removes them and checks the answer goes back to true, so the test is
+// about the conflict and not about some other fault on the machine.
+//
+// Neither profile is loaded: the conflict is between files on disk,
+// which is all the Python parser reads, and loading them would attach
+// two profiles to a path in the kernel for no reason.
+func TestLiveAppArmorStatusSeesATreeTheToolsCannotRead(t *testing.T) {
+	c := apparmorLive(t)
+	requireModeChanges(t, c)
+	r := New()
+
+	var files []string
+	for _, name := range []string{"halite-live-dup-a", "halite-live-dup-b"} {
+		path := filepath.Join(liveAppArmorDir, name)
+		body := "profile " + name + " /halite/live/dup/target {\n  file,\n}\n"
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatalf("writing %s: %v", path, err)
+		}
+		files = append(files, path)
+	}
+	removed := false
+	remove := func() {
+		for _, f := range files {
+			_ = os.Remove(f)
+		}
+		removed = true
+	}
+	t.Cleanup(func() {
+		if !removed {
+			remove()
+		}
+	})
+
+	out, err := r.Exec.Call(c, "apparmor.status", value.NewMap(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, _ := out.(*value.Map)
+	if tools, _ := status.Get("tools"); tools != false {
+		t.Errorf("status reports tools=%v with two profiles attached to one path; "+
+			"every aa-* call fails on this tree", tools)
+	}
+	reason, _ := status.Get("tools_reason")
+	text, _ := reason.(string)
+	for _, f := range files {
+		if !strings.Contains(text, f) {
+			t.Errorf("tools_reason does not name %s: %q", f, text)
+		}
+	}
+	t.Logf("with the conflict in place: %s", text)
+
+	// A mode change on a profile that has nothing to do with the
+	// conflict. It fails -- the tools fail for every name -- and the
+	// error has to say that it is not the profile's fault. `/usr/bin/man`
+	// is used because it is there on every Ubuntu and the call cannot
+	// succeed, so nothing about it is changed.
+	_, err = r.Exec.Call(c, "apparmor.complain", value.MapOf("name", "/usr/bin/man"))
+	if err == nil {
+		t.Fatal("aa-complain succeeded on a tree it cannot parse; if the conflict built " +
+			"here is no longer one this apparmor-utils rejects, this test needs a new one")
+	}
+	if !strings.Contains(err.Error(), "not this profile") {
+		t.Errorf("the failure blames the profile rather than the tree: %v", err)
+	}
+
+	remove()
+	if usable, why := apparmorToolsUsable(c); !usable {
+		t.Errorf("with the conflict removed the tools still cannot run, so the answer "+
+			"above was not about the conflict: %s", why)
 	}
 }
 
