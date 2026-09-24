@@ -190,7 +190,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"15.1 -- the branch that had no test at all behind a fixture that looked like one " +
 		"(plan.md §1.4). The running name and the boot-time name are checked separately, " +
 		"and checked while they *differ*, which is the node somebody renamed by hand " +
-		"(DIVERGENCE 5.36). Not covered: macOS and the other BSDs"},
+		"(DIVERGENCE 5.36). macOS was a third branch nobody had written: it took the " +
+		"/etc/hostname path, which a Mac does not read, and converged on it. It now keeps " +
+		"the name in `scutil`'s HostName, and renamed a macOS 15.7.9 runner (build 24G830) " +
+		"under sudo on the `macos` leg, checked against `scutil --get HostName` directly " +
+		"(DIVERGENCE 5.132). Not covered: a Mac with no HostName set, whose `scutil` " +
+		"answer has not been captured; `LocalHostName` and `ComputerName`, which the " +
+		"module leaves alone; and the other BSDs"},
 	"sysctl": {Level: exec.Hardware, Note: "set a parameter on two real kernels: Linux " +
 		"6.x on an Ubuntu 24.04 runner, persisted to a drop-in, and FreeBSD 15.1, " +
 		"persisted to sysctl.conf -- so both spellings `sysctlAssign` tries are now known " +

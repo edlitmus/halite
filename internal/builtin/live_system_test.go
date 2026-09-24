@@ -113,9 +113,22 @@ func TestLiveHostnameRenamesTheMachineAndPutsItBack(t *testing.T) {
 		}
 	})
 
+	_, statErr := os.Stat("/etc/hostname")
+	hadEtcHostname := statErr == nil
+
 	const want = "halite-live-probe"
 	if _, err := r.Exec.Call(c, "hostname.set_hostname", value.MapOf("hostname", want)); err != nil {
 		t.Fatalf("set_hostname: %v", err)
+	}
+
+	// On a Mac the module used to write /etc/hostname, which nothing on
+	// macOS reads, and then read it back and agree with itself
+	// (DIVERGENCE 5.132). A rename there must not invent the file.
+	if runtime.GOOS == "darwin" && !hadEtcHostname {
+		if _, err := os.Stat("/etc/hostname"); err == nil {
+			t.Errorf("set_hostname created /etc/hostname on a Mac, which has none and reads none")
+			_ = os.Remove("/etc/hostname")
+		}
 	}
 
 	// The running name, read back through the module and through the
@@ -176,6 +189,25 @@ func persistentByHand(t *testing.T, c *exec.Context) (name, where string) {
 			return "", "rc.conf"
 		}
 		return strings.TrimSpace(res.Stdout), "rc.conf"
+	}
+	if runtime.GOOS == "darwin" {
+		// macOS has no /etc/hostname. The name hostname(1) and
+		// gethostname(3) come back with is SystemConfiguration's
+		// `HostName` preference, per scutil(8), which `scutil --get`
+		// reads without root. Its answer for an unset preference is
+		// logged, because nothing here has seen it yet.
+		res, err := c.Run(exec.Command{
+			Argv:           []string{"scutil", "--get", "HostName"},
+			IgnoreExitCode: true,
+		})
+		if err != nil {
+			t.Fatalf("scutil: %v", err)
+		}
+		t.Logf("scutil --get HostName: exit %d, stdout %q, stderr %q", res.Code, res.Stdout, res.Stderr)
+		if res.Code != 0 {
+			return "", "scutil HostName"
+		}
+		return strings.TrimSpace(res.Stdout), "scutil HostName"
 	}
 	body, err := os.ReadFile("/etc/hostname")
 	if err != nil {

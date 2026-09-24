@@ -11436,6 +11436,71 @@ systemsetup -settimezone Mars/Olympus_Mons exited 1: Mars/Olympus_Mons is not a 
 - One runner image, macOS 15.7.9. The read path was also run on macOS
   26.7. Nothing was run on older releases.
 
+### 5.132 `hostname` on a Mac converged on a file macOS does not read
+
+`hostname`'s evidence note said "Not covered: macOS". The module had
+no macOS branch at all, so a Mac took the path meant for Linux without
+systemd:
+
+- `persistentHostname` read `/etc/hostname`. A Mac has no such file,
+  so the persistent name read as empty.
+- `setHostname` wrote `/etc/hostname`, then ran `hostname(1)`.
+- The next read found the file it had just written, and agreed with
+  it.
+
+So `hostname.system` converged, and reported that the name would
+survive a reboot, while the name the Mac boots with was never touched.
+This is the same defect DIVERGENCE 5.36 found on FreeBSD, and the unit
+fixture hid it the same way: it redirected `/etc/hostname` on every
+platform except FreeBSD, so on a Mac it tested a file the platform
+does not have.
+
+#### Shown on the `macos` leg before the fix
+
+The platform-neutral `TestLiveHostname*` tests had never run on a Mac,
+because the `macos` leg of `fleet.yml` ran only `TestLiveMac*`. The
+leg now runs both. The test's own reader, `persistentByHand`, reads
+`scutil --get HostName` on darwin: per scutil(8), that is the name
+behind hostname(1) and gethostname(3). Against the unchanged module,
+on a macOS 15.7.9 runner (build 24G830):
+
+```
+scutil HostName holds "sat12-bq163-...-2AFCF55367A0.local" and the module set "halite-live-probe"; this machine would come back as "sat12-bq163-...-2AFCF55367A0.local" after a reboot
+```
+
+#### The fix
+
+On darwin, the persistent name is now SystemConfiguration's `HostName`,
+read with `scutil --get HostName` and written with `scutil --set
+HostName`. The running name is still set with `hostname(1)`, after the
+preference, in the same order and for the same reason as the FreeBSD
+branch. The preference is read back after the write, because nothing
+here has seen `scutil`'s exit status for a write it refused.
+`TestDarwinSetHostnameWritesThePreferenceAndChecksIt` holds the
+command order and the read-back on every platform. It fails with the
+read-back removed.
+
+On the same leg, with the fix, all three live tests pass. `scutil --get
+HostName` read `halite-live-probe` after the rename, no `/etc/hostname`
+was created, and the machine's name was put back.
+
+#### What this does not cover
+
+- **A Mac with no `HostName` set.** Every Mac this has run on had one.
+  A non-zero exit is treated as unset, which is what the FreeBSD branch
+  does with `sysrc`. What `scutil` actually prints in that case has not
+  been captured, and the unit fixture says so.
+- **`LocalHostName` and `ComputerName`.** A Mac keeps three names. This
+  module manages only the one `hostname(1)` reports, which is also what
+  Salt's `network.mod_hostname` sets on a Mac. A tree that wants the
+  Bonjour or Sharing name changed has no function for it.
+- **Whether configd applies a `HostName` change to the running kernel
+  name, and how soon.** The module sets the running name itself, so it
+  does not depend on configd. Nothing measured what configd does.
+- **A reboot.** The claim that the name survives one comes from
+  scutil(8) and from `scutil --get` reading it back. No Mac was
+  rebooted.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

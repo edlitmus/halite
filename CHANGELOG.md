@@ -18,6 +18,15 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `hostname` on macOS keeps the name a Mac boots with
+
+On a Mac, `hostname.system` and `hostname.set_hostname` wrote
+`/etc/hostname`, a file macOS does not read, and then reported the node
+as converged. The name did not survive a reboot. They now set the
+`HostName` preference with `scutil`, which is the name `hostname(1)`
+reports, and check that it took. `LocalHostName` and `ComputerName` are
+not changed. DIVERGENCE 5.132.
+
 ### `timezone` on macOS, run for the first time
 
 The macOS branch had never been run, and running it found four defects:
