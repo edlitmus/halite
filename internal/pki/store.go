@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // Files is a directory of key material.
@@ -176,29 +178,18 @@ func (f Files) CreateCA(alg KeyAlgorithm, commonName string, lifetime time.Durat
 }
 
 // writeFile replaces a file atomically.
+//
+// This was a copy of atomicfile.Write, and it had drifted in the three
+// ways such a copy does. It chmod'd the temporary file directly rather
+// than going through internal/fileperm, so on Windows a mode was the
+// read-only attribute and nothing else. It called os.Rename rather than
+// atomicfile.Rename, so the Windows sharing race that atomicfile exists
+// for -- a reader holding the destination open makes MoveFileEx fail, and
+// while MoveFileEx holds it a reader's open fails -- applied to the key
+// store. And it never synced the directory after the rename, so a power
+// loss could leave a certificate with no name. DIVERGENCE 5.144.
 func writeFile(path string, data []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return os.Rename(name, path)
+	return atomicfile.Write(path, data, mode)
 }
 
 // ParseSerial reads a serial back from the spelling SerialString gives

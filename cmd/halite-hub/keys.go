@@ -26,6 +26,7 @@ var keysUsage = `halite-hub keys — enrollment and the key lifecycle (SPEC sect
   keys token create --ttl <dur>    mint a bootstrap token
   keys token list                  every token, and what it admitted
   keys token revoke <id>           withdraw a token
+  keys token delete <id>...        forget a token, and what it admitted
   keys operator create <name>      issue a certificate for an operator
   keys signer create <name>        make a job signing key (SPEC 25.6)
 
@@ -434,6 +435,40 @@ func runKeysToken(args *cli.Args) int {
 				cli.Fatalf("%v", err)
 			}
 			fmt.Printf("revoked token %s\n", id)
+		}
+		return 0
+
+	// `revoke` is what stops a token admitting anything and is almost
+	// always what an operator wants, because the record is the answer to
+	// "what did this token let in": a revoked token keeps its `SpentBy`
+	// list, and a leaked one can then be answered with a list rather than
+	// with a guess.
+	//
+	// `delete` is for the other case -- an autoscaling fleet that mints a
+	// token per instance, where `keys token list` grows without bound and
+	// stops being readable. It says what it is destroying, because that is
+	// the part nobody gets back. Without this, `keystore.DeleteToken`
+	// existed and nothing called it, so every token ever minted stayed on
+	// disk. DIVERGENCE 5.144.
+	case "delete":
+		if len(rest) == 0 {
+			cli.Fatalf("token delete needs a token id, which `keys token list` prints; " +
+				"`keys token revoke <id>` stops a token without forgetting what it admitted")
+		}
+		for _, id := range rest {
+			tok, err := h.store.GetToken(id)
+			if err != nil {
+				cli.Fatalf("%v", err)
+			}
+			if err := h.store.DeleteToken(id); err != nil {
+				cli.Fatalf("%v", err)
+			}
+			if len(tok.SpentBy) > 0 {
+				fmt.Printf("deleted token %s, which had admitted %s\n",
+					id, strings.Join(tok.SpentBy, ", "))
+			} else {
+				fmt.Printf("deleted token %s, which had admitted nothing\n", id)
+			}
 		}
 		return 0
 

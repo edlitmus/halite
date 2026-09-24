@@ -285,20 +285,52 @@ func start(cfg Config) (*childProcess, error) {
 	cmd.Env = []string{"HALITE_RENDER_SANDBOX=1"}
 	cmd.Stderr = cfg.Stderr
 
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, err
-	}
+	// Confinement first, because it only fills in cmd.SysProcAttr and can
+	// therefore fail before anything is open. It is a reachable failure:
+	// `renderAccount` refuses a `render_sandbox_user` this machine cannot
+	// look up, which is what a typo in that setting produces.
 	if err := applyConfinement(cmd, cfg); err != nil {
 		return nil, err
 	}
+
+	// Both ends of both pipes, owned here rather than by the Cmd.
+	//
+	// `cmd.StdinPipe()` and `cmd.StdoutPipe()` keep the *child* ends
+	// inside the Cmd, where nothing but `Start`'s deferred cleanup can
+	// reach them -- so a failure before `Start` is reached left four
+	// descriptors open with only each os.File's finalizer to reclaim them,
+	// which is not a bound anybody should rely on. Measured at exactly 4.0
+	// per attempt: the lowest free descriptor moved from 11 to 211 over 50
+	// failed starts. Closing the parent ends alone halves it and no more,
+	// which is how this arrangement was arrived at rather than guessed.
+	//
+	// An *os.File assigned to cmd.Stdin or cmd.Stdout is used directly and
+	// is not registered for closing, so the four closes below are the whole
+	// of the accounting. DIVERGENCE 5.144.
+	childIn, stdin, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, childOut, err := os.Pipe()
+	if err != nil {
+		_ = childIn.Close()
+		_ = stdin.Close()
+		return nil, err
+	}
+	cmd.Stdin, cmd.Stdout = childIn, childOut
+
 	if err := cmd.Start(); err != nil {
+		_ = childIn.Close()
+		_ = childOut.Close()
+		_ = stdin.Close()
+		_ = stdout.Close()
 		return nil, fmt.Errorf("the render sandbox could not start %s: %w", exe, err)
 	}
+	// The child holds its own ends now. The parent's copy of the stdout
+	// write end especially has to go: a read on `stdout` would never see
+	// EOF while this process still holds one.
+	_ = childIn.Close()
+	_ = childOut.Close()
 
 	c := &childProcess{cmd: cmd, stdin: stdin, stdout: stdout, pid: cmd.Process.Pid}
 	hello, err := readFrame(stdout)

@@ -577,6 +577,12 @@ halite-hub keys token create --ttl 1h --nodes 'web*.example' --cidr 10.0.0.0/8
 halite-node enroll --token '<secret>' --ca-file ca.crt
 ```
 
+Prefer `keys token revoke <id>` to `keys token delete <id>`: a revoked
+token admits nothing and keeps the record of what it already admitted,
+which is what answers "what did this token let in" after a leak.
+Delete is for a fleet that mints a token per instance, where the list
+would otherwise grow without bound; it says what it is forgetting.
+
 The secret is printed once. The hub keeps only a SHA-256 digest of it.
 
 ### Renewal and revocation
