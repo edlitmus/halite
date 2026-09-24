@@ -348,3 +348,32 @@ func (r *darwinZoneRunner) Run(_ context.Context, cmd exec.Command) (exec.Result
 	}
 	return exec.Result{}, nil
 }
+
+// `systemsetup -listtimezones` as a macOS 15.7.9 runner (build 24G830)
+// printed it under sudo on the `macos` leg of fleet.yml: a heading, then
+// one zone per line with a leading space, then a trailing newline. The
+// head and tail are the captured lines; the full listing was 443 zones in
+// 445 words, which is the heading's two words and one per zone.
+func TestParseSystemsetupZonesReadsTheCapturedListing(t *testing.T) {
+	out := "Time Zones:\n Africa/Abidjan\n Africa/Accra\n Africa/Addis_Ababa\n" +
+		" Pacific/Wake\n Pacific/Wallis\n"
+	got := parseSystemsetupZones(out)
+	want := "Africa/Abidjan|Africa/Accra|Africa/Addis_Ababa|Pacific/Wake|Pacific/Wallis"
+	if strings.Join(got, "|") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+}
+
+// Without root, `systemsetup` refuses and exits 0 -- measured on macOS
+// 26.7 (build 25G229). That refusal is not a list of zones, and taking
+// it for one would have left list_zones returning nothing.
+func TestDarwinZonesIgnoresTheNonRootRefusal(t *testing.T) {
+	c := newCtx(false)
+	c.Lookup = func(string) string { return "/usr/sbin/systemsetup" }
+	c.Runner = &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"systemsetup -listtimezones": {Stdout: "You need administrator access to run this tool... exiting!\n"},
+	}}
+	if got := darwinZones(c); got != nil {
+		t.Errorf("the non-root refusal was read as %v", got)
+	}
+}

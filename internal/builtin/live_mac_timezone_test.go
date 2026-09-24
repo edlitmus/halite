@@ -76,22 +76,31 @@ func TestLiveMacTimezoneReadsThisMac(t *testing.T) {
 		t.Errorf("get_zone says %q and /etc/localtime points at %q", have, link)
 	}
 
-	zones, err := listZones(c)
-	if err != nil {
+	if _, err := listZones(c); err != nil {
 		t.Fatalf("list_zones on a Mac with a tz database: %v", err)
+	}
+
+	// The tree, walked directly. Not list_zones: as root that is
+	// `systemsetup`'s list, which is the set set_zone is held to and need
+	// not include the zone the Mac is in -- a macOS 15.7.9 runner was in
+	// UTC, which `systemsetup` refuses to set. The tree is what the
+	// running zone is read out of, so it must have it.
+	zones, err := zoneinfoNames()
+	if err != nil {
+		t.Fatalf("walking %s: %v", zoneinfoDir, err)
 	}
 	// A real tz database has several hundred zones; a walk that stopped
 	// at a link has none, and one that wandered into the alternate trees
 	// has thousands with `posix/` in front.
 	if len(zones) < 300 {
-		t.Errorf("list_zones returned %d zones; a real tz database has several hundred", len(zones))
+		t.Errorf("the tz tree walk returned %d zones; a real tz database has several hundred", len(zones))
 	}
 	if !knownZone(zones, have) {
-		t.Errorf("list_zones does not include %q, the zone this Mac is running in", have)
+		t.Errorf("the tz tree walk does not include %q, the zone this Mac is running in", have)
 	}
 	for _, z := range zones {
 		if strings.HasPrefix(z, "posix/") || strings.HasPrefix(z, "right/") || strings.Contains(z, ".") {
-			t.Errorf("list_zones returned %q, which is not a zone name", z)
+			t.Errorf("the tz tree walk returned %q, which is not a zone name", z)
 			break
 		}
 	}
