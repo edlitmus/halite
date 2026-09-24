@@ -8,7 +8,7 @@ import (
 // What `groups` means, as the set usermod -G and pw usermod -G are
 // handed. Both replace the whole supplementary list, so the set has to
 // be complete: without remove_groups it keeps every membership the
-// account already has (DIVERGENCE 5.135).
+// account already has (DIVERGENCE 5.138).
 func TestWantedGroupsKeepsWhatItWasNotAskedToRemove(t *testing.T) {
 	for _, tc := range []struct {
 		name         string

@@ -11784,6 +11784,111 @@ password put back into the argv, or the stderr check dropped).
   That is the test verifying a throwaway account's random password, and
   it is not the module.
 
+### 5.138 `user.present` stripped hand-added groups on Linux and FreeBSD
+
+`mac_user`'s evidence note recorded group removal as a gap on macOS:
+"`diffAccount` is append-only by design, so a group dropped from a
+tree's list is never taken off the account." Looking at why turned up
+the reverse problem on the platforms that carry the fleet. The three
+platforms gave a `groups:` list three different meanings:
+
+- **macOS** applied it with `macUserSetGroups(..., appendOnly=true)`.
+  A group was never removed, and a tree had no way to ask for removal.
+- **Linux and FreeBSD** applied it with `usermod -G` and `pw usermod
+  -G`, and both *replace* the whole supplementary list. The diff only
+  looked for missing groups. But `ModUser` was handed the whole spec,
+  so **any** change to the account (a shell, a comment, a home
+  directory) sent `-G <the tree's list>` with it, and every membership
+  the tree did not name was dropped.
+
+Nothing had driven `user.present` against a real account on Linux or
+FreeBSD. The `user` evidence note said so: "no account has been
+created, changed or removed on a real machine by this module".
+
+#### Shown before the fix
+
+`TestLiveUserGroupsAreKeptOrRemovedAsAsked` is platform-neutral. It
+now runs on the `linux`, `freebsd` and `macos` legs of `fleet.yml`, and
+`user*.go` now triggers the workflow, which it did not before. The test
+creates an account in two groups, adds it to a third with the
+platform's own tool (the membership an operator makes by hand), and
+then changes only the account's shell. Against the unchanged module,
+on an Ubuntu 24.04 runner and on FreeBSD 15.1:
+
+```
+after a shell change the account is in map[halug8463:true halug8463a:true halug8463b:true]; halug8463c was taken away without being asked
+```
+
+Membership is read with `id -Gn`, not through the module. macOS kept
+the group, as its append-only path would.
+
+#### The fix: one meaning, on every platform
+
+- **`groups` names the groups an account must be in.** Other
+  memberships are left alone. This is the macOS behaviour, and until
+  now it was the Linux and FreeBSD behaviour except on a run that
+  changed anything else.
+- **`remove_groups: true` makes `groups` the complete supplementary
+  set.** A membership the tree does not name is removed. It defaults
+  to false, **unlike Salt**, whose `remove_groups` defaults to true.
+  With Salt's default, the first run after an upgrade would take every
+  undeclared membership off every account on every host. Some of those
+  memberships were added by hand and are how people get `wheel` or
+  `sudo`. A tree that wants Salt's meaning says so.
+- On Linux and FreeBSD, `-G` is sent only when the groups differ, and
+  it carries the whole set the account should end with. That is
+  current membership plus the missing groups, or exactly the tree's
+  list under `remove_groups`. The primary group is excluded from the
+  comparison: `os/user` reports it, and `-G` does not take it.
+- `remove_groups` with no `groups` is refused. It would mean "remove
+  every supplementary group", which needs `-G ""`, and that has not
+  been run on either platform.
+
+With the fix, all three cases pass on Linux and FreeBSD: the
+hand-added group survives the shell change, a dropped group is kept by
+default, and `remove_groups` makes the list exact and then converges.
+
+#### And a reader that had never been right on a Mac
+
+The first run of `remove_groups` on the `macos` leg failed:
+
+```
+dseditgroup -o edit -d halug6562 ): Group not found.
+```
+
+`macUserGroups` reads `dscl . -search /Groups GroupMembership
+<user>`, and took every line at column 0 as a group name. Captured on
+macOS 26.7:
+
+```
+_lpadmin\t\tGroupMembership = (
+    "ed.silva"
+)
+```
+
+The closing `)` is at column 0 too. So on every Mac, for an account in
+any group at all, `user.info` reported membership of a group named
+`)`. The unit fixture had only the header lines, no members and no
+`)`, and so the parser passed against it. The fixture is now the
+captured shape. `TestMacUserGroupsReadsOnlyTheRecordHeaders` fails
+against the old parser (`got [) _lpadmin admin]`). The reader now takes
+only the header line, which is the one line that names the attribute.
+Nothing acted on the extra entry until `remove_groups`, which is why it
+had not been seen.
+
+#### What this does not cover
+
+- **`remove_groups` with an empty list.** Refused, as described above.
+- **A group whose name contains whitespace**, which is possible in
+  Open Directory. The macOS reader splits on whitespace.
+- **Directory-service accounts** (LDAP, NIS, Active Directory). `-G`
+  and `dseditgroup` change local groups. What they do to a membership
+  held in a directory was not run.
+- **The Linux behaviour change runs in both directions.** A tree that
+  relied, knowingly or not, on a change to an account also resetting
+  its groups now keeps the extra memberships. That is the intended
+  meaning, but it is a change to what a run does.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

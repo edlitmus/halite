@@ -211,7 +211,7 @@ func macUserGroups(c *exec.Context, name string) ([]any, error) {
 		// used to take every unindented line as a group, so ")" was read
 		// as a group the account is in on every Mac: `user.info` reported
 		// it, and remove_groups, the first caller to act on the list, tried
-		// `dseditgroup -d` on a group named ")" (DIVERGENCE 5.135). The
+		// `dseditgroup -d` on a group named ")" (DIVERGENCE 5.138). The
 		// header is the only line that names the attribute.
 		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") &&
 			strings.Contains(line, "\tGroupMembership") && !seen[f[0]] {
@@ -1031,7 +1031,7 @@ func macApplyUserChanges(c *exec.Context, spec userSpec, changes *value.Map) err
 	}
 	if changes.Has("groups") {
 		// Append-only unless remove_groups, which is the same meaning the
-		// Linux and FreeBSD paths give `groups` (DIVERGENCE 5.135). This
+		// Linux and FreeBSD paths give `groups` (DIVERGENCE 5.138). This
 		// was always append-only, so a group dropped from a tree was
 		// never taken off a Mac account and there was no way to ask.
 		if err := macUserSetGroups(c, spec.Name, spec.Groups, !spec.RemoveGroups); err != nil {

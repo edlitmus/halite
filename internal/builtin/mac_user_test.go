@@ -345,7 +345,7 @@ func TestMacUserSetGroupsConverges(t *testing.T) {
 	// macOS 26.7 (build 25G229), with the account renamed: a header, the
 	// members indented, and a closing ")" at column 0. The fixture this
 	// replaced had the headers alone, which is why a parser that read ")"
-	// as a group passed here (DIVERGENCE 5.135).
+	// as a group passed here (DIVERGENCE 5.138).
 	search := exec.Result{Stdout: "staff\t\tGroupMembership = (\n" +
 		"    \"_mbsetupuser\",\n" +
 		"    \"alice\"\n" +

@@ -660,7 +660,7 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		// handed the spec, so any change -- a shell, a comment -- also
 		// sent `-G <the tree's list>`, which replaces the whole
 		// supplementary set; measured on an Ubuntu runner and on FreeBSD
-		// 15.1 (DIVERGENCE 5.135). Now `-G` goes only when the groups
+		// 15.1 (DIVERGENCE 5.138). Now `-G` goes only when the groups
 		// differ, and carries the full set the account should end with.
 		mod := spec
 		mod.Groups = nil
@@ -798,7 +798,7 @@ func supplementaryGroups(current *value.Map) []string {
 // `usermod -G` and `pw usermod -G` take: both *replace* the supplementary
 // list. Handing them the tree's list alone, on a run that changed the
 // shell and nothing about groups, was how a hand-added group was
-// stripped on Linux and FreeBSD (DIVERGENCE 5.135).
+// stripped on Linux and FreeBSD (DIVERGENCE 5.138).
 func wantedGroups(have, want []string, remove bool) ([]string, bool) {
 	haveSet := map[string]bool{}
 	for _, g := range have {

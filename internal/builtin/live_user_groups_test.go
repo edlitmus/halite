@@ -23,7 +23,7 @@ import (
 // some other reason to call the account tool, because the diff looked
 // for missing groups alone. So a group added by hand survived until the
 // run where somebody changed the account's shell, and then it was gone
-// (DIVERGENCE 5.135). Nothing had driven `user.present` against a real
+// (DIVERGENCE 5.138). Nothing had driven `user.present` against a real
 // account on Linux or FreeBSD at all; the `user` evidence note said so.
 //
 // # What it establishes
