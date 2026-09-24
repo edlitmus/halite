@@ -177,6 +177,25 @@ func persistentByHand(t *testing.T, c *exec.Context) (name, where string) {
 		}
 		return strings.TrimSpace(res.Stdout), "rc.conf"
 	}
+	if runtime.GOOS == "darwin" {
+		// macOS has no /etc/hostname. The name hostname(1) and
+		// gethostname(3) come back with is SystemConfiguration's
+		// `HostName` preference, per scutil(8), which `scutil --get`
+		// reads without root. Its answer for an unset preference is
+		// logged, because nothing here has seen it yet.
+		res, err := c.Run(exec.Command{
+			Argv:           []string{"scutil", "--get", "HostName"},
+			IgnoreExitCode: true,
+		})
+		if err != nil {
+			t.Fatalf("scutil: %v", err)
+		}
+		t.Logf("scutil --get HostName: exit %d, stdout %q, stderr %q", res.Code, res.Stdout, res.Stderr)
+		if res.Code != 0 {
+			return "", "scutil HostName"
+		}
+		return strings.TrimSpace(res.Stdout), "scutil HostName"
+	}
 	body, err := os.ReadFile("/etc/hostname")
 	if err != nil {
 		t.Fatalf("/etc/hostname: %v", err)

@@ -470,12 +470,18 @@ jobs:
           # property of the machine, not of the test.
           echo "groups for ${SUDO_USER:-$USER}: $(id -G "${SUDO_USER:-$USER}" | wc -w)"
           getconf NGROUPS_MAX || true
+          # The three names a Mac keeps, and the running one. `hostname`
+          # is renamed by these tests, so what it was is printed first.
+          echo "hostname: $(hostname)"
+          for k in HostName LocalHostName ComputerName; do
+            echo "scutil $k: $(scutil --get $k 2>&1)"
+          done
 
       - name: drive the macOS row as root
         run: |
           set -e
           sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 \
-            go test -count=1 -v -run 'TestLiveMac' ./internal/builtin/
+            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname' ./internal/builtin/
 
       # The account tests create and remove a real account. If one is
       # left behind the machine is thrown away anyway, but a leg that
@@ -484,6 +490,10 @@ jobs:
       - name: the machine was put back
         if: always()
         run: |
+          echo "hostname: $(hostname); scutil HostName: $(scutil --get HostName 2>&1)"
+          test "$(hostname)" != "halite-live-probe" || {
+            echo "the tests left this machine renamed"; exit 1; }
+
           leftover=$(dscl . -list /Users | grep -c '^halite' || true)
           echo "halite* accounts remaining: $leftover"
           test "$leftover" -eq 0 || {
