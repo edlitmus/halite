@@ -11324,6 +11324,118 @@ arrived that way, and nothing here can tell one from an entry an operator
 wrote.
 
 
+### 5.131 The macOS timezone branch, run for the first time: four defects
+
+The macOS branch of `timezone` had never been run (plan.md §1.3, and
+the module's own evidence note: the `systemsetup` branch "had no test at
+all behind a fixture that looked like one"). Running it found four
+defects. The first was found on a real Mac. The other three appeared
+only once the `macos` leg of `fleet.yml` drove `systemsetup` as root
+on a macOS 15.7.9 runner (build 24G830).
+
+#### 1. `list_zones` found no zones on any Mac
+
+A read-only probe on macOS 26.7 (build 25G229), before anything was
+written:
+
+```
+listZones: 0 zones, err=this node has no time zone database under /usr/share/zoneinfo
+```
+
+On macOS, `/usr/share/zoneinfo` is not a directory:
+
+```
+/usr/share/zoneinfo -> /var/db/timezone/zoneinfo
+/var/db/timezone/zoneinfo -> /var/db/timezone/tz/2026c.1.0/zoneinfo
+```
+
+`filepath.WalkDir` does not follow a link, and that includes the root
+it was given. The walk visited one entry and found no zones. So
+`timezone.list_zones` failed on every Mac, and `timezone.system` lost
+its refusal of an unknown zone. The check is skipped when the list
+cannot be read: the right fallback for a node with no database, and
+the wrong one here. The mocked fixture could not have found this. It
+builds its tz tree as a plain directory, so the one property that
+differs on a Mac was the one property it did not have.
+
+The walk now resolves the root with `filepath.EvalSymlinks` first.
+`TestZoneinfoNamesFollowsALinkedRoot` builds the two-link layout on any
+unix. It fails against the old walk (`got []`).
+
+#### 2. `systemsetup` exits before the change is on disk
+
+The first root run, logged straight after `timezone.system` returned:
+
+```
+ls -l /etc/localtime: "ls: /etc/localtime: No such file or directory"
+/etc/localtime named Pacific/Chatham 34ms after the call returned
+```
+
+`systemsetup -settimezone` exits 0 and then replaces the link. For
+that gap the node has no `/etc/localtime`, which is UTC, silently. A
+state that read the zone next would have read a zone the node was not
+in. The old fixture's comment said "The real tool re-points
+/etc/localtime". That was true, but it was not the whole truth, and
+nothing had checked it.
+
+`setZone` now waits, for up to five seconds, until the link names the
+zone it asked for, and fails if the link never does. The live test
+checks the link the moment the state returns, not after a pause.
+
+With the wait removed again on purpose, on a throwaway branch, the
+`macos` leg failed where it should:
+
+```
+straight after setting Pacific/Chatham, /etc/localtime names "" (... no such file or directory)
+after setting Pacific/Chatham, get_zone says "UTC"
+```
+
+So for that gap, `get_zone` reported a zone the node was neither
+leaving nor entering.
+
+#### 3. `systemsetup` accepts a different set of names from the tz tree
+
+```
+systemsetup -listtimezones: 445 names; UTC=false GMT=true US/Pacific=false Pacific/Chatham=true
+```
+
+`systemsetup` takes 443 zones. The tree has several hundred more,
+including `UTC` (the zone that runner was in) and every `backward`
+alias such as `US/Pacific`. The tool refuses all of them, even though
+`systemsetup -gettimezone` reports a node in UTC as `GMT`. With the
+tree's list, `timezone.system: US/Pacific` passed the state's check and
+then failed at the tool.
+
+As root, `list_zones` now returns `systemsetup`'s own list, so the
+refusal comes from the state, in test mode too. Without root,
+`systemsetup -listtimezones` prints "You need administrator access to
+run this tool... exiting!" and **exits 0**; this was measured on macOS
+26.7. The module detects that and falls back to the tree, which is a
+superset of the right answer. The parser's fixture is the output logged
+from the runner.
+
+#### 4. The refusal's reason was lost
+
+`systemsetup` reports a refusal on stdout and exits 1. The exit-code
+error carries stderr, which was empty, so an unknown zone failed with
+`exited 1:` and no reason. The reason is included now:
+
+```
+systemsetup -settimezone Mars/Olympus_Mons exited 1: Mars/Olympus_Mons is not a valid timezone. The command 'listtimezones' will show a list of valid time zones.
+```
+
+#### What this does not cover
+
+- **A Mac in UTC cannot be put back into UTC by this module**, because
+  `systemsetup` will not set it. A tree that declares `UTC` on such a
+  Mac converges, because the zone is already right. On a Mac in any
+  other zone, the state refuses `UTC`, and `GMT` is the name the tool
+  takes. This is the platform's answer, and it is now reported as one.
+- **Without root, `list_zones` is the tree's list**, so it offers names
+  `set_zone` would refuse. `set_zone` needs root in any case.
+- One runner image, macOS 15.7.9. The read path was also run on macOS
+  26.7. Nothing was run on older releases.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

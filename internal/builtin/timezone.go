@@ -256,8 +256,7 @@ func setZone(c *exec.Context, want string) error {
 		}
 		return nil
 	case "darwin":
-		_, err := c.Run(exec.Command{Argv: []string{"systemsetup", "-settimezone", want}})
-		return err
+		return darwinSetZone(c, want)
 	}
 	// systemd's tool does the link, the /etc/timezone file and the
 	// running clock together, and is the only supported way to do it on
@@ -281,6 +280,53 @@ func setZone(c *exec.Context, want string) error {
 		}
 	}
 	return linkZone(want)
+}
+
+// zoneLinkWait bounds how long darwinSetZone waits for /etc/localtime to
+// name the zone it asked for.
+var zoneLinkWait = 5 * time.Second
+
+// darwinSetZone drives `systemsetup`, and does not take its exit status
+// as the answer. Measured on a macOS 15.7.9 runner (DIVERGENCE 5.131):
+//
+//   - `systemsetup -settimezone` exits 0 **before** the change is on
+//     disk. Straight afterwards /etc/localtime did not exist at all, and
+//     the new link appeared 34ms later. A node with no /etc/localtime is
+//     in UTC, silently, and the next state to read the zone would have
+//     read a zone the node is not in. So this waits for the link to name
+//     the zone, which is what the next run's reader reads, and fails if
+//     it never does.
+//   - It reports a refusal on **stdout**, and exits 1. The exit-code
+//     error carries stderr, which is empty, so the reason was lost: the
+//     refusal of an unknown zone read `exited 1:` and nothing else.
+func darwinSetZone(c *exec.Context, want string) error {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"systemsetup", "-settimezone", want},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return err
+	}
+	out := strings.TrimSpace(res.Stderr + res.Stdout)
+	if res.Code != 0 {
+		return fmt.Errorf("systemsetup -settimezone %s exited %d: %s", want, res.Code, firstLine(out))
+	}
+	// Without root, `systemsetup` says so and exits 0.
+	if strings.Contains(out, "administrator access") {
+		return fmt.Errorf("systemsetup -settimezone %s: %s", want, firstLine(out))
+	}
+	deadline := time.Now().Add(zoneLinkWait)
+	for {
+		if target, err := os.Readlink(localtimePath); err == nil && zoneFromPath(target) == want {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			target, _ := os.Readlink(localtimePath)
+			return fmt.Errorf("systemsetup -settimezone %s exited 0, and %v later %s points at %q",
+				want, zoneLinkWait, localtimePath, target)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 // linkZone points /etc/localtime at the zone file by hand, which is what
@@ -349,6 +395,11 @@ func listZones(c *exec.Context) ([]string, error) {
 	if runtime.GOOS == "windows" {
 		return windowsZones(c)
 	}
+	if runtime.GOOS == "darwin" {
+		if zones := darwinZones(c); len(zones) > 0 {
+			return zones, nil
+		}
+	}
 	if zones, err := zoneinfoNames(); err == nil && len(zones) > 0 {
 		return zones, nil
 	}
@@ -362,6 +413,42 @@ func listZones(c *exec.Context) ([]string, error) {
 		}
 	}
 	return nil, fmt.Errorf("this node has no time zone database under %s", zoneinfoDir)
+}
+
+// darwinZones asks `systemsetup` which names it takes, because on a Mac
+// that is a different set from the tz tree's. Measured on a macOS 15.7.9
+// runner: 445 names, and neither `UTC` -- the zone that runner was in --
+// nor any of the `backward` aliases such as `US/Pacific`, all of which
+// the tree has and `systemsetup -settimezone` refuses (DIVERGENCE 5.131).
+// Offering the tree's list made the state's unknown-zone refusal pass a
+// name the tool then rejected.
+//
+// It needs root, and without it prints a refusal and exits 0; nil sends
+// the caller to the tree, which is the best a non-root reader can say
+// and is a superset of the right answer.
+func darwinZones(c *exec.Context) []string {
+	if c.Which("systemsetup") == "" {
+		return nil
+	}
+	res, err := c.Run(exec.Command{Argv: []string{"systemsetup", "-listtimezones"}, IgnoreExitCode: true})
+	if err != nil || res.Code != 0 || strings.Contains(res.Stdout+res.Stderr, "administrator access") {
+		return nil
+	}
+	return parseSystemsetupZones(res.Stdout)
+}
+
+// parseSystemsetupZones reads `systemsetup -listtimezones`: a heading
+// line ending in a colon, then one zone per indented line.
+func parseSystemsetupZones(out string) []string {
+	var zones []string
+	for _, line := range nonEmptyLines(out) {
+		if strings.HasSuffix(line, ":") || strings.ContainsAny(line, " \t") {
+			continue
+		}
+		zones = append(zones, line)
+	}
+	sort.Strings(zones)
+	return zones
 }
 
 // windowsZones reads tzutil's listing, which alternates a display name
@@ -391,18 +478,30 @@ func windowsZones(c *exec.Context) ([]string, error) {
 // alternate trees and the plain-text tables — are excluded by name
 // rather than by content, because reading several thousand files to
 // decide would cost more than the rest of the state put together.
+//
+// The root is resolved before it is walked, because on macOS it is not a
+// directory: /usr/share/zoneinfo is a link to /var/db/timezone/zoneinfo,
+// which is itself a link to the versioned tree the OS updates in place.
+// WalkDir does not follow a link, the root included, so walking the path
+// as given visits one entry, finds no zones, and reports a node with a
+// full tz database as having none -- which is what every Mac did, and
+// what turned off the unknown-zone refusal in timezone.system there.
 func zoneinfoNames() ([]string, error) {
+	root, err := filepath.EvalSymlinks(zoneinfoDir)
+	if err != nil {
+		return nil, err
+	}
 	skipTop := map[string]bool{"posix": true, "right": true}
 	skipFile := map[string]bool{
 		"posixrules": true, "localtime": true, "Factory": true,
 		"leapseconds": true, "leap-seconds.list": true, "SECURITY": true,
 	}
 	var out []string
-	err := filepath.WalkDir(zoneinfoDir, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		name := zoneRelative(path)
+		name := zoneRelative(root, path)
 		if name == "" {
 			return nil
 		}
@@ -427,8 +526,8 @@ func zoneinfoNames() ([]string, error) {
 	return out, nil
 }
 
-func zoneRelative(path string) string {
-	rel, err := filepath.Rel(zoneinfoDir, path)
+func zoneRelative(root, path string) string {
+	rel, err := filepath.Rel(root, path)
 	if err != nil || rel == "." {
 		return ""
 	}

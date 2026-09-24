@@ -18,6 +18,24 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `timezone` on macOS, run for the first time
+
+The macOS branch had never been run, and running it found four defects:
+
+- `timezone.list_zones` failed on every Mac, because `/usr/share/zoneinfo`
+  is a symlink there. Because of that, `timezone.system` passed an
+  unknown zone to `systemsetup` instead of refusing it.
+- `systemsetup -settimezone` exits before `/etc/localtime` is replaced,
+  so for a moment the node has no zone file. The module now waits for
+  the new link.
+- `systemsetup` accepts fewer names than the tz tree has: no `UTC`, and
+  no aliases such as `US/Pacific`. As root, `list_zones` now returns the
+  tool's own list, so the state refuses those names itself.
+- `set_zone` now includes `systemsetup`'s reason when it refuses.
+
+A Mac cannot be set to `UTC` through `systemsetup`. Use `GMT`.
+DIVERGENCE 5.131.
+
 ### `schedule.add` is arbitrary code, and the schedule functions honour `--test`
 
 Two fixes in the scheduling module, both found while asking what stops a
