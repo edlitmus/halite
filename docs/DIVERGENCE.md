@@ -12019,6 +12019,83 @@ where the defects were. The conformance harness the review names next --
 six state functions of 132 -- is the thing that would have caught all
 three, and it is a bigger piece of work than any of these fixes.
 
+### 5.134 Three shapes behind a duration, a redactor and a flag
+
+The remaining Tier 1 rows of the review, and each turned out to be a
+narrower defect with a wider mechanism behind it.
+
+#### `timeout: "900"` meant no timeout at all
+
+`internal/builtin`'s `durationOf` handled a string through
+`time.ParseDuration`, which wants a unit, so `"900"` failed. The call site
+then discarded the error -- `if d, err := durationOf(v); err == nil` --
+leaving `Timeout` at zero, and `exec.OSRunner` arms a deadline only when it
+is above zero. A state asking for a bounded command got an unbounded one.
+
+Three things made it worse than a typo in a parser:
+
+- **The quoted form is not exotic.** A template produces strings and
+  nothing else, so `timeout: {{ pillar['deploy_timeout'] }}` arrives as
+  `"900"` however the pillar spelled it. A tree that looks entirely
+  numeric reaches this code as text.
+- **`signature.Duration` promises both spellings**: "a Go duration string
+  or a bare number of seconds". The parameter is declared that type, so
+  the module was refusing what its own signature advertised.
+- **The same word in the same file parsed two ways.** `internal/state`'s
+  compiler has `asDuration`, which accepts a bare number and diagnoses
+  what it cannot read. So `timeout: "900"` was a deadline to the compiler
+  and an error to the module -- and the module said nothing.
+
+And the module already argues the case against itself. It refuses `bg`
+together with `timeout` with this reason: *"a tree that asked for a bounded
+run and got an unbounded one has been told the opposite of the truth."*
+That is the exact outcome the discarded error produced.
+
+One parser now, `value.ParseDuration`, in the package every caller already
+imports; the compiler, the module and `config.Duration` all defer to it,
+and the module refuses a timeout it cannot read rather than running
+unbounded. There are 18 `time.ParseDuration` call sites in the tree and
+they are not all wrong: a flag or a setting may reasonably insist on a
+unit. What had to agree were the ones reading a word out of a tree.
+
+#### The redactor did not cover the model
+
+`redact.Set.ScrubValue` switched on `string`, `[]any` and
+`map[string]any`, and fell through on **`*value.Map`** -- the ordered map of
+the nine-type model, which is what a state's changes, a pillar fragment, a
+grain set and a `--out json` report all are. Every caller handing one over
+got it back unchanged, having called the right function.
+
+That is the shape worth naming: not a missing call, but a call that reads
+as protection and does nothing. The logger scrubs every structured field
+through it, so the hole was one `Info("...", "changes", m)` away from being
+a leak, wherever a value.Map was logged.
+
+Keys are scrubbed as well as values now, because a mapping keyed by a token
+is the same fault one level down.
+
+#### The node's `doctor` printed through no redactor, and the hub's `--out` did nothing
+
+The hub's `doctor` has scrubbed since 5.110 and says why beside the call: a
+check prints what it *found*, and the pillar check's finding is a
+compilation error that can name a decrypted value. The node's printed
+`report.Text()` raw -- and the node compiles its *whole* tree, so it
+reaches more GPG blocks than the hub does.
+
+Measured on this host: `halite-node doctor --out json` printed the pillar
+file's path and its decryption error verbatim. Both paths are scrubbed now,
+and `cli.Redact` was not the answer for either -- it is applied by
+`cli.Fatalf` and nowhere else, so a report printed normally passes it by.
+
+**There was no node doctor test at all**, which is how two functions that
+read alike came to differ.
+
+Looking at it turned up one more: **the hub's `doctorValue` was called from
+nowhere.** `halite-hub doctor --out json` printed the table, so a flag the
+usage text advertises was accepted and ignored -- the
+accepted-and-does-nothing shape `InertKeys` exists to stop happening to
+settings, in a command line instead. It is wired now, and scrubbed.
+
 
 ## 6. Everything else not started
 

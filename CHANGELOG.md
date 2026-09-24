@@ -69,6 +69,38 @@ The macOS branch had never been run, and running it found four defects:
 
 A Mac cannot be set to `UTC` through `systemsetup`. Use `GMT`.
 DIVERGENCE 5.131.
+### `timeout: "900"` on cmd.run meant no timeout at all
+
+A quoted number — which is what a template produces, since
+`timeout: {{ pillar['deploy_timeout'] }}` is a string however the pillar
+spelled it — failed `cmd.run`'s duration parse, and the error was
+discarded. The deadline stayed unset, and an unset deadline is no deadline:
+a state that asked for a bounded command got an unbounded one. The state
+compiler accepted the same word in the same file.
+
+One parser now, shared, accepting both `15m` and `900`, and a timeout that
+cannot be read stops the command instead of quietly meaning nothing.
+
+### The redactor did not cover halite's own map type
+
+`ScrubValue` handled Go maps and slices and fell through on the ordered map
+of the nine-type model — which is what a state's changes, a pillar
+fragment, a grain set and a `--out json` report all are. Callers that
+handed one over got it back unscrubbed, having called the right function.
+Keys are scrubbed as well as values now.
+
+### `halite-node doctor` printed through no redactor
+
+The hub's has scrubbed since the pillar check learned to quote a
+compilation error; the node's did not, and the node compiles its whole tree,
+so it reaches more encrypted blocks than the hub. Both output paths are
+scrubbed now. `halite-node doctor --out json` printed a pillar file's path
+and its decryption error verbatim before this.
+
+While there: `halite-hub doctor --out json` printed the table. The function
+for it existed and was called from nowhere, so the flag was accepted and
+ignored. It works now.
+
 ### `--test` was not read-only in the state layer either
 
 Three more, from the other end of the same question the audit below asked.

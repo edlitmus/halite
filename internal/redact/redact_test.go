@@ -386,3 +386,53 @@ func TestScrubExceptReplacesTheLongerSecretWhole(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+// The ordered map of the nine-type model is scrubbed, keys and all.
+//
+// It was not: the type switch handled `map[string]any` and fell through on
+// `*value.Map`, which is what a state's changes, a pillar fragment, a grain
+// set and a `--out json` report all are. Every caller that handed one over
+// got it back unchanged, having done the right thing. DIVERGENCE 5.134.
+func TestScrubValueScrubsTheOrderedMap(t *testing.T) {
+	s := New()
+	s.Add("hunter2")
+	s.Add("s3cret-key-name")
+
+	in := value.MapOf(
+		"password", "hunter2",
+		"nested", value.MapOf("inner", "prefix-hunter2-suffix"),
+		"list", []any{"hunter2", "safe"},
+		// A key can carry a secret too.
+		"s3cret-key-name", "value",
+	)
+	out, ok := s.ScrubValue(in).(*value.Map)
+	if !ok {
+		t.Fatalf("ScrubValue returned %T, want *value.Map", s.ScrubValue(in))
+	}
+
+	if v, _ := out.Get("password"); v != Placeholder {
+		t.Errorf("password = %v, want it scrubbed", v)
+	}
+	nested, _ := out.Get("nested")
+	inner, _ := nested.(*value.Map).Get("inner")
+	if strings.Contains(inner.(string), "hunter2") {
+		t.Errorf("the nested value still holds the secret: %v", inner)
+	}
+	list, _ := out.Get("list")
+	if got := list.([]any)[0]; got != Placeholder {
+		t.Errorf("the list member is %v, want it scrubbed", got)
+	}
+	if _, present := out.Get("s3cret-key-name"); present {
+		t.Error("a key that is itself a secret survived unscrubbed")
+	}
+	// The shape is kept: a redactor that flattened its input would be
+	// unusable for a state's changes.
+	if out.Len() != in.Len() {
+		t.Errorf("the scrubbed map holds %d keys, the original held %d", out.Len(), in.Len())
+	}
+	// And the original is untouched, because a caller logging a value it
+	// still needs must not have it rewritten underneath.
+	if v, _ := in.Get("password"); v != "hunter2" {
+		t.Errorf("the input was modified: %v", v)
+	}
+}
