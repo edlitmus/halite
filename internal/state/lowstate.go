@@ -482,5 +482,5 @@ func asStringList(v any, pos value.Pos, d *Decl, name string, diags *Diags) []st
 
 // asDuration reads a duration option. One rule, in value.ParseDuration:
 // this had its own copy and `cmd.run` had another, and they disagreed
-// about a bare number of seconds. DIVERGENCE 5.134.
+// about a bare number of seconds. DIVERGENCE 5.137.
 func asDuration(v any) (time.Duration, error) { return value.ParseDuration(v) }

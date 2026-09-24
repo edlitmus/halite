@@ -32,7 +32,7 @@ import (
 // `timeout: "900"` got an unbounded command: the one outcome the module's
 // own refusal of `bg` with `timeout` says it must never produce, on the
 // grounds that "a tree that asked for a bounded run and got an unbounded
-// one has been told the opposite of the truth". DIVERGENCE 5.134.
+// one has been told the opposite of the truth". DIVERGENCE 5.137.
 //
 // So the rule lives once, in the package every caller already imports, and
 // a caller that cannot use a value says so rather than proceeding without

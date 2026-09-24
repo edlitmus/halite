@@ -724,7 +724,7 @@ func registrationName(line, prefix string) (string, bool) {
 // outside the one check written to catch a module nobody has considered,
 // and `cmd` had no evidence row at all. 23 mutating modules were out of
 // scope that way; this closes the door on a new one arriving the same way,
-// by making the field a vocabulary rather than prose. DIVERGENCE 5.135.
+// by making the field a vocabulary rather than prose. DIVERGENCE 5.138.
 func TestEveryPrivilegeIsOneTheGateKnows(t *testing.T) {
 	known := map[string]bool{
 		signature.PrivRoot:          true,

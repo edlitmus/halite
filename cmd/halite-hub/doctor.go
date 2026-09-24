@@ -76,7 +76,7 @@ func runDoctor(args *cli.Args) int {
 	// called from nowhere, so the flag the usage text advertises was
 	// accepted and ignored: a hub asked for JSON printed the table, which
 	// is the accepted-and-does-nothing shape `InertKeys` exists to stop
-	// happening to settings. DIVERGENCE 5.134.
+	// happening to settings. DIVERGENCE 5.137.
 	format, err := cli.ParseFormat(args.Flag("out", "summary"))
 	if err != nil {
 		cli.Fatalf("%v", err)

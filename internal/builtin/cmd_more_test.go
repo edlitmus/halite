@@ -203,7 +203,7 @@ func TestServiceKnownIgnoresTheSystemdSuffix(t *testing.T) {
 // error discarded — leaving `Timeout` at zero, which `exec.OSRunner` reads
 // as no deadline at all. A state that asked for a bounded command got an
 // unbounded one, which is what this module refuses to do for `bg` and
-// `timeout` together, in those words. DIVERGENCE 5.134.
+// `timeout` together, in those words. DIVERGENCE 5.137.
 func TestCmdRunReadsATimeoutATemplateProduced(t *testing.T) {
 	r := New()
 
