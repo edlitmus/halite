@@ -117,6 +117,20 @@ func TestLiveGroupGidIsSetAndNeverRenumbered(t *testing.T) {
 		if ok && !bExists {
 			t.Errorf("group.present %s succeeded and there is no such group", b)
 		}
+
+		// A refused create must not leave a record behind. Checked against
+		// the platform's list of groups, not a gid read: a record with no
+		// gid reads as "no gid" and looks like no record at all.
+		listed := groupListed(t, c, b)
+		info, _ := r.Exec.Call(c, "group.info", value.MapOf("name", b))
+		t.Logf("%s: after the refusal, %s listed=%v, group.info=%v", runtime.GOOS, b, listed, info)
+		if !ok && listed {
+			t.Errorf("group.present %s failed and left a group %s behind", b, b)
+			if again, err := r.States.Call(c, "group.present", value.MapOf("name", b)); err == nil {
+				t.Logf("and group.present %s without a gid then says: ok=%v changed=%v %q",
+					b, again.Succeeded(), again.HasChanges(), again.Comment)
+			}
+		}
 	})
 }
 
@@ -192,4 +206,27 @@ func platformGidIfAny(t *testing.T, c *exec.Context, name string) (int64, bool) 
 		t.Fatalf("getent group %s printed %q", name, res.Stdout)
 	}
 	return n, true
+}
+
+// groupListed reports whether the platform lists a group by that name,
+// whatever attributes its record has.
+func groupListed(t *testing.T, c *exec.Context, name string) bool {
+	t.Helper()
+	argv := []string{"getent", "group", name}
+	if runtime.GOOS == "darwin" {
+		argv = []string{"dscl", ".", "-list", "/Groups"}
+	}
+	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "darwin" {
+		return res.Code == 0
+	}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		if strings.TrimSpace(line) == name {
+			return true
+		}
+	}
+	return false
 }
