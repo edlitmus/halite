@@ -873,6 +873,13 @@ func macShadowSetPassword(c *exec.Context, name, password string) error {
 	if c.Which("passwd") == "" {
 		return fmt.Errorf("mac_shadow.set_password needs `passwd`, which was not found")
 	}
+	// Asked first, so that the commonest mistake gets a clear answer
+	// rather than one read out of passwd's stderr.
+	if info, err := macUserInfo(c, name); err != nil {
+		return fmt.Errorf("mac_shadow.set_password: reading %s: %w", name, err)
+	} else if info.Len() == 0 {
+		return fmt.Errorf("mac_shadow.set_password: there is no account named %s", name)
+	}
 	res, err := c.Run(exec.Command{
 		Argv:           []string{"passwd", name},
 		Stdin:          password + "\n" + password + "\n",
@@ -886,7 +893,27 @@ func macShadowSetPassword(c *exec.Context, name, password string) error {
 		return fmt.Errorf("passwd %s exited %d: %s", name, res.Code,
 			firstLine(strings.TrimSpace(res.Stderr+res.Stdout)))
 	}
+	if extra := passwdStderrBeyondPrompts(res.Stderr); extra != "" {
+		return fmt.Errorf("passwd %s exited 0 and said: %s", name, firstLine(extra))
+	}
 	return nil
+}
+
+// passwdStderrBeyondPrompts returns what passwd wrote to stderr other than
+// its two prompts.
+//
+// passwd's exit status does not say whether it worked: on a macOS 15.7.9
+// runner, `passwd` for an account that does not exist printed
+// `passwd: Unknown user name '<name>'.` and exited 0. So success is
+// matched rather than failure: a successful run's stderr was exactly
+// `New password:Retype new password:`, and anything else there is taken
+// as passwd saying no. A list of known error messages would pass the
+// first one nobody had seen. stdout is not read, because it holds a
+// banner about the login keychain on every run, successful or not.
+func passwdStderrBeyondPrompts(stderr string) string {
+	rest := strings.ReplaceAll(stderr, "Retype new password:", "")
+	rest = strings.ReplaceAll(rest, "New password:", "")
+	return strings.TrimSpace(rest)
 }
 
 // macPlainAccountName is the shape of a short account name: letters,
