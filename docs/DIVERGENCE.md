@@ -11621,6 +11621,22 @@ fail, and so do the unrecognised-answer case and
 `apparmorToolMessage` swapped back to `firstLine`, the Firefox case
 fails on both of its file names.
 
+#### A name the tools cannot find is a success, as far as their exit status goes
+
+Round 4's capture showed more than the probe needed. `aa-enforce`,
+`aa-complain` and `aa-disable` all **exit 0** for a name that does not
+exist, and print `Can't find …` on stdout. `apparmorRunTool` trusted
+the exit status. So `apparmor.enforce name=/usr/sbin/tcpdmp` returned
+true and changed nothing. The `apparmor.mode` state was never exposed,
+because it reads securityfs first and refuses a profile that is not
+loaded. The execution functions are what an operator types by hand,
+and they had no such check. A zero exit that carries the tool's
+not-found sentence for the name is now a failure that says nothing
+was changed. `TestAModeChangeOnAProfileThatIsNotThereFails` holds the
+captured output and fails for all three tools when the check is
+disabled. `TestLiveAppArmorRefusesAProfileThatIsNotThere` now drives
+the three execution functions as well as the state.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

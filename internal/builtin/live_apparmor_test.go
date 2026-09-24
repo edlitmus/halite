@@ -429,6 +429,17 @@ func TestLiveAppArmorRefusesAProfileThatIsNotThere(t *testing.T) {
 	if !strings.Contains(out.Comment, "halite-no-such-profile") {
 		t.Errorf("the refusal does not name the profile: %q", out.Comment)
 	}
+
+	// The execution functions do not read securityfs first, so they are
+	// the ones exposed to the tools exiting 0 for a name they cannot
+	// find. DIVERGENCE 5.133.
+	for _, fn := range []string{"enforce", "complain", "disable"} {
+		if _, err := r.Exec.Call(c, "apparmor."+fn, value.MapOf("name", "halite-no-such-profile")); err == nil {
+			t.Errorf("apparmor.%s reported success for a profile this machine does not have", fn)
+		} else if !strings.Contains(err.Error(), "nothing was changed") {
+			t.Errorf("apparmor.%s failed, but not by saying nothing changed: %v", fn, err)
+		}
+	}
 }
 
 // **`apparmor.status` sees a tree the tools cannot read**, on a real

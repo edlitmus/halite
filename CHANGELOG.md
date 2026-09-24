@@ -44,6 +44,11 @@ anything else.
   tree, the error now says that the fault is not with the profile you
   named.
 
+- `apparmor.enforce`, `apparmor.complain` and `apparmor.disable` now
+  fail for a profile name that does not exist. Before, they returned
+  success, because the `aa-*` tools exit 0 in that case. The
+  `apparmor.mode` state always refused such a name.
+
 halite does not remove the conflicting files. Removing them is the
 operator's decision. DIVERGENCE 5.133.
 

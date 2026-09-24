@@ -359,6 +359,31 @@ func TestAModeChangeOnAnUnreadableTreeBlamesTheTree(t *testing.T) {
 	}
 }
 
+// **A mode change on a name the tools cannot find is a failure, though
+// the tools exit 0 for it.**
+//
+// The response is the captured one, verbatim: `aa-enforce` against a
+// name that is not there, on a tree it can read, exits 0 and says so on
+// stdout. The execution functions used to trust the status and return
+// true. DIVERGENCE 5.133.
+func TestAModeChangeOnAProfileThatIsNotThereFails(t *testing.T) {
+	for _, fn := range []string{"enforce", "complain", "disable"} {
+		t.Run(fn, func(t *testing.T) {
+			c, runner := apparmorFixture(t, "Y\n", "/usr/bin/man (enforce)\n")
+			runner.Responses["aa-"+fn+" "+apparmorProbeProfile] = apparmorProbeWorks
+			// Directly rather than through the registry, which refuses
+			// the apparmor module off Linux.
+			err := apparmorRunTool(c, "aa-"+fn, apparmorProbeProfile)
+			if err == nil {
+				t.Fatalf("aa-%s was reported as success for a profile the tool could not find", fn)
+			}
+			if !strings.Contains(err.Error(), "nothing was changed") {
+				t.Errorf("the failure does not say nothing changed: %v", err)
+			}
+		})
+	}
+}
+
 // The state moves a profile between modes, and does nothing to one that
 // is already right.
 func TestTheModeStateConvergesAProfile(t *testing.T) {

@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -496,6 +497,21 @@ func apparmorRunTool(c *exec.Context, tool, name string) error {
 				"named are fixed", tool, name, msg)
 		}
 		return fmt.Errorf("%s %s: %s", tool, name, msg)
+	}
+	// **A profile the tools cannot find is reported with exit status 0.**
+	// Captured on apparmor-utils 4.0.1: `aa-enforce`, `aa-complain` and
+	// `aa-disable` against a name that is not there all print "Can't
+	// find <name> in the system path list" to stdout and succeed. Until
+	// DIVERGENCE 5.133 this function trusted the status, so
+	// `apparmor.enforce name=/usr/sbin/tcpdmp` returned true and changed
+	// nothing. The state was never exposed -- it reads securityfs first
+	// and refuses a profile that is not loaded -- but the execution
+	// functions are what an operator reaches for by hand.
+	if strings.Contains(res.Stdout+res.Stderr, apparmorNotFound(name)) {
+		return fmt.Errorf("%s %s: no profile by that name is in %s, so nothing was changed "+
+			"(the tool says so and exits 0). A profile is named by what it attaches to, not "+
+			"by its file; `apparmor.list_profiles` shows what this node has loaded",
+			tool, name, filepath.Dir(AppArmorDisableDir))
 	}
 	return nil
 }
