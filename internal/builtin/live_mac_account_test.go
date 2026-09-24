@@ -317,7 +317,7 @@ func TestLiveMacAccountArc(t *testing.T) {
 // it.
 //
 // The module hands it to dscl on standard input, so it is not in `ps`
-// (DIVERGENCE 5.133). The authonly checks below do put it in an argv, of
+// (DIVERGENCE 5.134). The authonly checks below do put it in an argv, of
 // a throwaway account that is removed with the test.
 func throwawayPassword(t *testing.T) string {
 	t.Helper()
@@ -357,7 +357,7 @@ func (w *argvWatch) Run(ctx context.Context, cmd exec.Command) (exec.Result, err
 // "Reported as set" is not enough here, and TestLiveMacAccountArc only
 // asks that: a password mangled on the way in is still a password that
 // is set, and dscl's interactive mode was measured doing exactly that
-// (DIVERGENCE 5.133). So each one is authenticated with `dscl . -authonly`,
+// (DIVERGENCE 5.134). So each one is authenticated with `dscl . -authonly`,
 // and a wrong one is checked to fail, so that authonly is known to be
 // able to say no. The authonly check puts the password in *its* argv;
 // that is this test's own verification of a throwaway account's random

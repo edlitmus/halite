@@ -410,7 +410,7 @@ func TestMacAccountModulesAreRegisteredAndRestricted(t *testing.T) {
 }
 
 // The password goes to passwd on standard input, never in an argv,
-// where every local account can read it through `ps` (DIVERGENCE 5.133).
+// where every local account can read it through `ps` (DIVERGENCE 5.134).
 // Platform-neutral: this is what the module hands to the runner, so it
 // runs on every CI leg and not only on a Mac.
 func TestMacShadowSetPasswordKeepsThePasswordOutOfArgv(t *testing.T) {

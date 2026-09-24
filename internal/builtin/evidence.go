@@ -635,7 +635,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"never in an argv. On a macOS 15.7.9 runner (build 24G830) under sudo, on the `macos` leg " +
 		"of `fleet.yml`, thirteen passwords (every ASCII punctuation character, leading `-` and " +
 		"`#`, leading and trailing spaces, non-ASCII) were each set and then authenticated with " +
-		"`dscl . -authonly`, and none appeared in any command's argv (DIVERGENCE 5.133). The " +
+		"`dscl . -authonly`, and none appeared in any command's argv (DIVERGENCE 5.134). The " +
 		"standing limit is not a gap in testing: `info` can report whether a hash is present and " +
 		"can never compare one, because dscl does not expose it. Not covered: an account with a " +
 		"secure token or on a FileVault volume, and the login keychain, which passwd does not " +

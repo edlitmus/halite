@@ -29,7 +29,7 @@ local user could read it with `ps` while the call ran. It now goes to
 - Failures are detected from `passwd`'s output, because `passwd` exits
   0 even when it refuses.
 
-The login keychain is still not updated, as before. DIVERGENCE 5.133.
+The login keychain is still not updated, as before. DIVERGENCE 5.134.
 
 ### `hostname` on macOS keeps the name a Mac boots with
 

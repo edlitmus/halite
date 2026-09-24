@@ -830,7 +830,7 @@ func hasShadowHash(c *exec.Context, name string) bool {
 // comment saying macOS offers no standard-input path. An argv is
 // readable by every local account through `ps` for as long as the call
 // runs, and dscl(1) itself calls that form "inherently insecure"
-// (DIVERGENCE 5.133). Four ways of getting the password onto stdin were
+// (DIVERGENCE 5.134). Four ways of getting the password onto stdin were
 // tried as root on a macOS 15.7.9 runner, each checked by authenticating
 // with the password afterwards:
 //
