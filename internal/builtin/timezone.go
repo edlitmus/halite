@@ -391,18 +391,30 @@ func windowsZones(c *exec.Context) ([]string, error) {
 // alternate trees and the plain-text tables — are excluded by name
 // rather than by content, because reading several thousand files to
 // decide would cost more than the rest of the state put together.
+//
+// The root is resolved before it is walked, because on macOS it is not a
+// directory: /usr/share/zoneinfo is a link to /var/db/timezone/zoneinfo,
+// which is itself a link to the versioned tree the OS updates in place.
+// WalkDir does not follow a link, the root included, so walking the path
+// as given visits one entry, finds no zones, and reports a node with a
+// full tz database as having none -- which is what every Mac did, and
+// what turned off the unknown-zone refusal in timezone.system there.
 func zoneinfoNames() ([]string, error) {
+	root, err := filepath.EvalSymlinks(zoneinfoDir)
+	if err != nil {
+		return nil, err
+	}
 	skipTop := map[string]bool{"posix": true, "right": true}
 	skipFile := map[string]bool{
 		"posixrules": true, "localtime": true, "Factory": true,
 		"leapseconds": true, "leap-seconds.list": true, "SECURITY": true,
 	}
 	var out []string
-	err := filepath.WalkDir(zoneinfoDir, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		name := zoneRelative(path)
+		name := zoneRelative(root, path)
 		if name == "" {
 			return nil
 		}
@@ -427,8 +439,8 @@ func zoneinfoNames() ([]string, error) {
 	return out, nil
 }
 
-func zoneRelative(path string) string {
-	rel, err := filepath.Rel(zoneinfoDir, path)
+func zoneRelative(root, path string) string {
+	rel, err := filepath.Rel(root, path)
 	if err != nil || rel == "." {
 		return ""
 	}

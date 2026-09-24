@@ -11324,6 +11324,63 @@ arrived that way, and nothing here can tell one from an entry an operator
 wrote.
 
 
+### 5.131 `timezone.list_zones` found no zones on any Mac
+
+The macOS branch of `timezone` had never been run (plan.md §1.3, and
+the module's own evidence note: the `systemsetup` branch "had no test at
+all behind a fixture that looked like one"). A read-only probe on a real
+Mac, macOS 26.7 (build 25G229), turned up a reading defect before
+anything was written:
+
+```
+listZones: 0 zones, err=this node has no time zone database under /usr/share/zoneinfo
+```
+
+On macOS, `/usr/share/zoneinfo` is not a directory:
+
+```
+/usr/share/zoneinfo -> /var/db/timezone/zoneinfo
+/var/db/timezone/zoneinfo -> /var/db/timezone/tz/2026c.1.0/zoneinfo
+```
+
+`filepath.WalkDir` does not follow a link, and that includes the root
+it was given. The walk visited one entry, found no zones, and
+`listZones` reported a node with a full tz database as having none. Two
+things followed on every Mac:
+
+- `timezone.list_zones` failed outright.
+- `timezone.system` lost its refusal of a zone the node does not have.
+  The check is skipped when the list cannot be read, which is the right
+  fallback for a node that really has no database and the wrong one
+  here. A misspelled zone went straight to `systemsetup`, and test mode
+  reported it as a change it would make.
+
+The mocked fixture could not have found this. It builds its own tz tree
+as a plain directory, so the one property that differs on a Mac was the
+one property it did not have.
+
+The walk now resolves the root with `filepath.EvalSymlinks` first.
+`TestZoneinfoNamesFollowsALinkedRoot` builds macOS's two-link layout in
+a temporary directory, so the guard runs on every unix leg and not only
+on a Mac. It failed against the old walk (`got []`) and passes against
+the new one. `TestLiveMacTimezoneReadsThisMac` checks the real
+database: it failed on this Mac before the fix and passes after it.
+
+#### What this does not cover
+
+The write path is still not demonstrated here. Changing a zone needs
+root, and `TestLiveMacTimezoneSetsTheZoneAndPutsItBack` is written for
+the `macos` leg of `fleet.yml`. Until that leg has run it, the
+following are open:
+
+- Whether `systemsetup -settimezone` re-points `/etc/localtime`, which
+  is what the old fixture assumed and what the next run's reader needs.
+- Whether `systemsetup` exits non-zero on a zone it refuses. `setZone`
+  treats exit 0 as success, and nothing here has seen what
+  `systemsetup` does with a zone it does not recognise.
+- Whether `systemsetup` accepts every name the tz tree holds, including
+  the `backward` aliases such as `US/Pacific`.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

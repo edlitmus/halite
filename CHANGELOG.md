@@ -18,6 +18,14 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `timezone.list_zones` works on macOS, and so does the unknown-zone refusal
+
+On macOS, `/usr/share/zoneinfo` is a symlink. The module walked it
+without following it, so `timezone.list_zones` failed on every Mac, and
+`timezone.system` passed a misspelled zone to `systemsetup` instead of
+refusing it. Both work now. The write path on macOS is still not
+demonstrated. DIVERGENCE 5.131.
+
 ### `schedule.add` is arbitrary code, and the schedule functions honour `--test`
 
 Two fixes in the scheduling module, both found while asking what stops a

@@ -180,6 +180,39 @@ func TestZoneinfoNamesReturnsZonesAndNotTheTablesBesideThem(t *testing.T) {
 	}
 }
 
+// macOS keeps the tz database behind two links -- /usr/share/zoneinfo to
+// /var/db/timezone/zoneinfo to a versioned tree -- and WalkDir does not
+// follow a link at its root. This is that layout, built on any unix, so
+// the guard runs on every CI leg and not only the one that is a Mac: a
+// walk of the path as given finds no zones at all (DIVERGENCE 5.131).
+func TestZoneinfoNamesFollowsALinkedRoot(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the unix zone files do not exist on Windows")
+	}
+	dir := t.TempDir()
+	real := filepath.Join(dir, "tz", "2026c.1.0", "zoneinfo")
+	writeFile(t, filepath.Join(real, "America", "Los_Angeles"), "TZif")
+	writeFile(t, filepath.Join(real, "UTC"), "TZif")
+	middle := filepath.Join(dir, "db-zoneinfo")
+	if err := os.Symlink(real, middle); err != nil {
+		t.Fatal(err)
+	}
+	old := zoneinfoDir
+	zoneinfoDir = filepath.Join(dir, "share-zoneinfo")
+	defer func() { zoneinfoDir = old }()
+	if err := os.Symlink(middle, zoneinfoDir); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := zoneinfoNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "America/Los_Angeles|UTC"; strings.Join(got, "|") != want {
+		t.Errorf("got %v, want %s", got, want)
+	}
+}
+
 // The state is a state: it reports no change when the node already has
 // the zone, changes it when it does not, and reports no change again on
 // the run after that.
