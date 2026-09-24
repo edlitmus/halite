@@ -11680,6 +11680,110 @@ as expected, because the prepared tree is one the tools can read.
   removes the files that were demonstrated to work, and the choice
   between the two files in each pair is arbitrary.
 
+### 5.134 `mac_shadow.set_password` put the password in `ps`
+
+`mac_shadow.set_password` ran `dscl . -passwd /Users/<name>
+<password>`. The plaintext was in dscl's argv, which every local account
+can read through `ps` for as long as the call runs. On a node, that is
+every run that sets a password, and the run is as root. The module
+documented this as unavoidable: "macOS offers no standard-input path
+for it." That was an exculpatory conclusion nobody had tested, and
+dscl(1) contradicts it. It says passing passwords on the command line
+"is inherently insecure and can cause password exposure", and that
+dscl reads commands from standard input when none is given.
+
+Finding a stdin path that actually works took four attempts. Each
+attempt ran as root on the `macos` leg (macOS 15.7.9, build 24G830).
+Each was checked by authenticating with `dscl . -authonly` afterwards,
+and by confirming that a wrong password is refused, so that authonly
+is known to be able to say no. "Open Directory reports a password as
+set" was not enough, because it is also true of a wrong password.
+
+#### 1. dscl interactive mode, password on its command line: sets passwords nobody typed
+
+The obvious route is `passwd /Users/<name> <password>` on dscl's
+stdin. That hands the password to dscl's own tokeniser, which dscl(1)
+does not document.
+
+- **Double-quoted**, with `\` and `"` escaped: a password holding a
+  single quote failed with `eDSAuthFailed`. dscl treated `'` as a quote
+  even inside `"..."`, split the password in two, and took the two
+  words as passwd's *old* and new password.
+- **Backslash before every non-alphanumeric ASCII character**: six of
+  thirteen passwords (a leading `-`, a leading `#`, runs of spaces, a
+  lone quote, shell metacharacters, all of ASCII punctuation) came back
+  with **exit 0 and nothing on stdout or stderr, and then did not
+  authenticate**. dscl had set a password nobody typed, and said
+  nothing. On a node, that locks the account with a password nobody
+  has, and reports success.
+
+That second result is why the fix does not escape anything. Two more
+things were measured on the way and are recorded because they would
+bite the next attempt:
+
+- Interactive dscl **exits 0 when a command fails**. For a path that
+  does not exist it printed `passwd: Invalid Path` and
+  `<dscl_cmd> DS Error: -14009 (eDSUnknownNodeName)`, and exited 0.
+- A newline in the password would end one dscl command and start
+  another, as root.
+
+#### 2. dscl's own prompt, and `sysadminctl`: neither sets anything
+
+- `passwd /Users/<name>` with no password, the man page's "you will be
+  securely prompted": with no terminal it printed `New Password:`, then
+  its usage text, and set nothing.
+- `sysadminctl -resetPasswordFor <name> -newPassword -`: "Operation is
+  not permitted without secure token unlock". That is the normal state
+  of a node.
+
+#### 3. passwd(1): every password authenticates
+
+`passwd <name>`, with the password written twice on stdin for its two
+prompts. passwd reads a line and does not tokenise it. All thirteen
+passwords authenticated, including all of ASCII punctuation, a leading
+`-`, leading and trailing spaces, and non-ASCII, and none appeared in
+any argv. `argvWatch`, in the live test, fails the test if the
+password shows up in the argv of any command the module runs.
+
+passwd **also exits 0 when it refuses**. For an account that does not
+exist it printed `passwd: Unknown user name '<name>'.` on stderr and
+exited 0. So the module matches success, not failure: on a successful
+run stderr was exactly `New password:Retype new password:`, and
+anything else there is an error. A list of known error messages would
+pass the first one nobody had seen. The account is also looked up
+before passwd runs, so the commonest mistake gets a plain answer.
+
+A control character in the password, including a line break, is
+refused before anything runs, because passwd would end the password at
+it. So is a name that is not a plain account name, since a leading `-`
+is an option to passwd.
+
+`TestMacShadowSetPasswordKeepsThePasswordOutOfArgv` and
+`TestMacShadowSetPasswordReadsPasswdsStderrNotItsExit` run on every
+platform, and each fails when its half of the fix is removed (the
+password put back into the argv, or the stderr check dropped).
+`TestLiveMacShadowPasswordRoundTripsThroughStdin` is the live test.
+
+#### What this does not cover
+
+- **A tab in a password is refused**, along with every other control
+  character. That is conservative; nothing measured whether passwd
+  would carry one.
+- **A node with a terminal.** passwd might prompt on `/dev/tty` if it
+  has one. A node has no terminal, and neither did the runner. The call
+  has a timeout so that it fails rather than hangs if it ever does.
+- **FileVault and secure tokens.** passwd changed the password of an
+  account with no secure token. What it does to an account that has
+  one, or on a FileVault volume, was not run. dscl(1) warns that
+  FileVault needs the old password.
+- **The login keychain.** passwd prints that it does not update the
+  login keychain password. Neither did `dscl -passwd`, so this is not a
+  regression, but a tree that changes a real user's password leaves
+  that user's keychain locked with the old one.
+- **The live test's own authonly checks put the password in an argv.**
+  That is the test verifying a throwaway account's random password, and
+  it is not the module.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

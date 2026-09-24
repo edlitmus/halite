@@ -629,12 +629,17 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`group.present`, then removed and converged again (DIVERGENCE 5.115). Not covered: " +
 		"an explicitly requested gid, and the refusal to renumber a group that exists with a " +
 		"different one -- which is the branch that protects every file the group owns"},
-	"mac_shadow": {Level: exec.Hardware, Note: "`dscl . -passwd` set a real password on a real " +
-		"account on macOS 27.0 (build 26A5425a) under sudo, and Open Directory reported the " +
-		"account's password as set afterwards where it had not been before (DIVERGENCE " +
-		"5.115). The standing limit is not a gap in testing: `info` can report whether a hash " +
-		"is present and can never compare one, because dscl does not expose it. The password " +
-		"is passed as an argv and is visible in `ps` while the call runs"},
+	"mac_shadow": {Level: exec.Hardware, Note: "the old `dscl . -passwd` set a real password " +
+		"on macOS 27.0 (build 26A5425a) under sudo, and Open Directory reported it set (DIVERGENCE " +
+		"5.115). It is now set through passwd(1) reading standard input, so the plaintext is " +
+		"never in an argv. On a macOS 15.7.9 runner (build 24G830) under sudo, on the `macos` leg " +
+		"of `fleet.yml`, thirteen passwords (every ASCII punctuation character, leading `-` and " +
+		"`#`, leading and trailing spaces, non-ASCII) were each set and then authenticated with " +
+		"`dscl . -authonly`, and none appeared in any command's argv (DIVERGENCE 5.133). The " +
+		"standing limit is not a gap in testing: `info` can report whether a hash is present and " +
+		"can never compare one, because dscl does not expose it. Not covered: an account with a " +
+		"secure token or on a FileVault volume, and the login keychain, which passwd does not " +
+		"update"},
 
 	"mac_defaults": {Level: exec.Hardware, Note: "driven end to end against the real " +
 		"`defaults` on macOS 27.0 (build 26A5425a), including the two paths that made " +

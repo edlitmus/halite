@@ -4159,7 +4159,7 @@ mac_shadow.info(name: string)
 
 #### `mac_shadow.set_password`
 
-Set an account's password. macOS keeps no offline hash, so this takes a plaintext and runs `dscl . -passwd`, as Salt's does — which means the plaintext is briefly in the process table, because macOS offers no standard-input path for it.
+Set an account's password. macOS keeps no offline hash, so this takes a plaintext, and hands it to passwd(1) on standard input rather than as an argument, so it is not in the process table. A password with a line break or other control character is refused.
 
 ```
 mac_shadow.set_password(name: string, password: string)
