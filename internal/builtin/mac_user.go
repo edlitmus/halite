@@ -948,6 +948,9 @@ func macUserPresentState(c *exec.Context, args *value.Map) (states.Result, error
 	if spec.Name == "" {
 		return states.False("This state needs an account name."), nil
 	}
+	if why := removeGroupsUnsupported(spec); why != "" {
+		return states.False(why), nil
+	}
 	if spec.Password != "" {
 		return states.False(fmt.Sprintf(
 			"%s: a password hash cannot be applied on macOS — Open Directory keeps a "+
@@ -1020,7 +1023,11 @@ func macApplyUserChanges(c *exec.Context, spec userSpec, changes *value.Map) err
 		}
 	}
 	if changes.Has("groups") {
-		if err := macUserSetGroups(c, spec.Name, spec.Groups, true); err != nil {
+		// Append-only unless remove_groups, which is the same meaning the
+		// Linux and FreeBSD paths give `groups` (DIVERGENCE 5.135). This
+		// was always append-only, so a group dropped from a tree was
+		// never taken off a Mac account and there was no way to ask.
+		if err := macUserSetGroups(c, spec.Name, spec.Groups, !spec.RemoveGroups); err != nil {
 			return err
 		}
 	}
