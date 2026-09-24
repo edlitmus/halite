@@ -12201,6 +12201,124 @@ usage text advertises was accepted and ignored -- the
 accepted-and-does-nothing shape `InertKeys` exists to stop happening to
 settings, in a command line instead. It is wired now, and scrubbed.
 
+### 5.135 Four gates that read text where a check belonged
+
+The review's Tier 2: the guards that had stopped guarding. Each was
+verified here by breaking the thing it covers and watching it pass, then
+fixed and broken again.
+
+They share one shape, and it is worth naming before the four: **a text
+search standing in for a check.** `strings.Contains` over a file, a field
+or a comment, where a parse or a value comparison belongs. The same shape
+as 5.132's pillar rule, which read an expression's spelling rather than
+what it compiled to, and as 5.82's grain comparison. A search reads what
+somebody *wrote*; a check reads what the program *does*.
+
+#### The dependency allowlist had never run, anywhere
+
+`internal/buildpolicy`'s allowlist test shells `go list -m all`, which
+cannot succeed in a vendored repository:
+
+	go: can't compute 'all' using the vendor directory
+
+and the failure was treated as environmental -- `t.Skip`. It is not
+environmental; it is a property of this repository, so the test skipped on
+every machine including CI, and `make policy` runs without `-v`, so the
+skip printed nothing. `policy` is also the one CI leg that runs on a
+docs-only change, and CLAUDE.md names this test as what enforces SPEC 4.2.
+
+It reads `vendor/modules.txt` and `go.mod` now -- files, always readable,
+offline, on every platform -- and an unreadable source is `t.Fatal`,
+because the unreadable case is the one where the check has stopped
+checking. It logs what it checked, since "the allowlist passed" and "the
+allowlist read nothing" printed the same thing for as long as it skipped.
+
+Demonstrating it took three tries, and the failures are the interesting
+part. Adding `github.com/pkg/errors` to `vendor/modules.txt` alone, or to
+`go.mod` alone, does not reach the test at all: Go's own vendor
+consistency check refuses to build the package first. So the only way an
+unapproved dependency can arrive is fully vendored and consistent -- which
+is what `go mod vendor` produces, and which this test now fails on,
+naming the module and the file it was found in.
+
+#### `make release-gate` did not cover the module that runs anything
+
+The gate picks the modules it covers by looking for the substring `root`
+in `Privileges`, which is a free-text field. `cmd` declares **"whatever
+the command needs"** -- honest prose, containing no "root" -- so ten
+functions including `cmd.run`, `cmd.script` and `cmd.exec_code` sat
+outside the one check written to catch a module nobody has considered.
+`cmd` had **no evidence row at all**; the gate, once it could see the
+module, said so in its own words: *"cmd  no declaration at all; nobody has
+considered this module"*.
+
+23 mutating modules were outside the gate this way. The other 22 mutate as
+an unprivileged user, which is the gate's documented line, and they stay
+outside it.
+
+Two fixes rather than one. The field is a closed vocabulary now --
+`PrivRoot`, `PrivRootForOthers`, `PrivCaller` -- held by a test, so a new
+module cannot invent a phrase that the gate will not recognise; there were
+only ever three distinct strings, so this cost nothing but the naming. And
+the gate asks a named predicate, `NeedsPrivilege`, rather than searching
+prose.
+
+`cmd`'s row is written to what has actually been run: real binaries and
+real shells through `exec.OSRunner` across this package's tests, on every
+platform CI builds for, with `RunAs` watched on the macOS leg -- where it
+found an account in more than sixteen groups failing as `fork/exec`
+(5.120). Three limits named, including that there is no single tool to
+capture, because what `cmd` drives is whatever the caller names.
+
+#### The build-integrity gate read the comment it was copied from
+
+`TestBuildRecipePinsIntegrityFlags` searched the whole Makefile for five
+flags. The Makefile opens with a comment block listing all five -- the
+block the test was written from. Strip `-trimpath`, `CGO_ENABLED=0` and
+`GOPROXY=off` from the actual recipe and it stayed green: the gate was
+reading its own documentation.
+
+It drops comment lines first, and asks *where* rather than *whether*: each
+flag against the variable that carries it (`RELEASE_ENV`, `BUILDFLAGS`),
+and the release target against using both. A flag set in some unrelated
+recipe is not a flag on the artifact.
+
+#### The `ext.Confine()` audit was a text search
+
+`strings.Contains(source, "ext.Confine()")`, so the defect it was written
+for -- the shipped extension running unbounded while `sys.list_extensions`
+reported limits as in force -- reinstates by putting `//` in front of the
+line. Demonstrated exactly that way.
+
+It parses now, and requires a call from `main`: the limits bound the
+calling process, so a call in a helper nobody invokes reads identically to
+a call that happens.
+
+#### SPEC 31's Upgrade row was three comments
+
+The audit finds `upgrade:<name>` markers in test files and took their
+presence as coverage. Delete all 596 lines of a covering file's test
+bodies, leave the markers, and it passed -- while logging the covering
+files by name, which is the part that would have reassured a reader.
+
+A marker is a claim, and the claim is checked now: the file carrying one
+must hold test functions that parse to more than a trivial body. The
+threshold is deliberately far below the real ones -- the two covering
+files parse to 2,426 and 1,726 syntax nodes across eleven tests, against a
+floor of 40 -- because this guards against a body that has been emptied,
+not against a thin test. Nothing static can tell a thorough test from a
+weak one; it can tell a test from a comment.
+
+#### What is left of the review's Tier 2
+
+Two rows, both larger than these and neither fixed here: the conformance
+harness covers **6 state functions of 132** while `internal/states`
+claims every state module passes it, and `firewall` is `Hardware` with no
+`TestLive*` anywhere while 22 live tests match no leg's `-run` filter. The
+first is what would have caught all three defects in 5.133; the second is
+a coverage claim rather than a defect. Both are recorded in plan.md rather
+than done.
+
 
 ### 5.138 `user.present` stripped hand-added groups on Linux and FreeBSD
 

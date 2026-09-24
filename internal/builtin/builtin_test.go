@@ -714,3 +714,56 @@ func registrationName(line, prefix string) (string, bool) {
 	}
 	return name, true
 }
+
+// Every declared privilege is one the gate recognises.
+//
+// `make release-gate` decides what it covers by reading these strings, and
+// it read them with `strings.Contains(p, "root")`. `cmd` declares
+// "whatever the command needs" — honest prose, containing no "root" — so
+// ten functions including `cmd.run`, `cmd.script` and `cmd.exec_code` sat
+// outside the one check written to catch a module nobody has considered,
+// and `cmd` had no evidence row at all. 23 mutating modules were out of
+// scope that way; this closes the door on a new one arriving the same way,
+// by making the field a vocabulary rather than prose. DIVERGENCE 5.135.
+func TestEveryPrivilegeIsOneTheGateKnows(t *testing.T) {
+	known := map[string]bool{
+		signature.PrivRoot:          true,
+		signature.PrivRootForOthers: true,
+		signature.PrivCaller:        true,
+	}
+	r := New()
+	seen := 0
+	for _, name := range r.Exec.Signatures().Names() {
+		sig, _ := r.Exec.Signatures().Lookup(name)
+		for _, p := range sig.Privileges {
+			seen++
+			if !known[p] {
+				t.Errorf("%s declares the privilege %q, which is not one of the vocabulary in "+
+					"internal/signature. The release gate reads this field to decide what it "+
+					"covers, so a phrase it does not know is a way past it: use PrivRoot, "+
+					"PrivRootForOthers or PrivCaller, or add a constant and teach "+
+					"NeedsPrivilege about it.", name, p)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no function declares a privilege, so this check has stopped checking")
+	}
+	t.Logf("checked %d privilege declaration(s)", seen)
+}
+
+// And the gate covers the module that can run anything.
+func TestTheReleaseGateCoversArbitraryCode(t *testing.T) {
+	for _, m := range New().Trust() {
+		if m.Module == "cmd" {
+			if !m.Root {
+				t.Error("`cmd` is outside the release gate, and it runs whatever it is given")
+			}
+			if !m.Demonstrated {
+				t.Error("`cmd` has no evidence declaration")
+			}
+			return
+		}
+	}
+	t.Fatal("`cmd` is not in the trust table at all")
+}
