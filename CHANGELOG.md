@@ -46,6 +46,49 @@ local user could read it with `ps` while the call ran. It now goes to
   0 even when it refuses.
 
 The login keychain is still not updated, as before. DIVERGENCE 5.134.
+### Documentation an operator acts on, audited against the code
+
+Six claims in the reference were false. Each is fixed, and each is now
+held by a test rather than by care.
+
+- **`job_queue_depth` was documented as `100`.** The node uses `16`.
+  `docs/configuration.md` is generated from the key table, so it printed
+  the table's number faithfully and nothing compared the table to the
+  program. `listen` was wrong the other way: declared `:4510`, which is
+  the hub's and not the API's `:4511`.
+- **`yaml_bool_11` was documented inverted.** It defaults to **on**, and
+  `docs/from-salt.md` said `yes`, `no`, `on` and `off` were strings unless
+  you turned it on. The setting you reach for after auditing a tree is
+  `yaml_bool_11: false`. The reference also listed `y` and `n`, which the
+  resolver deliberately does not match, because PyYAML does not either.
+- **The `halite-node` manual page documented `state show`.** There is no
+  such subcommand; it is `show_highstate`, `show_lowstate`, `show_top`,
+  `show_sls` or `show_states`.
+- **Two commands the command reference calls `works` do not run.**
+  `halite-hub migrate --cmd-default-shell` is now
+  `--no-cmd-default-shell`, and `halite-hub runner reactor.test` takes
+  `tag=` and `data=` rather than `--tag` and `--data`.
+- **Platform claims from before the macOS live leg.** Three pages still
+  said the macOS code had been run on nothing. All seven `mac_*` modules
+  are `hardware`, and the pages now point at `sys.evidence` on the node in
+  front of you for the per-module answer.
+
+### `sysrc` has been driven against the real `sysrc(8)`
+
+Its evidence note claimed it read a real `rc.conf` through the real
+`sysrc` on CI's FreeBSD runner. It did not: the test installs a recording
+runner, so on that runner it ran beside a real `sysrc` and never called
+it. The level went back to `Assumed`, which is what it always was.
+
+A live test now drives the real tool against an `rc.conf` in a directory
+the test owns, on FreeBSD's CI leg: `sysrc.set` writes the setting and
+both the real `sysrc -n` and the file on disk are read to confirm it, a
+dry run changes nothing, and `sysrc.absent` removes it. The module is
+`hardware` on that run.
+
+Nothing about the module changed. Its first run did find a defect, in the
+test: the opening assertion expected `sysrc.get` to fail for a setting
+that is not there, where it documents an empty string.
 
 ### `hostname` on macOS keeps the name a Mac boots with
 
@@ -98,6 +141,91 @@ The macOS branch had never been run, and running it found four defects:
 
 A Mac cannot be set to `UTC` through `systemsetup`. Use `GMT`.
 DIVERGENCE 5.131.
+### `timeout: "900"` on cmd.run meant no timeout at all
+
+A quoted number — which is what a template produces, since
+`timeout: {{ pillar['deploy_timeout'] }}` is a string however the pillar
+spelled it — failed `cmd.run`'s duration parse, and the error was
+discarded. The deadline stayed unset, and an unset deadline is no deadline:
+a state that asked for a bounded command got an unbounded one. The state
+compiler accepted the same word in the same file.
+
+One parser now, shared, accepting both `15m` and `900`, and a timeout that
+cannot be read stops the command instead of quietly meaning nothing.
+
+### The redactor did not cover halite's own map type
+
+`ScrubValue` handled Go maps and slices and fell through on the ordered map
+of the nine-type model — which is what a state's changes, a pillar
+fragment, a grain set and a `--out json` report all are. Callers that
+handed one over got it back unscrubbed, having called the right function.
+Keys are scrubbed as well as values now.
+
+### `halite-node doctor` printed through no redactor
+
+The hub's has scrubbed since the pillar check learned to quote a
+compilation error; the node's did not, and the node compiles its whole tree,
+so it reaches more encrypted blocks than the hub. Both output paths are
+scrubbed now. `halite-node doctor --out json` printed a pillar file's path
+and its decryption error verbatim before this.
+
+While there: `halite-hub doctor --out json` printed the table. The function
+for it existed and was called from nowhere, so the flag was accepted and
+ignored. It works now.
+
+### `--test` was not read-only in the state layer either
+
+Three more, from the other end of the same question the audit below asked.
+
+**`check_cmd` ran during a dry run — and reported a failure that was not
+there.** The generic form runs after the state, to validate what is now on
+disk; under `--test` nothing was written, so it validated the state you
+were asking to change. A `check_cmd: nginx -t` on the configuration you are
+deploying *because* the running one is broken reported the dry run as a
+failure, and so did a `visudo -c -f` on a file that does not exist yet. It
+is skipped now, and the result says it was skipped rather than leaving a
+clean `--test` to read as your check having passed.
+
+**`git.latest` fetched under `--test`.** The comment said a fetch "changes
+nothing in the working tree", which is true of the working tree and false
+of the repository: measured against the real git, seven files under `.git`,
+the remote-tracking ref moved, and a tag created that was not there before.
+A dry run now resolves the commit with `git ls-remote`, which asks the same
+question over the same network and writes nothing — so the prediction is
+unchanged.
+
+**`grains.absent` with `destructive` could not converge.** It deleted this
+node's entry, masked the underlying value with a null, and then on the next
+run deleted the mask, uncovered the value and masked it again: mask,
+delete, mask, delete, for ever, reporting a change every time. It converges
+on the second run now, and the null stays — removing it would uncover the
+value you asked to be rid of.
+
+### A nodegroup could hide an untrusted grain from the pillar rule
+
+**Security.** A pillar top file may target only on trusted grains — a node
+controls its own grains, so targeting pillar on an untrusted one lets a
+node ask for another node's secrets. The rule was enforced by reading the
+expression's text, and a nodegroup's expansion happens afterwards, inside
+the compiler. `G@role:db` was refused; `N@dbservers`, defined as exactly
+that, was not.
+
+The negated form is the one to check your trees for. A pillar target
+evaluates against the trusted grains alone, so an untrusted term is always
+false and its negation is always true: a top file saying "everything
+except the database hosts", written as a nodegroup, delivered the secret
+**to the database hosts** and to everything else, silently.
+
+The pillar compiler now asks the compiled target what it consults instead
+of reading its text, so an expansion is covered by construction. Two
+smaller faults went with it: a grain name that ended at `:` or a space, so
+`not (G@fips_mode)` was refused as the grain `fips_mode)`; and the audit
+record filing a grain-based delivery as a name match.
+
+If you use nodegroups in a pillar top file, a compile will now tell you
+which grains they rely on and refuse the ones that are not in
+`pillar_trusted_grains`.
+
 ### Twenty-one functions that said they honoured `--test` and did not
 
 `--test` must change nothing, and 271 execution functions carried that

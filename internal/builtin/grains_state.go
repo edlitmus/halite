@@ -137,13 +137,36 @@ func grainsAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 	if err != nil {
 		return states.False(fmt.Sprintf("%s could not be read back: %v", name, err)), nil
 	}
-	_, ours := lookupGrain(held, path)
+	ourValue, ours := lookupGrain(held, path)
 
-	// Already null, and nothing of this node's own to delete: there is
-	// nothing to do. Salt says "Grain is already set" here, which reads
-	// oddly and means "already in the state you asked for".
-	if current == nil && !(destructive && ours) {
-		return states.True(fmt.Sprintf("Grain %s is already set.", name)), nil
+	if current == nil {
+		// Already null, and nothing of this node's own to delete: there
+		// is nothing to do. Salt says "Grain is already set" here, which
+		// reads oddly and means "already in the state you asked for".
+		if !destructive || !ours {
+			return states.True(fmt.Sprintf("Grain %s is already set.", name)), nil
+		}
+		// `destructive` with an entry of our own that is *already the
+		// null* is as far as a deletion can go, and saying so is what
+		// stops this state oscillating for ever.
+		//
+		// It did oscillate. The apply path below deletes this node's
+		// entry and then, where the grain is still visible from a file
+		// this state does not own, writes a null to mask it -- and the
+		// next run saw "null, and an entry of ours", deleted the mask,
+		// uncovered the value, and masked it again. Measured over five
+		// runs: mask, delete, mask, delete, mask, a change reported every
+		// time. A state that cannot converge is worse than one that
+		// fails, because nothing about it looks wrong.
+		//
+		// The key stays in the file, holding null. That is the honest end
+		// state rather than a deletion: removing it would uncover the
+		// value the operator asked to be rid of.
+		if ourValue == nil {
+			return states.True(fmt.Sprintf(
+				"Grain %s is already null. Its value comes from a file this state does not "+
+					"own, so a null of this node's own is as far as a deletion can go.", name)), nil
+		}
 	}
 
 	changes := value.NewMap(1)

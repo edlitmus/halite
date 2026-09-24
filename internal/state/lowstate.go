@@ -480,20 +480,7 @@ func asStringList(v any, pos value.Pos, d *Decl, name string, diags *Diags) []st
 	}
 }
 
-func asDuration(v any) (time.Duration, error) {
-	switch t := v.(type) {
-	case int64:
-		return time.Duration(t) * time.Second, nil
-	case float64:
-		return time.Duration(t * float64(time.Second)), nil
-	case string:
-		if d, err := time.ParseDuration(t); err == nil {
-			return d, nil
-		}
-		if n, err := strconv.ParseFloat(t, 64); err == nil {
-			return time.Duration(n * float64(time.Second)), nil
-		}
-		return 0, fmt.Errorf("%q is not a duration", t)
-	}
-	return 0, fmt.Errorf("%s is not a duration", value.TypeName(v))
-}
+// asDuration reads a duration option. One rule, in value.ParseDuration:
+// this had its own copy and `cmd.run` had another, and they disagreed
+// about a bare number of seconds. DIVERGENCE 5.139.
+func asDuration(v any) (time.Duration, error) { return value.ParseDuration(v) }

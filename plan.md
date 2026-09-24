@@ -1338,6 +1338,29 @@ unchanged.
    tell which they have. A fourth level would say it; so would a sentence
    in each affected function's documentation.
 
+7a. **The conformance harness covers 6 state functions of 132**, while
+   `internal/states/states.go` says in its package comment that every
+   state module must pass it. Raised by the review behind DIVERGENCE 5.140
+   and left undone there, because it is the largest item in that report and
+   the most valuable: a `Probe` case on `check_cmd` or on
+   `grains.absent --destructive` would have caught both of 5.137's defects
+   immediately, and a convergence case would have caught the third.
+
+   What makes it work is not writing 126 more cases by hand. The harness
+   already knows how to drive a state twice and assert the second run
+   changes nothing; what it lacks is a way to *reach* each state with
+   arguments that make sense, which is the same problem 5.131's audit
+   solved for execution functions by synthesising from the signature and
+   then reporting honestly how many it could not reach.
+
+7b. **A coverage claim nobody measured.** `firewall` is `Hardware` with no
+   `TestLive*` anywhere, so the FreeBSD leg's broad `-run TestLive` selects
+   nothing for it; 22 live tests match no leg's `-run` filter at all,
+   including the two `TestLiveSnap*` written because the `snap list`
+   fixtures had been taken from documentation. The analysis behind this is
+   read off `run.sh` and the filters rather than observed on a runner, and
+   it should be checked on one before anything is moved.
+
 8. **`module.run` argument pass-through.** Salt passes unknown kwargs
    through to the function being run; this build validates against a
    fixed parameter list. Strict validation is right for every other state

@@ -313,7 +313,7 @@ are signed are in [Operations](operations.md#signing-a-job).
 | no equivalent | `halite-hub migrate /srv/salt --pillar-root /srv/pillar` | works |
 | no equivalent | `halite-hub migrate /srv/salt --salt-config /etc/salt/master` | works | <!-- lexicon:allow -->
 | no equivalent | `halite-hub migrate /srv/salt --fail-on review` | works |
-| no equivalent | `halite-hub migrate /srv/salt --cmd-default-shell` | works |
+| no equivalent | `halite-hub migrate /srv/salt --no-cmd-default-shell` | works |
 | no equivalent | `halite-hub migrate /srv/salt --bridge-skeleton ./bridges` | works |
 | `salt-call --local state.show_sls web` (to find errors) | `halite-node lint /srv/salt/web.sls` | works |
 | no equivalent | `halite-hub lint /srv/salt/web.sls` | works |
@@ -1112,7 +1112,7 @@ record_it:
 | `wheel.<function>` | same, against one hub-function namespace | works |
 | `caller.<function>` | same, on the node that fired the event | works |
 | `salt-run reactor.list` | `halite-hub runner reactor.list` | works |
-| no equivalent | `halite-hub runner reactor.test --tag … --data …` | works |
+| no equivalent | `halite-hub runner reactor.test tag=… data=…` | works |
 | the reactor runs with full master privilege | each entry names a `principal`, denied by default | works | <!-- lexicon:allow -->
 | single-threaded and serialized | worker pool, bounded queue, ordering by causality chain | works |
 | no equivalent | `debounce`, `dedupe_window`, `rate_limit` per glob | works |

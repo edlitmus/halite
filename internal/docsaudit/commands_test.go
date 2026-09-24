@@ -288,3 +288,90 @@ func TestEachManualPageHasItsPreamble(t *testing.T) {
 		}
 	}
 }
+
+// A subcommand a manual page names exists.
+//
+// The audits above read the code and check the documentation mentions it.
+// Nothing read the documentation and checked the code — so
+// `contrib/man/halite-node.8` documented a `state show` subcommand that has
+// never existed, beside the five that do (`show_top`, `show_highstate`,
+// `show_sls`, `show_lowstate`, `show_states`). The binary's own error
+// message lists the real ones; the manual page is what an operator has on a
+// machine built from source, and it sent them to a word the program
+// refuses. DIVERGENCE 5.142.
+//
+// The rule is deliberately loose: a word written as `.Cm <parent> <child>`,
+// where the parent is a real top-level subcommand, must appear somewhere in
+// that binary's package as a quoted word. That is not proof the pairing is
+// valid — `keys token create` and `keys signer create` share the word
+// `create` — but it catches a word the program does not know at all, which
+// is the defect this found.
+//
+// Quoted words rather than `case` labels, because not every dispatch is a
+// switch: `event send` is `if args.Positional[0] != "send"`, and a first
+// version of this audit reported that real subcommand as missing. An audit
+// that assumes one shape of dispatch finds the shapes it assumed.
+func TestEverySubcommandAManualPageNamesExists(t *testing.T) {
+	root := repoRoot(t)
+	nested := regexp.MustCompile(`(?m)^\.(?:It )?Cm ([a-z][a-z-]*) ([a-z][a-z_-]*)`)
+
+	checked := 0
+	for _, binary := range []string{"halite-node", "halite-hub", "halite-api"} {
+		page := readDoc(t, filepath.Join(root, "contrib", "man", binary+".8"))
+
+		top := map[string]bool{}
+		for _, sub := range subcommandsOf(t, root, binary) {
+			top[sub] = true
+		}
+		words := quotedWordsIn(t, filepath.Join(root, "cmd", binary))
+
+		for _, m := range nested.FindAllStringSubmatch(page, -1) {
+			parent, child := m[1], m[2]
+			if !top[parent] {
+				// Not a subcommand pairing: `.Cm halite-node enroll` and
+				// the like name the binary, and a flag is `.Fl`.
+				continue
+			}
+			checked++
+			if !words[child] {
+				t.Errorf("contrib/man/%s.8 documents `%s %s`, and the word %q appears "+
+					"nowhere in %s's package — so the page names a word the program does "+
+					"not know. An operator on a machine built from source has the page and "+
+					"nothing else.", binary, parent, child, child, binary)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no nested subcommand was read out of the manual pages; this check has " +
+			"stopped checking")
+	}
+	t.Logf("checked %d documented subcommand pairing(s)", checked)
+}
+
+// quotedWordsIn collects every quoted lowercase word in a package, which is
+// the vocabulary it can possibly answer to.
+func quotedWordsIn(t *testing.T, dir string) map[string]bool {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("%s: %v", dir, err)
+	}
+	word := regexp.MustCompile(`"([a-z][a-z_-]*)"`)
+	out := map[string]bool{}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range word.FindAllStringSubmatch(string(body), -1) {
+			out[w[1]] = true
+		}
+	}
+	if len(out) == 0 {
+		t.Fatalf("no quoted words were read from %s", dir)
+	}
+	return out
+}

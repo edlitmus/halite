@@ -237,12 +237,21 @@ func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 		}
 		for _, te := range targets.Entries() {
 			expr := value.KeyString(te.Key)
-			basis, err := c.checkTargetIsPermitted(expr, state.TopMatchKind(te.Val))
+			// Compiled before it is judged, and judged on what it
+			// compiled to.
+			//
+			// The other order is what let a nodegroup carry an untrusted
+			// grain past SPEC 12.4: the check read the expression's text
+			// and the expansion happened afterwards, inside the compiler.
+			// An expression that does not compile is reported as that,
+			// which is also the right answer -- there is nothing to judge
+			// about terms nobody could parse. DIVERGENCE 5.136.
+			matcher, err := state.CompileTopTarget(expr, te.Val, c.Config.Nodegroups)
 			if err != nil {
 				out.Diags.Add(te.KeyPos, state.TopName, "", "%v", err)
 				continue
 			}
-			matcher, err := state.CompileTopTarget(expr, te.Val, c.Config.Nodegroups)
+			basis, err := c.checkTargetIsPermitted(expr, matcher)
 			if err != nil {
 				out.Diags.Add(te.KeyPos, state.TopName, "", "%v", err)
 				continue
@@ -266,81 +275,53 @@ func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 // checkTargetIsPermitted refuses a pillar top expression that targets on
 // pillar, and reports which grains an expression relies on so that an
 // untrusted one can be refused by name.
-func (c *Compiler) checkTargetIsPermitted(expr, matchKind string) (string, error) {
-	// Pillar cannot target on pillar: it does not exist yet, and
-	// pretending it does produces an ordering-dependent result. SPEC
-	// section 12.4.
-	for _, sigil := range []string{"I@", "J@"} {
-		if strings.Contains(expr, sigil) {
-			return "", fmt.Errorf(
-				"pillar top expression %q targets on pillar, which is not available while pillar is being compiled", expr)
-		}
-	}
-
-	if matchKind == "pillar" || matchKind == "pillar_pcre" {
-		return "", fmt.Errorf(
-			"pillar top expression %q targets on pillar, which is not available while pillar is being compiled", expr)
-	}
-
-	grains := grainNamesIn(expr)
-	// `- match: grain` names the grain in the expression rather than
-	// with a G@ sigil, and is the spelling an existing Salt tree uses.
-	// Missing it meant the rule of SPEC 12.4 was neither enforced nor
-	// reported: the target compiled, matched nothing, because the node a
-	// pillar target sees carries only the trusted grains, and the file
-	// was silently absent from the pillar.
-	if matchKind == "grain" || matchKind == "grain_pcre" {
-		name, _, _ := strings.Cut(expr, ":")
-		if name != "" {
-			grains = append(grains, name)
-		}
-	}
-	if len(grains) == 0 {
-		return "glob", nil
-	}
+func (c *Compiler) checkTargetIsPermitted(expr string, matcher *target.Matcher) (string, error) {
 	trusted := map[string]bool{}
 	for _, g := range c.trusted() {
 		trusted[g] = true
 	}
+
 	var untrusted []string
-	for _, g := range grains {
-		// A `node:` path is hub-authoritative and always permitted.
-		if strings.HasPrefix(g, "node:") || g == "node" {
-			continue
-		}
-		if !trusted[g] {
-			untrusted = append(untrusted, g)
+	basis := "glob"
+	for _, term := range matcher.Terms() {
+		switch term.Kind {
+		case target.Pillar, target.PillarRegex:
+			// Pillar cannot target on pillar: it does not exist yet, and
+			// pretending it does produces an ordering-dependent result.
+			// SPEC section 12.4.
+			return "", fmt.Errorf(
+				"pillar top expression %q targets on pillar, which is not available while pillar is being compiled", expr)
+
+		case target.Grain, target.GrainRegex:
+			basis = "grain"
+			// A `node:` path is hub-authoritative and always permitted.
+			if term.Key == "node" || strings.HasPrefix(term.Key, "node:") {
+				continue
+			}
+			if !trusted[term.Key] {
+				untrusted = append(untrusted, term.Key)
+			}
 		}
 	}
+
 	if len(untrusted) > 0 {
 		sort.Strings(untrusted)
+		untrusted = dedupe(untrusted)
 		return "", fmt.Errorf(
 			"pillar top expression %q targets on the grain(s) %s, which a node controls and which are not in pillar_trusted_grains; "+
 				"add them deliberately, or move the attribute to a hub-authoritative node attribute (SPEC section 12.4)",
 			expr, strings.Join(untrusted, ", "))
 	}
-	return "grain", nil
+	return basis, nil
 }
 
-// grainNamesIn extracts the grain names a target expression relies on.
-func grainNamesIn(expr string) []string {
-	var out []string
-	for _, sigil := range []string{"G@", "P@"} {
-		off := 0
-		for {
-			i := strings.Index(expr[off:], sigil)
-			if i < 0 {
-				break
-			}
-			rest := expr[off+i+len(sigil):]
-			end := strings.IndexAny(rest, ": ")
-			if end < 0 {
-				end = len(rest)
-			}
-			if end > 0 {
-				out = append(out, rest[:end])
-			}
-			off += i + len(sigil)
+// dedupe removes repeats from a sorted list, so that an expression naming
+// the same untrusted grain twice reports it once.
+func dedupe(sorted []string) []string {
+	out := sorted[:0]
+	for i, s := range sorted {
+		if i == 0 || s != sorted[i-1] {
+			out = append(out, s)
 		}
 	}
 	return out

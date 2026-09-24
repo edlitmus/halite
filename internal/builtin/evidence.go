@@ -92,6 +92,23 @@ var moduleEvidence = map[string]exec.Evidence{
 		"test fail. Not covered there: `list_upgrades` parsed an empty answer because the " +
 		"instance had nothing to upgrade, and `pkg.upgrade` was not run at all " +
 		"(DIVERGENCE 5.124)"},
+	// `cmd` had no row at all until the gate could see it. It was outside
+	// the selection because that read `strings.Contains(p, "root")` over
+	// the free-text Privileges field, and `cmd` says "whatever the command
+	// needs" -- so the module that runs arbitrary code was outside the one
+	// check written to catch a module nobody had considered. DIVERGENCE
+	// 5.140.
+	"cmd": {Level: exec.Hardware, Note: "runs real binaries and real shells through " +
+		"`exec.OSRunner` throughout this package's tests -- `cmd.script` writing, running and " +
+		"removing a real script, `cmd.exec_code`, the background form returning a real pid, and " +
+		"the shell path saying so -- on every platform CI builds for, and the estate's own tree " +
+		"drives `cmd.run` at 54 call sites. `RunAs` is the part that needs root and it has been " +
+		"watched on the macOS leg, where it found an account in more than sixteen groups failing " +
+		"as fork/exec (5.120). Three limits: `umask` is exercised by unit tests rather than by " +
+		"watching a file's mode on a real run as root; the Windows shell path is built and its " +
+		"quoting is unverified against cmd.exe; and there is no single tool to capture here, " +
+		"because what this module drives is whatever the caller names",
+	},
 	"file": {Level: exec.Hardware, Note: "writes, reads, moves, links and removes real files " +
 		"on a real filesystem throughout this package's tests, and `patch` drives the real " +
 		"`patch` binary -- which is where running it found that an already-applied patch is " +
@@ -548,8 +565,36 @@ var moduleEvidence = map[string]exec.Evidence{
 		"where the conventional path differs and no CI leg reads it as root; and Salt's " +
 		"`sudo.salt_call`, deliberately not built, because `cmd.run` already takes a `runas` and " +
 		"applies it with setuid rather than through a second privilege system"},
-	"sysrc": {Level: exec.Captured, Note: "reads real rc.conf through the real `sysrc` on " +
-		"CI's FreeBSD runner; nothing has watched this module write one"},
+	// It was `Captured` on a claim it had not earned, and is `Hardware` on
+	// one it has. Both halves are worth keeping, because the first is how
+	// the second came to be necessary.
+	//
+	// The old note said this module "reads real rc.conf through the real
+	// `sysrc` on CI's FreeBSD runner". Its only test swaps in a
+	// RecordingRunner, so on that runner it ran *beside* a real sysrc and
+	// never called it: `c.Which("sysrc")` decided whether the test ran and
+	// the recorder decided what it saw, which reads exactly like a test
+	// that uses the tool. DIVERGENCE 5.142.
+	//
+	// `TestLiveSysrcWritesAndReadsBackARealRCConf` replaced it and found a
+	// defect on the first run it ever did -- in itself. Its opening
+	// assertion expected `sysrc.get` to *error* on a setting that is not
+	// there, where the function documents an empty string, so the leg
+	// refused the test rather than the module. That is the leg earning its
+	// cost: the other five assertions, including both mutating ones,
+	// passed against the real tool on the first attempt.
+	"sysrc": {Level: exec.Hardware, Note: "**driven against the real `sysrc(8)`** on CI's " +
+		"FreeBSD runner (run 36053810550, 2026-09-24), against an rc.conf in a directory the " +
+		"test owns -- `sysrc -f <file>` is the tool's own way of working somewhere other than " +
+		"/etc/rc.conf. `sysrc.set` wrote the setting and **both** the real `sysrc -n` and the " +
+		"file on disk were read to confirm it, because a tool agreeing with itself establishes " +
+		"only half of it; a dry run then changed nothing, measured the same way; and " +
+		"`sysrc.absent` removed the setting from the real file. The reader was checked against " +
+		"the writer *and* against the tool. Not covered: /etc/rc.conf itself, deliberately -- " +
+		"nothing in CI writes the file that decides whether the runner boots; `sysrc.show`'s " +
+		"`-a` parse, which no live test reads; and the distinction between a setting that is " +
+		"unset and one set to the empty string, which `sysrc.get` flattens by design and the " +
+		"state functions do not"},
 	// `pam` has no tool to drive, which is why its note reads
 	// differently from every other one here. PAM is a library the login
 	// programs link, not a program this module runs, so there is no
@@ -695,10 +740,13 @@ func (r *Registries) Trust() []doctor.ModuleTrust {
 		}
 		module, _, _ := strings.Cut(fn, ".")
 		mutating[module] = true
-		for _, p := range sig.Privileges {
-			if strings.Contains(p, "root") {
-				needsRoot[module] = true
-			}
+		// One named predicate, not a substring over prose. `cmd`
+		// declares "whatever the command needs", which contains no
+		// "root" -- so the module that runs arbitrary code was outside
+		// the gate written to catch a module nobody had considered, and
+		// had no evidence row at all. DIVERGENCE 5.140.
+		if sig.NeedsPrivilege() {
+			needsRoot[module] = true
 		}
 	}
 	names := make([]string, 0, len(mutating))

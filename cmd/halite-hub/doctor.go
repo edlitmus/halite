@@ -68,10 +68,26 @@ func runDoctor(args *cli.Args) int {
 		hubFIPSCheck(),
 	})
 
-	fmt.Printf("halite-hub doctor — %s\n\n", shown)
 	// Scrubbed on the way out. `doctor` prints what a check found, and
 	// the pillar check's finding is a compilation error that can name a
 	// decrypted value; nothing else here writes to the terminal.
+	//
+	// `--out json` reaches this now. `doctorValue` was written for it and
+	// called from nowhere, so the flag the usage text advertises was
+	// accepted and ignored: a hub asked for JSON printed the table, which
+	// is the accepted-and-does-nothing shape `InertKeys` exists to stop
+	// happening to settings. DIVERGENCE 5.139.
+	format, err := cli.ParseFormat(args.Flag("out", "summary"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	if format == cli.JSON || format == cli.YAML {
+		if err := cli.Write(os.Stdout, secrets.ScrubValue(doctorValue(report)), format, 0); err != nil {
+			cli.Fatalf("%v", err)
+		}
+		return report.ExitCode()
+	}
+	fmt.Printf("halite-hub doctor — %s\n\n", shown)
 	fmt.Print(secrets.Scrub(report.Text()))
 	return report.ExitCode()
 }

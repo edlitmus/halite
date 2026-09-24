@@ -516,10 +516,17 @@ covers them in full:
    should not.
 3. **`functions: ['*']` does not include the arbitrary-code functions.**
    Name them or do not get them.
-4. **YAML 1.1 booleans are off.** `yes`, `no`, `on`, `off` are strings
-   unless you set `yaml_bool_11: true`. A tree that says `enabled: no`
-   and means `false` needs that setting, and it is worth grepping for
-   before you turn it on.
+4. **YAML 1.1 booleans are on, and warn.** `yes`, `no`, `on`, `off`
+   resolve to booleans, as PyYAML and therefore Salt do — so a tree that
+   says `enabled: no` and means `false` keeps working. Every one of them
+   produces a warning naming the file and line, which is the list to grep
+   your tree with; `yaml_bool_11: false` switches to YAML 1.2 semantics,
+   where `no` is the string, and it is what you set *after* the audit
+   rather than before it.
+
+   This paragraph used to say the opposite — that the words were strings
+   unless you set `yaml_bool_11: true` — which made the advice a no-op and
+   the stated behaviour inverted.
 5. **The hub runs unprivileged.** Salt's daemon ran as root and read
    whatever it liked. <!-- lexicon:allow --> Every directory the hub
    touches — its PKI, its state, its cache, its GPG keyring — has to be

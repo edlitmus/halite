@@ -192,6 +192,29 @@ func (s *Set) ScrubValue(v any) any {
 			out[k] = s.ScrubValue(item)
 		}
 		return out
+	case *value.Map:
+		// The ordered map of the nine-type model, which is what almost
+		// everything structured in this project actually is: a state's
+		// changes, a pillar fragment, a grain set, a doctor report
+		// rendered for `--out json`.
+		//
+		// It was missing, so every one of those passed through this
+		// function unchanged -- the redactor silently doing nothing to
+		// the project's own central type, while the caller had done the
+		// right thing by calling it. A scrub that cannot see the shape
+		// it is handed is worse than no scrub, because the call site
+		// reads as protection. DIVERGENCE 5.139.
+		//
+		// The keys are scrubbed as well as the values. A key can carry a
+		// secret -- a pillar mapping keyed by a token, a grain whose name
+		// came from a decrypted value -- and leaving them would be the
+		// same fault one level down. Positions are carried over, because
+		// they are what a diagnostic quotes.
+		out := value.NewMap(t.Len())
+		for _, e := range t.Entries() {
+			out.SetAt(s.ScrubValue(e.Key), s.ScrubValue(e.Val), e.KeyPos, e.ValPos)
+		}
+		return out
 	}
 	return v
 }

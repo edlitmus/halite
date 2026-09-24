@@ -11932,6 +11932,199 @@ never produce an existing repository. The `check_cmd` finding in the same
 review is in `internal/runner` rather than in a module, and is outside
 what this audit looks at. Neither is contradicted here.
 
+### 5.136 A nodegroup carried an untrusted grain past SPEC 12.4
+
+Found by a code review running in a parallel session, verified here, and
+the verification is worth recording because the first three attempts to
+reproduce it all failed for reasons that had nothing to do with the
+defect.
+
+SPEC 12.4 says a pillar top file may target only on trusted grains: a
+node controls its own grains, so targeting pillar on an untrusted one
+lets a node ask for another node's secrets by renaming itself. The rule
+was enforced by scanning the expression's text for `G@`, `P@`, `I@` and
+`J@`.
+
+**A nodegroup carries no sigil of its own, and its expansion happens
+inside the compiler -- after the text was read.** So:
+
+```yaml
+# refused, correctly
+'G@role:db':
+  - secret
+
+# permitted, with dbservers defined as G@role:db
+'N@dbservers':
+  - secret
+```
+
+#### The negation is the one that hurt
+
+A pillar target evaluates against the trusted grains alone -- that is the
+point of `targetNode`. So an untrusted term is not merely unchecked, it is
+always **false**. Which makes its negation always **true**:
+
+```yaml
+# notdb: "not G@role:db"
+'N@notdb':
+  - secret
+```
+
+An operator writing "everything except the database hosts" delivered the
+secret **to the database hosts**, and to every other node as well, with no
+diagnostic anywhere. Reproduced: a node with `role: db` receives
+`password: hunter2`. Spelled directly, the same expression is refused.
+
+#### The fix is to stop reading the text
+
+The two things that had to agree were a hand-rolled scan over the
+expression and a parser that expands nodegroups, and they could not be
+made to agree by improving the scan -- a scan cannot see an expansion that
+has not happened yet.
+
+`internal/target` records the terms it compiles: `target.Term` is a kind
+and a key, appended where each leaf is built, with a nodegroup's own terms
+merged in from the sub-parser. `Matcher.Terms()` reports them, the pillar
+compiler asks the matcher what the expression consults, and the check
+happens *after* compilation rather than before it.
+
+That also closed two smaller defects, both of them consequences of the
+scan rather than separate mistakes:
+
+- **A grain name ended at `:` or a space**, so `not (G@fips_mode)` named
+  the grain `fips_mode)`, which is in no allowlist -- a legitimate
+  expression refused with a message naming a grain nobody wrote.
+  `fips_mode` is in the default trusted set, so this refused exactly the
+  expression the rule was written to permit.
+- **The audit record filed a grain-based delivery as `glob`**, because
+  the text carried no sigil. The record of which nodes were handed which
+  pillar, and on what basis, said "name match" for a delivery decided by a
+  grain.
+
+#### Three probes that failed before one worked
+
+Worth writing down, because each produced a *negative* result that looked
+like a finding:
+
+1. The first probe keyed its in-memory files `base|top.sls`, and the test
+   loader expects `base|top`. The top file was never found, `resolveTop`
+   took its "a tree with no top file delivers nothing" path, and all three
+   cases came back inert -- which read as "the review is wrong, nothing is
+   delivered".
+2. Before that, a reading of `CompileAuto` suggested `N@...` would be
+   treated as a glob without an explicit `- match:`. It is not:
+   `looksCompound` recognises any registered sigil, `N@` among them.
+3. The audit basis was read from a case that matched nothing, so no audit
+   entry existed to inspect.
+
+Each was a probe that measured something other than what it claimed. The
+same shape as the `| tail` that reported `tail`'s exit code in 5.127, on
+the same day.
+
+#### What this does not change
+
+The **state** top file has no trusted-grain rule and should not: SPEC 12.4
+is about pillar, where the hazard is a node obtaining another node's
+secrets. A node choosing which states it applies is a different and much
+smaller thing, and Salt behaves the same way.
+
+
+### 5.137 `--test` was not read-only in the state layer either, three ways
+
+5.131 audited the execution functions and said plainly what it could not
+reach: the state layer, 116 mutating functions claiming `reliable`, of
+which the differential judged 32. A review running in parallel went at the
+same question from the other end and found three the audit had missed. All
+three are confirmed here, each by measurement rather than by reading, and
+each now has a test that fails without its fix.
+
+#### `check_cmd` ran during a dry run, and reported a failure that was not there
+
+The runner's generic `check_cmd` -- the requisite form, for states that
+have no file to validate -- ran the operator's command whatever the mode.
+`r.Ctx.Test` appears exactly once in `internal/runner/runner.go`, and it is
+the line that *sets* it for a prereq probe.
+
+`file.managed` owns its own `check_cmd` and gets this right, with the rule
+written down beside it: *"A test run does not reach check_cmd, which is
+Salt's ordering too... The command is the operator's and may do anything,
+and a run that promised to change nothing must not run it. SPEC section
+11.6."* The generic path is that rule's neighbour, and broke it.
+
+**The second half is worse than a dry run that acts.** The generic form
+runs *after* the state, to validate what is now on disk. Under test mode
+nothing was written -- so the command validated the state the operator was
+asking to change. A `check_cmd: nginx -t` on the configuration being
+deployed *because* the running one is broken reported the dry run as a
+**failure**; so did a `visudo -c -f` on a file that does not exist yet. A
+dry run saying a state would fail when it would have succeeded is the one
+answer it must not give, and it is the answer that sends somebody looking
+for a defect in their own tree.
+
+The result now says the check was skipped, rather than staying silent: a
+clean `--test` would otherwise read as the operator's check having passed.
+
+#### `git.latest` fetched, and the reason it gave was exculpatory
+
+The comment said: *"A fetch is a network call that changes nothing in the
+working tree, so test mode does it too."* True of the working tree, and
+false of the repository -- which is the shape CLAUDE.md warns about by
+name, a finding that ends the investigation with "this is fine, because".
+
+Measured against the real git, in a bare repository and a clone in a
+temporary directory: a `fetch --tags` wrote **seven files** under `.git` --
+`FETCH_HEAD`, `logs/refs/remotes/origin/main`, three objects,
+`refs/remotes/origin/main`, and `refs/tags/v9` -- moved the remote-tracking
+ref, and created a tag that had not been there. A tag arriving during a run
+that promised to change nothing outlives the run and can decide what a
+later `git describe` or a tag-pinned state resolves to.
+
+**This one did not cost any accuracy to fix**, which is the unusual part.
+`git ls-remote` asks the same question over the same network and writes
+nothing -- measured the same way, zero files touched -- so a dry run
+resolves the wanted commit from the remote and predicts the move exactly as
+before. Where the remote does not publish the ref, the fallback is the
+local resolution the fetching path used anyway.
+
+The test drives the real `git` with a `file://` remote in a directory it
+owns, so it needs no root, no network and no live gate -- the shape
+`openssl_cert`'s round trip established. It asserts the prediction, then
+asserts that not one byte under `.git` changed, then runs the same call for
+real to prove the test is not passing against a state that does nothing.
+
+#### `grains.absent --destructive` could not converge
+
+The apply path deletes this node's own entry and then, where the grain is
+still visible from a file the state does not own, writes a null to mask it
+-- and says so. The converged check asked only whether an entry of ours
+exists, and the mask is one.
+
+Measured over five runs: **mask, delete, mask, delete, mask**, a change
+reported every time. The next run deleted the mask, uncovered the value,
+and masked it again, for ever. A highstate over such a node never settles,
+which is the 5.112 shape a third time: a state that cannot converge is
+worse than one that fails, because nothing about it looks wrong.
+
+The check now asks what our entry *holds*. A null of our own is as far as a
+deletion can go, and it converges on the second run. The key stays in the
+file holding null, deliberately: removing it would uncover the value the
+operator asked to be rid of.
+
+#### What this says about the audit in 5.131
+
+Every one of these three is in the state layer, and the audit there reached
+32 of 116. Two of the three could not have been reached by it at all: the
+`check_cmd` path is in `internal/runner` rather than in a module, and
+`git.latest`'s fetch is behind an existing-repository precondition that
+synthesised arguments never produce. The third, `grains.absent`, is a
+*convergence* fault rather than a test-mode one -- it needs two runs and a
+grain-collection merge between them, which no single call can show.
+
+So the audit's own statement of its limits was right, and the limits were
+where the defects were. The conformance harness the review names next --
+six state functions of 132 -- is the thing that would have caught all
+three, and it is a bigger piece of work than any of these fixes.
+
 
 ### 5.138 `user.present` stripped hand-added groups on Linux and FreeBSD
 
@@ -12037,6 +12230,371 @@ had not been seen.
   relied, knowingly or not, on a change to an account also resetting
   its groups now keeps the extra memberships. That is the intended
   meaning, but it is a change to what a run does.
+
+
+### 5.139 Three shapes behind a duration, a redactor and a flag
+
+The remaining Tier 1 rows of the review, and each turned out to be a
+narrower defect with a wider mechanism behind it.
+
+#### `timeout: "900"` meant no timeout at all
+
+`internal/builtin`'s `durationOf` handled a string through
+`time.ParseDuration`, which wants a unit, so `"900"` failed. The call site
+then discarded the error -- `if d, err := durationOf(v); err == nil` --
+leaving `Timeout` at zero, and `exec.OSRunner` arms a deadline only when it
+is above zero. A state asking for a bounded command got an unbounded one.
+
+Three things made it worse than a typo in a parser:
+
+- **The quoted form is not exotic.** A template produces strings and
+  nothing else, so `timeout: {{ pillar['deploy_timeout'] }}` arrives as
+  `"900"` however the pillar spelled it. A tree that looks entirely
+  numeric reaches this code as text.
+- **`signature.Duration` promises both spellings**: "a Go duration string
+  or a bare number of seconds". The parameter is declared that type, so
+  the module was refusing what its own signature advertised.
+- **The same word in the same file parsed two ways.** `internal/state`'s
+  compiler has `asDuration`, which accepts a bare number and diagnoses
+  what it cannot read. So `timeout: "900"` was a deadline to the compiler
+  and an error to the module -- and the module said nothing.
+
+And the module already argues the case against itself. It refuses `bg`
+together with `timeout` with this reason: *"a tree that asked for a bounded
+run and got an unbounded one has been told the opposite of the truth."*
+That is the exact outcome the discarded error produced.
+
+One parser now, `value.ParseDuration`, in the package every caller already
+imports; the compiler, the module and `config.Duration` all defer to it,
+and the module refuses a timeout it cannot read rather than running
+unbounded. There are 18 `time.ParseDuration` call sites in the tree and
+they are not all wrong: a flag or a setting may reasonably insist on a
+unit. What had to agree were the ones reading a word out of a tree.
+
+#### The redactor did not cover the model
+
+`redact.Set.ScrubValue` switched on `string`, `[]any` and
+`map[string]any`, and fell through on **`*value.Map`** -- the ordered map of
+the nine-type model, which is what a state's changes, a pillar fragment, a
+grain set and a `--out json` report all are. Every caller handing one over
+got it back unchanged, having called the right function.
+
+That is the shape worth naming: not a missing call, but a call that reads
+as protection and does nothing. The logger scrubs every structured field
+through it, so the hole was one `Info("...", "changes", m)` away from being
+a leak, wherever a value.Map was logged.
+
+Keys are scrubbed as well as values now, because a mapping keyed by a token
+is the same fault one level down.
+
+#### The node's `doctor` printed through no redactor, and the hub's `--out` did nothing
+
+The hub's `doctor` has scrubbed since 5.110 and says why beside the call: a
+check prints what it *found*, and the pillar check's finding is a
+compilation error that can name a decrypted value. The node's printed
+`report.Text()` raw -- and the node compiles its *whole* tree, so it
+reaches more GPG blocks than the hub does.
+
+Measured on this host: `halite-node doctor --out json` printed the pillar
+file's path and its decryption error verbatim. Both paths are scrubbed now,
+and `cli.Redact` was not the answer for either -- it is applied by
+`cli.Fatalf` and nowhere else, so a report printed normally passes it by.
+
+**There was no node doctor test at all**, which is how two functions that
+read alike came to differ.
+
+Looking at it turned up one more: **the hub's `doctorValue` was called from
+nowhere.** `halite-hub doctor --out json` printed the table, so a flag the
+usage text advertises was accepted and ignored -- the
+accepted-and-does-nothing shape `InertKeys` exists to stop happening to
+settings, in a command line instead. It is wired now, and scrubbed.
+
+
+### 5.140 Five gates that read text where a check belonged
+
+The review's Tier 2: the guards that had stopped guarding. Each was
+verified here by breaking the thing it covers and watching it pass, then
+fixed and broken again.
+
+They share one shape, and it is worth naming before the five: **a text
+search standing in for a check.** `strings.Contains` over a file, a field
+or a comment, where a parse or a value comparison belongs. Five, not the
+four this entry first counted: `make release-gate` searched a free-text
+field for the word `root`, which is the same shape as the other four and
+belongs in the count.
+
+It is the same shape as 5.136's pillar rule, which read an expression's
+spelling rather than what it compiled to, and as 5.82's grain comparison.
+A search reads what somebody *wrote*; a check reads what the program
+*does*.
+
+#### The dependency allowlist had never run, anywhere
+
+`internal/buildpolicy`'s allowlist test shells `go list -m all`, which
+cannot succeed in a vendored repository:
+
+	go: can't compute 'all' using the vendor directory
+
+and the failure was treated as environmental -- `t.Skip`. It is not
+environmental; it is a property of this repository, so the test skipped on
+every machine including CI, and `make policy` runs without `-v`, so the
+skip printed nothing. `policy` is also the one CI leg that runs on a
+docs-only change, and CLAUDE.md names this test as what enforces SPEC 4.2.
+
+It reads `vendor/modules.txt` and `go.mod` now -- files, always readable,
+offline, on every platform -- and an unreadable source is `t.Fatal`,
+because the unreadable case is the one where the check has stopped
+checking. It logs what it checked, since "the allowlist passed" and "the
+allowlist read nothing" printed the same thing for as long as it skipped.
+
+Demonstrating it took three tries, and the failures are the interesting
+part. Adding `github.com/pkg/errors` to `vendor/modules.txt` alone, or to
+`go.mod` alone, does not reach the test at all: Go's own vendor
+consistency check refuses to build the package first. So the only way an
+unapproved dependency can arrive is fully vendored and consistent -- which
+is what `go mod vendor` produces, and which this test now fails on,
+naming the module and the file it was found in.
+
+#### `make release-gate` did not cover the module that runs anything
+
+The gate picks the modules it covers by looking for the substring `root`
+in `Privileges`, which is a free-text field. `cmd` declares **"whatever
+the command needs"** -- honest prose, containing no "root" -- so ten
+functions including `cmd.run`, `cmd.script` and `cmd.exec_code` sat
+outside the one check written to catch a module nobody has considered.
+`cmd` had **no evidence row at all**; the gate, once it could see the
+module, said so in its own words: *"cmd  no declaration at all; nobody has
+considered this module"*.
+
+23 mutating modules were outside the gate this way. The other 22 mutate as
+an unprivileged user, which is the gate's documented line, and they stay
+outside it.
+
+Two fixes rather than one. The field is a closed vocabulary now --
+`PrivRoot`, `PrivRootForOthers`, `PrivCaller` -- held by a test, so a new
+module cannot invent a phrase that the gate will not recognise; there were
+only ever three distinct strings, so this cost nothing but the naming. And
+the gate asks a named predicate, `NeedsPrivilege`, rather than searching
+prose.
+
+`cmd`'s row is written to what has actually been run: real binaries and
+real shells through `exec.OSRunner` across this package's tests, on every
+platform CI builds for, with `RunAs` watched on the macOS leg -- where it
+found an account in more than sixteen groups failing as `fork/exec`
+(5.120). Three limits named, including that there is no single tool to
+capture, because what `cmd` drives is whatever the caller names.
+
+#### The build-integrity gate read the comment it was copied from
+
+`TestBuildRecipePinsIntegrityFlags` searched the whole Makefile for five
+flags. The Makefile opens with a comment block listing all five -- the
+block the test was written from. Strip `-trimpath`, `CGO_ENABLED=0` and
+`GOPROXY=off` from the actual recipe and it stayed green: the gate was
+reading its own documentation.
+
+It drops comment lines first, and asks *where* rather than *whether*: each
+flag against the variable that carries it (`RELEASE_ENV`, `BUILDFLAGS`),
+and the release target against using both. A flag set in some unrelated
+recipe is not a flag on the artifact.
+
+#### The `ext.Confine()` audit was a text search
+
+`strings.Contains(source, "ext.Confine()")`, so the defect it was written
+for -- the shipped extension running unbounded while `sys.list_extensions`
+reported limits as in force -- reinstates by putting `//` in front of the
+line. Demonstrated exactly that way.
+
+It parses now, and requires a call from `main`: the limits bound the
+calling process, so a call in a helper nobody invokes reads identically to
+a call that happens.
+
+#### SPEC 31's Upgrade row was three comments
+
+The audit finds `upgrade:<name>` markers in test files and took their
+presence as coverage. Delete all 596 lines of a covering file's test
+bodies, leave the markers, and it passed -- while logging the covering
+files by name, which is the part that would have reassured a reader.
+
+A marker is a claim, and the claim is checked now: the file carrying one
+must hold test functions that parse to more than a trivial body. The
+threshold is deliberately far below the real ones -- the two covering
+files parse to 2,426 and 1,726 syntax nodes across eleven tests, against a
+floor of 40 -- because this guards against a body that has been emptied,
+not against a thin test. Nothing static can tell a thorough test from a
+weak one; it can tell a test from a comment.
+
+#### What is left of the review's Tier 2
+
+Two rows, both larger than these and neither fixed here: the conformance
+harness covers **6 state functions of 132** while `internal/states`
+claims every state module passes it, and `firewall` is `Hardware` with no
+`TestLive*` anywhere while 22 live tests match no leg's `-run` filter. The
+first is what would have caught all three defects in 5.137; the second is
+a coverage claim rather than a defect. Both are recorded in plan.md rather
+than done.
+
+
+### 5.142 Six documentation claims that were false, and the audits that hold them
+
+The review's Tier 3: the prose. Not typos -- claims a reader acts on, each
+one verified against the code or the tool before it was touched, and each
+one now held by a test rather than by care.
+
+The shape is the project's own: **two paths that must agree.** A key table
+and the fallback the program actually uses. An evidence note and the test
+it describes. A manual page and the dispatch switch. A documented
+invocation and the flag parser that refuses it. In every case the document
+was written once, correctly or not, and then the code moved.
+
+#### `sysrc` was `Captured`, and had never executed
+
+The evidence note said this module *"reads real rc.conf through the real
+`sysrc` on CI's FreeBSD runner"*. It does not. Its only test installs a
+`RecordingRunner`, so on that runner it ran *beside* a real `sysrc` and
+never called it: `c.Which("sysrc")` decided whether the test ran, and the
+recorder decided what it saw. A skip guard on the real tool reads exactly
+like a test that uses the real tool, which is why this survived a
+FreeBSD-first project's attention for as long as it did.
+
+It went to `Assumed`, which is what it always was, and then to
+`Hardware`, which it has now earned.
+`TestLiveSysrcWritesAndReadsBackARealRCConf` drives the real binary
+against an rc.conf in a directory the test owns -- `sysrc -f <file>` is the
+tool's own way of working somewhere other than `/etc/rc.conf`, and the
+module already exposes it -- and checks, in order, that `get` answers for
+a setting that is not there, that `set` puts it in the file on disk *and*
+that the real `sysrc -n` reads it back, that a dry run changes nothing,
+and that `sysrc.absent` removes it. The tool's own read-back is not enough
+on its own; a module that agrees with itself proves nothing.
+
+This host could not be the witness: its shell is a Linux compatibility
+layer and FreeBSD's `sysrc` is a shell script that fails there on readonly
+variables. So `internal/builtin/sysrc*.go` went into fleet.yml's `freebsd`
+leg's trigger paths, and the leg ran it.
+
+##### What the first run found, which was a defect in the test
+
+The leg refused it, on the opening assertion, and the assertion was wrong:
+it expected `sysrc.get` to **error** on a setting that is not there, where
+the function's own documentation says *"an empty string when it is not
+set"*. Written from an assumption about what a reader does with a missing
+key, and it tested the assumption.
+
+This is the argument for the leg in one line. The other five assertions --
+including both mutating ones, the write to a real `rc.conf` and the removal
+from it -- passed against the real tool on the first attempt. The one that
+failed was mine.
+
+The assertion now pins the documented contract instead, which is the
+stronger test: an empty string, no error, measured against the real tool.
+One thing is recorded rather than fixed, because it is a limitation and not
+a fault: absence flattened to the empty string means `sysrc.get` cannot
+tell `halite_probe_enable` unset from `halite_probe_enable=""`, and on
+FreeBSD the second is meaningful -- `ifconfig_em0=""` declares an interface
+with no options. `sysrcGet`'s second return value does distinguish them and
+the state functions read it; only the exec function discards it.
+
+`make release-gate` was red between those two commits, deliberately, and is
+green again on a measurement rather than on a sentence.
+
+#### `job_queue_depth` was documented as 100 and the node used 16
+
+`docs/configuration.md` is generated from `internal/config`'s key table,
+so it prints whatever the table says, faithfully, whether or not the
+program agrees. Nothing compared the two. An operator sizing a burst
+around 100 was reading a number no node has ever used:
+`cfg.Int("job_queue_depth", 16)`.
+
+`listen` was wrong in the other direction -- declared `:4510`, which is
+right for the hub and wrong for the API's `:4511`, and the table is keyed
+by name so it has to say both.
+
+`TestDocumentedDefaultsMatchTheCodesFallback` compares every literal
+fallback in the tree against the table. It skips three shapes and says how
+many: a fallback that is a named constant, a zero value meaning "decided
+further down", and a key the table declares no default for. Those are the
+audit's blind spot and they are printed rather than implied.
+
+#### The YAML 1.1 boolean setting was documented inverted
+
+`yaml_bool_11` defaults to **true**, and `docs/from-salt.md` told a
+migrating operator the opposite: *"YAML 1.1 booleans are off. `yes`, `no`,
+`on`, `off` are strings unless you set `yaml_bool_11: true`."* Both halves
+are wrong. They resolve, as PyYAML and therefore Salt resolve them; the
+setting to change after auditing a tree is `false`, not `true`; and the
+advice as printed was a no-op that read as a precaution.
+
+The reference also listed `y` and `n` among the spellings, which the
+resolver deliberately omits -- PyYAML's own resolver does not match the
+single letters, and honouring SPEC 10.1.3's table as written would make
+`name: n` a boolean here and a string in Salt. That omission has been in
+this ledger since section 1; the configuration reference contradicted it.
+
+#### `halite-node state show` has not existed for some time
+
+The manual page documented `state show`. The subcommand is `show_highstate`,
+`show_lowstate`, `show_top`, `show_sls` or `show_states`, and a manual page
+is the documentation a machine has when the source tree is not on it, which
+on this project's fleet is every machine but one.
+
+`TestEverySubcommandAManualPageNamesExists` reads the quoted words of each
+page and fails on one the binary does not dispatch. It reads any quoted
+word rather than only `case` labels, because `event send` is dispatched by
+an `if` and the first version of this audit called it missing.
+
+#### Two commands the reference calls `works` do not run
+
+`docs/command-reference.md`'s third column says `works`. That is a claim
+about a string a reader will paste into a shell, and two were false:
+
+- **`halite-hub migrate /srv/salt --cmd-default-shell`.** The flag became
+  `--no-cmd-default-shell` when the `cmd.run` shell default inverted
+  (5.81) and the row was never touched.
+- **`halite-hub runner reactor.test --tag … --data …`.** A runner takes
+  its arguments as `key=value` pairs, never as flags. `--data` is refused
+  outright; `--tag` is accepted only because `event listen` documents a
+  flag by that name.
+
+Both fail immediately:
+
+	halite: --data is not a flag of `halite-hub runner`
+
+which is the good case, and it is why they went unnoticed: the reader
+loses a minute, not an afternoon, and never tells anybody.
+
+`TestEveryWorkingCommandsFlagsAreRealFlags` checks all 50 flags in the 138
+commands that column calls `works`. It can do so statically because
+`cli.RejectUnknownFlags` decides what a flag is by reading the usage text
+-- a flag is accepted because it is described and described because it is
+accepted -- so the accepted set is a property of a string constant. The
+audit builds the same set the program builds, from the same constants,
+parsed rather than grepped.
+
+It is therefore no stricter than the program, deliberately. `--tag` on
+`runner` still passes, because the hub judges a flag against its whole
+usage text plus the subcommand's; the audit measures the claim *this
+works*, and that one does.
+
+#### What the platform claims said
+
+`README.md`, `docs/getting-started.md` and `docs/migrating-from-salt.md`
+each described a state of the world from before the macOS live leg:
+*"The code cross-compiles for both and has been run on neither"*, and
+*"macOS has run only the read-side live tests"*. All seven `mac_*` modules
+are `hardware`, the launchd provider has been driven, and Linux arm64 runs a
+hub and a node natively on a FIPS host. All three pages now say so, and
+all three point at `sys.evidence` on the node in front of the reader as
+the authority, because a per-module answer will outlast any sentence in a
+README.
+
+#### Two of these were found by writing the audit, not by reading
+
+Worth recording, because it is the argument for writing the guard first.
+The `job_queue_depth` disagreement and the `listen` one were both found by
+the audit on its first run; nobody had read those two lines and noticed.
+The `sysrc` note and the `state show` page were found by reading. The
+score is even, and the audits keep running.
+
 
 ## 6. Everything else not started
 

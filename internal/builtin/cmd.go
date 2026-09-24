@@ -136,7 +136,14 @@ func registerCmd(r *Registries) {
 		return value.Truthy(v) && argvForm(args)
 	}
 
-	build := func(c *exec.Context, args *value.Map) exec.Command {
+	// An error rather than a Command alone, because of the one thing this
+	// function used to swallow: a `timeout` it could not read left the
+	// deadline unset and the command unbounded. The refusal of `bg` with
+	// `timeout` below gives the reason in its own words -- "a tree that
+	// asked for a bounded run and got an unbounded one has been told the
+	// opposite of the truth" -- and that applies at least as much to a
+	// timeout nobody could parse.
+	build := func(c *exec.Context, args *value.Map) (exec.Command, error) {
 		use, shellPath, _ := shellRequest(c, args)
 		cmd := exec.Command{
 			Shell:          use,
@@ -170,11 +177,13 @@ func registerCmd(r *Registries) {
 			cmd.Env = env
 		}
 		if v, ok := args.Get("timeout"); ok && v != nil {
-			if d, err := durationOf(v); err == nil {
-				cmd.Timeout = d
+			d, err := durationOf(v)
+			if err != nil {
+				return exec.Command{}, fmt.Errorf("timeout: %w", err)
 			}
+			cmd.Timeout = d
 		}
-		return cmd
+		return cmd, nil
 	}
 
 	runAll := func(c *exec.Context, args *value.Map) (*value.Map, error) {
@@ -185,7 +194,10 @@ func registerCmd(r *Registries) {
 			return nil, fmt.Errorf("this state asks for a shell and also gives `args`; " +
 				"a shell line is one string and an argument vector is a list, so pick one. SPEC section 15.2")
 		}
-		cmd := build(c, args)
+		cmd, err := build(c, args)
+		if err != nil {
+			return nil, err
+		}
 		if cmd.Shell {
 			c.Logf("warn", "cmd is running through a shell: %s", cmd.String())
 		}
@@ -305,7 +317,10 @@ func registerCmd(r *Registries) {
 			return states.False("This state asks for a shell and also gives `args`; " +
 				"a shell line is one string and an argument vector is a list, so pick one. SPEC section 15.2"), nil
 		}
-		cmd := build(c, args)
+		cmd, err := build(c, args)
+		if err != nil {
+			return states.False(capitalizeFirst(err.Error()) + "."), nil
+		}
 		background := states.Bool(args, "bg", false)
 		if background && cmd.Timeout > 0 {
 			// Nothing is waiting for the process, so nothing can stop it
@@ -407,17 +422,11 @@ func firstLine(s string) string {
 	return s
 }
 
-func durationOf(v any) (time.Duration, error) {
-	switch t := v.(type) {
-	case int64:
-		return time.Duration(t) * time.Second, nil
-	case float64:
-		return time.Duration(t * float64(time.Second)), nil
-	case string:
-		return time.ParseDuration(t)
-	}
-	return 0, fmt.Errorf("%s is not a duration", value.TypeName(v))
-}
+// durationOf reads a `timeout`. One rule, in value.ParseDuration: this
+// took Go's form only, so `timeout: "900"` -- which is what a template
+// produces -- was refused, and the caller discarded the refusal and ran
+// the command with no deadline. DIVERGENCE 5.139.
+func durationOf(v any) (time.Duration, error) { return value.ParseDuration(v) }
 
 // trimOutput removes the line ending a program leaves on its last line.
 //
