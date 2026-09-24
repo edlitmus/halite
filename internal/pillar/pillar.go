@@ -245,7 +245,7 @@ func (c *Compiler) resolveTop(out *Compiled) ([]string, map[string]bool) {
 			// and the expansion happened afterwards, inside the compiler.
 			// An expression that does not compile is reported as that,
 			// which is also the right answer -- there is nothing to judge
-			// about terms nobody could parse. DIVERGENCE 5.135.
+			// about terms nobody could parse. DIVERGENCE 5.136.
 			matcher, err := state.CompileTopTarget(expr, te.Val, c.Config.Nodegroups)
 			if err != nil {
 				out.Diags.Add(te.KeyPos, state.TopName, "", "%v", err)

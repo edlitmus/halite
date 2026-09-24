@@ -203,7 +203,7 @@ func (s *Set) ScrubValue(v any) any {
 		// the project's own central type, while the caller had done the
 		// right thing by calling it. A scrub that cannot see the shape
 		// it is handed is worse than no scrub, because the call site
-		// reads as protection. DIVERGENCE 5.137.
+		// reads as protection. DIVERGENCE 5.139.
 		//
 		// The keys are scrubbed as well as the values. A key can carry a
 		// secret -- a pillar mapping keyed by a token, a grain whose name

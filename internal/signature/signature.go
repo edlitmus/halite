@@ -167,7 +167,7 @@ type Signature struct {
 	// the gate -- `cmd` said "whatever the command needs", which contains
 	// no "root", so the module that can run anything sat outside the one
 	// check written to catch a module nobody had considered. DIVERGENCE
-	// 5.138.
+	// 5.140.
 	//
 	// Use PrivRoot, PrivRootForOthers or PrivCaller. A function needing
 	// nothing leaves this empty.

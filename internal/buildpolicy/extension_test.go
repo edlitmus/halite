@@ -57,7 +57,7 @@ func TestEveryShippedExtensionAppliesTheLimits(t *testing.T) {
 // so the defect the check was written for reinstates by putting `//` in
 // front of the line it was written about. That is the shape this
 // project's audits keep being caught by: a text search standing in for a
-// check. DIVERGENCE 5.138.
+// check. DIVERGENCE 5.140.
 //
 // From `main` specifically, because the limits bound the calling process
 // and are useless applied somewhere that never runs: a call in a helper

@@ -392,7 +392,7 @@ func TestScrubExceptReplacesTheLongerSecretWhole(t *testing.T) {
 // It was not: the type switch handled `map[string]any` and fell through on
 // `*value.Map`, which is what a state's changes, a pillar fragment, a grain
 // set and a `--out json` report all are. Every caller that handed one over
-// got it back unchanged, having done the right thing. DIVERGENCE 5.137.
+// got it back unchanged, having done the right thing. DIVERGENCE 5.139.
 func TestScrubValueScrubsTheOrderedMap(t *testing.T) {
 	s := New()
 	s.Add("hunter2")

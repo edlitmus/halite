@@ -97,7 +97,7 @@ var moduleEvidence = map[string]exec.Evidence{
 	// the free-text Privileges field, and `cmd` says "whatever the command
 	// needs" -- so the module that runs arbitrary code was outside the one
 	// check written to catch a module nobody had considered. DIVERGENCE
-	// 5.138.
+	// 5.140.
 	"cmd": {Level: exec.Hardware, Note: "runs real binaries and real shells through " +
 		"`exec.OSRunner` throughout this package's tests -- `cmd.script` writing, running and " +
 		"removing a real script, `cmd.exec_code`, the background form returning a real pid, and " +
@@ -574,7 +574,7 @@ var moduleEvidence = map[string]exec.Evidence{
 	// RecordingRunner, so on that runner it ran *beside* a real sysrc and
 	// never called it: `c.Which("sysrc")` decided whether the test ran and
 	// the recorder decided what it saw, which reads exactly like a test
-	// that uses the tool. DIVERGENCE 5.139.
+	// that uses the tool. DIVERGENCE 5.142.
 	//
 	// `TestLiveSysrcWritesAndReadsBackARealRCConf` replaced it and found a
 	// defect on the first run it ever did -- in itself. Its opening
@@ -744,7 +744,7 @@ func (r *Registries) Trust() []doctor.ModuleTrust {
 		// declares "whatever the command needs", which contains no
 		// "root" -- so the module that runs arbitrary code was outside
 		// the gate written to catch a module nobody had considered, and
-		// had no evidence row at all. DIVERGENCE 5.138.
+		// had no evidence row at all. DIVERGENCE 5.140.
 		if sig.NeedsPrivilege() {
 			needsRoot[module] = true
 		}

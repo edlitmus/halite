@@ -144,7 +144,7 @@ type Node struct {
 // pillar target evaluates against the trusted grains alone, so the term
 // is always false, the negation is always true, and the secret intended
 // for everything *except* the database hosts went to them with no
-// diagnostic at all. DIVERGENCE 5.135.
+// diagnostic at all. DIVERGENCE 5.136.
 //
 // And a closing parenthesis: the scan ended a grain name at `:` or a
 // space, so `not (G@fips_mode)` named the grain `fips_mode)`, which is in

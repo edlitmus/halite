@@ -10,7 +10,7 @@ import (
 //
 // The two parsers this replaces disagreed about exactly one of these: the
 // quoted bare number, which is what a template produces for every
-// duration however the pillar spelled it. DIVERGENCE 5.137.
+// duration however the pillar spelled it. DIVERGENCE 5.139.
 func TestParseDurationTakesBothSpellingsATreeWrites(t *testing.T) {
 	cases := map[any]time.Duration{
 		"15m":           15 * time.Minute,

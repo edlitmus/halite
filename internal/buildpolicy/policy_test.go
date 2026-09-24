@@ -246,7 +246,7 @@ func TestBuildRecipePinsIntegrityFlags(t *testing.T) {
 	// with a comment block listing all five flags -- the block this
 	// check was written from. So stripping `-trimpath`, `CGO_ENABLED=0`
 	// and `GOPROXY=off` from the actual recipe left it green: the gate
-	// was reading the documentation of itself. DIVERGENCE 5.138.
+	// was reading the documentation of itself. DIVERGENCE 5.140.
 	//
 	// It also asks *where* now, not merely whether. A flag present in
 	// some unrelated recipe is not a flag on the artifact, so the

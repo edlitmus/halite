@@ -52,7 +52,7 @@ import (
 // stricter than the program, deliberately — it measures the claim
 // "this works", and that one does.
 //
-// DIVERGENCE 5.139.
+// DIVERGENCE 5.142.
 func TestEveryWorkingCommandsFlagsAreRealFlags(t *testing.T) {
 	root := repoRoot(t)
 	ref := readDoc(t, filepath.Join(root, "docs", "command-reference.md"))

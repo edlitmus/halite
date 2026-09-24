@@ -377,7 +377,7 @@ func TestMalformedPillarIsReported(t *testing.T) {
 // The text reader this replaces got two of these wrong: it ended a name
 // at `:` or a space, so the parenthesised case named the grain
 // `fips_mode)`, and it could not see inside a nodegroup at all.
-// DIVERGENCE 5.135.
+// DIVERGENCE 5.136.
 func TestTheGrainsATargetConsultsComeFromTheCompiler(t *testing.T) {
 	groups := target.Nodegroups{
 		"dbservers": "G@role:db",
@@ -584,7 +584,7 @@ base:
 // the database hosts was delivered to the database hosts, with no
 // diagnostic. Both directions are asserted here, because a fix that
 // refused the group but still allowed the negation would pass a test that
-// only checked the first. DIVERGENCE 5.135.
+// only checked the first. DIVERGENCE 5.136.
 func TestANodegroupCannotHideAnUntrustedGrain(t *testing.T) {
 	secret := map[string]string{
 		"base|secret": "password: hunter2\n",

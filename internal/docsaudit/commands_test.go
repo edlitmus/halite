@@ -298,7 +298,7 @@ func TestEachManualPageHasItsPreamble(t *testing.T) {
 // `show_sls`, `show_lowstate`, `show_states`). The binary's own error
 // message lists the real ones; the manual page is what an operator has on a
 // machine built from source, and it sent them to a word the program
-// refuses. DIVERGENCE 5.139.
+// refuses. DIVERGENCE 5.142.
 //
 // The rule is deliberately loose: a word written as `.Cm <parent> <child>`,
 // where the parent is a real top-level subcommand, must appear somewhere in

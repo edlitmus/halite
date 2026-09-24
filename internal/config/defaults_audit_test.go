@@ -24,7 +24,7 @@ import (
 // They disagreed. `job_queue_depth` was documented as 100 and the node
 // passed 16: `cfg.Int("job_queue_depth", 16)`. An operator reading the
 // reference and sizing a burst around 100 was reading a number no node has
-// ever used. DIVERGENCE 5.139.
+// ever used. DIVERGENCE 5.142.
 //
 // # What it reads
 //

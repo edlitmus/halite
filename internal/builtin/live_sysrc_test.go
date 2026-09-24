@@ -20,7 +20,7 @@ import (
 // `RecordingRunner`, so on the FreeBSD runner it ran *beside* a real sysrc
 // and never called it — the `c.Which("sysrc")` guard decided whether the
 // test ran, and the recorder decided what it saw. A skip guard on the real
-// tool reads like a test that uses it. DIVERGENCE 5.139.
+// tool reads like a test that uses it. DIVERGENCE 5.142.
 //
 // # It touches no rc.conf that matters
 //
