@@ -222,9 +222,37 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 	current := strings.TrimSpace(before.Stdout)
 
-	// A fetch is a network call that changes nothing in the working tree,
-	// so test mode does it too: without it the state cannot say whether
-	// it would change anything, and guessing is worse.
+	// A dry run asks the remote and writes nothing.
+	//
+	// This used to fetch under test mode, on the reasoning -- written in
+	// this comment -- that "a fetch is a network call that changes
+	// nothing in the working tree". That is true of the working tree and
+	// false of the repository, which is the exculpatory shape this
+	// project's own rules warn about: measured against the real git, a
+	// `fetch --tags` into a clone wrote **seven files** under `.git`,
+	// moved the remote-tracking refs, and created a tag that was not
+	// there before. A tag arriving during a run that promised to change
+	// nothing is a change that outlives the run and can decide what a
+	// later `git describe` or a tag-pinned state resolves to.
+	//
+	// `git ls-remote` asks the same question over the same network and
+	// writes nothing -- measured the same way, zero files touched. So the
+	// prediction survives: this is not the usual trade of accuracy for
+	// honesty, and where the remote does not know the ref the fallback is
+	// the local resolution the fetching path used anyway.
+	if c.Test {
+		want, err := gitRemoteRev(c, target, remote, rev)
+		if err != nil {
+			return states.False(fmt.Sprintf("%s could not be reached: %v", remote, err)), nil
+		}
+		if current == want {
+			return states.True(fmt.Sprintf("%s is already at %s.", target, shortCommit(want))), nil
+		}
+		return states.WouldChange(
+			fmt.Sprintf("%s would move from %s to %s.", target, shortCommit(current), shortCommit(want)),
+			value.MapOf("revision", states.Change(shortCommit(current), shortCommit(want)))), nil
+	}
+
 	fetch := []string{"fetch", "--quiet"}
 	if states.Bool(args, "force_fetch", false) {
 		fetch = append(fetch, "--force")
@@ -287,6 +315,65 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 	return states.Changed(
 		fmt.Sprintf("%s moved from %s to %s.", target, shortCommit(current), shortCommit(want)), changes), nil
+}
+
+// gitRemoteRev is the commit a revision names on the remote, read without
+// writing anything locally.
+//
+// `ls-remote` rather than `fetch`: it answers over the network and touches
+// no file, which is what lets a dry run predict accurately and still be a
+// dry run. Checked against the real git: `<sha>\t<ref>` per line, with a
+// pattern argument matching `refs/heads/<rev>` and `refs/tags/<rev>`, and
+// a bare `HEAD` for the remote's default branch.
+//
+// A branch is preferred over a tag of the same name, because that is what
+// the fetching path resolved -- `<remote>/<rev>` is a remote-tracking
+// branch. A revision that is already an object name needs no remote at
+// all, and one the remote does not know falls back to resolving it
+// locally, which is what the fetching path did when `<remote>/<rev>` did
+// not resolve.
+func gitRemoteRev(c *exec.Context, target, remote, rev string) (string, error) {
+	if looksLikeCommit(rev) {
+		return rev, nil
+	}
+	pattern := rev
+	if pattern == "" {
+		pattern = "HEAD"
+	}
+	res, err := gitRun(c, target, "ls-remote", remote, pattern)
+	if err != nil {
+		return "", err
+	}
+	var heads, tags, other string
+	for _, line := range strings.Split(strings.TrimSpace(res.Stdout), "\n") {
+		sha, ref, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if !ok || sha == "" {
+			continue
+		}
+		switch {
+		case ref == "refs/heads/"+rev, ref == "HEAD":
+			heads = sha
+		case ref == "refs/tags/"+rev:
+			tags = sha
+		default:
+			if other == "" {
+				other = sha
+			}
+		}
+	}
+	for _, sha := range []string{heads, tags, other} {
+		if sha != "" {
+			return sha, nil
+		}
+	}
+	// The remote does not publish it. A local tag or commit still
+	// resolves, and saying "unknown" for one would report a change that
+	// is not there.
+	local, err := gitRun(c, target, "rev-parse", rev)
+	if err != nil {
+		return "", fmt.Errorf("%s is not a ref on %s and does not resolve locally", rev, remote)
+	}
+	return strings.TrimSpace(local.Stdout), nil
 }
 
 // looksLikeCommit reports whether a revision is a raw object name, which

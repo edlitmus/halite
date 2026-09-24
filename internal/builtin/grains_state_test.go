@@ -314,3 +314,88 @@ func TestGrainsPresentWithNowhereToWriteSaysSo(t *testing.T) {
 		t.Error("a context with no way to persist should fail")
 	}
 }
+
+// `grains.absent` with `destructive` converges, which it did not.
+//
+// The apply path deletes this node's own entry, and where the grain is
+// still visible from a file the state does not own it writes a null to
+// mask it. The converged check then asked only "is there an entry of
+// ours?" — and the mask is one. So the next run deleted the mask,
+// uncovered the value, and masked it again: measured over five runs it
+// went mask, delete, mask, delete, mask, reporting a change every time,
+// for ever. A highstate over such a node never settles, and nothing about
+// the output looks wrong.
+//
+// The loop below is what makes this a convergence test rather than an
+// idempotence one: it recomputes what the node's next grain collection
+// would see between runs, because the state reads a snapshot and the
+// oscillation only appears across that boundary.
+func TestGrainsAbsentDestructiveConvergesOnAMaskedGrain(t *testing.T) {
+	const platform = "FreeBSD"
+	g := newGrainStateContext()
+	g.collected.Set("kernel", platform)
+
+	var changes []bool
+	for run := 0; run < 4; run++ {
+		res, err := grainsAbsent(g.context(false),
+			value.MapOf("name", "kernel", "destructive", true))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Succeeded() {
+			t.Fatalf("run %d failed: %+v", run+1, res)
+		}
+		changes = append(changes, res.HasChanges())
+
+		// The merge the node would do: this state's file wins where it
+		// has the key, and the platform supplies it otherwise.
+		if held, ours := g.held.Get("kernel"); ours {
+			g.collected.Set("kernel", held)
+		} else {
+			g.collected.Set("kernel", platform)
+		}
+	}
+
+	if !changes[0] {
+		t.Error("the first run should mask the grain and report the change")
+	}
+	for i, changed := range changes[1:] {
+		if changed {
+			t.Errorf("run %d reported a change, so this state does not converge: %v", i+2, changes)
+		}
+	}
+	// The null stays. Removing it would uncover the value the operator
+	// asked to be rid of, which is the whole reason it cannot be deleted.
+	if v, ours := g.held.Get("kernel"); !ours || v != nil {
+		t.Errorf("the mask this state wrote is %v (present=%v), want a null it keeps", v, ours)
+	}
+}
+
+// And a grain this node does own is still deleted outright, rather than
+// being left as a null by the fix above.
+func TestGrainsAbsentDestructiveStillDeletesOurOwn(t *testing.T) {
+	g := newGrainStateContext()
+	g.held.Set("role", "web")
+	g.collected.Set("role", "web")
+
+	res, err := grainsAbsent(g.context(false), value.MapOf("name", "role", "destructive", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Succeeded() || !res.HasChanges() {
+		t.Fatalf("%+v", res)
+	}
+	if _, ours := g.held.Get("role"); ours {
+		t.Error("the entry this node owned was not deleted")
+	}
+
+	// And the run after it converges, with the key gone rather than null.
+	g.collected.Delete("role")
+	res, err = grainsAbsent(g.context(false), value.MapOf("name", "role", "destructive", true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Succeeded() || res.HasChanges() {
+		t.Errorf("the second run should converge: %+v", res)
+	}
+}

@@ -11923,6 +11923,102 @@ is about pillar, where the hazard is a node obtaining another node's
 secrets. A node choosing which states it applies is a different and much
 smaller thing, and Salt behaves the same way.
 
+### 5.133 `--test` was not read-only in the state layer either, three ways
+
+5.131 audited the execution functions and said plainly what it could not
+reach: the state layer, 116 mutating functions claiming `reliable`, of
+which the differential judged 32. A review running in parallel went at the
+same question from the other end and found three the audit had missed. All
+three are confirmed here, each by measurement rather than by reading, and
+each now has a test that fails without its fix.
+
+#### `check_cmd` ran during a dry run, and reported a failure that was not there
+
+The runner's generic `check_cmd` -- the requisite form, for states that
+have no file to validate -- ran the operator's command whatever the mode.
+`r.Ctx.Test` appears exactly once in `internal/runner/runner.go`, and it is
+the line that *sets* it for a prereq probe.
+
+`file.managed` owns its own `check_cmd` and gets this right, with the rule
+written down beside it: *"A test run does not reach check_cmd, which is
+Salt's ordering too... The command is the operator's and may do anything,
+and a run that promised to change nothing must not run it. SPEC section
+11.6."* The generic path is that rule's neighbour, and broke it.
+
+**The second half is worse than a dry run that acts.** The generic form
+runs *after* the state, to validate what is now on disk. Under test mode
+nothing was written -- so the command validated the state the operator was
+asking to change. A `check_cmd: nginx -t` on the configuration being
+deployed *because* the running one is broken reported the dry run as a
+**failure**; so did a `visudo -c -f` on a file that does not exist yet. A
+dry run saying a state would fail when it would have succeeded is the one
+answer it must not give, and it is the answer that sends somebody looking
+for a defect in their own tree.
+
+The result now says the check was skipped, rather than staying silent: a
+clean `--test` would otherwise read as the operator's check having passed.
+
+#### `git.latest` fetched, and the reason it gave was exculpatory
+
+The comment said: *"A fetch is a network call that changes nothing in the
+working tree, so test mode does it too."* True of the working tree, and
+false of the repository -- which is the shape CLAUDE.md warns about by
+name, a finding that ends the investigation with "this is fine, because".
+
+Measured against the real git, in a bare repository and a clone in a
+temporary directory: a `fetch --tags` wrote **seven files** under `.git` --
+`FETCH_HEAD`, `logs/refs/remotes/origin/main`, three objects,
+`refs/remotes/origin/main`, and `refs/tags/v9` -- moved the remote-tracking
+ref, and created a tag that had not been there. A tag arriving during a run
+that promised to change nothing outlives the run and can decide what a
+later `git describe` or a tag-pinned state resolves to.
+
+**This one did not cost any accuracy to fix**, which is the unusual part.
+`git ls-remote` asks the same question over the same network and writes
+nothing -- measured the same way, zero files touched -- so a dry run
+resolves the wanted commit from the remote and predicts the move exactly as
+before. Where the remote does not publish the ref, the fallback is the
+local resolution the fetching path used anyway.
+
+The test drives the real `git` with a `file://` remote in a directory it
+owns, so it needs no root, no network and no live gate -- the shape
+`openssl_cert`'s round trip established. It asserts the prediction, then
+asserts that not one byte under `.git` changed, then runs the same call for
+real to prove the test is not passing against a state that does nothing.
+
+#### `grains.absent --destructive` could not converge
+
+The apply path deletes this node's own entry and then, where the grain is
+still visible from a file the state does not own, writes a null to mask it
+-- and says so. The converged check asked only whether an entry of ours
+exists, and the mask is one.
+
+Measured over five runs: **mask, delete, mask, delete, mask**, a change
+reported every time. The next run deleted the mask, uncovered the value,
+and masked it again, for ever. A highstate over such a node never settles,
+which is the 5.112 shape a third time: a state that cannot converge is
+worse than one that fails, because nothing about it looks wrong.
+
+The check now asks what our entry *holds*. A null of our own is as far as a
+deletion can go, and it converges on the second run. The key stays in the
+file holding null, deliberately: removing it would uncover the value the
+operator asked to be rid of.
+
+#### What this says about the audit in 5.131
+
+Every one of these three is in the state layer, and the audit there reached
+32 of 116. Two of the three could not have been reached by it at all: the
+`check_cmd` path is in `internal/runner` rather than in a module, and
+`git.latest`'s fetch is behind an existing-repository precondition that
+synthesised arguments never produce. The third, `grains.absent`, is a
+*convergence* fault rather than a test-mode one -- it needs two runs and a
+grain-collection merge between them, which no single call can show.
+
+So the audit's own statement of its limits was right, and the limits were
+where the defects were. The conformance harness the review names next --
+six state functions of 132 -- is the thing that would have caught all
+three, and it is a bigger piece of work than any of these fixes.
+
 
 ## 6. Everything else not started
 
