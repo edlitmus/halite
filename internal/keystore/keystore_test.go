@@ -361,3 +361,74 @@ func TestTheStoreRefusesAnIdentityThatIsAPath(t *testing.T) {
 
 // errorFrom keeps a two-value call readable in a one-value assertion.
 func errorFrom(_ Mode, err error) error { return err }
+
+// A token can be deleted, and deleting one removes its record from disk.
+//
+// `DeleteToken` was written and nothing called it: `keys token create`,
+// `list` and `revoke` existed and `delete` did not, so every token ever
+// minted stayed in the store. An autoscaling fleet mints one per instance,
+// which is the documented use for tokens, so `keys token list` grew
+// without bound.
+//
+// Revoking and deleting are different answers and the difference is the
+// `SpentBy` record: a revoked token stops admitting anything and keeps the
+// list of what it let in, which is how a leaked token is answered with a
+// list rather than a guess. Deleting destroys that, which is why the
+// command says what it is destroying. DIVERGENCE 5.144.
+func TestDeletingATokenRemovesItAndRevokingKeepsIt(t *testing.T) {
+	a, _ := newAuthority(t)
+	a.Mode = ModeToken
+	now := time.Now()
+	a.Now = func() time.Time { return now }
+
+	spent, secret, err := a.Store.MintToken(TokenOptions{TTL: time.Hour}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keep, _, err := a.Store.MintToken(TokenOptions{TTL: time.Hour}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Spend the first, so that it has something to forget.
+	csr, _ := request(t, "web1.example")
+	if _, err := a.Enroll(Request{CSR: csr, Token: secret, RemoteAddr: "10.1.2.3:9000"}); err != nil {
+		t.Fatalf("enrolling with a live token: %v", err)
+	}
+	before, err := a.Store.GetToken(spent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before.SpentBy) == 0 {
+		t.Fatal("the token recorded nothing it admitted, so this test cannot tell " +
+			"deleting from revoking")
+	}
+
+	// Revoking keeps the record, which is the reason to prefer it.
+	if err := a.Store.RevokeToken(keep.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Store.GetToken(keep.ID); err != nil {
+		t.Errorf("a revoked token is gone from the store: %v", err)
+	}
+
+	// Deleting removes it.
+	if err := a.Store.DeleteToken(spent.ID); err != nil {
+		t.Fatalf("deleting a spent token: %v", err)
+	}
+	if _, err := a.Store.GetToken(spent.ID); !errors.Is(err, ErrNoToken) {
+		t.Errorf("reading a deleted token returned %v, want ErrNoToken", err)
+	}
+	tokens, err := a.Store.ListTokens()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tokens) != 1 || tokens[0].ID != keep.ID {
+		t.Errorf("the store lists %d token(s) after one of two was deleted", len(tokens))
+	}
+
+	// Deleting one that is not there says so rather than succeeding.
+	if err := a.Store.DeleteToken(spent.ID); !errors.Is(err, ErrNoToken) {
+		t.Errorf("deleting a token twice returned %v, want ErrNoToken", err)
+	}
+}

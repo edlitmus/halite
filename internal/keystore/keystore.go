@@ -226,35 +226,21 @@ func (s *Store) List() ([]*Record, error) {
 	return out, nil
 }
 
-// writeAtomic writes through a temporary file in the same directory, so
-// that a store read during a write sees the old record or the new one
-// and never half of either.
+// writeAtomic writes a store record, owned by the account the store
+// directory belongs to.
+//
+// The ownership step has to happen before the rename -- otherwise the
+// record is briefly reachable at its final path by the wrong account, and
+// is then left owned by the wrong one -- which is why this goes through
+// atomicfile.WritePrepared rather than atomicfile.Write.
+//
+// It used to be a copy of the whole of atomicfile.Write with that one step
+// added, and the copy had drifted: it chmod'd the temporary file directly
+// instead of going through internal/fileperm, so a record written 0600 on
+// Windows got the read-only attribute and its directory's inherited ACL,
+// and it never synced the directory after the rename. DIVERGENCE 5.144.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
-	if err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	// Before the rename, so the record is never briefly readable by the
-	// wrong account and never left owned by the wrong one.
-	if err := inheritOwner(name, filepath.Dir(path)); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
-	}
-	return atomicfile.Rename(name, path)
+	return atomicfile.WritePrepared(path, data, mode, func(tmp string) error {
+		return inheritOwner(tmp, filepath.Dir(path))
+	})
 }

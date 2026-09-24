@@ -12753,6 +12753,165 @@ number is visible.
 exist; this is about the defaults behind them.
 
 
+### 5.144 The review's Tier 4, where two items were larger than their label
+
+"Maintainability", which is where a finding goes when nobody expects it to
+matter. Two of the four did.
+
+#### The render sandbox leaked four descriptors per failed start
+
+`rendersandbox.start` made both pipes and then did something that could
+fail, and `exec.Cmd.Start` is what closes pipes: its deferred cleanup
+closes the child ends always and the parent ends when the process did not
+start. So a failure *before* `Start` was reached left four descriptors open
+with only each `os.File`'s finalizer to reclaim them.
+
+It is reachable. `applyConfinement` resolves `render_sandbox_user` and
+refuses a name the machine cannot look up, which is what a typo in that
+setting produces — and a node that retries a render then accumulates them.
+
+**Measured at exactly 4.0 per attempt**: the lowest free descriptor moved
+from 11 to 211 over 50 failed starts.
+
+##### The first measurement was a broken probe
+
+The first version of the test counted entries in `/dev/fd`. On this host
+that directory is a static three — 0, 1 and 2 — and does not change when
+twenty files are opened; `/proc/self/fd` does not exist here at all. The
+test reported **no leak**, and the no-leak result was the probe.
+
+It reads the number the kernel gives a freshly opened descriptor instead. A
+unix kernel hands out the lowest free one, so that number is a high-water
+mark, and it moves by four per turn when four per turn are lost. The probe
+was verified against twenty deliberate opens before the result was
+believed, which is the step that was missing the first time.
+
+##### The fix, and why halving it was the interesting result
+
+Closing the parent ends on the failure path took it from 4.0 to **2.0** —
+not to zero. The child ends live inside the `Cmd`, where nothing but
+`Start`'s cleanup can reach them. So `start` now owns both ends of both
+pipes through `os.Pipe` and assigns `*os.File`s to `cmd.Stdin` and
+`cmd.Stdout`, which `os/exec` uses directly and does not register for
+closing; and `applyConfinement` moved *above* the pipes, since it only
+fills in `SysProcAttr` and can fail before anything is open.
+
+The halfway measurement is why this is the arrangement rather than a guess.
+
+#### Three more copies of `atomicfile`, and what each had lost
+
+`internal/atomicfile`'s package documentation opens by saying six packages
+had their own copy of the same helper and all six were wrong on Windows.
+They were consolidated. Nothing stopped a seventh, and there were three:
+
+| | |
+|---|---|
+| `internal/keystore.writeAtomic` | node records and bootstrap tokens, mode 0600 |
+| `internal/pki.writeFile` | the package that holds the enrollment CA |
+| `cmd/halite-node.writeFileAtomic` | a node's own runtime configuration |
+
+All three had drifted in the same three ways, which is the argument for an
+audit rather than for three fixes:
+
+- **`internal/fileperm` was bypassed.** Each chmod'd the temporary file
+  directly. On Windows a mode is the read-only attribute and nothing else;
+  `fileperm.ApplyFile` additionally restricts the access control list for a
+  private mode. So a record written `0600` was not private, and the mode
+  said it was.
+- **`atomicfile.Rename` was bypassed** by two of the three, so the Windows
+  sharing race this package exists for — a reader holding the destination
+  open makes `MoveFileEx` fail, and while `MoveFileEx` holds it a reader's
+  open fails — applied to the key store and to the node's configuration.
+- **The directory was never synced** after the rename, so a power loss
+  could leave a file with no name.
+
+Nobody wrote those copies carelessly. Each was written before or beside
+this package, and each was correct on unix, which is where they were read.
+
+`keystore` had a reason for its copy: it hands a record to the account the
+store directory belongs to, and it has to do that *before* the rename or
+the record is briefly reachable at its final path by the wrong account and
+is then left owned by the wrong one. There was no way to express that from
+outside `atomicfile.Write`, so it kept the whole helper to get one step.
+`WritePrepared` takes that step as a callback, and the copy is gone.
+
+`TestNothingElseWritesThroughATempFileAndARename` reads 4,882 functions and
+fails on any outside the package that both makes a temporary file and
+renames something. Deliberately coarse: a precise rule would have to decide
+what counts as "atomic enough" and would be argued with rather than obeyed.
+One exemption, named by function and with its reason — a streamed archive
+download, which cannot go through a `[]byte` API — and a second test that
+fails if an exemption outlives the function it excused.
+
+#### Two lists of extension kinds, and a test that could not fail
+
+`ext.Kinds` and `internal/extension.Kinds` were the same twelve strings
+written twice, and the consistency test in `ext` looked like what held them
+together. It walked `ext.Kinds` asserting `ext.ValidKind` of each, and
+`ValidKind` is `slices.Contains(Kinds, …)` — so it could not fail whatever
+either list said, while its own comment claimed it checked that every kind
+the SDK names *"is one the host will accept"*. It never looked at the host.
+
+One list rather than a better test: `ext` imports nothing internal and
+several internal packages already import it, so there was never a reason
+for the second. The agreement is now an assignment. `TestEveryKindConstantIsInTheList`
+replaces it and checks the pair a new kind can actually break — the twelve
+exported constants against the list — failing when a constant is added to
+one and not the other, demonstrated by dropping `KindSigner` from the list.
+
+#### `DeleteToken` existed and nothing called it
+
+So every bootstrap token ever minted stayed on the hub's disk. `keys token`
+had `create`, `list` and `revoke`; `keys delete <node>` existed for nodes
+and nothing did for tokens.
+
+`keys token delete <id>` is wired now, and it says what it is destroying,
+because `revoke` is almost always the right answer and the difference is
+the record: a revoked token admits nothing and keeps its `SpentBy` list,
+which is how a leaked token is answered with a list rather than a guess.
+Delete is for the documented autoscaling case, one token per instance,
+where `keys token list` grows until nobody reads it.
+
+`closeRenderSandbox` was the other unwired half worth wiring, next to the
+evidence shutdown in the agent loop. The child does exit on EOF when the
+node does, so this is about a graceful stop being graceful: the child is
+reaped here rather than depending on the order a dying process's pipes come
+apart.
+
+#### One near-miss worth recording
+
+`stopTracing` looked unwired to a grep and is not: `traceShutdown =
+n.stopTracing` is the reference, because `main` exits through `os.Exit` and
+a deferred flush would never run. An assignment is a call site, and a
+search for `stopTracing(` does not find one.
+
+#### What is recorded rather than fixed
+
+Two things, both in plan.md:
+
+**`internal/pki` does not use `internal/fileperm` at all.** `WriteKey`
+opens the file `0600` directly and `Ensure` calls `os.MkdirAll(dir, 0700)`,
+so on Windows neither the CA private key nor the directory holding it is
+access-control restricted — while the package's own doc says *"Keys are
+written 0600 and certificates 0644, and the directory is 0700"* and calls
+the enrollment CA the most valuable thing in the estate. No hub runs on
+Windows today, and the Windows CI leg runs the unit suite natively, so
+`fileperm.Others` can be the witness. Its own change.
+
+**Nine direct `os.Rename` calls remain** outside `atomicfile`: `file.rename`
+and `file.move` doing what an operator asked, a key moved aside before
+re-enrollment, a downloaded archive installed under its final name, the
+evidence log sealing a segment, `/etc/localtime` being replaced. Each is a
+judgement about whether the Windows retry belongs there, not a duplicate of
+the helper, and the audit above deliberately does not rule on them.
+
+Also not done: the remaining unreferenced symbols. A coarse sweep finds 25
+functions and methods with no reference in the module, against the review's
+49 — the difference is methodology, and several of mine are false positives
+(`MarshalJSON` and `UnmarshalJSON` are reached by reflection). The count is
+not worth quoting until the sweep is worth trusting.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

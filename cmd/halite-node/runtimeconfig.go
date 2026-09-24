@@ -8,6 +8,8 @@ import (
 	"github.com/edlitmus/halite/internal/grains"
 	"github.com/edlitmus/halite/internal/value"
 	"github.com/edlitmus/halite/internal/yaml"
+
+	"github.com/edlitmus/halite/internal/atomicfile"
 )
 
 // runtimeFile is the name a node writes its own changes to.
@@ -91,30 +93,14 @@ func (n *node) runtimeDir(kind string) (string, error) {
 // writeFileAtomic writes through a temporary file in the same
 // directory, so that a node interrupted mid-write leaves the previous
 // configuration rather than half of the new one.
+//
+// It was its own copy of atomicfile.Write and had drifted the same three
+// ways the others had: os.Chmod rather than internal/fileperm, so a mode
+// was the read-only attribute alone on Windows; os.Rename rather than
+// atomicfile.Rename, so the Windows sharing race applied; and no
+// directory sync after the rename. DIVERGENCE 5.144.
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".halite-*")
-	if err != nil {
-		return err
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Chmod(name, mode); err != nil {
-		return err
-	}
-	return os.Rename(name, path)
+	return atomicfile.Write(path, data, mode)
 }
 
 // loadRuntimeConfig reads back what saveRuntimeConfig last wrote, so a

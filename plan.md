@@ -2212,6 +2212,59 @@ somebody would otherwise rediscover.
     wrong one for an extension that logs its way to a quiet death. Left
     deliberately, noted here so it is a decision rather than drift.
 
+19e. **`internal/pki` does not use `internal/fileperm`, on the platform
+    where that is the whole of the answer.** `WriteKey` opens the file
+    with `os.OpenFile(path, …, 0o600)` and `Ensure` calls
+    `os.MkdirAll(dir, 0o700)`. On Windows a mode is the read-only
+    attribute and a directory mode is nothing at all, so neither the
+    enrollment CA's private key nor the directory holding it is
+    access-control restricted — while the package's own documentation
+    says *"Keys are written 0600 and certificates 0644, and the directory
+    is 0700: a certificate is public and a key is not, and the difference
+    should be visible in `ls -l` rather than only in a document"*, and
+    calls that key the most valuable thing in the estate.
+
+    `internal/fileperm` exists for exactly this and eight call sites use
+    it. This package, which has more reason to than any of them, uses it
+    nowhere. Found while consolidating the copies of `atomicfile`
+    (DIVERGENCE 5.144), which is how the gap became visible: the copy in
+    `pki` was bypassing `fileperm` and so was everything around it.
+
+    **Not a live exposure today**: no hub or node in this estate runs on
+    Windows. It is ranked here rather than fixed because it is worth
+    doing properly — `fileperm.Others` reports which accounts can reach a
+    file, so a test can assert the restriction rather than assume it, and
+    the `test (windows-2022)` leg runs the unit suite on a real Windows
+    machine, which makes CI the witness rather than a reading of the
+    source.
+
+19f. **Nine direct `os.Rename` calls outside `atomicfile`.** Each is a
+    judgement rather than a duplicate of the helper, which is why
+    `TestNothingElseWritesThroughATempFileAndARename` deliberately does
+    not rule on them: `file.rename` and `file.move` doing what an
+    operator asked, a node key moved aside before re-enrollment, a
+    downloaded archive installed under its final name, the evidence log
+    sealing a segment, `/etc/localtime` being replaced.
+
+    The question for each is whether `atomicfile.Rename`'s Windows retry
+    belongs there. For the estate's own writes — the evidence segment,
+    `/etc/localtime` — it probably does. For a module doing what the
+    operator literally asked, a retry may hide a conflict the operator
+    should see. DIVERGENCE 5.144.
+
+19g. **The unreferenced-symbol sweep is not worth trusting yet.** A
+    coarse pass finds 25 functions and methods with no reference in the
+    module, against the 49 an earlier review counted. The difference is
+    methodology, and several of the 25 are false positives —
+    `MarshalJSON` and `UnmarshalJSON` are reached by reflection, and an
+    assignment like `traceShutdown = n.stopTracing` is a call site that a
+    search for `stopTracing(` does not find.
+
+    The two with a consequence were fixed (`DeleteToken`,
+    `closeRenderSandbox`; DIVERGENCE 5.144). The rest needs a sweep that
+    understands per-GOOS builds and interface satisfaction before a count
+    is quoted anywhere.
+
 **Blocked on a decision**
 
 20. ~~Whether FreeBSD belongs in SPEC 27.1 tier 1~~ — **answered

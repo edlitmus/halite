@@ -14,6 +14,8 @@ import (
 	"path"
 	"sort"
 	"strings"
+
+	"github.com/edlitmus/halite/ext"
 )
 
 // ManifestName is the file inside a bundle that describes it.
@@ -24,10 +26,21 @@ const ManifestName = "manifest.json"
 const SignatureName = "manifest.sig"
 
 // Kinds are the extension kinds of SPEC 24.2.
-var Kinds = []string{
-	"module", "state", "grain", "beacon", "returner", "pillar",
-	"runner", "renderer", "auth", "roster", "fileserver", "signer",
-}
+//
+// The host's list *is* the SDK's list, rather than a second copy of it.
+// There were two, and a test that read like it held them together and
+// could not: `TestTheKindsAreConsistent` walked `ext.Kinds` asserting
+// `ext.ValidKind` of each, and `ValidKind` is `slices.Contains(Kinds, …)`
+// -- so it could not fail whatever either list said, while its own comment
+// claimed it checked that every kind the SDK names "is one the host will
+// accept". It never looked at the host.
+//
+// One list rather than a better test, because `ext` imports nothing
+// internal and several internal packages already import it, so there was
+// never a reason for the second. A kind the host accepted and the SDK did
+// not would have been an extension refused at handshake by a name its
+// author read out of the SDK. DIVERGENCE 5.144.
+var Kinds = ext.Kinds
 
 // Manifest describes a bundle.
 type Manifest struct {
