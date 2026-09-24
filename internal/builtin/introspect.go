@@ -642,18 +642,47 @@ func syncExtensionsResult(c *exec.Context, function string, kinds []string) (sta
 // new code from the file server", it means "the agent has fetched
 // signed, pinned bundles". What runs does not change until the node
 // next loads them, and the answer says so.
+// kindList renders the extension kinds a sync would fetch, for the dry
+// run's answer.
+func kindList(kinds []string) []any {
+	if len(kinds) == 0 {
+		return []any{"every kind"}
+	}
+	out := make([]any, len(kinds))
+	for i, k := range kinds {
+		out[i] = k
+	}
+	return out
+}
+
 func syncExtensions(function string, kinds []string, doc string) exec.Module {
 	return exec.Module{
 		Sig: signature.Signature{
 			Module: "saltutil", Function: function,
-			Doc:      doc + " It fetches and does not load: what is running does not change until the node restarts.",
-			Mutates:  true,
-			TestMode: signature.TestNotApplicable,
+			Doc:     doc + " It fetches and does not load: what is running does not change until the node restarts.",
+			Mutates: true,
+			// Unreliable rather than not-applicable, which is what this
+			// said, and which was a contradiction on its face: a
+			// function that changes the system cannot be a function
+			// test mode does not apply to. `internal/builtin`'s guard
+			// has forbidden that pairing for state modules since it was
+			// written and nothing said it for execution modules, so
+			// these seven declared it and fetched bundles under a dry
+			// run.
+			//
+			// Unreliable is the honest level, and it is the one the
+			// state form of the same operation already declared: what a
+			// sync would change is decided by what the file server has,
+			// which cannot be known without asking it.
+			TestMode: signature.TestUnreliable,
 			Section:  "24.5",
 		},
 		Fn: func(c *exec.Context, args *value.Map) (any, error) {
 			if c.SyncExtensions == nil {
 				return nil, errors.New("this node has no file server to synchronize extensions from")
+			}
+			if c.Test {
+				return value.MapOf("would_sync", kindList(kinds)), nil
 			}
 			return c.SyncExtensions(kinds)
 		},

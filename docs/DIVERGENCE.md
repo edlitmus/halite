@@ -11323,7 +11323,6 @@ permanent. Nothing audits an existing `schedule.d` for entries that
 arrived that way, and nothing here can tell one from an entry an operator
 wrote.
 
-
 ### 5.131 The macOS timezone branch, run for the first time: four defects
 
 The macOS branch of `timezone` had never been run (plan.md §1.3, and
@@ -11783,6 +11782,156 @@ password put back into the argv, or the stderr check dropped).
 - **The live test's own authonly checks put the password in an argv.**
   That is the test verifying a throwaway account's random password, and
   it is not the module.
+
+
+### 5.135 The `--test` claim, audited across every module
+
+`exec.Context.Test` carries a claim in its own comment -- *"a run that
+must change nothing. Every function that mutates the system checks it"* --
+about 271 execution functions, and nothing checked it. 5.130 found seven
+scheduling functions breaking it; this is the same question asked of
+everything.
+
+**Twenty-one more were breaking it.** They are now fixed, and
+`TestEveryMutatingFunctionHonoursItsTestModeClaim` holds all 248 of the
+mutating functions that make the claim:
+
+- **Every mutating function in the language-manager modules**, fourteen of
+  them: `pip install`, `pip uninstall`, `npm install --global`, `npm
+  uninstall`, `gem install`, `gem uninstall`, `cargo install`, `cargo
+  uninstall`, `go install`, `cpan -i`, `composer install`, `composer
+  require`, `mvn <goals>` and `virtualenv <path>` all ran the tool under a
+  dry run. Not one of the three files contained the string `c.Test`.
+- **`pkg.purge` and `pkg.upgrade`** ran `pkg delete -y` and `pkg upgrade
+  --yes`, while `pkg.install` and `pkg.remove` two files away checked
+  properly.
+- **`pkg.hold` and `pkg.unhold`** ran `pkg lock --yes` and `pkg unlock
+  --yes`.
+- **`service.force_reload`** reloaded, or restarted, the service.
+- **The seven `saltutil.sync_*` functions** fetched extension bundles, and
+  declared `signature.TestNotApplicable` while doing it -- a contradiction the guard
+  on *state* modules has forbidden since it was written ("a function that
+  changes the system cannot be not_applicable") and which nothing said
+  about execution modules. The state form of the same operation declares
+  `signature.TestUnreliable` and checks; the execution form claimed the question did
+  not apply.
+
+#### The default is the strongest claim
+
+`signature.TestReliable` is the **zero value**. A module that never
+considered test mode declares "makes no change, and predicts the change
+accurately" by saying nothing.
+
+That is the exact inverse of the evidence model in the same package, where
+`Assumed` is the zero value on purpose so that "nobody classified this"
+cannot read as "this is fine". Here, nobody classifying it reads as the
+strongest promise in the system. Every one of the 21 was a signature
+nobody had thought about, and in each module some sibling function *did*
+check -- so the shared claim was believed on the strength of its
+neighbours.
+
+Whether the zero value should be the weakest claim is a decision rather
+than a defect, and it is in plan.md §6.
+
+#### What the audit does, and what it cannot
+
+Two checks, and a function must fail both to be reported.
+
+*Dynamically*, each function is called twice with synthesised arguments --
+once with `Test` set, once without -- against a recording runner and a
+directory of its own, and the commands and file changes are compared.
+*Statically*, the source of the registration is searched for a reference to
+the context's `Test` field, following the package's own named functions.
+
+Neither alone would do. The dynamic check cannot tell "ran the same
+read-only command twice" from "ran the same mutating command twice",
+because the recorder answers with nothing and the function stops before
+its own test branch -- which is precisely what `acl.wipe`, `at.atrm`,
+`ps.kill_pid`, `ps.pkill`, `reboot.cancel`, `firewall.disable` and
+`swap.off` do, and all seven are correct. The static check cannot see
+through an interface to a provider it never reaches. Together they named
+the 21 and nothing else.
+
+**The audit is as broad as the machine it runs on.** On this FreeBSD host
+it reaches 61 of the 248 and reports the other 187 by name: a module gated
+to Linux, macOS or Windows refuses before it runs anything. The same test
+on the Linux and macOS legs reaches a different subset, and the count is
+logged so the two can be compared.
+
+#### Two measurement errors, both mine, both caught before they were believed
+
+The first harness gave each of the two runs its own temporary directory,
+and the directory's path appears inside the commands -- so no function
+that takes a path could ever compare equal, and all of them read as
+"withheld something under `--test`". Eleven functions were in the wrong
+bucket until the paths were normalised.
+
+The second was worse, because it read as a finding: with the `signature.TestMode`
+filter dropped, the audit flagged the whole `cmd.*` family. Those declare
+`signature.TestUnreliable` and do run under a dry run, deliberately -- it is Salt's
+behaviour and it is what `onlyif`, `unless` and `creates` are built on,
+since a conditional that did not run during a test would answer for a
+machine nobody had looked at. The claim being audited is the *reliable*
+one.
+
+That second error exposed something real about the model, though.
+`signature.TestUnreliable` is documented as "cannot honestly predict its changes"
+and is being used for two different things: a function that cannot
+predict, and a function that *acts anyway*. Nothing distinguishes them,
+so an operator reading `unreliable` cannot tell whether a dry run will
+leave the machine alone. Also in plan.md §6.
+
+#### And the one only Linux could see
+
+The audit is as broad as the machine it runs on, so it was taken to the
+lab: an Ubuntu 26.04 row and an Alpine 3.24 row, raised for the purpose.
+They judged **32 of the 248** where this FreeBSD host judges 14, and found
+one more violation.
+
+**`kmod.load` ran `modprobe <name>` under a dry run**, and `kmod.remove`
+ran `modprobe -r`. It is the fourth instance of the pattern this ledger
+has now recorded four times in two days: the *state* forms,
+`kmod.present` and `kmod.absent`, check test mode forty lines above in the
+same file, and the execution functions they delegate to did not.
+
+The guard went into `loadModule` and `removeModule` — the helpers both the
+states and the execution functions share — rather than into the two
+registrations, so that any later caller gets it too. `persistModule` and
+`unpersistModule` write the modules configuration and were guarded in the
+same place for the same reason: the write is there, so the check belongs
+there.
+
+Neither row found anything else, which is worth as much as the finding: 31
+functions judged on Linux after the fix, all of them honouring the claim.
+Both rows then passed the whole lab suite -- build, unit and the live
+tests as root -- and were destroyed in the same session.
+
+**What the lab cannot reach either.** The two rows judge the Linux-gated
+set. The `mac_*` and `win_*` modules are judged by the macOS and Windows
+CI legs, because this is an ordinary unit test and those legs run
+`go test ./...` — read by hand for this entry, all of them honour test
+mode through shared helpers. What remains unjudged anywhere is a function
+whose tool is absent from every machine the suite runs on: `composer`,
+`gem`, `maven` and `cpan` are not installed on any of them, so their
+guards are held by the source read alone.
+
+#### The state side, measured and mostly unreached
+
+The same differential over the 116 mutating state functions that claim
+reliable reached 32 of them and found none acting under a dry run: the
+commands they ran either way were reads -- `pkg query`, `service status`,
+`zfs list`, `pip list`, `crontab -l` -- which is how a state computes the
+prediction it is required to make.
+
+That is not a clean bill. It reached 32, and for `git.latest` it reached
+only the clone path (an absent repository), where the state does withhold
+the clone. A review running in parallel with this work reports that
+`git.latest` *fetches* into an existing repository under `--test`, and
+this audit cannot speak to that path at all, because synthesised arguments
+never produce an existing repository. The `check_cmd` finding in the same
+review is in `internal/runner` rather than in a module, and is outside
+what this audit looks at. Neither is contradicted here.
+
 
 ### 5.138 `user.present` stripped hand-added groups on Linux and FreeBSD
 

@@ -523,6 +523,20 @@ func loadModule(c *exec.Context, mod string, persist bool) ([]string, error) {
 	if c.Which("modprobe") == "" {
 		return nil, fmt.Errorf("modprobe was not found on this node")
 	}
+	if c.Test {
+		// The states above check test mode before they get here; the
+		// execution functions `kmod.load` and `kmod.remove` did not, and
+		// a dry run of either loaded or unloaded the module. Checked in
+		// the shared helper so that both paths and any future caller get
+		// it, and after the `modprobe` lookup so that a node without
+		// modprobe still says so rather than predicting a change it
+		// could not make.
+		//
+		// Found on the lab's Alpine and Ubuntu rows: a FreeBSD host
+		// cannot reach this code at all, so the audit that caught it
+		// could only catch it on Linux.
+		return subtract([]string{mod}, before), nil
+	}
 	res, err := c.Run(exec.Command{Argv: []string{"modprobe", mod}, Env: exec.CleanEnv()})
 	if err != nil {
 		return nil, fmt.Errorf("modprobe %s: %w: %s", mod, err, firstLine(res.Stderr))
@@ -559,6 +573,14 @@ func removeModule(c *exec.Context, mod string, persist, comment bool) ([]string,
 		if c.Which("modprobe") == "" {
 			return nil, fmt.Errorf("modprobe was not found on this node")
 		}
+		if c.Test {
+			// See loadModule: the state form checked and the execution
+			// form did not. The prediction is the module itself, because
+			// what `modprobe -r` also unloads cannot be known without
+			// running it -- and naming only what was asked for is the
+			// honest half of that.
+			return subtract([]string{mod}, nil), nil
+		}
 		res, err := c.Run(exec.Command{Argv: []string{"modprobe", "-r", mod}, Env: exec.CleanEnv()})
 		if err != nil {
 			return nil, fmt.Errorf("modprobe -r %s: %w: %s", mod, err, firstLine(res.Stderr))
@@ -589,6 +611,12 @@ func persistModule(c *exec.Context, mod string) ([]string, error) {
 	}
 	if containsString(persisted, mod) {
 		return nil, nil
+	}
+	if c.Test {
+		// Reached only from a caller that did not check, which is what
+		// this pair of fixes is about -- but the write is here, so the
+		// guard belongs here too rather than only at the callers.
+		return []string{mod}, nil
 	}
 	lines, err := confLines(conf)
 	if err != nil {
@@ -630,6 +658,11 @@ func unpersistModule(c *exec.Context, mod string, comment bool) ([]string, error
 	}
 	if !found {
 		return nil, nil
+	}
+	if c.Test {
+		// The same reasoning as persistModule: the write is here, so the
+		// guard is here.
+		return []string{mod}, nil
 	}
 	return []string{mod}, writeConf(conf, out)
 }

@@ -54,6 +54,13 @@ func TestLedgerTestCitationsResolve(t *testing.T) {
 		t.Fatal("no test functions were found; this check has stopped checking")
 	}
 
+	// A bare backticked `TestSomething` is read as naming a test. The
+	// `signature` package's own constants are spelled the same way --
+	// TestReliable, TestUnreliable, TestNotApplicable, TestMode -- so the
+	// ledger writes those qualified, as `signature.TestUnreliable`, which
+	// this pattern deliberately does not match. Prose about test mode
+	// would otherwise be reported as a citation of tests that do not
+	// exist.
 	cited := regexp.MustCompile("`(Test[A-Za-z0-9_]+)`")
 	checked := 0
 	for i, line := range strings.Split(ledger, "\n") {

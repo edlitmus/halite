@@ -142,6 +142,15 @@ func registerServiceMore(r *Registries) {
 					return nil, err
 				}
 				name := states.Str(args, "name", "")
+				if c.Test {
+					// Which of the two it would do cannot be known
+					// without trying the reload, and trying it is the
+					// change. So the answer names the service and says
+					// nothing it cannot know, which is what
+					// TestReliable requires: no change, and no claim
+					// about a change that was not measured.
+					return name, nil
+				}
 				if err := p.Reload(c, name); err == nil {
 					return true, nil
 				}

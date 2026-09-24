@@ -98,6 +98,54 @@ The macOS branch had never been run, and running it found four defects:
 
 A Mac cannot be set to `UTC` through `systemsetup`. Use `GMT`.
 DIVERGENCE 5.131.
+### Twenty-one functions that said they honoured `--test` and did not
+
+`--test` must change nothing, and 271 execution functions carried that
+promise with nothing checking it. Twenty-one were breaking it, and all of
+them ran the real thing under a dry run:
+
+- **Every mutating function in the language-manager modules** — `pip
+  install` and `uninstall`, `npm install --global` and `uninstall`, `gem
+  install` and `uninstall`, `cargo install` and `uninstall`, `go install`,
+  `cpan -i`, `composer install` and `require`, `mvn`, and `virtualenv
+  <path>`. A dry run installed the packages.
+- **`pkg.purge`** and **`pkg.upgrade`**, which ran `pkg delete -y` and
+  `pkg upgrade --yes` while `pkg.install` and `pkg.remove` checked
+  properly.
+- **`pkg.hold`** and **`pkg.unhold`**.
+- **`service.force_reload`**, which reloaded or restarted the service.
+- **The seven `saltutil.sync_*` functions**, which fetched extension
+  bundles and declared that test mode did not apply to them — a
+  combination the state modules have never been allowed.
+
+Each now answers with what it would have done and runs nothing. The seven
+`saltutil.sync_*` functions declare `unreliable`, which is what the state
+form of the same operation has always said: what a sync would change
+depends on what the file server has.
+
+`kmod.load` and `kmod.remove` were the same fault and were found the same
+way, on Linux: a dry run loaded or unloaded the kernel module. A FreeBSD
+host cannot reach that code, so the audit that caught the other twenty-one
+could only catch these two on a machine that runs modprobe. The guard is
+in the helpers the states and the execution functions share, along with
+the two that write the modules configuration.
+
+An audit holds all 248 of them from now on. It calls every mutating
+function twice, with and without `--test`, and compares what each run did
+— and separately reads the source for the check — because neither
+question answers on its own. It reaches 61 on a FreeBSD host and names the
+187 it cannot: a module gated to another platform refuses before it runs
+anything, so the audit is as broad as the machine it runs on.
+
+A second guard refuses the combination the `saltutil` functions used: a
+function that changes the system cannot declare that test mode does not
+apply to it. Either it honours `--test`, or it cannot predict what it
+would do, and both of those are answers.
+
+Unchanged and worth knowing: `cmd.run` and its family do run under a dry
+run. That is Salt's behaviour and it is what `onlyif`, `unless` and
+`creates` are built on — a conditional that did not run during a test
+would be answering about a machine nobody looked at.
 
 ### `schedule.add` is arbitrary code, and the schedule functions honour `--test`
 
