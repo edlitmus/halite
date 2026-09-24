@@ -287,9 +287,31 @@ func apparmorStatus(c *exec.Context) (*value.Map, error) {
 // The probe is an invocation against a profile that does not exist. That
 // is deliberate: the tools parse the whole profile tree *before* looking
 // for the profile named, so a tree they cannot read fails at the parse
-// and a tree they can read fails at the lookup. The two are told apart
-// by which error comes back, and nothing on the machine is changed
-// either way.
+// and a tree they can read fails at the lookup. Nothing on the machine
+// is changed either way.
+//
+// # It recognises the answer that means yes, not the answers that mean no
+//
+// This used to be the other way round: a list of the error messages a
+// broken tree had been seen to produce, and "usable" for anything else.
+// That list was right about every message on it and wrong about the
+// machine, because the messages are not a small set. They are whatever
+// the Python parser happens to trip over first, and one GitHub runner
+// image (ubuntu-24.04 20260920.314) had three independent faults in its
+// tree, each with its own wording, each hidden behind the one before it
+// — `passt`'s mount rule, two Edge profiles attached to one path, two
+// Firefox files defining one profile. The first of those was on the
+// list and the image started hitting the second, so `tools: true` was
+// reported on a node where every mode change failed. DIVERGENCE 5.133.
+//
+// The success answer, by contrast, is one thing, captured on that same
+// runner once its tree was cleaned: exit 0, and on stdout
+//
+//	Can't find halite-probe-does-not-exist in the system path list. ...
+//
+// So that is what is matched, and anything else is a no. An answer this
+// module does not recognise is reported as one — the wrong way to fail
+// here is claiming a mode can be changed, not doubting it.
 func apparmorToolsUsable(c *exec.Context) (bool, string) {
 	if c.Which("aa-enforce") == "" {
 		return false, "the aa-* tools are not installed; they are in apparmor-utils, " +
@@ -302,22 +324,62 @@ func apparmorToolsUsable(c *exec.Context) (bool, string) {
 	if err != nil {
 		return false, err.Error()
 	}
-	out := res.Stderr + res.Stdout
-	// A tree the tools cannot parse. The wording differs between
-	// versions and between the rules they choke on, so the shapes are
-	// matched rather than one message.
-	for _, broken := range []string{"cannot have a source", "Can't parse", "Traceback", "Include file"} {
-		if strings.Contains(out, broken) {
-			return false, "the aa-* tools cannot parse this node's profile tree, so no mode " +
-				"can be changed on it by any means: " + firstLine(out)
-		}
+	out := apparmorToolMessage(res.Stderr + res.Stdout)
+	if res.Code == 0 && strings.Contains(out, apparmorNotFound(apparmorProbeProfile)) {
+		return true, ""
 	}
-	return true, ""
+	if res.Code != 0 {
+		// Every non-zero answer seen from this probe has been a tree the
+		// Python parser could not read. The reason says what the tool
+		// said, in full, because the useful part is which files: the
+		// Firefox conflict names them on the second and third lines.
+		return false, "the aa-* tools fail before they look up any profile, which is what " +
+			"they do when they cannot parse this node's profile tree, so no mode can be " +
+			"changed on it by any means: " + out
+	}
+	return false, "aa-enforce answered a probe for a profile that does not exist in a " +
+		"way this module does not recognise, so it does not claim a mode can be changed " +
+		"here: " + out
 }
 
 // apparmorProbeProfile is a name no machine has, used to ask the tools
 // whether they work without changing anything.
 const apparmorProbeProfile = "halite-probe-does-not-exist"
+
+// apparmorNotFound is how the aa-* tools begin their answer about a name
+// they cannot find — on stdout, with exit status 0. Captured from
+// apparmor-utils 4.0.1 on Ubuntu 24.04; DIVERGENCE 5.133.
+func apparmorNotFound(name string) string {
+	return "Can't find " + name + " in the system path list"
+}
+
+// apparmorToolMessage is what an aa-* tool said, on one line.
+//
+// Not `firstLine`. The tools print a blank line before an error, and
+// some of their errors are several lines long with the part an operator
+// needs at the end:
+//
+//	ERROR: Conflicting profiles for firefox defined in two files:
+//	- /etc/apparmor.d/usr.bin.firefox
+//	- /etc/apparmor.d/firefox
+//
+// `firstLine` of that says there is a conflict and not where.
+func apparmorToolMessage(s string) string {
+	var lines []string
+	for _, line := range strings.Split(s, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	msg := strings.Join(lines, " ")
+	// A Python traceback is the one answer that could run long, and a
+	// reason nobody can read on one screen is not doing its job.
+	const max = 600
+	if len(msg) > max {
+		msg = msg[:max] + " …"
+	}
+	return msg
+}
 
 // apparmorEnabled reads the kernel parameter, and returns why not.
 func apparmorEnabled() (bool, string) {
@@ -420,7 +482,20 @@ func apparmorRunTool(c *exec.Context, tool, name string) error {
 		return err
 	}
 	if res.Code != 0 {
-		return fmt.Errorf("%s %s: %s", tool, name, firstLine(res.Stderr+res.Stdout))
+		msg := apparmorToolMessage(res.Stderr + res.Stdout)
+		// The tools fail over the whole tree before reaching the profile
+		// named, and their error then names some other profile entirely
+		// -- Edge's, on a server with no browser anyone would run. Read
+		// alone, that sends an operator looking at the wrong thing, so
+		// the probe is asked whether the tools work at all and, if they
+		// do not, the error says this was never about `name`.
+		if usable, _ := apparmorToolsUsable(c); !usable {
+			return fmt.Errorf("%s %s: %s -- and it is not this profile: the aa-* tools fail "+
+				"the same way for a profile that does not exist, because they cannot parse "+
+				"this node's profile tree, so no mode can be changed here until the files "+
+				"named are fixed", tool, name, msg)
+		}
+		return fmt.Errorf("%s %s: %s", tool, name, msg)
 	}
 	return nil
 }

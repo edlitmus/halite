@@ -11501,6 +11501,126 @@ was created, and the machine's name was put back.
   scutil(8) and from `scutil --get` reading it back. No Mac was
   rebooted.
 
+### 5.133 `apparmor`: the probe listed the ways to fail, and the runner found a new one
+
+The `linux` leg of `fleet.yml` went red on the scheduled run of
+2026-09-24 (run 35977347113). The day before, it had been green. Two of
+the four AppArmor live tests failed, and all three mode changes in them
+failed the same way:
+
+    aa-complain halite-live-probe: ERROR: Profile for /opt/microsoft/msedge/msedge
+    exists in /etc/apparmor.d/msedge and {'f': '/etc/apparmor.d/microsoft-edge-stable',
+    'p': 'microsoft-edge-stable', 're': AARE('/opt/microsoft/msedge/msedge')}
+
+The runner image had moved from ubuntu-24.04 20260907.300.1 to
+20260920.314.1. apparmor-utils was the same, 4.0.1really4.0.1-0ubuntu0.24.04.7.
+
+#### The green run was a skip
+
+The 2026-09-23 log shows that the mutating tests did not pass. They
+skipped, on 5.37's `passt` error. The mutating half of this module
+has never run on a GitHub runner, and 5.55's `hardware` note is from
+a different host. Nothing was lost on 09-24. A skip was replaced by
+a failure, and the failure is the more honest of the two.
+
+#### What the runner has, captured
+
+The tree was taken apart on a throwaway runner of the same image (runs
+36040947862, 36041060026, 36041211085; the capture workflow was never
+merged). Each fault was moved aside in turn and the probe was run again:
+
+| Round | What `aa-enforce halite-probe-does-not-exist` said | The file(s) | Owner (`dpkg -S`) |
+|---|---|---|---|
+| 1 | `Profile for /opt/microsoft/msedge/msedge exists in … and …` | `msedge`, `microsoft-edge-stable` | `apparmor`; **none**, dated the day the image was built |
+| 2 | `Operation {'runbindable'} cannot have a source` (5.37's) | `abstractions/passt` | `passt` |
+| 3 | `Conflicting profiles for firefox defined in two files:` followed by the two paths | `usr.bin.firefox`, `firefox` | not captured; `apparmor` |
+| 4 | exit 0, `Can't find halite-probe-does-not-exist in the system path list. …` on stdout | — | — |
+
+So there are three independent faults in one tree. Each one hides
+the next. Every failure is exit 1 with `ERROR:` on stderr after a
+blank line. `passt` has not gone away: the Edge conflict is reached
+first. The Firefox conflict was hidden behind both. A duplicate built
+on purpose (two files, two profiles, one path that does not exist)
+gives round 1's shape with halite's names in it. Moving either Edge
+file aside instead of the other gives the same round 2.
+
+#### The module defect: `tools: true` on a node where nothing works
+
+`TestLiveAppArmorReadsWhatSecurityfsPrints` passed on 09-24 and did not
+log "mode changes are not possible here". So `apparmor.status` told
+the operator `tools: true` on a node where all three mode changes
+failed. This is the exact lie 5.37 was written to stop. It came back
+because 5.37 fixed it by **listing the error messages that mean no**
+(`cannot have a source`, `Can't parse`, `Traceback`, `Include file`)
+and reading every other answer as yes. The runner shows that those
+messages are not a small set. They are whatever the Python parser
+trips over first, and a new package puts a new one in front.
+
+A real node has the same exposure. Nothing on the runner is unique to
+CI. `msedge` and `firefox` are profiles that Ubuntu's own `apparmor`
+package ships. They collide with any other profile for the same
+program, whoever puts it there. On the runner, the Edge file belongs
+to no package at all. Any node that has such a pair has a tree the
+tools cannot read.
+
+The probe now **recognises the one answer that means yes**: exit 0
+with `Can't find <probe> in the system path list` (captured in round
+4). A non-zero exit reports `tools: false`. So does an exit 0 with any
+other output, and the reason says that the answer was not recognised.
+The wrong way for this field to fail is to claim that a mode can be
+changed.
+
+The unit fixture for the working case was **written, not captured**.
+It had exit 1 and `ERROR: profile … does not exist`, and it agreed with
+the module because the module had been written to match it. The real
+answer differs in both the exit status and the stream.
+
+#### Two smaller defects in the same place
+
+- **The reason lost the file names.** Both the probe and a failed
+  mode change took `firstLine` of the tool's output. The Firefox
+  error puts its two paths on lines two and three, so an operator was
+  told there was a conflict but not where. The whole message is now
+  kept, joined onto one line.
+- **A failed mode change blamed the profile.** `apparmor.complain
+  /usr/sbin/tcpdump` on this tree fails with an error about Edge,
+  which is accurate and misleading. When a mode change fails, the probe
+  is now asked whether the tools work at all. If they do not, the error
+  says the fault is not with this profile and names the files that are
+  at fault.
+
+#### Why the module does not fix the tree
+
+It could delete one file of each conflicting pair, and that works on
+the runner (round 4). On a node, it would mean a configuration manager
+removing profiles that belong to another package, chosen by the order
+in which a Python parser happened to report them, as a side effect of
+`apparmor.status`. What to remove is the operator's decision. The
+module's job is to say so correctly, with the file names. Route 3 of
+5.37 (changing the mode without the `aa-*` tools) would avoid the
+question completely. It is still the larger undertaking that 5.37 and
+5.55 described, and this entry does not start it.
+
+#### Two copies of one probe
+
+The live test's `requireModeChanges` had its own probe with its own
+shorter list (`cannot have a source`, `Traceback`). It agreed with the
+module on 09-23 and was wrong in the same way on 09-24. It now calls
+`apparmorToolsUsable`, so there is one probe. A new live test,
+`TestLiveAppArmorStatusSeesATreeTheToolsCannotRead`, builds the
+round-1 conflict on the machine. It checks that `status` says
+`tools: false` and names both files, and that a mode change on
+`/usr/bin/man` blames the tree. Then it removes the conflict and
+checks that the answer goes back to yes. This means the negative path
+is exercised on every run, whatever broken trees the next image ships.
+
+Broken on purpose: with the old list put back, the Edge, Firefox and
+built-duplicate cases in `TestStatusAsksWhetherTheToolsWorkRatherThanWhetherTheyExist`
+fail, and so do the unrecognised-answer case and
+`TestAModeChangeOnAnUnreadableTreeBlamesTheTree`. With only
+`apparmorToolMessage` swapped back to `firstLine`, the Firefox case
+fails on both of its file names.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
