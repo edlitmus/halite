@@ -127,7 +127,7 @@ func nodeConfigCheck(args *cli.Args, n *node) doctor.Check {
 }
 
 func nodeCertificateCheck(args *cli.Args, n *node) doctor.Check {
-	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.String("pki_dir", config.DefaultPKIDir))}
+	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.PathUnderRoot("pki_dir", "pki"))}
 	certs := map[string]*x509.Certificate{}
 	for label, name := range map[string]string{
 		"this node's certificate": pki.NodeCertFile,

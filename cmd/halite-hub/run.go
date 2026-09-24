@@ -37,7 +37,7 @@ func operatorClient(args *cli.Args) *transport.Client {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	files := pki.Files{Dir: args.Flag("pki-dir", cfg.String("pki_dir", config.DefaultPKIDir))}
+	files := pki.Files{Dir: args.Flag("pki-dir", cfg.PathUnderRoot("pki_dir", "pki"))}
 
 	name := args.Flag("as", "")
 	certPath := args.Flag("cert", "")

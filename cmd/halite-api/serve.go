@@ -188,7 +188,7 @@ func loadAccounts(s *service, args *cli.Args) *account.File {
 
 // loadPolicy reads the RBAC of SPEC 23.5.
 func loadPolicy(s *service, args *cli.Args) *policy.Policy {
-	path := args.Flag("policy", s.cfg.String("policy", config.DefaultPolicy))
+	path := args.Flag("policy", s.cfg.PathUnderRoot("policy", "policy.yaml"))
 	raw, err := os.ReadFile(filepath.Clean(path))
 	if errors.Is(err, os.ErrNotExist) {
 		// Deny by default, and said out loud: a service that
@@ -216,7 +216,7 @@ func loadPolicy(s *service, args *cli.Args) *policy.Policy {
 // it yields one certificate bounded by one policy rather than the
 // control plane itself.
 func hubClient(s *service, args *cli.Args) *transport.Client {
-	files := pki.Files{Dir: args.Flag("pki-dir", s.cfg.String("pki_dir", config.DefaultPKIDir))}
+	files := pki.Files{Dir: args.Flag("pki-dir", s.cfg.PathUnderRoot("pki_dir", "pki"))}
 	name := args.Flag("as", s.cfg.String("api_operator", "api"))
 
 	certPath := args.Flag("cert", files.Path("operator-"+name+".crt"))
