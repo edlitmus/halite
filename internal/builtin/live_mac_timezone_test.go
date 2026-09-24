@@ -1,12 +1,15 @@
 package builtin
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/edlitmus/halite/internal/exec"
+	hexec "github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -41,15 +44,46 @@ import (
 // library reads rather than against itself.
 func macZoneFromLink(t *testing.T) string {
 	t.Helper()
+	zone, err := macZoneLink()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return zone
+}
+
+func macZoneLink() (string, error) {
 	target, err := os.Readlink("/etc/localtime")
 	if err != nil {
-		t.Fatalf("/etc/localtime is not a link on this Mac: %v", err)
+		return "", fmt.Errorf("/etc/localtime is not a link on this Mac: %v", err)
 	}
 	i := strings.LastIndex(target, "/zoneinfo/")
 	if i < 0 {
-		t.Fatalf("/etc/localtime points at %s, which is not under a zoneinfo tree", target)
+		return "", fmt.Errorf("/etc/localtime points at %s, which is not under a zoneinfo tree", target)
 	}
-	return target[i+len("/zoneinfo/"):]
+	return target[i+len("/zoneinfo/"):], nil
+}
+
+// macZoneLinkWithin polls for the link to name want, and says how long
+// it took. The first run on the `macos` leg found /etc/localtime missing
+// straight after `systemsetup -settimezone` had exited 0, so whether the
+// tool replaces the link synchronously is a measurement, not an
+// assumption, and a state whose next run reads the link depends on it.
+func macZoneLinkWithin(t *testing.T, want string, d time.Duration) (string, error) {
+	t.Helper()
+	start := time.Now()
+	var zone string
+	var err error
+	for {
+		zone, err = macZoneLink()
+		if err == nil && zone == want {
+			t.Logf("/etc/localtime named %s %v after the call returned", want, time.Since(start).Round(time.Millisecond))
+			return zone, nil
+		}
+		if time.Since(start) > d {
+			return zone, err
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
 }
 
 func TestLiveMacTimezoneReadsThisMac(t *testing.T) {
@@ -102,16 +136,40 @@ func TestLiveMacTimezoneSetsTheZoneAndPutsItBack(t *testing.T) {
 		t.Fatal("HALITE_SYSTEM_LIVE is set and there is no `systemsetup`; this is not a Mac")
 	}
 
+	// Captured as the link target and put back as the link target, not
+	// through `systemsetup`: the first run on the `macos` leg found the
+	// runner in UTC, and `systemsetup -settimezone UTC` refuses with
+	// "UTC is not a valid timezone", so a restore through the tool left
+	// the machine in the zone the test had moved it to.
+	originalTarget, err := os.Readlink("/etc/localtime")
+	if err != nil {
+		t.Fatalf("/etc/localtime is not a link on this Mac: %v", err)
+	}
 	original := macZoneFromLink(t)
-	t.Logf("this Mac is in %s", original)
+	t.Logf("this Mac is in %s (%s)", original, originalTarget)
+	macLogTool(t, "systemsetup", "-gettimezone")
+	if out, err := exec.Command("systemsetup", "-listtimezones").CombinedOutput(); err == nil {
+		names := strings.Fields(string(out))
+		has := func(z string) bool {
+			for _, n := range names {
+				if n == z {
+					return true
+				}
+			}
+			return false
+		}
+		t.Logf("systemsetup -listtimezones: %d names; UTC=%v GMT=%v US/Pacific=%v Pacific/Chatham=%v",
+			len(names), has("UTC"), has("GMT"), has("US/Pacific"), has("Pacific/Chatham"))
+	}
 	t.Cleanup(func() {
-		res, err := c.Run(exec.Command{
-			Argv:           []string{"systemsetup", "-settimezone", original},
-			IgnoreExitCode: true,
-		})
-		if err != nil || res.Code != 0 {
-			t.Errorf("RESTORE FAILED: systemsetup -settimezone %s: %v %s",
-				original, err, res.Stderr+res.Stdout)
+		tmp := "/etc/localtime.halite-restore"
+		_ = os.Remove(tmp)
+		if err := os.Symlink(originalTarget, tmp); err != nil {
+			t.Errorf("RESTORE FAILED: %v", err)
+			return
+		}
+		if err := os.Rename(tmp, "/etc/localtime"); err != nil {
+			t.Errorf("RESTORE FAILED: %v", err)
 			return
 		}
 		if now := macZoneFromLink(t); now != original {
@@ -142,13 +200,16 @@ func TestLiveMacTimezoneSetsTheZoneAndPutsItBack(t *testing.T) {
 	// the reader reads. Checked here against the link itself, and against
 	// what `systemsetup` reports, which are the two things that have to
 	// agree for the next run to see the change.
-	if link := macZoneFromLink(t); link != want {
-		t.Errorf("after setting %s, /etc/localtime points at %s", want, link)
+	macLogTool(t, "ls", "-l", "/etc/localtime")
+	macLogTool(t, "systemsetup", "-gettimezone")
+	if link, err := macZoneLinkWithin(t, want, 5*time.Second); err != nil || link != want {
+		macLogTool(t, "ls", "-l", "/etc/localtime")
+		t.Fatalf("five seconds after setting %s, /etc/localtime names %q (%v)", want, link, err)
 	}
 	if got, err := currentZone(c); err != nil || got != want {
 		t.Errorf("after setting %s, get_zone says %q (%v)", want, got, err)
 	}
-	if out, err := c.Run(exec.Command{
+	if out, err := c.Run(hexec.Command{
 		Argv: []string{"systemsetup", "-gettimezone"}, IgnoreExitCode: true,
 	}); err == nil && !strings.Contains(out.Stdout, want) {
 		t.Errorf("after setting %s, systemsetup -gettimezone says %q", want, strings.TrimSpace(out.Stdout))
@@ -178,10 +239,20 @@ func TestLiveMacTimezoneSetsTheZoneAndPutsItBack(t *testing.T) {
 	// And set_zone, which has no such check in front of it, must report
 	// the tool's refusal rather than succeed: `systemsetup` is the tool
 	// whose exit status nothing here had ever seen.
-	if err := setZone(c, "Mars/Olympus_Mons"); err == nil {
+	err = setZone(c, "Mars/Olympus_Mons")
+	t.Logf("set_zone Mars/Olympus_Mons: %v", err)
+	if err == nil {
 		t.Errorf("set_zone of a zone this Mac does not have reported success")
 	}
 	if link := macZoneFromLink(t); link != want {
 		t.Errorf("a refused zone moved /etc/localtime from %s to %s", want, link)
 	}
+}
+
+// macLogTool runs a command outside the module and logs what it said and
+// how it exited, which is what this test exists to find out.
+func macLogTool(t *testing.T, argv ...string) {
+	t.Helper()
+	out, err := exec.Command(argv[0], argv[1:]...).CombinedOutput()
+	t.Logf("%s: %q (%v)", strings.Join(argv, " "), strings.TrimSpace(string(out)), err)
 }
