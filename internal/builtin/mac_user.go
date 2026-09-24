@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -610,9 +611,9 @@ func registerMacUser(r *Registries) {
 			Sig: signature.Signature{
 				Module: "mac_shadow", Function: "set_password",
 				Doc: "Set an account's password. macOS keeps no offline hash, so this takes " +
-					"a plaintext and runs `dscl . -passwd`, as Salt's does — which means the " +
-					"plaintext is briefly in the process table, because macOS offers no " +
-					"standard-input path for it.",
+					"a plaintext, and hands it to passwd(1) on standard input rather than as an " +
+					"argument, so it is not in the process table. A password with a line break " +
+					"or other control character is refused.",
 				Params: []signature.Param{
 					uname,
 					req("password", signature.String, "The new password, in plaintext."),
@@ -821,12 +822,118 @@ func hasShadowHash(c *exec.Context, name string) bool {
 	return res.Code == 0 && strings.Contains(res.Stdout, "ShadowHashData")
 }
 
+// macShadowSetPassword sets a password with passwd(1), which reads the
+// new password from standard input, so that the plaintext is never in an
+// argv.
+//
+// This used to run `dscl . -passwd /Users/<name> <password>`, with a
+// comment saying macOS offers no standard-input path. An argv is
+// readable by every local account through `ps` for as long as the call
+// runs, and dscl(1) itself calls that form "inherently insecure"
+// (DIVERGENCE 5.134). Four ways of getting the password onto stdin were
+// tried as root on a macOS 15.7.9 runner, each checked by authenticating
+// with the password afterwards:
+//
+//   - **dscl interactive mode, with the password on the command line it
+//     reads.** dscl's tokeniser is not the shell's and is not documented.
+//     Double-quoted, a single quote split the password into passwd's old
+//     and new arguments. Backslash-escaped, six of thirteen passwords
+//     were accepted with exit 0 and no error, and *did not
+//     authenticate* afterwards: dscl had set a password nobody typed.
+//     That is the worst available outcome, and it is why this does not
+//     escape anything.
+//   - **dscl's own prompt** (`passwd` with no password). With no
+//     terminal it printed `New Password:`, then its usage text, and set
+//     nothing.
+//   - **`sysadminctl -newPassword -`**: "Operation is not permitted
+//     without secure token unlock", which is the normal state of a node.
+//   - **passwd(1)**, with the password twice on stdin for its two
+//     prompts: every password authenticated, including all of ASCII
+//     punctuation, a leading `-`, leading and trailing spaces, and
+//     non-ASCII. passwd reads a line, so nothing is tokenised at all.
+//
+// A line break, or any other control character, is refused before
+// anything runs: passwd reads up to a newline, so one would end the
+// password there. The timeout is there in case passwd ever reaches for
+// a terminal instead of stdin, which it did not on the runner and which
+// a node, having no terminal, cannot provide.
 func macShadowSetPassword(c *exec.Context, name, password string) error {
 	if name == "" {
 		return fmt.Errorf("mac_shadow.set_password needs an account name")
 	}
-	return macRun(c, []string{"dscl", ".", "-passwd", "/Users/" + name, password},
-		"dscl -passwd /Users/"+name)
+	if !macPlainAccountName(name) {
+		return fmt.Errorf("mac_shadow.set_password: %q is not an account name this will pass to passwd", name)
+	}
+	for _, r := range password {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("mac_shadow.set_password: the password contains a control character; " +
+				"passwd reads it as a line, so a line break would end the password early")
+		}
+	}
+	if c.Which("passwd") == "" {
+		return fmt.Errorf("mac_shadow.set_password needs `passwd`, which was not found")
+	}
+	// Asked first, so that the commonest mistake gets a clear answer
+	// rather than one read out of passwd's stderr.
+	if info, err := macUserInfo(c, name); err != nil {
+		return fmt.Errorf("mac_shadow.set_password: reading %s: %w", name, err)
+	} else if info.Len() == 0 {
+		return fmt.Errorf("mac_shadow.set_password: there is no account named %s", name)
+	}
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"passwd", name},
+		Stdin:          password + "\n" + password + "\n",
+		Timeout:        30 * time.Second,
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return err
+	}
+	if res.Code != 0 {
+		return fmt.Errorf("passwd %s exited %d: %s", name, res.Code,
+			firstLine(strings.TrimSpace(res.Stderr+res.Stdout)))
+	}
+	if extra := passwdStderrBeyondPrompts(res.Stderr); extra != "" {
+		return fmt.Errorf("passwd %s exited 0 and said: %s", name, firstLine(extra))
+	}
+	return nil
+}
+
+// passwdStderrBeyondPrompts returns what passwd wrote to stderr other than
+// its two prompts.
+//
+// passwd's exit status does not say whether it worked: on a macOS 15.7.9
+// runner, `passwd` for an account that does not exist printed
+// `passwd: Unknown user name '<name>'.` and exited 0. So success is
+// matched rather than failure: a successful run's stderr was exactly
+// `New password:Retype new password:`, and anything else there is taken
+// as passwd saying no. A list of known error messages would pass the
+// first one nobody had seen. stdout is not read, because it holds a
+// banner about the login keychain on every run, successful or not.
+func passwdStderrBeyondPrompts(stderr string) string {
+	rest := strings.ReplaceAll(stderr, "Retype new password:", "")
+	rest = strings.ReplaceAll(rest, "New password:", "")
+	return strings.TrimSpace(rest)
+}
+
+// macPlainAccountName is the shape of a short account name: letters,
+// digits, `_`, `-` and `.`, not starting with `-` or `.`. Anything else
+// is refused rather than passed on: a name that starts with `-` is an
+// option to passwd, and a name is not a secret that has to be carried
+// verbatim.
+func macPlainAccountName(name string) bool {
+	if name == "" || strings.HasPrefix(name, "-") || strings.HasPrefix(name, ".") {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '_', r == '-', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // ---- the virtual user/group states on darwin ----

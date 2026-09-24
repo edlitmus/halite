@@ -18,6 +18,19 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `mac_shadow.set_password` no longer exposes the password in `ps`
+
+The password was passed to `dscl` as a command-line argument, so any
+local user could read it with `ps` while the call ran. It now goes to
+`passwd(1)` on standard input. Two consequences for operators:
+
+- A password that contains a line break or another control character,
+  including a tab, is refused.
+- Failures are detected from `passwd`'s output, because `passwd` exits
+  0 even when it refuses.
+
+The login keychain is still not updated, as before. DIVERGENCE 5.134.
+
 ### `hostname` on macOS keeps the name a Mac boots with
 
 On a Mac, `hostname.system` and `hostname.set_hostname` wrote

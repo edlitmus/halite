@@ -408,3 +408,106 @@ func TestMacAccountModulesAreRegisteredAndRestricted(t *testing.T) {
 		}
 	}
 }
+
+// The password goes to passwd on standard input, never in an argv,
+// where every local account can read it through `ps` (DIVERGENCE 5.134).
+// Platform-neutral: this is what the module hands to the runner, so it
+// runs on every CI leg and not only on a Mac.
+func TestMacShadowSetPasswordKeepsThePasswordOutOfArgv(t *testing.T) {
+	const secret = `s3cret with "quotes" and \ backslash`
+	c, runner := macShadowCtx(t, macShadowPrompts)
+
+	if err := macShadowSetPassword(c, "halitet1", secret); err != nil {
+		t.Fatal(err)
+	}
+	var cmd exec.Command
+	for _, ran := range runner.Ran {
+		for _, arg := range ran.Argv {
+			if strings.Contains(arg, "s3cret") {
+				t.Errorf("the password is in argv: %q", ran.Argv)
+			}
+		}
+		if ran.Argv[0] == "passwd" {
+			cmd = ran
+		}
+	}
+	if strings.Join(cmd.Argv, " ") != "passwd halitet1" {
+		t.Fatalf("ran %v, want passwd halitet1 among them", runner.RanCommands())
+	}
+	// Verbatim, twice, for passwd's two prompts: nothing is escaped,
+	// because passwd reads a line and does not tokenise it.
+	if want := secret + "\n" + secret + "\n"; cmd.Stdin != want {
+		t.Errorf("stdin is %q, want %q", cmd.Stdin, want)
+	}
+	if cmd.Timeout == 0 {
+		t.Error("passwd runs with no timeout, so a prompt on a terminal would hang the run")
+	}
+}
+
+// passwd exits 0 when it refuses, so the module reads its stderr, and
+// reads it for what success looks like. Both stderr strings are the ones
+// passwd printed on a macOS 15.7.9 runner under sudo.
+func TestMacShadowSetPasswordReadsPasswdsStderrNotItsExit(t *testing.T) {
+	c, _ := macShadowCtx(t, macShadowPrompts)
+	if err := macShadowSetPassword(c, "halitet1", "x"); err != nil {
+		t.Errorf("passwd's two prompts alone were taken as a failure: %v", err)
+	}
+
+	c, _ = macShadowCtx(t, exec.Result{Stderr: "passwd: Unknown user name 'halitet1'.\n"})
+	err := macShadowSetPassword(c, "halitet1", "x")
+	if err == nil || !strings.Contains(err.Error(), "Unknown user name") {
+		t.Errorf("passwd's refusal with exit 0 was taken as success: %v", err)
+	}
+}
+
+// An account that is not there is refused before passwd runs.
+func TestMacShadowSetPasswordRefusesAnAccountThatIsNotThere(t *testing.T) {
+	c, runner := macAccountCtx(t, map[string]exec.Result{
+		"dscl -plist . -read /Users/ghost": dsclNotFound,
+	})
+	c.Lookup = func(name string) string { return "/usr/bin/" + name }
+	err := macShadowSetPassword(c, "ghost", "x")
+	if err == nil || !strings.Contains(err.Error(), "no account named ghost") {
+		t.Errorf("got %v", err)
+	}
+	if ranPrefix(runner, "passwd") {
+		t.Error("passwd ran for an account that is not there")
+	}
+}
+
+// macShadowPrompts is passwd's stderr on success, as captured.
+var macShadowPrompts = exec.Result{Stderr: "New password:Retype new password:"}
+
+func macShadowCtx(t *testing.T, passwd exec.Result) (*exec.Context, *exec.RecordingRunner) {
+	t.Helper()
+	c, runner := macAccountCtx(t, map[string]exec.Result{
+		"dscl -plist . -read /Users/halitet1": {Stdout: macUserPlist("halitet1", "501", "20", "/Users/halitet1", "/bin/zsh", "t")},
+	})
+	runner.Default = passwd
+	c.Lookup = func(name string) string { return "/usr/bin/" + name }
+	return c, runner
+}
+
+// passwd reads the password as a line, so a line break would end it
+// early and the rest would become the retype -- or, on the dscl
+// interactive path this replaced, a second command run as root. Refused
+// before anything runs, as is a name that is not a plain account name
+// (a leading `-` is an option to passwd).
+func TestMacShadowSetPasswordRefusesASecondCommand(t *testing.T) {
+	for _, tc := range []struct{ name, password string }{
+		{"halitet1", "x\ndelete /Users/admin"},
+		{"halitet1", "x\rdelete /Users/admin"},
+		{"halitet1", "tab\there"},
+		{"halitet1 /Users/admin", "x"},
+		{"../admin", "x"},
+		{"-q", "x"},
+	} {
+		c, runner := macShadowCtx(t, macShadowPrompts)
+		if err := macShadowSetPassword(c, tc.name, tc.password); err == nil {
+			t.Errorf("name %q, password %q was accepted", tc.name, tc.password)
+		}
+		if len(runner.Ran) != 0 {
+			t.Errorf("name %q ran %v before refusing", tc.name, runner.RanCommands())
+		}
+	}
+}
