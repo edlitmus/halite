@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -324,9 +325,34 @@ func TestMacGroupPresentAndAbsent(t *testing.T) {
 	}
 }
 
+func TestMacUserGroupsReadsOnlyTheRecordHeaders(t *testing.T) {
+	c, _ := macAccountCtx(t, map[string]exec.Result{
+		"dscl . -search /Groups GroupMembership alice": {Stdout: "_lpadmin\t\tGroupMembership = (\n" +
+			"    \"alice\"\n)\nadmin\t\tGroupMembership = (\n    \"_mbsetupuser\",\n    \"alice\"\n)\n"},
+	})
+	got, err := macUserGroups(c, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(got) != "[_lpadmin admin]" {
+		t.Errorf("got %v, want [_lpadmin admin]", got)
+	}
+}
+
 func TestMacUserSetGroupsConverges(t *testing.T) {
-	// alice is in staff and admin; wants dev and staff.
-	search := exec.Result{Stdout: "staff\t\tGroupMembership\nadmin\t\tGroupMembership\n"}
+	// alice is in staff and admin; wants dev and staff. The listing is the
+	// shape `dscl . -search /Groups GroupMembership <user>` printed on
+	// macOS 26.7 (build 25G229), with the account renamed: a header, the
+	// members indented, and a closing ")" at column 0. The fixture this
+	// replaced had the headers alone, which is why a parser that read ")"
+	// as a group passed here (DIVERGENCE 5.138).
+	search := exec.Result{Stdout: "staff\t\tGroupMembership = (\n" +
+		"    \"_mbsetupuser\",\n" +
+		"    \"alice\"\n" +
+		")\n" +
+		"admin\t\tGroupMembership = (\n" +
+		"    \"alice\"\n" +
+		")\n"}
 	c, runner := macAccountCtx(t, map[string]exec.Result{
 		"dscl . -search /Groups GroupMembership alice": search,
 	})

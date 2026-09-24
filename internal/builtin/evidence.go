@@ -565,9 +565,15 @@ var moduleEvidence = map[string]exec.Evidence{
 		"runs only against a throwaway tree, deliberately, because a wrong line there locks " +
 		"every account out of the node and a test is not a thing to find that out with"},
 
-	"user": {Level: exec.Captured, Note: "reads go through os/user against the real " +
-		"account database, and no account has been created, changed or removed on a real " +
-		"machine by this module"},
+	"user": {Level: exec.Hardware, Note: "`user.present`, `group.present` and their " +
+		"`absent` states created, changed and removed a real account and three real groups " +
+		"as root on an Ubuntu 24.04 runner (`useradd`/`usermod`) and on FreeBSD 15.1 (`pw`), " +
+		"on the `linux` and `freebsd` legs of `fleet.yml`, with membership read back through " +
+		"`id -Gn` rather than this module. The first run found a run that changed only the " +
+		"shell stripping a hand-added group on both, because `-G` replaces the supplementary " +
+		"list and was sent on every change (DIVERGENCE 5.138). Not covered: `password`, the " +
+		"ageing options, an explicit uid and `unique`, `system`, `usergroup`, and " +
+		"`remove_groups` with no groups, which is refused rather than run"},
 
 	"snap": {Level: exec.Captured, Note: "read against the real snapd 2.76.3 on Ubuntu " +
 		"22.04 and 26.04, which is what the fixtures had never been: they were written " +
@@ -621,9 +627,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"and supplementary group asked for, a second `user.present` with the same spec " +
 		"changed nothing, a shell change was seen and then converged, and `user.absent` with " +
 		"`purge` removed the record and the home and was then a no-op. Not covered: the " +
-		"`system`/IsHidden path, an explicit uid and the `unique` refusal, `usergroup`, and " +
-		"group *removal* -- `diffAccount` is append-only by design, so a group dropped from a " +
-		"tree's list is never taken off the account (DIVERGENCE 5.115)"},
+		"`system`/IsHidden path, an explicit uid and the `unique` refusal, and `usergroup` " +
+		"(DIVERGENCE 5.115). Group removal is `remove_groups`, driven on a macOS 15.7.9 runner " +
+		"on the `macos` leg alongside the Linux and FreeBSD paths it has to agree with; it found " +
+		"the `dscl -search` reader taking each record's closing `)` for a group (DIVERGENCE " +
+		"5.138)"},
 	"mac_group": {Level: exec.Hardware, Note: "created through the real `dseditgroup` on macOS " +
 		"27.0 (build 26A5425a) under sudo, read back with a gid, converged on a second " +
 		"`group.present`, then removed and converged again (DIVERGENCE 5.115). Not covered: " +

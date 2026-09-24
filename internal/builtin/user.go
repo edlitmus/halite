@@ -66,6 +66,11 @@ type userSpec struct {
 	// Unique requires the uid to be unused. False is useradd's -o, and
 	// is how an estate gives a second name to uid 0 deliberately.
 	Unique bool
+	// RemoveGroups makes Groups the account's complete supplementary set,
+	// so a membership the tree does not name is removed. False, the
+	// default, makes Groups the groups the account must be in and leaves
+	// every other membership alone. See diffAccount.
+	RemoveGroups bool
 }
 
 // freebsdTool drives pw(8), which is FreeBSD's single account tool.
@@ -413,7 +418,8 @@ func registerUserStates(r *Registries) {
 					opt("home", signature.Path, "", "The home directory."),
 					opt("shell", signature.Path, "", "The login shell."),
 					opt("fullname", signature.String, "", "The comment field."),
-					opt("groups", signature.List, nil, "Supplementary groups."),
+					opt("groups", signature.List, nil, "Supplementary groups the account must be in. Other memberships are left alone unless remove_groups is set."),
+					opt("remove_groups", signature.Bool, false, "Make groups the complete supplementary set, removing the account from any group not listed. Off by default, unlike Salt, so that a membership added by hand is not taken away by a tree that never named it."),
 					opt("createhome", signature.Bool, true, "Create the home directory."),
 					opt("system", signature.Bool, false, "Create a system account."),
 					opt("password", signature.String, "", "The password hash. Passed to the account tool on standard input, never in an argument vector."),
@@ -532,6 +538,8 @@ func specFrom(args *value.Map) userSpec {
 		Password:   states.Str(args, "password", ""),
 		UserGroup:  optionalBool(args, "usergroup"),
 		Unique:     states.Bool(args, "unique", true),
+
+		RemoveGroups: states.Bool(args, "remove_groups", false),
 	}
 }
 
@@ -560,6 +568,9 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	spec := specFrom(args)
 	if spec.Name == "" {
 		return states.False("This state needs an account name."), nil
+	}
+	if why := removeGroupsUnsupported(spec); why != "" {
+		return states.False(why), nil
 	}
 	tool, err := pickAccountTool(c)
 	if err != nil {
@@ -645,7 +656,18 @@ func userPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	argv := tool.AddUser(spec)
 	if exists {
-		argv = tool.ModUser(spec)
+		// ModUser is handed only what changed about groups. It used to be
+		// handed the spec, so any change -- a shell, a comment -- also
+		// sent `-G <the tree's list>`, which replaces the whole
+		// supplementary set; measured on an Ubuntu runner and on FreeBSD
+		// 15.1 (DIVERGENCE 5.138). Now `-G` goes only when the groups
+		// differ, and carries the full set the account should end with.
+		mod := spec
+		mod.Groups = nil
+		if changes.Has("groups") {
+			mod.Groups, _ = wantedGroups(supplementaryGroups(current), spec.Groups, spec.RemoveGroups)
+		}
+		argv = tool.ModUser(mod)
 	}
 	if _, err := c.Run(exec.Command{Argv: argv}); err != nil {
 		return states.False(fmt.Sprintf("The account %s could not be %s: %v", spec.Name, verb, err)), nil
@@ -696,22 +718,15 @@ func diffAccount(current *value.Map, spec userSpec, changes *value.Map) {
 			changes.Set("fullname", states.Change(cur, spec.Comment))
 		}
 	}
-	if len(spec.Groups) > 0 {
+	if len(spec.Groups) > 0 || spec.RemoveGroups {
 		cur, _ := current.Get("groups")
-		have := map[string]bool{}
-		if list, ok := cur.([]any); ok {
-			for _, g := range list {
-				have[value.KeyString(g)] = true
+		have := supplementaryGroups(current)
+		if final, differs := wantedGroups(have, spec.Groups, spec.RemoveGroups); differs {
+			anyFinal := make([]any, len(final))
+			for i, g := range final {
+				anyFinal[i] = g
 			}
-		}
-		var missing []string
-		for _, g := range spec.Groups {
-			if !have[g] {
-				missing = append(missing, g)
-			}
-		}
-		if len(missing) > 0 {
-			changes.Set("groups", states.Change(cur, spec.Groups))
+			changes.Set("groups", states.Change(cur, anyFinal))
 		}
 	}
 	// The shell is not in os/user's record, so it is read separately; a
@@ -731,6 +746,96 @@ func diffAccount(current *value.Map, spec userSpec, changes *value.Map) {
 			changes.Set("shell", states.Change(cur, spec.Shell))
 		}
 	}
+}
+
+// removeGroupsUnsupported refuses remove_groups with no groups to keep.
+//
+// That would mean "remove every supplementary group", and `-G` is only
+// ever sent with a non-empty list: what `usermod -G ""` and `pw usermod
+// -G ""` do to an account has not been run on either platform. So it is
+// refused by name rather than done by a path nobody has watched.
+func removeGroupsUnsupported(spec userSpec) string {
+	if spec.RemoveGroups && len(spec.Groups) == 0 {
+		return fmt.Sprintf("%s: remove_groups with no groups would remove the account from every "+
+			"supplementary group, which this build does not do; name the groups to keep.", spec.Name)
+	}
+	return ""
+}
+
+// supplementaryGroups is the account's groups without its primary one.
+//
+// userInfo reads the list from os/user's GroupIds, which includes the
+// primary group; `-G` on usermod and pw is the supplementary list, which
+// does not. Comparing the two as they stand would make remove_groups
+// see the primary group as a membership the tree did not name, on every
+// run, and try to remove it.
+func supplementaryGroups(current *value.Map) []string {
+	var primary string
+	if gid, ok := current.Get("gid"); ok {
+		if g, err := user.LookupGroupId(value.KeyString(gid)); err == nil {
+			primary = g.Name
+		}
+	}
+	cur, _ := current.Get("groups")
+	list, _ := cur.([]any)
+	var out []string
+	for _, g := range list {
+		if name := value.KeyString(g); name != primary {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// wantedGroups is the supplementary set the account should end with, and
+// whether that differs from the one it has.
+//
+// Without remove, it is what the account has plus whatever it was asked
+// for and lacks: `groups` names the groups an account must be in. With
+// remove, it is exactly what was asked for.
+//
+// The result is the whole set, not the additions, because that is what
+// `usermod -G` and `pw usermod -G` take: both *replace* the supplementary
+// list. Handing them the tree's list alone, on a run that changed the
+// shell and nothing about groups, was how a hand-added group was
+// stripped on Linux and FreeBSD (DIVERGENCE 5.138).
+func wantedGroups(have, want []string, remove bool) ([]string, bool) {
+	haveSet := map[string]bool{}
+	for _, g := range have {
+		haveSet[g] = true
+	}
+	wantSet := map[string]bool{}
+	for _, g := range want {
+		wantSet[g] = true
+	}
+	differs := false
+	for g := range wantSet {
+		if !haveSet[g] {
+			differs = true
+		}
+	}
+	if remove {
+		for g := range haveSet {
+			if !wantSet[g] {
+				differs = true
+			}
+		}
+	}
+	final := map[string]bool{}
+	for g := range wantSet {
+		final[g] = true
+	}
+	if !remove {
+		for g := range haveSet {
+			final[g] = true
+		}
+	}
+	out := make([]string, 0, len(final))
+	for g := range final {
+		out = append(out, g)
+	}
+	sort.Strings(out)
+	return out, differs
 }
 
 // shellOf reads an account's login shell from /etc/passwd. It returns an

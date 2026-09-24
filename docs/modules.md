@@ -10927,7 +10927,7 @@ user.absent(name: string, purge: bool = false)
 Ensure an account exists with the given attributes.
 
 ```
-user.present(name: string, uid: int, gid: any, home: path = , shell: path = , fullname: string = , groups: list, createhome: bool = true, system: bool = false, password: string = , usergroup: bool, unique: bool = true, enforce_password: bool = true, mindays: int, maxdays: int, warndays: int, inactdays: int, expire: int)
+user.present(name: string, uid: int, gid: any, home: path = , shell: path = , fullname: string = , groups: list, remove_groups: bool = false, createhome: bool = true, system: bool = false, password: string = , usergroup: bool, unique: bool = true, enforce_password: bool = true, mindays: int, maxdays: int, warndays: int, inactdays: int, expire: int)
 ```
 
 | Parameter | Type | Default | Meaning |
@@ -10938,7 +10938,8 @@ user.present(name: string, uid: int, gid: any, home: path = , shell: path = , fu
 | `home` | path | `` | The home directory. |
 | `shell` | path | `` | The login shell. |
 | `fullname` | string | `` | The comment field. |
-| `groups` | list | — | Supplementary groups. |
+| `groups` | list | — | Supplementary groups the account must be in. Other memberships are left alone unless remove_groups is set. |
+| `remove_groups` | bool | `false` | Make groups the complete supplementary set, removing the account from any group not listed. Off by default, unlike Salt, so that a membership added by hand is not taken away by a tree that never named it. |
 | `createhome` | bool | `true` | Create the home directory. |
 | `system` | bool | `false` | Create a system account. |
 | `password` | string | `` | The password hash. Passed to the account tool on standard input, never in an argument vector. |

@@ -205,9 +205,16 @@ func macUserGroups(c *exec.Context, name string) ([]any, error) {
 		if len(f) == 0 {
 			continue
 		}
-		// `dscl -search` prints "<group>\t\tGroupMembership = (...)"; the
-		// group name is the first field of the record's first line.
-		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") && f[0] != "" && !seen[f[0]] {
+		// `dscl -search` prints each match as a header line,
+		// "<group>\t\tGroupMembership = (", the members indented one per
+		// line, and a closing ")" -- at column 0, like the header. This
+		// used to take every unindented line as a group, so ")" was read
+		// as a group the account is in on every Mac: `user.info` reported
+		// it, and remove_groups, the first caller to act on the list, tried
+		// `dseditgroup -d` on a group named ")" (DIVERGENCE 5.138). The
+		// header is the only line that names the attribute.
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") &&
+			strings.Contains(line, "\tGroupMembership") && !seen[f[0]] {
 			seen[f[0]] = true
 			names = append(names, f[0])
 		}
@@ -948,6 +955,9 @@ func macUserPresentState(c *exec.Context, args *value.Map) (states.Result, error
 	if spec.Name == "" {
 		return states.False("This state needs an account name."), nil
 	}
+	if why := removeGroupsUnsupported(spec); why != "" {
+		return states.False(why), nil
+	}
 	if spec.Password != "" {
 		return states.False(fmt.Sprintf(
 			"%s: a password hash cannot be applied on macOS — Open Directory keeps a "+
@@ -1020,7 +1030,11 @@ func macApplyUserChanges(c *exec.Context, spec userSpec, changes *value.Map) err
 		}
 	}
 	if changes.Has("groups") {
-		if err := macUserSetGroups(c, spec.Name, spec.Groups, true); err != nil {
+		// Append-only unless remove_groups, which is the same meaning the
+		// Linux and FreeBSD paths give `groups` (DIVERGENCE 5.138). This
+		// was always append-only, so a group dropped from a tree was
+		// never taken off a Mac account and there was no way to ask.
+		if err := macUserSetGroups(c, spec.Name, spec.Groups, !spec.RemoveGroups); err != nil {
 			return err
 		}
 	}

@@ -18,6 +18,22 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `user.present` no longer strips groups it was not asked about
+
+On Linux and FreeBSD, any change to an account, such as a new shell,
+also replaced its supplementary groups with the tree's `groups` list.
+Every membership added by hand was removed. On macOS, a group was
+never removed. On every platform, `groups` now means "the groups the
+account must be in", and other memberships are left alone.
+
+The new `remove_groups: true` option makes the list exact: the account
+is removed from every group the tree does not name. It is off by
+default, unlike Salt's. `remove_groups` with an empty `groups` list is
+refused.
+
+`user.info` on macOS no longer reports a group named `)`.
+DIVERGENCE 5.138.
+
 ### `mac_shadow.set_password` no longer exposes the password in `ps`
 
 The password was passed to `dscl` as a command-line argument, so any
