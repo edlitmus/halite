@@ -12096,18 +12096,23 @@ usage text advertises was accepted and ignored -- the
 accepted-and-does-nothing shape `InertKeys` exists to stop happening to
 settings, in a command line instead. It is wired now, and scrubbed.
 
-### 5.138 Four gates that read text where a check belonged
+### 5.138 Five gates that read text where a check belonged
 
 The review's Tier 2: the guards that had stopped guarding. Each was
 verified here by breaking the thing it covers and watching it pass, then
 fixed and broken again.
 
-They share one shape, and it is worth naming before the four: **a text
+They share one shape, and it is worth naming before the five: **a text
 search standing in for a check.** `strings.Contains` over a file, a field
-or a comment, where a parse or a value comparison belongs. The same shape
-as 5.135's pillar rule, which read an expression's spelling rather than
-what it compiled to, and as 5.82's grain comparison. A search reads what
-somebody *wrote*; a check reads what the program *does*.
+or a comment, where a parse or a value comparison belongs. Five, not the
+four this entry first counted: `make release-gate` searched a free-text
+field for the word `root`, which is the same shape as the other four and
+belongs in the count.
+
+It is the same shape as 5.135's pillar rule, which read an expression's
+spelling rather than what it compiled to, and as 5.82's grain comparison.
+A search reads what somebody *wrote*; a check reads what the program
+*does*.
 
 #### The dependency allowlist had never run, anywhere
 
