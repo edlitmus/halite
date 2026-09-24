@@ -49,9 +49,29 @@ func TestLiveSysrcWritesAndReadsBackARealRCConf(t *testing.T) {
 	r := New()
 
 	// Absent to begin with, through the module's own reader.
-	if _, err := r.Exec.Call(c, "sysrc.get",
-		value.MapOf("name", "halite_probe_enable", "file", rc)); err == nil {
-		t.Error("sysrc.get answered for a setting that is not there")
+	//
+	// `sysrc.get` documents "an empty string when it is not set", and that
+	// is the contract being pinned here. The first version of this test
+	// asserted an *error* instead, from an assumption about what a reader
+	// does with a missing key, and the FreeBSD leg refused it on the first
+	// run it ever did -- which is the whole argument for the leg. A test
+	// written from an assumption tests the assumption.
+	//
+	// Worth knowing rather than fixing: because absence is flattened to
+	// the empty string, `sysrc.get` cannot tell `halite_probe_enable` unset
+	// from `halite_probe_enable=""`, and on FreeBSD the second is a real
+	// and meaningful state -- `ifconfig_em0=""` is how an interface is
+	// declared with no options. The state functions read `sysrcGet`'s
+	// second return value and do tell them apart; only the exec function
+	// discards it.
+	before, err := r.Exec.Call(c, "sysrc.get",
+		value.MapOf("name", "halite_probe_enable", "file", rc))
+	if err != nil {
+		t.Fatalf("sysrc.get on a setting that is not there: %v", err)
+	}
+	if s, _ := before.(string); s != "" {
+		t.Errorf("sysrc.get returned %#v for a setting that is not there, and the "+
+			"function documents an empty string", before)
 	}
 
 	// Set it, and read it back with the real tool rather than with the

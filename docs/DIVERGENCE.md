@@ -12451,23 +12451,46 @@ recorder decided what it saw. A skip guard on the real tool reads exactly
 like a test that uses the real tool, which is why this survived a
 FreeBSD-first project's attention for as long as it did.
 
-It is `Assumed` now, which is what it always was.
+It went to `Assumed`, which is what it always was, and then to
+`Hardware`, which it has now earned.
 `TestLiveSysrcWritesAndReadsBackARealRCConf` drives the real binary
 against an rc.conf in a directory the test owns -- `sysrc -f <file>` is the
 tool's own way of working somewhere other than `/etc/rc.conf`, and the
-module already exposes it -- and checks four things in order: that `get`
-refuses a setting that is not there, that `set` puts it in the file on
-disk *and* that the real `sysrc -n` reads it back, that a dry run changes
-nothing, and that `sysrc.absent` removes it. The tool's own read-back is
-not enough on its own; a module that agrees with itself proves nothing.
+module already exposes it -- and checks, in order, that `get` answers for
+a setting that is not there, that `set` puts it in the file on disk *and*
+that the real `sysrc -n` reads it back, that a dry run changes nothing,
+and that `sysrc.absent` removes it. The tool's own read-back is not enough
+on its own; a module that agrees with itself proves nothing.
 
-**It has not run.** This host's shell is a Linux compatibility layer and
-FreeBSD's `sysrc` is a shell script that fails there on readonly
-variables, so the witness has to be fleet.yml's `freebsd` leg, and
-`internal/builtin/sysrc*.go` is now in that leg's trigger paths. Until
-that run exists **`make release-gate` is red on `sysrc`**, which is the
-gate working: an unknown was recorded as an unknown, and the claim that
-replaced it will be a measurement.
+This host could not be the witness: its shell is a Linux compatibility
+layer and FreeBSD's `sysrc` is a shell script that fails there on readonly
+variables. So `internal/builtin/sysrc*.go` went into fleet.yml's `freebsd`
+leg's trigger paths, and the leg ran it.
+
+##### What the first run found, which was a defect in the test
+
+The leg refused it, on the opening assertion, and the assertion was wrong:
+it expected `sysrc.get` to **error** on a setting that is not there, where
+the function's own documentation says *"an empty string when it is not
+set"*. Written from an assumption about what a reader does with a missing
+key, and it tested the assumption.
+
+This is the argument for the leg in one line. The other five assertions --
+including both mutating ones, the write to a real `rc.conf` and the removal
+from it -- passed against the real tool on the first attempt. The one that
+failed was mine.
+
+The assertion now pins the documented contract instead, which is the
+stronger test: an empty string, no error, measured against the real tool.
+One thing is recorded rather than fixed, because it is a limitation and not
+a fault: absence flattened to the empty string means `sysrc.get` cannot
+tell `halite_probe_enable` unset from `halite_probe_enable=""`, and on
+FreeBSD the second is meaningful -- `ifconfig_em0=""` declares an interface
+with no options. `sysrcGet`'s second return value does distinguish them and
+the state functions read it; only the exec function discards it.
+
+`make release-gate` was red between those two commits, deliberately, and is
+green again on a measurement rather than on a sentence.
 
 #### `job_queue_depth` was documented as 100 and the node used 16
 

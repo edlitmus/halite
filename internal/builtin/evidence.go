@@ -565,25 +565,36 @@ var moduleEvidence = map[string]exec.Evidence{
 		"where the conventional path differs and no CI leg reads it as root; and Salt's " +
 		"`sudo.salt_call`, deliberately not built, because `cmd.run` already takes a `runas` and " +
 		"applies it with setuid rather than through a second privilege system"},
-	// Lowered from Captured, which it had not earned. The note said this
-	// module "reads real rc.conf through the real `sysrc` on CI's FreeBSD
-	// runner"; its only test swaps in a RecordingRunner, so on that runner
-	// it ran *beside* a real sysrc and never called it. The
-	// `c.Which("sysrc")` guard decided whether the test ran and the
-	// recorder decided what it saw, which reads exactly like a test that
-	// uses the tool. DIVERGENCE 5.139.
+	// It was `Captured` on a claim it had not earned, and is `Hardware` on
+	// one it has. Both halves are worth keeping, because the first is how
+	// the second came to be necessary.
 	//
-	// `TestLiveSysrcWritesAndReadsBackARealRCConf` is written and drives
-	// the real binary against an rc.conf in a temporary directory. It has
-	// not run yet: this host's shell is a Linux compatibility layer, where
-	// FreeBSD's `sysrc` shell script fails on readonly variables, so the
-	// witness has to be the `freebsd` leg of fleet.yml. This stays
-	// `Assumed` until that run exists, and the gate is red until then --
-	// which is the gate working, not a regression.
-	"sysrc": {Level: exec.Assumed, Note: "its tests script `sysrc`'s output through a " +
-		"RecordingRunner and never execute it, so nothing has watched this module read or " +
-		"write an rc.conf. TestLiveSysrcWritesAndReadsBackARealRCConf drives the real tool " +
-		"against a temporary file and waits on the freebsd leg to run it"},
+	// The old note said this module "reads real rc.conf through the real
+	// `sysrc` on CI's FreeBSD runner". Its only test swaps in a
+	// RecordingRunner, so on that runner it ran *beside* a real sysrc and
+	// never called it: `c.Which("sysrc")` decided whether the test ran and
+	// the recorder decided what it saw, which reads exactly like a test
+	// that uses the tool. DIVERGENCE 5.139.
+	//
+	// `TestLiveSysrcWritesAndReadsBackARealRCConf` replaced it and found a
+	// defect on the first run it ever did -- in itself. Its opening
+	// assertion expected `sysrc.get` to *error* on a setting that is not
+	// there, where the function documents an empty string, so the leg
+	// refused the test rather than the module. That is the leg earning its
+	// cost: the other five assertions, including both mutating ones,
+	// passed against the real tool on the first attempt.
+	"sysrc": {Level: exec.Hardware, Note: "**driven against the real `sysrc(8)`** on CI's " +
+		"FreeBSD runner (run 36053810550, 2026-09-24), against an rc.conf in a directory the " +
+		"test owns -- `sysrc -f <file>` is the tool's own way of working somewhere other than " +
+		"/etc/rc.conf. `sysrc.set` wrote the setting and **both** the real `sysrc -n` and the " +
+		"file on disk were read to confirm it, because a tool agreeing with itself establishes " +
+		"only half of it; a dry run then changed nothing, measured the same way; and " +
+		"`sysrc.absent` removed the setting from the real file. The reader was checked against " +
+		"the writer *and* against the tool. Not covered: /etc/rc.conf itself, deliberately -- " +
+		"nothing in CI writes the file that decides whether the runner boots; `sysrc.show`'s " +
+		"`-a` parse, which no live test reads; and the distinction between a setting that is " +
+		"unset and one set to the empty string, which `sysrc.get` flattens by design and the " +
+		"state functions do not"},
 	// `pam` has no tool to drive, which is why its note reads
 	// differently from every other one here. PAM is a library the login
 	// programs link, not a program this module runs, so there is no
