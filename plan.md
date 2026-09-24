@@ -1316,7 +1316,7 @@ unchanged.
    as did `cmd.run`'s `bg`, `file.recurse`'s `template` and
    `host.present`'s list of addresses (5.93, 5.95).
 7. **What `TestMode`'s levels should mean, and what its default should
-   be.** Raised by the audit in DIVERGENCE 5.131, which found 21 functions
+   be.** Raised by the audit in DIVERGENCE 5.135, which found 21 functions
    breaking the `--test` promise, and both halves of this are a decision
    rather than a defect.
 
