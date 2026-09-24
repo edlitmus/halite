@@ -18,6 +18,15 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `group.present` on macOS no longer leaves a broken group behind
+
+On a Mac, asking `group.present` for a gid that another group already
+had failed correctly. But it left a directory record for the group
+behind, with no gid, and the next run reported that record as an
+existing group. A failed create now removes the record it left. An
+existing group record with no gid is reported as broken, with the
+command that removes it. DIVERGENCE 5.148.
+
 ### Three audits no longer read a second checkout of the repository
 
 A git worktree inside the repository — `.claude/worktrees/` is where Claude

@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -535,5 +536,119 @@ func TestMacShadowSetPasswordRefusesASecondCommand(t *testing.T) {
 		if len(runner.Ran) != 0 {
 			t.Errorf("name %q ran %v before refusing", tc.name, runner.RanCommands())
 		}
+	}
+}
+
+// macGidlessGroupPlist is the record `dseditgroup -o create -i 20 <name>`
+// left behind after refusing with "GID already exists", read with `dscl
+// -plist . -read` on a macOS 15.7.9 runner (build 24G830). There is no
+// PrimaryGroupID in it (DIVERGENCE 5.148).
+const macGidlessGroupPlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>dsAttrTypeNative:record_daemon_version</key>
+	<array>
+		<string>9054000</string>
+	</array>
+	<key>dsAttrTypeStandard:AppleMetaNodeLocation</key>
+	<array>
+		<string>/Local/Default</string>
+	</array>
+	<key>dsAttrTypeStandard:GeneratedUID</key>
+	<array>
+		<string>566806F9-289D-497A-A69F-4B21D940FAAE</string>
+	</array>
+	<key>dsAttrTypeStandard:RecordName</key>
+	<array>
+		<string>halgidrec2670</string>
+	</array>
+	<key>dsAttrTypeStandard:RecordType</key>
+	<array>
+		<string>dsRecTypeStandard:Groups</string>
+	</array>
+</dict>
+</plist>
+`
+
+// A gid-less record is not a usable group, and group.present says so
+// instead of calling it converged.
+func TestMacGroupPresentRefusesAGidlessRecord(t *testing.T) {
+	c, runner := macAccountCtx(t, map[string]exec.Result{
+		"dscl -plist . -read /Groups/halgidrec2670": {Stdout: macGidlessGroupPlist},
+	})
+	res, err := macGroupPresentState(c, value.MapOf("name", "halgidrec2670"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() || !strings.Contains(res.Comment, "no gid") {
+		t.Errorf("a gid-less record was accepted: %+v", res)
+	}
+	if ranPrefix(runner, "dseditgroup") {
+		t.Errorf("refusing ran dseditgroup: %v", runner.RanCommands())
+	}
+}
+
+// wheel's PrimaryGroupID is 0, which macGroupInfo also reads a missing
+// one as; the record is what tells them apart.
+func TestMacGroupPresentAcceptsGidZero(t *testing.T) {
+	c, _ := macAccountCtx(t, map[string]exec.Result{
+		"dscl -plist . -read /Groups/wheel": {Stdout: macGroupPlist("0")},
+	})
+	res, err := macGroupPresentState(c, value.MapOf("name", "wheel"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Succeeded() || res.HasChanges() {
+		t.Errorf("wheel, gid 0, was not converged: %+v", res)
+	}
+}
+
+// seqRunner answers a command from a queue per key, so a record can be
+// absent before a create and present after it.
+type seqRunner struct {
+	queue map[string][]exec.Result
+	ran   []string
+}
+
+func (r *seqRunner) Run(_ context.Context, cmd exec.Command) (exec.Result, error) {
+	key := cmd.String()
+	r.ran = append(r.ran, key)
+	q := r.queue[key]
+	if len(q) == 0 {
+		return exec.Result{}, nil
+	}
+	res := q[0]
+	if len(q) > 1 {
+		r.queue[key] = q[1:]
+	}
+	return res, nil
+}
+
+// A create refused for a taken gid leaves a record behind on macOS; the
+// state removes it, because the group did not exist before the call.
+func TestMacGroupPresentRemovesTheRecordAFailedCreateLeft(t *testing.T) {
+	c, _ := macAccountCtx(t, nil)
+	read := "dscl -plist . -read /Groups/halgidrec2670"
+	runner := &seqRunner{queue: map[string][]exec.Result{
+		read: {dsclNotFound, {Stdout: macGidlessGroupPlist}},
+		"dseditgroup -o create -i 20 halgidrec2670": {{Code: 64, Stderr: "GID already exists\n"}},
+	}}
+	c.Runner = runner
+	res, err := macGroupPresentState(c, value.MapOf("name", "halgidrec2670", "gid", int64(20)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Succeeded() || !strings.Contains(res.Comment, "GID already exists") {
+		t.Errorf("the refused create was not reported: %+v", res)
+	}
+	deleted := false
+	for _, k := range runner.ran {
+		if k == "dseditgroup -o delete halgidrec2670" {
+			deleted = true
+		}
+	}
+	if !deleted {
+		t.Errorf("the record the failed create left was not removed: %v", runner.ran)
 	}
 }

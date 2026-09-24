@@ -1083,7 +1083,7 @@ func macGroupPresentState(c *exec.Context, args *value.Map) (states.Result, erro
 		// find it, so `group.info` reports it absent, and nothing can own a
 		// file by it. It is what a failed `dseditgroup -o create` used to
 		// leave behind (below), and reporting it as present was reporting a
-		// broken machine as converged (DIVERGENCE 5.142).
+		// broken machine as converged (DIVERGENCE 5.148).
 		if !macGroupHasGid(c, name) {
 			return states.False(fmt.Sprintf(
 				"The group %s has a directory record with no gid, which is not a usable group. "+
@@ -1106,7 +1106,7 @@ func macGroupPresentState(c *exec.Context, args *value.Map) (states.Result, erro
 		// `dseditgroup -o create -i <gid>` for a gid another group has
 		// fails with "GID already exists" -- and leaves a record for the
 		// name behind, with no PrimaryGroupID. Measured on a macOS 15.7.9
-		// runner (DIVERGENCE 5.142); Linux's groupadd and FreeBSD's pw
+		// runner (DIVERGENCE 5.148); Linux's groupadd and FreeBSD's pw
 		// refuse the same request and leave nothing. The group did not
 		// exist before this call, so whatever record is there now is the
 		// failed create's, and it is removed.
