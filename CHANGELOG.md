@@ -18,6 +18,28 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `--root` now moves what it says it moves
+
+`--root <dir>` is documented on all three binaries as the configuration
+root. It moved the configuration file and its drop-in directory, and
+nothing the configuration file describes: `pki_dir` and `policy`, whose
+documented defaults are `<config root>/pki` and
+`<config root>/policy.yaml`, were resolved against the root the binary was
+built for.
+
+So `halite-hub policy show --root /opt/staging` printed the **production**
+policy, naming production's path in a line a reader scans past, and
+`halite-hub keys list --root /opt/staging` reached for production's
+enrollment CA. Both now resolve against the root the flag names.
+
+`halite-hub ssh`'s roster had a second form of the same fault: it read a
+configuration key named `root`, which the key table does not declare and
+nothing sets, so it always fell through to the built-in path.
+
+Settings that do not live under the configuration root — `state_dir`,
+`cache_dir`, `log_dir`, the socket directory — are unchanged by `--root`,
+as documented. Set them explicitly to relocate them.
+
 ### `hostname` on macOS keeps the name a Mac boots with
 
 On a Mac, `hostname.system` and `hostname.set_hostname` wrote

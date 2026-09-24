@@ -113,7 +113,7 @@ func sshTargets(h *hubContext, args *cli.Args, kind, expression string) ([]roste
 	case "flat":
 		path := args.Flag("roster-file", h.cfg.String("roster_file", ""))
 		if path == "" {
-			path = filepath.Join(h.cfg.String("root", config.DefaultRoot), "roster")
+			path = filepath.Join(h.cfg.Root(), "roster")
 		}
 		loaded, err = roster.ReadFlat(path)
 	case "sshconfig":

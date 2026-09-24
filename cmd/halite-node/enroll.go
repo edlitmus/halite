@@ -30,7 +30,7 @@ import (
 // hubClient assembles the node's side of the transport from its
 // configuration and whatever key material it already has.
 func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
-	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.String("pki_dir", config.DefaultPKIDir))}
+	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.PathUnderRoot("pki_dir", "pki"))}
 
 	address := args.Flag("hub", n.cfg.String("hub", ""))
 	if address == "" {
@@ -581,7 +581,7 @@ func (n *node) useHubIfConfigured(args *cli.Args) {
 	if args.Flag("hub", n.cfg.String("hub", "")) == "" {
 		return
 	}
-	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.String("pki_dir", config.DefaultPKIDir))}
+	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.PathUnderRoot("pki_dir", "pki"))}
 	if !files.Exists(pki.NodeCertFile) || !files.Exists(pki.CACertFile) {
 		return
 	}
