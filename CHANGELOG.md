@@ -45,16 +45,22 @@ held by a test rather than by care.
   are `hardware`, and the pages now point at `sys.evidence` on the node in
   front of you for the per-module answer.
 
-### `sysrc` is `Assumed` again, and the release gate is red
+### `sysrc` has been driven against the real `sysrc(8)`
 
 Its evidence note claimed it read a real `rc.conf` through the real
-`sysrc` on CI's FreeBSD runner. It does not: the test installs a
-recording runner, so on that runner it ran beside a real `sysrc` and never
-called it. The level is back to `Assumed`, which is what it always was.
+`sysrc` on CI's FreeBSD runner. It did not: the test installs a recording
+runner, so on that runner it ran beside a real `sysrc` and never called
+it. The level went back to `Assumed`, which is what it always was.
 
-A live test now drives the real tool against an `rc.conf` in a temporary
-directory, and `make release-gate` is red until FreeBSD's CI leg has run
-it. Nothing about the module changed.
+A live test now drives the real tool against an `rc.conf` in a directory
+the test owns, on FreeBSD's CI leg: `sysrc.set` writes the setting and
+both the real `sysrc -n` and the file on disk are read to confirm it, a
+dry run changes nothing, and `sysrc.absent` removes it. The module is
+`hardware` on that run.
+
+Nothing about the module changed. Its first run did find a defect, in the
+test: the opening assertion expected `sysrc.get` to fail for a setting
+that is not there, where it documents an empty string.
 
 ### `hostname` on macOS keeps the name a Mac boots with
 
