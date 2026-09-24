@@ -88,7 +88,7 @@ Delivery follows the phases in SPEC section 32.
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Done**: authentication, the execution and event endpoints, webhooks, OIDC, LDAP, returners, and the bridge protocol with its extension model |
 | 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship. macOS has the package and service providers and seven `mac_*` modules, including `mac_user`/`mac_group`/`mac_shadow` so `user.present` works there. **All seven are `hardware`**, and a CI leg drives them as root on every change. An eighth, `mac_assistive`, was taken out of the build: its writes go to a database SIP keeps readonly to root, and the only way to demonstrate them is a manual grant re-given on every rebuild (DIVERGENCE 5.119). |
-| 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | **Started**: the chaos suite and SPEC 31's upgrade layer are built, CI runs every leg of `make check` on Linux, Windows, macOS and FreeBSD, metrics are nearly complete, and `doctor` ships. The scale harness, external review, detached signing, tracing, packaging and the backtracking regex engine are not. |
+| 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | **Started**: the chaos suite and SPEC 31's upgrade layer are built, CI runs every leg of `make check` on Linux, Windows, macOS and FreeBSD, metrics are nearly complete, and `doctor` ships. Tracing is built and wired, and detached job signing landed with node-side evidence. The scale harness, external review, packaging and the backtracking regex engine are not. |
 
 A node manages its own tree today — Salt's masterless mode — and that is
 worth shipping on its own, because it can be validated against Salt in
@@ -295,9 +295,11 @@ and exercised, not that SPEC section 15's module inventory is complete:
 this build ships 87 execution modules and 48 state modules against a
 specification naming roughly 90 and 46 — 593 execution functions across 87
 modules and 132 state functions across 48. FreeBSD is the development
-platform; Linux and Windows have each been verified against a real host,
-and macOS has run only the read-side live tests of its `mac_*` modules
-while Linux arm64 has not been run at all. `make test-linux`
+platform; Linux and Windows have each been verified against a real host;
+macOS drives its `mac_*` modules as root on a CI leg of its own, which is
+what raised six of them to `hardware` and found a `RunAs` that fails for an
+account in more than sixteen groups; and Linux arm64 runs the suite, a hub
+and a node natively on one FIPS host. `make test-linux`
 runs the suite as Linux binaries under this host's compat layer, which
 covers the platform-neutral code and the
 `/proc` grain collector but reaches no apt, dnf, or systemd. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is

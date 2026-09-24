@@ -83,6 +83,7 @@ on:
       # `user.present` is driven by TestLiveUserGroups on the linux, freebsd
       # and macos legs, and nothing here ran when it changed.
       - "internal/builtin/user*.go"
+      - "internal/builtin/sysrc*.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
       - ".github/workflows/fleet.yml"

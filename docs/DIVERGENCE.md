@@ -12424,6 +12424,144 @@ had not been seen.
   relied, knowingly or not, on a change to an account also resetting
   its groups now keeps the extra memberships. That is the intended
   meaning, but it is a change to what a run does.
+### 5.139 Six documentation claims that were false, and the audits that hold them
+
+The review's Tier 3: the prose. Not typos -- claims a reader acts on, each
+one verified against the code or the tool before it was touched, and each
+one now held by a test rather than by care.
+
+The shape is the project's own: **two paths that must agree.** A key table
+and the fallback the program actually uses. An evidence note and the test
+it describes. A manual page and the dispatch switch. A documented
+invocation and the flag parser that refuses it. In every case the document
+was written once, correctly or not, and then the code moved.
+
+#### `sysrc` was `Captured`, and had never executed
+
+The evidence note said this module *"reads real rc.conf through the real
+`sysrc` on CI's FreeBSD runner"*. It does not. Its only test installs a
+`RecordingRunner`, so on that runner it ran *beside* a real `sysrc` and
+never called it: `c.Which("sysrc")` decided whether the test ran, and the
+recorder decided what it saw. A skip guard on the real tool reads exactly
+like a test that uses the real tool, which is why this survived a
+FreeBSD-first project's attention for as long as it did.
+
+It is `Assumed` now, which is what it always was.
+`TestLiveSysrcWritesAndReadsBackARealRCConf` drives the real binary
+against an rc.conf in a directory the test owns -- `sysrc -f <file>` is the
+tool's own way of working somewhere other than `/etc/rc.conf`, and the
+module already exposes it -- and checks four things in order: that `get`
+refuses a setting that is not there, that `set` puts it in the file on
+disk *and* that the real `sysrc -n` reads it back, that a dry run changes
+nothing, and that `sysrc.absent` removes it. The tool's own read-back is
+not enough on its own; a module that agrees with itself proves nothing.
+
+**It has not run.** This host's shell is a Linux compatibility layer and
+FreeBSD's `sysrc` is a shell script that fails there on readonly
+variables, so the witness has to be fleet.yml's `freebsd` leg, and
+`internal/builtin/sysrc*.go` is now in that leg's trigger paths. Until
+that run exists **`make release-gate` is red on `sysrc`**, which is the
+gate working: an unknown was recorded as an unknown, and the claim that
+replaced it will be a measurement.
+
+#### `job_queue_depth` was documented as 100 and the node used 16
+
+`docs/configuration.md` is generated from `internal/config`'s key table,
+so it prints whatever the table says, faithfully, whether or not the
+program agrees. Nothing compared the two. An operator sizing a burst
+around 100 was reading a number no node has ever used:
+`cfg.Int("job_queue_depth", 16)`.
+
+`listen` was wrong in the other direction -- declared `:4510`, which is
+right for the hub and wrong for the API's `:4511`, and the table is keyed
+by name so it has to say both.
+
+`TestDocumentedDefaultsMatchTheCodesFallback` compares every literal
+fallback in the tree against the table. It skips three shapes and says how
+many: a fallback that is a named constant, a zero value meaning "decided
+further down", and a key the table declares no default for. Those are the
+audit's blind spot and they are printed rather than implied.
+
+#### The YAML 1.1 boolean setting was documented inverted
+
+`yaml_bool_11` defaults to **true**, and `docs/from-salt.md` told a
+migrating operator the opposite: *"YAML 1.1 booleans are off. `yes`, `no`,
+`on`, `off` are strings unless you set `yaml_bool_11: true`."* Both halves
+are wrong. They resolve, as PyYAML and therefore Salt resolve them; the
+setting to change after auditing a tree is `false`, not `true`; and the
+advice as printed was a no-op that read as a precaution.
+
+The reference also listed `y` and `n` among the spellings, which the
+resolver deliberately omits -- PyYAML's own resolver does not match the
+single letters, and honouring SPEC 10.1.3's table as written would make
+`name: n` a boolean here and a string in Salt. That omission has been in
+this ledger since section 1; the configuration reference contradicted it.
+
+#### `halite-node state show` has not existed for some time
+
+The manual page documented `state show`. The subcommand is `show_highstate`,
+`show_lowstate`, `show_top`, `show_sls` or `show_states`, and a manual page
+is the documentation a machine has when the source tree is not on it, which
+on this project's fleet is every machine but one.
+
+`TestEverySubcommandAManualPageNamesExists` reads the quoted words of each
+page and fails on one the binary does not dispatch. It reads any quoted
+word rather than only `case` labels, because `event send` is dispatched by
+an `if` and the first version of this audit called it missing.
+
+#### Two commands the reference calls `works` do not run
+
+`docs/command-reference.md`'s third column says `works`. That is a claim
+about a string a reader will paste into a shell, and two were false:
+
+- **`halite-hub migrate /srv/salt --cmd-default-shell`.** The flag became
+  `--no-cmd-default-shell` when the `cmd.run` shell default inverted
+  (5.81) and the row was never touched.
+- **`halite-hub runner reactor.test --tag … --data …`.** A runner takes
+  its arguments as `key=value` pairs, never as flags. `--data` is refused
+  outright; `--tag` is accepted only because `event listen` documents a
+  flag by that name.
+
+Both fail immediately:
+
+	halite: --data is not a flag of `halite-hub runner`
+
+which is the good case, and it is why they went unnoticed: the reader
+loses a minute, not an afternoon, and never tells anybody.
+
+`TestEveryWorkingCommandsFlagsAreRealFlags` checks all 50 flags in the 138
+commands that column calls `works`. It can do so statically because
+`cli.RejectUnknownFlags` decides what a flag is by reading the usage text
+-- a flag is accepted because it is described and described because it is
+accepted -- so the accepted set is a property of a string constant. The
+audit builds the same set the program builds, from the same constants,
+parsed rather than grepped.
+
+It is therefore no stricter than the program, deliberately. `--tag` on
+`runner` still passes, because the hub judges a flag against its whole
+usage text plus the subcommand's; the audit measures the claim *this
+works*, and that one does.
+
+#### What the platform claims said
+
+`README.md`, `docs/getting-started.md` and `docs/migrating-from-salt.md`
+each described a state of the world from before the macOS live leg:
+*"The code cross-compiles for both and has been run on neither"*, and
+*"macOS has run only the read-side live tests"*. All seven `mac_*` modules
+are `hardware`, the launchd provider has been driven, and Linux arm64 runs a
+hub and a node natively on a FIPS host. All three pages now say so, and
+all three point at `sys.evidence` on the node in front of the reader as
+the authority, because a per-module answer will outlast any sentence in a
+README.
+
+#### Two of these were found by writing the audit, not by reading
+
+Worth recording, because it is the argument for writing the guard first.
+The `job_queue_depth` disagreement and the `listen` one were both found by
+the audit on its first run; nobody had read those two lines and noticed.
+The `sysrc` note and the `state show` page were found by reading. The
+score is even, and the audits keep running.
+
 
 ## 6. Everything else not started
 

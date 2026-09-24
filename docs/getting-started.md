@@ -123,9 +123,14 @@ macOS takes the Linux paths deliberately: Homebrew's prefix is not fixed,
 so `/etc` is the honest default rather than a guess at one.
 
 Read [DIVERGENCE 4](DIVERGENCE.md) before trusting a run on Windows or
-macOS. The code cross-compiles for both and has not been run on either,
-so the modules that matter there — `pkg`, `service`, the Windows event
-log — are unexercised rather than known good. Linux and FreeBSD are the
+macOS. Both run the suite natively in CI now, and macOS has a leg that
+drives its `mac_*` modules as root on every change — so all seven of them,
+`mac_user`, `mac_group`, `mac_shadow`, `mac_defaults`, `mac_power`,
+`mac_keychain` and `mac_softwareupdate`, are `hardware` rather than assumed, and the launchd service provider has
+been driven. What is still thin there is Windows: four of its eighteen
+modules ship, and the `pkg` and `service` providers are exercised by the
+unit suite rather than against a real machine. `sys.evidence` on the node
+in front of you is the authority, not this page. Linux and FreeBSD are the
 platforms this build has been run on.
 
 ## The first tree

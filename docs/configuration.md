@@ -123,7 +123,7 @@ static or failover, selecting how a list of hubs is used.
 
 ### `listen`
 
-*`halite-hub`, `halite-api` · `:4510` · SPEC section 6.1*
+*`halite-hub`, `halite-api` · `:4510 on the hub, :4511 on the API` · SPEC section 6.1*
 
 Listen address.
 
@@ -513,9 +513,9 @@ strict or permissive name resolution in templates.
 
 *`halite-node`, `halite-hub` · `true` · SPEC section 10.1.3*
 
-Resolve yes, no, on, off, y, and n as booleans, as PyYAML does.
+Resolve yes, no, on, and off as booleans, as PyYAML does.
 
-Resolves `yes`, `no`, `on`, `off`, `y`, and `n` as booleans, as PyYAML does. Off by default because YAML 1.2 does not, and a Norwegian country code of `no` should stay a string. Turn it on for a tree written against Salt that depends on the old behaviour.
+Resolves `yes`, `no`, `on`, and `off` as booleans, as PyYAML does — and therefore as Salt does, which is why it is **on** by default: an existing tree depends on it, and a `enabled: no` that quietly became the string "no" would be true everywhere it is tested. Every such scalar also produces a warning naming the file and line, so a tree can be audited without changing behaviour first; `yaml_bool_11: false` is what you set afterwards, and it switches to YAML 1.2 semantics where a Norwegian country code of `no` stays a string. The single letters `y` and `n` are **not** resolved, although SPEC 10.1.3's table lists them: PyYAML's resolver does not match them either, so honouring the table would make `name: n` a boolean here and a string in Salt. SPEC 10.1.3.
 
 ## The file server
 
@@ -1822,7 +1822,7 @@ SPEC 25.4 asks that a spawned process get an explicit PATH, and without this it 
 
 ### `job_queue_depth`
 
-*`halite-node` · `100` · SPEC section 9.6*
+*`halite-node` · `16` · SPEC section 9.6*
 
 How many jobs may wait before the node refuses more.
 
@@ -2052,7 +2052,7 @@ Every setting, and which programs read it.
 | `job_cache` | `halite-hub` | `local` | Targeting and the job cache |
 | `job_cache_max_size` | `halite-hub` | `10GiB` | Targeting and the job cache |
 | `job_cache_retention` | `halite-hub` | `720h` | Targeting and the job cache |
-| `job_queue_depth` | `halite-node` | `100` | Node execution controls |
+| `job_queue_depth` | `halite-node` | `16` | Node execution controls |
 | `job_signer_keys` | `halite-node` | — | Node execution controls |
 | `key_algorithm` | `halite-hub` | `ecdsa-p256` | Enrollment and certificates |
 | `ldap_address` | `halite-api` | — | LDAP and Active Directory |
@@ -2074,7 +2074,7 @@ Every setting, and which programs read it.
 | `ldap_user_filter` | `halite-api` | `(uid=%s)` | LDAP and Active Directory |
 | `legacy_acl` | `halite-hub` | — | Authorization |
 | `legacy_arg_parse` | `halite-node`, `halite-hub` | `false` | Node execution controls |
-| `listen` | `halite-hub`, `halite-api` | `:4510` | Identity and connection |
+| `listen` | `halite-hub`, `halite-api` | `:4510 on the hub, :4511 on the API` | Identity and connection |
 | `log_file` | all three programs | — | Logging and diagnostics |
 | `log_format` | all three programs | `json` | Logging and diagnostics |
 | `log_level` | all three programs | `info` | Logging and diagnostics |

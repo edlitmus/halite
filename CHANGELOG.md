@@ -46,6 +46,43 @@ local user could read it with `ps` while the call ran. It now goes to
   0 even when it refuses.
 
 The login keychain is still not updated, as before. DIVERGENCE 5.134.
+### Documentation an operator acts on, audited against the code
+
+Six claims in the reference were false. Each is fixed, and each is now
+held by a test rather than by care.
+
+- **`job_queue_depth` was documented as `100`.** The node uses `16`.
+  `docs/configuration.md` is generated from the key table, so it printed
+  the table's number faithfully and nothing compared the table to the
+  program. `listen` was wrong the other way: declared `:4510`, which is
+  the hub's and not the API's `:4511`.
+- **`yaml_bool_11` was documented inverted.** It defaults to **on**, and
+  `docs/from-salt.md` said `yes`, `no`, `on` and `off` were strings unless
+  you turned it on. The setting you reach for after auditing a tree is
+  `yaml_bool_11: false`. The reference also listed `y` and `n`, which the
+  resolver deliberately does not match, because PyYAML does not either.
+- **The `halite-node` manual page documented `state show`.** There is no
+  such subcommand; it is `show_highstate`, `show_lowstate`, `show_top`,
+  `show_sls` or `show_states`.
+- **Two commands the command reference calls `works` do not run.**
+  `halite-hub migrate --cmd-default-shell` is now
+  `--no-cmd-default-shell`, and `halite-hub runner reactor.test` takes
+  `tag=` and `data=` rather than `--tag` and `--data`.
+- **Platform claims from before the macOS live leg.** Three pages still
+  said the macOS code had been run on nothing. All seven `mac_*` modules
+  are `hardware`, and the pages now point at `sys.evidence` on the node in
+  front of you for the per-module answer.
+
+### `sysrc` is `Assumed` again, and the release gate is red
+
+Its evidence note claimed it read a real `rc.conf` through the real
+`sysrc` on CI's FreeBSD runner. It does not: the test installs a
+recording runner, so on that runner it ran beside a real `sysrc` and never
+called it. The level is back to `Assumed`, which is what it always was.
+
+A live test now drives the real tool against an `rc.conf` in a temporary
+directory, and `make release-gate` is red until FreeBSD's CI leg has run
+it. Nothing about the module changed.
 
 ### `hostname` on macOS keeps the name a Mac boots with
 
