@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -302,25 +303,13 @@ func zoneFixture(t *testing.T) (c *exec.Context, want string, settle func()) {
 
 	if runtime.GOOS == "darwin" {
 		// darwin does not take the file-writing path at all: setZone
-		// drives `systemsetup`, which this test mocks, so nothing moves
-		// the link the reader reads and the state could never converge
-		// here however correct it was. The real tool re-points
-		// /etc/localtime, so settle does that.
-		//
-		// Found by putting macOS in CI. It is a gap in this fixture
-		// rather than in the module -- `zoneFromPath` takes the last
-		// `/zoneinfo/` in the target, which is what makes macOS's
-		// /var/db/timezone/zoneinfo path read correctly -- but the
-		// fixture is what stood between the module and any evidence
-		// that it works there.
-		return c, "America/Denver", func() {
-			if err := os.Remove(localtimePath); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Symlink(filepath.Join(zoneinfoDir, "America/Denver"), localtimePath); err != nil {
-				t.Fatal(err)
-			}
-		}
+		// drives `systemsetup` and then waits for /etc/localtime to name
+		// the zone. The stand-in does what the real tool was measured to
+		// do on the `macos` leg (DIVERGENCE 5.131): exit 0 and re-point
+		// the link. Before that was measured this was a settle function
+		// the test called by hand, which assumed the same thing and
+		// demonstrated nothing about it.
+		c.Runner = &darwinZoneRunner{t: t}
 	}
 	return c, "America/Denver", func() {}
 }
@@ -344,4 +333,18 @@ func redirectZoneFiles(t *testing.T, dir string) func() {
 		zoneinfoDir, localtimePath = oldZoneinfo, oldLocaltime
 		etcTimezonePath, zoneNamePath = oldEtc, oldName
 	}
+}
+
+// darwinZoneRunner stands in for `systemsetup -settimezone` by moving the
+// redirected /etc/localtime, as the real one does.
+type darwinZoneRunner struct{ t *testing.T }
+
+func (r *darwinZoneRunner) Run(_ context.Context, cmd exec.Command) (exec.Result, error) {
+	if len(cmd.Argv) == 3 && cmd.Argv[0] == "systemsetup" && cmd.Argv[1] == "-settimezone" {
+		_ = os.Remove(localtimePath)
+		if err := os.Symlink(filepath.Join(zoneinfoDir, cmd.Argv[2]), localtimePath); err != nil {
+			r.t.Fatal(err)
+		}
+	}
+	return exec.Result{}, nil
 }
