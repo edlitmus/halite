@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -494,7 +495,7 @@ func (r *Runner) execute(ch *state.Chunk, watchFired bool) states.Result {
 	// became a bare `visudo -c -f`, and visudo exits 1 when `-f` has no
 	// argument. See DIVERGENCE 5.108.
 	if len(ch.Opts.CheckCmd) > 0 && res.Succeeded() && !r.States.OwnsCheckCmd(ch.Func()) {
-		res = r.applyCheckCmd(ch, res)
+		res = r.checkCmdResult(ch, res)
 	}
 	if res.Name == "" {
 		res.Name = ch.Name
@@ -526,6 +527,40 @@ func firstLine(s string) string {
 
 // applyCheckCmd runs the check_cmd commands and lets them decide the
 // result.
+// checkCmdResult runs the generic `check_cmd`, or says why it did not.
+//
+// Not under `--test`, for the reason `file.managed` states beside its own
+// check and this path did not honour: the command is the operator's and
+// may do anything, and a run that promised to change nothing must not run
+// it. SPEC section 11.6.
+//
+// It was worse than a dry run that acts. The generic form runs *after* the
+// state, to validate what is now on disk -- and under test mode nothing
+// was written, so the command validated the state the operator was asking
+// to change. A `check_cmd: nginx -t` on the configuration you are
+// deploying *because* the running one is broken reported the dry run as a
+// failure; so did a `visudo -c -f` on a file that does not exist yet. The
+// dry run said the state would fail when it would have succeeded, which is
+// the one answer a dry run must not give.
+//
+// The result says the check was skipped rather than staying silent about
+// it: an operator reading a clean `--test` would otherwise take it as
+// their check_cmd having passed.
+func (r *Runner) checkCmdResult(ch *state.Chunk, res states.Result) states.Result {
+	if r.Ctx.Test {
+		res.Comment = strings.TrimRight(res.Comment, " \n") +
+			"\nIts check_cmd was not run: this was a test run, and the check validates what "
+		if len(ch.Opts.CheckCmd) == 1 {
+			res.Comment += "would have been written."
+		} else {
+			res.Comment += "would have been written (" +
+				strconv.Itoa(len(ch.Opts.CheckCmd)) + " commands)."
+		}
+		return res
+	}
+	return r.applyCheckCmd(ch, res)
+}
+
 func (r *Runner) applyCheckCmd(ch *state.Chunk, res states.Result) states.Result {
 	for _, cmd := range ch.Opts.CheckCmd {
 		out, err := r.Ctx.Run(exec.Command{

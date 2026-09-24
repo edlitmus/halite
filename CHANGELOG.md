@@ -98,6 +98,34 @@ The macOS branch had never been run, and running it found four defects:
 
 A Mac cannot be set to `UTC` through `systemsetup`. Use `GMT`.
 DIVERGENCE 5.131.
+### `--test` was not read-only in the state layer either
+
+Three more, from the other end of the same question the audit below asked.
+
+**`check_cmd` ran during a dry run — and reported a failure that was not
+there.** The generic form runs after the state, to validate what is now on
+disk; under `--test` nothing was written, so it validated the state you
+were asking to change. A `check_cmd: nginx -t` on the configuration you are
+deploying *because* the running one is broken reported the dry run as a
+failure, and so did a `visudo -c -f` on a file that does not exist yet. It
+is skipped now, and the result says it was skipped rather than leaving a
+clean `--test` to read as your check having passed.
+
+**`git.latest` fetched under `--test`.** The comment said a fetch "changes
+nothing in the working tree", which is true of the working tree and false
+of the repository: measured against the real git, seven files under `.git`,
+the remote-tracking ref moved, and a tag created that was not there before.
+A dry run now resolves the commit with `git ls-remote`, which asks the same
+question over the same network and writes nothing — so the prediction is
+unchanged.
+
+**`grains.absent` with `destructive` could not converge.** It deleted this
+node's entry, masked the underlying value with a null, and then on the next
+run deleted the mask, uncovered the value and masked it again: mask,
+delete, mask, delete, for ever, reporting a change every time. It converges
+on the second run now, and the null stays — removing it would uncover the
+value you asked to be rid of.
+
 ### A nodegroup could hide an untrusted grain from the pillar rule
 
 **Security.** A pillar top file may target only on trusted grains — a node

@@ -1339,3 +1339,52 @@ func TestTheStatesNameIsStillScrubbed(t *testing.T) {
 		t.Errorf("Nested printed the name:\n%s", got)
 	}
 }
+
+// A dry run does not run the generic check_cmd, and says it did not.
+//
+// Two defects in one. The command is the operator's and may do anything,
+// which is the rule `file.managed` states beside its own check and this
+// path did not honour. And the generic form runs *after* the state to
+// validate what is now on disk — so under test mode, where nothing was
+// written, it validated the state the operator was asking to change: a
+// `check_cmd: nginx -t` on the configuration being deployed *because* the
+// running one is broken reported the dry run as a failure. A dry run
+// saying a state would fail when it would have succeeded is the one
+// answer it must not give.
+func TestADryRunDoesNotRunTheGenericCheckCmd(t *testing.T) {
+	var ran []string
+	recordAndFail := func(r *Runner) {
+		ctx := *r.Ctx
+		ctx.Test = true
+		ctx.Runner = runnerFunc(func(cmd exec.Command) (exec.Result, error) {
+			ran = append(ran, cmd.Argv[0])
+			// Exactly the case that matters: the check fails, because
+			// the machine is still in the state the operator asked to
+			// change.
+			return exec.Result{Code: 1}, nil
+		})
+		r.Ctx = &ctx
+	}
+
+	out, _ := compileAndRun(t, "a:\n  probe.plain:\n    - check_cmd: 'nginx -t'\n", recordAndFail)
+
+	for _, cmd := range ran {
+		if strings.Contains(cmd, "nginx") {
+			t.Errorf("the check_cmd ran during a dry run: %q", cmd)
+		}
+	}
+	if out.Failed() {
+		t.Errorf("a dry run reported a failure from a check it should not have run: %v",
+			out.Results[0].Result.Comment)
+	}
+	// And it says so, because a clean `--test` would otherwise read as
+	// the operator's check having passed.
+	if c := out.Results[0].Result.Comment; !strings.Contains(c, "check_cmd was not run") {
+		t.Errorf("the result does not say the check was skipped: %q", c)
+	}
+}
+
+// runnerFunc adapts a function to exec.CommandRunner.
+type runnerFunc func(exec.Command) (exec.Result, error)
+
+func (f runnerFunc) Run(_ context.Context, cmd exec.Command) (exec.Result, error) { return f(cmd) }
