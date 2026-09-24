@@ -56,7 +56,7 @@ type Config struct {
 	// `config.DefaultPKIDir` is relative to the root the binary was
 	// compiled for rather than the one the operator named. That made
 	// `--root` relocate the configuration file and nothing the
-	// configuration file describes. DIVERGENCE 5.140.
+	// configuration file describes. DIVERGENCE 5.143.
 	root string
 	// Files lists every file that contributed, in the order they merged.
 	Files []string
@@ -249,7 +249,7 @@ func (c *Config) Root() string {
 // The two things that had to agree were the flag and every default
 // documented relative to what the flag names, and nothing held them
 // together: the root was an argument to Load and then discarded.
-// DIVERGENCE 5.140.
+// DIVERGENCE 5.143.
 func (c *Config) PathUnderRoot(key, name string) string {
 	return c.String(key, filepath.Join(c.Root(), name))
 }

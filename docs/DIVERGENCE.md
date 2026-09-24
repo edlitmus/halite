@@ -11680,7 +11680,7 @@ as expected, because the prepared tree is one the tools can read.
   removes the files that were demonstrated to work, and the choice
   between the two files in each pair is arbitrary.
 
-### 5.140 `--root` moved the configuration file and nothing it describes
+### 5.143 `--root` moved the configuration file and nothing it describes
 
 Found while probing the last row of a documentation audit, which is worth
 saying because the row itself was about a flag the CLI refuses and this is
