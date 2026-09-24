@@ -222,9 +222,13 @@ func fqdn() (string, error) {
 // which file it came from.
 //
 // FreeBSD keeps it in rc.conf and has `sysrc` to read it, which this
-// build already shells out to for `sysrc.get`. Everything else keeps it
-// in /etc/hostname.
+// build already shells out to for `sysrc.get`. macOS keeps it in
+// SystemConfiguration's `HostName` preference, read by `scutil`.
+// Everything else keeps it in /etc/hostname.
 func persistentHostname(c *exec.Context) (name, where string, err error) {
+	if runtime.GOOS == "darwin" {
+		return darwinPersistentHostname(c)
+	}
 	if runtime.GOOS == "freebsd" {
 		res, err := c.Run(exec.Command{
 			Argv:           []string{"sysrc", "-n", "hostname"},
@@ -269,6 +273,9 @@ func persistentHostname(c *exec.Context) (name, where string, err error) {
 // the two leaves the node with the name it will boot with rather than
 // one it will lose.
 func setHostname(c *exec.Context, want string) error {
+	if runtime.GOOS == "darwin" {
+		return darwinSetHostname(c, want)
+	}
 	if runtime.GOOS == "freebsd" {
 		if _, err := c.Run(exec.Command{Argv: []string{"sysrc", "hostname=" + want}}); err != nil {
 			return err
@@ -306,6 +313,80 @@ func setHostname(c *exec.Context, want string) error {
 		return err
 	}
 	return nil
+}
+
+// scutilHostName is where macOS keeps the name hostname(1) and
+// gethostname(3) come back with: SystemConfiguration's `HostName`
+// preference, per scutil(8). It is one of three names a Mac keeps --
+// `LocalHostName` is the Bonjour name and `ComputerName` the one the
+// Sharing pane shows -- and the only one this module means by
+// "hostname", which is also what Salt's `network.mod_hostname` sets on a
+// Mac. The other two are left alone.
+const scutilHostName = "scutil HostName"
+
+// darwinPersistentHostname reads the preference.
+//
+// Until this existed a Mac took the /etc/hostname path, and macOS has no
+// such file: the reader said the persistent name was empty, the writer
+// created the file, and the next read agreed with the write, so the
+// state converged on a file nothing on a Mac reads while the name the
+// machine boots with was never touched. The `macos` leg showed it
+// (DIVERGENCE 5.132): after `set_hostname`, `scutil --get HostName`
+// still held the runner's own name.
+//
+// A non-zero exit is taken as unset, which is what the FreeBSD branch
+// does with `sysrc` for the same reason: an empty persistent name is the
+// difference the state closes. What `scutil` prints for an unset
+// preference has not been captured -- every Mac this has run on had one.
+func darwinPersistentHostname(c *exec.Context) (string, string, error) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"scutil", "--get", "HostName"},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return "", scutilHostName, err
+	}
+	if res.Code != 0 {
+		return "", scutilHostName, nil
+	}
+	return strings.TrimSpace(res.Stdout), scutilHostName, nil
+}
+
+// darwinSetHostname writes the preference and then the running name, in
+// the order the FreeBSD branch does and for its reason: a failure
+// between the two leaves the node with the name it will boot with. The
+// running name is set with hostname(1) rather than left to configd,
+// because whether configd applies a `HostName` change to the kernel, and
+// how soon, is not something this has measured -- and the timezone
+// branch found `systemsetup` reporting success before its change existed
+// (DIVERGENCE 5.131).
+//
+// The preference is read back after it is written, because `scutil`'s
+// exit status on a refused write is not something anybody here has
+// seen, and a write that silently did nothing is the defect this branch
+// replaces.
+func darwinSetHostname(c *exec.Context, want string) error {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"scutil", "--set", "HostName", want},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return err
+	}
+	if res.Code != 0 {
+		return fmt.Errorf("scutil --set HostName %s exited %d: %s",
+			want, res.Code, firstLine(strings.TrimSpace(res.Stderr+res.Stdout)))
+	}
+	got, _, err := darwinPersistentHostname(c)
+	if err != nil {
+		return err
+	}
+	if got != want {
+		return fmt.Errorf("scutil --set HostName %s exited 0 and HostName is %q: %s",
+			want, got, firstLine(strings.TrimSpace(res.Stderr+res.Stdout)))
+	}
+	_, err = c.Run(exec.Command{Argv: []string{"hostname", want}})
+	return err
 }
 
 // sameHostname compares a configured name against a running one.

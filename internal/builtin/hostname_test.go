@@ -76,8 +76,9 @@ func TestAShortNameAndAQualifiedOneAreTheSameNode(t *testing.T) {
 // hostnameFixture points the persistent name wherever this platform
 // keeps it, and returns the function that writes one there.
 //
-// FreeBSD keeps it in rc.conf and is read through `sysrc`; everything
-// else keeps it in /etc/hostname. The first version of these tests
+// FreeBSD keeps it in rc.conf and is read through `sysrc`, macOS in
+// SystemConfiguration's HostName and is read through `scutil`;
+// everything else keeps it in /etc/hostname. The first version of these tests
 // redirected the file and nothing else, so on FreeBSD — the platform
 // this project is developed on — they exercised a branch the module
 // does not take there, and reported a pass for it. That went unseen
@@ -96,6 +97,29 @@ func hostnameFixture(t *testing.T) (c *exec.Context, where string, set func(name
 		c.Runner = runner
 		return c, "rc.conf", func(name string) {
 			runner.Responses["sysrc -n hostname"] = exec.Result{Stdout: name + "\n"}
+		}
+	}
+
+	if runtime.GOOS == "darwin" {
+		// The same mistake a second time: until macOS had a branch of its
+		// own this fixture redirected /etc/hostname there too, and passed
+		// on a Mac for a file a Mac does not have (DIVERGENCE 5.132).
+		//
+		// A set name is what `scutil --get HostName` printed on a macOS
+		// 15.7.9 runner: the name and a newline, exit 0. The unset answer
+		// is **not** captured -- every Mac this has run on had a HostName
+		// -- so it is written as the branch treats it, any non-zero exit,
+		// and says nothing about what scutil really prints.
+		runner := &exec.RecordingRunner{
+			Responses: map[string]exec.Result{"scutil --get HostName": {Code: 1}},
+		}
+		c.Runner = runner
+		return c, scutilHostName, func(name string) {
+			if name == "" {
+				runner.Responses["scutil --get HostName"] = exec.Result{Code: 1}
+				return
+			}
+			runner.Responses["scutil --get HostName"] = exec.Result{Stdout: name + "\n"}
 		}
 	}
 
@@ -209,5 +233,43 @@ func TestTheHostnameStateReportsWhichHalfWasWrong(t *testing.T) {
 	}
 	if !res.Succeeded() {
 		t.Errorf("a converged node did not succeed: %+v", res)
+	}
+}
+
+// The macOS write: the preference first, read back, then the running
+// name. Callable on any platform, so it runs on every CI leg and not
+// only the one that is a Mac.
+//
+// The read-back is the assertion that matters. `scutil`'s exit status on
+// a write it did not make has not been seen, and a write that silently
+// did nothing is exactly the defect this branch replaced -- so a
+// preference that does not say the new name afterwards is a failure, and
+// the running name is not touched.
+func TestDarwinSetHostnameWritesThePreferenceAndChecksIt(t *testing.T) {
+	c := newCtx(false)
+	runner := &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"scutil --get HostName": {Stdout: "web1\n"},
+	}}
+	c.Runner = runner
+	if err := darwinSetHostname(c, "web1"); err != nil {
+		t.Fatal(err)
+	}
+	want := "scutil --set HostName web1|scutil --get HostName|hostname web1"
+	if got := strings.Join(runner.RanCommands(), "|"); got != want {
+		t.Errorf("ran %s, want %s", got, want)
+	}
+
+	runner = &exec.RecordingRunner{Responses: map[string]exec.Result{
+		"scutil --get HostName": {Stdout: "old-name\n"},
+	}}
+	c.Runner = runner
+	err := darwinSetHostname(c, "web1")
+	if err == nil || !strings.Contains(err.Error(), "old-name") {
+		t.Errorf("a write the preference did not take was not refused: %v", err)
+	}
+	for _, ran := range runner.RanCommands() {
+		if strings.HasPrefix(ran, "hostname ") {
+			t.Errorf("the running name was set after the preference refused the write: %s", ran)
+		}
 	}
 }

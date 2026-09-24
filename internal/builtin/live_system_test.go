@@ -113,9 +113,22 @@ func TestLiveHostnameRenamesTheMachineAndPutsItBack(t *testing.T) {
 		}
 	})
 
+	_, statErr := os.Stat("/etc/hostname")
+	hadEtcHostname := statErr == nil
+
 	const want = "halite-live-probe"
 	if _, err := r.Exec.Call(c, "hostname.set_hostname", value.MapOf("hostname", want)); err != nil {
 		t.Fatalf("set_hostname: %v", err)
+	}
+
+	// On a Mac the module used to write /etc/hostname, which nothing on
+	// macOS reads, and then read it back and agree with itself
+	// (DIVERGENCE 5.132). A rename there must not invent the file.
+	if runtime.GOOS == "darwin" && !hadEtcHostname {
+		if _, err := os.Stat("/etc/hostname"); err == nil {
+			t.Errorf("set_hostname created /etc/hostname on a Mac, which has none and reads none")
+			_ = os.Remove("/etc/hostname")
+		}
 	}
 
 	// The running name, read back through the module and through the
