@@ -381,6 +381,11 @@ func TestLiveMacShadowPasswordRoundTripsThroughStdin(t *testing.T) {
 		"trailing\\": suffix + `\`,
 		"shell":      "$HOME;`id`|&" + suffix,
 		"non-ascii":  "pässwörd-" + suffix,
+		"lone-quote": "'" + suffix,
+		"leading-":   "-" + suffix,
+		"leading#":   "#" + suffix,
+		"spaces":     "  two  spaces  " + suffix + " ",
+		"everything": "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~ " + suffix,
 	}
 	real := c.Runner
 	for label, password := range cases {

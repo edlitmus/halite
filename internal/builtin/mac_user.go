@@ -839,11 +839,15 @@ func hasShadowHash(c *exec.Context, name string) bool {
 //     "x\ndelete /Users/admin" would run the delete, as root. So a line
 //     break, or any other control character, is refused before anything
 //     runs, and so is a name that is not a plain account name.
-//   - **The password has to survive dscl's tokeniser.** It is sent
-//     double-quoted with backslash and double quote escaped. That this
-//     round-trips is measured, not assumed: the live test sets passwords
-//     with spaces, both quotes, a backslash, shell metacharacters and
-//     non-ASCII, and authenticates with each (TestLiveMacShadow...).
+//   - **The password has to survive dscl's tokeniser**, which is not
+//     the shell's (see dsclQuote). That it round-trips is measured, not
+//     assumed: the live test sets passwords with spaces, both quotes, a
+//     backslash, shell metacharacters, a leading `-` and `#`, and
+//     non-ASCII, and authenticates with each
+//     (TestLiveMacShadowPasswordRoundTripsThroughStdin).
+//   - **dscl's exit status does not say whether it worked.** In
+//     interactive mode it exited 0 for a path that does not exist, having
+//     printed `passwd: Invalid Path`, so the output is read as well.
 func macShadowSetPassword(c *exec.Context, name, password string) error {
 	if name == "" {
 		return fmt.Errorf("mac_shadow.set_password needs an account name")
@@ -894,17 +898,34 @@ func macPlainAccountName(name string) bool {
 	return true
 }
 
-// dsclQuote double-quotes one argument for dscl's interactive mode.
+// dsclQuote escapes one argument for dscl's interactive mode by putting
+// a backslash before every ASCII character that is not a letter or a
+// digit, and leaving the rest alone.
+//
+// Not double quotes, which is what this did first. On a macOS 15.7.9
+// runner a password holding a single quote, sent inside double quotes,
+// came back as `eDSAuthFailed`: dscl's tokeniser treats `'` as a quote
+// even inside `"..."`, split the password in two, and took the two
+// words as passwd's *old* and new password. A different split could as
+// easily have set a password nobody typed, with no error at all, so the
+// escaping is measured against every character class the live test
+// sends rather than chosen for being the usual one (DIVERGENCE 5.133).
 func dsclQuote(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return `"` + s + `"`
+	var b strings.Builder
+	for _, r := range s {
+		if r < 0x80 && !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // dsclInteractiveFailed reports whether dscl's interactive output
-// carries an error. In interactive mode dscl reads commands until the
-// end of its input, and whether it exits non-zero for a command that
-// failed is measured by the live test rather than relied on here.
+// carries an error. It has to be read: on a macOS 15.7.9 runner,
+// interactive mode exited 0 after `passwd: Invalid Path` on stdout and
+// `<dscl_cmd> DS Error: -14009 (eDSUnknownNodeName)` on stderr, and a
+// successful passwd printed nothing on either.
 func dsclInteractiveFailed(out string) bool {
 	return strings.Contains(out, "Error") || strings.Contains(out, "error") ||
 		strings.Contains(out, "Invalid") || strings.Contains(out, "eDS")

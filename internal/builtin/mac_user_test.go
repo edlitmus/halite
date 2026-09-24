@@ -432,7 +432,7 @@ func TestMacShadowSetPasswordKeepsThePasswordOutOfArgv(t *testing.T) {
 			t.Errorf("the password is in argv: %q", cmd.Argv)
 		}
 	}
-	want := `passwd /Users/halitet1 "s3cret with \"quotes\" and \\ backslash"` + "\n"
+	want := `passwd /Users/halitet1 s3cret\ with\ \"quotes\"\ and\ \\\ backslash` + "\n"
 	if cmd.Stdin != want {
 		t.Errorf("stdin is %q, want %q", cmd.Stdin, want)
 	}
