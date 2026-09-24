@@ -12475,6 +12475,48 @@ a coverage claim rather than a defect. Both are recorded in plan.md rather
 than done.
 
 
+### 5.141 The audits read a second checkout as if it were this one
+
+`TestNoMathRand` failed on a developer's Mac with the template seed's
+own two files as offenders:
+
+```
+math/rand is imported outside the deterministic template seed: .claude/worktrees/frosty-ramanujan-8fb3ba/internal/template/env.go, ...
+```
+
+`.claude/worktrees/` is where Claude Code puts a git worktree for a
+parallel session. It is a whole second copy of the repository, at
+another commit, inside this one. The audit allows `math/rand` in two
+paths by name, and the same two files under the worktree have
+different paths.
+
+That failure was the visible one. The same walk exists in nine
+places, the audits of `buildpolicy`, `specaudit`, `metrics`, `config`,
+`exec` and `chaos`, and every one read the second copy. Each kept its
+own list of directories to skip, and the lists had already drifted
+apart (`testdata` in some, `dist` in others, nothing at all in
+`TestNoUnitOffersAReloadThatWouldKillTheService`, which walked
+`vendor` and `.git` too). A read of another checkout can fail an audit
+that should pass. It can also do the reverse. The SIGHUP check passes
+if *any* file registers the signal, so a worktree at a commit that
+handled it would have passed that check for a tree that did not.
+
+`internal/repotree.OtherCheckout` now answers the question with git's
+own rule: a directory below the root that has a `.git` entry of its
+own (a worktree's file or a clone's directory) is a separate work tree.
+All nine walkers skip it. With the worktree present, `make check`
+passes. With the check taken back out of `TestNoMathRand`, the failure
+above returns.
+
+#### What this does not cover
+
+- **A copy of the tree that is not a git checkout**, such as an
+  unpacked tarball dropped inside the repository. Nothing marks it, and
+  the audits still read it.
+- **Walkers outside the audits.** `file.recurse`, `extension` bundling
+  and the fileserver walk directories a node was told to walk. They are
+  not audits of this repository, and they are unchanged.
+
 ### 5.142 Six documentation claims that were false, and the audits that hold them
 
 The review's Tier 3: the prose. Not typos -- claims a reader acts on, each

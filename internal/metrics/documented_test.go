@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // registeredFamilies is every metric name this build names in its own
@@ -23,6 +25,9 @@ func registeredFamilies(t *testing.T) map[string]bool {
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", "vendor", "bin", "dist", "testdata":
+				return fs.SkipDir
+			}
+			if repotree.OtherCheckout(root, path) {
 				return fs.SkipDir
 			}
 			return nil

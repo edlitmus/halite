@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // TestLedgerTestCitationsResolve holds the ledger to naming tests that
@@ -31,6 +33,9 @@ func TestLedgerTestCitationsResolve(t *testing.T) {
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", "vendor", "bin", "dist":
+				return fs.SkipDir
+			}
+			if repotree.OtherCheckout(root, path) {
 				return fs.SkipDir
 			}
 			return nil
@@ -161,6 +166,9 @@ func registeredMetricFamilies(t *testing.T) map[string]bool {
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", "vendor", "bin", "dist", "testdata":
+				return fs.SkipDir
+			}
+			if repotree.OtherCheckout(root, path) {
 				return fs.SkipDir
 			}
 			return nil

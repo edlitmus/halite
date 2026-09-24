@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // TestEveryExitCodeReadAsksForIt holds every caller to the contract
@@ -62,6 +64,9 @@ func TestEveryExitCodeReadAsksForIt(t *testing.T) {
 		if info.IsDir() {
 			switch info.Name() {
 			case "vendor", "testdata", ".git":
+				return filepath.SkipDir
+			}
+			if repotree.OtherCheckout(root, path) {
 				return filepath.SkipDir
 			}
 			return nil

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // Every key has to be documented, and every documented key has to
@@ -86,6 +88,9 @@ func TestAnyStatedSettingCountMatchesTheTable(t *testing.T) {
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", "bin", "dist", "vendor", "testdata":
+				return fs.SkipDir
+			}
+			if repotree.OtherCheckout(root, path) {
 				return fs.SkipDir
 			}
 			return nil

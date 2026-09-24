@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // Term is a prohibited word and what to use instead.
@@ -205,7 +207,7 @@ func Scan(root string) ([]Finding, error) {
 			return relErr
 		}
 		if info.IsDir() {
-			if IsExempt(filepath.ToSlash(rel) + "/") {
+			if IsExempt(filepath.ToSlash(rel)+"/") || repotree.OtherCheckout(root, path) {
 				return filepath.SkipDir
 			}
 			return nil
