@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
@@ -610,7 +611,7 @@ func registerMacUser(r *Registries) {
 			Sig: signature.Signature{
 				Module: "mac_shadow", Function: "set_password",
 				Doc: "Set an account's password. macOS keeps no offline hash, so this takes " +
-					"a plaintext, and hands it to `dscl` on standard input rather than as an " +
+					"a plaintext, and hands it to passwd(1) on standard input rather than as an " +
 					"argument, so it is not in the process table. A password with a line break " +
 					"or other control character is refused.",
 				Params: []signature.Param{
@@ -821,68 +822,78 @@ func hasShadowHash(c *exec.Context, name string) bool {
 	return res.Code == 0 && strings.Contains(res.Stdout, "ShadowHashData")
 }
 
-// macShadowSetPassword sets a password through dscl's interactive mode,
-// so that the plaintext is on dscl's standard input and not in its argv.
+// macShadowSetPassword sets a password with passwd(1), which reads the
+// new password from standard input, so that the plaintext is never in an
+// argv.
 //
 // This used to run `dscl . -passwd /Users/<name> <password>`, with a
-// comment saying macOS offers no standard-input path. dscl(1) says
-// otherwise, in its own words: with no command on the line it "runs in
-// an interactive mode, reading commands from standard input", and
-// "Passing these passwords on the command line is inherently insecure
-// and can cause password exposure". An argv is readable by every local
-// account through `ps` for as long as the call runs, which on a node is
-// every run that sets one (DIVERGENCE 5.133).
+// comment saying macOS offers no standard-input path. An argv is
+// readable by every local account through `ps` for as long as the call
+// runs, and dscl(1) itself calls that form "inherently insecure"
+// (DIVERGENCE 5.133). Four ways of getting the password onto stdin were
+// tried as root on a macOS 15.7.9 runner, each checked by authenticating
+// with the password afterwards:
 //
-// Two things follow from putting a command line on stdin:
+//   - **dscl interactive mode, with the password on the command line it
+//     reads.** dscl's tokeniser is not the shell's and is not documented.
+//     Double-quoted, a single quote split the password into passwd's old
+//     and new arguments. Backslash-escaped, six of thirteen passwords
+//     were accepted with exit 0 and no error, and *did not
+//     authenticate* afterwards: dscl had set a password nobody typed.
+//     That is the worst available outcome, and it is why this does not
+//     escape anything.
+//   - **dscl's own prompt** (`passwd` with no password). With no
+//     terminal it printed `New Password:`, then its usage text, and set
+//     nothing.
+//   - **`sysadminctl -newPassword -`**: "Operation is not permitted
+//     without secure token unlock", which is the normal state of a node.
+//   - **passwd(1)**, with the password twice on stdin for its two
+//     prompts: every password authenticated, including all of ASCII
+//     punctuation, a leading `-`, leading and trailing spaces, and
+//     non-ASCII. passwd reads a line, so nothing is tokenised at all.
 //
-//   - **A newline in either field is a second command.** A password of
-//     "x\ndelete /Users/admin" would run the delete, as root. So a line
-//     break, or any other control character, is refused before anything
-//     runs, and so is a name that is not a plain account name.
-//   - **The password has to survive dscl's tokeniser**, which is not
-//     the shell's (see dsclQuote). That it round-trips is measured, not
-//     assumed: the live test sets passwords with spaces, both quotes, a
-//     backslash, shell metacharacters, a leading `-` and `#`, and
-//     non-ASCII, and authenticates with each
-//     (TestLiveMacShadowPasswordRoundTripsThroughStdin).
-//   - **dscl's exit status does not say whether it worked.** In
-//     interactive mode it exited 0 for a path that does not exist, having
-//     printed `passwd: Invalid Path`, so the output is read as well.
+// A line break, or any other control character, is refused before
+// anything runs: passwd reads up to a newline, so one would end the
+// password there. The timeout is there in case passwd ever reaches for
+// a terminal instead of stdin, which it did not on the runner and which
+// a node, having no terminal, cannot provide.
 func macShadowSetPassword(c *exec.Context, name, password string) error {
 	if name == "" {
 		return fmt.Errorf("mac_shadow.set_password needs an account name")
 	}
 	if !macPlainAccountName(name) {
-		return fmt.Errorf("mac_shadow.set_password: %q is not an account name this will pass to dscl", name)
+		return fmt.Errorf("mac_shadow.set_password: %q is not an account name this will pass to passwd", name)
 	}
 	for _, r := range password {
 		if r < 0x20 || r == 0x7f {
-			return fmt.Errorf("mac_shadow.set_password: the password contains a control character, " +
-				"which dscl's interactive mode would read as the end of the command")
+			return fmt.Errorf("mac_shadow.set_password: the password contains a control character; " +
+				"passwd reads it as a line, so a line break would end the password early")
 		}
 	}
-	if c.Which("dscl") == "" {
-		return fmt.Errorf("mac account modules need `dscl`, which was not found")
+	if c.Which("passwd") == "" {
+		return fmt.Errorf("mac_shadow.set_password needs `passwd`, which was not found")
 	}
 	res, err := c.Run(exec.Command{
-		Argv:           []string{"dscl", "-q", "."},
-		Stdin:          "passwd /Users/" + name + " " + dsclQuote(password) + "\n",
+		Argv:           []string{"passwd", name},
+		Stdin:          password + "\n" + password + "\n",
+		Timeout:        30 * time.Second,
 		IgnoreExitCode: true,
 	})
 	if err != nil {
 		return err
 	}
-	out := strings.TrimSpace(res.Stderr + res.Stdout)
-	if res.Code != 0 || dsclInteractiveFailed(out) {
-		return fmt.Errorf("dscl passwd /Users/%s exited %d: %s", name, res.Code, firstLine(out))
+	if res.Code != 0 {
+		return fmt.Errorf("passwd %s exited %d: %s", name, res.Code,
+			firstLine(strings.TrimSpace(res.Stderr+res.Stdout)))
 	}
 	return nil
 }
 
 // macPlainAccountName is the shape of a short account name: letters,
-// digits, `_`, `-` and `.`, not starting with `-`. Anything else is
-// refused rather than escaped, because it is going onto a dscl command
-// line and a name is not a secret that has to be carried verbatim.
+// digits, `_`, `-` and `.`, not starting with `-` or `.`. Anything else
+// is refused rather than passed on: a name that starts with `-` is an
+// option to passwd, and a name is not a secret that has to be carried
+// verbatim.
 func macPlainAccountName(name string) bool {
 	if name == "" || strings.HasPrefix(name, "-") || strings.HasPrefix(name, ".") {
 		return false
@@ -896,39 +907,6 @@ func macPlainAccountName(name string) bool {
 		}
 	}
 	return true
-}
-
-// dsclQuote escapes one argument for dscl's interactive mode by putting
-// a backslash before every ASCII character that is not a letter or a
-// digit, and leaving the rest alone.
-//
-// Not double quotes, which is what this did first. On a macOS 15.7.9
-// runner a password holding a single quote, sent inside double quotes,
-// came back as `eDSAuthFailed`: dscl's tokeniser treats `'` as a quote
-// even inside `"..."`, split the password in two, and took the two
-// words as passwd's *old* and new password. A different split could as
-// easily have set a password nobody typed, with no error at all, so the
-// escaping is measured against every character class the live test
-// sends rather than chosen for being the usual one (DIVERGENCE 5.133).
-func dsclQuote(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r < 0x80 && !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9') {
-			b.WriteByte('\\')
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
-// dsclInteractiveFailed reports whether dscl's interactive output
-// carries an error. It has to be read: on a macOS 15.7.9 runner,
-// interactive mode exited 0 after `passwd: Invalid Path` on stdout and
-// `<dscl_cmd> DS Error: -14009 (eDSUnknownNodeName)` on stderr, and a
-// successful passwd printed nothing on either.
-func dsclInteractiveFailed(out string) bool {
-	return strings.Contains(out, "Error") || strings.Contains(out, "error") ||
-		strings.Contains(out, "Invalid") || strings.Contains(out, "eDS")
 }
 
 // ---- the virtual user/group states on darwin ----

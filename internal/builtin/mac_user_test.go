@@ -432,16 +432,24 @@ func TestMacShadowSetPasswordKeepsThePasswordOutOfArgv(t *testing.T) {
 			t.Errorf("the password is in argv: %q", cmd.Argv)
 		}
 	}
-	want := `passwd /Users/halitet1 s3cret\ with\ \"quotes\"\ and\ \\\ backslash` + "\n"
-	if cmd.Stdin != want {
+	if strings.Join(cmd.Argv, " ") != "passwd halitet1" {
+		t.Errorf("ran %q, want passwd halitet1", cmd.Argv)
+	}
+	// Verbatim, twice, for passwd's two prompts: nothing is escaped,
+	// because passwd reads a line and does not tokenise it.
+	if want := secret + "\n" + secret + "\n"; cmd.Stdin != want {
 		t.Errorf("stdin is %q, want %q", cmd.Stdin, want)
+	}
+	if cmd.Timeout == 0 {
+		t.Error("passwd runs with no timeout, so a prompt on a terminal would hang the run")
 	}
 }
 
-// A line break on dscl's standard input ends one command and starts the
-// next, so a password carrying one would run whatever follows it, as
-// root. Refused before anything runs, as is a name that is not a plain
-// account name.
+// passwd reads the password as a line, so a line break would end it
+// early and the rest would become the retype -- or, on the dscl
+// interactive path this replaced, a second command run as root. Refused
+// before anything runs, as is a name that is not a plain account name
+// (a leading `-` is an option to passwd).
 func TestMacShadowSetPasswordRefusesASecondCommand(t *testing.T) {
 	c := newCtx(false)
 	c.Lookup = func(name string) string { return "/usr/bin/" + name }

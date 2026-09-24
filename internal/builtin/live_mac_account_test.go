@@ -330,9 +330,8 @@ func throwawayPassword(t *testing.T) string {
 
 // argvWatch runs commands for real and fails the test if any argv holds
 // the secret, which is the property `mac_shadow.set_password` exists to
-// keep now. It logs each dscl call's exit and output -- never its stdin
-// -- because what interactive mode prints and returns is what this test
-// was written to find out.
+// keep now. It logs each passwd call's exit and stderr -- never its
+// stdin -- so that what passwd says on a runner is on the record.
 type argvWatch struct {
 	t      *testing.T
 	inner  exec.CommandRunner
@@ -346,19 +345,19 @@ func (w *argvWatch) Run(ctx context.Context, cmd exec.Command) (exec.Result, err
 		}
 	}
 	res, err := w.inner.Run(ctx, cmd)
-	if len(cmd.Argv) > 0 && cmd.Argv[0] == "dscl" && cmd.Stdin != "" {
-		w.t.Logf("dscl %v on stdin: exit %d, stdout %q, stderr %q, err %v",
-			cmd.Argv[1:], res.Code, res.Stdout, res.Stderr, err)
+	if len(cmd.Argv) > 0 && cmd.Argv[0] == "passwd" {
+		w.t.Logf("passwd: exit %d, stderr %q, err %v", res.Code, res.Stderr, err)
 	}
 	return res, err
 }
 
-// The password reaches Open Directory through dscl's standard input
+// The password reaches Open Directory through passwd's standard input
 // intact, whatever it holds, and never through an argv.
 //
 // "Reported as set" is not enough here, and TestLiveMacAccountArc only
-// asks that: a password mangled by dscl's tokeniser is still a password
-// that is set. So each one is authenticated with `dscl . -authonly`,
+// asks that: a password mangled on the way in is still a password that
+// is set, and dscl's interactive mode was measured doing exactly that
+// (DIVERGENCE 5.133). So each one is authenticated with `dscl . -authonly`,
 // and a wrong one is checked to fail, so that authonly is known to be
 // able to say no. The authonly check puts the password in *its* argv;
 // that is this test's own verification of a throwaway account's random
@@ -414,9 +413,8 @@ func TestLiveMacShadowPasswordRoundTripsThroughStdin(t *testing.T) {
 		})
 	}
 
-	// A path that is not there. Whether interactive mode reports a failed
-	// command through its exit status is not something dscl(1) says, so
-	// the module also reads its output, and this is what holds that.
+	// An account that is not there: passwd has to say so through its
+	// exit status, because that is all the module reads.
 	c.Runner = &argvWatch{t: t, inner: real, secret: suffix}
 	err = macShadowSetPassword(c, account+"nobody", suffix)
 	c.Runner = real
