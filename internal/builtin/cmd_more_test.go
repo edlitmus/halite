@@ -1,10 +1,12 @@
 package builtin
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileperm"
@@ -191,3 +193,57 @@ func TestServiceKnownIgnoresTheSystemdSuffix(t *testing.T) {
 		t.Error("a service that is not there should not be found")
 	}
 }
+
+// A `timeout` a template produced arms the deadline, and one nobody can
+// read stops the command.
+//
+// `timeout: "900"` is what `timeout: {{ pillar['deploy_timeout'] }}`
+// becomes, because a template produces strings and nothing else. It used
+// to reach `time.ParseDuration`, which wants a unit, fail, and have its
+// error discarded — leaving `Timeout` at zero, which `exec.OSRunner` reads
+// as no deadline at all. A state that asked for a bounded command got an
+// unbounded one, which is what this module refuses to do for `bg` and
+// `timeout` together, in those words. DIVERGENCE 5.134.
+func TestCmdRunReadsATimeoutATemplateProduced(t *testing.T) {
+	r := New()
+
+	for _, spelled := range []any{"900", int64(900), float64(900), "15m"} {
+		var armed time.Duration
+		c := newCtx(false)
+		c.Runner = runnerFor(func(cmd exec.Command) (exec.Result, error) {
+			armed = cmd.Timeout
+			return exec.Result{}, nil
+		})
+		if _, err := r.Exec.Call(c, "cmd.run",
+			value.MapOf("name", "/bin/true", "timeout", spelled)); err != nil {
+			t.Errorf("timeout %#v: %v", spelled, err)
+			continue
+		}
+		want := 900 * time.Second
+		if armed != want {
+			t.Errorf("timeout %#v armed %v, want %v", spelled, armed, want)
+		}
+	}
+
+	// And a word nobody can read is a refusal rather than an unbounded
+	// run. The command must not have been started at all.
+	started := false
+	c := newCtx(false)
+	c.Runner = runnerFor(func(exec.Command) (exec.Result, error) {
+		started = true
+		return exec.Result{}, nil
+	})
+	_, err := r.Exec.Call(c, "cmd.run", value.MapOf("name", "/bin/true", "timeout", "soon"))
+	if err == nil {
+		t.Error("an unreadable timeout was accepted")
+	}
+	if started {
+		t.Error("the command ran with no deadline after its timeout could not be read")
+	}
+}
+
+// runnerFor adapts a function to exec.CommandRunner, for a test that has
+// to see the Command rather than script a reply to it.
+type runnerFor func(exec.Command) (exec.Result, error)
+
+func (f runnerFor) Run(_ context.Context, cmd exec.Command) (exec.Result, error) { return f(cmd) }

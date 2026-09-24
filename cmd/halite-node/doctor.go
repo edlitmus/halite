@@ -47,14 +47,31 @@ func runDoctor(args *cli.Args) int {
 		nodeFIPSCheck(n),
 	})
 
+	// Scrubbed on the way out, both ways out.
+	//
+	// The hub's doctor has done this since DIVERGENCE 5.110 and said why:
+	// a check prints what it found, and the pillar check's finding is a
+	// compilation error that can name a decrypted value. The node's did
+	// not -- and the node compiles its *whole* tree, so it reaches more
+	// GPG blocks than the hub does. Measured on this host: the node's
+	// `--out json` printed the pillar file's path and its decryption
+	// error verbatim.
+	//
+	// `cli.Redact` does not cover this. It is applied by `cli.Fatalf` and
+	// nowhere else, so a report printed normally passes it by.
 	switch n.format {
 	case cli.JSON, cli.YAML:
-		n.out(doctorValue(report))
+		n.out(n.secrets.ScrubValue(doctorValue(report)))
 	default:
-		fmt.Printf("halite-node doctor — %s\n\n", n.nodeID)
-		fmt.Print(report.Text())
+		fmt.Print(n.secrets.Scrub(n.doctorHeading() + report.Text()))
 	}
 	return report.ExitCode()
+}
+
+// doctorHeading is the line above the checks, kept apart from the printing
+// so that a test can read what would be written.
+func (n *node) doctorHeading() string {
+	return fmt.Sprintf("halite-node doctor — %s\n\n", n.nodeID)
 }
 
 // doctorValue renders the report for `--out json` or `yaml`, so that a

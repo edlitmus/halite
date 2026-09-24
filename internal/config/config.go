@@ -300,15 +300,12 @@ func (c *Config) Duration(path string, def time.Duration) time.Duration {
 	if !ok || v == nil {
 		return def
 	}
-	switch t := v.(type) {
-	case string:
-		if d, err := time.ParseDuration(t); err == nil {
-			return d
-		}
-	case int64:
-		return time.Duration(t) * time.Second
-	case float64:
-		return time.Duration(t * float64(time.Second))
+	// One rule, in value.ParseDuration -- which accepts a bare number of
+	// seconds, as `15m` and `900` both appear in a real configuration. A
+	// setting this cannot read falls back to the default, which is this
+	// function's contract and is why it takes one.
+	if d, err := value.ParseDuration(v); err == nil {
+		return d
 	}
 	return def
 }
