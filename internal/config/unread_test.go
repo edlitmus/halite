@@ -128,7 +128,7 @@ func readSomewhere(text, key string) bool {
 // both times the omission was found by this guard reporting a setting as
 // unread: `Float` and `IsSet` arrived with `tracing_sample_rate`, and
 // `PathUnderRoot` arrived with the `--root` fix and made `policy` look
-// read by nothing (DIVERGENCE 5.140).
+// read by nothing (DIVERGENCE 5.143).
 //
 // Twice is enough. A hand-maintained list of a type's own methods is a
 // second copy of the type, and the failure it produces is a *false*

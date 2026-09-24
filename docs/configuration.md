@@ -49,7 +49,7 @@ not sit under the configuration root and do not follow it; set them
 explicitly to relocate those. Until recently `--root` moved the
 configuration file and nothing the configuration file describes, so
 `halite-hub policy show --root /opt/staging` printed the production
-policy (DIVERGENCE 5.140).
+policy (DIVERGENCE 5.143).
 
 ## Which program reads what
 

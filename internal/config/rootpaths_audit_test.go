@@ -56,7 +56,7 @@ import (
 // documented as moving them. Only the two that SPEC 27.3 places under the
 // root are wrong to use this way.
 //
-// DIVERGENCE 5.140.
+// DIVERGENCE 5.143.
 func TestNoRootDerivedConstantIsAConfigFallback(t *testing.T) {
 	var checked int
 	root := filepath.Join("..", "..")

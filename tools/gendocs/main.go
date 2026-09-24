@@ -82,7 +82,7 @@ that lives beside the configuration needs no roots set at all.
 		"explicitly to relocate those. Until recently `--root` moved the\n" +
 		"configuration file and nothing the configuration file describes, so\n" +
 		"`halite-hub policy show --root /opt/staging` printed the production\n" +
-		"policy (DIVERGENCE 5.140).\n\n")
+		"policy (DIVERGENCE 5.143).\n\n")
 	b.WriteString(`## Which program reads what
 
 Three programs read configuration, and most settings belong to one of

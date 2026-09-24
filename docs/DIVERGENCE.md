@@ -12594,7 +12594,7 @@ The `job_queue_depth` disagreement and the `listen` one were both found by
 the audit on its first run; nobody had read those two lines and noticed.
 The `sysrc` note and the `state show` page were found by reading. The
 score is even, and the audits keep running.
-### 5.140 `--root` moved the configuration file and nothing it describes
+### 5.143 `--root` moved the configuration file and nothing it describes
 
 Found while probing the last row of a documentation audit, which is worth
 saying because the row itself was about a flag the CLI refuses and this is
