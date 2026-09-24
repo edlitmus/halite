@@ -610,9 +610,9 @@ func registerMacUser(r *Registries) {
 			Sig: signature.Signature{
 				Module: "mac_shadow", Function: "set_password",
 				Doc: "Set an account's password. macOS keeps no offline hash, so this takes " +
-					"a plaintext and runs `dscl . -passwd`, as Salt's does — which means the " +
-					"plaintext is briefly in the process table, because macOS offers no " +
-					"standard-input path for it.",
+					"a plaintext, and hands it to `dscl` on standard input rather than as an " +
+					"argument, so it is not in the process table. A password with a line break " +
+					"or other control character is refused.",
 				Params: []signature.Param{
 					uname,
 					req("password", signature.String, "The new password, in plaintext."),
@@ -821,12 +821,93 @@ func hasShadowHash(c *exec.Context, name string) bool {
 	return res.Code == 0 && strings.Contains(res.Stdout, "ShadowHashData")
 }
 
+// macShadowSetPassword sets a password through dscl's interactive mode,
+// so that the plaintext is on dscl's standard input and not in its argv.
+//
+// This used to run `dscl . -passwd /Users/<name> <password>`, with a
+// comment saying macOS offers no standard-input path. dscl(1) says
+// otherwise, in its own words: with no command on the line it "runs in
+// an interactive mode, reading commands from standard input", and
+// "Passing these passwords on the command line is inherently insecure
+// and can cause password exposure". An argv is readable by every local
+// account through `ps` for as long as the call runs, which on a node is
+// every run that sets one (DIVERGENCE 5.133).
+//
+// Two things follow from putting a command line on stdin:
+//
+//   - **A newline in either field is a second command.** A password of
+//     "x\ndelete /Users/admin" would run the delete, as root. So a line
+//     break, or any other control character, is refused before anything
+//     runs, and so is a name that is not a plain account name.
+//   - **The password has to survive dscl's tokeniser.** It is sent
+//     double-quoted with backslash and double quote escaped. That this
+//     round-trips is measured, not assumed: the live test sets passwords
+//     with spaces, both quotes, a backslash, shell metacharacters and
+//     non-ASCII, and authenticates with each (TestLiveMacShadow...).
 func macShadowSetPassword(c *exec.Context, name, password string) error {
 	if name == "" {
 		return fmt.Errorf("mac_shadow.set_password needs an account name")
 	}
-	return macRun(c, []string{"dscl", ".", "-passwd", "/Users/" + name, password},
-		"dscl -passwd /Users/"+name)
+	if !macPlainAccountName(name) {
+		return fmt.Errorf("mac_shadow.set_password: %q is not an account name this will pass to dscl", name)
+	}
+	for _, r := range password {
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("mac_shadow.set_password: the password contains a control character, " +
+				"which dscl's interactive mode would read as the end of the command")
+		}
+	}
+	if c.Which("dscl") == "" {
+		return fmt.Errorf("mac account modules need `dscl`, which was not found")
+	}
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"dscl", "-q", "."},
+		Stdin:          "passwd /Users/" + name + " " + dsclQuote(password) + "\n",
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return err
+	}
+	out := strings.TrimSpace(res.Stderr + res.Stdout)
+	if res.Code != 0 || dsclInteractiveFailed(out) {
+		return fmt.Errorf("dscl passwd /Users/%s exited %d: %s", name, res.Code, firstLine(out))
+	}
+	return nil
+}
+
+// macPlainAccountName is the shape of a short account name: letters,
+// digits, `_`, `-` and `.`, not starting with `-`. Anything else is
+// refused rather than escaped, because it is going onto a dscl command
+// line and a name is not a secret that has to be carried verbatim.
+func macPlainAccountName(name string) bool {
+	if name == "" || strings.HasPrefix(name, "-") || strings.HasPrefix(name, ".") {
+		return false
+	}
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '_', r == '-', r == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// dsclQuote double-quotes one argument for dscl's interactive mode.
+func dsclQuote(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
+}
+
+// dsclInteractiveFailed reports whether dscl's interactive output
+// carries an error. In interactive mode dscl reads commands until the
+// end of its input, and whether it exits non-zero for a command that
+// failed is measured by the live test rather than relied on here.
+func dsclInteractiveFailed(out string) bool {
+	return strings.Contains(out, "Error") || strings.Contains(out, "error") ||
+		strings.Contains(out, "Invalid") || strings.Contains(out, "eDS")
 }
 
 // ---- the virtual user/group states on darwin ----

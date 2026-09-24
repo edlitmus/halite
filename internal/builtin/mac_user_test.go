@@ -408,3 +408,58 @@ func TestMacAccountModulesAreRegisteredAndRestricted(t *testing.T) {
 		}
 	}
 }
+
+// The password goes to dscl on standard input, never in its argv, where
+// every local account can read it through `ps` (DIVERGENCE 5.133).
+// Platform-neutral: this is what the module hands to the runner, so it
+// runs on every CI leg and not only on a Mac.
+func TestMacShadowSetPasswordKeepsThePasswordOutOfArgv(t *testing.T) {
+	c := newCtx(false)
+	c.Lookup = func(name string) string { return "/usr/bin/" + name }
+	runner := &exec.RecordingRunner{}
+	c.Runner = runner
+
+	const secret = `s3cret with "quotes" and \ backslash`
+	if err := macShadowSetPassword(c, "halitet1", secret); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.Ran) != 1 {
+		t.Fatalf("ran %d commands, want 1: %v", len(runner.Ran), runner.RanCommands())
+	}
+	cmd := runner.Ran[0]
+	for _, arg := range cmd.Argv {
+		if strings.Contains(arg, "s3cret") {
+			t.Errorf("the password is in argv: %q", cmd.Argv)
+		}
+	}
+	want := `passwd /Users/halitet1 "s3cret with \"quotes\" and \\ backslash"` + "\n"
+	if cmd.Stdin != want {
+		t.Errorf("stdin is %q, want %q", cmd.Stdin, want)
+	}
+}
+
+// A line break on dscl's standard input ends one command and starts the
+// next, so a password carrying one would run whatever follows it, as
+// root. Refused before anything runs, as is a name that is not a plain
+// account name.
+func TestMacShadowSetPasswordRefusesASecondCommand(t *testing.T) {
+	c := newCtx(false)
+	c.Lookup = func(name string) string { return "/usr/bin/" + name }
+	for _, tc := range []struct{ name, password string }{
+		{"halitet1", "x\ndelete /Users/admin"},
+		{"halitet1", "x\rdelete /Users/admin"},
+		{"halitet1", "tab\there"},
+		{"halitet1 /Users/admin", "x"},
+		{"../admin", "x"},
+		{"-q", "x"},
+	} {
+		runner := &exec.RecordingRunner{}
+		c.Runner = runner
+		if err := macShadowSetPassword(c, tc.name, tc.password); err == nil {
+			t.Errorf("name %q, password %q was accepted", tc.name, tc.password)
+		}
+		if len(runner.Ran) != 0 {
+			t.Errorf("name %q ran %v before refusing", tc.name, runner.RanCommands())
+		}
+	}
+}

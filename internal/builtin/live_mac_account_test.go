@@ -1,11 +1,13 @@
 package builtin
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -314,10 +316,9 @@ func TestLiveMacAccountArc(t *testing.T) {
 // an account that exists for the length of this test and is removed with
 // it.
 //
-// `dscl . -passwd` takes the password as an argument, so it is visible
-// in `ps` for as long as the call runs -- which is true of this module
-// in production too, not only here. Worth knowing; not something this
-// test can avoid while driving the module as it is written.
+// The module hands it to dscl on standard input, so it is not in `ps`
+// (DIVERGENCE 5.133). The authonly checks below do put it in an argv, of
+// a throwaway account that is removed with the test.
 func throwawayPassword(t *testing.T) string {
 	t.Helper()
 	b := make([]byte, 16)
@@ -325,4 +326,97 @@ func throwawayPassword(t *testing.T) string {
 		t.Fatalf("generating a password: %v", err)
 	}
 	return "Ht-" + hex.EncodeToString(b)
+}
+
+// argvWatch runs commands for real and fails the test if any argv holds
+// the secret, which is the property `mac_shadow.set_password` exists to
+// keep now. It logs each dscl call's exit and output -- never its stdin
+// -- because what interactive mode prints and returns is what this test
+// was written to find out.
+type argvWatch struct {
+	t      *testing.T
+	inner  exec.CommandRunner
+	secret string
+}
+
+func (w *argvWatch) Run(ctx context.Context, cmd exec.Command) (exec.Result, error) {
+	for _, arg := range cmd.Argv {
+		if w.secret != "" && strings.Contains(arg, w.secret) {
+			w.t.Errorf("the password is in the argv of %s", cmd.Argv[0])
+		}
+	}
+	res, err := w.inner.Run(ctx, cmd)
+	if len(cmd.Argv) > 0 && cmd.Argv[0] == "dscl" && cmd.Stdin != "" {
+		w.t.Logf("dscl %v on stdin: exit %d, stdout %q, stderr %q, err %v",
+			cmd.Argv[1:], res.Code, res.Stdout, res.Stderr, err)
+	}
+	return res, err
+}
+
+// The password reaches Open Directory through dscl's standard input
+// intact, whatever it holds, and never through an argv.
+//
+// "Reported as set" is not enough here, and TestLiveMacAccountArc only
+// asks that: a password mangled by dscl's tokeniser is still a password
+// that is set. So each one is authenticated with `dscl . -authonly`,
+// and a wrong one is checked to fail, so that authonly is known to be
+// able to say no. The authonly check puts the password in *its* argv;
+// that is this test's own verification of a throwaway account's random
+// password, not the module.
+func TestLiveMacShadowPasswordRoundTripsThroughStdin(t *testing.T) {
+	c, account, _ := macAccountLiveRoot(t)
+	res, err := macUserPresentState(c, value.MapOf("name", account, "shell", "/bin/zsh",
+		"home", "/Users/"+account, "fullname", "halite password test"))
+	if err != nil || !res.Succeeded() {
+		t.Fatalf("creating %s: %v %+v", account, err, res)
+	}
+
+	suffix := throwawayPassword(t)
+	cases := map[string]string{
+		"plain":      suffix,
+		"space":      "with space " + suffix,
+		"dquote":     `dq"uote` + suffix,
+		"squote":     "sq'uote" + suffix,
+		"backslash":  `back\slash` + suffix,
+		"trailing\\": suffix + `\`,
+		"shell":      "$HOME;`id`|&" + suffix,
+		"non-ascii":  "pässwörd-" + suffix,
+	}
+	real := c.Runner
+	for label, password := range cases {
+		t.Run(label, func(t *testing.T) {
+			watch := &argvWatch{t: t, inner: real, secret: suffix}
+			c.Runner = watch
+			defer func() { c.Runner = real }()
+
+			if err := macShadowSetPassword(c, account, password); err != nil {
+				t.Fatalf("set_password: %v", err)
+			}
+			c.Runner = real
+			ok, err := c.Run(exec.Command{
+				Argv: []string{"dscl", ".", "-authonly", account, password}, IgnoreExitCode: true,
+			})
+			if err != nil || ok.Code != 0 {
+				t.Errorf("the password set through stdin does not authenticate: exit %d %s",
+					ok.Code, firstLine(ok.Stderr+ok.Stdout))
+			}
+			bad, err := c.Run(exec.Command{
+				Argv: []string{"dscl", ".", "-authonly", account, "wrong-" + suffix}, IgnoreExitCode: true,
+			})
+			if err == nil && bad.Code == 0 {
+				t.Errorf("authonly accepted a wrong password, so it cannot tell whether the right one worked")
+			}
+		})
+	}
+
+	// A path that is not there. Whether interactive mode reports a failed
+	// command through its exit status is not something dscl(1) says, so
+	// the module also reads its output, and this is what holds that.
+	c.Runner = &argvWatch{t: t, inner: real, secret: suffix}
+	err = macShadowSetPassword(c, account+"nobody", suffix)
+	c.Runner = real
+	t.Logf("set_password on an account that does not exist: %v", err)
+	if err == nil {
+		t.Errorf("set_password on an account that does not exist reported success")
+	}
 }
