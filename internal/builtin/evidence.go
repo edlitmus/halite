@@ -160,10 +160,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"the filesystem"},
 	"timezone": {Level: exec.Hardware, Note: "driven on Debian 12 in `make fleetcheck`: " +
 		"`/etc/localtime` really relinked against a real tzdata 2026b and read back, and a " +
-		"zone the machine does not have refused (DIVERGENCE 5.35). Not covered: the " +
-		"`timedatectl` branch, which needs systemd running, and the macOS `systemsetup` " +
-		"branch, which had no test at all behind a fixture that looked like one " +
-		"(plan.md §1.3)"},
+		"zone the machine does not have refused (DIVERGENCE 5.35). The macOS `systemsetup` " +
+		"branch was driven as root on a macOS 15.7.9 runner (build 24G830) on the `macos` " +
+		"leg of `fleet.yml`: a zone set, `/etc/localtime` checked the moment the state " +
+		"returned, a second run that changed nothing, and zones the tree has but " +
+		"`systemsetup` refuses turned away by the state. Running it found four defects " +
+		"(DIVERGENCE 5.131). Not covered: the `timedatectl` branch, which needs systemd " +
+		"running, and macOS releases other than that runner's"},
 
 	// ---- Mutated a real machine, in the live CI legs ----
 	//
