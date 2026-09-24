@@ -157,7 +157,13 @@ func platformGidIfAny(t *testing.T, c *exec.Context, name string) (int64, bool) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.Code != 0 {
+		// A record that is not there is not always a non-zero exit: on a
+		// macOS 15.7.9 runner, `dscl . -read /Groups/<missing>
+		// PrimaryGroupID` exited 0 and printed nothing on stdout. So an
+		// empty answer is "no such group", and what dscl said is logged.
+		if res.Code != 0 || strings.TrimSpace(res.Stdout) == "" {
+			t.Logf("dscl -read /Groups/%s PrimaryGroupID: exit %d, stdout %q, stderr %q",
+				name, res.Code, res.Stdout, res.Stderr)
 			return 0, false
 		}
 		f := strings.Fields(res.Stdout)
