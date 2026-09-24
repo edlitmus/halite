@@ -1,6 +1,10 @@
 package specaudit
 
 import (
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,6 +56,7 @@ func TestEveryUpgradeClauseHasATest(t *testing.T) {
 	}
 
 	covered := markersInTree(t)
+	root := filepath.Join("..", "..")
 	for _, c := range upgradeClauses {
 		files := covered[c.Marker]
 		if len(files) == 0 {
@@ -59,7 +64,23 @@ func TestEveryUpgradeClauseHasATest(t *testing.T) {
 				"%s in a comment.", c.Clause, c.Marker)
 			continue
 		}
-		t.Logf("%s: %s", c.Clause, strings.Join(files, ", "))
+		// The marker is a claim, and the claim is checked. A file that
+		// carries one and holds no test that does anything is the
+		// coverage this audit used to accept: the marker survives while
+		// the test it names is deleted.
+		var covering []string
+		for _, rel := range files {
+			names, nodes := substanceOf(t, filepath.Join(root, rel))
+			if len(names) == 0 || nodes < minUpgradeNodes {
+				t.Errorf("%s claims %q and holds %d test function(s) parsing to %d node(s), "+
+					"which is not a test. The marker is a claim that this row is covered; "+
+					"deleting the body and keeping the comment is how it stops being one.",
+					rel, c.Clause, len(names), nodes)
+				continue
+			}
+			covering = append(covering, fmt.Sprintf("%s (%d tests, %d nodes)", rel, len(names), nodes))
+		}
+		t.Logf("%s: %s", c.Clause, strings.Join(covering, ", "))
 	}
 }
 
@@ -81,6 +102,44 @@ func upgradeRow(t *testing.T) string {
 	t.Fatal("SPEC 31 has no Upgrade row; this audit is reading the wrong table")
 	return ""
 }
+
+// substanceOf reports the test functions in a file and how much they do.
+//
+// A marker is a claim that a row is covered, and the claim was taken on
+// the strength of the comment alone: delete all 596 lines of a covering
+// file's test bodies, leave the marker, and this audit passed while
+// logging the file by name. The review that found it demonstrated exactly
+// that. DIVERGENCE 5.135.
+//
+// So a file carrying a marker has to hold test functions that do
+// something. The threshold is deliberately low against what the real ones
+// hold -- the two covering files parse to 2,426 and 1,726 syntax nodes
+// across eleven test functions -- because this is a guard against a body
+// that has been emptied, not a measure of quality. Nothing static can tell
+// a thorough test from a thin one; what it can tell is the difference
+// between a test and a comment.
+func substanceOf(t *testing.T, path string) (names []string, nodes int) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Body == nil || !strings.HasPrefix(fn.Name.Name, "Test") {
+			continue
+		}
+		names = append(names, fn.Name.Name)
+		ast.Inspect(fn.Body, func(ast.Node) bool { nodes++; return true })
+	}
+	return names, nodes
+}
+
+// minUpgradeNodes is what a covering file must at least parse to. A test
+// body emptied of everything but a `t.Log` falls under it; every real one
+// here is two orders of magnitude above it.
+const minUpgradeNodes = 40
 
 // markersInTree finds every `upgrade:` marker in a test file.
 func markersInTree(t *testing.T) map[string][]string {

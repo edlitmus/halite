@@ -1,6 +1,9 @@
 package buildpolicy
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,28 +40,67 @@ func TestEveryShippedExtensionAppliesTheLimits(t *testing.T) {
 
 	for _, dir := range commands {
 		name := filepath.Base(dir)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var source strings.Builder
-		for _, e := range entries {
-			if !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
-				continue
-			}
-			body, err := os.ReadFile(filepath.Join(dir, e.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
-			source.Write(body)
-		}
-		if !strings.Contains(source.String(), "ext.Confine()") {
-			t.Errorf("%s does not call ext.Confine(), so it runs without the resource limits "+
-				"the host believes it applied, and sys.list_extensions reports them as in force",
-				name)
+		if !callsConfineFromMain(t, dir) {
+			t.Errorf("%s does not call ext.Confine() from main, so it runs without the "+
+				"resource limits the host believes it applied, and sys.list_extensions "+
+				"reports them as in force", name)
 		}
 	}
 	t.Logf("checked %d extension(s)", len(commands))
+}
+
+// callsConfineFromMain reports whether an extension's `main` actually
+// calls it.
+//
+// Parsed rather than searched. This was `strings.Contains(source,
+// "ext.Confine()")`, and a commented-out call contains that string --
+// so the defect the check was written for reinstates by putting `//` in
+// front of the line it was written about. That is the shape this
+// project's audits keep being caught by: a text search standing in for a
+// check. DIVERGENCE 5.135.
+//
+// From `main` specifically, because the limits bound the calling process
+// and are useless applied somewhere that never runs: a call in a helper
+// nobody invokes reads identically to a call that happens.
+func callsConfineFromMain(t *testing.T, dir string) bool {
+	t.Helper()
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, dir, func(fi os.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatalf("%s: %v", dir, err)
+	}
+	for _, pkg := range pkgs {
+		for _, file := range pkg.Files {
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Recv != nil || fn.Name.Name != "main" || fn.Body == nil {
+					continue
+				}
+				found := false
+				ast.Inspect(fn.Body, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					sel, ok := call.Fun.(*ast.SelectorExpr)
+					if !ok || sel.Sel.Name != "Confine" {
+						return true
+					}
+					if pkgIdent, ok := sel.X.(*ast.Ident); ok && pkgIdent.Name == "ext" {
+						found = true
+						return false
+					}
+					return true
+				})
+				if found {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // And the skeleton the migration tool generates emits the same call, so

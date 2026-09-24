@@ -79,6 +79,41 @@ func (t TestMode) String() string {
 	}
 }
 
+// The privilege vocabulary. A test holds every declaration to this set,
+// so that a new module cannot invent a phrase that a gate reading these
+// strings will not recognise.
+const (
+	// PrivRoot is the ordinary case: the function cannot do its work
+	// without being root.
+	PrivRoot = "root"
+	// PrivRootForOthers needs root only to act on another account's
+	// property -- signalling its process, reading its crontab -- and works
+	// unprivileged on the caller's own.
+	PrivRootForOthers = "root to signal another account's process"
+	// PrivCaller is `cmd` and its like: the function runs what it is
+	// given, so what it needs is whatever that needs. It counts as
+	// privileged for the release gate, because a node runs as root and
+	// therefore so does whatever it is handed.
+	PrivCaller = "whatever the command needs"
+)
+
+// NeedsPrivilege reports whether a function changes a machine with
+// privilege it would not have as an ordinary user.
+//
+// One predicate, named, rather than a substring search at each caller: the
+// gate used `strings.Contains(p, "root")` over this field, which answered
+// no for PrivCaller and quietly left 10 functions of the `cmd` module --
+// `cmd.run`, `cmd.script`, `cmd.exec_code` among them -- outside it.
+func (s Signature) NeedsPrivilege() bool {
+	for _, p := range s.Privileges {
+		switch p {
+		case PrivRoot, PrivRootForOthers, PrivCaller:
+			return true
+		}
+	}
+	return false
+}
+
 // Param is one parameter of a function.
 type Param struct {
 	Name     string
@@ -122,7 +157,20 @@ type Signature struct {
 	TestMode TestMode
 	// Platforms restricts the function; empty means every platform.
 	Platforms []string
-	// Privileges names what the function needs, such as "root".
+	// Privileges names what the function needs.
+	//
+	// The strings are a closed vocabulary, checked by a test, because
+	// something reads them to decide what to gate: `make release-gate`
+	// refuses a release in which a module that changes a machine with
+	// privilege has never been demonstrated, and it picks those modules by
+	// looking in here. Free prose in a field a gate reads is a way past
+	// the gate -- `cmd` said "whatever the command needs", which contains
+	// no "root", so the module that can run anything sat outside the one
+	// check written to catch a module nobody had considered. DIVERGENCE
+	// 5.135.
+	//
+	// Use PrivRoot, PrivRootForOthers or PrivCaller. A function needing
+	// nothing leaves this empty.
 	Privileges []string
 
 	// AnyKwargs accepts keyword arguments the signature does not name,
