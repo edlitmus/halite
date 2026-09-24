@@ -53,7 +53,7 @@ var Keys = []Key{
 	{"hub_alive_interval", nodeOnly, "30s", "Ping interval on the subscribe stream.", "6.2"},
 	{"hub_tries", nodeOnly, "0", "Reconnect attempts before giving up; 0 means retry forever.", "6.2"},
 	{"hub_type", nodeOnly, "static", "static or failover, selecting how a list of hubs is used.", "6.2"},
-	{"listen", hubAPI, ":4510", "Listen address.", "6.1"},
+	{"listen", hubAPI, `:4510 on the hub, :4511 on the API`, "Listen address.", "6.1"},
 	{"pki_dir", all, DefaultPKIDir, "Key material.", "27.3"},
 	{"cache_dir", all, DefaultCacheDir, "Discardable cache.", "27.3"},
 	{"state_dir", all, DefaultStateDir, "Durable state: job cache, events, evidence.", "27.3"},
@@ -88,7 +88,7 @@ var Keys = []Key{
 	// Renderers.
 	{"renderer", nodeHub, "jinja|yaml", "The default renderer pipeline.", "10"},
 	{"undefined", nodeHub, "strict", "strict or permissive name resolution in templates.", "10.2.6"},
-	{"yaml_bool_11", nodeHub, "true", "Resolve yes, no, on, off, y, and n as booleans, as PyYAML does.", "10.1.3"},
+	{"yaml_bool_11", nodeHub, "true", "Resolve yes, no, on, and off as booleans, as PyYAML does.", "10.1.3"},
 	{"template_trim_blocks", nodeHub, "false", "Jinja trim_blocks.", "10.2.1"},
 	{"template_lstrip_blocks", nodeHub, "false", "Jinja lstrip_blocks.", "10.2.1"},
 	{"random_seed", nodeHub, "deterministic", "deterministic or nondeterministic template randomness.", "10.2.4"},
@@ -235,7 +235,7 @@ var Keys = []Key{
 	// Node execution.
 	{"node_data_cache", hubOnly, "true", "Keep per-node grains, pillar, and mine on the hub.", "28.3"},
 	{"parallel_jobs", nodeOnly, "false", "Allow jobs to run alongside one another by default.", "9.6"},
-	{"job_queue_depth", nodeOnly, "100", "How many jobs may wait before the node refuses more.", "9.6"},
+	{"job_queue_depth", nodeOnly, "16", "How many jobs may wait before the node refuses more.", "9.6"},
 	{"require_job_signature", nodeOnly, "false", "Refuse a job without a valid detached operator signature: true, false, or a list of function classes.", "25.6"},
 	{"job_signer_keys", nodeOnly, "", "Public keys whose detached job signatures this node accepts.", "25.6"},
 	{"evidence", nodeOnly, "true", "Keep the append-only, hash-chained local record of what this node accepted.", "25.7"},

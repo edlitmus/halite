@@ -80,6 +80,7 @@ on:
       - "internal/builtin/tmpfs*.go"
       - "internal/builtin/reboot*.go"
       - "internal/builtin/mac_*.go"
+      - "internal/builtin/sysrc*.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
       - ".github/workflows/fleet.yml"

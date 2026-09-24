@@ -565,8 +565,25 @@ var moduleEvidence = map[string]exec.Evidence{
 		"where the conventional path differs and no CI leg reads it as root; and Salt's " +
 		"`sudo.salt_call`, deliberately not built, because `cmd.run` already takes a `runas` and " +
 		"applies it with setuid rather than through a second privilege system"},
-	"sysrc": {Level: exec.Captured, Note: "reads real rc.conf through the real `sysrc` on " +
-		"CI's FreeBSD runner; nothing has watched this module write one"},
+	// Lowered from Captured, which it had not earned. The note said this
+	// module "reads real rc.conf through the real `sysrc` on CI's FreeBSD
+	// runner"; its only test swaps in a RecordingRunner, so on that runner
+	// it ran *beside* a real sysrc and never called it. The
+	// `c.Which("sysrc")` guard decided whether the test ran and the
+	// recorder decided what it saw, which reads exactly like a test that
+	// uses the tool. DIVERGENCE 5.139.
+	//
+	// `TestLiveSysrcWritesAndReadsBackARealRCConf` is written and drives
+	// the real binary against an rc.conf in a temporary directory. It has
+	// not run yet: this host's shell is a Linux compatibility layer, where
+	// FreeBSD's `sysrc` shell script fails on readonly variables, so the
+	// witness has to be the `freebsd` leg of fleet.yml. This stays
+	// `Assumed` until that run exists, and the gate is red until then --
+	// which is the gate working, not a regression.
+	"sysrc": {Level: exec.Assumed, Note: "its tests script `sysrc`'s output through a " +
+		"RecordingRunner and never execute it, so nothing has watched this module read or " +
+		"write an rc.conf. TestLiveSysrcWritesAndReadsBackARealRCConf drives the real tool " +
+		"against a temporary file and waits on the freebsd leg to run it"},
 	// `pam` has no tool to drive, which is why its note reads
 	// differently from every other one here. PAM is a library the login
 	// programs link, not a program this module runs, so there is no

@@ -233,9 +233,13 @@ The larger absences today:
 - **`halite-hub files`**, the push in the other direction from `salt-cp`.
   The file server serves; pushing a file to a node is not built.
 - **Windows and macOS modules.** Phase 5, and the only platform work
-  left. The code cross-compiles for both and has been run on neither, so
-  `pkg`, `service`, and the Windows event log are unexercised rather
-  than known good. DIVERGENCE 4 is the platform matrix.
+  left. macOS is past cross-compilation: a CI leg drives its `mac_*`
+  modules as root on every change, six of them are `hardware`, and the
+  launchd service provider has been driven. Windows runs the suite
+  natively and four of its eighteen modules ship, with `pkg`, `service`
+  and the event log exercised by the unit suite rather than against a real
+  machine. DIVERGENCE 4 is the platform matrix and `sys.evidence` is the
+  per-module answer.
 - **`_modules/` and friends.** A formula carrying custom Python is not
   portable without conversion. `migrate --bridge-skeleton <dir>`
   generates a Go bridge for each one, with the signatures filled in from

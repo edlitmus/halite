@@ -43,8 +43,12 @@ Compile or apply a state tree.
 applies the highstate,
 .Cm state apply Ar sls
 applies one file, and
-.Cm state show
-compiles without applying.
+.Cm state show_highstate
+prints the assembled high state,
+.Cm state show_lowstate
+the ordered low state, and
+.Cm state show_top
+the top file matches, none of which applies anything.
 With
 .Fl -test
 nothing is changed and the result is what would have changed.

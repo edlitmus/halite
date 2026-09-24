@@ -282,7 +282,7 @@ var KeyDocs = map[string]KeyDoc{
 	},
 	"yaml_bool_11": {
 		Group:  "Rendering and templates",
-		Detail: "Resolves `yes`, `no`, `on`, `off`, `y`, and `n` as booleans, as PyYAML does. Off by default because YAML 1.2 does not, and a Norwegian country code of `no` should stay a string. Turn it on for a tree written against Salt that depends on the old behaviour.",
+		Detail: "Resolves `yes`, `no`, `on`, and `off` as booleans, as PyYAML does — and therefore as Salt does, which is why it is **on** by default: an existing tree depends on it, and a `enabled: no` that quietly became the string \"no\" would be true everywhere it is tested. Every such scalar also produces a warning naming the file and line, so a tree can be audited without changing behaviour first; `yaml_bool_11: false` is what you set afterwards, and it switches to YAML 1.2 semantics where a Norwegian country code of `no` stays a string. The single letters `y` and `n` are **not** resolved, although SPEC 10.1.3's table lists them: PyYAML's resolver does not match them either, so honouring the table would make `name: n` a boolean here and a string in Salt. SPEC 10.1.3.",
 	},
 	"template_trim_blocks": {
 		Group:  "Rendering and templates",
