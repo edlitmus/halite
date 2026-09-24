@@ -11637,6 +11637,49 @@ captured output and fails for all three tools when the check is
 disabled. `TestLiveAppArmorRefusesAProfileThatIsNotThere` now drives
 the three execution functions as well as the state.
 
+#### The fleet leg now runs the mutating half, and says so if it cannot
+
+`fleet.yml`'s linux leg now purges `passt` (nothing else is removed)
+and deletes `microsoft-edge-stable` and `firefox` before the live
+tests. It then runs the probe and fails the job unless the tools give
+the working answer. The comment it replaces said that no workaround
+existed and relied on the release gate to back up the skip. The first
+point was true of 5.37's single attempt. The second stopped being
+true when 5.55 moved `apparmor` to `hardware`, and from then on the
+skip on this leg had no backup at all.
+
+On this branch (Fleet run 36042192549, image 20260920.314.1), all five
+AppArmor live tests ran as root and passed, and none skipped. That
+covers securityfs, the complain/enforce/disable cycle with its
+symlink, the state's prediction and convergence, the refusals, and
+the conflict built on purpose. **This is the first time the mutating
+path has run on a GitHub runner.** The evidence note now names that
+run beside 5.55's host.
+
+Broken on purpose on a runner (run 36042256077, both fixes reverted
+together, never merged): `TestLiveAppArmorStatusSeesATreeTheToolsCannotRead`
+failed with `tools=true`, an empty reason, and a mode change that
+blamed `/usr/bin/man`. `TestLiveAppArmorRefusesAProfileThatIsNotThere`
+failed for all three execution functions. The other three passed,
+as expected, because the prepared tree is one the tools can read.
+
+#### What this does not settle
+
+- **The conflicts are only reported.** A node with an Edge or Firefox
+  pair still cannot have any mode changed until an operator removes
+  one of the files. `apparmor.status` now says which files.
+- **One image and one apparmor-utils version**: ubuntu-24.04
+  20260920.314.1, 4.0.1really4.0.1-0ubuntu0.24.04.7. The success
+  sentence the probe matches comes from that version. If another
+  version words it differently, the probe answers `tools: false` with
+  "does not recognise". That is the intended direction of failure,
+  but it would still be a false no, and nothing has been run on
+  another version to find out.
+- **Which file of each pair is the wrong one** was not examined, and
+  the owner of `usr.bin.firefox` was not captured. The fleet step
+  removes the files that were demonstrated to work, and the choice
+  between the two files in each pair is arbitrary.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
