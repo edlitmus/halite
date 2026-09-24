@@ -395,6 +395,17 @@ func macGroupCreate(c *exec.Context, name string, gid int64) error {
 	return macRun(c, argv, "dseditgroup -o create "+name)
 }
 
+// macGroupHasGid reports whether a group's record carries a
+// PrimaryGroupID at all. macGroupInfo reads a missing one as 0, which is
+// also `wheel`'s real gid, so the two are told apart on the record.
+func macGroupHasGid(c *exec.Context, name string) bool {
+	rec, ok, err := dsclRead(c, "/Groups/"+name)
+	if err != nil || !ok {
+		return true // not this function's question; the caller already read it
+	}
+	return dsFirst(rec, "PrimaryGroupID") != ""
+}
+
 func macGroupDelete(c *exec.Context, name string) error {
 	return macRun(c, []string{"dseditgroup", "-o", "delete", name}, "dseditgroup -o delete "+name)
 }
@@ -1068,6 +1079,16 @@ func macGroupPresentState(c *exec.Context, args *value.Map) (states.Result, erro
 		return states.False(fmt.Sprintf("The group %s could not be read: %v", name, err)), nil
 	}
 	if current.Len() > 0 {
+		// A record with no PrimaryGroupID is not a group: getgrnam does not
+		// find it, so `group.info` reports it absent, and nothing can own a
+		// file by it. It is what a failed `dseditgroup -o create` used to
+		// leave behind (below), and reporting it as present was reporting a
+		// broken machine as converged (DIVERGENCE 5.142).
+		if !macGroupHasGid(c, name) {
+			return states.False(fmt.Sprintf(
+				"The group %s has a directory record with no gid, which is not a usable group. "+
+					"Remove it with `dseditgroup -o delete %s` and run this again.", name, name)), nil
+		}
 		if gid <= 0 {
 			return states.True(fmt.Sprintf("The group %s already exists.", name)), nil
 		}
@@ -1082,6 +1103,19 @@ func macGroupPresentState(c *exec.Context, args *value.Map) (states.Result, erro
 		return states.WouldChange(fmt.Sprintf("The group %s would be created.", name), changes), nil
 	}
 	if err := macGroupCreate(c, name, gid); err != nil {
+		// `dseditgroup -o create -i <gid>` for a gid another group has
+		// fails with "GID already exists" -- and leaves a record for the
+		// name behind, with no PrimaryGroupID. Measured on a macOS 15.7.9
+		// runner (DIVERGENCE 5.142); Linux's groupadd and FreeBSD's pw
+		// refuse the same request and leave nothing. The group did not
+		// exist before this call, so whatever record is there now is the
+		// failed create's, and it is removed.
+		if after, rerr := macGroupInfo(c, name); rerr == nil && after.Len() > 0 {
+			if derr := macGroupDelete(c, name); derr != nil {
+				return states.False(fmt.Sprintf("The group %s could not be created: %v; and the "+
+					"half-made record it left could not be removed: %v", name, err, derr)), nil
+			}
+		}
 		return states.False(fmt.Sprintf("The group %s could not be created: %v", name, err)), nil
 	}
 	return states.Changed(fmt.Sprintf("The group %s was created.", name), changes), nil

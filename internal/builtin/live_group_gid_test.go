@@ -134,6 +134,40 @@ func TestLiveGroupGidIsSetAndNeverRenumbered(t *testing.T) {
 	})
 }
 
+// The record a refused `dseditgroup -o create -i <taken gid>` leaves on a
+// Mac, made on purpose with the tool itself rather than the module (which
+// now removes it) so that its shape is on the record for the unit
+// fixture, and then removed.
+func TestLiveMacGroupCreateWithATakenGidLeavesARecord(t *testing.T) {
+	if os.Getenv("HALITE_SYSTEM_LIVE") != "1" || runtime.GOOS != "darwin" || os.Geteuid() != 0 {
+		t.Skip("macOS, root and HALITE_SYSTEM_LIVE=1")
+	}
+	c := realCtx(t)
+	name := fmt.Sprintf("halgidrec%d", os.Getpid())
+	t.Cleanup(func() {
+		_, _ = c.Run(exec.Command{Argv: []string{"dseditgroup", "-o", "delete", name}, IgnoreExitCode: true})
+	})
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"dseditgroup", "-o", "create", "-i", "20", name},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("dseditgroup -o create -i 20 %s: exit %d, stdout %q, stderr %q", name, res.Code, res.Stdout, res.Stderr)
+	rec, err := c.Run(exec.Command{Argv: []string{"dscl", "-plist", ".", "-read", "/Groups/" + name}, IgnoreExitCode: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("dscl -plist . -read /Groups/%s: exit %d, stdout %q, stderr %q", name, rec.Code, rec.Stdout, rec.Stderr)
+	if rec.Code != 0 {
+		t.Skipf("this macOS leaves no record behind; the module's cleanup has nothing to do here")
+	}
+	if macGroupHasGid(c, name) {
+		t.Errorf("the record a refused create left has a PrimaryGroupID: %q", rec.Stdout)
+	}
+}
+
 // freeGidPair finds two consecutive gids no group on this machine has.
 func freeGidPair(t *testing.T) int64 {
 	t.Helper()
