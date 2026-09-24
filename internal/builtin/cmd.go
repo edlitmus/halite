@@ -425,7 +425,7 @@ func firstLine(s string) string {
 // durationOf reads a `timeout`. One rule, in value.ParseDuration: this
 // took Go's form only, so `timeout: "900"` -- which is what a template
 // produces -- was refused, and the caller discarded the refusal and ran
-// the command with no deadline. DIVERGENCE 5.134.
+// the command with no deadline. DIVERGENCE 5.137.
 func durationOf(v any) (time.Duration, error) { return value.ParseDuration(v) }
 
 // trimOutput removes the line ending a program leaves on its last line.

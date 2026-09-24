@@ -11932,7 +11932,7 @@ never produce an existing repository. The `check_cmd` finding in the same
 review is in `internal/runner` rather than in a module, and is outside
 what this audit looks at. Neither is contradicted here.
 
-### 5.132 A nodegroup carried an untrusted grain past SPEC 12.4
+### 5.135 A nodegroup carried an untrusted grain past SPEC 12.4
 
 Found by a code review running in a parallel session, verified here, and
 the verification is worth recording because the first three attempts to
@@ -12028,7 +12028,7 @@ is about pillar, where the hazard is a node obtaining another node's
 secrets. A node choosing which states it applies is a different and much
 smaller thing, and Salt behaves the same way.
 
-### 5.133 `--test` was not read-only in the state layer either, three ways
+### 5.136 `--test` was not read-only in the state layer either, three ways
 
 5.131 audited the execution functions and said plainly what it could not
 reach: the state layer, 116 mutating functions claiming `reliable`, of
@@ -12124,7 +12124,7 @@ where the defects were. The conformance harness the review names next --
 six state functions of 132 -- is the thing that would have caught all
 three, and it is a bigger piece of work than any of these fixes.
 
-### 5.134 Three shapes behind a duration, a redactor and a flag
+### 5.137 Three shapes behind a duration, a redactor and a flag
 
 The remaining Tier 1 rows of the review, and each turned out to be a
 narrower defect with a wider mechanism behind it.
@@ -12201,7 +12201,7 @@ usage text advertises was accepted and ignored -- the
 accepted-and-does-nothing shape `InertKeys` exists to stop happening to
 settings, in a command line instead. It is wired now, and scrubbed.
 
-### 5.135 Four gates that read text where a check belonged
+### 5.138 Four gates that read text where a check belonged
 
 The review's Tier 2: the guards that had stopped guarding. Each was
 verified here by breaking the thing it covers and watching it pass, then
@@ -12210,7 +12210,7 @@ fixed and broken again.
 They share one shape, and it is worth naming before the four: **a text
 search standing in for a check.** `strings.Contains` over a file, a field
 or a comment, where a parse or a value comparison belongs. The same shape
-as 5.132's pillar rule, which read an expression's spelling rather than
+as 5.135's pillar rule, which read an expression's spelling rather than
 what it compiled to, and as 5.82's grain comparison. A search reads what
 somebody *wrote*; a check reads what the program *does*.
 
@@ -12315,7 +12315,7 @@ Two rows, both larger than these and neither fixed here: the conformance
 harness covers **6 state functions of 132** while `internal/states`
 claims every state module passes it, and `firewall` is `Hardware` with no
 `TestLive*` anywhere while 22 live tests match no leg's `-run` filter. The
-first is what would have caught all three defects in 5.133; the second is
+first is what would have caught all three defects in 5.136; the second is
 a coverage claim rather than a defect. Both are recorded in plan.md rather
 than done.
 

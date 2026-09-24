@@ -109,7 +109,7 @@ func upgradeRow(t *testing.T) string {
 // the strength of the comment alone: delete all 596 lines of a covering
 // file's test bodies, leave the marker, and this audit passed while
 // logging the file by name. The review that found it demonstrated exactly
-// that. DIVERGENCE 5.135.
+// that. DIVERGENCE 5.138.
 //
 // So a file carrying a marker has to hold test functions that do
 // something. The threshold is deliberately low against what the real ones

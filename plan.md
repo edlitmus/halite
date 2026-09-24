@@ -1340,10 +1340,10 @@ unchanged.
 
 7a. **The conformance harness covers 6 state functions of 132**, while
    `internal/states/states.go` says in its package comment that every
-   state module must pass it. Raised by the review behind DIVERGENCE 5.135
+   state module must pass it. Raised by the review behind DIVERGENCE 5.138
    and left undone there, because it is the largest item in that report and
    the most valuable: a `Probe` case on `check_cmd` or on
-   `grains.absent --destructive` would have caught both of 5.133's defects
+   `grains.absent --destructive` would have caught both of 5.136's defects
    immediately, and a convergence case would have caught the third.
 
    What makes it work is not writing 126 more cases by hand. The harness
