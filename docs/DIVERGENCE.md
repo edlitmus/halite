@@ -13235,6 +13235,80 @@ because there is no test to run; the level rests on work recorded in the
 ledger. Either a live test exists for it or the level is an assertion, and
 today it is an assertion.
 
+### 5.148 A Mac group create that failed left a group behind
+
+`mac_group`'s evidence note said an explicit gid had never been run,
+nor "the refusal to renumber a group that exists with a different one
+-- which is the branch that protects every file the group owns". The
+Linux and FreeBSD `group.present` make the same promises in the same
+words, and had not been run either.
+
+`TestLiveGroupGidIsSetAndNeverRenumbered` is platform-neutral and runs
+on the `linux`, `freebsd` and `macos` legs of `fleet.yml`. It reads
+gids with the platform's own tools (`getent`, or `dscl` on a Mac), not
+through this module. Two of its three questions came back right on all
+three platforms:
+
+- A group created with a gid has that gid, and the run after is a
+  no-op.
+- A different gid for an existing group is refused, in test mode and
+  on a real run, and the group keeps its gid.
+
+The third question was a gid another group already has. All three
+tools refuse it:
+
+```
+groupadd: GID '42100' already exists
+pw: gid `42100' has already been allocated
+dseditgroup -o create halgid5788b: GID already exists
+```
+
+**On a Mac, the refusal is not the end of it.** `dseditgroup -o create
+-i <taken gid>` exits 64 and **leaves a record for the name behind**,
+with no `PrimaryGroupID`. The test's cleanup was removing that record,
+so it only showed up once the test listed groups with `dscl . -list
+/Groups` after the refusal. What was left, read on a macOS 15.7.9
+runner, holds a record name, a record type, a generated UID and a node
+location, and nothing else. Then:
+
+```
+group.present halgid2995b failed and left a group halgid2995b behind
+and group.present halgid2995b without a gid then says: ok=true changed=false "The group halgid2995b already exists."
+```
+
+A broken record was reported as converged. It is not a usable group:
+getgrnam does not find it, so `group.info` reported it absent in the
+same run, and nothing can own a file by it. Linux and FreeBSD left
+nothing behind.
+
+#### The fix
+
+- After a failed create, if a record for the name now exists, it is
+  removed. The group did not exist before the call, so any record
+  there now is the failed create's. With the fix, the same request on
+  the runner leaves `eDSRecordNotFound`.
+- An existing record with no `PrimaryGroupID` is refused, with the
+  command that removes it, not reported as present. The check reads
+  the record itself, because the parsed gid reads a missing
+  `PrimaryGroupID` as 0, and 0 is also `wheel`'s real gid.
+  `TestMacGroupPresentAcceptsGidZero` holds that distinction.
+
+The unit fixture is the record captured from the runner.
+`TestMacGroupPresentRemovesTheRecordAFailedCreateLeft` and
+`TestMacGroupPresentRefusesAGidlessRecord` each fail with their half
+of the fix removed.
+
+#### What this does not cover
+
+- **`members` on macOS.** `group.present` on darwin does not read it,
+  so a tree that lists members on a Mac is told the group already
+  exists, and nothing is changed. That is a separate defect and is
+  not fixed here.
+- **Gid-less records made some other way.** They are now refused, not
+  repaired. The refusal says how to remove one, and does not remove
+  it, because this state did not make it.
+- **One runner image.** Whether older releases of `dseditgroup` leave
+  the same record behind was not run.
 
 ## 6. Everything else not started
 

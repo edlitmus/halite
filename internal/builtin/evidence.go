@@ -685,9 +685,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"5.138)"},
 	"mac_group": {Level: exec.Hardware, Note: "created through the real `dseditgroup` on macOS " +
 		"27.0 (build 26A5425a) under sudo, read back with a gid, converged on a second " +
-		"`group.present`, then removed and converged again (DIVERGENCE 5.115). Not covered: " +
-		"an explicitly requested gid, and the refusal to renumber a group that exists with a " +
-		"different one -- which is the branch that protects every file the group owns"},
+		"`group.present`, then removed and converged again (DIVERGENCE 5.115). An explicit gid, " +
+		"the refusal to renumber an existing group, and a gid another group already has were " +
+		"driven on a macOS 15.7.9 runner (build 24G830) on the `macos` leg, beside the Linux and " +
+		"FreeBSD paths that make the same promises, with the gid read through `dscl` rather " +
+		"than this module. The last found `dseditgroup` refusing a taken gid and leaving a " +
+		"record with no gid behind, which the next run called converged (DIVERGENCE 5.148). " +
+		"Not covered: `members` on macOS, which `group.present` there does not read"},
 	"mac_shadow": {Level: exec.Hardware, Note: "the old `dscl . -passwd` set a real password " +
 		"on macOS 27.0 (build 26A5425a) under sudo, and Open Directory reported it set (DIVERGENCE " +
 		"5.115). It is now set through passwd(1) reading standard input, so the plaintext is " +
