@@ -120,7 +120,7 @@ func doctorValue(r doctor.Report) *value.Map {
 // is issued for years, so it is never the thing anybody is thinking
 // about, and when it lapses every node in the estate stops at once.
 func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
-	files := pki.Files{Dir: args.Flag("pki-dir", cfg.String("pki_dir", config.DefaultPKIDir))}
+	files := pki.Files{Dir: args.Flag("pki-dir", cfg.PathUnderRoot("pki_dir", "pki"))}
 	certs := map[string]*x509.Certificate{}
 	for label, name := range map[string]string{
 		"this hub's certificate": pki.HubCertFile,

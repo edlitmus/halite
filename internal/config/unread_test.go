@@ -2,6 +2,9 @@ package config
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"sort"
@@ -109,20 +112,76 @@ func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
 // declared on `file.managed` and is a configuration key, and neither was
 // read by anything.
 func readSomewhere(text, key string) bool {
-	// Every accessor on Config, and adding one to Config means adding
-	// it here. `Float` and `IsSet` arrived with `tracing_sample_rate`
-	// and this guard reported the setting unread until they did, which
-	// is the guard working: an accessor it does not know about is a way
-	// to read a key that it cannot see.
-	for _, accessor := range []string{
-		"String", "Bool", "OptionalBool", "Int", "Float", "IsSet",
-		"Map", "StringSlice", "Roots", "Duration", "Get",
-	} {
+	for _, accessor := range configAccessors() {
 		if strings.Contains(text, fmt.Sprintf(".%s(%q", accessor, key)) {
 			return true
 		}
 	}
 	return false
+}
+
+// configAccessors are the methods on *Config that take a setting name,
+// read out of the type rather than listed here.
+//
+// The list used to be written by hand, with a comment saying that adding
+// an accessor to Config meant adding it here. That happened twice and
+// both times the omission was found by this guard reporting a setting as
+// unread: `Float` and `IsSet` arrived with `tracing_sample_rate`, and
+// `PathUnderRoot` arrived with the `--root` fix and made `policy` look
+// read by nothing (DIVERGENCE 5.143).
+//
+// Twice is enough. A hand-maintained list of a type's own methods is a
+// second copy of the type, and the failure it produces is a *false*
+// report from a guard people trust -- which is worse than a missed one,
+// because the next person spends an afternoon on a setting that is read
+// perfectly well. So this parses the methods instead: every method on
+// `*Config` whose first parameter is a string is an accessor, and
+// `Root()` and `Redacted()`, which take nothing, are not.
+func configAccessors() []string {
+	fset := token.NewFileSet()
+	pkg, err := parser.ParseDir(fset, ".", nil, 0)
+	if err != nil {
+		panic(fmt.Sprintf("reading this package's own accessors: %v", err))
+	}
+	var out []string
+	for name, p := range pkg {
+		if strings.HasSuffix(name, "_test") {
+			continue
+		}
+		for _, file := range p.Files {
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Recv == nil || len(fn.Recv.List) != 1 {
+					continue
+				}
+				star, ok := fn.Recv.List[0].Type.(*ast.StarExpr)
+				if !ok {
+					continue
+				}
+				ident, ok := star.X.(*ast.Ident)
+				if !ok || ident.Name != "Config" {
+					continue
+				}
+				if !firstParamIsString(fn.Type.Params) {
+					continue
+				}
+				out = append(out, fn.Name.Name)
+			}
+		}
+	}
+	sort.Strings(out)
+	if len(out) == 0 {
+		panic("no accessor was read off *Config; this guard has stopped checking")
+	}
+	return out
+}
+
+func firstParamIsString(params *ast.FieldList) bool {
+	if params == nil || len(params.List) == 0 {
+		return false
+	}
+	ident, ok := params.List[0].Type.(*ast.Ident)
+	return ok && ident.Name == "string"
 }
 
 // allWaivers is both maps, for the check that no waiver names a setting

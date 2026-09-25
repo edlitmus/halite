@@ -12635,6 +12635,122 @@ The `job_queue_depth` disagreement and the `listen` one were both found by
 the audit on its first run; nobody had read those two lines and noticed.
 The `sysrc` note and the `state show` page were found by reading. The
 score is even, and the audits keep running.
+### 5.143 `--root` moved the configuration file and nothing it describes
+
+Found while probing the last row of a documentation audit, which is worth
+saying because the row itself was about a flag the CLI refuses and this is
+about two flags it accepts.
+
+#### What it did
+
+`--root <dir>` is documented on all three binaries, in all three manual
+pages, as *"the configuration root"*. Measured on this host, which this
+project manages:
+
+	$ halite-hub policy show --root /tmp/staging
+	policy /usr/local/etc/halite/policy.yaml
+
+	role shell
+	  0. cmd.run, cmd.shell, cmd.script, module.run, … on *
+
+	$ halite-hub keys list --root /tmp/staging
+	halite: there is no enrollment CA in /usr/local/etc/halite/pki
+
+The first printed the live estate's rules while being asked about a
+throwaway directory, and said which file it read — in a line a reader
+scans past, because it names the path they expected to be looking at. An
+operator comparing a staging policy with production reads production
+twice and finds no difference. The second reached for production's
+enrollment CA, which is the most valuable thing in the estate.
+
+Neither is a crash and neither is silent in the strict sense: both name
+the path. That is exactly why it survived. A wrong answer that shows its
+working looks like a right answer.
+
+#### Why no amount of care would have caught it
+
+The shape is this project's own, and this instance is the purest form of
+it yet: **`Load` took the root as an argument and threw it away.**
+
+	func Load(role Role, opts LoadOptions) (*Config, error) {
+		root := opts.Root
+		…
+		cfg := &Config{Role: role, Values: value.NewMap(16)}
+
+`root` decided where to look for `hub.yaml` and the drop-in directory, and
+then went out of scope. So every setting documented as a default *relative
+to the root* — `pki_dir` is `<config root>/pki`, `policy` is
+`<config root>/policy.yaml` — had to be written against a constant instead,
+and was: `config.DefaultPKIDir` and `config.DefaultPolicy`, both fixed at
+build time from the *platform's* root.
+
+There was no expression a call site could have written that would have been
+correct. The information was not there to be used.
+
+#### The fix
+
+`Config` keeps its root, and `PathUnderRoot(key, name)` is the one way to
+read a setting whose documented default is relative to it. Ten call sites
+across the three binaries move to it.
+
+One of the ten was a different bug wearing the same clothes:
+`cmd/halite-hub/ssh.go` resolved the roster with
+`h.cfg.String("root", config.DefaultRoot)` — a read of a configuration
+**key** named `root`, which the key table does not declare and no file
+ever sets, so it always fell through to the constant. `--root` was never
+consulted; a `root:` in `hub.yaml` would have been reported as unknown.
+
+#### Two guards, because the two halves fail differently
+
+`TestPathUnderRootFollowsTheLoadedRoot` is the direct one: load with a
+root, ask for the paths, check they sit under it, check a setting in the
+file still wins, and check a `Config` built by a struct literal — which
+tests in this tree do — answers the platform default rather than a name
+joined to an empty string.
+
+`TestNoRootDerivedConstantIsAConfigFallback` is the one that matters in a
+year. A new call site written the old way compiles, runs, and is wrong
+only when somebody passes `--root`, so it reads every two-argument
+`Config.String` in the tree — 203 of them — and fails on a fallback
+derived from the build-time root. `DefaultStateDir`, `DefaultCacheDir`,
+`DefaultLogDir` and `DefaultSocketDir` are deliberately not in its
+forbidden set: those live under `/var`, `--root` is not documented as
+moving them, and an audit that flags correct code gets silenced.
+
+Both were demonstrated by reinstating the old call sites and watching them
+fail, and the helper was broken in place — `filepath.Join(DefaultRoot, …)`
+in `PathUnderRoot` itself — and watched to fail too.
+
+#### The guard that caught the fix
+
+Adding an accessor to `Config` made `TestEveryDeclaredKeyIsReadOrRecorded`
+report `policy` as *"declared, documented, and read by nothing"*, because
+that audit held a hand-written list of the accessors to search for.
+
+Its own comment had predicted this: *"adding one to Config means adding it
+here… an accessor it does not know about is a way to read a key that it
+cannot see."* It had happened once before, when `Float` and `IsSet`
+arrived with `tracing_sample_rate`.
+
+Twice is enough, so the list is derived now: every method on `*Config`
+whose first parameter is a string, parsed out of the type. A
+hand-maintained list of a type's own methods is a second copy of the type,
+and the failure it produces is a *false* report from a guard people trust
+— which is worse than a missed one, because the next person spends an
+afternoon on a setting that is read perfectly well. An empty derivation
+panics with a message saying the guard has stopped checking, rather than
+passing.
+
+#### Not covered
+
+The static audit reads `Config.String` only. Every root-relative default
+in this tree is a path and therefore a string, so nothing is missed today,
+but a numeric or boolean setting documented relative to the root would sit
+outside it. The audit says how many calls it read so that a drop in that
+number is visible.
+
+`--config`, `--pki-dir` and `--policy` were already honoured where they
+exist; this is about the defaults behind them.
 
 
 ## 6. Everything else not started

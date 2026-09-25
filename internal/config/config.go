@@ -46,6 +46,18 @@ func (r Role) DropInDir() string { return r.String() + ".d" }
 // Config is a loaded, merged, shimmed configuration.
 type Config struct {
 	Role Role
+	// root is the configuration root this configuration was loaded from:
+	// what `--root` named, or the platform's default when it named
+	// nothing.
+	//
+	// It is held here because several settings are documented as defaults
+	// *relative to the root* -- `pki_dir` is `<config root>/pki`, `policy`
+	// is `<config root>/policy.yaml` -- and a fallback written as
+	// `config.DefaultPKIDir` is relative to the root the binary was
+	// compiled for rather than the one the operator named. That made
+	// `--root` relocate the configuration file and nothing the
+	// configuration file describes. DIVERGENCE 5.143.
+	root string
 	// Files lists every file that contributed, in the order they merged.
 	Files []string
 	// Values is the merged mapping after the compatibility shim ran.
@@ -91,7 +103,7 @@ func Load(role Role, opts LoadOptions) (*Config, error) {
 		dropIn = filepath.Join(root, role.DropInDir())
 	}
 
-	cfg := &Config{Role: role, Values: value.NewMap(16)}
+	cfg := &Config{Role: role, root: root, Values: value.NewMap(16)}
 
 	merged, err := loadFile(path, opts.AllowMissing)
 	if err != nil {
@@ -207,6 +219,39 @@ func (c *Config) String(path, def string) string {
 		return s
 	}
 	return def
+}
+
+// Root is the configuration root this configuration was loaded from.
+//
+// A zero Config -- one built by a test with a struct literal rather than
+// by Load -- has no root, and this answers the platform default for it,
+// because every caller wants a path it can join to and none of them wants
+// to handle an empty string.
+func (c *Config) Root() string {
+	if c.root == "" {
+		return DefaultRoot
+	}
+	return c.root
+}
+
+// PathUnderRoot reads a setting whose documented default is a path
+// relative to the configuration root.
+//
+// `pki_dir` is documented as `<config root>/pki` and `policy` as
+// `<config root>/policy.yaml`, and both were written in the code as
+// `config.DefaultPKIDir` and `config.DefaultPolicy` -- constants fixed at
+// build time from the *platform's* root, not from the root this
+// configuration was loaded with. So `halite-hub policy show --root
+// /opt/staging` read production's `policy.yaml` and said so in its own
+// output, and `halite-hub keys list --root /opt/staging` reached for
+// production's enrollment CA. Both measured on a live host.
+//
+// The two things that had to agree were the flag and every default
+// documented relative to what the flag names, and nothing held them
+// together: the root was an argument to Load and then discarded.
+// DIVERGENCE 5.143.
+func (c *Config) PathUnderRoot(key, name string) string {
+	return c.String(key, filepath.Join(c.Root(), name))
 }
 
 // OptionalBool reads a boolean setting that has three states: set true,

@@ -41,6 +41,16 @@ that lives beside the configuration needs no roots set at all.
 | `<socket dir>` | `/run/halite` | `/var/run/halite` |
 | `<log dir>` | `/var/log/halite` | `/var/log/halite` |
 
+`--root <dir>` moves `<config root>`, and every default written in
+terms of it moves with it: `pki_dir` and `policy` resolve against the
+root the flag names, not the one the binary was built for. The
+`<state dir>`, `<cache dir>`, `<socket dir>` and `<log dir>` defaults do
+not sit under the configuration root and do not follow it; set them
+explicitly to relocate those. Until recently `--root` moved the
+configuration file and nothing the configuration file describes, so
+`halite-hub policy show --root /opt/staging` printed the production
+policy (DIVERGENCE 5.143).
+
 ## Which program reads what
 
 Three programs read configuration, and most settings belong to one of

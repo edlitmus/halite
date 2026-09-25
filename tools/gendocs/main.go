@@ -74,6 +74,15 @@ that lives beside the configuration needs no roots set at all.
 		fmt.Fprintf(&b, "| `%s` | `%s` | `%s` |\n", t.Token, t.Linux, t.BSD)
 	}
 	b.WriteString("\n")
+	b.WriteString("`--root <dir>` moves `<config root>`, and every default written in\n" +
+		"terms of it moves with it: `pki_dir` and `policy` resolve against the\n" +
+		"root the flag names, not the one the binary was built for. The\n" +
+		"`<state dir>`, `<cache dir>`, `<socket dir>` and `<log dir>` defaults do\n" +
+		"not sit under the configuration root and do not follow it; set them\n" +
+		"explicitly to relocate those. Until recently `--root` moved the\n" +
+		"configuration file and nothing the configuration file describes, so\n" +
+		"`halite-hub policy show --root /opt/staging` printed the production\n" +
+		"policy (DIVERGENCE 5.143).\n\n")
 	b.WriteString(`## Which program reads what
 
 Three programs read configuration, and most settings belong to one of

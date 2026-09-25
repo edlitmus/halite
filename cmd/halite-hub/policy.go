@@ -26,7 +26,7 @@ policy flags:
 
 // policyPath is where the file lives.
 func policyPath(cfg *config.Config) string {
-	return cfg.String("policy", filepath.Join(config.DefaultRoot, "policy.yaml"))
+	return cfg.PathUnderRoot("policy", "policy.yaml")
 }
 
 // loadPolicyFile reads the policy for a command line, where a missing

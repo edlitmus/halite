@@ -114,7 +114,7 @@ func openHub(args *cli.Args, create bool) *hubContext {
 		}
 	}
 
-	files := pki.Files{Dir: args.Flag("pki-dir", cfg.String("pki_dir", config.DefaultPKIDir))}
+	files := pki.Files{Dir: args.Flag("pki-dir", cfg.PathUnderRoot("pki_dir", "pki"))}
 	alg, err := pki.ParseKeyAlgorithm(cfg.String("key_algorithm", string(pki.ECDSAP256)))
 	if err != nil {
 		cli.Fatalf("%v", err)
@@ -549,7 +549,7 @@ func runServe(args *cli.Args) int {
 // to mean that when the file is absent as well as when it is empty, or
 // it means nothing at all.
 func loadPolicy(h *hubContext) (*policy.Policy, error) {
-	path := h.cfg.String("policy", filepath.Join(config.DefaultRoot, "policy.yaml"))
+	path := h.cfg.PathUnderRoot("policy", "policy.yaml")
 	src, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		h.log.Warn("there is no policy file, so no operator may submit a job",
