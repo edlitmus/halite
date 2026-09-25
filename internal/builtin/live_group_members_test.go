@@ -21,7 +21,7 @@ import (
 // path set it with gpasswd(1), which FreeBSD does not have, and the macOS
 // path did not read `members` at all -- a tree listing members on a Mac
 // was told the group already existed and nothing changed (DIVERGENCE
-// 5.151). None of the three had been run.
+// 5.152). None of the three had been run.
 //
 // # What it establishes
 //
