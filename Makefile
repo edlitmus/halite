@@ -15,6 +15,15 @@ BINARIES = halite-node halite-hub halite-api
 # `!=` rather than `$(shell ...)`: BSD make has no $(shell), and this
 # project is developed on FreeBSD. GNU make has supported `!=` since 4.0,
 # so one spelling serves both.
+# ... and GNU make *before* 4.0 does not fail on it. macOS ships GNU
+# make 3.81 as /usr/bin/make, which reads `GIT_VERSION != git describe`
+# as an assignment to a variable named "GIT_VERSION !" and carries on:
+# every variable below set with `!=` is empty, so a Mac build was stamped
+# with no version, no commit and no SOURCE_DATE_EPOCH, and `make install`
+# resolved CONFDIR, STATEDIR and SERVICEDIR to empty strings -- silently
+# (DIVERGENCE 5.153). make-supports-bang, a prerequisite of every target
+# that stamps a build or installs one, turns that into a refusal.
+MAKE_BANG_PROBE != echo supported
 GIT_VERSION != git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev
 GIT_COMMIT  != git rev-parse HEAD 2>/dev/null || echo unknown
 GIT_EPOCH   != git log -1 --format=%ct 2>/dev/null || echo 0
@@ -64,7 +73,7 @@ TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
 	linux/riscv64 linux/ppc64le linux/s390x
 TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
-.PHONY: all build test chaos perf perf-bench race vet cover check release release-gate cross clean tidy vendor policy fmt \
+.PHONY: all make-supports-bang build test chaos perf perf-bench race vet cover check release release-gate cross clean tidy vendor policy fmt \
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
@@ -73,7 +82,7 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 
 all: build
 
-build:
+build: make-supports-bang
 	@mkdir -p bin
 	@for b in $(BINARIES); do \
 		echo "building bin/$$b"; \
@@ -96,7 +105,18 @@ release-gate:
 	@env $(DEV_ENV) go test -count=1 -tags releasegate \
 		-run TestReleaseGateNoUnverifiedRootMutatingModule ./internal/builtin/
 
-release:
+# make-supports-bang refuses a make that cannot evaluate `!=`. See the
+# comment above GIT_VERSION: without it every stamped and installed
+# value is empty and nothing says so.
+make-supports-bang:
+	@test "$(MAKE_BANG_PROBE)" = supported || { \
+		echo "this make does not evaluate '!=' assignments, so the version, commit," >&2; \
+		echo "SOURCE_DATE_EPOCH and install paths would all be empty." >&2; \
+		echo "It is probably GNU make older than 4.0 (macOS /usr/bin/make is 3.81)." >&2; \
+		echo "Use bmake, or GNU make 4.0 or later (Homebrew: 'brew install make', then 'gmake')." >&2; \
+		exit 1; }
+
+release: make-supports-bang
 	@mkdir -p bin
 	@for b in $(BINARIES); do \
 		echo "building bin/$$b (release)"; \
@@ -295,7 +315,7 @@ vuln:
 #
 # The second build is made from a copy of the tree at a different path,
 # so -trimpath is exercised rather than assumed.
-repro:
+repro: make-supports-bang
 	@set -e; \
 	tmp=$$(mktemp -d); trap "rm -rf $$tmp" EXIT; \
 	mkdir -p $$tmp/a $$tmp/b/src; \
@@ -349,7 +369,7 @@ build-all:
 # bundle. docs/extensions.md walks through it.
 EXTENSIONS = halite-ext-aws-secrets
 
-extensions:
+extensions: make-supports-bang
 	@mkdir -p bin
 	@for e in $(EXTENSIONS); do \
 		echo "building bin/$$e"; \
@@ -370,7 +390,7 @@ vendor:
 	go mod vendor
 
 # fips builds the parallel artifact set for this machine.
-fips:
+fips: make-supports-bang
 	@mkdir -p bin
 	@for b in $(BINARIES); do \
 		echo "building bin/$$b-fips (module $(FIPS_MODULE))"; \
@@ -411,7 +431,7 @@ fips-test:
 # for a platform nobody assessed would be a claim rather than a fact.
 FIPS_TARGETS = linux/amd64 linux/arm64
 
-fips-cross:
+fips-cross: make-supports-bang
 	@mkdir -p dist
 	@for t in $(FIPS_TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; \
@@ -422,7 +442,7 @@ fips-cross:
 		done; \
 	done
 
-cross:
+cross: make-supports-bang
 	@mkdir -p dist
 	@for t in $(TARGETS); do \
 		os=$${t%/*}; arch=$${t#*/}; ext=""; \
@@ -514,7 +534,7 @@ HALITE_USER ?= halite
 # a work tree owned by someone else, which surfaces as `error obtaining
 # VCS status: exit status 128` and names neither git nor sudo. Build as
 # yourself, install as root.
-install:
+install: make-supports-bang
 	@for b in $(BINARIES); do \
 		test -x bin/$$b || { \
 			echo "bin/$$b is missing. Run 'make build' as yourself first:" >&2; \
@@ -578,7 +598,7 @@ install:
 #
 # internal/docsaudit holds these pages to the binaries' own dispatch
 # switches, so a command cannot ship without one.
-install-man:
+install-man: make-supports-bang
 	@p=`dirname "$(MANDIR)"`; \
 	if test -w "$(MANDIR)" 2>/dev/null || test -w "$$p"; then \
 		install -d -m 0755 "$(MANDIR)" || exit 1; \
@@ -593,7 +613,7 @@ install-man:
 
 # install-service puts the platform's own service files in place. They
 # are overwritten: picking up a fix to them is the reason to run this.
-install-service:
+install-service: make-supports-bang
 	@p=`dirname "$(SERVICEDIR)"`; \
 	{ test -w "$(SERVICEDIR)" 2>/dev/null || test -w "$$p"; } || { \
 		echo "cannot write $(SERVICEDIR) — run as root, or set SERVICEDIR" >&2; exit 1; }
@@ -614,7 +634,7 @@ install-service:
 # install-fips is the parallel artifact set of SPEC 27.4, for a host that
 # is deploying it. The drop-ins are not installed automatically: on
 # systemd they change what the unit runs, which is a decision.
-install-fips:
+install-fips: make-supports-bang
 	@for b in $(BINARIES); do \
 		test -x bin/$$b-fips || { \
 			echo "bin/$$b-fips is missing. Run 'make fips' as yourself first." >&2; \
