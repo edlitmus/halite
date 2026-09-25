@@ -384,7 +384,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"live tests and none skipped, on the GitHub ubuntu-24.04 runner image 20260920.314.1 " +
 		"(Fleet run 36042192549, 2026-09-24), once that image's three unparseable profile " +
 		"faults were removed by the workflow; the module now detects such a tree by the one " +
-		"answer a working tool gives rather than by a list of failures (DIVERGENCE 5.133)"},
+		"answer a working tool gives rather than by a list of failures (DIVERGENCE 5.133). " +
+		"**Two apparmor-utils versions**, not one: the same five tests ran and passed on " +
+		"4.0.1really4.0.1-0ubuntu0.24.04.8 after the leg began refreshing its package index " +
+		"(Fleet run 36084429647, 2026-09-25), so the probe's success sentence is matched on " +
+		"more than the one release it was captured from. Not covered: a version that words " +
+		"that sentence differently, which is the case the probe would answer `tools: false` " +
+		"for, and which two patch releases of one upstream version do not establish"},
 
 	// ---- Read from a real system, mutation never watched ----
 
