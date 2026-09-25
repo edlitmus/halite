@@ -880,6 +880,10 @@ func (launchdProvider) Name() string { return "mac_service" }
 func (launchdProvider) Available(c *exec.Context) bool { return c.Which("launchctl") != "" }
 
 func (launchdProvider) Status(c *exec.Context, name string) (bool, error) {
+	if target, ok := launchdUserTarget(c, name); ok {
+		out, loaded := launchdPrintTarget(c, target)
+		return loaded && launchdHasPID(out), nil
+	}
 	res, err := c.Run(exec.Command{
 		Argv:           []string{"launchctl", "list", name},
 		IgnoreExitCode: true,
@@ -906,8 +910,12 @@ func (launchdProvider) Enabled(c *exec.Context, name string) (bool, error) {
 	// now. A label absent from the store carries no override, and the
 	// best answer this build has for it is whether launchd knows the job
 	// at all, since there is no plist RunAtLoad reader here.
+	store := "system"
+	if target, ok := launchdUserTarget(c, name); ok {
+		store = strings.TrimSuffix(target, "/"+name)
+	}
 	res, err := c.Run(exec.Command{
-		Argv:           []string{"launchctl", "print-disabled", "system"},
+		Argv:           []string{"launchctl", "print-disabled", store},
 		IgnoreExitCode: true,
 	})
 	if err == nil && res.Code == 0 {
@@ -936,6 +944,22 @@ func (launchdProvider) Start(c *exec.Context, name string) error {
 	// "this job was already running" and from "it ran and exited before
 	// anybody looked". A pid cannot: an on-demand job that does its work
 	// in fifty milliseconds is never observed with one.
+	if target, ok := launchdUserTarget(c, name); ok {
+		// A per-user job is started with `kickstart` on its full target:
+		// as root, the legacy `launchctl start <label>` looks in the
+		// system domain only, and exited 3 for an agent in gui/501
+		// (DIVERGENCE 5.150). kickstart blocks until launchd has spawned
+		// the job, throttle included (DIVERGENCE 5.149); the spawn count
+		// is still awaited, so the two domains answer the same way.
+		before, haveBaseline := launchdSpawnCountAt(c, target)
+		if _, err := c.Run(exec.Command{Argv: []string{"launchctl", "kickstart", target}}); err != nil {
+			return err
+		}
+		if !haveBaseline {
+			return nil
+		}
+		return launchdAwaitSpawnAt(c, target, before)
+	}
 	before, haveBaseline := launchdSpawnCount(c, name)
 	if _, err := c.Run(exec.Command{Argv: []string{"launchctl", "start", name}}); err != nil {
 		return err
@@ -968,6 +992,11 @@ func (launchdProvider) Start(c *exec.Context, name string) error {
 // module's answer and the machine's differ for long enough that anything
 // reading the node in between is told the wrong thing.
 func launchdAwaitSpawn(c *exec.Context, name string, before int) error {
+	return launchdAwaitSpawnAt(c, "system/"+name, before)
+}
+
+func launchdAwaitSpawnAt(c *exec.Context, target string, before int) error {
+	name := target[strings.LastIndex(target, "/")+1:]
 	deadline := time.Now().Add(launchdSpawnLimit)
 	if c.Ctx != nil {
 		if jobDeadline, ok := c.Ctx.Deadline(); ok && jobDeadline.Before(deadline) {
@@ -975,7 +1004,7 @@ func launchdAwaitSpawn(c *exec.Context, name string, before int) error {
 		}
 	}
 	for {
-		runs, ok := launchdSpawnCount(c, name)
+		runs, ok := launchdSpawnCountAt(c, target)
 		if !ok {
 			// launchd answered a moment ago and does not now: the job
 			// has been unloaded under us, and no respawn is coming.
@@ -1008,14 +1037,15 @@ func launchdAwaitSpawn(c *exec.Context, name string, before int) error {
 // cannot print, answers false rather than zero, because "never spawned"
 // and "cannot see it" are different facts.
 func launchdSpawnCount(c *exec.Context, name string) (int, bool) {
-	res, err := c.Run(exec.Command{
-		Argv:           []string{"launchctl", "print", "system/" + name},
-		IgnoreExitCode: true,
-	})
-	if err != nil || res.Code != 0 {
+	return launchdSpawnCountAt(c, "system/"+name)
+}
+
+func launchdSpawnCountAt(c *exec.Context, target string) (int, bool) {
+	out, loaded := launchdPrintTarget(c, target)
+	if !loaded {
 		return 0, false
 	}
-	for _, ln := range strings.Split(res.Stdout, "\n") {
+	for _, ln := range strings.Split(out, "\n") {
 		ln = strings.TrimSpace(ln)
 		if !strings.HasPrefix(ln, "runs = ") {
 			continue
@@ -1036,6 +1066,18 @@ func launchdSpawnCount(c *exec.Context, name string) (int, bool) {
 }
 
 func (launchdProvider) Stop(c *exec.Context, name string) error {
+	if target, ok := launchdUserTarget(c, name); ok {
+		// The legacy `launchctl stop <label>` sends SIGTERM in the
+		// caller's domain, which as root is the system domain, and exited
+		// 3 for an agent in gui/501. `kill TERM` on the full target is
+		// the same signal to the right job. A job that is not running has
+		// nothing to signal, and that is success: it is stopped.
+		if out, loaded := launchdPrintTarget(c, target); loaded && !launchdHasPID(out) {
+			return nil
+		}
+		_, err := c.Run(exec.Command{Argv: []string{"launchctl", "kill", "TERM", target}})
+		return err
+	}
 	_, err := c.Run(exec.Command{Argv: []string{"launchctl", "stop", name}})
 	return err
 }
@@ -1045,6 +1087,67 @@ func (launchdProvider) Restart(c *exec.Context, name string) error {
 		return err
 	}
 	return launchdProvider{}.Start(c, name)
+}
+
+// launchdUserTarget finds a job that is not in the system domain but is
+// loaded in the console user's `gui/<uid>` domain, and returns its full
+// service target.
+//
+// Every command this provider ran named, or defaulted to, the system
+// domain, which is where a LaunchDaemon lives and what a node running as
+// root manages. A LaunchAgent lives in a login session's domain. On a
+// macOS 15.7.9 runner, against an agent loaded in gui/501 and running,
+// `service.status` answered false, `service.start` and `service.stop`
+// failed with `launchctl` exiting 3, and `service.enabled` read the
+// system store (DIVERGENCE 5.150). A false "not running" is the worst of
+// those: `service.dead` reported an agent that was running as already
+// stopped.
+//
+// The system domain is asked first and wins, so nothing changes for a
+// label it has. The console user is the owner of /dev/console, which is
+// also the user Salt's mac_service resolves an agent's domain to. With
+// nobody logged in at the console there is no gui domain to look in.
+//
+// Only a *loaded* agent is found. One whose plist is on disk but has not
+// been bootstrapped into a session is not, as before.
+func launchdUserTarget(c *exec.Context, name string) (string, bool) {
+	if _, loaded := launchdPrintTarget(c, "system/"+name); loaded {
+		return "", false
+	}
+	res, err := c.Run(exec.Command{Argv: []string{"stat", "-f", "%u", "/dev/console"}, IgnoreExitCode: true})
+	if err != nil || res.Code != 0 {
+		return "", false
+	}
+	uid := strings.TrimSpace(res.Stdout)
+	if uid == "" || uid == "0" {
+		return "", false
+	}
+	target := "gui/" + uid + "/" + name
+	if _, loaded := launchdPrintTarget(c, target); !loaded {
+		return "", false
+	}
+	return target, true
+}
+
+// launchdPrintTarget is `launchctl print <target>`, and whether launchd
+// knows the target at all.
+func launchdPrintTarget(c *exec.Context, target string) (string, bool) {
+	res, err := c.Run(exec.Command{Argv: []string{"launchctl", "print", target}, IgnoreExitCode: true})
+	if err != nil || res.Code != 0 {
+		return "", false
+	}
+	return res.Stdout, true
+}
+
+// launchdHasPID reports whether a `launchctl print` dump names a pid,
+// which it does only while the job has a process.
+func launchdHasPID(out string) bool {
+	for _, ln := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(ln), "pid = ") {
+			return true
+		}
+	}
+	return false
 }
 
 // Reload is a restart, because launchd has no reload.
@@ -1072,11 +1175,21 @@ func (launchdProvider) Reload(c *exec.Context, name string) error {
 }
 
 func (launchdProvider) Enable(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"launchctl", "enable", "system/" + name}})
+	_, err := c.Run(exec.Command{Argv: []string{"launchctl", "enable", launchdStoreTarget(c, name)}})
 	return err
 }
 
 func (launchdProvider) Disable(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"launchctl", "disable", "system/" + name}})
+	_, err := c.Run(exec.Command{Argv: []string{"launchctl", "disable", launchdStoreTarget(c, name)}})
 	return err
+}
+
+// launchdStoreTarget is the target the disable store is keyed by: the
+// agent's own when it is loaded in the console user's domain, and the
+// system one otherwise, which is what this always wrote.
+func launchdStoreTarget(c *exec.Context, name string) string {
+	if target, ok := launchdUserTarget(c, name); ok {
+		return target
+	}
+	return "system/" + name
 }

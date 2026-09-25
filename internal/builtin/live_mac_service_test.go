@@ -1,7 +1,6 @@
 package builtin
 
 import (
-	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -608,73 +607,140 @@ func TestLiveMacServiceRestartOutsideTheThrottleIsImmediate(t *testing.T) {
 	}
 }
 
-// TEMPORARY measurement: what the launchd provider does with a per-user
-// job -- a LaunchAgent in the console user's gui domain -- as it stands.
-// Removed once the answer is in the ledger.
-func TestLiveMacServiceMeasureAgent(t *testing.T) {
+// **A per-user job: a LaunchAgent in the console user's gui domain.**
+//
+// Every command the provider ran named, or defaulted to, the system
+// domain. Against an agent loaded in gui/501 and running, `service.status`
+// said false, `service.start` and `service.stop` failed with launchctl
+// exiting 3, and `service.enabled` read the system store (DIVERGENCE
+// 5.150) -- so `service.dead` would have called a running agent stopped.
+//
+// Each step is checked with `launchctl print gui/<uid>/<label>`, not
+// through the module.
+func TestLiveMacServiceManagesAConsoleUsersAgent(t *testing.T) {
 	c := launchdLive(t)
 	r := New()
 	const label = "org.halite.live-agent"
 	path := "/Library/LaunchAgents/" + label + ".plist"
 
-	console, _ := c.Run(exec.Command{Argv: []string{"stat", "-f", "%Su %u", "/dev/console"}, IgnoreExitCode: true})
-	t.Logf("console owner: %q", console.Stdout)
-	f := strings.Fields(console.Stdout)
-	if len(f) < 2 || f[0] == "root" {
-		t.Skipf("no console user on this Mac (%q); a gui domain needs one", console.Stdout)
+	console, err := c.Run(exec.Command{Argv: []string{"stat", "-f", "%u", "/dev/console"}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	uid := f[1]
+	uid := strings.TrimSpace(console.Stdout)
+	if uid == "" || uid == "0" {
+		t.Skipf("nobody is logged in at the console (%q), so there is no gui domain", uid)
+	}
 	domain := "gui/" + uid
-	pd, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print", domain}, IgnoreExitCode: true})
-	t.Logf("launchctl print %s: exit %d (%d bytes)", domain, pd.Code, len(pd.Stdout))
+	target := domain + "/" + label
 
-	plist := strings.ReplaceAll(liveLaunchdPlist, liveLaunchdLabel, label)
-	if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(strings.ReplaceAll(liveLaunchdPlist, liveLaunchdLabel, label)), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = c.Run(exec.Command{Argv: []string{"launchctl", "bootout", domain + "/" + label}, IgnoreExitCode: true})
-		_, _ = c.Run(exec.Command{Argv: []string{"launchctl", "enable", domain + "/" + label}, IgnoreExitCode: true})
+		for _, argv := range [][]string{{"launchctl", "bootout", target}, {"launchctl", "enable", target}} {
+			_, _ = c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+		}
 		_ = os.Remove(path)
+		if res, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print", target}, IgnoreExitCode: true}); res.Code == 0 {
+			t.Errorf("the agent is still loaded after cleanup")
+		}
 	})
-	bs, _ := c.Run(exec.Command{Argv: []string{"launchctl", "bootstrap", domain, path}, IgnoreExitCode: true})
-	t.Logf("bootstrap %s: exit %d %q %q", domain, bs.Code, bs.Stdout, bs.Stderr)
+	if res, _ := c.Run(exec.Command{Argv: []string{"launchctl", "bootstrap", domain, path}, IgnoreExitCode: true}); res.Code != 0 {
+		t.Fatalf("launchctl bootstrap %s: exit %d %s", domain, res.Code, res.Stderr)
+	}
 
-	truth := func(what string) {
-		p, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print", domain + "/" + label}, IgnoreExitCode: true})
-		state := ""
-		for _, ln := range strings.Split(p.Stdout, "\n") {
-			ln = strings.TrimSpace(ln)
-			if strings.HasPrefix(ln, "state = ") || strings.HasPrefix(ln, "pid = ") || strings.HasPrefix(ln, "runs = ") {
-				state += ln + "; "
+	pid := func() int {
+		res, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print", target}, IgnoreExitCode: true})
+		for _, ln := range strings.Split(res.Stdout, "\n") {
+			if f := strings.TrimSpace(ln); strings.HasPrefix(f, "pid = ") {
+				n, _ := strconv.Atoi(strings.TrimPrefix(f, "pid = "))
+				return n
 			}
 		}
-		t.Logf("%s: launchctl print %s/%s: exit %d %s", what, domain, label, p.Code, state)
+		return 0
 	}
-	truth("after bootstrap")
-
-	for _, fn := range []string{"service.status", "service.enabled", "service.available"} {
-		v, err := r.Exec.Call(c, fn, value.MapOf("name", label))
-		t.Logf("%s %s: %v %v", fn, label, v, err)
+	status := func() any {
+		v, err := r.Exec.Call(c, "service.status", value.MapOf("name", label))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
 	}
-	v, err := r.Exec.Call(c, "service.start", value.MapOf("name", label))
-	t.Logf("service.start: %v %v", v, err)
-	time.Sleep(2 * time.Second)
-	truth("after service.start")
-	v, err = r.Exec.Call(c, "service.status", value.MapOf("name", label))
-	t.Logf("service.status after start: %v %v", v, err)
+	settle := func(running bool) int {
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) {
+			if p := pid(); (p != 0) == running {
+				return p
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("the agent did not reach running=%v", running)
+		return 0
+	}
 
-	ks, _ := c.Run(exec.Command{Argv: []string{"launchctl", "kickstart", domain + "/" + label}, IgnoreExitCode: true})
-	t.Logf("kickstart %s/%s: exit %d %q", domain, label, ks.Code, ks.Stderr)
-	truth("after kickstart")
-	v, err = r.Exec.Call(c, "service.status", value.MapOf("name", label))
-	t.Logf("service.status while running in %s: %v %v", domain, v, err)
-	v, err = r.Exec.Call(c, "service.stop", value.MapOf("name", label))
-	t.Logf("service.stop: %v %v", v, err)
-	time.Sleep(2 * time.Second)
-	truth("after service.stop")
-	l, _ := r.Exec.Call(c, "service.get_all", value.NewMap(0))
-	t.Logf("service.get_all includes the agent: %v", strings.Contains(fmt.Sprint(l), label))
-	asUser, _ := c.Run(exec.Command{Argv: []string{"launchctl", "asuser", uid, "launchctl", "list", label}, IgnoreExitCode: true})
-	t.Logf("launchctl asuser %s launchctl list %s: exit %d %q", uid, label, asUser.Code, asUser.Stdout)
+	if status() != false {
+		t.Errorf("service.status = %v for a loaded, idle agent", status())
+	}
+
+	if _, err := r.Exec.Call(c, "service.start", value.MapOf("name", label)); err != nil {
+		t.Fatalf("service.start: %v", err)
+	}
+	first := pid()
+	if first == 0 {
+		t.Errorf("service.start returned and the agent has no pid")
+		first = settle(true)
+	}
+	if status() != true {
+		t.Errorf("service.status = %v while the agent runs as pid %d", status(), first)
+	}
+
+	if _, err := r.Exec.Call(c, "service.restart", value.MapOf("name", label)); err != nil {
+		t.Fatalf("service.restart: %v", err)
+	}
+	if second := settle(true); second == first {
+		t.Errorf("service.restart left pid %d in place", first)
+	}
+
+	// The state that was wrong: a running agent is not already dead.
+	res, err := r.States.Call(c, "service.dead", value.MapOf("name", label))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Succeeded() || !res.HasChanges() {
+		t.Errorf("service.dead on a running agent: %+v", res)
+	}
+	settle(false)
+	if status() != false {
+		t.Errorf("service.status = %v after the agent was stopped", status())
+	}
+	if again, _ := r.States.Call(c, "service.dead", value.MapOf("name", label)); again.HasChanges() {
+		t.Errorf("service.dead on a stopped agent reported a change: %+v", again)
+	}
+
+	// The disable store the agent's own domain keeps, not the system one.
+	disabled := func() string {
+		res, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print-disabled", domain}, IgnoreExitCode: true})
+		for _, ln := range strings.Split(res.Stdout, "\n") {
+			if strings.Contains(ln, `"`+label+`"`) {
+				return strings.TrimSpace(ln)
+			}
+		}
+		return ""
+	}
+	if _, err := r.Exec.Call(c, "service.disable", value.MapOf("name", label)); err != nil {
+		t.Fatalf("service.disable: %v", err)
+	}
+	if got := disabled(); !strings.HasSuffix(got, "disabled") && !strings.HasSuffix(got, "true") {
+		t.Errorf("after service.disable, %s's store says %q", domain, got)
+	}
+	if v, _ := r.Exec.Call(c, "service.enabled", value.MapOf("name", label)); v != false {
+		t.Errorf("service.enabled = %v after disabling", v)
+	}
+	if _, err := r.Exec.Call(c, "service.enable", value.MapOf("name", label)); err != nil {
+		t.Fatalf("service.enable: %v", err)
+	}
+	if got := disabled(); !strings.HasSuffix(got, "enabled") && !strings.HasSuffix(got, "false") {
+		t.Errorf("after service.enable, %s's store says %q", domain, got)
+	}
 }

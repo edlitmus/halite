@@ -123,6 +123,7 @@ func TestLaunchdStartWaitsForTheSpawnCounterToMove(t *testing.T) {
 
 	runner := &sequencedRunner{answers: map[string][]exec.Result{
 		launchdPrintCommand: {
+			{Stdout: stillThrottled}, // the system domain has it, so it is not a user agent
 			{Stdout: stillThrottled}, // the baseline, read before the start
 			{Stdout: stillThrottled}, // scheduled, not yet spawned
 			{Stdout: respawned},
@@ -138,7 +139,15 @@ func TestLaunchdStartWaitsForTheSpawnCounterToMove(t *testing.T) {
 	ran := runner.commands()
 	// The order is the whole point: the baseline has to be read before
 	// the start, or there is nothing for the counter to have moved from.
-	if len(ran) < 2 || ran[0] != launchdPrintCommand || ran[1] != launchdStartCommand {
+	// (The print ahead of it is launchdUserTarget asking the system
+	// domain first, which is the same command.)
+	start := -1
+	for i, cmd := range ran {
+		if cmd == launchdStartCommand {
+			start = i
+		}
+	}
+	if start < 1 || ran[start-1] != launchdPrintCommand {
 		t.Fatalf("Start ran %v; it must print before it starts", ran)
 	}
 	if ran[len(ran)-1] != launchdPrintCommand {
@@ -160,9 +169,22 @@ func TestLaunchdStartDoesNotWaitWithoutABaseline(t *testing.T) {
 	if err := (launchdProvider{}).Start(c, "org.halite.live-probe"); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+	// Nothing after the start: with no counter to compare against there
+	// is nothing to wait for. What comes before it is the domain lookup
+	// (the system print, then the console user, who is nobody here) and
+	// the one baseline read.
 	ran := runner.commands()
-	if len(ran) != 2 {
-		t.Fatalf("Start ran %v; with no baseline it prints once and starts once", ran)
+	if len(ran) == 0 || ran[len(ran)-1] != launchdStartCommand {
+		t.Fatalf("Start ran %v; with no baseline it starts and does not wait", ran)
+	}
+	starts := 0
+	for _, cmd := range ran {
+		if cmd == launchdStartCommand {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Errorf("Start ran %v; it should start once", ran)
 	}
 }
 
