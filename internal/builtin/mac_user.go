@@ -1074,6 +1074,7 @@ func macUserAbsentState(c *exec.Context, args *value.Map) (states.Result, error)
 func macGroupPresentState(c *exec.Context, args *value.Map) (states.Result, error) {
 	name := states.Str(args, "name", "")
 	gid := states.Int(args, "gid", 0)
+	wantMembers, hasMembers := groupMembersRequested(args)
 	current, err := macGroupInfo(c, name)
 	if err != nil {
 		return states.False(fmt.Sprintf("The group %s could not be read: %v", name, err)), nil
@@ -1089,16 +1090,27 @@ func macGroupPresentState(c *exec.Context, args *value.Map) (states.Result, erro
 				"The group %s has a directory record with no gid, which is not a usable group. "+
 					"Remove it with `dseditgroup -o delete %s` and run this again.", name, name)), nil
 		}
-		if gid <= 0 {
-			return states.True(fmt.Sprintf("The group %s already exists.", name)), nil
+		if gid > 0 {
+			if cur, _ := current.Get("gid"); cur != gid {
+				return states.False(fmt.Sprintf(
+					"The group %s exists with a different gid; halite does not renumber a group, because every file owned by it would be orphaned.", name)), nil
+			}
 		}
-		if cur, _ := current.Get("gid"); cur == gid {
+		// `members` was not read here at all, so every list was reported
+		// as already in place (DIVERGENCE 5.152). It is the same whole-list
+		// reconcile the other platforms use, with dseditgroup as the tool.
+		if hasMembers {
+			return reconcileGroupMembers(c, name, wantMembers)
+		}
+		if gid > 0 {
 			return states.True(fmt.Sprintf("The group %s already exists with gid %d.", name, gid)), nil
 		}
-		return states.False(fmt.Sprintf(
-			"The group %s exists with a different gid; halite does not renumber a group, because every file owned by it would be orphaned.", name)), nil
+		return states.True(fmt.Sprintf("The group %s already exists.", name)), nil
 	}
 	changes := value.MapOf(name, states.Change(nil, "present"))
+	if hasMembers {
+		changes.Set("members", states.Change(nil, wantMembers))
+	}
 	if c.Test {
 		return states.WouldChange(fmt.Sprintf("The group %s would be created.", name), changes), nil
 	}
@@ -1117,6 +1129,12 @@ func macGroupPresentState(c *exec.Context, args *value.Map) (states.Result, erro
 			}
 		}
 		return states.False(fmt.Sprintf("The group %s could not be created: %v", name, err)), nil
+	}
+	if hasMembers {
+		if res, _ := reconcileGroupMembers(c, name, wantMembers); !res.Succeeded() {
+			return states.False(fmt.Sprintf("The group %s was created but its members could not be set: %s",
+				name, res.Comment)), nil
+		}
 	}
 	return states.Changed(fmt.Sprintf("The group %s was created.", name), changes), nil
 }

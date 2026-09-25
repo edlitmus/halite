@@ -376,7 +376,7 @@ jobs:
           # through a file rather than $PIPESTATUS so that this reads the
           # same as the freebsd leg.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid' ./internal/builtin/ 2>&1;
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 
@@ -610,7 +610,7 @@ jobs:
         run: |
           set -e
           sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 \
-            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname|TestLiveUserGroups|TestLiveGroupGid' ./internal/builtin/
+            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers' ./internal/builtin/
 
       # The account tests create and remove a real account. If one is
       # left behind the machine is thrown away anyway, but a leg that

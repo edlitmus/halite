@@ -626,7 +626,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`absent` states created, changed and removed a real account and three real groups " +
 		"as root on an Ubuntu 24.04 runner (`useradd`/`usermod`) and on FreeBSD 15.1 (`pw`), " +
 		"on the `linux` and `freebsd` legs of `fleet.yml`, with membership read back through " +
-		"`id -Gn` rather than this module. The first run found a run that changed only the " +
+		"`id -Gn` rather than this module. `group.present`'s `members` was driven the same " +
+		"way on all three platforms, read with `getent group`, and found FreeBSD refusing for " +
+		"want of gpasswd and Linux unable to converge on a group that is some account's " +
+		"primary group (DIVERGENCE 5.152). The first run found a run that changed only the " +
 		"shell stripping a hand-added group on both, because `-G` replaces the supplementary " +
 		"list and was sent on every change (DIVERGENCE 5.138). Not covered: `password`, the " +
 		"ageing options, an explicit uid and `unique`, `system`, `usergroup`, and " +
@@ -697,7 +700,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"FreeBSD paths that make the same promises, with the gid read through `dscl` rather " +
 		"than this module. The last found `dseditgroup` refusing a taken gid and leaving a " +
 		"record with no gid behind, which the next run called converged (DIVERGENCE 5.148). " +
-		"Not covered: `members` on macOS, which `group.present` there does not read"},
+		"`members` was not read at all on macOS; it is now set with `dseditgroup` and was " +
+		"driven on the same leg beside Linux and FreeBSD, read back from `dscl` (DIVERGENCE " +
+		"5.152)"},
 	"mac_shadow": {Level: exec.Hardware, Note: "the old `dscl . -passwd` set a real password " +
 		"on macOS 27.0 (build 26A5425a) under sudo, and Open Directory reported it set (DIVERGENCE " +
 		"5.115). It is now set through passwd(1) reading standard input, so the plaintext is " +

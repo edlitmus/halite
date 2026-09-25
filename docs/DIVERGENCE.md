@@ -13525,6 +13525,70 @@ machine with a long-tracked snap is still the only thing that would show the
 original defect, and none is scheduled.
 
 
+### 5.152 `group.present` members: refused on FreeBSD, ignored on macOS, stuck on Linux
+
+`group.present`'s `members` is the group's whole member list: anyone
+not named is removed. It had not been run on any platform. The
+platform-neutral `TestLiveGroupMembersAreExactlyTheList` now runs on
+the `linux`, `freebsd` and `macos` legs of `fleet.yml`, and reads
+membership with `getent group` or `dscl`, not through this module.
+Against the unchanged module, each platform failed in a different way:
+
+- **FreeBSD refused outright**, on every step:
+
+  ```
+  Setting the members of halgm2012 needs gpasswd(1), which is not on this node's PATH.
+  ```
+
+  The reconciler used gpasswd, which is a Linux tool. FreeBSD edits a
+  group's member list with `pw groupmod`. This is the tier-1 platform,
+  which carries most of production.
+- **macOS reported success and did nothing.** `macGroupPresentState`
+  did not read `members` at all. Every list, including an empty one,
+  was answered with `The group halgm1650 already exists.` and no
+  change, and the group stayed empty. That is a broken machine
+  reported as converged.
+- **Linux worked**, until the group was some account's primary group.
+  Then it failed on every run:
+
+  ```
+  halgm10141u4 could not be removed from halgm10141: gpasswd -d halgm10141u4 halgm10141 exited 3: gpasswd: user 'halgm10141u4' is not a member of 'halgm10141'
+  ```
+
+  `groupMemberNames` folded every account whose *primary* group this
+  was into the member list, with a comment saying that removing one
+  "would be both impossible and wrong". Both halves of that were true,
+  and folding them in was what put the account on the removal list. A
+  primary group is set on the account, by `user.present`'s `gid`. No
+  member-list tool can add or remove it. The list `members` sets is
+  getgrnam's `gr_mem`, which is also what Salt compares against.
+
+#### The fix
+
+- `members` is compared against the group's supplementary member list
+  only: the fourth field of `/etc/group` on Linux and FreeBSD, and
+  `GroupMembership` from Open Directory on macOS.
+- It is changed with each platform's own member tool: gpasswd on Linux,
+  `pw groupmod <g> -m <u>` and `-d <u>` on FreeBSD, and `dseditgroup -o
+  edit -a` and `-d` on macOS.
+- macOS reads `members` both for a group that exists and for one it
+  has just created, as the other platforms do.
+
+With the fix, all five cases pass on all three platforms: members set
+and then converged, test mode predicting without acting, a changed
+list adding and removing, a primary-group account left alone, and an
+empty list emptying the group. The failing runs above are the same
+test against the unchanged module.
+
+#### What this does not cover
+
+- **Directory-service groups** (LDAP, NIS, AD). The tools edit local
+  groups.
+- **`addusers` and `delusers`**, Salt's additive forms. They are not
+  implemented.
+- **A member that is not an account on the machine.** The tools refuse
+  it, and the state reports their refusal. That was not run.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
