@@ -156,6 +156,20 @@ jobs:
           path: digests-${{ matrix.builder }}.txt
           if-no-files-found: error
 
+      # The binaries themselves, briefly. The digests are what the compare
+      # job holds equal and what the attestation names, but a digest
+      # cannot be verified without the bytes it is a digest of, and
+      # without them nobody can check an attestation against an artifact
+      # or diff a build that did not reproduce elsewhere. Three days,
+      # because this is a workflow artifact and not a release: publishing
+      # is a separate step that does not exist yet.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.builder }}
+          path: dist/
+          retention-days: 3
+          if-no-files-found: error
+
   compare:
     name: two builders agree
     needs: build
