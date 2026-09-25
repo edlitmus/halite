@@ -492,7 +492,17 @@ cross: make-supports-bang
 # -r` separates with one space and GNU's `sha256sum` with two, and awk
 # normalises both to two rather than this depending on which host cut the
 # release.
+# dist is cross, then the per-platform release archives of SPEC 27.2
+# (tools/disttar: binaries, example configuration and manual pages, every
+# time, owner, mode and order pinned), then SHA256SUMS over all of it --
+# 51 binaries and 17 archives. Stale archives go first: SHA256SUMS sums
+# everything in dist/, and an archive left from another version would be
+# a line in this one's manifest.
 dist: cross
+	@rm -f dist/halite-*.tar.gz dist/halite-*.zip
+	@env $(RELEASE_ENV) go run ./tools/disttar -dist dist \
+		-version "$(VERSION)" -epoch "$(SOURCE_DATE_EPOCH)" \
+		-targets "$(TARGETS)" -binaries "$(BINARIES)"
 	@cd dist && rm -f SHA256SUMS && \
 	if command -v sha256sum >/dev/null 2>&1; then \
 		sha256sum *; \

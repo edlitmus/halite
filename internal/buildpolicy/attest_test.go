@@ -62,8 +62,34 @@ func TestTheReleaseAttestsOnlyWhatTwoBuildersAgreed(t *testing.T) {
 			}
 		}
 	}
+	// Publishing is the one job that writes to the repository, it comes
+	// after the attestation, it checks what it publishes against what was
+	// compared, and it only creates a release on a tag.
+	publish, ok := jobs["publish"]
+	if !ok {
+		t.Fatal("release.yml has no publish job")
+	}
+	if !regexp.MustCompile(`needs:\s*attest\b`).MatchString(publish) ||
+		!strings.Contains(publish, "needs.attest.result == 'success'") {
+		t.Error("the publish job does not wait for a successful attest")
+	}
+	for _, want := range []string{"cmp dist/SHA256SUMS digests-ubuntu-24.04.txt", "sha256sum -c", "startsWith(github.ref, 'refs/tags/v')", "gh release create"} {
+		if !strings.Contains(publish, want) {
+			t.Errorf("the publish job has no %q", want)
+		}
+	}
+	for name, body := range jobs {
+		has := strings.Contains(body, "contents: write")
+		if name == "publish" && !has {
+			t.Error("the publish job lacks contents: write")
+		}
+		if name != "publish" && has {
+			t.Errorf("job %s holds contents: write; only publish may", name)
+		}
+	}
+
 	top := wf[:strings.Index(wf, "\njobs:")]
-	if strings.Contains(top, "id-token: write") || strings.Contains(top, "attestations: write") {
+	if strings.Contains(top, "id-token: write") || strings.Contains(top, "attestations: write") || strings.Contains(top, "contents: write") {
 		t.Error("release.yml grants signing permissions to every job at the top level")
 	}
 }

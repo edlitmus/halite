@@ -195,8 +195,9 @@ jobs:
           ls -l digests-*.txt
           a=digests-ubuntu-24.04.txt
           b=digests-ubuntu-22.04.txt
-          # Seventeen targets in SPEC 27.1's list, three binaries each.
-          expected=51
+          # Seventeen targets in SPEC 27.1's list, three binaries each,
+          # and one release archive per target (tools/disttar).
+          expected=68
           for f in "$a" "$b"; do
             test -s "$f" || { echo "$f is missing or empty"; exit 1; }
             n=$(wc -l < "$f")
@@ -257,3 +258,79 @@ jobs:
       - uses: actions/attest-build-provenance@v4
         with:
           subject-checksums: digests-ubuntu-24.04.txt
+
+  # Publish the release: the per-platform archives and SHA256SUMS, on a
+  # tag, and only after the gate, the two-builder compare and the
+  # provenance have all passed -- `attest` needs the first two, so
+  # needing it is needing all three.
+  #
+  # The files published are the ones built, checked twice before they go:
+  # this job's copy of SHA256SUMS must be byte-identical to the manifest
+  # the compare job held equal, and every file must match its line in it.
+  # A file that was built, uploaded and downloaded is three chances to
+  # differ from what was attested, and this is where that is ruled out.
+  #
+  # A manual run does everything except publish: it checks the files and
+  # prints what a tag would put in the release. That is how this job is
+  # exercised without minting a tag.
+  #
+  # v0.* and any tag with a suffix (v1.0.0-rc1) are marked pre-release:
+  # CHANGELOG.md says 1.0.0 is SPEC 32's phase 6, and the artifacts carry
+  # provenance but no detached signature yet (SPEC 4.3).
+  publish:
+    name: publish the release
+    needs: attest
+    if: ${{ needs.attest.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist-ubuntu-24.04
+          path: dist
+      - uses: actions/download-artifact@v8
+        with:
+          name: digests-ubuntu-24.04
+      - name: the files are the ones the builders agreed on
+        run: |
+          set -e
+          cmp dist/SHA256SUMS digests-ubuntu-24.04.txt
+          cd dist && sha256sum -c --quiet SHA256SUMS
+          ls halite-*.tar.gz halite-*.zip | wc -l | xargs echo "archives:"
+      - name: publish, on a tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -e
+          version="${TAG#v}"
+          cat > notes.md <<NOTES
+          halite ${version}, for SPEC 27.1's seventeen platforms: one archive per
+          platform (the BSD 2-Clause licence, binaries, example configuration,
+          manual pages), and SHA256SUMS.
+
+          Every archive and binary here was built twice, on two different runners,
+          and published only because the two builds were byte-identical. Check a
+          download, then its provenance:
+
+              sha256sum --ignore-missing -c SHA256SUMS
+              gh attestation verify halite-${version}-linux-amd64.tar.gz --repo ${GITHUB_REPOSITORY}
+
+          The provenance is keyless SLSA, signed by this repository's release
+          workflow through Sigstore. There is no detached signature yet (SPEC 4.3).
+          SHA256SUMS also lists the bare binaries, which are inside the archives.
+          Changes are in CHANGELOG.md.
+          NOTES
+          prerelease=""
+          case "$TAG" in v0.*|*-*) prerelease="--prerelease" ;; esac
+          if [ "$IS_TAG" != "true" ]; then
+            echo "not a tag ($GITHUB_REF): a tag would publish, with $prerelease:"
+            ls -1 dist/halite-*.tar.gz dist/halite-*.zip dist/SHA256SUMS
+            cat notes.md
+            exit 0
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "halite ${version}" --notes-file notes.md $prerelease \
+            dist/halite-*.tar.gz dist/halite-*.zip dist/SHA256SUMS

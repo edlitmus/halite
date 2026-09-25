@@ -17,6 +17,22 @@ what is built; [docs/](docs/) says how to use it.
 
 ## Try it
 
+From a release, pick the archive for your platform, check it, and put
+the binary on your path. The archive also holds the licence (BSD
+2-Clause), the example configuration and the manual pages:
+
+```sh
+v=X.Y.Z; p=linux-amd64    # set these: the release, and your platform
+curl -LO https://github.com/edlitmus/halite/releases/download/v$v/halite-$v-$p.tar.gz
+curl -LO https://github.com/edlitmus/halite/releases/download/v$v/SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
+gh attestation verify halite-$v-$p.tar.gz --repo edlitmus/halite
+tar -xzf halite-$v-$p.tar.gz
+sudo install -m 0755 halite-$v-$p/bin/halite-node /usr/local/bin/
+```
+
+No release has been tagged yet. Until one is, build from source:
+
 ```sh
 make build        # on a Mac, gmake or bmake; see Building below
 sudo install -m 0755 bin/halite-node /usr/local/bin/
@@ -392,8 +408,10 @@ is checked with:
 
     gh attestation verify halite-node-linux-amd64 --repo edlitmus/halite
 
-The workflow does not publish a release yet. Its binaries are kept for
-three days as a workflow artifact.
+On a `v*` tag, it then publishes the release: one archive per platform,
+holding the binaries, the example configuration and the manual pages,
+and SHA256SUMS. The archives are pinned the way the binaries are, so the
+two builders agree on them too.
 
 `make check` runs the specification's own build rules as tests: the
 lexicon policy of section 2.3, the dependency allowlist of section 4.2,

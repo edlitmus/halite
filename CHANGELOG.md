@@ -18,6 +18,21 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Release archives, and a workflow that publishes them
+
+`make dist` now assembles one archive per platform, 17 in all, including
+tier 3: `halite-<version>-<os>-<arch>.tar.gz`, or `.zip` for Windows.
+Each holds the licence, the three binaries, the example configuration
+and the manual pages. Times, owners, modes and entry order are pinned, so the two
+release builders produce the same bytes, and the archives are covered
+by `SHA256SUMS` and by the build provenance.
+
+On a `v*` tag, `release.yml` publishes a GitHub release with the
+archives and `SHA256SUMS`, after the release gate, the two-builder
+comparison and the attestation have passed. It first checks that every
+file matches the compared manifest. `v0.*` and suffixed tags are marked
+pre-release. No tag has been pushed yet.
+
 ### Builds from a Mac's default `make` now refuse instead of being stamped blank
 
 macOS's `/usr/bin/make` is GNU make 3.81, which silently ignores the
