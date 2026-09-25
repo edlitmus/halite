@@ -61,6 +61,12 @@ func TestLedgerTestCitationsResolve(t *testing.T) {
 	// this pattern deliberately does not match. Prose about test mode
 	// would otherwise be reported as a citation of tests that do not
 	// exist.
+	//
+	// A `-run` prefix is the second thing that looks like a citation and
+	// is not. The ledger writes those with a trailing star --
+	// `TestLiveModprobe*` -- which reads correctly as a family and does
+	// not match here, since a star is not a word character. See 5.147,
+	// where three of them appear.
 	cited := regexp.MustCompile("`(Test[A-Za-z0-9_]+)`")
 	checked := 0
 	for i, line := range strings.Split(ledger, "\n") {

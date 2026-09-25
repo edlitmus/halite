@@ -1353,14 +1353,100 @@ unchanged.
    solved for execution functions by synthesising from the signature and
    then reporting honestly how many it could not reach.
 
-7b. **A coverage claim nobody measured.** `firewall` is `Hardware` with no
-   `TestLive*` anywhere, so the FreeBSD leg's broad `-run TestLive` selects
-   nothing for it; 22 live tests match no leg's `-run` filter at all,
-   including the two `TestLiveSnap*` written because the `snap list`
-   fixtures had been taken from documentation. The analysis behind this is
-   read off `run.sh` and the filters rather than observed on a runner, and
-   it should be checked on one before anything is moved.
+7b. **A coverage claim, measured at last — and the claim itself was wrong
+    twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off
+    the filters rather than observed, and does not survive contact with a
+    runner. Two legs, `debian` and `freebsd`, use a bare `-run TestLive`,
+    so **every** live test matches some leg's filter. The framing could not
+    have been right.
 
+    It was wrong in a second way: **the filter selects and the environment
+    decides.** There are two gates, not one. `HALITE_SYSTEM_LIVE=1` is set
+    by the `linux`, `freebsd` and `macos` legs; `HALITE_FLEET_LIVE=1` is
+    exported by `contrib/docker/fleet/run.sh` and is what the Debian tests
+    read. So the `debian` leg selects all 124 and can run only the
+    `HALITE_FLEET_LIVE` ones, and its catch-all filter buys nothing for the
+    rest.
+
+    **Measured on Fleet run 36116721474 (2026-09-25), all four legs
+    green**, by reading each leg's own PASS and SKIP lines: 124 `TestLive*`
+    functions, **106 pass somewhere, 18 never pass anywhere**. Those 18 are
+    three different things and only one is a defect:
+
+    - **13 need a machine CI does not have** — three `TestLiveAPK*`, five
+      `TestLiveOpenRC*`, five `TestLiveSysvinit*`. They are the lab's rows,
+      and the lab did drive them (5.124, 5.126). Correct as they stand; a
+      leg would have to be an Alpine and a sysvinit host.
+    - **1 is deliberate.** `TestLiveRebootSchedulesAndCancelsWithoutRebooting`
+      wants `HALITE_REBOOT_LIVE=1` on top, and says so: *"deliberately not
+      covered by HALITE_SYSTEM_LIVE alone"*. It schedules a real reboot.
+    - **4 could have run on the `linux` leg and never did**, which is the
+      defect. `TestLiveSnapReadsTheRealList`,
+      `TestLiveSnapChannelAgreesWithSnapInfo`,
+      `TestLiveModprobeReadsRealModules` and `TestLiveUdevReadsRealDevices`
+      are Linux-only and `HALITE_SYSTEM_LIVE`-gated, so the `linux` leg is
+      the only place they can execute — and its filter named
+      `TestLiveModprobeLoadsAndPersists` and `TestLiveUdevControlAsRoot`,
+      the *siblings*, and no `TestLiveSnap` at all. **Fixed**: the filter
+      says `TestLiveModprobe`, `TestLiveUdev` and `TestLiveSnap`, which
+      selects those four and nothing else — 40 selected became 44, none
+      lost. `internal/builtin/snap*.go` went into the leg's trigger paths,
+      which it was not in, and the leg's name now says `snap`.
+
+    `firewall` **is** `Hardware` with no `TestLive*` anywhere, which the
+    old text got right and is the part still open. It is the one claim here
+    that nothing has measured, because there is nothing to measure: the
+    level rests on work recorded in the ledger rather than on a test that
+    runs. Either a live test exists for it or the level is an assertion.
+
+    A sibling added tomorrow would have been lost the same way, so
+    `TestTheLinuxLegsFilterNamesFamiliesNotTests` in `internal/buildpolicy`
+    holds the filter to a rule: a pattern must name a **family prefix**,
+    never a complete test name, because a prefix picks up a sibling and a
+    complete name cannot. It also fails on a pattern that matches nothing.
+    Both demonstrated by reinstating the old filter and by misspelling a
+    pattern.
+
+    **Measured after the fix** (Fleet run 36144631929, `linux` leg green):
+    `TestLiveModprobeReadsRealModules` and `TestLiveUdevReadsRealDevices`
+    **pass**; both `TestLiveSnap*` still **skip**, because the
+    `ubuntu-24.04` image has snapd and no snaps, so there is no `snap list`
+    table to parse. Two of the four, and the leg was green either way —
+    which is this item's own lesson arriving a second time. See 7c.
+
+    **Its blind spot, stated:** a family nobody has named *at all* is still
+    invisible — which is exactly how `TestLiveSnap*` was missed, and what
+    found it was reading four legs' logs by hand. The guard catches three of
+    the four, not the fourth. Closing that needs a way to know which tests
+    *should* be runnable on a given runner, which depends on the tools
+    present and is not in the tree.
+
+7c. **`snap`'s reading is `Captured` and CI still does not perform it.** The
+    two `TestLiveSnap*` tests are selected by the `linux` leg now (7b) and
+    skip on it: the `ubuntu-24.04` image carries snapd with **no snaps
+    installed**, and both tests read `snap list` and skip by name when the
+    table is empty. Correctly — there is nothing to parse — but the effect is
+    that the defect which made `snap` interesting in the first place
+    (DIVERGENCE 5.112: `snap list` truncates a long channel with U+2026, so
+    `snap.installed` compared a declared channel against a prefix and would
+    have run `snap refresh` on every run of an already-correct node) is
+    guarded by tests that never execute in CI.
+
+    The leg could install one snap in a setup step, as it already installs
+    `quota`, `lvm2`, `mdadm`, `iptables` and `nftables`. The *test* declines
+    to install anything and should keep declining — installing pulls from
+    the store and takes a squashfs mount — but a setup step is not the test.
+
+    Not done blind because `snap install` on a hosted runner needs the
+    seeding to have finished (`snap wait system seed.loaded`) and is a known
+    source of flake; a leg that fails intermittently is worse than one that
+    skips two tests honestly. The cheap version is to install a tiny snap,
+    wait for the seed, and let the leg's existing skip-printing step show
+    whether it worked — and to back it out if it flakes twice.
+
+    A truncated channel is what a captured fixture would show, so the
+    alternative is a fixture taken from a machine that has one, which is
+    what 5.112 did by hand and what decays.
 8. **`module.run` argument pass-through.** Salt passes unknown kwargs
    through to the function being run; this build validates against a
    fixed parameter list. Strict validation is right for every other state
