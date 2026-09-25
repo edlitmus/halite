@@ -377,7 +377,15 @@ Every one of those runs in CI on push and on each pull request —
 on Linux and on Windows both. `release.yml` adds what a single machine
 cannot check: on a tag, two builders compile the same source and their
 digests are compared, which is the reproducibility property SPEC section
-4.3 asks for and `make repro` can only half prove.
+4.3 asks for and `make repro` can only half prove. Once they agree, and
+only if the release gate passed, it signs SLSA build provenance for those
+digests through Sigstore, with no long-lived key. A binary from that run
+is checked with:
+
+    gh attestation verify halite-node-linux-amd64 --repo edlitmus/halite
+
+The workflow does not publish a release yet. Its binaries are kept for
+three days as a workflow artifact.
 
 `make check` runs the specification's own build rules as tests: the
 lexicon policy of section 2.3, the dependency allowlist of section 4.2,

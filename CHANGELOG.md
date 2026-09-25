@@ -18,6 +18,17 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Release builds carry verifiable provenance
+
+`release.yml` now signs SLSA build provenance, keyless through Sigstore,
+for exactly the binaries its two builders produced identically, and only
+after the release gate passes. On a downloaded binary from that run:
+
+    gh attestation verify halite-node-linux-amd64 --repo edlitmus/halite
+
+The binaries are kept for three days as a workflow artifact. No release
+is published yet, and detached signatures are still to come (SPEC 4.3).
+
 ### `group.present`'s `members` works on FreeBSD and macOS
 
 `members`, the complete list of a group's members, was broken in a

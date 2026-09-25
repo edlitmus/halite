@@ -218,6 +218,15 @@ third-party code never shares an address space with the agent.
 | Toolchain provenance | The Go toolchain is fetched by digest from an internal mirror, not by version tag. |
 | SBOM | CycloneDX generated from `go version -m` output on the shipped binary, not from the source tree. What linked, not what was declared. |
 | Signing | Detached signature per artifact plus an in-toto/SLSA provenance attestation naming the source commit, the toolchain digest, and the builder identity. |
+
+**Signing, as it stands (decided 2026-09-25).** The provenance half ships first. It is keyless:
+the release workflow signs an SLSA build provenance attestation through Sigstore with its own
+GitHub OIDC identity, for exactly the digests its two builders agreed on, so no long-lived key
+exists to keep or lose. The attestation names the source commit, the workflow and the runner. It
+does **not** yet name the toolchain digest. The detached signature per artifact is deferred. It
+waits on a decision about where a signing key lives, and a long-lived key does not belong on a
+hosted runner. Keyless verification needs Sigstore's public trust root, which is fetched online or
+carried into an air-gapped site.
 | Binary hygiene | No embedded network fetches at build time, no code generation from a remote source, no `go:generate` step that reaches the network. |
 | FIPS | A parallel build with `GOFIPS140=v1.0.0`, using the Go Cryptographic Module. Runtime enforcement with `GODEBUG=fips140=on`. Section 27.4. |
 
@@ -2437,8 +2446,9 @@ tested, not about how many people run it.
 Two honest qualifications. **The architecture clause is a goal, not a description**: tier 1 CI runs
 on amd64 for every platform in it, and the only arm64 machine this project has is a single Ubuntu
 host. **Packages are unbuilt for every tier 1 platform**, FreeBSD included; section 27.2 describes
-what a release will carry, and the release workflow currently verifies reproducibility rather than
-producing artifacts.
+what a release will carry. The release workflow verifies reproducibility and attests provenance for
+the binaries its two builders agreed on, keeps those binaries briefly as a workflow artifact, and
+publishes no release.
 
 ### 27.2 Artifacts
 
