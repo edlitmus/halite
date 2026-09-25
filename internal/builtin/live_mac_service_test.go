@@ -606,3 +606,141 @@ func TestLiveMacServiceRestartOutsideTheThrottleIsImmediate(t *testing.T) {
 		}
 	}
 }
+
+// **A per-user job: a LaunchAgent in the console user's gui domain.**
+//
+// Every command the provider ran named, or defaulted to, the system
+// domain. Against an agent loaded in gui/501 and running, `service.status`
+// said false, `service.start` and `service.stop` failed with launchctl
+// exiting 3, and `service.enabled` read the system store (DIVERGENCE
+// 5.150) -- so `service.dead` would have called a running agent stopped.
+//
+// Each step is checked with `launchctl print gui/<uid>/<label>`, not
+// through the module.
+func TestLiveMacServiceManagesAConsoleUsersAgent(t *testing.T) {
+	c := launchdLive(t)
+	r := New()
+	const label = "org.halite.live-agent"
+	path := "/Library/LaunchAgents/" + label + ".plist"
+
+	console, err := c.Run(exec.Command{Argv: []string{"stat", "-f", "%u", "/dev/console"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid := strings.TrimSpace(console.Stdout)
+	if uid == "" || uid == "0" {
+		t.Skipf("nobody is logged in at the console (%q), so there is no gui domain", uid)
+	}
+	domain := "gui/" + uid
+	target := domain + "/" + label
+
+	if err := os.WriteFile(path, []byte(strings.ReplaceAll(liveLaunchdPlist, liveLaunchdLabel, label)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for _, argv := range [][]string{{"launchctl", "bootout", target}, {"launchctl", "enable", target}} {
+			_, _ = c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+		}
+		_ = os.Remove(path)
+		if res, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print", target}, IgnoreExitCode: true}); res.Code == 0 {
+			t.Errorf("the agent is still loaded after cleanup")
+		}
+	})
+	if res, _ := c.Run(exec.Command{Argv: []string{"launchctl", "bootstrap", domain, path}, IgnoreExitCode: true}); res.Code != 0 {
+		t.Fatalf("launchctl bootstrap %s: exit %d %s", domain, res.Code, res.Stderr)
+	}
+
+	pid := func() int {
+		res, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print", target}, IgnoreExitCode: true})
+		for _, ln := range strings.Split(res.Stdout, "\n") {
+			if f := strings.TrimSpace(ln); strings.HasPrefix(f, "pid = ") {
+				n, _ := strconv.Atoi(strings.TrimPrefix(f, "pid = "))
+				return n
+			}
+		}
+		return 0
+	}
+	status := func() any {
+		v, err := r.Exec.Call(c, "service.status", value.MapOf("name", label))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	settle := func(running bool) int {
+		deadline := time.Now().Add(15 * time.Second)
+		for time.Now().Before(deadline) {
+			if p := pid(); (p != 0) == running {
+				return p
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("the agent did not reach running=%v", running)
+		return 0
+	}
+
+	if status() != false {
+		t.Errorf("service.status = %v for a loaded, idle agent", status())
+	}
+
+	if _, err := r.Exec.Call(c, "service.start", value.MapOf("name", label)); err != nil {
+		t.Fatalf("service.start: %v", err)
+	}
+	first := pid()
+	if first == 0 {
+		t.Errorf("service.start returned and the agent has no pid")
+		first = settle(true)
+	}
+	if status() != true {
+		t.Errorf("service.status = %v while the agent runs as pid %d", status(), first)
+	}
+
+	if _, err := r.Exec.Call(c, "service.restart", value.MapOf("name", label)); err != nil {
+		t.Fatalf("service.restart: %v", err)
+	}
+	if second := settle(true); second == first {
+		t.Errorf("service.restart left pid %d in place", first)
+	}
+
+	// The state that was wrong: a running agent is not already dead.
+	res, err := r.States.Call(c, "service.dead", value.MapOf("name", label))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Succeeded() || !res.HasChanges() {
+		t.Errorf("service.dead on a running agent: %+v", res)
+	}
+	settle(false)
+	if status() != false {
+		t.Errorf("service.status = %v after the agent was stopped", status())
+	}
+	if again, _ := r.States.Call(c, "service.dead", value.MapOf("name", label)); again.HasChanges() {
+		t.Errorf("service.dead on a stopped agent reported a change: %+v", again)
+	}
+
+	// The disable store the agent's own domain keeps, not the system one.
+	disabled := func() string {
+		res, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print-disabled", domain}, IgnoreExitCode: true})
+		for _, ln := range strings.Split(res.Stdout, "\n") {
+			if strings.Contains(ln, `"`+label+`"`) {
+				return strings.TrimSpace(ln)
+			}
+		}
+		return ""
+	}
+	if _, err := r.Exec.Call(c, "service.disable", value.MapOf("name", label)); err != nil {
+		t.Fatalf("service.disable: %v", err)
+	}
+	if got := disabled(); !strings.HasSuffix(got, "disabled") && !strings.HasSuffix(got, "true") {
+		t.Errorf("after service.disable, %s's store says %q", domain, got)
+	}
+	if v, _ := r.Exec.Call(c, "service.enabled", value.MapOf("name", label)); v != false {
+		t.Errorf("service.enabled = %v after disabling", v)
+	}
+	if _, err := r.Exec.Call(c, "service.enable", value.MapOf("name", label)); err != nil {
+		t.Fatalf("service.enable: %v", err)
+	}
+	if got := disabled(); !strings.HasSuffix(got, "enabled") && !strings.HasSuffix(got, "false") {
+		t.Errorf("after service.enable, %s's store says %q", domain, got)
+	}
+}

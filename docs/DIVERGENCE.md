@@ -13373,6 +13373,72 @@ daemon back.
   need a provider that sleeps, run as root on a Mac, and that was not
   done. The bound is half the throttle, against a measured 29ms.
 
+### 5.150 launchd: a running LaunchAgent read as not running
+
+5.122 and 5.149 left the launchd provider's `gui/` and `user/`
+domains open: "every command that provider runs names `system/`". That
+is the domain of a LaunchDaemon, which is what a node running as root
+mostly manages. A LaunchAgent lives in a login session's domain. What
+the provider did with one had never been run.
+
+An agent was installed in `/Library/LaunchAgents` and bootstrapped
+into the console user's domain on the `macos` leg (macOS 15.7.9, build
+24G830; the console user is `runner`, uid 501). It was then driven
+through the unchanged module:
+
+```
+service.status org.halite.live-agent: false          (loaded, idle -- right, by accident)
+service.start: launchctl start org.halite.live-agent exited 3
+kickstart gui/501/org.halite.live-agent: exit 0      (the test starting it by hand)
+service.status while running in gui/501: false        (pid 3086)
+service.stop: launchctl stop org.halite.live-agent exited 3
+service.get_all includes the agent: false
+```
+
+As root, the legacy `launchctl start`, `stop` and `list <label>` look
+in the system domain and nowhere else. The worst of these results is
+the false status. `service.dead` asks `Status` first, so it would have
+reported a running agent as already stopped: a broken machine
+reported as converged. `service.running` would have tried to start
+the agent on every run and failed.
+
+#### The fix
+
+The system domain is asked first, with `launchctl print
+system/<label>`. For a label it has, nothing changes. Only a label it
+does not have is looked for in the console user's `gui/<uid>` domain.
+The console user is the owner of `/dev/console`, which is also the
+user Salt's mac_service resolves an agent's domain to. A label found
+there is driven on its full target:
+
+| | system domain (unchanged) | console user's gui domain |
+|---|---|---|
+| status | `launchctl list <label>`, `"PID" =` | `launchctl print`, a `pid =` line |
+| start | `launchctl start`, then the spawn count | `launchctl kickstart`, then the spawn count |
+| stop | `launchctl stop` | `launchctl kill TERM`, or nothing if it has no pid |
+| enabled, enable, disable | `system` store | the gui domain's store |
+
+`TestLiveMacServiceManagesAConsoleUsersAgent` checks every row against
+`launchctl print` on the gui target. It covers start, status, restart
+(the pid changes), `service.dead` on the running agent (a change, then
+converged), disable and enable, read back from `print-disabled
+gui/<uid>`. It passes, and every system-domain test in the file passes
+beside it. `TestLaunchdStatusFindsAConsoleUsersAgent` holds the routing
+on every platform, and fails with the gui branch of `Status` removed.
+
+#### What this does not cover
+
+- **An agent that is not loaded.** Its plist is on disk but it has not
+  been bootstrapped into a session. The provider finds jobs through
+  launchd, not through plist directories, so such an agent is still
+  unknown, as it was before.
+- **The `user/<uid>` domain, and users other than the console user.**
+  With nobody at the console, which is common on a headless Mac,
+  there is no gui domain and everything targets the system domain as
+  before.
+- **`service.get_all`** still lists the system domain only.
+- **A label loaded in both domains** is treated as the system job.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

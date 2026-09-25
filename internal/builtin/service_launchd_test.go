@@ -123,6 +123,7 @@ func TestLaunchdStartWaitsForTheSpawnCounterToMove(t *testing.T) {
 
 	runner := &sequencedRunner{answers: map[string][]exec.Result{
 		launchdPrintCommand: {
+			{Stdout: stillThrottled}, // the system domain has it, so it is not a user agent
 			{Stdout: stillThrottled}, // the baseline, read before the start
 			{Stdout: stillThrottled}, // scheduled, not yet spawned
 			{Stdout: respawned},
@@ -138,7 +139,15 @@ func TestLaunchdStartWaitsForTheSpawnCounterToMove(t *testing.T) {
 	ran := runner.commands()
 	// The order is the whole point: the baseline has to be read before
 	// the start, or there is nothing for the counter to have moved from.
-	if len(ran) < 2 || ran[0] != launchdPrintCommand || ran[1] != launchdStartCommand {
+	// (The print ahead of it is launchdUserTarget asking the system
+	// domain first, which is the same command.)
+	start := -1
+	for i, cmd := range ran {
+		if cmd == launchdStartCommand {
+			start = i
+		}
+	}
+	if start < 1 || ran[start-1] != launchdPrintCommand {
 		t.Fatalf("Start ran %v; it must print before it starts", ran)
 	}
 	if ran[len(ran)-1] != launchdPrintCommand {
@@ -160,9 +169,22 @@ func TestLaunchdStartDoesNotWaitWithoutABaseline(t *testing.T) {
 	if err := (launchdProvider{}).Start(c, "org.halite.live-probe"); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
+	// Nothing after the start: with no counter to compare against there
+	// is nothing to wait for. What comes before it is the domain lookup
+	// (the system print, then the console user, who is nobody here) and
+	// the one baseline read.
 	ran := runner.commands()
-	if len(ran) != 2 {
-		t.Fatalf("Start ran %v; with no baseline it prints once and starts once", ran)
+	if len(ran) == 0 || ran[len(ran)-1] != launchdStartCommand {
+		t.Fatalf("Start ran %v; with no baseline it starts and does not wait", ran)
+	}
+	starts := 0
+	for _, cmd := range ran {
+		if cmd == launchdStartCommand {
+			starts++
+		}
+	}
+	if starts != 1 {
+		t.Errorf("Start ran %v; it should start once", ran)
 	}
 }
 
@@ -195,4 +217,47 @@ func (r *sequencedRunner) commands() []string {
 		out[i] = cmd.String()
 	}
 	return out
+}
+
+// A label the system domain does not have is looked for in the console
+// user's gui domain, and its status read from there (DIVERGENCE 5.150).
+// The `stat` answer is what `stat -f %u /dev/console` printed on a macOS
+// 15.7.9 runner; the running dump is the captured print with a pid line.
+func TestLaunchdStatusFindsAConsoleUsersAgent(t *testing.T) {
+	running := strings.Replace(launchdPrintCapture, "state = not running", "state = running\n\tpid = 3086", 1)
+	if running == launchdPrintCapture {
+		t.Fatal("the capture has no state line to change")
+	}
+	runner := &sequencedRunner{answers: map[string][]exec.Result{
+		"launchctl print system/org.halite.live-agent":  {{Code: 113, Stderr: "Could not find service \"org.halite.live-agent\" in domain for system\n"}},
+		"stat -f %u /dev/console":                       {{Stdout: "501\n"}},
+		"launchctl print gui/501/org.halite.live-agent": {{Stdout: running}},
+	}}
+	c := newCtx(false)
+	c.Runner = runner
+
+	up, err := (launchdProvider{}).Status(c, "org.halite.live-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !up {
+		t.Errorf("an agent running in gui/501 read as not running: %v", runner.commands())
+	}
+	if got := launchdStoreTarget(c, "org.halite.live-agent"); got != "gui/501/org.halite.live-agent" {
+		t.Errorf("the disable store target is %s", got)
+	}
+}
+
+// With nobody at the console there is no gui domain, and the system
+// domain is what everything targets, as before.
+func TestLaunchdNoConsoleUserMeansTheSystemDomain(t *testing.T) {
+	runner := &sequencedRunner{answers: map[string][]exec.Result{
+		"launchctl print system/org.halite.live-agent": {{Code: 113}},
+		"stat -f %u /dev/console":                      {{Stdout: "0\n"}},
+	}}
+	c := newCtx(false)
+	c.Runner = runner
+	if got := launchdStoreTarget(c, "org.halite.live-agent"); got != "system/org.halite.live-agent" {
+		t.Errorf("with root at the console the target is %s", got)
+	}
 }

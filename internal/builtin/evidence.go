@@ -261,8 +261,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"module. That run found the boot state being read from /etc/rc3.d on a machine " +
 		"that boots to runlevel 2 (DIVERGENCE 5.126). Not covered: the `chkconfig` branch " +
 		"of the same provider, which wants a RHEL of the sysvinit era and which no machine " +
-		"here has; and launchd's `gui/` and `user/` domains, since every command there " +
-		"names `system/`"},
+		"here has; and launchd's `user/` domain and agents that are not loaded. A LaunchAgent " +
+		"loaded in the console user's `gui/` domain was started, restarted, stopped through " +
+		"`service.dead`, disabled and enabled on a macOS 15.7.9 runner, each checked against " +
+		"`launchctl print` on the gui target; before that the provider read it as not running " +
+		"while it ran (DIVERGENCE 5.150)"},
 
 	// `openssl_cert` is the one module here whose *mutating* path costs
 	// nothing to demonstrate: it writes a file it is told to write, in a

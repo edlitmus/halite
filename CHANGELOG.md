@@ -18,6 +18,17 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `service` on macOS manages the console user's LaunchAgents
+
+The launchd provider looked only in the system domain. For a
+LaunchAgent running in a logged-in user's session, `service.status`
+reported it as not running, `service.dead` would have reported it
+already stopped, and `service.start` and `service.stop` failed. A label
+the system domain doesn't have is now looked for in the console user's
+`gui` domain, and started, stopped, enabled and disabled there.
+LaunchDaemons are unaffected. Agents that aren't loaded, and other
+users' sessions, are not covered. DIVERGENCE 5.150.
+
 ### `group.present` on macOS no longer leaves a broken group behind
 
 On a Mac, asking `group.present` for a gid that another group already
