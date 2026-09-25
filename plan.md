@@ -919,6 +919,31 @@ Unchanged since the last revision, and verified again here.
   remains the cheap half and still runs on every change, because a build
   that is not reproducible from two paths on one machine will not be
   reproducible across two.
+
+  **Two builders is still two GitHub Ubuntu images, and that is not yet
+  "two machines".** SPEC 4.3 says two builders *on two machines*. On
+  2026-09-25 a `linux/amd64` build in the `golang:1.26.6` container on an
+  Apple-silicon Mac, from the same commit with the same stamps, was not
+  byte-identical to CI's. It was deterministic run to run, and its build
+  info and dependency list matched CI's exactly (DIVERGENCE 5.155). The
+  leading suspect is that the container ran amd64 under emulation. Two
+  stamping defects that also made builds differ were found on the way and
+  fixed (5.154, 5.155).
+
+  **Next: test a native Intel (amd64) Linux build that is not a GitHub
+  runner.** A lab host from `contrib/tofu`, or this estate's Ubuntu
+  machine if it is amd64, building the same commit with `make dist` under
+  the pinned toolchain, with its `SHA256SUMS` diffed against the one the
+  release workflow keeps. The outcome decides what comes next:
+  - **Identical:** the Mac difference was emulation, and the claim holds
+    for native builders. Record it, and consider adding that machine as a
+    third builder the release workflow compares against.
+  - **Different:** the build has a host-dependent input nobody has named.
+    Rebuild both sides *without* `-s -w`, so the symbol tables show which
+    symbol differs, before changing anything.
+
+  An arm64 Linux builder is the same question for the other architecture,
+  which CI only ever cross-compiles.
 - **What CI does not yet do.** *Updated 2026-09-25:* `release.yml` now
   signs keyless SLSA provenance for what its builders agreed on, and
   keeps the binaries for three days as a workflow artifact. It still

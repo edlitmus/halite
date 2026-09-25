@@ -18,7 +18,7 @@ what is built; [docs/](docs/) says how to use it.
 ## Try it
 
 ```sh
-make build
+make build        # on a Mac, gmake or bmake; see Building below
 sudo install -m 0755 bin/halite-node /usr/local/bin/
 
 mkdir -p /srv/halite/states
@@ -359,6 +359,14 @@ make saltdiff   # the differential against Salt, in a container
 make zfscheck   # the zpool module against a real pool, in a VM
 make racecheck  # `race` in a container, for a host with no C compiler
 ```
+
+The Makefile is written for BSD make and for GNU make 4.0 or later. **On a
+Mac, `/usr/bin/make` is GNU make 3.81**, which silently ignores the `!=`
+assignments that set the version stamp and the install paths. So `make
+build`, `release`, `dist`, the FIPS targets and `install` refuse to run
+under it and say why. Use `bmake`, or GNU make from Homebrew (`brew install
+make`, then `gmake`). `make check` and `make test` work with the stock
+`make`.
 
 `make race` is the race detector, and it is the one to use: FreeBSD and
 macOS have clang in base and Linux has gcc, so it runs natively on every
