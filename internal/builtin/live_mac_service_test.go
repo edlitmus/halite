@@ -560,7 +560,6 @@ func TestLiveMacServiceRefusesToMask(t *testing.T) {
 	}
 }
 
-
 // **A restart outside launchd's respawn throttle does not wait for it.**
 //
 // launchd holds a respawn until ten seconds after the job's last spawn

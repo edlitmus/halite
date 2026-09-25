@@ -1047,6 +1047,26 @@ func (launchdProvider) Restart(c *exec.Context, name string) error {
 	return launchdProvider{}.Start(c, name)
 }
 
+// Reload is a restart, because launchd has no reload.
+//
+// That costs nothing for a job that has been up longer than launchd's
+// respawn throttle -- ten seconds by default, the job's ThrottleInterval
+// -- and up to ten seconds for one respawned more recently, because the
+// restart waits for the respawn launchd is holding (DIVERGENCE 5.122).
+// Measured on a macOS 15.7.9 runner: 29ms outside the window, 10.1s
+// inside it (DIVERGENCE 5.149).
+//
+// Two alternatives were measured and are worse:
+//
+//   - `launchctl kickstart -k` does not get past the throttle either.
+//     Inside the window it took 10.0s against this provider's 10.1s,
+//     because it blocks until the same held respawn happens. On a
+//     *stopped* job it took 20s and launchd spawned the job twice.
+//   - `launchctl kill HUP` would be a reload for a daemon that handles
+//     SIGHUP, and would end one that does not. With KeepAlive false,
+//     which is launchd's default, nothing brings it back. A reload that
+//     can stop the service it was asked to refresh is not one to send
+//     on a guess about the program it is sending to.
 func (launchdProvider) Reload(c *exec.Context, name string) error {
 	return launchdProvider{}.Restart(c, name)
 }

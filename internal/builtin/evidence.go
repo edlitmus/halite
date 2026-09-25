@@ -239,7 +239,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"stopped, restarted, enabled, disabled and listed, each checked against " +
 		"`launchctl print` rather than the `launchctl list` the module reads, which found " +
 		"restart reporting success while launchd had only scheduled the respawn " +
-		"(DIVERGENCE 5.122). The **OpenRC** provider is driven against a real " +
+		"(DIVERGENCE 5.122). `reload` is a restart on launchd, which has no reload: it " +
+		"returned in 29ms for a job up longer than launchd's ten-second respawn throttle and " +
+		"in 10.1s inside it, and `launchctl kickstart -k` was measured no faster (DIVERGENCE " +
+		"5.149). The **OpenRC** provider is driven against a real " +
 		"`rc-service` and `rc-update` on Alpine 3.24 in the lab, on an init script the test " +
 		"installs: started, restarted (checked by the pid changing), stopped, enabled and " +
 		"disabled, each read back from `rc-update show` and the pidfile rather than from " +
