@@ -13730,6 +13730,84 @@ three programs it applies to.
 
 
 
+### 5.154 On a Mac, `make` stamped builds with nothing and nobody was told
+
+The Makefile sets its build stamps and install paths with `!=`. The
+comment above them said, correctly, that "GNU make has supported `!=`
+since 4.0". The `make` on every Mac is `/usr/bin/make`, **GNU make
+3.81**. It does not fail on `!=`. It reads `GIT_VERSION != git
+describe` as an assignment to a variable named `GIT_VERSION !` and
+carries on:
+
+```
+$ /usr/bin/make -p -n cross | grep GIT_
+GIT_COMMIT  ! = git rev-parse HEAD 2>/dev/null || echo unknown
+GIT_VERSION ! = git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev
+GIT_EPOCH   ! = git log -1 --format=%ct 2>/dev/null || echo 0
+```
+
+So on a Mac, `VERSION`, `COMMIT` and `SOURCE_DATE_EPOCH` were empty. A
+`make build`, `release` or `dist` produced binaries stamped with no
+version and no commit, without an error. `make install` saw `CONFDIR`,
+`STATEDIR` and `SERVICEDIR` as empty strings and would have built its
+paths from an empty prefix. This was found while trying to reproduce a
+CI build on a Mac. The Mac's digest could not have matched, because its
+stamps were blank.
+
+Every target that stamps a build or installs one now depends on
+`make-supports-bang`. That target evaluates a probe with `!=` and
+refuses, with instructions, when the probe comes back empty. Measured:
+`/usr/bin/make build` and `make install` refuse; bmake and GNU make
+4.4.1 pass. `TestEveryStampingTargetRefusesAMakeWithoutBang` reads the
+Makefile and fails for any target whose recipe uses `$(BUILDFLAGS)` or
+installs without the guard. It fails with the guard taken off
+`fips-cross`.
+
+**Not guarded, deliberately: `make check`.** The tests read no `!=`
+variable, so development on a Mac with `/usr/bin/make` keeps working.
+Only the targets whose output would be wrong refuse.
+
+### 5.155 The version stamp depended on the clone, not the commit
+
+With the release workflow keeping its binaries (#138, which this
+investigation needed), CI's `halite-node-linux-amd64` at `77d4c14` could at last
+be compared with a local build of the same commit. The two reported
+different versions:
+
+```
+/ci/halite-node-linux-amd64    halite-node 77d4c14+77d4c14da349
+dist/halite-node-linux-amd64   halite-node 77d4c14d+77d4c14da349
+```
+
+`GIT_VERSION` is `git describe --always`, and without `--abbrev` git
+chooses the length of an abbreviated hash from how many objects the
+repository holds. A fresh clone from GitHub gave seven characters, and
+a clone of the working repository gave eight. **The same clone gave
+eight straight after a `git fetch` and seven an hour later.** The stamp
+is compiled into the binary, so the digest was a function of the
+clone's object count as well as the commit.
+
+`GIT_VERSION` now passes `--abbrev=12`. That is a minimum, which git
+still lengthens if an abbreviation is ambiguous, and at twelve hex
+digits that does not happen in a repository this size. A fresh GitHub
+clone and the working repository both give `77d4c14da349`.
+`TestTheVersionStampHasAFixedAbbreviation` holds the flag.
+
+#### What is still unexplained
+
+With the stamp matching, a `linux/amd64` build in the `golang:1.26.6`
+container on an Apple-silicon Mac is **still not byte-identical** to
+CI's (`f51babdf…` against `dd8355ed…`). The container build is
+deterministic: two runs gave the same digest. Its build info and
+dependency list are identical to CI's. The difference sits in the Go
+build ID and in data shifted by a few bytes after it. The binaries are
+stripped, so no symbol table says which symbol grew. The leading
+suspect is that the container ran `linux/amd64` under emulation, where
+CI builds natively, but that has not been tested. SPEC 4.3's "two
+builders on two machines" is therefore demonstrated only for two
+GitHub Ubuntu images. A native amd64 builder that is not GitHub's is
+the next measurement.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

@@ -18,6 +18,19 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Builds from a Mac's default `make` now refuse instead of being stamped blank
+
+macOS's `/usr/bin/make` is GNU make 3.81, which silently ignores the
+Makefile's `!=` assignments. A Mac build came out with no version,
+commit or source date, and `make install` saw empty install paths.
+Build, release, dist, FIPS and install targets now stop with an
+explanation. Use `bmake` or GNU make 4.0 or later, for example
+`brew install make`, then run `gmake`. `make check` is unaffected.
+
+Version stamps now use a fixed 12-character commit abbreviation, so the
+same commit is stamped the same way in every clone. DIVERGENCE 5.154
+and 5.155.
+
 ### Release builds carry verifiable provenance
 
 `release.yml` now signs SLSA build provenance, keyless through Sigstore,

@@ -176,6 +176,10 @@ a base64 startup script instead.
 
 - **The `Makefile` is BSD make.** There is no `$(shell …)`; use `!=`. A
   GNU-ism fails quietly, not loudly. Recipe lines are separate shells.
+  The reverse trap is on a Mac: `/usr/bin/make` is GNU make 3.81, which
+  ignores `!=` silently, so build and install targets refuse to run under
+  it (`make-supports-bang`). Use `bmake` or `gmake` there; `make check`
+  still works with the stock one.
 - **One vendored dependency**, `golang.org/x/sys`, under a closed
   allowlist that `internal/buildpolicy` enforces. Adding one is a SPEC
   change and almost certainly the wrong answer — the project's own rule
