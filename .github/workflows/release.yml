@@ -198,3 +198,48 @@ jobs:
             echo "REPRODUCIBILITY FAILURE: the two builders disagree"
             exit 1
           fi
+
+  # SLSA build provenance for exactly the digests two builders agreed on.
+  #
+  # Keyless: the attestation is signed through Sigstore with this
+  # workflow's own OIDC identity, so there is no long-lived key to keep or
+  # to lose. That is the choice for now (SPEC 4.3, decided 2026-09-25); a
+  # detached signature per artifact, which SPEC 4.3 also asks for, waits on
+  # where a signing key would live, and no key belongs on a hosted runner.
+  #
+  # It attests the *manifest*, not files. `subject-checksums` takes the
+  # SHA256SUMS the compare job has just held equal across both builders,
+  # so the only digests given provenance are ones two independent builds
+  # produced -- the reproducibility check is the precondition, not a
+  # neighbouring job. No binary moves between jobs to do it.
+  #
+  # The gate is required here on every run, manual or not. A manual run
+  # lets the build proceed past a failed gate because "do two builders
+  # agree" is a question about the build (see the build job); an
+  # attestation is a statement about an artifact meant to be used, and
+  # the gate is what refuses one that is not fit to be.
+  #
+  # Verify an artifact with:
+  #
+  #   gh attestation verify halite-node-linux-amd64 --repo edlitmus/halite
+  attest:
+    name: provenance for what two builders agreed on
+    needs: [gate, compare]
+    if: ${{ needs.gate.result == 'success' && needs.compare.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: digests-ubuntu-24.04
+      - name: the manifest the builders agreed on
+        run: |
+          set -e
+          test -s digests-ubuntu-24.04.txt
+          echo "$(wc -l < digests-ubuntu-24.04.txt) artifacts"
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-checksums: digests-ubuntu-24.04.txt

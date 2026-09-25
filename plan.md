@@ -1128,7 +1128,13 @@ unblocks rather than by how hard it is.
   gate has to compare artifact digests rather than only binary ones, and
   archive reproducibility has to be proven on a throwaway tag** — cheap
   now, expensive to discover after five artifact kinds depend on it.
-- **Where the signing key lives.** A detached signature per artifact and
+- **Where the signing key lives.** *Partly answered 2026-09-25:
+  provenance first, keyless, in CI.* `release.yml`'s `attest` job signs
+  SLSA provenance through Sigstore with the workflow's OIDC identity, for
+  the manifest the two builders agreed on and only after the gate
+  passes. The detached per-artifact signature is still open, and the
+  question below is still the one to answer for it.
+  The original question: A detached signature per artifact and
   an in-toto/SLSA attestation naming the source commit, the toolchain
   digest and the builder identity. This estate already keeps PGP keys
   for pillar; whether release signing shares that custody, and whether
