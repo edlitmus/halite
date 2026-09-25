@@ -13227,6 +13227,10 @@ finished (`snap wait system seed.loaded`) and is a known source of flake, and
 a leg that fails intermittently is worse than one that skips two tests
 honestly. plan.md 7c.
 
+**Done the same day**, in 5.151: the leg installs `hello-world` after waiting
+on the seed, both tests run, and closing it found the test asserting
+something snapd does not guarantee.
+
 #### `firewall` is the part still open
 
 The old item was right about this and it is unchanged: `firewall` is
@@ -13438,6 +13442,88 @@ on every platform, and fails with the gui branch of `Status` removed.
   before.
 - **`service.get_all`** still lists the system domain only.
 - **A label loaded in both domains** is treated as the system job.
+### 5.151 The leg installs a snap, and the test stopped assuming one exists
+
+5.147 fixed the `linux` leg's filter so four live tests were selected, and two
+of them — both `TestLiveSnap*` — skipped anyway, on a green leg, because
+`ubuntu-24.04` ships snapd as a **deb** and installs no snaps. `snap list`
+there is empty and both tests skip by name with nothing to parse. This closes
+that, and closing it found a defect in the test.
+
+#### The test asserted something snapd does not guarantee
+
+`TestLiveSnapReadsTheRealList` named one row to check every column of:
+
+	// snapd itself is a snap on every machine that has snapd, which
+	// makes it the one row that can be named without installing
+	// anything.
+	raw, has := listed.Get("snapd")
+	if !has {
+		t.Fatalf("snapd is not in its own list, …")
+
+That sentence is false, and the machine that disproves it is the one the test
+now runs on. snapd installed from a deb is not itself a snap, so a host
+carrying only a `core`-based snap lists `core` and that snap and no `snapd`.
+On such a host the test **fatals for a host that is perfectly well**.
+
+It never fired, because the empty-list skip above it caught the only case
+anyone had run. Install one small snap — which is what this entry does — and
+the assertion becomes reachable. A fixture written from how snapd usually
+looks rather than from what it guarantees, which is 5.31's shape again and
+the reason this file exists at all.
+
+Every row's every column is checked now. No named snap, no assumption, and
+strictly more coverage: the header-driven split is the thing that can lose a
+column, and one row exercised it once.
+
+#### The leg installs `hello-world`
+
+The store's own throwaway: tens of kilobytes, no services. `snap wait system
+seed.loaded` first, because `snap install` during seeding fails with a
+complaint about the system not being ready.
+
+The *tests* still install nothing, deliberately — installing pulls from the
+store and takes a squashfs mount, which has no place in a test meant to run
+unattended against whatever machine is to hand. **A setup step is not the
+test**, and this leg already installs `quota`, `lvm2`, `mdadm`, `iptables`
+and `nftables` the same way.
+
+#### The leg can now say what skipped, and fails when snap does
+
+Two steps, and the first is the general one. This leg ran `go test -v`
+straight into the job log and nothing read it, so a skip here was invisible —
+which is precisely how two tests sat unrun while the leg was green for
+months. It tees its output and prints *"tests that ran / tests that skipped,
+with the reason each gave"*, which the `freebsd` leg has had for a while.
+The leg that selects the most tests did not have it.
+
+The second is specific and is an assertion rather than a report: **a
+`TestLiveSnap*` skip fails the leg.** The install step exists only so those
+two can run, and if it stops having that effect — a store outage, a renamed
+snap, an image that seeds differently — the tests go back to skipping and the
+leg goes back to being green about it. Reporting that would repeat the
+original mistake, so it is checked. Fewer than two passes with none skipped
+fails too, which catches the test being deleted or renamed.
+
+The assertion's shell was exercised against three transcripts before it
+shipped — both passing, one skipping, one passing alone — because a guard
+that is wrong about its own log is worse than no guard.
+
+#### What this does and does not establish
+
+It makes the `snap list` **parse** run on CI: the header-driven split, every
+column of every row, and the cross-check of each channel against `snap info`.
+That is the reading `snap` is `Captured` on, and until now nothing performed
+it here.
+
+It does **not** exercise the truncation this file was written for.
+`hello-world` tracks `latest/stable`, which is short; 5.112's defect needs a
+channel long enough for `snap list` to shorten with U+2026. The guard runs
+over whatever channels exist and will see none truncated, which shows the
+reader does not *introduce* truncation rather than that it handles it. A
+machine with a long-tracked snap is still the only thing that would show the
+original defect, and none is scheduled.
+
 
 ## 6. Everything else not started
 

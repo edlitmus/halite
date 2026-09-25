@@ -65,19 +65,35 @@ func TestLiveSnapReadsTheRealList(t *testing.T) {
 		t.Skip("this node has snapd and no snaps installed; there is no table to parse")
 	}
 
-	// snapd itself is a snap on every machine that has snapd, which
-	// makes it the one row that can be named without installing
-	// anything.
-	raw, has := listed.Get("snapd")
-	if !has {
-		t.Fatalf("snapd is not in its own list, which means a row did not parse: %v",
-			listed.StringKeys())
-	}
-	row := raw.(*value.Map)
-	for _, field := range []string{"version", "revision", "channel", "publisher", "notes"} {
-		v, _ := row.GetString(field)
-		if s, _ := v.(string); strings.TrimSpace(s) == "" {
-			t.Errorf("snapd's %s is empty; the header-driven split lost a column: %v", field, row)
+	// Every row's every column, rather than `snapd`'s.
+	//
+	// This used to name `snapd`, on the stated grounds that "snapd itself
+	// is a snap on every machine that has snapd, which makes it the one
+	// row that can be named without installing anything". That is not
+	// true, and the machine that disproved it is the one this test now
+	// runs on: `ubuntu-24.04` installs snapd as a **deb**, so `snap list`
+	// there is empty until something is installed, and a machine carrying
+	// only a `core`-based snap lists `core` and that snap and no `snapd`
+	// at all. On such a host the assertion failed for a host that is
+	// perfectly well -- it was a fixture written from how snapd usually
+	// looks rather than from what it guarantees.
+	//
+	// Checking every row is also strictly stronger: the header-driven
+	// split is what can lose a column, and one named row exercised it
+	// once. DIVERGENCE 5.151.
+	for _, name := range listed.StringKeys() {
+		raw, _ := listed.Get(name)
+		row, ok := raw.(*value.Map)
+		if !ok {
+			t.Errorf("%s is a %T rather than a row", name, raw)
+			continue
+		}
+		for _, field := range []string{"version", "revision", "channel", "publisher", "notes"} {
+			v, _ := row.GetString(field)
+			if s, _ := v.(string); strings.TrimSpace(s) == "" {
+				t.Errorf("%s's %s is empty; the header-driven split lost a column: %v",
+					name, field, row)
+			}
 		}
 	}
 

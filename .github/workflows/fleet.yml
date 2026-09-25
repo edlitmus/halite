@@ -197,6 +197,32 @@ jobs:
       - name: install the AppArmor tools
         run: sudo apt-get install -y --no-install-recommends apparmor-utils
 
+      # A snap to list.
+      #
+      # `ubuntu-24.04` ships snapd as a **deb** and installs no snaps, so
+      # `snap list` on it is empty and both `TestLiveSnap*` skip by name --
+      # which they did, invisibly, on a green leg, for as long as this leg
+      # has existed (DIVERGENCE 5.147). The module is `Captured` on exactly
+      # the reading those two tests perform, and the defect behind it
+      # (5.112: a channel truncated with U+2026, compared against a declared
+      # one, refreshing on every run of a correct node) was guarded by tests
+      # that never ran here.
+      #
+      # `hello-world` is the store's own throwaway: a few tens of kilobytes,
+      # no services, no daemons. The tests install nothing themselves and
+      # should not -- installing pulls from the store and takes a squashfs
+      # mount, which does not belong in a test that runs unattended against
+      # whatever machine is to hand. A setup step is not the test.
+      #
+      # The seed wait is not optional: on a fresh runner snapd may still be
+      # seeding, and `snap install` during seeding fails with a message
+      # about the system not being ready.
+      - name: install a snap for the snap module to read
+        run: |
+          sudo snap wait system seed.loaded
+          sudo snap install hello-world
+          snap list
+
       # The quota tools are a separate package everywhere, which is
       # itself the reason `quota.report` refuses by name rather than
       # returning an empty report when `repquota` is missing.
@@ -344,7 +370,52 @@ jobs:
       # explicitly instead.
       - name: drive hostname, sysctl, apparmor, netplan, service, pkg, quota and lvm
         run: |
-          sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1             go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid' ./internal/builtin/
+          set -e
+          # Teed rather than redirected, so a suite that hangs is still
+          # readable before the job's timeout, and the status carried
+          # through a file rather than $PIPESTATUS so that this reads the
+          # same as the freebsd leg.
+          { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 \
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid' ./internal/builtin/ 2>&1;
+            echo $? > /tmp/live.status; } | tee /tmp/live.txt
+          exit "$(cat /tmp/live.status)"
+
+      # A test that skips is not a test that ran, and this leg had no way
+      # of saying so: it printed `go test -v` straight to the log and
+      # nothing read it, which is how two snap tests sat unrun on a green
+      # leg. The freebsd leg has had this step for a while; the leg that
+      # selects the most tests did not. DIVERGENCE 5.148.
+      - name: what ran, and what skipped and why
+        if: always()
+        run: |
+          test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
+          printf 'tests that ran:     %s\n' "$(grep -c '^--- PASS' /tmp/live.txt || true)"
+          printf 'tests that skipped: %s\n' "$(grep -c '^--- SKIP' /tmp/live.txt || true)"
+          echo "--- skipped, with the reason each gave:"
+          awk '/^--- SKIP/ { print $3": "prev } { prev=$0 }' /tmp/live.txt || true
+
+      # The step above makes a skip visible; this one makes the snap skip
+      # *fail*. The install step exists only so these two can run, and if
+      # it stops having that effect -- a store outage, a renamed snap, a
+      # runner image that seeds differently -- the tests go back to
+      # skipping and the leg goes back to being green about it. That is
+      # the exact shape this leg was fixed for, so it is asserted rather
+      # than printed.
+      - name: the snap tests ran rather than skipping
+        if: always()
+        run: |
+          test -r /tmp/live.txt || { echo "the suite produced no output"; exit 1; }
+          if grep -q '^--- SKIP: TestLiveSnap' /tmp/live.txt; then
+            grep -B 1 '^--- SKIP: TestLiveSnap' /tmp/live.txt || true
+            echo '::error::a TestLiveSnap test skipped, so the snap table had nothing in it and the module has not been read. The install step above is what should have prevented that; its output says what happened.'
+            exit 1
+          fi
+          passed=$(grep -c '^--- PASS: TestLiveSnap' /tmp/live.txt || true)
+          echo "TestLiveSnap tests that passed: $passed"
+          if [ "$passed" -lt 2 ]; then
+            echo '::error::fewer than the two TestLiveSnap tests passed, and none skipped, so one of them failed or stopped existing. Both are meant to run here.'
+            exit 1
+          fi
 
       # Put back, for the same reason the tests restore what they touch:
       # the runner is thrown away, and a cleanup that only works because
