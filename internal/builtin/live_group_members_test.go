@@ -121,6 +121,29 @@ func TestLiveGroupMembersAreExactlyTheList(t *testing.T) {
 		expect(t, u2, u3)
 	})
 
+	// An account whose *primary* group this is. It is not a member in
+	// the sense `members` sets -- that is the group's own member list,
+	// `getent`'s fourth column and Salt's gr_mem -- and no member-list
+	// tool can take a primary group away. So a list that does not name
+	// it must still converge, and must not try.
+	t.Run("an account whose primary group it is is left alone", func(t *testing.T) {
+		u4 := group + "u4"
+		t.Cleanup(func() { _, _ = r.States.Call(c, "user.absent", value.MapOf("name", u4)) })
+		res, err := r.States.Call(c, "user.present", value.MapOf("name", u4, "gid", group,
+			"shell", "/usr/bin/false", "home", "/tmp/"+u4, "createhome", false))
+		if err != nil || !res.Succeeded() {
+			t.Fatalf("user.present %s with primary group %s: %v %+v", u4, group, err, res)
+		}
+		ok, changed, comment := set(t, false, u2, u3)
+		t.Logf("%s: members [u2 u3] with %s's primary group %s: ok=%v changed=%v %q",
+			runtime.GOOS, u4, group, ok, changed, comment)
+		if !ok || changed {
+			t.Errorf("a primary-group account made members [u2 u3] fail or change: ok=%v changed=%v %s",
+				ok, changed, comment)
+		}
+		expect(t, u2, u3)
+	})
+
 	t.Run("an empty list empties the group", func(t *testing.T) {
 		if ok, changed, comment := set(t, false); !ok || !changed {
 			t.Errorf("emptying members: ok=%v changed=%v %s", ok, changed, comment)
