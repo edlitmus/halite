@@ -953,8 +953,10 @@ Unchanged since the last revision, and verified again here.
   `SHA256SUMS`.
 - **What CI does not yet do.** *Updated 2026-09-25:* `release.yml` now
   signs keyless SLSA provenance for what its builders agreed on, and
-  keeps the binaries for three days as a workflow artifact. It still
-  publishes no release. The rest of this bullet, as written: it does not publish anything: SPEC 27.2's
+  keeps the binaries for three days as a workflow artifact. *And
+  2026-09-25 again:* on a `v*` tag its `publish` job now creates the
+  GitHub release, with the per-platform archives and SHA256SUMS (§3.6
+  item 2). No tag has been pushed, so it has not published one. The rest of this bullet, as written: it does not publish anything: SPEC 27.2's
   artifacts do not exist to publish (§3.5's first bullet is unchanged),
   so `release.yml` proves the build is reproducible and stops there. It
   runs on GitHub-hosted runners, which is a dependency SPEC does not
@@ -1067,7 +1069,15 @@ unblocks rather than by how hard it is.
    artifact kind attaches to: a tarball, a package or an image is
    reproducible against a line in it, and SPEC 27.2's SBOM and signature
    are per artifact, which is per line.
-2. **Tarballs.** SPEC 27.2 describes them as "static binaries plus
+2. ~~**Tarballs.**~~ **Done 2026-09-25, with the release publish job.**
+   `tools/disttar`, standard library only, assembles one archive per
+   platform in `make dist`, before SHA256SUMS, with every time, owner,
+   mode and order pinned; the two-builder compare now holds 68 lines
+   (51 binaries, 17 archives). `release.yml`'s `publish` job uploads the
+   archives and SHA256SUMS on a `v*` tag, after the gate, the compare and
+   the attestation, having checked the files against the compared
+   manifest; `v0.*` and suffixed tags are pre-releases. A manual run does
+   everything but publish. SPEC 27.2 describes them as "static binaries plus
    example configuration and the manual pages, for air-gapped and
    container use", and every one of those inputs already exists in
    `contrib/`. This is the artifact this fleet would actually use, since
