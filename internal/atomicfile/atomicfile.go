@@ -31,6 +31,30 @@ import (
 // because a rename across filesystems is not atomic and on some is not
 // permitted at all.
 func Write(path string, data []byte, mode os.FileMode) error {
+	return WritePrepared(path, data, mode, nil)
+}
+
+// WritePrepared is Write with one step inserted between the finished
+// temporary file and the rename.
+//
+// It exists for one caller, and for a reason worth stating rather than
+// generalising: internal/keystore has to hand its records to the account
+// the store directory belongs to, and it has to do that *before* the
+// rename, or the record is briefly reachable at its final path by the
+// wrong account and is then left owned by the wrong one. There is no way
+// to express that from outside this function, so keystore had its own
+// copy of the whole helper -- and that copy had drifted in the two ways a
+// copy does.
+//
+// It called `tmp.Chmod(mode)` rather than internal/fileperm, so on
+// Windows a record written with mode 0600 got the read-only attribute and
+// whatever ACL it inherited from its directory: the mode said private and
+// the file was not. And it never synced the directory after the rename,
+// so a power loss could leave a record with no name.
+//
+// `prepare` receives the temporary file's path and may be nil.
+// DIVERGENCE 5.144.
+func WritePrepared(path string, data []byte, mode os.FileMode, prepare func(tmpPath string) error) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
@@ -53,6 +77,11 @@ func Write(path string, data []byte, mode os.FileMode) error {
 	}
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	if prepare != nil {
+		if err := prepare(name); err != nil {
+			return fmt.Errorf("writing %s: %w", path, err)
+		}
 	}
 	if err := Rename(name, path); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)

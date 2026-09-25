@@ -89,6 +89,32 @@ dry run changes nothing, and `sysrc.absent` removes it. The module is
 Nothing about the module changed. Its first run did find a defect, in the
 test: the opening assertion expected `sysrc.get` to fail for a setting
 that is not there, where it documents an empty string.
+### `keys token delete`, and three files written more carefully
+
+- **`halite-hub keys token delete <id>`** is new. Without it no command
+  removed a bootstrap token's record, so every token ever minted stayed on
+  the hub's disk — and `keys token list` on an autoscaling fleet, which is
+  what tokens are for, grew until nobody read it. Prefer
+  `keys token revoke`: a revoked token admits nothing and keeps the record
+  of what it already admitted, which is what answers "what did this token
+  let in". Delete says what it is forgetting.
+- **The key store, the PKI store and a node's runtime configuration** each
+  had their own copy of the atomic-write helper, and each copy had lost the
+  same three things: the Windows access control list for a private mode,
+  the Windows rename retry, and the directory sync after the rename. On
+  Windows a record written `0600` was not private and a rename could fail
+  against a concurrent reader. All three go through `internal/atomicfile`
+  now, and a test refuses a fourth copy.
+- **The render sandbox** leaked four file descriptors per failed start, on
+  a path a typo in `render_sandbox_user` reaches: measured at exactly 4.0
+  per attempt over 50 attempts. It leaks none now.
+- **The render sandbox child** is ended when the agent stops rather than
+  left to notice its input has gone.
+
+Not changed, and recorded in plan.md: `internal/pki` restricts neither the
+CA private key nor its directory by access control list on Windows, where
+the mode it uses means nothing. No hub in this estate runs on Windows.
+
 ### `--root` now moves what it says it moves
 
 `--root <dir>` is documented on all three binaries as the configuration

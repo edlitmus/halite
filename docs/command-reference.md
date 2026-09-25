@@ -421,6 +421,7 @@ certificate it generated the key for. SPEC section 7.
 | `auto_accept: True` | `halite-hub keys token create --ttl 1h --nodes 'web*'` | works |
 | no equivalent | `halite-hub keys token list` | works |
 | no equivalent | `halite-hub keys token revoke <id>` | works |
+| no equivalent | `halite-hub keys token delete <id>` | works |
 | the minion generates a key on first start | `halite-node enroll` | works | <!-- lexicon:allow -->
 | no equivalent | `halite-node renew` | works |
 | `salt-minion` (the daemon) | `halite-node connect` | works | <!-- lexicon:allow -->

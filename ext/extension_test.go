@@ -261,14 +261,40 @@ func TestAnExtensionWithNoHandlerSaysSo(t *testing.T) {
 	}
 }
 
-// Every kind this package names is one the host will accept.
-func TestTheKindsAreConsistent(t *testing.T) {
-	for _, k := range Kinds {
-		if !ValidKind(k) {
-			t.Errorf("%s is listed and not valid", k)
+// Every kind has a named constant, and no constant is missing from the
+// list.
+//
+// This test used to walk `Kinds` asserting `ValidKind` of each, which
+// cannot fail: `ValidKind` is `slices.Contains(Kinds, …)`, so the two
+// agreed by construction. Its comment said it checked that every kind
+// this package names "is one the host will accept", and it never looked at
+// the host; the host held a second hand-written list of the same twelve
+// strings. That list is `ext.Kinds` now, so the agreement is the
+// assignment rather than an assertion, and what is left worth checking is
+// that the exported constants and the list say the same thing -- which is
+// the pair a new kind can break, by adding one and forgetting the other.
+// DIVERGENCE 5.144.
+func TestEveryKindConstantIsInTheList(t *testing.T) {
+	constants := map[string]string{
+		"KindModule": KindModule, "KindState": KindState, "KindGrain": KindGrain,
+		"KindBeacon": KindBeacon, "KindReturner": KindReturner, "KindPillar": KindPillar,
+		"KindRunner": KindRunner, "KindRenderer": KindRenderer, "KindAuth": KindAuth,
+		"KindRoster": KindRoster, "KindFileServer": KindFileServer, "KindSigner": KindSigner,
+	}
+	if len(constants) != len(Kinds) {
+		t.Errorf("there are %d named kind constants and %d entries in Kinds; "+
+			"a kind added to one and not the other is accepted in one place and refused "+
+			"in the other", len(constants), len(Kinds))
+	}
+	for name, value := range constants {
+		if !ValidKind(value) {
+			t.Errorf("%s is %q and is not in Kinds", name, value)
 		}
 	}
 	if ValidKind("pilar") {
 		t.Error("a misspelt kind was accepted")
+	}
+	if ValidKind("") {
+		t.Error("the empty string was accepted as a kind")
 	}
 }

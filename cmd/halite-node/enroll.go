@@ -360,6 +360,16 @@ func runConnect(args *cli.Args) int {
 	n.startEvidence()
 	defer n.stopEvidence("the agent stopped")
 
+	// The render sandbox child, ended deliberately rather than left to
+	// notice its stdin has gone. `closeRenderSandbox` was written and
+	// nothing called it; the child does exit on EOF when this process
+	// does, so this is about the graceful stop being graceful -- the
+	// child is reaped here, in this process's own time, instead of
+	// depending on the order in which a dying process's pipes are torn
+	// down. It is a no-op when no render ever started one.
+	// DIVERGENCE 5.144.
+	defer n.closeRenderSandbox()
+
 	// The executor runs jobs; the loop below reads the stream. They are
 	// separate goroutines with a bounded queue between them, per SPEC
 	// 9.6, so a state run that takes ten minutes does not stop the node
