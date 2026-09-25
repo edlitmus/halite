@@ -12508,6 +12508,10 @@ All nine walkers skip it. With the worktree present, `make check`
 passes. With the check taken back out of `TestNoMathRand`, the failure
 above returns.
 
+5.146 applied the same package to three more audits, written in the
+same week, which read the second copy in three further ways. That
+makes twelve walkers sharing one rule.
+
 #### What this does not cover
 
 - **A copy of the tree that is not a git checkout**, such as an
