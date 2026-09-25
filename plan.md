@@ -176,9 +176,11 @@ bugs that only a platform without unlink-while-open could show.
 had never run the suite; it runs on every change now, and found two
 defects within five minutes of a runner existing — see §1.3. FreeBSD is
 the development platform, has run the suite for a long time, and has no
-CI because GitHub hosts no runner for it. Linux arm64 has still never
-run it, though macOS in CI is arm64, so the platform-neutral code now
-runs on that architecture somewhere.
+CI because GitHub hosts no runner for it. ~~Linux arm64 has still never
+run it~~ -- it has, natively, on `ref-salt1`, an EC2 arm64 host running
+Ubuntu 22.04 with a FIPS kernel: the suite, and a hub and a node from the
+`-fips` artifacts (item 13, DIVERGENCE 5.83 and 5.84). macOS in CI is
+arm64 as well.
 
 **What Windows still lacks** is the module set, not the platform work:
 `win_dacl`, `win_service`, `win_registry` and `win_task` ship; the other
@@ -942,8 +944,13 @@ Unchanged since the last revision, and verified again here.
     Rebuild both sides *without* `-s -w`, so the symbol tables show which
     symbol differs, before changing anything.
 
-  An arm64 Linux builder is the same question for the other architecture,
-  which CI only ever cross-compiles.
+  arm64 is a different case. It has been built and run natively, on
+  `ref-salt1` (EC2, Ubuntu 22.04, FIPS kernel; item 13, DIVERGENCE 5.83
+  and 5.84). What has not been measured is whether a native arm64 build is
+  **byte-identical** to the binary CI cross-compiles for `linux/arm64`, and
+  `ref-salt1` is the machine to do it on. Same procedure: `make dist` at a
+  commit the release workflow has built, diffed against its
+  `SHA256SUMS`.
 - **What CI does not yet do.** *Updated 2026-09-25:* `release.yml` now
   signs keyless SLSA provenance for what its builders agreed on, and
   keeps the binaries for three days as a workflow artifact. It still
