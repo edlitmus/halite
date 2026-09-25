@@ -502,10 +502,11 @@ happen on one machine.
 
 ## What will be different
 
-Four things about the tree bite in practice, and all four are in the
-Step 0 report; the fifth is about the estate rather than the tree, so
-the audit cannot see it. [migrating-from-salt.md](migrating-from-salt.md)
-covers them in full:
+Six things bite in practice. Four of them are in the Step 0 report; the
+other two are not, because one is a state default this build inverts and
+the other is about the estate rather than the tree, and the audit reads
+neither. [migrating-from-salt.md](migrating-from-salt.md) covers them in
+full:
 
 1. **`cmd.run` uses a shell, as Salt's does.** Pipes, redirections and
    `&&` work as they stand. `cmd_default_shell: false` is the hardened
@@ -527,13 +528,28 @@ covers them in full:
    This paragraph used to say the opposite — that the words were strings
    unless you set `yaml_bool_11: true` — which made the advice a no-op and
    the stated behaviour inverted.
-5. **The hub runs unprivileged.** Salt's daemon ran as root and read
+5. **`user.present` leaves groups it was not asked about alone.**
+   Salt's `remove_groups` defaults to **true**, so Salt's `groups:` is the
+   account's complete supplementary set and anything not listed is taken
+   away. Here it defaults to **false**: `groups:` means "the groups this
+   account must be in", and a membership added by hand survives a run that
+   never named it. Set `remove_groups: true` for Salt's behaviour, on the
+   states that want it.
+
+   The Step 0 audit does not flag this, because it reads the tree for
+   things that will not work rather than for things that will work
+   differently, and a `user.present` with `groups:` is valid either way.
+   Grep your tree for `groups:` under `user.present` if any of it relies
+   on memberships being pruned.
+
+6. **The hub runs unprivileged.** Salt's daemon ran as root and read
    whatever it liked. <!-- lexicon:allow --> Every directory the hub
    touches — its PKI, its state, its cache, its GPG keyring — has to be
    readable by the account it runs as, and the symptoms of one that is
-   not name neither the directory nor the account. This is the one the
-   Step 0 audit cannot see, because it is about the estate rather than
-   the tree.
+   not name neither the directory nor the account. The Step 0 audit
+   cannot see this one either, and for a different reason from item 5: it
+   is about the estate rather than the tree, and the audit reads only the
+   tree.
 
 And two that are better rather than different:
 

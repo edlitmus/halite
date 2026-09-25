@@ -53,7 +53,7 @@ halite-hub migrate /srv/salt --out json           # for a pipeline
 Run it before anything else. It answers "how big is this?" in seconds,
 and the answer is usually smaller than expected.
 
-## The five differences that will actually bite
+## The six differences that will actually bite
 
 ### Undefined names are an error
 
@@ -152,6 +152,35 @@ asking for the agent's own copy to be written too, is not a parameter of
 this state at all — this build always writes that copy — so a tree
 carrying it gets the unknown-argument error naming the file, the line and
 the key.
+
+### `user.present` does not prune groups
+
+Salt's `remove_groups` defaults to **true**, so a Salt `user.present` with
+`groups:` declares the account's *complete* supplementary set: every
+membership the tree does not name is removed on every run.
+
+Here it defaults to **false**. `groups:` means "the groups this account
+must be in", and anything else the account belongs to is left alone. Set
+`remove_groups: true` on the states that want Salt's meaning.
+
+The default is inverted deliberately, and the reason is the first run
+rather than the steady state: with Salt's default, the first highstate
+after a migration would strip every membership added by hand on every host
+at once — an operator's own account removed from `wheel`, a service
+account removed from a group some other tool granted — and nothing in the
+tree would record what had been taken away. Reversing it makes the
+destructive reading the one you have to ask for.
+
+Two details worth knowing before you set it:
+
+- `remove_groups: true` with no `groups:` is refused rather than treated as
+  "remove everything", because the two readings are too far apart to guess
+  between.
+- The account's primary group is never removed, whatever the list says.
+
+This is the one difference in this section that the Step 0 audit does not
+report, because a `user.present` with `groups:` is valid either way: it
+works, and it works differently. Grep your tree for it.
 
 ## Encrypted pillar
 

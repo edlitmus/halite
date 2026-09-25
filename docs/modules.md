@@ -7609,7 +7609,7 @@ timezone.get_zone()
 
 #### `timezone.list_zones`
 
-Return the time zone names this node will accept.
+Return the time zone names this node will accept. On macOS as root these are `systemsetup`'s own, which exclude `UTC` and the `backward` aliases the tz tree carries; unprivileged, the tz tree's list is returned instead, which is a superset.
 
 ```
 timezone.list_zones()
@@ -10901,7 +10901,7 @@ timezone.system(name: string)
 
 | Parameter | Type | Default | Meaning |
 |---|---|---|---|
-| `name` | string | — | The zone, named as this platform names it. Defaults to the state ID. |
+| `name` | string | — | The zone, named as this platform names it. Defaults to the state ID. On macOS the accepted names are `systemsetup -listtimezones`'s rather than the tz tree's: there is no `UTC` (use `GMT`) and no `backward` alias such as `US/Pacific`. |
 
 *changes the system · honours `--test` · SPEC section 15.5*
 
