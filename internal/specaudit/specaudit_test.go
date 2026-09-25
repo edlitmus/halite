@@ -18,6 +18,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/builtin"
 	"github.com/edlitmus/halite/internal/hub"
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 const (
@@ -669,6 +670,9 @@ func TestNothingClaimsADeliveredPhase(t *testing.T) {
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", "bin", "testdata":
+				return filepath.SkipDir
+			}
+			if repotree.OtherCheckout(root, path) {
 				return filepath.SkipDir
 			}
 			return nil

@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // repoRoot walks up from the test's working directory to the module root.
@@ -109,7 +111,8 @@ func TestEveryScenarioHasATestThatExercisesIt(t *testing.T) {
 			return err
 		}
 		if info.IsDir() {
-			if name := info.Name(); name == "vendor" || name == ".git" || name == "testdata" {
+			if name := info.Name(); name == "vendor" || name == ".git" || name == "testdata" ||
+				repotree.OtherCheckout(root, path) {
 				return filepath.SkipDir
 			}
 			return nil

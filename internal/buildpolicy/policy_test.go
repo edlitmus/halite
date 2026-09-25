@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // repoRoot walks up from the test's working directory to the module root.
@@ -356,7 +358,7 @@ func TestNoMathRand(t *testing.T) {
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
 		if info.IsDir() {
-			if rel == "vendor" || rel == ".git" {
+			if rel == "vendor" || rel == ".git" || repotree.OtherCheckout(root, path) {
 				return filepath.SkipDir
 			}
 			return nil

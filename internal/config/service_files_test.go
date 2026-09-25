@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // readServiceFiles returns every file under contrib/rc.d and
@@ -93,7 +95,13 @@ func TestRcScriptsUsingDaemonNameTheProcessTheySupervise(t *testing.T) {
 // ExecReload therefore turned `systemctl reload` into an outage.
 func TestNoUnitOffersAReloadThatWouldKillTheService(t *testing.T) {
 	handled := false
-	err := filepath.Walk(filepath.Join("..", ".."), func(path string, info os.FileInfo, err error) error {
+	repo := filepath.Join("..", "..")
+	err := filepath.Walk(repo, func(path string, info os.FileInfo, err error) error {
+		// Another checkout inside this one could register SIGHUP and
+		// make this pass for code that is not in the tree.
+		if err == nil && info.IsDir() && repotree.OtherCheckout(repo, path) {
+			return filepath.SkipDir
+		}
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}

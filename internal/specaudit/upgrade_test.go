@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // SPEC 31's Upgrade row, held to the tests that cover it.
@@ -152,7 +154,8 @@ func markersInTree(t *testing.T) map[string][]string {
 			return err
 		}
 		if info.IsDir() {
-			if name := info.Name(); name == "vendor" || name == ".git" || name == "testdata" {
+			if name := info.Name(); name == "vendor" || name == ".git" || name == "testdata" ||
+				repotree.OtherCheckout(root, path) {
 				return filepath.SkipDir
 			}
 			return nil
