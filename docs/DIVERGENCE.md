@@ -13078,6 +13078,118 @@ version needs to distinguish a walk of the repository from a walk of a
 temporary directory, and the audits do both.
 
 
+### 5.147 Four live tests that no leg could run, and a claim wrong in two ways
+
+`plan.md` 7b had said, since it was written, that *"22 live tests match no
+leg's `-run` filter at all"*, and admitted in its own last sentence that the
+analysis was *"read off `run.sh` and the filters rather than observed on a
+runner"*. Asked to fix it, because it is wrong. It is wrong twice.
+
+#### Every live test matches some leg's filter
+
+Two of the four legs pass a bare `-run TestLive`: `freebsd`, and `debian`
+through `make fleetcheck`. So the count could not have been 22 or any other
+number — the framing has no instances. A pattern-level analysis was never
+going to answer the question it was asked.
+
+#### The filter selects; the environment decides
+
+The second error is the more interesting one, because it is why the
+catch-alls buy nothing. **There are two gate variables, not one.**
+`HALITE_SYSTEM_LIVE=1` is set by the `linux`, `freebsd` and `macos` legs.
+`HALITE_FLEET_LIVE=1` is exported by `contrib/docker/fleet/run.sh`, and it
+is what the Debian tests read.
+
+So the `debian` leg selects all 124 live tests and can execute only the
+`HALITE_FLEET_LIVE` ones; every `HALITE_SYSTEM_LIVE` test it selects skips
+on the variable. Its catch-all is a catch-all for a different suite. "Does
+some filter match it" and "can it run anywhere" are different questions, and
+only the second is worth asking.
+
+#### What running it actually says
+
+Measured from the four legs' own PASS and SKIP lines on Fleet run
+36116721474 (2026-09-25), all four green. **124 `TestLive*` functions; 106
+pass somewhere; 18 pass nowhere.** The 18 are three different things:
+
+| | count | |
+|---|---|---|
+| needs a machine CI does not have | 13 | `TestLiveAPK*` ×3, `TestLiveOpenRC*` ×5, `TestLiveSysvinit*` ×5 |
+| deliberate second opt-in | 1 | `TestLiveRebootSchedulesAndCancelsWithoutRebooting` |
+| **could have run and never did** | **4** | both `TestLiveSnap*`, `TestLiveModprobeReadsRealModules`, `TestLiveUdevReadsRealDevices` |
+
+The thirteen are the lab's rows and the lab drove them (5.124, 5.126); a leg
+would have to *be* an Alpine and a sysvinit host. The reboot test wants
+`HALITE_REBOOT_LIVE=1` on top and says so in its skip: *"deliberately not
+covered by HALITE_SYSTEM_LIVE alone"*. Neither is a defect.
+
+The four are. They are Linux-only and `HALITE_SYSTEM_LIVE`-gated, so the
+`linux` leg is the only place they can execute, and its filter named
+`TestLiveModprobeLoadsAndPersists` and `TestLiveUdevControlAsRoot` — the
+*siblings* — and no `TestLiveSnap*` at all. Two families where one of two
+members ran, and one family nobody had named.
+
+`snap` is `Captured` on exactly the reading these two tests perform, and
+`internal/builtin/snap*.go` was not even in the leg's trigger paths, so a
+change to the module would not have run the leg that now drives it.
+
+#### The fix, and the guard, and what the guard does not see
+
+The filter says `TestLiveModprobe*`, `TestLiveUdev*` and `TestLiveSnap*` now:
+40 tests selected became 44, exactly the four, none lost. `snap*.go` is in
+the trigger paths and the leg's name says `snap`.
+
+`TestTheLinuxLegsFilterNamesFamiliesNotTests` holds the rule that a pattern
+must be a **family prefix and never a complete test name** — a prefix picks
+up a sibling written later and a complete name cannot. It also fails a
+pattern matching no test. Demonstrated both ways: reinstating the old filter
+names both offenders, and misspelling `TestLiveSnap*` as `TestLiveSnapd*` is
+reported as selecting nothing.
+
+**It would not have found the snap case**, and that is worth stating rather
+than implying the hole is closed: a family named nowhere is invisible to a
+rule about how patterns are spelled. What found it was reading four legs'
+logs by hand, and the general form — which tests *should* be runnable on a
+given runner — depends on the tools that runner has and is not in the tree.
+
+#### What the leg then said: two of the four, and why
+
+The four were selected and the leg went green, which is exactly the
+combination worth not trusting. Reading its PASS and SKIP lines rather than
+the conclusion (Fleet run 36144631929):
+
+- `TestLiveModprobeReadsRealModules` — **PASS**
+- `TestLiveUdevReadsRealDevices` — **PASS**
+- both `TestLiveSnap*` — **SKIP**, *"this node has snapd and no snaps
+  installed; there is no table to parse"* and *"no snaps installed on this
+  node"*
+
+So the filter fix reached two of the four. The `ubuntu-24.04` image carries
+snapd and **no snaps**, and both snap tests read `snap list` and skip by name
+when the table is empty — correctly, since there is nothing to parse.
+
+A green leg with two tests still not running is the same shape as the bug
+this entry is about: the leg is not lying, it is answering a narrower
+question than a reader assumes. `snap` stays `Captured` on a reading that CI
+still does not perform.
+
+The leg could install one snap in a setup step, the way it already installs
+`quota`, `lvm2`, `mdadm`, `iptables` and `nftables` — the *test* declines to
+install anything, deliberately, but a setup step is not the test. It is not
+done here because `snap install` on a hosted runner needs the seeding to have
+finished (`snap wait system seed.loaded`) and is a known source of flake, and
+a leg that fails intermittently is worse than one that skips two tests
+honestly. plan.md 7c.
+
+#### `firewall` is the part still open
+
+The old item was right about this and it is unchanged: `firewall` is
+`Hardware` with no `TestLive*` anywhere. There is nothing to measure,
+because there is no test to run; the level rests on work recorded in the
+ledger. Either a live test exists for it or the level is an assertion, and
+today it is an assertion.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
