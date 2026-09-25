@@ -13004,6 +13004,80 @@ reads like the section was deleted. It matches the stable tail now and
 reads the number out of whatever heading it finds.
 
 
+### 5.146 Three audits I wrote this week read a second checkout, three ways
+
+A parallel session found that `TestNoMathRand` was failing on a Claude Code
+worktree under `.claude/worktrees/` — a whole second copy of the
+repository, at another commit, sitting inside the tree every repo-walking
+audit walks. Nine walkers had the fault and each carried its own list of
+directories to skip; the lists had already drifted apart. That work is that
+session's, and it introduced `internal/repotree`.
+
+Three of my own test files walk the tree the same way, written over the last
+two days, and all three have it -- four call sites between them, because one
+file walks twice. This entry is about measuring which and how, because "they read
+worktrees" turned out to describe three different symptoms and one
+non-symptom.
+
+#### What each one actually did
+
+A real worktree, made with `git worktree add`, pointed at an older commit,
+and each walker run against it:
+
+- **`TestNoRootDerivedConstantIsAConfigFallback`** — **false findings**,
+  four of them, naming `.claude/worktrees/probe/cmd/halite-api/serve.go:191`
+  and three siblings. The nested copy predates 5.143, so its call sites
+  still pass `config.DefaultPKIDir`, and the audit reported code that is not
+  in this tree as though somebody had just written it.
+- **`TestNothingElseWritesThroughATempFileAndARename`** — **false
+  findings**, three, and by a different mechanism: its exemption is keyed by
+  path, `internal/builtin/archive_remote.go:fetchRemoteArchive`, and the
+  nested copy's path does not match it. So the one function that is
+  deliberately allowed to pair a temporary file with a rename was reported
+  as a violation. That is 5.141's shape exactly — an allowlist keyed by a
+  path that a second copy does not have.
+- **`TestDocumentedDefaultsMatchTheCodesFallback`** — **no false finding,
+  and a false count.** It compared **140** literal fallbacks where there are
+  70, and its list of what it could not compare came back with 217 entries
+  doubled to 444, half of them naming the nested copy. The number it logs
+  *specifically so that its blind spot is visible rather than implied* was
+  the thing that was wrong. Nothing failed, which is why this one would have
+  gone on being wrong.
+- **`TestACountedListHasThatManyItems`** and `docsaudit`'s flag audit — **not
+  affected**, and worth saying so rather than fixing them anyway: both read
+  named files rather than walking, so there is no second copy to find.
+
+Three walkers, three symptoms, one cause.
+
+#### The fix is the other session's, taken whole
+
+`internal/repotree.OtherCheckout` is copied byte for byte from that
+session's branch, its test included, rather than reimplemented. The point is
+not politeness: a second implementation of "is this directory another
+checkout" is a fifth copy of a rule, which is the defect 5.144 spent an
+afternoon removing from `atomicfile`. Taking the file identically also means
+that when their branch rebases onto this, the two copies collapse instead of
+conflicting.
+
+Demonstrated by removing the call from one walker and watching the three
+false findings come back, then restoring it. The counts are the other half
+of the proof: 140 comparisons become 70, 444 uncompared become 217, and the
+logs name no path under `.claude/`.
+
+#### What is not covered
+
+Only the four walkers I added. The other session's branch fixes the nine
+that predate them and is the authority on that set; if it lands after this,
+its `internal/repotree` is already here and its nine changes still apply.
+
+Nothing stops a *tenth* walker being written without the check. A guard
+would have to recognise a `filepath.WalkDir` from the repository root and
+ask whether `OtherCheckout` appears in it, which is checkable and is not
+built here — recorded as plan.md 19i rather than done, because the honest
+version needs to distinguish a walk of the repository from a walk of a
+temporary directory, and the audits do both.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

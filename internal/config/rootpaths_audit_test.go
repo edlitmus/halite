@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/value"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // A setting documented as living under the configuration root resolves
@@ -67,6 +69,14 @@ func TestNoRootDerivedConstantIsAConfigFallback(t *testing.T) {
 		if d.IsDir() {
 			switch d.Name() {
 			case ".git", "vendor", "bin", "dist", "testdata", "contrib":
+				return fs.SkipDir
+			}
+			// A second checkout inside this one is not this tree:
+			// `.claude/worktrees/` holds one at another commit, and this
+			// walker would otherwise read it and report its contents as
+			// findings against this tree. See internal/repotree.
+			// DIVERGENCE 5.146.
+			if repotree.OtherCheckout(root, path) {
 				return fs.SkipDir
 			}
 			return nil
