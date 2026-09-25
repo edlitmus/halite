@@ -2277,6 +2277,26 @@ somebody would otherwise rediscover.
     reader to grep their own tree, which is a worse answer than a finding
     with a file and a line. DIVERGENCE 5.145.
 
+19i. **Nothing stops a tenth repo-walking audit being written without the
+    other-checkout check.** `internal/repotree.OtherCheckout` has four call
+    sites, across three of my test files (DIVERGENCE 5.146); the nine walkers
+    that predate them are fixed on the branch that found the fault and are
+    not on `main` yet. A tenth written next month will read
+    `.claude/worktrees/` again, reporting another commit's code as this
+    tree's.
+
+    A guard is checkable in principle: find each `filepath.WalkDir` whose
+    root is the repository, and require `repotree.OtherCheckout` inside it.
+    What makes it more than an afternoon is that these audits walk two
+    different kinds of tree — the repository, and a `t.TempDir()` they built
+    themselves — and only the first needs the check. Flagging the second
+    would be an audit that reports correct code, which gets silenced rather
+    than obeyed.
+
+    Worth doing when somebody has the appetite; the cost of not doing it is
+    one false finding, found the next time a worktree exists, which is how
+    this one was found.
+
 **Blocked on a decision**
 
 20. ~~Whether FreeBSD belongs in SPEC 27.1 tier 1~~ — **answered

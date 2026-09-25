@@ -18,6 +18,18 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Three audits no longer read a second checkout of the repository
+
+A git worktree inside the repository — `.claude/worktrees/` is where Claude
+Code puts one — is a whole second copy at another commit, and three audits
+added this week walked into it. Two reported findings against code that is
+not in this tree; a third compared every setting twice and logged a count
+twice the real one. They skip it now, through
+`internal/repotree.OtherCheckout`.
+
+Nothing an operator runs is affected: these are audits that run in `make
+check`.
+
 ### The migration guides describe `user.present`'s group change
 
 `user.present` now leaves groups it was not asked about alone, and
