@@ -18,8 +18,8 @@ what is built; [docs/](docs/) says how to use it.
 ## Try it
 
 From a release, pick the archive for your platform, check it, and put
-the binary on your path. The archive also holds the example
-configuration and the manual pages:
+the binary on your path. The archive also holds the licence (BSD
+2-Clause), the example configuration and the manual pages:
 
 ```sh
 v=X.Y.Z; p=linux-amd64    # set these: the release, and your platform

@@ -61,6 +61,7 @@ func main() {
 	flag.StringVar(&o.binaries, "binaries", "", "space-separated binary names")
 	flag.StringVar(&o.examples, "examples", "contrib/examples", "example configuration to include")
 	flag.StringVar(&o.man, "man", "contrib/man", "manual pages to include, as man8")
+	flag.StringVar(&o.license, "license", "LICENSE", "the licence, copied to the top of every archive")
 	flag.Parse()
 	names, err := run(o)
 	if err != nil {
@@ -73,7 +74,7 @@ func main() {
 }
 
 type options struct {
-	dist, version, epoch, targets, binaries, examples, man string
+	dist, version, epoch, targets, binaries, examples, man, license string
 }
 
 // entry is one file in an archive: where it goes, what it holds, and its
@@ -98,7 +99,7 @@ func run(o options) ([]string, error) {
 		return nil, errors.New("-targets and -binaries are both required")
 	}
 
-	shared, err := sharedEntries(o.examples, o.man)
+	shared, err := sharedEntries(o.examples, o.man, o.license)
 	if err != nil {
 		return nil, err
 	}
@@ -148,8 +149,12 @@ func run(o options) ([]string, error) {
 }
 
 // sharedEntries is what every platform's archive carries besides its
-// binaries: the example configuration and the manual pages.
-func sharedEntries(examples, man string) ([]entry, error) {
+// binaries: the licence, the example configuration and the manual pages.
+//
+// The licence is required, not optional: an archive is a copy of the
+// software handed to somebody, and the BSD licence's first condition is
+// that a redistribution in binary form carries its text.
+func sharedEntries(examples, man, license string) ([]entry, error) {
 	var out []entry
 	add := func(dir, into string) error {
 		files, err := os.ReadDir(dir)
@@ -173,6 +178,11 @@ func sharedEntries(examples, man string) ([]entry, error) {
 		}
 		return nil
 	}
+	body, err := os.ReadFile(license)
+	if err != nil {
+		return nil, fmt.Errorf("%w; every archive carries the licence", err)
+	}
+	out = append(out, entry{path: "LICENSE", body: body, mode: 0o644})
 	if err := add(examples, "examples"); err != nil {
 		return nil, err
 	}

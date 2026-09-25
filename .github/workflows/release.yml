@@ -308,7 +308,8 @@ jobs:
           version="${TAG#v}"
           cat > notes.md <<NOTES
           halite ${version}, for SPEC 27.1's seventeen platforms: one archive per
-          platform (binaries, example configuration, manual pages), and SHA256SUMS.
+          platform (the BSD 2-Clause licence, binaries, example configuration,
+          manual pages), and SHA256SUMS.
 
           Every archive and binary here was built twice, on two different runners,
           and published only because the two builds were byte-identical. Check a

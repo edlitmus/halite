@@ -22,8 +22,8 @@ The state of the rebuild, by what it means rather than by commit.
 
 `make dist` now assembles one archive per platform, 17 in all, including
 tier 3: `halite-<version>-<os>-<arch>.tar.gz`, or `.zip` for Windows.
-Each holds the three binaries, the example configuration and the manual
-pages. Times, owners, modes and entry order are pinned, so the two
+Each holds the licence, the three binaries, the example configuration
+and the manual pages. Times, owners, modes and entry order are pinned, so the two
 release builders produce the same bytes, and the archives are covered
 by `SHA256SUMS` and by the build provenance.
 

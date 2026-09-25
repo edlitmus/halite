@@ -38,10 +38,12 @@ func fixture(t *testing.T) options {
 	write(filepath.Join(root, "ex", "node.yaml"), "node: {}\n", 0o600)
 	write(filepath.Join(root, "ex", "hub.yaml"), "hub: {}\n", 0o666)
 	write(filepath.Join(root, "man", "halite-node.8"), ".Dd\n", 0o600)
+	write(filepath.Join(root, "LICENSE"), "BSD 2-Clause License\n", 0o600)
 	return options{
 		dist: dist, version: "0.13.0", epoch: "1790360170",
 		targets: "linux/amd64 windows/arm64", binaries: "halite-node halite-hub",
 		examples: filepath.Join(root, "ex"), man: filepath.Join(root, "man"),
+		license: filepath.Join(root, "LICENSE"),
 	}
 }
 
@@ -124,7 +126,7 @@ func TestTheTarballIsPinned(t *testing.T) {
 	}
 	top := "halite-0.13.0-linux-amd64/"
 	wantNames := []string{
-		top, top + "bin/", top + "bin/halite-hub", top + "bin/halite-node",
+		top, top + "LICENSE", top + "bin/", top + "bin/halite-hub", top + "bin/halite-node",
 		top + "examples/", top + "examples/hub.yaml", top + "examples/node.yaml",
 		top + "man/", top + "man/man8/", top + "man/man8/halite-node.8",
 	}
@@ -135,7 +137,7 @@ func TestTheTarballIsPinned(t *testing.T) {
 		t.Error("entries are not in sorted order")
 	}
 	for n, m := range map[string]int64{
-		top + "bin/halite-node": 0o755, top + "examples/hub.yaml": 0o644,
+		top + "bin/halite-node": 0o755, top + "examples/hub.yaml": 0o644, top + "LICENSE": 0o644,
 		top + "man/man8/halite-node.8": 0o644, top + "bin/": 0o755,
 	} {
 		if modes[n] != m {
@@ -164,7 +166,7 @@ func TestTheWindowsArchiveIsAPinnedZip(t *testing.T) {
 		}
 	}
 	joined := strings.Join(names, " ")
-	for _, n := range []string{"bin/halite-node.exe", "bin/halite-hub.exe", "examples/node.yaml", "man/man8/halite-node.8"} {
+	for _, n := range []string{"LICENSE", "bin/halite-node.exe", "bin/halite-hub.exe", "examples/node.yaml", "man/man8/halite-node.8"} {
 		if !strings.Contains(joined, "halite-0.13.0-windows-arm64/"+n) {
 			t.Errorf("the zip has no %s: %v", n, names)
 		}
@@ -183,6 +185,11 @@ func TestItRefusesWhatWouldMakeAnArchiveWrong(t *testing.T) {
 		if _, err := run(o); err == nil || !strings.Contains(err.Error(), "SOURCE_DATE_EPOCH") {
 			t.Errorf("epoch %q: %v", e, err)
 		}
+	}
+	o = fixture(t)
+	o.license = filepath.Join(t.TempDir(), "LICENSE")
+	if _, err := run(o); err == nil || !strings.Contains(err.Error(), "licence") {
+		t.Errorf("a missing licence: %v", err)
 	}
 	o = fixture(t)
 	o.binaries += " halite-api"
