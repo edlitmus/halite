@@ -11674,10 +11674,51 @@ as expected, because the prepared tree is one the tools can read.
   "does not recognise". That is the intended direction of failure,
   but it would still be a false no, and nothing has been run on
   another version to find out.
+- ~~**One image and one apparmor-utils version.**~~ **A second version
+  has now been run**, by accident, and it passed. See the subsection
+  below.
 - **Which file of each pair is the wrong one** was not examined, and
   the owner of `usr.bin.firefox` was not captured. The fleet step
   removes the files that were demonstrated to work, and the choice
   between the two files in each pair is arbitrary.
+
+#### A second apparmor-utils version, found by the leg breaking
+
+**2026-09-25.** The `linux` leg started failing on every branch and on
+`main` at once:
+
+	E: Failed to fetch .../apparmor-utils_4.0.1really4.0.1-0ubuntu0.24.04.7_all.deb  404
+	##[error]Process completed with exit code 100.
+
+`fleet.yml` ran six `apt-get install` calls and none was preceded by
+`apt-get update`, so each resolved against the index the runner image was
+baked with. That works until Ubuntu publishes a point release for one of
+those packages, and then the filename the index names is gone from the
+pool. Runs at 22:23Z on `main` and 22:25Z on a feature branch passed; the
+01:30Z run failed, on a branch that had changed nothing relevant. The
+archive moved, not the tree.
+
+The leg had been green for weeks, which reads as *"these installs work"*
+and meant *"this image's index still matches the pool"*.
+
+**What the fix then established.** With `apt-get update` in front, the
+same runner image — 20260920.314.1, unchanged — installs
+**4.0.1really4.0.1-0ubuntu0.24.04.8**, because the archive decides now
+rather than the image. All five `TestLiveAppArmor*` tests ran and passed
+on that version, none skipped on that leg (Fleet run 36084429647).
+
+So the gap this entry named above — *"nothing has been run on another
+version to find out"* whether the probe's success sentence still matches —
+is answered, and the answer is that it does. That was not the point of the
+change and is the more useful half of it: the evidence rested on one
+package version because nothing in the tree asked for any particular one,
+so the note happened to be right. It is now right for two.
+
+What has still not been run is a version that words the sentence
+*differently*, which is the case the probe would get wrong. Two patch
+releases of the same upstream version do not establish that, and nothing
+schedules the discovery — it will arrive the next time Ubuntu rewords a
+string, and this leg is where it will show up.
 
 ### 5.134 `mac_shadow.set_password` put the password in `ps`
 
