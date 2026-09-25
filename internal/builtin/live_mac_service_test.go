@@ -560,80 +560,50 @@ func TestLiveMacServiceRefusesToMask(t *testing.T) {
 	}
 }
 
-// TEMPORARY measurement: how long a restart takes inside launchd's
-// ten-second respawn throttle, by the provider's stop+start and by
-// `launchctl kickstart`, each timed to the spawn count moving and the
-// pid changing. Removed once the answer is in the ledger.
-func TestLiveMacServiceMeasureKickstart(t *testing.T) {
+
+// **A restart outside launchd's respawn throttle does not wait for it.**
+//
+// launchd holds a respawn until ten seconds after the job's last spawn
+// (its `ThrottleInterval`), and the provider now waits for the respawn
+// rather than reporting a restart that has not happened (DIVERGENCE
+// 5.122). That wait is the throttle's and nobody else's -- `launchctl
+// kickstart -k` was measured taking the same ten seconds inside the window
+// (DIVERGENCE 5.149) -- so the claim worth holding is the other half: a
+// job that has been up longer than the window, which is what a service
+// being reloaded after a configuration change is, comes back at once.
+//
+// And a second restart straight after the first is inside the window
+// again, so it waits. That is logged, not asserted, because the number is
+// launchd's: it is the cost of a tree that restarts one service twice in
+// a run.
+func TestLiveMacServiceRestartOutsideTheThrottleIsImmediate(t *testing.T) {
 	c := launchdLive(t)
 	installProbeDaemon(t, c)
 	r := New()
-	target := "system/" + liveLaunchdLabel
-
-	await := func(what string, before, oldPID int, started time.Time) {
-		t.Helper()
-		for time.Since(started) < 30*time.Second {
-			runs, ok := launchdSpawnCount(c, liveLaunchdLabel)
-			pid, _ := launchdRunningPID(t, c)
-			if ok && runs > before && pid != 0 && pid != oldPID {
-				t.Logf("%s: runs %d->%d, pid %d->%d, %s after the call began", what, before, runs, oldPID, pid,
-					time.Since(started).Round(time.Millisecond))
-				return
-			}
-			time.Sleep(20 * time.Millisecond)
-		}
-		_, out := launchdRunningPID(t, c)
-		t.Logf("%s: not respawned after 30s: %s", what, launchdStateLines(out))
-	}
 
 	if _, err := r.Exec.Call(c, "service.start", value.MapOf("name", liveLaunchdLabel)); err != nil {
 		t.Fatal(err)
 	}
+	// Past the window, measured from the spawn the start made.
+	time.Sleep(11 * time.Second)
 
-	// 1. the provider's restart, straight after a start
-	before, _ := launchdSpawnCount(c, liveLaunchdLabel)
-	pid, _ := launchdRunningPID(t, c)
-	started := time.Now()
-	if _, err := r.Exec.Call(c, "service.restart", value.MapOf("name", liveLaunchdLabel)); err != nil {
-		t.Fatal(err)
+	for i, want := range []string{"outside the window", "inside the window"} {
+		pid, _ := launchdRunningPID(t, c)
+		started := time.Now()
+		if _, err := r.Exec.Call(c, "service.reload", value.MapOf("name", liveLaunchdLabel)); err != nil {
+			t.Fatalf("service.reload %s: %v", want, err)
+		}
+		took := time.Since(started)
+		now, out := launchdRunningPID(t, c)
+		t.Logf("service.reload %s returned after %s, pid %d -> %d", want, took.Round(time.Millisecond), pid, now)
+		if now == 0 || now == pid {
+			t.Errorf("service.reload %s returned and the job was not respawned: %s", want, launchdStateLines(out))
+		}
+		// Five seconds is half the throttle: a reload that waited for it
+		// cannot come in under this, and one that did not has room to
+		// spare on a loaded runner.
+		if i == 0 && took > 5*time.Second {
+			t.Errorf("a reload of a job up for longer than the throttle took %s; it should not wait for it", took)
+		}
 	}
-	t.Logf("provider restart: call returned after %s", time.Since(started).Round(time.Millisecond))
-	await("provider restart", before, pid, started)
-
-	// 2. kickstart -k on the running job, straight after that respawn
-	before, _ = launchdSpawnCount(c, liveLaunchdLabel)
-	pid, _ = launchdRunningPID(t, c)
-	started = time.Now()
-	res, err := c.Run(exec.Command{Argv: []string{"launchctl", "kickstart", "-k", target}, IgnoreExitCode: true})
-	t.Logf("kickstart -k (running): exit %d err %v stdout %q stderr %q, returned after %s",
-		res.Code, err, res.Stdout, res.Stderr, time.Since(started).Round(time.Millisecond))
-	await("kickstart -k (running)", before, pid, started)
-
-	// 3. kickstart on a stopped job, inside the throttle window
-	if _, err := c.Run(exec.Command{Argv: []string{"launchctl", "stop", liveLaunchdLabel}}); err != nil {
-		t.Fatal(err)
-	}
-	waitForLaunchdPID(t, c, "stop", false)
-	before, _ = launchdSpawnCount(c, liveLaunchdLabel)
-	started = time.Now()
-	res, err = c.Run(exec.Command{Argv: []string{"launchctl", "kickstart", target}, IgnoreExitCode: true})
-	t.Logf("kickstart (stopped): exit %d err %v stdout %q stderr %q, returned after %s",
-		res.Code, err, res.Stdout, res.Stderr, time.Since(started).Round(time.Millisecond))
-	await("kickstart (stopped)", before, 0, started)
-
-	// 4. kickstart -k on a stopped job
-	if _, err := c.Run(exec.Command{Argv: []string{"launchctl", "stop", liveLaunchdLabel}}); err != nil {
-		t.Fatal(err)
-	}
-	waitForLaunchdPID(t, c, "stop", false)
-	before, _ = launchdSpawnCount(c, liveLaunchdLabel)
-	started = time.Now()
-	res, err = c.Run(exec.Command{Argv: []string{"launchctl", "kickstart", "-k", target}, IgnoreExitCode: true})
-	t.Logf("kickstart -k (stopped): exit %d err %v stdout %q stderr %q, returned after %s",
-		res.Code, err, res.Stdout, res.Stderr, time.Since(started).Round(time.Millisecond))
-	await("kickstart -k (stopped)", before, 0, started)
-
-	// 5. kickstart on a label launchd does not know
-	res, err = c.Run(exec.Command{Argv: []string{"launchctl", "kickstart", "-k", "system/org.halite.nosuchjob"}, IgnoreExitCode: true})
-	t.Logf("kickstart -k (unknown label): exit %d err %v stdout %q stderr %q", res.Code, err, res.Stdout, res.Stderr)
 }
