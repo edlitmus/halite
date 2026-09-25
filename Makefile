@@ -21,10 +21,18 @@ BINARIES = halite-node halite-hub halite-api
 # every variable below set with `!=` is empty, so a Mac build was stamped
 # with no version, no commit and no SOURCE_DATE_EPOCH, and `make install`
 # resolved CONFDIR, STATEDIR and SERVICEDIR to empty strings -- silently
-# (DIVERGENCE 5.153). make-supports-bang, a prerequisite of every target
+# (DIVERGENCE 5.154). make-supports-bang, a prerequisite of every target
 # that stamps a build or installs one, turns that into a refusal.
 MAKE_BANG_PROBE != echo supported
-GIT_VERSION != git describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev
+# --abbrev=12, fixed. Without it git chooses the length of an
+# abbreviated hash from how many objects the repository holds, so the
+# same commit was stamped 77d4c14 on a fresh CI clone and 77d4c14d in a
+# larger local one -- and in one clone, 77d4c14d straight after a fetch
+# and 77d4c14 an hour later. The stamp is in the binary, so the digest
+# depended on the clone and not only on the commit (DIVERGENCE 5.155).
+# Twelve is a minimum git still lengthens if it is ambiguous, and at
+# twelve hex digits that does not happen in a repository this size.
+GIT_VERSION != git describe --tags --always --dirty --abbrev=12 2>/dev/null || echo 0.0.0-dev
 GIT_COMMIT  != git rev-parse HEAD 2>/dev/null || echo unknown
 GIT_EPOCH   != git log -1 --format=%ct 2>/dev/null || echo 0
 

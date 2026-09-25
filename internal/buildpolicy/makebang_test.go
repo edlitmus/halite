@@ -9,7 +9,7 @@ import (
 )
 
 // Every Makefile target that stamps a build or installs one must refuse
-// a make that cannot evaluate `!=` (DIVERGENCE 5.153).
+// a make that cannot evaluate `!=` (DIVERGENCE 5.154).
 //
 // GNU make before 4.0 -- macOS's /usr/bin/make is 3.81 -- reads
 // `GIT_VERSION != git describe` as an assignment to a variable named
@@ -57,5 +57,24 @@ func TestEveryStampingTargetRefusesAMakeWithoutBang(t *testing.T) {
 	}
 	if checked < 10 {
 		t.Errorf("found only %d stamping or installing targets; the rule reader has stopped matching the Makefile", checked)
+	}
+}
+
+// The version stamp is a function of the commit alone (DIVERGENCE 5.155).
+// `git describe --always` without a fixed --abbrev picks the length of
+// the abbreviated hash from the repository's object count, so the same
+// commit was stamped with seven characters on one clone and eight on
+// another, and the digest followed.
+func TestTheVersionStampHasAFixedAbbreviation(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(repoRoot(t), "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^GIT_VERSION\s*!=\s*(git describe[^|]*)`).FindStringSubmatch(string(b))
+	if m == nil {
+		t.Fatal("GIT_VERSION is not set from git describe")
+	}
+	if !regexp.MustCompile(`--abbrev=\d+`).MatchString(m[1]) {
+		t.Errorf("GIT_VERSION is %q, with no fixed --abbrev", strings.TrimSpace(m[1]))
 	}
 }
