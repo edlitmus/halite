@@ -1421,32 +1421,38 @@ unchanged.
     *should* be runnable on a given runner, which depends on the tools
     present and is not in the tree.
 
-7c. **`snap`'s reading is `Captured` and CI still does not perform it.** The
-    two `TestLiveSnap*` tests are selected by the `linux` leg now (7b) and
-    skip on it: the `ubuntu-24.04` image carries snapd with **no snaps
-    installed**, and both tests read `snap list` and skip by name when the
-    table is empty. Correctly — there is nothing to parse — but the effect is
-    that the defect which made `snap` interesting in the first place
-    (DIVERGENCE 5.112: `snap list` truncates a long channel with U+2026, so
-    `snap.installed` compared a declared channel against a prefix and would
-    have run `snap refresh` on every run of an already-correct node) is
-    guarded by tests that never execute in CI.
+7c. ~~**`snap`'s reading is `Captured` and CI still does not perform it.**~~
+    — **done 2026-09-25 (5.151).** The `linux` leg installs `hello-world`
+    after waiting on `snap wait system seed.loaded`, so `snap list` has a
+    table and both `TestLiveSnap*` run: the header-driven split, every column
+    of every row, and each channel cross-checked against `snap info`.
 
-    The leg could install one snap in a setup step, as it already installs
-    `quota`, `lvm2`, `mdadm`, `iptables` and `nftables`. The *test* declines
-    to install anything and should keep declining — installing pulls from
-    the store and takes a squashfs mount — but a setup step is not the test.
+    Closing it found a defect in the test. It named one row to check —
+    `snapd` — on the stated grounds that *"snapd itself is a snap on every
+    machine that has snapd"*, which snapd does not guarantee: installed from
+    a deb it is not itself a snap, so a host carrying only a `core`-based
+    snap lists no `snapd` and the test **fatalled for a host that is
+    perfectly well**. Unreachable until something was installed, which is why
+    nobody had seen it. Every row's every column is checked now.
 
-    Not done blind because `snap install` on a hosted runner needs the
-    seeding to have finished (`snap wait system seed.loaded`) and is a known
-    source of flake; a leg that fails intermittently is worse than one that
-    skips two tests honestly. The cheap version is to install a tiny snap,
-    wait for the seed, and let the leg's existing skip-printing step show
-    whether it worked — and to back it out if it flakes twice.
+    Two steps went with it. The leg prints *"tests that ran / tests that
+    skipped, with the reason each gave"* — it had been running `go test -v`
+    into the job log with nothing reading it, which is how two tests sat
+    unrun while it was green, and the `freebsd` leg has had that step for a
+    while. And a `TestLiveSnap*` **skip now fails the leg**, because the
+    install exists only so those two can run and a report would repeat the
+    original mistake.
 
-    A truncated channel is what a captured fixture would show, so the
-    alternative is a fixture taken from a machine that has one, which is
-    what 5.112 did by hand and what decays.
+    **Still not established**, and it is the interesting half: the
+    truncation. `hello-world` tracks `latest/stable`, and 5.112's defect
+    needs a channel long enough for `snap list` to shorten with U+2026. The
+    guard runs over whatever channels exist and sees none truncated, which
+    shows the reader does not *introduce* truncation rather than that it
+    handles it. A snap on a long track is the only thing that would show the
+    original defect. Candidates exist in the store — a snap tracking
+    something like `1.2/stable/ubuntu-22.04` — and picking one means checking
+    it is small, stable and unlikely to be renamed, which is a store
+    question rather than a code one.
 8. **`module.run` argument pass-through.** Salt passes unknown kwargs
    through to the function being run; this build validates against a
    fixed parameter list. Strict validation is right for every other state
