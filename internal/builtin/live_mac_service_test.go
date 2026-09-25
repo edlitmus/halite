@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"strconv"
@@ -605,4 +606,75 @@ func TestLiveMacServiceRestartOutsideTheThrottleIsImmediate(t *testing.T) {
 			t.Errorf("a reload of a job up for longer than the throttle took %s; it should not wait for it", took)
 		}
 	}
+}
+
+// TEMPORARY measurement: what the launchd provider does with a per-user
+// job -- a LaunchAgent in the console user's gui domain -- as it stands.
+// Removed once the answer is in the ledger.
+func TestLiveMacServiceMeasureAgent(t *testing.T) {
+	c := launchdLive(t)
+	r := New()
+	const label = "org.halite.live-agent"
+	path := "/Library/LaunchAgents/" + label + ".plist"
+
+	console, _ := c.Run(exec.Command{Argv: []string{"stat", "-f", "%Su %u", "/dev/console"}, IgnoreExitCode: true})
+	t.Logf("console owner: %q", console.Stdout)
+	f := strings.Fields(console.Stdout)
+	if len(f) < 2 || f[0] == "root" {
+		t.Skipf("no console user on this Mac (%q); a gui domain needs one", console.Stdout)
+	}
+	uid := f[1]
+	domain := "gui/" + uid
+	pd, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print", domain}, IgnoreExitCode: true})
+	t.Logf("launchctl print %s: exit %d (%d bytes)", domain, pd.Code, len(pd.Stdout))
+
+	plist := strings.ReplaceAll(liveLaunchdPlist, liveLaunchdLabel, label)
+	if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = c.Run(exec.Command{Argv: []string{"launchctl", "bootout", domain + "/" + label}, IgnoreExitCode: true})
+		_, _ = c.Run(exec.Command{Argv: []string{"launchctl", "enable", domain + "/" + label}, IgnoreExitCode: true})
+		_ = os.Remove(path)
+	})
+	bs, _ := c.Run(exec.Command{Argv: []string{"launchctl", "bootstrap", domain, path}, IgnoreExitCode: true})
+	t.Logf("bootstrap %s: exit %d %q %q", domain, bs.Code, bs.Stdout, bs.Stderr)
+
+	truth := func(what string) {
+		p, _ := c.Run(exec.Command{Argv: []string{"launchctl", "print", domain + "/" + label}, IgnoreExitCode: true})
+		state := ""
+		for _, ln := range strings.Split(p.Stdout, "\n") {
+			ln = strings.TrimSpace(ln)
+			if strings.HasPrefix(ln, "state = ") || strings.HasPrefix(ln, "pid = ") || strings.HasPrefix(ln, "runs = ") {
+				state += ln + "; "
+			}
+		}
+		t.Logf("%s: launchctl print %s/%s: exit %d %s", what, domain, label, p.Code, state)
+	}
+	truth("after bootstrap")
+
+	for _, fn := range []string{"service.status", "service.enabled", "service.available"} {
+		v, err := r.Exec.Call(c, fn, value.MapOf("name", label))
+		t.Logf("%s %s: %v %v", fn, label, v, err)
+	}
+	v, err := r.Exec.Call(c, "service.start", value.MapOf("name", label))
+	t.Logf("service.start: %v %v", v, err)
+	time.Sleep(2 * time.Second)
+	truth("after service.start")
+	v, err = r.Exec.Call(c, "service.status", value.MapOf("name", label))
+	t.Logf("service.status after start: %v %v", v, err)
+
+	ks, _ := c.Run(exec.Command{Argv: []string{"launchctl", "kickstart", domain + "/" + label}, IgnoreExitCode: true})
+	t.Logf("kickstart %s/%s: exit %d %q", domain, label, ks.Code, ks.Stderr)
+	truth("after kickstart")
+	v, err = r.Exec.Call(c, "service.status", value.MapOf("name", label))
+	t.Logf("service.status while running in %s: %v %v", domain, v, err)
+	v, err = r.Exec.Call(c, "service.stop", value.MapOf("name", label))
+	t.Logf("service.stop: %v %v", v, err)
+	time.Sleep(2 * time.Second)
+	truth("after service.stop")
+	l, _ := r.Exec.Call(c, "service.get_all", value.NewMap(0))
+	t.Logf("service.get_all includes the agent: %v", strings.Contains(fmt.Sprint(l), label))
+	asUser, _ := c.Run(exec.Command{Argv: []string{"launchctl", "asuser", uid, "launchctl", "list", label}, IgnoreExitCode: true})
+	t.Logf("launchctl asuser %s launchctl list %s: exit %d %q", uid, label, asUser.Code, asUser.Stdout)
 }
