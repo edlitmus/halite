@@ -2261,9 +2261,11 @@ somebody would otherwise rediscover.
     written before it could be run. ~~**sysvinit is the one left**~~ —
     **done 2026-09-19** on a lab row that had to be built rather than
     chosen (item 17, DIVERGENCE 5.126). **This item is closed: all four
-    providers have been driven.** What launchd leaves open
-    is its `gui/` and `user/` domains: every command that provider runs
-    names `system/`, which is what a node running as root manages.
+    providers have been driven.** ~~What launchd leaves open
+    is its `gui/` and `user/` domains~~ -- the console user's `gui/`
+    domain is **done** (DIVERGENCE 5.150): a label the system domain does
+    not have is found and driven there. The `user/` domain, and agents
+    whose plist is on disk but not loaded, are still open.
 
 19c. ~~**A FreeBSD row for `fleetcheck`, or an honest note that there
     is not one.**~~ — **done**, and the answer is the second thing

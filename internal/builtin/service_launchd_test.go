@@ -218,3 +218,46 @@ func (r *sequencedRunner) commands() []string {
 	}
 	return out
 }
+
+// A label the system domain does not have is looked for in the console
+// user's gui domain, and its status read from there (DIVERGENCE 5.150).
+// The `stat` answer is what `stat -f %u /dev/console` printed on a macOS
+// 15.7.9 runner; the running dump is the captured print with a pid line.
+func TestLaunchdStatusFindsAConsoleUsersAgent(t *testing.T) {
+	running := strings.Replace(launchdPrintCapture, "state = not running", "state = running\n\tpid = 3086", 1)
+	if running == launchdPrintCapture {
+		t.Fatal("the capture has no state line to change")
+	}
+	runner := &sequencedRunner{answers: map[string][]exec.Result{
+		"launchctl print system/org.halite.live-agent":  {{Code: 113, Stderr: "Could not find service \"org.halite.live-agent\" in domain for system\n"}},
+		"stat -f %u /dev/console":                       {{Stdout: "501\n"}},
+		"launchctl print gui/501/org.halite.live-agent": {{Stdout: running}},
+	}}
+	c := newCtx(false)
+	c.Runner = runner
+
+	up, err := (launchdProvider{}).Status(c, "org.halite.live-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !up {
+		t.Errorf("an agent running in gui/501 read as not running: %v", runner.commands())
+	}
+	if got := launchdStoreTarget(c, "org.halite.live-agent"); got != "gui/501/org.halite.live-agent" {
+		t.Errorf("the disable store target is %s", got)
+	}
+}
+
+// With nobody at the console there is no gui domain, and the system
+// domain is what everything targets, as before.
+func TestLaunchdNoConsoleUserMeansTheSystemDomain(t *testing.T) {
+	runner := &sequencedRunner{answers: map[string][]exec.Result{
+		"launchctl print system/org.halite.live-agent": {{Code: 113}},
+		"stat -f %u /dev/console":                      {{Stdout: "0\n"}},
+	}}
+	c := newCtx(false)
+	c.Runner = runner
+	if got := launchdStoreTarget(c, "org.halite.live-agent"); got != "system/org.halite.live-agent" {
+		t.Errorf("with root at the console the target is %s", got)
+	}
+}
