@@ -1180,15 +1180,21 @@ unblocks rather than by how hard it is.
   a GitHub-hosted runner is allowed to hold the key at all, is Ed's
   call. §3.5 already notes that hosted runners are a dependency SPEC
   does not discuss, and this is where that stops being academic.
-- **How far the `-fips` set goes.** SPEC 27.4 describes a parallel
-  artifact set suffixed `-fips` and does not limit it by platform. Taken
-  literally that doubles every row above. Linux-only is the defensible
-  reading — it is where a FIPS kernel exists — but the specification
-  should say so rather than the build quietly deciding.
-- **Whether tier 3 ships packages or only binaries.** §3.5 records that
-  `cross` now publishes tier 3, nine more binaries that nothing has run.
-  Tier 3 promises "compiles and is published", which binaries satisfy;
-  packaging them would be a promise the tier does not make.
+- ~~**How far the `-fips` set goes.**~~ **Answered 2026-09-25: Linux
+  only, for the time being** (`linux/amd64`, `linux/arm64`). SPEC 27.4
+  now says so. The Makefile's `FIPS_TARGETS` was already that list,
+  under a comment that said "tier 1", and `TestFIPSTargetsAreLinuxOnly`
+  now holds the two together.
+- ~~**Whether tier 3 ships packages or only binaries.**~~ **Answered
+  2026-09-25: binaries only, for now.** SPEC 27.1's tier 3 row and
+  27.2 say so: tier 3 platforms appear in the tarball and the checksum
+  manifest, and get no native package.
+- **The old tags.** `v0.7.0` to `v0.12.0` belong to the deleted proof of
+  concept and are to be removed (2026-09-25), together with their
+  GitHub releases. Every tagged commit is in `main`'s history, so the
+  git history loses nothing. Until a new tag exists, `git describe`
+  has no tag to count from and `VERSION` falls back to the bare commit.
+  The pre-1.0 numbering scheme is still undecided.
 
 **What this does not change.** `make install` from source keeps working
 and stays the path this fleet uses. Packaging is for other people's
