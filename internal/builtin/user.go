@@ -955,15 +955,19 @@ func groupMembersRequested(args *value.Map) ([]string, bool) {
 // account in a privileged group that the tree had just been edited to
 // remove, which is the failure worth being exact about.
 //
-// gpasswd is the tool, because it is the one that edits a group's member
-// list directly; usermod -G rewrites an *account's* groups and would
-// need a read-modify-write of every member to express this.
+// The list is the group's own member list -- supplementary membership --
+// and it is changed with the tool that edits a group's member list
+// directly, which differs by platform (DIVERGENCE 5.151):
+//
+//   - Linux: gpasswd(1).
+//   - FreeBSD: `pw groupmod -m` and `-d`. FreeBSD has no gpasswd, and
+//     this used to refuse there with "needs gpasswd(1)" -- on the
+//     platform that carries most of production.
+//   - macOS: `dseditgroup -o edit -a` and `-d`, read back from Open
+//     Directory's GroupMembership. macGroupPresentState did not read
+//     `members` at all, and reported every list as already in place.
 func reconcileGroupMembers(c *exec.Context, name string, want []string) (states.Result, error) {
-	g, err := user.LookupGroup(name)
-	if err != nil {
-		return states.False(fmt.Sprintf("The group %s could not be read: %v", name, err)), nil
-	}
-	have, err := groupMemberNames(g.Gid, name)
+	have, err := groupMembersOf(c, name)
 	if err != nil {
 		return states.False(fmt.Sprintf("The members of %s could not be read: %v", name, err)), nil
 	}
@@ -976,21 +980,62 @@ func reconcileGroupMembers(c *exec.Context, name string, want []string) (states.
 	if c.Test {
 		return states.WouldChange(fmt.Sprintf("The members of %s would be set.", name), changes), nil
 	}
-	if c.Which("gpasswd") == "" {
-		return states.False(fmt.Sprintf(
-			"Setting the members of %s needs gpasswd(1), which is not on this node's PATH.", name)), nil
+	addArgv, removeArgv, why := groupMemberTools(c)
+	if why != "" {
+		return states.False(fmt.Sprintf("Setting the members of %s %s.", name, why)), nil
 	}
 	for _, u := range add {
-		if _, err := c.Run(exec.Command{Argv: []string{"gpasswd", "-a", u, name}}); err != nil {
+		if _, err := c.Run(exec.Command{Argv: addArgv(u, name)}); err != nil {
 			return states.False(fmt.Sprintf("%s could not be added to %s: %v", u, name, err)), nil
 		}
 	}
 	for _, u := range remove {
-		if _, err := c.Run(exec.Command{Argv: []string{"gpasswd", "-d", u, name}}); err != nil {
+		if _, err := c.Run(exec.Command{Argv: removeArgv(u, name)}); err != nil {
 			return states.False(fmt.Sprintf("%s could not be removed from %s: %v", u, name, err)), nil
 		}
 	}
 	return states.Changed(fmt.Sprintf("The members of %s were set.", name), changes), nil
+}
+
+// groupMembersOf is a group's supplementary member list, from where this
+// platform keeps it.
+func groupMembersOf(c *exec.Context, name string) ([]string, error) {
+	if runtime.GOOS == "darwin" {
+		info, err := macGroupInfo(c, name)
+		if err != nil {
+			return nil, err
+		}
+		list, _ := info.Get("members")
+		items, _ := list.([]any)
+		out := make([]string, 0, len(items))
+		for _, m := range items {
+			out = append(out, value.KeyString(m))
+		}
+		sort.Strings(out)
+		return out, nil
+	}
+	return groupMemberNames(name)
+}
+
+// groupMemberTools returns how this platform adds an account to a
+// group's member list and removes one, or why it cannot.
+func groupMemberTools(c *exec.Context) (add, remove func(user, group string) []string, why string) {
+	switch runtime.GOOS {
+	case "darwin":
+		return func(u, g string) []string { return []string{"dseditgroup", "-o", "edit", "-a", u, "-t", "user", g} },
+			func(u, g string) []string { return []string{"dseditgroup", "-o", "edit", "-d", u, "-t", "user", g} }, ""
+	case "freebsd":
+		if c.Which("pw") == "" {
+			return nil, nil, "needs pw(8), which is not on this node's PATH"
+		}
+		return func(u, g string) []string { return []string{"pw", "groupmod", g, "-m", u} },
+			func(u, g string) []string { return []string{"pw", "groupmod", g, "-d", u} }, ""
+	}
+	if c.Which("gpasswd") == "" {
+		return nil, nil, "needs gpasswd(1), which is not on this node's PATH"
+	}
+	return func(u, g string) []string { return []string{"gpasswd", "-a", u, g} },
+		func(u, g string) []string { return []string{"gpasswd", "-d", u, g} }, ""
 }
 
 // membershipDiff reports who to add and who to remove, as sets.

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"os/user"
 	"runtime"
 	"sort"
 	"strconv"
@@ -232,25 +231,21 @@ func agingUnsupported(args *value.Map) string {
 		strings.Join(named, ", "), runtime.GOOS)
 }
 
-// groupMemberNames lists a group's members.
+// groupMemberNames lists a group's supplementary members: the fourth
+// column of its /etc/group line, which is getgrnam's gr_mem and what
+// Salt's group.present compares `members` against.
 //
-// The supplementary list in /etc/group is only half the answer: an
-// account whose *primary* group is this one is a member without
-// appearing there, and removing it would be both impossible and wrong.
-// So the primary members are found by gid and folded in, and neither
-// half is reported twice.
-func groupMemberNames(gid, name string) ([]string, error) {
+// It used to fold in every account whose *primary* group this is, with a
+// comment saying that removing such an account "would be both impossible
+// and wrong". Both halves were right, and folding them in was what made
+// the reconciler try it: on an Ubuntu runner, `members: [u2, u3]` on a
+// group that was u4's primary group ran `gpasswd -d u4` and failed with
+// "user 'u4' is not a member", on every run (DIVERGENCE 5.151). A primary
+// group is set on the account, by `user.present`'s `gid`, and no member
+// list can add or remove it.
+func groupMemberNames(name string) ([]string, error) {
 	seen := map[string]bool{}
 	var out []string
-	add := func(n string) {
-		if n == "" || seen[n] {
-			return
-		}
-		seen[n] = true
-		out = append(out, n)
-	}
-
-	// The supplementary members, from the group file's fourth column.
 	f, err := os.Open("/etc/group")
 	if err != nil {
 		return nil, err
@@ -263,22 +258,14 @@ func groupMemberNames(gid, name string) ([]string, error) {
 			continue
 		}
 		for _, m := range strings.Split(fields[3], ",") {
-			add(strings.TrimSpace(m))
+			if m = strings.TrimSpace(m); m != "" && !seen[m] {
+				seen[m] = true
+				out = append(out, m)
+			}
 		}
 	}
 	if err := scan.Err(); err != nil {
 		return nil, err
-	}
-
-	// And the accounts whose primary group this is.
-	for _, raw := range listAccountNames() {
-		n, ok := raw.(string)
-		if !ok {
-			continue
-		}
-		if u, err := user.Lookup(n); err == nil && u.Gid == gid {
-			add(n)
-		}
 	}
 	sort.Strings(out)
 	return out, nil
