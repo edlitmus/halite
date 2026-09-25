@@ -1189,12 +1189,13 @@ unblocks rather than by how hard it is.
   2026-09-25: binaries only, for now.** SPEC 27.1's tier 3 row and
   27.2 say so: tier 3 platforms appear in the tarball and the checksum
   manifest, and get no native package.
-- **The old tags.** `v0.7.0` to `v0.12.0` belong to the deleted proof of
-  concept and are to be removed (2026-09-25), together with their
-  GitHub releases. Every tagged commit is in `main`'s history, so the
-  git history loses nothing. Until a new tag exists, `git describe`
-  has no tag to count from and `VERSION` falls back to the bare commit.
-  The pre-1.0 numbering scheme is still undecided.
+- ~~**The old tags.**~~ **Removed 2026-09-25.** `v0.7.0` to `v0.12.0`
+  belonged to the deleted proof of concept. They were deleted with their
+  six GitHub releases, and the repository has no tags now. Every tagged
+  commit is in `main`'s history, so the git history lost nothing. Until
+  a new tag exists, `git describe` has no tag to count from, and
+  `VERSION` is the commit abbreviated to a fixed twelve characters
+  (DIVERGENCE 5.155). The pre-1.0 numbering scheme is still undecided.
 
 **What this does not change.** `make install` from source keeps working
 and stays the path this fleet uses. Packaging is for other people's
