@@ -2264,6 +2264,18 @@ somebody would otherwise rediscover.
     `closeRenderSandbox`; DIVERGENCE 5.144). The rest needs a sweep that
     understands per-GOOS builds and interface satisfaction before a count
     is quoted anywhere.
+19h. **`halite-hub migrate` does not flag a `user.present` with
+    `groups:`.** `internal/migrate` mentions groups nowhere, so the Step 0
+    report is silent about the one difference in `docs/from-salt.md`'s list
+    that it cannot see. A tree relying on Salt's `remove_groups: true`
+    default gets a run that prunes nothing and says nothing — the benign
+    direction, and therefore the one an operator never finds out about.
+
+    The audit's existing shape fits it: `CatPillarGrain` is already a
+    category for "valid, and means something different here". This would be
+    a second of those. Until it exists, `docs/from-salt.md` item 5 tells the
+    reader to grep their own tree, which is a worse answer than a finding
+    with a file and a line. DIVERGENCE 5.145.
 
 **Blocked on a decision**
 

@@ -87,7 +87,7 @@ func registerTimezone(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "timezone", Function: "list_zones",
-				Doc:      "Return the time zone names this node will accept.",
+				Doc:      "Return the time zone names this node will accept. On macOS as root these are `systemsetup`'s own, which exclude `UTC` and the `backward` aliases the tz tree carries; unprivileged, the tz tree's list is returned instead, which is a superset.",
 				TestMode: signature.TestNotApplicable,
 				Section:  "15.2",
 			},
@@ -102,7 +102,7 @@ func registerTimezone(r *Registries) {
 			Module: "timezone", Function: "system",
 			Doc: "Ensure this node's time zone is the one named.",
 			Params: []signature.Param{
-				nameParam("The zone, named as this platform names it. Defaults to the state ID."),
+				nameParam("The zone, named as this platform names it. Defaults to the state ID. On macOS the accepted names are `systemsetup -listtimezones`'s rather than the tz tree's: there is no `UTC` (use `GMT`) and no `backward` alias such as `US/Pacific`."),
 			},
 			Mutates:    true,
 			TestMode:   signature.TestReliable,

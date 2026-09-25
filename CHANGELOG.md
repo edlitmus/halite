@@ -18,6 +18,25 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The migration guides describe `user.present`'s group change
+
+`user.present` now leaves groups it was not asked about alone, and
+`remove_groups: true` makes the list exact — **the opposite of Salt's
+default**. That was in the generated module reference and in nothing a
+migrating operator reads. Both `docs/from-salt.md` and
+`docs/migrating-from-salt.md` now cover it, including why the default is
+reversed: with Salt's, the first highstate after a migration strips every
+hand-added membership on every host at once.
+
+`halite-hub migrate` does **not** report this, and the guides say so
+rather than implying the Step 0 audit catches everything.
+
+`timezone.system`'s parameter documentation now names the macOS
+restriction: the accepted zones there are `systemsetup`'s, which have no
+`UTC` — use `GMT` — and none of the `backward` aliases such as
+`US/Pacific`. `timezone.list_zones` says that its answer as root differs
+from its answer unprivileged, and which is the superset.
+
 ### `user.present` no longer strips groups it was not asked about
 
 On Linux and FreeBSD, any change to an account, such as a new shell,

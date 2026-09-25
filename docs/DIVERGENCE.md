@@ -12910,6 +12910,98 @@ functions and methods with no reference in the module, against the review's
 49 — the difference is methodology, and several of mine are false positives
 (`MarshalJSON` and `UnmarshalJSON` are reached by reflection). The count is
 not worth quoting until the sweep is worth trusting.
+### 5.145 Seven merges in a day, and the two pages nobody re-read
+
+Prompted by a plain question — *"a lot of PRs landed today, make sure the
+docs are all still accurate"* — and the answer was: the mechanical gates
+were all green and two hand-written pages were wrong anyway.
+
+What passed, first, because it is the reason the gaps were narrow:
+`internal/specaudit`, `internal/docsaudit`, `internal/buildpolicy`,
+`internal/policy`, `internal/config` and `internal/metrics` all pass on
+`main`, `go run ./tools/gendocs docs` produces no diff, the function and
+module counts quoted in prose match the build, and all seven `mac_*`
+modules really are `hardware` as three pages now claim.
+
+#### `user.present` inverted a Salt default and neither migration page said so
+
+The day's `user.present` change (5.138) made `groups:` mean "the groups
+this account must be in" and added `remove_groups`, **defaulting to false
+where Salt's defaults to true**. It is in the generated module reference,
+because that is generated from the signature, and in this ledger. It was
+in neither `docs/from-salt.md` nor `docs/migrating-from-salt.md` — the two
+pages that exist for exactly this, one of which opens a section called
+*"The five differences that will actually bite"*.
+
+A Salt tree relying on Salt's default gets a run that prunes nothing and
+says nothing, which is the benign direction, and that is precisely why it
+needed writing down: nothing will fail to tell the operator.
+
+Both pages carry it now. The reason for the inversion is the part worth
+having in a migration guide rather than only in a ledger — with Salt's
+default the *first* highstate after a migration strips every
+hand-added membership on every host at once, and the tree records nothing
+about what it took — so that is what the entry explains, with the two
+details somebody setting `remove_groups: true` needs: it is refused with
+no `groups:`, and the primary group is never removed. Both verified in
+`internal/builtin/user.go` rather than taken from 5.138's summary.
+
+#### The `from-salt.md` list claims the Step 0 audit finds every item
+
+It said *"Four things about the tree bite in practice, and all four are in
+the Step 0 report"*, and that was true: `cmd.run`'s shell,
+`CatPillarGrain`, the ACL translation and `yaml_bool_11` are all findings
+`halite-hub migrate` emits.
+
+`remove_groups` is **not**. `internal/migrate` does not mention groups at
+all, and a `user.present` with `groups:` is valid either way — it works,
+and it works differently, which is not the kind of thing that audit looks
+for. So the item is written as one the report does not reach, the intro
+count is corrected, and item 6 no longer calls itself *"the one the Step 0
+audit cannot see"* when there are two.
+
+Making `migrate` flag it is the better answer and is not done here; it is
+plan.md 19h.
+
+#### macOS refuses `UTC` and the module reference did not mention it
+
+5.131 established that `systemsetup -settimezone` takes 445 names and
+neither `UTC` — the zone that runner was in — nor any `backward` alias
+such as `US/Pacific`. That went into the ledger and the changelog. The
+`timezone.system` parameter said only *"named as this platform names
+it"*, so `docs/modules.md`, which is where somebody writing a state
+looks, warned nobody.
+
+The caveat is in the signature now, so the generated page carries it, and
+`list_zones` says that its answer differs as root from unprivileged and
+which way round. Not a wrong document — a silent one, which for a state
+that fails on a whole platform is the same cost to the reader.
+
+#### A count in a heading is a claim
+
+`## The five differences that will actually bite` was a promise about the
+`###` sections under it, and adding a sixth broke it. Nothing checked it:
+`TestCountsInProseMatchTheBuild` covers *"N execution functions across M
+modules"* and nothing else.
+
+`TestACountedListHasThatManyItems` checks the two constructs that promise
+a count of what follows — that heading, and `from-salt.md`'s lead sentence
+over its numbered list — and both break paths were demonstrated: a heading
+saying five over six sections, and a list item that stops being one.
+
+It is a **named list, not a pattern**, and that is a deliberate limit. A
+number word in a heading is usually not a count of what follows: this
+ledger alone has *"`pkg`: five more functions"* and *"`pam`: two include
+mechanisms"* and a dozen more that promise nothing. A regular expression
+over headings would report all of them, and an audit that reports correct
+prose gets silenced rather than obeyed. A third counted list somewhere
+else is not covered, and the test logs how many it checked so that the
+limit is visible rather than assumed.
+
+The first version of the check pinned the whole heading including the
+number, so a wrong count failed as *"no longer contains"* — a message that
+reads like the section was deleted. It matches the stable tail now and
+reads the number out of whatever heading it finds.
 
 
 ## 6. Everything else not started
