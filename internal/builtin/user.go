@@ -957,7 +957,7 @@ func groupMembersRequested(args *value.Map) ([]string, bool) {
 //
 // The list is the group's own member list -- supplementary membership --
 // and it is changed with the tool that edits a group's member list
-// directly, which differs by platform (DIVERGENCE 5.151):
+// directly, which differs by platform (DIVERGENCE 5.152):
 //
 //   - Linux: gpasswd(1).
 //   - FreeBSD: `pw groupmod -m` and `-d`. FreeBSD has no gpasswd, and

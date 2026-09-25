@@ -18,6 +18,21 @@ when SPEC section 32's phase 6 exit criteria are met.
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `group.present`'s `members` works on FreeBSD and macOS
+
+`members`, the complete list of a group's members, was broken in a
+different way on each platform:
+
+- **FreeBSD** refused it, because it looked for `gpasswd`, which
+  FreeBSD doesn't have.
+- **macOS** ignored it, and reported the list as already in place.
+- **Linux** failed on every run for a group that was some account's
+  primary group.
+
+It now works on all three. The comparison covers the group's own
+member list only; an account's primary group is set with
+`user.present`'s `gid`. DIVERGENCE 5.152.
+
 ### `service` on macOS manages the console user's LaunchAgents
 
 The launchd provider looked only in the system domain. For a

@@ -1097,7 +1097,7 @@ func macGroupPresentState(c *exec.Context, args *value.Map) (states.Result, erro
 			}
 		}
 		// `members` was not read here at all, so every list was reported
-		// as already in place (DIVERGENCE 5.151). It is the same whole-list
+		// as already in place (DIVERGENCE 5.152). It is the same whole-list
 		// reconcile the other platforms use, with dseditgroup as the tool.
 		if hasMembers {
 			return reconcileGroupMembers(c, name, wantMembers)

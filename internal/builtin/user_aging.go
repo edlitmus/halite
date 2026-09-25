@@ -240,7 +240,7 @@ func agingUnsupported(args *value.Map) string {
 // and wrong". Both halves were right, and folding them in was what made
 // the reconciler try it: on an Ubuntu runner, `members: [u2, u3]` on a
 // group that was u4's primary group ran `gpasswd -d u4` and failed with
-// "user 'u4' is not a member", on every run (DIVERGENCE 5.151). A primary
+// "user 'u4' is not a member", on every run (DIVERGENCE 5.152). A primary
 // group is set on the account, by `user.present`'s `gid`, and no member
 // list can add or remove it.
 func groupMemberNames(name string) ([]string, error) {
