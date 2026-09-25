@@ -13523,8 +13523,6 @@ over whatever channels exist and will see none truncated, which shows the
 reader does not *introduce* truncation rather than that it handles it. A
 machine with a long-tracked snap is still the only thing that would show the
 original defect, and none is scheduled.
-
-
 ### 5.152 `group.present` members: refused on FreeBSD, ignored on macOS, stuck on Linux
 
 `group.present`'s `members` is the group's whole member list: anyone
@@ -13588,6 +13586,149 @@ test against the unchanged module.
   implemented.
 - **A member that is not an account on the machine.** The tools refuse
   it, and the state reports their refusal. That was not run.
+### 5.153 Ledger numbering stopped being hand work
+
+A section number is chosen when an entry is written and checked when it is
+merged, so two branches in flight pick the same one and whoever merges
+second renumbers. CLAUDE.md said to renumber yours rather than main's,
+which is right, and said nothing about how — so it was done by hand.
+
+**On 2026-09-25 one change was renumbered three times.** #123 took the
+number it had, then #133 and #135 took the next two, and the snap-leg entry
+walked from 5.148 to 5.149 to 5.151 in a morning. Across the two days of
+the code-review work it happened about nine times.
+
+*About*, because **git does not know.** Only two renumber commits survive
+anywhere in history — one of them *"renumber this branch's ledger sections,
+which main took first"*, from well before this week. The rest were amended
+into the commit they fixed or squashed at merge, which is what you do with
+a chore commit. So the cost leaves almost no trace, and the next person to
+hit it has no way to discover it is routine rather than bad luck. That is
+the argument for a tool over a note in CLAUDE.md: a note would be read once
+by somebody who had no reason to think it mattered.
+
+#### Why by hand was the wrong answer, not merely a slow one
+
+Renumbering 5.149 to 5.151 means rewriting every citation of 5.149. There
+are up to thirteen for one entry — 5.144 has thirteen outside the ledger.
+And **main may cite 5.149 too**, meaning *its own* section, which must not
+move.
+
+So the safe edit is not `s/5.149/5.151/`. The last one was a hand-written
+list of twenty-six file-and-line pairs, assembled by grepping and then
+deciding, line by line, whose citation each was. A blanket substitution
+would have silently repointed four references in `service.go`,
+`live_mac_service_test.go` and `evidence.go` at an entry about a snap.
+
+Nothing would have caught it. `TestLedgerDivergenceCitationsResolve`
+checks that a cited number **exists**, not that it is the one meant, and a
+repointed citation resolves perfectly.
+
+#### `tools/ledger`
+
+	go run ./tools/ledger next        the next free number in each chapter
+	go run ./tools/ledger plan        what renumbering would change
+	go run ./tools/ledger renumber    do it
+
+A section is this branch's when its **title** is absent from the base's
+copy of the ledger — matched by title because the number is the thing in
+dispute. Those get the next free numbers in the order their author already
+put them, move to the end of their chapter so the file still reads newest
+last, and their citations are rewritten.
+
+The citation rule is the whole point: **a citation is rewritten only on a
+line this branch added**, read from `git diff -U0`'s hunk headers. Git
+already knows which lines are ours, so "whose citation is this" is decided
+by construction rather than by judgement. Hunk headers rather than content
+comparison, because two identical lines are indistinguishable by content
+and only one of them may be new.
+
+#### Demonstrated against the collision it was written for
+
+A scratch branch off `main` took 5.149 — which `main` uses for launchd's
+reload — and cited it, while `main` cited the same number four times
+meaning its own entry. The tool:
+
+- found the section by title and targeted **5.153**, the next free;
+- listed four citations to rewrite, all of them this branch's;
+- left `main`'s four alone, checked afterwards by name;
+- moved the whole section to the chapter's end, `####` subsection and all;
+- and the ledger audits passed.
+
+#### What the tool's own tests hold, and one that was wrong
+
+The extent rule is where a mistake would be worst: an entry owns its
+`####` subsections, and cutting at the first of them would move a heading
+and leave its body inside somebody else's entry — worse than the hand
+editing this replaces. That, and that a citation of `5.14` is not a
+citation of `5.149`, are unit tests, both demonstrated by breaking the
+rule and watching them fail.
+
+Two of those tests were wrong when first written: they asserted line
+indices worked out by hand, and reported the code as broken when it was
+right. They assert content and outcomes now — that the extent contains the
+subsection's text, that a section inserted at the computed point lands
+inside the right chapter — which is what was meant and cannot be
+miscounted.
+
+#### Using it on its own change found two of its own bugs
+
+**A free number in the wrong place.** `main` took 5.152 while this was
+being written, so the entry was renumbered to 5.153 — and then the rebase
+onto that `main` put *its* 5.152 **after** this 5.153, because git appends
+both sides' additions and the base's landed last. Every number was free and
+unique. The tool said *"nothing to do"*, and the ordering audit rejected
+the file: *"section 5.152 follows 5.153"*.
+
+It checked the number and never the position. It checks both now, and
+reports them separately, because they are different questions and a branch
+can need one without the other.
+
+**A test that exercised a function without testing it was wired in.** The
+position check was written as a free function with a unit test — and
+disabling its one call site changed nothing any test noticed. That is the
+project's own rule about breaking a fix on purpose, failing on a tool
+written to enforce the project's rules.
+
+So `newPlan` is split: it reads the repository, and `buildPlan` decides
+from two versions of the ledger and the touched lines. The decision is
+tested through the shape the tool actually makes, and the second break —
+the same one — now fails.
+
+#### It cannot tell a citation from an illustration
+
+Also found by using it. The plan listed, among the lines to rewrite, a
+sentence in CLAUDE.md reading *"renumbering 5.149 to 5.152 means rewriting
+every citation of 5.149"*. That number was an example, not a reference to
+this entry, and nothing in the text says so.
+
+Harmless there, since either number illustrates the point, but a line
+saying *"5.152 is unrelated to this"* would have been turned into a
+falsehood. So `plan` prints every line it would touch and is meant to be
+read before `renumber` runs; CLAUDE.md says so. The example in CLAUDE.md
+now uses the numbers the real incident used, which belong to `main` and are
+therefore never in play.
+
+The ordering that avoids it entirely: renumber first, write the prose
+afterwards. This entry's own subsections had to be written that way, having
+been mangled once.
+
+#### What this does not do
+
+It does not stop the collision happening; it stops the collision costing.
+The number is still allocated against the `main` you last saw, so a `main`
+that moves while a PR waits still needs one command and a force-push.
+Eliminating it would mean not numbering from a shared counter at all —
+slugs, or dates — and that is a rename of 186 sections and every citation
+of them, which buys less than it costs.
+
+`/ledger`, `/gendocs` and `/extbundle` went into `.gitignore` while this
+was written. That file already explains the trap in its own words — a
+`go build ./tools/…` with no `-o` leaves a multi-megabyte binary at the
+repository root, and *"Both were committed once"* — and named two of the
+three programs it applies to.
+
+
 
 ## 6. Everything else not started
 

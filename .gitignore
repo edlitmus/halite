@@ -14,6 +14,12 @@ cover.out
 /halite-hub
 /halite-node
 /halite-api
+# `go build ./tools/ledger` writes one of these too, and this file's own
+# note about the two that were committed once is the reason to name it
+# before it happens a third time.
+/ledger
+/gendocs
+/extbundle
 
 # migrate reports: they quote a real tree's file paths and service names,
 # which belong to whoever owns that estate and not in this repository.
