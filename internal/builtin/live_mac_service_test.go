@@ -559,3 +559,50 @@ func TestLiveMacServiceRefusesToMask(t *testing.T) {
 		t.Errorf("the refusal does not name the init system: %v", err)
 	}
 }
+
+// **A restart outside launchd's respawn throttle does not wait for it.**
+//
+// launchd holds a respawn until ten seconds after the job's last spawn
+// (its `ThrottleInterval`), and the provider now waits for the respawn
+// rather than reporting a restart that has not happened (DIVERGENCE
+// 5.122). That wait is the throttle's and nobody else's -- `launchctl
+// kickstart -k` was measured taking the same ten seconds inside the window
+// (DIVERGENCE 5.149) -- so the claim worth holding is the other half: a
+// job that has been up longer than the window, which is what a service
+// being reloaded after a configuration change is, comes back at once.
+//
+// And a second restart straight after the first is inside the window
+// again, so it waits. That is logged, not asserted, because the number is
+// launchd's: it is the cost of a tree that restarts one service twice in
+// a run.
+func TestLiveMacServiceRestartOutsideTheThrottleIsImmediate(t *testing.T) {
+	c := launchdLive(t)
+	installProbeDaemon(t, c)
+	r := New()
+
+	if _, err := r.Exec.Call(c, "service.start", value.MapOf("name", liveLaunchdLabel)); err != nil {
+		t.Fatal(err)
+	}
+	// Past the window, measured from the spawn the start made.
+	time.Sleep(11 * time.Second)
+
+	for i, want := range []string{"outside the window", "inside the window"} {
+		pid, _ := launchdRunningPID(t, c)
+		started := time.Now()
+		if _, err := r.Exec.Call(c, "service.reload", value.MapOf("name", liveLaunchdLabel)); err != nil {
+			t.Fatalf("service.reload %s: %v", want, err)
+		}
+		took := time.Since(started)
+		now, out := launchdRunningPID(t, c)
+		t.Logf("service.reload %s returned after %s, pid %d -> %d", want, took.Round(time.Millisecond), pid, now)
+		if now == 0 || now == pid {
+			t.Errorf("service.reload %s returned and the job was not respawned: %s", want, launchdStateLines(out))
+		}
+		// Five seconds is half the throttle: a reload that waited for it
+		// cannot come in under this, and one that did not has room to
+		// spare on a loaded runner.
+		if i == 0 && took > 5*time.Second {
+			t.Errorf("a reload of a job up for longer than the throttle took %s; it should not wait for it", took)
+		}
+	}
+}

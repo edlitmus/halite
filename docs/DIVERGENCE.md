@@ -13310,6 +13310,69 @@ of the fix removed.
 - **One runner image.** Whether older releases of `dseditgroup` leave
   the same record behind was not run.
 
+### 5.149 launchd's reload: the ten seconds are launchd's, and only sometimes
+
+DIVERGENCE 5.122 left this open: "`Reload` is `Restart`, because
+launchd has no reload, so on a Mac `service.reload` now inherits the
+ten-second wait too. Nothing measured what a tree that reloads in a
+loop makes of that." The wait is launchd's respawn throttle. A job
+asked to start again within its `ThrottleInterval` (ten seconds by
+default) of its last spawn is held, and since 5.122 the provider waits
+for that held respawn instead of reporting a restart that has not
+happened.
+
+The obvious fix was `launchctl kickstart -k`, which kills and restarts
+a job in one call. It was measured on the `macos` leg (macOS 15.7.9,
+build 24G830) against the probe LaunchDaemon, each case timed until
+launchd's spawn count moved and the pid changed:
+
+| Straight after a spawn | Took | Spawns |
+|---|---|---|
+| provider restart (stop, then start) | 10.14s | +1 |
+| `kickstart -k`, job running | 10.03s | +1 |
+| `kickstart`, job stopped | 10.03s | +1 |
+| `kickstart -k`, job stopped | **20.03s** | **+2** |
+
+`kickstart` does not get past the throttle. It blocks until the same
+held respawn happens, where this provider polls for it. On a stopped
+job, `-k` spawned the job twice and took twice as long. So it is not an
+improvement, and in one case it is worse. For a label launchd does not
+know, it exits 113 with `Could not find service`.
+
+The question that decides whether any of this matters is the other
+half. The throttle is measured from the last spawn, and a service
+being reloaded after a configuration change has usually been up far
+longer than that:
+
+```
+service.reload outside the window returned after 29ms, pid 6207 -> 6432
+service.reload inside the window returned after 10.113s, pid 6432 -> 6742
+```
+
+So a reload costs nothing unless the same job was spawned in the last
+ten seconds, which is a tree that restarts one service twice in a run.
+Then it costs up to the remainder of the window, and it reports the
+truth when it returns. That is launchd's cost, and no launchd tool
+avoids it without editing the job's own `ThrottleInterval`.
+`TestLiveMacServiceRestartOutsideTheThrottleIsImmediate` holds the
+fast case to under half the window. The provider is unchanged; its
+comment now carries these numbers.
+
+`launchctl kill HUP` would be a true reload for a daemon that handles
+SIGHUP. It is not used, because it ends a daemon that does not handle
+it, and with `KeepAlive` false, launchd's default, nothing brings that
+daemon back.
+
+#### What this does not cover
+
+- **The `gui/` and `user/` domains**, as in 5.122.
+- **A job with a `ThrottleInterval` of its own.** The probe uses the
+  default. A longer interval makes the in-window wait longer, and the
+  provider's 90-second limit bounds it.
+- **The timing test was not broken on purpose.** Showing it fail would
+  need a provider that sleeps, run as root on a Mac, and that was not
+  done. The bound is half the throttle, against a measured 29ms.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
