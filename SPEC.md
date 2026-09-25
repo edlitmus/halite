@@ -2433,7 +2433,7 @@ checks, and making them a single command is worth more than it appears.
 |---|---|---|
 | 1 | Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky, Alma 8 and 9; Amazon Linux 2023; FreeBSD 14 and 15; Windows Server 2019, 2022, 2025; all on amd64 and arm64 | Full CI, functional tests, and packages |
 | 2 | SUSE 15, Alpine 3.19 and later, macOS 14 and later | Built and unit-tested; functional tests on a subset |
-| 3 | OpenBSD, NetBSD, Solaris and illumos, Linux on riscv64, ppc64le, s390x | Compiles and is published; community-supported |
+| 3 | OpenBSD, NetBSD, Solaris and illumos, Linux on riscv64, ppc64le, s390x | Compiles and is published as binaries only, with no packages; community-supported |
 
 The hub and the API are supported on tier 1 Linux and FreeBSD. Nodes are supported on everything.
 
@@ -2462,6 +2462,13 @@ publishes no release.
 | Container image | `FROM scratch` with the static binary, CA bundle, and time zone data. No shell, no package manager. Separate images per binary. |
 | SBOM and provenance | Per artifact, section 4.3 |
 | Manual pages | `halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc. Section 8 because each command administers a machine and most need root. They are a deliverable in their own right and not only a package's contents: a machine built from source and installed with `make install` gets them and does not get `docs/`. Every subcommand appears in the page for its binary, held there by a test. |
+
+**Which platforms get which artifacts.** Native packages — `.deb`, `.rpm`, `.msi`, `.pkg` and the
+FreeBSD package — are built for tier 1 and tier 2 platforms only. Tier 3 platforms are published as
+binaries, in the tarball and the checksum manifest, and get no package. A package is a promise
+about install layout, service integration and upgrades on that platform. Tier 3 promises that the
+code compiles and nothing more, and a package would be a promise nobody has tested. Decided
+2026-09-25.
 
 **This table specifies contents, not tooling.** What a `.deb` or a container image must *contain*
 is a promise to whoever installs it; which program assembles it is an implementation choice, and
@@ -2498,6 +2505,14 @@ exchange, Ed25519 is unavailable, SHA-1 is unavailable except in the TOTP path w
 disabled, and `halite-*-fips version` reports the module version and self-test status. The
 `fips_mode` grain reports both the host's kernel FIPS state and the binary's own mode, and a
 mismatch is a `doctor` warning.
+
+**The `-fips` set is Linux only, for now: `linux/amd64` and `linux/arm64`.** Linux is where a
+kernel FIPS mode exists for the `fips_mode` grain to report and compare against the binary's own
+mode, and it is where this estate's FIPS requirement lives. A `-fips` binary for FreeBSD, Windows
+or macOS would still route its cryptography through the Go Cryptographic Module, but nobody has
+assessed it on those platforms, and publishing one would imply that somebody had. Widening the set
+is a change to this paragraph and to `FIPS_TARGETS` in the Makefile, which a test holds together.
+Decided 2026-09-25.
 
 The older `boringcrypto` route is superseded by the native module and is not used here. It required
 cgo, which section 4.3 forbids outright.

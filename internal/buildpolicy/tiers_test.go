@@ -206,3 +206,44 @@ func makefileTargets(t *testing.T, root string) map[string]bool {
 	}
 	return out
 }
+
+// The -fips artifact set is Linux only, by decision (SPEC 27.4,
+// 2026-09-25), and the Makefile's FIPS_TARGETS is what builds it. The two
+// had disagreed with a third party: FIPS_TARGETS was always Linux, the
+// comment above it said "only the tier 1 platforms", and SPEC did not
+// limit the set at all. So both are read and held together here -- a
+// widened FIPS_TARGETS fails until SPEC says so too, and a SPEC that
+// stopped saying Linux-only fails until the build agrees.
+func TestFIPSTargetsAreLinuxOnly(t *testing.T) {
+	root := repoRoot(t)
+	mk, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^FIPS_TARGETS\s*=\s*(.+)$`).FindSubmatch(mk)
+	if m == nil {
+		t.Fatal("the Makefile has no FIPS_TARGETS")
+	}
+	targets := strings.Fields(string(m[1]))
+	if len(targets) == 0 {
+		t.Fatal("FIPS_TARGETS is empty")
+	}
+	for _, target := range targets {
+		if !strings.HasPrefix(target, "linux/") {
+			t.Errorf("FIPS_TARGETS names %s; SPEC 27.4 makes the -fips set Linux only", target)
+		}
+	}
+	spec, err := os.ReadFile(filepath.Join(root, "SPEC.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const claim = "The `-fips` set is Linux only, for now: `linux/amd64` and `linux/arm64`."
+	if !strings.Contains(string(spec), claim) {
+		t.Errorf("SPEC 27.4 no longer says %q; the build still makes that choice", claim)
+	}
+	for _, target := range targets {
+		if !strings.Contains(string(spec), "`"+target+"`") {
+			t.Errorf("FIPS_TARGETS builds %s and SPEC 27.4 does not name it", target)
+		}
+	}
+}

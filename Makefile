@@ -434,9 +434,13 @@ fips-verify:
 fips-test:
 	env $(FIPS_ENV) go test -count=1 ./...
 
-# fips-cross is the release set. Only the tier 1 platforms of SPEC 27.1
-# get one: the module is what is certified, and shipping a -fips binary
-# for a platform nobody assessed would be a claim rather than a fact.
+# fips-cross is the release set, and it is Linux only (SPEC 27.4, decided
+# 2026-09-25). The comment here used to say "only the tier 1 platforms",
+# while the list below has always been Linux, and FreeBSD and Windows are
+# tier 1 too; SPEC said nothing either way. The module is what is
+# certified, and shipping a -fips binary for a platform nobody assessed
+# would be a claim rather than a fact. TestFIPSTargetsAreLinuxOnly holds
+# this list and SPEC 27.4 together.
 FIPS_TARGETS = linux/amd64 linux/arm64
 
 fips-cross: make-supports-bang
