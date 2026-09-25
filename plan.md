@@ -898,7 +898,9 @@ Unchanged since the last revision, and verified again here.
 
 - **No artifact in SPEC 27.2 is built.** No packaging configuration of
   any kind, no `.msi`, no `.pkg`, no container image for the product
-  itself, no SBOM, no provenance attestation. `make release` builds bare binaries into `bin/`
+  itself, and no SBOM. ~~No provenance attestation~~: keyless SLSA
+  provenance is signed in `release.yml` since 2026-09-25, for the digests
+  its two builders agreed on. `make release` builds bare binaries into `bin/`
   and has never been run. `contrib/` has systemd units, FreeBSD rc.d
   scripts and example configuration, and that is the whole packaging
   story.
@@ -917,7 +919,10 @@ Unchanged since the last revision, and verified again here.
   remains the cheap half and still runs on every change, because a build
   that is not reproducible from two paths on one machine will not be
   reproducible across two.
-- **What CI does not yet do.** It does not publish anything: SPEC 27.2's
+- **What CI does not yet do.** *Updated 2026-09-25:* `release.yml` now
+  signs keyless SLSA provenance for what its builders agreed on, and
+  keeps the binaries for three days as a workflow artifact. It still
+  publishes no release. The rest of this bullet, as written: it does not publish anything: SPEC 27.2's
   artifacts do not exist to publish (§3.5's first bullet is unchanged),
   so `release.yml` proves the build is reproducible and stops there. It
   runs on GitHub-hosted runners, which is a dependency SPEC does not
@@ -1037,7 +1042,9 @@ unblocks rather than by how hard it is.
    §0 records that it installs from source, and it is the cheapest place
    to get the reproducible-archive discipline right before anything more
    elaborate depends on it.
-3. **SBOM, signatures and provenance.** SPEC 4.3 requires all three per
+3. **SBOM, signatures and provenance.** *Provenance done 2026-09-25*
+   (keyless, in CI; SPEC 4.3's signing paragraph). The detached signature
+   waits on the signing key, and the SBOM is unwritten. SPEC 4.3 requires all three per
    artifact, and doing them *now* rather than after the artifact kinds
    multiply means each later kind inherits the machinery instead of
    retrofitting it. The SBOM is specified as CycloneDX generated from
@@ -1516,8 +1523,8 @@ unchanged.
       at all.
     - *Packages* — **not kept, and not FreeBSD's problem alone.** No
       packaging exists for any platform: there is no packaging
-      configuration in the tree and the release workflow verifies
-      reproducibility rather than producing artifacts. The consequence below discounts
+      configuration in the tree, and the release workflow builds, compares
+      and attests binaries but produces no package. The consequence below discounts
       it twice, since this fleet installs from source.
 
     Two things the move makes it honest to state plainly, both of which

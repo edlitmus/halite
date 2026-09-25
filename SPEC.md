@@ -2446,8 +2446,9 @@ tested, not about how many people run it.
 Two honest qualifications. **The architecture clause is a goal, not a description**: tier 1 CI runs
 on amd64 for every platform in it, and the only arm64 machine this project has is a single Ubuntu
 host. **Packages are unbuilt for every tier 1 platform**, FreeBSD included; section 27.2 describes
-what a release will carry, and the release workflow currently verifies reproducibility rather than
-producing artifacts.
+what a release will carry. The release workflow verifies reproducibility and attests provenance for
+the binaries its two builders agreed on, keeps those binaries briefly as a workflow artifact, and
+publishes no release.
 
 ### 27.2 Artifacts
 

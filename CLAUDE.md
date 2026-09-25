@@ -149,7 +149,7 @@ does not (`shutdown -c`, `getfacl -s`).
 - **`make check`** is the local gate: `fmt-check vet build-all test race policy fips-test`.
 - **`.github/workflows/ci.yml`** — unit, race, fmt/vet/policy, build-all, reproducible build, the Salt differential, FIPS, on Linux/macOS/Windows/FreeBSD.
 - **`.github/workflows/fleet.yml`** — the *live* legs, which drive real tools as root: `debian`, `linux`, `freebsd` (an emulated VM) and `macos`. Triggered by a schedule, a dispatch, and changes to the modules they cover. If you add a live test, add it to the right leg's `-run` filter and to the trigger paths, or it will never run again.
-- **`.github/workflows/release.yml`** — two builders, all artifacts compared byte-for-byte. Runnable by `workflow_dispatch` without minting a tag.
+- **`.github/workflows/release.yml`** — two builders, all artifacts compared byte-for-byte, then keyless SLSA provenance for the digests they agreed on (only after the release gate passes). The binaries are kept for three days as a workflow artifact; nothing is published as a release yet. Runnable by `workflow_dispatch` without minting a tag, which writes a real, permanent Sigstore log entry for that commit.
 
 ### Live tests
 
