@@ -13808,6 +13808,35 @@ builders on two machines" is therefore demonstrated only for two
 GitHub Ubuntu images. A native amd64 builder that is not GitHub's is
 the next measurement.
 
+#### And it still does, on a clone that predates the tag deletion
+
+**2026-09-25**, found while recording the decision that the first tag is
+`v0.1.0`. Deleting a remote tag does not delete a local one, so a working
+copy from before the six proof-of-concept tags were removed still has
+them. On the development host:
+
+	$ git ls-remote --tags origin
+	$ git tag
+	v0.7.0 v0.8.0 v0.9.0 v0.10.0 v0.11.0 v0.12.0
+	$ git describe --tags --always --dirty --abbrev=12
+	v0.12.0-676-ga60577a
+
+So `make build` here stamps **the deleted proof of concept's version onto
+a v1 binary**, while CI — a fresh clone of a repository with no tags —
+stamps the commit. Two builders disagreeing about a version for a reason
+that is not the commit is exactly what this entry is about; `--abbrev=12`
+fixed one cause of it and this is another.
+
+It is not a defect in the build: `git describe` is doing what it is asked,
+and plan.md's *"the repository has no tags now"* was true of `origin` and
+of any clone made after the deletion. It now says which.
+
+**Tagging `v0.1.0` ends it.** `git describe` counts from the nearest tag,
+and a tag on a recent commit is nearer than one on a commit before the
+proof of concept was deleted — so every clone agrees again from the first
+tag onwards. Until then the options are `git tag -d` on the six, or
+knowing that a local version string is fiction.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

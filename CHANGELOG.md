@@ -11,8 +11,13 @@ Nothing here is released yet. Phases 0, 1, and 2 of the delivery plan in
 SPEC section 32 are complete: a node that manages its own tree, and a
 fleet driven from a hub. Phases 3 and 4 are complete too — the runners,
 orchestration, reactors, beacons, the scheduler, the mine, the API, and
-the extension model. Versions resume at 1.0.0
-when SPEC section 32's phase 6 exit criteria are met.
+the extension model.
+
+**The first tag will be `v0.1.0`** — decided 2026-09-25. The numbering
+starts again from the rewrite rather than resuming the proof of concept's,
+which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
+`release.yml`, so the first tag is marked as one without anybody asking.
+**1.0.0 still waits on SPEC section 32's phase 6 exit criteria.**
 
 ## Unreleased
 
