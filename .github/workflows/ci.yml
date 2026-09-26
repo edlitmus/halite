@@ -406,6 +406,22 @@ jobs:
 
       # Every step below runs inside the VM.
       #
+      # git is not in the image, and five tests in `internal/builtin`
+      # skipped for want of it -- four `TestGitLatest*` and the
+      # `git.latest` conformance case -- on the tier 1 platform that
+      # carries about 80% of the estate. Nothing said so, because no leg
+      # runs `go test -v` and a skip prints nothing;
+      # `TestTheGitBinaryIsPresentSoTheGitTestsRun` is what turned it into
+      # a failure anybody could see. git-lite rather than git: it provides
+      # the same /usr/local/bin/git without the Perl and Python a full
+      # install pulls into an emulated VM.
+      - name: Install git, which the git tests need
+        shell: cpa.sh {0}
+        run: |
+          set -e
+          sudo pkg install -y git-lite
+          git --version
+
       # The toolchain comes from go.dev rather than from pkg, and its
       # version is read out of go.mod rather than written here. `pkg
       # install go` gives whatever the ports tree has, which is a second

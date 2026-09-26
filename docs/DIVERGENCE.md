@@ -14162,6 +14162,25 @@ requirement: `VERSION` comes from `git describe` in the Makefile, so a machine
 that can build halite has git, and one that cannot should be told which tests
 it is not running instead of left to assume they passed.
 
+**It answered on the first run: git was not there.** CI run 36266405856,
+`test (freebsd)`:
+
+	--- FAIL: TestTheGitBinaryIsPresentSoTheGitTestsRun
+	no git on this machine, so five tests in this package skipped silently
+
+So the four `TestGitLatest*` tests had **never run on FreeBSD** — not once,
+and nothing in any green run said otherwise. The leg installs `git-lite` now,
+which provides the same `/usr/local/bin/git` without the Perl a full install
+pulls into an emulated VM.
+
+Worth separating the two findings, because only one of them is about git. The
+first is that a tier 1 platform was missing coverage. The second is the reason
+it stayed missing: **a skip is silent without `-v`, so a green leg and a leg
+that ran five fewer tests print the same thing.** The first was fixed in a
+line of YAML. The second is the one to remember, and it is
+[a test that skips is not a test that ran] with a new way of hiding — this
+time not in a message nobody read, but in the absence of any message at all.
+
 One more break was tried and **missed**: an `archive.extracted` that
 extracts only the top level of a nested archive passes the conformance case,
 for the same reason — the probe does not check the apply's outcome. Four
