@@ -2,6 +2,7 @@ package builtin
 
 import (
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -134,5 +135,29 @@ func writeFileForTest(t *testing.T, path, body string, mode os.FileMode) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), mode); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The git binary is a requirement, not a hope.
+//
+// Five tests in this package skip without it -- four `TestGitLatest*` and
+// the `git.latest` conformance case -- and a skip is invisible: no CI leg
+// here runs `go test -v`, so `ok internal/builtin` is printed whether those
+// five ran or silently did not. On the FreeBSD leg, which is tier 1 and
+// carries about 80% of this estate, the virtual machine installs a pinned Go
+// toolchain and nothing else, so whether git is there was a question nobody
+// could answer from the output.
+//
+// This makes it answerable. It is not a new requirement: `VERSION` comes
+// from `git describe` in the Makefile, so a machine that can build halite
+// has git, and one that cannot should be told which tests it is not running
+// rather than left to assume they passed.
+func TestTheGitBinaryIsPresentSoTheGitTestsRun(t *testing.T) {
+	if _, err := osexec.LookPath("git"); err != nil {
+		t.Fatalf("no git on this machine, so five tests in this package skipped "+
+			"silently -- four TestGitLatest* and the git.latest conformance case. "+
+			"The Makefile derives VERSION from `git describe`, so this is already a "+
+			"build requirement; install git, or know that git.latest is unexercised "+
+			"here. LookPath said: %v", err)
 	}
 }

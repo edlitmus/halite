@@ -14147,6 +14147,21 @@ Four tests now start from a populated file and assert what survives: the
 other key, a comment line, a hashed entry, and for the `absent` pair that
 only the named entry went. Each was confirmed against its own break.
 
+##### The one skip, made loud
+
+`git.latest`'s case needs the real git binary and skips without it, which is
+this package's existing convention for four `TestGitLatest*` tests. The
+convention hides something: **no CI leg here runs `go test -v`**, so
+`ok internal/builtin` is printed whether those five ran or silently did not,
+and the FreeBSD virtual machine installs a pinned Go toolchain and nothing
+else. Whether git is in it was a question the output could not answer — on
+tier 1, carrying 80% of the estate.
+
+`TestTheGitBinaryIsPresentSoTheGitTestsRun` answers it by failing. Not a new
+requirement: `VERSION` comes from `git describe` in the Makefile, so a machine
+that can build halite has git, and one that cannot should be told which tests
+it is not running instead of left to assume they passed.
+
 One more break was tried and **missed**: an `archive.extracted` that
 extracts only the top level of a nested archive passes the conformance case,
 for the same reason — the probe does not check the apply's outcome. Four
