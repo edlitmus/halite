@@ -4,9 +4,23 @@
 // not a suggestion: in test mode a function must make no change, return a
 // nil result when it would change something, populate changes with the
 // predicted change, and populate comment with a human sentence.
-// Conformance is enforced by the shared harness in this package, which
-// every state module must pass. Salt has no such harness, which is why
-// test=True in Salt is unreliable for a nontrivial fraction of modules.
+// Conformance is enforced by the shared harness in this package. Salt has
+// no such harness, which is why test=True in Salt is unreliable for a
+// nontrivial fraction of modules.
+//
+// This used to say the harness is one "which every state module must
+// pass", which was an intention rather than a fact: eighteen of a hundred
+// and thirty-two functions had a case, and nothing said which the rest
+// were. The harness *applies* the state, twice, for real -- that is how
+// idempotence becomes observable, and it is also the limit, because a case
+// can only exist for a function whose whole effect lands inside a
+// directory the test owns. `pkg.installed` and `service.running` would
+// apply to the machine running the suite.
+//
+// So the obligation is now written down instead of asserted:
+// `internal/builtin`'s `unconformed` table holds every function without a
+// case and why, and a new state function with neither a case nor an entry
+// fails. DIVERGENCE 5.157.
 package states
 
 import (

@@ -92,15 +92,54 @@ func run(f func(*plan) error) {
 }
 
 func cmdNext(p *plan) error {
-	chapters := make([]int, 0, len(p.baseMax))
-	for c := range p.baseMax {
+	for _, line := range nextFree(p) {
+		fmt.Println(line)
+	}
+	return nil
+}
+
+// nextFree reports, per chapter, the first number nobody has used --
+// counting the base's high-water mark *and* this branch's own entries.
+//
+// It returns lines rather than printing them because the first version
+// printed, and so had no test: on a branch that had already added 5.156 it
+// answered "next free is 5.156", handing back the number the caller had
+// just used. A tool for avoiding collisions, proposing one.
+func nextFree(p *plan) []string {
+	high := map[int]int{}
+	for c, m := range p.baseMax {
+		high[c] = m
+	}
+	for _, s := range p.mine {
+		if s.minor > high[s.major] {
+			high[s.major] = s.minor
+		}
+	}
+
+	chapters := make([]int, 0, len(high))
+	for c := range high {
 		chapters = append(chapters, c)
 	}
 	sort.Ints(chapters)
+
+	var out []string
 	for _, c := range chapters {
-		fmt.Printf("chapter %d: next free is %d.%d\n", c, c, p.baseMax[c]+1)
+		// Every one of this branch's entries in the chapter, not the
+		// last seen: naming only one of two sends the reader looking
+		// for the other where it is not.
+		var ours []string
+		for _, s := range p.mine {
+			if s.major == c {
+				ours = append(ours, s.label())
+			}
+		}
+		line := fmt.Sprintf("chapter %d: next free is %d.%d", c, c, high[c]+1)
+		if len(ours) > 0 {
+			line += "  (this branch already adds " + strings.Join(ours, ", ") + ")"
+		}
+		out = append(out, line)
 	}
-	return nil
+	return out
 }
 
 // section is one numbered heading in the ledger.

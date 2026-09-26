@@ -271,3 +271,47 @@ func TestBuildPlanRenumbersACollision(t *testing.T) {
 		t.Errorf("the wrong section was picked: %q", p.moves[0].sec.title)
 	}
 }
+
+// TestNextFreeCountsThisBranchsOwnEntries is the test the printing version
+// could not have. The bug it holds shut was live: `next` read only the
+// base's sections, because a number is allocated *against* the base, and so
+// on a branch already adding 5.156 it recommended 5.156.
+func TestNextFreeCountsThisBranchsOwnEntries(t *testing.T) {
+	p := &plan{
+		baseMax: map[int]int{5: 155},
+		mine: []section{
+			{major: 5, minor: 156, title: "first"},
+			{major: 5, minor: 157, title: "second"},
+		},
+	}
+
+	got := nextFree(p)
+	if len(got) != 1 {
+		t.Fatalf("one chapter has entries, got %d lines: %q", len(got), got)
+	}
+	if !strings.Contains(got[0], "next free is 5.158") {
+		t.Errorf("155 in the base and 156, 157 on the branch means 158 is free:\n%s", got[0])
+	}
+	// Both, because a branch's second entry is exactly the case that was
+	// wrong, and naming one of two is its own small lie.
+	for _, want := range []string{"5.156", "5.157"} {
+		if !strings.Contains(got[0], want) {
+			t.Errorf("the line does not say the branch already adds %s:\n%s", want, got[0])
+		}
+	}
+}
+
+// A chapter nobody has touched on this branch should say nothing about the
+// branch -- an empty parenthesis reads as a claim that it added something.
+func TestNextFreeSaysNothingAboutAnUntouchedChapter(t *testing.T) {
+	p := &plan{
+		baseMax: map[int]int{4: 13, 5: 155},
+		mine:    []section{{major: 5, minor: 156, title: "only in five"}},
+	}
+
+	for _, line := range nextFree(p) {
+		if strings.HasPrefix(line, "chapter 4:") && strings.Contains(line, "this branch") {
+			t.Errorf("chapter 4 has nothing of this branch in it:\n%s", line)
+		}
+	}
+}
