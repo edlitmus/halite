@@ -23,6 +23,36 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `file.append` could not converge, and now does
+
+    /etc/motd:
+      file.append:
+        - text: |
+            Managed by halite
+
+A YAML block scalar ends in a newline, and the comparison that decided what
+was missing held lines without one, so the requested text was never found in
+the file it had just been written to. Every run appended it again:
+
+    after one run:  "first\nManaged by halite\n\n"
+    after two runs: "first\nManaged by halite\n\nManaged by halite\n\n"
+
+The file grew on every highstate and nothing reported it — the state said it
+had made a change, which was true. Requested text is split into lines now.
+The same fix covers `file.prepend` and both execution forms, because the
+churn was reachable from `halite-node call` as well as from a state.
+
+### Sixteen file states are now applied twice and checked
+
+The SPEC 11.6 conformance harness applies a state for real, asserts that
+`--test` changed nothing and predicted the same thing, and asserts the second
+run converges. It covered seven functions of a hundred and thirty-two while
+`internal/states` claimed every module passed it. Eighteen now do, including
+all sixteen `file` states, and the other hundred and fourteen are listed
+one by one with the reason — reachable and unwritten, needing the node's own
+roots, or changing the machine the suite runs on. A new state with neither a
+case nor a reason fails the build.
+
 ### Release archives carry what has and has not been demonstrated
 
 `EVIDENCE.md` is in every archive: each module's evidence level, and for the

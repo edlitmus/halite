@@ -718,6 +718,39 @@ func pythonGroupRefs(repl string) string {
 	return b.String()
 }
 
+// splitRequestedLines turns what the tree asked for into lines, because
+// the presence check below compares against the file's lines and those
+// carry no newline.
+//
+// A YAML block scalar always ends in one, so the ordinary spelling
+//
+//	file.append:
+//	  - text: |
+//	      Managed by halite
+//
+// hands this function `"Managed by halite\n"` -- one element with a
+// newline inside it, which never matched a line of the file and was
+// therefore appended on every run. The file grew forever and nothing
+// reported it: a state that cannot converge is worse than one that fails.
+// Verified against this project's own parser rather than assumed from how
+// YAML usually behaves. DIVERGENCE 5.157.
+//
+// Only a *trailing* empty is dropped, and only one. A blank line in the
+// middle of a block is something the tree asked for, and an element that
+// is deliberately empty is left to the caller: this is about the newline
+// the format adds, not about tidying the request.
+func splitRequestedLines(requested []string) []string {
+	var out []string
+	for _, item := range requested {
+		parts := strings.Split(item, "\n")
+		if len(parts) > 1 && parts[len(parts)-1] == "" {
+			parts = parts[:len(parts)-1]
+		}
+		out = append(out, parts...)
+	}
+	return out
+}
+
 func fileAppendPrepend(c *exec.Context, args *value.Map, prepend bool) (states.Result, error) {
 	path, before, res, ok := readEditTarget(args)
 	if !ok {
@@ -727,6 +760,10 @@ func fileAppendPrepend(c *exec.Context, args *value.Map, prepend bool) (states.R
 	if len(lines) == 0 {
 		lines = states.Strings(args, "content")
 	}
+	if len(lines) == 0 {
+		return states.False("This state names no lines to add."), nil
+	}
+	lines = splitRequestedLines(lines)
 	if len(lines) == 0 {
 		return states.False("This state names no lines to add."), nil
 	}

@@ -3,13 +3,16 @@ package builtin
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -43,6 +46,34 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 	r := New()
 	dir := t.TempDir()
 
+	// A file server, because `file.recurse` needs one and a local tree is
+	// one.
+	//
+	// It refuses without `exec.FileLister`, saying it needs "a tree, which
+	// a node running against a hub or its own roots has" -- and the second
+	// half of that is `fileserver.Fetcher`, which implements ListUnder over
+	// a local tree. So this needs no hub and no machine: a roots directory
+	// the test writes is a file server, and `file.recurse` is reachable
+	// in-process. DIVERGENCE 5.157.
+	roots := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(roots, "tree", "nested"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		filepath.Join(roots, "tree", "one.conf"):           "one\n",
+		filepath.Join(roots, "tree", "nested", "two.conf"): "two\n",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := fileserver.NewFetcher(fileserver.NewRoots(map[string][]string{"base": {roots}}))
+	withFiles := func(test bool) *exec.Context {
+		c := newCtx(test)
+		c.Files = files
+		return c
+	}
+
 	// A probe reports the observable state of a path, so the harness can
 	// check directly that test mode touched nothing rather than inferring
 	// it from the module's own answers.
@@ -67,6 +98,43 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 				return "", err
 			}
 			return fmt.Sprintf("file %s %q %d", formatMode(info.Mode()), b, info.ModTime().UnixNano()), nil
+		}
+	}
+
+	// probeTree reports every file under a root and what it holds, so a
+	// copy that loses a nested entry fails rather than passing on the top
+	// level alone.
+	probeTree := func(root string) func() (string, error) {
+		return func() (string, error) {
+			var seen []string
+			err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+				if err != nil {
+					if os.IsNotExist(err) && path == root {
+						return nil
+					}
+					return err
+				}
+				rel, _ := filepath.Rel(root, path)
+				if d.IsDir() {
+					seen = append(seen, "dir "+rel)
+					return nil
+				}
+				info, err := d.Info()
+				if err != nil {
+					return err
+				}
+				body, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				seen = append(seen, fmt.Sprintf("file %s %s %q", rel, formatMode(info.Mode()), body))
+				return nil
+			})
+			if err != nil {
+				return "", err
+			}
+			sort.Strings(seen)
+			return strings.Join(seen, "\n"), nil
 		}
 	}
 
@@ -121,16 +189,208 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 			SkipIdempotence:       true,
 			SkipIdempotenceReason: "this state exists to report a change on every run, for exercising watch and onchanges",
 		},
+
+		// ---- The rest of `file`, which is reachable because every one of
+		// them is confined to a path this test owns.
+		//
+		// The harness applies the state for real, twice, so a case can only
+		// exist for a function whose whole effect lands inside a directory
+		// the test made. That is why this list is `file` and not the other
+		// forty-odd modules: `pkg.installed` and `service.running` would
+		// apply to the machine running the suite, which on this project is
+		// a host the fleet manages. See TestEveryStateIsCoveredOrExcused
+		// for the accounting. DIVERGENCE 5.157.
+		{
+			Name:  "file.append",
+			Probe: probePath(filepath.Join(dir, "append.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "append.conf"),
+				"text", []any{"appended"},
+			),
+			Setup: func() error {
+				return os.WriteFile(filepath.Join(dir, "append.conf"), []byte("first\n"), 0o644)
+			},
+		},
+		{
+			Name:  "file.prepend",
+			Probe: probePath(filepath.Join(dir, "prepend.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "prepend.conf"),
+				"text", []any{"prepended"},
+			),
+			Setup: func() error {
+				return os.WriteFile(filepath.Join(dir, "prepend.conf"), []byte("body\n"), 0o644)
+			},
+		},
+		{
+			Name:  "file.line",
+			Probe: probePath(filepath.Join(dir, "line.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "line.conf"),
+				"content", "PermitRootLogin no",
+				"mode", "ensure",
+				"before", "# end",
+			),
+			Setup: func() error {
+				return os.WriteFile(filepath.Join(dir, "line.conf"), []byte("# start\n# end\n"), 0o644)
+			},
+		},
+		{
+			Name:  "file.replace",
+			Probe: probePath(filepath.Join(dir, "replace.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "replace.conf"),
+				"pattern", "^level = .*$",
+				"repl", "level = warn",
+			),
+			Setup: func() error {
+				return os.WriteFile(filepath.Join(dir, "replace.conf"), []byte("level = info\n"), 0o644)
+			},
+		},
+		{
+			Name:  "file.comment",
+			Probe: probePath(filepath.Join(dir, "comment.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "comment.conf"),
+				"regex", "^enabled",
+			),
+			Setup: func() error {
+				return os.WriteFile(filepath.Join(dir, "comment.conf"), []byte("enabled = yes\n"), 0o644)
+			},
+		},
+		{
+			Name:  "file.uncomment",
+			Probe: probePath(filepath.Join(dir, "uncomment.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "uncomment.conf"),
+				"regex", "^enabled",
+			),
+			Setup: func() error {
+				return os.WriteFile(filepath.Join(dir, "uncomment.conf"), []byte("#enabled = yes\n"), 0o644)
+			},
+		},
+		{
+			Name:  "file.blockreplace",
+			Probe: probePath(filepath.Join(dir, "block.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "block.conf"),
+				"marker_start", "# HALITE START",
+				"marker_end", "# HALITE END",
+				"content", "managed = true\n",
+				"append_if_not_found", true,
+			),
+			Setup: func() error {
+				return os.WriteFile(filepath.Join(dir, "block.conf"), []byte("untouched\n"), 0o644)
+			},
+		},
+		{
+			Name:  "file.copy",
+			Probe: probePath(filepath.Join(dir, "copied.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "copied.conf"),
+				"source", filepath.Join(dir, "copy-source.conf"),
+			),
+			Setup: func() error {
+				if err := os.WriteFile(filepath.Join(dir, "copy-source.conf"),
+					[]byte("source body\n"), 0o644); err != nil {
+					return err
+				}
+				return os.RemoveAll(filepath.Join(dir, "copied.conf"))
+			},
+		},
+		{
+			Name:  "file.serialize",
+			Probe: probePath(filepath.Join(dir, "serialized.json")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "serialized.json"),
+				"dataset", value.MapOf("key", "value"),
+				"serializer", "json",
+			),
+			Setup: func() error { return os.RemoveAll(filepath.Join(dir, "serialized.json")) },
+		},
+		{
+			Name: "file.recurse",
+			// The whole tree, not one file: recurse's business is the
+			// nested entry, and a probe that read only the top would pass
+			// on a copy that lost it.
+			Probe: probeTree(filepath.Join(dir, "recursed")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "recursed"),
+				"source", "salt://tree",
+			),
+			Setup: func() error { return os.RemoveAll(filepath.Join(dir, "recursed")) },
+		},
+		{
+			Name:  "file.rename",
+			Probe: probePath(filepath.Join(dir, "renamed.conf")),
+			Args: value.MapOf(
+				"name", filepath.Join(dir, "renamed.conf"),
+				"source", filepath.Join(dir, "rename-source.conf"),
+			),
+			Setup: func() error {
+				if err := os.RemoveAll(filepath.Join(dir, "renamed.conf")); err != nil {
+					return err
+				}
+				return os.WriteFile(filepath.Join(dir, "rename-source.conf"),
+					[]byte("to be renamed\n"), 0o644)
+			},
+		},
 	}
 
 	for _, cf := range cases {
 		t.Run(cf.Name, func(t *testing.T) {
-			failures := cf.Check(r.States, newCtx)
+			failures := cf.Check(r.States, withFiles)
 			for _, f := range failures {
 				t.Errorf("%s", f)
 			}
 		})
 	}
+
+	// And the accounting, here rather than in a test of its own so that it
+	// reads the very list that just ran. Two lists of what is covered
+	// would disagree; this repository has found that three times in a week.
+	t.Run("every state is covered or excused", func(t *testing.T) {
+		covered := map[string]bool{}
+		for _, cf := range cases {
+			covered[cf.Name] = true
+		}
+		var missing []string
+		for _, name := range r.States.Signatures().Names() {
+			if covered[name] || unconformed[name] != "" {
+				continue
+			}
+			missing = append(missing, name)
+		}
+		sort.Strings(missing)
+		for _, name := range missing {
+			t.Errorf("%s has no conformance case and no entry in `unconformed`. "+
+				"SPEC 11.6's harness is what checks that a state makes no change in "+
+				"test mode, predicts what it would change, and converges -- and "+
+				"`internal/states`'s own package comment says every state module must "+
+				"pass it. Add a case, or say in `unconformed` why this one cannot have "+
+				"one.", name)
+		}
+		// The other direction: an excuse for a function that no longer
+		// exists is an exemption nobody granted, covering whatever takes
+		// that name next.
+		real := map[string]bool{}
+		for _, name := range r.States.Signatures().Names() {
+			real[name] = true
+		}
+		for name, why := range unconformed {
+			if !real[name] {
+				t.Errorf("`unconformed` excuses %s, which is not a state function", name)
+			}
+			if strings.TrimSpace(why) == "" {
+				t.Errorf("`unconformed` excuses %s with no reason", name)
+			}
+			if covered[name] {
+				t.Errorf("%s has a conformance case and is also excused; delete the excuse", name)
+			}
+		}
+		t.Logf("%d of %d state functions have a conformance case; %d are excused",
+			len(covered), len(r.States.Signatures().Names()), len(unconformed))
+	})
 }
 
 // ---- file.managed behaviour ----

@@ -13943,6 +13943,105 @@ same thing, which makes the table the single place a neglected run goes
 missing from.
 
 
+### 5.157 The conformance harness covered 7 of 132, and the claim said all of them
+
+`internal/states`'s package comment described the SPEC 11.6 harness as one
+"which **every** state module must pass". Seven functions of a hundred and
+thirty-two had a case, and nothing anywhere said which the other hundred and
+twenty-five were. plan.md 7a.
+
+The harness is worth extending rather than the sentence worth softening: it
+applies a state twice, for real, and asserts that test mode changed nothing,
+that the prediction matches, and that the second run converges. Nothing else
+in the system can check those.
+
+#### The limit nobody had written down
+
+**The harness applies the state.** That is how idempotence becomes
+observable and it is also the ceiling: a case can exist for a function whose
+whole effect lands inside a directory the test owns, and `pkg.installed` or
+`service.running` would apply to the machine running the suite — which on
+this project is a node the fleet manages. The `--test` audit of 5.135 hit the
+same wall and its wet half was deleted for the same reason.
+
+So the gap is not "126 cases nobody has written". It is three different
+gaps, and they are now named in `unconformed`, one entry per function:
+
+| | |
+|---|---|
+| **17** | reachable in-process, not yet written — the effect is confined to a path or to nothing |
+| **15** | applies to the node's own configuration, so a case needs its roots redirected first |
+| **82** | changes the machine the suite runs on; belongs to a live test on a disposable host |
+
+A new state function with neither a case nor an entry now fails, and so does
+an entry for a function that no longer exists, or one that has both. That
+turns an unbounded claim into a list that can be shortened deliberately and
+argued with.
+
+#### Coverage 7 → 18, and `file.recurse` needed no machine
+
+All sixteen `file` states have cases now. `file.recurse` had refused with
+
+	This invocation cannot list a directory on the file server, so there is
+	nothing to recurse over. `file.recurse` needs a tree, which a node
+	running against a hub or its own roots has.
+
+and the second half of that sentence is the answer: `fileserver.Fetcher`
+implements `exec.FileLister` over a local tree, so **a directory the test
+writes is a file server.** No hub, no lab, nothing billed. The case drives a
+nested tree and a separate behaviour test checks the copy is complete, which
+the harness cannot: a recurse that copied only the top level would satisfy
+test mode and idempotence perfectly.
+
+#### What it found: `file.append` could not converge
+
+	/etc/motd:
+	  file.append:
+	    - text: |
+	        Managed by halite
+
+`fileAppendPrepend` decides what is missing by building a set of the file's
+lines — which carry no newline — and asking whether each requested line is
+in it. A YAML block scalar **always** ends in a newline, checked against
+this project's own parser rather than assumed: `text: |` yields
+`"Managed by halite\n"`. That element is never in the set, so it is appended
+on every run:
+
+	after one run:  "first\nManaged by halite\n\n"
+	after two runs: "first\nManaged by halite\n\nManaged by halite\n\n"
+
+The file grows forever and nothing reports it. **A state that cannot
+converge is worse than one that fails**, which is 5.112's lesson about
+`snap.installed` arriving by a different road.
+
+Requested text is split into lines now, dropping one trailing empty and no
+more — a blank line inside a block is something the tree asked for. One fix
+serves four entry points, the `append` and `prepend` states and both
+execution forms, and the test checks all four, because a fix applied to the
+state alone would leave the churn reachable from `halite-node call`.
+
+#### Three times the instrument was wrong, not the code
+
+Worth recording together, because the pattern is the point and all three
+pointed the same way — blaming the code:
+
+- `file.append` and `file.prepend` first failed the harness as
+  non-idempotent, which read as a live churn defect. The cause was **this
+  case** passing `text: ["appended\n"]`. Removing the newline made both
+  pass. The real defect above was then found by asking *why* that input
+  behaved so badly, rather than by the failure itself.
+- `Roots` appeared to lack `ListUnder`, which would have meant masterless
+  `file.recurse` is broken and its error message lies. The cause was a
+  `grep | head -8` that truncated before `fetch.go:66`.
+- The recurse probe looked undiscriminating, because removing a file from
+  the source tree still passed. It should have: a smaller tree is still
+  copied idempotently. The break was not a conformance violation at all.
+
+None of the three would have been caught by a passing test. What caught
+them was checking the instrument before believing the reading, which is
+the discipline this project keeps relearning three times in one afternoon.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
