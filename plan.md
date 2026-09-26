@@ -1201,11 +1201,37 @@ unblocks rather than by how hard it is.
   manifest, and get no native package.
 - ~~**The old tags.**~~ **Removed 2026-09-25.** `v0.7.0` to `v0.12.0`
   belonged to the deleted proof of concept. They were deleted with their
-  six GitHub releases, and the repository has no tags now. Every tagged
-  commit is in `main`'s history, so the git history lost nothing. Until
-  a new tag exists, `git describe` has no tag to count from, and
-  `VERSION` is the commit abbreviated to a fixed twelve characters
-  (DIVERGENCE 5.155). The pre-1.0 numbering scheme is still undecided.
+  six GitHub releases, and **origin** has no tags now. Every tagged
+  commit is in `main`'s history, so the git history lost nothing.
+
+  **A clone that predates the deletion still has them**, because deleting
+  a remote tag does not delete a local one. On the development host today
+  `git describe --tags --always --dirty --abbrev=12` answers
+  `v0.12.0-676-ga60577a`, so a local `make build` stamps the deleted
+  proof of concept's version onto a v1 binary, while CI — a fresh clone
+  of a repository with no tags — stamps the commit. DIVERGENCE 5.155 has
+  the measurement; `git tag -d` the six, or expect it.
+
+- ~~**The pre-1.0 numbering scheme.**~~ **Answered 2026-09-25: the first
+  tag is `v0.1.0`.** Not a resumption of the proof of concept's numbering,
+  which reached 0.12.0 — that line is deleted and its tags are gone, so
+  the count starts again from the rewrite.
+
+  Three things already agree with it and needed no change.
+  `release.yml`'s `publish` job treats `v0.*` as a pre-release, so the
+  first tag is marked as one without a flag. `fetch-depth: 0` on the
+  build matrix means the tag is an input to the stamp, which is what
+  makes two builders agree on a version at all. And the `v*` trigger
+  matches, so tagging is the whole of the release action.
+
+  It also ends the stale-tag problem above: once `v0.1.0` exists, `git
+  describe` finds a nearer tag than `v0.12.0` in every clone, so the
+  local and CI stamps agree again for the first time since the tags were
+  removed.
+
+  **1.0.0 is unchanged** and still gated on SPEC section 32's phase 6
+  exit criteria. What `v0.1.0` says is that the rewrite is worth tagging
+  and shipping archives for before it is worth calling 1.0.
 
 **What this does not change.** `make install` from source keeps working
 and stays the path this fleet uses. Packaging is for other people's
