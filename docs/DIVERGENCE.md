@@ -13713,6 +13713,30 @@ The ordering that avoids it entirely: renumber first, write the prose
 afterwards. This entry's own subsections had to be written that way, having
 been mangled once.
 
+#### `next` did not count the branch's own entries
+
+Found by using it again, a day later. `next` answered *"chapter 5: next free
+is 5.156"* on a branch whose working tree already contained a staged 5.156 —
+so the number it recommended for the second entry of a two-entry branch was
+the first entry's. Taking the advice would have produced the collision inside
+one branch that this tool exists to stop between two.
+
+The cause is that `next` read only `origin/main`'s sections, because
+allocation is *against* `main`; `plan` read both, which is why `plan` was
+right about the same tree at the same moment. **Two readers of one file
+disagreeing, the shape 5.157 is also about.** It now takes the maximum of
+both and says which entries are the branch's own:
+
+	chapter 5: next free is 5.158  (this branch already adds 5.156, 5.157)
+
+The first attempt at that line named one entry — the last it happened to
+see — which on a two-entry branch would have sent the reader looking for the
+other where it is not. Both bugs came of printing rather than returning: the
+computation had no test because it had no return value. `nextFree` returns
+its lines now and two tests hold it, and removing the fix reproduces the
+original wrong answer exactly.
+
+
 #### What this does not do
 
 It does not stop the collision happening; it stops the collision costing.
