@@ -17,10 +17,18 @@
 // directory the test owns. `pkg.installed` and `service.running` would
 // apply to the machine running the suite.
 //
-// So the obligation is now written down instead of asserted:
+// So the obligation is written down instead of asserted:
 // `internal/builtin`'s `unconformed` table holds every function without a
 // case and why, and a new state function with neither a case nor an entry
-// fails. DIVERGENCE 5.157.
+// fails. Thirty-five of the hundred and thirty-two have a case and
+// ninety-seven are listed there, all of them needing either the node's own
+// roots or a machine nobody minds breaking.
+//
+// Not every state has work to do. `cmd.wait` and `module.wait` act only
+// when a watch requisite fires, and the `test.*` fakes report a fixed
+// answer, so for them idempotence is free and the contract is that the
+// answer does not depend on the mode -- which is what
+// `Conformance.Unchanging` checks. DIVERGENCE 5.157.
 package states
 
 import (

@@ -23,6 +23,36 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `ssh_auth.present` could have emptied an authorized_keys file
+
+Nothing would have caught it. Every test of `ssh_auth` and
+`ssh_known_hosts` started from a file that did not exist, so no test had
+another account's key to lose, and the conformance harness cannot see the
+difference: a state that destroys the file once is perfectly idempotent
+about it afterwards. The states were written to preserve the other entries
+and no test held them to it.
+
+No release shipped the bug — it was found by breaking the code on purpose
+while writing conformance cases. Four tests now start from a populated
+file and assert what survives: the other key, a comment line, a hashed
+known_hosts entry, and for `absent`, that only the named entry went.
+
+### Thirty-five state functions are held to the test-mode contract
+
+Up from eighteen. The seventeen that had been listed as reachable and
+unwritten now have cases: the five `test.*` fakes, `cmd.run`,
+`cmd.script`, `cmd.wait`, `module.run`, `module.wait`,
+`archive.extracted`, `x509.certificate_managed`, `git.latest`, and both
+halves of `ssh_auth` and `ssh_known_hosts`.
+
+Six of them needed the harness widened rather than a case written.
+`cmd.wait` and `module.wait` do nothing unless a watch requisite fires,
+and the `test.*` fakes return a fixed answer, so for them the contract is
+that the answer does not depend on `--test` — and a `cmd.wait` that ran
+its command anyway would run it under `--test` too. Both are now checked
+against a path the command would create, so the state's own word for it is
+not what is being trusted.
+
 ### `file.append` could not converge, and now does
 
     /etc/motd:

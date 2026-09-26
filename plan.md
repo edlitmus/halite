@@ -1426,20 +1426,45 @@ unchanged.
    tell which they have. A fourth level would say it; so would a sentence
    in each affected function's documentation.
 
-7a. **The conformance harness covers 6 state functions of 132**, while
-   `internal/states/states.go` says in its package comment that every
-   state module must pass it. Raised by the review behind DIVERGENCE 5.140
-   and left undone there, because it is the largest item in that report and
-   the most valuable: a `Probe` case on `check_cmd` or on
-   `grains.absent --destructive` would have caught both of 5.137's defects
-   immediately, and a convergence case would have caught the third.
+7a. **Done, in two passes: 7 of 132 to 35 of 132, and the rest named.**
+   ~~The conformance harness covers 6 state functions of 132~~ — the count
+   was 7 when it was measured rather than 6, which is one more hand-written
+   number that had drifted from the thing it described.
 
-   What makes it work is not writing 126 more cases by hand. The harness
-   already knows how to drive a state twice and assert the second run
-   changes nothing; what it lacks is a way to *reach* each state with
-   arguments that make sense, which is the same problem 5.131's audit
-   solved for execution functions by synthesising from the signature and
-   then reporting honestly how many it could not reach.
+   `internal/states/states.go` said in its package comment that every state
+   module must pass the harness. It does not say that now; what it says is
+   what is true, and `internal/builtin`'s `unconformed` table names every
+   function without a case, one line each, with the reason. A new state
+   function with neither a case nor an entry fails the build, so the gap can
+   be argued with and shortened but not forgotten. DIVERGENCE 5.157.
+
+   **The approach guessed here was not the one that worked.** Synthesising
+   arguments from the signature is what 5.131's execution-function audit
+   did, and it would have produced cases that reach a state without meaning
+   anything, because a conformance case is mostly its `Setup` and its
+   `Probe` — the arguments are the easy part. What the work actually needed
+   was to sort the 132 by *what the function touches*: confined to a
+   directory the test owns, or applying to the machine the suite runs on.
+   Eighteen were the former and now thirty-five are.
+
+   Two things were learnt rather than written:
+
+   - **Six functions had no case because the harness could not express
+     them**, not because nobody had written one. `cmd.wait` and the
+     `test.*` fakes change nothing at all, and every phase of the harness
+     assumed a state with work to do. A missing capability had been filed
+     as a missing effort. `Conformance.Unchanging` covers them now, and the
+     six is counted by the test rather than written here.
+   - **The harness checks the contract, not the result.** An
+     `ssh_auth.present` that replaced the file instead of appending to it
+     passed the whole package, because destroying the file once is then
+     idempotent. That is the shape 5.157's second half is about, and it is
+     why a state whose outcome matters needs a test beside its case.
+
+   What remains is the ninety-seven in `unconformed`: fifteen that need the
+   node's own roots redirected — reachable, and the obvious next tranche —
+   and eighty-two that change the machine the suite runs on and belong to
+   `TestLive*` on a disposable host.
 
 7b. **A coverage claim, measured at last — and the claim itself was wrong
     twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off
