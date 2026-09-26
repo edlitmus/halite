@@ -40,3 +40,14 @@ func shellLine(a, b string) string { return a + "; " + b }
 
 // trueProgram is a program that exits 0, and its arguments.
 func trueProgram() (name string, args []any) { return "/bin/sh", []any{"-c", "exit 0"} }
+
+// writeMarkerScript writes a script that creates the file named by its
+// first argument, so a conformance probe can tell whether the script ran.
+func writeMarkerScript(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(dir, "marker.sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n: > \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}

@@ -48,6 +48,33 @@ type Conformance struct {
 	SkipIdempotence bool
 	// SkipIdempotenceReason is required whenever SkipIdempotence is set.
 	SkipIdempotenceReason string
+	// Unchanging marks a function that never changes anything, and
+	// switches the harness to the contract such a function actually has.
+	//
+	// The phases above all assume a state with something to do: phase 1
+	// fails a function that reports success, because a case whose setup
+	// left nothing to change is testing nothing. That assumption held for
+	// every case until `cmd.wait` and `module.wait`, whose whole purpose
+	// is to do nothing unless a watch requisite fires, and the `test.*`
+	// fakes that exist to report a fixed answer. Six functions were
+	// listed as having no case for a reason that was really "the harness
+	// cannot express this one".
+	//
+	// What is checked instead is what can go wrong with such a function:
+	// it must never return nil, never report a change, and answer
+	// identically whether or not test mode is on. The last is the one
+	// that matters -- a `cmd.wait` that ran its command under `--test`
+	// would be the same defect as any other state changing the system in
+	// test mode, and with a Probe the harness sees it directly.
+	//
+	// Whether the answer is success or failure is deliberately not
+	// checked: `test.fail_without_changes` fails on purpose, and which
+	// answer a module gives is an ordinary unit test's business.
+	Unchanging bool
+	// UnchangingReason is required whenever Unchanging is set, because
+	// "this state changes nothing" is a claim about the module, and a
+	// wrong one silently exempts it from every phase above.
+	UnchangingReason string
 }
 
 // Failure is one conformance violation.
@@ -75,6 +102,16 @@ func (cf Conformance) Check(r *Registry, newContext func(test bool) *exec.Contex
 	}
 	if cf.SkipIdempotence && cf.SkipIdempotenceReason == "" {
 		fail("harness", "SkipIdempotence needs a stated reason")
+	}
+	if cf.Unchanging {
+		if cf.UnchangingReason == "" {
+			fail("harness", "Unchanging needs a stated reason")
+		}
+		if cf.SkipIdempotence {
+			fail("harness", "Unchanging and SkipIdempotence contradict each other: "+
+				"a function that changes nothing cannot have a second run that legitimately differs")
+		}
+		return append(failures, cf.checkUnchanging(r, newContext)...)
 	}
 
 	// Phase 1: test mode against a system that does not yet match.
@@ -218,10 +255,44 @@ func checkComment(comment string) error {
 		return fmt.Errorf("comment %q is too short to be a sentence", trimmed)
 	}
 	first := []rune(trimmed)[0]
-	if !unicode.IsUpper(first) && !unicode.IsDigit(first) && first != '/' {
+	if !unicode.IsUpper(first) && !unicode.IsDigit(first) && !startsWithIdentifier(trimmed) {
 		return fmt.Errorf("comment %q should read as a sentence", trimmed)
 	}
 	return nil
+}
+
+// startsWithIdentifier reports whether a comment opens with the thing the
+// state manages rather than with a word.
+//
+// The rule above used to be "upper case, a digit, or a slash", and the
+// slash was there because a `file` comment opens with the path. That is the
+// house style throughout: `ssh_known_hosts` says "host.example.com was
+// added to …", `pam` says "pam_unix.so was added to …", `snap` opens with
+// the snap's name. A grep of this package finds 289 comment constructions
+// opening with a substituted value or a lower-case letter, and the reason
+// none of them had ever failed is that only the functions with a
+// conformance case are checked at all -- so the check and the code it
+// checks disagreed, and the disagreement was invisible.
+//
+// The slash was the same exception written narrowly, so this is that
+// exception widened to what it was always standing for: a first word that
+// is an identifier, a path or a hostname rather than English. What stays
+// rejected is the shape the check exists for -- a comment that opens with
+// a lower-case English word, which is either a fragment ("changed",
+// "done") or a sentence somebody started in the middle ("the rule was
+// removed").
+func startsWithIdentifier(comment string) bool {
+	word := comment
+	if i := strings.IndexFunc(comment, unicode.IsSpace); i > 0 {
+		word = comment[:i]
+	}
+	// Trailing sentence punctuation is not part of the identifier, and a
+	// one-word comment carries it: "web.example.com."
+	word = strings.TrimRight(word, ".,:;!?")
+	if word == "" {
+		return false
+	}
+	return strings.ContainsAny(word, "./\\-_:@")
 }
 
 // checkChangeShape holds the changes mapping to Salt's {old, new} shape,
@@ -254,4 +325,99 @@ func renderChanges(m *value.Map) string {
 		parts = append(parts, fmt.Sprintf("%s=%v", value.KeyString(e.Key), e.Val))
 	}
 	return strings.Join(parts, " ")
+}
+
+// checkUnchanging is the contract of a state that changes nothing: it is
+// what the phases in Check reduce to when there is never anything to do.
+//
+// The interesting defect for such a function is not idempotence, which is
+// free, but a difference between test mode and a real run. `cmd.wait` runs
+// its command only when a watch requisite fires, and a `cmd.wait` that ran
+// it anyway would run it under `--test` too -- an operator asking what a
+// highstate would do, and having it done. So every check here is applied
+// to both modes and then the two answers are compared, and a Probe is the
+// direct form of the same question.
+//
+// Four runs rather than two because the alternation is the point: a
+// function that changes something on its first call and not its second
+// would pass a single pair.
+func (cf Conformance) checkUnchanging(r *Registry, newContext func(test bool) *exec.Context) []Failure {
+	var failures []Failure
+	fail := func(phase, format string, args ...any) {
+		failures = append(failures, Failure{Phase: phase, Msg: fmt.Sprintf(format, args...)})
+	}
+
+	if cf.Setup != nil {
+		if err := cf.Setup(); err != nil {
+			fail("setup", "%v", err)
+			return failures
+		}
+	}
+	var before string
+	if cf.Probe != nil {
+		var err error
+		if before, err = cf.Probe(); err != nil {
+			fail("setup", "probe failed: %v", err)
+			return failures
+		}
+	}
+
+	phases := []struct {
+		name string
+		test bool
+	}{
+		{"test mode", true},
+		{"apply", false},
+		{"test mode, repeated", true},
+		{"second run", false},
+	}
+	var answers []Result
+	for _, phase := range phases {
+		res, err := r.Call(newContext(phase.test), cf.Name, cf.Args)
+		if err != nil {
+			fail(phase.name, "returned an error: %v", err)
+			return failures
+		}
+		if res.Result == nil {
+			fail(phase.name, "returned a nil result, which means `would change`, from a state "+
+				"this case declares changes nothing (%s)", cf.UnchangingReason)
+		}
+		if res.HasChanges() {
+			fail(phase.name, "reported changes: %s. This case declares the state changes nothing (%s), "+
+				"so either the declaration is wrong or the state is",
+				renderChanges(res.Changes), cf.UnchangingReason)
+		}
+		if err := checkComment(res.Comment); err != nil {
+			fail(phase.name, "%v", err)
+		}
+		answers = append(answers, res)
+	}
+
+	// The comparison, which is the whole reason for running four times.
+	// Comment as well as result: a state that changes nothing has nothing
+	// to describe differently, and a comment that varies with the mode is
+	// a sign of a branch that does.
+	for i, res := range answers[1:] {
+		name := phases[i+1].name
+		if res.ResultString() != answers[0].ResultString() {
+			fail(name, "answered %q where the first test-mode run answered %q; "+
+				"a state that changes nothing has no reason to answer differently",
+				res.ResultString(), answers[0].ResultString())
+		}
+		if res.Comment != answers[0].Comment {
+			fail(name, "commented %q where the first test-mode run commented %q",
+				res.Comment, answers[0].Comment)
+		}
+	}
+
+	if cf.Probe != nil {
+		after, err := cf.Probe()
+		if err != nil {
+			fail("probe", "probe failed: %v", err)
+		} else if after != before {
+			fail("probe", "the system changed from %q to %q across four runs of a state "+
+				"that changes nothing (%s)", before, after, cf.UnchangingReason)
+		}
+	}
+	return failures
 }

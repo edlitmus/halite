@@ -46,3 +46,14 @@ func comspecForTest() string {
 	}
 	return `C:\Windows\system32\cmd.exe`
 }
+
+// writeMarkerScript writes a script that creates the file named by its
+// first argument, so a conformance probe can tell whether the script ran.
+func writeMarkerScript(t *testing.T, dir string) string {
+	t.Helper()
+	path := filepath.Join(dir, "marker.cmd")
+	if err := os.WriteFile(path, []byte("@echo off\r\ntype nul > %1\r\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
