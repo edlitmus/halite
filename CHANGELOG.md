@@ -23,6 +23,20 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Release archives carry what has and has not been demonstrated
+
+`EVIDENCE.md` is in every archive: each module's evidence level, and for the
+ones short of `hardware`, what nobody has watched. It is generated from the
+same table `sys.evidence` and `doctor` answer from, so it cannot say
+something the node in front of you would contradict — and
+`docs/evidence.md` is the same page in the repository.
+
+The release notes point at it instead of repeating a hand-written
+disclosure. Nothing held the hand-written one to the code, and the table it
+described had been left behind three times in the direction that matters —
+arm64 Linux twice, macOS once, each a run that happened while the note
+still said nobody had done it.
+
 ### Release archives, and a workflow that publishes them
 
 `make dist` now assembles one archive per platform, 17 in all, including

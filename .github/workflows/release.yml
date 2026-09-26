@@ -322,6 +322,13 @@ jobs:
           workflow through Sigstore. There is no detached signature yet (SPEC 4.3).
           SHA256SUMS also lists the bare binaries, which are inside the archives.
           Changes are in CHANGELOG.md.
+
+          **What has and has not been demonstrated** is EVIDENCE.md, inside every
+          archive: each module's evidence level and, for the ones short of
+          *hardware*, what nobody has watched. It is generated from the same table
+          the code answers "sys.evidence" and "doctor" from, so it cannot drift from
+          what a node will tell you. It replaces the hand-written disclosure the
+          proof of concept's notes carried, which nothing held to the code.
           NOTES
           prerelease=""
           case "$TAG" in v0.*|*-*) prerelease="--prerelease" ;; esac

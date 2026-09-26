@@ -39,11 +39,13 @@ func fixture(t *testing.T) options {
 	write(filepath.Join(root, "ex", "hub.yaml"), "hub: {}\n", 0o666)
 	write(filepath.Join(root, "man", "halite-node.8"), ".Dd\n", 0o600)
 	write(filepath.Join(root, "LICENSE"), "BSD 2-Clause License\n", 0o600)
+	write(filepath.Join(root, "evidence.md"), "# What has been demonstrated\n", 0o600)
 	return options{
 		dist: dist, version: "0.13.0", epoch: "1790360170",
 		targets: "linux/amd64 windows/arm64", binaries: "halite-node halite-hub",
 		examples: filepath.Join(root, "ex"), man: filepath.Join(root, "man"),
-		license: filepath.Join(root, "LICENSE"),
+		license:  filepath.Join(root, "LICENSE"),
+		evidence: filepath.Join(root, "evidence.md"),
 	}
 }
 
@@ -126,7 +128,8 @@ func TestTheTarballIsPinned(t *testing.T) {
 	}
 	top := "halite-0.13.0-linux-amd64/"
 	wantNames := []string{
-		top, top + "LICENSE", top + "bin/", top + "bin/halite-hub", top + "bin/halite-node",
+		top, top + "EVIDENCE.md", top + "LICENSE",
+		top + "bin/", top + "bin/halite-hub", top + "bin/halite-node",
 		top + "examples/", top + "examples/hub.yaml", top + "examples/node.yaml",
 		top + "man/", top + "man/man8/", top + "man/man8/halite-node.8",
 	}
@@ -166,7 +169,7 @@ func TestTheWindowsArchiveIsAPinnedZip(t *testing.T) {
 		}
 	}
 	joined := strings.Join(names, " ")
-	for _, n := range []string{"LICENSE", "bin/halite-node.exe", "bin/halite-hub.exe", "examples/node.yaml", "man/man8/halite-node.8"} {
+	for _, n := range []string{"EVIDENCE.md", "LICENSE", "bin/halite-node.exe", "bin/halite-hub.exe", "examples/node.yaml", "man/man8/halite-node.8"} {
 		if !strings.Contains(joined, "halite-0.13.0-windows-arm64/"+n) {
 			t.Errorf("the zip has no %s: %v", n, names)
 		}
@@ -195,5 +198,13 @@ func TestItRefusesWhatWouldMakeAnArchiveWrong(t *testing.T) {
 	o.binaries += " halite-api"
 	if _, err := run(o); err == nil || !strings.Contains(err.Error(), "make cross") {
 		t.Errorf("a missing binary: %v", err)
+	}
+	// The evidence report is required for the same reason the licence is:
+	// an archive without it is not the one SPEC 27.2 describes, and it is
+	// the only thing in the tarball that says what was demonstrated.
+	o = fixture(t)
+	o.evidence = filepath.Join(t.TempDir(), "evidence.md")
+	if _, err := run(o); err == nil || !strings.Contains(err.Error(), "gendocs") {
+		t.Errorf("a missing evidence report: %v", err)
 	}
 }

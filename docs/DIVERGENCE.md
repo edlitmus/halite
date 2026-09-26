@@ -13837,6 +13837,88 @@ proof of concept was deleted — so every clone agrees again from the first
 tag onwards. Until then the options are `git tag -d` on the six, or
 knowing that a local version string is fiction.
 
+### 5.156 The unverified list is generated, and the audit that should have held it did not
+
+Every release before this one carried a hand-written *"Not verified on real
+hardware"* section, required since 0.7.0. A hand-written list of what has
+not been run goes stale in exactly one direction — work gets done and the
+list still says it was not — and it had, twice in a fortnight:
+
+- `plan.md` said Linux arm64 *"has still never run it"* after the suite, a
+  hub and a node had all run natively on `ref-salt1` (5.83, 5.84).
+- Three pages said the macOS code *"has been run on neither"* while seven
+  `mac_*` modules were already `hardware` (5.142).
+
+Neither was a lie anybody told. Both were sentences nobody went back to
+after the run, which is what a hand-maintained caveat list produces.
+
+#### `docs/evidence.md`, from the table the code already answers from
+
+`tools/gendocs` writes it: every module's level, and for each the note —
+which in this project already says what was *not* covered, because the
+notes are written that way. It ships as `EVIDENCE.md` inside every release
+archive, so somebody holding only the tarball, which is the point of the
+tarball, can read what was demonstrated without a network. The release
+notes point at it instead of restating it.
+
+It is the same table `sys.evidence` and `doctor` answer from, so the page
+cannot say something a node would contradict.
+
+#### The first draft published a false caveat
+
+It used `UndemonstratedModules`, which is every **mutating** module rather
+than every module that mutates **as root**. So the page announced
+
+	## Mutates as root and has not been demonstrated
+	`make release-gate` refuses a release while this list is not empty.
+	It has 19 entries.
+
+while `make release-gate` passes. A page generated to stop a stale caveat
+being published, publishing a false one on its first run.
+
+It reads `Trust()` now and filters `m.Root && !m.Demonstrated` — the
+release gate's own rows and its own predicate, so the two agree by
+construction rather than by both being written carefully.
+
+#### And the audit that was supposed to catch staleness did not
+
+`TestGeneratedDocsAreCurrent` regenerates into a temporary directory and
+diffs, which is exactly the guard this needed. It held a **hand-written
+list of two filenames**:
+
+	var generated = []string{
+		"docs/configuration.md",
+		"docs/modules.md",
+	}
+
+Adding a third page to the generator did not add it there. So the new page
+was generated, linked from the README, and **unchecked**: lowering `sysrc`
+from `hardware` to `captured` without regenerating passed the audit. The
+whole claim — that neglecting the evidence table now breaks the build — was
+false when first made, and the break test is what said so.
+
+The list is read from what the generator writes now, so a fourth page is
+covered the day it is written. The same break then fails, naming the page
+and the first differing line.
+
+That is the third hand-maintained list in three days to have drifted from
+the thing it describes: the accessor list in
+`TestEveryDeclaredKeyIsReadOrRecorded` (5.143), the walkers in 5.146, and
+this. The shape is worth naming on its own: **a list of what to check,
+written beside the thing that produces it, is a second copy and will
+disagree.** Derive it or expect it to rot.
+
+#### What this asks of an agent, which no test can check
+
+CLAUDE.md now says it under the evidence model, because the mechanical half
+is only half. When a module is run against a real tool, the note is part of
+*that* change: which machine, which version, and what was not covered. A
+run that never reaches the table is invisible to the generated page, to
+`sys.evidence`, to `doctor` and to the release notes — all four now say the
+same thing, which makes the table the single place a neglected run goes
+missing from.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

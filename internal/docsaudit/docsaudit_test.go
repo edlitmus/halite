@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,9 +23,33 @@ import (
 
 // generated names each file, the go run target that writes it, and a
 // short reason for the reader who hits the failure.
-var generated = []string{
-	"docs/configuration.md",
-	"docs/modules.md",
+// generated is read from what the generator writes, not listed here.
+//
+// It was a hand-written list of two, and adding `docs/evidence.md` to the
+// generator did not add it here — so the new page was generated, linked,
+// and unchecked: changing an evidence level without regenerating passed.
+// A page whose whole purpose is to stop a stale claim being published,
+// itself going stale unnoticed.
+//
+// The generator prints each file it writes, so the list is its output.
+// A third page added tomorrow is covered the day it is written.
+func generatedFiles(t *testing.T, tmp string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatalf("reading what the generator wrote: %v", err)
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			out = append(out, filepath.Join("docs", e.Name()))
+		}
+	}
+	sort.Strings(out)
+	if len(out) == 0 {
+		t.Fatal("the generator wrote no pages; this audit has stopped checking")
+	}
+	return out
 }
 
 func repoRoot(t *testing.T) string {
@@ -47,7 +72,7 @@ func TestGeneratedDocsAreCurrent(t *testing.T) {
 		t.Fatalf("running the generator failed: %v\n%s", err, out)
 	}
 
-	for _, name := range generated {
+	for _, name := range generatedFiles(t, tmp) {
 		want, err := os.ReadFile(filepath.Join(tmp, filepath.Base(name)))
 		if err != nil {
 			t.Fatalf("the generator did not write %s: %v", name, err)
@@ -68,7 +93,13 @@ func TestGeneratedDocsAreCurrent(t *testing.T) {
 // the edit at the next generation.
 func TestGeneratedDocsSaySoAtTheTop(t *testing.T) {
 	root := repoRoot(t)
-	for _, name := range generated {
+	tmp := t.TempDir()
+	cmd := exec.Command("go", "run", "./tools/gendocs", tmp)
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running the generator failed: %v\n%s", err, out)
+	}
+	for _, name := range generatedFiles(t, tmp) {
 		data, err := os.ReadFile(filepath.Join(root, name))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
