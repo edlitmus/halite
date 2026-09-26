@@ -32,6 +32,7 @@ func main() {
 	}
 	write(filepath.Join(dir, "configuration.md"), ConfigurationReference())
 	write(filepath.Join(dir, "modules.md"), ModuleReference())
+	write(filepath.Join(dir, "evidence.md"), EvidenceReport())
 }
 
 func write(path, body string) {
@@ -334,4 +335,116 @@ func signatureNotes(s signature.Signature) string {
 // escapePipes keeps a doc string from breaking the table it sits in.
 func escapePipes(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "|", `\|`), "\n", " ")
+}
+
+// EvidenceReport renders what has and has not been demonstrated, per
+// module.
+//
+// # Why this is generated
+//
+// The proof of concept's release notes carried a hand-written "not
+// verified on real hardware" section, and a hand-written list of what has
+// not been run goes stale in the one direction that matters: work gets
+// done and the list still says it was not. That happened twice in a fortnight —
+// `plan.md` said Linux arm64 "has still never run it" after the suite, a
+// hub and a node had all run on `ref-salt1` (DIVERGENCE 5.83, 5.84), and
+// three pages said the macOS code "has been run on neither" while seven
+// `mac_*` modules were already `hardware` (5.142).
+//
+// So the list is derived from `internal/builtin`'s evidence table, which
+// is the thing an agent has to touch anyway when it runs something, and
+// `TestGeneratedDocsAreCurrent` fails when the page and the table
+// disagree. Neglecting the table now breaks the build rather than
+// quietly publishing a false caveat.
+//
+// **What that asks of whoever runs something on a real machine:** the
+// evidence note is part of that change, not an afterthought. Running
+// `pkg.install` against a real apt and not saying so in the note leaves
+// this page, `sys.evidence`, `doctor` and the release notes all claiming
+// it was never done.
+func EvidenceReport() string {
+	r := builtin.New()
+	declared := r.Exec.DeclaredEvidence()
+
+	// The same rows the release gate reads, not a list of its own. The
+	// first draft of this page used `UndemonstratedModules`, which is
+	// every *mutating* module rather than every module that mutates **as
+	// root** -- so it announced nineteen blocking modules and that
+	// `make release-gate` refuses to ship, while the gate passes. A page
+	// generated to stop a false caveat being published, publishing one.
+	var blocking []string
+	for _, m := range r.Trust() {
+		if m.Root && !m.Demonstrated {
+			blocking = append(blocking, m.Module)
+		}
+	}
+	sort.Strings(blocking)
+
+	byLevel := map[exec.EvidenceLevel][]string{}
+	for module, e := range declared {
+		byLevel[e.Level] = append(byLevel[e.Level], module)
+	}
+	for _, names := range byLevel {
+		sort.Strings(names)
+	}
+
+	var b strings.Builder
+	b.WriteString("# What has been demonstrated, and what has not\n\n")
+	b.WriteString(generatedNotice + "\n\n")
+	b.WriteString(`Every module's evidence level, from ` + "`internal/builtin`" + `'s table —
+the same answer ` + "`sys.evidence`" + ` gives on a node and ` + "`doctor`" + ` gives about
+itself. Three levels, and the difference between them is what somebody
+actually watched:
+
+| Level | What it means |
+|---|---|
+| ` + "`hardware`" + ` | the mutating path has been run against the real tool on a real system, and the note says which and when |
+| ` + "`captured`" + ` | the tests hold output taken from the real tool, so the parsing is checked; nothing has watched it *change* anything |
+| ` + "`assumed`" + ` | the tests were written from documentation. The default, deliberately |
+
+**` + "`assumed`" + ` is not a bug report.** A module there may be perfectly
+correct; what it means is that if it does the wrong thing, halite is not
+ruled out as the cause. That is the sentence an operator needs at three in
+the morning, and it is why the notes below say what was *not* covered as
+well as what was.
+
+`)
+
+	if len(blocking) > 0 {
+		fmt.Fprintf(&b, "## Mutates as root and has not been demonstrated\n\n")
+		fmt.Fprintf(&b, "`make release-gate` refuses a release while this list is not "+
+			"empty. It has %d entr%s.\n\n", len(blocking),
+			map[bool]string{true: "y", false: "ies"}[len(blocking) == 1])
+		for _, module := range blocking {
+			fmt.Fprintf(&b, "- **`%s`** — %s\n", module, noteOrNone(declared[module]))
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString("## Mutates as root and has not been demonstrated\n\n" +
+			"**Nothing.** `make release-gate` passes: every module that changes a machine " +
+			"as root has been run against the tool it drives.\n\n")
+	}
+
+	for _, level := range []exec.EvidenceLevel{exec.Assumed, exec.Captured, exec.Hardware} {
+		names := byLevel[level]
+		if len(names) == 0 {
+			continue
+		}
+		fmt.Fprintf(&b, "## `%s` — %d module%s\n\n", level, len(names),
+			map[bool]string{true: "", false: "s"}[len(names) == 1])
+		for _, module := range names {
+			fmt.Fprintf(&b, "### `%s`\n\n%s\n\n", module, noteOrNone(declared[module]))
+		}
+	}
+	return b.String()
+}
+
+// noteOrNone is the module's note, or the sentence that says there is
+// none — which is itself information, and is what the release gate
+// reports as "no declaration at all; nobody has considered this module".
+func noteOrNone(e exec.Evidence) string {
+	if strings.TrimSpace(e.Note) == "" {
+		return "_No note. Nobody has written down what is known about this module._"
+	}
+	return strings.TrimRight(e.Note, ".") + "."
 }

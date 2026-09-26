@@ -128,6 +128,31 @@ actually knows:
 There are two honest ways past it — demonstrate the module, or take it
 out of the build. Both have been used.
 
+### Running something is not done until the note says so
+
+**The evidence note is part of the change that ran the thing, not an
+afterthought.** `docs/evidence.md` is generated from the table, the
+release notes are built from it, `sys.evidence` and `doctor` answer from
+it, and `TestGeneratedDocsAreCurrent` fails when the page and the table
+disagree. So a level raised without regenerating breaks the build — and a
+run that never reaches the table is invisible to every one of those.
+
+It has gone wrong twice, both times in the same direction: **the work was
+done and the prose still said it never happened.**
+
+- `plan.md` said Linux arm64 *"has still never run it"* after the suite,
+  a hub and a node had all run natively on `ref-salt1` (5.83, 5.84).
+- Three pages said the macOS code *"has been run on neither"* while seven
+  `mac_*` modules were already `hardware` (5.142).
+
+Neither was a lie anybody told; both were sentences nobody went back to
+after the run. The generated page fixes the half that can be mechanical.
+The half that cannot is this: when you run a module against a real tool,
+**say which machine, which version, and what you did not cover**, in the
+note, in the same change. A note that says only "runs on Linux" is worth
+little at three in the morning, and the notes here are long for that
+reason.
+
 ## The estate, and why FreeBSD comes first
 
 Four FreeBSD hosts to one Ubuntu. FreeBSD is SPEC 27.1 **tier 1** and
