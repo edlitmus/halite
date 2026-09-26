@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -346,6 +347,32 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 		})
 	}
 
+	// The cases that need more than the shared context: commands that
+	// really run, a module dispatcher, or the git binary. They live in
+	// conformance_reach_test.go and are counted by the same accounting
+	// below, so there is still one answer to "what is covered".
+	reach := reachableConformanceCases(t, r, withFiles)
+	for _, cc := range reach {
+		name := cc.Label
+		if name == "" {
+			name = cc.Name
+		}
+		t.Run(name, func(t *testing.T) {
+			if cc.Requires != "" {
+				if _, err := osexec.LookPath(cc.Requires); err != nil {
+					t.Skipf("%s needs %s, which is not on this machine", cc.Name, cc.Requires)
+				}
+			}
+			ctx := withFiles
+			if cc.Context != nil {
+				ctx = cc.Context
+			}
+			for _, f := range cc.Check(r.States, ctx) {
+				t.Errorf("%s", f)
+			}
+		})
+	}
+
 	// And the accounting, here rather than in a test of its own so that it
 	// reads the very list that just ran. Two lists of what is covered
 	// would disagree; this repository has found that three times in a week.
@@ -353,6 +380,9 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 		covered := map[string]bool{}
 		for _, cf := range cases {
 			covered[cf.Name] = true
+		}
+		for _, cc := range reach {
+			covered[cc.Name] = true
 		}
 		var missing []string
 		for _, name := range r.States.Signatures().Names() {
@@ -388,8 +418,26 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 				t.Errorf("%s has a conformance case and is also excused; delete the excuse", name)
 			}
 		}
-		t.Logf("%d of %d state functions have a conformance case; %d are excused",
-			len(covered), len(r.States.Signatures().Names()), len(unconformed))
+		// Counted rather than written down, because a number in prose is a
+		// number that drifts: `plan.md` said 6 when it was 7, and this
+		// file's own comment said eleven when it was six.
+		unchangingOnly := map[string]bool{}
+		for _, cc := range reach {
+			if cc.Unchanging {
+				unchangingOnly[cc.Name] = true
+			}
+		}
+		for _, cc := range reach {
+			if !cc.Unchanging {
+				delete(unchangingOnly, cc.Name)
+			}
+		}
+		for _, cf := range cases {
+			delete(unchangingOnly, cf.Name)
+		}
+		t.Logf("%d of %d state functions have a conformance case; %d are excused; "+
+			"%d have one only because the harness can express a state that changes nothing",
+			len(covered), len(r.States.Signatures().Names()), len(unconformed), len(unchangingOnly))
 	})
 }
 

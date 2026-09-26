@@ -14041,6 +14041,157 @@ None of the three would have been caught by a passing test. What caught
 them was checking the instrument before believing the reading, which is
 the discipline this project keeps relearning three times in one afternoon.
 
+#### Coverage 18 → 35, and the seventeen reachable ones are gone
+
+The group above that said "reachable in-process and not yet written" had no
+excuse worth keeping, so it was closed. Ninety-seven entries remain and every
+one of them now needs either the node's own roots redirected or a machine
+nobody minds breaking.
+
+**Six of the seventeen needed the harness, not the case.** Every phase of
+`Conformance.Check` assumes a state with work to do — the first of them fails
+a function that reports success, on the grounds that a setup leaving nothing
+to change is testing nothing. `cmd.wait` and `module.wait` exist to do
+nothing unless a watch requisite fires; four of the five `test.*` fakes exist
+to report a fixed answer. So they had been sitting in a list of things nobody
+had got round to, when the real reason was that **the harness could not
+express them.** A missing capability recorded as a missing effort, which is
+the more expensive of the two mistakes because it does not look like one.
+
+That six was written as eleven first, counted off the case list by eye. It is
+now counted by the accounting subtest and logged beside the coverage figure,
+because a number in prose is a number that drifts — which is the same defect
+as `plan.md` saying this harness covered 6 functions when it covered 7.
+
+`Conformance.Unchanging` is the contract they actually have: never a nil
+result, never a change, and the same answer in both modes. That last is the
+one that matters, and it is the same defect as any other test-mode
+violation — a `cmd.wait` that ran its command anyway would run it under
+`--test` too. With a `Probe` the harness sees it directly, which is why
+`cmd.wait` and `module.wait` are given one over a path their command would
+create. Both breaks were tried:
+
+	probe: the system changed from "absent" to "present" across four
+	runs of a state that changes nothing
+
+Whether the answer is success or failure is deliberately not checked, because
+`test.fail_without_changes` fails on purpose. Which answer a module gives is
+an ordinary unit test's business; that it gives the same one either way is
+this harness's.
+
+`cmd.run`, `cmd.script` and `module.run` are idempotent through
+`SkipIdempotence` with the reason stated where a reader will find it:
+`creates`, `unless` and `onlyif` are **lowstate options**, evaluated by
+`internal/state` before the function is called, so the function reached
+through the registry always runs. That is not a defect, but a reader meeting
+`SkipIdempotence` on `cmd.run` should be told where idempotence comes from
+instead of guessing.
+
+##### A check and 289 comments that disagreed
+
+`checkComment` required an upper-case letter, a digit, or a leading slash.
+`ssh_known_hosts` failed on
+
+	host.example.com was added to /root/.ssh/known_hosts.
+
+which is a perfectly good thing to show an operator. The slash was there
+because a `file` comment opens with its path, and that is the house style
+throughout: `pam` opens with the module, `snap` with the snap's name. A grep
+of `internal/builtin` finds **289** comment constructions opening with a
+substituted value or a lower-case letter, and the reason none had ever failed
+is that only a function with a conformance case is checked at all — so the
+rule and the code disagreed, invisibly, for as long as the gap in coverage
+hid it. [Two paths that must agree.]
+
+The exception is now what it was always standing for: a first word that is an
+identifier, a path or a hostname. What stays refused is the shape the rule
+exists for — a comment opening with a lower-case English word, which is
+either a fragment ("changed", "done") or a sentence started in the middle
+("the rule was removed"). `nftables` and `pam` still have some of the latter
+and will fail the day their cases arrive, which is the right time to fix
+them.
+
+Widening a check to make new cases pass is exactly the move this ledger is
+suspicious of, so: the modules were not changed, the rule was, and both ends
+of it are held by tests that list what it admits and what it must refuse.
+
+##### `ssh_auth.present` could have emptied authorized_keys
+
+The finding, and the reason the break-it-again rule is not a formality.
+`ssh_auth.present` rewritten to replace the file rather than append to it —
+
+	existing = []authKey{want}
+
+— **passed the entire package**, conformance harness included.
+
+The harness cannot see it. It compares the probe across the two test-mode
+runs, which proves test mode changed nothing; it does not compare the probe
+after the apply, because it has no way to know what the apply should have
+left. And a state that destroys the file once is then perfectly idempotent
+about it: the second run finds the key present and reports no changes. All
+four phases agree.
+
+Nor could the existing tests, and that is the part worth keeping: every
+`ssh_auth` and `ssh_known_hosts` test in the package started from a file
+that did not exist, so **no test had ever had another account's key to
+lose.** The states were written to preserve one — `authKey.Raw` and
+`knownHost.Raw` exist for exactly that, and the code says a hashed
+known_hosts entry "is not readable, and rewriting the file must not drop
+it" — and nothing held them to it.
+
+On this estate `ssh_auth.present` is how accounts get their keys, so the
+bug's shape is every other operator locked out of four hosts on the next
+highstate.
+
+Four tests now start from a populated file and assert what survives: the
+other key, a comment line, a hashed entry, and for the `absent` pair that
+only the named entry went. Each was confirmed against its own break.
+
+##### The one skip, made loud
+
+`git.latest`'s case needs the real git binary and skips without it, which is
+this package's existing convention for four `TestGitLatest*` tests. The
+convention hides something: **no CI leg here runs `go test -v`**, so
+`ok internal/builtin` is printed whether those five ran or silently did not,
+and the FreeBSD virtual machine installs a pinned Go toolchain and nothing
+else. Whether git is in it was a question the output could not answer — on
+tier 1, carrying 80% of the estate.
+
+`TestTheGitBinaryIsPresentSoTheGitTestsRun` answers it by failing. Not a new
+requirement: `VERSION` comes from `git describe` in the Makefile, so a machine
+that can build halite has git, and one that cannot should be told which tests
+it is not running instead of left to assume they passed.
+
+**It answered on the first run: git was not there.** CI run 36266405856,
+`test (freebsd)`:
+
+	--- FAIL: TestTheGitBinaryIsPresentSoTheGitTestsRun
+	no git on this machine, so five tests in this package skipped silently
+
+So the four `TestGitLatest*` tests had **never run on FreeBSD** — not once,
+and nothing in any green run said otherwise. The leg installs `git-lite` now,
+which provides the same `/usr/local/bin/git` without the Perl a full install
+pulls into an emulated VM.
+
+Worth separating the two findings, because only one of them is about git. The
+first is that a tier 1 platform was missing coverage. The second is the reason
+it stayed missing: **a skip is silent without `-v`, so a green leg and a leg
+that ran five fewer tests print the same thing.** The first was fixed in a
+line of YAML. The second is the one to remember, and it is
+[a test that skips is not a test that ran] with a new way of hiding — this
+time not in a message nobody read, but in the absence of any message at all.
+
+One more break was tried and **missed**: an `archive.extracted` that
+extracts only the top level of a nested archive passes the conformance case,
+for the same reason — the probe does not check the apply's outcome. Four
+existing tests catch that one, `TestArchiveExtractedState` among them, so it
+is covered; the general lesson is that **the harness checks the contract, not
+the result**, and a state whose result matters needs its own test beside the
+case. That was already true of `file.recurse` and is now written where it
+applies to all of them.
+
+
+
 
 ## 6. Everything else not started
 

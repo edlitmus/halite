@@ -4,13 +4,23 @@ package builtin
 //
 // # What this table is for
 //
-// `internal/states`'s package comment says the SPEC 11.6 harness is one
-// "which every state module must pass". Eighteen of a hundred and
+// `internal/states`'s package comment used to say the SPEC 11.6 harness is
+// one "which every state module must pass". Eighteen of a hundred and
 // thirty-two had a case when this table was written, so the sentence was an
 // intention rather than a fact, and nothing said which the other hundred
 // and fourteen were. An unbounded gap nobody can enumerate is worse than a
 // long list: the list can be shortened deliberately, and its entries can be
 // argued with.
+//
+// It has been shortened once since. The seventeen that said "reachable
+// in-process and not yet written" are gone, which took thirty-five of a
+// hundred and thirty-two to a case and left ninety-seven here. Six of the
+// seventeen needed the harness widened rather than the case written:
+// `test.nop`, `cmd.wait` and their kind change nothing at all, and every
+// phase of the harness assumed a state with work to do. See
+// `states.Conformance.Unchanging`. The accounting subtest counts those six
+// rather than trusting this sentence, because this sentence said eleven
+// first.
 //
 // # Why most of these cannot simply be written
 //
@@ -23,28 +33,14 @@ package builtin
 // is, on this project, a host the fleet manages.
 //
 // So the honest split is by *what the function touches*, and that is how the
-// reasons below are grouped. Three of the groups are reachable with work and
-// say so; the rest need a machine nobody minds breaking, which is what
-// `TestLive*` and the lab are for.
+// two remaining reasons below are grouped. The first is reachable with work
+// and says what the work is; the second needs a machine nobody minds
+// breaking, which is what `TestLive*` and the lab are for.
 //
 // DIVERGENCE 5.157.
 var unconformed = map[string]string{}
 
 func init() {
-	// Reachable, and worth doing next: the effect is confined or absent,
-	// and only the arrangement is missing.
-	reach := "reachable in-process and not yet written: its effect is confined to a path or to nothing"
-	for _, n := range []string{
-		"test.configurable_test_state", "test.fail_without_changes", "test.nop",
-		"test.show_notification", "test.succeed_without_changes",
-		"archive.extracted", "x509.certificate_managed", "git.latest",
-		"cmd.run", "cmd.script", "cmd.wait", "module.run", "module.wait",
-		"ssh_auth.absent", "ssh_auth.present",
-		"ssh_known_hosts.absent", "ssh_known_hosts.present",
-	} {
-		unconformed[n] = reach
-	}
-
 	// Writes a file the node itself reads, so a case needs the node's own
 	// roots redirected rather than a bare temp directory.
 	node := "applies to this node's own configuration, so a case needs its roots redirected first"
