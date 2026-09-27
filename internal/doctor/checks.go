@@ -65,13 +65,36 @@ func ConfigValidity(path string, loadErr error, unknownKeys []string, restartsCl
 	}
 }
 
+// Expected is a certificate this process's configuration points at, and
+// how much notice its rotation needs.
+type Expected struct {
+	// Cert is the certificate. Nil means the configuration names it and
+	// the file is not there, which is reported rather than skipped:
+	// absent and expired are different problems with different remedies,
+	// and skipping the first quietly made them the same answer. See
+	// DIVERGENCE 5.159.
+	Cert *x509.Certificate
+	// WarnWithin is how long before expiry to begin saying so.
+	//
+	// Per certificate, because the certificates in one key directory do
+	// not share a clock. An enrollment CA is issued for a decade and
+	// rotating it re-enrols the estate; an operator credential is issued
+	// for thirty days by default and reissued with one command. A single
+	// window wide enough to be useful for the CA reports a
+	// default-lifetime operator certificate as expiring on the day it
+	// was created, which is a check that is permanently yellow and
+	// therefore read by nobody.
+	WarnWithin time.Duration
+}
+
 // CertificateExpiry checks every certificate this process depends on.
 //
 // Warns rather than fails on an approaching expiry, and the window is
 // generous, because the point is to be told in time to act rather than
 // on the morning it stops working. An expired one is a failure: nothing
-// will connect.
-func CertificateExpiry(certs map[string]*x509.Certificate, now time.Time, warnWithin time.Duration) Check {
+// will connect. So is one the configuration names and the directory does
+// not hold.
+func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 	return Check{
 		Name:  "certificate validity and expiry",
 		Roles: []string{RoleNode, RoleHub},
@@ -90,10 +113,15 @@ func CertificateExpiry(certs map[string]*x509.Certificate, now time.Time, warnWi
 			}
 			sort.Strings(names)
 
-			var expired, expiring, details []string
+			var absent, expired, expiring, details []string
 			for _, name := range names {
-				cert := certs[name]
+				want := certs[name]
+				cert := want.Cert
+				// Named by the configuration and not on disk. Reported,
+				// because the alternative is a check that passes for a
+				// reason nobody can see.
 				if cert == nil {
+					absent = append(absent, name+" is named here and its file is not present")
 					continue
 				}
 				left := cert.NotAfter.Sub(now)
@@ -104,22 +132,25 @@ func CertificateExpiry(certs map[string]*x509.Certificate, now time.Time, warnWi
 				case left <= 0:
 					expired = append(expired, fmt.Sprintf("%s expired %s ago",
 						name, roughly(-left)))
-				case left <= warnWithin:
+				case left <= want.WarnWithin:
 					expiring = append(expiring, fmt.Sprintf("%s expires in %s", name, roughly(left)))
 				default:
 					details = append(details, fmt.Sprintf("%s: %s left", name, roughly(left)))
 				}
 			}
 			switch {
-			case len(expired) > 0:
+			case len(expired) > 0 || len(absent) > 0:
 				res.Status = Fail
-				res.Detail = strings.Join(append(expired, expiring...), "; ")
-				res.Remedy = "Nothing will connect with an expired certificate.\n" +
-					"A node renews with `halite-node renew`; a hub's is reissued from its CA."
+				res.Detail = strings.Join(append(append(expired, absent...), expiring...), "; ")
+				res.Remedy = "Nothing will connect with an expired or missing certificate.\n" +
+					"A node renews with `halite-node renew`; a hub's is reissued from its CA; " +
+					"an operator's with `halite-hub keys operator create <name>`, which keeps " +
+					"the same cert:CN=<name> the policy binds."
 			case len(expiring) > 0:
 				res.Status = Warn
 				res.Detail = strings.Join(expiring, "; ")
-				res.Remedy = "Renew before it lapses: `halite-node renew` on a node. A " +
+				res.Remedy = "Renew before it lapses: `halite-node renew` on a node, " +
+					"`halite-hub keys operator create <name>` for an operator. A " +
 					"certificate that expires while the node is connected keeps that " +
 					"connection and is refused on the next one, so the symptom appears at a\n" +
 					"restart rather than at the expiry."

@@ -14433,6 +14433,78 @@ the build and vet, but not by an end-to-end run: reaching that line needs
 a real orchestration against the estate, which runs states on live
 machines. The edit is the same three-line shape applied to `migrate`,
 which *is* exercised above.
+### 5.159 The certificate check passed while the certificate nothing could connect with had expired
+
+`halite-hub doctor` reported
+
+```
+pass  certificate validity and expiry  the enrollment CA: 3619 days left;
+      this hub's certificate: 59 days left
+```
+
+in the same minute that
+
+```
+$ halite-hub run '*' test.ping --as ed
+halite: /v1/jobs: Post "https://localhost:4510/v1/jobs": remote error: tls: expired certificate
+```
+
+`hubCertificateCheck` built its map from exactly two entries,
+`pki.HubCertFile` and `pki.CACertFile`. Operator certificates were never in
+scope, so the check was **truthful about what it looked at and silent about
+the thing that was broken** — and it is named "certificate validity and
+expiry", not "the hub's own certificate validity and expiry". A check whose
+name promises a set it does not read is worse than an absent check, because
+a pass is taken as an answer about the whole set. Two more operator
+certificates were inside the check's own thirty-day window at the time and
+it said nothing about those either.
+
+**Widened to what the host has configured.** The hub's own pair, plus every
+`operator-<name>.crt` the configured `pki_dir` holds, read through
+`pki.Files.OperatorNames` — the same lister `run` uses to choose which
+credential to present when `--as` is not given. One lister on purpose: a
+hub that authenticates with a certificate the diagnostics do not enumerate
+is the defect above with a different file name.
+
+**Notice periods are per certificate now, and that is the substance rather
+than a detail.** `doctor.Expected` carries a `WarnWithin` beside each
+certificate. The certificates in one key directory do not share a clock:
+the enrollment CA is issued for a decade and rotating it re-enrols the
+estate, while `keys operator create` defaults to **720h** and reissuing is
+one command that keeps the same `cert:CN=<name>`. Checking operator
+certificates against the hub's thirty-day window would report every
+default-lifetime credential as expiring **on the day it was issued** — a
+row that is permanently yellow, and therefore read by nobody. So thirty days
+for the hub's pair, seven for an operator's. `TestAFreshOperatorCertificateDoesNotWarn`
+is what stops those two numbers from being changed independently.
+
+**Absent is now an answer.** `CertificateExpiry` skipped a nil certificate
+silently, and `hubCertificateCheck` skipped a file that did not exist. With
+two fixed files that was survivable, because a hub holding neither lands on
+the empty-map skip. With operator certificates in scope it stops being
+survivable: they legitimately come and go, so "the file is not there" and
+"the file is there and expired" would both vanish into the same silence and
+the check would go back to passing for a reason nobody can see. A
+certificate the configuration names and the directory does not hold is now a
+failure that says so. An empty key directory is still a skip, because a hub
+nobody has set up yet is not a hub with a missing certificate.
+
+**Demonstrated, not argued.** Against the estate's own pre-renewal key
+material the widened check reports `warn ... operator api expires in 38h;
+operator prometheus expires in 34h` — the two the old check passed over. An
+operator certificate one second past its `notAfter` produces `fail ...
+operator lapsed expired 5s ago` and exit 1. With `OperatorNames` stubbed
+back to nothing, the test reproduces the original false pass verbatim: *"an
+expired operator certificate is pass, not fail: the enrollment CA: 3599 days
+left; this hub's certificate: 58 days left"*.
+
+**Not done, and worth knowing.** The set comes from the key directory, not
+from `policy.yaml`, so an operator **bound in policy with no certificate on
+disk** is not reported — the check can say that a credential is lapsing, not
+that one a binding expects was never issued. `api.crt`, the API's own
+serving certificate, sits in the same directory and is still unchecked by
+anything: `halite-api` has no `doctor` at all. Both are additions to this
+check rather than corrections of it.
 
 
 

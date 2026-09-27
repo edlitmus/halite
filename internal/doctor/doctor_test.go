@@ -40,9 +40,12 @@ func all(t *testing.T) []Check {
 	return []Check{
 		ConfigValidity("/etc/halite/node.yaml", nil, nil, true),
 		ClockSkew(time.Second, nil, time.Minute),
-		CertificateExpiry(map[string]*x509.Certificate{
-			"node": {NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(90 * 24 * time.Hour)},
-		}, time.Now(), 14*24*time.Hour),
+		CertificateExpiry(map[string]Expected{
+			"node": {
+				Cert:       &x509.Certificate{NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(90 * 24 * time.Hour)},
+				WarnWithin: 14 * 24 * time.Hour,
+			},
+		}, time.Now()),
 		Connectivity("hub.example:4506", func(context.Context) (string, time.Duration, error) {
 			return "halite-hub ok", time.Millisecond, nil
 		}),
@@ -151,16 +154,25 @@ func everyOutcome(t *testing.T) []Result {
 		ConfigValidity("/etc/halite/node.yaml", nil, []string{"tracing"}, true),
 		ConfigValidity("/etc/halite/node.yaml", nil, nil, false),
 
-		CertificateExpiry(nil, now, time.Hour),
-		CertificateExpiry(map[string]*x509.Certificate{
-			"node": {NotBefore: now.Add(-time.Hour), NotAfter: now.Add(-time.Minute)},
-		}, now, 14*24*time.Hour),
-		CertificateExpiry(map[string]*x509.Certificate{
-			"node": {NotBefore: now.Add(-time.Hour), NotAfter: now.Add(3 * 24 * time.Hour)},
-		}, now, 14*24*time.Hour),
-		CertificateExpiry(map[string]*x509.Certificate{
-			"node": {NotBefore: now.Add(time.Hour), NotAfter: now.Add(48 * time.Hour)},
-		}, now, time.Hour),
+		CertificateExpiry(nil, now),
+		CertificateExpiry(map[string]Expected{
+			"node": {
+				Cert:       &x509.Certificate{NotBefore: now.Add(-time.Hour), NotAfter: now.Add(-time.Minute)},
+				WarnWithin: 14 * 24 * time.Hour,
+			},
+		}, now),
+		CertificateExpiry(map[string]Expected{
+			"node": {
+				Cert:       &x509.Certificate{NotBefore: now.Add(-time.Hour), NotAfter: now.Add(3 * 24 * time.Hour)},
+				WarnWithin: 14 * 24 * time.Hour,
+			},
+		}, now),
+		CertificateExpiry(map[string]Expected{
+			"node": {
+				Cert:       &x509.Certificate{NotBefore: now.Add(time.Hour), NotAfter: now.Add(48 * time.Hour)},
+				WarnWithin: time.Hour,
+			},
+		}, now),
 
 		Connectivity("", nil),
 		Connectivity("hub.example:4506", func(context.Context) (string, time.Duration, error) {

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -88,22 +87,13 @@ func operatorClient(args *cli.Args) *transport.Client {
 // defaultOperator finds the one operator certificate in the key
 // directory, and refuses to guess between several.
 func defaultOperator(files pki.Files) string {
-	entries, err := os.ReadDir(files.Dir)
-	if err != nil {
-		return ""
-	}
-	var names []string
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasPrefix(name, "operator-") && strings.HasSuffix(name, ".crt") {
-			names = append(names, strings.TrimSuffix(strings.TrimPrefix(name, "operator-"), ".crt"))
-		}
-	}
+	// The same lister `doctor` checks the expiry of, so the credential
+	// this presents is one that is being watched. pki.OperatorNames.
+	names := files.OperatorNames()
 	if len(names) == 1 {
 		return names[0]
 	}
 	if len(names) > 1 {
-		sort.Strings(names)
 		cli.Fatalf("there are %d operator certificates in %s (%s); say which with --as",
 			len(names), files.Dir, strings.Join(names, ", "))
 	}
