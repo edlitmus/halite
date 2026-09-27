@@ -390,7 +390,16 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 		}
 		// And the machine-level ones, whose cases live in
 		// live_conformance_test.go and run only where a machine has been
-		// offered up. Their *names* are read here so that a state with a
+		// offered up.
+		//
+		// A live case must be *constructed* on every platform and gated by
+		// its `platforms` field, never omitted. One was built inside
+		// `if key != ""` and so vanished on Windows, where there is no
+		// harmless sysctl to name -- and `sysctl.present` then read as
+		// having no case at all. This accounting is what caught it, on the
+		// windows-2022 leg, which is the argument for running it on every
+		// platform rather than once: coverage measured only where the audit
+		// happens to run is not coverage. Their *names* are read here so that a state with a
 		// live case does not read as uncovered; whether the case ran is a
 		// different question, and the live suite counts that itself and
 		// fails when nothing ran. Building the list is side-effect free by

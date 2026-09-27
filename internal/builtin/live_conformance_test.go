@@ -678,7 +678,21 @@ func kernelCases() []liveCase {
 	// suite's own so that the *persistent* half does not edit the
 	// machine's sysctl configuration -- the running half is real, and is
 	// put back.
-	if key, want := conformanceSysctl(); key != "" {
+	// Always appended, never conditionally.
+	//
+	// This was `if key != "" { … }`, so on Windows -- where there is no
+	// harmless sysctl to name -- the case was *absent from the list* rather
+	// than skipped, and the unit suite's accounting reported
+	// `sysctl.present` as having no case at all. Coverage became a function
+	// of the platform the audit ran on, which is the one thing a single
+	// list of truth is supposed to prevent. CI found it on windows-2022,
+	// the platform this could not be tried on locally.
+	//
+	// So a case is constructed unconditionally and its platforms are
+	// declared. An empty key is harmless: the case skips before its
+	// arguments are ever read.
+	{
+		key, want := conformanceSysctl()
 		before := func() string {
 			out, err := r.Exec.Call(root, "sysctl.get", value.MapOf("name", key))
 			if err != nil {
@@ -693,6 +707,10 @@ func kernelCases() []liveCase {
 			_, _ = r.Exec.Call(root, "sysctl.assign", value.MapOf("name", key, "value", before))
 		}
 		cases = append(cases, liveCase{
+			// Every platform with a `sysctl` worth naming. Windows has no
+			// entry in conformanceSysctl and is excluded here, which is
+			// the declaration doing the work the omission used to.
+			platforms: []string{"linux", "freebsd", "openbsd", "netbsd", "darwin"},
 			Conformance: states.Conformance{
 				Name: "sysctl.present",
 				Args: value.MapOf("name", key, "value", want,
