@@ -9587,6 +9587,50 @@ which values will later be printed is not a decision this build can make
 correctly, and the failure mode of guessing wrong is the one this entry
 is about.
 
+#### Fixed: `doctor` never had the GPG settings this entry said it had
+
+The paragraph above begins "Its pillar check compiles the same tree with
+the same GPG settings". It did not. `hubPillarCheck` built its
+`pillar.Config` literal by hand and assigned `OnSecret` — which is what
+this entry was about — while leaving `GPG` at its zero value, so the
+check invoked gpg with whatever `GNUPGHOME` the operator's shell
+happened to carry. `gpg_home` was read by `serve`, by the node, and by
+`lint`, and not by the one command whose job is to tell you the pillar
+is healthy.
+
+On the estate it reported
+
+```
+fail  pillar compilation  hosts.sls: beastie.edlitmus.info:ipmi_auth
+  could not be decrypted: gpg: public key decryption failed: No secret key
+```
+
+against a hub that was serving that same pillar, decrypted, to every
+node — `halite-node pillar items` returned the value while `doctor`
+called it broken. The report was wrong, not the pillar, and the failure
+points at the tree rather than at itself, so it sends whoever reads it
+to go and look at the wrong thing.
+
+**`ssh` was missed altogether.** `inlinePillar` compiles pillar per
+agentless target and had *neither* field: no `GPG`, so an encrypted
+pillar could not compile for a target at all, and no `OnSecret`, which is
+this entry's own defect still open in a third place. The GPG gap was
+masking the redactor gap — an agentless run could not reach a decrypted
+value to leak it, so fixing decryption alone would have opened the leak.
+Both were assigned together.
+
+**Why `pillarConfigFor` did not catch either.** The seam this entry
+built to be testable is in `internal/hub`, and both of these construct
+`pillar.Config` directly without going through it. A seam only guards
+the callers that use it; two did not, and nothing said so. The count of
+sites is what wanted checking, not the seam.
+
+The new test drives `doctor` against a keyring named only in
+`hub.yaml`, and deliberately does not export `GNUPGHOME`, because a test
+that exported it would pass against the unfixed code. With `GPG`
+commented out it reproduces the estate's error string verbatim.
+
+
 ### 5.111 `mine.update` took no arguments, and replaced what Salt merges
 
 `shared/salt/files/minion.d/mine.conf` opens with <!-- lexicon:allow -->
