@@ -128,7 +128,12 @@ func nodeConfigCheck(args *cli.Args, n *node) doctor.Check {
 
 func nodeCertificateCheck(args *cli.Args, n *node) doctor.Check {
 	files := pki.Files{Dir: args.Flag("pki-dir", n.cfg.PathUnderRoot("pki_dir", "pki"))}
-	certs := map[string]*x509.Certificate{}
+	// Fourteen days: long enough that a renewal is this fortnight's
+	// work rather than tonight's, short enough not to be background
+	// noise for a quarter. A node holds one certificate and one CA, so
+	// unlike the hub they share a window.
+	const notice = 14 * 24 * time.Hour
+	certs := map[string]doctor.Expected{}
 	for label, name := range map[string]string{
 		"this node's certificate": pki.NodeCertFile,
 		"the hub's CA":            pki.CACertFile,
@@ -142,15 +147,14 @@ func nodeCertificateCheck(args *cli.Args, n *node) doctor.Check {
 			// will connect with it either way, and a check that stays
 			// quiet about a file it could not parse is one that passes
 			// on a broken node.
-			certs[label+" (unreadable: "+err.Error()+")"] = &x509.Certificate{}
+			certs[label+" (unreadable: "+err.Error()+")"] = doctor.Expected{
+				Cert: &x509.Certificate{}, WarnWithin: notice,
+			}
 			continue
 		}
-		certs[label] = cert
+		certs[label] = doctor.Expected{Cert: cert, WarnWithin: notice}
 	}
-	// Fourteen days: long enough that a renewal is this fortnight's
-	// work rather than tonight's, short enough not to be background
-	// noise for a quarter.
-	return doctor.CertificateExpiry(certs, time.Now(), 14*24*time.Hour)
+	return doctor.CertificateExpiry(certs, time.Now())
 }
 
 func nodeConnectivityCheck(args *cli.Args, n *node) doctor.Check {

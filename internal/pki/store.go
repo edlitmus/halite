@@ -12,6 +12,8 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
@@ -33,7 +35,42 @@ const (
 	HubCertFile  = "hub.crt"
 	NodeKeyFile  = "node.key"
 	NodeCertFile = "node.crt"
+
+	// OperatorPrefix names an operator or service credential:
+	// operator-<name>.crt, whose CN is <name> and whose RBAC principal
+	// is cert:CN=<name>.
+	OperatorPrefix = "operator-"
 )
+
+// OperatorCertFile is the certificate for an operator called name.
+func OperatorCertFile(name string) string { return OperatorPrefix + name + ".crt" }
+
+// OperatorNames lists the operators this key directory holds a
+// certificate for, sorted.
+//
+// One lister, because two of them would disagree. `run` uses it to
+// decide which certificate to present when `--as` is not given, and
+// `doctor` uses it to decide which certificates to check the expiry of;
+// a hub where those two sets differ is a hub that authenticates with a
+// credential nothing is watching. A missing or unreadable directory
+// yields no names rather than an error: the callers both treat "no
+// operator certificates" as a state to report, not a failure.
+func (f Files) OperatorNames() []string {
+	entries, err := os.ReadDir(f.Dir)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, OperatorPrefix) || !strings.HasSuffix(name, ".crt") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(strings.TrimPrefix(name, OperatorPrefix), ".crt"))
+	}
+	sort.Strings(names)
+	return names
+}
 
 func (f Files) Path(name string) string { return filepath.Join(f.Dir, name) }
 
