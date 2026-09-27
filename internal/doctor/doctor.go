@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // Status is what a check found.
@@ -91,7 +93,41 @@ func (c Check) Applies(role string) bool {
 const (
 	RoleNode = "node"
 	RoleHub  = "hub"
+	// RoleAPI is `halite-api`. It is a hub client that terminates TLS of
+	// its own, so it holds a serving certificate, a client certificate
+	// and a CA -- three certificates that nothing checked the expiry of,
+	// because the API had no `doctor` at all. DIVERGENCE 5.160.
+	RoleAPI = "api"
 )
+
+// Value renders a report for `--out json` or `yaml`, so that a state can
+// read it. `doctor` in a state's `onlyif` is one of the reasons SPEC 26.4
+// argues for making it one command.
+//
+// Here rather than in each command, because there were two copies of this
+// with identical bodies and the API needed a third. The shape of the JSON
+// is the contract downstream tooling reads; three constructions of it
+// would be three things that have to agree. DIVERGENCE 5.160.
+func Value(r Report) *value.Map {
+	checks := value.NewMap(len(r.Results))
+	for _, res := range r.Results {
+		checks.Set(res.Name, value.MapOf(
+			"status", string(res.Status),
+			"detail", res.Detail,
+			"remedy", res.Remedy,
+		))
+	}
+	counts := value.NewMap(4)
+	for status, n := range r.Counts() {
+		counts.Set(string(status), n)
+	}
+	return value.MapOf(
+		"role", r.Role,
+		"worst", string(r.Worst()),
+		"counts", counts,
+		"checks", checks,
+	)
+}
 
 // Report is a run of the checks.
 type Report struct {

@@ -29,6 +29,7 @@ Usage:
   halite-api serve              run the HTTP API
   halite-api token <subcommand> issued tokens: list, show, revoke, prune
   halite-api account <sub>      local accounts: hash, list
+  halite-api doctor             check this service and say what to fix
   halite-api version            print the build identity
 
 Common flags:
@@ -59,6 +60,14 @@ token flags:
 
 account flags:
   --iterations <n>     PBKDF2 cost for a new hash
+
+doctor flags:
+  --tls-cert <path>    the certificate this service presents
+  --pki-dir <dir>      key material to read the operator certificate and
+                       the hub's CA from
+  --as <name>          which operator certificate to check, default the
+                       configured api_operator
+  --hub <address>      the hub to ask whether it answers
 `
 
 func main() {
@@ -90,6 +99,8 @@ func main() {
 		os.Exit(runToken(args))
 	case "account":
 		os.Exit(runAccount(args))
+	case "doctor":
+		os.Exit(runDoctor(args))
 	case "policy":
 		cli.Fatalf("the policy is the hub's; `halite-hub policy show` and " +
 			"`halite-hub policy test` read the same file this service does.")

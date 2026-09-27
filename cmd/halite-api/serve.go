@@ -46,7 +46,10 @@ func runServe(args *cli.Args) int {
 
 	accounts := loadAccounts(s, args)
 	loaded := loadPolicy(s, args)
-	hub := hubClient(s, args)
+	hub, err := hubClient(s, args)
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
 
 	// Named literally rather than through a helper, so the
 	// declared-and-unread audit can see that something reads it: a key
@@ -215,25 +218,29 @@ func loadPolicy(s *service, args *cli.Args) *policy.Policy {
 // a client, and the whole point of the separation is that compromising
 // it yields one certificate bounded by one policy rather than the
 // control plane itself.
-func hubClient(s *service, args *cli.Args) *transport.Client {
+// It returns its error rather than exiting, because `doctor` builds one
+// too and a diagnostic that exits on the first thing it finds wrong
+// reports nothing about everything else. `serve` still exits: it has
+// nothing to do without a hub. DIVERGENCE 5.160.
+func hubClient(s *service, args *cli.Args) (*transport.Client, error) {
 	files := pki.Files{Dir: args.Flag("pki-dir", s.cfg.PathUnderRoot("pki_dir", "pki"))}
 	name := args.Flag("as", s.cfg.String("api_operator", "api"))
 
-	certPath := args.Flag("cert", files.Path("operator-"+name+".crt"))
+	certPath := args.Flag("cert", files.Path(pki.OperatorCertFile(name)))
 	keyPath := args.Flag("key", files.Path("operator-"+name+".key"))
 	pair, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
-		cli.Fatalf("this service has no operator certificate at %s; "+
-			"`halite-hub keys operator create %s` makes one: %v", certPath, name, err)
+		return nil, fmt.Errorf("this service has no usable operator certificate at %s; "+
+			"`halite-hub keys operator create %s` makes one: %w", certPath, name, err)
 	}
 	ca, err := files.ReadCert(pki.CACertFile)
 	if err != nil {
-		cli.Fatalf("%v", err)
+		return nil, err
 	}
 
 	address := args.Flag("hub", s.cfg.String("hub", ""))
 	if address == "" {
-		cli.Fatalf("this service has no hub; set `hub` in the configuration or pass --hub")
+		return nil, errors.New("this service has no hub; set `hub` in the configuration or pass --hub")
 	}
 	url := address
 	if !strings.Contains(address, "://") {
@@ -249,7 +256,7 @@ func hubClient(s *service, args *cli.Args) *transport.Client {
 		Cert:       &pair,
 		ServerName: args.Flag("server-name", ""),
 		Timeout:    30 * time.Second,
-	}
+	}, nil
 }
 
 // servingCertificate is what the API presents to its own clients.

@@ -51,7 +51,7 @@ mixing them up is why `grains item a b c` used to answer about `a`.
 
 ## Asking a machine what is wrong with it
 
-`halite-node doctor` and `halite-hub doctor` run the checks of SPEC
+`halite-node doctor`, `halite-hub doctor` and `halite-api doctor` run the checks of SPEC
 section 26.4 and print a pass, warning, failure or skip for each, with a
 line saying what to do about anything that is not a pass.
 
@@ -95,6 +95,7 @@ knowing which of a dozen things to look at by hand.
 |---|---|---|
 | — | `halite-node doctor` | works |
 | — | `halite-hub doctor` | works |
+| — | `halite-api doctor` | works |
 | — | `halite-node doctor --out json` | works |
 | — | `halite-node verify-evidence` | works |
 | — | `halite-node verify-evidence --out json` | works |
@@ -114,19 +115,25 @@ reported a pass would be answering a question it did not ask.
 run at all rather than skipped, because a report whose every other line
 says "not applicable here" is one nobody reads to the end.
 
-| Check | node | hub |
-|---|---|---|
-| configuration validity | ✓ | ✓ |
-| certificate validity and expiry | ✓ | ✓ |
-| connectivity | ✓ | |
-| clock skew against the hub | ✓ | |
-| file server reachability | ✓ | ✓ |
-| pillar compilation | ✓ | ✓ |
-| disk space | ✓ | ✓ |
-| queue depths | | ✓ |
-| extension signatures | ✓ | |
-| module verification | ✓ | ✓ |
-| FIPS mode consistency | ✓ | ✓ |
+| Check | node | hub | api |
+|---|---|---|---|
+| configuration validity | ✓ | ✓ | ✓ |
+| certificate validity and expiry | ✓ | ✓ | ✓ |
+| connectivity | ✓ | | ✓ |
+| clock skew against the hub | ✓ | | |
+| file server reachability | ✓ | ✓ | |
+| pillar compilation | ✓ | ✓ | |
+| disk space | ✓ | ✓ | |
+| queue depths | | ✓ | |
+| extension signatures | ✓ | | |
+| module verification | ✓ | ✓ | |
+| FIPS mode consistency | ✓ | ✓ | ✓ |
+
+`halite-api` runs four. It serves no tree and holds no queue, so most of
+the rows above are not questions about it; what it does hold is three
+certificates — the one it presents to callers, the operator certificate
+it presents to the hub, and the CA it verifies the hub with — and a hub
+it cannot work without.
 
 The configuration check **re-reads the file from disk** rather than
 reporting what this process started with, because the interesting case

@@ -8,7 +8,12 @@
 // assessment needs to not have to trust.
 package fips
 
-import "crypto/fips140"
+import (
+	"crypto/fips140"
+	"os"
+	"runtime"
+	"strings"
+)
 
 // CertifiedModule is the module version SPEC 27.4 names, and the value
 // GOFIPS140 is set to for the parallel artifact set.
@@ -94,4 +99,36 @@ func Status() string {
 		s += ", non-approved algorithms rejected"
 	}
 	return s
+}
+
+// KernelMode reports the host kernel's FIPS state, and whether the
+// platform has one at all.
+//
+// The second return is the part that matters. On the BSDs and macOS
+// there is no kernel FIPS mode, and "off" is not the same answer as
+// "there is no such switch": the check gives different advice for the
+// two, and a warning that fires on every FreeBSD host is one nobody
+// reads.
+func KernelMode() (on bool, known bool, why string) {
+	switch runtime.GOOS {
+	case "linux":
+		b, err := os.ReadFile("/proc/sys/crypto/fips_enabled")
+		if err != nil {
+			// Absent on a kernel built without the FIPS option, which
+			// is a kernel that cannot be in FIPS mode. That is an
+			// answer, not a missing one.
+			return false, true, ""
+		}
+		return strings.TrimSpace(string(b)) == "1", true, ""
+	case "windows":
+		// The `fips_mode` grain reads the policy value, and a
+		// service reading it again here would be a second implementation of
+		// the same lookup that the two would eventually disagree
+		// about. Reported as not known from here rather than as
+		// absent, which is what Windows is not.
+		return false, false, "this command does not read the Windows FIPS policy value; " +
+			"`halite-node doctor` reports it, through the fips_mode grain"
+	default:
+		return false, false, runtime.GOOS + " has no kernel FIPS mode"
+	}
 }
