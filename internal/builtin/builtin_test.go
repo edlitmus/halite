@@ -352,6 +352,10 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 	// conformance_reach_test.go and are counted by the same accounting
 	// below, so there is still one answer to "what is covered".
 	reach := reachableConformanceCases(t, r, withFiles)
+	// And the ones that need the node's own configuration, which reaches a
+	// module through hooks on the context: SaveConfig, Beacons, Events and
+	// their neighbours, pointed at a directory this test owns.
+	reach = append(reach, nodeConformanceCases(t)...)
 	for _, cc := range reach {
 		name := cc.Label
 		if name == "" {

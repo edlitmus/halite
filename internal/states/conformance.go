@@ -75,6 +75,26 @@ type Conformance struct {
 	// "this state changes nothing" is a claim about the module, and a
 	// wrong one silently exempts it from every phase above.
 	UnchangingReason string
+	// AlwaysPredicts marks a function whose test mode reports a change
+	// even against a system that already matches, because it cannot find
+	// out without acting.
+	//
+	// `saltutil.sync_all` is the case: whether any extension bundle
+	// differs from the one on the file server is not knowable without
+	// fetching it, and the function says so in its own comment rather
+	// than guessing. Its signature declares `test_mode: unreliable`,
+	// which is the honest answer, and the last phase below -- "test mode
+	// against a system that already matches must not invent work" -- is
+	// the one thing such a function cannot satisfy.
+	//
+	// This does not skip that phase; it inverts it. A case setting this
+	// must show the function predicting a change, and the signature must
+	// declare the unreliability. So the claim is held to the code in both
+	// directions: a function that stops predicting unconditionally, or
+	// starts declaring itself reliable, fails until the case is corrected.
+	AlwaysPredicts bool
+	// AlwaysPredictsReason is required whenever AlwaysPredicts is set.
+	AlwaysPredictsReason string
 }
 
 // Failure is one conformance violation.
@@ -102,6 +122,13 @@ func (cf Conformance) Check(r *Registry, newContext func(test bool) *exec.Contex
 	}
 	if cf.SkipIdempotence && cf.SkipIdempotenceReason == "" {
 		fail("harness", "SkipIdempotence needs a stated reason")
+	}
+	if cf.AlwaysPredicts && cf.AlwaysPredictsReason == "" {
+		fail("harness", "AlwaysPredicts needs a stated reason")
+	}
+	if cf.AlwaysPredicts && cf.Unchanging {
+		fail("harness", "AlwaysPredicts and Unchanging contradict each other: a function that "+
+			"changes nothing has nothing to predict")
 	}
 	if cf.Unchanging {
 		if cf.UnchangingReason == "" {
@@ -226,11 +253,30 @@ func (cf Conformance) Check(r *Registry, newContext func(test bool) *exec.Contex
 		fail("test mode, already applied", "returned an error: %v", err)
 		return failures
 	}
-	if testAgain.Result == nil {
-		fail("test mode, already applied", "predicted a change against a system that already matches")
-	}
-	if testAgain.HasChanges() {
-		fail("test mode, already applied", "predicted changes: %s", renderChanges(testAgain.Changes))
+	switch {
+	case cf.AlwaysPredicts:
+		// Inverted rather than skipped: the case claims this function
+		// cannot know, so it must be seen not knowing, and the signature
+		// must say so too.
+		if testAgain.Result != nil {
+			fail("test mode, already applied",
+				"answered %q against a system that already matches, but this case declares that "+
+					"it always predicts a change (%s). Either the function can tell now, and the "+
+					"declaration should go, or something else changed.",
+				testAgain.ResultString(), cf.AlwaysPredictsReason)
+		}
+		if mod.Sig.TestMode != signature.TestUnreliable {
+			fail("signature", "this case declares that test mode always predicts a change (%s), "+
+				"which is test_mode unreliable, but the signature declares %v",
+				cf.AlwaysPredictsReason, mod.Sig.TestMode)
+		}
+	default:
+		if testAgain.Result == nil {
+			fail("test mode, already applied", "predicted a change against a system that already matches")
+		}
+		if testAgain.HasChanges() {
+			fail("test mode, already applied", "predicted changes: %s", renderChanges(testAgain.Changes))
+		}
 	}
 
 	// The declared test mode honesty must match what the harness saw.

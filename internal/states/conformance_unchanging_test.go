@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -285,5 +286,109 @@ func TestTrailingPunctuationIsNotAnIdentifier(t *testing.T) {
 	}
 	if err := checkComment("web.example.com was reachable."); err != nil {
 		t.Errorf("a host with a full stop was refused: %v", err)
+	}
+}
+
+// ---- AlwaysPredicts ----
+//
+// A function that cannot know whether the system matches without acting on
+// it -- `saltutil.sync_all`, which would have to fetch every bundle to find
+// out whether any of them differs -- reports a change in test mode even
+// against a system that already matches. The last phase of Check asserts the
+// opposite, so such a function needs the phase inverted rather than skipped:
+// the case claims the function cannot tell, and the harness makes it show
+// that it cannot.
+
+// unknowableModule can only find out by acting, so test mode always predicts.
+func unknowableModule(applied *bool) Module {
+	m := fixedModule("sync.things", func(c *exec.Context, args *value.Map) (Result, error) {
+		if c.Test {
+			return WouldChange("The bundles would be fetched.", Change("not fetched", "fetched")), nil
+		}
+		if *applied {
+			return True("Everything is already fetched."), nil
+		}
+		*applied = true
+		return Changed("The bundles were fetched.", Change("not fetched", "fetched")), nil
+	})
+	m.Sig.TestMode = signature.TestUnreliable
+	return m
+}
+
+func runAlwaysPredicts(t *testing.T, m Module, applied *bool) []Failure {
+	t.Helper()
+	r := NewRegistry()
+	r.Add(m)
+	cf := Conformance{
+		Name:                 m.Sig.Name(),
+		Args:                 value.MapOf("name", "bundles"),
+		Setup:                func() error { *applied = false; return nil },
+		AlwaysPredicts:       true,
+		AlwaysPredictsReason: "whether any bundle differs cannot be known without fetching it",
+	}
+	return cf.Check(r, func(test bool) *exec.Context { return &exec.Context{Test: test} })
+}
+
+func TestAlwaysPredictsAcceptsAFunctionThatCannotKnow(t *testing.T) {
+	applied := false
+	if got := runAlwaysPredicts(t, unknowableModule(&applied), &applied); len(got) != 0 {
+		t.Errorf("a function that cannot know was failed: %v", got)
+	}
+}
+
+// The declaration is held to the code in both directions. A function that
+// gains the ability to tell must fail until the case stops claiming it
+// cannot, because a stale exemption is an assertion nobody is making.
+func TestAlwaysPredictsRejectsAFunctionThatCanTell(t *testing.T) {
+	applied := false
+	m := fixedModule("sync.things", func(c *exec.Context, args *value.Map) (Result, error) {
+		if applied {
+			return True("Everything is already fetched."), nil
+		}
+		if c.Test {
+			return WouldChange("The bundles would be fetched.", Change("not fetched", "fetched")), nil
+		}
+		applied = true
+		return Changed("The bundles were fetched.", Change("not fetched", "fetched")), nil
+	})
+	m.Sig.TestMode = signature.TestUnreliable
+
+	failures := runAlwaysPredicts(t, m, &applied)
+	named := false
+	for _, f := range failures {
+		if strings.Contains(f.Msg, "the declaration should go") {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("a function that can now tell was accepted as one that cannot: %v", failures)
+	}
+}
+
+// And the signature has to agree: a function whose test mode cannot be
+// trusted must not declare that it can.
+func TestAlwaysPredictsRequiresAnUnreliableSignature(t *testing.T) {
+	applied := false
+	m := unknowableModule(&applied)
+	m.Sig.TestMode = signature.TestReliable
+
+	if !hasPhase(runAlwaysPredicts(t, m, &applied), "signature") {
+		t.Error("a case declaring that test mode always predicts was accepted against a " +
+			"signature declaring test mode reliable")
+	}
+}
+
+func TestAlwaysPredictsNeedsAStatedReason(t *testing.T) {
+	applied := false
+	r := NewRegistry()
+	r.Add(unknowableModule(&applied))
+	cf := Conformance{
+		Name:           "sync.things",
+		Args:           value.MapOf("name", "bundles"),
+		Setup:          func() error { applied = false; return nil },
+		AlwaysPredicts: true,
+	}
+	if !hasPhase(cf.Check(r, func(test bool) *exec.Context { return &exec.Context{Test: test} }), "harness") {
+		t.Error("AlwaysPredicts with no reason was accepted")
 	}
 }

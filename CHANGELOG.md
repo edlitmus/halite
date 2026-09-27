@@ -23,6 +23,42 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `grains.present` reported a change it could not make
+
+On a node whose static grains file names the grain, `grains.present` wrote
+the new value to `grains.d/99-runtime.yaml` — which `grains.Collect` merges
+*before* the static file, per SPEC 14.2's "merged last so it can override".
+The grain never changed and the state reported that it had, on every run:
+
+    first:  role was set to web in .../grains.d/99-runtime.yaml.
+    second: role was set to web in .../grains.d/99-runtime.yaml.
+
+The first run still writes, having no way to know. The second reads back
+its own file, finds what it wrote, sees the node still reporting the old
+value, and refuses — naming both files, because which one to edit is the
+operator's decision. `grains.absent` does the same for the null it writes.
+
+Six comments in the `grains`, `beacon` and `schedule` states now open with
+a capital, matching what their neighbours already did.
+
+### Fifty state functions are held to the test-mode contract
+
+Up from thirty-five. The fifteen that apply to the node's own
+configuration have cases now — both `grains`, `environ.setenv`, both
+halves of `beacon` and `schedule`, `event.send`, and all seven
+`saltutil.sync_*` — and the eighty-two left all change the machine the
+suite runs on.
+
+`saltutil.sync_*` cannot tell whether a bundle differs without fetching
+it, so its test mode reports a change either way. The harness holds that
+claim rather than excusing it: a case saying "this one cannot know" must
+show it not knowing, and the signature must declare the unreliability, so
+the exemption cannot outlive the reason for it.
+
+Separately, a `--test` guard on `environ.setval` and the `environ.setenv`
+execution function turns out to have been held by no test at all. It has
+one now; the guard was correct.
+
 ### `ssh_auth.present` could have emptied an authorized_keys file
 
 Nothing would have caught it. Every test of `ssh_auth` and
