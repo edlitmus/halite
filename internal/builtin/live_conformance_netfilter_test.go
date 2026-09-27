@@ -164,7 +164,7 @@ func iptablesCases() []liveCase {
 			// policy. Inside the namespace FORWARD governs nothing: there
 			// is one interface and it is loopback.
 			Name:  "iptables.set_policy",
-			Args:  value.MapOf("chain", "FORWARD", "policy", "DROP"),
+			Args:  value.MapOf("name", "FORWARD", "policy", "DROP"),
 			Probe: func() (string, error) { return iptablesPolicy(ipt, "FORWARD") },
 			Setup: func() error {
 				_, err := ipt("-P", "FORWARD", "ACCEPT")
@@ -179,7 +179,7 @@ func iptablesCases() []liveCase {
 			// change only the first time. That is the correct behaviour
 			// and the harness can hold it without help.
 			Name:    "iptables.flush",
-			Args:    value.MapOf("chain", conformanceChain, "force", true),
+			Args:    value.MapOf("name", conformanceChain, "force", true),
 			Probe:   probe,
 			Setup:   addRule,
 			Cleanup: dropChain,
@@ -251,12 +251,17 @@ func nftablesCases() []liveCase {
 		return err
 	}
 	const rule = "tcp dport 65001 ip saddr 203.0.113.0/24 drop"
+	// nftables identifies a rule it manages by a comment tag rather than
+	// by the rule's text, which is why `comment` is required on append,
+	// insert and delete. The tag is this suite's own.
+	const ruleTag = "halitecf-rule"
 	addRule := func() error {
 		if err := makeChain(); err != nil {
 			return err
 		}
 		_, err := r.States.Call(root, "nftables.append",
-			value.MapOf("table", table, "chain", chain, "rule", rule, "family", "inet"))
+			value.MapOf("table", table, "chain", chain, "rule", rule,
+				"comment", ruleTag, "family", "inet"))
 		return err
 	}
 
@@ -300,7 +305,7 @@ func nftablesCases() []liveCase {
 		linux(liveCase{Conformance: states.Conformance{
 			Name: "nftables.append",
 			Args: value.MapOf("table", table, "chain", chain, "rule", rule,
-				"family", "inet"),
+				"comment", ruleTag, "family", "inet"),
 			Probe:   probe,
 			Setup:   makeChain,
 			Cleanup: dropTable,
@@ -308,15 +313,18 @@ func nftablesCases() []liveCase {
 		linux(liveCase{Conformance: states.Conformance{
 			Name: "nftables.insert",
 			Args: value.MapOf("table", table, "chain", chain, "rule", rule,
-				"family", "inet"),
+				"comment", ruleTag, "family", "inet"),
 			Probe:   probe,
 			Setup:   makeChain,
 			Cleanup: dropTable,
 		}}),
 		linux(liveCase{Conformance: states.Conformance{
+			// Deleted by its comment tag, not by the rule text: that is
+			// how this module identifies a rule it put there, and the
+			// signature makes `comment` required for the same reason.
 			Name: "nftables.delete",
-			Args: value.MapOf("table", table, "chain", chain, "rule", rule,
-				"family", "inet"),
+			Args: value.MapOf("table", table, "chain", chain,
+				"comment", ruleTag, "family", "inet"),
 			Probe:   probe,
 			Setup:   addRule,
 			Cleanup: dropTable,
@@ -330,9 +338,8 @@ func nftablesCases() []liveCase {
 			Cleanup: dropTable,
 		}}),
 		linux(liveCase{Conformance: states.Conformance{
-			Name: "nftables.flush",
-			Args: value.MapOf("table", table, "chain", chain, "force", true,
-				"family", "inet"),
+			Name:    "nftables.flush",
+			Args:    value.MapOf("table", table, "force", true, "family", "inet"),
 			Probe:   probe,
 			Setup:   addRule,
 			Cleanup: dropTable,

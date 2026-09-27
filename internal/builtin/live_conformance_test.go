@@ -459,12 +459,41 @@ func scheduleCases() []liveCase {
 
 	atIdentifier := liveConformancePrefix + "-at"
 	atCommand := "/usr/bin/true"
+	// The queue rendered stably. The first version of this returned
+	// `fmt.Sprintf("%v", out)` over the list `at.atq` gives back, which is
+	// a slice of maps -- so it printed Go pointer addresses, they differed
+	// between two calls that had changed nothing, and the harness reported
+	// "test mode changed the system: the probe went from
+	// [0x3107ee2fc580] to [0x3107ee2fce00]". A false accusation by the
+	// instrument, of exactly the kind this project keeps making: the
+	// reading looked like evidence because it had the shape of one.
 	atProbe := func() (string, error) {
 		out, err := r.Exec.Call(root, "at.atq", value.NewMap(0))
 		if err != nil {
 			return "absent", nil
 		}
-		return fmt.Sprintf("%v", out), nil
+		jobs, ok := out.([]any)
+		if !ok {
+			return "no queue", nil
+		}
+		var lines []string
+		for _, j := range jobs {
+			m, ok := j.(*value.Map)
+			if !ok {
+				continue
+			}
+			// The job id is deliberately left out: `at` allocates a new
+			// one each time, so including it would make the probe differ
+			// between runs for a reason that is not a change.
+			when, _ := m.Get("date")
+			queue, _ := m.Get("queue")
+			lines = append(lines, fmt.Sprintf("queue=%v when=%v", queue, when))
+		}
+		if len(lines) == 0 {
+			return "empty queue", nil
+		}
+		sort.Strings(lines)
+		return strings.Join(lines, " | "), nil
 	}
 	removeAt := func() {
 		_, _ = r.States.Call(root, "at.absent",
