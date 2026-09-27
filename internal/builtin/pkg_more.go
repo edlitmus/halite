@@ -1087,9 +1087,13 @@ func (p dnfProvider) Upgrade(c *exec.Context, refresh bool) (*value.Map, error) 
 	if err != nil {
 		return nil, err
 	}
+	// `--refresh` when asked, and nothing when not: `-C` here had the
+	// same defect as in Install, and worse consequences -- an upgrade
+	// whose whole purpose is to fetch newer packages cannot do it under
+	// `--cacheonly`. See the comment on dnfProvider.Install.
 	argv := []string{p.binary, "upgrade", "-y", "-q"}
-	if !refresh {
-		argv = append(argv, "-C")
+	if refresh {
+		argv = append(argv, "--refresh")
 	}
 	if _, err := c.Run(exec.Command{Argv: argv}); err != nil {
 		return nil, err
