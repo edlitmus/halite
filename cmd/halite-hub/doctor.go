@@ -208,6 +208,12 @@ func hubPillarCheck(cfg *config.Config, onSecret func(string)) doctor.Check {
 			// targeting as unsafe on an estate that has deliberately
 			// widened it, and miss it on one that has narrowed it.
 			TrustedGrains: cfg.StringSlice("pillar_trusted_grains"),
+			// The keyring the hub serves with, not the one belonging to
+			// whoever ran `doctor`. Without this the check invoked gpg
+			// with no GNUPGHOME and reported every encrypted pillar as
+			// broken -- on a hub whose nodes were being served that
+			// same pillar, decrypted, all along. DIVERGENCE 5.110.
+			GPG: gpgOptionsFor(cfg),
 			// This check decrypts the same pillar the hub serves, and
 			// reports what went wrong when it does not compile. An
 			// error naming what was inside a GPG block is exactly the

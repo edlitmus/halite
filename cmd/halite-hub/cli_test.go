@@ -268,35 +268,9 @@ func TestLintDecryptsAndRedacts(t *testing.T) {
 	}
 	const secret = "s3cret-value-from-the-pillar"
 
-	home := t.TempDir()
-	if err := os.Chmod(home, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	gpg := func(args ...string) *exec.Cmd {
-		c := exec.Command("gpg", args...)
-		c.Env = append(os.Environ(), "GNUPGHOME="+home)
-		return c
-	}
-	if out, err := gpg("--batch", "--pinentry-mode", "loopback", "--passphrase", "",
-		"--quick-generate-key", "hub lint <t@example.invalid>", "default", "default", "never").
-		CombinedOutput(); err != nil {
-		t.Skipf("a throwaway key could not be generated here: %v\n%s", err, out)
-	}
-	t.Cleanup(func() { _ = exec.Command("gpgconf", "--kill", "gpg-agent").Run() })
+	home, gpg := throwawayKeyring(t)
 
-	// `--cipher-algo AES256` is what lets this run on a host in FIPS
-	// mode: left to itself GnuPG picks the session cipher from the
-	// recipient key's preferences, and on a FIPS kernel libgcrypt
-	// refuses that cipher and gpg aborts outright. Decryption -- what
-	// SPEC 12.6 actually performs -- is unaffected. DIVERGENCE 5.83.
-	enc := gpg("--batch", "--yes", "--trust-model", "always", "--cipher-algo", "AES256",
-		"--encrypt", "--armor", "-r", "t@example.invalid")
-	enc.Stdin = strings.NewReader(secret)
-	armored, err := enc.Output()
-	if err != nil {
-		t.Fatalf("encrypting: %v", err)
-	}
-	indented := strings.ReplaceAll(strings.TrimRight(string(armored), "\n"), "\n", "\n    ")
+	indented := armoredFor(t, gpg, secret, "    ")
 
 	dir := t.TempDir()
 	// `on:` gives the renderer something to warn about, so the run has
@@ -496,4 +470,106 @@ func TestCommandMatrixTargetsParse(t *testing.T) {
 		t.Error("no run or ssh rows were checked; this check has stopped checking")
 	}
 	t.Logf("checked %d documented target forms", checked)
+}
+
+// throwawayKeyring builds a GNUPGHOME with one usable key and returns it
+// with a gpg helper bound to it.
+//
+// The keyring is deliberately *not* exported into this process's
+// environment. Every defect this harness has caught was a command that
+// read the keyring from the environment instead of from configuration,
+// so a test that set GNUPGHOME here would pass against exactly the code
+// it is meant to fail against.
+func throwawayKeyring(t *testing.T) (string, func(...string) *exec.Cmd) {
+	t.Helper()
+	home := t.TempDir()
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	gpg := func(args ...string) *exec.Cmd {
+		c := exec.Command("gpg", args...)
+		c.Env = append(os.Environ(), "GNUPGHOME="+home)
+		return c
+	}
+	if out, err := gpg("--batch", "--pinentry-mode", "loopback", "--passphrase", "",
+		"--quick-generate-key", "hub test <t@example.invalid>", "default", "default", "never").
+		CombinedOutput(); err != nil {
+		t.Skipf("a throwaway key could not be generated here: %v\n%s", err, out)
+	}
+	t.Cleanup(func() { _ = exec.Command("gpgconf", "--kill", "gpg-agent").Run() })
+	return home, gpg
+}
+
+// armoredFor encrypts a value to the throwaway key, indented to sit
+// under a YAML block scalar.
+//
+// `--cipher-algo AES256` is what lets this run on a host in FIPS mode;
+// see TestLintDecryptsAndRedacts. DIVERGENCE 5.83.
+func armoredFor(t *testing.T, gpg func(...string) *exec.Cmd, secret, indent string) string {
+	t.Helper()
+	enc := gpg("--batch", "--yes", "--trust-model", "always", "--cipher-algo", "AES256",
+		"--encrypt", "--armor", "-r", "t@example.invalid")
+	enc.Stdin = strings.NewReader(secret)
+	armored, err := enc.Output()
+	if err != nil {
+		t.Fatalf("encrypting: %v", err)
+	}
+	return strings.ReplaceAll(strings.TrimRight(string(armored), "\n"), "\n", "\n"+indent)
+}
+
+// TestDoctorDecryptsWithTheConfiguredKeyring. `doctor` compiles pillar
+// to find out whether it compiles, and compiling a `#!yaml|gpg` file
+// decrypts it — so the check needs the hub's keyring and the hub's
+// redactor, exactly as serving does.
+//
+// It had neither. `hubPillarCheck` built a `pillar.Config` by hand and
+// left `GPG` unassigned, so the check invoked gpg with whatever
+// GNUPGHOME the operator happened to have and reported
+//
+//	fail  pillar compilation  ... could not be decrypted: No secret key
+//
+// on a hub that was serving that same pillar, decrypted, to every node
+// in the estate. The report was wrong, not the pillar. DIVERGENCE 5.110.
+func TestDoctorDecryptsWithTheConfiguredKeyring(t *testing.T) {
+	if _, err := exec.LookPath("gpg"); err != nil {
+		t.Skip("no gpg on PATH; SPEC 12.6 drives the system binary")
+	}
+	const secret = "s3cret-value-from-the-pillar"
+	home, gpg := throwawayKeyring(t)
+
+	pillarDir := t.TempDir()
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(pillarDir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("top.sls", "base:\n  '*':\n    - secrets\n")
+	write("secrets.sls", "#!yaml|gpg\ntoken: |\n    "+armoredFor(t, gpg, secret, "    ")+"\n")
+
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "hub.yaml")
+	if err := os.WriteFile(cfg, []byte(
+		"pillar_roots:\n  base:\n    - "+pillarDir+"\ngpg_home: "+home+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := run(t, "doctor", "--config", cfg, "--out", "nested")
+	all := got.stdout + got.stderr
+
+	// The pillar row has to pass. Asserting on the absence of the
+	// failure alone would also hold if the check stopped running.
+	if !strings.Contains(all, "pillar compilation") {
+		t.Fatalf("doctor did not run the pillar check at all:\n%s", all)
+	}
+	if strings.Contains(all, "could not be decrypted") || strings.Contains(all, "No secret key") {
+		t.Errorf("doctor read the environment's keyring instead of gpg_home:\n%s", all)
+	}
+	if !strings.Contains(all, "compiles, 1 top-level key(s)") {
+		t.Errorf("the pillar should compile against the configured keyring:\n%s", all)
+	}
+	// Decrypting is not enough: the value must reach the redactor, or
+	// doctor prints the pillar's secrets in its own report.
+	if strings.Contains(all, secret) {
+		t.Errorf("the decrypted value reached doctor's output:\n%s", all)
+	}
 }

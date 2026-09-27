@@ -302,6 +302,13 @@ func inlinePillar(h *hubContext, t roster.Target, args *cli.Args) (json.RawMessa
 		Config: pillar.Config{
 			NodeID: t.ID, Env: env, Grains: grains,
 			TrustedGrains: h.cfg.StringSlice("pillar_trusted_grains"),
+			// Agentless pillar is compiled here, so it is decrypted
+			// here: without the hub's keyring an encrypted pillar fails
+			// to compile, and without the redactor the values it
+			// decrypts reach this process's own output unhidden.
+			// DIVERGENCE 5.110.
+			GPG:      gpgOptionsFor(h.cfg),
+			OnSecret: h.secrets.Add,
 		},
 	}
 	compiled := compiler.Compile()
