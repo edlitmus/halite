@@ -375,8 +375,8 @@ jobs:
           # readable before the job's timeout, and the status carried
           # through a file rather than $PIPESTATUS so that this reads the
           # same as the freebsd leg.
-          { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers' ./internal/builtin/ 2>&1;
+          { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveConformance' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 
@@ -516,7 +516,7 @@ jobs:
           # always succeeds. The output is teed rather than redirected
           # so that a suite which hangs is still readable before the
           # job's timeout kills it.
-          { sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 \
+          { sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               go test -count=1 -v -timeout 20m -run TestLive ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"

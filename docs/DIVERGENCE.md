@@ -14334,6 +14334,63 @@ audit with two halves that must both fail is an audit with a blind spot
 shaped like the intersection of what each half cannot see**, and that blind
 spot is not visible from either half.
 
+##### Coverage 50 → 88, and the harness moved to a machine that can be broken
+
+The eighty-two that "change the machine the suite runs on" were never going to
+get a case in `go test ./...`: the harness applies a state for real, twice, so
+a `pkg.installed` case installs a package on whoever ran it, and on this
+project the development host is a node the fleet manages. So the harness
+went to the machine instead. `TestLiveConformance*` drives the same
+`states.Conformance` against a real system, and thirty-eight of the
+eighty-two have a case there.
+
+**A second gate, because `HALITE_SYSTEM_LIVE` is not the consent this needs.**
+The existing live tests take that variable to mean "this machine can be thrown
+away", and they are careful — each captures what it changed and puts it back.
+These cannot promise that as cheaply: a case creates an account or loads a
+kernel module and then the harness runs the state three more times, so the
+machine passes through four states rather than two. `HALITE_CONFORMANCE_LIVE=1`
+is required as well, set by `contrib/tofu/lab.sh` and by two `fleet.yml` legs.
+That variable has been set by hand on real machines to answer a question about
+one module, and none of those sessions signed up for a package manager being
+driven.
+
+**One list, two drivers.** The sixteen `iptables` and `nftables` functions
+cannot run on the machine at all — a wrong rule takes it off the network, and
+the harness would get it wrong four times — so they run inside a private
+network namespace, by the re-exec `live_netfilter_test.go` already uses. They
+are in the same case list as everything else, tagged `needsNetns`, and the
+main suite skips them. Two lists of names would have been the obvious
+alternative and this repository has twice found such a pair disagreeing.
+
+The unit suite's accounting reads the live list too, so a state with a live
+case no longer reads as uncovered, and it reports the live ones separately
+because *having* a case and *having run* it are different claims:
+
+	88 of 132 state functions have a conformance case (38 of them only on
+	a live machine); 44 are excused
+
+Building that list must touch nothing, which is why the builders take no
+`*testing.T`: a builder with one invites `t.Cleanup`, and the cleanups here
+call `user.absent` against the machine. Every effect belongs to a case's
+`Setup`, its `Cleanup`, or the state under test. Demonstrated rather than
+asserted — after the unit suite ran on this development host, `halitecfu`,
+`halitecfg`, the hosts entry and the crontab line were all absent.
+
+##### What the remaining forty-four are
+
+Not one list any more, which is the point of writing them down:
+
+| | |
+|---|---|
+| **9** | Windows and macOS: `win_dacl`, `win_service`, `win_task`, `mac_defaults`. The lab is Linux and FreeBSD, so these need the `macos` and `windows` legs. |
+| **12** | storage: `lvm` (6), `zfs`/`zpool` (4), `mount` (2). Reachable on a loopback file, and `live_lvm_loopback_test.go` already has the rig. Next tranche. |
+| **6** | language managers: `gem`, `npm`, `pip`. Each needs its own toolchain installed first. |
+| **4** | `firewall.*`, which is `pf` on FreeBSD and netfilter on Linux, and whose blast radius is the machine's connectivity. |
+| **13** | one-offs, each with its own reason: `hostname.system` and `timezone.system` change the machine's identity, `reboot.scheduled` keeps its own extra gate, `pkg.latest` and `pkg.purged` need a package with two versions in the repository, `pkgrepo.*` edits where software comes from, and `apparmor.mode`, `debconf.set`, `netplan.managed`, `jail.running` and `snap.*` each need a subsystem only some rows have. |
+
+
+
 
 
 

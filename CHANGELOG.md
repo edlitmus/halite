@@ -23,6 +23,24 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The test-mode contract is now checked on a real machine
+
+Eighty-eight of the hundred and thirty-two state functions are held to SPEC
+11.6's harness, up from fifty. The thirty-eight added here cannot be checked
+anywhere but on a machine that can be broken — the harness applies a state
+for real, twice, so a `pkg.installed` case installs a package on whoever ran
+it. `TestLiveConformance*` drives them against a real system: accounts,
+`/etc/hosts`, cron and at queues, packages, kernel modules, a kernel
+parameter, systemd services, FreeBSD's `rc.conf`, and all sixteen
+`iptables` and `nftables` functions inside a private network namespace.
+
+It asks for `HALITE_CONFORMANCE_LIVE=1` on top of `HALITE_SYSTEM_LIVE=1`.
+The second variable is not ceremony: the first has been set by hand on real
+machines to answer a question about one module, and this suite drives
+package managers and the account database through four states each. The
+throwaway lab and two CI legs set both; anything else gets a skip that says
+which variable is missing.
+
 ### `grains.present` reported a change it could not make
 
 On a node whose static grains file names the grain, `grains.present` wrote
