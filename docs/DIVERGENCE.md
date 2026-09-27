@@ -14337,6 +14337,105 @@ spot is not visible from either half.
 
 
 
+### 5.158 `doctor` could not accept the `--out` value it documents
+
+`halite-hub doctor` defaulted `--out` to `"summary"` and then handed that
+default to `cli.ParseFormat`, which knows `nested`, `json`, `yaml`, `txt`
+and `quiet` and nothing else. So the command refused the value nobody had
+chosen:
+
+```
+$ halite-hub doctor
+halite: unknown output format "summary"; halite offers nested, json, yaml, txt, and quiet
+```
+
+Bare `halite-hub doctor` — the form its own help prints, and the only form
+an operator types — exited 1 without running a single check. On a hub where
+every check passes, the command that exists to tell you the hub is fine was
+the one command that could not run. Found while reading `doctor` for an
+unrelated reason (5.110), not by anything failing.
+
+**A report is not a rendering.** `Format` names a way to render a value
+tree, and `Write` has a branch for each one. `summary` is not that: it is
+`doctor` printing `report.Text()` itself, the way `orch` prints a timeline
+and `migrate` prints `rep.Summary()`. Admitting those words to the Format
+vocabulary would give `Write` a case it cannot serve and would fall through
+to `nested`, which is the accepted-and-does-nothing shape again. So the
+sentinel stays outside `Format`, and `cli.ParseOut` is the one place that
+knows a command may have its own report:
+
+```go
+func ParseOut(own, s string) (ownReport bool, f Format, err error)
+```
+
+**One broken site, not three.** `migrate` (`main.go`) and `orch` hand-roll
+the same comparison, and an earlier draft of this entry claimed both were
+broken too. They are not, and the claim was never measured — it was read
+off the shape of the code rather than run:
+
+```
+$ halite-hub migrate --out xml <tree>     # main, before this change
+exit 1
+halite: unknown output format "xml"; halite offers nested, json, yaml, txt, and quiet
+```
+
+Both consult the error on the one path where it matters. The sentinel
+branch prints its own report and returns; a bad `--out` does not match the
+sentinel, falls into the `else`, and dies on the `if err != nil` that opens
+it. `ParseFormat` returns an error for an unknown format rather than
+defaulting to nested, so nothing is silently accepted anywhere.
+
+What is true about those two is narrower, and is a fragility argument
+rather than a defect: on the sentinel path they discard an error they do
+not need. That is harmless while the default *is* the sentinel, and becomes
+a defect the first time somebody changes a default to a word the parser
+does not know — which is exactly what `doctor` was. `ParseOut` returns both
+answers together so the error cannot be stepped around, which is why the
+two correct sites move to it as well.
+
+**How the wrong claim was produced, because the shape recurs.** The
+`migrate` sentence was not a guess. `migrate --out xml` *was* run — against
+the patched build, where it refuses because this change had just made it
+refuse. The other half, what it did *before*, was then written in the same
+breath and never run at all. **A one-sided measurement is worse than none,
+because it produces real output that makes the unmeasured half feel
+checked.** The transcript was real, the conclusion was half invented, and
+nothing in the prose distinguished them.
+
+It survived a round of review on both sides. The claim was raised, corrected
+once for a different error, and re-stated with more confidence *because* it
+was now labelled a correction — and a correction reads as though it has
+already been checked. A reviewer nearly relayed it onward before reading the
+control flow. So: **the correction of a wrong reading is not automatically a
+right one**, and a claim's history of having been fixed is not evidence
+about the claim. Both halves of a before-and-after have to be run, and a
+comparison is not measured until the "before" has an exit code of its own.
+
+**Why nothing caught it.** Every test that ran `doctor` passed `--out`
+explicitly, so the default — the only thing an operator uses — was the one
+path never exercised. A command's default is not covered by tests that
+always override it. `TestDoctorRunsWithItsOwnDefaults` runs it with no
+`--out` at all, and with the old line restored it fails with the error
+above verbatim.
+
+**One thing that looked like part of this and is not.** The same wrong
+string, `summary (default) or json`, appears in `internal/cli/flags_test.go`
+inside `sampleUsage`. That is a synthetic fixture for the flag-*name*
+parser (`FlagNames`, `UnknownFlags`, `Closest`) and asserts nothing about
+any real command's help, so it never pinned this defect in place. It is
+corrected here only so the fixture stops teaching a vocabulary the parser
+rejects. The three help strings that *were* wrong are in `main.go`,
+`keys.go` and `jobs.go`, and no audit checks them against `ParseFormat` —
+which is why they drifted.
+
+**Not verified.** `orch`'s change is covered by `ParseOut`'s unit test,
+the build and vet, but not by an end-to-end run: reaching that line needs
+a real orchestration against the estate, which runs states on live
+machines. The edit is the same three-line shape applied to `migrate`,
+which *is* exercised above.
+
+
+
 
 
 ## 6. Everything else not started

@@ -77,11 +77,11 @@ func runDoctor(args *cli.Args) int {
 	// accepted and ignored: a hub asked for JSON printed the table, which
 	// is the accepted-and-does-nothing shape `InertKeys` exists to stop
 	// happening to settings. DIVERGENCE 5.139.
-	format, err := cli.ParseFormat(args.Flag("out", "summary"))
+	summary, format, err := cli.ParseOut("summary", args.Flag("out", "summary"))
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
-	if format == cli.JSON || format == cli.YAML {
+	if !summary && (format == cli.JSON || format == cli.YAML) {
 		if err := cli.Write(os.Stdout, secrets.ScrubValue(doctorValue(report)), format, 0); err != nil {
 			cli.Fatalf("%v", err)
 		}

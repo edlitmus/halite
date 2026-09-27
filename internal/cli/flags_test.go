@@ -9,7 +9,7 @@ const sampleUsage = `halite-hub policy — the RBAC of SPEC section 23.5
 policy flags:
   --runner             evaluate the function as a runner rather than a job
   --kwarg <k=v>        an argument to include, repeatable as a comma list
-  --out <format>       summary (default) or json
+  --out <format>       summary (default), nested, json, yaml, txt, or quiet
   -v                   print the version
 `
 

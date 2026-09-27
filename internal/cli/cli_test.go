@@ -300,3 +300,40 @@ func TestYAMLOutputRoundTrips(t *testing.T) {
 		t.Errorf("yaml = %q", out)
 	}
 }
+
+// TestParseOutKeepsAReportOutOfTheFormatVocabulary. A command that prints
+// its own report -- `doctor`'s summary, `orch`'s timeline -- defaults
+// `--out` to that word, and that word is not a Format. `doctor` passed
+// its own default to ParseFormat and exited with `unknown output format
+// "summary"` before it checked a single thing, so the command could not
+// run at all with the flags it documents. DIVERGENCE 5.158.
+func TestParseOutKeepsAReportOutOfTheFormatVocabulary(t *testing.T) {
+	// The command's own word, and nothing at all, both mean "your report".
+	for _, in := range []string{"summary", ""} {
+		own, _, err := ParseOut("summary", in)
+		if err != nil {
+			t.Errorf("ParseOut(%q, %q) errored: %v", "summary", in, err)
+		}
+		if !own {
+			t.Errorf("ParseOut(%q, %q) did not ask for the command's own report", "summary", in)
+		}
+	}
+	// Each command names its own word, so orch's is not doctor's.
+	if own, _, _ := ParseOut("timeline", "timeline"); !own {
+		t.Error(`ParseOut("timeline", "timeline") did not ask for the timeline`)
+	}
+	if own, _, err := ParseOut("timeline", "summary"); own || err == nil {
+		t.Errorf(`ParseOut("timeline", "summary") = %v, %v; "summary" is not orch's word `+
+			`and is not a Format either`, own, err)
+	}
+	// A real format is still a real format.
+	own, f, err := ParseOut("summary", "json")
+	if own || err != nil || f != JSON {
+		t.Errorf(`ParseOut("summary", "json") = %v, %v, %v`, own, f, err)
+	}
+	// And the error survives. This is the half the hand-rolled sites
+	// dropped: they compared the string and returned before looking.
+	if own, _, err := ParseOut("summary", "xml"); own || err == nil {
+		t.Errorf(`ParseOut("summary", "xml") = %v, %v; an unknown format must error`, own, err)
+	}
+}

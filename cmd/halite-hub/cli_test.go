@@ -573,3 +573,53 @@ func TestDoctorDecryptsWithTheConfiguredKeyring(t *testing.T) {
 		t.Errorf("the decrypted value reached doctor's output:\n%s", all)
 	}
 }
+
+// TestDoctorRunsWithItsOwnDefaults. `doctor` documents `--out summary` as
+// its default and then could not accept it: it passed that default
+// straight to cli.ParseFormat, which knows only renderings of a value
+// tree, so bare `halite-hub doctor` exited 1 with
+//
+//	halite: unknown output format "summary"; halite offers nested, json, ...
+//
+// A command that cannot run with the flags it prints in its own help is
+// not a formatting bug; it is the whole command. Nothing caught it
+// because every test that ran `doctor` passed `--out` explicitly.
+// DIVERGENCE 5.158.
+func TestDoctorRunsWithItsOwnDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, "hub.yaml")
+	if err := os.WriteFile(cfg, []byte("pillar_roots:\n  base: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// No --out at all: the path an operator actually types.
+	bare := run(t, "doctor", "--config", cfg)
+	all := bare.stdout + bare.stderr
+	if strings.Contains(all, "unknown output format") {
+		t.Fatalf("bare `doctor` rejected its own default:\n%s", all)
+	}
+	// It has to have produced the report, not merely avoided the error.
+	for _, want := range []string{"halite-hub doctor", "certificate validity and expiry"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("bare `doctor` printed no %q:\n%s", want, all)
+		}
+	}
+
+	// Naming the default explicitly is the same request.
+	if got := run(t, "doctor", "--config", cfg, "--out", "summary"); got.stdout+got.stderr != all {
+		t.Errorf("`--out summary` and no --out disagree:\n%s\n---\n%s", all, got.stdout+got.stderr)
+	}
+
+	// The structured formats still work, and are still structured.
+	asJSON := run(t, "doctor", "--config", cfg, "--out", "json")
+	if !strings.Contains(asJSON.stdout, "\"checks\"") {
+		t.Errorf("`--out json` did not produce the report as JSON:\n%s", asJSON.stdout)
+	}
+
+	// And a genuinely wrong format is still refused -- the error was the
+	// only thing working here before, and it must not have been lost.
+	bad := run(t, "doctor", "--config", cfg, "--out", "xml")
+	if !strings.Contains(bad.stdout+bad.stderr, "unknown output format") {
+		t.Errorf("`--out xml` was accepted:\n%s", bad.stdout+bad.stderr)
+	}
+}

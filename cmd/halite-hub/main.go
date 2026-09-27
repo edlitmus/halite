@@ -53,7 +53,7 @@ Common flags:
   --help               describe the program without running a command
   --config <path>      configuration file, default <root>/hub.yaml
   --root <dir>         configuration root, default ` + config.DefaultRoot + `
-  --out <format>       summary (default) or json
+  --out <format>       summary (default), nested, json, yaml, txt, or quiet
 
 serve flags:
   --listen <addr>      listen address, default :4510
@@ -261,13 +261,13 @@ func runMigrate(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
-	format, err := cli.ParseFormat(args.Flag("out", "summary"))
-	if args.Flag("out", "summary") == "summary" {
+	summary, format, err := cli.ParseOut("summary", args.Flag("out", "summary"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	if summary {
 		fmt.Print(rep.Summary())
 	} else {
-		if err != nil {
-			cli.Fatalf("%v", err)
-		}
 		indent := 0
 		fmt.Sscanf(args.Flag("indent", "0"), "%d", &indent)
 		if err := cli.Write(os.Stdout, rep.JSON(), format, indent); err != nil {

@@ -46,7 +46,7 @@ keys flags:
   --state <state>      list only pending, accepted, rejected, revoked, or expired
   --all                accept every pending request
   --reason <text>      why a request was rejected or a certificate revoked
-  --out <format>       summary (default) or json
+  --out <format>       summary (default), nested, json, yaml, txt, or quiet
   --help               describe these commands without running one
 
 token create flags:
