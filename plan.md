@@ -1461,10 +1461,23 @@ unchanged.
      idempotent. That is the shape 5.157's second half is about, and it is
      why a state whose outcome matters needs a test beside its case.
 
-   What remains is the ninety-seven in `unconformed`: fifteen that need the
-   node's own roots redirected — reachable, and the obvious next tranche —
-   and eighty-two that change the machine the suite runs on and belong to
-   `TestLive*` on a disposable host.
+   The fifteen that needed "the node's own roots redirected" went the same
+   way, taking coverage to **50 of 132**. Redirecting them was less than the
+   phrase suggested: the node's configuration reaches a module through hooks
+   on `exec.Context`, so a case supplies them and points them at a temporary
+   directory. Writing them found a third live defect — `grains.present`
+   could not converge on a node whose static grains file names the grain,
+   because the file it writes is merged *before* that one — and a `--test`
+   guard on `environ.setval` that no test held.
+
+   What remains is the eighty-two in `unconformed`, every one of which
+   changes the machine the suite runs on: `pkg.installed`, `service.running`,
+   the firewall families, `user.present`. They belong to `TestLive*` on a
+   disposable host, which is what `fleet.yml` and `contrib/tofu` are for, and
+   the harness cannot be the thing that drives them — it applies twice, for
+   real, and the machine running the unit suite is a node this fleet
+   manages. So this row is as far as it goes in-process, and the next
+   increment of it is a live one.
 
 7b. **A coverage claim, measured at last — and the claim itself was wrong
     twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off
