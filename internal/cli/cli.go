@@ -205,6 +205,32 @@ func ParseFormat(s string) (Format, error) {
 	return "", fmt.Errorf("unknown output format %q; halite offers nested, json, yaml, txt, and quiet", s)
 }
 
+// ParseOut reads an `--out` value for a command that prints a report it
+// formats itself when the operator asks for nothing.
+//
+// own is that command's word for that report -- `doctor`'s "summary",
+// `orch`'s "timeline". Those are deliberately **not** Formats. A Format
+// names a rendering of a value tree and Write has a branch for each one;
+// a report the command writes by hand has none, so admitting one to the
+// Format vocabulary would mean Write silently rendering nested instead.
+//
+// Passing such a word to ParseFormat is what made `halite-hub doctor`
+// unrunnable: it defaulted `--out` to "summary", ParseFormat rejected
+// the default nothing had chosen, and the command exited before it
+// checked anything. DIVERGENCE 5.158.
+//
+// The two answers come back together on purpose. The sites that
+// hand-rolled this compared the string themselves and returned before
+// consulting the error, so a wrong `--out` was accepted and ignored the
+// moment the default changed. Here the error cannot be skipped.
+func ParseOut(own, s string) (ownReport bool, f Format, err error) {
+	if s == "" || s == own {
+		return true, Nested, nil
+	}
+	f, err = ParseFormat(s)
+	return false, f, err
+}
+
 // Write renders a value in the chosen format.
 func Write(w io.Writer, v any, f Format, indent int) error {
 	switch f {

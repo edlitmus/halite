@@ -27,7 +27,7 @@ var jobsUsage = `halite-hub jobs — the job cache (SPEC section 9.4)
 
 jobs flags:
   --limit <n>          how many jobs to list, default 20
-  --out <format>       summary (default) or json
+  --out <format>       summary (default), nested, json, yaml, txt, or quiet
 `
 
 // openJobs reads the cache directly.

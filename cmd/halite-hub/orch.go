@@ -109,8 +109,11 @@ func orchCall(args *cli.Args, fun string, arg []string, kwargs map[string]any) i
 	}
 
 	decoded, decodeErr := value.DecodeJSON(res.Return)
-	format, err := cli.ParseFormat(args.Flag("out", "timeline"))
-	if args.Flag("out", "timeline") == "timeline" {
+	timeline, format, err := cli.ParseOut("timeline", args.Flag("out", "timeline"))
+	if err != nil {
+		cli.Fatalf("%v", err)
+	}
+	if timeline {
 		// A failed run still has a timeline, and printing it is the
 		// point: the operator's next command is `orch resume --from`,
 		// and they need the step name to pass it.
@@ -122,9 +125,6 @@ func orchCall(args *cli.Args, fun string, arg []string, kwargs map[string]any) i
 			return 1
 		}
 		return 0
-	}
-	if err != nil {
-		cli.Fatalf("%v", err)
 	}
 	if decodeErr != nil {
 		cli.Fatalf("the hub's answer is not readable: %v", decodeErr)
