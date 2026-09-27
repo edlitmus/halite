@@ -241,6 +241,7 @@ func liveConformanceCases() []liveCase {
 	cases = append(cases, serviceCases()...)
 	cases = append(cases, rcConfCases()...)
 	cases = append(cases, netfilterCases()...)
+	cases = append(cases, storageCases()...)
 	return cases
 }
 

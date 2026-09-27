@@ -1485,15 +1485,20 @@ unchanged.
    a change against an already-empty table for ever, three lines below a
    sibling branch that counted first.
 
-   **Forty-four are left and they are not one list.** Nine are Windows and
-   macOS and need those legs rather than the lab. Twelve are storage —
-   `lvm`, `zfs`, `mount` — reachable on a loopback file, and
-   `live_lvm_loopback_test.go` already has the rig: the obvious next tranche.
-   Six are language managers needing their own toolchain installed first.
-   Four are `firewall.*`, whose blast radius is the machine's connectivity.
-   The remaining thirteen each have their own reason, from `reboot.scheduled`
-   keeping its own gate to `pkg.latest` needing a package with two versions
-   in the repository.
+   The twelve storage states followed — **100 of 132** — on storage the cases
+   make for themselves: LVM on loop devices, ZFS on a single file vdev, and
+   `mount` on `tmpfs` with its table redirected, so `/etc/fstab` is never
+   touched. That tranche also fixed `acl.wipe`, which had been unusable on
+   FreeBSD 14 since 5.113 was written: the fix for that entry reached one of
+   its two call sites, and the live ACL test had been failing on the
+   `freebsd14` row ever since, read as a fact about the machine.
+
+   **Thirty-two are left, and they are not one list.** Nine are Windows and
+   macOS and need those legs rather than the lab. Six are language managers
+   needing their own toolchain installed first. Four are `firewall.*`, whose
+   blast radius is the machine's connectivity. The remaining thirteen each
+   have their own reason, from `reboot.scheduled` keeping its own gate to
+   `pkg.latest` needing a package with two versions in the repository.
 
 7b. **A coverage claim, measured at last — and the claim itself was wrong
     twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off
