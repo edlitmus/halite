@@ -338,6 +338,16 @@ func startsWithIdentifier(comment string) bool {
 	if word == "" {
 		return false
 	}
+	// A comment may open with the literal it is about, quoted:
+	//
+	//	`tcp dport 65001 ip saddr 203.0.113.0/24 drop` was added to inet …
+	//
+	// which is `nftables`'s house style for a rule, and readable. A
+	// backtick cannot begin an English word, so admitting it costs the rule
+	// nothing.
+	if strings.HasPrefix(word, "`") {
+		return true
+	}
 	return strings.ContainsAny(word, "./\\-_:@")
 }
 

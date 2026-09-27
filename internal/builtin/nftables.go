@@ -1117,27 +1117,38 @@ func nftFlushFn(c *exec.Context, args *value.Map) (any, error) {
 		if !nftFindTable(rs, family, table) {
 			return nftMutateResult(c, false, fmt.Sprintf("The table %s %s does not exist.", family, table), nil), nil
 		}
-		change := value.MapOf(family+" "+table, states.Change("rules", "empty"))
+		// Counted first, as the chain branch above does. Without this the
+		// state reported a flush on every run against a table that was
+		// already empty.
+		n := nftTableRuleCount(rs, family, table)
+		if n == 0 {
+			return nftMutateResult(c, false, fmt.Sprintf("The table %s %s is already empty.", family, table), nil), nil
+		}
+		change := value.MapOf(family+" "+table, states.Change(fmt.Sprintf("%d rule(s)", n), "empty"))
 		if c.Test {
-			return nftMutateResult(c, true, fmt.Sprintf("The table %s %s would be flushed.", family, table), change), nil
+			return nftMutateResult(c, true, fmt.Sprintf("The table %s %s would be flushed (%d rule(s)).", family, table, n), change), nil
 		}
 		if err := nftApply(c, fmt.Sprintf("flush table %s %s\n", family, table)); err != nil {
 			return nil, err
 		}
-		return nftMutateResult(c, true, fmt.Sprintf("The table %s %s was flushed.", family, table), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The table %s %s was flushed (%d rule(s)).", family, table, n), change), nil
 
 	default:
 		if !force {
 			return nil, errors.New("flushing the whole ruleset wipes every table on the node, including ones this build did not write; pass force")
 		}
-		change := value.MapOf("ruleset", states.Change("present", "empty"))
+		n := nftRulesetRuleCount(rs)
+		if n == 0 {
+			return nftMutateResult(c, false, "The ruleset is already empty.", nil), nil
+		}
+		change := value.MapOf("ruleset", states.Change(fmt.Sprintf("%d rule(s)", n), "empty"))
 		if c.Test {
-			return nftMutateResult(c, true, "the whole ruleset would be flushed.", change), nil
+			return nftMutateResult(c, true, fmt.Sprintf("The whole ruleset would be flushed (%d rule(s)).", n), change), nil
 		}
 		if err := nftApply(c, "flush ruleset\n"); err != nil {
 			return nil, err
 		}
-		return nftMutateResult(c, true, "the whole ruleset was flushed.", change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The whole ruleset was flushed (%d rule(s)).", n), change), nil
 	}
 }
 
@@ -1150,6 +1161,31 @@ func nftRuleCount(rs *nftRuleset, family, table, chain string) int {
 	}
 	return n
 }
+
+// nftTableRuleCount counts every rule in a table, whatever chain it is in.
+//
+// The chain branch of `flush` has always counted before deciding, and
+// returns "already empty" when there is nothing to do. The table and ruleset
+// branches did not: they checked that the table *existed* and then reported
+// a change, so `nftables.flush` against an empty table reported one on every
+// run, for ever, while its sibling three lines above converged. Two branches
+// of one function disagreeing about whether to ask.
+//
+// Found by the conformance harness in the lab, which is the only thing that
+// would have: the second run is where it shows, and nothing drove a second
+// run before. DIVERGENCE 5.157.
+func nftTableRuleCount(rs *nftRuleset, family, table string) int {
+	n := 0
+	for _, ru := range rs.Rules {
+		if ru.Family == family && ru.Table == table {
+			n++
+		}
+	}
+	return n
+}
+
+// nftRulesetRuleCount counts every rule the node holds.
+func nftRulesetRuleCount(rs *nftRuleset) int { return len(rs.Rules) }
 
 // NFTablesSavePath is where `save` writes. A variable so a test can
 // redirect it.
