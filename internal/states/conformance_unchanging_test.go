@@ -253,6 +253,8 @@ func TestACommentMayOpenWithTheThingItManages(t *testing.T) {
 		"hello-world is already installed.",
 		"nginx.service was restarted.",
 		"ed@example.com was granted access.",
+		"`tcp dport 65001 ip saddr 203.0.113.0/24 drop` was added to inet halitecf conformance.",
+		"`nginx` is already at 1.24.0.",
 		`C:\Windows\Temp\x was removed.`,
 	} {
 		if err := checkComment(comment); err != nil {

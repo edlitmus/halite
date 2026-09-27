@@ -146,10 +146,46 @@ func (p dnfProvider) ListPkgs(c *exec.Context) (*value.Map, error) {
 	return out, nil
 }
 
+// Install adds packages, refreshing the metadata first when asked.
+//
+// # Why `-C` is not the opposite of a refresh
+//
+// This used to pass `-C` when `refresh` was false, on the reading that
+// "do not refresh" means "work from the cache". It does not, and dnf says
+// so in its own help:
+//
+//	-C, --cacheonly       run entirely from system cache, don't update cache
+//	--refresh             set metadata as expired before running the command
+//
+// `--cacheonly` forbids *downloading the packages*, not just refreshing the
+// metadata. So `pkg.installed` -- whose `refresh` defaults to false --
+// could not install anything that was not already in the local cache, which
+// on a machine that has never installed it is everything. Measured on Rocky
+// Linux 9, where dnf names the cause itself:
+//
+//	# dnf install -y -q -C tree
+//	Error: Some packages have invalid cache, but cannot be downloaded
+//	due to "--cacheonly" option
+//	# dnf install -y -q tree
+//	Installed: tree-1.8.0-10.el9.x86_64
+//
+// The shape to copy was beside it all along: `aptProvider.Install` runs
+// `apt-get update` when refresh is set and adds nothing when it is not. This
+// is the same behaviour in dnf's vocabulary. `--refresh` rather than a
+// separate `makecache` because it is one command and cannot half-succeed.
+//
+// EL7's yum 3 has no `--refresh`, so an explicit `refresh: true` would be
+// refused there. EL7 left support in June 2024 and is in no tier of SPEC
+// 27.1; EL8 and later ship yum as a link to dnf, where the flag is the
+// same one. Saying so beats silently dropping the caller's request.
+//
+// `ListUpgrades` keeps its `-C`, and correctly: reading what is available
+// from the metadata already held downloads nothing, so there "do not
+// refresh" and "cache only" really are the same instruction.
 func (p dnfProvider) Install(c *exec.Context, names []string, versions map[string]string, refresh bool) error {
 	argv := []string{p.binary, "install", "-y", "-q"}
-	if !refresh {
-		argv = append(argv, "-C")
+	if refresh {
+		argv = append(argv, "--refresh")
 	}
 	for _, n := range names {
 		if v, ok := versions[n]; ok && v != "" && !strings.HasSuffix(v, "*") {

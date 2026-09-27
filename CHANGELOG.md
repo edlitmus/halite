@@ -23,6 +23,48 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `dnf` could not install a package it had not already downloaded
+
+`pkg.installed` defaults `refresh` to false, and the dnf provider turned
+that into `dnf install -C` — `--cacheonly`, which forbids downloading the
+packages and not merely refreshing the metadata. So on the RedHat family
+the default path could not install anything not already in the local
+cache, which on a fresh machine is anything at all. It passes `--refresh`
+or nothing now, which is what `apt` has always done in its own vocabulary.
+
+Found by driving `pkg.installed` through the conformance harness on a real
+Rocky Linux 9. `dnf upgrade` had it too, and worse — an upgrade exists to
+fetch newer packages.
+
+### `nftables.flush` reported a change against an empty table
+
+Flushing a table or a ruleset that already held no rules reported a change
+every run, for ever, while the chain branch of the same function counted
+first and converged. Both count now and say how many rules they removed.
+
+### The test-mode contract is now checked on a real machine
+
+Eighty-eight of the hundred and thirty-two state functions are held to SPEC
+11.6's harness, up from fifty. The thirty-eight added here cannot be checked
+anywhere but on a machine that can be broken — the harness applies a state
+for real, twice, so a `pkg.installed` case installs a package on whoever ran
+it. `TestLiveConformance*` drives them against a real system: accounts,
+`/etc/hosts`, cron and at queues, packages, kernel modules, a kernel
+parameter, systemd services, FreeBSD's `rc.conf`, and all sixteen
+`iptables` and `nftables` functions inside a private network namespace.
+
+Driven in the throwaway lab on Alpine, Debian 13, Rocky 9 and FreeBSD 14:
+13, 17, 17 and 16 of 22 cases ran respectively, plus sixteen packet-filter
+cases inside a namespace on each Linux row, and every skip says which
+subsystem the machine lacks.
+
+It asks for `HALITE_CONFORMANCE_LIVE=1` on top of `HALITE_SYSTEM_LIVE=1`.
+The second variable is not ceremony: the first has been set by hand on real
+machines to answer a question about one module, and this suite drives
+package managers and the account database through four states each. The
+throwaway lab and two CI legs set both; anything else gets a skip that says
+which variable is missing.
+
 ### `grains.present` reported a change it could not make
 
 On a node whose static grains file names the grain, `grains.present` wrote

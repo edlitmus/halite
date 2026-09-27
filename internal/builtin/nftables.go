@@ -810,29 +810,29 @@ func nftTableChange(c *exec.Context, args *value.Map, present bool) (any, error)
 
 	if present {
 		if exists {
-			return nftMutateResult(c, false, fmt.Sprintf("table %s %s already exists.", family, name), nil), nil
+			return nftMutateResult(c, false, fmt.Sprintf("The table %s %s already exists.", family, name), nil), nil
 		}
 		change := value.MapOf(family+" "+name, states.Change(nil, "present"))
 		if c.Test {
-			return nftMutateResult(c, true, fmt.Sprintf("table %s %s would be created.", family, name), change), nil
+			return nftMutateResult(c, true, fmt.Sprintf("The table %s %s would be created.", family, name), change), nil
 		}
 		if err := nftApply(c, fmt.Sprintf("add table %s %s\n", family, name)); err != nil {
 			return nil, err
 		}
-		return nftMutateResult(c, true, fmt.Sprintf("table %s %s was created.", family, name), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The table %s %s was created.", family, name), change), nil
 	}
 
 	if !exists {
-		return nftMutateResult(c, false, fmt.Sprintf("table %s %s does not exist.", family, name), nil), nil
+		return nftMutateResult(c, false, fmt.Sprintf("The table %s %s does not exist.", family, name), nil), nil
 	}
 	change := value.MapOf(family+" "+name, states.Change("present", nil))
 	if c.Test {
-		return nftMutateResult(c, true, fmt.Sprintf("table %s %s would be removed, with everything in it.", family, name), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The table %s %s would be removed, with everything in it.", family, name), change), nil
 	}
 	if err := nftApply(c, fmt.Sprintf("delete table %s %s\n", family, name)); err != nil {
 		return nil, err
 	}
-	return nftMutateResult(c, true, fmt.Sprintf("table %s %s was removed.", family, name), change), nil
+	return nftMutateResult(c, true, fmt.Sprintf("The table %s %s was removed.", family, name), change), nil
 }
 
 // nftChainSpec renders a base chain's `{ ... }` body, or "" for a plain
@@ -881,22 +881,22 @@ func nftChainChange(c *exec.Context, args *value.Map, present bool) (any, error)
 			if spec != "" && existing.Base() {
 				want := strings.TrimSpace(states.Str(args, "policy", "accept"))
 				if existing.Policy == want {
-					return nftMutateResult(c, false, fmt.Sprintf("chain %s %s %s already exists as declared.", family, table, name), nil), nil
+					return nftMutateResult(c, false, fmt.Sprintf("The chain %s %s %s already exists as declared.", family, table, name), nil), nil
 				}
 				change := value.MapOf(chainRef(family, table, name)+" policy", states.Change(existing.Policy, want))
 				if c.Test {
-					return nftMutateResult(c, true, fmt.Sprintf("chain %s %s %s policy would become %s.", family, table, name, want), change), nil
+					return nftMutateResult(c, true, fmt.Sprintf("The chain %s %s %s policy would become %s.", family, table, name, want), change), nil
 				}
 				if err := nftApply(c, fmt.Sprintf("add chain %s %s %s %s\n", family, table, name, spec)); err != nil {
 					return nil, err
 				}
-				return nftMutateResult(c, true, fmt.Sprintf("chain %s %s %s policy became %s.", family, table, name, want), change), nil
+				return nftMutateResult(c, true, fmt.Sprintf("The chain %s %s %s policy became %s.", family, table, name, want), change), nil
 			}
-			return nftMutateResult(c, false, fmt.Sprintf("chain %s %s %s already exists.", family, table, name), nil), nil
+			return nftMutateResult(c, false, fmt.Sprintf("The chain %s %s %s already exists.", family, table, name), nil), nil
 		}
 		change := value.MapOf(chainRef(family, table, name), states.Change(nil, "present"))
 		if c.Test {
-			return nftMutateResult(c, true, fmt.Sprintf("chain %s %s %s would be created.", family, table, name), change), nil
+			return nftMutateResult(c, true, fmt.Sprintf("The chain %s %s %s would be created.", family, table, name), change), nil
 		}
 		line := fmt.Sprintf("add chain %s %s %s", family, table, name)
 		if spec != "" {
@@ -905,20 +905,20 @@ func nftChainChange(c *exec.Context, args *value.Map, present bool) (any, error)
 		if err := nftApply(c, line+"\n"); err != nil {
 			return nil, err
 		}
-		return nftMutateResult(c, true, fmt.Sprintf("chain %s %s %s was created.", family, table, name), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The chain %s %s %s was created.", family, table, name), change), nil
 	}
 
 	if existing == nil {
-		return nftMutateResult(c, false, fmt.Sprintf("chain %s %s %s does not exist.", family, table, name), nil), nil
+		return nftMutateResult(c, false, fmt.Sprintf("The chain %s %s %s does not exist.", family, table, name), nil), nil
 	}
 	change := value.MapOf(chainRef(family, table, name), states.Change("present", nil))
 	if c.Test {
-		return nftMutateResult(c, true, fmt.Sprintf("chain %s %s %s would be removed.", family, table, name), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The chain %s %s %s would be removed.", family, table, name), change), nil
 	}
 	if err := nftApply(c, fmt.Sprintf("delete chain %s %s %s\n", family, table, name)); err != nil {
 		return nil, err
 	}
-	return nftMutateResult(c, true, fmt.Sprintf("chain %s %s %s was removed.", family, table, name), change), nil
+	return nftMutateResult(c, true, fmt.Sprintf("The chain %s %s %s was removed.", family, table, name), change), nil
 }
 
 func chainRef(family, table, name string) string { return family + " " + table + " " + name }
@@ -946,7 +946,7 @@ func nftSetPolicyFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, fmt.Errorf("chain %s is not a base chain, so it has no policy", chainRef(family, table, name))
 	}
 	if ch.Policy == policy {
-		return nftMutateResult(c, false, fmt.Sprintf("chain %s policy is already %s.", chainRef(family, table, name), policy), nil), nil
+		return nftMutateResult(c, false, fmt.Sprintf("The chain %s policy is already %s.", chainRef(family, table, name), policy), nil), nil
 	}
 	prio := ch.Prio
 	if prio == "" {
@@ -955,12 +955,12 @@ func nftSetPolicyFn(c *exec.Context, args *value.Map) (any, error) {
 	spec := fmt.Sprintf("{ type %s hook %s priority %s ; policy %s ; }", ch.Type, ch.Hook, prio, policy)
 	change := value.MapOf(chainRef(family, table, name)+" policy", states.Change(ch.Policy, policy))
 	if c.Test {
-		return nftMutateResult(c, true, fmt.Sprintf("chain %s policy would become %s.", chainRef(family, table, name), policy), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The chain %s policy would become %s.", chainRef(family, table, name), policy), change), nil
 	}
 	if err := nftApply(c, fmt.Sprintf("add chain %s %s %s %s\n", family, table, name, spec)); err != nil {
 		return nil, err
 	}
-	return nftMutateResult(c, true, fmt.Sprintf("chain %s policy became %s.", chainRef(family, table, name), policy), change), nil
+	return nftMutateResult(c, true, fmt.Sprintf("The chain %s policy became %s.", chainRef(family, table, name), policy), change), nil
 }
 
 // nftRuleLine builds one `add rule` / `insert rule` script line.
@@ -1064,12 +1064,12 @@ func nftDeleteRule(c *exec.Context, args *value.Map) (any, error) {
 	}
 	change := value.MapOf(label, states.Change("present in "+chainRef(family, table, chain), nil))
 	if c.Test {
-		return nftMutateResult(c, true, fmt.Sprintf("the rule %s would be removed from %s.", label, chainRef(family, table, chain)), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The rule %s would be removed from %s.", label, chainRef(family, table, chain)), change), nil
 	}
 	if err := nftApply(c, fmt.Sprintf("delete rule %s %s %s handle %d\n", family, table, chain, handle)); err != nil {
 		return nil, err
 	}
-	return nftMutateResult(c, true, fmt.Sprintf("the rule %s was removed from %s.", label, chainRef(family, table, chain)), change), nil
+	return nftMutateResult(c, true, fmt.Sprintf("The rule %s was removed from %s.", label, chainRef(family, table, chain)), change), nil
 }
 
 func nftFlushFn(c *exec.Context, args *value.Map) (any, error) {
@@ -1090,7 +1090,7 @@ func nftFlushFn(c *exec.Context, args *value.Map) (any, error) {
 	case chain != "":
 		ch := nftFindChain(rs, family, table, chain)
 		if ch == nil {
-			return nftMutateResult(c, false, fmt.Sprintf("chain %s does not exist.", chainRef(family, table, chain)), nil), nil
+			return nftMutateResult(c, false, fmt.Sprintf("The chain %s does not exist.", chainRef(family, table, chain)), nil), nil
 		}
 		if ch.Base() && ch.Policy == "drop" && !force {
 			return nil, fmt.Errorf(
@@ -1099,45 +1099,56 @@ func nftFlushFn(c *exec.Context, args *value.Map) (any, error) {
 		}
 		n := nftRuleCount(rs, family, table, chain)
 		if n == 0 {
-			return nftMutateResult(c, false, fmt.Sprintf("chain %s is already empty.", chainRef(family, table, chain)), nil), nil
+			return nftMutateResult(c, false, fmt.Sprintf("The chain %s is already empty.", chainRef(family, table, chain)), nil), nil
 		}
 		change := value.MapOf(chainRef(family, table, chain), states.Change(fmt.Sprintf("%d rule(s)", n), "empty"))
 		if c.Test {
-			return nftMutateResult(c, true, fmt.Sprintf("chain %s would be flushed (%d rule(s)).", chainRef(family, table, chain), n), change), nil
+			return nftMutateResult(c, true, fmt.Sprintf("The chain %s would be flushed (%d rule(s)).", chainRef(family, table, chain), n), change), nil
 		}
 		if err := nftApply(c, fmt.Sprintf("flush chain %s %s %s\n", family, table, chain)); err != nil {
 			return nil, err
 		}
-		return nftMutateResult(c, true, fmt.Sprintf("chain %s was flushed (%d rule(s)).", chainRef(family, table, chain), n), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The chain %s was flushed (%d rule(s)).", chainRef(family, table, chain), n), change), nil
 
 	case table != "":
 		if !force {
 			return nil, fmt.Errorf("flushing a whole table empties every chain in it; pass force")
 		}
 		if !nftFindTable(rs, family, table) {
-			return nftMutateResult(c, false, fmt.Sprintf("table %s %s does not exist.", family, table), nil), nil
+			return nftMutateResult(c, false, fmt.Sprintf("The table %s %s does not exist.", family, table), nil), nil
 		}
-		change := value.MapOf(family+" "+table, states.Change("rules", "empty"))
+		// Counted first, as the chain branch above does. Without this the
+		// state reported a flush on every run against a table that was
+		// already empty.
+		n := nftTableRuleCount(rs, family, table)
+		if n == 0 {
+			return nftMutateResult(c, false, fmt.Sprintf("The table %s %s is already empty.", family, table), nil), nil
+		}
+		change := value.MapOf(family+" "+table, states.Change(fmt.Sprintf("%d rule(s)", n), "empty"))
 		if c.Test {
-			return nftMutateResult(c, true, fmt.Sprintf("table %s %s would be flushed.", family, table), change), nil
+			return nftMutateResult(c, true, fmt.Sprintf("The table %s %s would be flushed (%d rule(s)).", family, table, n), change), nil
 		}
 		if err := nftApply(c, fmt.Sprintf("flush table %s %s\n", family, table)); err != nil {
 			return nil, err
 		}
-		return nftMutateResult(c, true, fmt.Sprintf("table %s %s was flushed.", family, table), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The table %s %s was flushed (%d rule(s)).", family, table, n), change), nil
 
 	default:
 		if !force {
 			return nil, errors.New("flushing the whole ruleset wipes every table on the node, including ones this build did not write; pass force")
 		}
-		change := value.MapOf("ruleset", states.Change("present", "empty"))
+		n := nftRulesetRuleCount(rs)
+		if n == 0 {
+			return nftMutateResult(c, false, "The ruleset is already empty.", nil), nil
+		}
+		change := value.MapOf("ruleset", states.Change(fmt.Sprintf("%d rule(s)", n), "empty"))
 		if c.Test {
-			return nftMutateResult(c, true, "the whole ruleset would be flushed.", change), nil
+			return nftMutateResult(c, true, fmt.Sprintf("The whole ruleset would be flushed (%d rule(s)).", n), change), nil
 		}
 		if err := nftApply(c, "flush ruleset\n"); err != nil {
 			return nil, err
 		}
-		return nftMutateResult(c, true, "the whole ruleset was flushed.", change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The whole ruleset was flushed (%d rule(s)).", n), change), nil
 	}
 }
 
@@ -1150,6 +1161,31 @@ func nftRuleCount(rs *nftRuleset, family, table, chain string) int {
 	}
 	return n
 }
+
+// nftTableRuleCount counts every rule in a table, whatever chain it is in.
+//
+// The chain branch of `flush` has always counted before deciding, and
+// returns "already empty" when there is nothing to do. The table and ruleset
+// branches did not: they checked that the table *existed* and then reported
+// a change, so `nftables.flush` against an empty table reported one on every
+// run, for ever, while its sibling three lines above converged. Two branches
+// of one function disagreeing about whether to ask.
+//
+// Found by the conformance harness in the lab, which is the only thing that
+// would have: the second run is where it shows, and nothing drove a second
+// run before. DIVERGENCE 5.157.
+func nftTableRuleCount(rs *nftRuleset, family, table string) int {
+	n := 0
+	for _, ru := range rs.Rules {
+		if ru.Family == family && ru.Table == table {
+			n++
+		}
+	}
+	return n
+}
+
+// nftRulesetRuleCount counts every rule the node holds.
+func nftRulesetRuleCount(rs *nftRuleset) int { return len(rs.Rules) }
 
 // NFTablesSavePath is where `save` writes. A variable so a test can
 // redirect it.
@@ -1180,12 +1216,12 @@ func nftSaveFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 	change := value.MapOf(path, states.Change("stale or absent", "the running ruleset"))
 	if c.Test {
-		return nftMutateResult(c, true, fmt.Sprintf("the running ruleset would be written to %s.", path), change), nil
+		return nftMutateResult(c, true, fmt.Sprintf("The running ruleset would be written to %s.", path), change), nil
 	}
 	if err := atomicfile.Write(path, []byte(want), 0o600); err != nil {
 		return nil, fmt.Errorf("%s could not be written: %w", path, err)
 	}
-	return nftMutateResult(c, true, fmt.Sprintf("the running ruleset was written to %s.", path), change), nil
+	return nftMutateResult(c, true, fmt.Sprintf("The running ruleset was written to %s.", path), change), nil
 }
 
 func nftCheckFn(c *exec.Context, args *value.Map) (any, error) {

@@ -934,10 +934,10 @@ func iptablesChainChange(c *exec.Context, args *value.Map, create bool) (any, er
 		return nil, err
 	}
 	if create && exists {
-		return iptablesMutateResult(c, false, fmt.Sprintf("chain %s/%s already exists.", table, chain), nil), nil
+		return iptablesMutateResult(c, false, fmt.Sprintf("The chain %s/%s already exists.", table, chain), nil), nil
 	}
 	if !create && !exists {
-		return iptablesMutateResult(c, false, fmt.Sprintf("chain %s/%s does not exist.", table, chain), nil), nil
+		return iptablesMutateResult(c, false, fmt.Sprintf("The chain %s/%s does not exist.", table, chain), nil), nil
 	}
 	if !create && policy != "" {
 		return nil, fmt.Errorf("%s/%s is a built-in chain and cannot be deleted", table, chain)
@@ -951,12 +951,12 @@ func iptablesChainChange(c *exec.Context, args *value.Map, create bool) (any, er
 	}
 	change := value.MapOf(table+"/"+chain, states.Change(!create, create))
 	if c.Test {
-		return iptablesMutateResult(c, true, fmt.Sprintf("chain %s/%s would be %s.", table, chain, verb), change), nil
+		return iptablesMutateResult(c, true, fmt.Sprintf("The chain %s/%s would be %s.", table, chain, verb), change), nil
 	}
 	if err := iptablesRun(c, []string{bin, "-t", table, flag, chain}); err != nil {
 		return nil, err
 	}
-	return iptablesMutateResult(c, true, fmt.Sprintf("chain %s/%s %s.", table, chain, past), change), nil
+	return iptablesMutateResult(c, true, fmt.Sprintf("The chain %s/%s %s.", table, chain, past), change), nil
 }
 
 // ---- writing: policy ----
@@ -1016,7 +1016,7 @@ func iptablesFlushFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 	td := rs.Tables[table]
 	if td == nil {
-		return iptablesMutateResult(c, false, fmt.Sprintf("table %s has no chains to flush.", table), nil), nil
+		return iptablesMutateResult(c, false, fmt.Sprintf("The table %s has no chains to flush.", table), nil), nil
 	}
 
 	if chain == "" && !force {
@@ -1026,7 +1026,7 @@ func iptablesFlushFn(c *exec.Context, args *value.Map) (any, error) {
 	if chain != "" {
 		ch := td.Chains[chain]
 		if ch == nil {
-			return iptablesMutateResult(c, false, fmt.Sprintf("chain %s/%s does not exist.", table, chain), nil), nil
+			return iptablesMutateResult(c, false, fmt.Sprintf("The chain %s/%s does not exist.", table, chain), nil), nil
 		}
 		if ch.Policy != "" && ch.Policy != "ACCEPT" && !force {
 			return nil, fmt.Errorf(
@@ -1034,7 +1034,7 @@ func iptablesFlushFn(c *exec.Context, args *value.Map) (any, error) {
 					"and the node goes off the network. Pass force if that is what you mean", table, chain, ch.Policy)
 		}
 		if len(ch.Rules) == 0 {
-			return iptablesMutateResult(c, false, fmt.Sprintf("chain %s/%s is already empty.", table, chain), nil), nil
+			return iptablesMutateResult(c, false, fmt.Sprintf("The chain %s/%s is already empty.", table, chain), nil), nil
 		}
 	}
 
@@ -1174,25 +1174,25 @@ func iptablesChainState(c *exec.Context, args *value.Map, present bool) (states.
 
 	if present {
 		if exists {
-			return states.True(fmt.Sprintf("chain %s/%s exists.", table, chain)), nil
+			return states.True(fmt.Sprintf("The chain %s/%s exists.", table, chain)), nil
 		}
 		changes := value.MapOf(table+"/"+chain, states.Change(nil, "present"))
 		if c.Test {
-			return states.WouldChange(fmt.Sprintf("chain %s/%s would be created.", table, chain), changes), nil
+			return states.WouldChange(fmt.Sprintf("The chain %s/%s would be created.", table, chain), changes), nil
 		}
 		bin, _ := iptablesBin(family)
 		if err := iptablesRun(c, []string{bin, "-t", table, "-N", chain}); err != nil {
 			return states.False(err.Error()), nil
 		}
-		return states.Changed(fmt.Sprintf("chain %s/%s was created.", table, chain), changes), nil
+		return states.Changed(fmt.Sprintf("The chain %s/%s was created.", table, chain), changes), nil
 	}
 
 	if !exists {
-		return states.True(fmt.Sprintf("chain %s/%s does not exist.", table, chain)), nil
+		return states.True(fmt.Sprintf("The chain %s/%s does not exist.", table, chain)), nil
 	}
 	changes := value.MapOf(table+"/"+chain, states.Change("present", nil))
 	if c.Test {
-		return states.WouldChange(fmt.Sprintf("chain %s/%s would be flushed and removed.", table, chain), changes), nil
+		return states.WouldChange(fmt.Sprintf("The chain %s/%s would be flushed and removed.", table, chain), changes), nil
 	}
 	bin, _ := iptablesBin(family)
 	if err := iptablesRun(c, []string{bin, "-t", table, "-F", chain}); err != nil {
@@ -1201,7 +1201,7 @@ func iptablesChainState(c *exec.Context, args *value.Map, present bool) (states.
 	if err := iptablesRun(c, []string{bin, "-t", table, "-X", chain}); err != nil {
 		return states.False(fmt.Sprintf("the chain was flushed but not removed (it may still be a jump target): %v", err)), nil
 	}
-	return states.Changed(fmt.Sprintf("chain %s/%s was removed.", table, chain), changes), nil
+	return states.Changed(fmt.Sprintf("The chain %s/%s was removed.", table, chain), changes), nil
 }
 
 func iptablesRuleState(c *exec.Context, args *value.Map, mode string) (states.Result, error) {

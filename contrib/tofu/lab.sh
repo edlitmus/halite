@@ -357,10 +357,19 @@ test)
         fi
         labReport unit "$out"
 
-        echo "---- live suite (root, HALITE_SYSTEM_LIVE=1)"
+        # HALITE_CONFORMANCE_LIVE as well as HALITE_SYSTEM_LIVE.
+        #
+        # The conformance suite of live_conformance_test.go applies state
+        # modules for real and then runs each one three more times, so it
+        # asks for a second variable rather than treating
+        # HALITE_SYSTEM_LIVE as blanket consent -- that one has been set by
+        # hand on real machines to answer a question about one module. These
+        # instances are raised to be destroyed, which is exactly the machine
+        # it wants, so the lab sets both.
+        echo "---- live suite (root, HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1)"
         # shellcheck disable=SC2086,SC2029
         if ! ssh $SSH_OPTS "root@$addr" \
-            "cd $REMOTE_DIR && PATH=\$PATH:/usr/local/go/bin CGO_ENABLED=0 HALITE_SYSTEM_LIVE=1 go test -count=1 -v -run TestLive ./internal/builtin/" \
+            "cd $REMOTE_DIR && PATH=\$PATH:/usr/local/go/bin CGO_ENABLED=0 HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 go test -count=1 -v -run TestLive ./internal/builtin/" \
             >"$out" 2>&1; then
             host_failed="$host_failed live"
         fi

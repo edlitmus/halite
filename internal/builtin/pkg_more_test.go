@@ -514,3 +514,113 @@ func TestPkgAptOnlyFunctionsRefuseOtherProviders(t *testing.T) {
 		}
 	}
 }
+
+// `-C` is not the opposite of a refresh, and dnf says so itself.
+//
+// `pkg.installed` defaults `refresh` to false, and this provider used to
+// translate that into `dnf install -C` -- `--cacheonly`, which forbids
+// downloading the packages and not merely refreshing the metadata. So the
+// default path could not install anything not already in the local cache,
+// which on a machine that has never installed it is everything. Found by
+// driving `pkg.installed` through the conformance harness on a real Rocky
+// Linux 9 in the lab, where the rocky9 row exists because the dnf provider
+// had never been driven; dnf named the cause in its own words:
+//
+//	Error: Some packages have invalid cache, but cannot be downloaded
+//	due to "--cacheonly" option
+//
+// The argv is asserted rather than the outcome, because the outcome needs a
+// machine and the flag is the whole of the defect. DIVERGENCE 5.157.
+func TestDnfInstallDoesNotForbidDownloadingThePackage(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		refresh bool
+		want    []string
+		absent  []string
+	}{
+		{
+			name:    "the default, which must still be able to download",
+			refresh: false,
+			want:    []string{"dnf", "install", "-y", "-q", "tree"},
+			absent:  []string{"-C", "--cacheonly", "--refresh"},
+		},
+		{
+			name:    "refresh asked for, which must actually refresh",
+			refresh: true,
+			want:    []string{"dnf", "install", "-y", "-q", "--refresh", "tree"},
+			absent:  []string{"-C", "--cacheonly"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &exec.RecordingRunner{}
+			c := newCtx(false)
+			c.Runner = rec
+
+			p := dnfProvider{binary: "dnf"}
+			if err := p.Install(c, []string{"tree"}, nil, tc.refresh); err != nil {
+				t.Fatalf("Install: %v", err)
+			}
+			if len(rec.Ran) != 1 {
+				t.Fatalf("expected one command, got %d: %v", len(rec.Ran), rec.Ran)
+			}
+			got := rec.Ran[0].Argv
+			if strings.Join(got, " ") != strings.Join(tc.want, " ") {
+				t.Errorf("argv = %v, want %v", got, tc.want)
+			}
+			for _, bad := range tc.absent {
+				for _, arg := range got {
+					if arg == bad {
+						t.Errorf("argv carries %q, which stops dnf fetching the package: %v", bad, got)
+					}
+				}
+			}
+		})
+	}
+}
+
+// Upgrade had it too, and worse: an upgrade exists to fetch newer packages.
+func TestDnfUpgradeDoesNotForbidDownloadingThePackages(t *testing.T) {
+	rec := &exec.RecordingRunner{}
+	c := newCtx(false)
+	c.Runner = rec
+
+	p := dnfProvider{binary: "dnf"}
+	if _, err := p.Upgrade(c, false); err != nil {
+		t.Fatalf("Upgrade: %v", err)
+	}
+	for _, cmd := range rec.Ran {
+		for _, arg := range cmd.Argv {
+			if arg == "-C" || arg == "--cacheonly" {
+				t.Errorf("upgrade argv carries %q: %v", arg, cmd.Argv)
+			}
+		}
+	}
+}
+
+// And the read that keeps it, correctly: listing what is available from the
+// metadata already held downloads nothing, so there "do not refresh" and
+// "cache only" are the same instruction. Asserted so that a later reader
+// removing `-C` everywhere finds out that this one is deliberate.
+func TestDnfListUpgradesKeepsCacheOnlyWhenNotRefreshing(t *testing.T) {
+	rec := &exec.RecordingRunner{}
+	c := newCtx(false)
+	c.Runner = rec
+
+	p := dnfProvider{binary: "dnf"}
+	if _, err := p.ListUpgrades(c, false); err != nil {
+		t.Fatalf("ListUpgrades: %v", err)
+	}
+	if len(rec.Ran) == 0 {
+		t.Fatal("ListUpgrades ran nothing")
+	}
+	found := false
+	for _, arg := range rec.Ran[0].Argv {
+		if arg == "-C" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("a read that is not refreshing should stay on the cache it has: %v",
+			rec.Ran[0].Argv)
+	}
+}

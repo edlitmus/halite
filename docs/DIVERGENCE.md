@@ -14334,6 +14334,139 @@ audit with two halves that must both fail is an audit with a blind spot
 shaped like the intersection of what each half cannot see**, and that blind
 spot is not visible from either half.
 
+##### Coverage 50 → 88, and the harness moved to a machine that can be broken
+
+The eighty-two that "change the machine the suite runs on" were never going to
+get a case in `go test ./...`: the harness applies a state for real, twice, so
+a `pkg.installed` case installs a package on whoever ran it, and on this
+project the development host is a node the fleet manages. So the harness
+went to the machine instead. `TestLiveConformance*` drives the same
+`states.Conformance` against a real system, and thirty-eight of the
+eighty-two have a case there.
+
+**A second gate, because `HALITE_SYSTEM_LIVE` is not the consent this needs.**
+The existing live tests take that variable to mean "this machine can be thrown
+away", and they are careful — each captures what it changed and puts it back.
+These cannot promise that as cheaply: a case creates an account or loads a
+kernel module and then the harness runs the state three more times, so the
+machine passes through four states rather than two. `HALITE_CONFORMANCE_LIVE=1`
+is required as well, set by `contrib/tofu/lab.sh` and by two `fleet.yml` legs.
+That variable has been set by hand on real machines to answer a question about
+one module, and none of those sessions signed up for a package manager being
+driven.
+
+**One list, two drivers.** The sixteen `iptables` and `nftables` functions
+cannot run on the machine at all — a wrong rule takes it off the network, and
+the harness would get it wrong four times — so they run inside a private
+network namespace, by the re-exec `live_netfilter_test.go` already uses. They
+are in the same case list as everything else, tagged `needsNetns`, and the
+main suite skips them. Two lists of names would have been the obvious
+alternative and this repository has twice found such a pair disagreeing.
+
+The unit suite's accounting reads the live list too, so a state with a live
+case no longer reads as uncovered, and it reports the live ones separately
+because *having* a case and *having run* it are different claims:
+
+	88 of 132 state functions have a conformance case (38 of them only on
+	a live machine); 44 are excused
+
+Building that list must touch nothing, which is why the builders take no
+`*testing.T`: a builder with one invites `t.Cleanup`, and the cleanups here
+call `user.absent` against the machine. Every effect belongs to a case's
+`Setup`, its `Cleanup`, or the state under test. Demonstrated rather than
+asserted — after the unit suite ran on this development host, `halitecfu`,
+`halitecfg`, the hosts entry and the crontab line were all absent.
+
+##### What the remaining forty-four are
+
+Not one list any more, which is the point of writing them down:
+
+| | |
+|---|---|
+| **9** | Windows and macOS: `win_dacl`, `win_service`, `win_task`, `mac_defaults`. The lab is Linux and FreeBSD, so these need the `macos` and `windows` legs. |
+| **12** | storage: `lvm` (6), `zfs`/`zpool` (4), `mount` (2). Reachable on a loopback file, and `live_lvm_loopback_test.go` already has the rig. Next tranche. |
+| **6** | language managers: `gem`, `npm`, `pip`. Each needs its own toolchain installed first. |
+| **4** | `firewall.*`, which is `pf` on FreeBSD and netfilter on Linux, and whose blast radius is the machine's connectivity. |
+| **13** | one-offs, each with its own reason: `hostname.system` and `timezone.system` change the machine's identity, `reboot.scheduled` keeps its own extra gate, `pkg.latest` and `pkg.purged` need a package with two versions in the repository, `pkgrepo.*` edits where software comes from, and `apparmor.mode`, `debconf.set`, `netplan.managed`, `jail.running` and `snap.*` each need a subsystem only some rows have. |
+
+##### What the lab said, and the three defects it found
+
+Four rows raised and destroyed on 2026-09-27: `alpine`, `debian13`, `rocky9`
+and `freebsd14`. Three runs, because the first two found things.
+
+	alpine      13 of 22 cases ran,  9 skipped  + 16 packet-filter cases
+	debian13    17 of 22 cases ran,  5 skipped  + 16 packet-filter cases
+	rocky9      17 of 22 cases ran,  5 skipped  + 16 packet-filter cases
+	freebsd14   16 of 22 cases ran,  6 skipped
+
+Every skip names its reason and the summary counts them, because "the
+conformance suite passed" on a machine where most of it skipped is a sentence
+worth very little. Alpine skips the four `service` cases for having no
+systemd and both `kmod` cases for a kernel without `netdevsim`; FreeBSD skips
+the six Linux-only ones and runs the three `sysrc` cases nothing had driven
+before.
+
+**`dnf` could not install a package.** The rocky9 row exists because of a
+comment in `distros.tf` reading *"dnf provider (never driven)"*. It had not
+been, and the first time it was, it failed:
+
+	dnf install -y -q -C tree
+	Error: Some packages have invalid cache, but cannot be downloaded
+	due to "--cacheonly" option
+
+The provider passed `-C` whenever `refresh` was false, and `refresh` defaults
+to false. `-C` is `--cacheonly`, which forbids downloading the *packages* and
+not merely refreshing the metadata, so the default path could not install
+anything not already in the local cache — on a fresh machine, anything at
+all. dnf's own help distinguishes them and the provider had merged them:
+
+	-C, --cacheonly   run entirely from system cache, don't update cache
+	--refresh         set metadata as expired before running the command
+
+The shape to copy was in the same file: `aptProvider.Install` runs
+`apt-get update` when refresh is set and adds nothing when it is not. `dnf`
+now passes `--refresh` or nothing. `ListUpgrades` keeps its `-C` and is right
+to, because a read from held metadata downloads nothing; a test asserts that
+one stays, so a later reader removing `-C` everywhere is told it is
+deliberate.
+
+**`nftables.flush` could not converge.** Three branches: the chain branch
+counts the rules and returns "already empty" when there are none; the table
+and ruleset branches checked only that the target existed. So flushing an
+already-empty table reported a change on every run, for ever, three lines
+below a sibling that converged. Two branches of one function disagreeing
+about whether to ask the question — and only a second run can see it, which
+is what this harness does and nothing else did.
+
+**Thirty-eight comments in `iptables` and `nftables` opened with a lower-case
+English word.** Predicted by name in this entry two days earlier: those two
+modules "will fail the day their cases arrive, which is the right time to fix
+them". They arrived.
+
+##### Three mistakes of mine, on the record
+
+The lab found these too, and they are the reason a case list is not evidence
+until it has run:
+
+- **I read the parameter lists out of `docs/modules.md`.** `iptables.flush`
+  and `nftables.append` exist in *both* registries with different signatures,
+  and the generated page gave me the execution form — so the state form
+  rejected `chain` as not a parameter, and required a `comment` I had not
+  passed. The registry answers this in one command and is the authority.
+- **A probe of mine reported a change nobody made.** `at.atq` returns a slice
+  of maps, and `fmt.Sprintf("%v", …)` over it prints Go pointer addresses, so
+  two calls that had changed nothing differed: *"test mode changed the
+  system: the probe went from [0x3107ee2fc580] to [0x3107ee2fce00]"*. A false
+  accusation with the shape of evidence, which is the most expensive kind.
+- **I started a lab run before the commit that fixed the code had landed.**
+  `lab.sh` ships `git archive HEAD`, so the run would have tested the defect
+  it was meant to confirm fixed. Caught because the backgrounded chain died
+  before the run began, which is luck and not method.
+
+
+
+
+
 
 
 
