@@ -234,7 +234,7 @@ func (w watcher) present(c *exec.Context, args *value.Map) (states.Result, error
 			verb = "changed"
 		}
 		return states.WouldChange(
-			fmt.Sprintf("the %s %s would be %s.", w.thing, name, verb), changes), nil
+			fmt.Sprintf("The %s %s would be %s.", w.thing, name, verb), changes), nil
 	}
 
 	var err error
@@ -246,11 +246,11 @@ func (w watcher) present(c *exec.Context, args *value.Map) (states.Result, error
 		err = ctl.Add(name, want)
 	}
 	if err != nil {
-		return states.False(fmt.Sprintf("the %s %s could not be %s: %v",
+		return states.False(fmt.Sprintf("The %s %s could not be %s: %v",
 			w.thing, name, verb, err)), nil
 	}
 
-	res := states.Changed(fmt.Sprintf("the %s %s was %s.", w.thing, name, verb), changes)
+	res := states.Changed(fmt.Sprintf("The %s %s was %s.", w.thing, name, verb), changes)
 	w.persist(c, ctl, args, &res)
 	return res, nil
 }
@@ -273,14 +273,14 @@ func (w watcher) absent(c *exec.Context, args *value.Map) (states.Result, error)
 	changes.Set(name, states.Change("configured", "absent"))
 	if c.Test {
 		return states.WouldChange(
-			fmt.Sprintf("the %s %s would be removed.", w.thing, name), changes), nil
+			fmt.Sprintf("The %s %s would be removed.", w.thing, name), changes), nil
 	}
 	if err := ctl.Delete(name); err != nil {
-		return states.False(fmt.Sprintf("the %s %s could not be removed: %v",
+		return states.False(fmt.Sprintf("The %s %s could not be removed: %v",
 			w.thing, name, err)), nil
 	}
 
-	res := states.Changed(fmt.Sprintf("the %s %s was removed.", w.thing, name), changes)
+	res := states.Changed(fmt.Sprintf("The %s %s was removed.", w.thing, name), changes)
 	w.persist(c, ctl, args, &res)
 	return res, nil
 }
