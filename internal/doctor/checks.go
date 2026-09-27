@@ -31,7 +31,7 @@ import (
 func ConfigValidity(path string, loadErr error, unknownKeys []string, restartsClean bool) Check {
 	return Check{
 		Name:  "configuration validity",
-		Roles: []string{RoleNode, RoleHub},
+		Roles: []string{RoleNode, RoleHub, RoleAPI},
 		Run: func(context.Context) Result {
 			res := Result{Name: "configuration validity"}
 			if loadErr != nil {
@@ -107,7 +107,7 @@ type Expected struct {
 func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 	return Check{
 		Name:  "certificate validity and expiry",
-		Roles: []string{RoleNode, RoleHub},
+		Roles: []string{RoleNode, RoleHub, RoleAPI},
 		Run: func(context.Context) Result {
 			res := Result{Name: "certificate validity and expiry"}
 			if len(certs) == 0 {
@@ -204,7 +204,7 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 func Connectivity(hub string, probe func(context.Context) (string, time.Duration, error)) Check {
 	return Check{
 		Name:  "connectivity",
-		Roles: []string{RoleNode},
+		Roles: []string{RoleNode, RoleAPI},
 		Run: func(ctx context.Context) Result {
 			res := Result{Name: "connectivity"}
 			if hub == "" {
@@ -217,9 +217,13 @@ func Connectivity(hub string, probe func(context.Context) (string, time.Duration
 			if err != nil {
 				res.Status = Fail
 				res.Detail = fmt.Sprintf("%s did not answer: %v", hub, err)
+				// Worded for any hub client, because the API runs this
+				// check too and naming `halite-node doctor` in its
+				// output sends an operator to the wrong command.
 				res.Remedy = "In order: is the name resolvable and the port reachable; does " +
-					"the hub trust this node's CA and this node the hub's; is the hub running.\n" +
-					"`halite-node doctor` checks the certificate separately — if that " +
+					"the hub trust this client's certificate and this client the hub's; " +
+					"is the hub running.\n" +
+					"The certificate check reports that material separately — if it " +
 					"passed, this is the network or the hub."
 				return res
 			}

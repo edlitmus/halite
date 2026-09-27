@@ -78,7 +78,7 @@ type FIPSState struct {
 func FIPSConsistency(state FIPSState) Check {
 	return Check{
 		Name:  "FIPS mode consistency",
-		Roles: []string{RoleNode, RoleHub},
+		Roles: []string{RoleNode, RoleHub, RoleAPI},
 		Run: func(context.Context) Result {
 			res := Result{Name: "FIPS mode consistency"}
 

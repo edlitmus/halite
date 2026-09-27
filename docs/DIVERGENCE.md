@@ -14553,6 +14553,82 @@ the same key directory and is unchecked by anything — `halite-api` has no
 
 
 
+### 5.160 The API had no diagnostics, and so nothing checked its three certificates
+
+5.159 widened the hub's certificate check to everything the hub is
+configured with, and closed with what it could not reach: `api.crt`, the
+certificate `halite-api` presents to its callers, sitting in the same key
+directory and checked by nothing. The hub could not close that gap. The
+certificate is named in `api.yaml`, which is another service's
+configuration, and a hub reaching into it would be the hub asserting facts
+about a process it does not run.
+
+So the gap was not "a missing row in the hub's check". It was that
+**`halite-api` had no `doctor` at all**, while holding three certificates
+and depending on a fourth thing nobody checked either:
+
+* the certificate it presents to its own callers (`tls_cert`),
+* the operator certificate it presents to the hub (`api_operator`, 720h by
+  default),
+* the CA it verifies the hub with,
+* and the hub answering at all, which nothing it serves works without.
+
+SPEC 26.4 named two commands. It now names three, and says that each runs
+the subset that applies to it.
+
+**Four checks, none of them new.** `configuration validity`, `certificate
+validity and expiry`, `connectivity` and `FIPS mode consistency` already
+existed and already had the right shape; what they lacked was a role. The
+bijection audit between SPEC 26.4's sentence and this package's checks is
+on *names*, so adding `RoleAPI` and widening four `Roles` lists changes no
+name and the audit is untouched. The API deliberately runs no
+`pillar compilation`, `file server reachability` or `queue depths`: it
+serves no tree and holds no queue, and those are not questions about it.
+
+**The defect this turned up in the writing.** The first cut of the
+connectivity check called `hubClient`, which calls `cli.Fatalf` on a
+missing or unreadable operator certificate. On a service with no key
+material the whole `doctor` run died on the first probe:
+
+```
+$ halite-api doctor --pki-dir <empty>
+halite: this service has no operator certificate at .../operator-api.crt
+```
+
+One line, exit 1, and nothing about the configuration, the other
+certificates, or FIPS. That is the same shape as `loadPolicyFile` in 5.159
+and the argument is the same: **a diagnostic that exits on the first thing
+it finds wrong reports nothing about everything else**, which is the
+opposite of what somebody runs it for. `hubClient` now returns its error;
+`serve` still exits on it, because `serve` has nothing to do without a
+hub, and `doctor` turns it into a failed row and carries on. It now
+reports both the absent certificate and the unreachable hub in one run.
+
+**Two duplications closed rather than tripled.** `doctorValue` existed
+twice, in `cmd/halite-node` and `cmd/halite-hub`, with identical bodies and
+different doc comments; the API needed a third. The JSON it builds is the
+contract downstream tooling reads, so three constructions of it would be
+three things that have to agree — it is now `doctor.Value`. The kernel FIPS
+probe was likewise hub-local and is now `fips.KernelMode`.
+
+**A remedy that named the wrong command.** `Connectivity`'s failure text
+said "`halite-node doctor` checks the certificate separately". True for a
+node, and misdirection in the API's output. It is worded for any hub client
+now, which is what a check shared by three roles has to be.
+
+**Not changed, and worth knowing.** `CertificateExpiry` lists every
+certificate it looked at when it passes, and only the ones that are wrong
+when it fails. So the *coverage* of the check is visible exactly when there
+is nothing to worry about, and invisible at the moment somebody most wants
+to know whether the certificate they care about was examined. That is
+pre-existing behaviour shared with the node and the hub, it is not what
+this entry is about, and changing it would change three commands' output on
+the strength of an argument nobody has made yet. The test for coverage
+here asserts against the passing run for that reason, which is worth
+knowing before somebody reads it as thoroughness.
+
+
+
 
 
 ## 6. Everything else not started

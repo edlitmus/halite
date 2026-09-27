@@ -2419,10 +2419,16 @@ and needs no OpenTelemetry SDK. Tracing is off by default and sampled when on.
 
 ### 26.4 Diagnostics
 
-`halite-node doctor` and `halite-hub doctor` check configuration validity, clock skew against the
+`halite-node doctor`, `halite-hub doctor` and `halite-api doctor` check configuration validity,
+clock skew against the
 hub, certificate validity and expiry, connectivity, file server reachability, pillar compilation,
 disk space, queue depths, extension signatures, module verification, evidence chain, and FIPS mode consistency,
-and print a pass or fail per check with a remediation line. Most operational tickets on a Salt estate are one of these
+and print a pass or fail per check with a remediation line.
+Each command runs the subset that applies to it: a check that does not apply to the role is not run
+at all rather than skipped. `halite-api` holds three certificates — the one it presents to callers,
+the operator certificate it presents to the hub, and the CA it verifies the hub with — and until it
+had a `doctor` nothing checked any of them, because they are named in its configuration and not in
+the hub's. Most operational tickets on a Salt estate are one of these
 checks, and making them a single command is worth more than it appears.
 
 ## 27. Packaging and platforms

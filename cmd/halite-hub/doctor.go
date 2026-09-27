@@ -76,8 +76,9 @@ func runDoctor(args *cli.Args) int {
 	// the pillar check's finding is a compilation error that can name a
 	// decrypted value; nothing else here writes to the terminal.
 	//
-	// `--out json` reaches this now. `doctorValue` was written for it and
-	// called from nowhere, so the flag the usage text advertises was
+	// `--out json` reaches this now. The renderer -- `doctor.Value` since
+	// the API needed it too -- was written for it and called from
+	// nowhere, so the flag the usage text advertises was
 	// accepted and ignored: a hub asked for JSON printed the table, which
 	// is the accepted-and-does-nothing shape `InertKeys` exists to stop
 	// happening to settings. DIVERGENCE 5.139.
@@ -86,7 +87,7 @@ func runDoctor(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 	if !summary && (format == cli.JSON || format == cli.YAML) {
-		if err := cli.Write(os.Stdout, secrets.ScrubValue(doctorValue(report)), format, 0); err != nil {
+		if err := cli.Write(os.Stdout, secrets.ScrubValue(doctor.Value(report)), format, 0); err != nil {
 			cli.Fatalf("%v", err)
 		}
 		return report.ExitCode()
@@ -94,28 +95,6 @@ func runDoctor(args *cli.Args) int {
 	fmt.Printf("halite-hub doctor — %s\n\n", shown)
 	fmt.Print(secrets.Scrub(report.Text()))
 	return report.ExitCode()
-}
-
-// doctorValue renders the report for `--out json` or `yaml`.
-func doctorValue(r doctor.Report) *value.Map {
-	checks := value.NewMap(len(r.Results))
-	for _, res := range r.Results {
-		checks.Set(res.Name, value.MapOf(
-			"status", string(res.Status),
-			"detail", res.Detail,
-			"remedy", res.Remedy,
-		))
-	}
-	counts := value.NewMap(4)
-	for status, n := range r.Counts() {
-		counts.Set(string(status), n)
-	}
-	return value.MapOf(
-		"role", r.Role,
-		"worst", string(r.Worst()),
-		"counts", counts,
-		"checks", checks,
-	)
 }
 
 // hubCertificateCheck reads the hub's own certificate and its CA.
@@ -441,43 +420,11 @@ func hubFIPSCheck() doctor.Check {
 		Module:   fips.Module(),
 		Platform: runtime.GOOS,
 	}
-	on, ok, why := kernelFIPSMode()
+	on, ok, why := fips.KernelMode()
 	if ok {
 		state.Kernel = &on
 	} else {
 		state.NoKernel = why
 	}
 	return doctor.FIPSConsistency(state)
-}
-
-// kernelFIPSMode reports the host kernel's FIPS state, and whether the
-// platform has one at all.
-//
-// The second return is the part that matters. On the BSDs and macOS
-// there is no kernel FIPS mode, and "off" is not the same answer as
-// "there is no such switch": the check gives different advice for the
-// two, and a warning that fires on every FreeBSD host is one nobody
-// reads.
-func kernelFIPSMode() (on bool, known bool, why string) {
-	switch runtime.GOOS {
-	case "linux":
-		b, err := os.ReadFile("/proc/sys/crypto/fips_enabled")
-		if err != nil {
-			// Absent on a kernel built without the FIPS option, which
-			// is a kernel that cannot be in FIPS mode. That is an
-			// answer, not a missing one.
-			return false, true, ""
-		}
-		return strings.TrimSpace(string(b)) == "1", true, ""
-	case "windows":
-		// The `fips_mode` grain reads the policy value, and a hub
-		// reading it again here would be a second implementation of
-		// the same lookup that the two would eventually disagree
-		// about. Reported as not known from here rather than as
-		// absent, which is what Windows is not.
-		return false, false, "this command does not read the Windows FIPS policy value; " +
-			"`halite-node doctor` reports it, through the fips_mode grain"
-	default:
-		return false, false, runtime.GOOS + " has no kernel FIPS mode"
-	}
 }
