@@ -14389,6 +14389,82 @@ Not one list any more, which is the point of writing them down:
 | **4** | `firewall.*`, which is `pf` on FreeBSD and netfilter on Linux, and whose blast radius is the machine's connectivity. |
 | **13** | one-offs, each with its own reason: `hostname.system` and `timezone.system` change the machine's identity, `reboot.scheduled` keeps its own extra gate, `pkg.latest` and `pkg.purged` need a package with two versions in the repository, `pkgrepo.*` edits where software comes from, and `apparmor.mode`, `debconf.set`, `netplan.managed`, `jail.running` and `snap.*` each need a subsystem only some rows have. |
 
+##### What the lab said, and the three defects it found
+
+Four rows raised and destroyed on 2026-09-27: `alpine`, `debian13`, `rocky9`
+and `freebsd14`. Three runs, because the first two found things.
+
+	alpine      13 of 22 cases ran,  9 skipped  + 16 packet-filter cases
+	debian13    17 of 22 cases ran,  5 skipped  + 16 packet-filter cases
+	rocky9      17 of 22 cases ran,  5 skipped  + 16 packet-filter cases
+	freebsd14   16 of 22 cases ran,  6 skipped
+
+Every skip names its reason and the summary counts them, because "the
+conformance suite passed" on a machine where most of it skipped is a sentence
+worth very little. Alpine skips the four `service` cases for having no
+systemd and both `kmod` cases for a kernel without `netdevsim`; FreeBSD skips
+the six Linux-only ones and runs the three `sysrc` cases nothing had driven
+before.
+
+**`dnf` could not install a package.** The rocky9 row exists because of a
+comment in `distros.tf` reading *"dnf provider (never driven)"*. It had not
+been, and the first time it was, it failed:
+
+	dnf install -y -q -C tree
+	Error: Some packages have invalid cache, but cannot be downloaded
+	due to "--cacheonly" option
+
+The provider passed `-C` whenever `refresh` was false, and `refresh` defaults
+to false. `-C` is `--cacheonly`, which forbids downloading the *packages* and
+not merely refreshing the metadata, so the default path could not install
+anything not already in the local cache — on a fresh machine, anything at
+all. dnf's own help distinguishes them and the provider had merged them:
+
+	-C, --cacheonly   run entirely from system cache, don't update cache
+	--refresh         set metadata as expired before running the command
+
+The shape to copy was in the same file: `aptProvider.Install` runs
+`apt-get update` when refresh is set and adds nothing when it is not. `dnf`
+now passes `--refresh` or nothing. `ListUpgrades` keeps its `-C` and is right
+to, because a read from held metadata downloads nothing; a test asserts that
+one stays, so a later reader removing `-C` everywhere is told it is
+deliberate.
+
+**`nftables.flush` could not converge.** Three branches: the chain branch
+counts the rules and returns "already empty" when there are none; the table
+and ruleset branches checked only that the target existed. So flushing an
+already-empty table reported a change on every run, for ever, three lines
+below a sibling that converged. Two branches of one function disagreeing
+about whether to ask the question — and only a second run can see it, which
+is what this harness does and nothing else did.
+
+**Thirty-eight comments in `iptables` and `nftables` opened with a lower-case
+English word.** Predicted by name in this entry two days earlier: those two
+modules "will fail the day their cases arrive, which is the right time to fix
+them". They arrived.
+
+##### Three mistakes of mine, on the record
+
+The lab found these too, and they are the reason a case list is not evidence
+until it has run:
+
+- **I read the parameter lists out of `docs/modules.md`.** `iptables.flush`
+  and `nftables.append` exist in *both* registries with different signatures,
+  and the generated page gave me the execution form — so the state form
+  rejected `chain` as not a parameter, and required a `comment` I had not
+  passed. The registry answers this in one command and is the authority.
+- **A probe of mine reported a change nobody made.** `at.atq` returns a slice
+  of maps, and `fmt.Sprintf("%v", …)` over it prints Go pointer addresses, so
+  two calls that had changed nothing differed: *"test mode changed the
+  system: the probe went from [0x3107ee2fc580] to [0x3107ee2fce00]"*. A false
+  accusation with the shape of evidence, which is the most expensive kind.
+- **I started a lab run before the commit that fixed the code had landed.**
+  `lab.sh` ships `git archive HEAD`, so the run would have tested the defect
+  it was meant to confirm fixed. Caught because the backgrounded chain died
+  before the run began, which is luck and not method.
+
+
+
 
 
 

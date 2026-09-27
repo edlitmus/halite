@@ -1470,14 +1470,30 @@ unchanged.
    because the file it writes is merged *before* that one — and a `--test`
    guard on `environ.setval` that no test held.
 
-   What remains is the eighty-two in `unconformed`, every one of which
-   changes the machine the suite runs on: `pkg.installed`, `service.running`,
-   the firewall families, `user.present`. They belong to `TestLive*` on a
-   disposable host, which is what `fleet.yml` and `contrib/tofu` are for, and
-   the harness cannot be the thing that drives them — it applies twice, for
-   real, and the machine running the unit suite is a node this fleet
-   manages. So this row is as far as it goes in-process, and the next
-   increment of it is a live one.
+   The eighty-two that change the machine went to a machine. `TestLive*`
+   drives the same harness against a real system, and **thirty-eight of them
+   have a case** — coverage 88 of 132 — behind `HALITE_CONFORMANCE_LIVE=1` as
+   well as `HALITE_SYSTEM_LIVE=1`, because these apply a state four times
+   rather than restoring what they found. Run in the lab on Alpine, Debian
+   13, Rocky 9 and FreeBSD 14; the sixteen packet-filter functions run inside
+   a private network namespace.
+
+   It found two live defects on the first two attempts. `dnf install -C`
+   could not download the package it was installing, so `pkg.installed` did
+   not work on the RedHat family at all — on the row whose `distros.tf`
+   comment says "dnf provider (never driven)". And `nftables.flush` reported
+   a change against an already-empty table for ever, three lines below a
+   sibling branch that counted first.
+
+   **Forty-four are left and they are not one list.** Nine are Windows and
+   macOS and need those legs rather than the lab. Twelve are storage —
+   `lvm`, `zfs`, `mount` — reachable on a loopback file, and
+   `live_lvm_loopback_test.go` already has the rig: the obvious next tranche.
+   Six are language managers needing their own toolchain installed first.
+   Four are `firewall.*`, whose blast radius is the machine's connectivity.
+   The remaining thirteen each have their own reason, from `reboot.scheduled`
+   keeping its own gate to `pkg.latest` needing a package with two versions
+   in the repository.
 
 7b. **A coverage claim, measured at last — and the claim itself was wrong
     twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off
