@@ -41,20 +41,6 @@ package builtin
 var unconformed = map[string]string{}
 
 func init() {
-	// Writes a file the node itself reads, so a case needs the node's own
-	// roots redirected rather than a bare temp directory.
-	node := "applies to this node's own configuration, so a case needs its roots redirected first"
-	for _, n := range []string{
-		"grains.absent", "grains.present", "environ.setenv",
-		"beacon.absent", "beacon.present", "schedule.absent", "schedule.present",
-		"event.send",
-		"saltutil.sync_all", "saltutil.sync_beacons", "saltutil.sync_grains",
-		"saltutil.sync_modules", "saltutil.sync_renderers", "saltutil.sync_returners",
-		"saltutil.sync_states",
-	} {
-		unconformed[n] = node
-	}
-
 	// Changes the machine the suite runs on. The harness applies twice,
 	// for real, and this project's development host is a node the fleet
 	// manages -- so these belong to `TestLive*` and the lab, where the

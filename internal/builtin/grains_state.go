@@ -80,18 +80,21 @@ func grainsPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 	if had && sameGrain(current, want) {
 		return states.True(fmt.Sprintf("%s is already %v.", name, want)), nil
 	}
+	if err := refuseIfOurFileAlreadyLost(c, name, path, want); err != nil {
+		return states.False(err.Error()), nil
+	}
 
 	changes := value.NewMap(1)
 	changes.Set(name, states.Change(current, want))
 	if c.Test {
-		return states.WouldChange(fmt.Sprintf("%s would be set to %v.", name, want), changes), nil
+		return states.WouldChange(fmt.Sprintf("Grain %s would be set to %v.", name, want), changes), nil
 	}
 
 	written, err := saveGrain(c, path, want)
 	if err != nil {
 		return states.False(fmt.Sprintf("%s could not be set: %v", name, err)), nil
 	}
-	return states.Changed(fmt.Sprintf("%s was set to %v in %s.", name, want, written), changes), nil
+	return states.Changed(fmt.Sprintf("Grain %s was set to %v in %s.", name, want, written), changes), nil
 }
 
 // grainsAbsent clears a grain, as Salt's does.
@@ -166,6 +169,15 @@ func grainsAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 			return states.True(fmt.Sprintf(
 				"Grain %s is already null. Its value comes from a file this state does not "+
 					"own, so a null of this node's own is as far as a deletion can go.", name)), nil
+		}
+	}
+
+	// The same check `present` makes, for the null this writes: if our own
+	// file already holds it and the node still reports a value, the null is
+	// being merged under something that outranks it.
+	if !destructive {
+		if err := refuseIfOurFileAlreadyLost(c, name, path, nil); err != nil {
+			return states.False(err.Error()), nil
 		}
 	}
 
@@ -363,4 +375,73 @@ func heldGrains(c *exec.Context) (*value.Map, error) {
 		return value.NewMap(0), nil
 	}
 	return held, nil
+}
+
+// refuseIfOurFileAlreadyLost reports the case where this state has already
+// written what was asked and the node still reports something else.
+//
+// The state writes `grains.d/99-runtime.yaml`, and the comments here used to
+// say that file is "merged last precisely so that a runtime change beats the
+// file it was made against". It is merged last *within `grains.d`*.
+// `grains.Collect` merges, in order: the core facts, the `grains:` block from
+// the configuration, `grains.d`, and then **the static grains file** -- which
+// SPEC section 14.2 says is "merged last so it can override", and means it.
+//
+// So on a node whose `/etc/halite/grains` names the grain, the value went
+// where the old one still wins. Measured: the state reported
+// "role was set to web" on run one, run two, and every run after, with the
+// grain still `db` throughout. A state that cannot converge is worse than one
+// that fails, because nothing about it looks wrong -- the same lesson the
+// `absent` path above records learning about its own oscillation.
+//
+// The detection needs no new machinery and no guess about which source won.
+// This state can read its own file and can read what the node collected, so
+// when its file already holds the wanted value and the collection disagrees,
+// the write provably does not take effect. That is true whatever merged over
+// it, which is why this asks the question that way round rather than looking
+// for the static file.
+//
+// The first run still writes and still reports a change: it had no way to
+// know. The second run says so, and names both files, because the fix is an
+// operator's to make.
+//
+// SPEC 14.2 also says runtime grain changes are "persisted to
+// `/etc/halite/grains`" -- the static file, the one that wins. This build
+// persists them to `grains.d/99-runtime.yaml` instead, deliberately, so as
+// never to rewrite the operator's file. That divergence is what makes this
+// reachable at all, and resolving it is a decision rather than a fix; see
+// DIVERGENCE 5.157.
+func refuseIfOurFileAlreadyLost(c *exec.Context, name string, path []string, want any) error {
+	held, err := heldGrains(c)
+	if err != nil {
+		// Not this function's failure to report: the caller is about to
+		// read the same file and will say so with its own wording.
+		return nil
+	}
+	ourValue, ours := lookupGrain(held, path)
+	if !ours || !sameGrain(ourValue, want) {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s is already %s in this node's own grains file, and the node still reports %s. "+
+			"Something merged after that file names this grain -- the static grains file is "+
+			"merged last, per SPEC section 14.2 -- so writing it here cannot take effect. "+
+			"Set it in the static grains file, or remove it from there to let this state "+
+			"manage it.",
+		name, describeGrainValue(want), describeGrainValue(collectedGrain(c, path)))
+}
+
+// collectedGrain is what the node currently reports for a grain.
+func collectedGrain(c *exec.Context, path []string) any {
+	v, _ := lookupGrain(c.Grains, path)
+	return v
+}
+
+// describeGrainValue renders a grain for an operator's eye, distinguishing
+// the null this state writes from a value it has not got.
+func describeGrainValue(v any) string {
+	if v == nil {
+		return "null"
+	}
+	return fmt.Sprintf("%v", v)
 }

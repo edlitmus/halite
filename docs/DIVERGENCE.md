@@ -14190,6 +14190,108 @@ the result**, and a state whose result matters needs its own test beside the
 case. That was already true of `file.recurse` and is now written where it
 applies to all of them.
 
+##### Coverage 35 → 50, and `grains.present` could not converge
+
+The fifteen states that this table said applied "to this node's own
+configuration, so a case needs its roots redirected first". Redirecting them
+was less than it sounded: the node's configuration reaches a module through
+hooks on `exec.Context` — `SaveConfig`, `LoadConfig`, `ReloadConfig`,
+`Beacons`, `Schedule`, `Events`, `SyncExtensions` — so a case supplies them
+and points them at a temporary directory. Eighty-two entries remain and every
+one of them changes the machine the suite runs on.
+
+The `nodeRoots` helper is a miniature of `cmd/halite-node`, and a miniature
+that disagrees with the original generates defects rather than finding them.
+So the part where a disagreement would matter most — **which file wins when
+two of them name the same grain** — is not reimplemented: it calls the real
+`grains.Collect` with the options the real node passes it. Which is how the
+next paragraph happened.
+
+##### The merge order the state was built on is not the one that exists
+
+`grains_state.go` said, twice, that the file the grains states write is
+"merged last precisely so that a runtime change beats the file it was made
+against". True within `grains.d`. False against the static grains file, which
+`grains.Collect` merges after it:
+
+	core facts → the `grains:` config block → grains.d → the static file
+
+SPEC 14.2 says so outright — the static file is "merged last so it can
+override" — so the collector is right and the state was built on a belief
+about it that nobody had checked. Measured, with `role: db` in
+`/etc/halite/grains` and `grains.present: role: web` in the tree:
+
+	first:  succeeded / role was set to web in …/grains.d/99-runtime.yaml.
+	second: succeeded / role was set to web in …/grains.d/99-runtime.yaml.
+
+The grain stays `db` and the state reports a change that did not happen, on
+every run, for ever. **This is 5.137's non-convergence arriving by a third
+road**, and the irony is on the record: the long comment in `grainsAbsent`
+about its own five-run oscillation ends by explaining that the runtime file
+wins, which is the assumption that produced this.
+
+The detection needs no new machinery and no guess about which source won.
+The state can read its own file and can read what the node collected, so when
+its own file already holds the value asked for and the collection disagrees,
+the write provably does not take effect — whatever merged over it. Asking it
+in that direction is deliberate: a check that looked for the static file
+would go wrong again the day something else is merged later. The first run
+still writes and reports, having had no way to know; the second refuses and
+names both files, because the fix is an operator's to make.
+
+**A decision, not a defect, and left open.** SPEC 14.2 also says runtime
+grain changes are "persisted to `/etc/halite/grains`" — the file that wins.
+This build persists them to `grains.d/99-runtime.yaml` instead, deliberately,
+so as never to rewrite the operator's file, and `runtimeconfig.go` argues
+that case well. But that divergence from SPEC is what makes the above
+reachable at all, and closing it means either writing the operator's file or
+reordering the collector against SPEC's stated intent. Both are Ed's to
+choose; the refusal above is what makes either safe to wait for.
+
+##### Six comments, and the prediction that came true
+
+The entry above widened `checkComment` and said `nftables` and `pam` "will
+fail the day their cases arrive, which is the right time to fix them". Five
+cases arrived and six comments failed, in two shapes:
+
+- `the beacon conformance would be added.` — a lower-case English word, which
+  is the shape the rule exists to refuse.
+- `role would be set to web.` — a bare one-word identifier, which **cannot**
+  be told from English by any rule. Nothing to widen here; the module's own
+  sibling three functions away already said `Grain %s is already set.`, so
+  the inconsistency was internal.
+
+Both were capitalised. Recorded because the prediction was right and the
+mechanism worked: a rule nobody could satisfy would have been the wrong
+answer, and a rule that quietly admitted everything would have been worse.
+
+##### Two guards, and the one nothing held
+
+`environ.setenv`'s conformance case missed a break, and the reason was
+instructive rather than a gap: the state's test-mode branch and
+`applyEnviron` **each** have a guard, so removing either alone leaves the
+other. Two independent guards is a good property and it is why a
+single-point break on the state proved nothing.
+
+Following it found the gap, though. Deleting `applyEnviron`'s guard — the one
+that stops `environ.setval --test` from changing this process's environment
+and, on a unix, from writing `/etc/environment` — **passed the entire
+package**, including `TestEveryMutatingFunctionHonoursItsTestModeClaim`. That
+audit needs a function to fail a dynamic *and* a static check, and neither
+half reaches this: the dynamic half watches a directory and a recording
+runner, and `os.Setenv` is neither a file nor a command, while the static
+half looks for a reference to `Test` and, in its own words, "cannot tell a
+`Test` reference that guards the mutation from one that only phrases a
+message".
+
+So a `--test` guard on a mutating execution function was held by nothing.
+It has a test now. The general shape is worth more than the instance: **an
+audit with two halves that must both fail is an audit with a blind spot
+shaped like the intersection of what each half cannot see**, and that blind
+spot is not visible from either half.
+
+
+
 
 
 
