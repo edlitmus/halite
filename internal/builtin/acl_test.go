@@ -420,8 +420,14 @@ func TestRemoveOnlyTakesOutTheNamedType(t *testing.T) {
 
 func TestWipeIsIdempotentOnAnAlreadyTrivialACL(t *testing.T) {
 	path := "/home/ed/aclcapture/testfile"
+	// The fixture the mark actually reads. This scripted `getfacl -sq` and
+	// passed anyway, because an unscripted command falls through to the
+	// recorder's default -- so `ls` returned nothing, the absent `+` read as
+	// trivial, and the test was right for the wrong reason. It asserts
+	// against a real `ls -ld` capture of a trivial file now.
 	c := aclContext(map[string]exec.Result{
-		"getfacl -sq " + path: {Code: 0, Stdout: ""},
+		"realpath " + path: {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:   {Code: 0, Stdout: aclLsTrivial},
 	})
 	out, err := aclWipeFn(c, aclArgs("name", path))
 	if err != nil {
@@ -438,9 +444,14 @@ func TestWipeIsIdempotentOnAnAlreadyTrivialACL(t *testing.T) {
 
 func TestWipeRunsSetfaclDashBOnAnExtendedACL(t *testing.T) {
 	path := "/home/ed/aclcapture/testfile"
+	// `wipe` asks aclExtendedMark, not `getfacl -s`, because that flag does
+	// not exist on FreeBSD 14 -- see DIVERGENCE 5.113, whose fix reached
+	// `is_extended` and originally missed this function. So the fixtures are
+	// the ones the mark reads: a real `ls -ld` capture with the `+`.
 	c := aclContext(map[string]exec.Result{
-		"getfacl -sq " + path: {Code: 0, Stdout: aclRealCapture},
-		"setfacl -b " + path:  {Code: 0},
+		"realpath " + path:   {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:     {Code: 0, Stdout: aclLsExtended},
+		"setfacl -b " + path: {Code: 0},
 	})
 	out, err := aclWipeFn(c, aclArgs("name", path))
 	if err != nil {
@@ -458,7 +469,8 @@ func TestWipeRunsSetfaclDashBOnAnExtendedACL(t *testing.T) {
 func TestWipeAddsDashRWhenRecursive(t *testing.T) {
 	path := "/home/ed/aclcapture/testfile"
 	c := aclContext(map[string]exec.Result{
-		"getfacl -sq " + path:   {Code: 0, Stdout: aclRealCapture},
+		"realpath " + path:      {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:        {Code: 0, Stdout: aclLsExtended},
 		"setfacl -R -b " + path: {Code: 0},
 	})
 	if _, err := aclWipeFn(c, aclArgs("name", path, "recursive", true)); err != nil {

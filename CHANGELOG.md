@@ -23,6 +23,27 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `acl.wipe` did not work on FreeBSD 14
+
+`getfacl -s` arrived in FreeBSD 15, and on 14 it is not an option at all,
+so `acl.wipe` failed on every path with `getfacl: illegal option -- s` —
+on the platform that carries most of this estate. The knowledge was
+already here: `aclExtendedMark` exists to answer the same question without
+that flag, and carries twenty lines explaining why. The fix reached
+`acl.is_extended` and not its sibling. It asks the same function now, and
+an audit walks all 290 files in the package to make sure nothing passes
+`-s` to `getfacl` again.
+
+### One hundred state functions are held to the test-mode contract
+
+Up from eighty-eight. The twelve storage states have cases now, on storage
+they make for themselves: LVM on loop devices, ZFS on a single file vdev,
+and `mount` on `tmpfs` with its table pointed at a file of the suite's own,
+so `/etc/fstab` is never touched.
+
+Thirty-two are left: nine Windows and macOS, six language managers, four
+`firewall.*`, and thirteen one-offs each with its own stated reason.
+
 ### `dnf` could not install a package it had not already downloaded
 
 `pkg.installed` defaults `refresh` to false, and the dnf provider turned

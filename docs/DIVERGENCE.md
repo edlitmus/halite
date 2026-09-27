@@ -9838,6 +9838,64 @@ The POSIX.1e refusal is a refusal again: `is_extended` now reads the ACL
 through the same `readACL` every other function here uses, which names
 the family it will not parse instead of complaining about a flag.
 
+#### The fix reached one call site of two
+
+`acl.wipe` kept calling `getfacl -sq` for four months after this entry was
+written, three hundred and ninety lines below the comment explaining why
+nothing may. So `acl.wipe` was unusable on every FreeBSD 14 host —
+
+	getfacl could not read …/mnt/aclfile: getfacl: illegal option -- s
+
+— on the platform that is SPEC 27.1 tier 1 and carries about 80% of the
+estate.
+
+**What is interesting is not the missed call site but why nobody saw it.**
+`TestLiveACLRoundTripsAnNFSv4EntryOnARealFile` has been failing on
+`freebsd14` in the lab the whole time, and the failure was read as a fact
+about the machine rather than about the code — the surrounding output is
+full of legitimate skips saying this platform lacks that subsystem, and a
+real failure among them looks like one more. It took three consecutive lab
+runs in one afternoon, with the failure identical each time, for it to read
+as a defect.
+
+`aclWipeFn` asks `aclExtendedMark` now, which is the function this entry
+created. The second implementation of "is this ACL extended" was the whole
+problem, so the fix is to delete it rather than to correct its flags: two
+paths that must agree, made into one path.
+
+##### The guard
+
+`TestNothingPassesTheFreeBSD15OnlyFlagToGetfacl` walks every Go file in
+`internal/builtin` with the AST, finds every argument list that runs
+`getfacl`, and fails on `-s` or any short cluster containing it. 290 files.
+
+A comment could not have stopped this and a test of `acl.wipe` would have
+covered `acl.wipe`. The mistake was made at the level of the package — the
+knowledge was present, in prose, twenty lines long, and the second call site
+simply never met it — so the check is made at that level. Deliberately narrow:
+`dpkg-query -s` and `iptables -s` are both in this package and both correct,
+so only a list that names `getfacl` is this test's business.
+
+Both spellings were put back and watched to fail: the `-sq` that shipped, and
+a bare `-s`.
+
+##### And a test that was passing for the wrong reason
+
+`TestWipeIsIdempotentOnAnAlreadyTrivialACL` scripted `getfacl -sq` returning
+empty output, and kept passing after the change — because an unscripted
+command falls through to the recording runner's **default**, so `ls -ld`
+returned nothing, the absent `+` read as "trivial", and the assertion held for
+a reason unrelated to what it was checking.
+
+Worth its own note, because a scripted-command fixture fails open by
+construction: scripting the wrong command does not error, it silently gets the
+default. Two of the three wipe tests failed loudly when the module changed,
+which is what sent anybody looking; the third did not, and nothing would have
+found it but reading the list. It now asserts against a real `ls -ld` capture
+of a trivial file, and removing the module's check makes it fail.
+
+
+
 ### 5.114 A `defaults delete` that could not report convergence, and the flag that hid it
 
 `mac_defaults` was the one macOS module with a live test that already
@@ -14462,6 +14520,52 @@ until it has run:
   `lab.sh` ships `git archive HEAD`, so the run would have tested the defect
   it was meant to confirm fixed. Caught because the backgrounded chain died
   before the run began, which is luck and not method.
+
+##### Coverage 88 → 100: the twelve storage states on storage of their own
+
+`lvm` (6), `zpool`/`zfs` (4) and `mount` (2), which needed a real kernel
+rather than a real machine in particular: `pvs` reads a label off a disk,
+`lvcreate` asks device-mapper for a node under `/dev`, `zpool create` writes a
+pool label, and `mount` changes what the kernel has mounted. A container
+shares the host's device-mapper and its mount namespace is not the machine's.
+
+Three rigs, each of which the cases make for themselves:
+
+| | |
+|---|---|
+| `lvm` | loop devices over sparse files, the rig `live_lvm_loopback_test.go` established |
+| `zfs` | a **single file vdev** — ZFS takes a file natively, so no loop device is needed at all — with the pool's mountpoint redirected into the working directory so nothing appears at `/<pool>` |
+| `mount` | `tmpfs`, which is a real mount needing no block device and no filesystem written, with its table pointed at a `config` file of the suite's own |
+
+`tmpfs` is worth dwelling on. The alternative was building a filesystem on a
+loop device, which is more machinery, slower, and platform-divided. A tmpfs
+mount is the same kernel operation as any other as far as `mount.mounted` is
+concerned, and the `config` parameter means `/etc/fstab` is never read or
+written — which is what makes these runnable on a machine somebody else owns,
+and is an argument for that parameter existing at all.
+
+**Each case builds and destroys its own rig**, because the harness runs
+`Setup` before test mode *and* again before the apply. A rig built once and
+shared would be in whatever state the previous phase left it; a loop device
+costs milliseconds and a wrong assumption about shared state costs a defect
+that only shows on the second phase. `loopDevice` reuses the device it already
+attached, so the second `Setup` does not leak one — the loop driver is shared
+with the rest of the machine.
+
+##### An argument a case cannot know until Setup has run
+
+A loop device's name is chosen by `losetup --find`, and a temporary
+directory's path by the operating system, so neither can be in `Args` at
+construction — and construction must touch nothing, because the unit suite
+builds this list to count what is covered.
+
+`Conformance.Args` is a `*value.Map`, read when the state is called, which is
+after `Setup`. So a case builds a partial map and its `Setup` fills in what it
+discovered. The harness holds the same pointer and sees them. No change to the
+harness, nothing computed at construction, and the alternative — a
+`func() *value.Map` field — would have needed one.
+
+
 
 
 
