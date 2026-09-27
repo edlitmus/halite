@@ -49,14 +49,36 @@ func writeCert(t *testing.T, dir, file, cn string, notBefore, notAfter time.Time
 
 // hubDoctorCerts runs the hub's certificate check against a key directory
 // written here, which is the only way to tell what it actually looks at.
-func hubDoctorCerts(t *testing.T, pkiDir string) doctor.Result {
+//
+// An empty policyYAML writes no policy at all, which is a distinct case
+// from an empty one: a hub with no policy has no bindings for this check
+// to be missing.
+func hubDoctorCerts(t *testing.T, pkiDir, policyYAML string) doctor.Result {
 	t.Helper()
-	cfg, err := config.Load(config.Hub, config.LoadOptions{Root: t.TempDir(), AllowMissing: true})
+	root := t.TempDir()
+	if policyYAML != "" {
+		if err := os.WriteFile(filepath.Join(root, "policy.yaml"), []byte(policyYAML), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := config.Load(config.Hub, config.LoadOptions{Root: root, AllowMissing: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	args := &cli.Args{Flags: map[string]string{"pki-dir": pkiDir}}
 	return hubCertificateCheck(args, cfg).Run(context.Background())
+}
+
+// readonlyRole is the smallest policy that parses, so a test can say what
+// it binds without describing a role.
+const readonlyRole = "roles:\n  readonly:\n    - target: '*'\n      functions: ['test.ping']\nbindings:\n"
+
+// healthyPair writes a hub certificate and CA that are nowhere near
+// expiry, so the only thing a test is asserting about is the operator.
+func healthyPair(t *testing.T, dir string, now time.Time) {
+	t.Helper()
+	writeCert(t, dir, pki.HubCertFile, "halite hub", now.Add(-time.Hour), now.Add(59*24*time.Hour))
+	writeCert(t, dir, pki.CACertFile, "halite enrollment CA", now.Add(-time.Hour), now.Add(3600*24*time.Hour))
 }
 
 // TestTheCertificateCheckCoversOperatorCertificates. The check read
@@ -80,7 +102,7 @@ func TestTheCertificateCheckCoversOperatorCertificates(t *testing.T) {
 	writeCert(t, dir, pki.CACertFile, "halite enrollment CA", now.Add(-time.Hour), now.Add(3600*24*time.Hour))
 	writeCert(t, dir, pki.OperatorCertFile("ed"), "ed", now.Add(-31*24*time.Hour), now.Add(-6*time.Hour))
 
-	res := hubDoctorCerts(t, dir)
+	res := hubDoctorCerts(t, dir, "")
 	if res.Status != doctor.Fail {
 		t.Errorf("an expired operator certificate is %s, not fail: %s", res.Status, res.Detail)
 	}
@@ -113,7 +135,7 @@ func TestAFreshOperatorCertificateDoesNotWarn(t *testing.T) {
 	writeCert(t, dir, pki.OperatorCertFile("fresh"), "fresh",
 		now.Add(-time.Minute), now.Add(720*time.Hour-time.Minute))
 
-	res := hubDoctorCerts(t, dir)
+	res := hubDoctorCerts(t, dir, "")
 	if res.Status != doctor.Pass {
 		t.Errorf("a freshly issued default-lifetime operator certificate is %s: %s",
 			res.Status, res.Detail)
@@ -123,7 +145,7 @@ func TestAFreshOperatorCertificateDoesNotWarn(t *testing.T) {
 	// simply been widened until it never fires.
 	writeCert(t, dir, pki.OperatorCertFile("soon"), "soon",
 		now.Add(-29*24*time.Hour), now.Add(36*time.Hour))
-	if res := hubDoctorCerts(t, dir); res.Status != doctor.Warn {
+	if res := hubDoctorCerts(t, dir, ""); res.Status != doctor.Warn {
 		t.Errorf("an operator certificate 36h from expiry is %s, not warn: %s",
 			res.Status, res.Detail)
 	}
@@ -140,7 +162,7 @@ func TestAFreshOperatorCertificateDoesNotWarn(t *testing.T) {
 // "the file is there and expired" must not collapse into the same
 // answer. DIVERGENCE 5.159.
 func TestAnAbsentCertificateIsReportedAndAnEmptyDirectoryIsNot(t *testing.T) {
-	if res := hubDoctorCerts(t, t.TempDir()); res.Status != doctor.Skip {
+	if res := hubDoctorCerts(t, t.TempDir(), ""); res.Status != doctor.Skip {
 		t.Errorf("an empty key directory is %s, not skip: %s", res.Status, res.Detail)
 	}
 
@@ -148,11 +170,101 @@ func TestAnAbsentCertificateIsReportedAndAnEmptyDirectoryIsNot(t *testing.T) {
 	dir := t.TempDir()
 	writeCert(t, dir, pki.CACertFile, "halite enrollment CA", now.Add(-time.Hour), now.Add(3600*24*time.Hour))
 
-	res := hubDoctorCerts(t, dir)
+	res := hubDoctorCerts(t, dir, "")
 	if res.Status != doctor.Fail {
 		t.Errorf("a hub with a CA and no certificate of its own is %s: %s", res.Status, res.Detail)
 	}
 	if !strings.Contains(res.Detail, "not present") {
 		t.Errorf("the absent certificate is not named as absent: %s", res.Detail)
+	}
+}
+
+// TestThePolicysOperatorsAreCoveredWhetherOrNotAFileExists. The set of
+// operators the check reports on came from the key directory, so its
+// coverage was "whatever happens to be on disk" -- which is silent about
+// the case somebody is actually waiting on: a binding the operator wrote
+// and a certificate nobody ever issued. The policy is the host's
+// statement of which principals it expects, so that is what the check
+// reads. DIVERGENCE 5.159.
+func TestThePolicysOperatorsAreCoveredWhetherOrNotAFileExists(t *testing.T) {
+	now := time.Now()
+	dir := t.TempDir()
+	healthyPair(t, dir, now)
+	// One issued and healthy, one bound and never issued.
+	writeCert(t, dir, pki.OperatorCertFile("ed"), "ed", now.Add(-time.Hour), now.Add(80*24*time.Hour))
+	pol := readonlyRole +
+		"  - principal: 'cert:CN=ed'\n    roles: ['readonly']\n" +
+		"  - principal: 'cert:CN=ci'\n    roles: ['readonly']\n"
+
+	res := hubDoctorCerts(t, dir, pol)
+	if res.Status != doctor.Warn {
+		t.Errorf("a binding with no certificate is %s, not warn: %s", res.Status, res.Detail)
+	}
+	// Named as the principal, because that is the string in the policy
+	// the operator has to go and look at.
+	if !strings.Contains(res.Detail, "cert:CN=ci") {
+		t.Errorf("the unissued binding is not named: %s", res.Detail)
+	}
+	// Not a renewal. Telling somebody to renew a certificate that was
+	// never issued sends them looking for a file that is not there.
+	if !strings.Contains(res.Remedy, "take the binding out of the policy") {
+		t.Errorf("the remedy does not offer the two real options: %s", res.Remedy)
+	}
+	// The healthy one must not be swept up as absent. A warning lists
+	// only what is wrong, so `operator ed` is expected to be absent from
+	// the detail -- what would be a defect is it appearing as missing.
+	if strings.Contains(res.Detail, "operator ed is named here") {
+		t.Errorf("an issued certificate was reported as absent: %s", res.Detail)
+	}
+}
+
+// TestAGlobBindingIsNotMistakenForACertificate. SPEC 23.5 allows
+// `cert:CN=relay-*` so that a fleet of relays is one line. A pattern
+// names no file, so there is nothing to check the expiry of and no way to
+// know how many certificates were meant to exist. Reporting it as absent
+// would be a failure on every hub that uses one.
+func TestAGlobBindingIsNotMistakenForACertificate(t *testing.T) {
+	now := time.Now()
+	dir := t.TempDir()
+	healthyPair(t, dir, now)
+	pol := readonlyRole + "  - principal: 'cert:CN=relay-*'\n    roles: ['readonly']\n"
+
+	res := hubDoctorCerts(t, dir, pol)
+	if res.Status != doctor.Pass {
+		t.Errorf("a glob binding made the check %s: %s", res.Status, res.Detail)
+	}
+	if strings.Contains(res.Detail, "relay-") {
+		t.Errorf("the glob was treated as a certificate name: %s", res.Detail)
+	}
+}
+
+// TestAnUnreadablePolicySaysSoRatherThanNarrowingQuietly. If the policy
+// cannot be parsed then this check covers less than its name claims, and
+// nothing else in `doctor` reads the policy, so there is no other row for
+// it to appear in. Saying nothing would be the defect of 5.159 again with
+// a different file in the silence.
+//
+// A *missing* policy is not a note: a hub with no policy authorizes
+// nothing and says so elsewhere, and there are no bindings to be missing.
+func TestAnUnreadablePolicySaysSoRatherThanNarrowingQuietly(t *testing.T) {
+	now := time.Now()
+	dir := t.TempDir()
+	healthyPair(t, dir, now)
+
+	res := hubDoctorCerts(t, dir, "roles:\n  readonly: not-a-list-of-rules\n")
+	if res.Status != doctor.Warn {
+		t.Errorf("an unparseable policy left the check at %s: %s", res.Status, res.Detail)
+	}
+	if !strings.Contains(res.Detail, "not covered here") {
+		t.Errorf("the narrowed coverage is not admitted: %s", res.Detail)
+	}
+	// One line: a check's detail is one line, and a parse error is not.
+	if strings.Contains(res.Detail, "\n") {
+		t.Errorf("the detail runs to more than one line: %q", res.Detail)
+	}
+
+	// No policy at all is not a complaint.
+	if res := hubDoctorCerts(t, dir, ""); res.Status != doctor.Pass {
+		t.Errorf("a hub with no policy is %s: %s", res.Status, res.Detail)
 	}
 }

@@ -74,6 +74,16 @@ type Expected struct {
 	// and skipping the first quietly made them the same answer. See
 	// DIVERGENCE 5.159.
 	Cert *x509.Certificate
+	// Absence is what a nil Cert means, and is required whenever one is
+	// possible. A hub's own certificate missing is an outage and fails;
+	// an operator the policy binds and nobody ever issued is a binding
+	// that cannot be used, which is worth saying and is not an outage.
+	// Empty is read as Fail, because a certificate that is named,
+	// absent, and unclassified is more likely a gap than a plan.
+	Absence Status
+	// AbsentDetail replaces the sentence used when Cert is nil, for the
+	// cases where "named here and not present" is not what happened.
+	AbsentDetail string
 	// WarnWithin is how long before expiry to begin saying so.
 	//
 	// Per certificate, because the certificates in one key directory do
@@ -113,7 +123,7 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 			}
 			sort.Strings(names)
 
-			var absent, expired, expiring, details []string
+			var absent, unissued, expired, expiring, details []string
 			for _, name := range names {
 				want := certs[name]
 				cert := want.Cert
@@ -121,7 +131,15 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 				// because the alternative is a check that passes for a
 				// reason nobody can see.
 				if cert == nil {
-					absent = append(absent, name+" is named here and its file is not present")
+					detail := want.AbsentDetail
+					if detail == "" {
+						detail = name + " is named here and its file is not present"
+					}
+					if want.Absence == Warn {
+						unissued = append(unissued, detail)
+					} else {
+						absent = append(absent, detail)
+					}
 					continue
 				}
 				left := cert.NotAfter.Sub(now)
@@ -146,14 +164,28 @@ func CertificateExpiry(certs map[string]Expected, now time.Time) Check {
 					"A node renews with `halite-node renew`; a hub's is reissued from its CA; " +
 					"an operator's with `halite-hub keys operator create <name>`, which keeps " +
 					"the same cert:CN=<name> the policy binds."
-			case len(expiring) > 0:
+			case len(expiring) > 0 || len(unissued) > 0:
 				res.Status = Warn
-				res.Detail = strings.Join(expiring, "; ")
-				res.Remedy = "Renew before it lapses: `halite-node renew` on a node, " +
-					"`halite-hub keys operator create <name>` for an operator. A " +
-					"certificate that expires while the node is connected keeps that " +
-					"connection and is refused on the next one, so the symptom appears at a\n" +
-					"restart rather than at the expiry."
+				res.Detail = strings.Join(append(append([]string(nil), expiring...), unissued...), "; ")
+				// Two different problems, so two different remedies, and
+				// only the ones that apply. Telling somebody to renew a
+				// certificate that was never issued sends them looking
+				// for a file that is not there.
+				var remedy []string
+				if len(expiring) > 0 {
+					remedy = append(remedy, "Renew before it lapses: `halite-node renew` on a "+
+						"node, `halite-hub keys operator create <name>` for an operator. A "+
+						"certificate that expires while the node is connected keeps that "+
+						"connection and is refused on the next one, so the symptom appears at a\n"+
+						"restart rather than at the expiry.")
+				}
+				if len(unissued) > 0 {
+					remedy = append(remedy, "A binding with no certificate authorizes nobody: "+
+						"issue it with `halite-hub keys operator create <name>`, or take the "+
+						"binding out of the policy. Nothing is broken until somebody expects "+
+						"that principal to work.")
+				}
+				res.Remedy = strings.Join(remedy, "\n")
 			default:
 				res.Status = Pass
 				res.Detail = strings.Join(details, "; ")

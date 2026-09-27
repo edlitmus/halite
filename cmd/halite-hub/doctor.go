@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -19,6 +22,7 @@ import (
 	"github.com/edlitmus/halite/internal/hub"
 	"github.com/edlitmus/halite/internal/pillar"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/policy"
 	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/template"
 	"github.com/edlitmus/halite/internal/value"
@@ -119,6 +123,69 @@ func doctorValue(r doctor.Report) *value.Map {
 // The CA is the one that matters most and is the one nobody watches: it
 // is issued for years, so it is never the thing anybody is thinking
 // about, and when it lapses every node in the estate stops at once.
+// boundOperators lists the operator names the host's policy binds, and a
+// note when it could not find out.
+//
+// `loadPolicyFile` is the command-line path and calls `cli.Fatalf` on a
+// missing or unparseable policy, which is right for `policy show` and
+// wrong here: a diagnostic that exits on the first thing it finds wrong
+// reports nothing about everything else. So this reads the file itself
+// and returns what it managed to learn.
+//
+// A missing policy is not a note. A hub with no policy authorizes
+// nothing and says so elsewhere, and there are no bindings for this
+// check to be missing. A policy that exists and does not parse is a
+// note, because then the set of operators this check covers is smaller
+// than the set the name promises and nothing else would say so.
+//
+// Globs are skipped deliberately. SPEC 23.5 allows `cert:CN=relay-*` so
+// that a fleet of relays is one line, and a pattern names no file: there
+// is nothing to check the expiry of and no way to know how many
+// certificates were meant to exist.
+func boundOperators(cfg *config.Config) (names []string, note string) {
+	path := policyPath(cfg)
+	src, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, ""
+		}
+		return nil, "the policy at " + path + " could not be read (" + err.Error() +
+			"), so operator certificates it names are not covered here"
+	}
+	loaded, _, err := policy.Load(src, path)
+	if err != nil {
+		return nil, "the policy at " + path + " does not parse (" +
+			doctorFirstLine(err.Error()) +
+			"), so operator certificates it names are not covered here"
+	}
+	const prefix = "cert:CN="
+	seen := map[string]bool{}
+	for _, b := range loaded.Bindings {
+		if !strings.HasPrefix(b.Principal, prefix) {
+			continue
+		}
+		name := strings.TrimPrefix(b.Principal, prefix)
+		if name == "" || strings.ContainsAny(name, "*?[") {
+			continue
+		}
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names, ""
+}
+
+// doctorFirstLine keeps a multi-line parse error to one line, because a
+// check's detail is one line.
+func doctorFirstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
 func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	files := pki.Files{Dir: args.Flag("pki-dir", cfg.PathUnderRoot("pki_dir", "pki"))}
 
@@ -158,7 +225,29 @@ func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	// the check was missing: it reported on the hub's own pair, passed,
 	// and said nothing while the credential an operator actually
 	// presents had expired. DIVERGENCE 5.159.
-	operators := files.OperatorNames()
+	onDisk := files.OperatorNames()
+
+	// And every operator the host's own policy binds, whether or not a
+	// file exists for it. The policy is the statement of which
+	// principals this hub expects, so a `cert:CN=` binding with no
+	// certificate is something the operator configured and nobody
+	// issued -- reported, because the check's coverage would otherwise
+	// be "whatever happens to be on disk", which is silent about exactly
+	// the case somebody is waiting on.
+	bound, policyNote := boundOperators(cfg)
+
+	operators := append([]string(nil), onDisk...)
+	have := map[string]bool{}
+	for _, name := range onDisk {
+		have[name] = true
+	}
+	var unissuedNames []string
+	for _, name := range bound {
+		if !have[name] {
+			unissuedNames = append(unissuedNames, name)
+		}
+	}
+	sort.Strings(unissuedNames)
 
 	// A key directory holding none of the three is a hub that has not
 	// been set up, which CertificateExpiry reports as a skip. Naming the
@@ -183,6 +272,25 @@ func hubCertificateCheck(args *cli.Args, cfg *config.Config) doctor.Check {
 	}
 	for _, name := range operators {
 		read("operator "+name, pki.OperatorCertFile(name), operatorNotice)
+	}
+	for _, name := range unissuedNames {
+		certs["operator "+name] = doctor.Expected{
+			WarnWithin: operatorNotice,
+			Absence:    doctor.Warn,
+			AbsentDetail: "the policy binds " + pki.Principal(name) +
+				" and no certificate has been issued for it",
+		}
+	}
+	// A policy that could not be read means this check covers less than
+	// its name claims, and saying nothing about that is the defect this
+	// entry is about wearing a different hat. Nothing else in `doctor`
+	// reads the policy, so there is no other row for it to appear in.
+	if policyNote != "" {
+		certs["the hub's policy"] = doctor.Expected{
+			WarnWithin:   operatorNotice,
+			Absence:      doctor.Warn,
+			AbsentDetail: policyNote,
+		}
 	}
 	return doctor.CertificateExpiry(certs, time.Now())
 }

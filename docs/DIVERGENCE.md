@@ -14498,13 +14498,58 @@ back to nothing, the test reproduces the original false pass verbatim: *"an
 expired operator certificate is pass, not fail: the enrollment CA: 3599 days
 left; this hub's certificate: 58 days left"*.
 
-**Not done, and worth knowing.** The set comes from the key directory, not
-from `policy.yaml`, so an operator **bound in policy with no certificate on
-disk** is not reported — the check can say that a credential is lapsing, not
-that one a binding expects was never issued. `api.crt`, the API's own
-serving certificate, sits in the same directory and is still unchecked by
-anything: `halite-api` has no `doctor` at all. Both are additions to this
-check rather than corrections of it.
+**The policy is part of what the host has configured.** The first cut of
+this took its set from the key directory, which made the coverage
+"whatever happens to be on disk" — and that is silent about the case
+somebody is actually waiting on: a binding the operator wrote and a
+certificate nobody ever issued. `policy.yaml` is the host's statement of
+which principals it expects, so every `cert:CN=<name>` binding is in scope
+whether a file exists for it or not. A bound name with no certificate reads
+
+```
+warn  certificate validity and expiry  the policy binds cert:CN=ci and no
+      certificate has been issued for it
+```
+
+and it is a **warning, not a failure**: the hub is serving, and a binding
+with no certificate authorizes nobody rather than breaking anybody. The
+remedy says the two real options — issue it, or take the binding out —
+because the expiry remedy would send somebody looking for a file to renew
+that was never there. `TestThePolicysOperatorsAreCoveredWhetherOrNotAFileExists`
+holds the status, and dropping the status back to `Fail` fails it.
+
+**Globs are skipped, deliberately.** SPEC 23.5 allows `cert:CN=relay-*` so
+that a fleet of relays is one line. A pattern names no file: there is
+nothing to read an expiry from and no way to know how many certificates
+were meant to exist. Treating one as absent would fail the check on every
+hub that uses one, which is why there is a test that a glob leaves the
+check passing.
+
+**An unreadable policy is admitted rather than absorbed.** If the file
+exists and does not parse, the set this check covers is smaller than its
+name promises, and nothing else in `doctor` reads the policy at all — so
+there is no other row for it to surface in. It says so, on one line,
+because a parse error is not one line:
+
+```
+warn  ... the policy at /usr/local/etc/halite/policy.yaml does not parse
+      (...), so operator certificates it names are not covered here
+```
+
+A policy that is simply *absent* is not a note. A hub with no policy
+authorizes nothing and says so elsewhere, and there are no bindings for
+this check to be missing. That distinction is the whole lesson of this
+entry applied to itself: silence is only honest when there is nothing to
+be silent about.
+
+`loadPolicyFile` was not reused, because it calls `cli.Fatalf` on a
+missing or unparseable policy. That is right for `policy show` and wrong
+for a diagnostic: a check that exits on the first thing it finds wrong
+reports nothing about everything else.
+
+**Still not done.** `api.crt`, the API's own serving certificate, sits in
+the same key directory and is unchecked by anything — `halite-api` has no
+`doctor` at all. That is an addition rather than a correction.
 
 
 
