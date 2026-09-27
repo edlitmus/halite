@@ -42,6 +42,17 @@ Local accounts:
 produces a password hash for the account file, and
 .Cm list
 reads what is in it.
+.It Cm doctor
+Run the diagnostics of the specification's section 26.4 that apply to this
+service.
+Changes nothing, and starts no listener, so it is safe to run against a
+service that is already running.
+It checks that the configuration loads, that the three certificates this
+service holds are valid and not near expiry \(em the one it presents to
+callers, the operator certificate it presents to the hub, and the CA it
+verifies the hub with \(em that the hub answers, and that nothing about
+this build contradicts the host's FIPS mode.
+Exits non-zero only on a failure, not on a warning.
 .It Cm version
 Print the build identity.
 .El
@@ -89,6 +100,10 @@ Produce a password hash for the local account file:
 Revoke every token a principal holds:
 .Pp
 .Dl halite-api token revoke --principal cert:CN=ed
+.Pp
+Ask this service what is wrong with it:
+.Pp
+.Dl halite-api doctor
 .Sh SEE ALSO
 .Xr halite-hub 8 ,
 .Xr halite-node 8

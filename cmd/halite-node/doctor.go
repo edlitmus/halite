@@ -61,7 +61,7 @@ func runDoctor(args *cli.Args) int {
 	// nowhere else, so a report printed normally passes it by.
 	switch n.format {
 	case cli.JSON, cli.YAML:
-		n.out(n.secrets.ScrubValue(doctorValue(report)))
+		n.out(n.secrets.ScrubValue(doctor.Value(report)))
 	default:
 		fmt.Print(n.secrets.Scrub(n.doctorHeading() + report.Text()))
 	}
@@ -72,30 +72,6 @@ func runDoctor(args *cli.Args) int {
 // so that a test can read what would be written.
 func (n *node) doctorHeading() string {
 	return fmt.Sprintf("halite-node doctor — %s\n\n", n.nodeID)
-}
-
-// doctorValue renders the report for `--out json` or `yaml`, so that a
-// state can read it. `doctor` in a state's `onlyif` is one of the
-// reasons SPEC 26.4 argues for making it one command.
-func doctorValue(r doctor.Report) *value.Map {
-	checks := value.NewMap(len(r.Results))
-	for _, res := range r.Results {
-		checks.Set(res.Name, value.MapOf(
-			"status", string(res.Status),
-			"detail", res.Detail,
-			"remedy", res.Remedy,
-		))
-	}
-	counts := value.NewMap(4)
-	for status, n := range r.Counts() {
-		counts.Set(string(status), n)
-	}
-	return value.MapOf(
-		"role", r.Role,
-		"worst", string(r.Worst()),
-		"counts", counts,
-		"checks", checks,
-	)
 }
 
 // nodeConfigCheck re-reads the configuration from disk.

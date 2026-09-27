@@ -52,7 +52,7 @@ func TestNodeDoctorScrubsBothOutputPaths(t *testing.T) {
 
 	// And the structured path, which is the one that leaked on this host:
 	// `--out json` printed the pillar file and its error verbatim.
-	structured, ok := n.secrets.ScrubValue(doctorValue(report)).(*value.Map)
+	structured, ok := n.secrets.ScrubValue(doctor.Value(report)).(*value.Map)
 	if !ok {
 		t.Fatal("the scrubbed report is no longer a mapping, so `--out json` would change shape")
 	}
