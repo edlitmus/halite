@@ -15217,6 +15217,91 @@ The test uses `test.fail_without_changes`, because it refuses on every platform
 and touches nothing — a test built on a real module would need that module's
 machine to say anything at all. Deleting the `res.Failed()` branch fails it.
 
+##### What the legs said, and the defect FreeBSD found
+
+Four of the five passed on the first run. `linux` drove all twelve of its new
+cases — including `reboot.scheduled`, and `TestLiveRebootSchedulesAndCancelsWithoutRebooting`
+for the first time anywhere — against Ubuntu 24.04.5 LTS, and finished with no
+shutdown pending, the hostname back, the zone back to `Etc/UTC`, and none of the
+four files this suite writes left on disk. `macos` and `windows` drove
+`timezone.system`, and `macos` put the Mac back by relinking, which is the half
+this tranche was least sure of.
+
+`freebsd` failed, on `timezone.system`, and the failure is a real defect on the
+tier-1 platform:
+
+    second run: reported changes on an already-applied state:
+      timezone = {old UTC, new Etc/UTC}
+    test mode, already applied: predicted changes:
+      timezone = {old UTC, new Etc/UTC}
+
+**`setZone` and `currentZone` did not name the same zone.** The two paths that
+must agree, again, and the measurement is in the leg's own "the machine was put
+back" step, which this tranche had just taught to print it:
+
+    time zone: cat: /var/db/zoneinfo: No such file or directory
+
+FreeBSD copies the zone file to /etc/localtime rather than linking it, so the
+name is not recoverable from the file itself. `/var/db/zoneinfo` is where the
+name lives — FreeBSD's own `tzsetup(8)` calls it the "saved name of the timezone
+file installed last", and `tzsetup -r` reinstalls the zone by reading it. On the
+host this module was written on it holds `America/Los_Angeles`, which is why
+`currentZone` reads it first.
+
+The runner has none. It is a cloud image that shipped a UTC `/etc/localtime`
+without ever running `tzsetup`. And `linkZone` wrote a name record only where one
+already existed:
+
+```go
+// Both of these are caches of the name kept beside the zone data,
+// and are only rewritten where the platform already keeps one:
+// creating either on a node that has neither would be inventing a
+// file that nothing on it reads.
+for _, path := range []string{zoneNamePath, etcTimezonePath} {
+```
+
+So on such a node the zone was installed and nothing recorded which one it was.
+`currentZone` then fell through every reader to its last resort — the
+abbreviation the running process is in, `UTC` — and the state compared that
+against `Etc/UTC`, found them different, and copied the zone file again. On every
+run, for ever, on any FreeBSD node whose image skipped tzsetup.
+
+**One rule was applied to two files, and it is right for only one of them.** It
+is true of `/etc/timezone`, which is Debian's invention and which nothing on
+FreeBSD reads. It is false of `/var/db/zoneinfo`, which is not a cache of the
+answer but the answer. The comment beside `currentZone`'s fallback called
+reporting the abbreviation "the safe direction to be wrong in", and that is an
+exculpatory conclusion of exactly the kind this chapter keeps finding: it is safe
+against silently doing nothing, and it is the direction that never converges.
+
+The fix writes `/var/db/zoneinfo` on FreeBSD and DragonFly whether or not it is
+there, which is what `tzsetup` does; `/etc/timezone` stays a cache elsewhere.
+`linkZone` takes the platform as a parameter rather than reading `runtime.GOOS`,
+so both branches are testable on whatever machine the suite runs on — the same
+change `venvPip` needed two steps earlier, for the same reason.
+
+**A test asserted the defect.** `TestLinkZoneRewritesOnlyTheNameCachesThatExist`
+ended with
+
+```go
+if _, err := os.Stat(zoneNamePath); err == nil {
+        t.Error("a /var/db/zoneinfo was created on a node that had none")
+}
+```
+
+which is the decision, written down and enforced, on every platform including
+FreeBSD. It is now scoped to Linux, where it is still right, and the new test
+asserts the whole cycle rather than the file: install `Etc/UTC` into a tree with
+a copied `/etc/localtime` and no name record, then read the zone back through
+`currentZone` and require `Etc/UTC`. Reverting the fix fails it.
+
+Worth saying plainly, because this is the third time in this chapter: the thing
+that found the defect was a case for a state that already had a hand-written
+live test. `TestLiveTimezoneSetsTheZoneAndReadsItBack` has been passing in the
+debian container for months. It passes because that container *has* an
+`/etc/timezone`, so the name is recorded and read back. The harness's extra
+phases are not what found this — the machine was.
+
 ##### What is left, and it is one
 
 `unconformed` now holds a single entry, `win_dacl.owner`, whose reason is

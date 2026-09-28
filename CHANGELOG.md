@@ -23,6 +23,34 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `timezone.system` never converged on a FreeBSD node with no `/var/db/zoneinfo`
+
+FreeBSD copies the zone file to `/etc/localtime` instead of linking it, so the
+zone's *name* lives only in `/var/db/zoneinfo` — which `tzsetup(8)` calls the
+"saved name of the timezone file installed last". halite wrote that file only
+where one already existed, on the reasoning that inventing a name record is
+inventing a file nothing reads. True of Debian's `/etc/timezone`; false of this
+one, which is not a cache of the answer but the answer.
+
+So on any FreeBSD node whose image never ran `tzsetup` — every cloud image that
+ships a UTC `/etc/localtime` — the zone was installed and nothing recorded which
+one. Reading it back fell through to the abbreviation the process was running in,
+`UTC`, which never equals a zone name like `Etc/UTC`: the state reported a change
+and reinstalled the zone on every run, for ever. It writes the name record now.
+
+Found by the new `timezone.system` conformance case on the fleet FreeBSD leg. The
+hand-written live test passes and always did, because the container it runs in
+has an `/etc/timezone`.
+
+### `snap` and `reboot` have watched their mutating paths
+
+`snap`'s install and remove, and `reboot`'s schedule and cancel, had never been
+run against the real tools by anything automated — `reboot`'s because the second
+gate it asks for was set nowhere. Both are now driven as root on the fleet Linux
+leg, and both evidence notes say which machine and what is still not covered:
+snap's `refresh` and `purge`, and FreeBSD's shutdown, which stays unwatched on
+purpose.
+
 ### One hundred and thirty-one state functions are held to the test-mode contract
 
 Up from a hundred and eighteen, with one excused. The last thirteen — the
