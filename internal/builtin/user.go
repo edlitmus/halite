@@ -247,6 +247,35 @@ var linuxTool = accountTool{
 	DelGroup: func(name string) []string { return []string{"groupdel", name} },
 }
 
+// accountPlatforms are the platforms `user` and `group` actually manage.
+//
+// Three, not two. `userPresent`, `userAbsent`, `groupPresent` and
+// `groupAbsent` each open with `if runtime.GOOS == "darwin"` and hand off to
+// the `mac_*` implementation over dscl; everything after that is
+// `pickAccountTool`, which drives `pw` on FreeBSD and `useradd` on Linux.
+// Windows has no branch at all.
+//
+// The signatures declared no restriction, which the field's documentation
+// reads as "every platform", so the registry let a Windows call through to a
+// module that answered
+//
+//	no account management tool was found on this node (windows)
+//
+// A true statement about the wrong thing, which is the shape
+// internal/signature/platform.go was written to stop -- its own comment says
+// of `sysrc` on Linux that the module "looked for a binary that is not there
+// and reported that instead". The same defect two modules along, found when
+// the conformance harness ran on the windows leg.
+//
+// **This list said `linux, freebsd` for one commit**, because that message
+// names only those two and it was read as a statement of scope. It is not: it
+// is the fallback's complaint, reached only after the darwin branch has
+// declined to return. `live_group_gid_test.go` drives `group.present` on the
+// macos leg and had been passing, and the narrowed list broke it -- which is
+// the only reason the mistake was caught before it shipped. An error message
+// describes the path that produced it, not the function that contains it.
+var accountPlatforms = []string{"linux", "freebsd", "darwin"}
+
 // pickAccountTool chooses the platform's account tool.
 func pickAccountTool(c *exec.Context) (accountTool, error) {
 	for _, t := range []accountTool{freebsdTool, linuxTool} {
@@ -311,6 +340,7 @@ func registerUserExec(r *Registries) {
 					req("groups", signature.List, "The supplementary groups."),
 				},
 				Mutates: true, TestMode: signature.TestReliable,
+				Platforms:  accountPlatforms,
 				Privileges: []string{"root"},
 				Section:    "15.2",
 			},
@@ -433,6 +463,7 @@ func registerUserStates(r *Registries) {
 					opt("expire", signature.Int, nil, "Account expiry, in days since the epoch. Linux only; chage -E."),
 				},
 				Mutates:    true,
+				Platforms:  accountPlatforms,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.5",
@@ -448,6 +479,7 @@ func registerUserStates(r *Registries) {
 					opt("purge", signature.Bool, false, "Also remove the home directory."),
 				},
 				Mutates:    true,
+				Platforms:  accountPlatforms,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.5",
@@ -465,6 +497,7 @@ func registerUserStates(r *Registries) {
 					opt("members", signature.List, nil, "The accounts the group holds. This is the whole list: anyone not named is removed."),
 				},
 				Mutates:    true,
+				Platforms:  accountPlatforms,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.5",
@@ -477,6 +510,7 @@ func registerUserStates(r *Registries) {
 				Doc:        "Ensure a group does not exist.",
 				Params:     []signature.Param{nameParam("The group. Defaults to the state ID.")},
 				Mutates:    true,
+				Platforms:  accountPlatforms,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.5",

@@ -39,6 +39,14 @@ type conformanceCase struct {
 	// `test.configurable_test_state` needs because its whole purpose is to
 	// behave differently depending on its arguments.
 	Label string
+	// platforms are the GOOS values this case applies to. Empty means any.
+	//
+	// Needed once `win_dacl` arrived: its effect lands on a path the test
+	// owns, so it belongs in this list rather than the live one, but it can
+	// only run on Windows. Declared rather than omitted, for the reason #154
+	// learnt on windows-2022 -- a case left out of the list on a platform
+	// reads as uncovered there.
+	platforms []string
 	// Requires is a program that must be on PATH for the case to mean
 	// anything. A case that names one and does not find it skips, saying
 	// so, which is this package's existing convention for the real git

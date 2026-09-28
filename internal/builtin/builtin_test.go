@@ -356,12 +356,27 @@ func TestFileStatesConformToTestMode(t *testing.T) {
 	// module through hooks on the context: SaveConfig, Beacons, Events and
 	// their neighbours, pointed at a directory this test owns.
 	reach = append(reach, nodeConformanceCases(t)...)
+	// `win_dacl` acts on a path this test owns, so it belongs here rather
+	// than in the live list; it runs on the windows-2022 legs of ci.yml.
+	reach = append(reach, winDACLCases()...)
 	for _, cc := range reach {
 		name := cc.Label
 		if name == "" {
 			name = cc.Name
 		}
 		t.Run(name, func(t *testing.T) {
+			if len(cc.platforms) > 0 {
+				ok := false
+				for _, p := range cc.platforms {
+					if p == runtime.GOOS {
+						ok = true
+					}
+				}
+				if !ok {
+					t.Skipf("%s is for %s and this is %s", cc.Name,
+						strings.Join(cc.platforms, " or "), runtime.GOOS)
+				}
+			}
 			if cc.Requires != "" {
 				if _, err := osexec.LookPath(cc.Requires); err != nil {
 					t.Skipf("%s needs %s, which is not on this machine", cc.Name, cc.Requires)

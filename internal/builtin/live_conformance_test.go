@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/edlitmus/halite/internal/exec"
+	hexec "github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -60,7 +60,7 @@ import (
 
 // liveGate reports whether this machine has been offered up for states to be
 // applied to it, and skips with the reason when it has not.
-func liveGate(t *testing.T) *exec.Context {
+func liveGate(t *testing.T) *hexec.Context {
 	t.Helper()
 	if os.Getenv("HALITE_SYSTEM_LIVE") != "1" {
 		t.Skip("set HALITE_SYSTEM_LIVE=1 on a machine you can throw away; " +
@@ -72,7 +72,15 @@ func liveGate(t *testing.T) *exec.Context {
 			"four states each, which is more than the other live tests ask for, so it " +
 			"needs the second variable as well. contrib/tofu/lab.sh and fleet.yml set both.")
 	}
-	if os.Geteuid() != 0 {
+	// Windows has no uid, and Go's Geteuid returns -1 there -- so a uid
+	// check would fail a runner that is a full administrator. The question
+	// is asked in the terms each platform can answer.
+	if runtime.GOOS == "windows" {
+		if !windowsIsElevated(t) {
+			t.Fatal("HALITE_CONFORMANCE_LIVE is set and this process is not elevated; " +
+				"a scheduled task and a service both need it")
+		}
+	} else if os.Geteuid() != 0 {
 		t.Fatal("HALITE_CONFORMANCE_LIVE is set and this is not root; every state here needs it")
 	}
 	return realCtx(t)
@@ -85,9 +93,9 @@ func liveGate(t *testing.T) *exec.Context {
 // needed a `t` would tempt somebody into `t.Cleanup`, whose handlers here
 // run `user.absent` against the machine. Construction touches nothing; every
 // effect belongs to a case's Setup, its Cleanup, or the state under test.
-func liveRoot() *exec.Context {
+func liveRoot() *hexec.Context {
 	c := newCtx(false)
-	c.Runner = &exec.OSRunner{}
+	c.Runner = &hexec.OSRunner{}
 	return c
 }
 
@@ -123,7 +131,7 @@ type liveCase struct {
 }
 
 // skipReason reports why this case cannot run here, or "" when it can.
-func (lc liveCase) skipReason(c *exec.Context) string {
+func (lc liveCase) skipReason(c *hexec.Context) string {
 	if len(lc.platforms) > 0 {
 		ok := false
 		for _, p := range lc.platforms {
@@ -147,7 +155,7 @@ func (lc liveCase) skipReason(c *exec.Context) string {
 		}
 	}
 	if lc.requiresKmod != "" {
-		res, err := c.Run(exec.Command{
+		res, err := c.Run(hexec.Command{
 			Argv:           []string{"modprobe", "-n", lc.requiresKmod},
 			IgnoreExitCode: true,
 		})
@@ -176,7 +184,7 @@ func TestLiveConformanceOnThisMachine(t *testing.T) {
 	// on the context leaks into the next -- and with a real runner,
 	// because a recorded command changes nothing and would make every case
 	// here a pass about nothing.
-	ctx := func(test bool) *exec.Context {
+	ctx := func(test bool) *hexec.Context {
 		n := liveRoot()
 		n.Test = test
 		return n
@@ -242,6 +250,8 @@ func liveConformanceCases() []liveCase {
 	cases = append(cases, rcConfCases()...)
 	cases = append(cases, netfilterCases()...)
 	cases = append(cases, storageCases()...)
+	cases = append(cases, windowsLiveCases()...)
+	cases = append(cases, macLiveCases()...)
 	return cases
 }
 
@@ -307,8 +317,18 @@ func accountCases() []liveCase {
 		}
 	}
 
+	// The platforms `user` and `group` manage, which is the list
+	// `accountPlatforms` declares: `useradd` on Linux, `pw` on FreeBSD, and
+	// dscl on darwin through the `mac_*` implementation each of the four
+	// functions hands off to. Windows has no branch, which is what the
+	// windows leg found.
+	accounts := func(lc liveCase) liveCase {
+		lc.platforms = []string{"linux", "freebsd", "darwin"}
+		return lc
+	}
+
 	return []liveCase{
-		{
+		accounts(liveCase{
 			Conformance: states.Conformance{
 				Name: "group.present",
 				Args: value.MapOf("name", group),
@@ -319,8 +339,8 @@ func accountCases() []liveCase {
 				Setup:   func() error { removeGroup(); return nil },
 				Cleanup: removeGroup,
 			},
-		},
-		{
+		}),
+		accounts(liveCase{
 			Conformance: states.Conformance{
 				Name:  "group.absent",
 				Args:  value.MapOf("name", group),
@@ -331,8 +351,8 @@ func accountCases() []liveCase {
 				},
 				Cleanup: removeGroup,
 			},
-		},
-		{
+		}),
+		accounts(liveCase{
 			Conformance: states.Conformance{
 				Name: "user.present",
 				// No `groups`: supplementary membership is a second
@@ -344,8 +364,8 @@ func accountCases() []liveCase {
 				Setup:   func() error { removeUser(); return nil },
 				Cleanup: removeUser,
 			},
-		},
-		{
+		}),
+		accounts(liveCase{
 			Conformance: states.Conformance{
 				Name:  "user.absent",
 				Args:  value.MapOf("name", user, "purge", true),
@@ -357,7 +377,7 @@ func accountCases() []liveCase {
 				},
 				Cleanup: removeUser,
 			},
-		},
+		}),
 	}
 }
 
@@ -392,8 +412,17 @@ func hostsFileCases() []liveCase {
 	remove := func() {
 		_, _ = r.States.Call(root, "host.absent", value.MapOf("name", name))
 	}
+	// `HostsPath` is `/etc/hosts`, which every unix has and Windows does
+	// not -- there the file lives under System32\drivers\etc and this
+	// module does not know it. darwin is in the list because the macos leg
+	// ran these and passed, not because /etc/hosts is assumed to be there.
+	unix := func(lc liveCase) liveCase {
+		lc.platforms = []string{"linux", "freebsd", "darwin"}
+		return lc
+	}
+
 	return []liveCase{
-		{
+		unix(liveCase{
 			Conformance: states.Conformance{
 				Name:    "host.present",
 				Args:    value.MapOf("name", name, "ip", addr),
@@ -401,8 +430,8 @@ func hostsFileCases() []liveCase {
 				Setup:   func() error { remove(); return nil },
 				Cleanup: remove,
 			},
-		},
-		{
+		}),
+		unix(liveCase{
 			Conformance: states.Conformance{
 				Name:  "host.absent",
 				Args:  value.MapOf("name", name),
@@ -414,7 +443,7 @@ func hostsFileCases() []liveCase {
 				},
 				Cleanup: remove,
 			},
-		},
+		}),
 	}
 }
 
@@ -537,7 +566,12 @@ func scheduleCases() []liveCase {
 				Setup:   func() error { removeAt(); return nil },
 				Cleanup: removeAt,
 			},
-			needs: []string{"at", "atq"},
+			// The module declares linux and freebsd and the registry
+			// enforces it, so macOS -- which has `at` and `atq` binaries --
+			// was refused by the signature rather than by the tool check.
+			// The case says the same thing the declaration does.
+			platforms: []string{"linux", "freebsd"},
+			needs:     []string{"at", "atq"},
 		},
 		{
 			Conformance: states.Conformance{
@@ -552,7 +586,12 @@ func scheduleCases() []liveCase {
 				},
 				Cleanup: removeAt,
 			},
-			needs: []string{"at", "atq"},
+			// The module declares linux and freebsd and the registry
+			// enforces it, so macOS -- which has `at` and `atq` binaries --
+			// was refused by the signature rather than by the tool check.
+			// The case says the same thing the declaration does.
+			platforms: []string{"linux", "freebsd"},
+			needs:     []string{"at", "atq"},
 		},
 	}
 }
@@ -593,8 +632,18 @@ func packageCases() []liveCase {
 		return err
 	}
 
+	// Linux and FreeBSD. Not macOS: the leg runs as root and Homebrew
+	// refuses outright -- "Running Homebrew as root is extremely dangerous
+	// and no longer supported" -- which is brew's decision, not this
+	// module's, and not one a case can work around. Not Windows: choco has
+	// no `tree`. Both learnt from the legs rather than assumed.
+	pkgPlatforms := func(lc liveCase) liveCase {
+		lc.platforms = []string{"linux", "freebsd"}
+		return lc
+	}
+
 	return []liveCase{
-		{
+		pkgPlatforms(liveCase{
 			Conformance: states.Conformance{
 				Name:    "pkg.installed",
 				Args:    value.MapOf("name", pkg),
@@ -602,8 +651,8 @@ func packageCases() []liveCase {
 				Setup:   func() error { remove(); return nil },
 				Cleanup: remove,
 			},
-		},
-		{
+		}),
+		pkgPlatforms(liveCase{
 			Conformance: states.Conformance{
 				Name:    "pkg.removed",
 				Args:    value.MapOf("name", pkg),
@@ -611,7 +660,7 @@ func packageCases() []liveCase {
 				Setup:   install,
 				Cleanup: remove,
 			},
-		},
+		}),
 	}
 }
 
@@ -774,7 +823,7 @@ WantedBy=multi-user.target
 		if err := os.WriteFile(unitPath, []byte(unit), 0o644); err != nil {
 			return err
 		}
-		_, err := root.Run(exec.Command{Argv: []string{"systemctl", "daemon-reload"}})
+		_, err := root.Run(hexec.Command{Argv: []string{"systemctl", "daemon-reload"}})
 		return err
 	}
 	stop := func() {
@@ -782,13 +831,13 @@ WantedBy=multi-user.target
 			{"systemctl", "stop", name},
 			{"systemctl", "disable", name},
 		} {
-			_, _ = root.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+			_, _ = root.Run(hexec.Command{Argv: argv, IgnoreExitCode: true})
 		}
 	}
 	teardown := func() {
 		stop()
 		_ = os.Remove(unitPath)
-		_, _ = root.Run(exec.Command{
+		_, _ = root.Run(hexec.Command{
 			Argv:           []string{"systemctl", "daemon-reload"},
 			IgnoreExitCode: true,
 		})
@@ -797,9 +846,9 @@ WantedBy=multi-user.target
 	// The probe reads systemctl rather than the module, so a module that
 	// reported a change it did not make has nowhere to hide.
 	probe := func() (string, error) {
-		active, _ := root.Run(exec.Command{
+		active, _ := root.Run(hexec.Command{
 			Argv: []string{"systemctl", "is-active", name}, IgnoreExitCode: true})
-		enabled, _ := root.Run(exec.Command{
+		enabled, _ := root.Run(hexec.Command{
 			Argv: []string{"systemctl", "is-enabled", name}, IgnoreExitCode: true})
 		return fmt.Sprintf("active=%s enabled=%s",
 			strings.TrimSpace(active.Stdout), strings.TrimSpace(enabled.Stdout)), nil
@@ -847,7 +896,7 @@ WantedBy=multi-user.target
 				if err := writeUnit(); err != nil {
 					return err
 				}
-				_, _ = root.Run(exec.Command{
+				_, _ = root.Run(hexec.Command{
 					Argv: []string{"systemctl", "disable", name}, IgnoreExitCode: true})
 				return nil
 			},
@@ -934,4 +983,25 @@ func rcConfCases() []liveCase {
 			Cleanup: remove,
 		}}),
 	}
+}
+
+// windowsIsElevated reports whether this process can do what these cases
+// need, asked by trying rather than by inspecting a token.
+//
+// `net session` is the conventional probe: it needs administrative rights and
+// changes nothing. A token query would be more precise and would need
+// `golang.org/x/sys/windows` in a test file, which the dependency allowlist of
+// `internal/buildpolicy` would have to be argued with -- and the answer this
+// needs is "can it", which running something is the direct form of.
+func windowsIsElevated(t *testing.T) bool {
+	t.Helper()
+	res, err := liveRoot().Run(hexec.Command{
+		Argv:           []string{"net", "session"},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		t.Logf("`net session` could not be run, so elevation is unknown: %v", err)
+		return false
+	}
+	return res.Code == 0
 }

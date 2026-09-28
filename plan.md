@@ -1493,12 +1493,20 @@ unchanged.
    its two call sites, and the live ACL test had been failing on the
    `freebsd14` row ever since, read as a fact about the machine.
 
-   **Thirty-two are left, and they are not one list.** Nine are Windows and
-   macOS and need those legs rather than the lab. Six are language managers
-   needing their own toolchain installed first. Four are `firewall.*`, whose
-   blast radius is the machine's connectivity. The remaining thirteen each
-   have their own reason, from `reboot.scheduled` keeping its own gate to
-   `pkg.latest` needing a package with two versions in the repository.
+   The nine Windows and macOS states followed — **108 of 132**, with
+   `win_dacl.owner` excluded for a reason of its own — and the split turned
+   out not to be by platform: `win_dacl`'s other three act on a path,
+   so they are in-process cases running on `windows-2022` with every pull
+   request, while `win_task`, `win_service` and `mac_defaults` change the
+   machine and run on legs that are discarded. That needed a `windows` leg,
+   which `fleet.yml` had never had, and the `macos` leg to be given the
+   variable the conformance suite asks for.
+
+   **Twenty-four are left.** Six are language managers, each needing its own
+   toolchain installed first. Four are `firewall.*`, whose blast radius is
+   the machine's connectivity. The remaining thirteen each have their own
+   reason, from `reboot.scheduled` keeping its own gate to `pkg.latest`
+   needing a package with two versions in the repository.
 
 7b. **A coverage claim, measured at last — and the claim itself was wrong
     twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off

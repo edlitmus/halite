@@ -14617,6 +14617,134 @@ The general form is worth keeping: **a rule enforced only where coverage
 reaches is a rule discovered at the rate coverage grows.** Four families, four
 runs, one edit each. The audit costs a quarter of a second.
 
+##### Coverage 100 → 109: the nine Windows and macOS states, and where each one belongs
+
+The split is the interesting part, and it is not the platform:
+
+| | |
+|---|---|
+| **3** | `win_dacl.present`, `.absent` and `.inherit` change the access list on a **path**, and a path in a temporary directory is not the machine — so these are *in-process* cases, and run in `ci.yml`'s `windows-2022` jobs on every pull request. |
+| **1** | `win_dacl.owner` is reachable and confined and still has no case, for a reason worth its own line below. |
+| **3** | `win_task.*` registers with the scheduler and `win_service.start_type` writes a service's start type. Those are the machine, so they are live cases behind a new `fleet.yml` leg. |
+| **2** | `mac_defaults.*` in a preference domain of the suite's own, live, on the existing `macos` leg — which needed `HALITE_CONFORMANCE_LIVE=1` and the conformance family adding to its `-run` filter, both of which had been left off when the variable was introduced. |
+
+`win_dacl` staying out of the live list is the same judgement the sixteen
+`file` states got, and `win_dacl_windows_test.go` had already established it by
+driving the real Windows security API against a temporary file in the ordinary
+suite. A case does not become live because its platform is unusual; it becomes
+live because its effect is.
+
+##### The one that could not be staged
+
+`win_dacl.owner` has no case, and the reason is neither "unreachable" nor
+"changes the machine". The harness needs a change to make, and an owner change
+needs a trustee Windows will accept as an owner. On the runners available it
+accepts neither tried:
+
+	setting the owner of …\owned.conf to Administrators:
+	This security ID may not be assigned as the owner of this object
+
+and the same for `SYSTEM`.
+
+The only assignable owner left is the account that already owns the file, which
+is no change at all — and the harness says in its own words that a setup
+leaving nothing to do is a case testing nothing. So this is an `unconformed`
+entry rather than a third guess at a trustee.
+`win_dacl_windows_test.go` drives `SetOwner` directly, so the function is not
+unchecked; what cannot be staged is the *change*, which is a different claim
+and the one worth writing down.
+
+###### An open question, not a conclusion
+
+`winsec.SetOwner` appends a hint when it could not enable the privilege an
+owner change needs, and **no hint appeared** in either failure. Two readings
+of that are available and the evidence contradicts both:
+
+- *The privilege was held.* But the leg prints `running as halite-ci (not an
+  administrator)`, and a non-administrator's token does not carry
+  `SeRestorePrivilege` at all.
+- *`enablePrivilege` reports a privilege it did not get.* That is the classic
+  Windows trap — `AdjustTokenPrivileges` returns success having assigned
+  nothing — and the function already guards it, returning
+  `GetLastError() != ERROR_NOT_ALL_ASSIGNED` with a comment saying why.
+
+So **why the hint was absent is not known**, and it is written down as a
+question because the next reader deserves that rather than a plausible
+sentence. It matters: the hint exists to explain this exact failure to an
+operator who is not running as an administrator, which is the commonest way to
+meet it. Answering it needs a Windows machine to step through, which this
+session did not have — the whole of what is established here is the two
+refusals and the absent hint.
+
+##### Two things Windows does not have
+
+**A uid.** `liveGate` refused anything but `os.Geteuid() == 0`, and Go returns
+**-1** on Windows — so the gate would have failed a runner that is a full
+administrator, for a reason that has nothing to do with privilege. It now asks
+each platform the question that platform can answer: on Windows, whether
+`net session` succeeds, which is the conventional probe and needs
+administrative rights while changing nothing. Asked by trying rather than by
+inspecting a token, which would have wanted `golang.org/x/sys/windows` in a
+test file and an argument with the dependency allowlist.
+
+**A filename that is only a filename.** The live cases were first written to
+`live_conformance_windows_test.go`, and Go reads a trailing `_windows` before
+`_test.go` as a build constraint — so the five cases compiled on Windows alone
+and vanished from the list everywhere else. **That is the defect of #154 in a
+new disguise**, a case list that is a function of where it is built, and this
+time the compiler caught it rather than a CI leg. Renamed
+`live_conformance_platform_test.go`, and the file says why.
+
+##### The probes read the tools
+
+`icacls` for the access list, `powershell (Get-Acl).Owner` for the owner,
+`schtasks /query` for the task, `sc qc` for the service, `defaults read` for
+the preference. Not one of them asks the module.
+
+`internal/winsec` would have been the direct way to read an access list and is
+`_windows.go` only, so a case file using it could not compile everywhere —
+which is the same constraint as above, arriving from the other side. Shelling
+out is what an operator does anyway, so the constraint pushed toward the better
+probe.
+
+##### And the mistake that nearly shipped: an error message is not a specification
+
+Writing the platform gates, `user` and `group` were declared
+`[linux, freebsd]`, on the strength of the message the module itself produces:
+
+	no account management tool was found on this node (windows);
+	halite drives pw on FreeBSD and useradd on Linux
+
+That message names two platforms, and it was read as a statement of the
+function's scope. **It is the fallback's complaint.** `userPresent`,
+`userAbsent`, `groupPresent` and `groupAbsent` each open with
+`if runtime.GOOS == "darwin"` and hand off to the `mac_*` implementation over
+dscl; `pickAccountTool` is only reached after that branch declines. There are
+three platforms, not two.
+
+`Platforms` is enforced by the registry, so the narrowed list did not merely
+mis-document — it **refused `group.present` on macOS**, and would have broken
+account management on a platform of the estate.
+
+What caught it was `live_group_gid_test.go`, which drives `group.present` on
+the `macos` leg and had been passing for months. One commit later it said
+
+	group.present runs on linux, freebsd, and this node is darwin
+
+which is the declaration being enforced against the truth. Nothing else would
+have: the module's Windows message was the evidence, the reasoning from it was
+wrong, and the only reason it did not ship is that a test already existed on
+the platform the claim excluded.
+
+**An error message describes the path that produced it, not the function that
+contains it.** The same discipline as reading a flag's prose beside the flag,
+and the same failure this ledger records under a different name each time:
+a stated reason ends the investigation.
+
+
+
+
+
 
 
 

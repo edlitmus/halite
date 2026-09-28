@@ -147,13 +147,13 @@ func winServiceStartTypeState(c *exec.Context, args *value.Map) (states.Result, 
 	changes := value.NewMap(1)
 	changes.Set("start_type", states.Change(current, want))
 	if c.Test {
-		return states.WouldChange(fmt.Sprintf("%s would start %s rather than %s.",
+		return states.WouldChange(fmt.Sprintf("The service %s would start %s rather than %s.",
 			name, want, current), changes), nil
 	}
 	if err := winServiceSetStartType(name, want); err != nil {
 		return states.False(fmt.Sprintf("The start type of %s could not be set to %s: %v",
 			name, want, err)), nil
 	}
-	return states.Changed(fmt.Sprintf("%s now starts %s rather than %s.",
+	return states.Changed(fmt.Sprintf("The service %s now starts %s rather than %s.",
 		name, want, current), changes), nil
 }
