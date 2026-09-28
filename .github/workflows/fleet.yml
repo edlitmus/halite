@@ -382,6 +382,27 @@ jobs:
       # is on PATH rather than in a standard location -- so root would
       # run a different Go, or none. The environment is named
       # explicitly instead.
+      # `HALITE_REBOOT_LIVE=1`, which until now was set nowhere at all.
+      #
+      # `live_reboot_test.go` introduced it as a second gate so that a test
+      # which schedules a real reboot could not be run by accident while
+      # running everything else, and it worked: nothing ever set it, so the
+      # one test that drives `shutdown` and the one that cancels it had
+      # never run anywhere. A test that skips is not a test that ran, and
+      # this leg is where that sentence keeps being learnt.
+      #
+      # This is the right machine for it. A hosted runner is a fresh
+      # virtual machine destroyed minutes later, the reboot is scheduled
+      # two hours out -- far past this job's timeout -- and on Linux the
+      # cancel is `shutdown -c`. None of that is true of the freebsd leg,
+      # where the whole leg runs inside one emulated VM and a cancel is
+      # finding the pid and sending it TERM, so the variable stays unset
+      # there and `reboot`'s FreeBSD branch stays covered by unit tests and
+      # by the manual-page test that reads `shutdown(8)` itself.
+      #
+      # "the machine was put back" below asserts nothing was left pending,
+      # because the conformance harness cannot: its Cleanup takes no
+      # *testing.T, so a cancel that failed there would be silent.
       - name: drive hostname, sysctl, apparmor, netplan, service, pkg, quota and lvm
         run: |
           set -e
@@ -390,7 +411,8 @@ jobs:
           # through a file rather than $PIPESTATUS so that this reads the
           # same as the freebsd leg.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveConformance' ./internal/builtin/ 2>&1;
+              HALITE_REBOOT_LIVE=1 \
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveReboot|TestLiveConformance' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 
@@ -446,12 +468,36 @@ jobs:
           echo "netplan files: $(ls /etc/netplan | tr '\n' ' ')"
           echo "probe unit: $(systemctl is-active halite-live-probe 2>&1)"
           echo "loop devices left attached: $(losetup -a | wc -l)"
+          echo "time zone: $(timedatectl show -p Timezone --value 2>&1)"
+          echo "apt sources from the suite: $(ls /etc/apt/sources.list.d | grep halitecf || echo none)"
+          echo "apparmor profiles from the suite: $(ls /etc/apparmor.d | grep halitecf || echo none)"
           test "$(hostname)" != "halite-live-probe" || {
             echo "the tests left this machine renamed"; exit 1; }
+          # The conformance suite's own name, which is a different string
+          # from the one above and would not have been caught by it.
+          test "$(hostname)" != "halitecf-host" || {
+            echo "the conformance suite left this machine renamed"; exit 1; }
           test ! -e /etc/netplan/98-halite-live-probe.yaml || {
             echo "the tests left the probe config in /etc/netplan"; exit 1; }
+          test ! -e /etc/netplan/97-halitecf-probe.yaml || {
+            echo "the conformance suite left its config in /etc/netplan"; exit 1; }
+          test ! -e /etc/apt/sources.list.d/halitecf-src.list || {
+            echo "the conformance suite left its apt repository configured"; exit 1; }
+          test ! -e /etc/apparmor.d/halitecf-aa || {
+            echo "the conformance suite left its AppArmor profile on disk"; exit 1; }
           test ! -e /run/systemd/system/halite-live-probe.service || {
             echo "the tests left the probe unit in /run/systemd/system"; exit 1; }
+          # The reboot assertion, and the reason this step stopped being
+          # merely tidy. Everything above leaves a mess that stays the same
+          # size; a pending shutdown takes the machine down later. Both
+          # places one can be recorded are read: the file logind holds it
+          # in, and the process table, where a shutdown scheduled without
+          # systemd sits.
+          echo "systemd shutdown scheduled: $(cat /run/systemd/shutdown/scheduled 2>&1 || true)"
+          if [ -e /run/systemd/shutdown/scheduled ] || pgrep -x shutdown >/dev/null; then
+            echo '::error::a shutdown is still pending after the suite. reboot.scheduled or a TestLiveReboot test did not cancel what it scheduled; the countermand is `shutdown -c`.'
+            exit 1
+          fi
 
   # The live suite on FreeBSD, which is the platform four of the five
   # hosts in this project's own fleet run and SPEC 27.1 tier 1.
@@ -559,8 +605,23 @@ jobs:
         run: |
           echo "hostname: $(hostname)"
           echo "rc.conf:  $(sysrc -n hostname 2>/dev/null || echo unset)"
+          echo "time zone: $(cat /var/db/zoneinfo 2>&1)"
+          echo "jails running: $(jls -N 2>&1 | tail -n +2 | wc -l)"
           test "$(hostname)" != "halite-live-probe" || {
             echo "the tests left this machine renamed"; exit 1; }
+          # The conformance suite's own name, a different string from the
+          # one above.
+          test "$(hostname)" != "halitecf-host" || {
+            echo "the conformance suite left this machine renamed"; exit 1; }
+          # The jail the conformance cases start and stop. It is `persist`,
+          # so nothing reaps it if the case's cleanup did not: a jail left
+          # running is the one piece of mess here that a later run would
+          # then refuse to stage over.
+          if jls -N 2>/dev/null | grep -q halitecf_jail; then
+            echo '::error::the conformance suite left its jail running; `jail -r halitecf_jail` removes it'
+            jls -N || true
+            exit 1
+          fi
 
   # The macOS row, as root, on a machine nobody minds breaking.
   #
@@ -634,8 +695,28 @@ jobs:
         if: always()
         run: |
           echo "hostname: $(hostname); scutil HostName: $(scutil --get HostName 2>&1)"
+          echo "time zone: $(systemsetup -gettimezone 2>&1); /etc/localtime -> $(readlink /etc/localtime 2>&1)"
           test "$(hostname)" != "halite-live-probe" || {
             echo "the tests left this machine renamed"; exit 1; }
+          # The conformance suite's own name, a different string from the
+          # one above.
+          test "$(hostname)" != "halitecf-host" || {
+            echo "the conformance suite left this machine renamed"; exit 1; }
+          # The zone the conformance case moves this Mac to. Its restore
+          # relinks /etc/localtime rather than going through the tool,
+          # because `systemsetup -settimezone UTC` refuses the zone this
+          # runner is actually in (5.131) -- so the restore is the part most
+          # worth asserting from outside the test that performs it.
+          #
+          # Asserted on the zone name rather than on the link target,
+          # because the target's spelling is a fact about this macOS version
+          # and an assertion built on it would silently stop firing. If this
+          # runner is ever itself in GMT the case picks another candidate,
+          # so GMT here means the restore did not happen.
+          if systemsetup -gettimezone 2>&1 | grep -q 'GMT'; then
+            echo "::error::the conformance suite left this Mac in GMT"
+            exit 1
+          fi
 
           leftover=$(dscl . -list /Users | grep -c '^halite' || true)
           echo "halite* accounts remaining: $leftover"

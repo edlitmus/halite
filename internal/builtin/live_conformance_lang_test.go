@@ -147,9 +147,7 @@ func gemCases() []liveCase {
 		rig.quiet("", "gem", "uninstall", "--executables", "--all", conformanceGem)
 	}
 	install := func() error {
-		_, err := rig.r.States.Call(rig.c, "gem.installed",
-			value.MapOf("name", conformanceGem))
-		return err
+		return applyForSetup(rig.r, rig.c, "gem.installed", value.MapOf("name", conformanceGem))
 	}
 
 	// Not Windows. `gem` is on the hosted runner's PATH, so `needs` found

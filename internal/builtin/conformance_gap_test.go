@@ -60,19 +60,26 @@ func init() {
 	// path rewrites a whole anchor, which is different enough to want a case of
 	// its own rather than sharing ufw's.
 
-	// Changes the machine the suite runs on. The harness applies twice,
-	// for real, and this project's development host is a node the fleet
-	// manages -- so these belong to `TestLive*` and the lab, where the
-	// machine is disposable.
-	machine := "changes the machine the suite runs on; the harness applies for real, so this " +
-		"belongs to a TestLive case on a disposable host"
-	for _, n := range []string{
-		"apparmor.mode",
-		"debconf.set", "hostname.system",
-		"jail.running", "netplan.managed",
-		"pkg.latest", "pkg.purged", "pkgrepo.absent", "pkgrepo.managed", "reboot.scheduled",
-		"snap.installed", "snap.removed", "timezone.system",
-	} {
-		unconformed[n] = machine
-	}
+	// Nothing else. The thirteen that said "changes the machine the suite
+	// runs on" are gone, which is the second and last time this table
+	// shrank: `hostname.system`, `timezone.system`, `reboot.scheduled`,
+	// `apparmor.mode`, `debconf.set`, `netplan.managed`, `jail.running`,
+	// `pkg.latest`, `pkg.purged`, `pkgrepo.managed`, `pkgrepo.absent`,
+	// `snap.installed` and `snap.removed` now have live cases.
+	//
+	// The reason they could be written was not a new machine. It was that
+	// "changes the machine the suite runs on" had stopped being a reason at
+	// all once `TestLiveConformance*` existed: the sentence was written when
+	// there was nowhere for such a case to go, and it survived the arrival
+	// of somewhere. Two of the thirteen needed more than moving:
+	//
+	//   - `pkg.latest` was excused as needing "a package with two versions
+	//     in the repository", which reading `pkgLatest` rather than its name
+	//     disproves: an absent package's installed version is the empty
+	//     string, so the state installs it and there is a change to stage.
+	//   - `reboot.scheduled` needed a second gate rather than a second
+	//     machine, and `liveCase.needsRebootGate` is it.
+	//
+	// A reason that has stopped being true is worse than a long list,
+	// because nobody re-reads it. Both are recorded in 5.157.
 }

@@ -279,7 +279,7 @@ func setZone(c *exec.Context, want string) error {
 			return fmt.Errorf("timedatectl: %s", firstLine(res.Stderr))
 		}
 	}
-	return linkZone(want)
+	return linkZone(want, runtime.GOOS)
 }
 
 // zoneLinkWait bounds how long darwinSetZone waits for /etc/localtime to
@@ -331,7 +331,14 @@ func darwinSetZone(c *exec.Context, want string) error {
 
 // linkZone points /etc/localtime at the zone file by hand, which is what
 // a node without systemd needs, and what a container gets.
-func linkZone(want string) error {
+// linkZone installs a zone by hand, for the platforms with no tool that does
+// it: every unix but macOS, and every Linux without systemd running.
+//
+// `goos` is a parameter rather than read from `runtime.GOOS` so that both
+// branches below are testable on whatever machine the suite runs on. The
+// `venvPip` rewrite made the same change for the same reason, after the Windows
+// branch of a path helper turned out to be unreachable by any test.
+func linkZone(want, goos string) error {
 	src := filepath.Join(zoneinfoDir, filepath.FromSlash(want))
 	info, err := os.Stat(src)
 	if err != nil || info.IsDir() {
@@ -359,11 +366,41 @@ func linkZone(want string) error {
 		}
 	}
 
-	// Both of these are caches of the name kept beside the zone data,
-	// and are only rewritten where the platform already keeps one:
-	// creating either on a node that has neither would be inventing a
-	// file that nothing on it reads.
-	for _, path := range []string{zoneNamePath, etcTimezonePath} {
+	// The name, recorded beside the zone data.
+	//
+	// # One of these is a cache and the other is the answer
+	//
+	// This used to write both only where the platform already kept one, on the
+	// reasoning that "creating either on a node that has neither would be
+	// inventing a file that nothing on it reads". That is true of
+	// /etc/timezone, which is Debian's, and it is **not** true of
+	// /var/db/zoneinfo on FreeBSD. `tzsetup(8)`'s own manual calls that file
+	// the "saved name of the timezone file installed last", and `tzsetup -r`
+	// reinstalls the zone by reading it. It is the platform's record of the
+	// answer, not a cache of it.
+	//
+	// And FreeBSD copies the zone file to /etc/localtime rather than linking
+	// it, so that record is the *only* place the name survives. A node
+	// without one -- which is every cloud image that shipped a UTC
+	// /etc/localtime without running tzsetup, including this project's own
+	// FreeBSD CI runner -- therefore had no readable zone name at all after
+	// this function ran. `currentZone` fell through to the abbreviation the
+	// process is running under, "UTC", and `timezone.system` asked for
+	// `Etc/UTC` compared the two, found them different, and copied the file
+	// again. On every run, for ever. DIVERGENCE 5.157 has the measurement.
+	//
+	// So on FreeBSD and DragonFly it is written whether or not it is there,
+	// which is what tzsetup does; elsewhere both stay caches.
+	names := []string{etcTimezonePath}
+	if goos == "freebsd" || goos == "dragonfly" {
+		if err := writeAtomic(zoneNamePath, []byte(want+"\n"), 0o644); err != nil {
+			return fmt.Errorf("the zone was installed and %s could not be written, "+
+				"so this node cannot say which zone it is in: %w", zoneNamePath, err)
+		}
+	} else {
+		names = append(names, zoneNamePath)
+	}
+	for _, path := range names {
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}

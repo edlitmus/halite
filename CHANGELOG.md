@@ -23,6 +23,79 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `timezone.system` never converged on a FreeBSD node with no `/var/db/zoneinfo`
+
+FreeBSD copies the zone file to `/etc/localtime` instead of linking it, so the
+zone's *name* lives only in `/var/db/zoneinfo` — which `tzsetup(8)` calls the
+"saved name of the timezone file installed last". halite wrote that file only
+where one already existed, on the reasoning that inventing a name record is
+inventing a file nothing reads. True of Debian's `/etc/timezone`; false of this
+one, which is not a cache of the answer but the answer.
+
+So on any FreeBSD node whose image never ran `tzsetup` — every cloud image that
+ships a UTC `/etc/localtime` — the zone was installed and nothing recorded which
+one. Reading it back fell through to the abbreviation the process was running in,
+`UTC`, which never equals a zone name like `Etc/UTC`: the state reported a change
+and reinstalled the zone on every run, for ever. It writes the name record now.
+
+Found by the new `timezone.system` conformance case on the fleet FreeBSD leg. The
+hand-written live test passes and always did, because the container it runs in
+has an `/etc/timezone`.
+
+### `snap` and `reboot` have watched their mutating paths
+
+`snap`'s install and remove, and `reboot`'s schedule and cancel, had never been
+run against the real tools by anything automated — `reboot`'s because the second
+gate it asks for was set nowhere. Both are now driven as root on the fleet Linux
+leg, and both are `Hardware` rather than `Captured`. `pkg`'s note has also stopped
+saying that pkgng "has not been driven at all", which it had been since the
+eighty-two-state tranche: all four `pkg` states run against real pkg(8) on
+FreeBSD 15.1.
+
+Each note says which machine, which version, and what is still not covered:
+snap's `refresh` and `purge`, pkgng's `upgrade`, FreeBSD's genuine `shutdown(8)`,
+and macOS releases other than the runner's.
+
+### One hundred and thirty-one state functions are held to the test-mode contract
+
+Up from a hundred and eighteen, with one excused. The last thirteen — the
+machine's hostname and time zone, a scheduled reboot, an AppArmor profile's
+mode, a netplan document, a debconf answer, an apt repository, a jail,
+`pkg.latest`, `pkg.purged` and both `snap` states — now have cases driven
+against the real tools on a machine that is thrown away afterwards.
+
+They were excused, all thirteen, by a sentence saying such a state "belongs to
+a TestLive case on a disposable host". That sentence was written before the
+live conformance suite existed and went on reading as a reason for cases to be
+absent for another eighty of them. An excuse that has stopped being true is
+worse than a long list.
+
+The one that is left is `win_dacl.owner`: every runner available refused both
+`Administrators` and `SYSTEM` as an owner, so no change can be staged for it.
+
+### A conformance case's setup could not tell a refusal from a success
+
+Fifteen live conformance cases apply a state before the case runs — installing
+the package that `pkg.purged` then takes away, creating the group that
+`group.absent` removes. Each checked the error and not the result, and a state
+that runs and refuses returns no error. So a setup step that did not happen was
+indistinguishable from one that did, and the harness then reported that the case
+had nothing to change: a true sentence pointing at the case rather than at the
+refusal. They carry the module's own comment now.
+
+### `reboot`'s mutating tests had never run anywhere
+
+`HALITE_REBOOT_LIVE=1` exists so that a test which schedules a real reboot
+cannot be run by accident while running everything else. It worked, and nothing
+had ever set it — so the test that schedules a shutdown and reads it back, and
+the one that cancels it, had never run on any machine since they were written.
+
+The `linux` fleet leg sets it now: a hosted runner is destroyed minutes later,
+the reboot is scheduled two hours out, and on Linux the cancel is `shutdown -c`.
+It stays unset on FreeBSD, where cancelling means finding the pid and sending it
+TERM and the whole leg is one emulated machine. The leg also fails if a shutdown
+is left pending, in both places one can be recorded.
+
 ### `firewall.absent` reported a removal on every run
 
 It asked ufw to dry-run the delete and read the answer negatively — a change
@@ -50,7 +123,8 @@ its `SetDefault` refuses by design, so a case there would exercise `pfctl -e`
 and nothing else, and enabling a packet filter on a host reached only over SSH
 is not a trade to make for one line.
 
-Fourteen states are left, each with its own stated reason.
+Fourteen states were left at that point, each with its own stated reason;
+thirteen of them have cases now, above.
 
 ### `pip`'s `bin_env` works on Windows
 

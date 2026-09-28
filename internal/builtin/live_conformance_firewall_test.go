@@ -142,8 +142,7 @@ func firewallCases() []liveCase {
 			Probe: rulesProbe,
 			Setup: func() error {
 				clearRules()
-				_, err := r.States.Call(root, "firewall.allowed", ruleArgs())
-				return err
+				return applyForSetup(r, root, "firewall.allowed", ruleArgs())
 			},
 			Cleanup: clearRules,
 		}}),

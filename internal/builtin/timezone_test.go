@@ -95,7 +95,7 @@ func TestLinkZoneKeepsTheFormTheNodeAlreadyUsed(t *testing.T) {
 
 	// Held as a copy: it is rewritten as a copy, with the zone's bytes.
 	writeFile(t, localtimePath, "TZif-tokyo")
-	if err := linkZone("America/Denver"); err != nil {
+	if err := linkZone("America/Denver", runtime.GOOS); err != nil {
 		t.Fatal(err)
 	}
 	fi, err := os.Lstat(localtimePath)
@@ -116,7 +116,7 @@ func TestLinkZoneKeepsTheFormTheNodeAlreadyUsed(t *testing.T) {
 	if err := os.Symlink(filepath.Join(zoneinfoDir, "Asia/Tokyo"), localtimePath); err != nil {
 		t.Fatal(err)
 	}
-	if err := linkZone("America/Denver"); err != nil {
+	if err := linkZone("America/Denver", runtime.GOOS); err != nil {
 		t.Fatal(err)
 	}
 	target, err := os.Readlink(localtimePath)
@@ -128,10 +128,12 @@ func TestLinkZoneKeepsTheFormTheNodeAlreadyUsed(t *testing.T) {
 	}
 }
 
-// The name caches beside the zone data are rewritten where the platform
-// keeps one and not created where it does not: a /etc/timezone invented
-// on FreeBSD is a file nothing on that node reads, and one that will be
-// wrong the first time the zone is changed by any other means.
+// /etc/timezone is a cache and is rewritten only where the platform keeps one:
+// one invented on FreeBSD is a file nothing on that node reads, and one that
+// will be wrong the first time the zone is changed by any other means.
+//
+// This test used to say the same about /var/db/zoneinfo, and that was the
+// defect. See the test below.
 func TestLinkZoneRewritesOnlyTheNameCachesThatExist(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the unix zone files do not exist on Windows")
@@ -142,14 +144,70 @@ func TestLinkZoneRewritesOnlyTheNameCachesThatExist(t *testing.T) {
 	writeFile(t, filepath.Join(zoneinfoDir, "America/Denver"), "TZif-denver")
 	writeFile(t, etcTimezonePath, "Asia/Tokyo\n")
 
-	if err := linkZone("America/Denver"); err != nil {
+	if err := linkZone("America/Denver", "linux"); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(etcTimezonePath); strings.TrimSpace(string(b)) != "America/Denver" {
 		t.Errorf("/etc/timezone holds %q, want America/Denver", b)
 	}
 	if _, err := os.Stat(zoneNamePath); err == nil {
-		t.Error("a /var/db/zoneinfo was created on a node that had none")
+		t.Error("a /var/db/zoneinfo was created on a Linux node that had none")
+	}
+}
+
+// **A FreeBSD node that has never run tzsetup gets a /var/db/zoneinfo**, and
+// the state converges as a result.
+//
+// # Why this is the opposite of the test above
+//
+// The rule used to be one rule for both files: rewrite a name record only where
+// the platform already keeps one. That is right for /etc/timezone, which is
+// Debian's invention, and it is wrong for /var/db/zoneinfo, which `tzsetup(8)`
+// calls the "saved name of the timezone file installed last" and reads back
+// with `tzsetup -r`. It is FreeBSD's record of the answer.
+//
+// And FreeBSD copies the zone file to /etc/localtime instead of linking it, so
+// that record is the only place the name survives. Without it `currentZone`
+// falls through to the abbreviation the running process is in, and
+// `timezone.system` asked for `Etc/UTC` compares `UTC` against `Etc/UTC`,
+// finds them different, and installs the zone again -- on every run, for ever.
+//
+// That is not a hypothetical: the fleet `freebsd` leg's VM has no
+// /var/db/zoneinfo, and the conformance case for `timezone.system` failed there
+// with exactly that change set. The whole cycle is asserted here rather than
+// only the file, because the file existing is not the point -- the point is
+// that the zone can be read back.
+func TestLinkZoneRecordsTheNameOnFreeBSDThatHasNone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the unix zone files do not exist on Windows")
+	}
+	dir := t.TempDir()
+	restore := redirectZoneFiles(t, dir)
+	defer restore()
+	writeFile(t, filepath.Join(zoneinfoDir, "Etc/UTC"), "TZif-etc-utc")
+	// A copy and no name record anywhere, which is what a FreeBSD cloud
+	// image that never ran tzsetup looks like.
+	writeFile(t, localtimePath, "TZif-whatever")
+
+	if err := linkZone("Etc/UTC", "freebsd"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(zoneNamePath)
+	if err != nil {
+		t.Fatalf("%s was not written, so this node cannot say which zone it is in: %v",
+			zoneNamePath, err)
+	}
+	if got := strings.TrimSpace(string(b)); got != "Etc/UTC" {
+		t.Errorf("%s holds %q, want Etc/UTC", zoneNamePath, got)
+	}
+
+	// The half that matters. /etc/localtime is a copy here, so `currentZone`
+	// cannot read a link target and the name record is its only source: this
+	// is the assertion that `setZone` and `currentZone` name the same zone,
+	// which is what the state's convergence rests on.
+	if got, err := currentZone(newCtx(false)); err != nil || got != "Etc/UTC" {
+		t.Errorf("currentZone = %q (%v) after installing Etc/UTC; the state would "+
+			"report a change on every run", got, err)
 	}
 }
 

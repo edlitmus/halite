@@ -84,7 +84,17 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`download` and `list_downloaded` were checked field by field against real " +
 		"dpkg-query and dpkg-deb, and `autoremove` really reclaimed a package in the " +
 		"fleet container (5.40). The Chocolatey provider has only been read from, and " +
-		"dnf, yum, zypper, pacman and pkgng have not been driven at all. **apk has**: " +
+		"yum, zypper and pacman have not been driven at all. **pkgng has**: all four " +
+		"states -- `installed`, `removed`, `latest` and `purged` -- are driven through " +
+		"SPEC 11.6's conformance harness as root on the `freebsd` leg of `fleet.yml`, " +
+		"against real pkg(8) on FreeBSD 15.1-RELEASE, four applications of each. `dnf` " +
+		"is driven the same way in the lab, where `pkg.installed` on the RedHat family " +
+		"did not work at all until that run found `dnf install -C` refusing to download " +
+		"the package it was installing (DIVERGENCE 5.157). Not covered for either: " +
+		"`upgrade`, and `latest` against a package that is installed and outdated -- the " +
+		"case stages an absent package, which the state installs, so what it establishes " +
+		"is that the offered version and the installed version are spelled the same way. " +
+		"**apk too**: " +
 		"on Alpine 3.24 in the lab a package was installed through `pkg.install`, read " +
 		"back through `list_pkgs`, `version` and `file_list` -- the owner capability's " +
 		"first run anywhere -- and removed, each answer checked against apk itself rather " +
@@ -182,8 +192,18 @@ var moduleEvidence = map[string]exec.Evidence{
 		"leg of `fleet.yml`: a zone set, `/etc/localtime` checked the moment the state " +
 		"returned, a second run that changed nothing, and zones the tree has but " +
 		"`systemsetup` refuses turned away by the state. Running it found four defects " +
-		"(DIVERGENCE 5.131). Not covered: the `timedatectl` branch, which needs systemd " +
-		"running, and macOS releases other than that runner's"},
+		"(DIVERGENCE 5.131). **The `timedatectl` branch is now driven too**, by the " +
+		"`timezone.system` conformance case on the `linux` leg of `fleet.yml`, as root on " +
+		"Ubuntu 24.04.5 LTS (runner image 20260920.314.1) with systemd running: the zone " +
+		"moved, a second run changed nothing, and the machine came back in `Etc/UTC`. " +
+		"That case also found the defect in the FreeBSD branch -- a node with no " +
+		"/var/db/zoneinfo could not read back the zone it had just installed, so the " +
+		"state reported a change on every run for ever (DIVERGENCE 5.157). **The fixed " +
+		"FreeBSD branch was then driven on that leg**, as root on FreeBSD 15.1-RELEASE " +
+		"(releng/15.1-n283562-96841ea08dcf, amd64): a zone installed as a copy on a " +
+		"machine with no /var/db/zoneinfo, the name recorded, read back as the name that " +
+		"was asked for, a second run that changed nothing, and the machine put back. Not " +
+		"covered: macOS releases other than that runner's"},
 
 	// ---- Mutated a real machine, in the live CI legs ----
 	//
@@ -420,7 +440,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"machine's own /etc/hosts. It shares the `hosts` module's parser and writer, which " +
 		"is where the comment and blank-line handling is demonstrated"},
 
-	"reboot": {Level: exec.Captured, Note: "the readers are demonstrated against the real " +
+	"reboot": {Level: exec.Hardware, Note: "the readers are demonstrated against the real " +
 		"FreeBSD host this was written on: `required` compares freebsd-version's installed " +
 		"and running kernels, `scheduled` reads the real process table **through the `ps` " +
 		"module's own reader**, and `last_boot` reads kern.boottime. `scheduled` built its " +
@@ -436,11 +456,21 @@ var moduleEvidence = map[string]exec.Evidence{
 		"SIGTERM to a real process that really died -- against a stand-in named `shutdown` " +
 		"rather than a genuine one. The cancel's platform split is held to FreeBSD's own " +
 		"shutdown(8) manual source, which ships on every install and is read by a test " +
-		"rather than trusted from memory. **The mutating paths have never been watched " +
-		"working.** `schedule` and `cancel` need root on a machine that may be taken down, " +
-		"and the one live test that drives them is gated behind HALITE_SYSTEM_LIVE=1 *and* " +
-		"HALITE_REBOOT_LIVE=1, which no run has yet set, so no genuine `shutdown(8)` has " +
-		"been scheduled or countermanded by this module. What that gap cost once is worth " +
+		"rather than trusted from memory. **The mutating paths are watched working on " +
+		"Linux, and not on FreeBSD.** `schedule` and `cancel` need root on a machine that " +
+		"may be taken down, so they are gated behind HALITE_SYSTEM_LIVE=1 *and* " +
+		"HALITE_REBOOT_LIVE=1 -- and for most of this module's life nothing set the second " +
+		"one, so no genuine shutdown(8) had ever been scheduled or countermanded by it. " +
+		"The `linux` leg of `fleet.yml` sets it now: as root on Ubuntu 24.04.5 LTS " +
+		"(runner image 20260920.314.1) a real reboot was scheduled two hours out, read " +
+		"back through logind's /run/systemd/shutdown/scheduled, cancelled, and read back " +
+		"again as gone -- by `TestLiveRebootSchedulesAndCancelsWithoutRebooting` and by " +
+		"the `reboot.scheduled` conformance case, which applies the state four times. The " +
+		"leg then fails the job if anything is left pending. **FreeBSD's schedule and " +
+		"cancel are still unwatched against a genuine shutdown(8)**, deliberately: the " +
+		"freebsd leg is one emulated virtual machine, cancelling there means finding a pid " +
+		"and sending it TERM rather than passing a flag, and losing that machine ends the " +
+		"whole run. What that gap cost once is worth " +
 		"recording: this module shipped `shutdown -c` as the cancel on both platforms, " +
 		"because it is the cancel on Linux and the same flag is listed in FreeBSD's usage " +
 		"line -- where it means *power cycle the machine*, and is honoured on any host with " +
@@ -484,7 +514,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"jail was defined, started through `jail.start`, found in a raw `jls` rather than " +
 		"through this module's own reader, and stopped through `jail.stop`; and the " +
 		"`jail.running` state converged, reported no change on a second run and stopped it " +
-		"again. Both were checked by breaking them on purpose. That run found a third defect: " +
+		"again. Both were checked by breaking them on purpose. `jail.running` also goes " +
+		"through SPEC 11.6's harness on that leg, in both directions, against a jail " +
+		"configuration the case writes and passes as `config` -- so /etc/jail.conf is " +
+		"never opened, and the `config` argument is exercised rather than stepped past. That run found a third defect: " +
 		"`jail -e` prints each configured jail's **parameters**, not a list of names, and this " +
 		"module split the whole output on the separator and took every field as a name -- so " +
 		"`jail.running` answered \"is not defined in jail.conf\" for every jail that was in " +
@@ -635,7 +668,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"ageing options, an explicit uid and `unique`, `system`, `usergroup`, and " +
 		"`remove_groups` with no groups, which is refused rather than run"},
 
-	"snap": {Level: exec.Captured, Note: "read against the real snapd 2.76.3 on Ubuntu " +
+	"snap": {Level: exec.Hardware, Note: "read against the real snapd 2.76.3 on Ubuntu " +
 		"22.04 and 26.04, which is what the fixtures had never been: they were written " +
 		"from the documented columns, and the documentation is wrong about two of them. " +
 		"A real `snap list` prints the publisher with **two** asterisks, and it " +
@@ -646,11 +679,17 @@ var moduleEvidence = map[string]exec.Evidence{
 		"and would have run a real refresh on every run while reporting a change every " +
 		"time -- a state that cannot converge. The channel is resolved through `snap " +
 		"info` now, and `live_snap_test.go` checks every row against what snapd itself " +
-		"says rather than against this build's own reader. **The mutating half is still " +
-		"unwatched**: install, remove and refresh pull from the store, take a squashfs " +
-		"mount and a service, and removal can take data with it, so no test drives them " +
-		"on an unattended machine. What is demonstrated is the reading, which is where " +
-		"the defect was (DIVERGENCE 5.28)"},
+		"says rather than against this build's own reader. **Install and remove are now " +
+		"watched too**: the `snap.installed` and `snap.removed` conformance cases drive " +
+		"them as root on the `linux` leg of `fleet.yml` against snapd 2.76.3 on Ubuntu " +
+		"24.04.5 LTS (runner image 20260920.314.1), pulling `hello-world` 6.4 from the " +
+		"real store and removing it again, four applications of each state. Not covered: " +
+		"`refresh`, and therefore the channel-switch branch of `snap.installed` -- a " +
+		"channel switch needs a snap published in two channels, and `hello-world` is " +
+		"not one. Nor is `purge`, which discards a removed snap's data: the cases leave " +
+		"the default, because the removal path and the data-destruction path are " +
+		"different claims and only the first is made here. The reading is where the " +
+		"defect was (DIVERGENCE 5.28)"},
 
 	// ---- Mutated a real Mac, by hand, because no CI leg is one ----
 

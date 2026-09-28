@@ -128,6 +128,24 @@ type liveCase struct {
 	// re-executing itself into a namespace -- one list, two drivers, so
 	// the accounting cannot miss them.
 	needsNetns bool
+	// needsRebootGate marks a case that also needs HALITE_REBOOT_LIVE=1,
+	// the variable `live_reboot_test.go` introduced.
+	//
+	// One case sets it, `reboot.scheduled`, and the reason is the shape of
+	// its failure rather than its blast radius. Everything else here
+	// leaves a mess that stays the same size: a package installed, a file
+	// written, a jail up. A cancel that did not happen leaves a machine
+	// that goes down later, when nobody is watching, and the harness
+	// cannot even report it -- `Conformance.Cleanup` has no `*testing.T`.
+	// live_conformance_identity_test.go says what is done about that.
+	needsRebootGate bool
+	// unavailable is a reason this particular case cannot be answered here
+	// that no field above can express, asked last because it may run a
+	// tool. `apparmor.mode` is the case: the aa-* tools are on the machine
+	// and are unusable, because they parse every profile in
+	// /etc/apparmor.d before doing anything and one they cannot read
+	// breaks all of them.
+	unavailable func(c *hexec.Context) string
 }
 
 // skipReason reports why this case cannot run here, or "" when it can.
@@ -143,6 +161,13 @@ func (lc liveCase) skipReason(c *hexec.Context) string {
 			return fmt.Sprintf("this case is for %s and this is %s",
 				strings.Join(lc.platforms, " or "), runtime.GOOS)
 		}
+	}
+	// Before the tool checks, because it is a statement about what this run
+	// is permitted to do rather than about what the machine has: the message
+	// should say so even on a machine that has everything.
+	if lc.needsRebootGate && os.Getenv("HALITE_REBOOT_LIVE") != "1" {
+		return "this case schedules a real reboot and cancels it; set " +
+			"HALITE_REBOOT_LIVE=1 as well to allow that"
 	}
 	for _, need := range lc.needs {
 		if c.Which(need) == "" {
@@ -164,7 +189,45 @@ func (lc liveCase) skipReason(c *hexec.Context) string {
 				strings.TrimSpace(res.Stderr+res.Stdout))
 		}
 	}
+	if lc.unavailable != nil {
+		if why := lc.unavailable(c); why != "" {
+			return why
+		}
+	}
 	return ""
+}
+
+// applyForSetup runs a state as part of a case's Setup and treats a refusal as
+// a failure of the setup.
+//
+// `Registry.Call` returns a **nil error** for a state that ran and refused:
+// the refusal is in the result, and `states.False` is a legitimate answer. So a
+// Setup written as
+//
+//	_, err := r.States.Call(root, "pkg.installed", args)
+//	return err
+//
+// carries on when the package was not installed, and the harness then reports
+// "test mode reported success with nothing to do" -- which points at the case
+// being pointless rather than at the step that did not happen. Fifteen Setups
+// were written that way, and on a machine where one of them refuses the message
+// sends the reader to the wrong place.
+//
+// Cleanups are deliberately not routed through this. A Cleanup returns nothing
+// and cannot report anything, which is a separate gap that the legs' "the
+// machine was put back" steps close from outside.
+//
+// DIVERGENCE 5.157.
+func applyForSetup(r *Registries, c *hexec.Context, name string, args *value.Map) error {
+	res, err := r.States.Call(c, name, args)
+	if err != nil {
+		return fmt.Errorf("the setup's %s returned an error: %w", name, err)
+	}
+	if res.Failed() {
+		return fmt.Errorf("the setup's %s refused, so there is nothing for this case to "+
+			"change: %s", name, res.Comment)
+	}
+	return nil
 }
 
 func (lc liveCase) name() string {
@@ -254,6 +317,9 @@ func liveConformanceCases() []liveCase {
 	cases = append(cases, macLiveCases()...)
 	cases = append(cases, langCases()...)
 	cases = append(cases, firewallCases()...)
+	cases = append(cases, conformanceIdentityCases()...)
+	cases = append(cases, conformancePkgSysCases()...)
+	cases = append(cases, conformanceConfineCases()...)
 	return cases
 }
 
@@ -348,8 +414,7 @@ func accountCases() []liveCase {
 				Args:  value.MapOf("name", group),
 				Probe: groupProbe(group),
 				Setup: func() error {
-					_, err := r.States.Call(root, "group.present", value.MapOf("name", group))
-					return err
+					return applyForSetup(r, root, "group.present", value.MapOf("name", group))
 				},
 				Cleanup: removeGroup,
 			},
@@ -373,9 +438,7 @@ func accountCases() []liveCase {
 				Args:  value.MapOf("name", user, "purge", true),
 				Probe: accountProbe(user),
 				Setup: func() error {
-					_, err := r.States.Call(root, "user.present",
-						value.MapOf("name", user, "shell", "/bin/sh", "createhome", false))
-					return err
+					return applyForSetup(r, root, "user.present", value.MapOf("name", user, "shell", "/bin/sh", "createhome", false))
 				},
 				Cleanup: removeUser,
 			},
@@ -439,9 +502,7 @@ func hostsFileCases() []liveCase {
 				Args:  value.MapOf("name", name),
 				Probe: hostsProbe,
 				Setup: func() error {
-					_, err := r.States.Call(root, "host.present",
-						value.MapOf("name", name, "ip", addr))
-					return err
+					return applyForSetup(r, root, "host.present", value.MapOf("name", name, "ip", addr))
 				},
 				Cleanup: remove,
 			},
@@ -552,8 +613,7 @@ func scheduleCases() []liveCase {
 				// other phase.
 				Probe: cronProbe,
 				Setup: func() error {
-					_, err := r.States.Call(root, "cron.present", cronArgs())
-					return err
+					return applyForSetup(r, root, "cron.present", cronArgs())
 				},
 				Cleanup: removeCron,
 			},
@@ -581,10 +641,9 @@ func scheduleCases() []liveCase {
 				Args:  value.MapOf("name", atCommand, "identifier", atIdentifier),
 				Probe: atProbe,
 				Setup: func() error {
-					_, err := r.States.Call(root, "at.present",
+					return applyForSetup(r, root, "at.present",
 						value.MapOf("name", atCommand, "timespec", "now + 25 hours",
 							"identifier", atIdentifier))
-					return err
 				},
 				Cleanup: removeAt,
 			},
@@ -613,7 +672,7 @@ func scheduleCases() []liveCase {
 func packageCases() []liveCase {
 	r := New()
 	root := liveRoot()
-	const pkg = "tree"
+	const pkg = conformancePkgName
 
 	installed := func() (string, error) {
 		out, err := r.Exec.Call(root, "pkg.version", value.MapOf("name", pkg))
@@ -630,8 +689,7 @@ func packageCases() []liveCase {
 		_, _ = r.States.Call(root, "pkg.removed", value.MapOf("name", pkg))
 	}
 	install := func() error {
-		_, err := r.States.Call(root, "pkg.installed", value.MapOf("name", pkg))
-		return err
+		return applyForSetup(r, root, "pkg.installed", value.MapOf("name", pkg))
 	}
 
 	// Linux and FreeBSD. Not macOS: the leg runs as root and Homebrew
@@ -714,8 +772,7 @@ func kernelCases() []liveCase {
 				Args:  value.MapOf("name", mod),
 				Probe: loaded,
 				Setup: func() error {
-					_, err := r.States.Call(root, "kmod.present", value.MapOf("name", mod))
-					return err
+					return applyForSetup(r, root, "kmod.present", value.MapOf("name", mod))
 				},
 				Cleanup: unload,
 			},
@@ -885,8 +942,7 @@ WantedBy=multi-user.target
 				if err := writeUnit(); err != nil {
 					return err
 				}
-				_, err := r.States.Call(root, "service.running", value.MapOf("name", name))
-				return err
+				return applyForSetup(r, root, "service.running", value.MapOf("name", name))
 			},
 			Cleanup: teardown,
 		}}),
@@ -912,8 +968,7 @@ WantedBy=multi-user.target
 				if err := writeUnit(); err != nil {
 					return err
 				}
-				_, err := r.States.Call(root, "service.enabled", value.MapOf("name", name))
-				return err
+				return applyForSetup(r, root, "service.enabled", value.MapOf("name", name))
 			},
 			Cleanup: teardown,
 		}}),
@@ -950,9 +1005,7 @@ func rcConfCases() []liveCase {
 		if err := blank(); err != nil {
 			return err
 		}
-		_, err := r.States.Call(root, "sysrc.present",
-			value.MapOf("name", setting, "value", "NO", "file", path))
-		return err
+		return applyForSetup(r, root, "sysrc.present", value.MapOf("name", setting, "value", "NO", "file", path))
 	}
 	remove := func() { _ = os.Remove(path) }
 

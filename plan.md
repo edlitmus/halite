@@ -1426,7 +1426,7 @@ unchanged.
    tell which they have. A fourth level would say it; so would a sentence
    in each affected function's documentation.
 
-7a. **Done, in two passes: 7 of 132 to 35 of 132, and the rest named.**
+7a. **Done: 7 of 132 to 131 of 132, one excused.**
    ~~The conformance harness covers 6 state functions of 132~~ — the count
    was 7 when it was measured rather than 6, which is one more hand-written
    number that had drifted from the thing it described.
@@ -1518,16 +1518,40 @@ unchanged.
    recorded: its `SetDefault` refuses by design, so a case there would cover
    `pfctl -e` and nothing else.
 
-   **Fourteen are left**, and this is where the row stops being a backlog.
-   Each has its own reason and most are not "nobody got round to it":
-   `reboot.scheduled` keeps its own gate because it schedules a real reboot;
-   `pkg.latest` and `pkg.purged` need a package with two versions in the
-   repository; `pkgrepo.*` edits where software comes from; `hostname.system`
-   and `timezone.system` change the machine's identity; `win_dacl.owner` needs
-   an owner Windows will accept; and `apparmor.mode`, `debconf.set`,
-   `netplan.managed`, `jail.running` and `snap.*` each need a subsystem only
-   some rows have. The next increment here is judgement about what is worth
-   staging, not more of the same work.
+   The last thirteen followed — **131 of 132** — and the sentence above about
+   them being "where the row stops being a backlog" was wrong in two places,
+   which is worth leaving written down rather than editing out.
+
+   Thirteen of the fourteen were excused by one sentence, "changes the machine
+   the suite runs on", written in the same change that counted 18 of 132 — that
+   is, *before* `TestLiveConformance*` existed. It named as the reason a case
+   could not exist precisely the thing that was built four steps later, and it
+   went on reading as a reason for another eighty cases. **An excuse that has
+   stopped being true is worse than a long list**, because nothing audits it and
+   nobody re-reads it.
+
+   And `pkg.latest` did not need "a package with two versions in the
+   repository". Reading `pkgLatest` rather than its name: an absent package's
+   installed version is the empty string, so the state installs it, and the case
+   stages exactly what `pkg.installed`'s does. What it checks is better than the
+   excuse implied — that the newest version a provider *offers* is spelled the
+   same way as the version dpkg reports once it is installed, which if it is not
+   makes every highstate report an upgrade it already did.
+
+   `reboot.scheduled` did need a gate of its own, and `liveCase.needsRebootGate`
+   is it. Writing that found what the row was not looking for: **nothing had ever
+   set `HALITE_REBOOT_LIVE=1`**, so `reboot`'s two mutating tests had never run
+   anywhere, on any leg, since they were written. The `linux` leg sets it now,
+   and not the `freebsd` one — there a cancel is a kill by pid rather than a
+   flag, and the leg is one emulated VM whose loss ends the run.
+
+   **One is left.** `win_dacl.owner`, for the reason recorded when it was
+   written: no *change* can be staged, because every runner refused both
+   `Administrators` and `SYSTEM` as an owner. Two things are covered by
+   something other than a conformance case and are named in 5.157 so that 131
+   is not read as more than it is: `firewall`'s `pf` provider, and
+   `pkgrepo.managed`'s refresh, whose failure is a warning by design and whose
+   success is established by the debian container's own repository test.
 
 7b. **A coverage claim, measured at last — and the claim itself was wrong
     twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off
