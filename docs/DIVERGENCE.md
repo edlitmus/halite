@@ -15032,6 +15032,183 @@ the same break now fails.
 
 
 
+##### Coverage 118 → 131: the last thirteen, and a reason that had stopped being true
+
+The remaining fourteen were excused by two sentences. Thirteen of them shared
+one:
+
+> changes the machine the suite runs on; the harness applies for real, so this
+> belongs to a TestLive case on a disposable host
+
+That was written when it was true. It was written in the same change that
+counted 18 of 132, before `TestLiveConformance*` existed — and it names, as the
+reason a case cannot exist, precisely the thing that was built four steps later.
+The sentence survived the arrival of its own answer and went on reading as a
+reason for another eighty cases.
+
+Which is the second commonest defect shape in this repository wearing different
+clothes. **An exculpatory conclusion ends an investigation and then gets written
+down**, and 5.157 has already recorded two of them in its own history. This one
+is worse than those, because it was not wrong when written: nothing would have
+caught it, no audit compares an excuse against the machinery that might have
+made it obsolete, and the only thing that finds it is somebody reading the
+fourteen entries and asking what each one actually needs today.
+
+So all thirteen have live cases, in three files grouped by what they touch:
+
+| file | states |
+|---|---|
+| `live_conformance_identity_test.go` | `hostname.system`, `timezone.system`, `reboot.scheduled` |
+| `live_conformance_pkgsys_test.go` | `pkg.latest`, `pkg.purged`, `pkgrepo.managed`, `pkgrepo.absent`, `debconf.set`, `snap.installed`, `snap.removed` |
+| `live_conformance_confine_test.go` | `apparmor.mode`, `netplan.managed`, `jail.running` (twice) |
+
+Eleven of the thirteen needed nothing but writing. Two were not that.
+
+##### `pkg.latest` did not need a package with two versions in it
+
+Its excuse, from the report that wrote it, was that it "needs a package with
+two versions in the repository". That is a specific factual claim about the
+module, arrived at from the function's name, and reading `pkgLatest` disproves
+it in four lines:
+
+```go
+cur, present := installed.Get(name)
+currentVersion := ""
+if present {
+        currentVersion = value.KeyString(cur)
+}
+if latest == "" || latest == currentVersion {
+        continue
+}
+```
+
+For a package that is not installed, `currentVersion` is the empty string, the
+newest available version is not, and the state installs it. So the case stages
+what `pkg.installed`'s stages — remove the package, apply — and the search for a
+Debian suite carrying two versions of one package was a search for something
+nothing needed.
+
+What the case then checks is worth more than the excuse implied. It is not "does
+`latest` install things": it is that **the newest version the provider offers is
+spelled the same way as the version dpkg or pkg(8) reports once it is
+installed.** If those two strings differ in format at all — a colon epoch, a
+release suffix, an architecture — then `latest == currentVersion` is false for
+ever, and every highstate on every node reports an upgrade it has already done.
+Nothing in the unit suite can see that, because both strings come from fixtures
+written in the same sitting by the same person.
+
+##### `reboot.scheduled` needed a second gate, and the gate was set nowhere
+
+Its own excuse was the right shape: this one really does act on the machine in a
+way that cannot be confined, and the failure mode is unlike any other in the
+suite. Everything else here leaves a mess that stays the same size — a package
+installed, a file written, a jail up. A shutdown left pending takes the machine
+down later, when nobody is watching.
+
+`live_reboot_test.go` had already solved that, with `HALITE_REBOOT_LIVE=1`: a
+second variable existing only so that the test which schedules a real reboot
+cannot run by accident while running everything else. `liveCase.needsRebootGate`
+is the same gate for a conformance case, and one case sets it.
+
+And then the finding, which was not the one being looked for: **nothing had ever
+set that variable.** Not `fleet.yml`, not `lab.sh`, not the Makefile. The gate
+worked perfectly and the consequence was that `reboot`'s two mutating tests —
+the one that schedules a shutdown and reads it back through the process table,
+and the one that cancels it — had never run on any machine in this project's
+automated history. The `freebsd` leg's own comment says so in as many words
+("`reboot` is the one thing it does not reach, and cannot"), and that sentence
+had been read as a statement about FreeBSD rather than as a statement about
+every leg.
+
+A test that skips is not a test that ran. This is the fourth time that has been
+written down here and the first time the skip was invisible even to the step
+that prints skips, because the leg's `-run` filter never selected the test at
+all.
+
+So `HALITE_REBOOT_LIVE=1` is now set on the `linux` leg, and that leg's `-run`
+filter gained the reboot family, which brings
+`TestLiveRebootSchedulesAndCancelsWithoutRebooting` with it. That leg is the right machine and the choice is not a compromise:
+a hosted runner is a fresh virtual machine destroyed minutes later, the reboot is
+scheduled two hours out — far past the job's own timeout — and on Linux the
+cancel is `shutdown -c`. None of those three things is true of the `freebsd` leg,
+where the whole leg runs inside one emulated VM and cancelling a shutdown means
+finding its pid and sending it TERM, because `shutdown -c` on FreeBSD power
+cycles the machine (5.99). The variable stays unset there, deliberately, and
+`reboot`'s FreeBSD branch stays covered by unit tests and by the test that reads
+`shutdown(8)`'s own manual page.
+
+##### The workflow asserts what the harness cannot
+
+`Conformance.Cleanup` is a `func()`. It takes no `*testing.T`, so a cleanup that
+fails cannot report anything — which is fine for a package that did not get
+removed and is not fine for a shutdown that did not get cancelled.
+
+That gap is closed outside the harness rather than papered over inside it. The
+three legs' "the machine was put back" steps now assert, and not merely print:
+
+- `linux`: no shutdown pending, in **both** places one can be recorded —
+  /run/systemd/shutdown/scheduled, which is where logind holds one, and the
+  process table, where a shutdown scheduled without systemd sits. Plus the
+  hostname, the netplan document, the apt source and the AppArmor profile this
+  suite writes.
+- `freebsd`: the hostname, and that the case's `persist` jail is not still
+  running. `persist` means nothing reaps it, and a jail left up is the one piece
+  of mess here that a later run would then refuse to stage over.
+- `macos`: the hostname, and that the Mac is not left in `GMT`.
+
+Each of those names a string the existing assertions did not cover. The linux
+leg already refused to finish with the hostname `halite-live-probe`, and
+`halitecf-host` is a different string.
+
+##### A Mac cannot be put back through the state
+
+The `timezone.system` case picks its target zone out of the machine's own
+`timezone.list_zones` rather than naming one, because a Mac takes
+`systemsetup -listtimezones`'s names and not the tz tree's (5.131) and Windows
+takes its own identifiers. That much was expected.
+
+What was not is that **the zone a macOS runner is in is one the tool will not
+set.** The runner is in `UTC`; `systemsetup -settimezone UTC` refuses it —
+"UTC is not a valid timezone" — so a restore through the state would fail and
+leave the Mac in the zone the case moved it to. 5.131 found that, and
+`TestLiveMacTimezoneSetsTheZoneAndPutsItBack` already restores by relinking
+/etc/localtime and asserting afterwards that it worked.
+
+So the case's restore does the same thing on darwin and goes through the state
+everywhere else, which it must: on a systemd node a link written behind
+`timedatectl`'s back is reverted, and the module's own comment says so. Two
+mechanisms for one operation is normally the shape of a defect here; this is the
+case where it is the platform and not the code, and the comment says which.
+
+##### What is left, and it is one
+
+`unconformed` now holds a single entry, `win_dacl.owner`, whose reason is
+unchanged from when it was written: the state is reachable and its effect is
+confined to a path, and no *change* can be staged, because Windows refused both
+`Administrators` and `SYSTEM` as an owner with `ERROR_INVALID_OWNER` on every
+runner available. That entry also carries an open question rather than a
+conclusion — the absent privilege hint — and it is still open.
+
+Two things covered by something other than a conformance case, recorded here so
+that nobody counting 131 of 132 concludes more than that number means:
+
+- the `pf` provider of `firewall`, for the reasons the previous subsection gives;
+- `pkgrepo.managed`'s refresh. The case leaves `refresh` at its default, so
+  `refreshAfterRepoChange` runs — but a refresh that *fails* is carried as a
+  warning and not as a failure, by design, since the file is written and saying
+  the state failed would report the wrong thing. So the case establishes that
+  the refresh was attempted and that the state converges around it. That apt can
+  actually read what the module writes is established by
+  `TestLiveRepoIsWrittenAndAptReadsIt` in the debian container, against a signed
+  offline repository, and that is the test to go and read rather than assume
+  this one covers it.
+
+**Not yet run.** `make check` passes and every one of the fourteen new cases
+skips on this host, which is the only answer a FreeBSD box with a Linux
+compatibility shell can give about any of them. The `linux`, `freebsd` and
+`macos` legs of `fleet.yml` are what will say, and the windows leg for
+`timezone.system`.
+
 ### 5.158 `doctor` could not accept the `--out` value it documents
 
 `halite-hub doctor` defaulted `--out` to `"summary"` and then handed that

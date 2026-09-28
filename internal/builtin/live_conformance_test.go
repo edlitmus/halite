@@ -128,6 +128,24 @@ type liveCase struct {
 	// re-executing itself into a namespace -- one list, two drivers, so
 	// the accounting cannot miss them.
 	needsNetns bool
+	// needsRebootGate marks a case that also needs HALITE_REBOOT_LIVE=1,
+	// the variable `live_reboot_test.go` introduced.
+	//
+	// One case sets it, `reboot.scheduled`, and the reason is the shape of
+	// its failure rather than its blast radius. Everything else here
+	// leaves a mess that stays the same size: a package installed, a file
+	// written, a jail up. A cancel that did not happen leaves a machine
+	// that goes down later, when nobody is watching, and the harness
+	// cannot even report it -- `Conformance.Cleanup` has no `*testing.T`.
+	// live_conformance_identity_test.go says what is done about that.
+	needsRebootGate bool
+	// unavailable is a reason this particular case cannot be answered here
+	// that no field above can express, asked last because it may run a
+	// tool. `apparmor.mode` is the case: the aa-* tools are on the machine
+	// and are unusable, because they parse every profile in
+	// /etc/apparmor.d before doing anything and one they cannot read
+	// breaks all of them.
+	unavailable func(c *hexec.Context) string
 }
 
 // skipReason reports why this case cannot run here, or "" when it can.
@@ -143,6 +161,13 @@ func (lc liveCase) skipReason(c *hexec.Context) string {
 			return fmt.Sprintf("this case is for %s and this is %s",
 				strings.Join(lc.platforms, " or "), runtime.GOOS)
 		}
+	}
+	// Before the tool checks, because it is a statement about what this run
+	// is permitted to do rather than about what the machine has: the message
+	// should say so even on a machine that has everything.
+	if lc.needsRebootGate && os.Getenv("HALITE_REBOOT_LIVE") != "1" {
+		return "this case schedules a real reboot and cancels it; set " +
+			"HALITE_REBOOT_LIVE=1 as well to allow that"
 	}
 	for _, need := range lc.needs {
 		if c.Which(need) == "" {
@@ -162,6 +187,11 @@ func (lc liveCase) skipReason(c *hexec.Context) string {
 		if err != nil || res.Code != 0 {
 			return fmt.Sprintf("this kernel has no %s to load: %s", lc.requiresKmod,
 				strings.TrimSpace(res.Stderr+res.Stdout))
+		}
+	}
+	if lc.unavailable != nil {
+		if why := lc.unavailable(c); why != "" {
+			return why
 		}
 	}
 	return ""
@@ -254,6 +284,9 @@ func liveConformanceCases() []liveCase {
 	cases = append(cases, macLiveCases()...)
 	cases = append(cases, langCases()...)
 	cases = append(cases, firewallCases()...)
+	cases = append(cases, conformanceIdentityCases()...)
+	cases = append(cases, conformancePkgSysCases()...)
+	cases = append(cases, conformanceConfineCases()...)
 	return cases
 }
 
@@ -613,7 +646,7 @@ func scheduleCases() []liveCase {
 func packageCases() []liveCase {
 	r := New()
 	root := liveRoot()
-	const pkg = "tree"
+	const pkg = conformancePkgName
 
 	installed := func() (string, error) {
 		out, err := r.Exec.Call(root, "pkg.version", value.MapOf("name", pkg))

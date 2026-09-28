@@ -23,6 +23,36 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### One hundred and thirty-one state functions are held to the test-mode contract
+
+Up from a hundred and eighteen, with one excused. The last thirteen — the
+machine's hostname and time zone, a scheduled reboot, an AppArmor profile's
+mode, a netplan document, a debconf answer, an apt repository, a jail,
+`pkg.latest`, `pkg.purged` and both `snap` states — now have cases driven
+against the real tools on a machine that is thrown away afterwards.
+
+They were excused, all thirteen, by a sentence saying such a state "belongs to
+a TestLive case on a disposable host". That sentence was written before the
+live conformance suite existed and went on reading as a reason for cases to be
+absent for another eighty of them. An excuse that has stopped being true is
+worse than a long list.
+
+The one that is left is `win_dacl.owner`: every runner available refused both
+`Administrators` and `SYSTEM` as an owner, so no change can be staged for it.
+
+### `reboot`'s mutating tests had never run anywhere
+
+`HALITE_REBOOT_LIVE=1` exists so that a test which schedules a real reboot
+cannot be run by accident while running everything else. It worked, and nothing
+had ever set it — so the test that schedules a shutdown and reads it back, and
+the one that cancels it, had never run on any machine since they were written.
+
+The `linux` fleet leg sets it now: a hosted runner is destroyed minutes later,
+the reboot is scheduled two hours out, and on Linux the cancel is `shutdown -c`.
+It stays unset on FreeBSD, where cancelling means finding the pid and sending it
+TERM and the whole leg is one emulated machine. The leg also fails if a shutdown
+is left pending, in both places one can be recorded.
+
 ### `firewall.absent` reported a removal on every run
 
 It asked ufw to dry-run the delete and read the answer negatively — a change
@@ -50,7 +80,8 @@ its `SetDefault` refuses by design, so a case there would exercise `pfctl -e`
 and nothing else, and enabling a packet filter on a host reached only over SSH
 is not a trade to make for one line.
 
-Fourteen states are left, each with its own stated reason.
+Fourteen states were left at that point, each with its own stated reason;
+thirteen of them have cases now, above.
 
 ### `pip`'s `bin_env` works on Windows
 
