@@ -14919,6 +14919,69 @@ one line is a trade this suite should not make unasked.** pf's rule path
 rewrites a whole anchor, which is a different enough mechanism to want its own
 case rather than sharing ufw's.
 
+##### `firewall.absent` could not converge, and the reading was the defect
+
+The first run of these cases: `allowed`, `denied` and `enabled` pass, `absent`
+fails.
+
+	second run: reported changes on an already-applied state:
+	  allow port 65010/tcp = {old present, new nil}
+	test mode, already applied: predicted a change against a system that
+	  already matches
+
+`firewallRuleState` decides whether there is anything to do by asking the
+provider to dry-run the operation, and the comment beside it explains why that
+is right: "ufw is idempotent and says so, and asking it is more reliable than
+reproducing its own matching rules here". True — of a real run. **A dry-run
+delete says none of the things `ufwChanged` looks for.**
+
+`ufwChanged` reads negatively: a change happened unless the output carries
+"Skipping adding existing rule" or "Could not delete non-existent rule". A
+dry-run delete prints neither. It prints the ruleset that would result, and
+then "Rules updated" — only when there was a rule to take out. So the reading
+was "changed" every time, and a tree carrying `firewall.absent` reported a
+removal on **every highstate, for ever**, against a rule that was already gone.
+
+Measured on ufw 0.36.2 rather than reasoned about, because guessing at a
+tool's output is the mistake this ledger keeps recording:
+
+	ufw --dry-run allow P                present: "Skipping adding existing rule"
+	ufw --dry-run --force delete allow P present: the ruleset, then "Rules updated"
+	ufw --dry-run --force delete allow P absent:  the ruleset, and nothing more
+	ufw --force delete allow P           absent:  "Could not delete non-existent rule"
+
+The real delete does say it, which is why nothing had noticed: **every path
+that acts is covered by the negative reading, and only the prediction was
+wrong.** A defect that lives exclusively in `--test` is one an operator meets
+as a highstate that never settles, with no failure anywhere to point at.
+
+The fix is narrow: the dry-run delete is read positively, from "Rules updated".
+The add path converges today on the negative reading and is left alone —
+whether a dry-run add of an absent rule prints "Rules updated" was not
+measured, and changing a working path on an assumption is how the other half
+would break.
+
+##### Two mistakes of mine getting to that
+
+Both worth recording, because each is a shape this session has met before.
+
+**The step that captured the tool's output was itself wrong.** It ran
+`ufw --force allow 65010/tcp`, and `--force` applies to `enable`, `disable`,
+`delete` and `reset` — not to `allow`. So it added nothing, every delete after
+it found nothing, and the transcript read as though the *dry run* had deleted
+the rule. A plausible and wrong conclusion, from a measurement that had not
+measured what it claimed. Caught by reading the whole transcript rather than
+the part being looked for: `ERROR: Invalid syntax` was four lines above.
+
+**The first test of the fix tested the helper, not the wiring.** It called
+`ufwDryRunDeleteChanged` directly, so deleting its call site in `Apply` left it
+passing. That is the same error this session made on `tools/ledger` two days
+ago, where a test of `misplaced()` survived disabling the call to it. The
+second test goes through `ufwProvider.Apply` with ufw's answers scripted, and
+the same break now fails.
+
+
+
 
 
 

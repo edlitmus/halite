@@ -23,6 +23,19 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `firewall.absent` reported a removal on every run
+
+It asked ufw to dry-run the delete and read the answer negatively — a change
+happened unless ufw said "Could not delete non-existent rule". A dry run
+never says that: it prints the ruleset that would result, and "Rules
+updated" only when there is a rule to take out. So a tree carrying
+`firewall.absent` reported a removal on every highstate, for ever, against a
+rule already gone.
+
+Only the prediction was wrong; every path that acts reads correctly, which
+is why nothing had noticed. An operator met it as a highstate that never
+settles with no failure to point at.
+
 ### One hundred and eighteen state functions are held to the test-mode contract
 
 Up from a hundred and fourteen. The four `firewall` states have cases against

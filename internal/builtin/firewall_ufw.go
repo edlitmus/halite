@@ -143,7 +143,42 @@ func (p ufwProvider) Apply(c *exec.Context, r firewallRule, remove, dryRun bool)
 	if res.Code != 0 {
 		return false, fmt.Errorf("%s: %s", strings.Join(argv, " "), firstLine(res.Stderr+res.Stdout))
 	}
-	return ufwChanged(res.Stdout + res.Stderr), nil
+	out := res.Stdout + res.Stderr
+	if dryRun && remove {
+		return ufwDryRunDeleteChanged(out), nil
+	}
+	return ufwChanged(out), nil
+}
+
+// ufwDryRunDeleteChanged reads whether a dry-run delete would take a rule out.
+//
+// `ufwChanged` below looks for the phrases ufw prints when nothing changed,
+// and **a dry-run delete prints none of them.** It prints the ruleset that
+// would result, and then "Rules updated" only when there was a rule to
+// remove. So the negative reading said "changed" every time, and
+// `firewall.absent` reported a removal on every run for ever -- a state that
+// cannot converge, against a rule that was already gone.
+//
+// Measured on ufw 0.36.2, since guessing at a tool's output is the mistake
+// this project keeps recording. The four answers, and only the last is the
+// one `ufwChanged` was written for:
+//
+//	ufw --dry-run allow P               present: "Skipping adding existing rule"
+//	ufw --dry-run --force delete allow P  present: the ruleset, then "Rules updated"
+//	ufw --dry-run --force delete allow P  absent:  the ruleset, and nothing more
+//	ufw --force delete allow P            absent:  "Could not delete non-existent rule"
+//
+// The real delete does say it, which is why nothing noticed: every path that
+// acts is covered by the negative reading, and only the prediction was wrong.
+// The dry run does not delete -- `ufw show added` still lists the rule after
+// one -- so this is a reading problem and not a safety one.
+//
+// Narrow on purpose. The add path converges today on the negative reading and
+// is left alone: whether a dry-run add of an absent rule prints "Rules
+// updated" was not measured, and changing a working path on an assumption is
+// how the other half of this would break.
+func ufwDryRunDeleteChanged(out string) bool {
+	return strings.Contains(out, "Rules updated")
 }
 
 // ufwChanged reads whether ufw did anything.

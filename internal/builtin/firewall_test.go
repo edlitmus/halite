@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -173,5 +174,89 @@ func TestARuleThatWouldPermitEverythingIsRefused(t *testing.T) {
 		if err := r.validate(); err != nil {
 			t.Errorf("%s was refused: %v", r.describe(), err)
 		}
+	}
+}
+
+// A dry-run delete is read from what ufw actually prints.
+//
+// The fixtures are **captured**, not written from the manual: they are the
+// tails of `ufw --dry-run --force delete allow 65010/tcp` on ufw 0.36.2,
+// against a rule that was there and one that was not, taken from the linux
+// fleet leg. A fixture built from documentation tests the documentation, and
+// this is the second time in one change that mattered -- the step that
+// captured these was itself wrong the first time, using `ufw --force allow`,
+// which is a syntax error.
+//
+// The defect: `ufwChanged` looks for the phrases ufw prints when nothing
+// changed, and a dry-run delete prints none of them. So the reading was
+// "changed" every time and `firewall.absent` reported a removal on every run,
+// for ever, against a rule already gone. DIVERGENCE 5.157.
+func TestDryRunDeleteReadsWhetherARuleWouldGo(t *testing.T) {
+	// Captured: a rule was there, so ufw would take it out.
+	const wouldRemove = `### END LOGGING ###
+COMMIT
+Rules updated
+Rules updated (v6)
+`
+	// Captured: nothing to remove, so ufw prints the ruleset and stops.
+	const nothingToRemove = `### END LOGGING ###
+COMMIT
+`
+	if !ufwDryRunDeleteChanged(wouldRemove) {
+		t.Error("a dry-run delete that would remove a rule reported no change; " +
+			"ufw says `Rules updated` when there is one to take out")
+	}
+	if ufwDryRunDeleteChanged(nothingToRemove) {
+		t.Error("a dry-run delete with nothing to remove reported a change, which is " +
+			"how firewall.absent came to report a removal on every run for ever")
+	}
+
+	// And the negative reading, which stays for every path that acts. These
+	// are ufw's own words on a real run.
+	if ufwChanged("Could not delete non-existent rule\nCould not delete non-existent rule (v6)\n") {
+		t.Error("a real delete of a rule that is not there is not a change")
+	}
+	if !ufwChanged("Rules updated\nRules updated (v6)\n") {
+		t.Error("a real delete that removed a rule is a change")
+	}
+	if ufwChanged("Skipping adding existing rule\nSkipping adding existing rule (v6)\n") {
+		t.Error("adding a rule that is already there is not a change")
+	}
+}
+
+// And through Apply, which is the call site.
+//
+// The test above exercises `ufwDryRunDeleteChanged` directly, so deleting its
+// call site in `Apply` left it passing -- the same mistake this session made
+// once already, on `tools/ledger`: a test of the helper is not a test of the
+// wiring. This one goes through the provider with ufw's answers scripted, so
+// removing the branch fails it.
+func TestApplyReadsADryRunDeleteThroughTheProvider(t *testing.T) {
+	rule := firewallRule{Action: "allow", Port: "65010", Protocol: "tcp"}
+	argv := append([]string{"ufw", "--dry-run", "delete"}, ufwRuleArgs(rule)...)
+	key := exec.Command{Argv: argv}.String()
+
+	for _, tc := range []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"a rule is there to remove", "### END LOGGING ###\nCOMMIT\nRules updated\nRules updated (v6)\n", true},
+		{"nothing to remove", "### END LOGGING ###\nCOMMIT\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCtx(true)
+			c.Runner = &exec.RecordingRunner{
+				Responses: map[string]exec.Result{key: {Code: 0, Stdout: tc.out}},
+			}
+			got, err := ufwProvider{}.Apply(c, rule, true, true)
+			if err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Apply reported changed=%v, want %v, for ufw saying:\n%s",
+					got, tc.want, tc.out)
+			}
+		})
 	}
 }
