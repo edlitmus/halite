@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	hexec "github.com/edlitmus/halite/internal/exec"
@@ -151,7 +152,21 @@ func gemCases() []liveCase {
 		return err
 	}
 
+	// Not Windows. `gem` is on the hosted runner's PATH, so `needs` found
+	// it, and then rubygems could not read its own configuration:
+	//
+	//	gem list --local exited 1:
+	//	…/rubygems/config_file.rb:75:in `join':
+	//	no implicit conversion of nil into String (TypeError)
+	//
+	// That is rubygems failing on a path it expects in the environment,
+	// before it produces any output for this module to parse -- a fact about
+	// that Ruby on that runner, not about `gem.installed`, which passes on
+	// Linux and macOS. Excluded by platform rather than papered over with a
+	// broader tool check, because "gem exists" was true and was not the
+	// question.
 	withGem := func(lc liveCase) liveCase {
+		lc.platforms = []string{"linux", "freebsd", "darwin"}
 		lc.needs = []string{"gem"}
 		return lc
 	}
@@ -257,11 +272,15 @@ func pipCases() []liveCase {
 	rig := newLangRig()
 	args := value.MapOf("name", conformancePip)
 
+	// Through the same helper the module uses, not a second copy of the
+	// layout: the first version of this hardcoded `bin/pip`, which is the
+	// very thing that was wrong in `pipRun`. A probe that repeats the
+	// module's mistake agrees with it and proves nothing.
 	pipBin := func() string {
 		if rig.dir == "" {
 			return ""
 		}
-		return filepath.Join(rig.dir, "venv", "bin", "pip")
+		return venvPip(filepath.Join(rig.dir, "venv"), runtime.GOOS)
 	}
 	// `pip show` exits non-zero for a package that is not installed, which is
 	// the question, and prints the version when it is.
@@ -324,7 +343,7 @@ func pipCases() []liveCase {
 				if err != nil {
 					return err
 				}
-				return rig.run("", filepath.Join(env, "bin", "pip"),
+				return rig.run("", venvPip(env, runtime.GOOS),
 					"install", "--quiet", conformancePip)
 			},
 			Cleanup: rig.drop,

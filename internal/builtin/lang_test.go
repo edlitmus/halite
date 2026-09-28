@@ -352,3 +352,53 @@ func TestEveryLangAnswerReadsAsASentence(t *testing.T) {
 		}
 	}
 }
+
+// `bin_env` naming a virtualenv directory resolves to that venv's pip, on
+// both layouts.
+//
+// It built `<env>/bin/pip` unconditionally, and a Windows virtualenv puts its
+// executables in `Scripts` and names them `.exe` -- so the directory form of
+// `bin_env` could not work on Windows at all, on a platform this build
+// otherwise supports. Found when the conformance case for `pip.installed`,
+// which points `bin_env` at a venv it builds, ran on the windows leg:
+//
+//	exec: "...\halitecf-lang-...\venv\bin\pip": executable file not found
+//
+// Both branches are asserted here on whichever machine is running, because
+// the branch that was wrong is precisely the one nobody could reach.
+// DIVERGENCE 5.157.
+func TestBinEnvResolvesToTheVenvsPip(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		goos string
+		want string
+	}{
+		{"a unix venv directory", "/tmp/v", "linux", "/tmp/v/bin/pip"},
+		{"a trailing separator is not a name", "/tmp/v/", "linux", "/tmp/v/bin/pip"},
+		{"a windows venv directory", `C:\t\v`, "windows", `C:\t\v\Scripts\pip.exe`},
+		{"a pip already named is left alone", "/usr/bin/pip", "linux", "/usr/bin/pip"},
+		{"pip3 counts as a pip", "/usr/bin/pip3", "linux", "/usr/bin/pip3"},
+		{"so does pip.exe", `C:\v\Scripts\pip.exe`, "windows", `C:\v\Scripts\pip.exe`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// filepath.Join uses the separator of the machine running the
+			// test, so the comparison is on the last element rather than on
+			// the whole path -- which is the part the bug was in, and keeps
+			// this assertion true whichever platform runs it.
+			got := venvPip(tc.env, tc.goos)
+			wantBase := tc.want[strings.LastIndexAny(tc.want, `/\`)+1:]
+			gotBase := got[strings.LastIndexAny(got, `/\`)+1:]
+			if gotBase != wantBase {
+				t.Errorf("venvPip(%q, %s) = %q; the pip should be %q", tc.env, tc.goos, got, wantBase)
+			}
+			if tc.goos == "windows" && !strings.Contains(got, "Scripts") && gotBase != "pip.exe" {
+				t.Errorf("venvPip(%q, windows) = %q; a Windows venv keeps its executables in Scripts",
+					tc.env, got)
+			}
+			if tc.goos != "windows" && strings.Contains(got, "Scripts") {
+				t.Errorf("venvPip(%q, %s) = %q; Scripts is Windows's", tc.env, tc.goos, got)
+			}
+		})
+	}
+}

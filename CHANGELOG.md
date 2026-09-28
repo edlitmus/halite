@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `pip`'s `bin_env` works on Windows
+
+Given a virtualenv directory it built `<env>/bin/pip`, and a Windows
+virtualenv keeps its executables in `Scripts` and names them `.exe` — so
+the directory form of that argument could not work there at all. It
+resolves the platform's own layout now.
+
 ### The language managers report what they did in a sentence
 
 `gem`, `npm` and `pip` opened four of their six answers with a bare package

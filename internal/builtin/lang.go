@@ -2,6 +2,8 @@ package builtin
 
 import (
 	"fmt"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -224,12 +226,43 @@ func registerPip(r *Registries) {
 func pipRun(c *exec.Context, args *value.Map, argv ...string) (exec.Result, error) {
 	tool := "pip"
 	if env := states.Str(args, "bin_env", ""); env != "" {
-		tool = env
-		if !strings.HasSuffix(env, "pip") && !strings.HasSuffix(env, "pip3") {
-			tool = strings.TrimRight(env, "/") + "/bin/pip"
-		}
+		tool = venvPip(env, runtime.GOOS)
 	}
 	return langRun(c, tool, "", argv...)
+}
+
+// venvPip resolves `bin_env` to the pip it names.
+//
+// `bin_env` is documented as "a virtualenv directory or a pip binary", and the
+// directory form built `<env>/bin/pip` unconditionally. **A Windows
+// virtualenv puts its executables in `Scripts`, and names them `.exe`**, so on
+// Windows the directory form could not work at all -- the whole argument was
+// unusable there, on a platform this build otherwise supports.
+//
+// Found by the conformance case for `pip.installed`, which points `bin_env` at
+// a venv it builds and ran on the windows leg for the first time:
+//
+//	exec: "…\halitecf-lang-…\venv\bin\pip": executable file not found
+//
+// A separator is not translated either: a caller writing a Windows path is
+// joined with `filepath.Join`, which uses the platform's own.
+//
+// The goos is a parameter rather than read from `runtime` so that both
+// branches can be tested on one machine. Every other way of checking this
+// would have needed a Windows box, and the branch that was wrong is exactly
+// the one nobody could run.
+func venvPip(env, goos string) string {
+	trimmed := strings.TrimRight(env, `/\`)
+	base := filepath.Base(trimmed)
+	// Already a pip, whatever its directory: `…/bin/pip`, `…/pip3`, or on
+	// Windows `…\Scripts\pip.exe`.
+	if base == "pip" || base == "pip3" || base == "pip.exe" || base == "pip3.exe" {
+		return env
+	}
+	if goos == "windows" {
+		return filepath.Join(trimmed, "Scripts", "pip.exe")
+	}
+	return filepath.Join(trimmed, "bin", "pip")
 }
 
 // parsePipList reads `pip list --format=json`.

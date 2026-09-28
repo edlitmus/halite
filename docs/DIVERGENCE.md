@@ -14808,6 +14808,53 @@ and asks `states.CommentIsASentence` directly, in both the singular and plural
 branches, since only one of them had ever been exercised. Removing the noun
 makes it fail.
 
+##### What the legs said, and the defect Windows found
+
+Run 36444158057. All six pass on Linux and on macOS:
+
+	linux     31 of 45 cases ran, 14 skipped  + 16 packet-filter cases
+	darwin    17 of 45 cases ran, 28 skipped
+	windows    9 of 45 cases ran, 36 skipped
+
+Windows refused four of them, and one refusal is a defect in the module rather
+than in the case.
+
+**`bin_env` naming a virtualenv could not work on Windows at all.** `pipRun`
+built `<env>/bin/pip` unconditionally, and a Windows virtualenv puts its
+executables in `Scripts` and names them `.exe`:
+
+	exec: "…\halitecf-lang-…\venv\bin\pip": executable file not found
+
+So the directory form of a documented argument — "a virtualenv directory or a
+pip binary" — was unusable on a platform this build otherwise supports, and
+nothing had noticed because nothing had ever passed `bin_env` on Windows.
+
+`venvPip(env, goos)` resolves it now, and takes the goos as a **parameter**
+rather than reading `runtime.GOOS`, so both branches are asserted on whatever
+machine runs the suite. That is the point: the branch that was wrong is exactly
+the one nobody could reach, and a test that could only check the working half
+would have been written years before the broken half was found.
+
+The case's own probe had the same bug — it hardcoded `bin/pip` — and now calls
+the same helper. **A probe that repeats the module's mistake agrees with it and
+proves nothing**, which is worth more than the one-line fix: the probe existed
+to be independent and was not.
+
+**`gem` on the hosted Windows runner is a fact about that Ruby.** `gem` was on
+PATH, so `needs` found it, and then rubygems could not read its own
+configuration:
+
+	gem list --local exited 1: …/rubygems/config_file.rb:75:in `join':
+	no implicit conversion of nil into String (TypeError)
+
+That is rubygems failing on a path it expects in the environment, before
+producing any output for the module to parse. Excluded by platform rather than
+by a broader tool check, because "gem exists" was true and was not the
+question — and `gem.installed` passes on Linux and macOS, so nothing about the
+module is implicated.
+
+
+
 
 
 
