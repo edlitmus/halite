@@ -108,12 +108,12 @@ func langPresent(
 	}
 	if c.Test {
 		return states.WouldChange(
-			fmt.Sprintf("%s would be installed.", states.SortedNames(missing)), changes), nil
+			fmt.Sprintf("%s would be installed.", namesList(missing, what)), changes), nil
 	}
 	if err := install(missing); err != nil {
 		return states.False(fmt.Sprintf("Installing %s failed: %v", states.SortedNames(missing), err)), nil
 	}
-	return states.Changed(fmt.Sprintf("%s was installed.", states.SortedNames(missing)), changes), nil
+	return states.Changed(fmt.Sprintf("%s was installed.", namesList(missing, what)), changes), nil
 }
 
 // langAbsent is the body every `removed` state shares.
@@ -146,12 +146,12 @@ func langAbsent(
 	}
 	if c.Test {
 		return states.WouldChange(
-			fmt.Sprintf("%s would be removed.", states.SortedNames(present)), changes), nil
+			fmt.Sprintf("%s would be removed.", namesList(present, what)), changes), nil
 	}
 	if err := remove(present); err != nil {
 		return states.False(fmt.Sprintf("Removing %s failed: %v", states.SortedNames(present), err)), nil
 	}
-	return states.Changed(fmt.Sprintf("%s was removed.", states.SortedNames(present)), changes), nil
+	return states.Changed(fmt.Sprintf("%s was removed.", namesList(present, what)), changes), nil
 }
 
 func orAny(version string) any {
@@ -166,10 +166,29 @@ func namesOf(specs []pkgSpec, what string) string {
 	for _, s := range specs {
 		names = append(names, s.Name)
 	}
+	return namesList(names, what)
+}
+
+// namesList renders a set of package names with the noun in front.
+//
+// A package name is a bare lower-case token -- `six`, `ms`, `colorize` -- and
+// SPEC 11.6's "the comment reads as a sentence" refuses one at the start,
+// rightly: nothing distinguishes it from an English word, which is the whole
+// reason `checkComment`'s identifier exception cannot help here.
+//
+// `namesOf` already did this for the converged answers. The four change
+// answers below went straight to `states.SortedNames`, so every one of them
+// opened with a package name -- "colorize would be installed." -- and all six
+// of these states would have failed their conformance case on it. Found by
+// reading `langPresent` before the case had run, which is the only reason it
+// did not cost a CI cycle: the format string there begins with `%s`, so the
+// static audit in comment_shape_test.go cannot judge it and deliberately does
+// not try. A substituted value is usually a path; here it is a bare word.
+func namesList(names []string, what string) string {
 	if len(names) == 1 {
 		return strings.Title(what) + " " + names[0] // lexicon:allow
 	}
-	return states.SortedNames(names)
+	return strings.Title(what) + "s " + states.SortedNames(names) // lexicon:allow
 }
 
 // langStateParams is the argument set all six of these states share.

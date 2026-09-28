@@ -59,10 +59,8 @@ func init() {
 	for _, n := range []string{
 		"apparmor.mode",
 		"debconf.set", "firewall.absent", "firewall.allowed", "firewall.denied",
-		"firewall.enabled", "gem.installed", "gem.removed",
-		"hostname.system",
+		"firewall.enabled", "hostname.system",
 		"jail.running", "netplan.managed",
-		"npm.installed", "npm.removed", "pip.installed", "pip.removed",
 		"pkg.latest", "pkg.purged", "pkgrepo.absent", "pkgrepo.managed", "reboot.scheduled",
 		"snap.installed", "snap.removed", "timezone.system",
 	} {

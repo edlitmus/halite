@@ -316,3 +316,39 @@ func TestLangStateRefusesAnUnverifiableVersion(t *testing.T) {
 		t.Errorf("an unpinned request is satisfied by its presence: %+v", res)
 	}
 }
+
+// Every answer these six states give reads as a sentence.
+//
+// The four *change* answers used to open with a package name --
+// "colorize would be installed." -- which SPEC 11.6's rule refuses, because a
+// bare lower-case token cannot be told from an English word. All six states
+// would have failed their conformance case on it.
+//
+// Asserted here rather than left to the live cases, for two reasons. The live
+// cases need a network and a CI runner, so this would have been discovered at
+// the slowest possible moment; and `comment_shape_test.go` cannot see it,
+// because the format string begins with `%s` and that audit deliberately does
+// not judge a substituted value. So the gap between the static audit and the
+// live harness is covered by asking the rule directly, with the answers
+// rendered. DIVERGENCE 5.157.
+func TestEveryLangAnswerReadsAsASentence(t *testing.T) {
+	// Both arities, because the singular and plural renderings are separate
+	// branches of namesList and only one of them was ever exercised.
+	for _, names := range [][]string{{"colorize"}, {"ms", "six"}} {
+		for _, what := range []string{"gem", "package"} {
+			rendered := namesList(names, what)
+			for _, answer := range []string{
+				rendered + " would be installed.",
+				rendered + " was installed.",
+				rendered + " would be removed.",
+				rendered + " was removed.",
+				rendered + " is already installed.",
+				rendered + " is not installed.",
+			} {
+				if err := states.CommentIsASentence(answer); err != nil {
+					t.Errorf("%q: %v", answer, err)
+				}
+			}
+		}
+	}
+}
