@@ -33,9 +33,9 @@ macOS, which is what the code does.
 
 ### The Windows and macOS states are held to the test-mode contract
 
-One hundred and nine of the hundred and thirty-two, up from a hundred. The
-four `win_dacl` states act on a path rather than on the machine, so they run
-in the ordinary Windows job on every change; `win_task`, `win_service` and
+One hundred and eight of the hundred and thirty-two, up from a hundred.
+Three of the four `win_dacl` states act on a path rather than on the
+machine, so they run in the ordinary Windows job on every change; `win_task`, `win_service` and
 `mac_defaults` change the machine and run on CI legs that are thrown away
 afterwards — a new `windows` leg, and the `macos` leg, which had been left
 without the variable the conformance suite asks for.

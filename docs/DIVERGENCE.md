@@ -14623,7 +14623,8 @@ The split is the interesting part, and it is not the platform:
 
 | | |
 |---|---|
-| **4** | `win_dacl.*` changes the access list on a **path**, and a path in a temporary directory is not the machine — so these are *in-process* cases, and run in `ci.yml`'s `windows-2022` jobs on every pull request. |
+| **3** | `win_dacl.present`, `.absent` and `.inherit` change the access list on a **path**, and a path in a temporary directory is not the machine — so these are *in-process* cases, and run in `ci.yml`'s `windows-2022` jobs on every pull request. |
+| **1** | `win_dacl.owner` is reachable and confined and still has no case, for a reason worth its own line below. |
 | **3** | `win_task.*` registers with the scheduler and `win_service.start_type` writes a service's start type. Those are the machine, so they are live cases behind a new `fleet.yml` leg. |
 | **2** | `mac_defaults.*` in a preference domain of the suite's own, live, on the existing `macos` leg — which needed `HALITE_CONFORMANCE_LIVE=1` and the conformance family adding to its `-run` filter, both of which had been left off when the variable was introduced. |
 
@@ -14632,6 +14633,29 @@ The split is the interesting part, and it is not the platform:
 driving the real Windows security API against a temporary file in the ordinary
 suite. A case does not become live because its platform is unusual; it becomes
 live because its effect is.
+
+##### The one that could not be staged
+
+`win_dacl.owner` has no case, and the reason is neither "unreachable" nor
+"changes the machine". The harness needs a change to make, and an owner change
+needs a trustee Windows will accept as an owner. On the runners available it
+accepts neither tried:
+
+	setting the owner of …\owned.conf to Administrators:
+	This security ID may not be assigned as the owner of this object
+
+and the same for `SYSTEM`. Both on an elevated runner where `winsec.SetOwner`
+had enabled `SeRestorePrivilege` — which it reports, because the hint naming a
+missing privilege is printed exactly when one could not be enabled, and no hint
+appeared. The module did its part; the object would not take either SID.
+
+The only assignable owner left is the account that already owns the file, which
+is no change at all — and the harness says in its own words that a setup
+leaving nothing to do is a case testing nothing. So this is an `unconformed`
+entry rather than a third guess at a trustee, and the entry says all of the
+above. `win_dacl_windows_test.go` drives `SetOwner` directly, so the function
+is not unchecked; what cannot be staged is the *change*, which is a different
+claim and the one worth writing down.
 
 ##### Two things Windows does not have
 

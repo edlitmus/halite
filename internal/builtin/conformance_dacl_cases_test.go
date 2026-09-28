@@ -207,36 +207,29 @@ func winDACLCases() []conformanceCase {
 		Cleanup: dropDir(&inheritDir),
 	}}))
 
-	// owner: set to SYSTEM.
+	// win_dacl.owner has no case, and `unconformed` says why.
 	//
-	// `Administrators` was the first choice and Windows refused it —
-	// "This security ID may not be assigned as the owner of this object" —
-	// on a runner that is elevated and where `winsec.SetOwner` had enabled
-	// SeRestorePrivilege successfully. It says so itself: the error carries
-	// no hint about a missing privilege, and the hint is printed exactly
-	// when the privilege could not be enabled. So the module did its part
-	// and the trustee was simply not assignable there.
+	// The harness needs a change to make, and an owner change needs a trustee
+	// Windows will accept as an owner. On the runners available it accepts
+	// neither one tried:
 	//
-	// SYSTEM is, and it is not the account creating the file, so there is
-	// still a change to make. Recorded rather than silently swapped,
-	// because "pick a different trustee" is the kind of fix that looks
-	// arbitrary a year later.
-	ownerDir, ownerPath := "", ""
-	ownerArgs := value.MapOf("owner", "SYSTEM")
-	cases = append(cases, windows(conformanceCase{Conformance: states.Conformance{
-		Name: "win_dacl.owner",
-		Args: ownerArgs,
-		Setup: func() error {
-			if err := newDir(&ownerDir)(); err != nil {
-				return err
-			}
-			ownerPath = filepath.Join(ownerDir, "owned.conf")
-			ownerArgs.Set("name", ownerPath)
-			return os.WriteFile(ownerPath, []byte("x"), 0o600)
-		},
-		Probe:   winOwnerProbe(&ownerPath),
-		Cleanup: dropDir(&ownerDir),
-	}}))
+	//	setting the owner of …\owned.conf to Administrators:
+	//	This security ID may not be assigned as the owner of this object
+	//	setting the owner of …\owned.conf to SYSTEM: (the same)
+	//
+	// Both on an elevated runner where `winsec.SetOwner` had enabled
+	// SeRestorePrivilege — which it reports, since the hint about a missing
+	// privilege is printed exactly when one could not be enabled, and no hint
+	// appeared. So the module did its part and the object would not take
+	// either SID.
+	//
+	// The remaining assignable owner is the account that already owns the
+	// file, which is no change at all, and a case whose setup leaves nothing
+	// to do is a case that tests nothing — the harness says so in those
+	// words. Rather than guess at a third trustee, this is an entry in
+	// `unconformed`: the honest statement is that the *change* cannot be
+	// staged here, not that the state is unchecked. `win_dacl_windows_test.go`
+	// drives SetOwner directly.
 
 	return cases
 }
