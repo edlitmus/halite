@@ -177,42 +177,45 @@ func TestARuleThatWouldPermitEverythingIsRefused(t *testing.T) {
 	}
 }
 
-// A dry-run delete is read from what ufw actually prints.
+// A dry-run delete is answered from the rules ufw holds.
 //
-// The fixtures are **captured**, not written from the manual: they are the
-// tails of `ufw --dry-run --force delete allow 65010/tcp` on ufw 0.36.2,
-// against a rule that was there and one that was not, taken from the linux
-// fleet leg. A fixture built from documentation tests the documentation, and
-// this is the second time in one change that mattered -- the step that
-// captured these was itself wrong the first time, using `ufw --force allow`,
-// which is a syntax error.
+// The fixtures are **captured** from `ufw show added` on ufw 0.36.2 on the
+// linux fleet leg -- both forms, with a rule and without. A fixture written
+// from the manual tests the manual, and that mattered twice in this one
+// change: the step that captured these was wrong the first time, using
+// `ufw --force allow`, which is a syntax error.
 //
 // The defect: `ufwChanged` looks for the phrases ufw prints when nothing
-// changed, and a dry-run delete prints none of them. So the reading was
-// "changed" every time and `firewall.absent` reported a removal on every run,
-// for ever, against a rule already gone. DIVERGENCE 5.157.
-func TestDryRunDeleteReadsWhetherARuleWouldGo(t *testing.T) {
-	// Captured: a rule was there, so ufw would take it out.
-	const wouldRemove = `### END LOGGING ###
-COMMIT
-Rules updated
-Rules updated (v6)
+// changed, and a dry-run delete prints none of them, so `firewall.absent`
+// reported a removal on every run for ever. The first repair read "Rules
+// updated" out of the dry run's ruleset dump and was also wrong -- a second
+// capture printed it for an absent rule too. DIVERGENCE 5.157.
+func TestTheAddedListingSaysWhetherARuleIsThere(t *testing.T) {
+	rule := firewallRule{Action: "allow", Port: "65010", Protocol: "tcp"}
+
+	// Captured, with the rule.
+	const withRule = `Added user rules (see 'ufw status' for running firewall):
+ufw allow 65010/tcp
 `
-	// Captured: nothing to remove, so ufw prints the ruleset and stops.
-	const nothingToRemove = `### END LOGGING ###
-COMMIT
+	// Captured, with none.
+	const withNone = `Added user rules (see 'ufw status' for running firewall):
+(None)
 `
-	if !ufwDryRunDeleteChanged(wouldRemove) {
-		t.Error("a dry-run delete that would remove a rule reported no change; " +
-			"ufw says `Rules updated` when there is one to take out")
+	if !ufwAddedListHas(withRule, rule) {
+		t.Errorf("the listing names the rule and this did not find it:\n%s", withRule)
 	}
-	if ufwDryRunDeleteChanged(nothingToRemove) {
-		t.Error("a dry-run delete with nothing to remove reported a change, which is " +
-			"how firewall.absent came to report a removal on every run for ever")
+	if ufwAddedListHas(withNone, rule) {
+		t.Error("an empty listing was read as holding the rule, which is how " +
+			"firewall.absent came to report a removal on every run")
+	}
+	// A different rule in the listing is not this rule.
+	other := firewallRule{Action: "allow", Port: "65011", Protocol: "tcp"}
+	if ufwAddedListHas(withRule, other) {
+		t.Error("a listing holding 65010 was read as holding 65011")
 	}
 
-	// And the negative reading, which stays for every path that acts. These
-	// are ufw's own words on a real run.
+	// And the negative reading, which stays for every path that acts. ufw's
+	// own words on a real run.
 	if ufwChanged("Could not delete non-existent rule\nCould not delete non-existent rule (v6)\n") {
 		t.Error("a real delete of a rule that is not there is not a change")
 	}
@@ -226,23 +229,21 @@ COMMIT
 
 // And through Apply, which is the call site.
 //
-// The test above exercises `ufwDryRunDeleteChanged` directly, so deleting its
-// call site in `Apply` left it passing -- the same mistake this session made
-// once already, on `tools/ledger`: a test of the helper is not a test of the
-// wiring. This one goes through the provider with ufw's answers scripted, so
-// removing the branch fails it.
-func TestApplyReadsADryRunDeleteThroughTheProvider(t *testing.T) {
+// The first test of the first repair called the helper directly, so deleting
+// its call site in `Apply` left it passing -- the same error this session made
+// on `tools/ledger`, where a test of `misplaced()` survived disabling the call
+// to it. This goes through the provider with ufw's answers scripted.
+func TestApplyAnswersADryRunDeleteFromTheListing(t *testing.T) {
 	rule := firewallRule{Action: "allow", Port: "65010", Protocol: "tcp"}
-	argv := append([]string{"ufw", "--dry-run", "delete"}, ufwRuleArgs(rule)...)
-	key := exec.Command{Argv: argv}.String()
+	key := exec.Command{Argv: []string{"ufw", "show", "added"}}.String()
 
 	for _, tc := range []struct {
 		name string
 		out  string
 		want bool
 	}{
-		{"a rule is there to remove", "### END LOGGING ###\nCOMMIT\nRules updated\nRules updated (v6)\n", true},
-		{"nothing to remove", "### END LOGGING ###\nCOMMIT\n", false},
+		{"a rule is there to remove", "Added user rules:\nufw allow 65010/tcp\n", true},
+		{"nothing to remove", "Added user rules:\n(None)\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := newCtx(true)
@@ -254,8 +255,14 @@ func TestApplyReadsADryRunDeleteThroughTheProvider(t *testing.T) {
 				t.Fatalf("Apply: %v", err)
 			}
 			if got != tc.want {
-				t.Errorf("Apply reported changed=%v, want %v, for ufw saying:\n%s",
-					got, tc.want, tc.out)
+				t.Errorf("Apply reported changed=%v, want %v, for:\n%s", got, tc.want, tc.out)
+			}
+			// The dry run must not have run a delete.
+			rec := c.Runner.(*exec.RecordingRunner)
+			for _, ran := range rec.RanCommands() {
+				if strings.Contains(ran, "delete") {
+					t.Errorf("a dry run ran %q", ran)
+				}
 			}
 		})
 	}

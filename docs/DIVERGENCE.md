@@ -14955,11 +14955,40 @@ that acts is covered by the negative reading, and only the prediction was
 wrong.** A defect that lives exclusively in `--test` is one an operator meets
 as a highstate that never settles, with no failure anywhere to point at.
 
-The fix is narrow: the dry-run delete is read positively, from "Rules updated".
-The add path converges today on the negative reading and is left alone —
-whether a dry-run add of an absent rule prints "Rules updated" was not
-measured, and changing a working path on an assumption is how the other half
-would break.
+##### The first repair was also wrong
+
+It read "Rules updated" out of the dry run's ruleset dump as the signal — on
+the strength of one capture, where the phrase appeared for a rule that was
+there and not for one that was not.
+
+**One observation of a message is not a rule about when it appears.** A second
+capture, on a ufw that had had a rule added and removed, printed "Rules
+updated" for an absent rule too; and the two runs of the diagnostic disagree
+with each other, which is the thing to notice. The conformance case failed
+identically after the "fix", which is the only reason this did not ship — a
+repair that changes nothing observable is indistinguishable from no repair, and
+the case was the only thing looking.
+
+So the question is asked of something that answers it directly. `ufw show
+added` lists the rules ufw holds, active or not, as the commands that added
+them:
+
+	Added user rules (see 'ufw status' for running firewall):
+	ufw allow 65010/tcp
+
+and `(None)` when there are none. The comparison is that line against the argv
+this provider would build — ufw's own recorded spelling against ours, which is
+not a reimplementation of its rule matching.
+
+The limit is stated where the code is: the match is exact, so it recognises the
+spelling `ufwRuleArgs` produces, which is the only spelling halite ever adds. A
+rule an operator wrote by hand in another form will not match, and
+`firewall.absent` will then attempt the delete rather than predict it — the safe
+direction, since a real delete reads its own output correctly.
+
+The add path is untouched. It converges on the negative reading, and whether a
+dry-run add of an absent rule prints "Rules updated" was never measured;
+changing a working path on an assumption is how the other half would break.
 
 ##### Two mistakes of mine getting to that
 

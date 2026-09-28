@@ -34,7 +34,8 @@ rule already gone.
 
 Only the prediction was wrong; every path that acts reads correctly, which
 is why nothing had noticed. An operator met it as a highstate that never
-settles with no failure to point at.
+settles with no failure to point at. It now asks `ufw show added`, which
+answers directly whether ufw holds the rule.
 
 ### One hundred and eighteen state functions are held to the test-mode contract
 

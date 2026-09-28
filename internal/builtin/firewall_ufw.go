@@ -127,6 +127,11 @@ func (ufwProvider) Reload(c *exec.Context) error {
 }
 
 func (p ufwProvider) Apply(c *exec.Context, r firewallRule, remove, dryRun bool) (bool, error) {
+	// A dry-run delete cannot be read from ufw's own words -- see
+	// ufwRuleAdded -- so it is answered from the list of rules ufw holds.
+	if dryRun && remove {
+		return ufwRuleAdded(c, r)
+	}
 	argv := []string{"ufw"}
 	if dryRun {
 		argv = append(argv, "--dry-run")
@@ -143,42 +148,73 @@ func (p ufwProvider) Apply(c *exec.Context, r firewallRule, remove, dryRun bool)
 	if res.Code != 0 {
 		return false, fmt.Errorf("%s: %s", strings.Join(argv, " "), firstLine(res.Stderr+res.Stdout))
 	}
-	out := res.Stdout + res.Stderr
-	if dryRun && remove {
-		return ufwDryRunDeleteChanged(out), nil
-	}
-	return ufwChanged(out), nil
+	return ufwChanged(res.Stdout + res.Stderr), nil
 }
 
-// ufwDryRunDeleteChanged reads whether a dry-run delete would take a rule out.
+// ufwRuleAdded reports whether ufw holds this rule, from `ufw show added`.
 //
-// `ufwChanged` below looks for the phrases ufw prints when nothing changed,
-// and **a dry-run delete prints none of them.** It prints the ruleset that
-// would result, and then "Rules updated" only when there was a rule to
-// remove. So the negative reading said "changed" every time, and
-// `firewall.absent` reported a removal on every run for ever -- a state that
-// cannot converge, against a rule that was already gone.
+// # Why not the dry run, and why not "Rules updated"
 //
-// Measured on ufw 0.36.2, since guessing at a tool's output is the mistake
-// this project keeps recording. The four answers, and only the last is the
-// one `ufwChanged` was written for:
+// `firewallRuleState` asks the provider to dry-run the operation, which is
+// right for an add -- `ufw --dry-run allow P` says "Skipping adding existing
+// rule" when there is nothing to do, and that is the whole answer. For a
+// **delete** the dry run says none of the phrases `ufwChanged` looks for: it
+// prints the ruleset that would result. So the negative reading returned
+// "changed" every time and `firewall.absent` reported a removal on every run,
+// for ever, against a rule already gone.
 //
-//	ufw --dry-run allow P               present: "Skipping adding existing rule"
-//	ufw --dry-run --force delete allow P  present: the ruleset, then "Rules updated"
-//	ufw --dry-run --force delete allow P  absent:  the ruleset, and nothing more
-//	ufw --force delete allow P            absent:  "Could not delete non-existent rule"
+// The first repair read "Rules updated" out of that dump as the signal, on one
+// observation of it appearing for a rule that was there and not for one that
+// was not. **That was wrong**: a second capture, on a ufw that had had a rule
+// added and removed, printed "Rules updated" for an absent rule too. One
+// observation of a message is not a rule about when it appears, and the
+// conformance case failed identically after the "fix" -- which is the only
+// reason the mistake did not ship.
 //
-// The real delete does say it, which is why nothing noticed: every path that
-// acts is covered by the negative reading, and only the prediction was wrong.
-// The dry run does not delete -- `ufw show added` still lists the rule after
-// one -- so this is a reading problem and not a safety one.
+// So the question is asked of something that answers it directly. `ufw show
+// added` lists the rules ufw holds, active or not, as the commands that added
+// them:
 //
-// Narrow on purpose. The add path converges today on the negative reading and
-// is left alone: whether a dry-run add of an absent rule prints "Rules
-// updated" was not measured, and changing a working path on an assumption is
-// how the other half of this would break.
-func ufwDryRunDeleteChanged(out string) bool {
-	return strings.Contains(out, "Rules updated")
+//	Added user rules (see 'ufw status' for running firewall):
+//	ufw allow 65010/tcp
+//
+// and `(None)` when there are none. The comparison is that line against the
+// argv this provider would use -- ufw's own recorded spelling against ours,
+// not a reimplementation of ufw's rule matching, which is what the comment on
+// `firewallRuleState` warns against.
+//
+// # The limit, stated
+//
+// The match is exact, so it recognises the spelling `ufwRuleArgs` produces --
+// which is the only spelling halite ever adds. A rule an operator added by
+// hand in another form will not match, and `firewall.absent` will then attempt
+// the delete rather than predict it. That is the safe direction: a real delete
+// reads its own output correctly, so the outcome is right and only the dry
+// run's prediction is pessimistic.
+func ufwRuleAdded(c *exec.Context, r firewallRule) (bool, error) {
+	res, err := c.Run(exec.Command{
+		Argv:           []string{"ufw", "show", "added"},
+		IgnoreExitCode: true,
+	})
+	if err != nil {
+		return false, err
+	}
+	if res.Code != 0 {
+		return false, fmt.Errorf("ufw show added: %s", firstLine(res.Stderr+res.Stdout))
+	}
+	return ufwAddedListHas(res.Stdout, r), nil
+}
+
+// ufwAddedListHas reads the listing, split out so the parsing can be tested
+// against captured output without a ufw to run.
+func ufwAddedListHas(out string, r firewallRule) bool {
+	want := "ufw " + strings.Join(ufwRuleArgs(r), " ")
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ufwChanged reads whether ufw did anything.
