@@ -50,6 +50,10 @@ they make for themselves: LVM on loop devices, ZFS on a single file vdev,
 and `mount` on `tmpfs` with its table pointed at a file of the suite's own,
 so `/etc/fstab` is never touched.
 
+Driven in the lab on Debian 13 and FreeBSD 14: 25 and 22 of 34 cases ran.
+All six `lvm` cases against real loop devices, all four `zpool`/`zfs`
+against a real pool, `mount` on both.
+
 Thirty-two are left: nine Windows and macOS, six language managers, four
 `firewall.*`, and thirteen one-offs each with its own stated reason.
 

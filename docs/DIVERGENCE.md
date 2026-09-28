@@ -14552,6 +14552,22 @@ that only shows on the second phase. `loopDevice` reuses the device it already
 attached, so the second `Setup` does not leak one — the loop driver is shared
 with the rest of the machine.
 
+##### What the lab said
+
+Two rows, `debian13` and `freebsd14`, raised and destroyed on 2026-09-27:
+
+	debian13    25 of 34 cases ran,  9 skipped  + 16 packet-filter cases
+	freebsd14   22 of 34 cases ran, 12 skipped
+
+All six `lvm` cases pass against real loop devices on Debian; all four
+`zpool`/`zfs` cases pass against a real pool on FreeBSD, where ZFS is in the
+base system; `mount` passes on both. The `zfs` cases skip on Debian, whose row
+does not install the userland, and say so.
+
+`freebsd14` **passed for the first time.** It had failed every previous run on
+`TestLiveACLRoundTripsAnNFSv4EntryOnARealFile`, which is the `getfacl -s`
+defect recorded as a subsection of 5.113 — found by this work and fixed in it.
+
 ##### An argument a case cannot know until Setup has run
 
 A loop device's name is chosen by `losetup --find`, and a temporary
