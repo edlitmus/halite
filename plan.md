@@ -2553,18 +2553,18 @@ somebody would otherwise rediscover.
     `closeRenderSandbox`; DIVERGENCE 5.144). The rest needs a sweep that
     understands per-GOOS builds and interface satisfaction before a count
     is quoted anywhere.
-19h. **`halite-hub migrate` does not flag a `user.present` with
-    `groups:`.** `internal/migrate` mentions groups nowhere, so the Step 0
-    report is silent about the one difference in `docs/from-salt.md`'s list
-    that it cannot see. A tree relying on Salt's `remove_groups: true`
-    default gets a run that prunes nothing and says nothing — the benign
-    direction, and therefore the one an operator never finds out about.
+19h. ~~**`halite-hub migrate` does not flag a `user.present` with
+    `groups:`**~~ — **done** (DIVERGENCE 5.162). A new category,
+    `CatSemantics`, for the class `CatPillarGrain` was the first member of:
+    a declaration that is valid here and means something different from
+    what it meant in Salt. Review severity, naming the file and the line
+    of the `groups:` key, and silent when the declaration already states
+    `remove_groups` — either value, because both are the operator having
+    decided.
 
-    The audit's existing shape fits it: `CatPillarGrain` is already a
-    category for "valid, and means something different here". This would be
-    a second of those. Until it exists, `docs/from-salt.md` item 5 tells the
-    reader to grep their own tree, which is a worse answer than a finding
-    with a file and a line. DIVERGENCE 5.145.
+    Found one in this project's own Salt tree, `users.sls:19`, which is the
+    measurement rather than a fixture. `docs/from-salt.md` item 5 no longer
+    tells the reader to grep.
 
 19i. **Nothing stops a tenth repo-walking audit being written without the
     other-checkout check.** `internal/repotree.OtherCheckout` has four call

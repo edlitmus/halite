@@ -15775,6 +15775,71 @@ some of those directories hold nothing anybody would want. Counted here so the
 number is known rather than fixed in a commit about `pki`. plan.md 19e is closed;
 this is what should replace it.
 
+### 5.162 The migration audit was silent about the one difference it could not see
+
+`docs/from-salt.md` lists what a tree does differently here, and item 5 is
+`user.present` with `groups:`. Salt's `remove_groups` defaults to **true**, so
+`groups:` there is the account's complete supplementary set and anything unlisted
+is taken away. Here it defaults to false: `groups:` means "the groups this account
+must be in", and a membership added by hand survives a run that never named it.
+
+So a tree relying on Salt's pruning gets a run that prunes nothing and reports
+success. **The benign direction, and therefore the one nobody finds out about** —
+there is no failure, no warning and no drift to notice; the account simply keeps a
+membership somebody wanted gone.
+
+And the audit said nothing, which item 5 admitted in its own words:
+
+> The Step 0 audit does not flag this, because it reads the tree for things that
+> will not work rather than for things that will work differently, and a
+> `user.present` with `groups:` is valid either way. Grep your tree for `groups:`
+> under `user.present` if any of it relies on memberships being pruned.
+
+Telling a reader to grep their own tree is a worse answer than a finding with a
+file and a line, and it is the answer a document gives when the tool cannot.
+
+#### The question the audit was not asking
+
+Every other check in `internal/migrate` asks *would this run?* For a whole class of
+difference that question has the wrong answer: these run perfectly and do
+something else. `CatPillarGrain` was the first of them — a pillar top targeting an
+untrusted grain keeps working, and the audit reports it so that trusting the grain
+becomes a recorded decision rather than an accident. `CatSemantics` is the second,
+and it is named for the class rather than for this one difference, because
+`docs/from-salt.md` is a list of them and every item on that list the audit cannot
+see is an item whose only reader is somebody who went looking.
+
+#### A stated decision is not a finding
+
+The check is silent when the declaration already names `remove_groups`, and
+silent for **either** value. True is Salt's behaviour and false is this build's,
+and both are the operator having decided — reporting a decision back is the audit
+describing work that does not exist. That is the failing the `cmd_default_shell`
+branch was corrected for, in the same function, for the same reason.
+
+Both values are tested, not just `true`: silencing only the Salt-compatible one
+would make the rule "agrees with Salt" rather than "has been decided", and those
+two are the same today and need not stay so.
+
+#### Measured against the estate, not a fixture
+
+Run against this project's own Salt tree, which is what the audit exists for:
+
+    REVIEW (1)
+      [semantics] users.sls:19
+        `groups:` here means the groups this account must be in, and leaves any
+        other membership alone; Salt's `remove_groups` defaults to true, so there
+        it was the complete set and anything unlisted was removed
+
+One declaration, in an estate of sixteen SLS files and two `user.present`
+references, at the line the `groups:` key is on. It names `wheel` or `sudo`
+depending on the platform, plus `operator` and `video`. Whether that account is
+meant to keep anything else is Ed's question to answer; the point is that it is now
+a question somebody was asked rather than one that needed grepping for.
+
+Four tests, and both breaks fail: removing the finding, and ignoring a stated
+`remove_groups`. plan.md 19h closed.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
