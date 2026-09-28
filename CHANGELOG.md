@@ -23,6 +23,17 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `pkg.latest` said it had upgraded a package it installed
+
+`pkg.latest` compares the newest available version against the installed one,
+and for a package that is not installed the installed one is the empty string —
+so the state installs it, which is right, and then reported "The following
+packages would be upgraded". The change set was correct throughout, so nothing
+reading changes could see the discrepancy.
+
+It now keeps the two apart: "The following packages were installed: tree; and
+these were upgraded: curl". Both still go to the package manager in one call.
+
 ### `timezone.system` never converged on a FreeBSD node with no `/var/db/zoneinfo`
 
 FreeBSD copies the zone file to `/etc/localtime` instead of linking it, so the

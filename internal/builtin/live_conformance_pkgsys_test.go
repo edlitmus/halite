@@ -32,10 +32,12 @@ import (
 // node reports an upgrade it already did. Nothing in the unit suite can see
 // that, because both strings come from fixtures written together.
 //
-// The comment it prints is worth knowing about and is not a defect the harness
-// can see: it says the package "would be upgraded" for one it is about to
-// install. Recorded rather than changed, because changing a message is a
-// change to what operators grep for and belongs in its own commit.
+// Writing this case found a defect the harness cannot see: the comment said
+// the package "would be upgraded" for one it was about to install. It was
+// recorded here rather than fixed, because changing a message changes what
+// operators grep for -- and then fixed in its own commit, since this estate's
+// only reader of that text said so. `pkgLatestSentence` and
+// `pkg_latest_test.go` are where it lives now.
 //
 // # pkgrepo writes where software comes from, so the repository is a real one
 //

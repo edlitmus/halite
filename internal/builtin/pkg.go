@@ -493,7 +493,7 @@ func pkgLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 	}
 	names, _ := packageSpecs(args)
 	if len(names) == 0 {
-		return states.False("This state names no packages to upgrade."), nil
+		return states.False("This state names no packages to bring up to date."), nil
 	}
 
 	installed, err := p.ListPkgs(c)
@@ -501,7 +501,13 @@ func pkgLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("The installed package list could not be read: %v", err)), nil
 	}
 
-	var outdated []string
+	// Two lists, because this state does two things and used to say it did
+	// one. A package that is not installed has no current version, so the
+	// comparison below is against the empty string and the state installs
+	// it -- which is right, and is what an operator writing `pkg.latest`
+	// for a new package expects. It then reported that the package had
+	// been *upgraded*. See pkgLatestSentence.
+	var toInstall, toUpgrade []string
 	changes := value.NewMap(len(names))
 	for _, name := range names {
 		latest, err := p.LatestVersion(c, name)
@@ -516,20 +522,58 @@ func pkgLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 		if latest == "" || latest == currentVersion {
 			continue
 		}
-		outdated = append(outdated, name)
+		if present {
+			toUpgrade = append(toUpgrade, name)
+		} else {
+			toInstall = append(toInstall, name)
+		}
 		changes.Set(name, states.Change(currentVersion, latest))
 	}
 
-	if len(outdated) == 0 {
+	if len(toInstall)+len(toUpgrade) == 0 {
 		return states.True(fmt.Sprintf("All of the requested packages are at their newest version: %s.", states.SortedNames(names))), nil
 	}
+	// One call for both: `Install` upgrades a package that is present and
+	// installs one that is not, which is why the split above is about what
+	// to *say* rather than about what to do.
+	acting := append(append([]string{}, toInstall...), toUpgrade...)
 	if c.Test {
 		return states.WouldChange(
-			fmt.Sprintf("The following packages would be upgraded: %s.", states.SortedNames(outdated)), changes), nil
+			pkgLatestSentence("would be installed", "would be upgraded", toInstall, toUpgrade), changes), nil
 	}
-	if err := p.Install(c, outdated, nil, true); err != nil {
-		return states.False(fmt.Sprintf("The packages could not be upgraded: %v", err)), nil
+	if err := p.Install(c, acting, nil, true); err != nil {
+		return states.False(fmt.Sprintf("The packages could not be installed or upgraded: %v", err)), nil
 	}
 	return states.Changed(
-		fmt.Sprintf("The following packages were upgraded: %s.", states.SortedNames(outdated)), changes), nil
+		pkgLatestSentence("were installed", "were upgraded", toInstall, toUpgrade), changes), nil
+}
+
+// pkgLatestSentence says which of the two things `pkg.latest` is about to do,
+// or has done.
+//
+// # Why one sentence was not enough
+//
+// It said "The following packages would be upgraded" for every package it
+// acted on, including ones that were not installed and which it was about to
+// install. The change set was right all along -- `{old: "", new: "1.2"}`
+// names the absence -- so nothing that reads the changes could see the
+// discrepancy, and only a person reading the comment could. That is the shape
+// of defect this project keeps finding in prose rather than in code: the
+// machine-readable half was correct, so no test disagreed.
+//
+// The phrases are passed in rather than derived from `c.Test`, so that the
+// tense lives at the call site next to the result it describes and this
+// function has no opinion about which run it is in.
+func pkgLatestSentence(installPhrase, upgradePhrase string, toInstall, toUpgrade []string) string {
+	switch {
+	case len(toInstall) == 0:
+		return fmt.Sprintf("The following packages %s: %s.",
+			upgradePhrase, states.SortedNames(toUpgrade))
+	case len(toUpgrade) == 0:
+		return fmt.Sprintf("The following packages %s: %s.",
+			installPhrase, states.SortedNames(toInstall))
+	}
+	return fmt.Sprintf("The following packages %s: %s; and these %s: %s.",
+		installPhrase, states.SortedNames(toInstall),
+		upgradePhrase, states.SortedNames(toUpgrade))
 }

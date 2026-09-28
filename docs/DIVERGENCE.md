@@ -15097,6 +15097,44 @@ ever, and every highstate on every node reports an upgrade it has already done.
 Nothing in the unit suite can see that, because both strings come from fixtures
 written in the same sitting by the same person.
 
+##### And it said it had upgraded a package it installed
+
+A separate defect the same reading turned up, in the half of the state nothing
+machine-readable could disagree with. `pkgLatest` reported
+
+    The following packages would be upgraded: tree.
+
+for a package that was not installed and which it was about to install. The
+change set was right all along — `{old: "", new: "2.1.1-2"}` names the absence,
+which is exactly how the state decides to act — so no test that reads changes
+could see it, and only a person reading the comment could.
+
+That is worth separating from the rest of this chapter. Most entries here are a
+parser disagreeing with a tool, or a document disagreeing with code. This one is
+the *comment* disagreeing with the *change set* inside one result, and the
+machine-readable half was the correct one. A suite can be complete about
+everything it compares and still say the wrong thing to the person reading the
+output.
+
+It was recorded rather than changed when found, because a comment is what an
+operator greps for. Ed's ruling was that this estate's only reader of that text
+is Ed, so it is safe to correct: the state now keeps two lists and
+`pkgLatestSentence` names both, "The following packages were installed: tree;
+and these were upgraded: curl". Both go to the provider in **one** `Install`
+call, because that call upgrades what is present and installs what is not —
+splitting the message must not split the transaction.
+
+Four tests, through `pkgLatest` with a scripted provider rather than against the
+helper, because a test of `pkgLatestSentence` would survive deleting the call to
+it — the `misplaced()` and `ufwDryRunDeleteChanged` mistake, twice in one week.
+Reverting to the single sentence fails them with the original wording.
+
+**And the first version of the one-call assertion did not assert it.** It
+counted names rather than calls, so two `Install` calls and one were the same
+length and the deliberately broken build passed. The tell was in the failure
+message, which had to hedge: "in %d call(s) worth of names". A test whose wording
+is unsure what it measures is a test that is not measuring it.
+
 ##### `reboot.scheduled` needed a second gate, and the gate was set nowhere
 
 Its own excuse was the right shape: this one really does act on the machine in a
