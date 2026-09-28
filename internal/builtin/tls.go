@@ -300,7 +300,7 @@ func tlsCreateCAFn(c *exec.Context, args *value.Map) (any, error) {
 	exists := tlsCAFilesExist(dir)
 
 	if exists && !force {
-		return tlsMutateResult(c, false, fmt.Sprintf("the %s CA already exists at %s.", caName, dir), nil,
+		return tlsMutateResult(c, false, fmt.Sprintf("The %s CA already exists at %s.", caName, dir), nil,
 			value.MapOf("certificate", certPath, "private_key", keyPath)), nil
 	}
 
@@ -314,7 +314,7 @@ func tlsCreateCAFn(c *exec.Context, args *value.Map) (any, error) {
 		verb = "replaced"
 	}
 	if c.Test {
-		return tlsMutateResult(c, true, fmt.Sprintf("the %s CA would be %s at %s.", caName, verb, dir), nil, nil), nil
+		return tlsMutateResult(c, true, fmt.Sprintf("The %s CA would be %s at %s.", caName, verb, dir), nil, nil), nil
 	}
 
 	key, err := generateKey(spec)
@@ -342,7 +342,7 @@ func tlsCreateCAFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 
 	change := value.MapOf(dir, states.Change(nil, "a certificate authority"))
-	return tlsMutateResult(c, true, fmt.Sprintf("the %s CA was %s at %s.", caName, verb, dir), change,
+	return tlsMutateResult(c, true, fmt.Sprintf("The %s CA was %s at %s.", caName, verb, dir), change,
 		value.MapOf("certificate", certPath, "private_key", keyPath)), nil
 }
 
@@ -403,7 +403,7 @@ func tlsCreateCASignedCertFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	if c.Test {
-		return tlsMutateResult(c, true, fmt.Sprintf("a certificate for %s would be issued by %s.", cn, caName), nil, nil), nil
+		return tlsMutateResult(c, true, fmt.Sprintf("A certificate for %s would be issued by %s.", cn, caName), nil, nil), nil
 	}
 
 	caCertPEM, err := os.ReadFile(tlsCACertPath(dir))
@@ -460,7 +460,7 @@ func tlsCreateCASignedCertFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 
 	change := value.MapOf(cn, states.Change(nil, "issued"))
-	return tlsMutateResult(c, true, fmt.Sprintf("a certificate for %s was issued by %s.", cn, caName), change,
+	return tlsMutateResult(c, true, fmt.Sprintf("A certificate for %s was issued by %s.", cn, caName), change,
 		value.MapOf("certificate", certPath, "private_key", keyPath, "serial_number", issued.SerialNumber.Text(16))), nil
 }
 
@@ -499,7 +499,7 @@ func tlsRevokeCertFn(c *exec.Context, args *value.Map) (any, error) {
 		matched++
 	}
 	if matched == 0 {
-		return tlsMutateResult(c, false, fmt.Sprintf("no valid certificate for %s was found to revoke.", cn), nil, nil), nil
+		return tlsMutateResult(c, false, fmt.Sprintf("No valid certificate for %s was found to revoke.", cn), nil, nil), nil
 	}
 
 	change := value.MapOf(cn, states.Change("valid", "revoked"))

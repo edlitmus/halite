@@ -713,17 +713,30 @@ func aclWipeFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 	recursive := states.Bool(args, "recursive", false)
 
-	if err := aclToolPresent(c, "getfacl"); err != nil {
+	// Asked through aclExtendedMark, not `getfacl -s`.
+	//
+	// **`getfacl -s` was added in FreeBSD 15.** On 14 it is not an option
+	// at all -- the usage is `getfacl [-dhnqv]` -- so this call failed with
+	//
+	//	getfacl: illegal option -- s
+	//
+	// for every path on every 14 host, which made `acl.wipe` unusable
+	// there. That is 5.113 exactly, and 5.113 was *fixed*: the whole
+	// explanation of it sits three hundred and ninety lines above this, on
+	// aclExtendedMark, which exists because of it. The fix reached
+	// `acl.is_extended` and not its sibling, and nothing noticed for want
+	// of a FreeBSD 14 in the loop -- the live ACL test failed there for
+	// months and the failure was read as the machine rather than the code.
+	//
+	// So the question is asked once, in one place, and both callers use it.
+	// A second implementation of "is this ACL extended" is what produced
+	// the divergence; removing it is the fix rather than correcting the
+	// flags. DIVERGENCE 5.113.
+	extended, err := aclExtendedMark(c, path, true)
+	if err != nil {
 		return nil, err
 	}
-	res, err := c.Run(exec.Command{Argv: []string{"getfacl", "-sq", path}, IgnoreExitCode: true})
-	if err != nil {
-		return nil, fmt.Errorf("getfacl could not be run: %w", err)
-	}
-	if res.Code != 0 {
-		return nil, fmt.Errorf("getfacl could not read %s: %s", path, strings.TrimSpace(firstLine(res.Stderr)))
-	}
-	if strings.TrimSpace(res.Stdout) == "" {
+	if !extended {
 		return aclMutateResult(c, false, fmt.Sprintf("%s already has only the trivial ACL implied by its mode.", path), nil), nil
 	}
 

@@ -307,6 +307,20 @@ func checkComment(comment string) error {
 	return nil
 }
 
+// CommentIsASentence is checkComment, for an audit outside this package.
+//
+// `internal/builtin` has a static check that no state's comment *format
+// string* opens with a lower-case English word, because four separate lab
+// runs have now found one that did -- `nftables`, `iptables`, `lvm` and the
+// `beacon`/`schedule` pair, each discovered when its first conformance case
+// arrived. Finding them at `make check` instead is worth more than finding
+// them one family at a time on a billed instance.
+//
+// Exported rather than reimplemented there: a second copy of this rule is
+// precisely the two-paths-that-must-agree shape, and the copy would be the
+// one that drifted.
+func CommentIsASentence(comment string) error { return checkComment(comment) }
+
 // startsWithIdentifier reports whether a comment opens with the thing the
 // state manages rather than with a word.
 //

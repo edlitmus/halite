@@ -52,17 +52,13 @@ func init() {
 		"debconf.set", "firewall.absent", "firewall.allowed", "firewall.denied",
 		"firewall.enabled", "gem.installed", "gem.removed",
 		"hostname.system",
-		"jail.running", "lvm.lv_absent", "lvm.lv_present", "lvm.pv_absent", "lvm.pv_present",
-		"lvm.vg_absent", "lvm.vg_present",
-		"mac_defaults.absent", "mac_defaults.write", "mount.mounted", "mount.unmounted",
-		"netplan.managed",
+		"jail.running", "mac_defaults.absent", "mac_defaults.write", "netplan.managed",
 		"npm.installed", "npm.removed", "pip.installed", "pip.removed",
 		"pkg.latest", "pkg.purged", "pkgrepo.absent", "pkgrepo.managed", "reboot.scheduled",
 		"snap.installed", "snap.removed", "timezone.system",
 
 		"win_dacl.absent", "win_dacl.inherit", "win_dacl.owner", "win_dacl.present",
 		"win_service.start_type", "win_task.absent", "win_task.present",
-		"zfs.absent", "zfs.filesystem_present", "zpool.absent", "zpool.present",
 	} {
 		unconformed[n] = machine
 	}

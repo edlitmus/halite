@@ -736,7 +736,7 @@ func jailRunningState(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	jails, err := jailList(c)
 	if err != nil {
-		return states.False(fmt.Sprintf("the running jails could not be read: %v", err)), nil
+		return states.False(fmt.Sprintf("The running jails could not be read: %v", err)), nil
 	}
 	_, running := jails[name]
 

@@ -178,7 +178,7 @@ func gitLatest(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False("This state needs a repository URL and a target directory."), nil
 	}
 	if c.Which("git") == "" {
-		return states.False("git was not found on this node; the git module drives the system binary."), nil
+		return states.False("Git was not found on this node; the git module drives the system binary."), nil
 	}
 
 	_, err := os.Stat(filepath.Join(target, ".git"))

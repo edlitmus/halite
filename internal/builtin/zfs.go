@@ -175,7 +175,7 @@ func zfsFilesystemPresent(c *exec.Context, args *value.Map) (states.Result, erro
 		return states.False("This state needs a dataset name."), nil
 	}
 	if c.Which("zfs") == "" {
-		return states.False("zfs was not found on this node."), nil
+		return states.False("Zfs was not found on this node."), nil
 	}
 	props := states.Mapping(args, "properties")
 
@@ -258,7 +258,7 @@ func sortedPropertyNames(props *value.Map) []string {
 func zfsAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 	dataset := states.Str(args, "name", "")
 	if c.Which("zfs") == "" {
-		return states.False("zfs was not found on this node."), nil
+		return states.False("Zfs was not found on this node."), nil
 	}
 	if !zfsExists(c, dataset) {
 		return states.True(fmt.Sprintf("The dataset %s is already absent.", dataset)), nil
