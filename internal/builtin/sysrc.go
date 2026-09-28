@@ -178,7 +178,7 @@ func sysrcPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False("This state needs an rc.conf setting name."), nil
 	}
 	if c.Which("sysrc") == "" {
-		return states.False("sysrc was not found on this node; the sysrc module manages FreeBSD's rc.conf."), nil
+		return states.False("Sysrc was not found on this node; the sysrc module manages FreeBSD's rc.conf."), nil
 	}
 
 	current, set, err := sysrcGet(c, name, file)
@@ -207,7 +207,7 @@ func sysrcAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 	name := states.Str(args, "name", "")
 	file := states.Str(args, "file", "")
 	if c.Which("sysrc") == "" {
-		return states.False("sysrc was not found on this node; the sysrc module manages FreeBSD's rc.conf."), nil
+		return states.False("Sysrc was not found on this node; the sysrc module manages FreeBSD's rc.conf."), nil
 	}
 
 	current, set, err := sysrcGet(c, name, file)

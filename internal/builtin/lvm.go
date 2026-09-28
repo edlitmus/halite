@@ -984,18 +984,18 @@ func lvmPVRemove(c *exec.Context, args *value.Map) (any, error) {
 
 	change := value.MapOf("wiped", states.Change(todo, nil))
 	if c.Test {
-		return lvmMutateResult(c, true, fmt.Sprintf("the LVM label would be wiped from %s.", strings.Join(todo, ", ")), change), nil
+		return lvmMutateResult(c, true, fmt.Sprintf("The LVM label would be wiped from %s.", strings.Join(todo, ", ")), change), nil
 	}
 	if err := lvmRun(c, lvmPVRemoveArgv(todo, force)); err != nil {
 		return nil, err
 	}
-	return lvmMutateResult(c, true, fmt.Sprintf("the LVM label was wiped from %s.", strings.Join(todo, ", ")), change), nil
+	return lvmMutateResult(c, true, fmt.Sprintf("The LVM label was wiped from %s.", strings.Join(todo, ", ")), change), nil
 }
 
 func lvmVGCreate(c *exec.Context, args *value.Map) (any, error) {
 	name := strings.TrimSpace(states.Str(args, "name", ""))
 	if name == "" {
-		return nil, errors.New("a volume group must be named")
+		return nil, errors.New("A volume group must be named")
 	}
 	if strings.ContainsRune(name, '/') {
 		return nil, fmt.Errorf("%q is not a volume group name", name)
@@ -1019,7 +1019,7 @@ func lvmVGCreate(c *exec.Context, args *value.Map) (any, error) {
 		// against one is an error. The idempotent answer is to say it is
 		// already there and point at the tool that would add to it.
 		return lvmMutateResult(c, false,
-			fmt.Sprintf("volume group %q already exists; use lvm.vgextend to add devices to it.", name), nil), nil
+			fmt.Sprintf("The volume group %q already exists; use lvm.vgextend to add devices to it.", name), nil), nil
 	}
 	if err := lvmDevicesFreeFor(c, name, devices); err != nil {
 		return nil, err
@@ -1027,12 +1027,12 @@ func lvmVGCreate(c *exec.Context, args *value.Map) (any, error) {
 
 	change := value.MapOf("created", states.Change(nil, value.MapOf("name", name, "devices", devices)))
 	if c.Test {
-		return lvmMutateResult(c, true, fmt.Sprintf("volume group %q would be created from %s.", name, strings.Join(devices, ", ")), change), nil
+		return lvmMutateResult(c, true, fmt.Sprintf("The volume group %q would be created from %s.", name, strings.Join(devices, ", ")), change), nil
 	}
 	if err := lvmRun(c, lvmVGCreateArgv(name, devices, extentSize, force)); err != nil {
 		return nil, err
 	}
-	return lvmMutateResult(c, true, fmt.Sprintf("volume group %q was created from %s.", name, strings.Join(devices, ", ")), change), nil
+	return lvmMutateResult(c, true, fmt.Sprintf("The volume group %q was created from %s.", name, strings.Join(devices, ", ")), change), nil
 }
 
 // lvmDevicesFreeFor refuses a device that already belongs to a different
@@ -1057,7 +1057,7 @@ func lvmDevicesFreeFor(c *exec.Context, vg string, devices []string) error {
 func lvmVGExtend(c *exec.Context, args *value.Map) (any, error) {
 	name := strings.TrimSpace(states.Str(args, "name", ""))
 	if name == "" {
-		return nil, errors.New("a volume group must be named")
+		return nil, errors.New("A volume group must be named")
 	}
 	devices, err := lvmDevices(args)
 	if err != nil {
@@ -1096,7 +1096,7 @@ func lvmVGExtend(c *exec.Context, args *value.Map) (any, error) {
 		}
 	}
 	if len(todo) == 0 {
-		return lvmMutateResult(c, false, fmt.Sprintf("volume group %q already spans %s.", name, strings.Join(devices, ", ")), nil), nil
+		return lvmMutateResult(c, false, fmt.Sprintf("The volume group %q already spans %s.", name, strings.Join(devices, ", ")), nil), nil
 	}
 
 	change := value.MapOf("added", states.Change(nil, todo))
@@ -1112,7 +1112,7 @@ func lvmVGExtend(c *exec.Context, args *value.Map) (any, error) {
 func lvmVGRemove(c *exec.Context, args *value.Map) (any, error) {
 	name := strings.TrimSpace(states.Str(args, "name", ""))
 	if name == "" {
-		return nil, errors.New("a volume group must be named")
+		return nil, errors.New("A volume group must be named")
 	}
 	force := states.Bool(args, "force", false)
 	if err := lvmToolsPresent(c); err != nil {
@@ -1124,7 +1124,7 @@ func lvmVGRemove(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	if !exists {
-		return lvmMutateResult(c, false, fmt.Sprintf("volume group %q does not exist.", name), nil), nil
+		return lvmMutateResult(c, false, fmt.Sprintf("The volume group %q does not exist.", name), nil), nil
 	}
 
 	lvs, err := lvmReport(c, "lv", "")
@@ -1146,12 +1146,12 @@ func lvmVGRemove(c *exec.Context, args *value.Map) (any, error) {
 
 	change := value.MapOf("removed", states.Change(name, nil))
 	if c.Test {
-		return lvmMutateResult(c, true, fmt.Sprintf("volume group %q would be removed.", name), change), nil
+		return lvmMutateResult(c, true, fmt.Sprintf("The volume group %q would be removed.", name), change), nil
 	}
 	if err := lvmRun(c, lvmVGRemoveArgv(name, force)); err != nil {
 		return nil, err
 	}
-	return lvmMutateResult(c, true, fmt.Sprintf("volume group %q was removed.", name), change), nil
+	return lvmMutateResult(c, true, fmt.Sprintf("The volume group %q was removed.", name), change), nil
 }
 
 func lvmLVCreate(c *exec.Context, args *value.Map) (any, error) {
@@ -1185,18 +1185,18 @@ func lvmLVCreate(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	if lv != nil {
-		return lvmMutateResult(c, false, fmt.Sprintf("logical volume %s/%s already exists.", opts.Group, opts.Name), nil), nil
+		return lvmMutateResult(c, false, fmt.Sprintf("The logical volume %s/%s already exists.", opts.Group, opts.Name), nil), nil
 	}
 
 	change := value.MapOf("created", states.Change(nil, value.MapOf(
 		"name", opts.Group+"/"+opts.Name, "size", firstNonEmpty(opts.Size, opts.Extents))))
 	if c.Test {
-		return lvmMutateResult(c, true, fmt.Sprintf("logical volume %s/%s would be created.", opts.Group, opts.Name), change), nil
+		return lvmMutateResult(c, true, fmt.Sprintf("The logical volume %s/%s would be created.", opts.Group, opts.Name), change), nil
 	}
 	if err := lvmRun(c, argv); err != nil {
 		return nil, err
 	}
-	return lvmMutateResult(c, true, fmt.Sprintf("logical volume %s/%s was created.", opts.Group, opts.Name), change), nil
+	return lvmMutateResult(c, true, fmt.Sprintf("The logical volume %s/%s was created.", opts.Group, opts.Name), change), nil
 }
 
 func firstNonEmpty(a, b string) string {
@@ -1240,7 +1240,7 @@ func lvmLVResize(c *exec.Context, args *value.Map) (any, error) {
 	if want, ok := lvmParseSize(size); ok {
 		switch {
 		case want == current.Bytes:
-			return lvmMutateResult(c, false, fmt.Sprintf("logical volume %s is already %d bytes.", ref, want), nil), nil
+			return lvmMutateResult(c, false, fmt.Sprintf("The logical volume %s is already %d bytes.", ref, want), nil), nil
 		case want < current.Bytes && !force:
 			return nil, fmt.Errorf(
 				"logical volume %s is %d bytes and the target is %d: a shrink can outrun the filesystem on top of it and lose data; "+
@@ -1250,12 +1250,12 @@ func lvmLVResize(c *exec.Context, args *value.Map) (any, error) {
 
 	change := value.MapOf("size", states.Change(current.Bytes, firstNonEmpty(size, extents)))
 	if c.Test {
-		return lvmMutateResult(c, true, fmt.Sprintf("logical volume %s would be resized.", ref), change), nil
+		return lvmMutateResult(c, true, fmt.Sprintf("The logical volume %s would be resized.", ref), change), nil
 	}
 	if err := lvmRun(c, argv); err != nil {
 		return nil, err
 	}
-	return lvmMutateResult(c, true, fmt.Sprintf("logical volume %s was resized.", ref), change), nil
+	return lvmMutateResult(c, true, fmt.Sprintf("The logical volume %s was resized.", ref), change), nil
 }
 
 func lvmLVRemove(c *exec.Context, args *value.Map) (any, error) {
@@ -1272,17 +1272,17 @@ func lvmLVRemove(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	if current == nil {
-		return lvmMutateResult(c, false, fmt.Sprintf("logical volume %s does not exist.", ref), nil), nil
+		return lvmMutateResult(c, false, fmt.Sprintf("The logical volume %s does not exist.", ref), nil), nil
 	}
 
 	change := value.MapOf("removed", states.Change(ref, nil))
 	if c.Test {
-		return lvmMutateResult(c, true, fmt.Sprintf("logical volume %s would be removed.", ref), change), nil
+		return lvmMutateResult(c, true, fmt.Sprintf("The logical volume %s would be removed.", ref), change), nil
 	}
 	if err := lvmRun(c, lvmLVRemoveArgv(ref, true)); err != nil {
 		return nil, err
 	}
-	return lvmMutateResult(c, true, fmt.Sprintf("logical volume %s was removed.", ref), change), nil
+	return lvmMutateResult(c, true, fmt.Sprintf("The logical volume %s was removed.", ref), change), nil
 }
 
 // ---- states ----
@@ -1294,7 +1294,7 @@ func lvmStateName(args *value.Map) string {
 func lvmPVPresentState(c *exec.Context, args *value.Map) (states.Result, error) {
 	device := lvmStateName(args)
 	if device == "" {
-		return states.False("a block device must be named"), nil
+		return states.False("A block device must be named"), nil
 	}
 	if err := lvmToolsPresent(c); err != nil {
 		return states.False(err.Error()), nil
@@ -1320,7 +1320,7 @@ func lvmPVPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 func lvmPVAbsentState(c *exec.Context, args *value.Map) (states.Result, error) {
 	device := lvmStateName(args)
 	if device == "" {
-		return states.False("a block device must be named"), nil
+		return states.False("A block device must be named"), nil
 	}
 	if err := lvmToolsPresent(c); err != nil {
 		return states.False(err.Error()), nil
@@ -1340,18 +1340,18 @@ func lvmPVAbsentState(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	changes := value.MapOf(device, states.Change("physical volume", "no label"))
 	if c.Test {
-		return states.WouldChange(fmt.Sprintf("the LVM label would be wiped from %s.", device), changes), nil
+		return states.WouldChange(fmt.Sprintf("The LVM label would be wiped from %s.", device), changes), nil
 	}
 	if err := lvmRun(c, lvmPVRemoveArgv([]string{device}, force)); err != nil {
 		return states.False(err.Error()), nil
 	}
-	return states.Changed(fmt.Sprintf("the LVM label was wiped from %s.", device), changes), nil
+	return states.Changed(fmt.Sprintf("The LVM label was wiped from %s.", device), changes), nil
 }
 
 func lvmVGPresentState(c *exec.Context, args *value.Map) (states.Result, error) {
 	name := lvmStateName(args)
 	if name == "" {
-		return states.False("a volume group must be named"), nil
+		return states.False("A volume group must be named"), nil
 	}
 	devices := states.Strings(args, "devices")
 	force := states.Bool(args, "force", false)
@@ -1367,21 +1367,21 @@ func lvmVGPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 	if !exists {
 		if len(devices) == 0 {
 			return states.False(fmt.Sprintf(
-				"volume group %q does not exist and no devices were given to build it from", name)), nil
+				"Volume group %q does not exist and no devices were given to build it from", name)), nil
 		}
 		if err := lvmDevicesFreeFor(c, name, devices); err != nil {
 			return states.False(err.Error()), nil
 		}
 		changes := value.MapOf(name, states.Change(nil, value.MapOf("devices", devices)))
 		if c.Test {
-			return states.WouldChange(fmt.Sprintf("volume group %q would be created from %s.",
+			return states.WouldChange(fmt.Sprintf("The volume group %q would be created from %s.",
 				name, strings.Join(devices, ", ")), changes), nil
 		}
 		extentSize := strings.TrimSpace(states.Str(args, "physicalextentsize", ""))
 		if err := lvmRun(c, lvmVGCreateArgv(name, devices, extentSize, force)); err != nil {
 			return states.False(err.Error()), nil
 		}
-		return states.Changed(fmt.Sprintf("volume group %q was created from %s.",
+		return states.Changed(fmt.Sprintf("The volume group %q was created from %s.",
 			name, strings.Join(devices, ", ")), changes), nil
 	}
 
@@ -1390,7 +1390,7 @@ func lvmVGPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 	// moves the data that is on it, which is not a thing a state should
 	// do as a side effect of a list that got shorter.
 	if len(devices) == 0 {
-		return states.True(fmt.Sprintf("volume group %q exists.", name)), nil
+		return states.True(fmt.Sprintf("The volume group %q exists.", name)), nil
 	}
 	pvs, err := lvmPVList(c)
 	if err != nil {
@@ -1413,7 +1413,7 @@ func lvmVGPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 		}
 	}
 	if len(todo) == 0 {
-		return states.True(fmt.Sprintf("volume group %q already spans %s.", name, strings.Join(devices, ", "))), nil
+		return states.True(fmt.Sprintf("The volume group %q already spans %s.", name, strings.Join(devices, ", "))), nil
 	}
 
 	changes := value.MapOf(name, states.Change("without "+strings.Join(todo, ", "), "with "+strings.Join(todo, ", ")))
@@ -1430,7 +1430,7 @@ func lvmVGPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 func lvmVGAbsentState(c *exec.Context, args *value.Map) (states.Result, error) {
 	name := lvmStateName(args)
 	if name == "" {
-		return states.False("a volume group must be named"), nil
+		return states.False("A volume group must be named"), nil
 	}
 	force := states.Bool(args, "force", false)
 	if err := lvmToolsPresent(c); err != nil {
@@ -1441,7 +1441,7 @@ func lvmVGAbsentState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(err.Error()), nil
 	}
 	if !exists {
-		return states.True(fmt.Sprintf("volume group %q does not exist.", name)), nil
+		return states.True(fmt.Sprintf("The volume group %q does not exist.", name)), nil
 	}
 
 	lvs, err := lvmReport(c, "lv", "")
@@ -1457,25 +1457,25 @@ func lvmVGAbsentState(c *exec.Context, args *value.Map) (states.Result, error) {
 	if len(held) > 0 && !force {
 		sort.Strings(held)
 		return states.False(fmt.Sprintf(
-			"volume group %q still holds logical volumes (%s); set force to remove the group and all of them",
+			"Volume group %q still holds logical volumes (%s); set force to remove the group and all of them",
 			name, strings.Join(held, ", "))), nil
 	}
 
 	changes := value.MapOf(name, states.Change("present", nil))
 	if c.Test {
-		return states.WouldChange(fmt.Sprintf("volume group %q would be removed.", name), changes), nil
+		return states.WouldChange(fmt.Sprintf("The volume group %q would be removed.", name), changes), nil
 	}
 	if err := lvmRun(c, lvmVGRemoveArgv(name, force)); err != nil {
 		return states.False(err.Error()), nil
 	}
-	return states.Changed(fmt.Sprintf("volume group %q was removed.", name), changes), nil
+	return states.Changed(fmt.Sprintf("The volume group %q was removed.", name), changes), nil
 }
 
 func lvmLVPresentState(c *exec.Context, args *value.Map) (states.Result, error) {
 	lvName := lvmStateName(args)
 	vg := strings.TrimSpace(states.Str(args, "vgname", ""))
 	if lvName == "" || vg == "" {
-		return states.False("a logical volume needs a name and a vgname"), nil
+		return states.False("A logical volume needs a name and a vgname"), nil
 	}
 	size := strings.TrimSpace(states.Str(args, "size", ""))
 	extents := strings.TrimSpace(states.Str(args, "extents", ""))
@@ -1488,7 +1488,7 @@ func lvmLVPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 		return states.False(err.Error()), nil
 	}
 	if !exists {
-		return states.False(fmt.Sprintf("volume group %q does not exist", vg)), nil
+		return states.False(fmt.Sprintf("The volume group %q does not exist", vg)), nil
 	}
 	current, err := lvmFindLV(c, vg, lvName)
 	if err != nil {
@@ -1511,12 +1511,12 @@ func lvmLVPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 		}
 		changes := value.MapOf(vg+"/"+lvName, states.Change(nil, "created"))
 		if c.Test {
-			return states.WouldChange(fmt.Sprintf("logical volume %s/%s would be created.", vg, lvName), changes), nil
+			return states.WouldChange(fmt.Sprintf("The logical volume %s/%s would be created.", vg, lvName), changes), nil
 		}
 		if err := lvmRun(c, argv); err != nil {
 			return states.False(err.Error()), nil
 		}
-		return states.Changed(fmt.Sprintf("logical volume %s/%s was created.", vg, lvName), changes), nil
+		return states.Changed(fmt.Sprintf("The logical volume %s/%s was created.", vg, lvName), changes), nil
 	}
 
 	// The volume is there. A grow to a larger absolute size is done; a
@@ -1526,7 +1526,7 @@ func lvmLVPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 	// surprise. lvm.lvresize with force is the deliberate path for that.
 	want, absolute := lvmParseSize(size)
 	if size == "" || !absolute || want <= current.Bytes {
-		res := states.True(fmt.Sprintf("logical volume %s/%s exists.", vg, lvName))
+		res := states.True(fmt.Sprintf("The logical volume %s/%s exists.", vg, lvName))
 		if absolute && want < current.Bytes {
 			res.Warnings = append(res.Warnings,
 				fmt.Sprintf("%s/%s is %d bytes, larger than the declared %d; lvm.lv_present never shrinks a volume. Use lvm.lvresize with force.",
@@ -1543,19 +1543,19 @@ func lvmLVPresentState(c *exec.Context, args *value.Map) (states.Result, error) 
 	}
 	changes := value.MapOf(ref, states.Change(current.Bytes, size))
 	if c.Test {
-		return states.WouldChange(fmt.Sprintf("logical volume %s would be grown to %s.", ref, size), changes), nil
+		return states.WouldChange(fmt.Sprintf("The logical volume %s would be grown to %s.", ref, size), changes), nil
 	}
 	if err := lvmRun(c, argv); err != nil {
 		return states.False(err.Error()), nil
 	}
-	return states.Changed(fmt.Sprintf("logical volume %s was grown to %s.", ref, size), changes), nil
+	return states.Changed(fmt.Sprintf("The logical volume %s was grown to %s.", ref, size), changes), nil
 }
 
 func lvmLVAbsentState(c *exec.Context, args *value.Map) (states.Result, error) {
 	lvName := lvmStateName(args)
 	vg := strings.TrimSpace(states.Str(args, "vgname", ""))
 	if lvName == "" || vg == "" {
-		return states.False("a logical volume needs a name and a vgname"), nil
+		return states.False("A logical volume needs a name and a vgname"), nil
 	}
 	ref := vg + "/" + lvName
 	if err := lvmToolsPresent(c); err != nil {
@@ -1566,15 +1566,15 @@ func lvmLVAbsentState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(err.Error()), nil
 	}
 	if current == nil {
-		return states.True(fmt.Sprintf("logical volume %s does not exist.", ref)), nil
+		return states.True(fmt.Sprintf("The logical volume %s does not exist.", ref)), nil
 	}
 
 	changes := value.MapOf(ref, states.Change("present", nil))
 	if c.Test {
-		return states.WouldChange(fmt.Sprintf("logical volume %s would be removed.", ref), changes), nil
+		return states.WouldChange(fmt.Sprintf("The logical volume %s would be removed.", ref), changes), nil
 	}
 	if err := lvmRun(c, lvmLVRemoveArgv(ref, true)); err != nil {
 		return states.False(err.Error()), nil
 	}
-	return states.Changed(fmt.Sprintf("logical volume %s was removed.", ref), changes), nil
+	return states.Changed(fmt.Sprintf("The logical volume %s was removed.", ref), changes), nil
 }

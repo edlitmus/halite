@@ -871,7 +871,7 @@ func mdadmDestroyFn(c *exec.Context, args *value.Map) (any, error) {
 	change := value.MapOf(device, states.Change("array of "+strings.Join(members, ", "), "destroyed"))
 	if c.Test {
 		return mdadmMutateResult(c, true,
-			fmt.Sprintf("array %s would be stopped and the superblocks on %d member(s) zeroed.",
+			fmt.Sprintf("Array %s would be stopped and the superblocks on %d member(s) zeroed.",
 				device, len(members)), change), nil
 	}
 
@@ -888,7 +888,7 @@ func mdadmDestroyFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	return mdadmMutateResult(c, true,
-		fmt.Sprintf("array %s was destroyed and the superblocks on %d member(s) zeroed.",
+		fmt.Sprintf("Array %s was destroyed and the superblocks on %d member(s) zeroed.",
 			device, len(members)), change), nil
 }
 
@@ -1034,13 +1034,13 @@ func mdadmCreateFn(c *exec.Context, args *value.Map) (any, error) {
 		"level", levelName, "devices", opts.Devices)))
 	if c.Test {
 		return mdadmMutateResult(c, true, fmt.Sprintf(
-			"array %s would be created as %s across %s.", opts.Device, levelName, strings.Join(opts.Devices, ", ")), change), nil
+			"Array %s would be created as %s across %s.", opts.Device, levelName, strings.Join(opts.Devices, ", ")), change), nil
 	}
 	if _, err := mdadmRun(c, argv); err != nil {
 		return nil, err
 	}
 	return mdadmMutateResult(c, true, fmt.Sprintf(
-		"array %s was created as %s across %s.", opts.Device, levelName, strings.Join(opts.Devices, ", ")), change), nil
+		"Array %s was created as %s across %s.", opts.Device, levelName, strings.Join(opts.Devices, ", ")), change), nil
 }
 
 // mdadmLevelName renders a level for a message: a bare number gains the
@@ -1116,13 +1116,13 @@ func mdadmStopFn(c *exec.Context, args *value.Map) (any, error) {
 		return mdadmMutateResult(c, false, fmt.Sprintf("%s is not a running array.", device), nil), nil
 	}
 	if c.Test {
-		return mdadmMutateResult(c, true, fmt.Sprintf("array %s would be stopped.", device),
+		return mdadmMutateResult(c, true, fmt.Sprintf("Array %s would be stopped.", device),
 			value.MapOf(device, states.Change("running", "stopped"))), nil
 	}
 	if _, err := mdadmRun(c, []string{"mdadm", "--stop", device}); err != nil {
 		return nil, err
 	}
-	return mdadmMutateResult(c, true, fmt.Sprintf("array %s was stopped.", device),
+	return mdadmMutateResult(c, true, fmt.Sprintf("Array %s was stopped.", device),
 		value.MapOf(device, states.Change("running", "stopped"))), nil
 }
 
@@ -1218,13 +1218,13 @@ func mdadmGrowFn(c *exec.Context, args *value.Map) (any, error) {
 		change.Set("size", states.Change(a.ArraySizeKB, size))
 	}
 	if c.Test {
-		return mdadmMutateResult(c, true, fmt.Sprintf("array %s would be grown; a reshape can take hours.", device), change), nil
+		return mdadmMutateResult(c, true, fmt.Sprintf("Array %s would be grown; a reshape can take hours.", device), change), nil
 	}
 	out, err := mdadmRun(c, argv)
 	if err != nil {
 		return nil, err
 	}
-	res := mdadmMutateResult(c, true, fmt.Sprintf("array %s was grown; the reshape runs in the background.", device), change)
+	res := mdadmMutateResult(c, true, fmt.Sprintf("Array %s was grown; the reshape runs in the background.", device), change)
 	if out != "" {
 		res.Set("output", out)
 	}

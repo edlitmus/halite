@@ -442,7 +442,7 @@ func rebootSchedule(c *exec.Context, delayMinutes int64, message string) (any, e
 	out.Set("changed", true)
 	out.Set("delay_minutes", delayMinutes)
 	out.Set("comment", fmt.Sprintf(
-		"a reboot is scheduled for %d minute(s) from now; `reboot.cancel` stops it",
+		"A reboot is scheduled for %d minute(s) from now; `reboot.cancel` stops it",
 		delayMinutes))
 	return out, nil
 }
@@ -784,7 +784,7 @@ func rebootScheduledState(c *exec.Context, args *value.Map) (states.Result, erro
 	if onlyIfRequired {
 		required, err := rebootRequired(c)
 		if err != nil {
-			return states.False(fmt.Sprintf("whether a reboot is needed could not be read: %v", err)), nil
+			return states.False(fmt.Sprintf("Whether a reboot is needed could not be read: %v", err)), nil
 		}
 		m := required.(*value.Map)
 		known, _ := m.GetString("known")
@@ -797,29 +797,29 @@ func rebootScheduledState(c *exec.Context, args *value.Map) (states.Result, erro
 		}
 		if need, _ := m.GetString("required"); need != true {
 			comment, _ := m.GetString("comment")
-			return states.True(fmt.Sprintf("no reboot is required: %v", comment)), nil
+			return states.True(fmt.Sprintf("No reboot is required: %v", comment)), nil
 		}
 	}
 
 	pending, err := rebootScheduled(c)
 	if err != nil {
-		return states.False(fmt.Sprintf("whether a shutdown is pending could not be read: %v", err)), nil
+		return states.False(fmt.Sprintf("Whether a shutdown is pending could not be read: %v", err)), nil
 	}
 	if already, _ := pending.(*value.Map).GetString("scheduled"); already == true {
 		comment, _ := pending.(*value.Map).GetString("comment")
-		return states.True(fmt.Sprintf("a reboot is already pending, so this changed nothing: %v",
+		return states.True(fmt.Sprintf("A reboot is already pending, so this changed nothing: %v",
 			comment)), nil
 	}
 
 	changes := value.MapOf("reboot", states.Change("none pending", fmt.Sprintf("in %d minute(s)", delay)))
 	if c.Test {
 		return states.WouldChange(fmt.Sprintf(
-			"a reboot would be scheduled for %d minute(s) from now.", delay), changes), nil
+			"A reboot would be scheduled for %d minute(s) from now.", delay), changes), nil
 	}
 	if _, err := rebootSchedule(c, delay, message); err != nil {
-		return states.False(fmt.Sprintf("a reboot could not be scheduled: %v", err)), nil
+		return states.False(fmt.Sprintf("A reboot could not be scheduled: %v", err)), nil
 	}
 	return states.Changed(fmt.Sprintf(
-		"a reboot is scheduled for %d minute(s) from now; `reboot.cancel` stops it", delay),
+		"A reboot is scheduled for %d minute(s) from now; `reboot.cancel` stops it", delay),
 		changes), nil
 }

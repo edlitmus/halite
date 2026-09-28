@@ -34,6 +34,15 @@ that flag, and carries twenty lines explaining why. The fix reached
 an audit walks all 290 files in the package to make sure nothing passes
 `-s` to `getfacl` again.
 
+### Every state's comment reads as a sentence
+
+SPEC 11.6 wants a state's comment to be a human sentence, and sixty-nine of
+them opened with a lower-case English word — "the volume group was
+removed.", "array md0 was stopped." An audit now walks the package and
+holds all of them to it, rather than the conformance harness discovering one
+module family at a time. Operator-visible wording only; no behaviour
+changed.
+
 ### One hundred state functions are held to the test-mode contract
 
 Up from eighty-eight. The twelve storage states have cases now, on storage

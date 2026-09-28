@@ -1004,7 +1004,7 @@ func nftAddRule(c *exec.Context, args *value.Map, mode string) (any, error) {
 		}
 		if nftFindRuleByComment(rs, family, table, chain, comment) != nil {
 			return nftMutateResult(c, false,
-				fmt.Sprintf("a rule with comment %q is already in %s.", comment, chainRef(family, table, chain)), nil), nil
+				fmt.Sprintf("A rule with comment %q is already in %s.", comment, chainRef(family, table, chain)), nil), nil
 		}
 	} else {
 		warns = append(warns,
@@ -1054,7 +1054,7 @@ func nftDeleteRule(c *exec.Context, args *value.Map) (any, error) {
 		ru := nftFindRuleByComment(rs, family, table, chain, comment)
 		if ru == nil {
 			return nftMutateResult(c, false,
-				fmt.Sprintf("no rule with comment %q is in %s.", comment, chainRef(family, table, chain)), nil), nil
+				fmt.Sprintf("No rule with comment %q is in %s.", comment, chainRef(family, table, chain)), nil), nil
 		}
 		handle = ru.Handle
 	}
@@ -1289,7 +1289,7 @@ func nftSetPolicyState(c *exec.Context, args *value.Map) (states.Result, error) 
 
 func nftRuleState(c *exec.Context, args *value.Map, mode string) (states.Result, error) {
 	if strings.TrimSpace(states.Str(args, "comment", "")) == "" {
-		return states.False("a comment is required: it is the rule's identity, and without one a state cannot be idempotent"), nil
+		return states.False("A comment is required: it is the rule's identity, and without one a state cannot be idempotent"), nil
 	}
 	var (
 		out any
@@ -1325,7 +1325,7 @@ func nftStateFromMutate(c *exec.Context, out any, err error) (states.Result, err
 	}
 	m, ok := out.(*value.Map)
 	if !ok {
-		return states.False("the module returned an unexpected shape"), nil
+		return states.False("The module returned an unexpected shape"), nil
 	}
 	changed, _ := m.GetString("changed")
 	cv, _ := m.GetString("comment")

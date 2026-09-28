@@ -832,7 +832,7 @@ func iptablesRulePresent(c *exec.Context, family, table, chain string, spec []st
 		return false, nil, err
 	}
 	if strings.TrimSpace(chain) == "" {
-		return false, nil, errors.New("a chain must be named")
+		return false, nil, errors.New("A chain must be named")
 	}
 	bin, _ := iptablesBin(family)
 	argv := append([]string{bin, "-t", table, "-C", chain}, spec...)
@@ -927,7 +927,7 @@ func iptablesChainChange(c *exec.Context, args *value.Map, create bool) (any, er
 	table := iptablesTable(args)
 	chain := strings.TrimSpace(states.Str(args, "chain", ""))
 	if chain == "" {
-		return nil, errors.New("a chain must be named")
+		return nil, errors.New("A chain must be named")
 	}
 	exists, policy, err := iptablesChainExists(c, family, table, chain)
 	if err != nil {
@@ -1099,12 +1099,12 @@ func iptablesSaveFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 	change := value.MapOf(path, states.Change("stale or absent", "the running ruleset"))
 	if c.Test {
-		return iptablesMutateResult(c, true, fmt.Sprintf("the running ruleset would be written to %s.", path), change), nil
+		return iptablesMutateResult(c, true, fmt.Sprintf("The running ruleset would be written to %s.", path), change), nil
 	}
 	if err := atomicfile.Write(path, []byte(want), 0o600); err != nil {
 		return nil, fmt.Errorf("%s could not be written: %w", path, err)
 	}
-	return iptablesMutateResult(c, true, fmt.Sprintf("the running ruleset was written to %s.", path), change), nil
+	return iptablesMutateResult(c, true, fmt.Sprintf("The running ruleset was written to %s.", path), change), nil
 }
 
 // iptablesDefaultSavePath picks the distribution's own restore file, or
@@ -1162,7 +1162,7 @@ func iptablesChainState(c *exec.Context, args *value.Map, present bool) (states.
 	table := iptablesTable(args)
 	chain := strings.TrimSpace(states.Str(args, "name", ""))
 	if chain == "" {
-		return states.False("a chain must be named"), nil
+		return states.False("A chain must be named"), nil
 	}
 	exists, policy, err := iptablesChainExists(c, family, table, chain)
 	if err != nil {
@@ -1199,7 +1199,7 @@ func iptablesChainState(c *exec.Context, args *value.Map, present bool) (states.
 		return states.False(err.Error()), nil
 	}
 	if err := iptablesRun(c, []string{bin, "-t", table, "-X", chain}); err != nil {
-		return states.False(fmt.Sprintf("the chain was flushed but not removed (it may still be a jump target): %v", err)), nil
+		return states.False(fmt.Sprintf("The chain was flushed but not removed (it may still be a jump target): %v", err)), nil
 	}
 	return states.Changed(fmt.Sprintf("The chain %s/%s was removed.", table, chain), changes), nil
 }
@@ -1209,7 +1209,7 @@ func iptablesRuleState(c *exec.Context, args *value.Map, mode string) (states.Re
 	table := iptablesTable(args)
 	chain := strings.TrimSpace(states.Str(args, "chain", ""))
 	if chain == "" {
-		return states.False("a chain must be named"), nil
+		return states.False("A chain must be named"), nil
 	}
 	spec, err := iptablesRuleStateSpec(args)
 	if err != nil {

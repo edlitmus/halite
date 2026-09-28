@@ -14565,6 +14565,44 @@ discovered. The harness holds the same pointer and sees them. No change to the
 harness, nothing computed at construction, and the alternative — a
 `func() *value.Map` field — would have needed one.
 
+##### Four lab runs to find one rule, so the rule moved to make check
+
+The comment rule has now been discovered the expensive way four times, each on
+a billed instance, each for one more module family: `beacon` and `schedule`,
+then `nftables`, then `iptables`, then `lvm`. Every time the finding was the
+same mechanical edit, and every time it cost a lab cycle — because the harness
+can only enforce the rule on a function that has a case, and a family gets its
+first case the day somebody writes one.
+
+`TestNoStateCommentOpensWithALowerCaseWord` walks the package with the AST,
+finds every call that builds a state result — `states.Changed`,
+`WouldChange`, `True`, `False`, and any helper whose name ends
+`MutateResult`, matched by shape so a new one is covered the day it exists —
+and judges the format string's literal opening.
+
+It found **59 across 15 files**, every one of them a failure waiting for its
+family's first case: `mdadm`, `data`, `reboot`, `tls`, `udev`, `zfs`, `zpool`,
+`jail`, `git`, `at`, `kmod`, `sysrc` and three already known. 69 occurrences
+capitalised.
+
+**It reuses the rule rather than restating it.** `states.CommentIsASentence`
+is exported for this one caller, because a second copy of "what reads as a
+sentence" in the audit is the two-paths-that-must-agree shape and the copy is
+the one that would drift.
+
+What it cannot judge is a format opening with a substitution — `%s` becomes a
+path or a device at runtime, which the rule admits and a static check cannot
+evaluate. 289 constructions are that shape and stay the harness's business.
+Sixteen more open with a lower-case letter and pass, because the first word is
+an identifier like `pf.conf`. What is left is the prefix somebody typed, which
+is exactly where the mistake kept being made.
+
+The general form is worth keeping: **a rule enforced only where coverage
+reaches is a rule discovered at the rate coverage grows.** Four families, four
+runs, one edit each. The audit costs a quarter of a second.
+
+
+
 
 
 

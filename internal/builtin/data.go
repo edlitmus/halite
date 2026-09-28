@@ -424,7 +424,7 @@ func dataUpdateFn(c *exec.Context, args *value.Map) (any, error) {
 	}
 	items := states.Mapping(args, "items")
 	if items == nil || items.Len() == 0 {
-		return dataMutateResult(c, false, "no keys were given to update.", nil), nil
+		return dataMutateResult(c, false, "No keys were given to update.", nil), nil
 	}
 	store, err := dataReadStore(path)
 	if err != nil {
@@ -444,7 +444,7 @@ func dataUpdateFn(c *exec.Context, args *value.Map) (any, error) {
 		change.Set(key, states.Change(oldForChange, e.Val))
 	}
 	if change.Len() == 0 {
-		return dataMutateResult(c, false, "every key already held the value given.", nil), nil
+		return dataMutateResult(c, false, "Every key already held the value given.", nil), nil
 	}
 	if c.Test {
 		return dataMutateResult(c, true, fmt.Sprintf("%d key(s) would be updated.", change.Len()), change), nil
@@ -472,16 +472,16 @@ func dataDumpFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	if mapsEqual(store, items) {
-		return dataMutateResult(c, false, "the store already holds that mapping.", nil), nil
+		return dataMutateResult(c, false, "The store already holds that mapping.", nil), nil
 	}
 	change := value.MapOf("store", states.Change(fmt.Sprintf("%d key(s)", store.Len()), fmt.Sprintf("%d key(s)", items.Len())))
 	if c.Test {
-		return dataMutateResult(c, true, "the store would be replaced.", change), nil
+		return dataMutateResult(c, true, "The store would be replaced.", change), nil
 	}
 	if err := dataWriteStore(path, items); err != nil {
 		return nil, err
 	}
-	return dataMutateResult(c, true, "the store was replaced.", change), nil
+	return dataMutateResult(c, true, "The store was replaced.", change), nil
 }
 
 // dataPopResult carries the value pop hands back to the caller alongside
@@ -534,14 +534,14 @@ func dataClearFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	if store.Len() == 0 {
-		return dataMutateResult(c, false, "the store is already empty.", nil), nil
+		return dataMutateResult(c, false, "The store is already empty.", nil), nil
 	}
 	change := value.MapOf("store", states.Change(fmt.Sprintf("%d key(s)", store.Len()), "0 key(s)"))
 	if c.Test {
-		return dataMutateResult(c, true, "the store would be cleared.", change), nil
+		return dataMutateResult(c, true, "The store would be cleared.", change), nil
 	}
 	if err := dataWriteStore(path, value.NewMap(0)); err != nil {
 		return nil, err
 	}
-	return dataMutateResult(c, true, "the store was cleared.", change), nil
+	return dataMutateResult(c, true, "The store was cleared.", change), nil
 }

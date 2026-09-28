@@ -717,7 +717,7 @@ func zpoolPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False("This state needs a pool name."), nil
 	}
 	if c.Which("zpool") == "" {
-		return states.False("zpool was not found on this node."), nil
+		return states.False("Zpool was not found on this node."), nil
 	}
 	declared, err := parseLayout(argValue(args, "layout"))
 	if err != nil {
@@ -847,7 +847,7 @@ func zpoolAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False("This state needs a pool name."), nil
 	}
 	if c.Which("zpool") == "" {
-		return states.False("zpool was not found on this node."), nil
+		return states.False("Zpool was not found on this node."), nil
 	}
 	if !zpoolExists(c, name) {
 		return states.True(fmt.Sprintf("The pool %s is not attached to this node.", name)), nil

@@ -275,7 +275,7 @@ func kmodPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	loaded, err := modList(c, false)
 	if err != nil {
-		return states.False(fmt.Sprintf("the loaded modules could not be read: %v", err)), nil
+		return states.False(fmt.Sprintf("The loaded modules could not be read: %v", err)), nil
 	}
 	if persist {
 		// With persist, "present" means loaded *and* written down, so a
@@ -319,7 +319,7 @@ func kmodAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 
 	loaded, err := modList(c, false)
 	if err != nil {
-		return states.False(fmt.Sprintf("the loaded modules could not be read: %v", err)), nil
+		return states.False(fmt.Sprintf("The loaded modules could not be read: %v", err)), nil
 	}
 	if persist {
 		// With persist, a module counts as present if it is loaded *or*

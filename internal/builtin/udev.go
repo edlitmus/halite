@@ -316,12 +316,12 @@ func udevTriggerFn(c *exec.Context, args *value.Map) (any, error) {
 			count = len(strings.Fields(strings.TrimSpace(res.Stdout)))
 		}
 		return udevMutateResult(c, true, fmt.Sprintf(
-			"a %s event would be triggered for %s (%d device(s) match).", action, scope, count), change), nil
+			"A %s event would be triggered for %s (%d device(s) match).", action, scope, count), change), nil
 	}
 	if err := udevRun(c, argv); err != nil {
 		return nil, err
 	}
-	return udevMutateResult(c, true, fmt.Sprintf("a %s event was triggered for %s.", action, scope), change), nil
+	return udevMutateResult(c, true, fmt.Sprintf("A %s event was triggered for %s.", action, scope), change), nil
 }
 
 func udevSettleFn(c *exec.Context, args *value.Map) (any, error) {

@@ -378,7 +378,7 @@ func atListJobs(c *exec.Context, queue string) ([]atJobLine, error) {
 		return nil, err
 	}
 	if c.Which(argv[0]) == "" {
-		return nil, fmt.Errorf("this node has no `%s`", argv[0])
+		return nil, fmt.Errorf("This node has no `%s`", argv[0])
 	}
 	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
@@ -397,7 +397,7 @@ func atShowScript(c *exec.Context, job int64) (string, error) {
 		return "", err
 	}
 	if c.Which(argv[0]) == "" {
-		return "", fmt.Errorf("this node has no `%s`", argv[0])
+		return "", fmt.Errorf("This node has no `%s`", argv[0])
 	}
 	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
 	if err != nil {
@@ -526,7 +526,7 @@ func atAtFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	if c.Which(argv[0]) == "" {
-		return nil, fmt.Errorf("this node has no `%s`", argv[0])
+		return nil, fmt.Errorf("This node has no `%s`", argv[0])
 	}
 	if c.Test {
 		out := value.NewMap(2)
@@ -548,7 +548,7 @@ func atAtrmFn(c *exec.Context, args *value.Map) (any, error) {
 		return nil, err
 	}
 	if c.Which(argv[0]) == "" {
-		return nil, fmt.Errorf("this node has no `%s`", argv[0])
+		return nil, fmt.Errorf("This node has no `%s`", argv[0])
 	}
 
 	// A read that fails here costs only the "already gone" answer, the
@@ -625,7 +625,7 @@ func atPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.False(fmt.Sprintf("%v", err)), nil
 	}
 	if c.Which(argv[0]) == "" {
-		return states.False(fmt.Sprintf("this node has no `%s`", argv[0])), nil
+		return states.False(fmt.Sprintf("This node has no `%s`", argv[0])), nil
 	}
 	result, err := atRunSchedule(c, argv, atScriptWithIdentifier(identifier, cmd))
 	if err != nil {
