@@ -85,6 +85,10 @@ on:
       # and macos legs, and nothing here ran when it changed.
       - "internal/builtin/user*.go"
       - "internal/builtin/sysrc*.go"
+      # `firewall`, whose four states are driven against a real ufw on the
+      # linux leg -- three of them without ever enabling it, since ufw edits
+      # its stored rules whether or not it is active.
+      - "internal/builtin/firewall*.go"
       # The language managers, whose conformance cases install a real
       # package over the network on the linux and macos legs. `lang*.go` is
       # one file set for all three of gem, npm and pip.

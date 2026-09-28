@@ -50,6 +50,16 @@ func init() {
 		"The only assignable owner left is the account that " +
 		"already owns the file, which is no change. win_dacl_windows_test.go drives SetOwner directly."
 
+	// The `firewall` module's four states have cases against `ufw`, and the
+	// `pf` provider has none. Not an entry -- the functions are covered -- but
+	// worth a line where somebody counting will read it: `pf`'s SetDefault
+	// refuses by design, since pf has no per-direction default policy, so a
+	// `firewall.enabled` case on FreeBSD would exercise `pfctl -e` and nothing
+	// more; and enabling a packet filter on a host reachable only over SSH to
+	// cover one line is a trade this suite should not make unasked. pf's rule
+	// path rewrites a whole anchor, which is different enough to want a case of
+	// its own rather than sharing ufw's.
+
 	// Changes the machine the suite runs on. The harness applies twice,
 	// for real, and this project's development host is a node the fleet
 	// manages -- so these belong to `TestLive*` and the lab, where the
@@ -58,8 +68,7 @@ func init() {
 		"belongs to a TestLive case on a disposable host"
 	for _, n := range []string{
 		"apparmor.mode",
-		"debconf.set", "firewall.absent", "firewall.allowed", "firewall.denied",
-		"firewall.enabled", "hostname.system",
+		"debconf.set", "hostname.system",
 		"jail.running", "netplan.managed",
 		"pkg.latest", "pkg.purged", "pkgrepo.absent", "pkgrepo.managed", "reboot.scheduled",
 		"snap.installed", "snap.removed", "timezone.system",

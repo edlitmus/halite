@@ -23,6 +23,35 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `firewall.absent` reported a removal on every run
+
+It asked ufw to dry-run the delete and read the answer negatively — a change
+happened unless ufw said "Could not delete non-existent rule". A dry run
+never says that: it prints the ruleset that would result, and "Rules
+updated" only when there is a rule to take out. So a tree carrying
+`firewall.absent` reported a removal on every highstate, for ever, against a
+rule already gone.
+
+Only the prediction was wrong; every path that acts reads correctly, which
+is why nothing had noticed. An operator met it as a highstate that never
+settles with no failure to point at. It now asks `ufw show added`, which
+answers directly whether ufw holds the rule.
+
+### One hundred and eighteen state functions are held to the test-mode contract
+
+Up from a hundred and fourteen. The four `firewall` states have cases against
+a real `ufw`, and three of them never turn the firewall on: ufw edits its
+stored rules whether or not it is active, so a rule for an unused high port is
+enforced by nothing. The fourth enables it with both defaults set to allow, so
+nothing is ever blocked, and puts the defaults back afterwards.
+
+The `pf` provider stays uncovered on purpose, for a reason recorded with it:
+its `SetDefault` refuses by design, so a case there would exercise `pfctl -e`
+and nothing else, and enabling a packet filter on a host reached only over SSH
+is not a trade to make for one line.
+
+Fourteen states are left, each with its own stated reason.
+
 ### `pip`'s `bin_env` works on Windows
 
 Given a virtualenv directory it built `<env>/bin/pip`, and a Windows

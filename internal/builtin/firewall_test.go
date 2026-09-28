@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -173,5 +174,96 @@ func TestARuleThatWouldPermitEverythingIsRefused(t *testing.T) {
 		if err := r.validate(); err != nil {
 			t.Errorf("%s was refused: %v", r.describe(), err)
 		}
+	}
+}
+
+// A dry-run delete is answered from the rules ufw holds.
+//
+// The fixtures are **captured** from `ufw show added` on ufw 0.36.2 on the
+// linux fleet leg -- both forms, with a rule and without. A fixture written
+// from the manual tests the manual, and that mattered twice in this one
+// change: the step that captured these was wrong the first time, using
+// `ufw --force allow`, which is a syntax error.
+//
+// The defect: `ufwChanged` looks for the phrases ufw prints when nothing
+// changed, and a dry-run delete prints none of them, so `firewall.absent`
+// reported a removal on every run for ever. The first repair read "Rules
+// updated" out of the dry run's ruleset dump and was also wrong -- a second
+// capture printed it for an absent rule too. DIVERGENCE 5.157.
+func TestTheAddedListingSaysWhetherARuleIsThere(t *testing.T) {
+	rule := firewallRule{Action: "allow", Port: "65010", Protocol: "tcp"}
+
+	// Captured, with the rule.
+	const withRule = `Added user rules (see 'ufw status' for running firewall):
+ufw allow 65010/tcp
+`
+	// Captured, with none.
+	const withNone = `Added user rules (see 'ufw status' for running firewall):
+(None)
+`
+	if !ufwAddedListHas(withRule, rule) {
+		t.Errorf("the listing names the rule and this did not find it:\n%s", withRule)
+	}
+	if ufwAddedListHas(withNone, rule) {
+		t.Error("an empty listing was read as holding the rule, which is how " +
+			"firewall.absent came to report a removal on every run")
+	}
+	// A different rule in the listing is not this rule.
+	other := firewallRule{Action: "allow", Port: "65011", Protocol: "tcp"}
+	if ufwAddedListHas(withRule, other) {
+		t.Error("a listing holding 65010 was read as holding 65011")
+	}
+
+	// And the negative reading, which stays for every path that acts. ufw's
+	// own words on a real run.
+	if ufwChanged("Could not delete non-existent rule\nCould not delete non-existent rule (v6)\n") {
+		t.Error("a real delete of a rule that is not there is not a change")
+	}
+	if !ufwChanged("Rules updated\nRules updated (v6)\n") {
+		t.Error("a real delete that removed a rule is a change")
+	}
+	if ufwChanged("Skipping adding existing rule\nSkipping adding existing rule (v6)\n") {
+		t.Error("adding a rule that is already there is not a change")
+	}
+}
+
+// And through Apply, which is the call site.
+//
+// The first test of the first repair called the helper directly, so deleting
+// its call site in `Apply` left it passing -- the same error this session made
+// on `tools/ledger`, where a test of `misplaced()` survived disabling the call
+// to it. This goes through the provider with ufw's answers scripted.
+func TestApplyAnswersADryRunDeleteFromTheListing(t *testing.T) {
+	rule := firewallRule{Action: "allow", Port: "65010", Protocol: "tcp"}
+	key := exec.Command{Argv: []string{"ufw", "show", "added"}}.String()
+
+	for _, tc := range []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"a rule is there to remove", "Added user rules:\nufw allow 65010/tcp\n", true},
+		{"nothing to remove", "Added user rules:\n(None)\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newCtx(true)
+			c.Runner = &exec.RecordingRunner{
+				Responses: map[string]exec.Result{key: {Code: 0, Stdout: tc.out}},
+			}
+			got, err := ufwProvider{}.Apply(c, rule, true, true)
+			if err != nil {
+				t.Fatalf("Apply: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Apply reported changed=%v, want %v, for:\n%s", got, tc.want, tc.out)
+			}
+			// The dry run must not have run a delete.
+			rec := c.Runner.(*exec.RecordingRunner)
+			for _, ran := range rec.RanCommands() {
+				if strings.Contains(ran, "delete") {
+					t.Errorf("a dry run ran %q", ran)
+				}
+			}
+		})
 	}
 }

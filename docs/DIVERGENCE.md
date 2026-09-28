@@ -14865,6 +14865,154 @@ the fix was made from a stack trace and a path, and neither proves the repair:
 establishes `venvPip`; the unit test establishes only that the string is built
 the way this change intends.
 
+##### Coverage 114 → 118: the firewall, the family where a wrong rule costs the machine
+
+The four `firewall` states, against a real `ufw`. This is the one set where
+getting it wrong takes the host off the network, which is why `iptables` and
+`nftables` are driven inside a private namespace instead of on the machine —
+and `firewall` cannot go there. It is a virtual module over a provider, and
+`ufw` writes `/etc/ufw` and asks the running system to load rules; a network
+namespace makes neither of those private.
+
+So it runs on the machine, and the whole design of these cases is about making
+that safe.
+
+**Three of the four never enable the firewall.** `ufw allow` and `ufw delete`
+edit ufw's stored rules whether or not it is active, so a rule added while ufw
+is inactive is enforced by nothing at all. The port is 65010, which nothing
+listens on.
+
+That is possible only because of a decision made elsewhere for other reasons.
+Convergence here is read from **ufw's own words** — the provider looks for
+"Skipping adding existing rule" and "Could not delete non-existent rule", and
+test mode runs `ufw --dry-run`. Had it parsed `ufw status` instead, none of this
+would work: `status` prints no rules at all while ufw is off, so the cases would
+have had to turn the firewall on to observe their own effect. Worth recording
+because it is the opposite of the usual finding — a module's design choice
+quietly making a test safe years later.
+
+The probe had to learn the same lesson the other way round. `ufw status` was the
+obvious reading and is the wrong one, for exactly that reason; `ufw show added`
+lists the rules ufw holds whether it is running or not.
+
+**The fourth does enable it, with both defaults set to `allow`**, so the
+firewall comes up permitting everything and no connection is dropped — not even
+briefly, because the state sets the defaults *before* it enables. That was
+checked rather than assumed, and the module says why in its own comment: "so
+that a firewall coming up for the first time comes up with the policy the estate
+asked for rather than with its own for as long as it takes to run the next
+line." The original defaults are captured first and restored afterwards, since
+these are meant to be runnable on a real host and a test that leaves a firewall
+reconfigured is one nobody runs twice.
+
+##### What stays uncovered: the pf provider
+
+`firewall`'s functions are covered; `pf` as a provider is not, and the
+distinction is worth writing down rather than leaving as an absence.
+
+`pfProvider.SetDefault` refuses by design — pf has no per-direction default
+policy, and the refusal explains at length that the answer is the last matching
+rule of an operator's own `pf.conf`, a file halite deliberately does not own. So
+a `firewall.enabled` case on FreeBSD would exercise `pfctl -e` and nothing
+else, and **enabling a packet filter on a host reachable only over SSH to cover
+one line is a trade this suite should not make unasked.** pf's rule path
+rewrites a whole anchor, which is a different enough mechanism to want its own
+case rather than sharing ufw's.
+
+##### `firewall.absent` could not converge, and the reading was the defect
+
+The first run of these cases: `allowed`, `denied` and `enabled` pass, `absent`
+fails.
+
+	second run: reported changes on an already-applied state:
+	  allow port 65010/tcp = {old present, new nil}
+	test mode, already applied: predicted a change against a system that
+	  already matches
+
+`firewallRuleState` decides whether there is anything to do by asking the
+provider to dry-run the operation, and the comment beside it explains why that
+is right: "ufw is idempotent and says so, and asking it is more reliable than
+reproducing its own matching rules here". True — of a real run. **A dry-run
+delete says none of the things `ufwChanged` looks for.**
+
+`ufwChanged` reads negatively: a change happened unless the output carries
+"Skipping adding existing rule" or "Could not delete non-existent rule". A
+dry-run delete prints neither. It prints the ruleset that would result, and
+then "Rules updated" — only when there was a rule to take out. So the reading
+was "changed" every time, and a tree carrying `firewall.absent` reported a
+removal on **every highstate, for ever**, against a rule that was already gone.
+
+Measured on ufw 0.36.2 rather than reasoned about, because guessing at a
+tool's output is the mistake this ledger keeps recording:
+
+	ufw --dry-run allow P                present: "Skipping adding existing rule"
+	ufw --dry-run --force delete allow P present: the ruleset, then "Rules updated"
+	ufw --dry-run --force delete allow P absent:  the ruleset, and nothing more
+	ufw --force delete allow P           absent:  "Could not delete non-existent rule"
+
+The real delete does say it, which is why nothing had noticed: **every path
+that acts is covered by the negative reading, and only the prediction was
+wrong.** A defect that lives exclusively in `--test` is one an operator meets
+as a highstate that never settles, with no failure anywhere to point at.
+
+##### The first repair was also wrong
+
+It read "Rules updated" out of the dry run's ruleset dump as the signal — on
+the strength of one capture, where the phrase appeared for a rule that was
+there and not for one that was not.
+
+**One observation of a message is not a rule about when it appears.** A second
+capture, on a ufw that had had a rule added and removed, printed "Rules
+updated" for an absent rule too; and the two runs of the diagnostic disagree
+with each other, which is the thing to notice. The conformance case failed
+identically after the "fix", which is the only reason this did not ship — a
+repair that changes nothing observable is indistinguishable from no repair, and
+the case was the only thing looking.
+
+So the question is asked of something that answers it directly. `ufw show
+added` lists the rules ufw holds, active or not, as the commands that added
+them:
+
+	Added user rules (see 'ufw status' for running firewall):
+	ufw allow 65010/tcp
+
+and `(None)` when there are none. The comparison is that line against the argv
+this provider would build — ufw's own recorded spelling against ours, which is
+not a reimplementation of its rule matching.
+
+The limit is stated where the code is: the match is exact, so it recognises the
+spelling `ufwRuleArgs` produces, which is the only spelling halite ever adds. A
+rule an operator wrote by hand in another form will not match, and
+`firewall.absent` will then attempt the delete rather than predict it — the safe
+direction, since a real delete reads its own output correctly.
+
+The add path is untouched. It converges on the negative reading, and whether a
+dry-run add of an absent rule prints "Rules updated" was never measured;
+changing a working path on an assumption is how the other half would break.
+
+##### Two mistakes of mine getting to that
+
+Both worth recording, because each is a shape this session has met before.
+
+**The step that captured the tool's output was itself wrong.** It ran
+`ufw --force allow 65010/tcp`, and `--force` applies to `enable`, `disable`,
+`delete` and `reset` — not to `allow`. So it added nothing, every delete after
+it found nothing, and the transcript read as though the *dry run* had deleted
+the rule. A plausible and wrong conclusion, from a measurement that had not
+measured what it claimed. Caught by reading the whole transcript rather than
+the part being looked for: `ERROR: Invalid syntax` was four lines above.
+
+**The first test of the fix tested the helper, not the wiring.** It called
+`ufwDryRunDeleteChanged` directly, so deleting its call site in `Apply` left it
+passing. That is the same error this session made on `tools/ledger` two days
+ago, where a test of `misplaced()` survived disabling the call to it. The
+second test goes through `ufwProvider.Apply` with ufw's answers scripted, and
+the same break now fails.
+
+
+
+
+
 
 
 
