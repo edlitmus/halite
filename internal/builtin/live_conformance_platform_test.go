@@ -129,8 +129,7 @@ func windowsLiveCases() []liveCase {
 			Probe: taskProbe,
 			Setup: func() error {
 				dropTask()
-				_, err := r.States.Call(root, "win_task.present", taskArgs())
-				return err
+				return applyForSetup(r, root, "win_task.present", taskArgs())
 			},
 			Cleanup: dropTask,
 		}}),
@@ -263,8 +262,7 @@ func macLiveCases() []liveCase {
 			Probe: probe,
 			Setup: func() error {
 				dropDomain()
-				_, err := r.States.Call(root, "mac_defaults.write", writeArgs)
-				return err
+				return applyForSetup(r, root, "mac_defaults.write", writeArgs)
 			},
 			Cleanup: dropDomain,
 		}}),

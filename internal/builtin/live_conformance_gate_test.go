@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	hexec "github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // The two gates `liveCase.skipReason` grew for the last tranche, tested here
@@ -131,5 +132,43 @@ func TestLastTrancheCasesAreBuiltEverywhere(t *testing.T) {
 				t.Errorf("%s has no Cleanup, and it changes the machine", lc.name())
 			}
 		}
+	}
+}
+
+// A Setup that calls a state must notice a refusal.
+//
+// `Registry.Call` returns a nil error for a state that ran and refused, so the
+// fifteen Setups written as `_, err := …; return err` carried on when their
+// setup step had not happened — and the harness then reported "test mode
+// reported success with nothing to do", which sends the reader to the case
+// rather than to the step. `applyForSetup` is what they call now, and this is
+// the assertion that it reads the result and not only the error.
+//
+// `test.fail_without_changes` is the state, because it refuses on every
+// platform and touches nothing: a case built on a real module would need that
+// module's machine to say anything at all.
+func TestApplyForSetupTreatsARefusalAsAFailure(t *testing.T) {
+	r := New()
+	c := newCtx(false)
+	const because = "this setup could not do its job"
+
+	err := applyForSetup(r, c, "test.fail_without_changes",
+		value.MapOf("name", "halitecf-setup-probe", "comment", because))
+	if err == nil {
+		t.Fatal("a Setup whose state refused reported success; the harness would then " +
+			"blame the case for having nothing to change")
+	}
+	// The module's own words, carried through. A generic "setup failed" would
+	// be the second thing to go and read rather than the answer.
+	if !strings.Contains(err.Error(), because) {
+		t.Errorf("the error does not carry the state's comment: %v", err)
+	}
+	if !strings.Contains(err.Error(), "test.fail_without_changes") {
+		t.Errorf("the error does not name the state that refused: %v", err)
+	}
+
+	// And a state that succeeds is not an error.
+	if err := applyForSetup(r, c, "test.nop", value.MapOf("name", "halitecf-setup-probe")); err != nil {
+		t.Errorf("a Setup whose state succeeded reported %v", err)
 	}
 }

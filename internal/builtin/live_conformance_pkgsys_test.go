@@ -96,8 +96,7 @@ func pkgRestCases() []liveCase {
 		_, _ = r.States.Call(root, "pkg.purged", value.MapOf("name", pkg))
 	}
 	install := func() error {
-		_, err := r.States.Call(root, "pkg.installed", value.MapOf("name", pkg))
-		return err
+		return applyForSetup(r, root, "pkg.installed", value.MapOf("name", pkg))
 	}
 
 	// Linux and FreeBSD, for the reasons packageCases records: Homebrew
@@ -253,8 +252,7 @@ func pkgrepoCases() []liveCase {
 					return err
 				}
 				drop()
-				_, err := r.States.Call(root, "pkgrepo.managed", args)
-				return err
+				return applyForSetup(r, root, "pkgrepo.managed", args)
 			},
 			Cleanup: drop,
 		}}),

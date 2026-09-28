@@ -40,6 +40,16 @@ worse than a long list.
 The one that is left is `win_dacl.owner`: every runner available refused both
 `Administrators` and `SYSTEM` as an owner, so no change can be staged for it.
 
+### A conformance case's setup could not tell a refusal from a success
+
+Fifteen live conformance cases apply a state before the case runs — installing
+the package that `pkg.purged` then takes away, creating the group that
+`group.absent` removes. Each checked the error and not the result, and a state
+that runs and refuses returns no error. So a setup step that did not happen was
+indistinguishable from one that did, and the harness then reported that the case
+had nothing to change: a true sentence pointing at the case rather than at the
+refusal. They carry the module's own comment now.
+
 ### `reboot`'s mutating tests had never run anywhere
 
 `HALITE_REBOOT_LIVE=1` exists so that a test which schedules a real reboot

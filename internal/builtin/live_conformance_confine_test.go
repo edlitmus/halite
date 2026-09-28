@@ -289,8 +289,7 @@ func jailCases() []liveCase {
 						return err
 					}
 					// Started through the state, the module's own way in.
-					_, err := r.States.Call(root, "jail.running", args(true))
-					return err
+					return applyForSetup(r, root, "jail.running", args(true))
 				},
 				Cleanup: tidy,
 			},

@@ -15180,6 +15180,43 @@ everywhere else, which it must: on a systemd node a link written behind
 mechanisms for one operation is normally the shape of a defect here; this is the
 case where it is the platform and not the code, and the comment says which.
 
+##### Fifteen Setups could not tell a refusal from a success
+
+Found while writing the thirteen, and a defect in the harness's own scaffolding
+rather than in a module. Every case whose setup needs a state applied first was
+written this way:
+
+```go
+Setup: func() error {
+        _, err := r.States.Call(root, "group.present", value.MapOf("name", group))
+        return err
+},
+```
+
+`Registry.Call` returns a **nil error** for a state that ran and refused. The
+refusal is in the result, and `states.False` is a legitimate answer to a
+question — so every one of those Setups carried on when its setup step had not
+happened. The harness then reached its first phase, found nothing to change, and
+reported:
+
+    test mode: reported success with nothing to do; the setup should leave a
+    change to make
+
+which is a true sentence pointing at the wrong thing. It reads as "this case is
+pointless" and the actual answer is "`group.present` refused, and here is why".
+On a machine where a setup step fails — a distribution without the tool, a
+package not in the archive, an account name already taken — the reader is sent
+to the case rather than to the cause.
+
+Fifteen sites, in seven files, all converted to `applyForSetup`, which reads the
+result and carries the module's own comment. Cleanups are deliberately left
+alone: a `Cleanup` returns nothing and can report nothing, which is the separate
+gap the legs' "the machine was put back" steps close from outside.
+
+The test uses `test.fail_without_changes`, because it refuses on every platform
+and touches nothing — a test built on a real module would need that module's
+machine to say anything at all. Deleting the `res.Failed()` branch fails it.
+
 ##### What is left, and it is one
 
 `unconformed` now holds a single entry, `win_dacl.owner`, whose reason is

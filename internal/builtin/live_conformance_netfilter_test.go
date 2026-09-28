@@ -111,8 +111,7 @@ func iptablesCases() []liveCase {
 		if err := makeChain(); err != nil {
 			return err
 		}
-		_, err := r.States.Call(root, "iptables.append", ruleArgs())
-		return err
+		return applyForSetup(r, root, "iptables.append", ruleArgs())
 	}
 
 	linux := func(lc liveCase) liveCase {
@@ -259,10 +258,9 @@ func nftablesCases() []liveCase {
 		if err := makeChain(); err != nil {
 			return err
 		}
-		_, err := r.States.Call(root, "nftables.append",
+		return applyForSetup(r, root, "nftables.append",
 			value.MapOf("table", table, "chain", chain, "rule", rule,
 				"comment", ruleTag, "family", "inet"))
-		return err
 	}
 
 	linux := func(lc liveCase) liveCase {
