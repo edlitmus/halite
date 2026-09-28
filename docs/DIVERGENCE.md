@@ -14853,6 +14853,18 @@ by a broader tool check, because "gem exists" was true and was not the
 question — and `gem.installed` passes on Linux and macOS, so nothing about the
 module is implicated.
 
+**Confirmed on the next run** (36447558299), which is the half that matters —
+the fix was made from a stack trace and a path, and neither proves the repair:
+
+	windows/amd64: 7 of 45 cases ran, 38 skipped
+	  PASS  npm.installed   PASS  npm.removed
+	  PASS  pip.installed   PASS  pip.removed
+	  SKIP  gem.installed   SKIP  gem.removed
+
+`pip.installed` and `pip.removed` driving a **real Windows virtualenv** is what
+establishes `venvPip`; the unit test establishes only that the string is built
+the way this change intends.
+
 
 
 
