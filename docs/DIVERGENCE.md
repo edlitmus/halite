@@ -14617,6 +14617,55 @@ The general form is worth keeping: **a rule enforced only where coverage
 reaches is a rule discovered at the rate coverage grows.** Four families, four
 runs, one edit each. The audit costs a quarter of a second.
 
+##### Coverage 100 → 109: the nine Windows and macOS states, and where each one belongs
+
+The split is the interesting part, and it is not the platform:
+
+| | |
+|---|---|
+| **4** | `win_dacl.*` changes the access list on a **path**, and a path in a temporary directory is not the machine — so these are *in-process* cases, and run in `ci.yml`'s `windows-2022` jobs on every pull request. |
+| **3** | `win_task.*` registers with the scheduler and `win_service.start_type` writes a service's start type. Those are the machine, so they are live cases behind a new `fleet.yml` leg. |
+| **2** | `mac_defaults.*` in a preference domain of the suite's own, live, on the existing `macos` leg — which needed `HALITE_CONFORMANCE_LIVE=1` and the conformance family adding to its `-run` filter, both of which had been left off when the variable was introduced. |
+
+`win_dacl` staying out of the live list is the same judgement the sixteen
+`file` states got, and `win_dacl_windows_test.go` had already established it by
+driving the real Windows security API against a temporary file in the ordinary
+suite. A case does not become live because its platform is unusual; it becomes
+live because its effect is.
+
+##### Two things Windows does not have
+
+**A uid.** `liveGate` refused anything but `os.Geteuid() == 0`, and Go returns
+**-1** on Windows — so the gate would have failed a runner that is a full
+administrator, for a reason that has nothing to do with privilege. It now asks
+each platform the question that platform can answer: on Windows, whether
+`net session` succeeds, which is the conventional probe and needs
+administrative rights while changing nothing. Asked by trying rather than by
+inspecting a token, which would have wanted `golang.org/x/sys/windows` in a
+test file and an argument with the dependency allowlist.
+
+**A filename that is only a filename.** The live cases were first written to
+`live_conformance_windows_test.go`, and Go reads a trailing `_windows` before
+`_test.go` as a build constraint — so the five cases compiled on Windows alone
+and vanished from the list everywhere else. **That is the defect of #154 in a
+new disguise**, a case list that is a function of where it is built, and this
+time the compiler caught it rather than a CI leg. Renamed
+`live_conformance_platform_test.go`, and the file says why.
+
+##### The probes read the tools
+
+`icacls` for the access list, `powershell (Get-Acl).Owner` for the owner,
+`schtasks /query` for the task, `sc qc` for the service, `defaults read` for
+the preference. Not one of them asks the module.
+
+`internal/winsec` would have been the direct way to read an access list and is
+`_windows.go` only, so a case file using it could not compile everywhere —
+which is the same constraint as above, arriving from the other side. Shelling
+out is what an operator does anyway, so the constraint pushed toward the better
+probe.
+
+
+
 
 
 

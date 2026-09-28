@@ -85,6 +85,12 @@ on:
       # and macos legs, and nothing here ran when it changed.
       - "internal/builtin/user*.go"
       - "internal/builtin/sysrc*.go"
+      # The Windows row's modules. `win_dacl` is deliberately absent: it
+      # acts on a path a test owns, so it runs in ci.yml's ordinary
+      # windows-2022 job on every pull request and needs no leg. A
+      # scheduled task and a service are the machine's.
+      - "internal/builtin/win_task*.go"
+      - "internal/builtin/win_service*.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
       - ".github/workflows/fleet.yml"
@@ -609,8 +615,8 @@ jobs:
       - name: drive the macOS row as root
         run: |
           set -e
-          sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 \
-            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers' ./internal/builtin/
+          sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
+            go test -count=1 -v -run 'TestLiveMac|TestLiveHostname|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveConformance' ./internal/builtin/
 
       # The account tests create and remove a real account. If one is
       # left behind the machine is thrown away anyway, but a leg that
@@ -649,3 +655,81 @@ jobs:
             grep 'org\.halite\.' | grep -c -E '=> (disabled|true)' || true)
           test "$stuck" -eq 0 || {
             echo "the tests left a job disabled in launchd's store"; exit 1; }
+
+  # Windows, for the two modules that change a Windows machine rather than
+  # a path on it: `win_task` registers with the scheduler and
+  # `win_service` writes a service's start type.
+  #
+  # # Why there was no Windows leg until now
+  #
+  # Because until now nothing here needed one. `win_dacl`, `win_task` and
+  # `win_service` all had unit tests driving the real Windows APIs against
+  # temporary paths, and `ci.yml`'s `windows-2022` job runs those on every
+  # pull request. What changed is the conformance harness: it applies a
+  # state twice and reads it back, so a case for `win_task` registers a
+  # real scheduled task -- which is the machine, and belongs behind
+  # `HALITE_CONFORMANCE_LIVE` on a runner that is thrown away.
+  #
+  # `win_dacl`'s four cases stayed in the ordinary suite for the same
+  # reason the sixteen `file` states did: a path in a temporary directory
+  # is not the machine.
+  #
+  # # No sudo, and no uid
+  #
+  # A GitHub Windows runner's account is already an administrator, so
+  # there is nothing to escalate through -- and `os.Geteuid()` returns -1
+  # on Windows, so the suite's gate asks whether a privileged operation
+  # succeeds instead of what a uid is. `whoami /groups` is printed below
+  # so that a leg which turns out not to be elevated says so in its own
+  # output rather than in a puzzling failure.
+  windows:
+    name: windows (real schtasks, sc)
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          # The pin, not go.mod's floor. See ci.yml's first setup-go step.
+          go-version: "1.26.6"
+          cache: true
+
+      # What this machine is, before anything writes to it, for the reason
+      # the macOS and FreeBSD legs print theirs: an evidence note names a
+      # release, and a leg that does not say which one it ran on cannot be
+      # compared to it.
+      - name: what this Windows is
+        shell: pwsh
+        run: |
+          (Get-CimInstance Win32_OperatingSystem).Caption
+          (Get-CimInstance Win32_OperatingSystem).Version
+          whoami
+          # S-1-16-12288 is the high-integrity SID: its presence is what
+          # "elevated" means, and the conformance gate needs it.
+          whoami /groups | Select-String 'S-1-16-12288' |
+            ForEach-Object { "elevated: $_" }
+
+      - name: drive the Windows row
+        env:
+          HALITE_SYSTEM_LIVE: "1"
+          HALITE_CONFORMANCE_LIVE: "1"
+        run: go test -count=1 -v -timeout 20m -run TestLiveConformance ./internal/builtin/
+
+      # The task and the service are named after this suite, and the
+      # removal path is the half easiest to get wrong -- so the leg says
+      # whether anything was left behind rather than trusting that it was
+      # not. The runner is discarded either way; a leg that cannot say so
+      # would not notice the cleanup breaking.
+      - name: the machine was put back
+        if: always()
+        shell: pwsh
+        run: |
+          $tasks = (schtasks /query /fo list 2>$null |
+            Select-String 'halitecf' | Measure-Object).Count
+          "halitecf* scheduled tasks remaining: $tasks"
+          if ($tasks -ne 0) { throw "the tests left a scheduled task behind" }
+
+          $svc = (sc.exe query state= all 2>$null |
+            Select-String 'halitecf' | Measure-Object).Count
+          "halitecf* services remaining: $svc"
+          if ($svc -ne 0) { throw "the tests left a service behind" }

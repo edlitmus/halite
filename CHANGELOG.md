@@ -23,6 +23,18 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The Windows and macOS states are held to the test-mode contract
+
+One hundred and nine of the hundred and thirty-two, up from a hundred. The
+four `win_dacl` states act on a path rather than on the machine, so they run
+in the ordinary Windows job on every change; `win_task`, `win_service` and
+`mac_defaults` change the machine and run on CI legs that are thrown away
+afterwards — a new `windows` leg, and the `macos` leg, which had been left
+without the variable the conformance suite asks for.
+
+Twenty-three are left: six language managers, four `firewall.*`, and
+thirteen one-offs each with its own stated reason.
+
 ### `acl.wipe` did not work on FreeBSD 14
 
 `getfacl -s` arrived in FreeBSD 15, and on 14 it is not an option at all,
