@@ -15302,6 +15302,46 @@ debian container for months. It passes because that container *has* an
 `/etc/timezone`, so the name is recorded and read back. The harness's extra
 phases are not what found this — the machine was.
 
+##### The second run, and three notes that said a run had not happened
+
+All five legs green. `timezone.system` passes on FreeBSD 15.1-RELEASE, and the
+leg's own put-back step is where that is visible:
+
+    time zone: UTC
+
+— a file that did not exist on the first run. The fix wrote it, the state read it
+back, and the machine was put back into the zone it started in.
+
+Then the half of this that is not mechanical. Four modules had runs behind them
+that their evidence notes denied, and one sentence in a note that had just been
+written was already false:
+
+| module | what the note said | what had happened |
+|---|---|---|
+| `timezone` | "Not covered: the `timedatectl` branch" | the linux leg drove it as root with systemd running |
+| `timezone` | "the fix for that has not itself been run on the `freebsd` leg yet" | it had, on the run that made this table |
+| `snap` | "**The mutating half is still unwatched**" | install and remove, against snapd 2.76.3, four applications each |
+| `reboot` | "**The mutating paths have never been watched working**", "HALITE_REBOOT_LIVE, which no run has yet set" | both, on Ubuntu 24.04.5 |
+| `pkg` | "dnf, yum, zypper, pacman and **pkgng have not been driven at all**" | pkgng's four states on FreeBSD, and dnf in the lab since 5.157's earlier tranche |
+| `jail` | nothing false, but nothing about the `config` argument either | `jail.running` driven through the harness against a configuration the case owns |
+
+`snap` and `reboot` move `Captured` → `Hardware`; `pkg`'s claim about pkgng had
+been false since the eighty-two tranche and nobody had gone back to it. Each note
+now says which machine, which version, and what is still not covered — snap's
+`refresh` and `purge`, pkgng's `upgrade` and its outdated-package path, FreeBSD's
+genuine `shutdown(8)`, and macOS releases other than the runner's.
+
+This is the third time this has been written down in this repository, and the
+second in one week. `plan.md` said Linux arm64 "has still never run it" after the
+suite had run there (5.83, 5.84); three pages said the macOS code "has been run on
+neither" while seven `mac_*` modules were `hardware` (5.142). The pattern is not
+carelessness about the run — it is that **the note is a different file from the
+thing that ran**, and the only defence that has worked is treating the note as
+part of the change rather than as documentation of it. `TestGeneratedDocsAreCurrent`
+catches a level raised without regenerating. Nothing catches a sentence that has
+quietly stopped being true, and a table like the one above is the only instrument
+there is.
+
 ##### What is left, and it is one
 
 `unconformed` now holds a single entry, `win_dacl.owner`, whose reason is

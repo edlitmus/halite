@@ -47,9 +47,14 @@ has an `/etc/timezone`.
 `snap`'s install and remove, and `reboot`'s schedule and cancel, had never been
 run against the real tools by anything automated — `reboot`'s because the second
 gate it asks for was set nowhere. Both are now driven as root on the fleet Linux
-leg, and both evidence notes say which machine and what is still not covered:
-snap's `refresh` and `purge`, and FreeBSD's shutdown, which stays unwatched on
-purpose.
+leg, and both are `Hardware` rather than `Captured`. `pkg`'s note has also stopped
+saying that pkgng "has not been driven at all", which it had been since the
+eighty-two-state tranche: all four `pkg` states run against real pkg(8) on
+FreeBSD 15.1.
+
+Each note says which machine, which version, and what is still not covered:
+snap's `refresh` and `purge`, pkgng's `upgrade`, FreeBSD's genuine `shutdown(8)`,
+and macOS releases other than the runner's.
 
 ### One hundred and thirty-one state functions are held to the test-mode contract
 

@@ -84,7 +84,17 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`download` and `list_downloaded` were checked field by field against real " +
 		"dpkg-query and dpkg-deb, and `autoremove` really reclaimed a package in the " +
 		"fleet container (5.40). The Chocolatey provider has only been read from, and " +
-		"dnf, yum, zypper, pacman and pkgng have not been driven at all. **apk has**: " +
+		"yum, zypper and pacman have not been driven at all. **pkgng has**: all four " +
+		"states -- `installed`, `removed`, `latest` and `purged` -- are driven through " +
+		"SPEC 11.6's conformance harness as root on the `freebsd` leg of `fleet.yml`, " +
+		"against real pkg(8) on FreeBSD 15.1-RELEASE, four applications of each. `dnf` " +
+		"is driven the same way in the lab, where `pkg.installed` on the RedHat family " +
+		"did not work at all until that run found `dnf install -C` refusing to download " +
+		"the package it was installing (DIVERGENCE 5.157). Not covered for either: " +
+		"`upgrade`, and `latest` against a package that is installed and outdated -- the " +
+		"case stages an absent package, which the state installs, so what it establishes " +
+		"is that the offered version and the installed version are spelled the same way. " +
+		"**apk too**: " +
 		"on Alpine 3.24 in the lab a package was installed through `pkg.install`, read " +
 		"back through `list_pkgs`, `version` and `file_list` -- the owner capability's " +
 		"first run anywhere -- and removed, each answer checked against apk itself rather " +
@@ -188,9 +198,12 @@ var moduleEvidence = map[string]exec.Evidence{
 		"moved, a second run changed nothing, and the machine came back in `Etc/UTC`. " +
 		"That case also found the defect in the FreeBSD branch -- a node with no " +
 		"/var/db/zoneinfo could not read back the zone it had just installed, so the " +
-		"state reported a change on every run for ever (DIVERGENCE 5.157). Not covered: " +
-		"**the fix for that has not itself been run on the `freebsd` leg yet**, and " +
-		"macOS releases other than that runner's"},
+		"state reported a change on every run for ever (DIVERGENCE 5.157). **The fixed " +
+		"FreeBSD branch was then driven on that leg**, as root on FreeBSD 15.1-RELEASE " +
+		"(releng/15.1-n283562-96841ea08dcf, amd64): a zone installed as a copy on a " +
+		"machine with no /var/db/zoneinfo, the name recorded, read back as the name that " +
+		"was asked for, a second run that changed nothing, and the machine put back. Not " +
+		"covered: macOS releases other than that runner's"},
 
 	// ---- Mutated a real machine, in the live CI legs ----
 	//
@@ -501,7 +514,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"jail was defined, started through `jail.start`, found in a raw `jls` rather than " +
 		"through this module's own reader, and stopped through `jail.stop`; and the " +
 		"`jail.running` state converged, reported no change on a second run and stopped it " +
-		"again. Both were checked by breaking them on purpose. That run found a third defect: " +
+		"again. Both were checked by breaking them on purpose. `jail.running` also goes " +
+		"through SPEC 11.6's harness on that leg, in both directions, against a jail " +
+		"configuration the case writes and passes as `config` -- so /etc/jail.conf is " +
+		"never opened, and the `config` argument is exercised rather than stepped past. That run found a third defect: " +
 		"`jail -e` prints each configured jail's **parameters**, not a list of names, and this " +
 		"module split the whole output on the separator and took every field as a name -- so " +
 		"`jail.running` answered \"is not defined in jail.conf\" for every jail that was in " +
