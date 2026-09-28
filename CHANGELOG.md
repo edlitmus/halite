@@ -23,6 +23,20 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The CA private key was unrestricted on Windows
+
+`internal/pki` created its key directory with `MkdirAll(dir, 0o700)` and its
+private keys with `OpenFile(path, …, 0o600)`. On Windows a file mode is the
+read-only attribute and a directory mode is nothing at all, so the enrollment
+CA's key — and the directory holding it — were reachable by any account on the
+machine, while the package's own documentation said otherwise. Both go through
+`internal/fileperm` now, which turns "no group, no other" into an access control
+list granting the owner, SYSTEM and Administrators and nobody else.
+
+No hub or node in this estate runs on Windows, so this was not a live exposure.
+It also restricts a key directory that already existed, which `MkdirAll` never
+did on any platform.
+
 ### `pkg.latest` said it had upgraded a package it installed
 
 `pkg.latest` compares the newest available version against the installed one,

@@ -15703,6 +15703,78 @@ knowing before somebody reads it as thoroughness.
 
 
 
+### 5.161 The CA private key and its directory were unrestricted on Windows
+
+`internal/pki`'s own documentation says what the layout means:
+
+> Keys are written 0600 and certificates 0644, and the directory is 0700: a
+> certificate is public and a key is not, and the difference should be visible
+> in `ls -l` rather than only in a document.
+
+It said that for a year while not keeping it on one platform. `Files.Ensure`
+called `os.MkdirAll(dir, 0o700)` and `Files.WriteKey` called
+`os.OpenFile(path, …, 0o600)` — and on Windows a file mode is the read-only
+attribute and a directory mode is nothing at all. So the enrollment CA's private
+key, which this package's own comment calls the most valuable thing in the
+estate, and the directory holding it, were reachable by any account on the
+machine.
+
+`internal/fileperm` exists for exactly this and eight call sites already used it.
+This package, which has more reason to than any of them, used it nowhere — and
+`fileperm` appeared in it only in a *comment*, explaining that a since-deleted
+copy of `atomicfile.Write` had bypassed it (5.144). That is how the gap became
+visible: consolidating the copies showed that the thing around the copy had the
+same fault.
+
+**Not a live exposure.** No hub or node in this estate runs on Windows. It is
+fixed rather than filed because the fix is small, and because "no node runs there
+yet" is the reason a defect waits for the first one that does.
+
+#### What the tests can see, and where
+
+Worth writing down, because two of the three assertions pass against the broken
+code on this platform, and a test that passes before and after a fix is not
+testing the fix.
+
+| assertion | unix | Windows |
+|---|---|---|
+| a directory `Ensure` created is unreachable by others | already true — `MkdirAll(0o700)` | the fix is the whole of it |
+| a key `WriteKey` wrote is unreachable by others | already true — `OpenFile(0o600)` | the fix is the whole of it |
+| a directory that **already existed** is restricted | the fix is the whole of it | the fix is the whole of it |
+
+The third is the one that bites everywhere, and it is also the case that matters
+in practice: `MkdirAll` on an existing directory returns nil and changes nothing,
+so a 0777 directory made by hand — or left by an older build that never
+restricted it — stayed 0777. That is the directory nobody goes back to check.
+Removing `fileperm.Apply` from `Ensure` fails it here.
+
+Measured rather than assumed, both ways: removing `fileperm.ApplyFile` from
+`WriteKey` leaves the suite **green** on FreeBSD. The `test (windows-2022)` job
+of `ci.yml`, which runs this package's unit suite on every push, is the only
+witness that half has. The test says so in its own comment rather than leaving a
+reader to infer coverage from a green run.
+
+The question asked is `fileperm.Others`, which names any account that can reach a
+path beyond its owner, SYSTEM and Administrators — from the mode on unix, from
+the ACL on Windows. One question, two implementations, so the test does not have
+to know which platform it is on, and the failure names *who* can read the key
+rather than saying the restriction is wrong.
+
+`WriteKey` restricts the open file before writing the bytes, so the key is never
+on disk reachable by another account. **Nothing observes that ordering** — it
+would take a second process racing the write — so it is a claim made by reading
+the function, and the test says as much.
+
+#### A dozen siblings, not fixed here
+
+The same sweep finds `os.MkdirAll(…, 0o700)` and `os.WriteFile(…, 0o600)` outside
+`fileperm` in twelve other places: the job cache, the returner spool and its
+webhook, the file returner, the log file, `ssh_known_hosts`, `ssh`, `data`. Each
+is the same shape and not the same judgement — a job return is not a CA key, and
+some of those directories hold nothing anybody would want. Counted here so the
+number is known rather than fixed in a commit about `pki`. plan.md 19e is closed;
+this is what should replace it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

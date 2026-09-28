@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // Files is a directory of key material.
@@ -24,6 +25,16 @@ import (
 // Keys are written 0600 and certificates 0644, and the directory is
 // 0700: a certificate is public and a key is not, and the difference
 // should be visible in `ls -l` rather than only in a document.
+//
+// **On Windows a mode is not that difference**, and this package said the
+// sentence above for a year while not keeping it there: a file mode is the
+// read-only attribute and a directory mode is nothing at all, so the CA key
+// and the directory holding it were reachable by any account on the machine.
+// Both now go through internal/fileperm, which turns "no group, no other"
+// into an access control list granting the owner, SYSTEM and Administrators
+// and nobody else. `fileperm.Others` names anyone beyond those, on either
+// platform, so a test can assert the restriction rather than read the source
+// and believe it. plan.md 19e.
 type Files struct{ Dir string }
 
 // The names this layout uses, so that the hub and the node agree
@@ -74,13 +85,32 @@ func (f Files) OperatorNames() []string {
 
 func (f Files) Path(name string) string { return filepath.Join(f.Dir, name) }
 
-// Ensure creates the directory.
+// Ensure creates the directory, restricted to the account that owns it.
+//
+// `MkdirAll` with 0o700 is the whole answer on unix and none of it on Windows,
+// where a directory mode is not an access control decision at all -- so the
+// directory holding the enrollment CA's private key was readable by any
+// account on the machine, while this package's own documentation says the
+// directory is 0700 because "a certificate is public and a key is not". That
+// is the one file in an estate whose disclosure cannot be undone.
+//
+// internal/fileperm is what expresses the intent on both platforms: a chmod
+// here, an inheriting ACL granting the owner, SYSTEM and Administrators there.
+// Only the leaf is restricted, deliberately -- `MkdirAll` may have created
+// parents, and those belong to whoever laid out the tree rather than to this
+// package. DIVERGENCE 5.144, plan.md 19e.
 func (f Files) Ensure() error {
 	if f.Dir == "" {
 		return errors.New("no key directory was given")
 	}
 	if err := os.MkdirAll(f.Dir, 0o700); err != nil {
 		return fmt.Errorf("creating %s: %w", f.Dir, err)
+	}
+	// Applied on every call and not only on creation. A directory somebody
+	// made by hand, or one left by an older build, is the case that matters:
+	// it is the one nobody will go back and check.
+	if err := fileperm.Apply(f.Dir, 0o700); err != nil {
+		return fmt.Errorf("restricting %s to its owner: %w", f.Dir, err)
 	}
 	return nil
 }
@@ -113,6 +143,15 @@ func (f Files) WriteKey(name string, key crypto.Signer) error {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	defer file.Close()
+	// Restricted before the key is in it, which is what ApplyFile is for.
+	// The 0o600 in the open above is the whole answer on unix and, on
+	// Windows, the read-only attribute and whatever ACL the file inherited
+	// -- so the mode said private and the file was not. Doing it here rather
+	// than after the write means there is no instant at which the key exists
+	// on disk reachable by another account.
+	if err := fileperm.ApplyFile(file, 0o600); err != nil {
+		return fmt.Errorf("restricting %s to its owner: %w", path, err)
+	}
 	if _, err := file.Write(pemBytes); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
