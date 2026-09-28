@@ -85,6 +85,10 @@ on:
       # and macos legs, and nothing here ran when it changed.
       - "internal/builtin/user*.go"
       - "internal/builtin/sysrc*.go"
+      # The language managers, whose conformance cases install a real
+      # package over the network on the linux and macos legs. `lang*.go` is
+      # one file set for all three of gem, npm and pip.
+      - "internal/builtin/lang*.go"
       # The Windows row's modules. `win_dacl` is deliberately absent: it
       # acts on a path a test owns, so it runs in ci.yml's ordinary
       # windows-2022 job on every pull request and needs no leg. A

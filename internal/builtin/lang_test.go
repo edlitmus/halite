@@ -316,3 +316,89 @@ func TestLangStateRefusesAnUnverifiableVersion(t *testing.T) {
 		t.Errorf("an unpinned request is satisfied by its presence: %+v", res)
 	}
 }
+
+// Every answer these six states give reads as a sentence.
+//
+// The four *change* answers used to open with a package name --
+// "colorize would be installed." -- which SPEC 11.6's rule refuses, because a
+// bare lower-case token cannot be told from an English word. All six states
+// would have failed their conformance case on it.
+//
+// Asserted here rather than left to the live cases, for two reasons. The live
+// cases need a network and a CI runner, so this would have been discovered at
+// the slowest possible moment; and `comment_shape_test.go` cannot see it,
+// because the format string begins with `%s` and that audit deliberately does
+// not judge a substituted value. So the gap between the static audit and the
+// live harness is covered by asking the rule directly, with the answers
+// rendered. DIVERGENCE 5.157.
+func TestEveryLangAnswerReadsAsASentence(t *testing.T) {
+	// Both arities, because the singular and plural renderings are separate
+	// branches of namesList and only one of them was ever exercised.
+	for _, names := range [][]string{{"colorize"}, {"ms", "six"}} {
+		for _, what := range []string{"gem", "package"} {
+			rendered := namesList(names, what)
+			for _, answer := range []string{
+				rendered + " would be installed.",
+				rendered + " was installed.",
+				rendered + " would be removed.",
+				rendered + " was removed.",
+				rendered + " is already installed.",
+				rendered + " is not installed.",
+			} {
+				if err := states.CommentIsASentence(answer); err != nil {
+					t.Errorf("%q: %v", answer, err)
+				}
+			}
+		}
+	}
+}
+
+// `bin_env` naming a virtualenv directory resolves to that venv's pip, on
+// both layouts.
+//
+// It built `<env>/bin/pip` unconditionally, and a Windows virtualenv puts its
+// executables in `Scripts` and names them `.exe` -- so the directory form of
+// `bin_env` could not work on Windows at all, on a platform this build
+// otherwise supports. Found when the conformance case for `pip.installed`,
+// which points `bin_env` at a venv it builds, ran on the windows leg:
+//
+//	exec: "...\halitecf-lang-...\venv\bin\pip": executable file not found
+//
+// Both branches are asserted here on whichever machine is running, because
+// the branch that was wrong is precisely the one nobody could reach.
+// DIVERGENCE 5.157.
+func TestBinEnvResolvesToTheVenvsPip(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  string
+		goos string
+		want string
+	}{
+		{"a unix venv directory", "/tmp/v", "linux", "/tmp/v/bin/pip"},
+		{"a trailing separator is not a name", "/tmp/v/", "linux", "/tmp/v/bin/pip"},
+		{"a windows venv directory", `C:\t\v`, "windows", `C:\t\v\Scripts\pip.exe`},
+		{"a pip already named is left alone", "/usr/bin/pip", "linux", "/usr/bin/pip"},
+		{"pip3 counts as a pip", "/usr/bin/pip3", "linux", "/usr/bin/pip3"},
+		{"so does pip.exe", `C:\v\Scripts\pip.exe`, "windows", `C:\v\Scripts\pip.exe`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// filepath.Join uses the separator of the machine running the
+			// test, so the comparison is on the last element rather than on
+			// the whole path -- which is the part the bug was in, and keeps
+			// this assertion true whichever platform runs it.
+			got := venvPip(tc.env, tc.goos)
+			wantBase := tc.want[strings.LastIndexAny(tc.want, `/\`)+1:]
+			gotBase := got[strings.LastIndexAny(got, `/\`)+1:]
+			if gotBase != wantBase {
+				t.Errorf("venvPip(%q, %s) = %q; the pip should be %q", tc.env, tc.goos, got, wantBase)
+			}
+			if tc.goos == "windows" && !strings.Contains(got, "Scripts") && gotBase != "pip.exe" {
+				t.Errorf("venvPip(%q, windows) = %q; a Windows venv keeps its executables in Scripts",
+					tc.env, got)
+			}
+			if tc.goos != "windows" && strings.Contains(got, "Scripts") {
+				t.Errorf("venvPip(%q, %s) = %q; Scripts is Windows's", tc.env, tc.goos, got)
+			}
+		})
+	}
+}

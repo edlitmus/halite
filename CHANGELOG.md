@@ -23,6 +23,31 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `pip`'s `bin_env` works on Windows
+
+Given a virtualenv directory it built `<env>/bin/pip`, and a Windows
+virtualenv keeps its executables in `Scripts` and names them `.exe` — so
+the directory form of that argument could not work there at all. It
+resolves the platform's own layout now.
+
+### The language managers report what they did in a sentence
+
+`gem`, `npm` and `pip` opened four of their six answers with a bare package
+name — "colorize would be installed." — where the converged answers already
+said "Gem colorize is already installed." Operator wording only, and it is
+also what SPEC 11.6 requires of a state's comment.
+
+### One hundred and fourteen state functions are held to the test-mode contract
+
+Up from a hundred and eight. The six language-manager states have cases, on
+CI legs that have a network: `gem` against the system gem path, `npm` in a
+project directory of the suite's own, and `pip` in a virtualenv it builds —
+which is also how it avoids the refusal a modern Debian or Ubuntu gives to
+`pip install` into the system Python.
+
+Eighteen are left: four `firewall.*` and fourteen one-offs, each with its
+own stated reason.
+
 ### `user` and `group` say which platforms they manage
 
 They declared none, which means every platform, while Windows has no

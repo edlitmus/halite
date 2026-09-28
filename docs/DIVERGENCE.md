@@ -14741,6 +14741,134 @@ contains it.** The same discipline as reading a flag's prose beside the flag,
 and the same failure this ledger records under a different name each time:
 a stated reason ends the investigation.
 
+##### Coverage 108 → 114: the six language managers, and why all six are live
+
+`gem`, `npm` and `pip`, two states each. Four of the six could have been
+in-process — `npm.installed` takes a `dir` and `pip.installed` a `bin_env`, and
+with those set the effect lands in a directory the case makes, which is exactly
+the test that kept the sixteen `file` states out of the live list.
+
+They are live anyway, for a reason that is neither privilege nor blast radius:
+**installing a package needs the network.** A unit suite that cannot answer
+without the internet cannot run on an aeroplane, in a locked-down builder, or
+in the sandbox the release job uses, and `go test ./...` must not need a
+package registry. Worth stating because it is a third criterion — the first two
+were "does it touch the machine" and "can the harness express it" — and it puts
+confined states on the live side for the first time.
+
+The consequence is stated rather than papered over: a failure here can be the
+network rather than the code, and the case cannot tell them apart. There is no
+probe for "the registry was reachable" and inventing one would be a second
+thing to get wrong.
+
+Where each points, and why:
+
+	gem   the system gem path, having no directory argument to redirect
+	npm   a project directory of the case's own, through `dir`
+	pip   a virtualenv the case builds, through `bin_env`
+
+`pip`'s is the interesting one twice over. It is how these avoid **PEP 668**:
+Debian 12 and Ubuntu 24.04 mark the system Python externally managed and refuse
+`pip install` into it outright, and a venv is what the refusal itself
+recommends — better than the flag that overrides it. And it only works because
+`pipRun` builds `<dir>/bin/pip` and `langRun` hands that to `exec.LookPath`,
+which resolves a name containing a separator directly instead of searching
+PATH. **Checked before the cases were written**: had it searched PATH, the whole
+`bin_env` argument would be unusable, and that would have been the finding
+rather than a footnote.
+
+The packages are the smallest pure ones their ecosystems have — `colorize`,
+`ms`, `six` — so that nothing compiles. A case needing a C toolchain would be
+testing the toolchain.
+
+##### The defect between the two checks
+
+Reading `langPresent` before running anything: its *converged* answers go
+through `namesOf`, which puts the noun in front — "Gem colorize is already
+installed." Its four *change* answers went straight to `states.SortedNames`:
+
+	"colorize would be installed."   "ms was removed."   "six was installed."
+
+A bare lower-case token, which SPEC 11.6's rule refuses and no rule could
+admit, since nothing distinguishes it from an English word. **All six states
+would have failed their conformance case on it.**
+
+The reason this is worth its own subsection is where it sat. It is invisible to
+both existing checks:
+
+- `comment_shape_test.go` skips a format string beginning with `%s`, and
+  deliberately: a substituted value is usually a path, and judging it statically
+  is impossible. Here it is a bare word.
+- the conformance harness would have caught it, on a CI runner, over a network,
+  at the slowest and most expensive moment available.
+
+So the gap between a static audit and a live harness is a real place for a
+defect to live, and the answer was neither: a unit test that renders the answers
+and asks `states.CommentIsASentence` directly, in both the singular and plural
+branches, since only one of them had ever been exercised. Removing the noun
+makes it fail.
+
+##### What the legs said, and the defect Windows found
+
+Run 36444158057. All six pass on Linux and on macOS:
+
+	linux     31 of 45 cases ran, 14 skipped  + 16 packet-filter cases
+	darwin    17 of 45 cases ran, 28 skipped
+	windows    9 of 45 cases ran, 36 skipped
+
+Windows refused four of them, and one refusal is a defect in the module rather
+than in the case.
+
+**`bin_env` naming a virtualenv could not work on Windows at all.** `pipRun`
+built `<env>/bin/pip` unconditionally, and a Windows virtualenv puts its
+executables in `Scripts` and names them `.exe`:
+
+	exec: "…\halitecf-lang-…\venv\bin\pip": executable file not found
+
+So the directory form of a documented argument — "a virtualenv directory or a
+pip binary" — was unusable on a platform this build otherwise supports, and
+nothing had noticed because nothing had ever passed `bin_env` on Windows.
+
+`venvPip(env, goos)` resolves it now, and takes the goos as a **parameter**
+rather than reading `runtime.GOOS`, so both branches are asserted on whatever
+machine runs the suite. That is the point: the branch that was wrong is exactly
+the one nobody could reach, and a test that could only check the working half
+would have been written years before the broken half was found.
+
+The case's own probe had the same bug — it hardcoded `bin/pip` — and now calls
+the same helper. **A probe that repeats the module's mistake agrees with it and
+proves nothing**, which is worth more than the one-line fix: the probe existed
+to be independent and was not.
+
+**`gem` on the hosted Windows runner is a fact about that Ruby.** `gem` was on
+PATH, so `needs` found it, and then rubygems could not read its own
+configuration:
+
+	gem list --local exited 1: …/rubygems/config_file.rb:75:in `join':
+	no implicit conversion of nil into String (TypeError)
+
+That is rubygems failing on a path it expects in the environment, before
+producing any output for the module to parse. Excluded by platform rather than
+by a broader tool check, because "gem exists" was true and was not the
+question — and `gem.installed` passes on Linux and macOS, so nothing about the
+module is implicated.
+
+**Confirmed on the next run** (36447558299), which is the half that matters —
+the fix was made from a stack trace and a path, and neither proves the repair:
+
+	windows/amd64: 7 of 45 cases ran, 38 skipped
+	  PASS  npm.installed   PASS  npm.removed
+	  PASS  pip.installed   PASS  pip.removed
+	  SKIP  gem.installed   SKIP  gem.removed
+
+`pip.installed` and `pip.removed` driving a **real Windows virtualenv** is what
+establishes `venvPip`; the unit test establishes only that the string is built
+the way this change intends.
+
+
+
+
+
 
 
 

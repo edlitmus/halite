@@ -1502,11 +1502,20 @@ unchanged.
    which `fleet.yml` had never had, and the `macos` leg to be given the
    variable the conformance suite asks for.
 
-   **Twenty-four are left.** Six are language managers, each needing its own
-   toolchain installed first. Four are `firewall.*`, whose blast radius is
-   the machine's connectivity. The remaining thirteen each have their own
-   reason, from `reboot.scheduled` keeping its own gate to `pkg.latest`
-   needing a package with two versions in the repository.
+   The six language managers followed — **114 of 132** — and gave the list a
+   third criterion. `npm` and `pip` can be confined to a directory, so by the
+   earlier test they belonged in-process; they are live because **installing a
+   package needs the network**, and `go test ./...` must answer without one.
+   `pip` goes into a virtualenv through `bin_env`, which is also how it gets
+   past PEP 668 on a modern Debian or Ubuntu.
+
+   **Eighteen are left.** Four are `firewall.*`, whose blast radius is the
+   machine's connectivity — the one family where a wrong rule takes the host
+   off the network, and the reason `iptables` and `nftables` run in a private
+   namespace rather than on the machine. The remaining fourteen each have
+   their own reason, from `reboot.scheduled` keeping its own gate to
+   `pkg.latest` needing a package with two versions in the repository, and
+   `win_dacl.owner` needing an owner Windows will accept.
 
 7b. **A coverage claim, measured at last — and the claim itself was wrong
     twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off
