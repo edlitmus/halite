@@ -23,6 +23,21 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### One hundred and eighteen state functions are held to the test-mode contract
+
+Up from a hundred and fourteen. The four `firewall` states have cases against
+a real `ufw`, and three of them never turn the firewall on: ufw edits its
+stored rules whether or not it is active, so a rule for an unused high port is
+enforced by nothing. The fourth enables it with both defaults set to allow, so
+nothing is ever blocked, and puts the defaults back afterwards.
+
+The `pf` provider stays uncovered on purpose, for a reason recorded with it:
+its `SetDefault` refuses by design, so a case there would exercise `pfctl -e`
+and nothing else, and enabling a packet filter on a host reached only over SSH
+is not a trade to make for one line.
+
+Fourteen states are left, each with its own stated reason.
+
 ### `pip`'s `bin_env` works on Windows
 
 Given a virtualenv directory it built `<env>/bin/pip`, and a Windows

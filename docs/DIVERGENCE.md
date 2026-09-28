@@ -14865,6 +14865,62 @@ the fix was made from a stack trace and a path, and neither proves the repair:
 establishes `venvPip`; the unit test establishes only that the string is built
 the way this change intends.
 
+##### Coverage 114 → 118: the firewall, the family where a wrong rule costs the machine
+
+The four `firewall` states, against a real `ufw`. This is the one set where
+getting it wrong takes the host off the network, which is why `iptables` and
+`nftables` are driven inside a private namespace instead of on the machine —
+and `firewall` cannot go there. It is a virtual module over a provider, and
+`ufw` writes `/etc/ufw` and asks the running system to load rules; a network
+namespace makes neither of those private.
+
+So it runs on the machine, and the whole design of these cases is about making
+that safe.
+
+**Three of the four never enable the firewall.** `ufw allow` and `ufw delete`
+edit ufw's stored rules whether or not it is active, so a rule added while ufw
+is inactive is enforced by nothing at all. The port is 65010, which nothing
+listens on.
+
+That is possible only because of a decision made elsewhere for other reasons.
+Convergence here is read from **ufw's own words** — the provider looks for
+"Skipping adding existing rule" and "Could not delete non-existent rule", and
+test mode runs `ufw --dry-run`. Had it parsed `ufw status` instead, none of this
+would work: `status` prints no rules at all while ufw is off, so the cases would
+have had to turn the firewall on to observe their own effect. Worth recording
+because it is the opposite of the usual finding — a module's design choice
+quietly making a test safe years later.
+
+The probe had to learn the same lesson the other way round. `ufw status` was the
+obvious reading and is the wrong one, for exactly that reason; `ufw show added`
+lists the rules ufw holds whether it is running or not.
+
+**The fourth does enable it, with both defaults set to `allow`**, so the
+firewall comes up permitting everything and no connection is dropped — not even
+briefly, because the state sets the defaults *before* it enables. That was
+checked rather than assumed, and the module says why in its own comment: "so
+that a firewall coming up for the first time comes up with the policy the estate
+asked for rather than with its own for as long as it takes to run the next
+line." The original defaults are captured first and restored afterwards, since
+these are meant to be runnable on a real host and a test that leaves a firewall
+reconfigured is one nobody runs twice.
+
+##### What stays uncovered: the pf provider
+
+`firewall`'s functions are covered; `pf` as a provider is not, and the
+distinction is worth writing down rather than leaving as an absence.
+
+`pfProvider.SetDefault` refuses by design — pf has no per-direction default
+policy, and the refusal explains at length that the answer is the last matching
+rule of an operator's own `pf.conf`, a file halite deliberately does not own. So
+a `firewall.enabled` case on FreeBSD would exercise `pfctl -e` and nothing
+else, and **enabling a packet filter on a host reachable only over SSH to cover
+one line is a trade this suite should not make unasked.** pf's rule path
+rewrites a whole anchor, which is a different enough mechanism to want its own
+case rather than sharing ufw's.
+
+
+
 
 
 

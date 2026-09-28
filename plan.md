@@ -1509,13 +1509,25 @@ unchanged.
    `pip` goes into a virtualenv through `bin_env`, which is also how it gets
    past PEP 668 on a modern Debian or Ubuntu.
 
-   **Eighteen are left.** Four are `firewall.*`, whose blast radius is the
-   machine's connectivity — the one family where a wrong rule takes the host
-   off the network, and the reason `iptables` and `nftables` run in a private
-   namespace rather than on the machine. The remaining fourteen each have
-   their own reason, from `reboot.scheduled` keeping its own gate to
-   `pkg.latest` needing a package with two versions in the repository, and
-   `win_dacl.owner` needing an owner Windows will accept.
+   The four `firewall` states followed — **118 of 132** — and they could not
+   go in a namespace, being a virtual module over a provider that writes
+   `/etc/ufw` and asks the running system to load rules. Three of them never
+   enable the firewall at all, because ufw edits its stored rules whether or
+   not it is active; the fourth enables it with both defaults set to allow and
+   restores them after. The `pf` provider stays uncovered with its reason
+   recorded: its `SetDefault` refuses by design, so a case there would cover
+   `pfctl -e` and nothing else.
+
+   **Fourteen are left**, and this is where the row stops being a backlog.
+   Each has its own reason and most are not "nobody got round to it":
+   `reboot.scheduled` keeps its own gate because it schedules a real reboot;
+   `pkg.latest` and `pkg.purged` need a package with two versions in the
+   repository; `pkgrepo.*` edits where software comes from; `hostname.system`
+   and `timezone.system` change the machine's identity; `win_dacl.owner` needs
+   an owner Windows will accept; and `apparmor.mode`, `debconf.set`,
+   `netplan.managed`, `jail.running` and `snap.*` each need a subsystem only
+   some rows have. The next increment here is judgement about what is worth
+   staging, not more of the same work.
 
 7b. **A coverage claim, measured at last — and the claim itself was wrong
     twice.** ~~"22 live tests match no leg's `-run` filter"~~ was read off

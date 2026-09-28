@@ -253,6 +253,7 @@ func liveConformanceCases() []liveCase {
 	cases = append(cases, windowsLiveCases()...)
 	cases = append(cases, macLiveCases()...)
 	cases = append(cases, langCases()...)
+	cases = append(cases, firewallCases()...)
 	return cases
 }
 
