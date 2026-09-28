@@ -378,6 +378,31 @@ jobs:
             exit 1
           fi
 
+      # TEMPORARY, removed in the next commit: what ufw actually says.
+      #
+      # `firewall.absent` decides whether a rule is there by dry-running the
+      # delete and reading ufw's words -- "Could not delete non-existent
+      # rule". It reported a change against an already-absent rule, so
+      # whether `--dry-run` prints that is the whole question, and the
+      # development host has no ufw to ask. Guessing at a tool's output is
+      # the mistake this repository keeps writing down.
+      - name: what ufw says about deleting a rule that is not there
+        run: |
+          set -x
+          sudo ufw --version || true
+          echo "--- add"
+          sudo ufw --force allow 65010/tcp 2>&1 || true
+          echo "--- dry-run delete of an EXISTING rule"
+          sudo ufw --dry-run --force delete allow 65010/tcp 2>&1 || true
+          echo "--- real delete"
+          sudo ufw --force delete allow 65010/tcp 2>&1 || true
+          echo "--- dry-run delete of a NON-EXISTENT rule"
+          sudo ufw --dry-run --force delete allow 65010/tcp 2>&1 || true
+          echo "--- real delete of a NON-EXISTENT rule"
+          sudo ufw --force delete allow 65010/tcp 2>&1 || true
+          echo "--- show added"
+          sudo ufw show added 2>&1 || true
+
       # `sudo -E` alone loses PATH, and the toolchain setup-go installed
       # is on PATH rather than in a standard location -- so root would
       # run a different Go, or none. The environment is named
