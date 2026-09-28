@@ -46,8 +46,8 @@ func init() {
 	// harness cannot stage a *change* for it on any machine available.
 	unconformed["win_dacl.owner"] = "reachable and confined to a path, but no change can be staged: " +
 		"an owner change needs a trustee Windows will accept as an owner, and on the runners " +
-		"available it refused both Administrators and SYSTEM with ERROR_INVALID_OWNER while " +
-		"SeRestorePrivilege was enabled. The only assignable owner left is the account that " +
+		"available it refused both Administrators and SYSTEM with ERROR_INVALID_OWNER. " +
+		"The only assignable owner left is the account that " +
 		"already owns the file, which is no change. win_dacl_windows_test.go drives SetOwner directly."
 
 	// Changes the machine the suite runs on. The harness applies twice,

@@ -14644,18 +14644,37 @@ accepts neither tried:
 	setting the owner of …\owned.conf to Administrators:
 	This security ID may not be assigned as the owner of this object
 
-and the same for `SYSTEM`. Both on an elevated runner where `winsec.SetOwner`
-had enabled `SeRestorePrivilege` — which it reports, because the hint naming a
-missing privilege is printed exactly when one could not be enabled, and no hint
-appeared. The module did its part; the object would not take either SID.
+and the same for `SYSTEM`.
 
 The only assignable owner left is the account that already owns the file, which
 is no change at all — and the harness says in its own words that a setup
 leaving nothing to do is a case testing nothing. So this is an `unconformed`
-entry rather than a third guess at a trustee, and the entry says all of the
-above. `win_dacl_windows_test.go` drives `SetOwner` directly, so the function
-is not unchecked; what cannot be staged is the *change*, which is a different
-claim and the one worth writing down.
+entry rather than a third guess at a trustee.
+`win_dacl_windows_test.go` drives `SetOwner` directly, so the function is not
+unchecked; what cannot be staged is the *change*, which is a different claim
+and the one worth writing down.
+
+###### An open question, not a conclusion
+
+`winsec.SetOwner` appends a hint when it could not enable the privilege an
+owner change needs, and **no hint appeared** in either failure. Two readings
+of that are available and the evidence contradicts both:
+
+- *The privilege was held.* But the leg prints `running as halite-ci (not an
+  administrator)`, and a non-administrator's token does not carry
+  `SeRestorePrivilege` at all.
+- *`enablePrivilege` reports a privilege it did not get.* That is the classic
+  Windows trap — `AdjustTokenPrivileges` returns success having assigned
+  nothing — and the function already guards it, returning
+  `GetLastError() != ERROR_NOT_ALL_ASSIGNED` with a comment saying why.
+
+So **why the hint was absent is not known**, and it is written down as a
+question because the next reader deserves that rather than a plausible
+sentence. It matters: the hint exists to explain this exact failure to an
+operator who is not running as an administrator, which is the commonest way to
+meet it. Answering it needs a Windows machine to step through, which this
+session did not have — the whole of what is established here is the two
+refusals and the absent hint.
 
 ##### Two things Windows does not have
 

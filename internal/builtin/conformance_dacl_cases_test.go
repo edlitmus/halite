@@ -217,11 +217,14 @@ func winDACLCases() []conformanceCase {
 	//	This security ID may not be assigned as the owner of this object
 	//	setting the owner of …\owned.conf to SYSTEM: (the same)
 	//
-	// Both on an elevated runner where `winsec.SetOwner` had enabled
-	// SeRestorePrivilege — which it reports, since the hint about a missing
-	// privilege is printed exactly when one could not be enabled, and no hint
-	// appeared. So the module did its part and the object would not take
-	// either SID.
+	// `winsec.SetOwner` appends a hint when it could not enable the privilege
+	// an owner change needs, and no hint appeared in either failure. Why is
+	// not known: the leg reports `running as halite-ci (not an
+	// administrator)`, so the privilege should have been absent, and
+	// `enablePrivilege` already guards the trap that would explain a false
+	// positive — it returns `GetLastError() != ERROR_NOT_ALL_ASSIGNED`.
+	// Written down as a question in DIVERGENCE 5.157 rather than guessed at;
+	// answering it needs a Windows machine to step through.
 	//
 	// The remaining assignable owner is the account that already owns the
 	// file, which is no change at all, and a case whose setup leaves nothing
