@@ -249,23 +249,32 @@ var linuxTool = accountTool{
 
 // accountPlatforms are the platforms `user` and `group` actually manage.
 //
-// `pickAccountTool` drives `pw` on FreeBSD and `useradd` on Linux, and there
-// is no third branch -- macOS has its own `mac_user` and `mac_group`, and
-// Windows has neither tool. The signatures declared no restriction, which the
-// field's documentation reads as "every platform", so the registry let a
-// Windows or macOS call through to a module that answered
+// Three, not two. `userPresent`, `userAbsent`, `groupPresent` and
+// `groupAbsent` each open with `if runtime.GOOS == "darwin"` and hand off to
+// the `mac_*` implementation over dscl; everything after that is
+// `pickAccountTool`, which drives `pw` on FreeBSD and `useradd` on Linux.
+// Windows has no branch at all.
+//
+// The signatures declared no restriction, which the field's documentation
+// reads as "every platform", so the registry let a Windows call through to a
+// module that answered
 //
 //	no account management tool was found on this node (windows)
 //
 // A true statement about the wrong thing, which is the shape
-// internal/signature/platform.go was written to stop: it says of `sysrc` on
-// Linux that the module "looked for a binary that is not there and reported
-// that instead". The same defect, two modules along, found when the
-// conformance harness ran these cases on the windows and macos legs.
+// internal/signature/platform.go was written to stop -- its own comment says
+// of `sysrc` on Linux that the module "looked for a binary that is not there
+// and reported that instead". The same defect two modules along, found when
+// the conformance harness ran on the windows leg.
 //
-// Declaring it moves the refusal to the registry, where it names the
-// platforms the function does support.
-var accountPlatforms = []string{"linux", "freebsd"}
+// **This list said `linux, freebsd` for one commit**, because that message
+// names only those two and it was read as a statement of scope. It is not: it
+// is the fallback's complaint, reached only after the darwin branch has
+// declined to return. `live_group_gid_test.go` drives `group.present` on the
+// macos leg and had been passing, and the narrowed list broke it -- which is
+// the only reason the mistake was caught before it shipped. An error message
+// describes the path that produced it, not the function that contains it.
+var accountPlatforms = []string{"linux", "freebsd", "darwin"}
 
 // pickAccountTool chooses the platform's account tool.
 func pickAccountTool(c *exec.Context) (accountTool, error) {

@@ -14664,6 +14664,42 @@ which is the same constraint as above, arriving from the other side. Shelling
 out is what an operator does anyway, so the constraint pushed toward the better
 probe.
 
+##### And the mistake that nearly shipped: an error message is not a specification
+
+Writing the platform gates, `user` and `group` were declared
+`[linux, freebsd]`, on the strength of the message the module itself produces:
+
+	no account management tool was found on this node (windows);
+	halite drives pw on FreeBSD and useradd on Linux
+
+That message names two platforms, and it was read as a statement of the
+function's scope. **It is the fallback's complaint.** `userPresent`,
+`userAbsent`, `groupPresent` and `groupAbsent` each open with
+`if runtime.GOOS == "darwin"` and hand off to the `mac_*` implementation over
+dscl; `pickAccountTool` is only reached after that branch declines. There are
+three platforms, not two.
+
+`Platforms` is enforced by the registry, so the narrowed list did not merely
+mis-document — it **refused `group.present` on macOS**, and would have broken
+account management on a platform of the estate.
+
+What caught it was `live_group_gid_test.go`, which drives `group.present` on
+the `macos` leg and had been passing for months. One commit later it said
+
+	group.present runs on linux, freebsd, and this node is darwin
+
+which is the declaration being enforced against the truth. Nothing else would
+have: the module's Windows message was the evidence, the reasoning from it was
+wrong, and the only reason it did not ship is that a test already existed on
+the platform the claim excluded.
+
+**An error message describes the path that produced it, not the function that
+contains it.** The same discipline as reading a flag's prose beside the flag,
+and the same failure this ledger records under a different name each time:
+a stated reason ends the investigation.
+
+
+
 
 
 

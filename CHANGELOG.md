@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `user` and `group` say which platforms they manage
+
+They declared none, which means every platform, while Windows has no
+account tool at all — so a Windows call reached the module and got "no
+account management tool was found on this node (windows)" instead of a
+refusal naming the platforms that work. They now declare Linux, FreeBSD and
+macOS, which is what the code does.
+
 ### The Windows and macOS states are held to the test-mode contract
 
 One hundred and nine of the hundred and thirty-two, up from a hundred. The

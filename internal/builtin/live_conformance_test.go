@@ -317,13 +317,13 @@ func accountCases() []liveCase {
 		}
 	}
 
-	// The platforms `user` and `group` manage, which is the same list
-	// `accountPlatforms` declares: `pw` on FreeBSD and `useradd` on Linux.
-	// macOS has `mac_user` and `mac_group` instead, and Windows neither --
-	// found by running these on the windows and macos legs, where the
-	// registry refused the call and said which platforms it does support.
+	// The platforms `user` and `group` manage, which is the list
+	// `accountPlatforms` declares: `useradd` on Linux, `pw` on FreeBSD, and
+	// dscl on darwin through the `mac_*` implementation each of the four
+	// functions hands off to. Windows has no branch, which is what the
+	// windows leg found.
 	accounts := func(lc liveCase) liveCase {
-		lc.platforms = []string{"linux", "freebsd"}
+		lc.platforms = []string{"linux", "freebsd", "darwin"}
 		return lc
 	}
 
