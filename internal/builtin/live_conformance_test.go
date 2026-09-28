@@ -317,8 +317,18 @@ func accountCases() []liveCase {
 		}
 	}
 
+	// The platforms `user` and `group` manage, which is the same list
+	// `accountPlatforms` declares: `pw` on FreeBSD and `useradd` on Linux.
+	// macOS has `mac_user` and `mac_group` instead, and Windows neither --
+	// found by running these on the windows and macos legs, where the
+	// registry refused the call and said which platforms it does support.
+	accounts := func(lc liveCase) liveCase {
+		lc.platforms = []string{"linux", "freebsd"}
+		return lc
+	}
+
 	return []liveCase{
-		{
+		accounts(liveCase{
 			Conformance: states.Conformance{
 				Name: "group.present",
 				Args: value.MapOf("name", group),
@@ -329,8 +339,8 @@ func accountCases() []liveCase {
 				Setup:   func() error { removeGroup(); return nil },
 				Cleanup: removeGroup,
 			},
-		},
-		{
+		}),
+		accounts(liveCase{
 			Conformance: states.Conformance{
 				Name:  "group.absent",
 				Args:  value.MapOf("name", group),
@@ -341,8 +351,8 @@ func accountCases() []liveCase {
 				},
 				Cleanup: removeGroup,
 			},
-		},
-		{
+		}),
+		accounts(liveCase{
 			Conformance: states.Conformance{
 				Name: "user.present",
 				// No `groups`: supplementary membership is a second
@@ -354,8 +364,8 @@ func accountCases() []liveCase {
 				Setup:   func() error { removeUser(); return nil },
 				Cleanup: removeUser,
 			},
-		},
-		{
+		}),
+		accounts(liveCase{
 			Conformance: states.Conformance{
 				Name:  "user.absent",
 				Args:  value.MapOf("name", user, "purge", true),
@@ -367,7 +377,7 @@ func accountCases() []liveCase {
 				},
 				Cleanup: removeUser,
 			},
-		},
+		}),
 	}
 }
 
@@ -402,8 +412,17 @@ func hostsFileCases() []liveCase {
 	remove := func() {
 		_, _ = r.States.Call(root, "host.absent", value.MapOf("name", name))
 	}
+	// `HostsPath` is `/etc/hosts`, which every unix has and Windows does
+	// not -- there the file lives under System32\drivers\etc and this
+	// module does not know it. darwin is in the list because the macos leg
+	// ran these and passed, not because /etc/hosts is assumed to be there.
+	unix := func(lc liveCase) liveCase {
+		lc.platforms = []string{"linux", "freebsd", "darwin"}
+		return lc
+	}
+
 	return []liveCase{
-		{
+		unix(liveCase{
 			Conformance: states.Conformance{
 				Name:    "host.present",
 				Args:    value.MapOf("name", name, "ip", addr),
@@ -411,8 +430,8 @@ func hostsFileCases() []liveCase {
 				Setup:   func() error { remove(); return nil },
 				Cleanup: remove,
 			},
-		},
-		{
+		}),
+		unix(liveCase{
 			Conformance: states.Conformance{
 				Name:  "host.absent",
 				Args:  value.MapOf("name", name),
@@ -424,7 +443,7 @@ func hostsFileCases() []liveCase {
 				},
 				Cleanup: remove,
 			},
-		},
+		}),
 	}
 }
 
@@ -547,7 +566,12 @@ func scheduleCases() []liveCase {
 				Setup:   func() error { removeAt(); return nil },
 				Cleanup: removeAt,
 			},
-			needs: []string{"at", "atq"},
+			// The module declares linux and freebsd and the registry
+			// enforces it, so macOS -- which has `at` and `atq` binaries --
+			// was refused by the signature rather than by the tool check.
+			// The case says the same thing the declaration does.
+			platforms: []string{"linux", "freebsd"},
+			needs:     []string{"at", "atq"},
 		},
 		{
 			Conformance: states.Conformance{
@@ -562,7 +586,12 @@ func scheduleCases() []liveCase {
 				},
 				Cleanup: removeAt,
 			},
-			needs: []string{"at", "atq"},
+			// The module declares linux and freebsd and the registry
+			// enforces it, so macOS -- which has `at` and `atq` binaries --
+			// was refused by the signature rather than by the tool check.
+			// The case says the same thing the declaration does.
+			platforms: []string{"linux", "freebsd"},
+			needs:     []string{"at", "atq"},
 		},
 	}
 }
@@ -603,8 +632,18 @@ func packageCases() []liveCase {
 		return err
 	}
 
+	// Linux and FreeBSD. Not macOS: the leg runs as root and Homebrew
+	// refuses outright -- "Running Homebrew as root is extremely dangerous
+	// and no longer supported" -- which is brew's decision, not this
+	// module's, and not one a case can work around. Not Windows: choco has
+	// no `tree`. Both learnt from the legs rather than assumed.
+	pkgPlatforms := func(lc liveCase) liveCase {
+		lc.platforms = []string{"linux", "freebsd"}
+		return lc
+	}
+
 	return []liveCase{
-		{
+		pkgPlatforms(liveCase{
 			Conformance: states.Conformance{
 				Name:    "pkg.installed",
 				Args:    value.MapOf("name", pkg),
@@ -612,8 +651,8 @@ func packageCases() []liveCase {
 				Setup:   func() error { remove(); return nil },
 				Cleanup: remove,
 			},
-		},
-		{
+		}),
+		pkgPlatforms(liveCase{
 			Conformance: states.Conformance{
 				Name:    "pkg.removed",
 				Args:    value.MapOf("name", pkg),
@@ -621,7 +660,7 @@ func packageCases() []liveCase {
 				Setup:   install,
 				Cleanup: remove,
 			},
-		},
+		}),
 	}
 }
 

@@ -247,6 +247,26 @@ var linuxTool = accountTool{
 	DelGroup: func(name string) []string { return []string{"groupdel", name} },
 }
 
+// accountPlatforms are the platforms `user` and `group` actually manage.
+//
+// `pickAccountTool` drives `pw` on FreeBSD and `useradd` on Linux, and there
+// is no third branch -- macOS has its own `mac_user` and `mac_group`, and
+// Windows has neither tool. The signatures declared no restriction, which the
+// field's documentation reads as "every platform", so the registry let a
+// Windows or macOS call through to a module that answered
+//
+//	no account management tool was found on this node (windows)
+//
+// A true statement about the wrong thing, which is the shape
+// internal/signature/platform.go was written to stop: it says of `sysrc` on
+// Linux that the module "looked for a binary that is not there and reported
+// that instead". The same defect, two modules along, found when the
+// conformance harness ran these cases on the windows and macos legs.
+//
+// Declaring it moves the refusal to the registry, where it names the
+// platforms the function does support.
+var accountPlatforms = []string{"linux", "freebsd"}
+
 // pickAccountTool chooses the platform's account tool.
 func pickAccountTool(c *exec.Context) (accountTool, error) {
 	for _, t := range []accountTool{freebsdTool, linuxTool} {
@@ -311,6 +331,7 @@ func registerUserExec(r *Registries) {
 					req("groups", signature.List, "The supplementary groups."),
 				},
 				Mutates: true, TestMode: signature.TestReliable,
+				Platforms:  accountPlatforms,
 				Privileges: []string{"root"},
 				Section:    "15.2",
 			},
@@ -433,6 +454,7 @@ func registerUserStates(r *Registries) {
 					opt("expire", signature.Int, nil, "Account expiry, in days since the epoch. Linux only; chage -E."),
 				},
 				Mutates:    true,
+				Platforms:  accountPlatforms,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.5",
@@ -448,6 +470,7 @@ func registerUserStates(r *Registries) {
 					opt("purge", signature.Bool, false, "Also remove the home directory."),
 				},
 				Mutates:    true,
+				Platforms:  accountPlatforms,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.5",
@@ -465,6 +488,7 @@ func registerUserStates(r *Registries) {
 					opt("members", signature.List, nil, "The accounts the group holds. This is the whole list: anyone not named is removed."),
 				},
 				Mutates:    true,
+				Platforms:  accountPlatforms,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.5",
@@ -477,6 +501,7 @@ func registerUserStates(r *Registries) {
 				Doc:        "Ensure a group does not exist.",
 				Params:     []signature.Param{nameParam("The group. Defaults to the state ID.")},
 				Mutates:    true,
+				Platforms:  accountPlatforms,
 				TestMode:   signature.TestReliable,
 				Privileges: []string{"root"},
 				Section:    "15.5",

@@ -207,10 +207,22 @@ func winDACLCases() []conformanceCase {
 		Cleanup: dropDir(&inheritDir),
 	}}))
 
-	// owner: set to Administrators, a group that exists on every Windows and
-	// is not the account creating the file, so there is a change to make.
+	// owner: set to SYSTEM.
+	//
+	// `Administrators` was the first choice and Windows refused it —
+	// "This security ID may not be assigned as the owner of this object" —
+	// on a runner that is elevated and where `winsec.SetOwner` had enabled
+	// SeRestorePrivilege successfully. It says so itself: the error carries
+	// no hint about a missing privilege, and the hint is printed exactly
+	// when the privilege could not be enabled. So the module did its part
+	// and the trustee was simply not assignable there.
+	//
+	// SYSTEM is, and it is not the account creating the file, so there is
+	// still a change to make. Recorded rather than silently swapped,
+	// because "pick a different trustee" is the kind of fix that looks
+	// arbitrary a year later.
 	ownerDir, ownerPath := "", ""
-	ownerArgs := value.MapOf("owner", "Administrators")
+	ownerArgs := value.MapOf("owner", "SYSTEM")
 	cases = append(cases, windows(conformanceCase{Conformance: states.Conformance{
 		Name: "win_dacl.owner",
 		Args: ownerArgs,
