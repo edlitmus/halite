@@ -390,14 +390,23 @@ jobs:
         run: |
           set -x
           sudo ufw --version || true
+          # `--force` is for enable/disable/delete/reset and is a syntax
+          # error on `allow` -- which the first run of this step found, by
+          # never adding the rule it meant to.
           echo "--- add"
-          sudo ufw --force allow 65010/tcp 2>&1 || true
-          echo "--- dry-run delete of an EXISTING rule"
-          sudo ufw --dry-run --force delete allow 65010/tcp 2>&1 || true
+          sudo ufw allow 65010/tcp 2>&1 || true
+          echo "--- show added, WITH the rule"
+          sudo ufw show added 2>&1 || true
+          echo "--- dry-run add of an EXISTING rule (tail)"
+          sudo ufw --dry-run allow 65010/tcp 2>&1 | tail -4 || true
+          echo "--- dry-run delete of an EXISTING rule (tail)"
+          sudo ufw --dry-run --force delete allow 65010/tcp 2>&1 | tail -4 || true
+          echo "--- show added, still there after the dry run?"
+          sudo ufw show added 2>&1 || true
           echo "--- real delete"
           sudo ufw --force delete allow 65010/tcp 2>&1 || true
-          echo "--- dry-run delete of a NON-EXISTENT rule"
-          sudo ufw --dry-run --force delete allow 65010/tcp 2>&1 || true
+          echo "--- dry-run delete of a NON-EXISTENT rule (tail)"
+          sudo ufw --dry-run --force delete allow 65010/tcp 2>&1 | tail -4 || true
           echo "--- real delete of a NON-EXISTENT rule"
           sudo ufw --force delete allow 65010/tcp 2>&1 || true
           echo "--- show added"
