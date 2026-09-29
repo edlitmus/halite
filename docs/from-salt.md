@@ -536,11 +536,17 @@ full:
    never named it. Set `remove_groups: true` for Salt's behaviour, on the
    states that want it.
 
-   The Step 0 audit does not flag this, because it reads the tree for
-   things that will not work rather than for things that will work
-   differently, and a `user.present` with `groups:` is valid either way.
-   Grep your tree for `groups:` under `user.present` if any of it relies
-   on memberships being pruned.
+   **The Step 0 audit flags it**, as a `semantics` finding at review
+   severity, naming the file and the line of the `groups:` key. It used to
+   say nothing, because it read the tree for things that will not work
+   rather than for things that will work differently — and this is the
+   second kind, which is the kind an operator never finds out about: a
+   tree relying on Salt's pruning gets a run that prunes nothing and
+   reports success.
+
+   A declaration that already states `remove_groups`, either way, is not
+   reported: that is a decision, and an audit that reports decisions back
+   is describing work that does not exist.
 
 6. **The hub runs unprivileged.** Salt's daemon ran as root and read
    whatever it liked. <!-- lexicon:allow --> Every directory the hub

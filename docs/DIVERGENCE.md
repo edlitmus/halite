@@ -15097,6 +15097,44 @@ ever, and every highstate on every node reports an upgrade it has already done.
 Nothing in the unit suite can see that, because both strings come from fixtures
 written in the same sitting by the same person.
 
+##### And it said it had upgraded a package it installed
+
+A separate defect the same reading turned up, in the half of the state nothing
+machine-readable could disagree with. `pkgLatest` reported
+
+    The following packages would be upgraded: tree.
+
+for a package that was not installed and which it was about to install. The
+change set was right all along — `{old: "", new: "2.1.1-2"}` names the absence,
+which is exactly how the state decides to act — so no test that reads changes
+could see it, and only a person reading the comment could.
+
+That is worth separating from the rest of this chapter. Most entries here are a
+parser disagreeing with a tool, or a document disagreeing with code. This one is
+the *comment* disagreeing with the *change set* inside one result, and the
+machine-readable half was the correct one. A suite can be complete about
+everything it compares and still say the wrong thing to the person reading the
+output.
+
+It was recorded rather than changed when found, because a comment is what an
+operator greps for. Ed's ruling was that this estate's only reader of that text
+is Ed, so it is safe to correct: the state now keeps two lists and
+`pkgLatestSentence` names both, "The following packages were installed: tree;
+and these were upgraded: curl". Both go to the provider in **one** `Install`
+call, because that call upgrades what is present and installs what is not —
+splitting the message must not split the transaction.
+
+Four tests, through `pkgLatest` with a scripted provider rather than against the
+helper, because a test of `pkgLatestSentence` would survive deleting the call to
+it — the `misplaced()` and `ufwDryRunDeleteChanged` mistake, twice in one week.
+Reverting to the single sentence fails them with the original wording.
+
+**And the first version of the one-call assertion did not assert it.** It
+counted names rather than calls, so two `Install` calls and one were the same
+length and the deliberately broken build passed. The tell was in the failure
+message, which had to hedge: "in %d call(s) worth of names". A test whose wording
+is unsure what it measures is a test that is not measuring it.
+
 ##### `reboot.scheduled` needed a second gate, and the gate was set nowhere
 
 Its own excuse was the right shape: this one really does act on the machine in a
@@ -15664,6 +15702,143 @@ knowing before somebody reads it as thoroughness.
 
 
 
+
+### 5.161 The CA private key and its directory were unrestricted on Windows
+
+`internal/pki`'s own documentation says what the layout means:
+
+> Keys are written 0600 and certificates 0644, and the directory is 0700: a
+> certificate is public and a key is not, and the difference should be visible
+> in `ls -l` rather than only in a document.
+
+It said that for a year while not keeping it on one platform. `Files.Ensure`
+called `os.MkdirAll(dir, 0o700)` and `Files.WriteKey` called
+`os.OpenFile(path, …, 0o600)` — and on Windows a file mode is the read-only
+attribute and a directory mode is nothing at all. So the enrollment CA's private
+key, which this package's own comment calls the most valuable thing in the
+estate, and the directory holding it, were reachable by any account on the
+machine.
+
+`internal/fileperm` exists for exactly this and eight call sites already used it.
+This package, which has more reason to than any of them, used it nowhere — and
+`fileperm` appeared in it only in a *comment*, explaining that a since-deleted
+copy of `atomicfile.Write` had bypassed it (5.144). That is how the gap became
+visible: consolidating the copies showed that the thing around the copy had the
+same fault.
+
+**Not a live exposure.** No hub or node in this estate runs on Windows. It is
+fixed rather than filed because the fix is small, and because "no node runs there
+yet" is the reason a defect waits for the first one that does.
+
+#### What the tests can see, and where
+
+Worth writing down, because two of the three assertions pass against the broken
+code on this platform, and a test that passes before and after a fix is not
+testing the fix.
+
+| assertion | unix | Windows |
+|---|---|---|
+| a directory `Ensure` created is unreachable by others | already true — `MkdirAll(0o700)` | the fix is the whole of it |
+| a key `WriteKey` wrote is unreachable by others | already true — `OpenFile(0o600)` | the fix is the whole of it |
+| a directory that **already existed** is restricted | the fix is the whole of it | the fix is the whole of it |
+
+The third is the one that bites everywhere, and it is also the case that matters
+in practice: `MkdirAll` on an existing directory returns nil and changes nothing,
+so a 0777 directory made by hand — or left by an older build that never
+restricted it — stayed 0777. That is the directory nobody goes back to check.
+Removing `fileperm.Apply` from `Ensure` fails it here.
+
+Measured rather than assumed, both ways: removing `fileperm.ApplyFile` from
+`WriteKey` leaves the suite **green** on FreeBSD. The `test (windows-2022)` job
+of `ci.yml`, which runs this package's unit suite on every push, is the only
+witness that half has. The test says so in its own comment rather than leaving a
+reader to infer coverage from a green run.
+
+The question asked is `fileperm.Others`, which names any account that can reach a
+path beyond its owner, SYSTEM and Administrators — from the mode on unix, from
+the ACL on Windows. One question, two implementations, so the test does not have
+to know which platform it is on, and the failure names *who* can read the key
+rather than saying the restriction is wrong.
+
+`WriteKey` restricts the open file before writing the bytes, so the key is never
+on disk reachable by another account. **Nothing observes that ordering** — it
+would take a second process racing the write — so it is a claim made by reading
+the function, and the test says as much.
+
+#### A dozen siblings, not fixed here
+
+The same sweep finds `os.MkdirAll(…, 0o700)` and `os.WriteFile(…, 0o600)` outside
+`fileperm` in twelve other places: the job cache, the returner spool and its
+webhook, the file returner, the log file, `ssh_known_hosts`, `ssh`, `data`. Each
+is the same shape and not the same judgement — a job return is not a CA key, and
+some of those directories hold nothing anybody would want. Counted here so the
+number is known rather than fixed in a commit about `pki`. plan.md 19e is closed;
+this is what should replace it.
+
+### 5.162 The migration audit was silent about the one difference it could not see
+
+`docs/from-salt.md` lists what a tree does differently here, and item 5 is
+`user.present` with `groups:`. Salt's `remove_groups` defaults to **true**, so
+`groups:` there is the account's complete supplementary set and anything unlisted
+is taken away. Here it defaults to false: `groups:` means "the groups this account
+must be in", and a membership added by hand survives a run that never named it.
+
+So a tree relying on Salt's pruning gets a run that prunes nothing and reports
+success. **The benign direction, and therefore the one nobody finds out about** —
+there is no failure, no warning and no drift to notice; the account simply keeps a
+membership somebody wanted gone.
+
+And the audit said nothing, which item 5 admitted in its own words:
+
+> The Step 0 audit does not flag this, because it reads the tree for things that
+> will not work rather than for things that will work differently, and a
+> `user.present` with `groups:` is valid either way. Grep your tree for `groups:`
+> under `user.present` if any of it relies on memberships being pruned.
+
+Telling a reader to grep their own tree is a worse answer than a finding with a
+file and a line, and it is the answer a document gives when the tool cannot.
+
+#### The question the audit was not asking
+
+Every other check in `internal/migrate` asks *would this run?* For a whole class of
+difference that question has the wrong answer: these run perfectly and do
+something else. `CatPillarGrain` was the first of them — a pillar top targeting an
+untrusted grain keeps working, and the audit reports it so that trusting the grain
+becomes a recorded decision rather than an accident. `CatSemantics` is the second,
+and it is named for the class rather than for this one difference, because
+`docs/from-salt.md` is a list of them and every item on that list the audit cannot
+see is an item whose only reader is somebody who went looking.
+
+#### A stated decision is not a finding
+
+The check is silent when the declaration already names `remove_groups`, and
+silent for **either** value. True is Salt's behaviour and false is this build's,
+and both are the operator having decided — reporting a decision back is the audit
+describing work that does not exist. That is the failing the `cmd_default_shell`
+branch was corrected for, in the same function, for the same reason.
+
+Both values are tested, not just `true`: silencing only the Salt-compatible one
+would make the rule "agrees with Salt" rather than "has been decided", and those
+two are the same today and need not stay so.
+
+#### Measured against the estate, not a fixture
+
+Run against this project's own Salt tree, which is what the audit exists for:
+
+    REVIEW (1)
+      [semantics] users.sls:19
+        `groups:` here means the groups this account must be in, and leaves any
+        other membership alone; Salt's `remove_groups` defaults to true, so there
+        it was the complete set and anything unlisted was removed
+
+One declaration, in an estate of sixteen SLS files and two `user.present`
+references, at the line the `groups:` key is on. It names `wheel` or `sudo`
+depending on the platform, plus `operator` and `video`. Whether that account is
+meant to keep anything else is Ed's question to answer; the point is that it is now
+a question somebody was asked rather than one that needed grepping for.
+
+Four tests, and both breaks fail: removing the finding, and ignoring a stated
+`remove_groups`. plan.md 19h closed.
 
 ## 6. Everything else not started
 

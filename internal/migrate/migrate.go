@@ -55,6 +55,16 @@ const (
 	CatParse Category = "parse"
 	// CatState is a state declaration this build cannot run.
 	CatState Category = "state"
+	// CatSemantics is a declaration that is valid here and means
+	// something different from what it meant in Salt.
+	//
+	// The second category of that kind; `CatPillarGrain` was the first.
+	// It exists because the audit's usual question -- "would this run?"
+	// -- has the wrong answer for a whole class of difference: these run
+	// perfectly, and do something else. `docs/from-salt.md` is the list
+	// of them, and every item on that list an audit cannot see is an
+	// item whose only reader is somebody who went looking.
+	CatSemantics Category = "semantics"
 )
 
 // Severity says whether a finding blocks a migration.

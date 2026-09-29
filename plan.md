@@ -2506,31 +2506,26 @@ somebody would otherwise rediscover.
     wrong one for an extension that logs its way to a quiet death. Left
     deliberately, noted here so it is a decision rather than drift.
 
-19e. **`internal/pki` does not use `internal/fileperm`, on the platform
-    where that is the whole of the answer.** `WriteKey` opens the file
-    with `os.OpenFile(path, …, 0o600)` and `Ensure` calls
-    `os.MkdirAll(dir, 0o700)`. On Windows a mode is the read-only
-    attribute and a directory mode is nothing at all, so neither the
-    enrollment CA's private key nor the directory holding it is
-    access-control restricted — while the package's own documentation
-    says *"Keys are written 0600 and certificates 0644, and the directory
-    is 0700: a certificate is public and a key is not, and the difference
-    should be visible in `ls -l` rather than only in a document"*, and
-    calls that key the most valuable thing in the estate.
+19e. ~~**`internal/pki` does not use `internal/fileperm`**~~ — **done**
+    (DIVERGENCE 5.161). `Ensure` and `WriteKey` go through `fileperm` now, so
+    the CA private key and the directory holding it are access-control
+    restricted on Windows as well as on unix, and the package's own sentence
+    about 0600 and 0700 is kept on both platforms rather than one.
 
-    `internal/fileperm` exists for exactly this and eight call sites use
-    it. This package, which has more reason to than any of them, uses it
-    nowhere. Found while consolidating the copies of `atomicfile`
-    (DIVERGENCE 5.144), which is how the gap became visible: the copy in
-    `pki` was bypassing `fileperm` and so was everything around it.
+    Two things learnt rather than assumed. The assertion that bites on every
+    platform is the **pre-existing** directory: `MkdirAll` on one that exists
+    returns nil and changes nothing, so a 0777 directory made by hand stayed
+    0777. And removing `fileperm.ApplyFile` from `WriteKey` leaves the suite
+    green on FreeBSD — measured — so the `test (windows-2022)` leg is the only
+    witness that half has, and the test says so in its own words.
 
-    **Not a live exposure today**: no hub or node in this estate runs on
-    Windows. It is ranked here rather than fixed because it is worth
-    doing properly — `fileperm.Others` reports which accounts can reach a
-    file, so a test can assert the restriction rather than assume it, and
-    the `test (windows-2022)` leg runs the unit suite on a real Windows
-    machine, which makes CI the witness rather than a reading of the
-    source.
+    **What replaces this row**: the same sweep finds `MkdirAll(…, 0o700)` and
+    `WriteFile(…, 0o600)` outside `fileperm` in twelve other places — the job
+    cache, the returner spool and its webhook, the file returner, the log file,
+    `ssh_known_hosts`, `ssh`, `data`. Same shape, different judgement each time:
+    a job return is not a CA key, and some of those directories hold nothing
+    anybody would want. Worth a pass that rules on each rather than a change
+    that applies `fileperm` to all twelve.
 
 19f. **Nine direct `os.Rename` calls outside `atomicfile`.** Each is a
     judgement rather than a duplicate of the helper, which is why
@@ -2558,18 +2553,18 @@ somebody would otherwise rediscover.
     `closeRenderSandbox`; DIVERGENCE 5.144). The rest needs a sweep that
     understands per-GOOS builds and interface satisfaction before a count
     is quoted anywhere.
-19h. **`halite-hub migrate` does not flag a `user.present` with
-    `groups:`.** `internal/migrate` mentions groups nowhere, so the Step 0
-    report is silent about the one difference in `docs/from-salt.md`'s list
-    that it cannot see. A tree relying on Salt's `remove_groups: true`
-    default gets a run that prunes nothing and says nothing — the benign
-    direction, and therefore the one an operator never finds out about.
+19h. ~~**`halite-hub migrate` does not flag a `user.present` with
+    `groups:`**~~ — **done** (DIVERGENCE 5.162). A new category,
+    `CatSemantics`, for the class `CatPillarGrain` was the first member of:
+    a declaration that is valid here and means something different from
+    what it meant in Salt. Review severity, naming the file and the line
+    of the `groups:` key, and silent when the declaration already states
+    `remove_groups` — either value, because both are the operator having
+    decided.
 
-    The audit's existing shape fits it: `CatPillarGrain` is already a
-    category for "valid, and means something different here". This would be
-    a second of those. Until it exists, `docs/from-salt.md` item 5 tells the
-    reader to grep their own tree, which is a worse answer than a finding
-    with a file and a line. DIVERGENCE 5.145.
+    Found one in this project's own Salt tree, `users.sls:19`, which is the
+    measurement rather than a fixture. `docs/from-salt.md` item 5 no longer
+    tells the reader to grep.
 
 19i. **Nothing stops a tenth repo-walking audit being written without the
     other-checkout check.** `internal/repotree.OtherCheckout` has four call

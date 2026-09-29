@@ -184,6 +184,36 @@ func checkStateFunction(rep *Report, opts Options, rel string, source []string, 
 			}
 		}
 
+		// `groups:` on `user.present` runs here and means something else.
+		//
+		// This is not a thing that will not work, which is what the rest
+		// of this audit looks for. Salt's `remove_groups` defaults to
+		// **true**, so `groups:` there is the account's complete
+		// supplementary set and anything unlisted is taken away; here it
+		// defaults to false, so `groups:` means "must be in these" and a
+		// membership added by hand survives. A tree relying on Salt's
+		// pruning gets a run that prunes nothing and reports success --
+		// the benign direction, and therefore the one an operator never
+		// finds out about.
+		//
+		// `docs/from-salt.md` item 5 used to end by telling the reader to
+		// grep their own tree for it, which is a worse answer than a
+		// finding with a file and a line. DIVERGENCE 5.162, plan.md 19h.
+		if name == "user.present" && argName == "groups" && !hasArgNamed(args, "remove_groups") {
+			rep.Findings = append(rep.Findings, Finding{
+				Category: CatSemantics, Severity: Review, File: rel,
+				Line: arg.KeyPos.Line, Col: arg.KeyPos.Col,
+				Subject: name + ".groups",
+				Msg: "`groups:` here means the groups this account must be in, and leaves " +
+					"any other membership alone; Salt's `remove_groups` defaults to true, so " +
+					"there it was the complete set and anything unlisted was removed",
+				Action: "If this state relied on memberships being pruned, add " +
+					"`remove_groups: true`. If it did not, nothing needs to change. " +
+					"docs/from-salt.md item 5.",
+			})
+			continue
+		}
+
 		// A mode that arrived as an integer is the one type error worth
 		// reporting from a stripped body: an integer is an integer
 		// whatever the templating did, and it is the difference between
@@ -207,6 +237,21 @@ func checkStateFunction(rep *Report, opts Options, rel string, source []string, 
 			})
 		}
 	}
+}
+
+// hasArgNamed reports whether a declaration states an argument.
+//
+// Used to say nothing about a `user.present` that already names
+// `remove_groups`: the operator has decided, either way, and reporting a
+// decision back as a finding is the audit describing work that does not
+// exist. The `cmd_default_shell` branch above declines for the same reason.
+func hasArgNamed(args []value.Entry, want string) bool {
+	for _, arg := range args {
+		if value.KeyString(arg.Key) == want {
+			return true
+		}
+	}
+	return false
 }
 
 // siblingsOf names the functions the module does provide, which is the

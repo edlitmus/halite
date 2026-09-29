@@ -23,6 +23,47 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `halite-hub migrate` reports `user.present` with `groups:`
+
+Salt's `remove_groups` defaults to true, so `groups:` there was an account's
+complete supplementary set and anything unlisted was removed. Here it defaults to
+false, so a membership added by hand survives — which means a tree relying on
+Salt's pruning gets a run that prunes nothing and reports success, with no failure
+to point at.
+
+The audit used to say nothing, because it looked for what would not work rather
+than for what would work differently. There is a category for that now,
+`semantics`, at review severity, naming the file and the line. A declaration that
+already states `remove_groups` is not reported, either way: that is a decision.
+
+`docs/from-salt.md` item 5 no longer ends by telling the reader to grep their own
+tree.
+
+### The CA private key was unrestricted on Windows
+
+`internal/pki` created its key directory with `MkdirAll(dir, 0o700)` and its
+private keys with `OpenFile(path, …, 0o600)`. On Windows a file mode is the
+read-only attribute and a directory mode is nothing at all, so the enrollment
+CA's key — and the directory holding it — were reachable by any account on the
+machine, while the package's own documentation said otherwise. Both go through
+`internal/fileperm` now, which turns "no group, no other" into an access control
+list granting the owner, SYSTEM and Administrators and nobody else.
+
+No hub or node in this estate runs on Windows, so this was not a live exposure.
+It also restricts a key directory that already existed, which `MkdirAll` never
+did on any platform.
+
+### `pkg.latest` said it had upgraded a package it installed
+
+`pkg.latest` compares the newest available version against the installed one,
+and for a package that is not installed the installed one is the empty string —
+so the state installs it, which is right, and then reported "The following
+packages would be upgraded". The change set was correct throughout, so nothing
+reading changes could see the discrepancy.
+
+It now keeps the two apart: "The following packages were installed: tree; and
+these were upgraded: curl". Both still go to the package manager in one call.
+
 ### `timezone.system` never converged on a FreeBSD node with no `/var/db/zoneinfo`
 
 FreeBSD copies the zone file to `/etc/localtime` instead of linking it, so the
