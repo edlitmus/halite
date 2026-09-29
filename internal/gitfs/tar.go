@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // MaxArchiveBytes bounds what one ref may unpack to.
@@ -59,11 +61,11 @@ func extractTar(archive []byte, dest string) error {
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0o700); err != nil {
+			if err := fileperm.MkdirAll(target, 0o700); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			if err := fileperm.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 				return err
 			}
 			written += header.Size

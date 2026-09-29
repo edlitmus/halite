@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/eventbus"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 )
 
@@ -48,7 +49,7 @@ func init() {
 		if opts.SpoolMax <= 0 {
 			opts.SpoolMax = 256 << 20
 		}
-		if err := os.MkdirAll(opts.SpoolDir, 0o700); err != nil {
+		if err := fileperm.MkdirAll(opts.SpoolDir, 0o700); err != nil {
 			return nil, err
 		}
 		client := &http.Client{Timeout: opts.Timeout}
@@ -253,7 +254,7 @@ func (r *webhookReturner) spool(kind string, body []byte) error {
 	name := fmt.Sprintf("%019d-%09d-%s-%s.json",
 		r.opts.now().UTC().UnixNano(), r.seq, kind, digestOf(body))
 	path := filepath.Join(r.opts.SpoolDir, name)
-	if err := os.WriteFile(path, body, 0o600); err != nil {
+	if err := fileperm.WriteFile(path, body, 0o600); err != nil {
 		return err
 	}
 	r.spooled += int64(len(body))

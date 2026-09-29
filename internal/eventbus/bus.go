@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // Bus is a segmented append-only log.
@@ -64,7 +66,7 @@ func Open(dir string) (*Bus, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("the event bus needs a directory")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the event bus: %w", err)
 	}
 	b := &Bus{
@@ -175,7 +177,7 @@ func (b *Bus) openCurrent() error {
 	if b.current != nil {
 		return nil
 	}
-	file, err := os.OpenFile(b.path(b.segment), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	file, err := fileperm.OpenFile(b.path(b.segment), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("opening the event bus segment: %w", err)
 	}

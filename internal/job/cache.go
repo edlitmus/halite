@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // Cache is the job cache of SPEC 9.4: a local store under the state
@@ -56,7 +57,7 @@ func OpenCache(dir string) (*Cache, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("the job cache needs a directory")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the job cache: %w", err)
 	}
 	return &Cache{dir: dir}, nil
@@ -148,7 +149,7 @@ func (c *Cache) Put(j *Job) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Join(dir, "returns"), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Join(dir, "returns"), 0o700); err != nil {
 		return fmt.Errorf("creating the record for %s: %w", j.JID, err)
 	}
 	raw, err := json.MarshalIndent(j, "", "  ")

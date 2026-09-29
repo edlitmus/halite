@@ -103,7 +103,7 @@ func (f Files) Ensure() error {
 	if f.Dir == "" {
 		return errors.New("no key directory was given")
 	}
-	if err := os.MkdirAll(f.Dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(f.Dir, 0o700); err != nil {
 		return fmt.Errorf("creating %s: %w", f.Dir, err)
 	}
 	// Applied on every call and not only on creation. A directory somebody
@@ -135,7 +135,17 @@ func (f Files) WriteKey(name string, key crypto.Signer) error {
 		return err
 	}
 	path := f.Path(name)
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	// fileperm.OpenFile restricts the handle before anything is written
+	// through it, so there is no instant at which the key exists on disk
+	// reachable by another account. The 0o600 alone is the whole answer on
+	// unix and, on Windows, the read-only attribute and whatever list the
+	// file inherited -- the mode said private and the file was not (5.161).
+	//
+	// This was an os.OpenFile and an ApplyFile beside it until the sweep in
+	// 5.164 gave the pair a name. Two calls that must both happen are one
+	// call now, which is the whole point of the sweep: the second half is
+	// what gets forgotten.
+	file, err := fileperm.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("%s already holds a private key; move it aside deliberately if it is to be replaced", path)
 	}
@@ -143,15 +153,6 @@ func (f Files) WriteKey(name string, key crypto.Signer) error {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	defer file.Close()
-	// Restricted before the key is in it, which is what ApplyFile is for.
-	// The 0o600 in the open above is the whole answer on unix and, on
-	// Windows, the read-only attribute and whatever ACL the file inherited
-	// -- so the mode said private and the file was not. Doing it here rather
-	// than after the write means there is no instant at which the key exists
-	// on disk reachable by another account.
-	if err := fileperm.ApplyFile(file, 0o600); err != nil {
-		return fmt.Errorf("restricting %s to its owner: %w", path, err)
-	}
 	if _, err := file.Write(pemBytes); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}

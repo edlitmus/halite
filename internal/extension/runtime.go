@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 	"sort"
 	"sync"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/edlitmus/halite/ext"
 	"github.com/edlitmus/halite/internal/bridge"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/signature"
 )
 
@@ -217,7 +217,7 @@ func (l *Loaded) ensure(ctx context.Context) (*bridge.Pool, error) {
 		// file or directory` — which names the executable, exists, and
 		// sends whoever reads it to entirely the wrong place.
 		if dir := l.rt.workDir(name); dir != "" {
-			if err := os.MkdirAll(dir, 0o700); err != nil {
+			if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 				l.poolErr = fmt.Errorf("the working directory for %s: %w", name, err)
 				return
 			}

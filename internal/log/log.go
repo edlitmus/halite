@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/redact"
 )
 
@@ -141,7 +142,7 @@ func New(opts Options) (*Logger, error) {
 		l.fields = map[string]any{}
 	}
 	if opts.File != "" {
-		f, err := os.OpenFile(opts.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		f, err := fileperm.OpenFile(opts.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("opening the log file: %w", err)
 		}

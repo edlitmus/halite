@@ -8,6 +8,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
 )
@@ -152,7 +153,7 @@ func bootstrapAdmin(cfg *config.Config, name string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(path, []byte(adminPolicy(name)), 0o600); err != nil {
+	if err := fileperm.WriteFile(path, []byte(adminPolicy(name)), 0o600); err != nil {
 		return "", err
 	}
 	return path, nil

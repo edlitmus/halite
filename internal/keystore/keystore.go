@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/pki"
 )
 
@@ -114,7 +115,7 @@ func Open(dir string) (*Store, error) {
 	}
 	// 0700: the requests are not secret, but who has asked to join is
 	// not public either.
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the key store: %w", err)
 	}
 	return &Store{dir: dir}, nil

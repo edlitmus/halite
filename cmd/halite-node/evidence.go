@@ -12,6 +12,7 @@ import (
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/doctor"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/nodeevidence"
 	"github.com/edlitmus/halite/internal/value"
@@ -362,7 +363,7 @@ func evidenceDirUsable(dir string) error {
 		return fmt.Errorf("%s is not a directory", dir)
 	}
 	probe := filepath.Join(dir, ".doctor")
-	if err := os.WriteFile(probe, nil, 0o600); err != nil {
+	if err := fileperm.WriteFile(probe, nil, 0o600); err != nil {
 		return err
 	}
 	return os.Remove(probe)

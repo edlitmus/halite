@@ -2519,13 +2519,18 @@ somebody would otherwise rediscover.
     green on FreeBSD — measured — so the `test (windows-2022)` leg is the only
     witness that half has, and the test says so in its own words.
 
-    **What replaces this row**: the same sweep finds `MkdirAll(…, 0o700)` and
-    `WriteFile(…, 0o600)` outside `fileperm` in twelve other places — the job
-    cache, the returner spool and its webhook, the file returner, the log file,
-    `ssh_known_hosts`, `ssh`, `data`. Same shape, different judgement each time:
-    a job return is not a CA key, and some of those directories hold nothing
-    anybody would want. Worth a pass that rules on each rather than a change
-    that applies `fileperm` to all twelve.
+    **The sweep this row asked for is done** (DIVERGENCE 5.164), and the twelve
+    it counted was wrong: it was **fifty-one calls in thirty-one files**, and the
+    seventeen the greps missed were found by the audit written to hold the rule
+    afterwards rather than by a third grep. All of them go through
+    `fileperm.MkdirAll`, `fileperm.WriteFile` or `fileperm.OpenFile` now, and
+    `nocreates_test.go` fails the build on a fifty-second.
+
+    The judgement that row expected to differ per site did not: in every one the
+    mode said "only this account" and the platform discarded it. What did need
+    judgement was the opposite direction — the helpers must not *widen* a
+    permission somebody chose, which two tests in other packages caught within
+    minutes of the first version.
 
 19f. **Nine direct `os.Rename` calls outside `atomicfile`.** Each is a
     judgement rather than a duplicate of the helper, which is why

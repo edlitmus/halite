@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/job"
 )
 
@@ -102,7 +103,7 @@ func OpenOrchStore(dir string) (*OrchStore, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("the orchestration store needs a directory")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the orchestration store: %w", err)
 	}
 	return &OrchStore{dir: dir}, nil

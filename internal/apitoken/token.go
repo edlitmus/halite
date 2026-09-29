@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // Token is one issued token, as it is stored.
@@ -138,7 +139,7 @@ func Open(dir string) (*Store, error) {
 	}
 	// 0700: the digests are not credentials, but the set of live
 	// principals is worth keeping to the service account.
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the token store: %w", err)
 	}
 	return &Store{dir: dir}, nil

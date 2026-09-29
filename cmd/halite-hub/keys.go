@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/jobsign"
 	"github.com/edlitmus/halite/internal/keystore"
 	"github.com/edlitmus/halite/internal/pki"
@@ -523,7 +524,7 @@ func runKeysOperator(args *cli.Args) int {
 	// The key first and 0600, because a certificate written beside a
 	// key that failed to write is a credential nobody can use and
 	// everybody can see.
-	if err := os.WriteFile(base+".key", keyPEM, 0o600); err != nil {
+	if err := fileperm.WriteFile(base+".key", keyPEM, 0o600); err != nil {
 		cli.Fatalf("%v", err)
 	}
 	if err := os.WriteFile(base+".crt", pki.EncodeCert(der), 0o644); err != nil {
@@ -616,7 +617,7 @@ func runKeysSigner(args *cli.Args) int {
 	// gives: a public key written beside a private one that failed to
 	// write is an invitation to configure a node to trust a key nobody
 	// holds.
-	if err := os.WriteFile(base+".key", keyPEM, 0o600); err != nil {
+	if err := fileperm.WriteFile(base+".key", keyPEM, 0o600); err != nil {
 		cli.Fatalf("%v", err)
 	}
 	if err := os.WriteFile(base+".pub", []byte(line+"\n"), 0o644); err != nil {

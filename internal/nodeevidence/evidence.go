@@ -47,6 +47,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // Schema is the version of a record's shape.
@@ -208,11 +210,11 @@ func Open(dir string, opts Options) (*Log, error) {
 	if dir == "" {
 		return nil, errors.New("the evidence log needs a directory")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the evidence directory: %w", err)
 	}
 	probe := filepath.Join(dir, ".writable")
-	if err := os.WriteFile(probe, nil, 0o600); err != nil {
+	if err := fileperm.WriteFile(probe, nil, 0o600); err != nil {
 		return nil, fmt.Errorf("the evidence directory at %s is not usable by this process: %w", dir, err)
 	}
 	if err := os.Remove(probe); err != nil {
@@ -287,7 +289,7 @@ func (l *Log) recover() error {
 	if err := truncatePartial(current); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(current, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := fileperm.OpenFile(current, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("opening the evidence log: %w", err)
 	}
@@ -388,7 +390,7 @@ func (l *Log) seal() error {
 	if err := os.Rename(current, target); err != nil {
 		return fmt.Errorf("sealing the evidence segment: %w", err)
 	}
-	f, err := os.OpenFile(current, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := fileperm.OpenFile(current, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("opening the evidence log: %w", err)
 	}

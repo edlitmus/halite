@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
 )
@@ -62,7 +63,7 @@ func OpenMineStore(dir string) (*MineStore, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("the mine needs a directory")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the mine: %w", err)
 	}
 	return &MineStore{dir: dir}, nil

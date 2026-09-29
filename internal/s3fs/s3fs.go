@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/awsauth"
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // MaxObjectBytes bounds one object. A state tree is text; an object
@@ -444,10 +445,10 @@ func (b *Backend) materialise(ctx context.Context, bucket Bucket,
 		if err != nil {
 			return nil, err
 		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		if err := fileperm.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(target, body, 0o600); err != nil {
+		if err := fileperm.WriteFile(target, body, 0o600); err != nil {
 			return nil, err
 		}
 	}

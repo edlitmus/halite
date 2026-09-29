@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/extension"
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 func main() {
@@ -46,7 +47,7 @@ func main() {
 
 	raw, err := manifest.Encode()
 	check(err)
-	check(os.WriteFile(filepath.Join(*dir, extension.ManifestName), raw, 0o644))
+	check(fileperm.WriteFile(filepath.Join(*dir, extension.ManifestName), raw, 0o644))
 
 	root, err := extension.MerkleRoot(manifest.Files)
 	check(err)
@@ -70,7 +71,7 @@ func loadOrCreateKey(path string) (ed25519.PrivateKey, ed25519.PublicKey) {
 	public, private, err := ed25519.GenerateKey(rand.Reader)
 	check(err)
 	if path != "" {
-		check(os.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(private)), 0o600))
+		check(fileperm.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(private)), 0o600))
 	}
 	return private, public
 }

@@ -9,9 +9,10 @@ import (
 	"encoding/pem"
 	"math/big"
 	"net"
-	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // TestDirectory is an LDAP server for another package's tests.
@@ -36,7 +37,7 @@ func NewTestDirectory(dir string) (*TestDirectory, error) {
 		return nil, err
 	}
 	caPath := filepath.Join(dir, "ldap-ca.pem")
-	if err := os.WriteFile(caPath, certPEM, 0o600); err != nil {
+	if err := fileperm.WriteFile(caPath, certPEM, 0o600); err != nil {
 		fake.close()
 		return nil, err
 	}

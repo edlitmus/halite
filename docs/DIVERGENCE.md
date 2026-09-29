@@ -15913,6 +15913,166 @@ otherwise cost once. Windows is skipped there too, because following that advice
 means running `icacls` and a test that shelled out to it would be a test of
 icacls's argument parsing.
 
+### 5.164 Fifty-one places said "only this account" in a way Windows discards
+
+`os.MkdirAll(dir, 0o700)` and `os.WriteFile(path, data, 0o600)` are how a Go
+program says that, and on Windows they say nothing: a directory mode is not an
+access control decision there, and a file mode is the read-only attribute. 5.161
+fixed the worst instance — the enrollment CA's private key — and closed by
+counting the rest at **twelve**.
+
+Twelve was wrong. It came from two greps, and the number is **fifty-one calls in
+thirty-one files**: the job cache and its returns, the relay spool, the webhook
+returner's spool and its entries, the file returner, the event bus, the node
+cache, the mine, the orchestration store, the keystore and its minted tokens, the
+API token store, the node evidence log and its segments, the extension staging
+and installed bundles, the gitfs mirror and its extracted archives, the s3
+file-server cache, the fileserver's own cache, the log file, `ssh` and
+`ssh_known_hosts` writing into `~/.ssh` on a managed node, `data.write_store`,
+`file.patch`'s backups, a remote archive being downloaded, the hub's bootstrap
+admin token, a node's inline one-shot files, and the extension bundle signing key
+in `tools/extbundle`.
+
+Each was one line of intent the platform discarded, and none was written
+carelessly — every one is correct on unix, which is where it was read.
+
+#### The greps found thirty-one; the audit found seventeen more
+
+Two hand-written greps found thirty-one. The audit written to hold the rule
+afterwards found **seventeen the greps had missed** — different mode spellings,
+calls broken across lines, and `os.OpenFile` sites the patterns did not reach.
+
+That is the entry. A sweep done by grep is a sweep whose completeness is a
+property of somebody's regular expression, and the only way to know what it
+missed is to write the thing that would have caught the next one and run it
+against the tree you have just finished. Doing them in the other order —
+audit first, then convert what it reports — costs nothing extra and is what
+should have happened.
+
+Two of the seventeen were **false positives**, and reading the whole list before
+acting on any of it is what stopped them being "fixed". `os.OpenFile`'s mode
+argument is not a mode unless the call creates the file; Go ignores it otherwise
+and the convention is to pass `0`, which satisfies `mode&0o077 == 0` perfectly.
+`accessible(path, flag)` in `file_more.go` opens a path to find out whether it can
+be opened. The audit now requires `os.O_CREATE` in the flags before it rules,
+read out of the flag expression rather than guessed at from the mode.
+
+#### What the helpers are, and the rule they needed
+
+`fileperm.MkdirAll`, `fileperm.WriteFile` and `fileperm.OpenFile`: the standard
+library call and the restriction, as one call. Thirty-one places doing both by
+hand is thirty-one chances to do only the first half, which is exactly what
+`internal/pki` did for a year.
+
+**And the first version of them was wrong in a way worth recording.** They
+applied the restriction unconditionally, and `Apply` is a chmod — a chmod
+**widens** as readily as it narrows. Two tests in other packages failed
+immediately:
+
+    --- FAIL: TestOpeningAnUnusableNodeCacheFailsAtOnce
+        a node cache this process cannot write was opened without complaint
+    --- FAIL: TestAnUnusableDirectoryIsRefusedAtOpen
+        Open accepted a directory it cannot write to
+
+Both make a directory mode 0500 and assert that opening a store there is refused,
+because the store probes by writing a file and removing it. `Apply(dir, 0o700)`
+chmod'd it back to writable, the probe succeeded, and the refusal never came. A
+helper written to protect a directory had quietly undone a restriction somebody
+chose.
+
+The two tests are worth more than the fix. They were written for something else
+entirely — 5.20, a directory left owned by root that made every target match
+nothing, whose lesson is that `MkdirAll` is satisfied by a directory whoever owns
+it — and they caught this because they assert on a
+*deliberately tight* permission, which nothing in `internal/fileperm` did. An
+operator who sets an evidence directory to 0500 means it, and a configuration
+management system that reopens it on every start is doing the opposite of its job.
+
+So the rule is: **restrict a path this call created, or one that anybody beyond
+its owner can reach; leave anything already private exactly as it is, tighter or
+not.** The question is `Others`, which is this package's own and which answers
+from the mode on unix and the access control list on Windows. A created path is
+always restricted whatever its mode came out as, because on Windows a new
+directory inherits its parent's list and "nobody else can reach it today" is not
+the same as a list that says so.
+
+#### And then Windows found the next one
+
+The leg this whole entry exists for failed on the first push:
+
+    --- FAIL: TestMkdirAllLeavesATighterPermissionAlone
+        a directory an operator had made read-only is writable again
+    --- FAIL: TestOpenFileLeavesATighterPermissionAlone
+        restricting …\sealed: chmod …\sealed: Access is denied.
+
+One is a test that could not make its own condition. `os.Mkdir(dir, 0o500)` does
+not make a directory read-only on Windows — access is decided by the list and Go
+does not translate the mode — so the directory was writable, the probe succeeded,
+and my assertion fired against a condition that was never arranged.
+`internal/nodeevidence`'s test skips for exactly this and says so in six lines;
+mine did not. It skips now, and what is skipped is arranging the condition rather
+than the rule, which `restrict` enforces by asking `Others` rather than the mode.
+
+**The other is a defect in the helper.** `OpenFile` restricted the handle
+whatever the flags said — and an `O_RDONLY` handle cannot carry out a `Chmod` on
+Windows, so a helper written to make a file private failed on a file that already
+was. The mode argument means nothing to an open that cannot create the file: Go
+ignores it, the convention is to pass `0`, and a caller that is only reading has
+no business changing who can read.
+
+So `OpenFile` now declines when `flag&os.O_CREATE == 0` — which is **the same
+rule `nocreates_test.go` already applied** when deciding what to report, arrived
+at from the other direction and half an hour earlier. Two places holding one rule,
+and for half an hour only one of them held it.
+
+The test for it needed a second attempt too. The first used a 0400 file, and
+deleting the rule left it passing on FreeBSD: a 0400 file is already private, so
+the already-private guard declined the chmod and the `O_CREATE` rule was never
+reached. The fixture is a **world-readable** file now — one the helper would
+narrow if it thought it should — and the assertion is that it did not, which
+fails on every platform when the rule is removed.
+
+#### And a citation that resolved to the wrong section
+
+Written down because it is the second time. The three comments above first cited
+**5.101** for "exists is not usable", and 5.101 is *The `yaml` filter, and the
+YAML this build writes*. The right number is 5.20, *What a directory left owned by
+root cost twice*, which is where `MkdirAll` being satisfied by a directory whoever
+owns it was found — and where the two tests that caught the widening come from.
+
+`internal/specaudit`'s ledger audit passed the whole time, because it checks that
+a cited number **exists** and not that the section says what the citation claims.
+That gap is recorded as plan.md's own note and was met again here within an hour
+of being read. Nothing mechanical catches it; the only thing that does is opening
+the section, which takes one command.
+
+#### The audit, and the half of it that is not a finding
+
+`nocreates_test.go` walks the tree, finds every `os.MkdirAll`, `os.WriteFile` and
+`os.OpenFile` whose mode is a **literal that denies group and other**, and fails
+naming the replacement. The test for "denies group and other" is
+`mode&0o077 == 0`, which is the same expression `Apply` uses to decide whether
+the platform needs more than a chmod: one rule, not two that have to be kept in
+step by hand.
+
+A mode that is not a literal is skipped and cannot be otherwise:
+`os.MkdirAll(target, os.FileMode(h.Mode).Perm()|0o700)` in the tar extractor takes
+its mode from the archive. Stated, because it means this audit bounds the problem
+and does not close it. A public mode is not its business — `0o755` on a directory
+netplan reads, `0o644` on a certificate, where the difference from a key is the
+whole point of the package.
+
+It also **counts the calls that do go through this package** and fails if there
+are fewer than twenty. Once clean, an audit reports nothing — and an audit that
+had stopped looking would report nothing too. The count is what tells the two
+apart, which is 5.124's lesson about a leg whose filter matched nothing, applied
+to a gate rather than to a workflow.
+
+Six breaks, all of which fail: one site back on `os.MkdirAll`; the audit made to
+stop recognising the helpers; each of the three helpers' restriction removed; and
+the restriction made unconditional again, which fails this package's own test and
+both of the tests that found it.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
