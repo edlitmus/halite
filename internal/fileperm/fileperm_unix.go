@@ -32,5 +32,6 @@ func Others(path string) ([]string, error) {
 	return []string{fmt.Sprintf("mode %o", perm)}, nil
 }
 
-// Advice is what to run to make the file private.
-func Advice(path string) string { return fmt.Sprintf("chmod 600 %s", path) }
+// Advice is what to run to make the path private. unixAdvice has the wording
+// and says why a directory differs.
+func Advice(path string) string { return unixAdvice(path, adviceIsDir(path)) }
