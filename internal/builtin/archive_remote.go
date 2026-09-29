@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/safehttp"
@@ -200,7 +201,7 @@ func fetchRemoteArchive(c *exec.Context, args *value.Map, source string) (out fe
 			return out, fmt.Errorf("%s failed its hash check: %w", safe, err)
 		}
 	}
-	if renameErr := os.Rename(part, dest); renameErr != nil {
+	if renameErr := atomicfile.Rename(part, dest); renameErr != nil {
 		_ = os.Remove(part)
 		return out, renameErr
 	}

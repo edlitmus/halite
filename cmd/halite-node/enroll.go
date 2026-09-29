@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
 	"github.com/edlitmus/halite/internal/fileserver"
@@ -226,7 +227,7 @@ func nodeKey(files pki.Files, args *cli.Args, force bool) (crypto.Signer, error)
 		// operator saying to start again, so the old key is moved
 		// aside rather than destroyed.
 		aside := files.Path(pki.NodeKeyFile) + "." + time.Now().UTC().Format("20060102T150405")
-		if err := os.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
+		if err := atomicfile.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
 			return nil, err
 		}
 		fmt.Fprintf(os.Stderr, "the previous key is at %s\n", aside)
@@ -292,7 +293,7 @@ func runRenew(args *cli.Args) int {
 	// node that replaced its key and then failed to get a certificate
 	// would have locked itself out.
 	aside := files.Path(pki.NodeKeyFile) + "." + time.Now().UTC().Format("20060102T150405")
-	if err := os.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
+	if err := atomicfile.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
 		cli.Fatalf("%v", err)
 	}
 	if err := files.WriteKey(pki.NodeKeyFile, key); err != nil {

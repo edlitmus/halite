@@ -16073,6 +16073,71 @@ stop recognising the helpers; each of the three helpers' restriction removed; an
 the restriction made unconditional again, which fails this package's own test and
 both of the tests that found it.
 
+### 5.165 Eight renames, and a judgement that turned out to be one judgement
+
+plan.md 19f listed eight direct `os.Rename` calls outside `internal/atomicfile`
+and framed each as a decision: `file.rename` and `file.move` doing what an
+operator asked, a node key moved aside before re-enrollment, a downloaded archive
+installed under its final name, the evidence log sealing a segment,
+/etc/localtime being replaced. The question, it said, was "whether
+`atomicfile.Rename`'s Windows retry belongs there" — probably yes for the
+estate's own writes, and for a module doing what the operator literally asked
+"a retry may hide a conflict the operator should see".
+
+Reading `Rename` answers all eight at once.
+
+**On unix `atomicfile.Rename` is `os.Rename`.** One line in
+`atomicfile_unix.go`, with a comment saying rename(2) is atomic and does not care
+who has the destination open. So on every platform this estate runs on, the
+conversion changes nothing whatsoever.
+
+On Windows the difference is a retry, and only for two errors:
+`ERROR_ACCESS_DENIED` and `ERROR_SHARING_VIOLATION`, which mean "somebody has the
+destination open right now". MoveFileEx opens the destination for delete with no
+sharing, so any reader — including every `os.ReadFile` in the standard library,
+which does not ask for FILE_SHARE_DELETE — makes a rename fail. The window is two
+seconds and `retry` returns the last error **unwrapped** when it closes.
+
+So the row's worry does not hold: nothing is hidden. The cost of the retry is at
+most two seconds of latency on a genuine denial, which is then reported exactly as
+it was.
+
+#### At two of the eight it is better than latency-neutral
+
+`file.move` (`file_more.go`) and `movePath` (`file_edit.go`) both **fall back to a
+copy** when the rename fails — deliberately, because a cross-filesystem rename
+fails with EXDEV and `mv` does the same. EXDEV is not transient, so the retry does
+not touch that path.
+
+But a Windows reader holding the destination open for a microsecond *was* enough
+to make the rename fail, and the fallback then turned an atomic move into a
+copy-and-remove: a new inode, hard links lost, and no error for anybody to see.
+An operator who asked to move a file got a copy, silently, for a reason unrelated
+to filesystems. Those two are the ones where this is a fix rather than a
+convention.
+
+#### The rule, and the prose it made false
+
+`norenames_test.go` fails on any `os.Rename` outside this package, with an
+exemption map for a rename that genuinely wants to fail on a reader. There are
+none today.
+
+`TestNothingElseWritesThroughATempFileAndARename` said in its own comment that it
+"is not a rule against `os.Rename`" and that the nine other renames were each "a
+judgement about whether the Windows retry belongs there". That was true when
+written and is not now, so it says so and points at the new test. A document held
+to the code includes a test's own comment about a neighbouring test.
+
+Both audits' exemption maps are now covered by
+`TestNoExemptionOutlivesItsFunction`, and `internal/fileperm`'s got the same
+check: all three are empty, which is exactly when a liveness check is free to add
+and the moment nobody thinks to. `internal/atomicfile` has had one since 5.144
+and `internal/fileperm` went a day without it.
+
+Three breaks, all failing: one site back on `os.Rename`; the audit made to stop
+recognising `atomicfile.Rename`, which trips the count of renames that do go
+through it; and an exemption naming a function that does not exist.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

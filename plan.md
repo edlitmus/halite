@@ -2532,19 +2532,23 @@ somebody would otherwise rediscover.
     permission somebody chose, which two tests in other packages caught within
     minutes of the first version.
 
-19f. **Nine direct `os.Rename` calls outside `atomicfile`.** Each is a
-    judgement rather than a duplicate of the helper, which is why
-    `TestNothingElseWritesThroughATempFileAndARename` deliberately does
-    not rule on them: `file.rename` and `file.move` doing what an
-    operator asked, a node key moved aside before re-enrollment, a
-    downloaded archive installed under its final name, the evidence log
-    sealing a segment, `/etc/localtime` being replaced.
+19f. ~~**Nine direct `os.Rename` calls outside `atomicfile`.**~~ — **done**
+    (DIVERGENCE 5.165), and the judgement this row expected to make eight times
+    turned out to be one judgement. On unix `atomicfile.Rename` *is*
+    `os.Rename` — one line — so the conversion changes nothing on any platform
+    this estate runs on. On Windows it waits up to two seconds for the two
+    sharing errors that mean "somebody has the destination open", and returns
+    the last error unwrapped when the window closes, so the row's worry about a
+    retry hiding a conflict does not hold.
 
-    The question for each is whether `atomicfile.Rename`'s Windows retry
-    belongs there. For the estate's own writes — the evidence segment,
-    `/etc/localtime` — it probably does. For a module doing what the
-    operator literally asked, a retry may hide a conflict the operator
-    should see. DIVERGENCE 5.144.
+    At two of the eight it is a fix rather than a convention. `file.move` and
+    `movePath` fall back to a **copy** when the rename fails, so a Windows
+    reader holding the destination open for a microsecond turned an atomic move
+    into a copy-and-remove — a new inode, hard links lost, no error.
+
+    `norenames_test.go` is the rule now, and the comment on
+    `TestNothingElseWritesThroughATempFileAndARename` that said the opposite is
+    corrected.
 
 19g. **The unreferenced-symbol sweep is not worth trusting yet.** A
     coarse pass finds 25 functions and methods with no reference in the

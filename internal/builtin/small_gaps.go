@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -118,7 +119,7 @@ func fileRename(c *exec.Context, args *value.Map) (any, error) {
 		_, err := os.Lstat(src)
 		return err == nil, nil
 	}
-	if err := os.Rename(src, dst); err != nil {
+	if err := atomicfile.Rename(src, dst); err != nil {
 		return nil, err
 	}
 	return true, nil
