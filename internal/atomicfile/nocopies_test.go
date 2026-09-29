@@ -49,13 +49,12 @@ import (
 // precise one would have to decide what counts as "atomic enough" and
 // would be argued with rather than obeyed.
 //
-// It is not a rule against `os.Rename`. There are nine other direct
-// renames in this tree -- `file.rename` and `file.move` doing what an
-// operator asked, a key being moved aside before re-enrollment, a
-// downloaded archive being installed under its final name, the evidence
-// log sealing a segment -- and each of those is a judgement about whether
-// the Windows retry belongs there, not a duplicate of this helper. They
-// are recorded in plan.md rather than changed here.
+// It is not a rule against `os.Rename`; `TestNothingElseRenamesWithTheStandardLibrary`
+// is, and it arrived later. This test said there were "nine other direct renames
+// in this tree" and that "each of those is a judgement about whether the Windows
+// retry belongs there" -- which was true until somebody read `Rename` and found
+// the judgement is the same for all of them, because on unix it *is* os.Rename.
+// DIVERGENCE 5.165.
 //
 // DIVERGENCE 5.144.
 // exemptions are the functions that pair a temporary file with a rename
@@ -78,24 +77,9 @@ func TestNothingElseWritesThroughATempFileAndARename(t *testing.T) {
 
 	var inspected int
 	root := filepath.Join("..", "..")
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "vendor", "bin", "dist", "testdata", "contrib":
-				return fs.SkipDir
-			}
-			// A second checkout inside this one is not this tree:
-			// `.claude/worktrees/` holds one at another commit, and this
-			// walker would otherwise read it and report its contents as
-			// findings against this tree. See internal/repotree.
-			// DIVERGENCE 5.146.
-			if repotree.OtherCheckout(root, path) {
-				return fs.SkipDir
-			}
-			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
@@ -164,31 +148,20 @@ func TestNothingElseWritesThroughATempFileAndARename(t *testing.T) {
 	t.Logf("inspected %d function(s) outside this package", inspected)
 }
 
-// Nothing is exempted that is not a function pairing a temp file with a
-// rename, so that an exemption cannot outlive what it excused.
+// Nothing is exempted from either audit here that is not a function in this
+// tree, so that an exemption cannot outlive what it excused.
+//
+// Both maps, not just the first. `renameExemptions` arrived with 5.165's rule
+// against `os.Rename` and is empty today, which is precisely when a liveness
+// check is free to add and the moment nobody thinks to.
 func TestNoExemptionOutlivesItsFunction(t *testing.T) {
 	// Read the same way the audit reads, so the two cannot disagree about
 	// what a match is.
 	present := map[string]bool{}
 	root := filepath.Join("..", "..")
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "vendor", "bin", "dist", "testdata", "contrib":
-				return fs.SkipDir
-			}
-			// A second checkout inside this one is not this tree:
-			// `.claude/worktrees/` holds one at another commit, and this
-			// walker would otherwise read it and report its contents as
-			// findings against this tree. See internal/repotree.
-			// DIVERGENCE 5.146.
-			if repotree.OtherCheckout(root, path) {
-				return fs.SkipDir
-			}
-			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
@@ -209,11 +182,16 @@ func TestNoExemptionOutlivesItsFunction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key := range exemptions() {
-		if !present[key] {
-			t.Errorf("%s is exempted from the temp-file-and-rename audit and no such "+
-				"function exists. An exemption left behind covers whatever takes that "+
-				"name next.", key)
+	for audit, exempt := range map[string]map[string]string{
+		"temp-file-and-rename": exemptions(),
+		"os.Rename":            renameExemptions(),
+	} {
+		for key := range exempt {
+			if !present[key] {
+				t.Errorf("%s is exempted from the %s audit and no such function exists. "+
+					"An exemption left behind covers whatever takes that name next.",
+					key, audit)
+			}
 		}
 	}
 }

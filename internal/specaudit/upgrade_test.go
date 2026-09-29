@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -149,15 +150,11 @@ func markersInTree(t *testing.T) map[string][]string {
 	root := filepath.Join("..", "..")
 	marker := regexp.MustCompile(`upgrade:[a-z-]+`)
 	out := map[string][]string{}
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			if name := info.Name(); name == "vendor" || name == ".git" || name == "testdata" ||
-				repotree.OtherCheckout(root, path) {
-				return filepath.SkipDir
-			}
+		if d.IsDir() {
 			return nil
 		}
 		if !strings.HasSuffix(path, "_test.go") {

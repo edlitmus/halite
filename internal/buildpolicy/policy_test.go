@@ -1,6 +1,7 @@
 package buildpolicy
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -10,23 +11,18 @@ import (
 	"github.com/edlitmus/halite/internal/repotree"
 )
 
-// repoRoot walks up from the test's working directory to the module root.
+// repoRoot is repotree.Root with a test's error handling.
+//
+// This was a byte-identical copy of a helper in internal/chaos and
+// internal/exec -- three of them, each walking up to go.mod, and a fourth
+// would have been written next. DIVERGENCE 5.166.
 func repoRoot(t *testing.T) string {
 	t.Helper()
-	dir, err := os.Getwd()
+	root, err := repotree.Root()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("could not find the module root")
-		}
-		dir = parent
-	}
+	return root
 }
 
 // TestLexiconPolicy enforces SPEC section 2.3: the prohibited terms may
@@ -351,16 +347,13 @@ func TestNoMathRand(t *testing.T) {
 		"internal/template/eval.go": true,
 	}
 	var offenders []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
 		rel = filepath.ToSlash(rel)
-		if info.IsDir() {
-			if rel == "vendor" || rel == ".git" || repotree.OtherCheckout(root, path) {
-				return filepath.SkipDir
-			}
+		if d.IsDir() {
 			return nil
 		}
 		if filepath.Ext(path) != ".go" || allowed[rel] || strings.HasSuffix(rel, "_test.go") {

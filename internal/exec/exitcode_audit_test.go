@@ -5,7 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -57,18 +57,11 @@ func TestEveryExitCodeReadAsksForIt(t *testing.T) {
 	root := repoRootDir(t)
 	var problems []string
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			switch info.Name() {
-			case "vendor", "testdata", ".git":
-				return filepath.SkipDir
-			}
-			if repotree.OtherCheckout(root, path) {
-				return filepath.SkipDir
-			}
+		if d.IsDir() {
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") {
@@ -202,20 +195,14 @@ func compositeSetsIgnoreExitCode(lit *ast.CompositeLit) bool {
 	return false
 }
 
+// repoRootDir is repotree.Root with a test's error handling. It was a
+// byte-identical copy of `repoRoot` in internal/buildpolicy and internal/chaos,
+// under a third name. DIVERGENCE 5.166.
 func repoRootDir(t *testing.T) string {
 	t.Helper()
-	dir, err := os.Getwd()
+	root, err := repotree.Root()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("could not find the module root")
-		}
-		dir = parent
-	}
+	return root
 }

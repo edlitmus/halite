@@ -1,6 +1,7 @@
 package config
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -96,13 +97,8 @@ func TestRcScriptsUsingDaemonNameTheProcessTheySupervise(t *testing.T) {
 func TestNoUnitOffersAReloadThatWouldKillTheService(t *testing.T) {
 	handled := false
 	repo := filepath.Join("..", "..")
-	err := filepath.Walk(repo, func(path string, info os.FileInfo, err error) error {
-		// Another checkout inside this one could register SIGHUP and
-		// make this pass for code that is not in the tree.
-		if err == nil && info.IsDir() && repotree.OtherCheckout(repo, path) {
-			return filepath.SkipDir
-		}
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
+	err := repotree.Walk(repo, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}
 		// Tests excluded: this file names the signal in its own reason,

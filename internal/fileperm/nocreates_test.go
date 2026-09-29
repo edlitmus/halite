@@ -114,6 +114,47 @@ func createsFile(call *ast.CallExpr) bool {
 	return found
 }
 
+// Nothing is exempted that is not a function in this tree, so that an exemption
+// cannot outlive what it excused.
+//
+// `createExemptions` is empty, which is exactly when this is free to add and the
+// moment nobody thinks to: `internal/atomicfile` has had the same check since
+// 5.144 and this package went without it for a day. The keys are read the same
+// way the audit reads them, so the two cannot disagree about what a match is.
+func TestNoCreateExemptionOutlivesItsFunction(t *testing.T) {
+	present := map[string]bool{}
+	root := filepath.Join("..", "..")
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		rel, _ := filepath.Rel(root, path)
+		fset := token.NewFileSet()
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return nil
+		}
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok {
+				present[filepath.ToSlash(rel)+":"+fn.Name.Name] = true
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range createExemptions() {
+		if !present[key] {
+			t.Errorf("%s is exempted from the private-mode audit and no such function "+
+				"exists. An exemption left behind covers whatever takes that name next.", key)
+		}
+	}
+}
+
 func TestNothingElseCreatesAPrivateFileWithTheStandardLibrary(t *testing.T) {
 	exempt := createExemptions()
 	// The calls this audit rules on, and the call in this package that each
@@ -126,23 +167,9 @@ func TestNothingElseCreatesAPrivateFileWithTheStandardLibrary(t *testing.T) {
 
 	var inspected, ruled, through int
 	root := filepath.Join("..", "..")
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "vendor", "bin", "dist", "testdata", "contrib":
-				return fs.SkipDir
-			}
-			// A second checkout inside this one is not this tree:
-			// `.claude/worktrees/` holds one at another commit, and this
-			// walker would otherwise report its contents as findings
-			// against this tree. See internal/repotree. DIVERGENCE 5.146.
-			if repotree.OtherCheckout(root, path) {
-				return fs.SkipDir
-			}
-			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/regexcompat"
 	"github.com/edlitmus/halite/internal/signature"
@@ -462,7 +463,7 @@ func movePath(source, dest string) error {
 		}
 		return os.Remove(source)
 	}
-	renameErr := os.Rename(source, dest)
+	renameErr := atomicfile.Rename(source, dest)
 	if renameErr == nil {
 		return nil
 	}

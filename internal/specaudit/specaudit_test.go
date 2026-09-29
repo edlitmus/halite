@@ -663,19 +663,9 @@ func TestNothingClaimsADeliveredPhase(t *testing.T) {
 	claim := regexp.MustCompile(`"[^"]*\b(phase [0-9])\b[^"]*"`)
 
 	checked, problems := 0, 0
-	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	err := repotree.Walk(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "bin", "testdata":
-				return filepath.SkipDir
-			}
-			if repotree.OtherCheckout(root, path) {
-				return filepath.SkipDir
-			}
-			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil

@@ -2532,19 +2532,23 @@ somebody would otherwise rediscover.
     permission somebody chose, which two tests in other packages caught within
     minutes of the first version.
 
-19f. **Nine direct `os.Rename` calls outside `atomicfile`.** Each is a
-    judgement rather than a duplicate of the helper, which is why
-    `TestNothingElseWritesThroughATempFileAndARename` deliberately does
-    not rule on them: `file.rename` and `file.move` doing what an
-    operator asked, a node key moved aside before re-enrollment, a
-    downloaded archive installed under its final name, the evidence log
-    sealing a segment, `/etc/localtime` being replaced.
+19f. ~~**Nine direct `os.Rename` calls outside `atomicfile`.**~~ — **done**
+    (DIVERGENCE 5.165), and the judgement this row expected to make eight times
+    turned out to be one judgement. On unix `atomicfile.Rename` *is*
+    `os.Rename` — one line — so the conversion changes nothing on any platform
+    this estate runs on. On Windows it waits up to two seconds for the two
+    sharing errors that mean "somebody has the destination open", and returns
+    the last error unwrapped when the window closes, so the row's worry about a
+    retry hiding a conflict does not hold.
 
-    The question for each is whether `atomicfile.Rename`'s Windows retry
-    belongs there. For the estate's own writes — the evidence segment,
-    `/etc/localtime` — it probably does. For a module doing what the
-    operator literally asked, a retry may hide a conflict the operator
-    should see. DIVERGENCE 5.144.
+    At two of the eight it is a fix rather than a convention. `file.move` and
+    `movePath` fall back to a **copy** when the rename fails, so a Windows
+    reader holding the destination open for a microsecond turned an atomic move
+    into a copy-and-remove — a new inode, hard links lost, no error.
+
+    `norenames_test.go` is the rule now, and the comment on
+    `TestNothingElseWritesThroughATempFileAndARename` that said the opposite is
+    corrected.
 
 19g. **The unreferenced-symbol sweep is not worth trusting yet.** A
     coarse pass finds 25 functions and methods with no reference in the
@@ -2571,25 +2575,33 @@ somebody would otherwise rediscover.
     measurement rather than a fixture. `docs/from-salt.md` item 5 no longer
     tells the reader to grep.
 
-19i. **Nothing stops a tenth repo-walking audit being written without the
-    other-checkout check.** `internal/repotree.OtherCheckout` has four call
-    sites, across three of my test files (DIVERGENCE 5.146); the nine walkers
-    that predate them are fixed on the branch that found the fault and are
-    not on `main` yet. A tenth written next month will read
-    `.claude/worktrees/` again, reporting another commit's code as this
-    tree's.
+19i. ~~**Nothing stops a tenth repo-walking audit being written without the
+    other-checkout check.**~~ — **done** (DIVERGENCE 5.166), and the tenth was
+    already written. `internal/config`'s `TestEveryDeclaredKeyIsReadOrRecorded`
+    walked the repository with **no skips at all** — not `vendor`, not
+    `testdata`, not `OtherCheckout` — so it could count a configuration key as
+    read because another commit's code read it.
 
-    A guard is checkable in principle: find each `filepath.WalkDir` whose
-    root is the repository, and require `repotree.OtherCheckout` inside it.
-    What makes it more than an afternoon is that these audits walk two
-    different kinds of tree — the repository, and a `t.TempDir()` they built
-    themselves — and only the first needs the check. Flagging the second
-    would be an audit that reports correct code, which gets silenced rather
-    than obeyed.
+    The row asked for a guard and the sweep found more than one fault. Six
+    different skip lists across seventeen walkers, so every audit claiming to
+    read "the whole tree" read a different tree:
+    `TestNothingClaimsADeliveredPhase` read 512 files where the repository has
+    484, auditing `golang.org/x/sys` for claims about halite's delivery phases.
+    And two audits were reading `contrib/tofu/.terraform/`, an untracked,
+    gitignored provider cache — so they gave different answers here and in CI.
 
-    Worth doing when somebody has the appetite; the cost of not doing it is
-    one false finding, found the next time a worktree exists, which is how
-    this one was found.
+    The root was found five ways: `filepath.Join("..", "..")` in eleven places
+    and five byte-identical `go.mod` walkers. A grep found three of the five;
+    the audit found the other two.
+
+    `repotree.Walk` and `repotree.Root` are the one way now, with
+    `nowalkers_test.go` enforcing both. The row's hard part — that some walks
+    are of a `t.TempDir()` and only repository walks need the check — is handled
+    by following one assignment to the root and treating a `filepath.Join` with
+    extra components as a subtree. One exemption, `buildpolicy.Scan`, because
+    SPEC 2.3's lexicon policy deliberately scans more than Go source; and an
+    exemption from the walker is not an exemption from `OtherCheckout`, which
+    the audit checks.
 
 **Blocked on a decision**
 

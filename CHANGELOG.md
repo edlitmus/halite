@@ -23,6 +23,36 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The audits read different trees, and one read another checkout
+
+Seventeen of halite's own audits walk the repository, and they kept six different
+lists of directories to skip. So each one's claim to read "the whole tree" meant
+something different: the audit that looks for messages telling an operator to wait
+for a delivered phase read 512 files where the repository has 484 — the extra 28
+being vendored `golang.org/x/sys`. Two read an untracked, gitignored OpenTofu
+provider cache, and so gave different answers on a developer's machine and in CI.
+
+One walked with no skips at all, including no check for a second git checkout
+inside the tree: the audit that reports which configuration settings nothing
+reads could count a setting as read because another commit's code read it.
+
+They all go through one walker now, and a build-time audit fails on a new one
+written the old way. This is internal tooling; no shipped behaviour changes.
+
+### `file.move` could turn an atomic move into a copy on Windows
+
+`file.move` and the `file.moved` state fall back to copying when a rename fails,
+because a cross-filesystem rename fails with EXDEV and `mv` does the same. On
+Windows a rename also fails while *anybody* has the destination open — including
+every `os.ReadFile` in the standard library, which does not ask for
+FILE_SHARE_DELETE — so a reader holding it for a microsecond was enough to make an
+operator's move into a copy-and-remove: a new inode, hard links lost, and no error
+to see.
+
+Every rename in the tree goes through `internal/atomicfile` now, which waits
+briefly for that case and reports anything else exactly as before. On unix it is
+`os.Rename` and nothing changes.
+
 ### Fifty-one places said "only this account" in a way Windows discarded
 
 `os.MkdirAll(dir, 0o700)` and `os.WriteFile(path, data, 0o600)` are how a Go

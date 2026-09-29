@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/regexcompat"
 	"github.com/edlitmus/halite/internal/signature"
@@ -186,7 +187,7 @@ func registerFileMore(r *Registries) {
 			},
 			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				src, dst := states.Str(args, "src", ""), states.Str(args, "dst", "")
-				if err := os.Rename(src, dst); err == nil {
+				if err := atomicfile.Rename(src, dst); err == nil {
 					return dst, nil
 				}
 				// A rename across filesystems fails with EXDEV, and the

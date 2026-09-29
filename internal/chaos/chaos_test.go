@@ -2,6 +2,7 @@ package chaos
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,23 +12,18 @@ import (
 	"github.com/edlitmus/halite/internal/repotree"
 )
 
-// repoRoot walks up from the test's working directory to the module root.
+// repoRoot is repotree.Root with a test's error handling.
+//
+// This was a byte-identical copy of a helper in internal/chaos and
+// internal/exec -- three of them, each walking up to go.mod, and a fourth
+// would have been written next. DIVERGENCE 5.166.
 func repoRoot(t *testing.T) string {
 	t.Helper()
-	dir, err := os.Getwd()
+	root, err := repotree.Root()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("could not find the module root")
-		}
-		dir = parent
-	}
+	return root
 }
 
 // Every scenario SPEC 31 names is registered, and nothing is registered
@@ -106,15 +102,11 @@ func TestEveryScenarioHasATestThatExercisesIt(t *testing.T) {
 	// being covered.
 	call := regexp.MustCompile(`chaos\.Exercises\(chaos\.([A-Za-z0-9_]+)\)`)
 
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			if name := info.Name(); name == "vendor" || name == ".git" || name == "testdata" ||
-				repotree.OtherCheckout(root, path) {
-				return filepath.SkipDir
-			}
+		if d.IsDir() {
 			return nil
 		}
 		if !strings.HasSuffix(path, "_test.go") {

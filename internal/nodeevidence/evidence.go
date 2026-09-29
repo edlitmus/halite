@@ -48,6 +48,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/fileperm"
 )
 
@@ -387,7 +388,7 @@ func (l *Log) seal() error {
 	if _, err := os.Stat(target); err == nil {
 		return fmt.Errorf("sealing the evidence segment: %s already exists", target)
 	}
-	if err := os.Rename(current, target); err != nil {
+	if err := atomicfile.Rename(current, target); err != nil {
 		return fmt.Errorf("sealing the evidence segment: %w", err)
 	}
 	f, err := fileperm.OpenFile(current, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)

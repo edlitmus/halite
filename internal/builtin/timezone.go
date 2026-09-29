@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/internal/atomicfile"
 	"github.com/edlitmus/halite/internal/exec"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
@@ -420,7 +421,7 @@ func replaceSymlink(path, target string) error {
 	if err := os.Symlink(target, tmp); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := atomicfile.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return err
 	}

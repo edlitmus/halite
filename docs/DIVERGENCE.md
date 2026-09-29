@@ -16073,6 +16073,180 @@ stop recognising the helpers; each of the three helpers' restriction removed; an
 the restriction made unconditional again, which fails this package's own test and
 both of the tests that found it.
 
+### 5.165 Eight renames, and a judgement that turned out to be one judgement
+
+plan.md 19f listed eight direct `os.Rename` calls outside `internal/atomicfile`
+and framed each as a decision: `file.rename` and `file.move` doing what an
+operator asked, a node key moved aside before re-enrollment, a downloaded archive
+installed under its final name, the evidence log sealing a segment,
+/etc/localtime being replaced. The question, it said, was "whether
+`atomicfile.Rename`'s Windows retry belongs there" — probably yes for the
+estate's own writes, and for a module doing what the operator literally asked
+"a retry may hide a conflict the operator should see".
+
+Reading `Rename` answers all eight at once.
+
+**On unix `atomicfile.Rename` is `os.Rename`.** One line in
+`atomicfile_unix.go`, with a comment saying rename(2) is atomic and does not care
+who has the destination open. So on every platform this estate runs on, the
+conversion changes nothing whatsoever.
+
+On Windows the difference is a retry, and only for two errors:
+`ERROR_ACCESS_DENIED` and `ERROR_SHARING_VIOLATION`, which mean "somebody has the
+destination open right now". MoveFileEx opens the destination for delete with no
+sharing, so any reader — including every `os.ReadFile` in the standard library,
+which does not ask for FILE_SHARE_DELETE — makes a rename fail. The window is two
+seconds and `retry` returns the last error **unwrapped** when it closes.
+
+So the row's worry does not hold: nothing is hidden. The cost of the retry is at
+most two seconds of latency on a genuine denial, which is then reported exactly as
+it was.
+
+#### At two of the eight it is better than latency-neutral
+
+`file.move` (`file_more.go`) and `movePath` (`file_edit.go`) both **fall back to a
+copy** when the rename fails — deliberately, because a cross-filesystem rename
+fails with EXDEV and `mv` does the same. EXDEV is not transient, so the retry does
+not touch that path.
+
+But a Windows reader holding the destination open for a microsecond *was* enough
+to make the rename fail, and the fallback then turned an atomic move into a
+copy-and-remove: a new inode, hard links lost, and no error for anybody to see.
+An operator who asked to move a file got a copy, silently, for a reason unrelated
+to filesystems. Those two are the ones where this is a fix rather than a
+convention.
+
+#### The rule, and the prose it made false
+
+`norenames_test.go` fails on any `os.Rename` outside this package, with an
+exemption map for a rename that genuinely wants to fail on a reader. There are
+none today.
+
+`TestNothingElseWritesThroughATempFileAndARename` said in its own comment that it
+"is not a rule against `os.Rename`" and that the nine other renames were each "a
+judgement about whether the Windows retry belongs there". That was true when
+written and is not now, so it says so and points at the new test. A document held
+to the code includes a test's own comment about a neighbouring test.
+
+Both audits' exemption maps are now covered by
+`TestNoExemptionOutlivesItsFunction`, and `internal/fileperm`'s got the same
+check: all three are empty, which is exactly when a liveness check is free to add
+and the moment nobody thinks to. `internal/atomicfile` has had one since 5.144
+and `internal/fileperm` went a day without it.
+
+Three breaks, all failing: one site back on `os.Rename`; the audit made to stop
+recognising `atomicfile.Rename`, which trips the count of renames that do go
+through it; and an exemption naming a function that does not exist.
+
+### 5.166 Seventeen walkers, six skip lists, and the tenth one was already written
+
+plan.md 19i: "Nothing stops a tenth repo-walking audit being written without the
+other-checkout check. A tenth written next month will read `.claude/worktrees/`
+again, reporting another commit's code as this tree's."
+
+**There was already one, and it predated the row.** `internal/config`'s
+`TestEveryDeclaredKeyIsReadOrRecorded` walked `filepath.Join("..", "..")` with no
+skips at all — not `vendor`, not `testdata`, and not `repotree.OtherCheckout`,
+which every other walker was given in 5.146. So it read a second checkout, and
+could count a configuration key as read because another commit's code read it.
+That is the audit whose whole job is to say which settings nothing consults.
+
+`TestNoUnitOffersAReloadThatWouldKillTheService` was the same shape with
+`OtherCheckout` and nothing else, so it read `vendor/` looking for Go that
+registers SIGHUP.
+
+#### The lists had drifted, which this package's own comment said and did not fix
+
+`internal/repotree`'s package comment ends: "Each walker kept its own list of
+directories to skip, and the lists had already drifted apart." `OtherCheckout`
+fixed the second-checkout half. The lists stayed drifted — **six spellings across
+seventeen walkers**:
+
+    .git vendor bin dist testdata contrib
+    .git bin dist vendor testdata
+    .git vendor bin dist testdata
+    .git vendor bin dist
+    .git bin testdata
+    (and two with none at all)
+
+So every audit that claims to read "the whole tree" read a different tree and
+nobody could say which. `TestNothingClaimsADeliveredPhase` skipped neither
+`vendor` nor `dist`: it read **512 files where the repository has 484**, which is
+to say it had been auditing `golang.org/x/sys` for claims about halite's delivery
+phases.
+
+An entry that names a fault and fixes half of it is worse than one that names it
+and stops, because the name is then spent.
+
+#### It was reading untracked local state, too
+
+Two of the three `.md` files `TestAnyStatedSettingCountMatchesTheTable` lost are
+under `contrib/tofu/.terraform/providers/…` — an OpenTofu provider cache that
+`tofu init` downloaded on this host. It is **untracked and gitignored**. So that
+audit read 22 documents here and 20 in CI, and one of the two it read only here
+was a third party's CHANGELOG.
+
+An audit whose population depends on untracked local state gives different answers
+on different machines, which is worse than either answer. `internal/buildpolicy`
+had already met this exact tree and exempted it by path, with a comment saying
+"third-party, untracked and not ours to reword" — in one place, for one audit.
+
+The one genuine narrowing is that `contrib/tofu/README.md` is no longer read by
+that prose audit. It states no settings count today; if a halite document under
+`contrib/` ever needs auditing, the answer is a walker that says so in its own
+words rather than an omission from the shared list.
+
+#### Root was found five ways
+
+`filepath.Join("..", "..")` in eleven places, and **five** byte-identical helpers
+walking up to `go.mod`: `repoRoot` in `internal/buildpolicy`, `internal/chaos` and
+`internal/doctor`, `repoRootDir` in `internal/exec`, and
+`repoRootForACLCheck` in `internal/builtin`. A grep found three; the audit found
+the other two — the same lesson as 5.164, one day later.
+
+`repotree.Root` is the one now. It returns an error rather than taking a
+`*testing.T`, so `internal/buildpolicy`'s lexicon scan — which is not a test — can
+use it.
+
+#### What is enforced, and the two things it cannot see
+
+`repotree.Walk` is `filepath.WalkDir` with one skip list and `OtherCheckout`
+built in. `nowalkers_test.go` fails on any `filepath.Walk` or `WalkDir` rooted at
+the repository, and a second test fails on any function that walks up to `go.mod`.
+
+**An exemption from the walker is not an exemption from the rule**: an exempted
+walk must still call `OtherCheckout`, and the audit checks that.
+
+One exemption, `internal/buildpolicy.Scan`. SPEC 2.3's lexicon policy scans
+documentation, configuration, shell and test fixtures on purpose, and has its own
+`ExemptPaths` list that already covers `vendor/`, `.git/` and the provider cache.
+`Walk` would narrow a gate, which is not a thing to do by accident.
+
+Two limits, stated:
+
+- **A root that arrives as a parameter is not followed**, and cannot be: whether
+  `Scan(root)`'s argument is the repository is a property of its callers. That is
+  the case the one exemption covers.
+- A walk rooted at a **subtree** — `filepath.Join("..", "..", "contrib", dir)` —
+  is not ruled on. `readServiceFiles` reads `contrib/rc.d` deliberately, and the
+  first version of this audit flagged it and then demanded it skip a second
+  checkout that cannot be inside `contrib/rc.d`. A Join is the repository only
+  when every argument is `".."`.
+
+#### Two mistakes of mine, on the record
+
+The first version matched the root expression's *text* against `".."` and `Root`,
+and flagged `internal/fileserver`'s `List` walking `absRoot` — a file server root
+an operator configured, which contains the letters `Root` and is not this
+repository. **A substring is not a type.** It follows one assignment now and
+matches `repotree.Root` with its package qualifier.
+
+And the counts were checked before and after, one audit at a time, because a
+unified skip list changes what several of them see. Every one is unchanged except
+the two named above: `nocopies` 4969, `nocreates` 4936, `norenames` 4969, the
+metric audits 109 and 81, the ledger audits 116 and 85. That comparison is the
+only reason I can say the narrowing was two places and not seventeen.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
