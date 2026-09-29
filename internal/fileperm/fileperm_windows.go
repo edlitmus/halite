@@ -1,7 +1,6 @@
 package fileperm
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/edlitmus/halite/internal/winsec"
@@ -46,9 +45,7 @@ func ApplyFile(f *os.File, mode os.FileMode) error {
 // SYSTEM and Administrators.
 func Others(path string) ([]string, error) { return winsec.Others(path) }
 
-// Advice is what to run to make the file private, in the form an
-// administrator on this platform would type.
-func Advice(path string) string {
-	return fmt.Sprintf(
-		`icacls "%s" /inheritance:r /grant:r "%%USERNAME%%:F" SYSTEM:F Administrators:F`, path)
-}
+// Advice is what to run to make the path private, in the form an administrator
+// on this platform would type. windowsAdvice has the wording and says why a
+// directory differs.
+func Advice(path string) string { return windowsAdvice(path, adviceIsDir(path)) }

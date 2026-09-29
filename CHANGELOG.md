@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The advice for a private directory would have locked its owner out
+
+When halite refuses to use a file other accounts can reach, it prints the command
+to run. For a directory that command was `chmod 600`, which removes the execute
+bit — the one that permits traversal — so following it would have made the
+directory unreachable by its own owner rather than private. It says `chmod 700`
+for a directory now, and on Windows it carries the inheritance flags that a
+directory's restriction needs and a file's does not.
+
 ### `halite-hub migrate` reports `user.present` with `groups:`
 
 Salt's `remove_groups` defaults to true, so `groups:` there was an account's

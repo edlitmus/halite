@@ -15840,6 +15840,79 @@ a question somebody was asked rather than one that needed grepping for.
 Four tests, and both breaks fail: removing the finding, and ignoring a stated
 `remove_groups`. plan.md 19h closed.
 
+### 5.163 The advice for a private directory would have locked its owner out
+
+`fileperm.Advice` is what halite prints when it refuses to use a file other
+accounts can reach: the command to run, in the terms the platform uses. It said,
+for every path:
+
+    chmod 600 /var/db/halite/pki
+
+On a **directory** that is wrong in the one direction that matters. The execute
+bit on a directory is what permits traversal, so 600 makes it unreachable by its
+own owner rather than private — an operator told that, about the directory holding
+the enrollment CA's key, would follow it and end up with a directory the hub
+itself cannot open. The advice would have converted "other accounts can read this"
+into "nothing can read this", which is a worse position and a harder one to
+diagnose.
+
+The Windows form had the matching fault. It omitted `(OI)(CI)`, icacls's spelling
+of SUB_CONTAINERS_AND_OBJECTS_INHERIT, which is exactly the flag
+`winsec.RestrictDir` sets and `winsec.Restrict` does not — so following it would
+produce a private directory holding keys that are not, because a file written in
+afterwards inherits from the parent above instead.
+
+#### Nothing caught it because advice is compared with nothing
+
+Every other claim in this package is checked against something. `Apply` is checked
+against `Others`; `Others` is checked against a real access control list. `Advice`
+is *printed*. It is a string that leaves the program and is read by a person, and
+there is no second path for it to disagree with — which is the same shape as
+`pkg.latest` saying "upgraded" about a package it installed (5.157): the
+machine-readable half was right and the sentence was the only wrong thing.
+
+It was seen because 5.161's new test printed it beside a directory, and `600`
+was visible next to a path ending in `/pki`. That is luck rather than method, and
+the method is the rest of this entry.
+
+#### The wording moved so that both platforms' can be read here
+
+`Advice` was two functions, one per build tag. The Windows wording could therefore
+be checked only on a Windows machine, and a wrong icacls flag in a string nothing
+executes is exactly the kind of thing that sits unread for a year.
+
+So the text moved into a file that compiles on both platforms, as
+`unixAdvice(path, isDir)` and `windowsAdvice(path, isDir)`, and each platform's
+`Advice` is one line selecting its own. `venvPip` and `linkZone` took that shape
+earlier in this chapter for the same reason: **a branch no test on the running
+machine can reach is a branch nobody has read since it was written.** The Windows
+break now fails on FreeBSD, which it could not have done before.
+
+The build-tagged split stays for `Apply`, `ApplyFile` and `Others`, which have real
+per-platform implementations. Only the text moved.
+
+#### Three claims, three tests, three breaks
+
+- **the wording**, both platforms, on either: the directory form is 700 and the
+  Windows one carries `(OI)(CI)`; the file forms have neither. It also asserts
+  `%USERNAME%` survives being formatted and that no `%!` verb error is in the
+  output, because the grant string moved from a format string to an argument and
+  a doubled `%%` left behind would have printed literally.
+- **the selection**: `Advice` given a real directory and a real file returns
+  different things, which is the one half that needs a filesystem.
+- **the effect**: applying the mode the advice names — parsed out of the advice
+  itself, so a wording change is applied by the test rather than compared against
+  a number written beside it — leaves a file inside the directory openable by its
+  owner. Under `chmod 600` that open fails with `permission denied`, which is the
+  failure an operator would have met after doing what they were told.
+
+The third is skipped as root, which holds CAP_DAC_OVERRIDE and traverses a
+directory whatever its mode: a test that cannot make the condition it is testing
+for is not testing for it, and `permtest`'s own comment records what pretending
+otherwise cost once. Windows is skipped there too, because following that advice
+means running `icacls` and a test that shelled out to it would be a test of
+icacls's argument parsing.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases
