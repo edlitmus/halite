@@ -829,6 +829,91 @@ func TestModuleRunCallsAndIsMarkedArbitrary(t *testing.T) {
 	}
 }
 
+// TestModuleRunPassesPositionalArgs breaks the bug where `args:` was
+// parsed, held in a variable, and then never given to the dispatcher:
+// `run` called `c.Dispatch.Call`, which binds with no positional
+// arguments at all, so `test.echo`'s one required parameter was always
+// missing and every `module.run` that used `args:` failed.
+func TestModuleRunPassesPositionalArgs(t *testing.T) {
+	r := New()
+	c := newCtx(false)
+	c.Dispatch = dispatcherFor(r)
+
+	res, err := r.States.Call(c, "module.run", value.MapOf(
+		"name", "test.echo", "args", []any{"hello"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Succeeded() {
+		t.Fatalf("result = %+v", res)
+	}
+	if ret, _ := res.Changes.Get("ret"); ret != "hello" {
+		t.Errorf("ret = %#v, want %q", ret, "hello")
+	}
+}
+
+// TestModuleRunPassesTopLevelKwargs breaks the bug where a key written
+// directly on the state (Salt's own syntax — no `kwargs:` nesting
+// needed) was validated against module.run's own parameter list
+// (name/args/kwargs) instead of being forwarded, so it was refused
+// before `run` ever saw it.
+func TestModuleRunPassesTopLevelKwargs(t *testing.T) {
+	r := New()
+	c := newCtx(false)
+	c.Dispatch = dispatcherFor(r)
+
+	res, err := r.States.Call(c, "module.run", value.MapOf(
+		"name", "test.echo", "text", "direct"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Succeeded() {
+		t.Fatalf("result = %+v", res)
+	}
+	if ret, _ := res.Changes.Get("ret"); ret != "direct" {
+		t.Errorf("ret = %#v, want %q", ret, "direct")
+	}
+}
+
+// TestModuleRunExplicitKwargsWinOverATopLevelKey pins the collision
+// rule stated in the code: an explicit `kwargs:` entry names itself as
+// a keyword argument, where a bare key's role is inferred, so it wins.
+func TestModuleRunExplicitKwargsWinOverATopLevelKey(t *testing.T) {
+	r := New()
+	c := newCtx(false)
+	c.Dispatch = dispatcherFor(r)
+
+	res, err := r.States.Call(c, "module.run", value.MapOf(
+		"name", "test.echo", "text", "top-level",
+		"kwargs", value.MapOf("text", "nested")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ret, _ := res.Changes.Get("ret"); ret != "nested" {
+		t.Errorf("ret = %#v, want %q", ret, "nested")
+	}
+}
+
+// TestModuleWaitForwardsTheSameWayThroughModWatch checks the other
+// half of module.run's own signature story: module.wait shares `run`
+// as its ModWatch reaction, so a watch that fires must forward a
+// top-level kwarg exactly as module.run does, and is bound at compile
+// time against wait's own signature rather than run's.
+func TestModuleWaitForwardsTheSameWayThroughModWatch(t *testing.T) {
+	r := New()
+	c := newCtx(false)
+	c.Dispatch = dispatcherFor(r)
+
+	res, err := r.States.CallWatch(c, "module.wait", value.MapOf(
+		"name", "test.echo", "text", "watched"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ret, _ := res.Changes.Get("ret"); ret != "watched" {
+		t.Errorf("ret = %#v, want %q", ret, "watched")
+	}
+}
+
 // dispatcherFor lets a module call another module in a test.
 type testDispatcher struct{ r *Registries }
 

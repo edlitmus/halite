@@ -16247,6 +16247,60 @@ the two named above: `nocopies` 4969, `nocreates` 4936, `norenames` 4969, the
 metric audits 109 and 81, the ledger audits 116 and 85. That comparison is the
 only reason I can say the narrowing was two places and not seventeen.
 
+### 5.167 `module.run` accepted `args:` and dropped it, and refused a bare kwarg it should have forwarded
+
+plan.md §6 item 8: "Salt passes unknown kwargs through to the function being run; this
+build validates against a fixed parameter list. Strict validation is right for every
+other state and wrong for this one." Two separate defects were behind that one
+sentence, and `TestModuleRunCallsAndIsMarkedArbitrary` exercised neither, because it
+never gave `module.run` an `args:` list or a bare kwarg to check.
+
+**The first: a positional call that never reached the function it named.**
+`registerModuleState`'s `run` parsed `args:` into a `positional` slice and then called
+`c.Dispatch.Call(c, fn, callArgs)` — the half of the `Dispatcher` interface that binds
+with `sig.Bind(nil, args)`, no positional arguments at all. `positional` was read
+exactly once after that, to choose between two identical error-message branches, which
+is what a dead variable looks like when nobody deletes it: the comment above it said "a
+positional call is retried through the registry, because the dispatcher's mapping form
+cannot express one," describing work that was never written. `internal/runner`'s own
+structured `unless`/`onlyif` dispatch (`internal/runner/runner.go`, the `*value.Map`
+case) parses the identical shape and calls `r.Exec.CallPositional(r.Ctx, fnName,
+positional, callArgs)` two lines later — the pair the project's own CLAUDE.md calls the
+commonest bug here, a thing recomputed twice that must agree and did not. `module.run`
+now calls `c.Dispatch.CallPositional` the same way.
+
+**The second: a bare keyword refused before `run` ever saw it.** Salt's `module.run`
+lets a caller write a keyword argument for the *target* function directly on the state
+— `- cwd: /tmp` beside `- name: cmd.run`, no `kwargs:` nesting — because the mapping
+form exists for a key that collides with `name`/`args`/`kwargs` and the plain form is
+what everyone writes otherwise. `module.run`'s own `Signature.Params` names only
+`name`, `args` and `kwargs`, and without `AnyKwargs` an unrecognised key is validated
+against that list and refused with "is not a parameter of this function" — before
+`run`'s body runs at all, since `states.Registry.Call` and `CallWatch` both bind against
+`m.Sig` first. The message named `module.run`, not the function the tree was trying to
+call, which is a second reason it read as this build's rule rather than Salt's.
+
+`beacon.present`/`schedule.present` (5.130-era) had already set `AnyKwargs: true` for
+the same reason — a configuration whose keys belong to the thing being configured
+rather than to the state — and `module.run` is the same shape one level removed: the
+keys belong to the function being called. Both `module.run` and `module.wait` now
+declare `AnyKwargs: true`, and `run` collects every key besides `name`/`args`/`kwargs`
+before it collects the nested `kwargs:` map, so an explicit `kwargs:` entry wins a name
+collision — it says what it is, where a bare key's role is inferred. `module.wait`
+needed the same flag independently: nothing in `run` runs when `wait` is called
+directly, but `Bind` runs against `wait`'s own signature regardless, at compile time and
+at watch time alike, so a tree using the bare-kwarg form on `module.wait` failed there
+even after `module.run` was fixed.
+
+**Verified**: `TestModuleRunPassesPositionalArgs`, `TestModuleRunPassesTopLevelKwargs`,
+`TestModuleRunExplicitKwargsWinOverATopLevelKey` and
+`TestModuleWaitForwardsTheSameWayThroughModWatch`
+(`internal/builtin/modules_test.go`) each fail with only one of the two fixes reverted
+— checked both ways, not inferred. Unverified: `module.run` has no `TestLive*` and none
+is added here; both defects are pure argument plumbing reachable in-process, and the
+function actually invoked is whatever the tree names, which is a `TestLive*` for that
+module's own signature to hold, not this state's.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

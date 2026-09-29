@@ -23,6 +23,18 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `module.run` dropped its own positional arguments, and refused a bare kwarg Salt allows
+
+`module.run` parsed an `args:` list into a variable and then called the half of
+its dispatcher that binds with no positional arguments at all, so `args:` was
+accepted and silently dropped before the function it named ever saw it.
+Separately, a keyword argument written directly on the state — `- cwd: /tmp`
+beside `- name: cmd.run`, which is how Salt's own `module.run` is normally
+written, with no `kwargs:` nesting — was refused as "not a parameter of this
+function," because the check ran against `module.run`'s own three parameters
+rather than the target function's. Both `module.run` and `module.wait` forward
+positional and bare-keyword arguments correctly now.
+
 ### The audits read different trees, and one read another checkout
 
 Seventeen of halite's own audits walk the repository, and they kept six different

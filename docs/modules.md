@@ -9972,7 +9972,7 @@ mac_defaults.write(name: string, domain: string, key: string, value: any, vtype:
 
 #### `module.run`
 
-Call an execution module function from a state.
+Call an execution module function from a state. A keyword argument the function takes may be written directly on the state instead of nested under `kwargs`.
 
 ```
 module.run(name: string, args: list, kwargs: map)
@@ -9988,7 +9988,7 @@ module.run(name: string, args: list, kwargs: map)
 
 #### `module.wait`
 
-Call an execution module function only when a watch requisite fires.
+Call an execution module function only when a watch requisite fires. A keyword argument the function takes may be written directly on the state instead of nested under `kwargs`.
 
 ```
 module.wait(name: string, args: list, kwargs: map)
