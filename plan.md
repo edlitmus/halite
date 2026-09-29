@@ -1653,10 +1653,20 @@ unchanged.
     something like `1.2/stable/ubuntu-22.04` — and picking one means checking
     it is small, stable and unlikely to be renamed, which is a store
     question rather than a code one.
-8. **`module.run` argument pass-through.** Salt passes unknown kwargs
-   through to the function being run; this build validates against a
-   fixed parameter list. Strict validation is right for every other state
-   and wrong for this one.
+8. ~~**`module.run` argument pass-through.**~~ — **done.** `module.run` and
+   `module.wait` now take `AnyKwargs`, the way `beacon.present` and
+   `schedule.present` already did for the same reason: the keys belong to
+   the thing being called, not to this state. A bare keyword written
+   directly on the state — Salt's own syntax, no `kwargs:` nesting needed
+   — is collected and forwarded, with an explicit `kwargs:` entry winning
+   a name collision because it says what it is. A second, unrelated
+   defect was found writing the test for the first: `run` parsed `args:`
+   into a `positional` slice and then called the half of the dispatcher
+   that binds with no positional arguments at all, so an `args:` list was
+   accepted and silently dropped before ever reaching the function it
+   named — the same pairing `internal/runner`'s own structured
+   `unless`/`onlyif` dispatch gets right two lines apart. DIVERGENCE
+   5.167.
 9. ~~**systemd over D-Bus, or `systemctl` shell-out?**~~ **Resolved
    (DIVERGENCE 5.39): D-Bus, as SPEC 15.2 says.** `internal/dbus` is a
    direct ~470-line wire client; the systemd provider issues its whole

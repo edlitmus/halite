@@ -333,13 +333,33 @@ func registerConfigModule(r *Registries) {
 // It is marked arbitrary_code, because the function it calls is chosen by
 // the caller: granting `module.run` is granting every module. SPEC section
 // 23.5 refuses to grant it by wildcard for exactly that reason.
+//
+// Salt's own `module.run` forwards kwargs the state itself does not
+// recognise straight through to the function being called — writing
+// `- cwd: /tmp` beside `- name: cmd.run` needs no `kwargs:` nesting — and
+// validating against `name`/`args`/`kwargs` alone, as every other state
+// does, would refuse that tree rather than run it. `AnyKwargs` is what
+// lets an unrecognised key reach `run` at all instead of failing at bind
+// time; without it, the loop below would never see the key it exists to
+// collect.
 func registerModuleState(r *Registries) {
 	run := func(c *exec.Context, args *value.Map) (states.Result, error) {
 		fn := states.Str(args, "name", "")
 		if fn == "" {
 			return states.False("This state needs a module.function to call."), nil
 		}
+		// Keys written directly on the state (anything AnyKwargs admitted
+		// besides name/args/kwargs) are collected first, and an explicit
+		// `kwargs:` entry wins a collision — it names itself as kwargs,
+		// where a bare key's role is inferred.
 		callArgs := value.NewMap(4)
+		for _, e := range args.Entries() {
+			switch value.KeyString(e.Key) {
+			case "name", "args", "kwargs":
+			default:
+				callArgs.SetAt(e.Key, e.Val, e.KeyPos, e.ValPos)
+			}
+		}
 		if kw := states.Mapping(args, "kwargs"); kw != nil {
 			for _, e := range kw.Entries() {
 				callArgs.SetAt(e.Key, e.Val, e.KeyPos, e.ValPos)
@@ -361,13 +381,11 @@ func registerModuleState(r *Registries) {
 		if c.Dispatch == nil {
 			return states.False("No module dispatcher is available to this run."), nil
 		}
-		out, err := c.Dispatch.Call(c, fn, callArgs)
+		// CallPositional, not Call: Call binds with no positional
+		// arguments at all, so an `args:` list was accepted here and
+		// silently dropped before it ever reached the function it named.
+		out, err := c.Dispatch.CallPositional(c, fn, positional, callArgs)
 		if err != nil {
-			// A positional call is retried through the registry, because
-			// the dispatcher's mapping form cannot express one.
-			if len(positional) > 0 {
-				return states.False(fmt.Sprintf("%s could not be called: %v", fn, err)), nil
-			}
 			return states.False(fmt.Sprintf("%s could not be called: %v", fn, err)), nil
 		}
 		return states.Changed(
@@ -394,7 +412,9 @@ func registerModuleState(r *Registries) {
 		states.Module{
 			Sig: signature.Signature{
 				Module: "module", Function: "run",
-				Doc: "Call an execution module function from a state.",
+				Doc: "Call an execution module function from a state. A keyword " +
+					"argument the function takes may be written directly on the " +
+					"state instead of nested under `kwargs`.",
 				Params: []signature.Param{
 					nameParam("The module.function to call. Defaults to the state ID."),
 					opt("args", signature.List, nil, "Positional arguments."),
@@ -404,6 +424,11 @@ func registerModuleState(r *Registries) {
 				ArbitraryCode: true,
 				TestMode:      signature.TestUnreliable,
 				Section:       "15.5",
+				// The function being called has its own parameter list,
+				// which this state does not and must not know — refusing
+				// a key here would be validating against the wrong
+				// signature. See the package comment above.
+				AnyKwargs: true,
 			},
 			Fn:       run,
 			ModWatch: run,
@@ -411,7 +436,9 @@ func registerModuleState(r *Registries) {
 		states.Module{
 			Sig: signature.Signature{
 				Module: "module", Function: "wait",
-				Doc: "Call an execution module function only when a watch requisite fires.",
+				Doc: "Call an execution module function only when a watch requisite fires. " +
+					"A keyword argument the function takes may be written directly on the " +
+					"state instead of nested under `kwargs`.",
 				Params: []signature.Param{
 					nameParam("The module.function to call. Defaults to the state ID."),
 					opt("args", signature.List, nil, "Positional arguments."),
@@ -419,8 +446,13 @@ func registerModuleState(r *Registries) {
 				},
 				Mutates:       true,
 				ArbitraryCode: true,
-				TestMode:      signature.TestUnreliable,
-				Section:       "15.5",
+				// Bound at compile time against this signature even though
+				// `wait`'s own Fn never calls the target — ModWatch does,
+				// on the same signature `run` uses — so refusing here
+				// would fail a tree `run`'s sibling accepts.
+				AnyKwargs: true,
+				TestMode:  signature.TestUnreliable,
+				Section:   "15.5",
 			},
 			Fn: func(c *exec.Context, args *value.Map) (states.Result, error) {
 				return states.True("This call waits for a watch requisite to fire, and none did."), nil
