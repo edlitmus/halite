@@ -119,6 +119,7 @@ func New() *Registries {
 	registerReboot(r)
 	registerSystemModule(r)
 	registerSnap(r)
+	registerPro(r)
 	registerJail(r)
 
 	// The Common Linux platform modules of SPEC section 15.3.

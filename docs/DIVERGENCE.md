@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **87 execution modules / 593 functions** and **48 state
+The build ships **88 execution modules / 600 functions** and **48 state
 modules / 132 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -645,7 +645,7 @@ specification cannot be quietly missed.
 | Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `udev`, `modprobe`, `systemd_service` (alias) | `authselect` |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
-| Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key`, `pro` |
+| Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `pro`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key` |
 | RHEL family | `yumpkg` and `dnfpkg` (aliases) | `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
@@ -16300,6 +16300,77 @@ even after `module.run` was fixed.
 is added here; both defects are pure argument plumbing reachable in-process, and the
 function actually invoked is whatever the tree names, which is a `TestLive*` for that
 module's own signature to hold, not this state's.
+
+### 5.168 `pro`: two of the Debian/Ubuntu row's three remaining modules close to one
+
+plan.md §7 item 11 named `pro` as the last real work on SPEC 15.3's Debian/Ubuntu row
+and said its design question was already answered: a Pro-enabled FIPS node and a
+`GOFIPS140` build are two separate claims, and `doctor`'s FIPS check already says so
+(DIVERGENCE 5.83). What was missing was the module that answers the first claim by
+asking the node rather than inferring it — `internal/builtin/pro.go`, seven exec
+functions (`version`, `status`, `is_attached`, `attach`, `detach`, `enable`,
+`disable`), no state (SPEC 15.5 names none, the `mdadm`/`modprobe`/`udev`/`journald`
+shape). Function count 593 → 600, module count 87 → 88; state counts unchanged.
+
+**Written against the real client, on this fleet's own Ubuntu Pro-attached
+development host** (`ubuntu-advantage-tools` 37.2ubuntu~24.04.1) — `pro status
+--format json` and `pro api u.pro.status.is_attached.v1` were run for real and their
+actual output, with the account's identifying fields replaced by placeholders of the
+same shape and type, is what `pro_test.go`'s fixtures hold. `pro.status` returns the
+document lifted into the value model whole, rather than narrowed to named fields SPEC
+15.3 does not specify a shape for: a service's `entitled`/`available` are the strings
+`"yes"`/`"no"` in the real client's own output, not booleans, and a fixture written
+from what seemed likely would very plausibly have gotten that the other way — exactly
+the §1.4/5.31 lesson, caught this time by capturing rather than guessing.
+`TestLiveProReadsTheRealClient` runs the same three functions again in the ordinary
+suite, ungated (they need no root and change nothing), asserting shape — an attached
+host reports at least one service, every service has a name and a status — rather
+than this host's particular subscription, so the same test passes here and skips
+cleanly on a bare image with the client installed and never attached.
+
+**The mutating quarter is `Assumed`, and stays that way in this change.** `attach`,
+`detach`, `enable` and `disable` are the whole reason the module needs root, and each
+argv builder (`proAttachArgv`, `proDetachArgv`, `proEnableArgv`, `proDisableArgv`) is
+pinned by a unit test against the client's own `--help` grammar — including that
+`pro attach` alone has no `--assume-yes`, unlike its three siblings, because its
+prompt is the browser flow a bare token skips rather than a yes/no confirmation.
+`proRun`'s envelope check (`result`/`errors`, the shape every captured response here
+carries) is exercised against a minimal synthetic document built to that shape, which
+is a test of this module's own parsing and not a claim about what `pro enable` prints
+— nothing here has seen that. None of the four has been run: enabling or disabling a
+service, or attaching or detaching the subscription, changes what this real host is
+entitled to install and patch, and this suite runs on that host. Two Real-World-
+Transactions/Account-Standing-Rule sandbox refusals during development — one on
+`pro enable esm-apps` (already enabled, so it would have been a true no-op) and one on
+the read-only `pro security-status` (an outbound call to Canonical's own metadata) —
+are why `security-status` and `cve`/`cves` are not in this module at all rather than
+Assumed: writing a parser for output nothing here has ever seen would be exactly
+DIVERGENCE 5.31's mistake with extra steps.
+
+`internal/exec/platform.go`'s pending table drops `pro`; DIVERGENCE 2.3's row moves it
+from the absent column to the present one, alongside `aptpkg` and `ufw`'s aliases.
+`registerEvidence`'s package comment, which 5.145's own lesson says goes stale the
+first time anyone forgets to re-read it, is corrected in the same change rather than
+left to say "no module … is unverified" for the second time (PR #41 fixed the same
+sentence once already, after 5.35-5.38). `make release-gate` goes red on one module
+again, on purpose: closing it needs a host whose Pro attachment, or whose entitlement
+to a service such as `usg`, somebody can afford to flip on purpose and put back. wired
+into `.github/workflows/fleet.yml`'s `linux` leg (`internal/builtin/pro*.go` in the
+trigger paths, `TestLiveProReadsTheRealClient` named exactly in the `-run` filter rather than
+shortened to a family prefix — the shortest prefix this module's own name suggests is
+also a substring of `TestLiveProcBeaconSeesAProcessArriveAndSeesOneMissing`, an
+unrelated live test from a different family, and `go test -run` matches a pattern
+anywhere in the name rather than by word boundary the way this audit's own `family()`
+helper does).
+
+**Verified**: `TestLiveProReadsTheRealClient` (real client, this host).
+`TestProParseIsAttached`, `TestProStatusFn`, `TestProAttachArgv`, `TestProDetachArgv`,
+`TestProEnableArgv`, `TestProDisableArgv`, `TestProRunChecksTheCommonEnvelope`
+(`internal/builtin/pro_test.go`), against captured and synthetic fixtures
+respectively, as described above. **Not verified, named rather than implied**:
+`attach`, `detach`, `enable`, `disable` against a real client; a detached host's
+`pro status` shape (this host has stayed attached throughout); `security-status` and
+`cve`/`cves`, not built.
 
 ## 6. Everything else not started
 
