@@ -62,24 +62,9 @@ import (
 func TestNoRootDerivedConstantIsAConfigFallback(t *testing.T) {
 	var checked int
 	root := filepath.Join("..", "..")
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "vendor", "bin", "dist", "testdata", "contrib":
-				return fs.SkipDir
-			}
-			// A second checkout inside this one is not this tree:
-			// `.claude/worktrees/` holds one at another commit, and this
-			// walker would otherwise read it and report its contents as
-			// findings against this tree. See internal/repotree.
-			// DIVERGENCE 5.146.
-			if repotree.OtherCheckout(root, path) {
-				return fs.SkipDir
-			}
-			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil

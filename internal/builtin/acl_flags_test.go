@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // Nothing in this package may pass `-s` to getfacl.
@@ -113,20 +115,11 @@ func isShortFlagCluster(s string) bool {
 // repoRootForACLCheck walks up to the directory holding go.mod.
 func repoRootForACLCheck(t *testing.T) string {
 	t.Helper()
-	dir, err := os.Getwd()
+	root, err := repotree.Root()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("no go.mod above the working directory")
-		}
-		dir = parent
-	}
+	return root
 }
 
 // aclArgvRunsGetfacl reports whether this argument list runs getfacl.

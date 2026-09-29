@@ -81,19 +81,9 @@ func TestAnyStatedSettingCountMatchesTheTable(t *testing.T) {
 
 	root := filepath.Join("..", "..")
 	checked, found := 0, 0
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
-		}
-		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "bin", "dist", "vendor", "testdata":
-				return fs.SkipDir
-			}
-			if repotree.OtherCheckout(root, path) {
-				return fs.SkipDir
-			}
-			return nil
 		}
 		if filepath.Ext(path) != ".md" {
 			return nil

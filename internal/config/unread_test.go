@@ -5,11 +5,14 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/repotree"
 )
 
 // A declared setting that nothing reads is the defect this project keeps
@@ -42,10 +45,19 @@ func waiverFor(name string) (string, bool) {
 }
 
 func TestEveryDeclaredKeyIsReadOrRecorded(t *testing.T) {
-	root := ".."
+	// The repository, through repotree.Walk. This walker used to be
+	// `filepath.Walk(filepath.Join("..", ".."))` with no skips at all -- not
+	// vendor, not testdata, and not repotree.OtherCheckout, which every other
+	// walker was given in 5.146. So it read a second checkout and counted a
+	// key as read because another commit's code read it. plan.md 19i predicted
+	// "a tenth written next month"; this one was already here. DIVERGENCE 5.166.
+	root, rootErr := repotree.Root()
+	if rootErr != nil {
+		t.Fatal(rootErr)
+	}
 	var body strings.Builder
-	err := filepath.Walk(filepath.Join(root, ".."), func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
+	err := repotree.Walk(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") {
 			return nil
 		}
 		// keys.go declares them and shim.go names the halite spelling a
