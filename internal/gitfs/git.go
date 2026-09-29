@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // run invokes git and returns its standard output.
@@ -74,7 +75,7 @@ func (o *Options) mirror(ctx context.Context, remote Remote) (string, error) {
 		return "", err
 	}
 	dir := filepath.Join(o.CacheDir, remote.mirrorDir())
-	if err := os.MkdirAll(o.CacheDir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(o.CacheDir, 0o700); err != nil {
 		return "", err
 	}
 
@@ -216,7 +217,7 @@ func (o *Options) materialise(ctx context.Context, mirror, target string, remote
 	if err := os.RemoveAll(staging); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(staging, 0o700); err != nil {
+	if err := fileperm.MkdirAll(staging, 0o700); err != nil {
 		return err
 	}
 	defer os.RemoveAll(staging)

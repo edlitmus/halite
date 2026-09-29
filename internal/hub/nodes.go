@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/value"
@@ -72,7 +73,7 @@ func OpenNodeCache(dir string) (*NodeCache, error) {
 	if dir == "" {
 		return nil, fmt.Errorf("the node cache needs a directory")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating the node cache: %w", err)
 	}
 	// MkdirAll is satisfied by a directory that already exists, whoever
@@ -83,7 +84,7 @@ func OpenNodeCache(dir string) (*NodeCache, error) {
 	// skipped. Checked here so it is one message at startup rather than
 	// a puzzle at the first job.
 	probe := filepath.Join(dir, ".writable")
-	if err := os.WriteFile(probe, nil, 0o600); err != nil {
+	if err := fileperm.WriteFile(probe, nil, 0o600); err != nil {
 		return nil, fmt.Errorf("the node cache at %s is not usable by this process: %w", dir, err)
 	}
 	if err := os.Remove(probe); err != nil {

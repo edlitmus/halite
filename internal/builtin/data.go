@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -245,7 +246,7 @@ func dataReadStore(path string) (*value.Map, error) {
 }
 
 func dataWriteStore(path string, m *value.Map) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("%s could not be created: %w", filepath.Dir(path), err)
 	}
 	encoded, err := value.EncodeJSON(m, 2)

@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/edlitmus/halite/internal/atomicfile"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/state"
 	"github.com/edlitmus/halite/internal/template"
 )
@@ -241,7 +242,7 @@ func (r *Remote) cacheFile(env, rel string) (string, error) {
 			}
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("caching %s: %w", rel, err)
 	}
 	if err := writeAtomic(path, body, 0o600); err != nil {
@@ -329,7 +330,7 @@ func digestOf(data []byte, algorithm string) (string, error) {
 // The idiom is one package rather than six copies of it, because all six
 // were wrong on Windows in the same way: see internal/atomicfile.
 func writeAtomic(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	return atomicfile.Write(path, data, mode)

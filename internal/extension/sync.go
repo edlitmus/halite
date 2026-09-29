@@ -158,7 +158,7 @@ func (s *Syncer) syncOne(name, version string, files []SourceFile) Change {
 			return change
 		}
 		dest := filepath.Join(staging, filepath.FromSlash(rel))
-		if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
+		if err := fileperm.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 			change.Status, change.Reason = "refused", err.Error()
 			return change
 		}
@@ -166,7 +166,7 @@ func (s *Syncer) syncOne(name, version string, files []SourceFile) Change {
 		// carried over the wire: a file server does not publish modes,
 		// and guessing from the name would make `run.sh` executable
 		// because of its extension.
-		if err := os.WriteFile(dest, body, 0o600); err != nil {
+		if err := fileperm.WriteFile(dest, body, 0o600); err != nil {
 			change.Status, change.Reason = "refused", err.Error()
 			return change
 		}
@@ -279,7 +279,7 @@ func markExecutable(dir string, manifest *Manifest) error {
 // The old one is moved aside and removed after the new one lands, so a
 // failure part-way leaves the previous bundle rather than nothing.
 func install(staging, target string) error {
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return err
 	}
 	previous := ""
@@ -302,7 +302,7 @@ func install(staging, target string) error {
 	// The staging directory has been renamed away, so the caller's
 	// deferred cleanup finds nothing. Recreate it so that cleanup is
 	// not an error on a path nobody reads.
-	return os.MkdirAll(staging, 0o700)
+	return fileperm.MkdirAll(staging, 0o700)
 }
 
 // groupBundles sorts the file server's listing into `<name>/<version>`.

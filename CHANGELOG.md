@@ -23,6 +23,23 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Fifty-one places said "only this account" in a way Windows discarded
+
+`os.MkdirAll(dir, 0o700)` and `os.WriteFile(path, data, 0o600)` are how a Go
+program says that, and on Windows they say nothing: a directory mode is not an
+access control decision there, and a file mode is the read-only attribute. The
+job cache and its returns, the relay spool, the returner spools, the event bus,
+the node cache, the mine, the orchestration store, the keystore and its tokens,
+the API token store, the node evidence log, extension staging and installed
+bundles, the git and s3 file-server caches, the log file, `~/.ssh` on a managed
+node, `data.write_store`, `file.patch`'s backups, the hub's bootstrap admin token
+and a node's inline one-shot files were all affected.
+
+All of them go through `internal/fileperm` now, which carries the intent out on
+both platforms, and a build-time audit fails on a fifty-second. **A path that is
+already private is left exactly as it is**, tighter or not: a directory an
+operator set read-only stays read-only.
+
 ### The advice for a private directory would have locked its owner out
 
 When halite refuses to use a file other accounts can reach, it prints the command

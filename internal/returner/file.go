@@ -58,7 +58,7 @@ func newFileReturner(name string, opts Options) (*fileReturner, error) {
 		opts.KeepFiles = 5
 	}
 	r := &fileReturner{name: name, opts: opts}
-	if err := os.MkdirAll(filepath.Dir(opts.Path), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(opts.Path), 0o700); err != nil {
 		return nil, err
 	}
 	return r, nil

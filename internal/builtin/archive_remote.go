@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/safehttp"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -172,7 +173,7 @@ func fetchRemoteArchive(c *exec.Context, args *value.Map, source string) (out fe
 	// Written beside the destination and renamed, so that an interrupted
 	// download is never mistaken for a cached archive on the next run.
 	part := dest + ".part"
-	f, openErr := os.OpenFile(part, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	f, openErr := fileperm.OpenFile(part, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if openErr != nil {
 		return out, openErr
 	}

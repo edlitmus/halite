@@ -4,13 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -405,7 +405,7 @@ func writeKnownHosts(c *exec.Context, path string, entries []knownHost, changes 
 	if c.Test {
 		return states.WouldChange(strings.Replace(comment, " was ", " would be ", 1), changes), nil
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return states.False(fmt.Sprintf("%s could not be created: %v", filepath.Dir(path), err)), nil
 	}
 	// 0644 rather than authorized_keys' 0600: known_hosts is not a

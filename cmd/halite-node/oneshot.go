@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/fileserver"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/value"
@@ -245,10 +246,10 @@ func writeInlineFile(dir, rel, body string) error {
 		}
 	}
 	target := filepath.Join(dir, clean)
-	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(target, []byte(body), 0o600)
+	return fileperm.WriteFile(target, []byte(body), 0o600)
 }
 
 // needsInlineTree reports whether a function compiles state, and so

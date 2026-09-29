@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/edlitmus/halite/internal/fileperm"
 )
 
 // DefaultSpoolMax bounds what a relay holds while its upstream is
@@ -57,7 +59,7 @@ func OpenSpool(dir string, max int64) (*Spool, error) {
 	if max <= 0 {
 		max = DefaultSpoolMax
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := fileperm.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
 	return &Spool{dir: dir, max: max}, nil
@@ -94,7 +96,7 @@ func (s *Spool) Put(body []byte, now time.Time) error {
 	// backlog instead of eating it. No test reached this one.
 	s.seq++
 	name := fmt.Sprintf("%020d-%09d-%d.json", now.UTC().UnixNano(), s.seq, s.dropped)
-	if err := os.WriteFile(filepath.Join(s.dir, name), body, 0o600); err != nil {
+	if err := fileperm.WriteFile(filepath.Join(s.dir, name), body, 0o600); err != nil {
 		return err
 	}
 	s.bytes += int64(len(body))

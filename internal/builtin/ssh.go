@@ -2,12 +2,12 @@ package builtin
 
 import (
 	"fmt"
-	"os"
 	"os/user"
 	"path/filepath"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/signature"
 	"github.com/edlitmus/halite/internal/states"
 	"github.com/edlitmus/halite/internal/value"
@@ -305,7 +305,7 @@ func writeAuthKeys(c *exec.Context, path string, keys []authKey, changes *value.
 	// sshd refuses an authorized_keys file that is group or world
 	// writable, and refuses a .ssh directory that is either, so both modes
 	// are set rather than left to the umask.
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := fileperm.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return states.False(fmt.Sprintf("%s could not be created: %v", filepath.Dir(path), err)), nil
 	}
 	if err := writeAtomic(path, []byte(b.String()), 0o600); err != nil {
