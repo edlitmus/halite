@@ -31,13 +31,18 @@ import (
 // modules against their real tools on real machines, and `apparmor`
 // closed since (DIVERGENCE 5.37's route 1 — a machine whose `aa-*`
 // tools actually parse its own profile tree, unlike the one 5.37
-// found), and `snap`'s reading closed with it (DIVERGENCE 5.28). What
-// is still `Assumed` is nothing: **no module that changes a machine as
-// root is unverified**, and the release gate passes for the first time.
-// `mac_softwareupdate` was the last, and it closed the way its note
-// says -- `--download` against Apple's real service on the `macos` leg,
-// with the machine's version unchanged afterwards, which is the claim
-// that module is built around.
+// found), and `snap`'s reading closed with it (DIVERGENCE 5.28).
+// `mac_softwareupdate` was the last of that run, and it closed the way
+// its note says -- `--download` against Apple's real service on the
+// `macos` leg, with the machine's version unchanged afterwards, which
+// is the claim that module is built around. The release gate passed
+// for the first time on 2026-09-18, and stayed that way until `pro`
+// arrived: a new module is `Assumed` on the day it lands, which is the
+// correct state for it and not a regression of this paragraph's claim.
+// **Read this table, not this comment, for which modules are red today**
+// — a sentence here saying "nothing is Assumed" is exactly the kind of
+// claim DIVERGENCE 5.145/5.166 found going stale the moment the next
+// module landed, and the point of the table is that it cannot.
 //
 // `mac_assistive` was the other, deferred deliberately because
 // the only way to close it is a standing manual grant. It is no longer
@@ -780,6 +785,22 @@ var moduleEvidence = map[string]exec.Evidence{
 		"install, deliberately and permanently; nothing here drives one. `ignore`, " +
 		"`list_ignored` and `reset_ignored` describe a `softwareupdate` option macOS removed " +
 		"and refuse by name"},
+
+	// ---- Arrived Assumed, on purpose, and says why ----
+
+	"pro": {Level: exec.Assumed, Note: "`version`, `status` and `is_attached` were run for real " +
+		"against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- " +
+		"`TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way " +
+		"`modprobe`/`udev`'s reads do. `attach`, `detach`, `enable` and `disable` are the module's " +
+		"whole reason to need root, and none of the four has been run: each changes what this real " +
+		"host is entitled to install and patch, which is not a thing to find out was wrong by " +
+		"trying it on the host this suite runs on. Their argv builders are pinned by a unit test " +
+		"against the client's own documented flags, and `proRun`'s envelope check is exercised " +
+		"against a minimal `result`/`errors` document of the same shape `status`/`is_attached` " +
+		"really printed here -- not against enable or disable's own output, which nothing has " +
+		"seen. This is the correct state for a module that just arrived, not a gap to explain away: " +
+		"closing it means a host whose Pro attachment, or whose entitlement to a service such as " +
+		"`usg`, someone can afford to flip on purpose and put back"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

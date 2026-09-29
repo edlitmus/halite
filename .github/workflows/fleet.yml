@@ -52,6 +52,7 @@ on:
       - "internal/builtin/modprobe*.go"
       - "internal/builtin/udev*.go"
       - "internal/builtin/snap*.go"
+      - "internal/builtin/pro*.go"
       # `iptables` and `nftables` run in a private network namespace, so
       # their live tests are in the ordinary `test` job and need no root
       # -- but a GitHub runner may forbid an unprivileged namespace, and
@@ -171,7 +172,7 @@ jobs:
   # throwaway unit in /run/systemd/system that is attached to nothing
   # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm, modprobe, udev, snap)
+    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm, modprobe, udev, snap, pro)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -412,7 +413,7 @@ jobs:
           # same as the freebsd leg.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveReboot|TestLiveConformance' ./internal/builtin/ 2>&1;
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveReboot|TestLiveConformance' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 

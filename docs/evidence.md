@@ -21,7 +21,15 @@ well as what was.
 
 ## Mutates as root and has not been demonstrated
 
-**Nothing.** `make release-gate` passes: every module that changes a machine as root has been run against the tool it drives.
+`make release-gate` refuses a release while this list is not empty. It has 1 entry.
+
+- **`pro`** — `version`, `status` and `is_attached` were run for real against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- `TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way `modprobe`/`udev`'s reads do. `attach`, `detach`, `enable` and `disable` are the module's whole reason to need root, and none of the four has been run: each changes what this real host is entitled to install and patch, which is not a thing to find out was wrong by trying it on the host this suite runs on. Their argv builders are pinned by a unit test against the client's own documented flags, and `proRun`'s envelope check is exercised against a minimal `result`/`errors` document of the same shape `status`/`is_attached` really printed here -- not against enable or disable's own output, which nothing has seen. This is the correct state for a module that just arrived, not a gap to explain away: closing it means a host whose Pro attachment, or whose entitlement to a service such as `usg`, someone can afford to flip on purpose and put back.
+
+## `assumed` — 1 module
+
+### `pro`
+
+`version`, `status` and `is_attached` were run for real against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- `TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way `modprobe`/`udev`'s reads do. `attach`, `detach`, `enable` and `disable` are the module's whole reason to need root, and none of the four has been run: each changes what this real host is entitled to install and patch, which is not a thing to find out was wrong by trying it on the host this suite runs on. Their argv builders are pinned by a unit test against the client's own documented flags, and `proRun`'s envelope check is exercised against a minimal `result`/`errors` document of the same shape `status`/`is_attached` really printed here -- not against enable or disable's own output, which nothing has seen. This is the correct state for a module that just arrived, not a gap to explain away: closing it means a host whose Pro attachment, or whose entitlement to a service such as `usg`, someone can afford to flip on purpose and put back.
 
 ## `captured` — 8 modules
 

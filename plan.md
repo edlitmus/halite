@@ -2122,11 +2122,19 @@ unbuilt item here is number 7.
    pkg** rather than a `.deb`, and neither ranks above `make install`
    continuing to work. The reproducible-build half is done regardless.
 11. **The Debian and Ubuntu row** (§2.3) — was first, through three
-   revisions. `pro` and `debbuild` remain, on one host. `pro`'s design
-   question is answered: a Pro-enabled FIPS node and a `GOFIPS140` build
-   are **two** claims and both are required, which is what `doctor`'s
-   FIPS check now says out loud. So it is buildable — it is simply worth
-   less than it was when the estate was imagined to be Ubuntu.
+   revisions. ~~`pro`~~ is **done**: seven exec functions (`version`,
+   `status`, `is_attached`, `attach`, `detach`, `enable`, `disable`), no
+   state, reads run for real against this fleet's own Ubuntu Pro-attached
+   development host. The design question that had blocked it is answered:
+   a Pro-enabled FIPS node and a `GOFIPS140` build are **two** claims and
+   both are required, which is what `doctor`'s FIPS check already says
+   out loud, and `pro.status`'s per-service `fips`/`fips-updates` entry is
+   where the first of those two claims now answers for itself. The
+   mutating quarter — `attach`/`detach`/`enable`/`disable` — is `Assumed`
+   on purpose: each changes what a real host is entitled to install and
+   patch, and this project's only Ubuntu Pro-attached host is the one the
+   suite runs on. DIVERGENCE 5.168. `debbuild` remains, on one host, and
+   is worth less than it was when the estate was imagined to be Ubuntu.
 12. **The Common Linux row** (§2.3) — was eleven modules and is now
     one, deliberately unbuilt. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
     first for the reason this item gave: they are the three that mean

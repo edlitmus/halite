@@ -23,6 +23,18 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A `pro` module: Ubuntu Pro status, attach, and per-service enable/disable
+
+SPEC 15.3's Debian/Ubuntu row named `pro` — "Ubuntu Pro attach, FIPS enablement,
+USG" — and nothing answered it: whether a node is Pro-attached, and whether a
+service like `fips` or `esm-infra` is entitled and enabled, could only be
+inferred from files a Pro-enabled kernel and a Pro-enabled userspace can each
+write independently. `pro.status`, `pro.is_attached` and `pro.version` read the
+real `pro` client and were run against this project's own Ubuntu Pro-attached
+development host; `pro.attach`, `pro.detach`, `pro.enable` and `pro.disable`
+are built to the client's documented argument grammar but not yet run against
+one, because each changes what a real host is entitled to install and patch.
+
 ### `module.run` dropped its own positional arguments, and refused a bare kwarg Salt allows
 
 `module.run` parsed an `args:` list into a variable and then called the half of
