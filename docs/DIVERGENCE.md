@@ -15981,8 +15981,9 @@ helper written to protect a directory had quietly undone a restriction somebody
 chose.
 
 The two tests are worth more than the fix. They were written for something else
-entirely — "exists is not usable" (5.101), the lesson that `MkdirAll` is satisfied
-by a directory whoever owns it — and they caught this because they assert on a
+entirely — 5.20, a directory left owned by root that made every target match
+nothing, whose lesson is that `MkdirAll` is satisfied by a directory whoever owns
+it — and they caught this because they assert on a
 *deliberately tight* permission, which nothing in `internal/fileperm` did. An
 operator who sets an evidence directory to 0500 means it, and a configuration
 management system that reopens it on every start is doing the opposite of its job.
@@ -15994,6 +15995,56 @@ from the mode on unix and the access control list on Windows. A created path is
 always restricted whatever its mode came out as, because on Windows a new
 directory inherits its parent's list and "nobody else can reach it today" is not
 the same as a list that says so.
+
+#### And then Windows found the next one
+
+The leg this whole entry exists for failed on the first push:
+
+    --- FAIL: TestMkdirAllLeavesATighterPermissionAlone
+        a directory an operator had made read-only is writable again
+    --- FAIL: TestOpenFileLeavesATighterPermissionAlone
+        restricting …\sealed: chmod …\sealed: Access is denied.
+
+One is a test that could not make its own condition. `os.Mkdir(dir, 0o500)` does
+not make a directory read-only on Windows — access is decided by the list and Go
+does not translate the mode — so the directory was writable, the probe succeeded,
+and my assertion fired against a condition that was never arranged.
+`internal/nodeevidence`'s test skips for exactly this and says so in six lines;
+mine did not. It skips now, and what is skipped is arranging the condition rather
+than the rule, which `restrict` enforces by asking `Others` rather than the mode.
+
+**The other is a defect in the helper.** `OpenFile` restricted the handle
+whatever the flags said — and an `O_RDONLY` handle cannot carry out a `Chmod` on
+Windows, so a helper written to make a file private failed on a file that already
+was. The mode argument means nothing to an open that cannot create the file: Go
+ignores it, the convention is to pass `0`, and a caller that is only reading has
+no business changing who can read.
+
+So `OpenFile` now declines when `flag&os.O_CREATE == 0` — which is **the same
+rule `nocreates_test.go` already applied** when deciding what to report, arrived
+at from the other direction and half an hour earlier. Two places holding one rule,
+and for half an hour only one of them held it.
+
+The test for it needed a second attempt too. The first used a 0400 file, and
+deleting the rule left it passing on FreeBSD: a 0400 file is already private, so
+the already-private guard declined the chmod and the `O_CREATE` rule was never
+reached. The fixture is a **world-readable** file now — one the helper would
+narrow if it thought it should — and the assertion is that it did not, which
+fails on every platform when the rule is removed.
+
+#### And a citation that resolved to the wrong section
+
+Written down because it is the second time. The three comments above first cited
+**5.101** for "exists is not usable", and 5.101 is *The `yaml` filter, and the
+YAML this build writes*. The right number is 5.20, *What a directory left owned by
+root cost twice*, which is where `MkdirAll` being satisfied by a directory whoever
+owns it was found — and where the two tests that caught the widening come from.
+
+`internal/specaudit`'s ledger audit passed the whole time, because it checks that
+a cited number **exists** and not that the section says what the citation claims.
+That gap is recorded as plan.md's own note and was met again here within an hour
+of being read. Nothing mechanical catches it; the only thing that does is opening
+the section, which takes one command.
 
 #### The audit, and the half of it that is not a finding
 

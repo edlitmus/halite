@@ -65,6 +65,23 @@ func OpenFile(path string, flag int, mode os.FileMode) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	// **A mode means nothing to an open that cannot create the file**, and
+	// acting on it anyway is worse than useless. Go ignores the argument for a
+	// non-creating open and the convention is to pass 0; a caller that is only
+	// reading has no business changing who can read.
+	//
+	// It is also not permitted. The `test (windows-2022)` leg found this: an
+	// O_RDONLY handle cannot carry out `Chmod`, so `ApplyFile` came back
+	//
+	//	restricting …\sealed: chmod …\sealed: Access is denied.
+	//
+	// and a helper meant to make a file private failed on one that already was.
+	// `nocreates_test.go` applies the same rule when deciding what to report --
+	// one rule in two places, and they have to agree, which is the shape of
+	// most of this chapter.
+	if flag&os.O_CREATE == 0 {
+		return f, nil
+	}
 	if existed {
 		reachable, err := others(path)
 		if err != nil {
@@ -119,7 +136,8 @@ func WriteFile(path string, data []byte, mode os.FileMode) error {
 // That is worth more than the two tests. An operator who sets an evidence
 // directory to 0500 means it, and a configuration management system that
 // reopens it on every start is doing the opposite of its job. Those tests were
-// written for a different reason -- "exists is not usable", DIVERGENCE 5.101 --
+// written for a different reason -- DIVERGENCE 5.20, a directory left owned by
+// root that made every target match nothing --
 // and they caught this because they assert on a *deliberately* tight
 // permission, which nothing else here does.
 //

@@ -178,10 +178,27 @@ func TestOpenFileReportsAPathItCannotOpen(t *testing.T) {
 // `internal/nodeevidence`'s `TestAnUnusableDirectoryIsRefusedAtOpen` both failed
 // on it, because both make a directory 0500 and assert that opening a store
 // there is refused — the store probes by writing a file, and the probe started
-// succeeding. Those tests were written for "exists is not usable" (5.101) and
+// succeeding. Those tests were written for something else -- 5.20, a directory
+// left owned by root that made every target match nothing -- and
 // they caught this because they assert on a *deliberately* tight permission,
 // which nothing in this package did.
 func TestMkdirAllLeavesATighterPermissionAlone(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// A directory created with mode 0500 is writable on Windows: access
+		// is decided by the access control list and Go does not translate the
+		// mode into one. Denying it properly means revoking write for this
+		// account through internal/winsec, and then the temporary directory
+		// cannot be cleaned up either.
+		//
+		// `internal/nodeevidence` skips for exactly this and says so; this
+		// test did not, and the windows-2022 leg reported the assertion
+		// firing against a directory that was never read-only. What is
+		// skipped is arranging the condition, not the rule: the rule is
+		// asserted here on unix and holds on both, since `restrict` asks
+		// `Others` rather than asking the mode.
+		t.Skip("a mode cannot make a directory unwritable on Windows; the rule itself " +
+			"is not platform-specific")
+	}
 	if os.Geteuid() == 0 {
 		t.Skip("this test needs an unprivileged account: root writes to a directory " +
 			"whatever its mode, so a widened one cannot be seen to be widened")
@@ -207,22 +224,76 @@ func TestMkdirAllLeavesATighterPermissionAlone(t *testing.T) {
 	private(t, dir, "a directory left as it was")
 }
 
-// The same for a file: one at 0400 stays at 0400.
+// **An open that cannot create the file does not touch its permissions.**
 //
-// WriteFile cannot be used to show it -- a 0400 file cannot be opened for
-// writing at all, so the call fails before any of this is reached -- so the
-// assertion is on OpenFile for reading, which is what a caller reopening an
-// append log does.
-func TestOpenFileLeavesATighterPermissionAlone(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("this test needs an unprivileged account: root opens a file whatever its mode")
-	}
-	path := filepath.Join(t.TempDir(), "sealed")
-	if err := os.WriteFile(path, []byte("sealed\n"), 0o400); err != nil {
+// The mode argument means nothing to such a call -- Go ignores it and the
+// convention is to pass 0 -- and a caller that is only reading has no business
+// changing who can read. It is also not permitted on Windows, where an O_RDONLY
+// handle cannot carry out a Chmod: the first version of `OpenFile` tried, and
+// the windows-2022 leg reported
+//
+//	restricting …\sealed: chmod …\sealed: Access is denied.
+//
+// from a helper meant to make a file private, about a file that already was.
+//
+// The file is **world-readable**, which is what makes this observable on every
+// platform. The first version used a 0400 file, and deleting the rule under test
+// left it passing here: a 0400 file is already private, so the
+// already-private guard declined the chmod and the O_CREATE rule was never
+// reached. A test that passes against the code with the rule removed is not
+// testing the rule -- so the fixture is a file the helper *would* narrow if it
+// thought it should, and the assertion is that it did not.
+func TestOpenFileWithoutOCreateDoesNotTouchThePermission(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "public")
+	if err := os.WriteFile(path, []byte("not a secret\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+	if err := Apply(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Asserted, so that a fixture which failed to make the file reachable
+	// cannot pass this test for the wrong reason.
+	if before, err := Others(path); err != nil {
+		t.Fatal(err)
+	} else if len(before) == 0 {
+		t.Fatalf("the setup produced a file nobody else can reach, so this test cannot "+
+			"see what it is for: %s", path)
 	}
 
 	f, err := OpenFile(path, os.O_RDONLY, 0o600)
+	if err != nil {
+		t.Fatalf("a read-only open failed: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Error(err)
+	}
+
+	after, err := Others(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) == 0 {
+		t.Error("a read-only open made the file private; the mode means nothing to an " +
+			"open that cannot create the file, and narrowing it is a side effect the " +
+			"caller did not ask for -- on Windows it fails outright, because an " +
+			"O_RDONLY handle cannot carry out a Chmod")
+	}
+}
+
+// And with O_CREATE on a file that is already private, the permission is left as
+// it is rather than set again -- the same rule MkdirAll follows, for the same
+// reason.
+func TestOpenFileLeavesAnAlreadyPrivateFileAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "log")
+	if err := WriteFile(path, []byte("earlier\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,12 +301,12 @@ func TestOpenFileLeavesATighterPermissionAlone(t *testing.T) {
 		t.Error(err)
 	}
 
-	info, err := os.Stat(path)
+	after, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o400 {
-		t.Errorf("the file is %v, and was 0400; OpenFile widened it", info.Mode().Perm())
+	if runtime.GOOS != "windows" && after.Mode().Perm() != before.Mode().Perm() {
+		t.Errorf("the mode went from %v to %v", before.Mode().Perm(), after.Mode().Perm())
 	}
-	private(t, path, "a file left as it was")
+	private(t, path, "a log that was already private")
 }
