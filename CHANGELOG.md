@@ -50,7 +50,7 @@ against authselect 1.2.6 on Rocky Linux 9.8 and AlmaLinux 8.10, and the module i
 `Hardware`. There is no `opt_out`: the version both releases ship does not have
 one. On a node authselect manages, `pam.set_module` on one of its generated files
 breaks authselect's symlink and the next forced select discards the edit —
-DIVERGENCE 5.172.
+DIVERGENCE 5.173.
 
 ### `pam` no longer edits a service file that is a symbolic link
 
@@ -60,7 +60,7 @@ Fedora/RHEL 8+ node, where authselect links `system-auth`, `password-auth` and
 three others into `/etc/pam.d`, that broke authselect's configuration and the next
 forced `authselect select` silently discarded the edit. Both now refuse a linked
 service, and for authselect's own files say to use the `authselect` module
-instead. DIVERGENCE 5.172.
+instead. DIVERGENCE 5.173.
 
 ### `pro.enable`/`pro.disable` driven for real; the release gate is green again
 

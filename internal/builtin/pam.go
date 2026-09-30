@@ -816,7 +816,7 @@ func pamRemoveModule(c *exec.Context, args *value.Map) (any, error) {
 // behind. On a Fedora/RHEL 8+ node that is not hypothetical: authselect
 // generates system-auth, password-auth, postlogin, fingerprint-auth and
 // smartcard-auth under /etc/authselect and links them into /etc/pam.d.
-// Driven once on AlmaLinux 8 (DIVERGENCE 5.172), `pam.set_module` on
+// Driven once on AlmaLinux 8 (DIVERGENCE 5.173), `pam.set_module` on
 // password-auth reported success; `authselect check` then failed with
 // "is not a symbolic link!", `authselect select` refused, and a forced
 // select restored the link and threw the edit away. The two modules

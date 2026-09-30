@@ -105,7 +105,7 @@ func TestLiveAuthselectReads(t *testing.T) {
 // changes one pam_lastlog argument in postlogin, and with-pwhistory adds
 // two lines to the password chain, which a key login never reaches.
 // Every step was first taken by hand on both lab hosts with a fresh ssh
-// login confirmed after it (DIVERGENCE 5.172) before it was put here.
+// login confirmed after it (DIVERGENCE 5.173) before it was put here.
 //
 // A node authselect has never configured is only taken over when
 // HALITE_AUTHSELECT_TAKEOVER=1 is also set, because authselect has no

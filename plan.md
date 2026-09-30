@@ -692,7 +692,7 @@ what an operator is looking for.
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
 | Debian and Ubuntu | 3 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
-| Common Linux | 0 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `modprobe` and `udev` ship** (DIVERGENCE 5.47-5.54), and **`authselect`** (5.172) -- the row is complete. `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm`/`modprobe`/`udev` are exec-only (no state -- SPEC 15.5 names none for any of them). `authselect` was deliberately left pending until a RHEL-family host existed to write it against; the lab's Rocky 9 and Alma 8 were that host. |
+| Common Linux | 0 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `modprobe` and `udev` ship** (DIVERGENCE 5.47-5.54), and **`authselect`** (5.173) -- the row is complete. `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm`/`modprobe`/`udev` are exec-only (no state -- SPEC 15.5 names none for any of them). `authselect` was deliberately left pending until a RHEL-family host existed to write it against; the lab's Rocky 9 and Alma 8 were that host. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate` and `mac_keychain` are modules (DIVERGENCE 5.41-5.46). **All seven are `hardware`** (5.114-5.118, 5.121), and `fleet.yml`'s `macos` leg drives them as root on every change to them, so the evidence stops being a run that happened once. `mac_assistive` was the eighth and is out of the build — SIP keeps its writes unreachable without a grant re-given on every rebuild (5.119). |
 | RHEL | 5 | `yumpkg`, `dnfpkg`, `firewalld`, `subscription_manager`, `dnf_module`. **`rpm` and `chattr` ship** (DIVERGENCE 5.172), written against the real tools on Rocky Linux 9.8 and AlmaLinux 8.10 in the lab. |
@@ -2383,7 +2383,7 @@ unbuilt item here is number 7.
     That closes eleven of the Common Linux row's twelve. **`authselect`
     was left pending, deliberately, not built from documentation** --
     and was built once there was a machine: see item 14 and DIVERGENCE
-    5.172. It
+    5.173. It
     is Fedora/RHEL 8+ only in reality, whatever row SPEC 15.3 files it
     under; Debian and Ubuntu manage PAM through `pam-auth-update`,
     which `pam`'s own module already handles, and this project has no
@@ -2409,7 +2409,7 @@ modules rather than acquiring the machine. What none of them is, is
 arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
 
 14. **A RHEL or Fedora 8+ host.** ~~`authselect`~~ is **done**
-    (DIVERGENCE 5.172): eight functions, `hardware`, driven as root on
+    (DIVERGENCE 5.173): eight functions, `hardware`, driven as root on
     Rocky Linux 9.8 and AlmaLinux 8.10 from the lab -- both of which
     ship authselect 1.2.6, so no 1.3+ feature (`opt-out`) was built.
     What is left is the RHEL row's own seven — `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
@@ -2477,7 +2477,7 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
         - org: my-org-id
 
     # authselect — a profile selection, which is the whole module.
-    # Built (DIVERGENCE 5.172): the argument is `features`, authselect's
+    # Built (DIVERGENCE 5.173): the argument is `features`, authselect's
     # own word, not the `options` this example first guessed. The
     # select itself was run on AlmaLinux 8 through halite-node call.
     sssd-auth:

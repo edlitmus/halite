@@ -686,7 +686,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"throwaway AlmaLinux 8.10 lab host on 2026-09-30 -- `set_module` adding an optional " +
 		"pam_echo.so to authselect's password-auth -- and that run found a defect: the atomic " +
 		"write replaced authselect's symlink, and authselect later discarded the edit " +
-		"(DIVERGENCE 5.172). Edits to a linked service file are now refused, which was checked " +
+		"(DIVERGENCE 5.173). Edits to a linked service file are now refused, which was checked " +
 		"on that host and on Rocky Linux 9.8. That is still not a demonstration of a successful " +
 		"edit to a real service file, so this stays `captured`"},
 

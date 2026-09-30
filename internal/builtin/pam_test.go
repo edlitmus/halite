@@ -625,7 +625,7 @@ func mustPamRules(t *testing.T, service string) []pamRule {
 
 // pamAuthselectTree lays out a PamDir whose password-auth is a link into
 // an authselect directory, the way authselect 1.2.6 left it on Rocky 9
-// and Alma 8 (DIVERGENCE 5.172), and a sshd that is a plain file.
+// and Alma 8 (DIVERGENCE 5.173), and a sshd that is a plain file.
 func pamAuthselectTree(t *testing.T) (pamDir, generated string) {
 	t.Helper()
 	pamDir = pamTree(t, map[string]string{"sshd": "auth\tinclude\tpassword-auth\n"})

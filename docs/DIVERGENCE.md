@@ -624,7 +624,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 22 are declared as pending rather than simply missing. A name absent
+The 20 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -642,7 +642,7 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `udev`, `modprobe`, `authselect` (5.172), `systemd_service` (alias) | none |
+| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `udev`, `modprobe`, `authselect` (5.173), `systemd_service` (alias) | none |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `pro`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key` |
@@ -5525,7 +5525,7 @@ disagreed with the real tool. `authselect`'s entry in
 `exec/platform.go` names this reason rather than "phase 5, with the
 Linux platform work".
 
-**Built since (5.172).** Two lab hosts, Rocky Linux 9 and AlmaLinux 8,
+**Built since (5.173).** Two lab hosts, Rocky Linux 9 and AlmaLinux 8,
 turned out to be enough; it ships `hardware`, and the paragraph above is
 kept as the reason it waited.
 
@@ -16659,8 +16659,7 @@ either host.
 test has not been run on the `linux` leg's Ubuntu, so it is not in that leg's `-run`
 filter; XFS, RHEL's default root filesystem, which neither lab image used; any
 attribute but `i` and `a` through the module; symlinks; a non-root caller; `rpm -Va`.
-
-### 5.172 `authselect`: built against the real tool, and the Common Linux row is complete
+### 5.173 `authselect`: built against the real tool, and the Common Linux row is complete
 
 5.54 left `authselect` pending on purpose: it is Fedora/RHEL 8+ only, and
 there was no RHEL-family machine to write it against. The lab now raises
@@ -16806,6 +16805,8 @@ nil): both new unit tests failed, one of them on finding
 is the Alma 8 run above, done before the fix; it was not re-run with the
 broken build. `sshd`, a plain file on the same node, is still editable —
 checked in the unit test, not on a host.
+
+
 
 ## 6. Everything else not started
 

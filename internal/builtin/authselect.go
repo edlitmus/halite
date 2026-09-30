@@ -32,7 +32,7 @@ import (
 // # What was learnt from the real tool rather than from its manual
 //
 // Everything below was taken from authselect 1.2.6 on Rocky Linux 9.8
-// and AlmaLinux 8.10 (DIVERGENCE 5.172), which are the versions those
+// and AlmaLinux 8.10 (DIVERGENCE 5.173), which are the versions those
 // releases actually ship -- neither has the 1.3+ `opt-out` subcommand
 // or a `--version` flag, so this module offers neither.
 //
@@ -63,7 +63,7 @@ import (
 // runs. `pam`'s *edits* are the other matter: `pam.set_module` on a
 // file authselect generated used to replace authselect's symlink with a
 // regular file, `authselect check` then failed, and the next forced
-// select threw the edit away (DIVERGENCE 5.172). pamRefuseLinked now
+// select threw the edit away (DIVERGENCE 5.173). pamRefuseLinked now
 // refuses, and names this module as the way to make the change.
 //
 // There is no `authselect` state: SPEC 15.5 names none, and
