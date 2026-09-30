@@ -84,6 +84,8 @@ run flags:
   --offline <policy>   skip (default), queue, or require
   --sign-key <path>    sign the job with this key, for nodes that set
                        require_job_signature (SPEC section 25.6)
+  --sign-extension <path>  sign the job through a bridged signer
+                       extension instead of a local key (SPEC section 24.2)
   --as <name>          which operator certificate to present
   --cert <path>        an operator certificate, instead of --as
   --key <path>         its key

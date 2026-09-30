@@ -3,14 +3,18 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/edlitmus/halite/ext"
+	"github.com/edlitmus/halite/internal/bridge"
 	"github.com/edlitmus/halite/internal/cli"
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/extsigner"
 	"github.com/edlitmus/halite/internal/job"
 	"github.com/edlitmus/halite/internal/jobsign"
 	"github.com/edlitmus/halite/internal/pki"
@@ -154,8 +158,13 @@ func runRun(args *cli.Args) int {
 		BatchTimeoutSecs: seconds(args.Flag("batch-timeout", ""), "batch-timeout"),
 		Subset:           subset,
 	}
-	if path := args.Flag("sign-key", ""); path != "" {
-		signJob(&req, path, ttl)
+	switch {
+	case args.Flag("sign-key", "") != "" && args.Flag("sign-extension", "") != "":
+		cli.Fatalf("--sign-key and --sign-extension name two different signers; use one")
+	case args.Flag("sign-key", "") != "":
+		signJob(&req, args.Flag("sign-key", ""), ttl)
+	case args.Flag("sign-extension", "") != "":
+		signJobWithExtension(ctx, &req, args.Flag("sign-extension", ""), ttl)
 	}
 	res, err := client.Submit(ctx, req)
 	if err != nil {
@@ -422,28 +431,22 @@ func isBoolWord(v string) bool {
 	return false
 }
 
-// signJob attaches SPEC 25.6's detached signature to a submission.
-//
-// Three things are settled here rather than by the hub, because the
-// signature covers them and a signer cannot sign what it has not chosen:
-// the job's identifier, its absolute expiry, and the exact arguments.
-// The hub checks the first two and relays the third.
+// prepareSigning settles the three things a signer must choose rather
+// than the hub, because the signature covers them and a signer cannot
+// sign what it has not chosen: the job's identifier, its absolute
+// expiry, and the exact arguments. The hub checks the first two and
+// relays the third.
 //
 // The arguments go through jobsign.WireValues first, so that what is
 // signed is what the node will decode rather than what this command line
 // happens to hold. Without it a structured argument signs in the order it
 // was typed and verifies against one sorted by `encoding/json`, and every
 // signed job carrying a mapping would be refused.
-func signJob(req *transport.SubmitRequest, path string, ttlSeconds int) {
-	pem, err := os.ReadFile(path)
-	if err != nil {
-		cli.Fatalf("--sign-key %s: %v", path, err)
-	}
-	key, err := jobsign.DecodePrivateKey(pem)
-	if err != nil {
-		cli.Fatalf("--sign-key %s: %v", path, err)
-	}
-
+//
+// Shared by both signers this command has: a local key and a bridged
+// `signer` extension sign the same job.Job, built the same way, so that
+// which one an operator used is invisible to a node verifying it.
+func prepareSigning(req *transport.SubmitRequest, ttlSeconds int) *job.Job {
 	kind, ok := target.KindFromFlag(req.TargetKind)
 	if !ok {
 		cli.Fatalf("%q is not a target kind", req.TargetKind)
@@ -466,7 +469,7 @@ func signJob(req *transport.SubmitRequest, path string, ttlSeconds int) {
 	// because job.SigningPayload is what the node will use to rebuild it
 	// -- including the rule that `--test` becomes a keyword argument on
 	// the wire. Two encoders would be two things to keep in step.
-	signed := &job.Job{
+	return &job.Job{
 		JID:        job.ID(req.JID),
 		Fun:        req.Fun,
 		Arg:        req.Arg,
@@ -477,9 +480,68 @@ func signJob(req *transport.SubmitRequest, path string, ttlSeconds int) {
 		TargetKind: kind.String(),
 		Test:       req.Test,
 	}
+}
+
+// signJob attaches SPEC 25.6's detached signature to a submission,
+// signed with a local key.
+func signJob(req *transport.SubmitRequest, path string, ttlSeconds int) {
+	pem, err := os.ReadFile(path)
+	if err != nil {
+		cli.Fatalf("--sign-key %s: %v", path, err)
+	}
+	key, err := jobsign.DecodePrivateKey(pem)
+	if err != nil {
+		cli.Fatalf("--sign-key %s: %v", path, err)
+	}
+	signed := prepareSigning(req, ttlSeconds)
 	signature, err := jobsign.Sign(key, job.SigningPayload(signed))
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
 	req.Signature = signature
+}
+
+// signJobWithExtension attaches SPEC 25.6's detached signature, signed
+// by a bridged `signer` extension (SPEC 24.2) instead of a key this
+// command line holds itself -- the case the section names explicitly:
+// "the signer may be a bridged `signer` extension backed by a KMS".
+//
+// Started and stopped once per submission rather than pooled: `run` is
+// a single command invocation, not a long-lived host, and the extension
+// model's process-per-call-batch pooling (internal/bridge) exists for a
+// hub or a node answering many calls, which this is not.
+func signJobWithExtension(ctx context.Context, req *transport.SubmitRequest, path string, ttlSeconds int) {
+	signed := prepareSigning(req, ttlSeconds)
+	digest := jobsign.Digest(job.SigningPayload(signed))
+
+	dir, err := os.MkdirTemp("", "halite-sign-ext-*")
+	if err != nil {
+		cli.Fatalf("--sign-extension %s: %v", path, err)
+	}
+	defer os.RemoveAll(dir)
+
+	proc, err := bridge.Start(ctx, bridge.Options{
+		Path:    path,
+		Kind:    ext.KindSigner,
+		WorkDir: dir,
+		// Inherited rather than emptied: this is the operator's own
+		// trusted binary, invoked directly by its path on this command
+		// line, not a fleet-distributed extension the sandbox of SPEC
+		// 24.3 exists to distrust. It needs its own environment to find
+		// its key material -- HALITE_EXT_SIGNER_KEY_FILE for the
+		// reference implementation, whatever a KMS-backed one reads
+		// for its own.
+		Env: os.Environ(),
+	})
+	if err != nil {
+		cli.Fatalf("--sign-extension %s: %v", path, err)
+	}
+	defer proc.Close()
+
+	signer := &extsigner.Bridged{Name: path, Ext: proc}
+	der, err := signer.Sign(ctx, digest)
+	if err != nil {
+		cli.Fatalf("--sign-extension %s: %v", path, err)
+	}
+	req.Signature = base64.StdEncoding.EncodeToString(der)
 }

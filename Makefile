@@ -375,7 +375,7 @@ build-all:
 # one of the three programs, they are not installed with them, and an
 # operator builds one per platform they will run it on before signing a
 # bundle. docs/extensions.md walks through it.
-EXTENSIONS = halite-ext-aws-secrets
+EXTENSIONS = halite-ext-aws-secrets halite-ext-signer-local
 
 extensions: make-supports-bang
 	@mkdir -p bin

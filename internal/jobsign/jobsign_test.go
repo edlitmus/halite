@@ -2,6 +2,8 @@ package jobsign
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"os"
@@ -49,6 +51,48 @@ func TestASignedJobVerifies(t *testing.T) {
 	}
 	if name != "ops" {
 		t.Errorf("the signature verified as %q, expected the key's name", name)
+	}
+}
+
+// TestDigestIsWhatSignAndVerifyActuallySignOver pins Digest's contract
+// for a caller that never touches Payload's bytes itself -- a bridged
+// `signer` extension (internal/extsigner) asks for a digest and hands
+// back raw ASN.1 DER, and the only way that round trip can verify is if
+// Digest, Sign and Verify all reduce a Payload to the identical 32
+// bytes.
+func TestDigestIsWhatSignAndVerifyActuallySignOver(t *testing.T) {
+	p := payload()
+	digest := Digest(p)
+
+	k, err := GenerateKey("ecdsa-p256")
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := ecdsa.SignASN1(rand.Reader, k, digest[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig := base64.StdEncoding.EncodeToString(der)
+
+	line, err := FormatSignerKey("ops", &k.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trusted, err := ParseSignerKey(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify([]SignerKey{trusted}, p, sig); err != nil {
+		t.Fatalf("a signature computed directly over Digest(p) does not verify: %v", err)
+	}
+
+	// Changing one field changes the digest -- the same property
+	// TestEveryCoveredFieldChangesTheSignature holds Sign to, checked
+	// here at the level a bridged signer actually sees.
+	other := p
+	other.Target = "db*"
+	if Digest(other) == digest {
+		t.Error("two payloads with a different target produced the same digest")
 	}
 }
 

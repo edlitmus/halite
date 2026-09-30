@@ -340,6 +340,18 @@ func DecodePrivateKey(data []byte) (*ecdsa.PrivateKey, error) {
 	return key, nil
 }
 
+// Digest is the SHA-256 of a payload's canonical encoding -- what an
+// external signer is actually asked to sign.
+//
+// Exported for a signer that does not speak Payload at all: a hardware
+// token or a KMS behind the bridged `signer` extension of SPEC 24.2/25.6
+// signs a digest it is handed, and internal/extsigner uses this so that
+// a bridged signature and one `Sign` produces locally cover exactly the
+// same bytes.
+func Digest(p Payload) [32]byte {
+	return sha256.Sum256(Canonical(p))
+}
+
 // Sign produces the detached signature for a job, base64 of ASN.1 DER.
 func Sign(key *ecdsa.PrivateKey, p Payload) (string, error) {
 	if key == nil {
@@ -348,7 +360,7 @@ func Sign(key *ecdsa.PrivateKey, p Payload) (string, error) {
 	if err := checkCurve(key.Curve); err != nil {
 		return "", err
 	}
-	digest := sha256.Sum256(Canonical(p))
+	digest := Digest(p)
 	der, err := ecdsa.SignASN1(rand.Reader, key, digest[:])
 	if err != nil {
 		return "", fmt.Errorf("signing the job: %w", err)
@@ -375,7 +387,7 @@ func Verify(keys []SignerKey, p Payload, signature string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("the job's signature is not base64: %w", err)
 	}
-	digest := sha256.Sum256(Canonical(p))
+	digest := Digest(p)
 	for _, key := range keys {
 		if ecdsa.VerifyASN1(key.Key, digest[:], der) {
 			return key.Name, nil
