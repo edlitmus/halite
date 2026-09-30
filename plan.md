@@ -2117,14 +2117,35 @@ unbuilt item here is number 7.
    bridges it the way `internal/extpillar` bridges `pillar`, and
    `cmd/halite-ext-signer-local` is the reference implementation,
    demonstrated end to end as a real subprocess signing a real digest a
-   real `jobsign.Verify` accepts. It is explicitly not a hardware token
-   or a KMS — this project has access to neither — so it proves the
-   bridge protocol rather than closing "a signature from a hardware
-   token or a KMS" above; that remainder needs an actual one to write
-   `handle` against. Three remain: the evidence-head anchor, a real
-   hardware/KMS-backed signer, and orchestration signing, which needs
-   this same live-signer shape rather than the offline one `--sign-key`
-   uses, and not merely a call to it.
+   real `jobsign.Verify` accepts (DIVERGENCE 5.170). It is explicitly not
+   a hardware token or a KMS — this project has access to neither — so
+   it proves the bridge protocol rather than closing "a signature from a
+   hardware token or a KMS" above; that remainder needs an actual one to
+   write `handle` against.
+
+   **The remaining three collapse to two.** Looking for where to attach
+   an orchestration's signature (DIVERGENCE 5.169) found that "orchestration
+   is not signed" and "the bridged signer extension is not built" were
+   never independent: SPEC 25.6's own field list — `jid`, target,
+   function, arguments, environment, expiry, the exact shape
+   `jobsign.Payload` already is — is chosen by an offline signer *before*
+   the hub sees the request (`cmd/halite-hub/run.go`'s `signJob` mints the
+   `jid` client-side, for exactly that reason), and an orchestration
+   step's target and job `jid` are both decided by the hub itself,
+   mid-run, compiling against its own pillar and dispatching against its
+   own clock. An external signer cannot sign a `Payload` it has not seen.
+   Closing orchestration signing for real needs the *live* half of what
+   this item just built — the bridge calling out per step, at dispatch
+   time, rather than an operator signing ahead of a submission — or a
+   pre-approved-plan workflow neither SPEC.md nor this plan specifies. A
+   hub-held key that signs its own orchestration's steps would make
+   `require_job_signature` pass mechanically without delivering the
+   property signing exists for: a compromised hub could sign anything it
+   liked for itself. So what remains is the evidence-head anchor, and a
+   real hardware-token or KMS-backed signer behind the bridge that now
+   exists — which is also what orchestration signing needs, once the hub
+   itself calls it per step rather than an operator calling it once per
+   submission.
 
 **Demoted, with the reason**
 

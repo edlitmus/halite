@@ -16372,7 +16372,69 @@ respectively, as described above. **Not verified, named rather than implied**:
 `pro status` shape (this host has stayed attached throughout); `security-status` and
 `cve`/`cves`, not built.
 
-### 5.169 The bridged `signer` extension, and its reference implementation
+### 5.169 Why "orchestration is not signed" is not a wiring gap
+
+plan.md §7 item 9 named four remainders on detached job signing (DIVERGENCE 5.128),
+one of them "orchestration is not signed." Looking for where to attach a signature
+found the sentence describes a structural mismatch rather than an omission, and it is
+worth writing down rather than closing with a version of it that would not mean what
+it says.
+
+SPEC 25.6: "A job, or an orchestration, is signed over a canonical encoding of `jid`,
+target, function, arguments, environment, and expiry." That is `jobsign.Payload`'s
+exact field set, and the section that follows explains why those particular fields and
+no others: `cmd/halite-hub/run.go`'s `signJob` comment says "the signature covers them
+and a signer cannot sign what it has not chosen: the job's identifier, its absolute
+expiry, and the exact arguments" — and the code backs the sentence. `req.JID =
+job.NewID(time.Now())` is minted **on the signer's own machine**, before the hub is
+ever asked anything. The hub is trusted to relay a job it did not choose the identity
+of, not to mint one and have someone else vouch for it after the fact.
+
+An orchestration step has none of that available in advance. `salt.state`'s `tgt` is a
+string a compiled low-state chunk carries, resolved against the hub's own pillar and
+grains — `internal/state`'s compiler, not the operator's machine — and the step's
+dispatched job's `JID` comes from `Server.DispatchAs` calling the hub's own clock at
+the moment `orchRunner.dispatchAndWait` (`internal/hub/orch_steps.go`) sends it. Both
+facts an offline signature would need to cover are decided by the hub, mid-run, and an
+external signer holding a key the hub does not have cannot sign a `Payload` whose
+`target` and `jid` it has not seen yet.
+
+Two ways exist to close that gap honestly, and neither is a small extension of what is
+already built:
+
+- **A live signer.** SPEC 25.6's own next sentence — "the signer may be a bridged
+  `signer` extension backed by a KMS" — describes exactly the shape that would work:
+  the hub calls out, per step, at the moment it knows the real `Payload`, and the KMS
+  signs bytes it is handed rather than a private key the hub holds. This is not a
+  detail on top of orchestration signing; it *is* the feature, and it is the fourth of
+  the four remainders this same plan.md item names — **built since, as the bridge
+  itself; see 5.170.** What is still missing is the hub calling it once per dispatched
+  step rather than an operator calling it once per submission, which is what 5.170's
+  own reference implementation does not attempt.
+- **A pre-approved plan.** An operator could compile the orchestration ahead of time
+  (`state.orchestrate_show_sls` already reports each step's `id`/`fun`/`sls`/`tgt`
+  without dispatching anything), sign each step's `Payload` against the plan that
+  compile produced, and have the real run refuse any step whose actual `Payload`
+  disagrees with what was pre-signed — including a `jid` chosen by the plan rather than
+  the hub's clock. Nothing here specifies what "disagrees" tolerates, what happens to a
+  step a pre-approved plan does not cover, or how a signed plan is threaded through
+  `OrchRequest` and `Submission`, and none of that is written down anywhere else either.
+
+What the naive third option — the hub signs each step's dispatched job with a key it
+holds locally — would actually buy is worth stating plainly, because it is the version
+that looks like it closes the item without doing either of the two above. It would make
+`require_job_signature` pass mechanically for orchestration-dispatched jobs. It would
+not deliver what SPEC 25.6 opens with: "for estates where hub compromise must not equal
+fleet compromise." A hub that holds its own signing key is a hub that can sign anything
+it likes for itself, which is the exact case signing exists to rule out. Building it
+would be closing the sentence and reopening the threat model the sentence is about.
+
+**Not done, and not a small remainder of what is done**: this needs the bridged signer
+extension, or a pre-approved-plan workflow neither SPEC.md nor this plan specifies,
+before an orchestration's steps can carry a signature that means what a standalone
+signed job's does. The first half of that sentence is 5.170; the second is still true.
+
+### 5.170 The bridged `signer` extension, and its reference implementation
 
 plan.md §7 item 9 named the bridged `signer` extension SPEC 24.2/25.6 mentions as one
 of four remainders on detached job signing. `ext.KindSigner` had been declared in
