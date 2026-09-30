@@ -122,6 +122,7 @@ func New() *Registries {
 	registerPro(r)
 	registerRpm(r)
 	registerChattr(r)
+	registerDnfModule(r)
 	registerJail(r)
 
 	// The Common Linux platform modules of SPEC section 15.3.

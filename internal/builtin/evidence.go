@@ -864,6 +864,28 @@ var moduleEvidence = map[string]exec.Evidence{
 		"CompareRPM's caret ordering reversed. Not built: `bin_pkg_info`, `checksum`, `diff`, `modified` " +
 		"(no .rpm file on either host without driving dnf, which other work was using). Not covered: " +
 		"`rpm -Va`, which the module refuses to run"},
+	"dnf_module": {Level: exec.Hardware, Note: "every function was run as root on 2026-09-30 on " +
+		"two throwaway Vultr lab instances: `rocky9` (Rocky Linux 9.8, dnf 4.14.0) and `alma8` " +
+		"(AlmaLinux 8.10, dnf 4.7.0). `TestLiveDnfModuleEnableSwitchDisableReset` took nginx, " +
+		"which neither host had chosen, through `enable` of one non-default stream, a second " +
+		"`enable` of another (refused by dnf, and the refusal carried through), `switch_to`, " +
+		"`disable` and `reset`, checking each step through `status` (modules.d) and `list` " +
+		"(`dnf module list`) and holding the two to each other; " +
+		"`TestLiveDnfModuleInstallAndRemove` installed and removed redis's `common` profile " +
+		"(redis:7 on rocky9, redis:6 on alma8 -- one package, no dependencies), confirmed with " +
+		"`rpm -q`; `TestLiveDnfModuleReadersAgree` compares the two readers across the whole " +
+		"host, which on alma8 means eight modules the image itself had enabled. Both hosts were " +
+		"left with modules.d, nginx and redis exactly as found. Broken on purpose four ways and " +
+		"watched failing on both hosts before being restored: `status` keeping the `state=` " +
+		"file `reset` leaves behind, the parser reading `[e]` as `[x]`, `switch_to` running " +
+		"`enable`, and modules.d's `profiles=` dropped. Fixtures are those hosts' real output " +
+		"(testdata/dnf_module). **Not covered:** a module with two installed profiles, so " +
+		"`profiles=`'s separator is libdnf's documented comma, not a captured one; a table from " +
+		"more than one repository (both hosts had AppStream alone) and third-party modular " +
+		"repos; `switch_to` with packages installed, which is where it does real work; globs " +
+		"in a spec; RHEL proper, CentOS Stream and Fedora (whose dnf5 dropped modularity " +
+		"entirely -- nothing here has run dnf5); and no CI leg runs any of it, so like `pro` " +
+		"it decays unless a person reruns it on a lab host"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

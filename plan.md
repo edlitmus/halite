@@ -695,7 +695,7 @@ what an operator is looking for.
 | Common Linux | 0 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `modprobe` and `udev` ship** (DIVERGENCE 5.47-5.54), and **`authselect`** (5.173) -- the row is complete. `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm`/`modprobe`/`udev` are exec-only (no state -- SPEC 15.5 names none for any of them). `authselect` was deliberately left pending until a RHEL-family host existed to write it against; the lab's Rocky 9 and Alma 8 were that host. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate` and `mac_keychain` are modules (DIVERGENCE 5.41-5.46). **All seven are `hardware`** (5.114-5.118, 5.121), and `fleet.yml`'s `macos` leg drives them as root on every change to them, so the evidence stops being a run that happened once. `mac_assistive` was the eighth and is out of the build — SIP keeps its writes unreachable without a grant re-given on every rebuild (5.119). |
-| RHEL | 5 | `yumpkg`, `dnfpkg`, `firewalld`, `subscription_manager`, `dnf_module`. **`rpm` and `chattr` ship** (DIVERGENCE 5.172), written against the real tools on Rocky Linux 9.8 and AlmaLinux 8.10 in the lab. |
+| RHEL | 4 | `yumpkg`, `dnfpkg`, `firewalld`, `subscription_manager`. **`rpm` and `chattr` ship** (DIVERGENCE 5.172), written against the real tools on Rocky Linux 9.8 and AlmaLinux 8.10 in the lab, and **`dnf_module` ships** (DIVERGENCE 5.174), built and driven on the same two rows. |
 | FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32); its field names are no longer assumed either, and auditing them against the list `jls -h` publishes found one the module had invented (5.66). The FreeBSD half of the **Common Linux** row's `quota` was audited at the same time and had two defects, both from being read rather than run (5.65). |
 | SUSE | 1 | `zypperpkg`. |
 
@@ -2388,8 +2388,8 @@ unbuilt item here is number 7.
     under; Debian and Ubuntu manage PAM through `pam-auth-update`,
     which `pam`'s own module already handles, and this project has no
     RHEL host to verify authselect against. It waits for the same
-    reason `yumpkg`, `dnfpkg`, `firewalld`,
-    `subscription_manager` and `dnf_module` do — shipping
+    reason `yumpkg`, `dnfpkg`, `firewalld` and
+    `subscription_manager` do — shipping
     fixtures for a tool nobody here has run is exactly the mistake
     DIVERGENCE 5.31 found and this document keeps citing. Items 14-19
     below say exactly what machine closes each.
@@ -2414,8 +2414,8 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     ship authselect 1.2.6, so no 1.3+ feature (`opt-out`) was built.
     What is left is the RHEL row's own seven — `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
     `subscription_manager`, `dnf_module`, `chattr` (§2.3, all seven
-    unbuilt, not merely unverified, when this item was written; `rpm`
-    and `chattr` since built, below) — and lets the `pkg` module's
+    unbuilt, not merely unverified, when this item was written; `rpm`,
+    `chattr` and `dnf_module` since built, below) — and lets the `pkg` module's
     dnf/yum provider be run for the first time: all four optional
     capabilities (`pkg.hold` through the `versionlock` plugin,
     upgrading, file ownership, repository listing) are implemented to
@@ -2429,6 +2429,12 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     rpm's own Lua `rpm.vercmp` compares raw versions on 4.14.3 and EVRs
     on 4.16.1.3. `rpm` is read-only (`Captured`); `chattr` set and
     cleared `i` and `a` as root on both (`Hardware`).
+
+    ~~`dnf_module`~~ is **done** (DIVERGENCE 5.174), on the same two
+    rows: every function run as root against dnf 4.14.0 and 4.7.0,
+    reading the host's choices from `/etc/dnf/modules.d` rather than
+    the human table, which it reads only for what the repositories
+    offer (`Hardware`).
 
     **Action:** `make lab-up` a RHEL 9 or Alma 8 row from
     `contrib/tofu` (already in its distro list, per §7's note above
@@ -2475,6 +2481,16 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
         - name: subscription_manager.register
         - activationkey: my-activation-key
         - org: my-org-id
+
+    # dnf_module — built (DIVERGENCE 5.174). SPEC 15.5 names no state
+    # for it, so a stream choice goes through module.run; `enable`
+    # of an already-enabled stream is a no-op, and of a different one
+    # is refused by dnf -- use switch_to for that. The functions were
+    # driven on the lab hosts; this state, through module.run, was not.
+    nginx-stream:
+      module.run:
+        - name: dnf_module.enable
+        - modules: [nginx:1.24]
 
     # authselect — a profile selection, which is the whole module.
     # Built (DIVERGENCE 5.173): the argument is `features`, authselect's
