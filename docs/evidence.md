@@ -21,15 +21,7 @@ well as what was.
 
 ## Mutates as root and has not been demonstrated
 
-`make release-gate` refuses a release while this list is not empty. It has 1 entry.
-
-- **`pro`** — `version`, `status` and `is_attached` were run for real against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- `TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way `modprobe`/`udev`'s reads do. `attach`, `detach`, `enable` and `disable` are the module's whole reason to need root, and none of the four has been run: each changes what this real host is entitled to install and patch, which is not a thing to find out was wrong by trying it on the host this suite runs on. Their argv builders are pinned by a unit test against the client's own documented flags, and `proRun`'s envelope check is exercised against a minimal `result`/`errors` document of the same shape `status`/`is_attached` really printed here -- not against enable or disable's own output, which nothing has seen. This is the correct state for a module that just arrived, not a gap to explain away: closing it means a host whose Pro attachment, or whose entitlement to a service such as `usg`, someone can afford to flip on purpose and put back.
-
-## `assumed` — 1 module
-
-### `pro`
-
-`version`, `status` and `is_attached` were run for real against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- `TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way `modprobe`/`udev`'s reads do. `attach`, `detach`, `enable` and `disable` are the module's whole reason to need root, and none of the four has been run: each changes what this real host is entitled to install and patch, which is not a thing to find out was wrong by trying it on the host this suite runs on. Their argv builders are pinned by a unit test against the client's own documented flags, and `proRun`'s envelope check is exercised against a minimal `result`/`errors` document of the same shape `status`/`is_attached` really printed here -- not against enable or disable's own output, which nothing has seen. This is the correct state for a module that just arrived, not a gap to explain away: closing it means a host whose Pro attachment, or whose entitlement to a service such as `usg`, someone can afford to flip on purpose and put back.
+**Nothing.** `make release-gate` passes: every module that changes a machine as root has been run against the tool it drives.
 
 ## `captured` — 8 modules
 
@@ -65,7 +57,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 42 modules
+## `hardware` — 43 modules
 
 ### `acl`
 
@@ -174,6 +166,10 @@ the apt provider installed packages in a highstate on a real Ubuntu node and con
 ### `pkgrepo`
 
 the apt provider was driven on Debian 12 in `make fleetcheck`: a signed repository written, read by a real `apt-get update`, listed, and removed (DIVERGENCE 5.35). Not covered: the yum, zypper and Chocolatey providers, and a repository reached over the network rather than from the filesystem.
+
+### `pro`
+
+`version`, `status` and `is_attached` were run for real against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- `TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way `modprobe`/`udev`'s reads do. `enable` and `disable` were then driven by hand on the same host, toggling `usg` (Ubuntu Security Guide, entitled on every Pro tier and an audit tool rather than a security control) off and back on and off again, confirmed against a real `pro status --format json` after each step -- `TestLiveProEnableAndDisable`, gated on root and `HALITE_SYSTEM_LIVE`, is state-agnostic and restores whichever way it found the host. Broken on purpose (an argv builder rewritten to send a service name the client does not recognise) and confirmed the test failed with the client's own refusal message, carried through the registry's own failing-mutation note, before being restored. `attach` and `detach` remain unverified: detaching this host loses its subscription until someone reattaches it with the original contract token, which only an operator holds, and neither function's argv builder or result parsing has been exercised beyond the unit test pinning it to the client's documented flags. Unlike the macOS row, no CI leg can make this decay-proof: there is no way to provision a Pro subscription for an ephemeral runner without embedding a real account's credential, so `TestLiveProEnableAndDisable` runs only where a person runs it by hand, on a host whose attachment they can afford to touch.
 
 ### `ps`
 

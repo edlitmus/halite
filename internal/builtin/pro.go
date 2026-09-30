@@ -30,25 +30,25 @@ import (
 // for itself, rather than a grain inferring it from a kernel file that
 // two different channels can both satisfy.
 //
-// # Reads are demonstrated here; the mutating half is not
+// # What is demonstrated, and what is not
 //
 // `pro status`, `pro api <endpoint>` and `pro --version` need no
 // privilege and change nothing, and this build's own development host is
 // itself Ubuntu Pro-attached — `pro.status`, `pro.is_attached` and
-// `pro.version` were run against it for real, and `TestLiveProReads` runs
-// them again in the ordinary suite. `pro.attach`, `pro.detach`,
-// `pro.enable` and `pro.disable` are written to the client's own
-// documented `--format json` argument grammar and its common result
-// envelope (`result`/`errors`/`warnings`, the same shape every `pro
-// status`/`pro api` response demonstrated here carries), and each argv
-// builder is a pure function pinned by a test — but none has been run.
-// Attaching, detaching or toggling an entitlement changes what this
-// real host is allowed to install and patch, which is not a thing to
-// discover was wrong by trying it on the host this suite runs on. So the
-// module arrives the way every new one does: `Assumed` for the half
-// nobody has watched change a machine, which holds the release gate red
-// on `pro` alone until a host volunteers to be attached, detached, or
-// have a service flipped, on purpose, by someone who can undo it.
+// `pro.version` were run against it for real, and `TestLiveProReadsTheRealClient`
+// runs them again in the ordinary suite. `pro.enable` and `pro.disable`
+// were then driven by hand on the same host, toggling `usg` off and back
+// (an audit tool, not a security control — entitled on every tier and
+// safe to flip either way), confirmed against a real `pro status` after
+// each step: `TestLiveProEnableAndDisable`, gated on root and
+// `HALITE_SYSTEM_LIVE`. `pro.attach` and `pro.detach` are written to the
+// client's own documented `--format json` argument grammar and pinned by
+// a unit test, but neither has been run — detaching this host loses its
+// subscription until someone reattaches it with the original contract
+// token, which only an operator holds, not this suite. See
+// `internal/builtin/evidence.go`'s note for exactly what that leaves
+// open, and why no CI leg can make even the demonstrated half
+// decay-proof the way the macOS row's `macos` leg does.
 //
 // # Why Ubuntu rather than Linux
 //
