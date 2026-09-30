@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **88 execution modules / 600 functions** and **48 state
+The build ships **90 execution modules / 610 functions** and **48 state
 modules / 132 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -646,7 +646,7 @@ specification cannot be quietly missed.
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `pro`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key` |
-| RHEL family | `yumpkg` and `dnfpkg` (aliases) | `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr` |
+| RHEL family | `rpm`, `chattr`, `yumpkg` and `dnfpkg` (aliases) | `firewalld`, `subscription_manager`, `dnf_module` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_assistive` (5.119) |
@@ -16555,6 +16555,106 @@ that way (5.114-5.118) — except here there will not be a leg. Re-running
 not a thing CI remembers for anyone.
 
 `make release-gate` is green again: `pro` was the only module keeping it red.
+
+### 5.172 `rpm` and `chattr`: the RHEL row's first two, written on two RHEL-family hosts
+
+plan.md §7 item 14 said the RHEL row waited on a machine, and that the machine now
+existed in `contrib/tofu`. Two lab instances were up: Rocky Linux 9.8 (rpm 4.16.1.3,
+e2fsprogs 1.46.5, ext4 root, SELinux enforcing) and AlmaLinux 8.10 (rpm 4.14.3,
+e2fsprogs 1.45.6, ext4 root). `rpm` and `chattr` were written against what those two
+printed, captured by a throwaway program that ran each argument vector the modules
+send, without a shell, and printed stdout and stderr as Go literals — so every
+fixture in `rpm_test.go` and `chattr_test.go` is pasted, not typed. Ten exec
+functions, two modules: function count 600 → 610, module count 88 → 90; no state for
+either (SPEC 15.5 names none). `internal/exec/platform.go` stops declaring both
+pending, and 2.3's RHEL row moves them to the present column.
+
+**`rpm`** is Salt's `rpm_lowpkg`, read-only: `list_pkgs`, `info`, `file_list`,
+`file_dict`, `owner`, `verify`, `version_cmp`. What the hosts said that a manual page
+would not have:
+
+- **One name, several packages.** AlmaLinux 8.10 has two `kernel-core` installed and
+  three `gpg-pubkey`; Rocky 9.8 has two `gpg-pubkey`. A map from name to one version
+  — `pkg.list_pkgs`'s shape, and Salt's — keeps whichever rpm printed last, so
+  `rpm.list_pkgs` and `rpm.info` return a list per name.
+- **"not installed" is on stdout,** between the records for the names rpm did find,
+  and rpm exits 1. Every parser steps over the line, and every call sets
+  `IgnoreExitCode` (5.113's trap; `TestRpmCallsAskForTheirExitCode` holds it, since the
+  fake runner cannot).
+- **`rpm -ql` prints the literal `(contains no files)`** for a package with none
+  (every gpg-pubkey). The module uses `--queryformat "[%{=NAME}\t%{FILENAMES}\n]"`,
+  which prints nothing for such a package and carries the owner on every line.
+- **A path can have several owners.** `rpm -qf /usr/share/man/man1` is `filesystem`
+  and `binutils` on Rocky 9.8 and only `filesystem` on AlmaLinux 8.10. `rpm.owner`
+  asks once per path and returns a list. An unowned path is "file X is not owned by
+  any package" on *stdout* with exit 1 and comes back as an empty list; an absent
+  path is an error on stderr and comes back as an error.
+- **`rpm -V`'s form is identical on 4.14.3 and 4.16.1.3** — `S.5....T.  c /etc/…`,
+  `missing   d /usr/share/doc/…` — byte for byte, with exit status 4 for the same
+  four findings on both. Both images already had a modified `/etc/skel/.bashrc`
+  before anything here touched them.
+- **rpm's own `rpm.vercmp` means different things on the two versions.** Reached
+  through `rpm --eval '%{lua: …}'`, it is raw rpmvercmp on 4.14.3 (`0:1.0` vs `1.0`
+  is -1, the colon being a separator) and an EVR comparison on 4.16.1.3 (the same
+  pair is 0). So the differential `TestLiveRpmVersionCmpAgreesWithRpm` compares bare
+  versions only, where both mean the same thing. It covers the caret: 4.14.3 on
+  AlmaLinux 8.10 sorts `1.0^1` below `1.0.1` as rpm 4.15 does, not as a separator.
+
+`bin_pkg_info`, `checksum`, `diff` and `modified` were not built: the first three need
+a `.rpm` file and neither host had one without asking dnf to download it, on hosts
+where other work was driving dnf at the time; `modified` is `verify` again.
+`rpm.verify` with no names (`rpm -Va`) is refused rather than offered unrun.
+
+**`chattr`** is `get`, `add` and `remove` — Salt's `file.lsattr`/`file.chattr` under
+SPEC's module name. What the hosts said:
+
+- **lsattr's column width is the e2fsprogs version**: 20 characters on 1.45.6, 22 on
+  1.46.5, same file, same state. The parser reads which letters are present and
+  never where they sit.
+- **Without `-d`, lsattr on a directory lists its contents** and not the directory,
+  on both. `-d` is always passed.
+- **chattr's exit status is not an account of what changed.** On Rocky 9.8, `+c` and
+  `+x` exit 0 on ext4 and lsattr then shows them; on AlmaLinux 8.10 `+x` is not in
+  1.45.6's vocabulary and chattr prints only its usage line. So every change is read
+  back and the call fails if lsattr disagrees. Breaking `remove` to send `+` showed
+  that this check is what catches it: chattr accepted it with exit 0.
+- **`chattr -e` succeeds and really clears extents** on both, migrating the file to
+  block maps. That is why there is no "set exactly" (`=`) function, and why `e` is
+  refused either way.
+- **Filesystems without attributes answer differently**: `/dev/shm` (tmpfs) and
+  `/proc` both refuse on AlmaLinux 8.10 ("Inappropriate ioctl for device"); on Rocky
+  9.8 tmpfs *has* attributes and `/proc` says "Operation not supported". The module
+  passes lsattr's own sentence through rather than classifying it.
+
+**Run, on both hosts, as root with `HALITE_SYSTEM_LIVE=1`:**
+`TestLiveRpmReadsTheRealDatabase`, `TestLiveRpmVersionCmpAgreesWithRpm`,
+`TestLiveRpmVerifySeesARealModification` (appends to `/etc/DIR_COLORS.lightbgcolor`
+and moves `/usr/share/doc/which/NEWS` away, finds both, restores both, and checks
+`verify` is clean again) and `TestLiveChattrSetsAndClearsImmutableAndAppend` (`+a`,
+then `+ia`, then `-ia`, checked with lsattr directly and with what the kernel then
+refuses; test mode; idempotence; a directory's own attributes). All pass on both.
+**Broken on purpose and watched fail on a real host, then restored:** lsattr without
+`-d` (AlmaLinux); `list_pkgs` keeping only the last instance per name (AlmaLinux, 889
+instances reported against `rpm -qa`'s 895); `remove` sending `+` and `IgnoreExitCode`
+dropped from the rpm calls (Rocky); the verify path offset by one character and
+CompareRPM's caret ordering reversed (AlmaLinux). No `+i`/`+a` file was left on
+either host.
+
+**Found, not fixed, because they are not these modules:**
+
+- `dnfProvider.OwnerOf` (`pkg.owner` on the RedHat family) runs
+  `rpm -qf --queryformat %{NAME} <path>` with no newline in the format and takes the
+  first line. For `/usr/share/man/man1` on Rocky 9.8 rpm printed `filesystembinutils`
+  — two owners run together into one name that does not exist.
+- `CompareRPM` says `1.0` and `1.0-1` are equal, on the reasoning in its own comment
+  that an absent release matches any; rpm 4.16.1.3's EVR comparison says -1. Which
+  one `pkg.latest` should follow is a question, not a defect found; it is recorded so
+  that it stays one.
+
+**Not verified:** no CI leg runs any of this — there is no RHEL leg, and the chattr
+test has not been run on the `linux` leg's Ubuntu, so it is not in that leg's `-run`
+filter; XFS, RHEL's default root filesystem, which neither lab image used; any
+attribute but `i` and `a` through the module; symlinks; a non-root caller; `rpm -Va`.
 
 ## 6. Everything else not started
 

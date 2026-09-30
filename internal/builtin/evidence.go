@@ -806,6 +806,34 @@ var moduleEvidence = map[string]exec.Evidence{
 		"proof: there is no way to provision a Pro subscription for an ephemeral runner without " +
 		"embedding a real account's credential, so `TestLiveProEnableAndDisable` runs only where a " +
 		"person runs it by hand, on a host whose attachment they can afford to touch"},
+
+	// ---- Driven in the lab on RHEL-family instances, by hand, because no CI leg is one ----
+
+	"chattr": {Level: exec.Hardware, Note: "driven as root on 2026-09-30 on two throwaway lab " +
+		"instances, both ext4: Rocky Linux 9.8 (e2fsprogs 1.46.5, whose lsattr column is 22 characters) " +
+		"and AlmaLinux 8.10 (e2fsprogs 1.45.6, 20 characters). `TestLiveChattrSetsAndClearsImmutableAndAppend` " +
+		"set `a`, then `i` on top, cleared both, and checked every step with lsattr run directly and with " +
+		"what the kernel then refused -- a truncating write under `a`, an append and an unlink under `i` -- " +
+		"plus test mode changing nothing, a second add being a no-op, and a directory reporting its own " +
+		"attributes rather than a child's. Broken on purpose two ways and watched fail on a real host: " +
+		"`-d` dropped from lsattr, and `remove` sending `+` (which chattr accepts with exit 0, so only the " +
+		"read-back caught it). Not covered: any attribute but `i` and `a` through the module (`c`, `s`, `u`, " +
+		"`d`, `A`, `S` and `x` were set by hand while capturing, not by a test), XFS -- RHEL's default root " +
+		"filesystem, which neither lab image used -- symlinks, and a non-root caller"},
+	"rpm": {Level: exec.Captured, Note: "read-only: it has no function that changes anything. Run on " +
+		"2026-09-30 against rpm 4.16.1.3 on Rocky Linux 9.8 and rpm 4.14.3 on AlmaLinux 8.10 by " +
+		"`TestLiveRpmReadsTheRealDatabase` -- `list_pkgs` counted against `rpm -qa` (AlmaLinux carries two " +
+		"kernel-core and three gpg-pubkey instances, all reported), `info` reassembled into what `rpm -q` " +
+		"prints, `file_list` against `rpm -ql`, `owner` for an owned, an unowned and an absent path -- and " +
+		"`TestLiveRpmVerifySeesARealModification`, which as root appended to a packaged config file and moved " +
+		"a doc file away, found both through `verify`, and put them back. `version_cmp` is CompareRPM, and " +
+		"`TestLiveRpmVersionCmpAgreesWithRpm` checks it against rpm's own `rpm.vercmp` for bare versions " +
+		"only: on 4.14.3 that function is raw rpmvercmp and on 4.16.1.3 it compares EVRs, so an epoch or " +
+		"release has no oracle that means the same thing on both. Broken on purpose and watched fail on real " +
+		"hosts: last-instance-wins in `list_pkgs`, IgnoreExitCode dropped, the verify path offset by one, and " +
+		"CompareRPM's caret ordering reversed. Not built: `bin_pkg_info`, `checksum`, `diff`, `modified` " +
+		"(no .rpm file on either host without driving dnf, which other work was using). Not covered: " +
+		"`rpm -Va`, which the module refuses to run"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

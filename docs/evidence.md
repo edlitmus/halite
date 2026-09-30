@@ -23,7 +23,7 @@ well as what was.
 
 **Nothing.** `make release-gate` passes: every module that changes a machine as root has been run against the tool it drives.
 
-## `captured` — 8 modules
+## `captured` — 9 modules
 
 ### `dnsutil`
 
@@ -41,6 +41,10 @@ reads the real /proc/self/mounts and the real `mount` output on the platforms CI
 
 every service file on the machine running the tests is parsed and checked against the file rather than against an expectation -- 13 real services and 53 real control flags on FreeBSD 15.1, 33 services and 191 flags (420 rules through Debian's own @include fan-out) on Ubuntu 24.04, and whatever the Linux and macOS CI legs have -- and the sweep is cross-checked against the per-service answer. Nothing has watched this module write to a real /etc/pam.d: the mutating half runs only against a throwaway tree, deliberately, because a wrong line there locks every account out of the node and a test is not a thing to find that out with.
 
+### `rpm`
+
+read-only: it has no function that changes anything. Run on 2026-09-30 against rpm 4.16.1.3 on Rocky Linux 9.8 and rpm 4.14.3 on AlmaLinux 8.10 by `TestLiveRpmReadsTheRealDatabase` -- `list_pkgs` counted against `rpm -qa` (AlmaLinux carries two kernel-core and three gpg-pubkey instances, all reported), `info` reassembled into what `rpm -q` prints, `file_list` against `rpm -ql`, `owner` for an owned, an unowned and an absent path -- and `TestLiveRpmVerifySeesARealModification`, which as root appended to a packaged config file and moved a doc file away, found both through `verify`, and put them back. `version_cmp` is CompareRPM, and `TestLiveRpmVersionCmpAgreesWithRpm` checks it against rpm's own `rpm.vercmp` for bare versions only: on 4.14.3 that function is raw rpmvercmp and on 4.16.1.3 it compares EVRs, so an epoch or release has no oracle that means the same thing on both. Broken on purpose and watched fail on real hosts: last-instance-wins in `list_pkgs`, IgnoreExitCode dropped, the verify path offset by one, and CompareRPM's caret ordering reversed. Not built: `bin_pkg_info`, `checksum`, `diff`, `modified` (no .rpm file on either host without driving dnf, which other work was using). Not covered: `rpm -Va`, which the module refuses to run.
+
 ### `sudo`
 
 driven against the real sudo and visudo 1.9.17p2 on this fleet's FreeBSD 15.1 host. `sudo.validate` runs the real `visudo -c` over files a test writes -- one the grammar accepts, one it rejects, and one that is not there -- and each answer carries visudo's own words; this needs no privilege, which is the point of it. `sudo.path` was read **both ways on the same host**: unprivileged it falls back to the platform's conventional location and says so, and as root it comes from `sudo -V` itself, so neither branch of the fallback is assumed. `sudo.list` was read as root against a real account, and a missing account refused. Every assertion was checked by breaking the code and watching it fail. **This module writes nothing by design** -- no sudoers parser is written here, because a second parser for that grammar would eventually disagree with the real one about who may become root. Not covered: Linux, where the conventional path differs and no CI leg reads it as root; and Salt's `sudo.salt_call`, deliberately not built, because `cmd.run` already takes a `runas` and applies it with setuid rather than through a second privilege system.
@@ -57,7 +61,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 43 modules
+## `hardware` — 44 modules
 
 ### `acl`
 
@@ -70,6 +74,10 @@ driven end to end on a real Ubuntu 24.04 host whose apparmor-utils 4.0.1 can par
 ### `at`
 
 driven against the real at/atq/atc/atrm on this fleet's FreeBSD 15.1 host, as root: a job scheduled far enough ahead that it never fires, found in a real `atq`, its script read back through a real `at -c`, removed, and the removal shown idempotent; the `at.present`/`at.absent` pair round-trips an identified job without duplicating it. **The queue parser was written without a real `atq` to read** -- `at` refuses an unprivileged caller on this host, so it was derived from the printf format in the binary itself (`%s\t%-16s%c%s\t%ld`), which says the job number is the last field. That inference is now confirmed against real output, and checked by reading the first field instead on purpose and watching the test fail. Not covered: Linux's at, whose argument vector is pinned in the platform table and which no leg has run; and a job actually firing, which nothing here waits for.
+
+### `chattr`
+
+driven as root on 2026-09-30 on two throwaway lab instances, both ext4: Rocky Linux 9.8 (e2fsprogs 1.46.5, whose lsattr column is 22 characters) and AlmaLinux 8.10 (e2fsprogs 1.45.6, 20 characters). `TestLiveChattrSetsAndClearsImmutableAndAppend` set `a`, then `i` on top, cleared both, and checked every step with lsattr run directly and with what the kernel then refused -- a truncating write under `a`, an append and an unlink under `i` -- plus test mode changing nothing, a second add being a no-op, and a directory reporting its own attributes rather than a child's. Broken on purpose two ways and watched fail on a real host: `-d` dropped from lsattr, and `remove` sending `+` (which chattr accepts with exit 0, so only the read-back caught it). Not covered: any attribute but `i` and `a` through the module (`c`, `s`, `u`, `d`, `A`, `S` and `x` were set by hand while capturing, not by a test), XFS -- RHEL's default root filesystem, which neither lab image used -- symlinks, and a non-root caller.
 
 ### `cmd`
 
