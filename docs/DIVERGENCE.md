@@ -612,9 +612,9 @@ state), `mac_power` (`pmset(8)`), `mac_user`, `mac_group` and
 (`security(1)`). `mac_assistive`, which drove `sqlite3(1)` against the
 SIP-protected `TCC.db` to manage the Accessibility grant list, shipped
 here too and has since been taken out of the build (5.119). `dnf_module`
-is the first of the RHEL row's own modules, built and driven on two
+followed `rpm` and `chattr` (5.172) into the RHEL row, built and driven on two
 throwaway lab instances, EL8 and EL9, because no machine of this
-estate is RHEL (5.172).
+estate is RHEL (5.174).
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -16808,10 +16808,7 @@ nil): both new unit tests failed, one of them on finding
 is the Alma 8 run above, done before the fix; it was not re-run with the
 broken build. `sshd`, a plain file on the same node, is still editable —
 checked in the unit test, not on a host.
-
-
-
-### 5.172 `dnf_module`: built against two real EL hosts, and a reset is not a deletion
+### 5.174 `dnf_module`: built against two real EL hosts, and a reset is not a deletion
 
 SPEC 15.3's RHEL row named `dnf_module` and nothing built it; §2.3 and
 `internal/exec/platform.go` declared it pending "with the RHEL platform work". No
@@ -16898,6 +16895,10 @@ spanning more than one repository; `switch_to` with packages installed, which is
 where it does real work; globs; RHEL proper, CentOS Stream, and Fedora, whose dnf5
 removed modularity. No `fleet.yml` leg is RHEL, so like `pro` (5.171) this
 evidence is a run a person repeats by hand on a lab host.
+
+
+
+
 
 ## 6. Everything else not started
 

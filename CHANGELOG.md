@@ -73,7 +73,7 @@ and return `{changes, stderr}` — the per-module state before and after, measur
 from modules.d. A module that has been reset reads as never touched, as it does to
 dnf, although dnf leaves its file behind. Every function was run as root on Rocky
 Linux 9.8 (dnf 4.14.0) and AlmaLinux 8.10 (dnf 4.7.0) lab instances; there is no
-state, since SPEC 15.5 names none, and no CI leg runs it. DIVERGENCE 5.172.
+state, since SPEC 15.5 names none, and no CI leg runs it. DIVERGENCE 5.174.
 
 ### `pro.enable`/`pro.disable` driven for real; the release gate is green again
 
