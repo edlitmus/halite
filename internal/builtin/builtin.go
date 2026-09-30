@@ -126,6 +126,7 @@ func New() *Registries {
 
 	// The Common Linux platform modules of SPEC section 15.3.
 	registerPam(r)
+	registerAuthselect(r)
 	registerQuota(r)
 	registerOpenSSLCert(r)
 	registerLVM(r)
