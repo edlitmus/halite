@@ -81,8 +81,14 @@ func TestLiveRpmReadsTheRealDatabase(t *testing.T) {
 	if tool := strings.TrimSpace(rpmTool(t, "-q", "bash")); nevra != tool {
 		t.Errorf("rpm.info assembles %q, `rpm -q bash` says %q", nevra, tool)
 	}
-	if desc, _ := bash.Get("description"); !strings.Contains(value.KeyString(desc), "Bourne") {
-		t.Errorf("bash's description = %q", desc)
+	// Against rpm's own answer, not against a word from one vendor's
+	// text. This asserted the description mentioned "Bourne", which Red
+	// Hat's bash says and openSUSE Leap 16.0's does not ("Bash is an
+	// sh-compatible command interpreter ..."), so it failed on the first
+	// SUSE host with the module reading the database correctly.
+	wantDesc := strings.TrimSpace(rpmTool(t, "-q", "--queryformat", "%{DESCRIPTION}", "bash"))
+	if desc, _ := bash.Get("description"); wantDesc == "" || strings.TrimSpace(value.KeyString(desc)) != wantDesc {
+		t.Errorf("bash's description = %q, `rpm -q --queryformat %%{DESCRIPTION}` says %q", desc, wantDesc)
 	}
 	if _, err := r.Exec.Call(c, "rpm.info", value.MapOf("names", []any{"bash", "halite-no-such-package"})); err == nil ||
 		!strings.Contains(err.Error(), "halite-no-such-package") {

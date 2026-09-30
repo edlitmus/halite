@@ -678,9 +678,12 @@ neither a typo nor an unbuilt module but the wrong module for the
 machine.
 
 Only the names whose provider exists are aliased. `zypperpkg` and
-`dnfpkg` stay pending: SUSE has no provider here and the dnf one covers
-repositories but not packages, so aliasing either would turn "not built"
-into "built, and fails when you call it".
+`dnfpkg` stayed pending on the grounds that SUSE had no provider and the
+dnf one covered repositories but not packages, so aliasing either would
+turn "not built" into "built, and fails when you call it". The second
+reason was never true and `dnfpkg` is an alias (DIVERGENCE §2.3); the
+first stopped being true when a zypper provider was written on a real
+openSUSE Leap 16.0, and `zypperpkg` is an alias too (DIVERGENCE 5.176).
 
 `dpkg` is the other Debian arrival, and the one that pays off soonest,
 because it is the half the virtual `pkg` module is deliberately not:
@@ -697,7 +700,7 @@ what an operator is looking for.
 | macOS | 0 | `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate` and `mac_keychain` are modules (DIVERGENCE 5.41-5.46). **All seven are `hardware`** (5.114-5.118, 5.121), and `fleet.yml`'s `macos` leg drives them as root on every change to them, so the evidence stops being a run that happened once. `mac_assistive` was the eighth and is out of the build — SIP keeps its writes unreachable without a grant re-given on every rebuild (5.119). |
 | RHEL | 1 | `yumpkg` and `dnfpkg` are aliases. **`rpm` and `chattr` ship** (DIVERGENCE 5.172), written against the real tools on Rocky Linux 9.8 and AlmaLinux 8.10 in the lab; **`dnf_module` ships** (DIVERGENCE 5.174), built and driven on the same two rows; and **`firewalld` ships** (DIVERGENCE 5.175), driven against a throwaway zone on both (firewalld 1.3.4 and 0.9.11), and deliberately **not** a `firewall` provider, for the same reason `iptables` is not plus one of its own -- a provider would act on the default zone, which is the one zone the lab could not safely change. `subscription_manager` remains: Rocky and Alma have no RHEL subscription to drive it against. |
 | FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32); its field names are no longer assumed either, and auditing them against the list `jls -h` publishes found one the module had invented (5.66). The FreeBSD half of the **Common Linux** row's `quota` was audited at the same time and had two defects, both from being read rather than run (5.65). |
-| SUSE | 1 | `zypperpkg`. |
+| SUSE | 0 | **`zypperpkg` ships** as an alias of `pkg`'s new zypper provider (DIVERGENCE 5.176), written and driven as root on openSUSE Leap 16.0 in the lab: all four `pkg` states through the conformance harness, hold, a real upgrade and a pinned downgrade, and an install past an unreachable repository. The row is complete. Not covered: `pkg.upgrade` and SLES. |
 
 Note the overlap with 2.2: `iptables`, `nftables` and `lvm` are named in
 both 15.3 and 15.5, so building the module and building its state are one
@@ -2525,7 +2528,18 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     as the target rather than invented, so whoever builds the module
     is writing to a known usage rather than guessing one from a man
     page and then guessing again at the state that wraps it.
-15. **A SUSE host.** Closes `zypperpkg`, the SUSE row's one missing
+15. ~~**A SUSE host.**~~ — **done, 2026-09-30**, on the lab's openSUSE
+    Leap 16.0 (zypper 1.14.101). `pkg` has a zypper provider and
+    `zypperpkg` is its alias, like `dnfpkg` (DIVERGENCE 5.176). Every
+    fixture was captured on that machine, and what it taught is mostly
+    exit codes: 106 means one repository was skipped *and the install
+    happened*, 104 is an answer for a search and a failure for an
+    install, and a pin below the installed version is a silent exit 0
+    without `--oldpackage`. Not covered: `pkg.upgrade` (a whole-system
+    update), repository priorities, SLES. What follows is the item as
+    it was written.
+
+    Closes `zypperpkg`, the SUSE row's one missing
     module (§2.3) — nothing built yet, not merely unverified, since
     this project has never had a SUSE machine to write it against.
 

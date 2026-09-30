@@ -1,0 +1,22 @@
+<?xml version='1.0'?>
+<stream>
+<message type="info">Refreshing service &apos;openSUSE&apos;.</message>
+<message type="error">Error building the cache:
+[halite-bogus|http://127.0.0.1:9/] Failed to retrieve new repository metadata.
+History:
+ - [|] Error trying to read from &apos;http://127.0.0.1:9/&apos;
+ - Download (curl) error for &apos;http://127.0.0.1:9/content&apos;:
+   Error code: Connection failed Curl error (7)
+   Error message: Failed to connect to 127.0.0.1 port 9 after 0 ms: Could not connect to server
+</message>
+<message type="warning">Skipping repository &apos;halite-bogus&apos; because of the above error.</message>
+<message type="error">Some of the repositories have not been refreshed because of an error.</message>
+<message type="info">Loading repository data...</message>
+<message type="info">Reading installed packages...</message>
+
+<search-result version="0.0">
+<solvable-list>
+<solvable status="not-installed" name="tree" kind="package" edition="2.2.1-160000.2.2" arch="x86_64" repository="repo-oss (16.0)"/>
+</solvable-list>
+</search-result>
+</stream>

@@ -1,0 +1,1 @@
+rpm -qa --queryformat %{NAME}\t%{EPOCH}:%{VERSION}-%{RELEASE}\n

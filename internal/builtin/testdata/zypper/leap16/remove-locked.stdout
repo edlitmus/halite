@@ -1,0 +1,9 @@
+Reading installed packages...
+Resolving package dependencies...
+
+Problem: 1: Detailed information: 
+- conflicting requests
+ Solution 1: do not ask to delete all solvables providing tree.x86_64 = 2.2.1-160000.2.2
+ Solution 2: remove lock to allow removal of tree-2.2.1-160000.2.2.x86_64
+
+Choose from above solutions by number or cancel [1/2/c/d/?] (c): c

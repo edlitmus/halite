@@ -1,0 +1,26 @@
+Refreshing service 'openSUSE'.
+Loading repository data...
+Reading installed packages...
+Resolving package dependencies...
+
+The following package is going to be downgraded:
+  libX11-data
+
+1 package to downgrade.
+
+Package download size:   167.4 KiB
+
+Package install size change:
+            |       1.1 MiB  required by packages that will be installed
+       0 B  |  -    1.1 MiB  released by packages that will be removed
+
+Backend:  classic_rpmtrans --dry-run
+Continue? [y/n/v/...? shows all options] (y): y
+
+Checking for file conflicts: [...done]
+Warning: 1 package had to be excluded from file conflicts check because it is not yet download.
+
+    Note: Checking for file conflicts requires not installed packages to be downloaded in advance in
+    order to access their file lists. See option '--download-in-advance / --dry-run --download-only'
+    in the zypper manual page for details.
+

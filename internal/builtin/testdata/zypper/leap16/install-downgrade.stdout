@@ -1,0 +1,28 @@
+Refreshing service 'openSUSE'.
+Loading repository data...
+Reading installed packages...
+Resolving package dependencies...
+
+The following package is going to be downgraded:
+  libX11-data
+
+1 package to downgrade.
+
+Package download size:   167.5 KiB
+
+Package install size change:
+            |       1.1 MiB  required by packages that will be installed
+       0 B  |  -    1.1 MiB  released by packages that will be removed
+
+Backend:  classic_rpmtrans
+Continue? [y/n/v/...? shows all options] (y): y
+Preloading Packages [..
+Preloading: libX11-data-1.8.10-160000.3.1.noarch.rpm [done]
+.done]
+Retrieving: libX11-data-1.8.10-160000.3.1.noarch (repo-oss (16.0)) (1/1), 167.5 KiB    
+
+Checking for file conflicts: [..done]
+(1/1) Installing: libX11-data-1.8.10-160000.3.1.noarch [..done]
+Running post-transaction scripts [...done]
+There are running programs which still use files and libraries deleted or updated by recent upgrades. They should be restarted to benefit from the latest updates. Run 'zypper ps -s' to list these programs.
+ 

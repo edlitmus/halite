@@ -44,6 +44,7 @@ table and says which of them the node in hand can use.
 | `ufw` | `firewall` | ufw |
 | `win_pkg` | `pkg` | chocolatey |
 | `yumpkg` | `pkg` | yumpkg |
+| `zypperpkg` | `pkg` | zypperpkg |
 
 ## Execution modules
 

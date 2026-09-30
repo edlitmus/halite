@@ -1,0 +1,14 @@
+Reading installed packages...
+Resolving package dependencies...
+
+The following package is going to be REMOVED:
+  tree
+
+1 package to remove.
+
+Package install size change:
+              |         0 B    required by packages that will be installed
+  -148.8 KiB  |  -  148.8 KiB  released by packages that will be removed
+
+Backend:  classic_rpmtrans --dry-run
+Continue? [y/n/v/...? shows all options] (y): y

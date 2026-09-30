@@ -1,0 +1,1 @@
+rpm -qf --queryformat %{NAME} /usr/bin/tree

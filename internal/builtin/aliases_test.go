@@ -148,8 +148,8 @@ func TestEverySpecNamedProviderThisBuildHasIsAliased(t *testing.T) {
 	}
 
 	// The names SPEC 15.3's platform table gives, against the provider
-	// each one would reach. `zypperpkg` is deliberately absent: there is
-	// no SUSE provider to alias yet.
+	// each one would reach. `zypperpkg` was absent until SUSE had a
+	// provider (DIVERGENCE 5.176).
 	for _, c := range []struct{ specName, provider string }{
 		{"aptpkg", "aptpkg"},
 		{"freebsdpkg", "pkgng"},
@@ -157,6 +157,7 @@ func TestEverySpecNamedProviderThisBuildHasIsAliased(t *testing.T) {
 		{"mac_brew_pkg", "mac_brew_pkg"},
 		{"dnfpkg", "dnfpkg"},
 		{"yumpkg", "yumpkg"},
+		{"zypperpkg", "zypperpkg"},
 	} {
 		if !aliased[c.provider] {
 			t.Errorf("SPEC 15.3 names %s and this build has the %s provider, but no alias "+

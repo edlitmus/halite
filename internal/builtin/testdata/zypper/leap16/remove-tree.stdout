@@ -1,0 +1,18 @@
+Reading installed packages...
+Resolving package dependencies...
+
+The following package is going to be REMOVED:
+  tree
+
+1 package to remove.
+
+Package install size change:
+              |         0 B    required by packages that will be installed
+  -148.8 KiB  |  -  148.8 KiB  released by packages that will be removed
+
+Backend:  classic_rpmtrans
+Continue? [y/n/v/...? shows all options] (y): y
+(1/1) Removing: tree-2.2.1-160000.2.2.x86_64 [..done]
+Running post-transaction scripts [....done]
+There are running programs which still use files and libraries deleted or updated by recent upgrades. They should be restarted to benefit from the latest updates. Run 'zypper ps -s' to list these programs.
+ 
