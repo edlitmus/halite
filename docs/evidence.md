@@ -61,7 +61,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 44 modules
+## `hardware` — 45 modules
 
 ### `acl`
 
@@ -74,6 +74,10 @@ driven end to end on a real Ubuntu 24.04 host whose apparmor-utils 4.0.1 can par
 ### `at`
 
 driven against the real at/atq/atc/atrm on this fleet's FreeBSD 15.1 host, as root: a job scheduled far enough ahead that it never fires, found in a real `atq`, its script read back through a real `at -c`, removed, and the removal shown idempotent; the `at.present`/`at.absent` pair round-trips an identified job without duplicating it. **The queue parser was written without a real `atq` to read** -- `at` refuses an unprivileged caller on this host, so it was derived from the printf format in the binary itself (`%s\t%-16s%c%s\t%ld`), which says the job number is the last field. That inference is now confirmed against real output, and checked by reading the first field instead on purpose and watching the test fail. Not covered: Linux's at, whose argument vector is pinned in the platform table and which no leg has run; and a job actually firing, which nothing here waits for.
+
+### `authselect`
+
+driven on 2026-09-30 as root against authselect 1.2.6 on two throwaway lab hosts -- Rocky Linux 9.8 (authselect-1.2.6-3.el9) and AlmaLinux 8.10 (authselect-1.2.6-2.el8), both starting from "No existing configuration detected." -- with a fresh ssh login confirmed after each mutation. Every function ran on both: `select` of `minimal` refused without `force` on an unconfigured node and succeeded with it; a repeat select reported no change and left the generated files' mtimes alone; `enable_feature`/`disable_feature` of with-silent-lastlog and with-pwhistory, each repeated to show no change, and a feature that does not exist (enable refused, disable no change); the same two features in the other order read as the same selection. `TestLiveAuthselectSelectAndFeatures` (gated on root, HALITE_SYSTEM_LIVE and, on an unconfigured node, HALITE_AUTHSELECT_TAKEOVER) and the ungated `TestLiveAuthselectReads` passed on both, and each was broken on purpose five ways -- no IgnoreExitCode, no idempotence short-circuit, a toggle trusting the exit code, an ordered feature compare, and the `current --raw` sentence read as a profile -- and failed on the real host every time. On AlmaLinux 8 only, the `sssd` profile with with-mkhomedir was selected and re-selected (no change) by hand through `halite-node call`, with sssd and oddjobd both inactive and root's key login unaffected. Not covered: sssd, winbind or oddjobd ever running, so nothing here shows a profile *working* for a directory user, only authselect writing it; the `nis` and `winbind` profiles; custom profiles (`create-profile`); `backup-restore`; authselect 1.3+ (Fedora, RHEL 10), whose `opt-out` and output this module has never seen; and no CI leg runs any of it -- fleet.yml has no RHEL-family runner.
 
 ### `chattr`
 

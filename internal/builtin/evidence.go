@@ -651,6 +651,30 @@ var moduleEvidence = map[string]exec.Evidence{
 	// output to capture and no command whose spelling could be wrong.
 	// The risk moves entirely into the file format, and that is what
 	// the live test corpus is.
+	"authselect": {Level: exec.Hardware, Note: "driven on 2026-09-30 as root against " +
+		"authselect 1.2.6 on two throwaway lab hosts -- Rocky Linux 9.8 (authselect-1.2.6-3.el9) " +
+		"and AlmaLinux 8.10 (authselect-1.2.6-2.el8), both starting from \"No existing " +
+		"configuration detected.\" -- with a fresh ssh login confirmed after each mutation. " +
+		"Every function ran on both: `select` of `minimal` refused without `force` on an " +
+		"unconfigured node and succeeded with it; a repeat select reported no change and left " +
+		"the generated files' mtimes alone; `enable_feature`/`disable_feature` of " +
+		"with-silent-lastlog and with-pwhistory, each repeated to show no change, and a " +
+		"feature that does not exist (enable refused, disable no change); the same two features " +
+		"in the other order read as the same selection. `TestLiveAuthselectSelectAndFeatures` " +
+		"(gated on root, HALITE_SYSTEM_LIVE and, on an unconfigured node, " +
+		"HALITE_AUTHSELECT_TAKEOVER) and the ungated `TestLiveAuthselectReads` passed on both, " +
+		"and each was broken on purpose five ways -- no IgnoreExitCode, no idempotence " +
+		"short-circuit, a toggle trusting the exit code, an ordered feature compare, and the " +
+		"`current --raw` sentence read as a profile -- and failed on the real host every time. " +
+		"On AlmaLinux 8 only, the `sssd` profile with with-mkhomedir was selected and " +
+		"re-selected (no change) by hand through `halite-node call`, with sssd and oddjobd " +
+		"both inactive and root's key login unaffected. Not covered: sssd, winbind or oddjobd " +
+		"ever running, so nothing here shows a profile *working* for a directory user, only " +
+		"authselect writing it; the `nis` and `winbind` profiles; custom profiles " +
+		"(`create-profile`); `backup-restore`; authselect 1.3+ (Fedora, RHEL 10), whose " +
+		"`opt-out` and output this module has never seen; and no CI leg runs any of it -- " +
+		"fleet.yml has no RHEL-family runner"},
+
 	"pam": {Level: exec.Captured, Note: "every service file on the machine running the tests " +
 		"is parsed and checked against the file rather than against an expectation -- 13 real " +
 		"services and 53 real control flags on FreeBSD 15.1, 33 services and 191 flags (420 " +

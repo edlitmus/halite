@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **90 execution modules / 610 functions** and **48 state
+The build ships **91 execution modules / 618 functions** and **48 state
 modules / 132 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -560,7 +560,7 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-42 of 65 present — the rows below total 23 absent.
+43 of 65 present — the rows below total 22 absent.
 
 Ten of the thirty are **aliases**. SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
@@ -624,7 +624,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 32 are declared as pending rather than simply missing. A name absent
+The 22 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -642,7 +642,7 @@ specification cannot be quietly missed.
 
 | Platform | Present | Absent |
 |---|---|---|
-| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `udev`, `modprobe`, `systemd_service` (alias) | `authselect` |
+| Common Linux | `pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `udev`, `modprobe`, `authselect` (5.172), `systemd_service` (alias) | none |
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `pro`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key` |
@@ -5524,6 +5524,10 @@ fixture written in a module's own spelling that agreed with itself and
 disagreed with the real tool. `authselect`'s entry in
 `exec/platform.go` names this reason rather than "phase 5, with the
 Linux platform work".
+
+**Built since (5.172).** Two lab hosts, Rocky Linux 9 and AlmaLinux 8,
+turned out to be enough; it ships `hardware`, and the paragraph above is
+kept as the reason it waited.
 
 ### 5.55 `apparmor`: closed on a machine whose own tools can read its own profiles
 
@@ -16655,6 +16659,126 @@ either host.
 test has not been run on the `linux` leg's Ubuntu, so it is not in that leg's `-run`
 filter; XFS, RHEL's default root filesystem, which neither lab image used; any
 attribute but `i` and `a` through the module; symlinks; a non-root caller; `rpm -Va`.
+
+### 5.172 `authselect`: built against the real tool, and the Common Linux row is complete
+
+5.54 left `authselect` pending on purpose: it is Fedora/RHEL 8+ only, and
+there was no RHEL-family machine to write it against. The lab now raises
+two, so it was written the 5.31 way — every fixture captured, every
+mutation driven as root — on:
+
+- **Rocky Linux 9.8**, `authselect-1.2.6-3.el9`
+- **AlmaLinux 8.10**, `authselect-1.2.6-2.el8`
+
+both throwaway Vultr instances whose `authselect current` began as "No
+existing configuration detected.", with `/etc/pam.d`, `nsswitch.conf`,
+`/etc/authselect` and `/var/lib/authselect` backed up and checksummed
+before the first mutation and a fresh ssh login confirmed after every one.
+
+**The first thing the hosts said was that the plan for them was wrong.**
+The work was scoped expecting 1.2 on EL8 and something newer (1.5) on
+EL9, with `local` as the new stock profile and `opt-out` as the way back. Both ship 1.2.6. Neither
+has `opt-out`, `--version` (it exits 1 and prints usage), or a `local`
+profile. The one difference between them is that EL8 still ships `nis`.
+So the module has no `opt_out` and no `version`: there is nothing on
+either host to drive them against.
+
+**What the tool does that its manual would not have told you:**
+
+| Question | What authselect 1.2.6 does |
+|---|---|
+| `current` on a node it never configured | exit **2**, "No existing configuration detected." on **stdout** — and `--raw` prints the same sentence, so reading `--raw`'s first word as the profile reports a profile called `No` |
+| `check` | exit 0 valid; **2** not configured; **3** "modified outside authselect", with one `[error] [file] ...` line per finding on stderr |
+| `select` over files it did not write | exit **4**, one `[error] File [...] exists but it needs to be overwritten!` per file; `--force` writes a backup under `/var/lib/authselect/backups/` first |
+| `enable-feature` of a feature already on | exit 0 — and rewrites every generated file anyway (the mtimes move) |
+| `enable-feature` of a feature that does not exist | exit 1, `Unknown profile feature` |
+| `disable-feature` of a feature that is not on, **or does not exist** | exit 0, no output |
+| `backup-remove` of a backup that does not exist | exit 0, no output |
+| order of features in `current --raw` | the order they were enabled, not sorted |
+| `backup-list` without `--raw` | the date in each host's own `%c`: `Wed 30 Sep 2026 03:29:29 AM UTC` on EL9, `Wed Sep 30 14:13:27 2026` on EL8 |
+
+authselect also ships message translations
+(`/usr/share/locale/*/LC_MESSAGES/authselect.mo`), so the module reads
+exit codes, never the sentences, and `backup_list` uses `--raw`.
+
+**The module** — eight functions, exec-only:
+
+- `current`, `check`, `list`, `list_features`, `backup_list` read.
+- `select(profile, features, force)` is idempotent: it compares `current`
+  as a *set* against what was asked, and only if they match does it ask
+  `check`; a node on the right profile whose files were edited by hand is
+  not on that profile, and is re-selected (or refused without `force`).
+  After any change it reads `current` back and refuses to report success
+  unless it says what was asked for.
+- `enable_feature`/`disable_feature` decide "changed" from `current`
+  before and after, not from the exit code, because of the two exit-0
+  rows above.
+
+The parameter is `features`, authselect's own word (`list-features`,
+`enable-feature`); plan.md §7 item 14's example, written before the module,
+said `options`, and has been corrected rather than aliased.
+
+There is no `authselect` state. SPEC 15.5 names none, and `select` is
+already idempotent, so `module.run` is the way a tree asserts a profile —
+which is how item 14's example was written.
+
+**Verified**, on both hosts unless stated:
+
+- `TestLiveAuthselectReads` (ungated; skips anywhere without authselect)
+  and `TestLiveAuthselectSelectAndFeatures` (root, `HALITE_SYSTEM_LIVE=1`,
+  and on a never-configured node also `HALITE_AUTHSELECT_TAKEOVER=1`,
+  because 1.2.6 has no way back) passed, from both starting states:
+  never-configured (the refusal without `force`, then the takeover) and
+  already configured (put back on its starting selection).
+- A repeat `select` leaves `/etc/authselect/system-auth`'s mtime alone —
+  the proof that authselect was not asked at all.
+- **Broken on purpose five ways, each on a real host, each failing:**
+  `IgnoreExitCode` removed (Rocky 9: `current --raw` "exited 2" with an
+  *empty* message, since the sentence is on stdout — the 5.113 trap);
+  the `current --raw` sentence parsed as a profile (Rocky 9: `current`
+  and `check` disagreed about whether the node was configured); the
+  idempotence short-circuit removed, the toggle trusting the exit code,
+  and the feature set compared in order (Alma 8: a repeat select, a
+  repeat enable, and the same two features reordered each reported a
+  change). The unit tests failed for every one of the five as well.
+- By hand, through `halite-node call` on Alma 8 only: plan.md's own
+  example, `select` of `sssd` with `with-mkhomedir`, then again (no
+  change), with sssd and oddjobd both inactive and root's key login
+  unaffected; the output carried authselect's REQUIREMENTS text ("make
+  sure ... oddjobd service is enabled and active"), which is why the
+  module does not pass `--quiet`.
+
+**Not verified:** sssd, winbind or oddjobd ever *running* — this shows
+authselect writing a profile, never a profile working for a directory
+user; the `nis` and `winbind` profiles; `with-mkhomedir` on Rocky 9, which
+does not have `pam_oddjob_mkhomedir.so` installed and was not risked;
+custom profiles; `backup-restore`; authselect 1.3+ (Fedora, RHEL 10),
+whose output and `opt-out` nothing here has seen. No `fleet.yml` leg runs
+any of it — there is no RHEL-family runner — so re-running the live test
+after a change is a thing to remember, not a thing CI does.
+
+#### `pam` and `authselect` are two paths to the same files
+
+`pam` reads through authselect's symlinks, which is correct: `pam.rules
+sshd` on an authselect node resolves `include password-auth` into the
+generated file, and that is the chain that runs.
+
+`pam`'s edits were not correct. `pam.set_module` was run once, on Alma 8,
+against `password-auth` while the node was on `minimal` — adding
+`session optional pam_echo.so`. It succeeded, and it had replaced the
+symlink `/etc/pam.d/password-auth -> /etc/authselect/password-auth` with a
+regular file: `pamCommit` writes through `atomicfile`, whose rename
+replaces the link rather than writing through it. Then:
+
+    authselect check      # exit 3
+    [error] [/etc/pam.d/password-auth] is not a symbolic link!
+    [error] [/etc/pam.d/password-auth] was not created by authselect!
+
+`authselect.select` of the same profile was refused (exit 4), and with
+`force` it restored the link and **silently discarded `pam`'s rule** — it
+survives only in authselect's backup directory. So the two modules, each
+behaving correctly by its own lights, undo one another, and a tree that
+used both would flap on every run.
 
 ## 6. Everything else not started
 

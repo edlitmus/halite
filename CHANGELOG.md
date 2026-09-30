@@ -37,6 +37,21 @@ status does not say what the filesystem did, and refuses `e`, since clearing it
 really does convert an ext4 file back to block maps. Neither is run by any CI leg;
 there is no RHEL leg. DIVERGENCE 5.172.
 
+### An `authselect` module, built on real RHEL-family hosts
+
+SPEC 15.3's Common Linux row now ships entirely. `authselect.current`, `check`,
+`list`, `list_features` and `backup_list` read a Fedora/RHEL 8+ node's
+authentication profile; `authselect.select` (a profile and exactly a set of
+features, with `force` to take over files authselect did not write),
+`enable_feature` and `disable_feature` change it, and report no change when there
+is none — which authselect itself does not: it rewrites every file on a repeat, and
+exits 0 for disabling a feature that does not exist. All eight were driven as root
+against authselect 1.2.6 on Rocky Linux 9.8 and AlmaLinux 8.10, and the module is
+`Hardware`. There is no `opt_out`: the version both releases ship does not have
+one. On a node authselect manages, `pam.set_module` on one of its generated files
+breaks authselect's symlink and the next forced select discards the edit —
+DIVERGENCE 5.172.
+
 ### `pro.enable`/`pro.disable` driven for real; the release gate is green again
 
 `pro`'s mutating functions shipped `Assumed`: nobody had watched `attach`, `detach`,
