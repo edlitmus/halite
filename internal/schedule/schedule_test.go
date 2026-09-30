@@ -183,6 +183,7 @@ func TestMaxRunningHoldsAJobBack(t *testing.T) {
 		Enabled: true, MaxRunning: 1, Location: time.UTC,
 	}
 	release := make(chan struct{})
+	firstStarted := make(chan struct{})
 	var started int
 	var mu sync.Mutex
 	e := &Engine{
@@ -191,6 +192,9 @@ func TestMaxRunningHoldsAJobBack(t *testing.T) {
 		Execute: func(ctx context.Context, r Run) error {
 			mu.Lock()
 			started++
+			if started == 1 {
+				close(firstStarted)
+			}
 			mu.Unlock()
 			<-release
 			return nil
@@ -198,7 +202,19 @@ func TestMaxRunningHoldsAJobBack(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	defer close(release)
 	go e.Run(ctx)
+
+	// Wait for the first run rather than sleeping a fixed time and
+	// assuming it has begun: on a loaded macOS CI runner 120ms once
+	// passed with no run started at all, and the test reported "0 runs"
+	// about a limit it had never exercised. The limit is only tested
+	// once something is actually holding the slot.
+	select {
+	case <-firstStarted:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the job never started")
+	}
 
 	// Several intervals pass while the first run is still going.
 	time.Sleep(120 * time.Millisecond)
@@ -208,7 +224,6 @@ func TestMaxRunningHoldsAJobBack(t *testing.T) {
 	if n != 1 {
 		t.Errorf("%d runs started with maxrunning 1", n)
 	}
-	close(release)
 }
 
 // `run_on_start` and `@reboot` both mean now, which is what makes a
