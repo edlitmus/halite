@@ -898,8 +898,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"only: on 4.14.3 that function is raw rpmvercmp and on 4.16.1.3 it compares EVRs, so an epoch or " +
 		"release has no oracle that means the same thing on both. Since DIVERGENCE 5.177 CompareRPM follows " +
 		"rpm 4.16's EVR comparison (`1.0` < `1.0-1`, as 4.16.1.3 answered on Rocky 9.8), and the differential " +
-		"has an `evr` subtest for epochs and releases on rpm >= 4.16 that has not yet run on any host; only " +
-		"two such pairs have a real rpm's answer. Broken on purpose and watched fail on real " +
+		"has an `evr` subtest for epochs and releases on rpm >= 4.16, which ran on Rocky 9.8's rpm 4.16.1.3 " +
+		"on 2026-09-30 and agreed with rpm on all eleven of its pairs (and skipped, saying why, on AlmaLinux " +
+		"8.10's 4.14.3), an empty release (`1.0-`) among them. Broken on purpose and watched fail on real " +
 		"hosts: last-instance-wins in `list_pkgs`, IgnoreExitCode dropped, the verify path offset by one, and " +
 		"CompareRPM's caret ordering reversed. Not built: `bin_pkg_info`, `checksum`, `diff`, `modified` " +
 		"(no .rpm file on either host without driving dnf, which other work was using). Not covered: " +

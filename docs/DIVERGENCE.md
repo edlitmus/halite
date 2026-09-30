@@ -17264,9 +17264,18 @@ the missing-release order: the two ordering tests failed, and so did the
 
 `TestLiveRpmVersionCmpAgreesWithRpm` has an `evr` subtest: on rpm >= 4.16, by
 `rpm --version`, it asks rpm's `rpm.vercmp` eleven epoch- and release-bearing
-pairs; below 4.16 it skips saying why. **It has not run anywhere**, and the
-`RPM version N` form it reads the version from is from memory, not captured —
-if it is wrong the subtest skips rather than passing.
+pairs; below 4.16 it skips saying why.
+
+**Run afterwards, on the lab, 2026-09-30.** On Rocky Linux 9.8 (rpm 4.16.1.3)
+the `evr` subtest ran — `rpm --version` printed `RPM version 4.16.1.3`, the
+form it reads — and rpm agreed with CompareRPM on all eleven pairs. On
+AlmaLinux 8.10 (rpm 4.14.3) it skipped with its reason, and the rest of
+`TestLiveRpm*` passed on both. The other two fixes were checked through a
+`halite-node` built from this change: `pkg.owner /usr/share/man/man1` on Rocky
+9.8 answered `filesystem` (rpm names `filesystem` and `binutils`), and
+`pkg.version kernel-core` on AlmaLinux 8.10, which has
+`4.18.0-553.el8_10` and `4.18.0-553.163.1.el8_10` installed side by side,
+answered the newer.
 
 **Found, not fixed: an exact pin without a release never converges on rpm.**
 `pkg.installed` with `version: 1.0` and no `allow_updates` compares `1.0`
@@ -17276,9 +17285,9 @@ and every run reinstalls — before this change and after it, shown by calling
 rpmverOverlap's, not an ordering — and that is its own change with its own
 test.
 
-**Not verified against a real rpm:** every release- or epoch-bearing pair but
-the two 5.172 recorded; `1.0-` (an empty release); the `evr` subtest itself;
-any rpm but 4.14.3 and 4.16.1.3, including Leap's 4.20.1, whose `rpm.vercmp`
+The eleven include `1.0-` against `1.0`, an empty release, which had been read
+only from the source. **Not verified against a real rpm:** any rpm but 4.14.3
+and 4.16.1.3, including Leap's 4.20.1, whose `rpm.vercmp`
 was not asked anything with a release.
 
 
