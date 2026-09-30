@@ -32,6 +32,13 @@ The state of the rebuild, by what it means rather than by commit.
 - **`pkg.list_pkgs` and `pkg.version` on the RedHat family** reported
   whichever of two side-by-side kernels rpm happened to print last. They now
   report the newest, as the SUSE provider already did.
+- **RPM version comparison follows rpm 4.16.** `pkg.version_cmp` and
+  `rpm.version_cmp` said `1.0` and `1.0-1` were equal; they now say `1.0` is
+  older, as rpm 4.16.1.3 does. A version without a release sorts before the
+  same version with one. `pkg.installed` with `allow_updates` still accepts
+  an installed `1.0-1` for a pin of `1.0`. An exact pin of `1.0` without
+  `allow_updates` never matched an installed `1.0-1` and still does not;
+  that is recorded, not fixed.
 
 Not run on a lab host since the change; each is held by a unit test built on
 bytes a lab host printed. DIVERGENCE 5.177.

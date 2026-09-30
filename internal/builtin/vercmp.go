@@ -121,11 +121,32 @@ func debianAlpha(a, b string) int {
 	return 0
 }
 
-// CompareRPM compares two RPM version strings, returning -1, 0, or 1. It
-// is rpmvercmp, plus the epoch and release handling around it.
+// CompareRPM compares two RPM version strings, [epoch:]version[-release],
+// returning -1, 0, or 1. It is rpm 4.16's EVR ordering, rpmverCmp in
+// rpmio/rpmver.c at tag rpm-4.16.1.3 -- what `rpm.vercmp` in rpm's Lua
+// calls there: rpmvercmp applied to the epoch (a missing one is "0"),
+// then the version, then the release, where a missing release sorts
+// before any present one, even an empty one (its compare_values).
+//
+// # A missing release sorts first; it does not match
+//
+// This used to say that an absent release compares equal to any release,
+// so `1.0` and `1.0-1` were the same. rpm 4.16.1.3 on Rocky 9.8 says -1
+// (DIVERGENCE 5.172), as its source does. "An absent release matches any"
+// is real, but it is rpm's rule for *satisfying a dependency* --
+// `Requires: foo = 1.0` accepts foo-1.0-1 -- which lives in rpmverOverlap
+// in the same file, beside the ordering and apart from it. Folded into the
+// ordering it made equality intransitive: `1.0` equalled `1.0-1` and
+// `1.0-2`, which are not equal to each other, and a sort or a "newest of"
+// built on that depends on the order it was handed things.
+//
+// No caller here needs the matching rule. pkg.installed's exact pin is a
+// string match and its allow_updates floor is `>= 0`, which an installed
+// `1.0-1` still clears against a pin of `1.0` (DIVERGENCE 5.177 lists every
+// caller).
 func CompareRPM(a, b string) int {
-	ae, av, ar := splitRPM(a)
-	be, bv, br := splitRPM(b)
+	ae, av, ar, aHasRelease := splitRPM(a)
+	be, bv, br, bHasRelease := splitRPM(b)
 
 	if c := compareInts(ae, be); c != 0 {
 		return c
@@ -133,15 +154,24 @@ func CompareRPM(a, b string) int {
 	if c := rpmvercmp(av, bv); c != 0 {
 		return c
 	}
-	// An absent release compares equal to any release, which is how
-	// `1.0` and `1.0-1` are the same package to rpm.
-	if ar == "" || br == "" {
+	switch {
+	case !aHasRelease && !bHasRelease:
 		return 0
+	case !aHasRelease:
+		return -1
+	case !bHasRelease:
+		return 1
 	}
 	return rpmvercmp(ar, br)
 }
 
-func splitRPM(v string) (epoch int, version, release string) {
+// splitRPM is rpm 4.16's parseEVR, near enough: an epoch when what comes
+// before the first colon is a number, and the release after the last
+// hyphen. hasRelease is separate from release because rpm tells "no
+// release" (NULL) from an empty one (`1.0-`). parseEVR also reads an
+// empty epoch (`:1.0`) as 0; here it stays in the version, where rpmvercmp
+// skips the colon as a separator, and the order comes out the same.
+func splitRPM(v string) (epoch int, version, release string, hasRelease bool) {
 	v = strings.TrimSpace(v)
 	if i := strings.IndexByte(v, ':'); i >= 0 {
 		if n, ok := atoiSafe(v[:i]); ok {
@@ -150,9 +180,9 @@ func splitRPM(v string) (epoch int, version, release string) {
 		}
 	}
 	if i := strings.LastIndexByte(v, '-'); i >= 0 {
-		return epoch, v[:i], v[i+1:]
+		return epoch, v[:i], v[i+1:], true
 	}
-	return epoch, v, ""
+	return epoch, v, "", false
 }
 
 // rpmvercmp is a transcription of rpm's own rpmvercmp.c.

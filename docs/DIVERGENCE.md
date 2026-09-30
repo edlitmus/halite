@@ -16659,7 +16659,7 @@ either host.
 - `CompareRPM` says `1.0` and `1.0-1` are equal, on the reasoning in its own comment
   that an absent release matches any; rpm 4.16.1.3's EVR comparison says -1. Which
   one `pkg.latest` should follow is a question, not a defect found; it is recorded so
-  that it stays one.
+  that it stays one. *Decided and changed in 5.177: rpm 4.16.*
 
 **Not verified:** no CI leg runs any of this — there is no RHEL leg, and the chattr
 test has not been run on the `linux` leg's Ubuntu, so it is not in that leg's `-run`
@@ -17215,6 +17215,71 @@ compare against. **Not measured:** what `pkg.latest` on a kernel does now on a
 real EL host, where `dnf list available` and installonly limits decide what is
 offered; no EL fixture of this argv exists, and the Alma kernels were captured
 in `rpm.list_pkgs`'s format, not this one.
+
+#### `CompareRPM` follows rpm 4.16: a missing release sorts first
+
+`CompareRPM` said `1.0` and `1.0-1` were equal, because "an absent release
+matches any". rpm 4.16.1.3 on Rocky 9.8 said -1 (5.172), which left open which
+one halite should follow. **Decided: rpm 4.16.** The rule is now rpm's
+`rpmverCmp` in `rpmio/rpmver.c` at tag `rpm-4.16.1.3` — the function
+`rpm.vercmp` in rpm's Lua calls there, read from the source for this change:
+rpmvercmp on the epoch (a missing one is `"0"`), then the version, then the
+release, where `compare_values` puts a missing release (NULL) before any
+present one, an empty one (`1.0-`) included.
+
+"An absent release matches any" was not invented. It is rpm's rule for
+*satisfying a dependency* — `Requires: foo = 1.0` accepts `foo-1.0-1` — and it
+lives in `rpmverOverlap` in the same file, beside the ordering and apart from
+it. Folded into an ordering it breaks transitivity of equality: `1.0` equalled
+`1.0-1` and `1.0-2`, which do not equal each other, so a "newest of" built on
+it depends on the order it is handed things. `TestComparisonIsATotalOrder` now
+checks equality is transitive, with `1.0-2` added to its list, and failed on
+exactly that before the fix.
+
+**Every caller, and what it means for each.**
+
+| Caller | What changes |
+|---|---|
+| `pkg.version_cmp` (scheme `rpm`, or `auto` on any family but Debian and FreeBSD) | The answer for a release-less against a release-bearing version: `1.0` vs `1.0-1` is now -1, was 0 |
+| `rpm.version_cmp` | The same function; the same change |
+| `pkg.upgrade_available` | Compares `pkg.version` with `pkg.latest_version`, both with releases on rpm; no change for what a provider returns |
+| `pkg.installed`, `allow_updates: true` (`installedIsAtLeast`) | `CompareRPM(installed, pin) >= 0`, on every family but Debian and FreeBSD — an unknown family (Alpine, Arch, macOS, Windows) gets the RPM scheme too, and apk's `-r29` is a release to it. A pin of `1.0` against an installed `1.0-1.el9` was 0 and is now 1: satisfied either way. `TestVersionSatisfiesAnRPMFloorWithoutARelease` holds it, and fails if the release order is reversed |
+| `pkg.installed`, an exact pin | Does not use `CompareRPM`: it is a string match or a `*` prefix. Unaffected — see below |
+| `pkg.latest` on the RedHat family | Does not use `CompareRPM`: the dnf provider's newest is `dnf list available`'s, compared as a string. Unaffected |
+| zypper `LatestVersion` (`pkg.latest`, `pkg.latest_version` on SUSE) | Picks the newest of zypper's editions, which all carry a release; no change for what zypper printed on Leap |
+| `parseRPMInstalledNewest` (dnf and zypper `list_pkgs`) | Compares `rpm -qa` versions, which always carry a release; no change |
+| `TestLiveZypper*` | Newest-of over rpm's and zypper's versions; releases present; no change |
+
+Epoch: `0:1.0` against `1.0` was 0 and still is, as 4.16.1.3 answered. The
+tilde and the caret are rpmvercmp's and were not touched; 5.172's differential
+already runs them against 4.14.3 and 4.16.1.3.
+
+Tests: the two real 4.16.1.3 answers, both ways round, in
+`TestRPMOrderingIsRpm416sEVRComparison`; eight more pairs from the source in
+`TestRPMAbsentReleaseSortsBeforeAnyRelease`, whose comment says no rpm has
+been asked them. Before the fix all three tests failed (`CompareRPM("1.0",
+"1.0-1") = 0; rpm 4.16.1.3 said -1`). Broken on purpose afterwards by reversing
+the missing-release order: the two ordering tests failed, and so did the
+`allow_updates` test, with a pin of `1.0` against `1.0-1.el9` unsatisfied.
+
+`TestLiveRpmVersionCmpAgreesWithRpm` has an `evr` subtest: on rpm >= 4.16, by
+`rpm --version`, it asks rpm's `rpm.vercmp` eleven epoch- and release-bearing
+pairs; below 4.16 it skips saying why. **It has not run anywhere**, and the
+`RPM version N` form it reads the version from is from memory, not captured —
+if it is wrong the subtest skips rather than passing.
+
+**Found, not fixed: an exact pin without a release never converges on rpm.**
+`pkg.installed` with `version: 1.0` and no `allow_updates` compares `1.0`
+against what rpm reports, `1.0-1.el9`, as strings, so it is never satisfied
+and every run reinstalls — before this change and after it, shown by calling
+`versionSatisfies` directly. What it lacks is a matching rule —
+rpmverOverlap's, not an ordering — and that is its own change with its own
+test.
+
+**Not verified against a real rpm:** every release- or epoch-bearing pair but
+the two 5.172 recorded; `1.0-` (an empty release); the `evr` subtest itself;
+any rpm but 4.14.3 and 4.16.1.3, including Leap's 4.20.1, whose `rpm.vercmp`
+was not asked anything with a release.
 
 
 

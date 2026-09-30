@@ -823,6 +823,30 @@ func TestVersionSatisfies(t *testing.T) {
 	}
 }
 
+// An allow_updates pin without a release is a floor that the installed
+// package, which rpm always reports with one, still clears. CompareRPM
+// used to reach this through "an absent release matches any" (0); since it
+// follows rpm 4.16 it reaches it through "a present release sorts after an
+// absent one" (1), and `>= 0` is true either way. A pin one version above
+// is still not met (DIVERGENCE 5.177).
+func TestVersionSatisfiesAnRPMFloorWithoutARelease(t *testing.T) {
+	c := newCtx(false)
+	c.Grains = value.MapOf("os_family", "RedHat")
+	for _, tc := range []struct {
+		installed, want string
+		ok              bool
+	}{
+		{"1.0-1.el9", "1.0", true},
+		{"1.1-1.el9", "1.0", true},
+		{"1.0-1.el9", "1.0-2.el9", false},
+		{"1.0-1.el9", "1.1", false},
+	} {
+		if got := versionSatisfies(c, tc.installed, tc.want, true); got != tc.ok {
+			t.Errorf("allow_updates: installed %q, pin %q: satisfied = %v, want %v", tc.installed, tc.want, got, tc.ok)
+		}
+	}
+}
+
 // ---- sys ----
 
 func TestSysDocReadsTheBuildTimeSignatures(t *testing.T) {
