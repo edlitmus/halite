@@ -45,8 +45,17 @@ echo "go:           $(go version)"
 # ships (/etc/DIR_COLORS.lightbgcolor, which's NEWS) and SUSE does not,
 # so it could only skip there. That is a limit of the test, recorded in
 # DIVERGENCE 5.178, not a skip this leg accepts.
+# `allowed_skips` names the one kind of skip a leg accepts: a subtest
+# gated on a tool version this distribution does not ship. It is empty
+# except on EL8, whose rpm 4.14.3 has no EVR comparison for the `evr`
+# subtest (DIVERGENCE 5.177) to be checked against. Naming it here keeps
+# every other skip a failure, and requiring it to happen means an EL8
+# image that someday ships rpm >= 4.16 says so instead of quietly running
+# a check this list does not claim.
+allowed_skips=''
 case "$ID" in
 rocky | almalinux)
+	[ "$ID" = almalinux ] && allowed_skips='TestLiveRpmVersionCmpAgreesWithRpm/evr'
 	modules='TestLiveRpm|TestLiveChattr|TestLiveAuthselect|TestLiveDnfModule'
 	expect='
 		TestLiveRpmReadsTheRealDatabase
@@ -132,10 +141,21 @@ fi
 # Every test selected here is one this distribution can run, so a skip is
 # the leg doing less than it says. That is the failure mode this whole
 # script is for: a green run in which everything quietly skipped.
-if grep -q -- '--- SKIP' "$out"; then
-	echo "::error::a test skipped on $PRETTY_NAME, and every test this leg selects is meant to run here. The reason is printed above."
-	failed=1
-fi
+for name in $(awk '/--- SKIP:/ { print $3 }' "$out"); do
+	case " $allowed_skips " in
+	*" $name "*) ;;
+	*)
+		echo "::error::$name skipped on $PRETTY_NAME, and every test this leg selects is meant to run here. The reason is printed above."
+		failed=1
+		;;
+	esac
+done
+for name in $allowed_skips; do
+	if ! grep -qF -- "--- SKIP: $name (" "$out"; then
+		echo "::error::$name was expected to skip on $PRETTY_NAME and did not: the tool it waits for may have arrived, so this list is out of date"
+		failed=1
+	fi
+done
 
 missing=0
 for name in $expect; do

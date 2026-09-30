@@ -17385,6 +17385,18 @@ containers on the first run, and no test needed changing. **Not verified:** how 
 mirrors make these legs flaky, which only a few weeks of nightly runs can say;
 `make fleetcheck-*` under BSD make (it was run only by GNU make, on the runner).
 
+#### One skip the EL8 leg accepts, by name
+
+Rebased onto 5.177, the alma8 leg went red on its first run: 5.177 added an
+`evr` subtest that runs only where rpm is 4.16 or later, and AlmaLinux 8.10
+ships 4.14.3, so it skipped — correctly, saying why — and this leg fails on
+any skip. `run.sh` now carries `allowed_skips`, empty on every leg but
+alma8, where it names `TestLiveRpmVersionCmpAgreesWithRpm/evr` alone. Any
+other skip still fails the leg, and the named one is *required* to happen:
+an EL8 image that someday ships rpm 4.16 fails with a message saying the
+list is out of date, rather than quietly running a check this ledger does
+not claim for it.
+
 
 ## 6. Everything else not started
 
