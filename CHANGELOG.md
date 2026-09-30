@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `pkg` on the RedHat and SUSE families: what the lab found, fixed
+
+- **`pkg.owner` of a path several packages own** returned their names run
+  together — `filesystembinutils` for `/usr/share/man/man1` on Rocky 9. It now
+  returns the first owner rpm names, as it already did on Debian; `rpm.owner`
+  lists them all.
+
+Not run on a lab host since the change; each is held by a unit test built on
+bytes a lab host printed. DIVERGENCE 5.177.
+
 ### `pkg` on SUSE, and `zypperpkg`
 
 `pkg.installed` on an openSUSE or SLES node used to answer "no package manager

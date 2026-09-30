@@ -486,17 +486,20 @@ func TestZypperHoldAndUnholdSpellTheCapturedCommands(t *testing.T) {
 	}
 }
 
-func TestZypperOwnerAndFileListAskRpm(t *testing.T) {
-	c := zypperCtx(t, newZypperRunner(t, "rpm-ql-tree", "rpm-qf-tree"))
+// OwnerOf is not here any more. Leap's `rpm -qf` answers were captured
+// under the dnf provider's old `--queryformat %{NAME}` argv, which ran two
+// owners together (DIVERGENCE 5.177); the provider now sends rpm.owner's
+// argv, which was captured on Rocky 9.8 and Alma 8.10 but not on Leap, so
+// TestRpmPkgOwnerOfASharedPathIsOneRealPackage holds both providers to
+// the Rocky bytes rather than this test serving Leap bytes under an argv
+// Leap was never asked.
+func TestZypperFileListAsksRpm(t *testing.T) {
+	c := zypperCtx(t, newZypperRunner(t, "rpm-ql-tree"))
 	files, err := zypperProvider{}.FileList(c, "tree")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !contains(files, "/usr/bin/tree") || len(files) != 7 {
 		t.Errorf("files = %v", files)
-	}
-	owner, err := zypperProvider{}.OwnerOf(c, "/usr/bin/tree")
-	if err != nil || owner != "tree" {
-		t.Errorf("owner = %q, %v", owner, err)
 	}
 }

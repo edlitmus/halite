@@ -16655,7 +16655,7 @@ either host.
 - `dnfProvider.OwnerOf` (`pkg.owner` on the RedHat family) runs
   `rpm -qf --queryformat %{NAME} <path>` with no newline in the format and takes the
   first line. For `/usr/share/man/man1` on Rocky 9.8 rpm printed `filesystembinutils`
-  — two owners run together into one name that does not exist.
+  — two owners run together into one name that does not exist. *Fixed in 5.177.*
 - `CompareRPM` says `1.0` and `1.0-1` are equal, on the reasoning in its own comment
   that an absent release matches any; rpm 4.16.1.3's EVR comparison says -1. Which
   one `pkg.latest` should follow is a question, not a defect found; it is recorded so
@@ -17147,6 +17147,48 @@ stickiness, which can make zypper install something other than the highest
 edition `latest_version` reports — every repository here had priority 99, which
 zypper itself remarks on; SLES, and any Leap other than 16.0; a package whose
 licence needs agreeing to.
+
+### 5.177 The RPM providers' owner, installed set and version order, fixed from what the lab found
+
+5.172 and 5.176 each wrote down a defect in code they were not about, and left
+it there on purpose. This section fixes three of them, all in the path
+`pkg` takes on the RedHat and SUSE families, with no lab host: every fixture
+below is one those two sections captured, and what could not be checked
+against a real rpm is said at the end.
+
+#### `pkg.owner` ran two owners together
+
+`dnfProvider.OwnerOf` sent `rpm -qf --queryformat %{NAME} <path>`. rpm prints
+the format once per owner and adds nothing between them, so on Rocky 9.8 (rpm
+4.16.1.3) `/usr/share/man/man1` — owned by `filesystem` and `binutils` — came
+back as `filesystembinutils`, a package that does not exist (5.172). The zypper
+provider delegated to the same function, so SUSE had it too.
+
+It now sends `rpm.owner`'s argv (`%{NAME}\n`, then `--`) and reads it with
+`rpm.owner`'s parser, through one `rpmOwnerArgv` both call, so the two cannot
+drift apart again. `pkg.owner` returns one string on every provider and its
+generated documentation says so, so it did not become a list: a shared path
+answers the **first** owner rpm names, which is what the apt provider does
+with dpkg's `pkg1, pkg2: /path`. `rpm.owner` is the call that lists them all,
+and the function's doc now points there. An unowned path and an absent one
+are still the empty string, as before and as on apt and pkgng; `rpm.owner`
+keeps the distinction between them.
+
+`TestRpmPkgOwnerOfASharedPathIsOneRealPackage` serves both Rocky answers, each
+under the argv that produced it — `filesystembinutils` under the old one,
+`filesystem\nbinutils\n` under the new — and anything else no answer, and holds
+the dnf and zypper providers to `filesystem`. Before the fix it failed with
+`owner = "filesystembinutils"`, the lab's own symptom. Broken on purpose
+afterwards: the newline dropped from the shared argv (it asked an argv nobody
+captured and got nothing), and the last owner taken instead of the first
+(`binutils`). Both failed.
+
+The Leap fixtures `rpm-qf-tree` and `rpm-qf-unowned` were captured under the
+old argv and no longer answer anything the provider sends, so they were
+removed rather than re-labelled with an argv Leap was never asked; the zypper
+unit test keeps its `file_list` half. **Not run:** the new argv on Leap's rpm
+4.20.1, and `pkg.owner` itself on any host since the change; the argv was run
+through `rpm.owner` on Rocky 9.8 and AlmaLinux 8.10 in 5.172.
 
 
 

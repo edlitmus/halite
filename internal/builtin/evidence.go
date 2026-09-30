@@ -110,7 +110,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"(DIVERGENCE 5.124). **zypper too**, on 2026-09-30, as root on the lab's " +
 		"openSUSE Leap 16.0 (zypper 1.14.101, rpm 4.20.1): `tree` installed through " +
 		"`zypperpkg.install`, read back through `version`, `latest_version`, `file_list` " +
-		"and `owner`, held with a zypper lock that really stopped `pkg.remove`, unheld and " +
+		"and `owner` (then `rpm -qf --queryformat %{NAME}`; the rpm.owner argv both rpm " +
+		"providers send since DIVERGENCE 5.177 was captured on Rocky 9.8 and AlmaLinux 8.10 " +
+		"and has not been run on Leap), held with a zypper lock that really stopped `pkg.remove`, unheld and " +
 		"removed, each answer checked against rpm or zypper directly; `pkg.latest` " +
 		"upgraded an installed, outdated `libX11-data` one release and converged on a " +
 		"second run, and `pkg.installed` pinned to the old release brought it back, which " +

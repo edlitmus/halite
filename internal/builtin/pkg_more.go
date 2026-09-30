@@ -216,7 +216,8 @@ func registerPkgMore(r *Registries) {
 		exec.Module{
 			Sig: signature.Signature{
 				Module: "pkg", Function: "owner",
-				Doc: "Return the package that owns a path, or the empty string.",
+				Doc: "Return the package that owns a path, or the empty string. A path several packages own " +
+					"(a shared directory) returns the first the package manager names; `rpm.owner` lists them all.",
 				Params: []signature.Param{
 					req("path", signature.Path, "The path."),
 				},
@@ -1136,18 +1137,30 @@ func (dnfProvider) FileList(c *exec.Context, name string) ([]string, error) {
 	return lines, nil
 }
 
+// OwnerOf is rpm.owner's query, reduced to pkg.owner's single string.
+//
+// A path can have several owners -- /usr/share/man/man1 is `filesystem`
+// and `binutils` on Rocky 9.8 -- and pkg.owner returns one name on every
+// provider, so it is the first rpm names, as the apt provider takes the
+// first package dpkg names. rpm.owner returns them all. The argv and the
+// parser are rpm.owner's own rather than a copy: this function used to
+// send its own `%{NAME}` with no newline, and rpm answered with the two
+// names run together (DIVERGENCE 5.172, 5.177).
+//
+// A path nobody owns and a path that does not exist are both the empty
+// string, which is what this did before and what the apt and pkgng
+// providers answer; parseRpmOwner's error for the absent path is rpm.owner's
+// distinction, not pkg.owner's.
 func (dnfProvider) OwnerOf(c *exec.Context, path string) (string, error) {
-	res, err := c.Run(exec.Command{
-		Argv:           []string{"rpm", "-qf", "--queryformat", "%{NAME}", path},
-		IgnoreExitCode: true,
-	})
+	res, err := rpmQuery(c, rpmOwnerArgv(path)...)
 	if err != nil {
 		return "", err
 	}
-	if res.Code != 0 {
+	owners, err := parseRpmOwner(path, res)
+	if err != nil || len(owners) == 0 {
 		return "", nil
 	}
-	return strings.TrimSpace(firstLine(res.Stdout)), nil
+	return value.KeyString(owners[0]), nil
 }
 
 func (p dnfProvider) ListRepos(c *exec.Context) (*value.Map, error) {

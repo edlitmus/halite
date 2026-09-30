@@ -6523,7 +6523,7 @@ pkg.list_upgrades(refresh: bool = true)
 
 #### `pkg.owner`
 
-Return the package that owns a path, or the empty string.
+Return the package that owns a path, or the empty string. A path several packages own (a shared directory) returns the first the package manager names; `rpm.owner` lists them all.
 
 ```
 pkg.owner(path: path)

@@ -303,3 +303,54 @@ func TestRpmVersionCmpIsCompareRPM(t *testing.T) {
 		t.Errorf("1.0~rc1 vs 1.0 = %#v, want -1", got)
 	}
 }
+
+// pkg.owner on the RedHat and SUSE families is `rpm -qf`, and it used to
+// ask with `--queryformat %{NAME}` -- no newline in the format. rpm prints
+// the format once per owner, so for a path two packages own, Rocky 9.8's
+// rpm 4.16.1.3 answered `filesystembinutils` for /usr/share/man/man1:
+// two names run together into one that does not exist (DIVERGENCE 5.172).
+// Both answers below are what Rocky 9.8 printed, each under the argv that
+// produced it, so the test fails the way the provider did if it goes back
+// to the old argv, and fails with no answer at all if it drifts to a third
+// argv nobody captured.
+func TestRpmPkgOwnerOfASharedPathIsOneRealPackage(t *testing.T) {
+	oldArgv := exec.Command{Argv: []string{"rpm", "-qf", "--queryformat", "%{NAME}", "/usr/share/man/man1"}}
+	newArgv := exec.Command{Argv: []string{"rpm", "-qf", "--queryformat", "%{NAME}\\n", "--", "/usr/share/man/man1"}}
+	for _, p := range []pkgOwner{dnfProvider{binary: "dnf"}, zypperProvider{}} {
+		runner := &exec.RecordingRunner{
+			Responses: map[string]exec.Result{
+				oldArgv.String(): {Stdout: "filesystembinutils"},
+				newArgv.String(): {Stdout: "filesystem\nbinutils\n"},
+			},
+			Default: exec.Result{Code: 99, Stderr: "no captured answer for this argv"},
+		}
+		c := &exec.Context{Runner: runner, Lookup: func(name string) string { return "/usr/bin/" + name }}
+		got, err := p.OwnerOf(c, "/usr/share/man/man1")
+		if err != nil {
+			t.Fatalf("%T: %v", p, err)
+		}
+		// The first owner rpm names, as the apt provider takes the first
+		// package dpkg names; rpm.owner is the call that lists them all.
+		if got != "filesystem" {
+			t.Errorf("%T: owner = %q, want filesystem (ran %v)", p, got, runner.RanCommands())
+		}
+	}
+}
+
+// A path nobody owns, and a path that does not exist, are both the empty
+// string from pkg.owner, as they are from the apt and pkgng providers:
+// that is pkg.owner's documented contract. rpm.owner, which speaks rpm's
+// own vocabulary, keeps the difference. Both answers are Rocky 9.8's.
+func TestRpmPkgOwnerOfAnUnownedOrAbsentPathIsEmpty(t *testing.T) {
+	for path, res := range map[string]exec.Result{
+		"/root/rpmchattr-capture": {Stdout: "file /root/rpmchattr-capture is not owned by any package\n", Code: 1},
+		"/nonexist":               {Stderr: "error: file /nonexist: No such file or directory\n", Code: 1},
+	} {
+		argv := exec.Command{Argv: []string{"rpm", "-qf", "--queryformat", "%{NAME}\\n", "--", path}}
+		c := proTestContext(map[string]exec.Result{argv.String(): res})
+		got, err := dnfProvider{binary: "dnf"}.OwnerOf(c, path)
+		if err != nil || got != "" {
+			t.Errorf("%s: owner = %q, %v; want the empty string", path, got, err)
+		}
+	}
+}
