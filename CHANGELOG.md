@@ -29,6 +29,9 @@ The state of the rebuild, by what it means rather than by commit.
   together — `filesystembinutils` for `/usr/share/man/man1` on Rocky 9. It now
   returns the first owner rpm names, as it already did on Debian; `rpm.owner`
   lists them all.
+- **`pkg.list_pkgs` and `pkg.version` on the RedHat family** reported
+  whichever of two side-by-side kernels rpm happened to print last. They now
+  report the newest, as the SUSE provider already did.
 
 Not run on a lab host since the change; each is held by a unit test built on
 bytes a lab host printed. DIVERGENCE 5.177.

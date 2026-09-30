@@ -17080,7 +17080,7 @@ measured anywhere.
   `-optional` were each installed at 6.12.0-160000.35.1 and .37.1. `list_pkgs`
   keeps the newest by rpm's ordering rather than whichever rpm printed last.
   The dnf provider still keeps the last one printed; EL's installonly kernels
-  have the same shape, and that was not changed or measured here.
+  have the same shape, and that was not changed or measured here. *Changed in 5.177.*
 - The XML stream interleaves `<message type="info">` ("Refreshing service
   'openSUSE'.") and, for a failed repository, `<message type="error">` with the
   answer; `list-updates` writes every `<update>` on one line; `--no-refresh`
@@ -17189,6 +17189,32 @@ removed rather than re-labelled with an argv Leap was never asked; the zypper
 unit test keeps its `file_list` half. **Not run:** the new argv on Leap's rpm
 4.20.1, and `pkg.owner` itself on any host since the change; the argv was run
 through `rpm.owner` on Rocky 9.8 and AlmaLinux 8.10 in 5.172.
+
+#### The dnf provider's installed set kept whichever instance rpm printed last
+
+`pkg.list_pkgs` is one version per name, and EL installs kernels side by side:
+AlmaLinux 8.10 had two `kernel-core`, and both RedHat hosts several
+`gpg-pubkey` (5.172). The dnf provider kept the last line rpm printed for a
+name, which is the order of rpm's database and answers nothing. 5.176 had
+already made the zypper provider keep the newest by `CompareRPM`, and noted
+that dnf still did not. The two send the same `rpm -qa` argv byte for byte, so
+dnf now uses zypper's parser, `parseRPMInstalledNewest`, rather than a second
+copy of it.
+
+The test is the Leap `rpm-qa` capture — a real answer to exactly this argv —
+fed through `dnfProvider.ListPkgs` as rpm printed it and reversed. That
+capture prints the older kernel first, so last-wins happened to be right in
+rpm's own order and wrong only reversed, which is the point of running both:
+before the fix the reversed run failed with `kernel-default =
+6.12.0-160000.35.1`. Broken on purpose afterwards by disabling the comparison
+in the shared parser: the dnf and zypper tests both failed, reversed.
+
+This reaches every caller of `ListPkgs` on the RedHat family: `pkg.list_pkgs`,
+`pkg.version`, and the installed version `pkg.installed` and `pkg.latest`
+compare against. **Not measured:** what `pkg.latest` on a kernel does now on a
+real EL host, where `dnf list available` and installonly limits decide what is
+offered; no EL fixture of this argv exists, and the Alma kernels were captured
+in `rpm.list_pkgs`'s format, not this one.
 
 
 

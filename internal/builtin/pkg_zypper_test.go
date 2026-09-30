@@ -226,6 +226,41 @@ func TestZypperListPkgsKeepsTheNewestOfTwoInstalledKernels(t *testing.T) {
 	}
 }
 
+// The dnf provider sends the same `rpm -qa` argv, byte for byte, so the
+// Leap capture is a real answer to it: EL's installonly kernels have the
+// same shape (AlmaLinux 8.10 in the lab had two kernel-core, 5.172). It
+// used to keep whichever instance rpm printed last, so the answer depended
+// on the order of rpm's database -- the Leap capture happens to print the
+// older kernel first, which is why only the reversed order caught it.
+func TestDnfListPkgsKeepsTheNewestWhateverOrderRpmPrints(t *testing.T) {
+	stdout := zypperFixture(t, "rpm-qa", "stdout")
+	lines := strings.Split(strings.TrimSpace(stdout), "\n")
+	reversed := make([]string, len(lines))
+	for i, ln := range lines {
+		reversed[len(lines)-1-i] = ln
+	}
+	argv := strings.TrimSpace(zypperFixture(t, "rpm-qa", "argv"))
+	for _, order := range []struct {
+		name, stdout string
+	}{{"as rpm printed it", stdout}, {"reversed", strings.Join(reversed, "\n") + "\n"}} {
+		r := newZypperRunner(t)
+		r.results[argv] = exec.Result{Stdout: order.stdout}
+		got, err := dnfProvider{binary: "dnf"}.ListPkgs(zypperCtx(t, r))
+		if err != nil {
+			t.Fatalf("%s: %v", order.name, err)
+		}
+		for name, want := range map[string]string{
+			"kernel-default":       "6.12.0-160000.37.1",
+			"kernel-default-extra": "6.12.0-160000.37.1",
+			"libX11-data":          "1.8.10-160000.3.1",
+		} {
+			if v, _ := got.Get(name); v != want {
+				t.Errorf("%s: %s = %v, want %s", order.name, name, v, want)
+			}
+		}
+	}
+}
+
 func TestZypperLatestVersionFromTheRealSearch(t *testing.T) {
 	for _, tc := range []struct {
 		fixture, name, want string
