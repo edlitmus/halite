@@ -16695,6 +16695,7 @@ either host to drive them against.
 | `disable-feature` of a feature that is not on, **or does not exist** | exit 0, no output |
 | `backup-remove` of a backup that does not exist | exit 0, no output |
 | order of features in `current --raw` | the order they were enabled, not sorted |
+| the first `select` on a node | also creates `/etc/dconf/db/distro.d/20-authselect` and `locks/20-authselect`, links into `/etc/authselect`, creating `/etc/dconf` itself where it did not exist — on both hosts, neither of which has `dconf` installed. A restore of `/etc/pam.d` and `nsswitch.conf` does not undo it; the links are left dangling |
 | `backup-list` without `--raw` | the date in each host's own `%c`: `Wed 30 Sep 2026 03:29:29 AM UTC` on EL9, `Wed Sep 30 14:13:27 2026` on EL8 |
 
 authselect also ships message translations
