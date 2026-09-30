@@ -1,0 +1,5 @@
+[redis]
+name=redis
+stream=7
+profiles=common
+state=enabled

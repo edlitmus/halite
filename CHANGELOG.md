@@ -62,6 +62,19 @@ forced `authselect select` silently discarded the edit. Both now refuse a linked
 service, and for authselect's own files say to use the `authselect` module
 instead. DIVERGENCE 5.173.
 
+### `dnf_module`: AppStream module streams on EL8 and EL9
+
+SPEC 15.3's RHEL row named `dnf_module` and nothing built it. It now ships
+eight functions under dnf's own verbs: `list` (what the repositories offer, from
+`dnf module list`), `status` (what this host has chosen, read from
+`/etc/dnf/modules.d` without running dnf), and `enable`, `disable`, `reset`,
+`switch_to`, `install` and `remove`, which take dnf's `name:stream/profile` specs
+and return `{changes, stderr}` — the per-module state before and after, measured
+from modules.d. A module that has been reset reads as never touched, as it does to
+dnf, although dnf leaves its file behind. Every function was run as root on Rocky
+Linux 9.8 (dnf 4.14.0) and AlmaLinux 8.10 (dnf 4.7.0) lab instances; there is no
+state, since SPEC 15.5 names none, and no CI leg runs it. DIVERGENCE 5.174.
+
 ### `pro.enable`/`pro.disable` driven for real; the release gate is green again
 
 `pro`'s mutating functions shipped `Assumed`: nobody had watched `attach`, `detach`,

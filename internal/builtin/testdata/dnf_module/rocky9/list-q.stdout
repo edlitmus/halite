@@ -1,0 +1,26 @@
+Rocky Linux 9 - AppStream
+Name       Stream Profiles                                                         Summary                                               
+mariadb    10.11  client, galera, server [d]                                       MariaDB Module                                        
+mariadb    11.8   client, galera, server [d]                                       MariaDB Module                                        
+maven      3.8    common [d]                                                       Java project management and project comprehension tool
+maven      3.9    common [d], openjdk11, openjdk17, openjdk21, openjdk25, openjdk8 Java project management and project comprehension tool
+mysql      8.4    api, client, filter, server [d]                                  MySQL Module                                          
+nginx      1.22   common [d]                                                       nginx webserver                                       
+nginx      1.24   common [d]                                                       nginx webserver                                       
+nginx      1.26   common [d]                                                       nginx webserver                                       
+nodejs     18     common [d], development, minimal, s2i                            Javascript runtime                                    
+nodejs     20     common [d], development, minimal, s2i                            Javascript runtime                                    
+nodejs     22     common [d], development, minimal, s2i                            Javascript runtime                                    
+nodejs     24     common [d], development, minimal, s2i                            Javascript runtime                                    
+php        8.1    common [d], devel, minimal                                       PHP scripting language                                
+php        8.2    common [d], devel, minimal                                       PHP scripting language                                
+php        8.3    common [d], devel, minimal                                       PHP scripting language                                
+postgresql 15     client, server [d]                                               PostgreSQL server and client module                   
+postgresql 16     client, server [d]                                               PostgreSQL server and client module                   
+postgresql 18     client, server [d]                                               PostgreSQL server and client module                   
+redis      7      common [d]                                                       Redis persistent key-value database                   
+ruby       3.1    common [d]                                                       An interpreter of object-oriented scripting language  
+ruby       3.3    common [d]                                                       An interpreter of object-oriented scripting language  
+ruby       4.0    common [d]                                                       An interpreter of object-oriented scripting language  
+
+Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled

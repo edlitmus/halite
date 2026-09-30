@@ -39,7 +39,6 @@ var pendingPlatformModules = map[string]PendingModule{
 		"use `pkgrepo`, which writes the signed-by keyrings that replaced it"},
 	"firewalld":            {Platform: "rhel", When: "phase 5, with the RHEL platform work"},
 	"subscription_manager": {Platform: "rhel", When: "phase 5, with the RHEL platform work"},
-	"dnf_module":           {Platform: "rhel", When: "phase 5, with the RHEL platform work"},
 	"zypperpkg":            {Platform: "suse", When: "phase 5, with the SUSE platform work"},
 	"win_file":             {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_useradd":          {Platform: "windows", When: "phase 5, with Windows parity"},

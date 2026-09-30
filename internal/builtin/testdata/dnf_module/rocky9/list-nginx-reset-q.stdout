@@ -1,0 +1,7 @@
+Rocky Linux 9 - AppStream
+Name  Stream Profiles   Summary        
+nginx 1.22   common [d] nginx webserver
+nginx 1.24   common [d] nginx webserver
+nginx 1.26   common [d] nginx webserver
+
+Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled

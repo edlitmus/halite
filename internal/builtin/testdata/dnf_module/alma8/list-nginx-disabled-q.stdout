@@ -1,0 +1,10 @@
+AlmaLinux 8 - AppStream
+Name  Stream      Profiles   Summary        
+nginx 1.14 [d][x] common [d] nginx webserver
+nginx 1.16 [x]    common [d] nginx webserver
+nginx 1.18 [x]    common [d] nginx webserver
+nginx 1.20 [x]    common [d] nginx webserver
+nginx 1.22 [x]    common [d] nginx webserver
+nginx 1.24 [x]    common [d] nginx webserver
+
+Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled

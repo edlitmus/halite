@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **91 execution modules / 618 functions** and **48 state
+The build ships **92 execution modules / 626 functions** and **48 state
 modules / 132 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -611,7 +611,10 @@ state), `mac_power` (`pmset(8)`), `mac_user`, `mac_group` and
 `mac_softwareupdate` (`softwareupdate(8)`) and `mac_keychain`
 (`security(1)`). `mac_assistive`, which drove `sqlite3(1)` against the
 SIP-protected `TCC.db` to manage the Accessibility grant list, shipped
-here too and has since been taken out of the build (5.119).
+here too and has since been taken out of the build (5.119). `dnf_module`
+followed `rpm` and `chattr` (5.172) into the RHEL row, built and driven on two
+throwaway lab instances, EL8 and EL9, because no machine of this
+estate is RHEL (5.174).
 
 `apparmor` is the one of those that is not only a platform module: SPEC
 names it in 15.2's core execution list and 15.5's core state list as
@@ -624,7 +627,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 20 are declared as pending rather than simply missing. A name absent
+The 19 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -646,7 +649,7 @@ specification cannot be quietly missed.
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `pro`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key` |
-| RHEL family | `rpm`, `chattr`, `yumpkg` and `dnfpkg` (aliases) | `firewalld`, `subscription_manager`, `dnf_module` |
+| RHEL family | `rpm`, `chattr`, `dnf_module`, `yumpkg` and `dnfpkg` (aliases) | `firewalld`, `subscription_manager` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_assistive` (5.119) |
@@ -16805,6 +16808,95 @@ nil): both new unit tests failed, one of them on finding
 is the Alma 8 run above, done before the fix; it was not re-run with the
 broken build. `sshd`, a plain file on the same node, is still editable —
 checked in the unit test, not on a host.
+### 5.174 `dnf_module`: built against two real EL hosts, and a reset is not a deletion
+
+SPEC 15.3's RHEL row named `dnf_module` and nothing built it; §2.3 and
+`internal/exec/platform.go` declared it pending "with the RHEL platform work". No
+machine in this estate is RHEL, so it was built against two throwaway lab
+instances raised for the purpose: `rocky9` (Rocky Linux 9.8, dnf 4.14.0) and
+`alma8` (AlmaLinux 8.10, dnf 4.7.0).
+
+**The surface is dnf's, because Salt has none.** Salt reaches modularity only
+through `pkg.install`'s `@module:stream` group syntax and cannot report or reset a
+stream. The eight functions are dnf's own verbs — `list`, `status`, `enable`,
+`disable`, `reset`, `switch_to`, `install`, `remove` — taking dnf's own
+`name:stream/profile` specs. SPEC 15.5 names no `dnf_module` state and none was
+added; a stream choice reaches a state through `module.run`.
+
+**Two readers, held to each other.** "Which streams exist and which is default"
+comes only from `dnf module list`, a table printed for a person; "what has this
+host chosen" has a better source, `/etc/dnf/modules.d/<name>.module`, the INI file
+dnf itself reads back. `list` parses the first, `status` reads the second without
+running dnf, and `TestLiveDnfModuleReadersAgree` compares them over the whole host
+— on alma8 that is eight streams the image had enabled (`container-tools`,
+`perl`, `python36`, `python39`, `virt` and three more); on rocky9, none.
+
+What the captures showed that no documentation would have:
+
+- **`dnf module reset` does not delete the file.** It rewrites it to `stream=`,
+  `profiles=`, `state=` — all empty — on both versions, and `dnf module list`
+  then shows the module unmarked, exactly like one never touched. A reader that
+  took "has a file" to mean "has a choice" would report every module anyone had
+  ever reset. `status` drops an empty `state`, so reset and untouched read the
+  same, as they do to dnf.
+- **The table cannot be split on whitespace.** Profiles is a comma list with
+  spaces, Summary is prose, and some rows (`389-ds 1.4` on alma8) have an empty
+  Profiles cell, so a row's third word is sometimes a profile and sometimes the
+  summary. The header is padded to exactly each column's width on both versions,
+  with different widths every invocation, so cells are read at the header's
+  offsets; a name cell holding a space means the offsets are wrong and the parser
+  refuses rather than shift the table.
+- **Two marker spellings.** Stream markers run together (`rhel8 [d][e]`, and
+  dnf 4.7's `1.14 [d][x]` for a default stream that is disabled); profile
+  markers are space-separated (`common [d] [i]`).
+- **EL9 ships no default streams.** Not one `[d]` in rocky9's Stream column;
+  alma8 has dozens. A test built against one would miss half the other.
+- **`-q` matters on dnf 4.7.** Without it, disabling nginx on alma8 made the next
+  `dnf module list` print a "Modular dependency problem" block (php:7.2 requires
+  nginx) and a metadata-age line above the table. With `-q`, stdout on both
+  versions held the tables alone.
+- **A disable can succeed loudly.** The same `dnf module disable nginx` on alma8
+  exits 0, writes `state=disabled`, and prints that dependency problem to stderr.
+  Failing on it would call a change dnf made a failure; dropping it would hide the
+  consequence. Mutations return `{changes, stderr}`, `changes` measured from
+  modules.d before and after rather than read from dnf's transaction summary.
+- **dnf's useful error is on its second line.** `enable nosuchmodule:1` prints
+  `Error: Problems in request:` then `missing groups or modules: nosuchmodule:1`,
+  and `c.Run`'s own error keeps only the first. Commands ask for their exit code
+  and the whole of stderr goes into the error — with a unit test holding that
+  every dnf command carries `IgnoreExitCode`, since `RecordingRunner` cannot show
+  the difference (5.113).
+- **Nothing-matched differs by how you asked.** `dnf module list nosuchmodule` is
+  exit 1, `Error: No matching Modules to list`; `dnf module list --installed` with
+  nothing installed is exit 0 and empty. Both are an empty list here.
+- **`enable` will not change an enabled stream**; dnf refuses and names
+  `module_stream_switch`. `switch_to` (`dnf module switch-to`, present on both
+  4.7 and 4.14) is the function that does it.
+
+**Driven for real.** `TestLiveDnfModuleEnableSwitchDisableReset` takes nginx
+through `enable` of one non-default stream, a refused second `enable`,
+`switch_to`, `disable` and `reset`, checking both readers at each step;
+`TestLiveDnfModuleInstallAndRemove` installs and removes redis's `common` profile
+(one package, no dependencies: 1.6 MB on rocky9, 1.2 MB on alma8), confirmed with
+`rpm -q`. Both tests skip unless the host has made no choice about the module and
+has none of it installed, and restore modules.d and the packages exactly as found
+— including deleting the `state=` file `reset` leaves, where there was no file
+before. Passed on both hosts. **Broken on purpose** four ways, each run on both
+hosts and each failing there before being restored: `status` keeping reset files
+(reset's `new` came back non-nil), `[e]` parsed as `[x]` (the readers disagreed on
+alma8's eight modules and on nginx at each step — on rocky9 only the latter, since
+it had nothing enabled, which is why both hosts were needed), `switch_to` running
+`enable` (dnf's own refusal came through), and modules.d's `profiles=` dropped
+(the install step failed on both).
+
+**Not covered**, and said in `evidence.go`'s note: a module with two installed
+profiles, so `profiles=`'s comma separator is libdnf's, not a captured one; a list
+spanning more than one repository; `switch_to` with packages installed, which is
+where it does real work; globs; RHEL proper, CentOS Stream, and Fedora, whose dnf5
+removed modularity. No `fleet.yml` leg is RHEL, so like `pro` (5.171) this
+evidence is a run a person repeats by hand on a lab host.
+
+
 
 
 

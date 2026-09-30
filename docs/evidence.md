@@ -61,7 +61,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 45 modules
+## `hardware` — 46 modules
 
 ### `acl`
 
@@ -90,6 +90,10 @@ runs real binaries and real shells through `exec.OSRunner` throughout this packa
 ### `debconf`
 
 driven against the real debconf 1.5.82 on Debian 12 in `make fleetcheck`: an answer written through `debconf-set-selections` and read back by both `debconf-get-selections` and `debconf-show` (DIVERGENCE 5.35). A malformed line makes debconf warn and continue rather than fail, which this module turns into an error -- demonstrated by breaking the field order on purpose.
+
+### `dnf_module`
+
+every function was run as root on 2026-09-30 on two throwaway Vultr lab instances: `rocky9` (Rocky Linux 9.8, dnf 4.14.0) and `alma8` (AlmaLinux 8.10, dnf 4.7.0). `TestLiveDnfModuleEnableSwitchDisableReset` took nginx, which neither host had chosen, through `enable` of one non-default stream, a second `enable` of another (refused by dnf, and the refusal carried through), `switch_to`, `disable` and `reset`, checking each step through `status` (modules.d) and `list` (`dnf module list`) and holding the two to each other; `TestLiveDnfModuleInstallAndRemove` installed and removed redis's `common` profile (redis:7 on rocky9, redis:6 on alma8 -- one package, no dependencies), confirmed with `rpm -q`; `TestLiveDnfModuleReadersAgree` compares the two readers across the whole host, which on alma8 means eight modules the image itself had enabled. Both hosts were left with modules.d, nginx and redis exactly as found. Broken on purpose four ways and watched failing on both hosts before being restored: `status` keeping the `state=` file `reset` leaves behind, the parser reading `[e]` as `[x]`, `switch_to` running `enable`, and modules.d's `profiles=` dropped. Fixtures are those hosts' real output (testdata/dnf_module). **Not covered:** a module with two installed profiles, so `profiles=`'s separator is libdnf's documented comma, not a captured one; a table from more than one repository (both hosts had AppStream alone) and third-party modular repos; `switch_to` with packages installed, which is where it does real work; globs in a spec; RHEL proper, CentOS Stream and Fedora (whose dnf5 dropped modularity entirely -- nothing here has run dnf5); and no CI leg runs any of it, so like `pro` it decays unless a person reruns it on a lab host.
 
 ### `dpkg`
 

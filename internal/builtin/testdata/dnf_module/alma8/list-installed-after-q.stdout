@@ -1,0 +1,5 @@
+AlmaLinux 8 - AppStream
+Name  Stream Profiles       Summary                            
+redis 6 [e]  common [d] [i] Redis persistent key-value database
+
+Hint: [d]efault, [e]nabled, [x]disabled, [i]nstalled

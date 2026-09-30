@@ -1,0 +1,24 @@
+Problems in request:
+Modular dependency problems with Defaults:
+
+ Problem: module php:7.2:8030020210119114311:2c7ca891.x86_64 from appstream requires module(nginx), but none of the providers can be installed
+  - conflicting requests
+  - module nginx:1.14:8030020210419100506:f8e95b4e.x86_64 from appstream is disabled
+  - module nginx:1.14:8100020260513203217:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.16:8040020210608131432:522a0ee4.x86_64 from appstream is disabled
+  - module nginx:1.16:8100020260514160827:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.18:8040020210608132736:522a0ee4.x86_64 from appstream is disabled
+  - module nginx:1.18:8100020260514160914:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.20:8080020231017064931:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.20:8100020260514160940:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.22:8080020231017064907:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.22:8100020260514161000:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020240411100500:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020260326074018:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020260409082804:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020260514161029:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020260519092035:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020260625074437:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020260713121029:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020260825001413:9edba152.x86_64 from appstream is disabled
+  - module nginx:1.24:8100020260914150358:9edba152.x86_64 from appstream is disabled
