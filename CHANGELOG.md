@@ -52,6 +52,16 @@ one. On a node authselect manages, `pam.set_module` on one of its generated file
 breaks authselect's symlink and the next forced select discards the edit —
 DIVERGENCE 5.172.
 
+### `pam` no longer edits a service file that is a symbolic link
+
+`pam.set_module` and `pam.remove_module` rewrote a service file with an atomic
+rename, which on a link replaces the link rather than the file it points at. On a
+Fedora/RHEL 8+ node, where authselect links `system-auth`, `password-auth` and
+three others into `/etc/pam.d`, that broke authselect's configuration and the next
+forced `authselect select` silently discarded the edit. Both now refuse a linked
+service, and for authselect's own files say to use the `authselect` module
+instead. DIVERGENCE 5.172.
+
 ### `pro.enable`/`pro.disable` driven for real; the release gate is green again
 
 `pro`'s mutating functions shipped `Assumed`: nobody had watched `attach`, `detach`,

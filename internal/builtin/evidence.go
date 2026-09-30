@@ -680,9 +680,15 @@ var moduleEvidence = map[string]exec.Evidence{
 		"services and 53 real control flags on FreeBSD 15.1, 33 services and 191 flags (420 " +
 		"rules through Debian's own @include fan-out) on Ubuntu 24.04, and whatever the Linux " +
 		"and macOS CI legs have -- and the sweep is cross-checked against the per-service " +
-		"answer. Nothing has watched this module write to a real /etc/pam.d: the mutating half " +
-		"runs only against a throwaway tree, deliberately, because a wrong line there locks " +
-		"every account out of the node and a test is not a thing to find that out with"},
+		"answer. The mutating half's tests run only against a throwaway tree, deliberately, " +
+		"because a wrong line there locks every account out of the node and a test is not a " +
+		"thing to find that out with. It has written to a real /etc/pam.d once, by hand, on a " +
+		"throwaway AlmaLinux 8.10 lab host on 2026-09-30 -- `set_module` adding an optional " +
+		"pam_echo.so to authselect's password-auth -- and that run found a defect: the atomic " +
+		"write replaced authselect's symlink, and authselect later discarded the edit " +
+		"(DIVERGENCE 5.172). Edits to a linked service file are now refused, which was checked " +
+		"on that host and on Rocky Linux 9.8. That is still not a demonstration of a successful " +
+		"edit to a real service file, so this stays `captured`"},
 
 	"user": {Level: exec.Hardware, Note: "`user.present`, `group.present` and their " +
 		"`absent` states created, changed and removed a real account and three real groups " +

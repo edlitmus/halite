@@ -61,9 +61,10 @@ import (
 // right: `pam.rules sshd` on an authselect node resolves `include
 // password-auth` into the generated file, and that is the chain that
 // runs. `pam`'s *edits* are the other matter: `pam.set_module` on a
-// file authselect generated replaces authselect's symlink with a
-// regular file, `authselect check` then fails, and the next forced
-// select throws the edit away (DIVERGENCE 5.172).
+// file authselect generated used to replace authselect's symlink with a
+// regular file, `authselect check` then failed, and the next forced
+// select threw the edit away (DIVERGENCE 5.172). pamRefuseLinked now
+// refuses, and names this module as the way to make the change.
 //
 // There is no `authselect` state: SPEC 15.5 names none, and
 // `authselect.select` is idempotent on its own, so `module.run` is how a

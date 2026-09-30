@@ -16780,6 +16780,32 @@ survives only in authselect's backup directory. So the two modules, each
 behaving correctly by its own lights, undo one another, and a tree that
 used both would flap on every run.
 
+#### The fix: `pam` refuses to edit a linked service file
+
+`pam.set_module` and `pam.remove_module` now `Lstat` the service file
+first and refuse a symbolic link. A link into `/etc/authselect` is
+refused by name, pointing at `authselect.select`/`enable_feature` or a
+custom profile; any other link is refused because the atomic rename
+would detach the service from the file it points at.
+
+Writing *through* the link was considered and is wrong: the target is
+authselect's generated output, and appending to it by hand on Rocky 9
+gave `authselect check` exit 3, `[/etc/authselect/password-auth] has
+unexpected content!`, with `enable-feature` and `select` both refusing
+(exit 4) until forced — which discards the edit just the same.
+
+Run on both hosts, each on `minimal`: `pam.set_module` on
+`password-auth` and `pam.remove_module` on `system-auth` were refused
+with authselect named, both links were still links, and `authselect
+check` still said valid. `pam.rules sshd` on both resolved 13 rules from
+`/etc/pam.d/password-auth` through the link, which is the read half
+working as it should. **Broken on purpose** (the refusal made to return
+nil): both new unit tests failed, one of them on finding
+`password-auth` no longer a link. The unfixed behaviour on a real host
+is the Alma 8 run above, done before the fix; it was not re-run with the
+broken build. `sshd`, a plain file on the same node, is still editable —
+checked in the unit test, not on a host.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

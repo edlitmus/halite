@@ -622,3 +622,66 @@ func mustPamRules(t *testing.T, service string) []pamRule {
 	}
 	return rules
 }
+
+// pamAuthselectTree lays out a PamDir whose password-auth is a link into
+// an authselect directory, the way authselect 1.2.6 left it on Rocky 9
+// and Alma 8 (DIVERGENCE 5.172), and a sshd that is a plain file.
+func pamAuthselectTree(t *testing.T) (pamDir, generated string) {
+	t.Helper()
+	pamDir = pamTree(t, map[string]string{"sshd": "auth\tinclude\tpassword-auth\n"})
+	managed := t.TempDir()
+	generated = filepath.Join(managed, "password-auth")
+	if err := os.WriteFile(generated, []byte("auth\trequired\tpam_unix.so\nsession\trequired\tpam_unix.so\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(generated, filepath.Join(pamDir, "password-auth")); err != nil {
+		t.Fatal(err)
+	}
+	old := AuthselectDir
+	AuthselectDir = managed
+	t.Cleanup(func() { AuthselectDir = old })
+	return pamDir, generated
+}
+
+func TestPamEditsRefuseAFileAuthselectGenerated(t *testing.T) {
+	pamDir, generated := pamAuthselectTree(t)
+	before, _ := os.ReadFile(generated)
+
+	set := value.MapOf("service", "password-auth", "type", "session", "module", "pam_echo.so", "control", "optional")
+	if _, err := pamSetModule(&exec.Context{}, set); err == nil || !strings.Contains(err.Error(), "authselect") {
+		t.Errorf("set_module: err = %v, want a refusal naming authselect", err)
+	}
+	remove := value.MapOf("service", "password-auth", "type", "session", "module", "pam_unix.so")
+	if _, err := pamRemoveModule(&exec.Context{}, remove); err == nil || !strings.Contains(err.Error(), "authselect") {
+		t.Errorf("remove_module: err = %v, want a refusal naming authselect", err)
+	}
+
+	info, err := os.Lstat(filepath.Join(pamDir, "password-auth"))
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("password-auth is no longer a link (%v, %v)", info, err)
+	}
+	if after, _ := os.ReadFile(generated); string(after) != string(before) {
+		t.Error("authselect's generated file was changed")
+	}
+
+	// A service authselect does not generate is still pam's to edit.
+	sshd := value.MapOf("service", "sshd", "type", "session", "module", "pam_echo.so", "control", "optional")
+	if _, err := pamSetModule(&exec.Context{}, sshd); err != nil {
+		t.Errorf("set_module on sshd, a plain file on the same node: %v", err)
+	}
+}
+
+func TestPamEditsRefuseAnyOtherLinkedService(t *testing.T) {
+	pamDir := pamTree(t, map[string]string{})
+	elsewhere := filepath.Join(t.TempDir(), "common")
+	if err := os.WriteFile(elsewhere, []byte("auth\trequired\tpam_unix.so\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(elsewhere, filepath.Join(pamDir, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	args := value.MapOf("service", "linked", "type", "auth", "module", "pam_deny.so", "control", "required")
+	if _, err := pamSetModule(&exec.Context{}, args); err == nil || !strings.Contains(err.Error(), "symbolic link") {
+		t.Errorf("err = %v, want a refusal to replace the link", err)
+	}
+}
