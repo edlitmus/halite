@@ -16372,6 +16372,67 @@ respectively, as described above. **Not verified, named rather than implied**:
 `pro status` shape (this host has stayed attached throughout); `security-status` and
 `cve`/`cves`, not built.
 
+### 5.169 The bridged `signer` extension, and its reference implementation
+
+plan.md §7 item 9 named the bridged `signer` extension SPEC 24.2/25.6 mentions as one
+of four remainders on detached job signing. `ext.KindSigner` had been declared in
+`ext/kind.go` since the extension model landed and called from nowhere — a manifest
+would accept the kind at handshake and nothing in the tree would ever offer one.
+
+`internal/extsigner` is the host side, the same shape `internal/extpillar` bridges a
+`pillar`-kind extension with: a `Caller` interface a test can satisfy without a
+subprocess, and a `Bridged` type turning one operation into one call. What a signer
+answers is narrower than a pillar source's mapping — `Sign` hands over a digest and
+gets back ASN.1 DER, `PublicKey` gets back a DER SubjectPublicKeyInfo — because a
+hardware token or a KMS signs bytes it is handed, not a `jobsign.Payload` it would have
+to understand this project's own encoding to parse. `jobsign.Digest` is now exported
+so a local key and a bridged one sign identically the same 32 bytes; `Sign` and `Verify`
+both go through it now instead of computing `sha256.Sum256(Canonical(p))` a second and
+third time.
+
+`cmd/halite-ext-signer-local` is the reference implementation, modelled on
+`halite-ext-aws-secrets` down to the doc-comment structure, and it says plainly what it
+is not: SPEC 25.6 exists for estates "where hub compromise must not equal fleet
+compromise," and a key in a PEM file next to the CLI is exactly the thing that property
+rules out. This extension proves the *bridge* -- a real subprocess, the real
+JSON-over-stdio protocol, a real ECDSA signature a real `jobsign.Verify` accepts --
+which is the same role the AWS Secrets Manager extension plays for `pillar`. A signer
+actually backed by a hardware token or a KMS is a different `handle` behind the
+identical two functions, `sign` and `public_key`, left for whoever has one to write
+against.
+
+**Where it differs from every other extension in this tree.** `pillar`, `grain` and the
+rest are loaded from the fleet's signed `_ext/` cache, verified and pinned, because the
+whole point is code the fleet trusts itself to distribute to itself. A signer is the
+opposite case by construction -- the machine invoking `halite-hub run` is not supposed
+to hold the key -- so `--sign-extension <path>` starts the named executable directly,
+the way an operator invokes any program they already trust by naming its path, and
+`internal/extension`'s `Store`/manifest/trust machinery is not involved at all.
+`internal/bridge.Start` (the same low-level primitive the trusted path uses one layer
+further down) is what actually speaks the protocol to it.
+
+`cmd/halite-hub/run.go`'s `signJob` was split: `prepareSigning` (the job identifier,
+absolute expiry, and wire-shaped arguments a signer must choose, unchanged from before)
+is now shared by `signJob` (a local key) and the new `signJobWithExtension`, so a local
+and a bridged signature cover the identical `job.Job`. `--sign-key` and
+`--sign-extension` refuse together, both naming two different signers for the same job.
+
+**Verified**: `TestSignerExtensionSignsAndVerifiesForReal`
+(`internal/extsigner/endtoend_test.go`) builds the real `halite-ext-signer-local`
+binary, starts it as a real subprocess through `internal/bridge`, asks it to sign a
+real payload's digest, and checks the answer both with a bare `ecdsa.VerifyASN1` and
+through `jobsign.Verify` itself -- the same two-directions-of-trust shape DIVERGENCE
+5.128 drove through `openssl` for a local key. Broken on purpose (the extension signing
+the digest's base64 *text* instead of the decoded bytes) and confirmed the test catches
+it before being restored. `TestDigestIsWhatSignAndVerifyActuallySignOver`
+(`internal/jobsign`) and `internal/extsigner`/`cmd/halite-ext-signer-local`'s own unit
+tests cover the error paths a real subprocess does not conveniently produce (a
+malformed answer, a non-ECDSA public key, a missing key file). **Not verified**: a real
+hardware token or KMS -- this project has access to neither -- and `--sign-extension`
+has not been run against a live, enrolled hub and node pair; the wire path a signed
+submission takes from there is unchanged from `--sign-key`'s, which 5.128 already
+demonstrated that way.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

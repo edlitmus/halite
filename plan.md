@@ -2113,6 +2113,19 @@ unbuilt item here is number 7.
    not signed, and the bridged `signer` extension SPEC 25.6 mentions is
    not built. Those four are the remainder; the mechanism is in.
 
+   ~~The bridged `signer` extension~~ is **done**: `internal/extsigner`
+   bridges it the way `internal/extpillar` bridges `pillar`, and
+   `cmd/halite-ext-signer-local` is the reference implementation,
+   demonstrated end to end as a real subprocess signing a real digest a
+   real `jobsign.Verify` accepts. It is explicitly not a hardware token
+   or a KMS — this project has access to neither — so it proves the
+   bridge protocol rather than closing "a signature from a hardware
+   token or a KMS" above; that remainder needs an actual one to write
+   `handle` against. Three remain: the evidence-head anchor, a real
+   hardware/KMS-backed signer, and orchestration signing, which needs
+   this same live-signer shape rather than the offline one `--sign-key`
+   uses, and not merely a call to it.
+
 **Demoted, with the reason**
 
 10. **Packaging** (§3.5) — was fifth, on the argument that the fleet

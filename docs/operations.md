@@ -1145,6 +1145,28 @@ Keep the private half off the hub. A signature the hub can produce
 protects nobody from the hub; the command prints the reminder because
 generating it on the hub is the convenient thing to do and the wrong one.
 
+**A signer that is not a file on this machine either.** `--sign-key`
+still needs the private key readable by whoever runs `halite-hub run`,
+which a hardware token or a KMS does not allow. `--sign-extension` asks
+a bridged `signer` extension (SPEC 24.2) for the signature instead:
+
+```sh
+HALITE_EXT_SIGNER_KEY_FILE=/path/to/signer-ops.key \
+    halite-hub run '*' state.apply --sign-extension ./halite-ext-signer-local
+```
+
+`halite-ext-signer-local` ships as the reference implementation of the
+bridge and nothing more — its own key is still a local PEM file, read
+from `HALITE_EXT_SIGNER_KEY_FILE` because this process is started
+directly by `--sign-extension` rather than loaded from the fleet's
+signed `_ext/` cache, so there is no `ext_pillar`-shaped configuration
+block to carry the path in. Reading it does not deliver the property
+signing exists for; it demonstrates that the protocol does, and a
+signer actually backed by a hardware token or a KMS is the same two
+functions — `sign` a digest, report `public_key` — against a different
+`handle`. `--sign-key` and `--sign-extension` name two different
+signers and refuse together.
+
 **What the requirement can say.** `true` for every job, `false` for none,
 or a list of function classes — `arbitrary_code`, `state`, `mutating`.
 SPEC 25.6 recommends `[arbitrary_code, state]`. A setting this build

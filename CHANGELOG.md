@@ -23,6 +23,18 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A bridged `signer` extension for detached job signing
+
+SPEC 25.6 says a job's signer "may be a bridged `signer` extension backed by a KMS,"
+and the extension kind existed only as a name in a validation list — nothing could
+load one or call it. `halite-hub run` now takes `--sign-extension <path>` alongside
+`--sign-key`: it starts the named program as a subprocess speaking the same protocol
+every extension does, hands it a digest, and uses the ASN.1 DER signature it returns
+exactly as it would one produced by a local key. `cmd/halite-ext-signer-local` ships
+as the reference implementation of the bridge — its own key is still a local PEM file,
+which is not what SPEC 25.6 is for, but the protocol round trip it proves is the same
+one a hardware token or a KMS-backed signer would use.
+
 ### A `pro` module: Ubuntu Pro status, attach, and per-service enable/disable
 
 SPEC 15.3's Debian/Ubuntu row named `pro` — "Ubuntu Pro attach, FIPS enablement,

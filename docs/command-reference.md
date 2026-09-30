@@ -285,6 +285,7 @@ halite-hub run '*' state.apply --sign-key ~/.halite/signer-ops.key
 |---|---|---|
 | no equivalent | `halite-hub keys signer create <name>` | works |
 | no equivalent | `halite-hub run ... --sign-key <path>` | works |
+| no equivalent | `halite-hub run ... --sign-extension <path>` | works |
 | no equivalent | `require_job_signature: true` | works |
 | no equivalent | `require_job_signature: [arbitrary_code, state]` | works |
 
