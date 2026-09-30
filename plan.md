@@ -695,7 +695,7 @@ what an operator is looking for.
 | Common Linux | 1 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `modprobe` and `udev` ship** (DIVERGENCE 5.47-5.54) -- eleven of twelve. `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm`/`modprobe`/`udev` are exec-only (no state -- SPEC 15.5 names none for any of them). **`authselect` is deliberately pending, not built.** SPEC files it under Common Linux, but it is Fedora/RHEL 8+ only in reality -- Debian manages PAM through `pam-auth-update`, which `pam` already reads -- and this project has no RHEL host to verify against. It waits alongside the other RHEL-only SPEC 15.3 modules for the same reason, rather than shipping fixtures for a tool nobody here has run, which is the exact mistake DIVERGENCE 5.31 warns against. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate` and `mac_keychain` are modules (DIVERGENCE 5.41-5.46). **All seven are `hardware`** (5.114-5.118, 5.121), and `fleet.yml`'s `macos` leg drives them as root on every change to them, so the evidence stops being a run that happened once. `mac_assistive` was the eighth and is out of the build — SIP keeps its writes unreachable without a grant re-given on every rebuild (5.119). |
-| RHEL | 7 | `yumpkg`, `dnfpkg`, `rpm`, `firewalld`, `subscription_manager`, `dnf_module`, `chattr`. |
+| RHEL | 5 | `yumpkg`, `dnfpkg`, `firewalld`, `subscription_manager`, `dnf_module`. **`rpm` and `chattr` ship** (DIVERGENCE 5.172), written against the real tools on Rocky Linux 9.8 and AlmaLinux 8.10 in the lab. |
 | FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32); its field names are no longer assumed either, and auditing them against the list `jls -h` publishes found one the module had invented (5.66). The FreeBSD half of the **Common Linux** row's `quota` was audited at the same time and had two defects, both from being read rather than run (5.65). |
 | SUSE | 1 | `zypperpkg`. |
 
@@ -2386,8 +2386,8 @@ unbuilt item here is number 7.
     under; Debian and Ubuntu manage PAM through `pam-auth-update`,
     which `pam`'s own module already handles, and this project has no
     RHEL host to verify authselect against. It waits for the same
-    reason `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
-    `subscription_manager`, `dnf_module` and `chattr` do — shipping
+    reason `yumpkg`, `dnfpkg`, `firewalld`,
+    `subscription_manager` and `dnf_module` do — shipping
     fixtures for a tool nobody here has run is exactly the mistake
     DIVERGENCE 5.31 found and this document keeps citing. Items 14-19
     below say exactly what machine closes each.
@@ -2409,12 +2409,21 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
 14. **A RHEL or Fedora 8+ host.** Closes `authselect` and the RHEL
     row's other six modules — `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
     `subscription_manager`, `dnf_module`, `chattr` (§2.3, all seven
-    unbuilt, not merely unverified) — and lets the `pkg` module's
+    unbuilt, not merely unverified, when this item was written; `rpm`
+    and `chattr` since built, below) — and lets the `pkg` module's
     dnf/yum provider be run for the first time: all four optional
     capabilities (`pkg.hold` through the `versionlock` plugin,
     upgrading, file ownership, repository listing) are implemented to
     the same shape apt's were and have never been exercised against a
     real dnf (DIVERGENCE §2.3/§2.5, evidence.go's `pkg` note).
+
+    ~~`rpm`~~ and ~~`chattr`~~ are **done** (DIVERGENCE 5.172), both
+    written against what the real tools printed on a Rocky Linux 9.8 and
+    an AlmaLinux 8.10 lab instance, which differ where it matters:
+    lsattr's column is 20 characters on one and 22 on the other, and
+    rpm's own Lua `rpm.vercmp` compares raw versions on 4.14.3 and EVRs
+    on 4.16.1.3. `rpm` is read-only (`Captured`); `chattr` set and
+    cleared `i` and `a` as root on both (`Hardware`).
 
     **Action:** `make lab-up` a RHEL 9 or Alma 8 row from
     `contrib/tofu` (already in its distro list, per §7's note above

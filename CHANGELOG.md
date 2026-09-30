@@ -23,6 +23,20 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `rpm` and `chattr`: the first two RHEL-row modules
+
+SPEC 15.3's RHEL row had nothing of its own but the `pkg` provider's aliases. Two of
+its modules now ship, written against the real tools on a Rocky Linux 9.8 and an
+AlmaLinux 8.10 lab instance rather than from their manual pages. `rpm` is Salt's
+`rpm_lowpkg`, read-only: `list_pkgs` and `info` return a list per package name,
+because both hosts really do carry several installed instances of one name (two
+kernels, several `gpg-pubkey` keys), plus `file_list`, `file_dict`, `owner`,
+`verify` and `version_cmp`. `chattr` reads attributes with `get` and changes them
+with `add` and `remove`, reads every change back from lsattr because chattr's exit
+status does not say what the filesystem did, and refuses `e`, since clearing it
+really does convert an ext4 file back to block maps. Neither is run by any CI leg;
+there is no RHEL leg. DIVERGENCE 5.172.
+
 ### `pro.enable`/`pro.disable` driven for real; the release gate is green again
 
 `pro`'s mutating functions shipped `Assumed`: nobody had watched `attach`, `detach`,
