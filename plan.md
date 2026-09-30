@@ -2113,6 +2113,24 @@ unbuilt item here is number 7.
    not signed, and the bridged `signer` extension SPEC 25.6 mentions is
    not built. Those four are the remainder; the mechanism is in.
 
+   **The third and fourth are one remainder, not two** (DIVERGENCE
+   5.169). Looking for where to attach an orchestration's signature found
+   that SPEC 25.6's own field list — `jid`, target, function, arguments,
+   environment, expiry, the exact shape `jobsign.Payload` already is —
+   is chosen by an offline signer *before* the hub sees the request
+   (`cmd/halite-hub/run.go`'s `signJob` mints the `jid` client-side, for
+   exactly that reason), and an orchestration step's target and job `jid`
+   are both decided by the hub itself, mid-run, compiling against its own
+   pillar and dispatching against its own clock. An external signer
+   cannot sign a `Payload` it has not seen. Closing this for real needs
+   the bridged KMS signer (a live per-step oracle the hub calls out to)
+   or a pre-approved-plan workflow neither SPEC.md nor this plan
+   specifies — not a small extension of what `halite-hub run --sign-key`
+   already does. A hub-held key that signs its own orchestration's steps
+   would make `require_job_signature` pass mechanically without
+   delivering the property signing exists for: a compromised hub could
+   sign anything it liked for itself.
+
 **Demoted, with the reason**
 
 10. **Packaging** (§3.5) — was fifth, on the argument that the fleet
