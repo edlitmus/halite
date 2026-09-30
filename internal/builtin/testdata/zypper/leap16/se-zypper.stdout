@@ -1,0 +1,16 @@
+<?xml version='1.0'?>
+<stream>
+<message type="info">Refreshing service &apos;openSUSE&apos;.</message>
+<message type="info">Loading repository data...</message>
+<message type="info">Reading installed packages...</message>
+
+<search-result version="0.0">
+<solvable-list>
+<solvable status="installed" name="zypper" kind="package" edition="1.14.101-160000.1.1" arch="x86_64" repository="repo-oss (16.0)"/>
+<solvable status="other-version" name="zypper" kind="package" edition="1.14.98-160000.1.1" arch="x86_64" repository="repo-oss (16.0)"/>
+<solvable status="other-version" name="zypper" kind="package" edition="1.14.95-160000.1.1" arch="x86_64" repository="repo-oss (16.0)"/>
+<solvable status="other-version" name="zypper" kind="package" edition="1.14.94-160000.1.1" arch="x86_64" repository="repo-oss (16.0)"/>
+<solvable status="other-version" name="zypper" kind="package" edition="1.14.93-160000.1.2" arch="x86_64" repository="repo-oss (16.0)"/>
+</solvable-list>
+</search-result>
+</stream>

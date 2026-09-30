@@ -34,8 +34,21 @@ type pkgProvider interface {
 }
 
 // providers is the registration list, searched in order.
+//
+// zypper is asked before dnf, and the order is load-bearing. openSUSE
+// packages dnf -- Leap 16.0's repo-oss offers `dnf` 4.23.0, `dnf5` and
+// `yum`, seen on the lab machine -- and a SUSE node that has installed one
+// has rpm and dnf on the path, which is everything the dnf provider asks
+// for. With dnf first, that node would be managed by a tool reading
+// /etc/yum.repos.d, which its own package manager never writes. The
+// reverse case is the one this order gets wrong: an EL node with a zypper
+// binary installed would pick zypper. That was not measured on any
+// machine, and is recorded rather than guarded because no grain is
+// available to guard it with (see zypperProvider.Available).
+// `TestZypperIsPickedBeforeDnf` holds the order.
 var pkgProviders = []pkgProvider{
 	aptProvider{},
+	zypperProvider{},
 	dnfProvider{binary: "dnf"},
 	dnfProvider{binary: "yum"},
 	pkgngProvider{},
@@ -51,7 +64,7 @@ func pickPkgProvider(c *exec.Context) (pkgProvider, error) {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("no package manager was found on this node (%s); halite ships providers for apt, dnf, yum, pkgng, apk, mac_brew_pkg, and chocolatey", runtime.GOOS)
+	return nil, fmt.Errorf("no package manager was found on this node (%s); halite ships providers for apt, zypper, dnf, yum, pkgng, apk, mac_brew_pkg, and chocolatey", runtime.GOOS)
 }
 
 func registerPkg(r *Registries) {

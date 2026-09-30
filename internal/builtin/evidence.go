@@ -89,7 +89,8 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`download` and `list_downloaded` were checked field by field against real " +
 		"dpkg-query and dpkg-deb, and `autoremove` really reclaimed a package in the " +
 		"fleet container (5.40). The Chocolatey provider has only been read from, and " +
-		"yum, zypper and pacman have not been driven at all. **pkgng has**: all four " +
+		"pacman, and the dnf provider under its `yum` spelling (EL7's yum 3), have not " +
+		"been driven at all. **pkgng has**: all four " +
 		"states -- `installed`, `removed`, `latest` and `purged` -- are driven through " +
 		"SPEC 11.6's conformance harness as root on the `freebsd` leg of `fleet.yml`, " +
 		"against real pkg(8) on FreeBSD 15.1-RELEASE, four applications of each. `dnf` " +
@@ -106,7 +107,21 @@ var moduleEvidence = map[string]exec.Evidence{
 		"than against another reader here, and the install broken on purpose to watch the " +
 		"test fail. Not covered there: `list_upgrades` parsed an empty answer because the " +
 		"instance had nothing to upgrade, and `pkg.upgrade` was not run at all " +
-		"(DIVERGENCE 5.124)"},
+		"(DIVERGENCE 5.124). **zypper too**, on 2026-09-30, as root on the lab's " +
+		"openSUSE Leap 16.0 (zypper 1.14.101, rpm 4.20.1): `tree` installed through " +
+		"`zypperpkg.install`, read back through `version`, `latest_version`, `file_list` " +
+		"and `owner`, held with a zypper lock that really stopped `pkg.remove`, unheld and " +
+		"removed, each answer checked against rpm or zypper directly; `pkg.latest` " +
+		"upgraded an installed, outdated `libX11-data` one release and converged on a " +
+		"second run, and `pkg.installed` pinned to the old release brought it back, which " +
+		"is the `--oldpackage` path; one unreachable repository added, with `pkg.install` " +
+		"succeeding past zypper's exit 106 and `refresh_db` failing on it; `list_repos` " +
+		"matched /etc/zypp/repos.d and `list_upgrades` (28 packages) matched rpm; and all " +
+		"four states through the conformance harness. Each of six deliberate breaks was " +
+		"watched failing there (DIVERGENCE 5.176). Not covered: `pkg.upgrade` (a whole-" +
+		"system `zypper update` on a machine kept for testing one thing), exit codes " +
+		"100-103 and 107, which were never produced, repository priorities and vendor " +
+		"stickiness (every repository had priority 99), and SLES, which was not run"},
 	// `cmd` had no row at all until the gate could see it. It was outside
 	// the selection because that read `strings.Contains(p, "root")` over
 	// the free-text Privileges field, and `cmd` says "whatever the command
@@ -187,9 +202,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"by breaking the field order on purpose"},
 	"pkgrepo": {Level: exec.Hardware, Note: "the apt provider was driven on Debian 12 in " +
 		"`make fleetcheck`: a signed repository written, read by a real `apt-get update`, " +
-		"listed, and removed (DIVERGENCE 5.35). Not covered: the yum, zypper and " +
-		"Chocolatey providers, and a repository reached over the network rather than from " +
-		"the filesystem"},
+		"listed, and removed (DIVERGENCE 5.35). Not covered: the yum and Chocolatey " +
+		"providers, and a repository reached over the network rather than from the " +
+		"filesystem. There is no zypper provider: `pkgrepo` on SUSE refuses by name, and " +
+		"`pkg.list_repos` is the only repository read there (DIVERGENCE 5.176)"},
 	"timezone": {Level: exec.Hardware, Note: "driven on Debian 12 in `make fleetcheck`: " +
 		"`/etc/localtime` really relinked against a real tzdata 2026b and read back, and a " +
 		"zone the machine does not have refused (DIVERGENCE 5.35). The macOS `systemsetup` " +

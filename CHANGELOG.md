@@ -23,6 +23,22 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `pkg` on SUSE, and `zypperpkg`
+
+`pkg.installed` on an openSUSE or SLES node used to answer "no package manager
+was found on this node". It now has a zypper provider, and SPEC 15.3's
+`zypperpkg` is its alias, the way `dnfpkg` is the dnf provider's — so the SUSE
+row is complete. Written and driven as root on openSUSE Leap 16.0 in the lab:
+install, remove, `latest` (a real one-release upgrade), a pinned downgrade,
+holds as zypper locks, `list_upgrades`, `list_repos`, `file_list` and `owner`.
+Three things an operator will see: an install on a node with one unreachable
+repository succeeds when the package really was installed (zypper's exit 106),
+and `refresh_db` there fails naming the repository; a pinned version below the
+installed one is installed, where zypper on its own would do nothing and exit
+0; and `pkgrepo` still has no zypper provider and refuses on SUSE. On a SUSE
+node with dnf also installed, `pkg` now picks zypper. `pkg.upgrade` was not
+driven, and SLES was not run. No CI leg runs it. DIVERGENCE 5.176.
+
 ### `rpm` and `chattr`: the first two RHEL-row modules
 
 SPEC 15.3's RHEL row had nothing of its own but the `pkg` provider's aliases. Two of

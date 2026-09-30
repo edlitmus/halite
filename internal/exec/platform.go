@@ -38,7 +38,6 @@ var pendingPlatformModules = map[string]PendingModule{
 	"apt_key": {Platform: "debian", When: "not planned: apt-key was removed in Debian 12 and Ubuntu 24.04; " +
 		"use `pkgrepo`, which writes the signed-by keyrings that replaced it"},
 	"subscription_manager": {Platform: "rhel", When: "phase 5, with the RHEL platform work"},
-	"zypperpkg":            {Platform: "suse", When: "phase 5, with the SUSE platform work"},
 	"win_file":             {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_useradd":          {Platform: "windows", When: "phase 5, with Windows parity"},
 	"win_groupadd":         {Platform: "windows", When: "phase 5, with Windows parity"},

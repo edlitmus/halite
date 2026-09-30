@@ -114,16 +114,16 @@ Repositories:
 // are none". This pins which provider answers what, so a capability added
 // or dropped shows up here.
 func TestPkgOptionalCapabilities(t *testing.T) {
-	holds := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false, "chocolatey": true}
-	repos := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false, "chocolatey": true}
-	upgrades := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": true, "chocolatey": true}
+	holds := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false, "chocolatey": true, "zypperpkg": true}
+	repos := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": false, "chocolatey": true, "zypperpkg": true}
+	upgrades := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": true, "chocolatey": true, "zypperpkg": true}
 	// Chocolatey has no command that maps a file to the package that
 	// installed it, so it implements neither half of pkgOwner and a
 	// caller gets the refusal that names it.
-	owners := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": true, "chocolatey": false}
+	owners := map[string]bool{"pkgng": true, "aptpkg": true, "dnfpkg": true, "apkpkg": true, "chocolatey": false, "zypperpkg": true}
 
 	for _, p := range []pkgProvider{
-		pkgngProvider{}, aptProvider{}, dnfProvider{binary: "dnf"}, apkProvider{}, chocoProvider{},
+		pkgngProvider{}, aptProvider{}, dnfProvider{binary: "dnf"}, apkProvider{}, chocoProvider{}, zypperProvider{},
 	} {
 		if _, ok := p.(pkgHolder); ok != holds[p.Name()] {
 			t.Errorf("%s pkgHolder = %v, want %v", p.Name(), ok, holds[p.Name()])

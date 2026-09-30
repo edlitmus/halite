@@ -1,0 +1,1 @@
+zypper --non-interactive install --dry-run --auto-agree-with-licenses --oldpackage --name tree=2.2.1-160000.2.2

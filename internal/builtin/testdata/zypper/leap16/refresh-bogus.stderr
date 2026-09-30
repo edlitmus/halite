@@ -1,0 +1,10 @@
+Repository 'halite-bogus' is invalid.
+[halite-bogus|http://127.0.0.1:9/] Failed to retrieve new repository metadata.
+History:
+ - [|] Error trying to read from 'http://127.0.0.1:9/'
+ - Download (curl) error for 'http://127.0.0.1:9/content':
+   Error code: Connection failed Curl error (7)
+   Error message: Failed to connect to 127.0.0.1 port 9 after 0 ms: Could not connect to server
+Please check if the URIs defined for this repository are pointing to a valid repository.
+Skipping repository 'halite-bogus' because of the above error.
+Some of the repositories have not been refreshed because of an error.

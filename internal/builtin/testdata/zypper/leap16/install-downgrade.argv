@@ -1,0 +1,1 @@
+zypper --non-interactive install --auto-agree-with-licenses --oldpackage --name libX11-data=1.8.10-160000.3.1

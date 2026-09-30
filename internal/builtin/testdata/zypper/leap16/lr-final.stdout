@@ -1,0 +1,12 @@
+Refreshing service 'openSUSE'.
+Repository priorities are without effect. All enabled repositories share the same priority.
+
+# | Alias                       | Name                      | Enabled | GPG Check | Refresh
+--+-----------------------------+---------------------------+---------+-----------+--------
+1 | Leap                        | Leap 16.0                 | No      | ----      | ----
+2 | openSUSE:repo-non-oss       | repo-non-oss (16.0)       | No      | ----      | ----
+3 | openSUSE:repo-non-oss-debug | repo-non-oss-debug (16.0) | No      | ----      | ----
+4 | openSUSE:repo-openh264      | repo-openh264 (16.0)      | Yes     | (r ) Yes  | Yes
+5 | openSUSE:repo-oss           | repo-oss (16.0)           | Yes     | (r ) Yes  | Yes
+6 | openSUSE:repo-oss-debug     | repo-oss-debug (16.0)     | No      | ----      | ----
+7 | openSUSE:repo-oss-source    | repo-oss-source (16.0)    | No      | ----      | ----

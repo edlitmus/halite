@@ -1,0 +1,1 @@
+zypper --non-interactive remove --dry-run --name tree nosuchpkg-halite

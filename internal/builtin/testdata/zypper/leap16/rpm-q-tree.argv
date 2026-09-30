@@ -1,0 +1,1 @@
+rpm -q --queryformat %{NAME}\t%{EPOCH}:%{VERSION}-%{RELEASE}\n tree

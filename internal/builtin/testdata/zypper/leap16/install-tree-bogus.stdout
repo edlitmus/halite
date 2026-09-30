@@ -1,0 +1,27 @@
+Refreshing service 'openSUSE'.
+Warning: Skipping repository 'halite-bogus' because of the above error.
+Loading repository data...
+Reading installed packages...
+Resolving package dependencies...
+
+The following NEW package is going to be installed:
+  tree
+
+1 new package to install.
+
+Package download size:    84.2 KiB
+
+Package install size change:
+              |     148.8 KiB  required by packages that will be installed
+   148.8 KiB  |  -      0 B    released by packages that will be removed
+
+Backend:  classic_rpmtrans
+Continue? [y/n/v/...? shows all options] (y): y
+Preloading Packages [..
+Preloading: tree-2.2.1-160000.2.2.x86_64.rpm [done]
+.done]
+Retrieving: tree-2.2.1-160000.2.2.x86_64 (repo-oss (16.0)) (1/1),  84.2 KiB    
+
+Checking for file conflicts: [..done]
+(1/1) Installing: tree-2.2.1-160000.2.2.x86_64 [..done]
+Running post-transaction scripts [....done]

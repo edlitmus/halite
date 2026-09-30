@@ -30,7 +30,9 @@ import (
 // Only the names whose provider actually exists are aliased, because
 // aliasing one that does not would turn "not built" into "built, and
 // fails when you call it", which is the worse of the two answers.
-// `zypperpkg` stays pending on those grounds: SUSE has no provider here.
+// `zypperpkg` stayed pending on those grounds for as long as SUSE had no
+// provider. It has one now, written against a real openSUSE Leap 16.0
+// (DIVERGENCE 5.176), and the name is an alias like the others.
 //
 // `dnfpkg` and `yumpkg` were pending on the same grounds and should not
 // have been. The note here said the dnf provider "covers repositories
@@ -62,6 +64,8 @@ func registerAliases(r *Registries) {
 		// them is usable on any given RHEL-family node.
 		"dnfpkg": "dnfpkg",
 		"yumpkg": "yumpkg",
+		// SPEC 15.3's SUSE row, and its only member.
+		"zypperpkg": "zypperpkg",
 	} {
 		r.Exec.Alias(alias, exec.Alias{
 			Module:   "pkg",

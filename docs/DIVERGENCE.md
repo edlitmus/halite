@@ -560,9 +560,10 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-43 of 65 present — the rows below total 22 absent.
+44 of 65 present — the rows below total 21 absent.
 
-Ten of the thirty are **aliases**. SPEC names both
+Thirteen of the forty-four are **aliases** (the count here said "ten of the
+thirty" long after both had moved; corrected with 5.176). SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -578,11 +579,13 @@ rather than a second set of functions, which is what keeps the counts
 honest: `pkg` has eighteen functions whether or not four platforms can
 each reach them under another name.
 
-Only the names whose provider exists are aliased. `zypperpkg` stays
-pending, because SUSE has no provider here, and aliasing it would turn
-"not built" into "built, and fails when you call it", which is the worse
-of the two answers. `sys.list_aliases` reports the table and says which
-of them this node can use.
+Only the names whose provider exists are aliased. `zypperpkg` stayed
+pending for as long as SUSE had no provider, because aliasing it would
+have turned "not built" into "built, and fails when you call it", which
+is the worse of the two answers. It has a provider now, written against
+a real openSUSE Leap 16.0 in the lab, and is an alias like the rest
+(5.176). `sys.list_aliases` reports the table and says which of them
+this node can use.
 
 `dnfpkg` and `yumpkg` were pending on the same grounds and should not
 have been. The reason given was that the dnf provider "covers
@@ -596,7 +599,7 @@ no `apkpkg`: Alpine has a working provider, but 15.3's table has no
 Alpine row, and inventing the name here would be this build deciding a
 specification it implements.
 
-Of the nineteen that are modules in their own right, four are the
+Of the thirty-one that are modules in their own right, four are the
 Windows ones, and they arrived because a Windows host became available:
 the gap tracks the hardware, not the intent. Five are the Debian row —
 `dpkg`, `debconf`, `netplan`, `apparmor` and `snap`. That row was built
@@ -627,7 +630,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 18 are declared as pending rather than simply missing. A name absent
+The 17 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -650,7 +653,7 @@ specification cannot be quietly missed.
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `pro`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key` |
 | RHEL family | `rpm`, `chattr`, `dnf_module`, `firewalld`, `yumpkg` and `dnfpkg` (aliases) | `subscription_manager` |
-| SUSE | none | `zypperpkg` |
+| SUSE | `zypperpkg` (alias, 5.176) | none |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_assistive` (5.119) |
 
@@ -17010,6 +17013,140 @@ changed, on purpose; `get_interfaces` only ever read an empty list; the iptables
 masquerade, forwarding, ICMP blocks and ipsets, none of them built. Deleting a zone
 leaves firewalld's own `<zone>.xml.old` in `/etc/firewalld/zones` (captured); the tests
 remove their own, and the module, like Salt's, does not.
+
+
+### 5.176 `zypperpkg`: a zypper provider, written on a real openSUSE, and the SUSE row is complete
+
+SPEC 15.3's SUSE row has one member, `zypperpkg`, and §2.3 kept it pending for a
+stated reason: SUSE had no `pkg` provider, and aliasing the name would turn "not
+built" into "built, and fails when you call it". The row is closed the way the
+others were: **a zypper provider for the virtual `pkg` module, and `zypperpkg` an
+alias of it**, exactly as `dnfpkg` is of the dnf provider. Not a standalone
+module — `pkg` has the same functions whatever the platform, and the alias keeps
+that count honest (§2.3).
+
+Written and driven on 2026-09-30 on a throwaway lab instance, openSUSE Leap 16.0,
+zypper 1.14.101, rpm 4.20.1, as root. Its `os_family` grain is `Suse`, which
+the live tests assert rather than assume. Every fixture under
+`internal/builtin/testdata/zypper/leap16` was captured there by one script that
+saved argv, stdout, stderr and exit status separately, and the unit tests serve
+each fixture under **the argv it was captured with**, so a command that drifts
+from what was captured finds no answer instead of a plausible one.
+
+**What it implements.** Everything `pkgProvider` requires — `list_pkgs`,
+`version`, `install`, `remove`, `purge`, `latest_version`/`available_version`,
+`refresh_db`, and the four states — plus the holder (`hold`, `unhold`,
+`list_holds`, as zypper locks), the upgrader (`upgrade`, `list_upgrades`), the
+owner (`file_list`, `owner`, through rpm, as dnf does) and `list_repos`. Reads use
+zypper's `-x` XML wherever zypper has it (`search`, `list-updates`, `locks`,
+`repos`); the installed set is `rpm -qa --queryformat`, as the dnf provider's is.
+Not implemented: `info_installed`, `download`, `autoremove`, which dnf does not
+answer either, and a `pkgrepo` provider — `pkgrepo` on SUSE still refuses by
+name, and `pkg.list_repos` is the only repository read there.
+
+**Selection.** By binary, zypper and rpm, and asked **before** dnf. That order is
+load-bearing and was checked on the machine: Leap 16.0's repo-oss offers `dnf`
+4.23.0, `dnf5` and `yum`, and a SUSE node that installs one has everything the
+dnf provider asks for. Not by the `os_family` grain, because the live tests'
+contexts carry the unit suite's fixed Debian grains and a grain-keyed provider
+would be unreachable on the host it was written for. The cost is recorded rather
+than guarded: an EL node with a zypper binary would now pick zypper. Not
+measured anywhere.
+
+#### What the real zypper said that no documentation would have
+
+- **Exit 106 means the work was done.** With one unreachable repository added
+  beside the good ones, `search` and `list-updates` exit 106 *with the full
+  answer*, and `install` exits 106 *having installed the package*. So an
+  install or removal that exits 106 is settled by asking rpm afterwards, and
+  rpm's answer is the result. `zypper refresh` does not use 106 at all: the
+  same repository makes it exit **4**, and `pkg.refresh_db` fails naming it.
+- **Exit 104 is an answer for a search and a failure for an install.**
+  `zypper install --name nosuchpkg` and `--name tree=9.9` both exit 104
+  having done nothing. `remove --name tree nosuchpkg` removes tree, says
+  "Installation has completed with error." and exits 104 — so a removal's 104
+  is settled by rpm too.
+- **A pin below the installed version is a silent exit 0.** Without
+  `--oldpackage`, zypper says the package "has lower version than the
+  installed one", "Nothing to do." and exits 0. `pkg.installed` with such a
+  pin would have reported success and never converged. The flag is passed
+  whenever a version is pinned, and breaking that on purpose on the host made
+  the state report *"The following packages were installed: libX11-data."*
+  while rpm still had the newer release — the test caught it by asking rpm.
+- **A lock's refusal is on stdout.** `zypper remove` of a locked package exits
+  4 with stderr empty and "Problem: … remove lock to allow removal" on stdout;
+  the error carries the tail of stdout when stderr has nothing.
+- **Two kernels installed is normal.** `kernel-default`, `-extra` and
+  `-optional` were each installed at 6.12.0-160000.35.1 and .37.1. `list_pkgs`
+  keeps the newest by rpm's ordering rather than whichever rpm printed last.
+  The dnf provider still keeps the last one printed; EL's installonly kernels
+  have the same shape, and that was not changed or measured here.
+- The XML stream interleaves `<message type="info">` ("Refreshing service
+  'openSUSE'.") and, for a failed repository, `<message type="error">` with the
+  answer; `list-updates` writes every `<update>` on one line; `--no-refresh`
+  suppresses the service refresh on `list-updates` and not on `repos`. The
+  parser walks the stream for the elements it wants.
+- Flags: `--non-interactive` always; `--name`, so a name is a package and not a
+  capability; `--auto-agree-with-licenses`, as Salt passes; **not**
+  `--gpg-auto-import-keys`, which would trust any key a repository offered;
+  **not** `--no-refresh` on install or upgrade — the dnf `-C` defect (5.157) in
+  zypper's vocabulary — but yes on `list_upgrades` without `refresh`.
+
+Every zypper command asks for its exit code, since all three meaningful codes
+would otherwise be unreachable on a machine (5.113), and
+`TestZypperCommandsAskForTheirExitCode` holds that. The unit tests' fixture
+runner also fails a non-zero exit the way `exec.OSRunner` does, which
+`RecordingRunner` does not.
+
+#### Driven on the host
+
+`TestLiveZypper*` (four tests) and the conformance harness's four `pkg` states
+(`installed`, `removed`, `latest`, `purged` on `tree`, 4 of 64 cases selected, 0
+skipped). `tree` installed through `zypperpkg.install` and read back through
+`version`, `latest_version` (the version offered before the install is the one
+rpm reports after it), `file_list` and `owner`; held, with `zypper locks` listing
+it and `pkg.remove` then failing and leaving it installed; unheld and removed.
+`pkg.latest` upgraded the installed, outdated `libX11-data` from
+1.8.10-160000.3.1 to .4.1 and a second run changed nothing; `pkg.installed`
+pinned to .3.1 brought it back. `list_repos` agreed with `/etc/zypp/repos.d`
+(seven repositories, two enabled — `repo-oss` and `repo-openh264`; the DVD
+`Leap` and the debug, source and non-oss ones disabled), and each of the 28
+`list_upgrades` entries is newer than what rpm has installed. Installs worked
+without a manual refresh first: zypper's autorefresh fetched what it needed.
+
+Broken on purpose, one at a time, each on the host:
+
+| Break | What failed |
+|---|---|
+| no `--oldpackage` | the pin test: state said installed, rpm had .4.1 |
+| no `IgnoreExitCode` | the unreachable-repository test: `latest_version` and `install` both errored on 106 |
+| `Hold` a no-op | the install test: `zypper locks` did not list it, and the "held" package was removed |
+| `Unhold` a no-op | the same test: the lock was still listed and the final removal failed on it |
+| 106 refused on install | the unreachable-repository test: the install failed although zypper had done it |
+| "installed at the newest" ignored | `latest_version` of the just-installed `tree` was its own version, not empty |
+
+Each break also fails the unit suite (the last-printed-wins kernel rule, broken
+on its own, fails `TestZypperListPkgsKeepsTheNewestOfTwoInstalledKernels`),
+though for the two no-op breaks only through the count of commands run; the
+live test is the one that sees the lock not taken. The host was put back after
+every run.
+
+The existing `apt`, `apk`, `dpkg` and `dnf_module` live tests skip on this host
+naming why. `TestLiveRpmReadsTheRealDatabase` (5.172) **failed** here, and the
+module was right: the test asserted bash's description mentions "Bourne", which
+Red Hat's does and openSUSE's does not. It now compares against rpm's own
+`%{DESCRIPTION}`, a separate commit.
+
+**Left as found:** `tree` not installed, no locks, the added repository removed,
+`libX11-data` back at 1.8.10-160000.3.1 — which it was before any of this.
+
+**Not covered:** `pkg.upgrade`, a whole-system `zypper update`, and the only way
+to exercise it on this image; exit codes 100–103 and 107, taken from the
+installed zypper(8) page and never produced; repository priorities and vendor
+stickiness, which can make zypper install something other than the highest
+edition `latest_version` reports — every repository here had priority 99, which
+zypper itself remarks on; SLES, and any Leap other than 16.0; a package whose
+licence needs agreeing to.
 
 
 

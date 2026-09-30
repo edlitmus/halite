@@ -1,0 +1,96 @@
+<?xml version='1.0'?>
+<stream>
+<message type="info">Refreshing service &apos;openSUSE&apos;.</message>
+<message type="error">Error building the cache:
+[halite-bogus|http://127.0.0.1:9/] Failed to retrieve new repository metadata.
+History:
+ - [|] Error trying to read from &apos;http://127.0.0.1:9/&apos;
+ - Download (curl) error for &apos;http://127.0.0.1:9/content&apos;:
+   Error code: Connection failed Curl error (7)
+   Error message: Failed to connect to 127.0.0.1 port 9 after 0 ms: Could not connect to server
+</message>
+<message type="warning">Skipping repository &apos;halite-bogus&apos; because of the above error.</message>
+<message type="error">Some of the repositories have not been refreshed because of an error.</message>
+<message type="info">Loading repository data...</message>
+<message type="info">Reading installed packages...</message>
+<update-status version="0.6">
+<update-list>
+<update kind="package" name="cups-config" edition="2.4.19-160000.2.1" arch="x86_64" edition-old="2.4.19-160000.1.1"><summary>CUPS library configuration files</summary><description>CUPS is a modular printing system which allows a computer to act as a
+print server.
+
+This subpackage contains some basic configuration files for its
+operation.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="kbd" edition="2.7.1-160000.3.1" arch="x86_64" edition-old="2.7.1-160000.2.2"><summary>Keyboard and Font Utilities</summary><description>Load and save keyboard mappings. This is needed if you are not using
+the US keyboard map. This package also contains utilities for changing
+your console fonts. If you install this package, YaST includes an extra
+menu to allow you to choose between the different fonts. This package
+also includes fonts from the kbd_fonts.tar.gz package (by Paul
+Gortmaker) on Sunsite.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="kernel-default" edition="6.12.0-160000.38.1" arch="x86_64" edition-old="6.12.0-160000.37.1"><summary>The Standard Kernel</summary><description>The standard kernel for both uniprocessor and multiprocessor systems.
+
+
+Source Timestamp: 2026-09-14 23:00:16 +0000
+GIT Revision: 1a5df4ee907e4e9f31d5d8db38723e54d39e4294</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="kernel-default-extra" edition="6.12.0-160000.38.1" arch="x86_64" edition-old="6.12.0-160000.37.1"><summary>The Standard Kernel - Unsupported kernel modules</summary><description>The standard kernel for both uniprocessor and multiprocessor systems.
+
+This package contains additional modules not supported by SUSE.
+
+
+Source Timestamp: 2026-09-14 23:00:16 +0000
+GIT Revision: 1a5df4ee907e4e9f31d5d8db38723e54d39e4294</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="kernel-default-optional" edition="6.12.0-160000.38.1" arch="x86_64" edition-old="6.12.0-160000.37.1"><summary>The Standard Kernel - Optional kernel modules</summary><description>The standard kernel for both uniprocessor and multiprocessor systems.
+
+This package contains optional modules only for openSUSE Leap.
+
+
+Source Timestamp: 2026-09-14 23:00:16 +0000
+GIT Revision: 1a5df4ee907e4e9f31d5d8db38723e54d39e4294</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libX11-6" edition="1.8.10-160000.4.1" arch="x86_64" edition-old="1.8.10-160000.3.1"><summary>Core X11 protocol client library</summary><description>The X Window System is a network-transparent window system that was
+designed at MIT. X display servers run on computers with either
+monochrome or color bitmap display hardware. The server distributes
+user input to and accepts output requests from various client
+programs located either on the same machine or elsewhere in the
+network. Xlib is a C subroutine library that application programs
+(clients) use to interface with the window system by means of a
+stream connection.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libX11-data" edition="1.8.10-160000.4.1" arch="noarch" edition-old="1.8.10-160000.3.1"><summary>Shared data for the Core X11 protocol library</summary><description>Data files for X11:
+
+* Error strings for X error codes
+* Device-independent color name database
+* Locale data and tables for the Compose Key</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libXrender1" edition="0.9.11-160000.3.1" arch="x86_64" edition-old="0.9.11-160000.2.2"><summary>X Rendering Extension library</summary><description>The Xrender library is designed as a lightweight library interface to
+the Render extension.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libblkid1" edition="2.41.1-160000.5.1" arch="x86_64" edition-old="2.41.1-160000.4.1"><summary>Filesystem detection library</summary><description>Library for filesystem detection.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libcups2" edition="2.4.19-160000.2.1" arch="x86_64" edition-old="2.4.19-160000.1.1"><summary>HTTP/IPP communication and printer queue and job library</summary><description>The CUPS library contains all of the core HTTP and IPP communications
+code as well as convenience functions for queuing print jobs, getting
+printer information, accessing resources via HTTP and IPP, and
+manipulating PPD files. The scheduler and all commands, filters, and
+backends use this library.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libexpat1" edition="2.8.4-160000.1.1" arch="x86_64" edition-old="2.7.1-160000.5.1"><summary>XML Parser Toolkit</summary><description>Expat is an XML parser library written in C. It is a stream-oriented
+parser in which an application registers handlers for things the
+parser might find in the XML document (like start tags).</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libfdisk1" edition="2.41.1-160000.5.1" arch="x86_64" edition-old="2.41.1-160000.4.1"><summary>Filesystem detection library</summary><description>Library for filesystem detection.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libfreebl3" edition="3.125-160000.2.1" arch="x86_64" edition-old="3.125-160000.1.1"><summary>Freebl library for the Network Security Services</summary><description>Network Security Services (NSS) is a set of libraries designed to
+support cross-platform development of security-enabled server
+applications. Applications built with NSS can support SSL v3,
+TLS v1.0, v1.1, v1.2, PKCS #5, PKCS #7, PKCS #11, PKCS #12, S/MIME, X.509 v3
+certificates, and other security standards.
+
+This package installs the freebl library from NSS.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libgcc_s1" edition="16.2.0+git9497-160000.2.1" arch="x86_64" edition-old="16.2.0+git9497-160000.1.1"><summary>C compiler runtime library</summary><description>Libgcc is needed for dynamically linked C programs.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libgomp1" edition="16.2.0+git9497-160000.2.1" arch="x86_64" edition-old="16.2.0+git9497-160000.1.1"><summary>The GNU compiler collection OpenMP runtime library</summary><description>This is the OpenMP runtime library needed by OpenMP enabled programs
+that were built with the -fopenmp compiler option and by programs that
+were auto-parallelized via the -ftree-parallelize-loops compiler
+option.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libkbdfile1" edition="2.7.1-160000.3.1" arch="x86_64" edition-old="2.7.1-160000.2.2"><summary>File I/O library for kbd utilities</summary><description>libkbdfile contains file access routines for kbd.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libkeymap1" edition="2.7.1-160000.3.1" arch="x86_64" edition-old="2.7.1-160000.2.2"><summary>Keymap library for kbd utilities</summary><description>libkeymap contains routines for exchanging keyboard mappings
+with the Linux kernel for the Linux virtual console (vtcon).</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libkfont0" edition="2.7.1-160000.3.1" arch="x86_64" edition-old="2.7.1-160000.2.2"><summary>Font I/O library for kbd utilities</summary><description>libkfont contains routines for reading/writing PSF fonts, screen maps
+and Unicode maps/tables for kbd.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="liblastlog2-2" edition="2.41.1-160000.5.1" arch="x86_64" edition-old="2.41.1-160000.4.1"><summary>Library to report most recent login of users</summary><description>The liblastlog2 library provides various interfaces to read, write or modify the lastlog 2 database.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libmount1" edition="2.41.1-160000.5.1" arch="x86_64" edition-old="2.41.1-160000.4.1"><summary>Device mount library</summary><description>Library designed to be used in low-level utils like
+mount(8) and /usr/sbin/mount.&lt;type&gt; helpers.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libpcre2-8-0" edition="10.45-160000.4.1" arch="x86_64" edition-old="10.45-160000.3.1"><summary>A library for Perl-compatible regular expressions</summary><description>The PCRE2 library is a set of functions that implement regular
+expression pattern matching using the same syntax and semantics
+as Perl 5.
+
+PCRE2 is a re-working of the original PCRE library to provide an entirely new
+API.
+
+This PCRE2 library variant supports 8-bit and UTF-8 strings.
+(See also libpcre2-16 and libpcre2-32)</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libsmartcols1" edition="2.41.1-160000.5.1" arch="x86_64" edition-old="2.41.1-160000.4.1"><summary>Column-based text sort engine</summary><description>Library to sort human readable column-based text output.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libsoftokn3" edition="3.125-160000.2.1" arch="x86_64" edition-old="3.125-160000.1.1"><summary>Network Security Services Softoken Module</summary><description>Network Security Services (NSS) is a set of libraries designed to
+support cross-platform development of security-enabled server
+applications. Applications built with NSS can support SSL v3,
+TLS v1.0, v1.1, v1.2, PKCS #5, PKCS #7, PKCS #11, PKCS #12, S/MIME, X.509 v3
+certificates, and other security standards.
+
+Network Security Services Softoken Cryptographic Module</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libstdc++6" edition="16.2.0+git9497-160000.2.1" arch="x86_64" edition-old="16.2.0+git9497-160000.1.1"><summary>The standard C++ shared library</summary><description>The standard C++ library, needed for dynamically linked C++ programs.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="libuuid1" edition="2.41.1-160000.5.1" arch="x86_64" edition-old="2.41.1-160000.4.1"><summary>Library to generate UUIDs</summary><description>A library to generate universally unique IDs (UUIDs).</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="mozilla-nss" edition="3.125-160000.2.1" arch="x86_64" edition-old="3.125-160000.1.1"><summary>Network Security Services</summary><description>Network Security Services (NSS) is a set of libraries designed to
+support cross-platform development of security-enabled server
+applications. Applications built with NSS can support SSL v3,
+TLS v1.0, v1.1, v1.2, PKCS #5, PKCS #7, PKCS #11, PKCS #12, S/MIME, X.509 v3
+certificates, and other security standards.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="mozilla-nss-certs" edition="3.125-160000.2.1" arch="x86_64" edition-old="3.125-160000.1.1"><summary>CA certificates for NSS</summary><description>This package contains the integrated CA root certificates from the
+Mozilla project.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update><update kind="package" name="util-linux-systemd" edition="2.41.1-160000.5.1" arch="x86_64" edition-old="2.41.1-160000.4.1"><summary>A collection of basic system utilities (systemd dependent part)</summary><description>This package contains a large variety of low-level system utilities
+that are necessary for a Linux system to function. It contains the
+mount program, the fdisk configuration tool, and more.</description><license/><source url="http://cdn.opensuse.org/distribution/leap/16.0/repo/oss/x86_64" alias="openSUSE:repo-oss"/></update></update-list>
+</update-status>
+</stream>
