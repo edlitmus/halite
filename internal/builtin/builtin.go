@@ -123,6 +123,7 @@ func New() *Registries {
 	registerRpm(r)
 	registerChattr(r)
 	registerDnfModule(r)
+	registerFirewalld(r)
 	registerJail(r)
 
 	// The Common Linux platform modules of SPEC section 15.3.

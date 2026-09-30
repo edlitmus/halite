@@ -75,6 +75,20 @@ dnf, although dnf leaves its file behind. Every function was run as root on Rock
 Linux 9.8 (dnf 4.14.0) and AlmaLinux 8.10 (dnf 4.7.0) lab instances; there is no
 state, since SPEC 15.5 names none, and no CI leg runs it. DIVERGENCE 5.174.
 
+### A `firewalld` module and `firewalld.present`
+
+RHEL-family nodes can now manage firewalld: twenty `firewalld.*` functions under Salt's
+own names (zones, services, ports, sources, rich rules, reload), and the
+`firewalld.present` state a migrated tree already uses. Both were driven against real
+daemons on Rocky Linux 9 (firewalld 1.3.4) and AlmaLinux 8 (0.9.11), and are `Hardware`.
+Where it differs from Salt, it says so: a rich rule is found however it was spelled,
+because firewalld rewrites the spelling; `default: true` checks that the zone is the
+default and never changes it; `prune_rich_rules`, `masquerade`, `interfaces`,
+`port_fwd` and `block_icmp` are refused rather than ignored; and a zone name containing
+`/`, which firewall-cmd accepts and turns into a subdirectory, is refused. `firewall.*`
+does not drive firewalld; on a firewalld node its refusal now says to use `firewalld`.
+DIVERGENCE 5.175.
+
 ### `pro.enable`/`pro.disable` driven for real; the release gate is green again
 
 `pro`'s mutating functions shipped `Assumed`: nobody had watched `attach`, `detach`,

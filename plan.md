@@ -695,7 +695,7 @@ what an operator is looking for.
 | Common Linux | 0 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `modprobe` and `udev` ship** (DIVERGENCE 5.47-5.54), and **`authselect`** (5.173) -- the row is complete. `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm`/`modprobe`/`udev` are exec-only (no state -- SPEC 15.5 names none for any of them). `authselect` was deliberately left pending until a RHEL-family host existed to write it against; the lab's Rocky 9 and Alma 8 were that host. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
 | macOS | 0 | `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate` and `mac_keychain` are modules (DIVERGENCE 5.41-5.46). **All seven are `hardware`** (5.114-5.118, 5.121), and `fleet.yml`'s `macos` leg drives them as root on every change to them, so the evidence stops being a run that happened once. `mac_assistive` was the eighth and is out of the build — SIP keeps its writes unreachable without a grant re-given on every rebuild (5.119). |
-| RHEL | 4 | `yumpkg`, `dnfpkg`, `firewalld`, `subscription_manager`. **`rpm` and `chattr` ship** (DIVERGENCE 5.172), written against the real tools on Rocky Linux 9.8 and AlmaLinux 8.10 in the lab, and **`dnf_module` ships** (DIVERGENCE 5.174), built and driven on the same two rows. |
+| RHEL | 1 | `yumpkg` and `dnfpkg` are aliases. **`rpm` and `chattr` ship** (DIVERGENCE 5.172), written against the real tools on Rocky Linux 9.8 and AlmaLinux 8.10 in the lab; **`dnf_module` ships** (DIVERGENCE 5.174), built and driven on the same two rows; and **`firewalld` ships** (DIVERGENCE 5.175), driven against a throwaway zone on both (firewalld 1.3.4 and 0.9.11), and deliberately **not** a `firewall` provider, for the same reason `iptables` is not plus one of its own -- a provider would act on the default zone, which is the one zone the lab could not safely change. `subscription_manager` remains: Rocky and Alma have no RHEL subscription to drive it against. |
 | FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32); its field names are no longer assumed either, and auditing them against the list `jls -h` publishes found one the module had invented (5.66). The FreeBSD half of the **Common Linux** row's `quota` was audited at the same time and had two defects, both from being read rather than run (5.65). |
 | SUSE | 1 | `zypperpkg`. |
 
@@ -2388,8 +2388,7 @@ unbuilt item here is number 7.
     under; Debian and Ubuntu manage PAM through `pam-auth-update`,
     which `pam`'s own module already handles, and this project has no
     RHEL host to verify authselect against. It waits for the same
-    reason `yumpkg`, `dnfpkg`, `firewalld` and
-    `subscription_manager` do — shipping
+    reason `subscription_manager` still does — shipping
     fixtures for a tool nobody here has run is exactly the mistake
     DIVERGENCE 5.31 found and this document keeps citing. Items 14-19
     below say exactly what machine closes each.
@@ -2415,7 +2414,7 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     What is left is the RHEL row's own seven — `yumpkg`, `dnfpkg`, `rpm`, `firewalld`,
     `subscription_manager`, `dnf_module`, `chattr` (§2.3, all seven
     unbuilt, not merely unverified, when this item was written; `rpm`,
-    `chattr` and `dnf_module` since built, below) — and lets the `pkg` module's
+    `chattr`, `dnf_module` and `firewalld` since built, below) — and lets the `pkg` module's
     dnf/yum provider be run for the first time: all four optional
     capabilities (`pkg.hold` through the `versionlock` plugin,
     upgrading, file ownership, repository listing) are implemented to
@@ -2435,6 +2434,13 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     reading the host's choices from `/etc/dnf/modules.d` rather than
     the human table, which it reads only for what the repositories
     offer (`Hardware`).
+
+    ~~`firewalld`~~ is **done** (DIVERGENCE 5.175), with a
+    `firewalld.present` state: twenty functions under Salt's names,
+    driven against throwaway zones on firewalld 1.3.4 and 0.9.11, and
+    not a `firewall` provider (`Hardware`). That leaves the row's
+    `subscription_manager`, which needs a real RHEL subscription that
+    neither lab row has.
 
     **Action:** `make lab-up` a RHEL 9 or Alma 8 row from
     `contrib/tofu` (already in its distro list, per §7's note above
@@ -2466,7 +2472,15 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
             name: httpd   # dnf's versionlock plugin, per DIVERGENCE §2.5
 
     # firewalld — a zone and a service, the way an estate's own
-    # tree is likely to have written it under Salt
+    # tree is likely to have written it under Salt. Built (DIVERGENCE
+    # 5.175), with one difference from Salt: `default: true` is
+    # checked, not set. This example itself was never applied -- it
+    # changes `public`, which on the lab hosts carries the SSH session;
+    # the state was driven against throwaway zones. Naming a zone that
+    # is not the default fails and
+    # prints the `firewall-cmd --set-default-zone` that would make it
+    # so, because changing the default zone moves every interface
+    # without one of its own -- on the lab hosts, the SSH session's.
     public-http:
       firewalld.present:
         - name: public
@@ -2503,8 +2517,11 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
         - features: [with-mkhomedir]
     ```
 
-    Each state above is aspirational until its module is written —
-    they are Salt's own real argument shapes for these modules, given
+    `firewalld` is done: `firewalld.present` and twenty exec functions,
+    Hardware on both lab distributions (DIVERGENCE 5.175), as are
+    `authselect` and `dnf_module`. The `subscription_manager` state
+    above is still aspirational until its module is written —
+    it is Salt's own real argument shape for that module, given
     as the target rather than invented, so whoever builds the module
     is writing to a known usage rather than guessing one from a man
     page and then guessing again at the state that wraps it.

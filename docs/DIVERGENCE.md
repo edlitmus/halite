@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **92 execution modules / 626 functions** and **48 state
-modules / 132 functions**.
+The build ships **93 execution modules / 646 functions** and **49 state
+modules / 133 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -470,7 +470,7 @@ different reason is given.
 | `blockdev` | not implemented | 0 | |
 | `data` | implemented | 11 | a node-local key/value store in one JSON file under the cache directory, in SPEC 6.4's canonical form. `load` and `items` both read from disk because there is no in-process session to flush, and `dump` replaces the store rather than flushing a memory this build does not keep (5.72) |
 | `defaults` | implemented | 3 | `merge`, `update` and `deepcopy`, for the `map.jinja` idiom every formula carries. The merge is in place by default because the call site is `{% do %}`, which discards the return value: merging into a new mapping would leave the template with its defaults unmerged and report nothing. `get` is refused by name, because it resolves a file relative to the formula being rendered, which is a file-server question rather than a data one. SPEC 15.2 does not list the module; an estate's tree does not compile without it |
-| `firewall` | implemented | 8 | virtual, with a ufw provider: status, enable, disable, set_default, allow, deny, delete and reload. firewalld, nftables and pf are not built, and the provider interface is shaped by the one provider it has |
+| `firewall` | implemented | 8 | virtual, with ufw and pf providers: status, enable, disable, set_default, allow, deny, delete and reload. `iptables`, `nftables` and `firewalld` are modules of their own and deliberately not providers (5.51, 5.175); the provider interface is still shaped by ufw, with pf refusing what it has no spelling for (5.31) |
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
@@ -627,7 +627,7 @@ what `aa-status` itself reads and is always there. The tools that
 *change* a mode really are in that package, and the module names it
 rather than reporting a missing binary.
 
-The 19 are declared as pending rather than simply missing. A name absent
+The 18 are declared as pending rather than simply missing. A name absent
 from the registry makes "not written yet" and "you have mistyped it" the
 same message, and the second sends an operator looking for a spelling
 error that is not there:
@@ -649,7 +649,7 @@ specification cannot be quietly missed.
 | ZFS, on every platform that has it | `zfs`, `zpool` | none |
 | FreeBSD | `freebsdpkg`, `freebsd_service`, `freebsd_sysctl`, `pf` (aliases), `jail` | none |
 | Debian, Ubuntu | `dpkg`, `debconf`, `netplan`, `apparmor`, `snap`, `pro`, `aptpkg` and `ufw` (aliases) | `debbuild`, `apt_key` |
-| RHEL family | `rpm`, `chattr`, `dnf_module`, `yumpkg` and `dnfpkg` (aliases) | `firewalld`, `subscription_manager` |
+| RHEL family | `rpm`, `chattr`, `dnf_module`, `firewalld`, `yumpkg` and `dnfpkg` (aliases) | `subscription_manager` |
 | SUSE | none | `zypperpkg` |
 | Windows | `win_dacl`, `win_service`, `win_registry`, `win_task`, `win_pkg` (alias) | `win_file`, `win_useradd`, `win_groupadd`, `win_shadow`, `win_network`, `win_firewall`, `win_disk`, `win_system`, `win_timezone`, `win_wua`, `win_certutil`, `win_dsc`, `win_lgpo` |
 | macOS | `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate`, `mac_keychain`, and `mac_brew_pkg` and `mac_service` (aliases) | `mac_assistive` (5.119) |
@@ -16895,6 +16895,123 @@ spanning more than one repository; `switch_to` with packages installed, which is
 where it does real work; globs; RHEL proper, CentOS Stream, and Fedora, whose dnf5
 removed modularity. No `fleet.yml` leg is RHEL, so like `pro` (5.171) this
 evidence is a run a person repeats by hand on a lab host.
+### 5.175 `firewalld`: built against two real daemons, and why it is not a `firewall` provider
+
+plan.md §7 item 14 named `firewalld` among the RHEL row's modules waiting on a machine,
+and gave the Salt-shaped state a migrated tree would use. The machines were two lab
+hosts: Rocky Linux 9.8 (firewalld 1.3.4) and AlmaLinux 8.10 (firewalld 0.9.11), both
+with the nftables backend and both reached over SSH through the `public` zone. So
+the constraint on this work came first: **nothing outside a zone the work created itself
+was to change, in either the running or the permanent configuration.** It shaped the
+module more than any Salt signature did.
+
+`internal/builtin/firewalld.go`: twenty exec functions with Salt's names and argument
+order — `version`, `default_zone`, `get_zones`, `get_services`, `list_services`,
+`list_ports`, `get_sources`, `get_interfaces`, `get_rich_rules`, `new_zone`,
+`delete_zone`, `add_`/`remove_service`, `_port`, `_source`, `_rich_rule`, and
+`reload_rules` — each taking `permanent`, default true as Salt's does, plus the state
+`firewalld.present` (`name`, `default`, `services`, `ports`, `sources`, `rich_rules`,
+and `prune_` for the first three). Function count 600 → 620, module count 88 → 89;
+state functions 132 → 133 across 48 → 49 modules.
+
+**firewalld respells rich rules, so membership is asked, never read.** The capture
+added `rule family=ipv4 source address=192.0.2.0/24 service name=ssh accept` and
+`--list-rich-rules` printed `rule family="ipv4" source address="192.0.2.0/24" service
+name="ssh" accept` — on both releases. A state comparing its own text against that
+listing never finds its rule, which is 5.31's `pf` defect in firewalld's spelling. Every
+"is it there?" goes through firewall-cmd's own `--query-*`, which answered `yes` for
+both spellings. The query exits 1 for "no", so every call sets `IgnoreExitCode` (5.114),
+and a unit test holds every command to that.
+
+**The query is semantic, which pruning cannot use.** `--query-port=9000/udp` answers
+yes while `9000-9001/udp` is open (captured, both hosts). Without pruning that is the
+right answer. With `prune_ports` it is wrong: the range is about to go, and a pruning
+state that believed the query would remove the range and never add the port. So a
+pruning state reads membership from the listing — sound for services, ports and
+sources, because firewalld echoes those back exactly as given (`198.51.100.7/24` is
+stored as written, not as its network). Rich rules are not echoed, so there is no
+`prune_rich_rules`; the state refuses the parameter rather than ignoring it, as it
+does `masquerade`, `interfaces`, `port_fwd` and `block_icmp`.
+
+**firewall-cmd accepted a zone named `bad/name`.** The capture script tried it
+expecting a refusal; both 0.9.11 and 1.3.4 printed `success` and wrote
+`/etc/firewalld/zones/bad/name.xml`, a zone whose name is a path. (It was deleted from
+both hosts' permanent configuration, and the directory removed, once noticed; the
+runtime never had it.) firewall-cmd does enforce a length — `INVALID_NAME ... max is 17`,
+exit 116 — so `new_zone` and `firewalld.present` now hold a name to 1-17 letters,
+digits, `-` and `_`, which covers every zone either host ships.
+
+**`default: true` is checked and never set.** Salt's state sets the default zone when
+it differs. That moves every interface without a zone of its own, which on both lab
+hosts is the SSH session's, so it was the one change this work could not make to find
+out what happens. A zone that is already the default passes; any other fails with the
+`firewall-cmd --set-default-zone` that would make it so. `delete_zone` likewise
+refuses the default zone before running anything.
+
+**Why not a `firewall` provider.** iptables and nftables are not providers because they
+are the layer under the abstraction (5.51). firewalld is not that — it is RHEL's ufw —
+but `firewall.allowed` on firewalld can only mean the default zone, the one zone this
+lab could not change. A provider would have been either demonstrated on `public` over
+the SSH session or not demonstrated. It would also need words `firewallProvider` does
+not have (which zone; runtime or permanent), and that interface stays shaped by ufw
+until a provider that has been run reshapes it. `firewall`'s refusal on a node with no
+provider now names `firewalld` as the module to use there. That refusal also said "pf
+[is] not built", which had been false since 5.31; it now names both providers.
+
+**Reloads.** A zone created with `--permanent --new-zone` is not in the running firewall
+until a reload (captured: runtime `--list-services` answers INVALID_ZONE, exit 112, and
+a `--permanent --delete-zone` leaves the zone running until one). So `new_zone`/`delete_zone` reload
+unless given `restart: false`, and `firewalld.present` reloads when it changed
+anything — both as Salt's do. A reload discards runtime-only changes on **every** zone.
+Before relying on that being harmless, each host's runtime and permanent
+configurations were compared: identical except `enp1s0` in `public`, which
+NetworkManager binds at runtime, and three reloads on each host left it there. The live
+tests make the same comparison and skip when anything else differs, so they will not
+discard somebody's runtime rule on a host that has one.
+
+**Driven.** `TestLiveFirewalldReadsTheRealDaemon`,
+`TestLiveFirewalldDrivesAThrowawayZone` (a `halite-fw-XXXX` zone: create, then add and
+remove each member kind with test mode first, and each second call a no-op; a
+runtime-only service that `reload_rules` then discards; delete) and
+`TestLiveFirewalldPresentConvergesAndPrunes`, plus a conformance case for
+`firewalld.present` (`halite-conform`), all passed on both hosts. Each test snapshots
+every other zone, runtime and permanent, and compares after its cleanup. The
+lab-driver captures of `--list-all-zones` from before the first change and after the
+last were byte-identical on both hosts. They run again in `contrib/tofu`'s sweep
+(`-run TestLive`) on every lab distro. No `fleet.yml` leg has firewalld, so no CI leg
+runs them.
+
+**Broken on purpose, on both hosts, each then restored:** (A) rich-rule membership
+read from the listing: the second `add_rich_rule` reported a change and
+`remove_rich_rule` found nothing to remove; `present` was not idempotent; the
+conformance harness failed its second-run and converged-test-mode phases. (B) no reload
+after `new_zone` or `present`: "the zone is not in the running firewall", and the
+runtime listing answered INVALID_ZONE. The conformance case **passed** with this break,
+because its probe reads the permanent configuration, which is what the state manages;
+the reload is the live test's to catch, and it does. (C) pruning trusting the query and
+exec test mode acting: "test mode changed the zone" for all four kinds, and the range
+survived pruning. The conformance case passed here too, since it neither prunes nor
+calls the exec functions. (D) the test's own guard, with the test zone left behind and
+not filtered: "10 zones before and 11 after", runtime and permanent. The leftover was
+deleted by hand.
+
+**0.9.11 against 1.3.4.** Every listing and query this module parses printed the same
+bytes on both. What differed: error wording (`INVALID_SERVICE: Zone 'z': 'x' not among
+existing services` against `INVALID_SERVICE: 'x' not among existing services`, same exit
+code 101; `INVALID_ADDR` likewise, 105; 0.9.11's name-length error ends in a stray
+` False`), which nothing here matches on beyond carrying it through; `--get-services`
+(1.3.4 knows more services); `--list-all`'s `forward:` line (`yes` on 1.3.4, `no` on
+0.9.11); and `--get-policies`, which exists only on 1.x. `--list-all` is a human block
+and is not parsed.
+
+**Not covered:** any zone with an interface bound, the default zone, and `public` — never
+changed, on purpose; `get_interfaces` only ever read an empty list; the iptables backend;
+`permanent: false` for anything but `add_service` and the listings; policies,
+masquerade, forwarding, ICMP blocks and ipsets, none of them built. Deleting a zone
+leaves firewalld's own `<zone>.xml.old` in `/etc/firewalld/zones` (captured); the tests
+remove their own, and the module, like Salt's, does not.
+
+
 
 
 

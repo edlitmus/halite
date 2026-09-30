@@ -61,7 +61,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 46 modules
+## `hardware` — 47 modules
 
 ### `acl`
 
@@ -106,6 +106,10 @@ writes, reads, moves, links and removes real files on a real filesystem througho
 ### `firewall`
 
 the pf provider was driven on a real FreeBSD host — status, enable, allow and absent, idempotent across runs — and that run found a defect no test had, so no rule matched itself and `firewall.absent` could remove nothing (DIVERGENCE 5.31). Still not seen on hardware: the anchor refusal refusing. A port list still cannot match, because pf expands one. The ufw provider has not been driven at all.
+
+### `firewalld`
+
+driven on 2026-09-30 against two real daemons on throwaway lab hosts, root, over SSH: Rocky Linux 9.8 with firewalld 1.3.4 and AlmaLinux 8.10 with firewalld 0.9.11. `TestLiveFirewalldDrivesAThrowawayZone` created a zone of its own (`halite-fw-` plus four random hex digits, no interface bound, only 192.0.2.0/24 as a source), added and removed a service, a port, a source and an unquoted rich rule in its permanent configuration -- each predicted in test mode first, each second add and remove a no-op -- added a runtime-only service and watched `reload_rules` discard it, refused to delete the default zone, and deleted its own zone with the reload that takes it out of the running firewall. `TestLiveFirewalldPresentConvergesAndPrunes` and the conformance case (`firewalld.present`) applied the state against a missing zone, twice more, and in test mode after, and pruned a `9000-9001/udp` range down to `9000/udp`. Every zone but the test's was snapshotted runtime and permanent before and compared after, and did not move, on either host. Broken on purpose four ways (rich-rule membership read from the listing; no reload after new_zone or present; pruning trusting `--query-port`, and exec test mode acting; the test's own guard weakened) and each failed on both hosts, then restored (DIVERGENCE 5.175). Not covered: any zone with an interface bound, the default zone, or `public` -- never changed, on purpose, which is also why `default: true` is checked and never set and why this is not a `firewall` provider; `get_interfaces` only ever read an empty list; firewalld with the nftables backend was what both hosts ran, so the iptables backend is unexercised; policies (1.x), masquerade, forwarding, ICMP blocks and ipsets are not built; `permanent: false` was driven for `add_service` and read for the listings, not for every member kind.
 
 ### `hostname`
 

@@ -93,8 +93,13 @@ func pickFirewallProvider(c *exec.Context) (firewallProvider, error) {
 			return p, nil
 		}
 	}
+	// firewalld is named because it is the one a RHEL node has, and it is
+	// deliberately a module of its own rather than a provider here
+	// (firewalld.go says why) -- so the refusal points at it instead of
+	// leaving the operator to conclude it is unsupported.
 	return nil, fmt.Errorf("no host firewall this build manages was found on this node; " +
-		"halite ships a ufw provider, and firewalld, nftables and pf are not built (SPEC section 15.3)")
+		"`firewall` has ufw and pf providers. On a firewalld host use the `firewalld` module, and for " +
+		"raw rules `iptables` or `nftables` (SPEC section 15.3)")
 }
 
 func registerFirewall(r *Registries) {
