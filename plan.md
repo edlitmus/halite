@@ -951,6 +951,26 @@ Unchanged since the last revision, and verified again here.
   `ref-salt1` is the machine to do it on. Same procedure: `make dist` at a
   commit the release workflow has built, diffed against its
   `SHA256SUMS`.
+
+  **This estate's own Ubuntu development host is amd64** (`uname -m`:
+  `x86_64`), so the first bullet above is not blocked on finding a lab
+  host — it is a `workflow_dispatch` run of `release.yml` away, from
+  here:
+
+  ```sh
+  # trigger a dispatch run (no tag needed) and note its commit
+  gh workflow run release.yml
+  gh run list --workflow=release.yml -L1
+
+  # once it finishes, fetch the digests it produced (the build job's
+  # own copy of dist/SHA256SUMS, one per builder image)
+  gh run download <run-id> -n digests-ubuntu-24.04
+
+  # on this host, at the same commit
+  git checkout <commit>
+  make dist
+  diff dist/SHA256SUMS digests-ubuntu-24.04.txt
+  ```
 - **What CI does not yet do.** *Updated 2026-09-25:* `release.yml` now
   signs keyless SLSA provenance for what its builders agreed on, and
   keeps the binaries for three days as a workflow artifact. *And
@@ -1701,6 +1721,28 @@ unchanged.
    recorded. It is a security control, so the third is not obviously
    wrong; that is why it is here rather than in §7.
 
+   **Action, if this is ever revisited:** the host this needs is the
+   *opposite* of the one that closed the release gate — one that still
+   has the stock `passt` package (a default install on current Ubuntu
+   desktop images; this project's own development host happens not to
+   have it, which is why 5.55 closed cleanly here and 5.37 did not on
+   the CI runner). Install `passt` and confirm `aa-enforce
+   /usr/bin/man` fails the way 5.37 recorded, then decide between the
+   three options above with a real reproduction in hand rather than
+   5.37's.
+
+   **Example state that would exercise whichever choice is made** —
+   the real one, `apparmor.mode`, not a hypothetical:
+
+   ```yaml
+   /usr/bin/man:
+     apparmor.mode:
+       - mode: enforce
+       - persist: true   # the flag the third option would add; today
+                          # the mode does not survive a reboot on a
+                          # host `aa-complain` cannot run on
+   ```
+
 12. ~~**Should FreeBSD be SPEC 27.1 tier 1?**~~ **Answered 2026-09-16:
     yes, and the table has moved.** §0 raised it and deferred it here.
     The reasoning it was deferred *with* turned out to be the reasoning
@@ -2068,6 +2110,28 @@ unbuilt item here is number 7.
    message that named the file twice, and a `render_sandbox_user` that
    was accepted and ignored on any node that could not drop privilege.
    Neither was reachable from a test that passed. DIVERGENCE 5.58.
+
+   **Action:** a node running as root — a real installed service, not
+   `halite-node call --local` on a developer's own account — with an
+   unprivileged account named for it to drop to. **Example config**
+   (`node.yaml`):
+
+   ```yaml
+   render_sandbox: true
+   render_sandbox_user: halite-render
+   render_sandbox_group: halite-render
+   ```
+
+   What to check afterward is a real privilege drop, not just that
+   compilation still succeeds: a template that would behave
+   differently under the two accounts is the test, for instance a
+   `salt['cmd.run']('id -un')`-style check is the wrong shape (`cmd`
+   runs in the parent, not the sandbox, by SPEC 25.5's own division) —
+   what proves the drop is the render *process's* own euid while a
+   compile is in flight (`ps -o user= -p <pid>` against the child PID
+   the node logs), or a pillar SLS file only `halite-render` (not root)
+   can read after a deliberately wrong ownership, which should refuse
+   under the sandbox and would not without it.
 9. **Node evidence and detached signing** (§6). Supply chain, and it
    matters more now that the thing being supplied runs everything.
 
@@ -2147,6 +2211,33 @@ unbuilt item here is number 7.
    itself calls it per step rather than an operator calling it once per
    submission.
 
+   **Action for the hardware/KMS signer:** access to one real signer —
+   a PIV/YubiKey with a P-256 or P-384 slot, or a cloud KMS (AWS KMS,
+   GCP Cloud KMS, both support ECDSA P-256) with a key an account can
+   invoke `Sign` on. Write a new `handle` for
+   `cmd/halite-ext-signer-local`'s shape (or a new
+   `cmd/halite-ext-signer-<kms>` binary) implementing `sign`/
+   `public_key` against that service's SDK instead of a local PEM file
+   — `internal/extsigner.Bridged` and `--sign-extension` need no change
+   at all, since they already speak the generic protocol. **Example**
+   once one exists:
+
+   ```sh
+   halite-hub run '*' state.apply --sign-extension ./halite-ext-signer-kms
+   ```
+
+   **Action for orchestration signing**, once the signer above exists:
+   wire `orchRunner.dispatchAndWait` (`internal/hub/orch_steps.go`) to
+   call it per step, immediately before `Server.DispatchAs`, instead of
+   building an unsigned `Submission` — the design question this needs
+   answered first (a live call per step vs. a pre-approved plan) is
+   still open, so this is a design task before it is a testing one.
+   **Example of the operator-visible surface, once decided:**
+
+   ```sh
+   halite-hub orch run my-orchestration.deploy --sign-extension ./halite-ext-signer-kms
+   ```
+
 **Demoted, with the reason**
 
 10. **Packaging** (§3.5) — was fifth, on the argument that the fleet
@@ -2177,9 +2268,52 @@ unbuilt item here is number 7.
    subscription until someone reattaches it with the token only an
    operator holds, which is a cost worth naming rather than spending on
    the strength of "why not". `make release-gate` is green again; `pro`
-   was the only module holding it red. `debbuild` remains, on one host,
-   and is worth less than it was when the estate was imagined to be
-   Ubuntu.
+   was the only module holding it red.
+
+   **Action for `attach`/`detach`:** a second Ubuntu host (or this one
+   again, later) with a spare contract token — a fresh free personal
+   subscription costs nothing to generate at
+   `ubuntu.com/pro/dashboard` and does not touch the token already
+   attached here. `pro` has no state of its own (SPEC 15.5 names none,
+   the `mdadm`/`modprobe`/`udev` shape), so the state layer's own path
+   to it is `module.run`, the same bridge DIVERGENCE 5.167 fixed the
+   argument pass-through on this session:
+
+   ```yaml
+   attach-pro:
+     module.run:
+       - name: pro.attach
+       - token: {{ pillar['pro_contract_token'] }}
+       - no_auto_enable: false
+
+   # later, to prove the reverse direction too
+   detach-pro:
+     module.run:
+       - name: pro.detach
+   ```
+
+   Run each once by hand first (`halite-node call pro.attach
+   token=...`), the way `enable`/`disable` were, before trusting a
+   state wrapping it — `TestModuleRunPassesTopLevelKwargs` proves the
+   plumbing, not that `pro.attach` itself does what its doc comment
+   says on a real contract.
+
+   **`debbuild` remains, on one host,** and is worth less than it was
+   when the estate was imagined to be Ubuntu. **Action:** this host
+   already has `dpkg-buildpackage`/`dpkg-source` (via `build-essential`)
+   but not `devscripts`, `debhelper` or `lintian`, which Salt's own
+   `debbuild` module wraps — `sudo apt install devscripts debhelper
+   lintian` and write the module against a small real source package
+   (`apt source hello` is a reasonable, tiny, non-controversial choice)
+   rather than a fixture. **Example**, once built:
+
+   ```yaml
+   build-hello-deb:
+     module.run:
+       - name: debbuild.build
+       - runas: builder
+       - tgt: /home/builder/hello-2.10
+   ```
 12. **The Common Linux row** (§2.3) — was eleven modules and is now
     one, deliberately unbuilt. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
     first for the reason this item gave: they are the three that mean
@@ -2281,9 +2415,82 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     upgrading, file ownership, repository listing) are implemented to
     the same shape apt's were and have never been exercised against a
     real dnf (DIVERGENCE §2.3/§2.5, evidence.go's `pkg` note).
+
+    **Action:** `make lab-up` a RHEL 9 or Alma 8 row from
+    `contrib/tofu` (already in its distro list, per §7's note above
+    that "the hosts exist"); write each module against what the real
+    tool prints, the DIVERGENCE 5.31 way, not from `man dnf`. Tear the
+    lab down the same session (`make lab-down`) — it bills while it is
+    up.
+
+    **Example states, once each module exists**, in roughly the order
+    a migrated tree would need them:
+
+    ```yaml
+    # pkg's dnf provider — exercised today on apt, never on dnf.
+    # hold is its own exec function (pkg.hold(name)), not an
+    # `installed` parameter, so a tree reaches it through module.run —
+    # and pkg.hold's own argument happens to be named `name` too, the
+    # same as module.run's own "which function" argument, so it has to
+    # go through `kwargs:` rather than as a bare key. A bare `name:`
+    # here can only ever mean "call pkg.hold"; DIVERGENCE 5.167 fixed
+    # module.run to forward a bare key at all, but this collision is
+    # exactly why the nested form still exists.
+    httpd:
+      pkg.installed: []
+
+    pin-httpd:
+      module.run:
+        - name: pkg.hold
+        - kwargs:
+            name: httpd   # dnf's versionlock plugin, per DIVERGENCE §2.5
+
+    # firewalld — a zone and a service, the way an estate's own
+    # tree is likely to have written it under Salt
+    public-http:
+      firewalld.present:
+        - name: public
+        - services: [http, https]
+        - default: true
+
+    # subscription_manager — attach and enable a repo, the RHEL
+    # analogue of pro.attach/enable this project just drove for real
+    # on Ubuntu
+    rhel-subscription:
+      module.run:
+        - name: subscription_manager.register
+        - activationkey: my-activation-key
+        - org: my-org-id
+
+    # authselect — a profile selection, which is the whole module
+    sssd-auth:
+      module.run:
+        - name: authselect.select
+        - profile: sssd
+        - options: [with-mkhomedir]
+    ```
+
+    Each state above is aspirational until its module is written —
+    they are Salt's own real argument shapes for these modules, given
+    as the target rather than invented, so whoever builds the module
+    is writing to a known usage rather than guessing one from a man
+    page and then guessing again at the state that wraps it.
 15. **A SUSE host.** Closes `zypperpkg`, the SUSE row's one missing
     module (§2.3) — nothing built yet, not merely unverified, since
     this project has never had a SUSE machine to write it against.
+
+    **Action:** `make lab-up` an openSUSE row (also already in
+    `contrib/tofu`'s distro list); write `zypperpkg` against real
+    `zypper` output the same way `pkg`'s apt provider was written
+    against real `apt`/`dpkg-query`.
+
+    **Example**, once built:
+
+    ```yaml
+    vim:
+      pkg.installed:
+        - refresh: true   # zypper refresh before the install
+    ```
 16. ~~**An Alpine host.**~~ — **done, 2026-09-18**, on the lab's Alpine
     row (3.24, kernel 6.18), and it was two jobs rather than one.
 
