@@ -87,7 +87,7 @@ default and never changes it; `prune_rich_rules`, `masquerade`, `interfaces`,
 `port_fwd` and `block_icmp` are refused rather than ignored; and a zone name containing
 `/`, which firewall-cmd accepts and turns into a subdirectory, is refused. `firewall.*`
 does not drive firewalld; on a firewalld node its refusal now says to use `firewalld`.
-DIVERGENCE 5.172.
+DIVERGENCE 5.175.
 
 ### `pro.enable`/`pro.disable` driven for real; the release gate is green again
 

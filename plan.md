@@ -2435,7 +2435,7 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     the human table, which it reads only for what the repositories
     offer (`Hardware`).
 
-    ~~`firewalld`~~ is **done** (DIVERGENCE 5.172), with a
+    ~~`firewalld`~~ is **done** (DIVERGENCE 5.175), with a
     `firewalld.present` state: twenty functions under Salt's names,
     driven against throwaway zones on firewalld 1.3.4 and 0.9.11, and
     not a `firewall` provider (`Hardware`). That leaves the row's
@@ -2473,7 +2473,7 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
 
     # firewalld — a zone and a service, the way an estate's own
     # tree is likely to have written it under Salt. Built (DIVERGENCE
-    # 5.172), with one difference from Salt: `default: true` is
+    # 5.175), with one difference from Salt: `default: true` is
     # checked, not set. This example itself was never applied -- it
     # changes `public`, which on the lab hosts carries the SSH session;
     # the state was driven against throwaway zones. Naming a zone that
@@ -2518,9 +2518,10 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     ```
 
     `firewalld` is done: `firewalld.present` and twenty exec functions,
-    Hardware on both lab distributions (DIVERGENCE 5.172). Each other
-    state above is aspirational until its module is written —
-    they are Salt's own real argument shapes for these modules, given
+    Hardware on both lab distributions (DIVERGENCE 5.175), as are
+    `authselect` and `dnf_module`. The `subscription_manager` state
+    above is still aspirational until its module is written —
+    it is Salt's own real argument shape for that module, given
     as the target rather than invented, so whoever builds the module
     is writing to a known usage rather than guessing one from a man
     page and then guessing again at the state that wraps it.

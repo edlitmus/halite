@@ -470,7 +470,7 @@ different reason is given.
 | `blockdev` | not implemented | 0 | |
 | `data` | implemented | 11 | a node-local key/value store in one JSON file under the cache directory, in SPEC 6.4's canonical form. `load` and `items` both read from disk because there is no in-process session to flush, and `dump` replaces the store rather than flushing a memory this build does not keep (5.72) |
 | `defaults` | implemented | 3 | `merge`, `update` and `deepcopy`, for the `map.jinja` idiom every formula carries. The merge is in place by default because the call site is `{% do %}`, which discards the return value: merging into a new mapping would leave the template with its defaults unmerged and report nothing. `get` is refused by name, because it resolves a file relative to the formula being rendered, which is a file-server question rather than a data one. SPEC 15.2 does not list the module; an estate's tree does not compile without it |
-| `firewall` | implemented | 8 | virtual, with ufw and pf providers: status, enable, disable, set_default, allow, deny, delete and reload. `iptables`, `nftables` and `firewalld` are modules of their own and deliberately not providers (5.51, 5.172); the provider interface is still shaped by ufw, with pf refusing what it has no spelling for (5.31) |
+| `firewall` | implemented | 8 | virtual, with ufw and pf providers: status, enable, disable, set_default, allow, deny, delete and reload. `iptables`, `nftables` and `firewalld` are modules of their own and deliberately not providers (5.51, 5.175); the provider interface is still shaped by ufw, with pf refusing what it has no spelling for (5.31) |
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
 | `kernelpkg` | not implemented | 0 | |
@@ -16895,12 +16895,7 @@ spanning more than one repository; `switch_to` with packages installed, which is
 where it does real work; globs; RHEL proper, CentOS Stream, and Fedora, whose dnf5
 removed modularity. No `fleet.yml` leg is RHEL, so like `pro` (5.171) this
 evidence is a run a person repeats by hand on a lab host.
-
-
-
-
-
-### 5.172 `firewalld`: built against two real daemons, and why it is not a `firewall` provider
+### 5.175 `firewalld`: built against two real daemons, and why it is not a `firewall` provider
 
 plan.md §7 item 14 named `firewalld` among the RHEL row's modules waiting on a machine,
 and gave the Salt-shaped state a migrated tree would use. The machines were two lab
@@ -17015,6 +17010,12 @@ changed, on purpose; `get_interfaces` only ever read an empty list; the iptables
 masquerade, forwarding, ICMP blocks and ipsets, none of them built. Deleting a zone
 leaves firewalld's own `<zone>.xml.old` in `/etc/firewalld/zones` (captured); the tests
 remove their own, and the module, like Salt's, does not.
+
+
+
+
+
+
 
 ## 6. Everything else not started
 

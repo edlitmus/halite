@@ -831,7 +831,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"and permanent before and compared after, and did not move, on either host. Broken on purpose four " +
 		"ways (rich-rule membership read from the listing; no reload after new_zone or present; pruning trusting " +
 		"`--query-port`, and exec test mode acting; the test's own guard weakened) and each failed on both hosts, " +
-		"then restored (DIVERGENCE 5.172). Not covered: any zone with an interface bound, the default zone, or " +
+		"then restored (DIVERGENCE 5.175). Not covered: any zone with an interface bound, the default zone, or " +
 		"`public` -- never changed, on purpose, which is also why `default: true` is checked and never set and " +
 		"why this is not a `firewall` provider; `get_interfaces` only ever read an empty list; firewalld with " +
 		"the nftables backend was what both hosts ran, so the iptables backend is unexercised; policies (1.x), " +
