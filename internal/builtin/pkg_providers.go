@@ -123,6 +123,14 @@ func (p dnfProvider) Available(c *exec.Context) bool {
 	return c.Which("rpm") != "" && c.Which(p.binary) != ""
 }
 
+// ListPkgs reads rpm's database, keeping the newest instance of a name.
+//
+// EL installs kernels side by side -- AlmaLinux 8.10 in the lab had two
+// `kernel-core` (DIVERGENCE 5.172) -- and a map keyed by name has room for
+// one. This used to keep whichever rpm printed last, which is the order of
+// rpm's database and not an answer to anything; the zypper provider had
+// already been made to keep the newest by rpm's ordering (5.176), and this
+// is the same argv, so it is the same parser (5.177).
 func (p dnfProvider) ListPkgs(c *exec.Context) (*value.Map, error) {
 	res, err := c.Run(exec.Command{
 		Argv: []string{"rpm", "-qa", "--queryformat", "%{NAME}\\t%{EPOCH}:%{VERSION}-%{RELEASE}\\n"},
@@ -130,20 +138,7 @@ func (p dnfProvider) ListPkgs(c *exec.Context) (*value.Map, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := value.NewMap(256)
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		name, version, ok := strings.Cut(line, "\t")
-		if !ok {
-			continue
-		}
-		// rpm writes "(none)" for a missing epoch; an epoch of zero is
-		// conventionally omitted, and keeping the literal string would
-		// make every version comparison fail.
-		version = strings.TrimPrefix(version, "(none):")
-		version = strings.TrimPrefix(version, "0:")
-		out.Set(name, version)
-	}
-	return out, nil
+	return parseRPMInstalledNewest(res.Stdout), nil
 }
 
 // Install adds packages, refreshing the metadata first when asked.

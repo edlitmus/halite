@@ -449,7 +449,7 @@ func rpmOwner(c *exec.Context, paths []string) (*value.Map, error) {
 	}
 	out := value.NewMap(len(paths))
 	for _, path := range paths {
-		res, err := rpmQuery(c, "rpm", "-qf", "--queryformat", "%{NAME}\\n", "--", path)
+		res, err := rpmQuery(c, rpmOwnerArgv(path)...)
 		if err != nil {
 			return nil, err
 		}
@@ -460,6 +460,18 @@ func rpmOwner(c *exec.Context, paths []string) (*value.Map, error) {
 		out.Set(path, owners)
 	}
 	return out, nil
+}
+
+// rpmOwnerArgv asks rpm who owns one path, one owner per line.
+//
+// The newline in the format is the point. rpm prints the format once per
+// owner and adds nothing between them, so `%{NAME}` alone -- which the
+// dnf provider's pkg.owner used to send -- ran /usr/share/man/man1's two
+// owners together into `filesystembinutils` on Rocky 9.8 (DIVERGENCE
+// 5.172, 5.177). rpm.owner and pkg.owner share this argv so the two
+// cannot disagree about it again.
+func rpmOwnerArgv(path string) []string {
+	return []string{"rpm", "-qf", "--queryformat", "%{NAME}\\n", "--", path}
 }
 
 // parseRpmOwner reads one `rpm -qf` answer. An unowned path is an answer

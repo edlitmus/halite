@@ -138,16 +138,58 @@ func TestCompareRPM(t *testing.T) {
 	}
 }
 
-// An absent release compares equal to any release in RPM, which is how
-// `1.0` and `1.0-1` are the same package to rpm and how a query without a
-// release still matches.
-func TestRPMAbsentReleaseMatchesAny(t *testing.T) {
-	if got := CompareRPM("1.0", "1.0-5"); got != 0 {
-		t.Errorf("1.0 vs 1.0-5 = %d, want 0", got)
+// CompareRPM is rpm 4.16's EVR ordering, and the two pairs here are what
+// rpm 4.16.1.3 on Rocky Linux 9.8 answered through its own `rpm.vercmp`
+// (`rpm --eval '%{lua: print(rpm.vercmp(...))}'`), recorded in DIVERGENCE
+// 5.172. They are the only release- and epoch-bearing answers a real rpm
+// has given this project.
+//
+// This used to say `1.0` and `1.0-1` were equal, on the reasoning that an
+// absent release matches any. That is rpm's rule for *matching* a
+// dependency (`Requires: foo = 1.0` is satisfied by foo-1.0-1), not its
+// ordering, and an ordering that has it is not transitive: `1.0` equalled
+// both `1.0-1` and `1.0-2` while those two were not equal to each other
+// (DIVERGENCE 5.177).
+func TestRPMOrderingIsRpm416sEVRComparison(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		// Rocky 9.8, rpm 4.16.1.3.
+		{"1.0", "1.0-1", -1},
+		{"0:1.0", "1.0", 0},
+	} {
+		if got := CompareRPM(c.a, c.b); got != c.want {
+			t.Errorf("CompareRPM(%q, %q) = %d; rpm 4.16.1.3 said %d", c.a, c.b, got, c.want)
+		}
+		if got := CompareRPM(c.b, c.a); got != -c.want {
+			t.Errorf("CompareRPM(%q, %q) = %d; the reverse of rpm 4.16.1.3's %d", c.b, c.a, got, c.want)
+		}
 	}
-	// It is not a wildcard on the version, though.
-	if got := CompareRPM("1.0", "1.1-5"); got != -1 {
-		t.Errorf("1.0 vs 1.1-5 = %d, want -1", got)
+}
+
+// These follow from rpmverCmp in rpmio/rpmver.c at tag rpm-4.16.1.3 -- a
+// missing epoch is "0", and a missing release sorts before any release,
+// an empty one included -- read from the source, and no real rpm has been
+// asked them. The live differential asks them on an rpm >= 4.16 host;
+// until one runs it, they are the source's answers and nothing more.
+func TestRPMAbsentReleaseSortsBeforeAnyRelease(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"1.0", "1.0-5", -1},
+		{"1.0", "1.1-5", -1},
+		{"1.1", "1.0-5", 1},
+		{"1:1.0", "1.0-5", 1},
+		{"1.0-", "1.0", 1},
+		{"0:1.0-1", "1.0-1", 0},
+		{"1.0~rc1-1", "1.0", -1},
+		{"1.0^git1", "1.0-1", 1},
+	} {
+		if got := CompareRPM(c.a, c.b); got != c.want {
+			t.Errorf("CompareRPM(%q, %q) = %d, want %d", c.a, c.b, got, c.want)
+		}
 	}
 }
 
@@ -155,7 +197,7 @@ func TestRPMAbsentReleaseMatchesAny(t *testing.T) {
 // different answer depending on the order it started in.
 func TestComparisonIsATotalOrder(t *testing.T) {
 	versions := []string{
-		"1.0~~", "1.0~", "1.0~rc1", "1.0", "1.0a", "1.0-1", "1.0.1", "1.1", "2.0", "1:0.1",
+		"1.0~~", "1.0~", "1.0~rc1", "1.0", "1.0a", "1.0-1", "1.0-2", "1.0.1", "1.1", "2.0", "1:0.1",
 	}
 	for _, cmp := range []struct {
 		name string
@@ -175,6 +217,12 @@ func TestComparisonIsATotalOrder(t *testing.T) {
 					bc := cmp.fn(b, c)
 					if ab < 0 && bc < 0 && cmp.fn(a, c) >= 0 {
 						t.Errorf("%s: %q < %q < %q but %q is not less than %q", cmp.name, a, b, c, a, c)
+					}
+					// Equality is transitive too. RPM's used not to be:
+					// `1.0` equalled `1.0-1` and `1.0-2`, which do not
+					// equal each other (DIVERGENCE 5.177).
+					if ab == 0 && bc == 0 && cmp.fn(a, c) != 0 {
+						t.Errorf("%s: %q = %q = %q but %q is not equal to %q", cmp.name, a, b, c, a, c)
 					}
 				}
 			}

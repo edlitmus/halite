@@ -141,7 +141,8 @@ func TestLiveRpmReadsTheRealDatabase(t *testing.T) {
 // TestLiveRpmVersionCmpAgreesWithRpm is a differential: CompareRPM
 // against rpm's own comparison, reached through its embedded Lua.
 //
-// Only bare versions -- no epoch, no release. `rpm.vercmp` is raw
+// Bare versions on every rpm; epochs and releases only on rpm >= 4.16
+// (the `evr` subtest, DIVERGENCE 5.177). `rpm.vercmp` is raw
 // rpmvercmp on rpm 4.14.3, where "0:1.0" against "1.0" is -1 because the
 // colon is just a separator, and an EVR comparison on rpm 4.16.1.3,
 // where the same pair is 0. That was measured on the two lab hosts, and
@@ -168,6 +169,41 @@ func TestLiveRpmVersionCmpAgreesWithRpm(t *testing.T) {
 			t.Errorf("version_cmp(%q, %q) = %v, rpm says %q", p[0], p[1], got, want)
 		}
 	}
+
+	// Epochs and releases, only where rpm.vercmp is rpm 4.16's EVR
+	// comparison (rpmverParse + rpmverCmp, rpmio/rpmver.c) -- which is
+	// what CompareRPM follows since DIVERGENCE 5.177. On 4.14.3 the same
+	// Lua call is raw rpmvercmp and would be a different question.
+	t.Run("evr", func(t *testing.T) {
+		line := strings.TrimSpace(rpmTool(t, "--version"))
+		version := strings.TrimPrefix(line, "RPM version ")
+		if version == line || version == "" {
+			t.Skipf("rpm --version said %q, which does not name a version this can gate on", line)
+		}
+		if rpmvercmp(version, "4.16") < 0 {
+			t.Skipf("rpm %s: rpm.vercmp is raw rpmvercmp before 4.16, not an EVR comparison", version)
+		}
+		t.Logf("rpm %s", version)
+		evrPairs := [][2]string{
+			// The two a real 4.16.1.3 answered in 5.172: -1 and 0.
+			{"1.0", "1.0-1"}, {"0:1.0", "1.0"},
+			// Not yet asked of any rpm when this was written.
+			{"1:1.0", "2.0"}, {"1:1.0", "1.0-5"}, {"1.0-1", "1.0-2"}, {"1.0-", "1.0"},
+			{"1.0~rc1-1", "1.0"}, {"1.0^git1", "1.0-1"}, {"2:1.0-1", "1:2.0-1"},
+			{"0:1.0-1", "1.0-1"}, {"2.34-60.el9", "2.34-60.el9_2.7"},
+		}
+		for _, p := range evrPairs {
+			out := rpmTool(t, "--eval", "%{lua: print(rpm.vercmp(\""+p[0]+"\", \""+p[1]+"\"))}")
+			want := strings.TrimSpace(out)
+			got, err := r.Exec.Call(&exec.Context{}, "rpm.version_cmp", value.MapOf("ver1", p[0], "ver2", p[1]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if value.KeyString(got) != want {
+				t.Errorf("version_cmp(%q, %q) = %v, rpm %s says %q", p[0], p[1], got, version, want)
+			}
+		}
+	})
 }
 
 // TestLiveRpmVerifySeesARealModification changes files a package owns

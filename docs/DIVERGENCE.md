@@ -16655,11 +16655,11 @@ either host.
 - `dnfProvider.OwnerOf` (`pkg.owner` on the RedHat family) runs
   `rpm -qf --queryformat %{NAME} <path>` with no newline in the format and takes the
   first line. For `/usr/share/man/man1` on Rocky 9.8 rpm printed `filesystembinutils`
-  — two owners run together into one name that does not exist.
+  — two owners run together into one name that does not exist. *Fixed in 5.177.*
 - `CompareRPM` says `1.0` and `1.0-1` are equal, on the reasoning in its own comment
   that an absent release matches any; rpm 4.16.1.3's EVR comparison says -1. Which
   one `pkg.latest` should follow is a question, not a defect found; it is recorded so
-  that it stays one.
+  that it stays one. *Decided and changed in 5.177: rpm 4.16.*
 
 **Not verified:** no CI leg runs any of this — there is no RHEL leg, and the chattr
 test has not been run on the `linux` leg's Ubuntu, so it is not in that leg's `-run`
@@ -17080,7 +17080,7 @@ measured anywhere.
   `-optional` were each installed at 6.12.0-160000.35.1 and .37.1. `list_pkgs`
   keeps the newest by rpm's ordering rather than whichever rpm printed last.
   The dnf provider still keeps the last one printed; EL's installonly kernels
-  have the same shape, and that was not changed or measured here.
+  have the same shape, and that was not changed or measured here. *Changed in 5.177.*
 - The XML stream interleaves `<message type="info">` ("Refreshing service
   'openSUSE'.") and, for a failed repository, `<message type="error">` with the
   answer; `list-updates` writes every `<update>` on one line; `--no-refresh`
@@ -17147,6 +17147,148 @@ stickiness, which can make zypper install something other than the highest
 edition `latest_version` reports — every repository here had priority 99, which
 zypper itself remarks on; SLES, and any Leap other than 16.0; a package whose
 licence needs agreeing to.
+
+### 5.177 The RPM providers' owner, installed set and version order, fixed from what the lab found
+
+5.172 and 5.176 each wrote down a defect in code they were not about, and left
+it there on purpose. This section fixes three of them, all in the path
+`pkg` takes on the RedHat and SUSE families, with no lab host: every fixture
+below is one those two sections captured, and what could not be checked
+against a real rpm is said at the end.
+
+#### `pkg.owner` ran two owners together
+
+`dnfProvider.OwnerOf` sent `rpm -qf --queryformat %{NAME} <path>`. rpm prints
+the format once per owner and adds nothing between them, so on Rocky 9.8 (rpm
+4.16.1.3) `/usr/share/man/man1` — owned by `filesystem` and `binutils` — came
+back as `filesystembinutils`, a package that does not exist (5.172). The zypper
+provider delegated to the same function, so SUSE had it too.
+
+It now sends `rpm.owner`'s argv (`%{NAME}\n`, then `--`) and reads it with
+`rpm.owner`'s parser, through one `rpmOwnerArgv` both call, so the two cannot
+drift apart again. `pkg.owner` returns one string on every provider and its
+generated documentation says so, so it did not become a list: a shared path
+answers the **first** owner rpm names, which is what the apt provider does
+with dpkg's `pkg1, pkg2: /path`. `rpm.owner` is the call that lists them all,
+and the function's doc now points there. An unowned path and an absent one
+are still the empty string, as before and as on apt and pkgng; `rpm.owner`
+keeps the distinction between them.
+
+`TestRpmPkgOwnerOfASharedPathIsOneRealPackage` serves both Rocky answers, each
+under the argv that produced it — `filesystembinutils` under the old one,
+`filesystem\nbinutils\n` under the new — and anything else no answer, and holds
+the dnf and zypper providers to `filesystem`. Before the fix it failed with
+`owner = "filesystembinutils"`, the lab's own symptom. Broken on purpose
+afterwards: the newline dropped from the shared argv (it asked an argv nobody
+captured and got nothing), and the last owner taken instead of the first
+(`binutils`). Both failed.
+
+The Leap fixtures `rpm-qf-tree` and `rpm-qf-unowned` were captured under the
+old argv and no longer answer anything the provider sends, so they were
+removed rather than re-labelled with an argv Leap was never asked; the zypper
+unit test keeps its `file_list` half. **Not run:** the new argv on Leap's rpm
+4.20.1, and `pkg.owner` itself on any host since the change; the argv was run
+through `rpm.owner` on Rocky 9.8 and AlmaLinux 8.10 in 5.172.
+
+#### The dnf provider's installed set kept whichever instance rpm printed last
+
+`pkg.list_pkgs` is one version per name, and EL installs kernels side by side:
+AlmaLinux 8.10 had two `kernel-core`, and both RedHat hosts several
+`gpg-pubkey` (5.172). The dnf provider kept the last line rpm printed for a
+name, which is the order of rpm's database and answers nothing. 5.176 had
+already made the zypper provider keep the newest by `CompareRPM`, and noted
+that dnf still did not. The two send the same `rpm -qa` argv byte for byte, so
+dnf now uses zypper's parser, `parseRPMInstalledNewest`, rather than a second
+copy of it.
+
+The test is the Leap `rpm-qa` capture — a real answer to exactly this argv —
+fed through `dnfProvider.ListPkgs` as rpm printed it and reversed. That
+capture prints the older kernel first, so last-wins happened to be right in
+rpm's own order and wrong only reversed, which is the point of running both:
+before the fix the reversed run failed with `kernel-default =
+6.12.0-160000.35.1`. Broken on purpose afterwards by disabling the comparison
+in the shared parser: the dnf and zypper tests both failed, reversed.
+
+This reaches every caller of `ListPkgs` on the RedHat family: `pkg.list_pkgs`,
+`pkg.version`, and the installed version `pkg.installed` and `pkg.latest`
+compare against. **Not measured:** what `pkg.latest` on a kernel does now on a
+real EL host, where `dnf list available` and installonly limits decide what is
+offered; no EL fixture of this argv exists, and the Alma kernels were captured
+in `rpm.list_pkgs`'s format, not this one.
+
+#### `CompareRPM` follows rpm 4.16: a missing release sorts first
+
+`CompareRPM` said `1.0` and `1.0-1` were equal, because "an absent release
+matches any". rpm 4.16.1.3 on Rocky 9.8 said -1 (5.172), which left open which
+one halite should follow. **Decided: rpm 4.16.** The rule is now rpm's
+`rpmverCmp` in `rpmio/rpmver.c` at tag `rpm-4.16.1.3` — the function
+`rpm.vercmp` in rpm's Lua calls there, read from the source for this change:
+rpmvercmp on the epoch (a missing one is `"0"`), then the version, then the
+release, where `compare_values` puts a missing release (NULL) before any
+present one, an empty one (`1.0-`) included.
+
+"An absent release matches any" was not invented. It is rpm's rule for
+*satisfying a dependency* — `Requires: foo = 1.0` accepts `foo-1.0-1` — and it
+lives in `rpmverOverlap` in the same file, beside the ordering and apart from
+it. Folded into an ordering it breaks transitivity of equality: `1.0` equalled
+`1.0-1` and `1.0-2`, which do not equal each other, so a "newest of" built on
+it depends on the order it is handed things. `TestComparisonIsATotalOrder` now
+checks equality is transitive, with `1.0-2` added to its list, and failed on
+exactly that before the fix.
+
+**Every caller, and what it means for each.**
+
+| Caller | What changes |
+|---|---|
+| `pkg.version_cmp` (scheme `rpm`, or `auto` on any family but Debian and FreeBSD) | The answer for a release-less against a release-bearing version: `1.0` vs `1.0-1` is now -1, was 0 |
+| `rpm.version_cmp` | The same function; the same change |
+| `pkg.upgrade_available` | Compares `pkg.version` with `pkg.latest_version`, both with releases on rpm; no change for what a provider returns |
+| `pkg.installed`, `allow_updates: true` (`installedIsAtLeast`) | `CompareRPM(installed, pin) >= 0`, on every family but Debian and FreeBSD — an unknown family (Alpine, Arch, macOS, Windows) gets the RPM scheme too, and apk's `-r29` is a release to it. A pin of `1.0` against an installed `1.0-1.el9` was 0 and is now 1: satisfied either way. `TestVersionSatisfiesAnRPMFloorWithoutARelease` holds it, and fails if the release order is reversed |
+| `pkg.installed`, an exact pin | Does not use `CompareRPM`: it is a string match or a `*` prefix. Unaffected — see below |
+| `pkg.latest` on the RedHat family | Does not use `CompareRPM`: the dnf provider's newest is `dnf list available`'s, compared as a string. Unaffected |
+| zypper `LatestVersion` (`pkg.latest`, `pkg.latest_version` on SUSE) | Picks the newest of zypper's editions, which all carry a release; no change for what zypper printed on Leap |
+| `parseRPMInstalledNewest` (dnf and zypper `list_pkgs`) | Compares `rpm -qa` versions, which always carry a release; no change |
+| `TestLiveZypper*` | Newest-of over rpm's and zypper's versions; releases present; no change |
+
+Epoch: `0:1.0` against `1.0` was 0 and still is, as 4.16.1.3 answered. The
+tilde and the caret are rpmvercmp's and were not touched; 5.172's differential
+already runs them against 4.14.3 and 4.16.1.3.
+
+Tests: the two real 4.16.1.3 answers, both ways round, in
+`TestRPMOrderingIsRpm416sEVRComparison`; eight more pairs from the source in
+`TestRPMAbsentReleaseSortsBeforeAnyRelease`, whose comment says no rpm has
+been asked them. Before the fix all three tests failed (`CompareRPM("1.0",
+"1.0-1") = 0; rpm 4.16.1.3 said -1`). Broken on purpose afterwards by reversing
+the missing-release order: the two ordering tests failed, and so did the
+`allow_updates` test, with a pin of `1.0` against `1.0-1.el9` unsatisfied.
+
+`TestLiveRpmVersionCmpAgreesWithRpm` has an `evr` subtest: on rpm >= 4.16, by
+`rpm --version`, it asks rpm's `rpm.vercmp` eleven epoch- and release-bearing
+pairs; below 4.16 it skips saying why.
+
+**Run afterwards, on the lab, 2026-09-30.** On Rocky Linux 9.8 (rpm 4.16.1.3)
+the `evr` subtest ran — `rpm --version` printed `RPM version 4.16.1.3`, the
+form it reads — and rpm agreed with CompareRPM on all eleven pairs. On
+AlmaLinux 8.10 (rpm 4.14.3) it skipped with its reason, and the rest of
+`TestLiveRpm*` passed on both. The other two fixes were checked through a
+`halite-node` built from this change: `pkg.owner /usr/share/man/man1` on Rocky
+9.8 answered `filesystem` (rpm names `filesystem` and `binutils`), and
+`pkg.version kernel-core` on AlmaLinux 8.10, which has
+`4.18.0-553.el8_10` and `4.18.0-553.163.1.el8_10` installed side by side,
+answered the newer.
+
+**Found, not fixed: an exact pin without a release never converges on rpm.**
+`pkg.installed` with `version: 1.0` and no `allow_updates` compares `1.0`
+against what rpm reports, `1.0-1.el9`, as strings, so it is never satisfied
+and every run reinstalls — before this change and after it, shown by calling
+`versionSatisfies` directly. What it lacks is a matching rule —
+rpmverOverlap's, not an ordering — and that is its own change with its own
+test.
+
+The eleven include `1.0-` against `1.0`, an empty release, which had been read
+only from the source. **Not verified against a real rpm:** any rpm but 4.14.3
+and 4.16.1.3, including Leap's 4.20.1, whose `rpm.vercmp`
+was not asked anything with a release.
 
 
 
