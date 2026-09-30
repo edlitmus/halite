@@ -947,6 +947,27 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`fleet.yml`'s `rpm` legs (DIVERGENCE 5.178) now re-run this on every change to the module, nightly, and on demand, each in a container of the real distribution on an ubuntu-24.04 runner -- rocky9 (dnf 4.14.0) and alma8 (dnf 4.7.0), reading and writing modules.d and " +
 		"installing redis from the distributions' real AppStream mirrors; all three tests passed on both on " +
 		"Fleet run 36778900509"},
+
+	// ---- Driven in the lab on EL and Debian instances, by hand, because no CI leg is one ----
+
+	"shadow": {Level: exec.Hardware, Note: "every function was run as root on 2026-09-30 on three throwaway " +
+		"Vultr lab instances: Rocky Linux 9.8 (shadow-utils 4.9-16.el9, passwd 0.80-12.el9), AlmaLinux 8.10 " +
+		"(shadow-utils 4.6-23.el8_10, passwd 0.80-4.el8) and Debian 13 (passwd 1:4.17.4-2). " +
+		"`TestLiveShadowDrivesAThrowawayAccount` made a `halite-shadow-` account of its own, drove each " +
+		"day-count setter to a value and back to unset (dates as `YYYY-MM-DD` and as day numbers), each " +
+		"twice, set a SHA-512 hash through chpasswd, locked, unlocked and deleted it, checked every step " +
+		"against `getent shadow` split independently of the module's parser, checked that unlocking a " +
+		"lock-only field is refused, and that test mode moved nothing; every other /etc/shadow line was " +
+		"compared before and after and never moved, and /etc/shadow, passwd, group and gshadow were " +
+		"byte-identical to a backup after each run. `TestAgeingIsWhatChageReportsBack` (user.present, " +
+		"which now reads through the same parser) passed on all three too. Broken on purpose five ways: " +
+		"the parser off by one column and the date conversion off by one day failed on all three hosts; " +
+		"test mode acting failed on all three; `!!` as the only lock prefix failed on Debian alone, whose " +
+		"lock is `!`; `usermod -U` with its exit status trusted failed on Debian alone, whose usermod exits " +
+		"0 while refusing (DIVERGENCE 5.180). Not covered: an account in LDAP or SSSD (read from the file, " +
+		"so not listed at all), a non-UTC node (dates are converted in UTC and handed to chage as day " +
+		"numbers, so chage's own time-zone handling is never reached), `passwd -l` on SUSE or Arch, and " +
+		"FreeBSD, which this module refuses by name; the test is now in fleet.yml's linux leg, an Ubuntu runner, and had not run there when this was written"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

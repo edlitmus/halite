@@ -416,7 +416,7 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **93 execution modules / 646 functions** and **49 state
+The build ships **94 execution modules / 658 functions** and **49 state
 modules / 133 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-48 of 56 present, plus `defaults` and `kmod`, which the section does not list.
+49 of 56 present, plus `defaults` and `kmod`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -483,7 +483,7 @@ different reason is given.
 | `reboot` | implemented | 5 | `required`, `scheduled`, `last_boot`, `schedule` and `cancel` — the layer above the immediate verbs, for a tree that wants a reboot it can countermand. `required` has a different answer on every platform and says which it used: FreeBSD compares `freebsd-version -k` against `-r`, Debian and Ubuntu read `/run/reboot-required`, and anywhere else it returns "this build cannot tell" rather than `false`. `uname -r` is used for none of it, because on the FreeBSD development host it reports the Linux compatibility layer's number. `schedule` has no zero delay: an immediate reboot is `system.reboot`, a different function on purpose. **`cancel` is not one command on both platforms** — Linux cancels with `shutdown -c`, and on FreeBSD that flag *power cycles the machine*, so the pending shutdown is found in the process table and sent SIGTERM, which is what FreeBSD's own shutdown(8) documents (5.73) |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
 | `selinux` | not implemented | 0 | Linux only. A Red Hat machine can now be raised on demand -- `make lab-up LAB_DISTROS='["rocky9"]'`, contrib/tofu -- so this waits on the work rather than on a host |
-| `shadow` | not implemented | 0 | |
+| `shadow` | implemented | 12 | Linux only. Reads /etc/shadow through the parser `user.present` uses and writes through `chage`, `passwd` and `chpasswd`; every function reads its column back rather than trusting an exit status, because Debian's `usermod -U` exits 0 while refusing. FreeBSD is refused by name (5.180) |
 | `state` | not implemented | 0 | reachable as `halite-node state`, not as a callable module function |
 | `sudo` | implemented | 4 | `validate` runs the real `visudo -c` over a file that is not yet installed, which is the function the rest exist for; `path` asks `sudo -V` and falls back to the platform convention saying which route it took; plus `version` and `list`. No sudoers parser is written here (5.72). Salt's `sudo.salt_call` is deliberately absent: `cmd.run` already takes a `runas` |
 | `swap` | implemented | 3 | `on`, `off` and `list` over the real `swapon`/`swapoff`, with the argument vector chosen by a platform table so every row is checkable from any host. FreeBSD has no priority flag and the module refuses one rather than dropping it. Persistence is `mount.mounted`'s job (5.72) |
@@ -17418,6 +17418,120 @@ was the working tree's path before and after. **Not verified:** any of
 these targets actually *run* under BSD make — beastie has no Docker — and
 GNU make 4.x, whose `CURDIR` is the same built-in as 3.81's.
 
+
+### 5.180 `shadow`: Salt's Linux shadow module, on two EL hosts and a Debian one
+
+SPEC 15.2 names `shadow` and plan.md §2.2 kept it last, on the reasoning that it
+overlaps `user.present`'s ageing arguments and "building it before that is
+answered would mean building it twice". It was not built twice: **the module and
+the state share one reader and one writer.** `readAging`, which `user.present`
+has used since its ageing arguments arrived, now parses /etc/shadow through the
+same `parseShadowLine` as `shadow.info`, and `shadow.set_password` hands its hash
+to the same `chpasswd -e` path (`setPassword`, user_password.go) as
+`user.present`'s `password:`. `user.present` does not call the execution module;
+the two call the same functions, which is the stronger form of agreement.
+
+Twelve functions, Salt's names and argument order: `info`, `list_users`,
+`set_password`, `del_password`, `lock_password`, `unlock_password`,
+`set_mindays`, `set_maxdays`, `set_warndays`, `set_inactdays`, `set_expire`,
+`set_date`. Not built: `gen_password` and `default_hash` (this build does not
+hash a plaintext), and Salt's `root=` argument.
+
+Captured and driven on 2026-09-30 on three throwaway lab instances, as root:
+Rocky Linux 9.8 (shadow-utils 4.9-16.el9, passwd 0.80-12.el9), AlmaLinux 8.10
+(shadow-utils 4.6-23.el8_10, passwd 0.80-4.el8) and Debian 13 (passwd
+1:4.17.4-2).
+
+**Read from the file; written through the tools.** `chage -l` is the obvious
+reader and is localised: under `LC_ALL=de_DE.UTF-8` on Debian 13 its labels were
+German and its months `Dez`; under `fr_FR.UTF-8`, French, with `sept.` and
+`déc.`. The same command on both EL hosts printed English, because they carry
+neither the translations nor a de/fr langpack — so a parser written on the EL
+hosts would have passed every test there. `getent shadow` printed the file's own
+bytes for every local account on all three, and also consults whatever nsswitch
+names (`files sss` on Alma 8, `files systemd` on Debian 13), none of which chage
+or passwd can change; the file is exactly the set the writers act on. The
+writers are `chage`, `passwd` and `chpasswd`, never an edit of /etc/shadow — the
+tools take the lock every other writer honours, and on both EL hosts the file is
+labelled `system_u:object_r:shadow_t:s0`, which a rewrite by rename would not
+have kept. Salt's own `set_password` edits the file by default.
+
+#### What the two families do differently
+
+| | EL 8 and 9 | Debian 13 |
+|---|---|---|
+| fresh `useradd` hash | `!!` | `!` |
+| `passwd -l` prefix | `!!` | `!` |
+| `usermod -L` prefix | `!` | `!` |
+| `passwd -u` on a lock-only field | refused, exit 254 | refused, exit 3 |
+| `usermod -U` on a lock-only field | refused, exit 1 | refused, **exit 0** |
+| `chage -i` (ISO dates in `-l`) | 9: yes; 8: no | yes |
+
+"Locked" is Salt's test, a leading `!`, which covers every row. No function
+here takes an exit status as its answer: each reads its column back, which is
+the only reading under which Debian's `usermod -U` is not a success.
+
+**Dates are converted here.** `set_expire` and `set_date` take Salt's
+`YYYY-MM-DD` or a day count; the date is turned into days since 1970-01-01 in
+UTC and chage is handed the number. Captured: `chage -E 2027-01-31` stored
+20849 and `chage -d 2026-09-01` stored 20697 on all three hosts, which is this
+conversion's answer. chage converts a date in the node's local zone, so passing
+the date through would leave the module guessing what to compare against. `-1`
+empties a column (captured: `chage -E -1`, `-I -1`, `-d -1` and `-M -1` all
+leave it empty, and `info` reports an empty column as -1, as Salt does); `0` is
+a zero, and `chage -d 0` forces a change at next login.
+
+**Names and hashes are held to one field.** An account name beginning `-` is an
+option to chage and passwd and is refused, as is one with a colon or white
+space. A hash with a colon or a line break is refused, because chpasswd reads
+`name:hash` records one per line and a line break would be a second record,
+for any account the text names. **`user.present`'s `password:` has no such
+check** — it hands the hash to the same chpasswd unexamined. Found here, not
+fixed here: it is a separate change to a different state.
+
+#### Driven on the hosts
+
+`TestLiveShadowDrivesAThrowawayAccount` creates `halite-shadow-` plus four hex
+digits and calls every function through the registry: each day-count setter to
+a value, the same call again, and back to unset; a hash set, locked twice,
+unlocked, deleted; an unlock of a lock-only field, which must fail and leave the
+field as it was; and three functions in test mode, which must move nothing.
+Every step is checked against `getent shadow` split by `strings.Split` rather
+than the module's own parser, so the reader is not also the judge. Every other
+/etc/shadow line is compared before and after. `TestAgeingIsWhatChageReportsBack`,
+`user.present`'s ageing test, passed on all three against the shared reader.
+After every run /etc/shadow, passwd, group and gshadow were byte-identical to
+the backup taken before the first change.
+
+Broken on purpose, one at a time, on all three hosts:
+
+| Break | rocky9 | alma8 | debian13 |
+|---|---|---|---|
+| parser reads one column to the right | fail | fail | fail |
+| date conversion one day late | fail | fail | fail |
+| test mode runs chage | fail | fail | fail |
+| only `!!` counts as locked | pass | pass | **fail** |
+| unlock via `usermod -U`, exit status trusted | pass | pass | **fail** |
+
+The last two pass on EL and fail on Debian, which is the table above: EL's lock
+is `!!` and EL's `usermod -U` exits 1. A test run only on the EL hosts would not
+have seen either.
+
+**FreeBSD.** Refused by name: every function declares `linux`, so a FreeBSD node
+is told `shadow.info runs on linux`. FreeBSD's account database is
+/etc/master.passwd, driven by pw(8), with a `change` and an `expire` column and <!-- lexicon:allow — the filename FreeBSD uses -->
+no minimum, maximum, warning or inactivity columns — its password policy is
+login.conf's, per login class. Salt ships that as a different module,
+`bsd_shadow`, with different functions (`set_change`), and none of it has been
+run here: no FreeBSD host that could be changed was available to this work. A
+FreeBSD tree sets a hash through `user.present`, which drives `pw usermod -H 0`.
+
+**Not covered:** accounts from LDAP or SSSD, which the file does not list; a
+node not in UTC, where the conversion is still UTC by design and chage's own
+zone handling is never reached; SUSE's and Arch's `passwd -l`; FreeBSD. The live
+test is added to `fleet.yml`'s linux leg, an Ubuntu runner with neither EL's
+`!!` nor Debian 13's passwd, and had not run there when this was written; the
+EL legs of it run only in the lab.
 
 ## 6. Everything else not started
 

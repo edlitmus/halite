@@ -85,6 +85,9 @@ on:
       # `user.present` is driven by TestLiveUserGroups on the linux, freebsd
       # and macos legs, and nothing here ran when it changed.
       - "internal/builtin/user*.go"
+      # `shadow` shares its /etc/shadow reader with user.present, and its
+      # live test drives chage, passwd and chpasswd as root on the linux leg.
+      - "internal/builtin/shadow*.go"
       - "internal/builtin/sysrc*.go"
       # `firewall`, whose four states are driven against a real ufw on the
       # linux leg -- three of them without ever enabling it, since ufw edits
@@ -499,7 +502,7 @@ jobs:
           # same as the freebsd leg.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveReboot|TestLiveConformance' ./internal/builtin/ 2>&1;
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveConformance' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 

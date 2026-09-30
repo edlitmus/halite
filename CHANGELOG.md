@@ -43,6 +43,24 @@ The state of the rebuild, by what it means rather than by commit.
 Not run on a lab host since the change; each is held by a unit test built on
 bytes a lab host printed. DIVERGENCE 5.177.
 
+### `shadow`, on Linux
+
+`shadow.info`, `set_password`, `lock_password` and the rest of Salt's Linux
+shadow module used to be "not a function". Twelve now ship under Salt's names:
+`info`, `list_users`, `set_password` (an already-hashed value, on chpasswd's
+standard input), `del_password`, `lock_password`, `unlock_password`, and the six
+`chage` setters `set_mindays`, `set_maxdays`, `set_warndays`, `set_inactdays`,
+`set_expire` and `set_date`, which take a day count or a `YYYY-MM-DD` date.
+Every function answers from /etc/shadow after acting, not from the tool's exit
+status, and an operator will see why: Debian's `usermod -U` refuses to unlock a
+password-less account and exits 0. `info` reads the file, so an LDAP or SSSD
+account is not in it. A hash with a colon or a line break, and an account name
+beginning with `-`, are refused. `user.present`'s ageing arguments now read
+through the same parser, with no change in what they do. Linux only: a FreeBSD
+node is told `shadow` runs on linux. Driven as root on Rocky 9.8, Alma 8.10 and
+Debian 13 in the lab, and added to fleet.yml's linux leg (Ubuntu), where it has not yet run. `gen_password` is not built.
+DIVERGENCE 5.180.
+
 ### `pkg` on SUSE, and `zypperpkg`
 
 `pkg.installed` on an openSUSE or SLES node used to answer "no package manager

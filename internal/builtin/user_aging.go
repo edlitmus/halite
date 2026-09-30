@@ -51,20 +51,19 @@ type shadowAging struct {
 	Expire *int64
 }
 
-// agingFields maps each argument to its shadow column and chage option.
-// The column numbers are /etc/shadow's, which shadow(5) fixes:
-// name:hash:lastchange:min:max:warn:inactive:expire.
+// agingFields maps each argument to its chage option. Which /etc/shadow
+// column each one is belongs to parseShadowLine in shadow.go, the one
+// reader of the file.
 var agingFields = []struct {
-	Arg    string
-	Column int
-	Flag   string
-	Get    func(*shadowAging) **int64
+	Arg  string
+	Flag string
+	Get  func(*shadowAging) **int64
 }{
-	{"mindays", 3, "-m", func(a *shadowAging) **int64 { return &a.Min }},
-	{"maxdays", 4, "-M", func(a *shadowAging) **int64 { return &a.Max }},
-	{"warndays", 5, "-W", func(a *shadowAging) **int64 { return &a.Warn }},
-	{"inactdays", 6, "-I", func(a *shadowAging) **int64 { return &a.Inact }},
-	{"expire", 7, "-E", func(a *shadowAging) **int64 { return &a.Expire }},
+	{"mindays", "-m", func(a *shadowAging) **int64 { return &a.Min }},
+	{"maxdays", "-M", func(a *shadowAging) **int64 { return &a.Max }},
+	{"warndays", "-W", func(a *shadowAging) **int64 { return &a.Warn }},
+	{"inactdays", "-I", func(a *shadowAging) **int64 { return &a.Inact }},
+	{"expire", "-E", func(a *shadowAging) **int64 { return &a.Expire }},
 }
 
 // agingFrom reads the five arguments off a declaration.
@@ -118,46 +117,22 @@ func asInt64(v any) (int64, bool) {
 // An empty column means "unset", which shadow(5) writes as an empty
 // field and chage reports as -1; it is returned as nil so that a
 // declaration setting it is a change and one not mentioning it is not.
+//
+// The line is parsed by shadow.go's reader, the one `shadow.info` uses,
+// so the state and the execution module cannot read a column two ways.
+// Only Linux reaches this: agingUnsupported refuses the arguments
+// everywhere else before anything is read.
 func readAging(name string) (shadowAging, bool, error) {
 	var cur shadowAging
-	loc, ok := hashLocations[runtime.GOOS]
-	if !ok {
+	if runtime.GOOS != "linux" {
 		return cur, false, fmt.Errorf("this build does not know where %s keeps password ageing", runtime.GOOS)
 	}
-	f, err := os.Open(loc.path)
-	if err != nil {
-		if os.IsPermission(err) {
-			return cur, false, fmt.Errorf("reading %s needs root, and so does setting password ageing", loc.path)
-		}
-		return cur, false, err
+	e, found, err := readShadowEntry(name)
+	if err != nil || !found {
+		return cur, found, err
 	}
-	defer f.Close()
-
-	scan := bufio.NewScanner(f)
-	for scan.Scan() {
-		line := scan.Text()
-		if !strings.HasPrefix(line, name+":") {
-			continue
-		}
-		fields := strings.Split(line, ":")
-		for _, fd := range agingFields {
-			if fd.Column >= len(fields) {
-				continue
-			}
-			text := strings.TrimSpace(fields[fd.Column])
-			if text == "" {
-				continue
-			}
-			n, err := strconv.ParseInt(text, 10, 64)
-			if err != nil {
-				continue
-			}
-			v := n
-			*fd.Get(&cur) = &v
-		}
-		return cur, true, nil
-	}
-	return cur, false, scan.Err()
+	cur.Min, cur.Max, cur.Warn, cur.Inact, cur.Expire = e.Min, e.Max, e.Warn, e.Inact, e.Expire
+	return cur, true, nil
 }
 
 // diffAging records each ageing column the declaration would change.
