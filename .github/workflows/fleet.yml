@@ -100,8 +100,17 @@ on:
       # scheduled task and a service are the machine's.
       - "internal/builtin/win_task*.go"
       - "internal/builtin/win_service*.go"
+      # The RHEL and SUSE rows, which the `rpm` legs drive in containers.
+      # The dnf and zypper `pkg` providers are already matched by
+      # `pkg*.go` above; `firewalld` is deliberately absent, because no
+      # leg can drive it (see the `rpm` job).
+      - "internal/builtin/rpm*.go"
+      - "internal/builtin/chattr*.go"
+      - "internal/builtin/authselect*.go"
+      - "internal/builtin/dnf_module*.go"
       - "internal/builtin/evidence.go"
       - "contrib/docker/fleet/**"
+      - "contrib/docker/fleet-rpm/**"
       - ".github/workflows/fleet.yml"
 
 permissions:
@@ -143,6 +152,83 @@ jobs:
           echo "what that covers and what it does not. A failure means"
           echo "either a module changed or Debian did; both are worth"
           echo "reading rather than retrying."
+
+  # The RHEL and SUSE rows, in containers, against the real tools.
+  #
+  # # Why these exist
+  #
+  # `rpm`, `chattr`, `authselect`, `dnf_module` and the dnf and zypper
+  # `pkg` providers were written against throwaway lab hosts -- Rocky 9.8,
+  # AlmaLinux 8.10, openSUSE Leap 16.0 -- and driven there by hand
+  # (DIVERGENCE 5.172-5.176). Every one of their evidence notes ended the
+  # same way: no CI leg runs any of it, so it stays true only while
+  # somebody remembers to raise the lab. That is evidence that decays, and
+  # these legs are what stop it decaying. DIVERGENCE 5.178.
+  #
+  # GitHub has no RHEL or SUSE runner, so the `debian` leg's shape is used:
+  # the distribution's own userland in a container on an Ubuntu runner,
+  # its own rpm, dnf, zypper, authselect and e2fsprogs, destructive on
+  # purpose and thrown away. `make fleetcheck-<distro>` is what runs, so a
+  # person runs the same command CI does, and the image's run.sh fails
+  # the leg when a test it selected skipped or vanished -- a leg that is
+  # green because everything skipped is the failure this is built against.
+  #
+  # # What is different from the debian leg, on purpose
+  #
+  # **These reach the network.** The debian leg bakes a repository into
+  # its image and runs with `--network none`; that cannot hold here. The
+  # dnf and zypper tests install and remove real packages (`tree`, redis's
+  # module profile, an older `libX11-data`) from the distributions' real
+  # mirrors, because a frozen repository tests the package manager against
+  # something nobody serves. A mirror outage can therefore turn one of
+  # these red for a reason that is not the change; the log names the
+  # repositories and the failing command.
+  #
+  # **The kernel is the runner's.** A container has Ubuntu's kernel, not
+  # EL's, so what is driven is the userland: the package database, the
+  # package managers, /etc. `chattr` sets real `i` and `a` flags, but on
+  # the runner's overlayfs over ext4, not on XFS, RHEL's default root.
+  #
+  # # What no leg here drives, and why
+  #
+  #   - `firewalld`: it needs a running daemon on a system bus with the
+  #     kernel's netfilter behind it. A container has no init and no bus,
+  #     and the netfilter it would program is the runner's. Its evidence is
+  #     still the two lab hosts (5.175).
+  #   - SELinux: the runner's kernel runs AppArmor. Nothing SELinux-shaped
+  #     can be observed from a container on it.
+  #   - `TestLiveRpmVerifySeesARealModification` on Leap: it edits two files
+  #     Red Hat ships and SUSE does not, so it runs on the EL legs only.
+  #   - The rest of the conformance harness: only its four `pkg` cases are
+  #     selected. The others want systemd, real accounts or the kernel.
+  rpm:
+    name: rpm (${{ matrix.distro }}, real rpm and ${{ matrix.tools }})
+    runs-on: ubuntu-24.04
+    # A first run builds the image, pulls the golang image for its
+    # toolchain, and fills an empty build cache; the tests then download
+    # packages. Measured, not guessed, in DIVERGENCE 5.178.
+    timeout-minutes: 30
+    strategy:
+      # One distribution failing says nothing about the other two, and
+      # cancelling them would throw away exactly the comparison these
+      # three exist to make.
+      fail-fast: false
+      matrix:
+        include:
+          - distro: rocky9
+            tools: dnf, dnf modules, authselect, chattr
+          - distro: alma8
+            tools: dnf, dnf modules, authselect, chattr
+          - distro: leap16
+            tools: zypper, chattr
+    steps:
+      - uses: actions/checkout@v7
+
+      # The same command a person runs, so the two cannot diverge. It
+      # builds the image from the tree rather than pulling one, for the
+      # debian leg's reason: what runs is what the repository says.
+      - name: drive the modules and prove they ran
+        run: make fleetcheck-${{ matrix.distro }}
 
   # `hostname` and `sysctl` on a machine rather than in an image.
   #
