@@ -16495,6 +16495,67 @@ has not been run against a live, enrolled hub and node pair; the wire path a sig
 submission takes from there is unchanged from `--sign-key`'s, which 5.128 already
 demonstrated that way.
 
+### 5.171 `pro.enable`/`pro.disable`, driven for real, and the release gate closes again
+
+DIVERGENCE 5.168 shipped `pro` with its mutating quarter — `attach`, `detach`,
+`enable`, `disable` — `Assumed`, on the reasoning that none of the four should be
+tried for the first time on the host this suite runs on. The operator of that host
+said otherwise: this development machine's Ubuntu Pro attachment is not critical, and
+can be experimented on.
+
+**`enable` and `disable` are now `Hardware`.** `usg` (Ubuntu Security Guide) was
+chosen for the reason 5.168 already gave for the module as a whole: it is an audit
+tool, entitled on every tier including the free personal subscription this host
+carries, and flipping it changes nothing a security posture depends on. By hand, then
+through a new gated live test:
+
+    sudo pro status --format json         # baseline: usg disabled
+    sudo pro enable usg --format json --assume-yes
+    # {"result": "success", "processed_services": ["usg"], "failed_services": [],
+    #  "needs_reboot": false, "errors": [], "warnings": [], "_schema_version": "0.1"}
+    sudo pro status --format json         # usg: enabled, "CIS Audit is active"
+    sudo pro disable usg --format json --assume-yes
+    sudo pro status --format json         # usg: disabled again
+
+That real envelope has two fields — `processed_services`, `failed_services`,
+`needs_reboot` — that `pro status`/`pro api`'s captured responses never showed, and
+`proRun`'s generic `result`/`errors` check (5.168) reads it correctly without change,
+which is the payoff of not having narrowed that parser to a guessed shape.
+
+`TestLiveProEnableAndDisable` (`internal/builtin/live_pro_test.go`), gated on root and
+`HALITE_SYSTEM_LIVE`, does the same round trip through the module's own functions
+rather than the shell: it reads which way `usg` already is, toggles it, confirms the
+new state through a real `pro status`, then reverses through a `defer` so the host is
+left exactly as found regardless of which way the test began. Run for real: pass,
+36-40 seconds each time depending on host load. **Broken on purpose** — one argv
+builder rewritten to send `pro enable` a service name the client does not recognise —
+and the test failed with the real client's own refusal (`"Cannot enable unknown
+service 'nonexistent-service-injected-for-testing'. Try anbox-cloud, cc-eal,
+esm-apps, ..."`), carried through `exec.Registry`'s own failing-mutation note (the
+mechanism DIVERGENCE 5.33 built and this is the first time this module's own tests
+have exercised it) — then restored and re-run clean.
+
+**`attach` and `detach` stay `Assumed`, deliberately, and the module's evidence note
+says why rather than leaving it implied.** Detaching this host would lose its
+subscription until someone reattaches it with the original contract token from
+`ubuntu.com/pro/dashboard`, which only the operator holds — offered and declined for
+this round, on the reasoning that `enable`/`disable` already close the release gate's
+actual question (whether *any* of this module's root-mutating functions has been
+watched touch a real machine) without spending the one thing here that is not cheaply
+reversible. `internal/builtin/evidence.go`'s `pro` entry states the asymmetry by name.
+
+**No CI leg can hold this decay-proof, unlike the macOS row's.** Nothing here becomes
+a `fleet.yml` leg: an ephemeral GitHub runner cannot be Ubuntu Pro-attached without
+embedding a real account's contract token as a repository secret, which is a
+different risk than any other live leg in this project takes on. `pro`'s `enable`/
+`disable` evidence rests on a run a person did by hand and can repeat by hand, the
+same shape the six `mac_*` modules had before the `macos` leg existed to keep them
+that way (5.114-5.118) — except here there will not be a leg. Re-running
+`TestLiveProEnableAndDisable` after a change to `pro.go` is a thing to remember to do,
+not a thing CI remembers for anyone.
+
+`make release-gate` is green again: `pro` was the only module keeping it red.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

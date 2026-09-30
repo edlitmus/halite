@@ -49,7 +49,13 @@ func TestTheLinuxLegsFilterNamesFamiliesNotTests(t *testing.T) {
 
 	// A pattern may name one test exactly when the sibling must not run
 	// here, with the reason. Empty is not a reason.
-	allowed := map[string]string{}
+	allowed := map[string]string{
+		"TestLiveProReadsTheRealClient": "its sibling, TestLiveProEnableAndDisable, needs a real " +
+			"Ubuntu Pro subscription attached, which an ephemeral GitHub runner cannot be without " +
+			"embedding a real account's contract token as a repository secret -- a different risk " +
+			"than any other live leg here takes on. It runs by hand, on a host whose operator can " +
+			"afford to touch its attachment; see DIVERGENCE 5.171.",
+	}
 
 	var checked int
 	for _, pattern := range filter {

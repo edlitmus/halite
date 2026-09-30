@@ -23,6 +23,18 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `pro.enable`/`pro.disable` driven for real; the release gate is green again
+
+`pro`'s mutating functions shipped `Assumed`: nobody had watched `attach`, `detach`,
+`enable` or `disable` change a real Ubuntu Pro subscription, and this project's only
+Pro-attached host is the one the test suite runs on. Its operator judged that host's
+attachment not critical, so `enable` and `disable` were driven for real — toggling
+`usg` (an audit tool, not a security control) off and back through the module's own
+code, confirmed against the real client's own status each step — and are now
+`Hardware`. `attach` and `detach` stay `Assumed`: detaching loses the subscription
+until someone reattaches it with a token only the operator holds, which is a cost this
+round did not spend. `make release-gate` passes again.
+
 ### A bridged `signer` extension for detached job signing
 
 SPEC 25.6 says a job's signer "may be a bridged `signer` extension backed by a KMS,"

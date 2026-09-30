@@ -2164,11 +2164,22 @@ unbuilt item here is number 7.
    both are required, which is what `doctor`'s FIPS check already says
    out loud, and `pro.status`'s per-service `fips`/`fips-updates` entry is
    where the first of those two claims now answers for itself. The
-   mutating quarter — `attach`/`detach`/`enable`/`disable` — is `Assumed`
-   on purpose: each changes what a real host is entitled to install and
-   patch, and this project's only Ubuntu Pro-attached host is the one the
-   suite runs on. DIVERGENCE 5.168. `debbuild` remains, on one host, and
-   is worth less than it was when the estate was imagined to be Ubuntu.
+   mutating quarter — `attach`/`detach`/`enable`/`disable` — shipped
+   `Assumed` on purpose: each changes what a real host is entitled to
+   install and patch, and this project's only Ubuntu Pro-attached host
+   is the one the suite runs on. DIVERGENCE 5.168.
+
+   ~~`enable`/`disable`~~ are **`Hardware`, since** (DIVERGENCE 5.171):
+   this project's own Ubuntu Pro-attached development host is not
+   critical, by its operator's own word, and `usg` toggled off and back
+   by hand and then by a gated live test cost nothing to try. `attach`
+   and `detach` stay `Assumed` — detaching this host loses its
+   subscription until someone reattaches it with the token only an
+   operator holds, which is a cost worth naming rather than spending on
+   the strength of "why not". `make release-gate` is green again; `pro`
+   was the only module holding it red. `debbuild` remains, on one host,
+   and is worth less than it was when the estate was imagined to be
+   Ubuntu.
 12. **The Common Linux row** (§2.3) — was eleven modules and is now
     one, deliberately unbuilt. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
     first for the reason this item gave: they are the three that mean
