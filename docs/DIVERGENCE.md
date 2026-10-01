@@ -17397,6 +17397,27 @@ an EL8 image that someday ships rpm 4.16 fails with a message saying the
 list is out of date, rather than quietly running a check this ledger does
 not claim for it.
 
+### 5.179 Every Docker target mounted an empty source tree under BSD make
+
+Checking #176's new `fleetcheck-*` targets under BSD make on beastie — CI
+runs only GNU make — showed `docker run ... -v "":/src`. The cause was not
+new: `saltdiff`, `zfscheck`, `fleetcheck` and `racecheck` already mounted
+`"$(CURDIR)"`, which is GNU make's variable; BSD make calls it `.CURDIR`
+and leaves `CURDIR` undefined, so under the make this project is developed
+with, every one of them handed Docker an empty path. make said nothing —
+the quiet failure a GNU-ism always is here, the shape 5.154 recorded for
+`!=` in the other direction.
+
+`CURDIR ?= ${.CURDIR}` at the top of the Makefile: GNU make sets `CURDIR`
+itself, so `?=` leaves it alone, and BSD make takes its own equivalent.
+
+**Measured**, with `make -n`: on beastie's BSD make, `fleetcheck` printed
+`-v "":/src` before the change and the clone's real path after, as did
+`saltdiff`, `zfscheck` and `racecheck`; on macOS's GNU make 3.81 the mount
+was the working tree's path before and after. **Not verified:** any of
+these targets actually *run* under BSD make — beastie has no Docker — and
+GNU make 4.x, whose `CURDIR` is the same built-in as 3.81's.
+
 
 ## 6. Everything else not started
 
