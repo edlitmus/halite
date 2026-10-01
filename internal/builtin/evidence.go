@@ -136,8 +136,8 @@ var moduleEvidence = map[string]exec.Evidence{
 		"/opt/homebrew, owned by an ordinary account in 9 groups): `latest_version`, `install`, `hold`, " +
 		"`list_holds`, `unhold` and `remove` of `hello`, the keg and its link owned by brew's owner afterwards " +
 		"and nothing new under /opt/homebrew owned by root. Not covered: `list_pkgs`, which on that Mac fails " +
-		"for a second reason -- one half-removed cask makes `brew list --versions` exit 1 after printing every " +
-		"package; `upgrade` and `list_upgrades` against an outdated formula; casks; and a node started by launchd " +
+		"for a second reason -- one half-removed cask makes `brew list --versions` exit 1 after printing the " +
+		"formulae and none of the casks; `upgrade` and `list_upgrades` against an outdated formula; casks; and a node started by launchd " +
 		"rather than sudo. Intel Macs are not supported (decided 2026-10-01), so their /usr/local layout " +
 		"is not a gap here. `TestLiveMacBrewPkgAsRoot` ran as root on the same Mac: everything passed but " +
 		"`list_pkgs`, for the cask reason above, and a build with the account switch removed failed it"},

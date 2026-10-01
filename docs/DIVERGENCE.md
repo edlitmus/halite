@@ -18326,9 +18326,12 @@ and failed both times, naming the command.
 
 **Found on the way, and not fixed here:** on the same Mac, `list_pkgs`
 fails even as an ordinary user. A cask whose Caskroom directory holds
-only `.metadata` makes `brew list --versions` print all 389 installed
-packages and then exit 1 with `Error: Cask 'kiro-cli' is not
-installed.`, and the provider discards the listing. `pkg.installed`
+only `.metadata` makes `brew list --versions` print the 389 formulae,
+**and none of the casks**, then exit 1 with `Error: Cask 'kiro-cli' is
+not installed.`; the provider fails on the exit. (A first reading of
+that output took the 389 lines for the whole listing. They are the
+formulae alone: `brew list --cask --versions` prints nothing at all on
+that machine.) `pkg.installed`
 reads `list_pkgs` first, so on such a Mac it fails too. That is a
 separate change.
 
