@@ -525,12 +525,12 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 4 of SPEC 15.2**: `blockdev`, `kernelpkg`,
+**Execution, 3 of SPEC 15.2**: `blockdev`,
 `nfs`, and `state` -- which is struck
 rather than missing, for the reason below. `reboot` and `system` have
 shipped since this row was written (DIVERGENCE 5.73), `shadow` and
 `locale` since (5.180, 5.181), `selinux` after them (5.183), and
-`logrotate` after that (5.186).
+`logrotate` after that (5.186), and `kernelpkg` after that (5.187).
 
 Re-measured against the registry on 2026-09-12. This row said 17. Seven
 shipped together as the block this fleet's own FreeBSD host can
@@ -545,8 +545,11 @@ already reachable three ways. Registering a module for them would be a
 second, thinner copy of the pipeline the node actually runs. The row is
 struck rather than filled. `ps` shipped earlier (DIVERGENCE 5.61).
 
-**State, 3 of SPEC 15.5**: `kernelpkg`, `pro`,
-`win_wua`. `logrotate.set` shipped with its execution module (5.186),
+**State, 2 of SPEC 15.5**: `pro` and
+`win_wua`. `kernelpkg`'s three states shipped with its execution
+module (5.187); `latest_active` schedules its reboot through
+`reboot.schedule` and never reboots at once, and has no conformance case
+because its change is a reboot. `logrotate.set` shipped with its execution module (5.186),
 on Debian 13 and on FreeBSD with the sysutils/logrotate port.
 `at`, `reboot`, `locale` and `selinux` have
 shipped since this row was written (`locale`, 5.181; `selinux`, 5.183),
@@ -614,12 +617,14 @@ to block. §7 has the consequences.
    they replace a whole ruleset at once rather than adding rules one at
    a time, which is a different thing from what the interface currently
    asks a provider to do.
-7. The rest — `at`, `blockdev`, `data`, `kernelpkg`, ~~`locale`~~,
+7. The rest — `at`, `blockdev`, `data`, ~~`kernelpkg`~~, ~~`locale`~~,
    ~~`logrotate`~~, `nfs`, `swap`, `tls`, `tmpfs`, `lvm` — each small, none
    blocking. `locale` ships (5.181), and `internal/migrate`'s gap test,
    which needs a state that does not exist, moved from `locale.system`
    to `logrotate.set`; `logrotate` ships (5.186), and the test moved
-   again, to `win_wua.uptodate`.
+   again, to `win_wua.uptodate`. `kernelpkg` ships (5.187), on Debian 13
+   through apt and on EL through dnf, and the test's other name moved
+   from `kernelpkg.latest_installed` to `win_wua.installed`.
 
 `state` is deliberately last. ~~`shadow`~~ was last beside it, on the
 grounds that it overlaps `user.present`'s ageing arguments and building it

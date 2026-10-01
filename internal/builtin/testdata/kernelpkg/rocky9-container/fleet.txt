@@ -1,0 +1,76 @@
+@@@ rpm	-q	kernel-core	--queryformat	%{NAME}\t%{EPOCH}:%{VERSION}-%{RELEASE}\t%{ARCH}\n
+@@@ exit 1
+@@@ stdout
+package kernel-core is not installed
+@@@ stderr
+@@@ end
+@@@ dnf	repoquery	--quiet	--latest-limit=1	--queryformat	%{NAME}\t%{EPOCH}:%{VERSION}-%{RELEASE}\t%{ARCH}\n	kernel-core
+@@@ exit 0
+@@@ stdout
+kernel-core	0:5.14.0-687.53.1.el9_8	x86_64
+
+@@@ stderr
+@@@ end
+@@@ dnf	--quiet	list	--showduplicates	kernel-core
+@@@ exit 0
+@@@ stdout
+Available Packages
+kernel-core.x86_64               5.14.0-687.10.1.el9_8.0.1                baseos
+kernel-core.x86_64               5.14.0-687.12.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.15.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.17.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.22.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.24.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.25.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.26.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.29.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.30.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.31.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.33.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.34.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.36.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.38.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.39.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.41.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.42.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.44.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.45.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.46.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.47.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.48.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.49.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.50.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.51.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.52.1.el9_8                    baseos
+kernel-core.x86_64               5.14.0-687.53.1.el9_8                    baseos
+@@@ stderr
+@@@ end
+@@@ dnf	--quiet	list	--showduplicates	kernel-core-5.14.0-687.53.1.el9_8
+@@@ exit 0
+@@@ stdout
+Available Packages
+kernel-core.x86_64                 5.14.0-687.53.1.el9_8                  baseos
+@@@ stderr
+@@@ end
+@@@ dnf	remove	--assumeno	kernel-core-5.14.0-687.52.1.el9_8.x86_64
+@@@ exit 1
+@@@ stdout
+Dependencies resolved.
+================================================================================
+ Package                 Arch       Version                   Repository   Size
+================================================================================
+Removing:
+ kernel-core             x86_64     5.14.0-687.52.1.el9_8     @baseos      68 M
+Removing dependent packages:
+ kernel                  x86_64     5.14.0-687.52.1.el9_8     @baseos       0  
+ kernel-modules          x86_64     5.14.0-687.52.1.el9_8     @baseos      38 M
+ kernel-modules-core     x86_64     5.14.0-687.52.1.el9_8     @baseos      29 M
+
+Transaction Summary
+================================================================================
+Remove  4 Packages
+
+Freed space: 135 M
+@@@ stderr
+Operation aborted.
+@@@ end

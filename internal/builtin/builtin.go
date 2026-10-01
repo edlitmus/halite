@@ -128,6 +128,7 @@ func New() *Registries {
 	registerLocale(r)
 	registerSELinux(r)
 	registerLogrotate(r)
+	registerKernelpkg(r)
 	registerJail(r)
 
 	// The Common Linux platform modules of SPEC section 15.3.

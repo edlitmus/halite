@@ -320,6 +320,7 @@ func liveConformanceCases() []liveCase {
 	cases = append(cases, firewalldConformanceCases()...)
 	cases = append(cases, localeConformanceCases()...)
 	cases = append(cases, logrotateConformanceCases()...)
+	cases = append(cases, kernelpkgConformanceCases()...)
 	cases = append(cases, conformanceSelinuxCases()...)
 	cases = append(cases, conformanceIdentityCases()...)
 	cases = append(cases, conformancePkgSysCases()...)

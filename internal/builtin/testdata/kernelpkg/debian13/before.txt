@@ -1,0 +1,150 @@
+@@@ dpkg-query	-W	-f=${Package}\t${Version}\t${Status}\n	linux-image-*
+@@@ exit 0
+@@@ stdout
+linux-image-6.12.107+deb13-amd64	6.12.107-1	install ok installed
+linux-image-6.12.107+deb13-amd64-unsigned		unknown ok not-installed
+linux-image-6.12.111+deb13-amd64	6.12.111-1	install ok installed
+linux-image-6.12.111+deb13-amd64-unsigned		unknown ok not-installed
+linux-image-amd64	6.12.111-1	install ok installed
+linux-image-generic		unknown ok not-installed
+@@@ stderr
+@@@ end
+@@@ apt-cache	show	--no-all-versions	linux-image-amd64
+@@@ exit 0
+@@@ stdout
+Package: linux-image-amd64
+Source: linux-signed-amd64 (6.12.111+1)
+Version: 6.12.111-1
+Installed-Size: 13
+Maintainer: Debian Kernel Team <debian-kernel@lists.debian.org>
+Architecture: amd64
+Provides: linux-image-generic, linux-latest-modules-6.12.111+deb13-amd64, virtualbox-guest-modules, wireguard-modules (= 1.0.0)
+Depends: linux-image-6.12.111+deb13-amd64 (= 6.12.111-1)
+Description-en: Linux for 64-bit PCs (meta-package)
+ This package depends on the latest Linux kernel and modules for use on PCs
+ with AMD64, Intel 64 or VIA Nano processors.
+Description-md5: 6a25122b463a5515998ee600e16b3daf
+Homepage: https://www.kernel.org/
+Section: kernel
+Priority: optional
+Filename: pool/updates/main/l/linux-signed-amd64/linux-image-amd64_6.12.111-1_amd64.deb
+Size: 1472
+SHA256: f80a6f00d4dd5acf4be28039c4fe87f0a37b6b3a026c0fb1377f751a029f8306
+
+@@@ stderr
+@@@ end
+@@@ apt-get	-s	purge	linux-image-6.12.111+deb13-amd64
+@@@ exit 0
+@@@ stdout
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  linux-image-6.12.111+deb13-amd64-unsigned
+Suggested packages:
+  firmware-linux-free linux-doc-6.12 debian-kernel-handbook
+The following packages will be REMOVED:
+  linux-image-6.12.111+deb13-amd64* linux-image-amd64*
+The following NEW packages will be installed:
+  linux-image-6.12.111+deb13-amd64-unsigned
+0 upgraded, 1 newly installed, 2 to remove and 0 not upgraded.
+Purg linux-image-amd64 [6.12.111-1]
+Purg linux-image-6.12.111+deb13-amd64 [6.12.111-1] [linux-headers-6.12.111+deb13-amd64:amd64 ]
+Inst linux-image-6.12.111+deb13-amd64-unsigned (6.12.111-1 Debian-Security:13/stable-security [amd64])
+Conf linux-image-6.12.111+deb13-amd64-unsigned (6.12.111-1 Debian-Security:13/stable-security [amd64])
+@@@ stderr
+@@@ end
+@@@ apt-get	-s	purge	linux-image-6.12.111+deb13-amd64	linux-image-6.12.111+deb13-amd64-unsigned
+@@@ exit 0
+@@@ stdout
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Package 'linux-image-6.12.111+deb13-amd64-unsigned' is not installed, so not removed
+The following packages were automatically installed and are no longer required:
+  linux-headers-6.12.111+deb13-common linux-kbuild-6.12.111+deb13
+Use 'apt autoremove' to remove them.
+The following packages will be REMOVED:
+  linux-headers-6.12.111+deb13-amd64* linux-headers-amd64*
+  linux-image-6.12.111+deb13-amd64* linux-image-amd64*
+0 upgraded, 0 newly installed, 4 to remove and 0 not upgraded.
+Purg linux-headers-amd64 [6.12.111-1]
+Purg linux-headers-6.12.111+deb13-amd64 [6.12.111-1]
+Purg linux-image-amd64 [6.12.111-1]
+Purg linux-image-6.12.111+deb13-amd64 [6.12.111-1]
+@@@ stderr
+@@@ end
+@@@ apt-get	-s	purge	linux-image-6.12.107+deb13-amd64	linux-image-6.12.107+deb13-amd64-unsigned
+@@@ exit 0
+@@@ stdout
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Package 'linux-image-6.12.107+deb13-amd64-unsigned' is not installed, so not removed
+The following packages were automatically installed and are no longer required:
+  linux-headers-6.12.107+deb13-common linux-kbuild-6.12.107+deb13
+Use 'apt autoremove' to remove them.
+The following packages will be REMOVED:
+  linux-headers-6.12.107+deb13-amd64* linux-image-6.12.107+deb13-amd64*
+0 upgraded, 0 newly installed, 2 to remove and 0 not upgraded.
+Purg linux-headers-6.12.107+deb13-amd64 [6.12.107-1]
+Purg linux-image-6.12.107+deb13-amd64 [6.12.107-1]
+@@@ stderr
+@@@ end
+@@@ dpkg-query	-W	-f=${Package}\t${Status}\n	linux-*-6.12.111+deb13-amd64
+@@@ exit 0
+@@@ stdout
+linux-headers-6.12.111+deb13-amd64	install ok installed
+linux-image-6.12.111+deb13-amd64	install ok installed
+linux-latest-modules-6.12.111+deb13-amd64	unknown ok not-installed
+@@@ stderr
+@@@ end
+@@@ apt-cache	policy	linux-image-6.12.111+deb13-amd64-unsigned	linux-image-unsigned-6.12.111+deb13-amd64
+@@@ exit 0
+@@@ stdout
+linux-image-6.12.111+deb13-amd64-unsigned:
+  Installed: (none)
+  Candidate: 6.12.111-1
+  Version table:
+     6.12.111-1 500
+        500 https://deb.debian.org/debian-security trixie-security/main amd64 Packages
+@@@ stderr
+@@@ end
+@@@ apt-get	-s	purge	linux-headers-6.12.111+deb13-amd64	linux-image-6.12.111+deb13-amd64	linux-image-6.12.111+deb13-amd64-unsigned
+@@@ exit 0
+@@@ stdout
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Package 'linux-image-6.12.111+deb13-amd64-unsigned' is not installed, so not removed
+The following packages were automatically installed and are no longer required:
+  linux-headers-6.12.111+deb13-common linux-kbuild-6.12.111+deb13
+Use 'apt autoremove' to remove them.
+The following packages will be REMOVED:
+  linux-headers-6.12.111+deb13-amd64* linux-headers-amd64*
+  linux-image-6.12.111+deb13-amd64* linux-image-amd64*
+0 upgraded, 0 newly installed, 4 to remove and 0 not upgraded.
+Purg linux-headers-amd64 [6.12.111-1]
+Purg linux-headers-6.12.111+deb13-amd64 [6.12.111-1]
+Purg linux-image-amd64 [6.12.111-1]
+Purg linux-image-6.12.111+deb13-amd64 [6.12.111-1]
+@@@ stderr
+@@@ end
+@@@ apt-cache	show	--no-all-versions	linux-image-nosuch-flavour
+@@@ exit 100
+@@@ stdout
+@@@ stderr
+E: No packages found
+@@@ end
+@@@ dpkg-query	-W	-f=${Package}\n	linux-image-nosuch*
+@@@ exit 1
+@@@ stdout
+@@@ stderr
+dpkg-query: no packages found matching linux-image-nosuch*
+@@@ end
+@@@ uname	-r
+@@@ exit 0
+@@@ stdout
+6.12.107+deb13-amd64
+@@@ stderr
+@@@ end

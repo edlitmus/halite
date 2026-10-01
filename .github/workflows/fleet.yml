@@ -96,6 +96,10 @@ on:
       - "internal/builtin/logrotate*.go"
       - "internal/builtin/live_logrotate*.go"
       - "internal/builtin/live_conformance_logrotate*.go"
+      # `kernelpkg`, whose live tests install and remove real kernels: on the
+      # linux leg through apt on the runner itself, and in the rpm legs
+      # through dnf in the EL containers, whose kernel is the runner's.
+      - "internal/builtin/kernelpkg*.go"
       - "internal/builtin/sysrc*.go"
       # `firewall`, whose four states are driven against a real ufw on the
       # linux leg -- three of them without ever enabling it, since ufw edits
@@ -221,7 +225,7 @@ jobs:
     # A first run builds the image, pulls the golang image for its
     # toolchain, and fills an empty build cache; the tests then download
     # packages. Measured, not guessed, in DIVERGENCE 5.178.
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       # One distribution failing says nothing about the other two, and
       # cancelling them would throw away exactly the comparison these
@@ -274,7 +278,7 @@ jobs:
   linux:
     name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm, modprobe, udev, snap, pro, acl, sudo)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -531,7 +535,8 @@ jobs:
           # same as the freebsd leg.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveConformance' ./internal/builtin/ 2>&1;
+              HALITE_KERNELPKG_LIVE=1 \
+              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 

@@ -50,6 +50,16 @@ func init() {
 		"The only assignable owner left is the account that " +
 		"already owns the file, which is no change. win_dacl_windows_test.go drives SetOwner directly."
 
+	// The other is a reboot rather than a path. `reboot.scheduled` has a
+	// case because it is what a needsRebootGate run is for; this one would
+	// need, in addition, a node where a newer kernel is installed and not
+	// running, which is exactly the node on which a cancel that failed
+	// boots into a kernel nobody has tried. DIVERGENCE 5.187.
+	unconformed["kernelpkg.latest_active"] = "its change is a scheduled reboot, on a node that by " +
+		"definition has an untried kernel installed; the lab hosts it was built on are not to be " +
+		"rebooted. Test mode and the converged answer are driven in TestLiveKernelpkgReadsAgreeWithTheMachine, " +
+		"and the scheduling it delegates to is reboot.scheduled's case"
+
 	// The `firewall` module's four states have cases against `ufw`, and the
 	// `pf` provider has none. Not an entry -- the functions are covered -- but
 	// worth a line where somebody counting will read it: `pf`'s SetDefault

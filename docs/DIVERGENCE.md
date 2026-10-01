@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **97 execution modules / 685 functions** and **54 state
-modules / 149 functions**.
+The build ships **98 execution modules / 694 functions** and **55 state
+modules / 152 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-52 of 56 present, plus `defaults` and `kmod`, which the section does not list.
+53 of 56 present, plus `defaults` and `kmod`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -473,7 +473,7 @@ different reason is given.
 | `firewall` | implemented | 8 | virtual, with ufw and pf providers: status, enable, disable, set_default, allow, deny, delete and reload. `iptables`, `nftables` and `firewalld` are modules of their own and deliberately not providers (5.51, 5.175); the provider interface is still shaped by ufw, with pf refusing what it has no spelling for (5.31) |
 | `hostname` | implemented | 4 | get_hostname, get_fqdn, get_persistent and set_hostname; unix only, because a Windows rename does not take effect until a reboot and a state that set one would report a change on every run until somebody did |
 | `http` | implemented | 1 | query, with SPEC 15.2's whole contract: mandatory certificate verification with no option to disable it, a 30 s timeout, a 10 MiB body limit, five redirects, and link-local and cloud metadata addresses refused at dial time 
-| `kernelpkg` | not implemented | 0 | |
+| `kernelpkg` | implemented | 9 | Linux only, through apt or dnf/yum as `pkg` picks them: Salt's apt and yum modules behind one name. Ordered by dpkg's and rpm's own version comparisons, not LooseVersion; a release is read from the image package's name, and the newest available from what the flavour's metapackage depends on, because Salt's patterns match nothing Debian 13 ships. `needs_reboot` is an error, not false, where the running kernel is no package (a container). `remove` and `cleanup` refuse the running kernel and simulate first, refusing a removal apt would answer by installing the unsigned twin or by taking the metapackage with it (5.187) |
 | `kmod` | implemented | 7 | Linux kernel modules: `available`, `check_available`, `lsmod`, `mod_list`, `is_loaded`, `load`, `remove`. SPEC names no such module and an estate's CIS controls need one (5.96). Linux only; FreeBSD's kldload is a different model and is refused by name |
 | `locale` | implemented | 5 | Linux only. Every comparison normalises the codeset as glibc does, because `locale -a` says `en_US.utf8` and localectl stores whatever it is given; `gen_locale` enables /etc/locale.gen and runs `locale-gen` on Debian and installs `glibc-langpack-<language>` on EL, which ships no locale sources (5.181) |
 | `logrotate` | implemented | 3 | `show_conf`, `get`, `set`, on Linux and FreeBSD (the port). Parsed by logrotate 3.22.0's grammar as measured, not Salt's heuristics: `010` is eight, a later `nocompress` or `size` overrides, `#` mid-line is not a comment. `set` edits one line in place and every write is checked with `logrotate -d` first; a stanza with several names is changed only when `key` names them all (5.186) |
@@ -494,7 +494,7 @@ different reason is given.
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-43 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
+44 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -524,7 +524,7 @@ different reason is given.
 | `gem` | implemented | 2 | install and remove, comparing against the tool's own listing |
 | `hostname` | implemented | 1 | `system`; the running name and the persistent one are read and reported separately, because a node where they disagree renames itself at the next boot |
 | `iptables` | implemented | 7 | Linux only; `chain_present`, `chain_absent`, `append`, `insert`, `delete`, `set_policy`, `flush`. Idempotence is `iptables -C`, not a re-parse of `iptables-save`. `flush` refuses a built-in chain that is holding traffic out, and a whole-table flush, without force. Not a `firewall` provider -- it is the layer under ufw |
-| `kernelpkg` | not implemented | 0 | |
+| `kernelpkg` | implemented | 3 | `latest_installed`; `latest_active`, which schedules its reboot through `reboot.schedule` with a minimum delay and never reboots at once, and has no conformance case because its change is a reboot; `latest_wait`, acting only on a watch or listen (5.187) |
 | `kmod` | implemented | 2 | `present` and `absent`. `mods` is the real argument and `name` a placeholder when it is given, as the estate's own tree says in a comment beside the state. `persist` writes the modules configuration, because a module unloaded but left in it comes back at the next boot (5.96) |
 | `locale` | implemented | 2 | `system` and `present`, comparing locales by glibc's codeset normalisation so either spelling converges; `present` is a langpack install on EL (5.181) |
 | `logrotate` | implemented | 1 | `set`, with Salt's arguments, compared as logrotate reads values (`rotate 010` is `rotate 8`, `size 1k` is `size 1024`); a criterion such as `daily` takes the line of the one it overrides (5.186) |
@@ -18131,6 +18131,147 @@ after-write check on its own rather than through a break; include order
 under a non-C collation, where logrotate sorts with strcoll;
 logrotate's scheduled run. Test mode does not run `logrotate -d`, so it
 cannot predict a refusal.
+
+### 5.187 `kernelpkg`: Salt's patterns find no Debian 13 kernel, and apt's purge does not remove one
+
+SPEC 15.2 and 15.5 name `kernelpkg` and plan.md 2.2 listed both halves
+missing. The nine execution functions ship under Salt's names --
+`active`, `list_installed`, `latest_available`, `latest_installed`,
+`needs_reboot`, `upgrade`, `upgrade_available`, `remove`, `cleanup` --
+over `pkg`'s apt and dnf/yum providers, with Salt's
+kernelpkg_linux_apt and kernelpkg_linux_yum behind the one name; and
+the three states, `latest_installed`, `latest_active` and
+`latest_wait`. Linux only, as Salt's are; FreeBSD 15.1 refuses it by
+name, and a node whose package manager is not apt or dnf/yum (zypper,
+apk) is refused naming the one it has.
+
+**What Salt's apt module does on Debian 13**, measured rather than read:
+its patterns, copied from v3006.9 and from the development branch, were applied to the lab
+host's real names with the host's own python3 3.13.5. The running
+release is `6.12.107+deb13-amd64` and the image package
+`linux-image-6.12.107+deb13-amd64`.
+
+- v3006.9's `_kernel_type` is `^[\d.-]+-(.+)$`, which the `+` stops: it
+  matches nothing, so every function but `active` raises on
+  `.group(1)` of None.
+- the development branch's is `^[\w.+\-~]+-([^-]+)$`, which gives `amd64`; but
+  `list_installed` then filters with `^linux-image-[\d.-]+-amd64$`,
+  which the same `+` stops, and lists nothing of the six
+  `linux-image-*` names dpkg knows. `latest_installed` is None and
+  `needs_reboot` compares against None.
+- `latest_available` reads the metapackage's version with
+  `^(\d+\.\d+\.\d+)\.(\d+)`, Ubuntu's `5.15.0.91.88` spelling. Debian's
+  `linux-image-amd64` is `6.12.111-1`, and the match is None.
+
+So here a release is read out of the image package's *name*, which is
+`linux-image-` followed by exactly what `uname -r` will print, and the
+newest available is the image the flavour's metapackage depends on in
+its candidate version (`apt-cache show --no-all-versions
+linux-image-amd64` says `Depends: linux-image-6.12.111+deb13-amd64 (=
+6.12.111-1)`; Ubuntu 24.04's `linux-image-azure` says it without the
+version, which is then asked of `apt-cache policy`). Every ordering is
+the package manager's own -- dpkg's for an image's Version, rpm's
+(5.177) for a kernel's EVR -- not LooseVersion over release strings.
+The flavour is the release after its version and ABI, so a
+`cloud-amd64` kernel is counted with `cloud-amd64` kernels and its
+metapackage is `linux-image-cloud-amd64`; the development branch's last-dash rule would,
+by its pattern (not run), name `linux-image-amd64` there, the generic
+kernel. Only the
+`amd64` and Ubuntu's `azure` flavours were on a machine.
+
+**`apt-get purge linux-image-R` does not remove kernel R on Debian
+13.** Measured with `apt-get -s`, then for real: the release's headers
+depend on `linux-image-R | linux-image-R-unsigned`, so apt answers the
+purge by installing the unsigned twin -- the same kernel, back in /boot
+-- and exits 0. Salt's `remove` is `pkg.purge` of the image alone (read from its
+source; on Debian 13 it never gets that far). And purging the kernel the metapackage depends on
+removes `linux-image-amd64` and `linux-headers-amd64`, through which the
+node receives every later kernel; on the lab host that was 6.12.111,
+the newest installed, which Salt's `cleanup(keep_latest=False)` would
+remove by its source.
+
+So `remove` here names the image, every installed package of that
+release (its headers; on Ubuntu its `linux-modules-R`, which holds the
+modules there, seen on the fleet's linux leg) and the
+twins apt knows of, asks `apt-get -s` first, and refuses -- naming the
+packages -- when the simulation would install anything or remove a
+package not of that release. A twin apt does not know is not named:
+Ubuntu has no `linux-image-R-unsigned`, and naming it made apt refuse
+the whole command (exit 100) on the leg's first run. On EL, `dnf remove
+--assumeno kernel-core-R` prints the transaction, and anything in it of
+another version is refused the same way; what it removed on both EL
+legs was `kernel`, `kernel-modules` and, on EL9, `kernel-modules-core`
+of the same version. `cleanup` plans every removal before making any,
+so a refused one leaves nothing half done. The running kernel is refused
+before the package manager is asked, and every removal is read back.
+
+**EL counts kernels by `kernel-core`**, every instance from `rpm -q`
+rather than `pkg.list_pkgs`, which keeps the newest of a name (5.177);
+Salt counts `kernel`, the empty package that pulls the others in; `kernel-core` is the one holding /lib/modules/R/vmlinuz. A
+kernel is installed as `kernel-R.arch`, so its modules come too. `uname
+-r`'s architecture suffix is dropped, as Salt's `pkg.normalize_name`
+does.
+
+**A running kernel that is no package is an error, not `false`.** In a
+container the kernel is the host's; `needs_reboot` and `cleanup` then
+say they cannot tell which kernel is safe or newer rather than answer.
+`upgrade` installs anyway and reports `reboot_required` as null with the
+reason, because the first rpm-leg run found it failing *after* a
+successful install; only `reboot=True` turns the unknown into an error.
+
+**The reboot.** Salt's `latest_active` calls `system.reboot(at_time)`,
+and `at_time` None is now. Here `latest_active`, `latest_wait` on a
+watch, and `upgrade reboot=True` schedule through `reboot.schedule`,
+whose minimum is one minute and whose default is five, so
+`reboot.cancel` always has a window; and `latest_active` is converged
+when a reboot is already pending, as `reboot.scheduled` is. Nothing
+here was allowed to reboot a host, so the scheduling path was driven in
+test mode only: on the lab host, where 6.12.111 was installed and not
+running, test mode predicted the reboot and none was pending after.
+`latest_active` has no conformance case, in `unconformed` with the
+reason; `latest_wait` has an `Unchanging` one.
+
+**Measured.** On the lab's Debian 13.7 (apt 3.0.3, dpkg 1.22.22) as
+root: `TestLiveKernelpkgReadsAgreeWithTheMachine` (against /boot,
+/proc and `dpkg --compare-versions`),
+`TestLiveKernelpkgRemovesAnOlderKernelAndRefusesTheRest` (6.12.94
+installed with its headers for the purpose, removed by `remove` and
+again by `cleanup`, the refusals of the running kernel and of 6.12.111),
+`TestLiveKernelpkgUpgradeInstallsTheNewest` and both conformance cases;
+the `internal/builtin` and `internal/states` unit suites. The kernel
+set -- every `linux-image`, `linux-headers`, `linux-kbuild` and
+`linux-modules` package, its version and its automatic mark -- was put
+back after each test and compared; /boot/grub/grub.cfg had the same
+sha256 before and after, and `apt-mark showauto`/`showmanual` were
+identical. The fleet's linux leg (ubuntu-24.04, apt 2.8.3, running
+6.17.0-1022-azure) ran the same three tests and both cases green,
+installing 7.0.0-1014-azure and removing 6.17.0-1021-azure. Its rpm
+legs ran `TestLiveKernelpkgReadsAgreeWithRPM` and
+`TestLiveKernelpkgRPMInstallsAndRemovesKernels` green in Rocky 9.8 (dnf
+4.14.0) and AlmaLinux 8.10 (dnf 4.7.0) containers, installing two
+kernels and removing one; their logged output is the EL fixtures. On
+AlmaLinux 8 the test's own put-back first failed: removing the last
+kernel would autoremove `systemd-udev`, which dnf protects, so it now
+removes with `--noautoremove`. FreeBSD 15.1 refused the module by name.
+
+Broken on purpose, each failing: `needs_reboot` inverted and test mode
+acting in `remove` (the read and removal tests, on Debian); the twin not
+named with the install refusal disabled -- apt installed
+`linux-image-6.12.94+deb13-amd64-unsigned`, which the module's own
+read-back caught; the metapackage check disabled, which removed both
+metapackages before the test failed and put them back; test mode acting
+in `latest_installed` (the conformance harness); the order reversed
+(the read test, against dpkg); the platform list emptied (on FreeBSD);
+and, on both EL legs, the removal target set to the empty `kernel`
+package, which left kernel-core installed.
+
+**Not verified:** an EL host running a kernel of its own -- the lab's
+Rocky 9 could not be raised -- so `active`, `needs_reboot` and
+`cleanup` on EL were never compared with a real running kernel; yum on
+EL7; Debian 12's `6.1.0-28-amd64` shape, Debian's `cloud` and `rt`
+flavours, and Ubuntu's `linux-image-unsigned-R` twin, which are handled
+from their names alone; a reboot actually scheduled by `latest_active`
+or `upgrade reboot=True`.
 
 
 

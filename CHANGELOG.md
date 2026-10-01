@@ -23,6 +23,29 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A `kernelpkg` module and its three states
+
+`kernelpkg.active`, `list_installed`, `latest_available`,
+`latest_installed`, `needs_reboot`, `upgrade`, `upgrade_available`,
+`remove` and `cleanup`, and the states `kernelpkg.latest_installed`,
+`latest_active` and `latest_wait`, on Linux nodes whose package manager is
+apt or dnf/yum. Where they differ from Salt's:
+
+- They work on Debian 13, where Salt's patterns match none of its kernel
+  packages: a release is read from the image package's name, and the newest
+  available from what the flavour's metapackage depends on.
+- Kernels are ordered by dpkg's and rpm's own version comparisons, and on EL
+  every installed `kernel-core` is listed, not only the newest.
+- `remove` and `cleanup` refuse the running kernel, and simulate first:
+  a removal apt would answer by installing the unsigned twin of the same
+  kernel, or that would take the metapackage (`linux-image-amd64`) with it,
+  is refused with the packages named.
+- `needs_reboot` is an error rather than `false` where the running kernel is
+  no package the node holds, such as in a container.
+- `latest_active` and `upgrade reboot=True` schedule the reboot through
+  `reboot.schedule`, never immediately: `at_time` defaults to five minutes,
+  and a reboot already pending counts as converged.
+
 ### A `logrotate` module and `logrotate.set`
 
 `logrotate.show_conf`, `logrotate.get`, `logrotate.set` and the state
