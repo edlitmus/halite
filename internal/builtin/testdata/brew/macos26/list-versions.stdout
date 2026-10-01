@@ -1,0 +1,7 @@
+boundary 0.21.3
+curl 8.22.0
+fish 4.6.0 4.0b1
+glib 2.88.3 2.90.0
+icu4c@78 78.3
+jq 1.8.2
+readline 8.3.3 8.3.6

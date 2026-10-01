@@ -18355,6 +18355,80 @@ yet say so.
 formula; casks; and an owner in more than sixteen groups, which the
 credential switch caps (5.120) and the hosted runner's account is.
 
+### 5.189 `mac_brew_pkg.list_pkgs` failed on one cask Homebrew cannot load
+
+5.188 found it: on a Mac with a half-removed cask, `pkg.list_pkgs`
+failed as an ordinary user too, and so did every `pkg.installed`,
+which reads it first. Measured on macOS 26.7.1 with Homebrew 7.0.7,
+389 formulae and 18 Caskroom entries:
+
+| Command | Exit | What it printed |
+|---|---|---|
+| `brew list --versions` | 1 | the 389 formulae, no casks, then `Error: Cask 'kiro-cli' is not installed.` |
+| `brew list --cask --versions` | 1 | nothing; the same error |
+| `brew list --cask` | 0 | 18 names, the broken ones included |
+| `brew info --json=v2 --installed` | 0 | 389 formulae and 13 casks |
+
+So one broken entry did not cost one cask, it cost all of them, and
+the provider -- which failed on the exit -- lost the formulae as well.
+
+**Four of the 18 are not one kind of broken.** Three hold only
+`.metadata`. One, `codex-app`, has a version directory and a cask
+definition that no longer loads. `aws-vault` is a rename, answering as
+`aws-vault-binary`, which is installed. None of these was made for the
+test; it is one working Mac after a year of ordinary use.
+
+**The fix reads `brew info --json=v2 --installed`.** It enumerates
+through Homebrew's `Caskroom.casks`, which skips a cask it cannot load
+-- "Don't blow up because of a single unavailable cask", in
+`cask/caskroom.rb` -- and keeps the ones it considers installed. The
+plan here was to read the formulae and casks separately and report a
+broken cask as an error; reading the source changed it. Homebrew's own
+answer to "is this cask installed" is no, for exactly these, so leaving
+them out is agreeing with brew rather than looking away, and an error
+would have made the listing fail again for a package nobody declared.
+
+**Choosing a version from the JSON corrected the parser it replaces.**
+Its comment said `brew list --versions` printed versions oldest first,
+and took the last as current. On this Mac it printed `fish 4.6.0
+4.0b1`: kegs in directory order (`installed_prefixes`), and the linked
+one -- the `fish` on the PATH -- is 4.0b1. The last field happened to be
+right. The JSON's `installed` is sorted by Homebrew's own version
+order (`sort_by(&:scheme_and_version)`, `formula.rb`), and the provider
+now reports `linked_keg`, or the newest installed where nothing is
+linked (keg-only `curl` and `icu4c@78`, and `readline` with two
+versions and neither linked). On the full capture that agrees with the
+old parser for all 389 formulae, so no formula's reported version
+changes; what changes is that the listing comes back, with the 13
+casks.
+
+**Measured.** `halite-node call pkg.list_pkgs` as an ordinary user on
+that Mac returns the listing, and `pkg.version fish` says 4.0b1; as
+root it does the same, through 5.188's switch to brew's owner, and
+`TestLiveMacBrewPkgAsRoot` -- which 5.188 left failing on exactly this
+`list_pkgs` -- passed there in full for the first time. The
+fixtures in `testdata/brew/macos26` were captured there and cut down
+mechanically, by a `jq` selection recorded in the test, to whole
+entries for seven formulae and three casks; the full listing names
+everything installed on a working machine, internal taps included, and
+this repository is public. The tests were broken twice on purpose --
+back to `brew list --versions`, which fails on the captured exit 1, and
+newest-instead-of-linked, which reports `fish` as 4.6.0 -- and failed
+both times.
+
+**Not handled: a formula and a cask with one name.** On this Mac
+`copilot-cli` is both AWS Copilot (`aws/tap/copilot-cli`, 1.34.1) and
+GitHub's Copilot CLI cask (1.0.90) -- two different programs. A
+name-to-version map holds one, and the cask's is reported, as the old
+listing's last line used to win. A state cannot tell them apart by name
+here; whether it should be able to is a question for SPEC 15.2, not a
+choice this change makes quietly.
+
+**Not verified:** a Mac whose broken cask is broken some fifth way;
+the 13 casks' versions against anything but brew's own JSON; and
+`list_upgrades`, which still reads `brew outdated --json=v2` and has
+not been run against a Mac with a broken cask.
+
 
 ## 6. Everything else not started
 

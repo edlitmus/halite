@@ -135,9 +135,12 @@ var moduleEvidence = map[string]exec.Evidence{
 		"brew binary. Driven as root through `halite-node call` on macOS 26.7.1 (arm64, Homebrew 7.0.7 under " +
 		"/opt/homebrew, owned by an ordinary account in 9 groups): `latest_version`, `install`, `hold`, " +
 		"`list_holds`, `unhold` and `remove` of `hello`, the keg and its link owned by brew's owner afterwards " +
-		"and nothing new under /opt/homebrew owned by root. Not covered: `list_pkgs`, which on that Mac fails " +
-		"for a second reason -- one half-removed cask makes `brew list --versions` exit 1 after printing the " +
-		"formulae and none of the casks; `upgrade` and `list_upgrades` against an outdated formula; casks; and a node started by launchd " +
+		"and nothing new under /opt/homebrew owned by root. `list_pkgs` reads `brew info --json=v2 --installed` " +
+		"since a half-removed cask made `brew list --versions` exit 1 (DIVERGENCE 5.189); it returns 389 formulae " +
+		"and 13 casks on that Mac as an ordinary user and as root, where `TestLiveMacBrewPkgAsRoot` then passed " +
+		"in full, the linked version of each formula, and is checked against " +
+		"fixtures captured there. Not covered: a formula and a cask sharing a name, where the cask's version is " +
+		"reported; `upgrade` and `list_upgrades` against an outdated formula; installing or removing a cask; and a node started by launchd " +
 		"rather than sudo. Intel Macs are not supported (decided 2026-10-01), so their /usr/local layout " +
 		"is not a gap here. `TestLiveMacBrewPkgAsRoot` ran as root on the same Mac: everything passed but " +
 		"`list_pkgs`, for the cask reason above, and a build with the account switch removed failed it"},

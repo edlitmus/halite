@@ -1,0 +1,1 @@
+brew info --json=v2 --installed
