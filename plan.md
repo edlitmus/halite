@@ -525,11 +525,11 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 6 of SPEC 15.2**: `blockdev`, `kernelpkg`,
-`logrotate`, `nfs`, `selinux`, and `state` -- which is struck
+**Execution, 5 of SPEC 15.2**: `blockdev`, `kernelpkg`,
+`logrotate`, `nfs`, and `state` -- which is struck
 rather than missing, for the reason below. `reboot` and `system` have
-shipped since this row was written (DIVERGENCE 5.73), and `shadow` and
-`locale` since (5.180, 5.181).
+shipped since this row was written (DIVERGENCE 5.73), `shadow` and
+`locale` since (5.180, 5.181), and `selinux` after them (5.183).
 
 Re-measured against the registry on 2026-09-12. This row said 17. Seven
 shipped together as the block this fleet's own FreeBSD host can
@@ -544,9 +544,9 @@ already reachable three ways. Registering a module for them would be a
 second, thinner copy of the pipeline the node actually runs. The row is
 struck rather than filled. `ps` shipped earlier (DIVERGENCE 5.61).
 
-**State, 7 of SPEC 15.5**: `acl`, `kernelpkg`, `logrotate`,
-`pro`, `selinux`, `sudo`, `win_wua`. `at`, `reboot` and `locale` have
-shipped since this row was written (`locale`, 5.181). The execution halves of `acl` and `sudo` ship; it
+**State, 6 of SPEC 15.5**: `acl`, `kernelpkg`, `logrotate`,
+`pro`, `sudo`, `win_wua`. `at`, `reboot`, `locale` and `selinux` have
+shipped since this row was written (`locale`, 5.181; `selinux`, 5.183). The execution halves of `acl` and `sudo` ship; it
 is their states that do not.
 
 Re-measured against the registry on 2026-09-12: this row had said 14 and
@@ -589,14 +589,18 @@ to block. §7 has the consequences.
    16.2's beacons, `proc` and `ps`, which were pending "a later phase,
    with a portable reader for it" -- **and both now ship**, leaving
    fifteen of that inventory. DIVERGENCE 5.61 and 5.62.
-4. **`selinux`**, `iptables`, `nftables`, `sudo`, `acl`. Platform-shaped
+4. ~~**`selinux`**~~, `iptables`, `nftables`, `sudo`, `acl`. Platform-shaped
    and mostly Linux; see 2.3. `apparmor` is struck: it ships, with seven
    execution functions and the `apparmor.mode` state, and it closed
-   15.2, 15.5 and 15.3's Debian row together. `selinux` is the one left
-   whose shape it informs — the same question (what is the running
-   policy, and what does a state do about it) against a mechanism that
-   answers it entirely differently, so nothing here was built to be
-   shared between them until there is a second one to share with. `firewall` is struck: it
+   15.2, 15.5 and 15.3's Debian row together. **`selinux` is struck
+   too**: seventeen execution functions, seven states and file's
+   context pair, built against Rocky 9.8 and AlmaLinux 8.10 (DIVERGENCE
+   5.183). It shares nothing with `apparmor`, and having built both,
+   that was right: the one question they have in common -- what does a
+   state do about the running mode -- has different answers, because an
+   AppArmor mode is a profile's and SELinux's is the kernel's, and the
+   latter is decided again at every boot by a file this module will not
+   write. `firewall` is struck: it
    ships as a virtual module with a ufw provider, which closed 15.2's
    execution module, 15.5's state and 15.3's `ufw` together. Its
    provider interface is shaped by the one provider it has, and
@@ -711,18 +715,15 @@ piece of work.
 
 ### 2.4 Function-level shortfalls inside modules that ship
 
-`file` has **46** of the ~50 SPEC 15.2 enumerates. ~~What is still
+`file` has **48** of the ~50 SPEC 15.2 enumerates. ~~What is still
 absent is `patch`, `sed`, `list_backups`, `restore_backup`, `seek_read`,
-`seek_write`~~ — **all six ship** (DIVERGENCE 5.63). Two things are
-still absent and they are different in kind:
+`seek_write`~~ — **all six ship** (DIVERGENCE 5.63). One thing is
+still absent:
 
-- **The SELinux context pair**, `get_selinux_context` and
-  `set_selinux_context`. Deliberately not written: there is no SELinux
-  on any machine this project has, and a context reader written from
-  documentation is the mistake DIVERGENCE 5.31 keeps being cited for.
-  It belongs with the `selinux` core module of §2.2 and with the RHEL
-  host of item 14, which is also where a STIG-shaped estate would put
-  it.
+- ~~**The SELinux context pair**, `get_selinux_context` and
+  `set_selinux_context`.~~ **Both ship**, with the `selinux` module of
+  §2.2, built where it said they belonged: on two RHEL-family lab hosts
+  with SELinux enforcing (DIVERGENCE 5.183).
 - **`file.accumulated`**, which SPEC 15.5 promises by name because
   trees use it and which nothing implements. It is a *state*, not an
   execution function: a declaration that other states append to and

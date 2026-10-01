@@ -154,9 +154,8 @@ notify:
 // function this build lacks still blocks.
 func TestARealStateGapStillBlocks(t *testing.T) {
 	root := writeSLSTree(t, map[string]string{
-		"base/app.sls": `confine_it:
-  selinux.mode:
-    - name: enforcing
+		"base/app.sls": `kernel_it:
+  kernelpkg.latest_installed: []
 
 rotate_it:
   logrotate.set:
@@ -175,8 +174,10 @@ rotate_it:
 	// Three corrections in, the pattern is worth naming: this test is a
 	// checklist of what has not been built, and it comes due every time
 	// something is. `locale.system` was the fourth, replaced by
-	// `logrotate.set` when locale shipped (DIVERGENCE 5.181).
-	for _, name := range []string{"selinux.mode", "logrotate.set"} {
+	// `logrotate.set` when locale shipped (DIVERGENCE 5.181), and
+	// `selinux.mode` the fifth, replaced by `kernelpkg.latest_installed`
+	// when selinux shipped (DIVERGENCE 5.183).
+	for _, name := range []string{"kernelpkg.latest_installed", "logrotate.set"} {
 		f, ok := findingFor(rep, name)
 		if !ok {
 			t.Fatalf("%s produced no finding", name)

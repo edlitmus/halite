@@ -53,6 +53,7 @@ on:
       - "internal/builtin/udev*.go"
       - "internal/builtin/snap*.go"
       - "internal/builtin/pro*.go"
+      - "internal/builtin/selinux*.go"
       # `iptables` and `nftables` run in a private network namespace, so
       # their live tests are in the ordinary `test` job and need no root
       # -- but a GitHub runner may forbid an unprivileged namespace, and
@@ -199,7 +200,10 @@ jobs:
   #     and the netfilter it would program is the runner's. Its evidence is
   #     still the two lab hosts (5.175).
   #   - SELinux: the runner's kernel runs AppArmor. Nothing SELinux-shaped
-  #     can be observed from a container on it.
+  #     can be observed from a container on it. The `linux` leg (the Ubuntu runner itself) runs
+  #     `TestLiveSelinux*` anyway, where the one that applies is the
+  #     refusal on a node with no SELinux; the module's evidence is the two
+  #     lab hosts (5.183).
   #   - `TestLiveRpmVerifySeesARealModification` on Leap: it edits two files
   #     Red Hat ships and SUSE does not, so it runs on the EL legs only.
   #   - The rest of the conformance harness: only its four `pkg` cases are
@@ -502,7 +506,7 @@ jobs:
           # same as the freebsd leg.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveConformance' ./internal/builtin/ 2>&1;
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveConformance' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 

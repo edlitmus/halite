@@ -1,0 +1,46 @@
+SELinux fcontext                                   type               Context
+
+/                                                  directory          system_u:object_r:root_t:s0 
+/.*                                                all files          system_u:object_r:default_t:s0 
+/[^/]+                                             regular file       system_u:object_r:etc_runtime_t:s0 
+/\.autofsck                                        regular file       system_u:object_r:etc_runtime_t:s0 
+/\.autorelabel                                     regular file       system_u:object_r:etc_runtime_t:s0 
+/\.ismount-test-file                               regular file       system_u:object_r:sosreport_tmp_t:s0 
+/\.journal                                         all files          <<None>>
+/boot/\.journal                                    all files          <<None>>
+/dev/(misc/)?agpgart                               character device   system_u:object_r:agp_device_t:s0 
+/dev/[shmxv]d[^/]*                                 block device       system_u:object_r:fixed_disk_device_t:s0 
+/dev/gpmctl                                        socket             system_u:object_r:gpmctl_t:s0 
+/dev/gpmdata                                       named pipe         system_u:object_r:gpmctl_t:s0 
+/dev/log                                           symbolic link      system_u:object_r:devlog_t:s0 
+/srv/halite-cap(/.*)?                              all files          system_u:object_r:httpd_sys_content_t:s0 
+/srv/halite-cap-dir                                directory          system_u:object_r:public_content_t:s0 
+/srv/halite-cap-user                               all files          user_u:object_r:httpd_sys_content_t:s0 
+/var/www(/.*)?                                     all files          system_u:object_r:httpd_sys_content_t:s0 
+/vicepa                                            all files          system_u:object_r:public_content_t:s0 
+/vicepb                                            all files          system_u:object_r:afs_files_t:s0 
+/vmlinuz.*                                         symbolic link      system_u:object_r:boot_t:s0 
+/xen(/.*)?                                         all files          system_u:object_r:xen_image_t:s0 
+
+SELinux Distribution fcontext Equivalence 
+
+/run = /var/run
+/run/lock = /var/lock
+/run/systemd/system = /usr/lib/systemd/system
+/run/systemd/generator = /usr/lib/systemd/system
+/run/systemd/generator.late = /usr/lib/systemd/system
+/lib = /usr/lib
+/lib64 = /usr/lib
+/usr/lib64 = /usr/lib
+/usr/local/lib64 = /usr/lib
+/usr/local/lib32 = /usr/lib
+/etc/systemd/system = /usr/lib/systemd/system
+/var/lib/xguest/home = /home
+/var/named/chroot/usr/lib64 = /usr/lib
+/var/named/chroot/lib64 = /usr/lib
+/home-inst = /home
+/home/home-inst = /home
+/var/roothome = /root
+/sbin = /usr/sbin
+/sysroot/tmp = /tmp
+/var/usrlocal = /usr/local
