@@ -435,16 +435,6 @@ func localeExecModules() []exec.Module {
 			Fn: fn,
 		}
 	}
-	mutate := func(function, doc string, params []signature.Param, fn exec.Func) exec.Module {
-		return exec.Module{
-			Sig: signature.Signature{
-				Module: "locale", Function: function, Doc: doc, Params: params,
-				Mutates: true, TestMode: signature.TestReliable,
-				Privileges: []string{"root"}, Platforms: linuxOnly, Section: "15.2",
-			},
-			Fn: fn,
-		}
-	}
 	return []exec.Module{
 		read("list_avail", "Return the locales this node can load, as `locale -a` spells them (`en_US.utf8`).", nil,
 			func(c *exec.Context, args *value.Map) (any, error) {
@@ -470,28 +460,52 @@ func localeExecModules() []exec.Module {
 				}
 				return localeAvail(c, name)
 			}),
-		mutate("set_locale", "Set the system LANG with `localectl set-locale`, leaving every LC_* variable as it "+
-			"is. True without acting when LANG is already the locale in any spelling; refused for a locale the "+
-			"node cannot load.",
-			[]signature.Param{loc},
-			func(c *exec.Context, args *value.Map) (any, error) {
+		// The two mutating functions are written out as literals rather than
+		// through a helper like `read`, because the --test audit
+		// (testmode_audit_test.go) finds which handlers consult Test by
+		// reading `Module:` and `Function:` as string literals in the
+		// signature. A helper that takes the function name as a parameter
+		// hides it, and the audit then judged set_locale -- whose dry run
+		// reads `localectl status` and `locale -a` to predict, and stops at
+		// localeSet's Test check -- as a dry run that acted. The element type
+		// is spelled out for the same reason: the audit matches a literal
+		// whose type is `exec.Module`, and an elided one has none.
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "locale", Function: "set_locale",
+				Doc: "Set the system LANG with `localectl set-locale`, leaving every LC_* variable as it " +
+					"is. True without acting when LANG is already the locale in any spelling; refused for a locale the " +
+					"node cannot load.",
+				Params:  []signature.Param{loc},
+				Mutates: true, TestMode: signature.TestReliable,
+				Privileges: []string{"root"}, Platforms: linuxOnly, Section: "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				name, err := localeName(args, "locale")
 				if err != nil {
 					return nil, err
 				}
 				return localeSet(c, name)
-			}),
-		mutate("gen_locale", "Make a locale loadable. On Debian, enable its /usr/share/i18n/SUPPORTED line in "+
-			"/etc/locale.gen and run `locale-gen --keep-existing`; on EL, install `glibc-langpack-<language>`, "+
-			"since EL ships no locale sources to compile. Returns whether the locale is loadable afterwards.",
-			[]signature.Param{loc, opt("charmap", signature.String, "", "Debian only: the charmap, when SUPPORTED lists the locale under more than one.")},
-			func(c *exec.Context, args *value.Map) (any, error) {
+			},
+		},
+		exec.Module{
+			Sig: signature.Signature{
+				Module: "locale", Function: "gen_locale",
+				Doc: "Make a locale loadable. On Debian, enable its /usr/share/i18n/SUPPORTED line in " +
+					"/etc/locale.gen and run `locale-gen --keep-existing`; on EL, install `glibc-langpack-<language>`, " +
+					"since EL ships no locale sources to compile. Returns whether the locale is loadable afterwards.",
+				Params:  []signature.Param{loc, opt("charmap", signature.String, "", "Debian only: the charmap, when SUPPORTED lists the locale under more than one.")},
+				Mutates: true, TestMode: signature.TestReliable,
+				Privileges: []string{"root"}, Platforms: linuxOnly, Section: "15.2",
+			},
+			Fn: func(c *exec.Context, args *value.Map) (any, error) {
 				name, err := localeName(args, "locale")
 				if err != nil {
 					return nil, err
 				}
 				return localeGen(c, name, states.Str(args, "charmap", ""))
-			}),
+			},
+		},
 	}
 }
 
