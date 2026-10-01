@@ -36,13 +36,21 @@ func TestLiveSudoStatesManageADropIn(t *testing.T) {
 	name := fmt.Sprintf("halite-live-%d", os.Getpid())
 	path := filepath.Join(dir, name)
 	before := liveDirListing(t, dir)
+	// What visudo says of the policy before the test, not "it passes":
+	// a GitHub runner's policy fails visudo -c on a file of its own
+	// (/etc/sudoers.d/runner, "bad permissions"), and this cleanup's first
+	// version failed there for that reason alone.
+	_, policyBefore, err := sudoRunVisudo(c, []string{"visudo", "-c"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		_ = os.Remove(path)
 		if after := liveDirListing(t, dir); after != before {
 			t.Errorf("%s was not left as found:\nbefore: %s\nafter:  %s", dir, before, after)
 		}
-		if ok, said, _ := sudoRunVisudo(c, []string{"visudo", "-c"}, ""); !ok {
-			t.Errorf("the policy fails visudo -c after the test: %s", said)
+		if _, said, _ := sudoRunVisudo(c, []string{"visudo", "-c"}, ""); said != policyBefore {
+			t.Errorf("visudo -c says something different after the test:\nbefore: %s\nafter:  %s", policyBefore, said)
 		}
 	})
 	t.Logf("drop-in directory %s, read from the node's sudoers", dir)

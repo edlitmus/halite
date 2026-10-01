@@ -593,9 +593,14 @@ jobs:
           test ! -e /run/systemd/system/halite-live-probe.service || {
             echo "the tests left the probe unit in /run/systemd/system"; exit 1; }
           # A sudoers drop-in left behind is a rule in force on a machine,
-          # so this is asserted rather than printed.
-          echo "sudoers drop-ins: $(ls /etc/sudoers.d | tr '\n' ' ')"
-          if ls /etc/sudoers.d | grep -Eq '^(halite-live-|halitecf-sudo)'; then
+          # so this is asserted rather than printed. Through sudo: the
+          # directory is 0750 root, and this step runs as the runner
+          # account, so a plain `ls` printed nothing and the check below
+          # could never have fired -- which the first run showed.
+          drop_ins=$(sudo ls /etc/sudoers.d)
+          echo "sudoers drop-ins: $(echo "$drop_ins" | tr '\n' ' ')"
+          test -n "$drop_ins" || { echo "::error::/etc/sudoers.d could not be listed"; exit 1; }
+          if echo "$drop_ins" | grep -Eq '^(halite-live-|halitecf-sudo)'; then
             echo '::error::the sudo tests left a drop-in in /etc/sudoers.d'; exit 1
           fi
           # The reboot assertion, and the reason this step stopped being
