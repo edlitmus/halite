@@ -1,0 +1,8 @@
+# file: f
+# owner: root
+# group: wheel
+user::rw-
+user:nobody:rwx
+group::r--
+mask::rwx
+other::r--

@@ -1,0 +1,7 @@
+# file: f
+# owner: root
+# group: root
+user::rw-
+group::r--
+other::r--
+

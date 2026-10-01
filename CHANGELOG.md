@@ -23,6 +23,34 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `acl` and `sudo` states, and `acl` on Linux and POSIX.1e
+
+`acl.present`, `acl.absent`, `acl.list_present` and `acl.list_absent` ship
+with Salt's arguments (`acl_type`, `acl_name`/`acl_names`, `perms`,
+`recurse`). They work in whichever ACL family a path's filesystem speaks:
+POSIX.1e on Linux and on UFS mounted `-o acls`, NFSv4 on ZFS and UFS
+mounted `-o nfsv4acls`. On NFSv4, `perms` is NFSv4's grammar, so `rwx`
+means read_data, write_data and execute, and a `d:` type is refused.
+`recurse` manages every path beneath, a default ACL on directories only,
+and skips symlinks. Salt's `force` is not built.
+
+The `acl` execution module, which was FreeBSD and NFSv4 only and refused a
+POSIX.1e entry by name, now reads and writes POSIX.1e too and runs on
+Linux (it needs the `acl` package there). `acl.get` returns a `family` key
+and, for a POSIX.1e directory, `default_entries`; `acl.set` and
+`acl.remove` take `default`, and `acl.set` takes the tags `mask` and
+`other`. On Linux, `follow_symlink: false` is refused: Linux's
+`getfacl -h` is its help flag.
+
+`sudo.present` and `sudo.absent` manage one sudoers drop-in each, in the
+directory the node's sudoers includes. The text is checked by
+`visudo -c -f -` before anything is written, test mode included, and the
+whole policy by `visudo -c` afterwards, which must also list the file; if
+either fails the previous text is put back and the state fails with
+visudo's words. A name containing `.` or ending in `~`, which sudo would
+silently skip, is refused. The drop-in is root's, mode 0440. DIVERGENCE
+5.184.
+
 ### `user.present` refuses a `password:` that would be a second record
 
 On Linux, `user.present` passed its `password:` to `chpasswd` unchecked, and

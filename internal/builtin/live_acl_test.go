@@ -13,11 +13,8 @@ import (
 	"github.com/edlitmus/halite/internal/value"
 )
 
-// liveACLRegistry builds a bare Registries with only `acl` in it.
-//
-// registerACL is not wired into New() yet — the ledger entry and the
-// call in builtin.go belong to whoever integrates this module — so a
-// live test that used New() would find no acl.* functions at all.
+// liveACLRegistry builds a bare Registries with only `acl` in it: the
+// execution functions and, since DIVERGENCE 5.184, the states.
 func liveACLRegistry() *Registries {
 	r := &Registries{Exec: exec.NewRegistry(), States: states.NewRegistry()}
 	registerACL(r)
@@ -238,13 +235,13 @@ func TestLiveACLRoundTripsAnNFSv4EntryOnARealFile(t *testing.T) {
 	}
 }
 
-// TestLivePOSIXOneACLIsRefusedByNameAgainstARealUFSFilesystem is the
-// half acl_test.go could not cover: every filesystem reachable without
-// root on the host this was written against is ZFS, which has no
-// POSIX.1e ACL to capture. `parseACLEntryLine`'s POSIX.1e branch was
-// written and tested against the three-field grammar quoted from
-// setfacl(1)'s own manual page, not a live entry — this test makes one
-// and points the module at it.
+// TestLiveACLReadsAPOSIXOneACLOnARealUFSFilesystem points acl.get at a
+// real POSIX.1e ACL on FreeBSD.
+//
+// It was TestLivePOSIXOneACLIsRefusedByName..., and asserted the
+// opposite: that the module refused the family by name, because there
+// were then no captures to parse it from. There are now (testdata/acl,
+// DIVERGENCE 5.184), so the same filesystem and the same ACL are read.
 //
 // `mount -o acls` is what turns POSIX.1e ACLs on for UFS (confirmed
 // against mount(8) on this host: nfsv4acls is the other, mutually
@@ -252,7 +249,7 @@ func TestLiveACLRoundTripsAnNFSv4EntryOnARealFile(t *testing.T) {
 // disk that is detached in cleanup regardless of pass or fail, the
 // same shape live_quota_ufs_test.go uses and for the same reason: nothing
 // here should still exist after `go test` exits.
-func TestLivePOSIXOneACLIsRefusedByNameAgainstARealUFSFilesystem(t *testing.T) {
+func TestLiveACLReadsAPOSIXOneACLOnARealUFSFilesystem(t *testing.T) {
 	if runtime.GOOS != "freebsd" {
 		t.Skipf("this leg makes a UFS filesystem with a POSIX.1e ACL; this is %s", runtime.GOOS)
 	}
@@ -288,10 +285,23 @@ func TestLivePOSIXOneACLIsRefusedByNameAgainstARealUFSFilesystem(t *testing.T) {
 	}
 
 	r := liveACLRegistry()
-	if _, err := r.Exec.Call(c, "acl.get", value.MapOf("name", path)); err == nil {
-		t.Fatal("acl.get read a real POSIX.1e ACL without complaint; it should refuse the family by name")
-	} else if !strings.Contains(err.Error(), "POSIX.1e") {
-		t.Errorf("acl.get failed without naming POSIX.1e: %v", err)
+	got, err := r.Exec.Call(c, "acl.get", value.MapOf("name", path))
+	if err != nil {
+		t.Fatalf("acl.get could not read a real POSIX.1e ACL: %v", err)
+	}
+	m := got.(*value.Map)
+	if family, _ := m.GetString("family"); family != aclFamilyPOSIX {
+		t.Errorf("family = %v, want %s", family, aclFamilyPOSIX)
+	}
+	entries, _ := m.GetString("entries")
+	var mask any
+	for _, e := range entries.([]any) {
+		if tag, _ := e.(*value.Map).GetString("tag"); tag == "mask" {
+			mask, _ = e.(*value.Map).GetString("permissions")
+		}
+	}
+	if mask != "rwx" {
+		t.Errorf("the mask entry setfacl wrote reads as %v, want rwx: %v", mask, entries)
 	}
 
 	// acl.is_extended never parses an entry, so the one family split
