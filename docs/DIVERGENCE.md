@@ -18438,6 +18438,60 @@ the 13 casks' versions against anything but brew's own JSON; and
 `list_upgrades`, which still reads `brew outdated --json=v2` and has
 not been run against a Mac with a broken cask.
 
+### 5.190 `mac_brew_pkg.latest_version` read "brew could not look" as "no such package"
+
+Found while checking 5.188's live test could fail. With the switch to
+brew's owner removed, the test stopped at `latest_version`, which
+returned an empty version and no error: Homebrew's refusal of root,
+read as a formula that does not exist. The provider took **any**
+non-zero exit from `brew info --json=v2 <name>` to mean "nothing by
+that name".
+
+Measured on macOS 26.7.1, Homebrew 7.0.7 -- both are exit 1, and only
+the message differs:
+
+| Case | Exit | stderr |
+|---|---|---|
+| a name brew has nothing for | 1 | `Error: No available formula with the name "no-such-formula-halite".` |
+| brew cannot run (`HOME` unset) | 1 | `Error: $HOME must be set to run brew.` |
+| brew run as root | 1 | `Error: Running Homebrew as root is extremely dangerous and no longer supported.` |
+
+**At the state it was worse than an empty answer.** `pkg.latest`
+treats an empty latest version as "nothing newer" and moves on, so a
+brew that could not answer for a name reported that name up to date.
+With the old code, the unit test that pairs a working listing with a
+failing `brew info hello` gets `All of the requested packages are at
+their newest version: hello.` -- for a package that is not installed.
+That pairing is two real captures put together, not a run. Every
+failure produced on the real Mac also broke the installed listing,
+which `pkg.latest` reads first and fails on correctly. What it stands
+for is a formula API that cannot be reached while the local listing
+still works, and that has not been watched happening.
+
+**The fix** separates the two by brew's own wording. Homebrew raises
+"no such package" as `FormulaUnavailableError` (`No available formula
+with the name ...`) or `FormulaOrCaskUnavailableError` (`No available
+formula or cask with the name ...`), the tap variant included
+(`exceptions.rb`). That prefix, captured from a real brew, is the only
+non-zero answer taken to mean absent; anything else is returned as an
+error carrying brew's first line. The two spellings this Mac could not
+produce are tested from the source, and the test says so.
+
+**Measured** through `halite-node call pkg.latest_version` on that Mac:
+`hello` gives 2.12.3, a name brew lacks gives an empty version and exit
+0, and with `HOME` unset it fails with brew's reason -- where `main`
+answers an empty version and exit 0. The fixtures are whole captures
+from that Mac. The tests were broken twice on purpose -- any non-zero
+exit read as absent again, and any `Error:` line read as absent -- and
+failed both times, the state test included.
+
+**Found on the way, not fixed here:** for a cask, `latest_version`
+returns an empty version though brew answers one. `brew info --json=v2
+1password-cli` exits 0 with the cask under `casks` and nothing under
+`formulae`, and the provider reads only `formulae`. Since 5.189 casks
+are in `list_pkgs`, so `pkg.latest` on a cask now reports it current
+whatever brew offers. Separate change.
+
 
 ## 6. Everything else not started
 

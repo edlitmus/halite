@@ -1,0 +1,131 @@
+{
+  "formulae": [
+    {
+      "name": "jq",
+      "full_name": "jq",
+      "tap": "homebrew/core",
+      "oldnames": [],
+      "aliases": [],
+      "versioned_formulae": [],
+      "desc": "Lightweight and flexible command-line JSON processor",
+      "license": "MIT",
+      "homepage": "https://jqlang.github.io/jq/",
+      "versions": {
+        "stable": "1.8.2",
+        "head": "HEAD",
+        "bottle": true
+      },
+      "urls": {
+        "stable": {
+          "url": "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-1.8.2.tar.gz",
+          "tag": null,
+          "revision": null,
+          "using": null,
+          "checksum": "71b8d6e8f5fe81f6c6d0d110e3892251f6ce76ed095abd315e26e6e1193af3af"
+        },
+        "head": {
+          "url": "https://github.com/jqlang/jq.git",
+          "branch": "master",
+          "using": null
+        }
+      },
+      "patches": [],
+      "revision": 0,
+      "version_scheme": 0,
+      "compatibility_version": null,
+      "autobump": true,
+      "no_autobump_message": null,
+      "skip_livecheck": false,
+      "bottle": {
+        "stable": {
+          "rebuild": 1,
+          "root_url": "https://ghcr.io/v2/homebrew/core",
+          "files": {
+            "arm64_tahoe": {
+              "cellar": ":any",
+              "url": "https://ghcr.io/v2/homebrew/core/jq/blobs/sha256:ca67c64d0aaf1e5472790ec2cc081ff7972316f27095d8a8aab81b3321247036",
+              "sha256": "ca67c64d0aaf1e5472790ec2cc081ff7972316f27095d8a8aab81b3321247036"
+            }
+          }
+        }
+      },
+      "pour_bottle_only_if": null,
+      "keg_only": false,
+      "keg_only_reason": null,
+      "options": [],
+      "build_dependencies": [],
+      "dependencies": [
+        "oniguruma"
+      ],
+      "test_dependencies": [],
+      "recommended_dependencies": [],
+      "optional_dependencies": [],
+      "uses_from_macos": [],
+      "uses_from_macos_bounds": [],
+      "requirements": [],
+      "conflicts_with": [],
+      "conflicts_with_reasons": [],
+      "link_overwrite": [],
+      "caveats": null,
+      "installed": [
+        {
+          "version": "1.8.2",
+          "used_options": [],
+          "built_as_bottle": true,
+          "poured_from_bottle": true,
+          "time": 1782225585,
+          "runtime_dependencies": [
+            {
+              "full_name": "oniguruma",
+              "version": "6.9.10",
+              "revision": 0,
+              "bottle_rebuild": 0,
+              "pkg_version": "6.9.10",
+              "declared_directly": true
+            }
+          ],
+          "installed_on_request": true
+        }
+      ],
+      "linked_keg": "1.8.2",
+      "pinned": false,
+      "outdated": false,
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "deprecate_args": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "disable_args": null,
+      "post_install_steps": [],
+      "post_install_defined": false,
+      "service": null,
+      "tap_git_head": "0211e9c2eeea26bc0f1b382446dc076321e9a871",
+      "ruby_source_path": "Formula/j/jq.rb",
+      "ruby_source_checksum": {
+        "sha256": "0081a3a8d8afaa165b4bfa9b222723916b56f4d04b975d7aad35e8cdad0b0296"
+      },
+      "head_dependencies": {
+        "build_dependencies": [
+          "autoconf",
+          "automake",
+          "libtool"
+        ],
+        "dependencies": [
+          "oniguruma"
+        ],
+        "test_dependencies": [],
+        "recommended_dependencies": [],
+        "optional_dependencies": [],
+        "uses_from_macos": [],
+        "uses_from_macos_bounds": []
+      }
+    }
+  ],
+  "casks": []
+}

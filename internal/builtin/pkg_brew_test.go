@@ -174,7 +174,7 @@ func TestBrewOwnedByRootIsRefusedBeforeRunning(t *testing.T) {
 // stderr are as captured, which is the failure.
 var brewFixtureDir = filepath.Join("testdata", "brew", "macos26")
 
-func brewFixtureCtx(t *testing.T) *exec.Context {
+func brewFixtureCtx(t *testing.T, fixtures ...string) *exec.Context {
 	t.Helper()
 	old := brewEuid
 	t.Cleanup(func() { brewEuid = old })
@@ -187,7 +187,7 @@ func brewFixtureCtx(t *testing.T) *exec.Context {
 		}
 		return ""
 	}
-	c.Runner = newCapturedRunner(t, brewFixtureDir, "info-installed", "list-versions")
+	c.Runner = newCapturedRunner(t, brewFixtureDir, fixtures...)
 	return c
 }
 
@@ -195,7 +195,7 @@ func brewFixtureCtx(t *testing.T) *exec.Context {
 // exit 1, and the provider failed with it. The listing must come back,
 // formulae and casks both.
 func TestBrewListPkgsSurvivesACaskBrewCannotLoad(t *testing.T) {
-	c := brewFixtureCtx(t)
+	c := brewFixtureCtx(t, "info-installed", "list-versions")
 	got, err := (brewProvider{}).ListPkgs(c)
 	if err != nil {
 		t.Fatalf("ListPkgs: %v", err)
@@ -228,7 +228,7 @@ func TestBrewListPkgsSurvivesACaskBrewCannotLoad(t *testing.T) {
 // formulae kept here. `brew list --versions` printed kegs in directory
 // order and its parser took the last field.
 func TestBrewListPkgsAgreesWithTheListItReplaces(t *testing.T) {
-	c := brewFixtureCtx(t)
+	c := brewFixtureCtx(t, "info-installed", "list-versions")
 	got, err := (brewProvider{}).ListPkgs(c)
 	if err != nil {
 		t.Fatal(err)
@@ -251,5 +251,84 @@ func TestBrewListPkgsRefusesWhatIsNotBrewJSON(t *testing.T) {
 	}
 	if _, err := parseBrewInstalled(`[]`); err == nil {
 		t.Error("a JSON array was accepted as brew's object")
+	}
+}
+
+// The info-* fixtures for single names were captured the same day and
+// are whole: `brew info --json=v2` for jq (installed) and hello (not),
+// a name brew has nothing for, and hello again with HOME unset --
+// a real refusal from brew that needs no root to produce, standing in
+// for the root refusal that showed this defect (DIVERGENCE 5.190).
+
+func TestBrewLatestVersionReadsTheStableVersion(t *testing.T) {
+	c := brewFixtureCtx(t, "info-jq", "info-available")
+	for name, want := range map[string]string{"jq": "1.8.2", "hello": "2.12.3"} {
+		got, err := (brewProvider{}).LatestVersion(c, name)
+		if err != nil || got != want {
+			t.Errorf("LatestVersion(%s) = %q, %v; want %q", name, got, err, want)
+		}
+	}
+}
+
+// brew has no such package: exit 1 and `No available formula`. That is
+// an answer -- nothing to install -- and not a failure.
+func TestBrewLatestVersionIsEmptyForANameBrewDoesNotHave(t *testing.T) {
+	c := brewFixtureCtx(t, "info-nosuch")
+	got, err := (brewProvider{}).LatestVersion(c, "no-such-formula-halite")
+	if err != nil || got != "" {
+		t.Errorf("LatestVersion = %q, %v; want an empty version and no error", got, err)
+	}
+}
+
+// The defect: brew could not look, also exit 1, and that came back as
+// "no such package". It must come back as brew's own reason.
+func TestBrewLatestVersionFailsWhenBrewCannotAnswer(t *testing.T) {
+	c := brewFixtureCtx(t, "info-nohome")
+	got, err := (brewProvider{}).LatestVersion(c, "hello")
+	if err == nil {
+		t.Fatalf("LatestVersion = %q, nil; brew refused to run and said so", got)
+	}
+	if !strings.Contains(err.Error(), "$HOME must be set to run brew") {
+		t.Errorf("err = %v; want brew's own reason in it", err)
+	}
+}
+
+func TestBrewSaysUnavailableOnlyForItsNotFoundErrors(t *testing.T) {
+	for stderr, want := range map[string]bool{
+		capturedFixture(t, brewFixtureDir, "info-nosuch", "stderr"): true,
+		// The other two spellings in Homebrew's exceptions.rb, the tap
+		// variant with its trailing note. Taken from the source, not
+		// captured: no tap here was missing to make brew print them.
+		"Error: No available formula or cask with the name \"x\".\n":                                         true,
+		"Error: No available formula or cask with the name \"t/x/y\".\nThis command requires the tap t/x.\n": true,
+		capturedFixture(t, brewFixtureDir, "info-nohome", "stderr"):                                          false,
+		"Error: Running Homebrew as root is extremely dangerous and no longer supported.\n":                  false,
+		"": false,
+	} {
+		if got := brewSaysUnavailable(stderr); got != want {
+			t.Errorf("brewSaysUnavailable(%q) = %v, want %v", stderr, got, want)
+		}
+	}
+}
+
+// What the defect cost at the state: `pkg.latest` reads an empty latest
+// version as "nothing newer", so a brew that could not answer for one
+// name reported that name up to date. The pairing here -- the listing
+// answers, `brew info hello` does not -- is two real captures put
+// together, not one run: every failure produced on a real Mac also broke
+// the listing, which the state reads first and fails on correctly. It is
+// what an unreachable formula API would look like while the local
+// listing still works, and it has not been watched happening.
+func TestBrewPkgLatestFailsWhenBrewCannotSayWhatIsLatest(t *testing.T) {
+	c := brewFixtureCtx(t, "info-installed", "info-nohome")
+	res, err := pkgLatest(c, value.MapOf("name", "hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Result == nil || *res.Result {
+		t.Fatalf("pkg.latest succeeded (%q) while brew could not say what is latest", res.Comment)
+	}
+	if !strings.Contains(res.Comment, "$HOME must be set to run brew") {
+		t.Errorf("comment = %q; want brew's reason in it", res.Comment)
 	}
 }
