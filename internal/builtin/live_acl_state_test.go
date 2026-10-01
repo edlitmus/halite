@@ -368,3 +368,43 @@ func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	return lines[len(lines)-1]
 }
+
+// acl.wipe on a POSIX.1e ACL must leave a trivial one, and say so once.
+//
+// FreeBSD's `setfacl -b` on a POSIX.1e file keeps the mask entry -- the
+// file still lists `mask::r--` and `ls` still marks it `+` -- so a wipe
+// that ran `-b` alone reported a change on every run and never left a
+// trivial ACL. Linux's `-b` removes the mask with the rest. Measured on
+// both lab hosts on 2026-09-30 (DIVERGENCE 5.185).
+func TestLiveACLWipeLeavesATrivialPOSIXOneACL(t *testing.T) {
+	c := liveACLStateGate(t)
+	dir := t.TempDir()
+	if runtime.GOOS == "freebsd" {
+		dir = liveUFSWithACLs(t, c, "acls")
+	}
+	f := filepath.Join(dir, "f")
+	if err := os.WriteFile(f, []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := c.Run(exec.Command{Argv: []string{"setfacl", "-m", "user:nobody:rwx", f}, IgnoreExitCode: true}); err != nil || res.Code != 0 {
+		t.Fatalf("setfacl: %v %s", err, res.Stderr)
+	}
+	r := New()
+	out, err := r.Exec.Call(c, "acl.wipe", value.MapOf("name", f))
+	if err != nil {
+		t.Fatalf("acl.wipe: %v", err)
+	}
+	if changed, _ := out.(*value.Map).GetString("changed"); changed != true {
+		t.Fatalf("wiping an extended ACL reported no change: %v", out)
+	}
+	if got := liveGetfacl(t, c, f); strings.Contains(got, "mask::") || strings.Contains(got, "nobody") {
+		t.Errorf("acl.wipe left more than the trivial ACL:\n%s", got)
+	}
+	again, err := r.Exec.Call(c, "acl.wipe", value.MapOf("name", f))
+	if err != nil {
+		t.Fatalf("a second acl.wipe: %v", err)
+	}
+	if changed, _ := again.(*value.Map).GetString("changed"); changed != false {
+		t.Errorf("a second acl.wipe reported a change, so the first did not finish: %v", again)
+	}
+}

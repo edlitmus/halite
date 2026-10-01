@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `acl.wipe` finishes on a FreeBSD POSIX.1e file
+
+On FreeBSD, `setfacl -b` on a UFS file with POSIX.1e ACLs keeps the mask
+entry, so `acl.wipe` left the file extended and reported a change on every
+run. It now runs `setfacl -b -n`, which leaves the trivial ACL on FreeBSD's
+both families and on Linux. DIVERGENCE 5.185.
+
 ### `acl` and `sudo` states, and `acl` on Linux and POSIX.1e
 
 `acl.present`, `acl.absent`, `acl.list_present` and `acl.list_absent` ship

@@ -17945,6 +17945,40 @@ unit-tested only. The fleet linux leg now installs `acl` and runs
 `TestLiveACL|TestLiveSudo`; neither had run on a GitHub runner when this
 was written.
 
+### 5.185 `acl.wipe` never finished on a FreeBSD POSIX.1e file
+
+Found while capturing for 5.184. On FreeBSD 15.1, on UFS mounted
+`-o acls`, `setfacl -b` on a file carrying a named entry leaves the mask
+behind:
+
+```
+user::rw-
+group::r--
+mask::r--
+other::r--
+```
+
+and `ls` still marks the file `+`. `acl.wipe` ran `-b` alone and decided
+"extended or not" from that mark, so on such a file it reported a change
+on every run and never left the trivial ACL it promised. Linux's `-b`
+(acl 2.3.2, Debian 13) removes the mask with the rest, so the defect was
+FreeBSD's alone -- and before 5.184 the module refused POSIX.1e for
+everything but `is_extended` and `wipe`, which is how it lived unseen.
+
+`setfacl -b -n` -- clear, and do not recalculate the mask -- left the
+trivial ACL on all four places it was tried: FreeBSD UFS `-o acls`, UFS
+`-o nfsv4acls`, a ZFS pool on a file, and Debian 13. `acl.wipe` sends
+that now. `TestLiveACLWipeLeavesATrivialPOSIXOneACL` wipes a file
+carrying `user:nobody:rwx`, reads the real getfacl for a mask, and wipes
+again expecting no change. Before the change it failed on freebsd15
+(`mask::r--` left, and the second wipe reported a change) and passed on
+debian13; after it, it passes on both, as does the NFSv4 round trip that
+also wipes.
+
+**Not verified:** FreeBSD 14's setfacl, and `-b -n` with `recursive` on
+a real tree; ZFS was tried by hand, not by the test, since the test makes
+its POSIX.1e file on UFS.
+
 
 
 ## 6. Everything else not started

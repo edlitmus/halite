@@ -1113,7 +1113,15 @@ func aclWipeFn(c *exec.Context, args *value.Map) (any, error) {
 		return aclMutateResult(c, true, comment, change), nil
 	}
 
-	argv := []string{"setfacl", "-b"}
+	// `-b -n`, not `-b`. On a FreeBSD POSIX.1e file `setfacl -b` keeps the
+	// mask entry: the ACL still lists `mask::r--`, `ls` still marks it `+`,
+	// and this function reported a change on every run without ever
+	// leaving a trivial ACL. `-n` (do not recalculate the mask) with `-b`
+	// drops it. Measured on FreeBSD 15.1 on UFS `-o acls`, UFS
+	// `-o nfsv4acls` and ZFS, and on Debian 13's setfacl 2.3.2, whose `-b`
+	// already removed the mask: `-b -n` left the trivial ACL on all four.
+	// DIVERGENCE 5.185.
+	argv := []string{"setfacl", "-b", "-n"}
 	if recursive {
 		argv = append(argv, "-R")
 	}

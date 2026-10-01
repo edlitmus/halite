@@ -610,7 +610,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"filesystems other than tmpfs and ext4 (xfs, btrfs); an `acl_name` given as a numeric id, which never " +
 		"converges because getfacl prints the name; Salt's `force`, not built; a mask entry and a named entry " +
 		"managed by two states, never run -- setfacl recalculating the mask whenever it sets a named entry " +
-		"was measured on both hosts, so they would undo each other on every run"},
+		"was measured on both hosts, so they would undo each other on every run. " +
+		"`acl.wipe` now sends `setfacl -b -n`: `-b` alone keeps a POSIX.1e mask on FreeBSD, so the wipe " +
+		"never finished there; `TestLiveACLWipeLeavesATrivialPOSIXOneACL` failed on freebsd15 before the " +
+		"change and passes on both hosts after it (DIVERGENCE 5.185)"},
 	"tmpfs": {Level: exec.Captured, Note: "read against the real `mount` and `df` on this " +
 		"fleet's FreeBSD 15.1 host, both against the tmpfs the host already had and against one " +
 		"the test mounted as root and then unmounted, with the reader shown to flip in both " +

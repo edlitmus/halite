@@ -456,9 +456,9 @@ func TestWipeRunsSetfaclDashBOnAnExtendedACL(t *testing.T) {
 	// `is_extended` and originally missed this function. So the fixtures are
 	// the ones the mark reads: a real `ls -ld` capture with the `+`.
 	c := aclContext(map[string]exec.Result{
-		"realpath " + path:   {Code: 0, Stdout: path + "\n"},
-		"ls -ld " + path:     {Code: 0, Stdout: aclLsExtended},
-		"setfacl -b " + path: {Code: 0},
+		"realpath " + path:      {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:        {Code: 0, Stdout: aclLsExtended},
+		"setfacl -b -n " + path: {Code: 0},
 	})
 	out, err := aclWipeFn(c, aclArgs("name", path))
 	if err != nil {
@@ -468,17 +468,17 @@ func TestWipeRunsSetfaclDashBOnAnExtendedACL(t *testing.T) {
 	if changed != true {
 		t.Fatal("wiping an extended ACL reported no change")
 	}
-	if cmds := aclSetfaclCommands(c); len(cmds) != 1 || cmds[0] != "setfacl -b "+path {
-		t.Errorf("want exactly `setfacl -b %s`, got %v", path, cmds)
+	if cmds := aclSetfaclCommands(c); len(cmds) != 1 || cmds[0] != "setfacl -b -n "+path {
+		t.Errorf("want exactly `setfacl -b -n %s` -- -b alone leaves a POSIX.1e mask on FreeBSD (DIVERGENCE 5.185); got %v", path, cmds)
 	}
 }
 
 func TestWipeAddsDashRWhenRecursive(t *testing.T) {
 	path := "/home/ed/aclcapture/testfile"
 	c := aclContext(map[string]exec.Result{
-		"realpath " + path:      {Code: 0, Stdout: path + "\n"},
-		"ls -ld " + path:        {Code: 0, Stdout: aclLsExtended},
-		"setfacl -R -b " + path: {Code: 0},
+		"realpath " + path:         {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:           {Code: 0, Stdout: aclLsExtended},
+		"setfacl -b -n -R " + path: {Code: 0},
 	})
 	if _, err := aclWipeFn(c, aclArgs("name", path, "recursive", true)); err != nil {
 		t.Fatalf("aclWipeFn: %v", err)
