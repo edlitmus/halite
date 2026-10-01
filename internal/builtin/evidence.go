@@ -1074,11 +1074,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"owner not handed to the new file, a rival criterion not replaced (caught by the module's own read-back), " +
 		"the logrotate -d check before a write ignored (caught on the named file; on a drop-in the check after " +
 		"the write put the old text back, which is that check demonstrated), and both checks ignored. On FreeBSD " +
-		"without the port, `show_conf` names newsyslog. Not covered: RHEL, SUSE and Ubuntu's logrotate builds; " +
+		"without the port, `show_conf` names newsyslog. fleet.yml's linux leg (ubuntu-24.04, logrotate 3.21.0) " +
+		"then ran both live tests and both conformance cases green on Fleet run 36810985486, and its freebsd leg, " +
+		"with no port, the newsyslog check. Not covered: RHEL and SUSE's logrotate builds; " +
 		"`tabooext`/`taboopat` (refused, not modelled); the last-one-wins rule for on/off pairs other than " +
 		"compress (only measured to be accepted names); a duplicate log entry across two files reaching the " +
-		"after-write check on a real host; include order under a non-C collation; logrotate's daily run itself; " +
-		"and the fleet.yml linux leg, which had not run this when it was written (DIVERGENCE 5.186)"},
+		"after-write check on a real host; include order under a non-C collation; and logrotate's daily run " +
+		"itself (DIVERGENCE 5.186)"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

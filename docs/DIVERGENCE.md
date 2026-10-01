@@ -18116,8 +18116,14 @@ old text back -- which is the only demonstration that path has had on a
 real host. It failed on the named file, which has no after-write check
 since the before-write one already read everything it includes.
 
-**Not verified:** RHEL, SUSE and Ubuntu's logrotate builds (the fleet.yml
-linux leg is Ubuntu and had not run this when it was written);
+**On CI**, after the lab runs: fleet.yml's linux leg (ubuntu-24.04,
+which installed logrotate 3.21.0 -- an older release than the lab's)
+ran both live tests and both conformance cases green on Fleet run
+36810985486, and its freebsd leg, which has no port,
+`TestLiveLogrotateNamesNewsyslogOnAFreeBSDWithoutThePort`. Nothing was
+broken on purpose there.
+
+**Not verified:** RHEL and SUSE's logrotate builds;
 `tabooext` and `taboopat`, which are refused rather than modelled;
 last-one-wins for on/off pairs other than `compress`, which were only
 measured to be accepted names; a cross-file duplicate reaching the
