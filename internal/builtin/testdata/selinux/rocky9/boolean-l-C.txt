@@ -1,0 +1,4 @@
+SELinux boolean                State  Default Description
+
+virt_sandbox_use_all_caps      (on   ,   on)  Allow sandbox containers to use all capabilities
+virt_use_nfs                   (on   ,   on)  Allow confined virtual guests to manage nfs files

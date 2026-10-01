@@ -152,10 +152,15 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`patch` binary -- which is where running it found that an already-applied patch is " +
 		"*reversed* rather than refused unless `--forward` is passed (DIVERGENCE 5.63). Two " +
 		"limits: nothing here has written a file it does not own, so the `chown` path is " +
-		"exercised only where the account already matches, the SELinux context pair is " +
-		"not implemented at all rather than implemented and unrun, and `patch` is " +
+		"exercised only where the account already matches, and `patch` is " +
 		"unexercised on Windows because the binary that runtime resolves there -- " +
-		"Strawberry Perl's patch 2.5.9 -- aborts on an ordinary unified diff"},
+		"Strawberry Perl's patch 2.5.9 -- aborts on an ordinary unified diff. The SELinux pair, " +
+		"`get_selinux_context` and `set_selinux_context`, was driven on 2026-09-30 on Rocky Linux 9.8 " +
+		"(coreutils 8.32) and AlmaLinux 8.10 (coreutils 8.30), both enforcing: read against `ls -Z`, " +
+		"`chcon -u` and `-t` predicted, applied and converged, `persist` adding the fcontext rule that " +
+		"survived a `restorecon -F`, and a symlink refused; on Debian 13, with no SELinux, the read " +
+		"fails with stat's own reason rather than answering (DIVERGENCE 5.183). `role` and `range` " +
+		"were never passed to chcon"},
 	"ps": {Level: exec.Hardware, Note: "read and signalled against the real process table " +
 		"on every platform the suite runs, and there are **three** readers rather than " +
 		"two: FreeBSD's libxo JSON, procps' columns, and BusyBox's, which is neither a " +
@@ -866,6 +871,29 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`add_service` and read for the listings, not for every member kind. No CI leg runs it: `fleet.yml`'s " +
 		"`rpm` legs are containers, with no init, no system bus and the runner's netfilter, so this evidence is " +
 		"still the two lab hosts and decays unless a person reruns it there (DIVERGENCE 5.178)"},
+	"selinux": {Level: exec.Hardware, Note: "driven on 2026-09-30 as root over SSH against two real, " +
+		"enforcing targeted policies on throwaway lab hosts: Rocky Linux 9.8 (policycoreutils 3.6-5.el9, " +
+		"selinux-policy-targeted 38.1.75) and AlmaLinux 8.10 (policycoreutils 2.9-26.el8_10, " +
+		"selinux-policy-targeted 3.14.3). Every parser reads output captured there (testdata/selinux); " +
+		"the two releases printed the same formats. `TestLiveSelinux*` checked the reads against the " +
+		"other tool answering the same question (getenforce, sestatus, getsebool -a, semodule -l, " +
+		"matchpathcon, ls -Z), and drove each mutating function through test mode, a real change, and a " +
+		"second no-op: httpd_can_network_connect at runtime and with -P (setsebool and setsebools); the " +
+		"running mode Enforcing to Permissive and back by selinuxfs; fcontext rules under " +
+		"/srv/halite-selinux-test including a directory-only one and -m over an existing rule, " +
+		"restorecon -F -R relabelling and a user-only drift seen by the check; ports tcp/18999, " +
+		"tcp/18990-18995, udp/18999 and a local override of the policy's tcp/8080. All seven states " +
+		"passed the conformance harness on both hosts. Local customisations (-C), the boolean and the " +
+		"mode were snapshotted before and compared after, and matched. Six deliberate breaks (the full " +
+		"port listing answering before -C, as Salt's does; a check without -F; persist ignoring the " +
+		"store; selinux.mode ignoring the config; exec test mode acting; the test's last delete " +
+		"dropped) each failed on both hosts, and a seventh, the test's cleanup dropped as well, was " +
+		"caught by the host guard on Rocky 9 (DIVERGENCE 5.183). Not covered: " +
+		"/etc/selinux/config is never written, so the mode is runtime-only and `disabled` is refused; " +
+		"`semodule` install, remove, enable and disable are not built (the disabled row was captured " +
+		"by hand); fcontext equivalence rules are not built; file types c, b, s, l and p were read and " +
+		"never passed to -f; `sel_range` on ports and `sel_level` on fcontext were never set; sctp and " +
+		"dccp ports are refused; the MLS policy and any EL7 or Fedora policycoreutils were not run"},
 	"pro": {Level: exec.Hardware, Note: "`version`, `status` and `is_attached` were run for real " +
 		"against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- " +
 		"`TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way " +

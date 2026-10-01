@@ -67,6 +67,41 @@ node is told `shadow` runs on linux. Driven as root on Rocky 9.8, Alma 8.10 and
 Debian 13 in the lab, and added to fleet.yml's linux leg (Ubuntu), where it has not yet run. `gen_password` is not built.
 DIVERGENCE 5.180.
 
+### `selinux`: the module, its seven states, and file's context pair
+
+- **New `selinux` module**, Linux only: `getenforce`, `getconfig`,
+  `setenforce`, `list_sebool`, `getsebool`, `setsebool`, `setsebools`,
+  `list_semod`, `getsemod`, `fcontext_get_policy`, `fcontext_add_policy`,
+  `fcontext_delete_policy`, `fcontext_policy_is_applied`,
+  `fcontext_apply_policy`, `port_get_policy`, `port_add_policy` and
+  `port_delete_policy`. Built and driven on Rocky Linux 9.8 and AlmaLinux 8.10.
+- **New states**: `selinux.mode`, `selinux.boolean`,
+  `selinux.fcontext_policy_present`, `selinux.fcontext_policy_absent`,
+  `selinux.fcontext_policy_applied`, `selinux.port_policy_present` and
+  `selinux.port_policy_absent`.
+- **`file.get_selinux_context` and `file.set_selinux_context`** now exist.
+  The read fails on a node with no SELinux rather than returning Salt's
+  "No selinux context information" sentence in place of a context.
+- **Different from Salt, on purpose:**
+  - **`setenforce` and `selinux.mode` change the running mode only.** They
+    never write `/etc/selinux/config`, so neither can disable SELinux.
+    `selinux.mode` refuses a mode that file disagrees with, because the node
+    would go back to the file's mode at its next boot.
+  - **The mutating functions return `{changed, comment, changes}`** and make
+    no change in test mode. Salt returns its command's output.
+  - **A local port rule wins over the policy's own.** semanage still lists
+    the policy's type after a local rule moves a port. Salt reads that line
+    and reports a rule in place that is not.
+  - **`fcontext_policy_is_applied` uses `restorecon -F`**, as the relabel
+    does, so a user or level drift is seen.
+  - **Two file specifications are refused**: a relative one, and one ending
+    in `/`. semanage accepts both and they never match anything.
+  - **The `absent` states refuse a rule the policy itself defines**, since
+    semanage cannot delete one, rather than reporting it gone.
+- **Not built**: policy module install, remove, enable and disable (Salt's
+  `setsemod`, `install_semod`, `remove_semod` and the `module*` states), and
+  fcontext equivalence rules.
+
 ### `pkg` on the RedHat and SUSE families: what the lab found, fixed
 
 - **`pkg.owner` of a path several packages own** returned their names run

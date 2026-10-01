@@ -1,0 +1,352 @@
+SELinux boolean                State  Default Description
+
+abrt_anon_write                (off  ,  off)  Allow ABRT to modify public files used for public file transfer services.
+abrt_handle_event              (off  ,  off)  Determine whether ABRT can run in the abrt_handle_event_t domain to handle ABRT event scripts.
+abrt_upload_watch_anon_write   (on   ,   on)  Determine whether abrt-handle-upload can modify public files used for public file transfer services in /var/spool/abrt-upload/.
+antivirus_can_scan_system      (off  ,  off)  Allow antivirus programs to read non security files on a system
+antivirus_use_jit              (off  ,  off)  Determine whether antivirus programs can use JIT compiler.
+auditadm_exec_content          (on   ,   on)  Allow auditadm to exec content
+authlogin_nsswitch_use_ldap    (off  ,  off)  Allow users to resolve user passwd entries directly from ldap rather then using a sssd server
+authlogin_radius               (off  ,  off)  Allow users to login using a radius server
+authlogin_yubikey              (off  ,  off)  Allow users to login using a yubikey OTP server or challenge response mode
+awstats_purge_apache_log_files (off  ,  off)  Determine whether awstats can purge httpd log files.
+boinc_execmem                  (on   ,   on)  Determine whether boinc can execmem/execstack.
+cdrecord_read_content          (off  ,  off)  Determine whether cdrecord can read various content. nfs, samba, removable devices, user temp and untrusted content files
+cluster_can_network_connect    (off  ,  off)  Allow cluster administrative domains to connect to the network using TCP.
+cluster_manage_all_files       (off  ,  off)  Allow cluster administrative domains to manage all files on a system.
+cluster_use_execmem            (off  ,  off)  Allow cluster administrative cluster domains memcheck-amd64- to use executable memory
+cobbler_anon_write             (off  ,  off)  Determine whether Cobbler can modify public files used for public file transfer services.
+cobbler_can_network_connect    (off  ,  off)  Determine whether Cobbler can connect to the network using TCP.
+cobbler_use_cifs               (off  ,  off)  Determine whether Cobbler can access cifs file systems.
+cobbler_use_nfs                (off  ,  off)  Determine whether Cobbler can access nfs file systems.
+collectd_tcp_network_connect   (off  ,  off)  Determine whether collectd can connect to the network using TCP.
+colord_use_nfs                 (off  ,  off)  Determine whether Colord can access nfs file systems.
+condor_tcp_network_connect     (off  ,  off)  Determine whether Condor can connect to the network using TCP.
+conman_can_network             (off  ,  off)  Determine whether conman can connect to all TCP ports
+conman_use_nfs                 (off  ,  off)  Allow conman to manage nfs files
+container_connect_any          (off  ,  off)  Determine whether container can connect to all TCP ports.
+container_manage_cgroup        (off  ,  off)  Allow sandbox containers to manage cgroup (systemd)
+container_read_certs           (off  ,  off)  Allow all container domains to read cert files and directories
+container_use_cephfs           (off  ,  off)  Determine whether container can use ceph file system
+container_use_devices          (off  ,  off)  Allow containers to use any device volume mounted into container
+container_use_dri_devices      (on   ,   on)  Allow containers to use any dri device volume mounted into container
+container_use_ecryptfs         (off  ,  off)  Determine whether container can use ecrypt file system
+container_user_exec_content    (on   ,   on)  Allow container to user exec content
+cron_can_relabel               (off  ,  off)  Allow system cron jobs to relabel filesystem for restoring file contexts.
+cron_system_cronjob_use_shares (off  ,  off)  Allow system cronjob to be executed on on NFS, CIFS or FUSE filesystem.
+cron_userdomain_transition     (on   ,   on)  Determine whether crond can execute jobs in the user domain as opposed to the the generic cronjob domain.
+cups_execmem                   (off  ,  off)  Allow cups execmem/execstack
+cvs_read_shadow                (off  ,  off)  Determine whether cvs can read shadow password files.
+daemons_dump_core              (off  ,  off)  Allow all daemons to write corefiles to /
+daemons_enable_cluster_mode    (off  ,  off)  Enable cluster mode for daemons.
+daemons_use_tcp_wrapper        (off  ,  off)  Allow all daemons to use tcp wrappers.
+daemons_use_tty                (off  ,  off)  Allow all daemons the ability to read/write terminals
+dbadm_exec_content             (on   ,   on)  Allow dbadm to exec content
+dbadm_manage_user_files        (off  ,  off)  Determine whether dbadm can manage generic user files.
+dbadm_read_user_files          (off  ,  off)  Determine whether dbadm can read generic user files.
+deny_bluetooth                 (off  ,  off)  Deny all system processes and Linux users to use bluetooth wireless technology.
+deny_execmem                   (off  ,  off)  Deny user domains applications to map a memory region as both executable and writable, this is dangerous and the executable should be reported in bugzilla
+deny_ptrace                    (off  ,  off)  Deny any process from ptracing or debugging any other processes.
+dhcpc_exec_iptables            (off  ,  off)  Allow dhcpc client applications to execute iptables commands
+dhcpd_use_ldap                 (off  ,  off)  Determine whether DHCP daemon can use LDAP backends.
+domain_can_mmap_files          (off  ,  off)  Allow any process to mmap any file on system with attribute file_type.
+domain_can_write_kmsg          (off  ,  off)  Allow all domains write to kmsg_device, while kernel is executed with systemd.log_target=kmsg parameter.
+domain_fd_use                  (on   ,   on)  Allow all domains to use other domains file descriptors
+domain_kernel_load_modules     (off  ,  off)  Allow all domains to have the kernel load modules
+entropyd_use_audio             (on   ,   on)  Determine whether entropyd can use audio devices as the source for the entropy feeds.
+exim_can_connect_db            (off  ,  off)  Determine whether exim can connect to databases.
+exim_manage_user_files         (off  ,  off)  Determine whether exim can create, read, write, and delete generic user content files.
+exim_read_user_files           (off  ,  off)  Determine whether exim can read generic user content files.
+fcron_crond                    (off  ,  off)  Enable extra rules in the cron domain to support fcron.
+fenced_can_network_connect     (off  ,  off)  Determine whether fenced can connect to the TCP network.
+fenced_can_ssh                 (off  ,  off)  Determine whether fenced can use ssh.
+fips_mode                      (on   ,   on)  Allow all domains to execute in fips_mode
+ftpd_anon_write                (off  ,  off)  Determine whether ftpd can modify public files used for public file transfer services. Directories/Files must be labeled public_content_rw_t.
+ftpd_connect_all_unreserved    (off  ,  off)  Determine whether ftpd can connect to all unreserved ports.
+ftpd_connect_db                (off  ,  off)  Determine whether ftpd can connect to databases over the TCP network.
+ftpd_full_access               (off  ,  off)  Determine whether ftpd can login to local users and can read and write all files on the system, governed by DAC.
+ftpd_use_cifs                  (off  ,  off)  Determine whether ftpd can use CIFS used for public file transfer services.
+ftpd_use_fusefs                (off  ,  off)  Allow ftpd to use ntfs/fusefs volumes.
+ftpd_use_nfs                   (off  ,  off)  Determine whether ftpd can use NFS used for public file transfer services.
+ftpd_use_passive_mode          (off  ,  off)  Determine whether ftpd can bind to all unreserved ports for passive mode.
+git_cgi_enable_homedirs        (off  ,  off)  Determine whether Git CGI can search home directories.
+git_cgi_use_cifs               (off  ,  off)  Determine whether Git CGI can access cifs file systems.
+git_cgi_use_nfs                (off  ,  off)  Determine whether Git CGI can access nfs file systems.
+git_session_bind_all_unreserved_ports (off  ,  off)  Determine whether Git session daemon can bind TCP sockets to all unreserved ports.
+git_session_users              (off  ,  off)  Determine whether calling user domains can execute Git daemon in the git_session_t domain.
+git_system_enable_homedirs     (off  ,  off)  Determine whether Git system daemon can search home directories.
+git_system_use_cifs            (off  ,  off)  Determine whether Git system daemon can access cifs file systems.
+git_system_use_nfs             (off  ,  off)  Determine whether Git system daemon can access nfs file systems.
+gitosis_can_sendmail           (off  ,  off)  Determine whether Gitosis can send mail.
+glance_api_can_network         (off  ,  off)  Determine whether glance-api can connect to all TCP ports
+glance_use_execmem             (off  ,  off)  Allow glance domain to use executable memory and executable stack
+glance_use_fusefs              (off  ,  off)  Allow glance domain to manage fuse files
+global_ssp                     (off  ,  off)  Enable reading of urandom for all domains.
+gpg_web_anon_write             (off  ,  off)  Allow gpg web domain to modify public files used for public file transfer services.
+gssd_read_tmp                  (on   ,   on)  Allow gssd to list tmp directories and read the kerberos credential cache.
+guest_exec_content             (on   ,   on)  Allow guest to exec content
+haproxy_connect_any            (off  ,  off)  Determine whether haproxy can connect to all TCP ports.
+httpd_anon_write               (off  ,  off)  Allow Apache to modify public files used for public file transfer services. Directories/Files must be labeled public_content_rw_t.
+httpd_builtin_scripting        (on   ,   on)  Allow httpd to use built in scripting (usually php)
+httpd_can_check_spam           (off  ,  off)  Allow http daemon to check spam
+httpd_can_connect_ftp          (off  ,  off)  Allow httpd to act as a FTP client connecting to the ftp port and ephemeral ports
+httpd_can_connect_ldap         (off  ,  off)  Allow httpd to connect to the ldap port
+httpd_can_connect_mythtv       (off  ,  off)  Allow http daemon to connect to mythtv
+httpd_can_connect_zabbix       (off  ,  off)  Allow http daemon to connect to zabbix
+httpd_can_network_connect      (on   ,  off)  Allow HTTPD scripts and modules to connect to the network using TCP.
+httpd_can_network_connect_cobbler (off  ,  off)  Allow HTTPD scripts and modules to connect to cobbler over the network.
+httpd_can_network_connect_db   (off  ,  off)  Allow HTTPD scripts and modules to connect to databases over the network.
+httpd_can_network_memcache     (off  ,  off)  Allow httpd to connect to memcache server
+httpd_can_network_redis        (off  ,  off)  Allow httpd to connect to redis
+httpd_can_network_relay        (off  ,  off)  Allow httpd to act as a relay
+httpd_can_sendmail             (off  ,  off)  Allow http daemon to send mail
+httpd_dbus_avahi               (off  ,  off)  Allow Apache to communicate with avahi service via dbus
+httpd_dbus_sssd                (off  ,  off)  Allow Apache to communicate with sssd service via dbus
+httpd_dontaudit_search_dirs    (off  ,  off)  Dontaudit Apache to search dirs.
+httpd_enable_cgi               (on   ,   on)  Allow httpd cgi support
+httpd_enable_ftp_server        (off  ,  off)  Allow httpd to act as a FTP server by listening on the ftp port.
+httpd_enable_homedirs          (off  ,  off)  Allow httpd to read home directories
+httpd_execmem                  (off  ,  off)  Allow httpd scripts and modules execmem/execstack
+httpd_graceful_shutdown        (off  ,  off)  Allow HTTPD to connect to port 80 for graceful shutdown
+httpd_manage_ipa               (off  ,  off)  Allow httpd processes to manage IPA content
+httpd_mod_auth_ntlm_winbind    (off  ,  off)  Allow Apache to use mod_auth_ntlm_winbind
+httpd_mod_auth_pam             (off  ,  off)  Allow Apache to use mod_auth_pam
+httpd_read_user_content        (off  ,  off)  Allow httpd to read user content
+httpd_run_ipa                  (off  ,  off)  Allow httpd processes to run IPA helper.
+httpd_run_preupgrade           (off  ,  off)  Allow Apache to run preupgrade
+httpd_run_stickshift           (off  ,  off)  Allow Apache to run in stickshift mode, not transition to passenger
+httpd_serve_cobbler_files      (off  ,  off)  Allow HTTPD scripts and modules to server cobbler files.
+httpd_setrlimit                (off  ,  off)  Allow httpd daemon to change its resource limits
+httpd_ssi_exec                 (off  ,  off)  Allow HTTPD to run SSI executables in the same domain as system CGI scripts.
+httpd_sys_script_anon_write    (off  ,  off)  Allow apache scripts to write to public content, directories/files must be labeled public_rw_content_t.
+httpd_tmp_exec                 (off  ,  off)  Allow Apache to execute tmp content.
+httpd_tty_comm                 (off  ,  off)  Unify HTTPD to communicate with the terminal. Needed for entering the passphrase for certificates at the terminal.
+httpd_unified                  (off  ,  off)  Unify HTTPD handling of all content files.
+httpd_use_cifs                 (off  ,  off)  Allow httpd to access cifs file systems
+httpd_use_fusefs               (off  ,  off)  Allow httpd to access FUSE file systems
+httpd_use_gpg                  (off  ,  off)  Allow httpd to run gpg
+httpd_use_nfs                  (off  ,  off)  Allow httpd to access nfs file systems
+httpd_use_opencryptoki         (off  ,  off)  Allow httpd to use opencryptoki
+httpd_use_openstack            (off  ,  off)  Allow httpd to access openstack ports
+httpd_use_sasl                 (off  ,  off)  Allow httpd to connect to  sasl
+httpd_verify_dns               (off  ,  off)  Allow Apache to query NS records
+icecast_use_any_tcp_ports      (off  ,  off)  Determine whether icecast can listen on and connect to any TCP port.
+init_audit_control             (off  ,  off)  Allow init audit_control capability
+init_create_dirs               (on   ,   on)  Enable init create, setattr, mounton on non_security_file_type
+irc_use_any_tcp_ports          (off  ,  off)  Determine whether irc clients can listen on and connect to any unreserved TCP ports.
+irssi_use_full_network         (off  ,  off)  Allow the Irssi IRC Client to connect to any port, and to bind to any unreserved port.
+kdumpgui_run_bootloader        (off  ,  off)  Allow s-c-kdump to run bootloader in bootloader_t.
+keepalived_connect_any         (off  ,  off)  Determine whether keepalived can connect to all TCP ports.
+kerberos_enabled               (on   ,   on)  Allow confined applications to run with kerberos.
+ksmtuned_use_cifs              (off  ,  off)  Allow ksmtuned to use cifs/Samba file systems
+ksmtuned_use_nfs               (off  ,  off)  Allow ksmtuned to use nfs file systems
+logadm_exec_content            (on   ,   on)  Allow logadm to exec content
+logging_syslogd_append_public_content (off  ,  off)  Allow syslogd daemon append public content files
+logging_syslogd_can_sendmail   (off  ,  off)  Allow syslogd daemon to send mail
+logging_syslogd_list_non_security_dirs (off  ,  off)  Allow syslogd daemon list non security directories
+logging_syslogd_run_nagios_plugins (off  ,  off)  Allow syslogd the ability to call nagios plugins. It is turned on by omprog rsyslog plugin.
+logging_syslogd_run_unconfined (off  ,  off)  Allow syslog to run unconfined scripts
+logging_syslogd_use_tty        (on   ,   on)  Allow syslogd the ability to read/write terminals
+login_console_enabled          (on   ,   on)  Allow logging in and using the system from /dev/console.
+logrotate_read_inside_containers (off  ,  off)  Allow logrotate to read logs inside
+logrotate_use_cifs             (off  ,  off)  Allow logrotate to manage cifs files
+logrotate_use_fusefs           (off  ,  off)  Allow logrotate domain to manage fuse files
+logrotate_use_nfs              (off  ,  off)  Allow logrotate to manage nfs files
+logwatch_can_network_connect_mail (off  ,  off)  Determine whether logwatch can connect to mail over the network.
+lsmd_plugin_connect_any        (off  ,  off)  Determine whether lsmd_plugin can connect to all TCP ports.
+mailman_use_fusefs             (off  ,  off)  Allow mailman to access FUSE file systems
+mcelog_client                  (off  ,  off)  Determine whether mcelog supports client mode.
+mcelog_exec_scripts            (on   ,   on)  Determine whether mcelog can execute scripts.
+mcelog_foreground              (off  ,  off)  Determine whether mcelog can use all the user ttys.
+mcelog_server                  (off  ,  off)  Determine whether mcelog supports server mode.
+minidlna_read_generic_user_content (off  ,  off)  Determine whether minidlna can read generic user content.
+mmap_low_allowed               (off  ,  off)  Control the ability to mmap a low area of the address space, as configured by /proc/sys/vm/mmap_min_addr.
+mock_enable_homedirs           (off  ,  off)  Allow mock to read files in home directories.
+mount_anyfile                  (on   ,   on)  Allow the mount commands to mount any directory or file.
+mozilla_plugin_bind_unreserved_ports (off  ,  off)  Allow mozilla plugin domain to bind unreserved tcp/udp ports.
+mozilla_plugin_can_network_connect (on   ,   on)  Allow mozilla plugin domain to connect to the network using TCP.
+mozilla_plugin_use_bluejeans   (off  ,  off)  Allow mozilla plugin to use Bluejeans.
+mozilla_plugin_use_gps         (off  ,  off)  Allow mozilla plugin to support GPS.
+mozilla_plugin_use_spice       (off  ,  off)  Allow mozilla plugin to support spice protocols.
+mozilla_read_content           (off  ,  off)  Allow confined web browsers to read home directory content
+mpd_enable_homedirs            (off  ,  off)  Determine whether mpd can traverse user home directories.
+mpd_use_cifs                   (off  ,  off)  Determine whether mpd can use cifs file systems.
+mpd_use_nfs                    (off  ,  off)  Determine whether mpd can use nfs file systems.
+mplayer_execstack              (off  ,  off)  Determine whether mplayer can make its stack executable.
+mysql_connect_any              (off  ,  off)  Allow mysqld to connect to all ports
+mysql_connect_http             (off  ,  off)  Allow mysqld to connect to http port
+nagios_run_pnp4nagios          (off  ,  off)  Allow nagios run in conjunction with PNP4Nagios.
+nagios_run_sudo                (off  ,  off)  Allow nagios/nrpe to call sudo from NRPE utils scripts.
+nagios_use_nfs                 (off  ,  off)  Determine whether Nagios, NRPE can access nfs file systems.
+named_tcp_bind_http_port       (off  ,  off)  Determine whether Bind can bind tcp socket to http ports.
+named_write_master_zones       (on   ,   on)  Determine whether Bind can write to master zone files. Generally this is used for dynamic DNS or zone transfers.
+neutron_can_network            (off  ,  off)  Determine whether neutron can connect to all TCP ports
+nfs_export_all_ro              (on   ,   on)  Allow any files/directories to be exported read/only via NFS.
+nfs_export_all_rw              (on   ,   on)  Allow any files/directories to be exported read/write via NFS.
+nfsd_anon_write                (off  ,  off)  Allow nfs servers to modify public files used for public file transfer services.  Files/Directories must be labeled public_content_rw_t.
+nis_enabled                    (off  ,  off)  Allow system to run with NIS
+nscd_use_shm                   (on   ,   on)  Allow confined applications to use nscd shared memory.
+openshift_use_nfs              (off  ,  off)  Allow openshift to access nfs file systems without labels
+openvpn_can_network_connect    (on   ,   on)  Determine whether openvpn can connect to the TCP network.
+openvpn_enable_homedirs        (on   ,   on)  Determine whether openvpn can read generic user home content files.
+openvpn_run_unconfined         (off  ,  off)  Allow openvpn to run unconfined scripts
+pcp_bind_all_unreserved_ports  (off  ,  off)  Allow pcp to bind to all unreserved_ports
+pcp_read_generic_logs          (off  ,  off)  Allow pcp to read generic logs
+pdns_can_network_connect_db    (off  ,  off)  Allow PowerDNS to connect to databases over the network.
+piranha_lvs_can_network_connect (off  ,  off)  Allow piranha-lvs domain to connect to the network using TCP.
+polipo_connect_all_unreserved  (off  ,  off)  Allow polipo to connect to all ports > 1023
+polipo_session_bind_all_unreserved_ports (off  ,  off)  Determine whether Polipo session daemon can bind tcp sockets to all unreserved ports.
+polipo_session_users           (off  ,  off)  Determine whether calling user domains can execute Polipo daemon in the polipo_session_t domain.
+polipo_use_cifs                (off  ,  off)  Determine whether polipo can access cifs file systems.
+polipo_use_nfs                 (off  ,  off)  Determine whether Polipo can access nfs file systems.
+polyinstantiation_enabled      (off  ,  off)  Enable polyinstantiated directory support.
+postfix_local_write_mail_spool (on   ,   on)  Allow postfix_local domain full write access to mail_spool directories
+postgresql_can_rsync           (off  ,  off)  Allow postgresql to use ssh and rsync for point-in-time recovery
+postgresql_selinux_transmit_client_label (off  ,  off)  Allow transmit client label to foreign database
+postgresql_selinux_unconfined_dbadm (on   ,   on)  Allow database admins to execute DML statement
+postgresql_selinux_users_ddl   (on   ,   on)  Allow unprivileged users to execute DDL statement
+pppd_can_insmod                (off  ,  off)  Allow pppd to load kernel modules for certain modems
+pppd_for_user                  (off  ,  off)  Allow pppd to be run for a regular user
+privoxy_connect_any            (on   ,   on)  Determine whether privoxy can connect to all tcp ports.
+prosody_bind_http_port         (off  ,  off)  Permit to prosody to bind apache port. Need to be activated to use BOSH.
+puppetagent_manage_all_files   (off  ,  off)  Allow Puppet client to manage all file types.
+puppetmaster_use_db            (off  ,  off)  Allow Puppet master to use connect to MySQL and PostgreSQL database
+racoon_read_shadow             (off  ,  off)  Allow racoon to read shadow
+radius_use_jit                 (off  ,  off)  Determine whether radius can use JIT compiler.
+redis_enable_notify            (off  ,  off)  Allow Redis to run redis-sentinal notification scripts.
+rpcd_use_fusefs                (off  ,  off)  Allow rpcd_t  to manage fuse files
+rsync_anon_write               (off  ,  off)  Allow rsync to modify public files used for public file transfer services.  Files/Directories must be labeled public_content_rw_t.
+rsync_client                   (off  ,  off)  Allow rsync to run as a client
+rsync_export_all_ro            (off  ,  off)  Allow rsync to export any files/directories read only.
+rsync_full_access              (off  ,  off)  Allow rsync server to manage all files/directories on the system.
+rsync_sys_admin                (off  ,  off)  Allow rsync sys_admin capability. This capability is required to restore files with extended attributes in the "trusted" namespace.
+samba_create_home_dirs         (off  ,  off)  Allow samba to create new home directories (e.g. via PAM)
+samba_domain_controller        (off  ,  off)  Allow samba to act as the domain controller, add users, groups and change passwords.
+samba_enable_home_dirs         (off  ,  off)  Allow samba and winbind-rpcd to share users home directories.
+samba_export_all_ro            (off  ,  off)  Allow samba to share any file/directory read only.
+samba_export_all_rw            (off  ,  off)  Allow samba to share any file/directory read/write.
+samba_load_libgfapi            (off  ,  off)  Allow smbd to load libgfapi from gluster.
+samba_portmapper               (off  ,  off)  Allow samba to act as a portmapper
+samba_run_unconfined           (off  ,  off)  Allow samba to run unconfined scripts
+samba_share_fusefs             (off  ,  off)  Allow samba to export ntfs/fusefs volumes.
+samba_share_nfs                (off  ,  off)  Allow samba to export NFS volumes.
+sanlock_enable_home_dirs       (off  ,  off)  Allow sanlock to read/write user home directories.
+sanlock_use_fusefs             (off  ,  off)  Allow sanlock to read/write fuse files
+sanlock_use_nfs                (off  ,  off)  Allow sanlock to manage nfs files
+sanlock_use_samba              (off  ,  off)  Allow sanlock to manage cifs files
+saslauthd_read_shadow          (off  ,  off)  Allow sasl to read shadow
+secadm_exec_content            (on   ,   on)  Allow secadm to exec content
+secure_mode                    (off  ,  off)  disallow programs, such as newrole, from transitioning to administrative user domains.
+secure_mode_insmod             (off  ,  off)  Disable kernel module loading.
+secure_mode_policyload         (off  ,  off)  Boolean to determine whether the system permits loading policy, setting enforcing mode, and changing boolean values.  Set this to true and you have to reboot to set it back.
+selinuxuser_direct_dri_enabled (on   ,   on)  Allow regular users direct dri device access
+selinuxuser_execheap           (off  ,  off)  Allow unconfined executables to make their heap memory executable.  Doing this is a really bad idea. Probably indicates a badly coded executable, but could indicate an attack. This executable should be reported in bugzilla
+selinuxuser_execmod            (on   ,   on)  Allow all unconfined executables to use libraries requiring text relocation that are not labeled textrel_shlib_t
+selinuxuser_execstack          (on   ,   on)  Allow unconfined executables to make their stack executable.  This should never, ever be necessary. Probably indicates a badly coded executable, but could indicate an attack. This executable should be reported in bugzilla
+selinuxuser_mysql_connect_enabled (off  ,  off)  Allow users to connect to the local mysql server
+selinuxuser_ping               (on   ,   on)  Allow confined users the ability to execute the ping and traceroute commands.
+selinuxuser_postgresql_connect_enabled (off  ,  off)  Allow users to connect to PostgreSQL
+selinuxuser_rw_noexattrfile    (on   ,   on)  Allow user to r/w files on filesystems that do not have extended attributes (FAT, CDROM, FLOPPY)
+selinuxuser_share_music        (off  ,  off)  Allow user music sharing
+selinuxuser_tcp_server         (off  ,  off)  Allow users to run TCP servers (bind to ports and accept connection from the same domain and outside users)  disabling this forces FTP passive mode and may change other protocols.
+selinuxuser_udp_server         (off  ,  off)  Allow users to run UDP servers (bind to ports and accept connection from the same domain and outside users)  disabling this may break avahi discovering services on the network and other udp related services.
+selinuxuser_use_ssh_chroot     (off  ,  off)  Allow user  to use ssh chroot environment.
+sge_domain_can_network_connect (off  ,  off)  Allow sge to connect to the network using any TCP port
+sge_use_nfs                    (off  ,  off)  Allow sge to access nfs file systems.
+smartmon_3ware                 (off  ,  off)  Determine whether smartmon can support devices on 3ware controllers.
+smbd_anon_write                (off  ,  off)  Allow samba to modify public files used for public file transfer services.  Files/Directories must be labeled public_content_rw_t.
+spamassassin_can_network       (off  ,  off)  Allow user spamassassin clients to use the network.
+spamd_enable_home_dirs         (on   ,   on)  Allow spamd to read/write user home directories.
+spamd_update_can_network       (off  ,  off)  Allow spamd_update to connect to all ports.
+squid_connect_any              (on   ,   on)  Determine whether squid can connect to all TCP ports.
+squid_use_tproxy               (off  ,  off)  Determine whether squid can run as a transparent proxy.
+ssh_chroot_rw_homedirs         (off  ,  off)  allow ssh with chroot env to read and write files in the user home directories
+ssh_keysign                    (off  ,  off)  allow host key based authentication
+ssh_sysadm_login               (off  ,  off)  Allow ssh logins as sysadm_r:sysadm_t
+ssh_use_tcpd                   (off  ,  off)  Allow sshd to use tcp wrappers
+sshd_launch_containers         (off  ,  off)  Determine whether sshd can launch container engines
+sslh_can_bind_any_port         (off  ,  off)  Determine whether sslh can listen on any tcp port or if it is restricted to the standard http.
+sslh_can_connect_any_port      (off  ,  off)  Determine whether sslh can connect to any tcp port or if it is restricted to the standard http, openvpn and jabber ports.
+sssd_access_kernel_keys        (off  ,  off)  Allow sssd read, view, and write access to kernel keys with kernel_t type
+sssd_connect_all_unreserved_ports (off  ,  off)  Allow sssd connect to all unreserved ports
+staff_exec_content             (on   ,   on)  Allow staff to exec content
+staff_use_svirt                (off  ,  off)  allow staff user to create and transition to svirt domains.
+swift_can_network              (off  ,  off)  Determine whether swift can connect to all TCP ports
+sysadm_exec_content            (on   ,   on)  Allow sysadm to exec content
+systemd_socket_proxyd_bind_any (off  ,  off)  Allow systemd-socket-proxyd to bind any port instead of one labelled with systemd_socket_proxyd_port_t.
+systemd_socket_proxyd_connect_any (off  ,  off)  Allow systemd-socket-proxyd to connect to any port instead of labelled ones.
+telepathy_connect_all_ports    (off  ,  off)  Allow the Telepathy connection managers to connect to any network port.
+telepathy_tcp_connect_generic_network_ports (on   ,   on)  Allow the Telepathy connection managers to connect to any generic TCP port.
+tftp_anon_write                (off  ,  off)  Allow tftp to modify public files used for public file transfer services.
+tftp_home_dir                  (off  ,  off)  Allow tftp to read and write files in the user home directories
+tmpreaper_use_cifs             (off  ,  off)  Determine whether tmpreaper can use cifs file systems.
+tmpreaper_use_nfs              (off  ,  off)  Determine whether tmpreaper can use nfs file systems.
+tmpreaper_use_samba            (off  ,  off)  Determine whether tmpreaper can use samba_share files
+tomcat_can_network_connect_db  (off  ,  off)  Allow tomcat to connect to databases over the network.
+tomcat_read_rpm_db             (off  ,  off)  Allow tomcat to read rpm database.
+tomcat_use_execmem             (off  ,  off)  Allow tomcat to use executable memory and executable stack
+tor_bind_all_unreserved_ports  (off  ,  off)  Determine whether tor can bind tcp sockets to all unreserved ports.
+tor_can_network_relay          (off  ,  off)  Allow tor to act as a relay
+tor_can_onion_services         (off  ,  off)  Allow tor to run onion services
+unconfined_chrome_sandbox_transition (on   ,   on)  allow unconfined users to transition to the chrome sandbox domains when running chrome-sandbox
+unconfined_dyntrans_all        (off  ,  off)  Allow a unconfined user to dynamically transition to a new context using setcon.
+unconfined_login               (on   ,   on)  Allow a user to login as an unconfined domain
+unconfined_mozilla_plugin_transition (on   ,   on)  Allow unconfined users to transition to the Mozilla plugin domain when running xulrunner plugin-container.
+unprivuser_use_svirt           (off  ,  off)  Allow unprivileged user to create and transition to svirt domains.
+use_ecryptfs_home_dirs         (off  ,  off)  Support ecryptfs home directories
+use_fusefs_home_dirs           (off  ,  off)  Support fusefs home directories
+use_lpd_server                 (off  ,  off)  Determine whether to support lpd server.
+use_nfs_home_dirs              (off  ,  off)  Support NFS home directories
+use_samba_home_dirs            (off  ,  off)  Support SAMBA home directories
+use_virtualbox                 (off  ,  off)  Allow create vbox modules during startup new kernel.
+user_exec_content              (on   ,   on)  Allow user to exec content
+user_t_run_containers          (off  ,  off)  Allow user to t run containers
+varnishd_connect_any           (off  ,  off)  Determine whether varnishd can use the full TCP network.
+virt_lockd_blk_devs            (off  ,  off)  Allow virtlockd read and lock block devices.
+virt_qemu_ga_read_nonsecurity_files (off  ,  off)  Allow qemu-ga read all non-security file types.
+virt_qemu_ga_run_unconfined    (off  ,  off)  Allow qemu-ga to run unconfined scripts
+virt_read_qemu_ga_data         (off  ,  off)  Allow qemu-ga to read qemu-ga date.
+virt_rw_qemu_ga_data           (off  ,  off)  Allow qemu-ga to manage qemu-ga date.
+virt_sandbox_share_apache_content (off  ,  off)  Allow sandbox containers to share apache content
+virt_sandbox_use_all_caps      (on   ,   on)  Allow sandbox containers to use all capabilities
+virt_sandbox_use_audit         (on   ,   on)  Allow sandbox containers to send audit messages
+virt_sandbox_use_fusefs        (off  ,  off)  Allow sandbox containers manage fuse files
+virt_sandbox_use_mknod         (off  ,  off)  Allow sandbox containers to use mknod system calls
+virt_sandbox_use_netlink       (off  ,  off)  Allow sandbox containers to use netlink system calls
+virt_sandbox_use_sys_admin     (off  ,  off)  Allow sandbox containers to use sys_admin system calls, for example mount
+virt_transition_userdomain     (off  ,  off)  Allow virtual processes to run as userdomains
+virt_use_comm                  (off  ,  off)  Allow confined virtual guests to use serial/parallel communication ports
+virt_use_execmem               (off  ,  off)  Allow confined virtual guests to use executable memory and executable stack
+virt_use_fusefs                (off  ,  off)  Allow confined virtual guests to read fuse files
+virt_use_glusterd              (off  ,  off)  Allow confined virtual guests to use glusterd
+virt_use_nfs                   (on   ,   on)  Allow confined virtual guests to manage nfs files
+virt_use_pcscd                 (off  ,  off)  Allow confined virtual guests to use smartcards
+virt_use_rawip                 (off  ,  off)  Allow confined virtual guests to interact with rawip sockets
+virt_use_samba                 (off  ,  off)  Allow confined virtual guests to manage cifs files
+virt_use_sanlock               (off  ,  off)  Allow confined virtual guests to interact with the sanlock
+virt_use_usb                   (on   ,   on)  Allow confined virtual guests to use usb devices
+virt_use_xserver               (off  ,  off)  Allow confined virtual guests to interact with the xserver
+webadm_manage_user_files       (off  ,  off)  Determine whether webadm can manage generic user files.
+webadm_read_user_files         (off  ,  off)  Determine whether webadm can read generic user files.
+wine_mmap_zero_ignore          (off  ,  off)  Determine whether attempts by wine to mmap low regions should be silently blocked.
+xdm_bind_vnc_tcp_port          (off  ,  off)  Allows xdm_t to bind on vnc_port_t(5910)
+xdm_exec_bootloader            (off  ,  off)  Allow the graphical login program to execute bootloader
+xdm_manage_bootloader          (on   ,   on)  Allow the graphical login program to create, read, write, and delete files in the /boot director and DOS filesystem.
+xdm_sysadm_login               (off  ,  off)  Allow the graphical login program to login directly as sysadm_r:sysadm_t
+xdm_write_home                 (off  ,  off)  Allow the graphical login program to create files in HOME dirs as xdm_home_t.
+xen_use_nfs                    (off  ,  off)  Allow xen to manage nfs files
+xend_run_blktap                (on   ,   on)  Allow xend to run blktapctrl/tapdisk. Not required if using dedicated logical volumes for disk images.
+xend_run_qemu                  (on   ,   on)  Allow xend to run qemu-dm. Not required if using paravirt and no vfb.
+xguest_connect_network         (on   ,   on)  Allow xguest users to configure Network Manager and connect to apache ports
+xguest_exec_content            (on   ,   on)  Allow xguest to exec content
+xguest_mount_media             (on   ,   on)  Allow xguest users to mount removable media
+xguest_use_bluetooth           (on   ,   on)  Allow xguest to use blue tooth devices
+xserver_clients_write_xshm     (off  ,  off)  Allows clients to write to the X server shared memory segments.
+xserver_execmem                (off  ,  off)  Allows XServer to execute writable memory
+xserver_object_manager         (off  ,  off)  Support X userspace object manager
+zabbix_can_network             (off  ,  off)  Determine whether zabbix can connect to all TCP ports
+zabbix_run_sudo                (off  ,  off)  Allow Zabbix to run su/sudo.
+zarafa_setrlimit               (off  ,  off)  Allow zarafa domains to setrlimit/sys_resource.
+zebra_write_config             (off  ,  off)  Allow zebra daemon to write it configuration files
+zoneminder_anon_write          (off  ,  off)  Allow ZoneMinder to modify public files used for public file transfer services.
+zoneminder_run_sudo            (off  ,  off)  Allow ZoneMinder to run su/sudo.

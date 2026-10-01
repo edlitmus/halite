@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **95 execution modules / 663 functions** and **50 state
-modules / 135 functions**.
+The build ships **96 execution modules / 682 functions** and **51 state
+modules / 142 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-50 of 56 present, plus `defaults` and `kmod`, which the section does not list.
+51 of 56 present, plus `defaults` and `kmod`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -441,7 +441,7 @@ different reason is given.
 | `dnsutil` | implemented | 5 | `A` and `AAAA` carry Salt's capitals, because they are record types, and each answers with one address family. `parse_hosts`, `hosts_append` and `hosts_remove` are Salt's three hosts functions. This shipped `dnsutil.a` and a `hosts_file` Salt has never had -- both names no tree could call (5.94, 5.96) |
 | `environ` | implemented | 6 | `setval` and `setenv` write the agent's own environment, and with `permanent` the place the platform keeps it: `/etc/environment` on a unix, the environment key of the registry on Windows. `persisted` reads that store back |
 | `event` | implemented | 1 | local only until the hub exists |
-| `file` | implemented | 46 | `patch` runs the system patch with `--forward`, because left to itself it reverses an already-applied patch and exits 0; `sed` is done in Go rather than by an editor, and its `limit` is a real per-line filter; `list_backups` and `restore_backup` read the cache a state fills with `backup: node` |
+| `file` | implemented | 48 | `get_selinux_context` and `set_selinux_context` arrived with `selinux` (5.183); `patch` runs the system patch with `--forward`, because left to itself it reverses an already-applied patch and exits 0; `sed` is done in Go rather than by an editor, and its `limit` is a real per-line filter; `list_backups` and `restore_backup` read the cache a state fills with `backup: node` |
 | `git` | implemented | 5 | through the system `git` binary |
 | `grains` | implemented | 7 | |
 | `group` | implemented | 1 | |
@@ -482,7 +482,7 @@ different reason is given.
 | `ps` | implemented | 7 | reads through the system `ps`, and FreeBSD's own libxo JSON where there is one; `kvm` is C and `sysctl kern.proc` needs golang.org/x/sys, so neither was reachable under SPEC 4.2. `pkill` refuses a pattern matching nothing, because that is a misspelling far more often than a tidy machine |
 | `reboot` | implemented | 5 | `required`, `scheduled`, `last_boot`, `schedule` and `cancel` — the layer above the immediate verbs, for a tree that wants a reboot it can countermand. `required` has a different answer on every platform and says which it used: FreeBSD compares `freebsd-version -k` against `-r`, Debian and Ubuntu read `/run/reboot-required`, and anywhere else it returns "this build cannot tell" rather than `false`. `uname -r` is used for none of it, because on the FreeBSD development host it reports the Linux compatibility layer's number. `schedule` has no zero delay: an immediate reboot is `system.reboot`, a different function on purpose. **`cancel` is not one command on both platforms** — Linux cancels with `shutdown -c`, and on FreeBSD that flag *power cycles the machine*, so the pending shutdown is found in the process table and sent SIGTERM, which is what FreeBSD's own shutdown(8) documents (5.73) |
 | `schedule` | implemented | 12 | `list` and `show_next_fire_time` answer from the configuration; the ten that change a running node's schedule name the phase they arrive in |
-| `selinux` | not implemented | 0 | Linux only. A Red Hat machine can now be raised on demand -- `make lab-up LAB_DISTROS='["rocky9"]'`, contrib/tofu -- so this waits on the work rather than on a host |
+| `selinux` | implemented | 17 | Linux only, through policycoreutils and selinuxfs, built against Rocky 9.8 and AlmaLinux 8.10 (5.183). The running mode only: `setenforce` never writes /etc/selinux/config, so it cannot disable SELinux. A port's type is answered from the local rules first, because the full listing keeps the policy's row after a local rule moves the port, which is where Salt's `port_get_policy` goes wrong. The relabel check and the relabel both use `restorecon -F`. Module install, remove and enable/disable, and fcontext equivalence, are not built |
 | `shadow` | implemented | 12 | Linux only. Reads /etc/shadow through the parser `user.present` uses and writes through `chage`, `passwd` and `chpasswd`; every function reads its column back rather than trusting an exit status, because Debian's `usermod -U` exits 0 while refusing. FreeBSD is refused by name (5.180) |
 | `state` | not implemented | 0 | reachable as `halite-node state`, not as a callable module function |
 | `sudo` | implemented | 4 | `validate` runs the real `visudo -c` over a file that is not yet installed, which is the function the rest exist for; `path` asks `sudo -V` and falls back to the platform convention saying which route it took; plus `version` and `list`. No sudoers parser is written here (5.72). Salt's `sudo.salt_call` is deliberately absent: `cmd.run` already takes a `runas` |
@@ -494,7 +494,7 @@ different reason is given.
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-39 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
+40 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -538,7 +538,7 @@ different reason is given.
 | `pro` | not implemented | 0 | Ubuntu only |
 | `reboot` | implemented | 1 | `scheduled`, which ensures a reboot is pending on a node that needs one. It defaults to scheduling only where `reboot.required` says one is needed; turning that off schedules a reboot on every node the state reaches, and the parameter's own documentation says so |
 | `schedule` | implemented | 2 | present and absent; absent now persists, which it did not before 
-| `selinux` | not implemented | 0 | Linux only |
+| `selinux` | implemented | 7 | `mode`, `boolean`, `fcontext_policy_present`/`absent`/`applied`, `port_policy_present`/`absent`. `mode` sets the running mode only and refuses one /etc/selinux/config disagrees with, rather than report converged on a node that changes back at boot. The `absent` states remove local rules and refuse the policy's own, which semanage cannot delete. The `module*` states are not built (5.183) |
 | `ssh_known_hosts` | implemented | 2 | present and absent; a key is either declared outright or scanned and checked against a declared fingerprint, and trust on first use is refused by name rather than performed silently |
 | `sudo` | not implemented | 0 | |
 | `timezone` | implemented | 1 | `system`; a zone the node does not have is refused in test mode, where the tool would never run to say so |
@@ -17418,7 +17418,6 @@ was the working tree's path before and after. **Not verified:** any of
 these targets actually *run* under BSD make — beastie has no Docker — and
 GNU make 4.x, whose `CURDIR` is the same built-in as 3.81's.
 
-
 ### 5.180 `shadow`: Salt's Linux shadow module, on two EL hosts and a Debian one
 
 SPEC 15.2 names `shadow` and plan.md §2.2 kept it last, on the reasoning that it
@@ -17654,7 +17653,6 @@ The `TestLiveLocale*` tests are in no CI leg. `fleet.yml`'s linux leg runs the
 whole conformance harness, so the `locale.system` case will run on its Ubuntu
 runner and `locale.present` will skip there (it runs only where rpm and dnf or
 yum are both present); neither had run there when this was written.
-
 ### 5.182 `user.present`'s `password:` could write a second account's record
 
 Found while building `shadow` (5.180), which refuses it for its own
@@ -17679,6 +17677,123 @@ cases before the change — on Linux it showed the record chpasswd would have
 received, `alice:<hash>\nroot:<hash>` — and passes after; an ordinary hash
 is still accepted on both platforms. **Not verified:** on a real chpasswd
 or pw, deliberately — the point is that the command is never built.
+### 5.183 `selinux`: built against two enforcing policies, and the running mode only
+
+§2.2 listed `selinux` as missing from both 15.2 and 15.5, and §2.4 held
+`file.get_selinux_context`/`set_selinux_context` back for the same host.
+All three are built now, against Rocky Linux 9.8 (policycoreutils 3.6) and
+AlmaLinux 8.10 (policycoreutils 2.9), both enforcing the targeted policy,
+reached as root over SSH. Seventeen execution functions under Salt's names,
+seven states, and the file pair. Every parser reads output captured there,
+under `internal/builtin/testdata/selinux`.
+
+**EL8 and EL9 print the same formats.** That was the expectation to test,
+not to assume: `semanage boolean|fcontext|port -l`, their `-C` forms,
+`semodule -lfull` and restorecon's lines were compared between the hosts,
+and what differs is content -- 364 booleans against 350, 441 policy modules
+against 421, `cockpit` at two priorities on Alma only -- plus restorecon
+`-R`'s order of traversal and the Python wording of one error. semodule's
+rebuild took 12 s on Rocky and 42 s on Alma, which is why Alma's runs are
+three times as long.
+
+What the captures found, each now a line of code with the capture beside it:
+
+- **The full port listing keeps the policy's row after a local rule moves
+  a port.** With tcp/8080 changed to `http_port_t`, `semanage port -l`
+  lists 8080 under `http_cache_port_t` *and* `http_port_t`, on both hosts.
+  Only `-C` says which is in force. Salt's `port_get_policy` greps the full
+  listing, so after such a change `port_policy_present` for the old type
+  reports a rule in place that is not. Here `-C` answers first.
+- **The full fcontext listing does not do that.** A local rule over the
+  policy's `/vicepa` *replaces* its row. So the full listing is the
+  effective set for file contexts, and `-C` is consulted only to know what
+  can be deleted. The two listings behave differently and the code says so
+  in two comments, not one.
+- **semanage stores a specification verbatim and accepts specifications
+  that can never match.** `relative/path`, `/srv/x/` and `/srv//x` all go
+  in with exit 0. With `/srv/halite-ts/` added, `matchpathcon
+  /srv/halite-ts` still answered `var_t`. A rule is therefore found by
+  exact comparison in semanage's own spelling (5.31's lesson; here the
+  caller's spelling and the tool's are the same string), and the relative
+  and trailing-slash forms are refused before semanage sees them. `//` is
+  not refused: whether it matches was not tested.
+- **`semanage ... -a` over an existing rule modifies it** ("already
+  defined, modifying instead", exit 0), for fcontext and port alike, on
+  both releases. The module uses `-m` for a local rule anyway and `-a`
+  otherwise. Both paths were driven.
+- **`setsebool -P` leaves a local record behind when it sets a boolean back
+  to its default.** After `-P on` then `-P off`, `semanage boolean -l -C`
+  lists `httpd_can_network_connect (off, off)`, and semanage has only
+  `--deleteall` to remove it. The live suite removes the one record through
+  `seobject.booleanRecords().delete`, which is what semanage itself calls,
+  and only if it was not there before.
+- **Salt's `fcontext_apply_policy` cannot see what it changed.** It parses
+  `restorecon reset (.*) context (.*)->(.*)`, the pre-2.7 spelling. Both
+  hosts print `Relabeled <path> from <ctx> to <ctx>` and, under `-n`,
+  `Would relabel ...`. Salt's check and its relabel also disagree: the
+  check runs `restorecon -n -v` and the relabel `restorecon -v -F`, and
+  without `-F` restorecon leaves user and level alone. A file `chcon -u
+  user_u`'d is "applied" to Salt's check and changed by its relabel. Here
+  both use `-F`.
+- **`setsebool a=on nosuch=on` is atomic**: exit 255 and neither is set.
+  Names are checked against the listing first anyway.
+- **On Debian 13 there is no `/sys/fs/selinux` at all**, and `stat -c %C`
+  prints `?` and exits 1. `file.get_selinux_context` errors there, where
+  Salt returns "No selinux context information is available" in place of a
+  context.
+
+#### The running mode only
+
+Salt's `setenforce` writes `/sys/fs/selinux/enforce` *and* rewrites the
+`SELINUX=` line of `/etc/selinux/config`; `selinux.mode` inherits both.
+Here neither function writes that file. A config write is judged at the
+next boot, which is exactly the run nobody is watching, and the hosts this
+was built on are reached over SSH and shared. So `setenforce` is the
+runtime half, `disabled` is refused, and **`selinux.mode` refuses a mode
+the config disagrees with** -- before changing anything -- rather than
+report converged on a node that changes back at boot. Its conformance case
+therefore runs in the one direction that can be converged safely: Setup
+makes the node Permissive, and the state makes it Enforcing to match the
+config.
+
+#### What ran, and what breaking it showed
+
+`TestLiveSelinux*` and the seven conformance cases passed on both hosts.
+The live suite checks each read against a second tool (getenforce,
+sestatus, getsebool -a, semodule -l, matchpathcon, ls -Z), and drives every
+mutating function through test mode, a real change and a second no-op.
+A guard snapshots the `-C` listings, the boolean and the mode before, and
+compares after; they matched on both hosts. On Debian 13 every
+`TestLiveSelinux*` but one skipped with the reason, and that one,
+`TestLiveSelinuxRefusesWhereThereIsNone`, passed.
+
+Broken on purpose, each failed:
+
+1. The full port listing answering before `-C`, as Salt's does: the
+   override of tcp/8080 failed its own read-back. Both hosts.
+2. The relabel check without `-F`: a user-only drift went unseen. Both.
+3. `persist` ignoring the policy store's value: the boolean test's four
+   persistent assertions failed. Both.
+4. `selinux.mode` not consulting the config: it reported Permissive as
+   converged with the config saying enforcing. Both.
+5. Exec test mode acting in `fcontext_add_policy`: "test mode added the
+   rule". Both.
+6. The port test's final delete of tcp/18999 dropped: its own "local port
+   rules left" assertion. Both.
+7. That, with the test's cleanup and assertion also dropped: the guard
+   reported the host was not put back. Rocky 9 only; the rule was removed
+   by hand afterwards.
+
+**Not verified:** any write to `/etc/selinux/config`; `semodule`
+install, remove, enable or disable (not built; the disabled row of
+`semodule -lfull` was captured by disabling and re-enabling `zabbix` by
+hand); fcontext equivalence rules (not built); file types other than
+all-files, `d` and `f` passed to `-f`, though all eight were parsed from the
+listing; `sel_range` on ports, `sel_level` on fcontext rules, and chcon's
+`-r` and `-l`; sctp and dccp ports, which are refused; the MLS policy; and
+any policycoreutils older than 2.9 or newer than 3.6.
+
+
 
 ## 6. Everything else not started
 

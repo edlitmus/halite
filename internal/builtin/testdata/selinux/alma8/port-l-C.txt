@@ -1,0 +1,4 @@
+SELinux Port Type              Proto    Port Number
+
+http_port_t                    tcp      18999, 18990-18995, 8080
+http_port_t                    udp      18999
