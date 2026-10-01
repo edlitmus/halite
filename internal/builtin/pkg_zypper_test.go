@@ -41,7 +41,16 @@ type zypperFixtureRunner struct {
 
 func zypperFixture(t *testing.T, name, part string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "zypper", "leap16", name+"."+part))
+	return capturedFixture(t, zypperFixtureDir, name, part)
+}
+
+var zypperFixtureDir = filepath.Join("testdata", "zypper", "leap16")
+
+// capturedFixture is one part (argv, stdout, stderr, exit) of a command
+// captured under dir.
+func capturedFixture(t *testing.T, dir, name, part string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, name+"."+part))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,19 +62,26 @@ func zypperFixture(t *testing.T, name, part string) string {
 // two different scenarios and cannot share one runner.
 func newZypperRunner(t *testing.T, names ...string) *zypperFixtureRunner {
 	t.Helper()
+	return newCapturedRunner(t, zypperFixtureDir, names...)
+}
+
+// newCapturedRunner is newZypperRunner for the fixtures under any dir
+// laid out the same way.
+func newCapturedRunner(t *testing.T, dir string, names ...string) *zypperFixtureRunner {
+	t.Helper()
 	r := &zypperFixtureRunner{t: t, results: map[string]exec.Result{}}
 	for _, n := range names {
-		argv := strings.TrimSpace(zypperFixture(t, n, "argv"))
+		argv := strings.TrimSpace(capturedFixture(t, dir, n, "argv"))
 		if _, dup := r.results[argv]; dup {
 			t.Fatalf("two fixtures answer %q", argv)
 		}
-		code, err := strconv.Atoi(strings.TrimSpace(zypperFixture(t, n, "exit")))
+		code, err := strconv.Atoi(strings.TrimSpace(capturedFixture(t, dir, n, "exit")))
 		if err != nil {
 			t.Fatal(err)
 		}
 		r.results[argv] = exec.Result{
-			Stdout: zypperFixture(t, n, "stdout"),
-			Stderr: zypperFixture(t, n, "stderr"),
+			Stdout: capturedFixture(t, dir, n, "stdout"),
+			Stderr: capturedFixture(t, dir, n, "stderr"),
 			Code:   code,
 		}
 	}

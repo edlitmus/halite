@@ -29,8 +29,11 @@ Every `pkg` function on macOS failed on a real node: the node runs as
 root, Homebrew refuses root, and brew was run as root. It now runs as the
 account that owns the `brew` binary, from that account's home. A state's
 `runas` still wins, and a Homebrew owned by root is refused by name.
-`pkg.list_pkgs` (and so `pkg.installed`) can still fail on a Mac with a
-half-removed cask; that is a separate fix.
+`pkg.list_pkgs` (and so `pkg.installed`) no longer fails on a Mac with a
+cask Homebrew cannot load: brew left such a cask out of its own listing
+and then failed the listing anyway, and the provider now asks brew the
+question that does not. The version reported for a formula is the
+linked one, which is the one on the PATH.
 
 ### A `kernelpkg` module and its three states
 

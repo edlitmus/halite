@@ -471,23 +471,111 @@ func (brewProvider) Name() string { return "mac_brew_pkg" }
 
 func (brewProvider) Available(c *exec.Context) bool { return c.Which("brew") != "" }
 
+// ListPkgs reads `brew info --json=v2 --installed`, not `brew list
+// --versions`, because the list fails as a whole on one cask Homebrew
+// cannot load.
+//
+// Measured on a Mac with Homebrew 7.0.7 and 18 Caskroom entries, four of
+// which brew itself calls "not installed" -- three holding only
+// `.metadata`, one whose cask definition no longer loads. `brew list
+// --versions` printed the 389 formulae, then `Error: Cask 'kiro-cli' is
+// not installed.` and exit 1; `brew list --cask --versions` printed
+// nothing at all, so the 13 healthy casks were lost with the broken one.
+// The provider failed on the exit, so `pkg.list_pkgs`, and every
+// `pkg.installed` that reads it first, failed on that machine for a cask
+// nobody had asked about. DIVERGENCE 5.189.
+//
+// `info --installed` enumerates through Homebrew's Caskroom.casks, which
+// skips a cask it cannot load ("Don't blow up because of a single
+// unavailable cask", cask/caskroom.rb) and keeps the ones it considers
+// installed. That is brew's own answer to "which casks are installed",
+// so a broken entry is left out here for the reason brew leaves it out,
+// not because this provider chose to look away. It answered 389 formulae
+// and 13 casks, exit 0, on the same machine.
 func (brewProvider) ListPkgs(c *exec.Context) (*value.Map, error) {
-	res, err := brewRun(c, exec.Command{Argv: []string{"brew", "list", "--versions"}})
+	res, err := brewRun(c, exec.Command{Argv: []string{"brew", "info", "--json=v2", "--installed"}})
 	if err != nil {
 		return nil, err
 	}
+	return parseBrewInstalled(res.Stdout)
+}
+
+// parseBrewInstalled turns `brew info --json=v2 --installed` into name ->
+// version.
+//
+// A formula's version is the one that is **linked**, which is the one on
+// the PATH, and the newest installed when none is (a keg-only formula, or
+// one unlinked by hand). Not the newest outright: this Mac has fish
+// 4.0b1 linked beside 4.6.0, and `fish` there is 4.0b1. `installed` is
+// sorted by Homebrew's own version order (`sort_by(&:scheme_and_version)`
+// in formula.rb), so its last entry is the newest by brew's rules rather
+// than this file's. The `brew list --versions` this replaces printed kegs
+// in directory order -- `fish 4.6.0 4.0b1` -- and its parser took the
+// last field, which happened to be right for fish and was documented as
+// "oldest first", which it is not. On the capture this was checked
+// against, the two agree for all 389 formulae.
+//
+// Names are the short `name` and cask `token`, which is what `brew list`
+// printed and so what every existing state already declares. A cask is
+// set after the formulae, so a name that is both is reported at the
+// cask's version, as the list's last line used to win.
+func parseBrewInstalled(stdout string) (*value.Map, error) {
+	v, err := value.DecodeJSON([]byte(stdout))
+	if err != nil {
+		return nil, fmt.Errorf("brew info --json=v2 --installed: %w", err)
+	}
+	doc, ok := v.(*value.Map)
+	if !ok {
+		return nil, fmt.Errorf("brew info --json=v2 --installed: top level is %s, not an object", value.TypeName(v))
+	}
 	out := value.NewMap(256)
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
+	formulae, _ := doc.Get("formulae")
+	for _, item := range asList(formulae) {
+		f, ok := item.(*value.Map)
+		if !ok {
 			continue
 		}
-		// Homebrew can have more than one version of a formula on disk at
-		// once, listed oldest first; only one is ever linked as current,
-		// and the last field is that newest one.
-		out.Set(fields[0], fields[len(fields)-1])
+		name := brewString(f, "name")
+		version := brewString(f, "linked_keg")
+		if version == "" {
+			installed, _ := f.Get("installed")
+			if kegs := asList(installed); len(kegs) > 0 {
+				if last, ok := kegs[len(kegs)-1].(*value.Map); ok {
+					version = brewString(last, "version")
+				}
+			}
+		}
+		if name != "" && version != "" {
+			out.Set(name, version)
+		}
+	}
+	casks, _ := doc.Get("casks")
+	for _, item := range asList(casks) {
+		k, ok := item.(*value.Map)
+		if !ok {
+			continue
+		}
+		if token, version := brewString(k, "token"), brewString(k, "installed"); token != "" && version != "" {
+			out.Set(token, version)
+		}
 	}
 	return out, nil
+}
+
+// brewString is a string field of a brew JSON object, or "" when it is
+// absent or null -- `linked_keg` is null for a keg-only formula.
+func brewString(m *value.Map, key string) string {
+	v, ok := m.Get(key)
+	if !ok || v == nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+func asList(v any) []any {
+	l, _ := v.([]any)
+	return l
 }
 
 func (brewProvider) Install(c *exec.Context, names []string, versions map[string]string, refresh bool) error {

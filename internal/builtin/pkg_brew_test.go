@@ -3,6 +3,7 @@ package builtin
 import (
 	"errors"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -150,5 +151,105 @@ func TestBrewOwnedByRootIsRefusedBeforeRunning(t *testing.T) {
 	}
 	if len(r.Ran) != 0 {
 		t.Errorf("ran %v after refusing", r.RanCommands())
+	}
+}
+
+// Every fixture under testdata/brew/macos26 was captured on 2026-10-01 on
+// macOS 26.7.1 (arm64) with Homebrew 7.0.7, as the account that owns it,
+// by a script that saved each command's argv, stdout, stderr and exit
+// status. That Mac had 389 formulae and 18 Caskroom entries, four of
+// which Homebrew calls "not installed" (DIVERGENCE 5.189).
+//
+// Both are cut down from the capture, mechanically, because the full
+// listing names everything installed on somebody's machine, internal
+// taps included, and is 1.7 MB. info-installed.stdout is
+//
+//	jq '{formulae: [.formulae[] | select(.full_name as $n | ["fish-shell/fish-beta-4/fish","glib","readline","curl","icu4c@78","jq","hashicorp/tap/boundary"] | index([$n]))], casks: [.casks[] | select(.token as $t | ["goreleaser","1password-cli","chatgpt"] | index([$t]))]}'
+//
+// -- whole entries, unedited, chosen for two formulae with two versions
+// installed (fish, whose linked one is the older; glib), one with two and
+// neither linked (readline), two keg-only (curl, icu4c@78), two from taps,
+// and three casks, one from a tap. list-versions.stdout is the same
+// formulae's lines from `brew list --versions`; its exit status and
+// stderr are as captured, which is the failure.
+var brewFixtureDir = filepath.Join("testdata", "brew", "macos26")
+
+func brewFixtureCtx(t *testing.T) *exec.Context {
+	t.Helper()
+	old := brewEuid
+	t.Cleanup(func() { brewEuid = old })
+	brewEuid = func() int { return 501 }
+	c := newCtx(false)
+	c.Grains = value.MapOf("os", "MacOS", "os_family", "MacOS")
+	c.Lookup = func(name string) string {
+		if name == "brew" {
+			return "/opt/homebrew/bin/brew"
+		}
+		return ""
+	}
+	c.Runner = newCapturedRunner(t, brewFixtureDir, "info-installed", "list-versions")
+	return c
+}
+
+// The defect: one cask Homebrew cannot load made `brew list --versions`
+// exit 1, and the provider failed with it. The listing must come back,
+// formulae and casks both.
+func TestBrewListPkgsSurvivesACaskBrewCannotLoad(t *testing.T) {
+	c := brewFixtureCtx(t)
+	got, err := (brewProvider{}).ListPkgs(c)
+	if err != nil {
+		t.Fatalf("ListPkgs: %v", err)
+	}
+	want := map[string]string{
+		"fish":     "4.0b1", // linked, and older than the 4.6.0 beside it
+		"glib":     "2.90.0",
+		"readline": "8.3.6", // two installed, neither linked: the newest
+		"curl":     "8.22.0",
+		"icu4c@78": "78.3",
+		"jq":       "1.8.2",
+		"boundary": "0.21.3", // hashicorp/tap/boundary, by its short name
+		// casks
+		"1password-cli": "2.39.0",
+		"chatgpt":       "26.623.141536",
+		"goreleaser":    "2.18.2", // goreleaser/tap/goreleaser
+	}
+	for name, v := range want {
+		if g, _ := got.Get(name); g != v {
+			t.Errorf("%s = %#v, want %q", name, g, v)
+		}
+	}
+	if got.Len() != len(want) {
+		t.Errorf("listed %d packages, want %d: %v", got.Len(), len(want), got.Keys())
+	}
+}
+
+// The listing this replaces is the oracle for formulae: on the full
+// capture the two agreed for all 389, and they must agree for the
+// formulae kept here. `brew list --versions` printed kegs in directory
+// order and its parser took the last field.
+func TestBrewListPkgsAgreesWithTheListItReplaces(t *testing.T) {
+	c := brewFixtureCtx(t)
+	got, err := (brewProvider{}).ListPkgs(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(capturedFixture(t, brewFixtureDir, "list-versions", "stdout")), "\n")
+	if len(lines) != 7 {
+		t.Fatalf("list-versions has %d lines, want the 7 formulae", len(lines))
+	}
+	for _, line := range lines {
+		f := strings.Fields(line)
+		if g, _ := got.Get(f[0]); g != f[len(f)-1] {
+			t.Errorf("%s: ListPkgs says %#v, `brew list --versions` said %q", f[0], g, f[len(f)-1])
+		}
+	}
+}
+
+func TestBrewListPkgsRefusesWhatIsNotBrewJSON(t *testing.T) {
+	if _, err := parseBrewInstalled("Error: something brew said\n"); err == nil {
+		t.Error("a non-JSON answer was accepted")
+	}
+	if _, err := parseBrewInstalled(`[]`); err == nil {
+		t.Error("a JSON array was accepted as brew's object")
 	}
 }
