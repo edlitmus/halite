@@ -17655,6 +17655,31 @@ whole conformance harness, so the `locale.system` case will run on its Ubuntu
 runner and `locale.present` will skip there (it runs only where rpm and dnf or
 yum are both present); neither had run there when this was written.
 
+### 5.182 `user.present`'s `password:` could write a second account's record
+
+Found while building `shadow` (5.180), which refuses it for its own
+`set_password`: `user.present` hands its `password:` to `chpasswd -e` as
+`name:hash\n` on standard input, and checked neither half. chpasswd reads
+one record per line, so a hash written as `<hash>\nroot:<hash>` set
+**root's** password from a state about another account, and a colon in
+either half split a field. The value comes from a state tree, usually from
+pillar, so the reach is whoever can write those — which is exactly the
+boundary a password state is supposed to hold.
+
+The check now lives in `passwordCommand`, the one path `user.present` (both
+its create and its update branch) and `shadow.set_password` reach on Linux
+and FreeBSD: an account name with a colon or a line break is refused, and
+the hash goes through `shadow`'s existing rule (no colon, line break or
+control character). FreeBSD's `pw usermod -H 0` reads one line from the
+descriptor, so the same text there was at best truncated; it is refused on
+both so the rule is one rule.
+
+`TestAPasswordRecordCannotCarryASecondRecord` failed on all twelve of its
+cases before the change — on Linux it showed the record chpasswd would have
+received, `alice:<hash>\nroot:<hash>` — and passes after; an ordinary hash
+is still accepted on both platforms. **Not verified:** on a real chpasswd
+or pw, deliberately — the point is that the command is never built.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

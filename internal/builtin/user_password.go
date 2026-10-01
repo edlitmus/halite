@@ -125,6 +125,19 @@ func currentHashWindows(name string) (string, bool, error) {
 // that matters — the hash is never in the argument vector — can be
 // asserted without either tool being installed.
 func passwordCommand(platform, name, hash string) (exec.Command, error) {
+	// Refused here rather than in each caller, because this is the one
+	// place `user.present` and `shadow.set_password` both pass through,
+	// and only `shadow` used to check: chpasswd reads `name:hash` lines,
+	// so a line break in either half is a second record -- for any
+	// account the text names -- and a colon is a field boundary. pw's
+	// `-H 0` reads one line from the descriptor, so the same text there
+	// is at best truncated; refusing on both keeps the rule one rule.
+	if strings.ContainsAny(name, ":\r\n") {
+		return exec.Command{}, fmt.Errorf("%q is not an account name a password record can carry", name)
+	}
+	if err := shadowHash(hash); err != nil {
+		return exec.Command{}, err
+	}
 	switch platform {
 	case "freebsd":
 		// `-H 0` tells pw to read an already-hashed password from the
