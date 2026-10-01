@@ -18492,6 +18492,74 @@ returns an empty version though brew answers one. `brew info --json=v2
 are in `list_pkgs`, so `pkg.latest` on a cask now reports it current
 whatever brew offers. Separate change.
 
+### 5.192 `halite-node state ... test=True` applied the states for real
+
+**The precaution an operator types was thrown away.** `test=True` is
+how Salt spells a dry run, and `halite-node` parsed it -- into
+`Kwargs`, as a boolean, the CLI parser's own comment saying `test=True`
+"has no other sensible reading". Neither `halite-node state <fn>` nor
+`halite-node call state.<fn>` read `Kwargs`. So both of these applied
+every state for real, and said nothing about the argument they had
+dropped:
+
+```
+halite-node state sls web test=True
+halite-node call state.apply test=True
+```
+
+The second is the form SPEC 32's phase 1 names as the node's exit
+criterion. Only `--test` worked, which is what `docs/command-reference.md`
+mapped Salt's spelling to -- so the documentation was right, and the
+habit every Salt operator has was a real run.
+
+It was found by running it. Checking the cask half of `pkg.latest` on
+a Mac ([edlitmus/halite#187](https://github.com/edlitmus/halite/pull/187)), `state sls
+casklatest test=True` was meant to show `pkg.latest` planning a cask
+upgrade and a cask install; it started `brew install` for both
+instead. Both failed partway (one app was already present outside
+Homebrew; the other's install did not complete), and nothing on that
+machine changed, which was luck rather than design.
+`TestTestEqualsTrueChangesNothing` reproduced it before the fix in all
+eight spellings it tries -- `state apply`, `highstate`, `sls`, and
+`call state.apply`, `.sls` and `.highstate`, with and without an SLS
+name, `True` and `true` -- each writing a `file.managed` target a dry
+run must not write.
+
+**The fix**, `applyStateKwargs`, reads them before anything compiles:
+
+- `test=True` turns test mode on. It cannot turn it off, which is the
+  rule the hub's jobs already followed (`execute.go`): a node
+  configured `test: true` -- SPEC 28.6's read-only posture beside a
+  Salt agent -- is not talked out of it from a command line.
+- `test=False` where `--test` or the configuration has already turned
+  test mode on is **refused**, not quietly overruled. Salt would run
+  for real there; staying dry without a word would surprise in the
+  other direction.
+- **Every other key is refused by name.** `saltenv=`, `pillar=`,
+  `exclude=` and the rest were dropped exactly as `test=` was, so a run
+  could differ from what was typed and nothing would say so. The
+  refusal points at `--help`, which lists `--env` and the root flags.
+
+The two other routes into a state run were checked and were already
+right: a hub's job carries `test=True` in its `Kwarg` and the node
+honours it, and the agentless one-shot path hands `Kwarg` to the same
+code.
+
+**Tests.** Besides the reproduction, `TestStateKwargsAreReadOrRefused`
+covers the refusals and `test=False` as a plain real run, each by
+whether the file was written. Both refusals were broken on purpose --
+unknown keys dropped again, and `test=False` under `--test` ignored
+silently -- and the test failed each time.
+
+**What changes for an operator:** a command line that passed a key
+this did not read used to run, ignoring it; it now fails before
+compiling. That is deliberate, and it is in the changelog.
+
+**Not verified:** `halite-node` on Windows and FreeBSD, where the code
+path is the same Go and nothing about it is platform-specific -- the
+`test (…)` legs run these tests there, which is the evidence, not this
+paragraph.
+
 
 ## 6. Everything else not started
 

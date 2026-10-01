@@ -17,6 +17,7 @@ implies it.
 | `salt-call --local state.apply` | `halite-node state apply --local` | works |
 | `salt-call --local state.highstate` | `halite-node state highstate --local` | works |
 | `salt-call --local state.apply test=True` | `halite-node state apply --local --test` | works |
+| `salt-call --local state.apply test=True` | `halite-node state apply --local test=True` | works; until DIVERGENCE 5.192 it was ignored and the states applied for real |
 | `salt-call --local state.apply web` | `halite-node state apply web --local` | works |
 | `salt-call --local state.sls web,db` | `halite-node state sls web db --local` | works |
 | `salt-call --local state.show_top` | `halite-node state show_top --local` | works |

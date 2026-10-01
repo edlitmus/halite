@@ -66,6 +66,56 @@ func runCall(args *cli.Args) int {
 	return 0
 }
 
+// applyStateKwargs reads the key=value arguments of `state <fn>` and
+// `call state.<fn>`, which used to be parsed and then dropped.
+//
+// Dropped is the word. `test=True` is how Salt spells a dry run, the CLI
+// parser recognised it as a boolean for exactly that reason, and the
+// state path never looked at Kwargs -- so `halite-node state sls web
+// test=True` applied web for real, with no word about the argument it
+// had discarded. It was found when that command started a `brew install`
+// on a Mac (DIVERGENCE 5.192). A dry run that is silently a real one is
+// the worst failure a configuration manager has, because the operator
+// typed the precaution.
+//
+// `test` follows the rule the hub's jobs already follow (execute.go): it
+// can turn test mode on and never off, so that a node configured with
+// `test: true` -- SPEC 28.6's read-only posture, beside a Salt agent --
+// is not talked out of it from a command line. `test=False` where test
+// mode is already on is refused rather than quietly overruled: Salt
+// would run for real there, and staying dry without saying so would
+// surprise in the other direction.
+//
+// Every other key is refused by name. `saltenv=`, `pillar=`, `exclude=`
+// and the rest were dropped exactly as `test=` was, so a run could differ
+// from what was typed in ways nothing reported. Refusing turns that into
+// an error before anything is compiled, and a key this learns to read
+// later moves out of the refusal rather than out of silence.
+func applyStateKwargs(n *node, kwargs *value.Map) error {
+	if kwargs == nil {
+		return nil
+	}
+	for _, key := range kwargs.Keys() {
+		v, _ := kwargs.Get(key)
+		if key != "test" {
+			return fmt.Errorf("state functions here do not take %s=; the only key=value argument they read is test=True "+
+				"(see `halite-node --help` for the flags that select an environment or a root)", key)
+		}
+		on, ok := v.(bool)
+		if !ok {
+			return fmt.Errorf("test=%v: want True or False", v)
+		}
+		switch {
+		case on:
+			n.test = true
+		case n.test:
+			return fmt.Errorf("test=False cannot turn off test mode that --test or this node's `test: true` turned on; " +
+				"remove that to apply for real")
+		}
+	}
+	return nil
+}
+
 // runState is `halite-node state <subcommand>`.
 func runState(args *cli.Args) int {
 	if len(args.Positional) == 0 {
@@ -76,6 +126,9 @@ func runState(args *cli.Args) int {
 
 func runStateFunction(args *cli.Args, fn string, rest []string) int {
 	n := setup(args)
+	if err := applyStateKwargs(n, args.Kwargs); err != nil {
+		cli.Fatalf("%v", err)
+	}
 	n.useHubIfConfigured(args)
 	p := n.compilePillar()
 	compiler := n.stateCompiler(p, newJobID())
