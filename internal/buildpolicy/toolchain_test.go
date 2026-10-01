@@ -197,3 +197,58 @@ func TestTheOfflineImagePinsTheSameToolchain(t *testing.T) {
 	}
 	t.Logf("the offline image is golang:%s, which go.mod pins", want)
 }
+
+// The RHEL and SUSE images copy their toolchain out of the golang image,
+// and that image's tag is held to go.mod's pin here as the debian image's
+// is above.
+//
+// These images do reach the network, so a drifted tag would not fail the
+// way the offline image's would; it would quietly build and test with a
+// Go nobody chose. `GOTOOLCHAIN=local` makes that a compile with the
+// wrong toolchain rather than a download of the right one, and this test
+// makes it a failure instead. DIVERGENCE 5.178.
+func TestTheRpmFleetImagesPinTheSameToolchain(t *testing.T) {
+	root := repoRoot(t)
+	mod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := regexp.MustCompile(`(?m)^toolchain go(1\.\d+(?:\.\d+)?)$`).FindStringSubmatch(string(mod))
+	if pin == nil {
+		t.Fatal("go.mod has no `toolchain` directive")
+	}
+	want := pin[1]
+
+	files, err := filepath.Glob(filepath.Join(root, "contrib", "docker", "fleet-rpm", "Dockerfile.*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) < 2 {
+		t.Fatalf("found %d Dockerfile.* under contrib/docker/fleet-rpm, want the EL and SUSE ones; "+
+			"this guard has stopped checking anything", len(files))
+	}
+	from := regexp.MustCompile(`(?m)^FROM golang:([0-9][^-\s]*)\S* AS toolchain$`)
+	for _, path := range files {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, _ := filepath.Rel(root, path)
+		m := from.FindSubmatch(body)
+		if m == nil {
+			t.Errorf("%s has no `FROM golang:<version> AS toolchain` stage to copy Go from", name)
+			continue
+		}
+		if string(m[1]) != want {
+			t.Errorf("%s copies its toolchain from golang:%s and go.mod pins %s", name, m[1], want)
+		}
+		if !regexp.MustCompile(`(?m)^COPY --from=toolchain /usr/local/go /usr/local/go$`).Match(body) {
+			t.Errorf("%s does not copy /usr/local/go out of its toolchain stage, so the pin above "+
+				"would not be the Go that runs", name)
+		}
+		if !regexp.MustCompile(`(?m)^ENV GOTOOLCHAIN=local$`).Match(body) {
+			t.Errorf("%s does not set GOTOOLCHAIN=local, so a mismatch would be downloaded over", name)
+		}
+	}
+	t.Logf("%d RHEL/SUSE fleet images copy Go %s, which go.mod pins", len(files), want)
+}

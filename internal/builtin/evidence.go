@@ -123,7 +123,13 @@ var moduleEvidence = map[string]exec.Evidence{
 		"watched failing there (DIVERGENCE 5.176). Not covered: `pkg.upgrade` (a whole-" +
 		"system `zypper update` on a machine kept for testing one thing), exit codes " +
 		"100-103 and 107, which were never produced, repository priorities and vendor " +
-		"stickiness (every repository had priority 99), and SLES, which was not run"},
+		"stickiness (every repository had priority 99), and SLES, which was not run. " +
+		"**Both RPM providers are now re-driven by CI**: `fleet.yml`'s `rpm` legs (DIVERGENCE 5.178) run the " +
+		"four conformance `pkg` states through the dnf provider in Rocky 9.8 and AlmaLinux 8.10 containers and " +
+		"through the zypper provider, with all four `TestLiveZypper*` tests, in an openSUSE Leap 16.0 " +
+		"container -- whose image installs the oldest `libX11-data` the mirrors offer so that the `pkg.latest` " +
+		"upgrade and the `--oldpackage` pin have something to do. All passed on Fleet run 36778900509, against " +
+		"the distributions' real mirrors"},
 	// `cmd` had no row at all until the gate could see it. It was outside
 	// the selection because that read `strings.Contains(p, "root")` over
 	// the free-text Privileges field, and `cmd` says "whatever the command
@@ -690,8 +696,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"ever running, so nothing here shows a profile *working* for a directory user, only " +
 		"authselect writing it; the `nis` and `winbind` profiles; custom profiles " +
 		"(`create-profile`); `backup-restore`; authselect 1.3+ (Fedora, RHEL 10), whose " +
-		"`opt-out` and output this module has never seen; and no CI leg runs any of it -- " +
-		"fleet.yml has no RHEL-family runner"},
+		"`opt-out` and output this module has never seen. " +
+		"`fleet.yml`'s `rpm` legs (DIVERGENCE 5.178) now re-run this on every change to the module, nightly, and on demand, each in a container of the real distribution on an ubuntu-24.04 runner -- rocky9 (Rocky 9.8, authselect-1.2.6-3.el9) and alma8 (AlmaLinux 8.10, " +
+		"authselect-1.2.6-2.el8) -- where both tests passed on Fleet run 36778900509, the select test taking " +
+		"over the image's never-configured /etc/pam.d under HALITE_AUTHSELECT_TAKEOVER. A container has no " +
+		"sshd and no login, so the legs show authselect writing the files, not anybody logging in through them"},
 
 	"pam": {Level: exec.Captured, Note: "every service file on the machine running the tests " +
 		"is parsed and checked against the file rather than against an expectation -- 13 real " +
@@ -854,7 +863,9 @@ var moduleEvidence = map[string]exec.Evidence{
 		"why this is not a `firewall` provider; `get_interfaces` only ever read an empty list; firewalld with " +
 		"the nftables backend was what both hosts ran, so the iptables backend is unexercised; policies (1.x), " +
 		"masquerade, forwarding, ICMP blocks and ipsets are not built; `permanent: false` was driven for " +
-		"`add_service` and read for the listings, not for every member kind"},
+		"`add_service` and read for the listings, not for every member kind. No CI leg runs it: `fleet.yml`'s " +
+		"`rpm` legs are containers, with no init, no system bus and the runner's netfilter, so this evidence is " +
+		"still the two lab hosts and decays unless a person reruns it there (DIVERGENCE 5.178)"},
 	"pro": {Level: exec.Hardware, Note: "`version`, `status` and `is_attached` were run for real " +
 		"against a genuinely Ubuntu Pro-attached development host (client 37.2ubuntu~24.04.1) -- " +
 		"`TestLiveProReadsTheRealClient` runs them again in the ordinary suite, ungated, the way " +
@@ -874,7 +885,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"embedding a real account's credential, so `TestLiveProEnableAndDisable` runs only where a " +
 		"person runs it by hand, on a host whose attachment they can afford to touch"},
 
-	// ---- Driven in the lab on RHEL-family instances, by hand, because no CI leg is one ----
+	// ---- Driven in the lab on RHEL-family instances, and since 5.178 in containers on fleet.yml ----
 
 	"chattr": {Level: exec.Hardware, Note: "driven as root on 2026-09-30 on two throwaway lab " +
 		"instances, both ext4: Rocky Linux 9.8 (e2fsprogs 1.46.5, whose lsattr column is 22 characters) " +
@@ -886,7 +897,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`-d` dropped from lsattr, and `remove` sending `+` (which chattr accepts with exit 0, so only the " +
 		"read-back caught it). Not covered: any attribute but `i` and `a` through the module (`c`, `s`, `u`, " +
 		"`d`, `A`, `S` and `x` were set by hand while capturing, not by a test), XFS -- RHEL's default root " +
-		"filesystem, which neither lab image used -- symlinks, and a non-root caller"},
+		"filesystem, which neither lab image used -- symlinks, and a non-root caller. " +
+		"`fleet.yml`'s `rpm` legs (DIVERGENCE 5.178) now re-run this on every change to the module, nightly, and on demand, each in a container of the real distribution on an ubuntu-24.04 runner -- rocky9, alma8 and leap16 (e2fsprogs 1.46.5, 1.45.6 and 1.47.0) -- " +
+		"where the test passed on all three on Fleet run 36778900509 with CAP_LINUX_IMMUTABLE added. Those runs " +
+		"set real flags, but on the runner's overlayfs over ext4 and under Ubuntu's kernel, not on an EL kernel " +
+		"or on XFS"},
 	"rpm": {Level: exec.Captured, Note: "read-only: it has no function that changes anything. Run on " +
 		"2026-09-30 against rpm 4.16.1.3 on Rocky Linux 9.8 and rpm 4.14.3 on AlmaLinux 8.10 by " +
 		"`TestLiveRpmReadsTheRealDatabase` -- `list_pkgs` counted against `rpm -qa` (AlmaLinux carries two " +
@@ -904,7 +919,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"hosts: last-instance-wins in `list_pkgs`, IgnoreExitCode dropped, the verify path offset by one, and " +
 		"CompareRPM's caret ordering reversed. Not built: `bin_pkg_info`, `checksum`, `diff`, `modified` " +
 		"(no .rpm file on either host without driving dnf, which other work was using). Not covered: " +
-		"`rpm -Va`, which the module refuses to run"},
+		"`rpm -Va`, which the module refuses to run. " +
+		"`fleet.yml`'s `rpm` legs (DIVERGENCE 5.178) now re-run this on every change to the module, nightly, and on demand, each in a container of the real distribution on an ubuntu-24.04 runner -- all three tests on rocky9 (rpm 4.16.1.3) and alma8 (4.14.3), and the two read tests " +
+		"on leap16 (rpm 4.20.1), all passing on Fleet run 36778900509. The verify test does not run on Leap: " +
+		"the two files it edits are Red Hat's, not SUSE's"},
 	"dnf_module": {Level: exec.Hardware, Note: "every function was run as root on 2026-09-30 on " +
 		"two throwaway Vultr lab instances: `rocky9` (Rocky Linux 9.8, dnf 4.14.0) and `alma8` " +
 		"(AlmaLinux 8.10, dnf 4.7.0). `TestLiveDnfModuleEnableSwitchDisableReset` took nginx, " +
@@ -925,8 +943,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"more than one repository (both hosts had AppStream alone) and third-party modular " +
 		"repos; `switch_to` with packages installed, which is where it does real work; globs " +
 		"in a spec; RHEL proper, CentOS Stream and Fedora (whose dnf5 dropped modularity " +
-		"entirely -- nothing here has run dnf5); and no CI leg runs any of it, so like `pro` " +
-		"it decays unless a person reruns it on a lab host"},
+		"entirely -- nothing here has run dnf5). " +
+		"`fleet.yml`'s `rpm` legs (DIVERGENCE 5.178) now re-run this on every change to the module, nightly, and on demand, each in a container of the real distribution on an ubuntu-24.04 runner -- rocky9 (dnf 4.14.0) and alma8 (dnf 4.7.0), reading and writing modules.d and " +
+		"installing redis from the distributions' real AppStream mirrors; all three tests passed on both on " +
+		"Fleet run 36778900509"},
 }
 
 // Trust renders this registry's evidence for `doctor`.

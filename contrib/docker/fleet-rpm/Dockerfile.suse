@@ -1,0 +1,55 @@
+# The image the SUSE row is driven in, against the real zypper.
+#
+# The `pkg` module's zypper provider, and `zypperpkg` its alias, were
+# written on one throwaway openSUSE Leap 16.0 lab host and driven there
+# by hand (DIVERGENCE 5.176). This is that run made repeatable, in a
+# container on an Ubuntu runner, for the reasons Dockerfile.el beside it
+# gives -- including the one that matters most: it reads openSUSE's own
+# mirrors at run time, because a zypper test against a repository frozen
+# into an image tests zypper against something nobody serves.
+#
+# The `rpm` module rides along, because Leap's rpm (4.20) is newer than
+# either EL image's, and the first SUSE run is where one of its tests
+# found an assumption that was Red Hat's rather than rpm's (5.176).
+
+# The pinned toolchain, copied from the image go.mod's pin names; see
+# Dockerfile.el for why this rather than a download.
+FROM golang:1.26.6-bookworm AS toolchain
+
+FROM opensuse/leap:16.0
+
+COPY --from=toolchain /usr/local/go /usr/local/go
+ENV PATH=/usr/local/go/bin:$PATH
+
+# e2fsprogs for chattr and lsattr.
+#
+# `libX11-data` is the package TestLiveZypperLatestUpgradesAndAPinDowngrades
+# upgrades with `pkg.latest` and pins back with `pkg.installed`. The test
+# needs it installed *and outdated*, and skips otherwise, so the oldest
+# edition the repositories offer is installed here, deliberately, with
+# `--oldpackage`. The lab host had exactly that shape by accident; this
+# image has it on purpose. The build fails if the repositories offer only
+# one edition, because then the test would skip and this image would be
+# the reason, and that should be said at build time rather than found in
+# a green run.
+RUN set -e; \
+    zypper --non-interactive refresh; \
+    zypper --non-interactive install --no-recommends e2fsprogs which; \
+    editions=$(zypper --non-interactive -x search -s --match-exact -t package libX11-data \
+        | grep -o 'edition="[^"]*"' | sed 's/edition="\(.*\)"/\1/' | sort -uV); \
+    echo "libX11-data editions offered: $(echo $editions)"; \
+    test "$(echo "$editions" | wc -l)" -ge 2 || { \
+        echo "the repositories offer one edition of libX11-data, so the pkg.latest test would have nothing to upgrade"; \
+        exit 1; }; \
+    oldest=$(echo "$editions" | head -1); \
+    zypper --non-interactive install --no-recommends --oldpackage --name "libX11-data=$oldest"; \
+    rpm -q libX11-data; \
+    zypper --non-interactive clean --all
+
+ENV GOTOOLCHAIN=local
+ENV CGO_ENABLED=0
+ENV GOCACHE=/gocache
+
+COPY run.sh /usr/local/bin/run.sh
+RUN chmod +x /usr/local/bin/run.sh
+ENTRYPOINT ["/usr/local/bin/run.sh"]

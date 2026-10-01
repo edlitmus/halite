@@ -85,7 +85,7 @@ TARGETS = $(TIER12_TARGETS) $(TIER3_TARGETS)
 	install install-service install-man \
 	fips fips-cross fips-verify fips-test \
 	saltdiff saltdiff-image zfscheck zfscheck-image racecheck racecheck-image \
-	fleetcheck fleetcheck-image dist \
+	fleetcheck fleetcheck-image fleetcheck-rocky9 fleetcheck-alma8 fleetcheck-leap16 dist \
 	lab-up lab-down lab-test lab-hosts lab-facts lab-wait lab-ssh lab-distros lab-plan lab-cidr lab-repair
 
 all: build
@@ -776,6 +776,54 @@ fleetcheck: fleetcheck-image
 		-v halite-gocache:/gocache -v halite-gomodcache:/gomodcache \
 		$(FLEETCHECK_IMAGE) \
 		go test -count=1 -v -run TestLive ./internal/builtin/
+
+# `make fleetcheck-rocky9`, `fleetcheck-alma8` and `fleetcheck-leap16`
+# drive the RHEL and SUSE rows the way `fleetcheck` drives Debian's.
+#
+# rpm, chattr, authselect, dnf_module and the dnf and zypper `pkg`
+# providers were written on throwaway lab hosts and driven there by hand
+# (DIVERGENCE 5.172-5.176). These make that repeatable: the real
+# distribution's userland in a container, the real tools, destructive on
+# purpose, thrown away afterwards. contrib/docker/fleet-rpm/run.sh picks
+# the tests by distribution and fails the run when one that should have
+# run skipped, which is the only way a leg like this is worth anything.
+#
+# Two deliberate differences from `fleetcheck`, both written down rather
+# than hidden:
+#
+#   - **The network.** `fleetcheck` runs `--network none`; these cannot.
+#     dnf and zypper install and remove real packages from the real
+#     mirrors, so a mirror outage can turn a run red. That is the cost of
+#     driving the package manager instead of a copy of it.
+#   - **CAP_LINUX_IMMUTABLE.** Docker drops it by default, and `chattr +i`
+#     and `+a` are exactly what that capability governs. It is added
+#     alone rather than with --privileged, which would hand the container
+#     the runner's devices for the sake of one capability.
+#
+# Like `fleetcheck`, not part of `make check`: each needs Docker and a
+# network, and takes minutes. fleet.yml runs all three.
+FLEETCHECK_RPM_DIR = contrib/docker/fleet-rpm
+
+fleetcheck-rocky9:
+	docker build --build-arg BASE=rockylinux/rockylinux:9 \
+		-f $(FLEETCHECK_RPM_DIR)/Dockerfile.el -t halite-fleet-rpm:rocky9 $(FLEETCHECK_RPM_DIR)
+	docker run --rm --cap-add LINUX_IMMUTABLE \
+		-v "$(CURDIR)":/src -v halite-gocache:/gocache \
+		halite-fleet-rpm:rocky9
+
+fleetcheck-alma8:
+	docker build --build-arg BASE=almalinux:8 \
+		-f $(FLEETCHECK_RPM_DIR)/Dockerfile.el -t halite-fleet-rpm:alma8 $(FLEETCHECK_RPM_DIR)
+	docker run --rm --cap-add LINUX_IMMUTABLE \
+		-v "$(CURDIR)":/src -v halite-gocache:/gocache \
+		halite-fleet-rpm:alma8
+
+fleetcheck-leap16:
+	docker build \
+		-f $(FLEETCHECK_RPM_DIR)/Dockerfile.suse -t halite-fleet-rpm:leap16 $(FLEETCHECK_RPM_DIR)
+	docker run --rm --cap-add LINUX_IMMUTABLE \
+		-v "$(CURDIR)":/src -v halite-gocache:/gocache \
+		halite-fleet-rpm:leap16
 
 # `make racecheck` is the `race` leg for a host that has no C compiler.
 #

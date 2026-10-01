@@ -17290,10 +17290,112 @@ only from the source. **Not verified against a real rpm:** any rpm but 4.14.3
 and 4.16.1.3, including Leap's 4.20.1, whose `rpm.vercmp`
 was not asked anything with a release.
 
+### 5.178 The RHEL and SUSE rows get CI legs, in containers, and what those can and cannot drive
 
+5.172 to 5.176 each ended with the same sentence in different words: no
+`fleet.yml` leg is RHEL or SUSE, so the evidence is a run somebody repeats by
+hand on a lab host. Five modules' notes in `evidence.go` said so. That is the
+decay the `macos` leg was built to stop, and GitHub offers no RHEL or SUSE
+runner to stop it the same way.
 
+**What was added.** A matrix job `rpm` in `fleet.yml` — `rocky9`
+(`rockylinux/rockylinux:9`), `alma8` (`almalinux:8`), `leap16`
+(`opensuse/leap:16.0`), tags checked against Docker Hub's registry API before
+use — each running `make fleetcheck-<distro>`, which builds
+`contrib/docker/fleet-rpm` (`Dockerfile.el` with a `BASE` argument,
+`Dockerfile.suse`) and runs its `run.sh` in the container as root. This is the
+`debian` leg's shape (5.35): the distribution's own userland, destructive on
+purpose, thrown away. Go is copied from `golang:1.26.6-bookworm`, the image
+the debian leg already starts from, rather than downloaded again with a third
+copy of the tarball's digest; `TestTheRpmFleetImagesPinTheSameToolchain` holds
+both Dockerfiles to go.mod's `toolchain` line (changed to 1.26.5 on purpose:
+it failed). Trigger paths gained `rpm*`, `chattr*`, `authselect*`,
+`dnf_module*` and `contrib/docker/fleet-rpm/**`; the providers were already
+under `pkg*.go`.
 
+**The proof is in the image, not the workflow.** `run.sh` selects each
+distribution's tests by family, lists by name every test that must pass, and
+fails the run on any `--- SKIP` and on any listed test without a
+`--- PASS` — so `make fleetcheck-rocky9` on a laptop fails the same way the
+leg does. Checked by breaking it on CI (Fleet run 36779388294, commit
+reverted): with `HALITE_AUTHSELECT_TAKEOVER` removed, both EL legs went red
+naming `TestLiveAuthselectSelectAndFeatures` as skipped; with a nonexistent
+test added to Leap's list, that leg went red naming it.
 
+**What ran, on Fleet run 36778900509** (the first run, all three green):
+
+| Leg | Userland | Passed | Skipped | Job time |
+|---|---|---|---|---|
+| rocky9 | Rocky 9.8, rpm 4.16.1.3, dnf 4.14.0, authselect-1.2.6-3.el9, e2fsprogs 1.46.5 | 14 of 14 listed (+ the parent conformance test) | 0 | 1m43s |
+| alma8 | AlmaLinux 8.10, rpm 4.14.3, dnf 4.7.0, authselect-1.2.6-2.el8, e2fsprogs 1.45.6 | 14 of 14 | 0 | 3m33s |
+| leap16 | openSUSE Leap 16.0, rpm 4.20.1, zypper 1.14.101, e2fsprogs 1.47.0 | 12 of 12 | 0 | 1m42s |
+
+On both EL legs: the three `TestLiveRpm*`, `TestLiveChattr*`, both
+`TestLiveAuthselect*`, the three `TestLiveDnfModule*`, and the conformance
+harness's `pkg.installed`, `removed`, `latest` and `purged` through the dnf
+provider ("4 of 64 live conformance cases ran, 0 skipped"). On Leap: the four
+`TestLiveZypper*`, `TestLiveRpmReadsTheRealDatabase`,
+`TestLiveRpmVersionCmpAgreesWithRpm`, `TestLiveChattr*`, and the same four
+`pkg` states through the zypper provider. Times include building the image
+with an empty cache; alma8's is longest because `TestLiveDnfModuleReadersAgree`
+alone took 60s against its dozens of default streams.
+
+**Three things that differ from the debian leg, on purpose:**
+
+- **The network.** The debian image runs `--network none`. These cannot: dnf
+  and zypper install `tree`, redis's module profile and `libX11-data` from the
+  real mirrors, and a frozen repository would test them against something
+  nobody serves. A mirror outage can turn a leg red for a reason that is not
+  the change; the log carries dnf's and zypper's own messages.
+- **CAP_LINUX_IMMUTABLE**, added alone (`--cap-add`) rather than
+  `--privileged`, since Docker drops it and `chattr +i`/`+a` need exactly it.
+  `/tmp` in these containers is overlayfs over the runner's ext4, and the
+  chattr test's `lsattr` read-backs and kernel refusals all held there. Whether
+  overlayfs would pass the flags through was an open question before the run;
+  it did, on Ubuntu 24.04's runner kernel.
+- **The Leap image stages an outdated package.** 5.176's lab host happened to
+  have an old `libX11-data`; a fresh container does not, and
+  `TestLiveZypperLatestUpgradesAndAPinDowngrades` would skip. The image
+  installs the oldest edition offered (the mirrors offered
+  1.8.10-160000.2.2, .3.1 and .4.1; it took .2.2) and the build fails if
+  fewer than two editions exist, so that condition surfaces at build time
+  rather than as a skip.
+
+**Not covered by any leg, and why:**
+
+- **`firewalld`.** It needs a running daemon on a system bus with netfilter
+  behind it; a container has no init, no bus, and only the runner's netfilter.
+  Its evidence remains the two lab hosts of 5.175, and its note says so.
+- **SELinux**, anything at all: the runner's kernel runs AppArmor.
+- **The kernel.** Every leg runs Ubuntu's kernel. What is driven is the
+  userland — package databases, package managers, files in /etc — and chattr's
+  flags are set on overlayfs/ext4, never on XFS, RHEL's default root.
+- **`TestLiveRpmVerifySeesARealModification` on Leap**: it edits
+  `/etc/DIR_COLORS.lightbgcolor` and which's NEWS, which Red Hat ships and SUSE
+  does not, so Leap's filter names the other two rpm tests exactly. On EL the
+  image reinstalls `which` with `tsflags=` cleared, because the container base
+  sets `nodocs` and the test would otherwise skip for want of the NEWS file.
+- **authselect working for anyone.** A container has no sshd and no login; the
+  leg shows authselect writing the profile, as 5.173 did, and less than the lab
+  did, since there nobody confirmed an ssh login after each change.
+- The rest of the conformance harness: only the four `pkg` cases are selected.
+
+No defect was found in the modules: every test these legs select passed in the
+containers on the first run, and no test needed changing. **Not verified:** how often the
+mirrors make these legs flaky, which only a few weeks of nightly runs can say;
+`make fleetcheck-*` under BSD make (it was run only by GNU make, on the runner).
+
+#### One skip the EL8 leg accepts, by name
+
+Rebased onto 5.177, the alma8 leg went red on its first run: 5.177 added an
+`evr` subtest that runs only where rpm is 4.16 or later, and AlmaLinux 8.10
+ships 4.14.3, so it skipped — correctly, saying why — and this leg fails on
+any skip. `run.sh` now carries `allowed_skips`, empty on every leg but
+alma8, where it names `TestLiveRpmVersionCmpAgreesWithRpm/evr` alone. Any
+other skip still fails the leg, and the named one is *required* to happen:
+an EL8 image that someday ships rpm 4.16 fails with a message saying the
+list is out of date, rather than quietly running a check this ledger does
+not claim for it.
 
 
 ## 6. Everything else not started
