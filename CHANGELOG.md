@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `pkg` works on a Mac node
+
+Every `pkg` function on macOS failed on a real node: the node runs as
+root, Homebrew refuses root, and brew was run as root. It now runs as the
+account that owns the `brew` binary, from that account's home. A state's
+`runas` still wins, and a Homebrew owned by root is refused by name.
+`pkg.list_pkgs` (and so `pkg.installed`) can still fail on a Mac with a
+half-removed cask; that is a separate fix.
+
 ### A `kernelpkg` module and its three states
 
 `kernelpkg.active`, `list_installed`, `latest_available`,

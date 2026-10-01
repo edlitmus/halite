@@ -18274,6 +18274,84 @@ from their names alone; a reboot actually scheduled by `latest_active`
 or `upgrade reboot=True`.
 
 
+### 5.188 `mac_brew_pkg` ran Homebrew as root, which Homebrew refuses
+
+**Every `pkg` function on a Mac node failed.** Homebrew refuses to run
+as root, reading commands included, and the node runs as root; the
+provider ran `brew` as whoever ran the node. Measured on macOS 26.7.1
+(arm64) with Homebrew 7.0.7 under `/opt/homebrew`:
+
+```
+$ sudo halite-node call pkg.list_pkgs
+halite: brew list --versions exited 1: Error: Running Homebrew as root is extremely dangerous and no longer supported.
+```
+
+Nothing said so. `pkg` was `Hardware`, and every word of that note was
+about apt, pkgng, dnf, apk, zypper and chocolatey. The live conformance
+suite left macOS out of its `pkg` cases with a comment quoting the same
+refusal -- the defect, read as a reason not to test rather than as the
+defect. It is the pair this ledger keeps finding: a module-level
+evidence level and a provider it never covered, and a test exclusion
+and the code path it excluded.
+
+**The fix** is `brewRun`, which every brew command in the provider now
+goes through. As root, it runs brew as the account that owns the `brew`
+binary -- how Salt's mac_brew_pkg chooses, and the one thing on the
+machine that records who installed Homebrew. Not the console user,
+who is not necessarily Homebrew's owner and may not exist. The command
+runs from that account's home, because a node's working directory is
+wherever it was started and brew run as another account in a directory
+it cannot read fails in Ruby's startup. And root's `HOME` is no longer
+passed alongside the one the credential switch supplies: the duplicate
+resolved to the right value only because the switch appends last.
+
+Three cases do not switch: a node that is not root (it cannot become
+anybody else); a context that already names an account, such as a
+state's `runas`, which is honoured as it is everywhere else; and a brew
+owned by root, which is refused by name, because running it as its
+owner would be running it as root.
+
+**Demonstrated** as root through `halite-node call` on that Mac:
+`latest_version`, `install`, `hold`, `list_holds`, `unhold` and
+`remove` of `hello`. Afterwards the keg and its link belonged to brew's
+owner, and nothing new under `/opt/homebrew` belonged to root -- the
+assertion that matters, since a brew that somehow still ran as root
+would leave a keg its owner could not later upgrade or remove.
+`TestLiveMacBrewPkgAsRoot` makes the same run, and the `macos` leg of
+`fleet.yml` picks it up through its existing `-run` filter, whose
+prefix pattern already matches it. Its unit counterpart calls every method of the provider as a fake root and
+fails on any command not run as the owner; it was broken twice on
+purpose -- never switching, and one method calling `c.Run` directly --
+and failed both times, naming the command.
+
+**Found on the way, and not fixed here:** on the same Mac, `list_pkgs`
+fails even as an ordinary user. A cask whose Caskroom directory holds
+only `.metadata` makes `brew list --versions` print all 389 installed
+packages and then exit 1 with `Error: Cask 'kiro-cli' is not
+installed.`, and the provider discards the listing. `pkg.installed`
+reads `list_pkgs` first, so on such a Mac it fails too. That is a
+separate change.
+
+`TestLiveMacBrewPkgAsRoot` was run as root on the same Mac twice. With
+the fix, every assertion passed except `list_pkgs`, for the cask reason
+below. With the account switch removed, it failed -- and not where it
+was expected to. `latest_version` returned an empty version and no
+error, because the provider reads brew's non-zero exit from `brew info`
+as "no such formula" and so reported Homebrew's root refusal as a
+package that does not exist. The test caught it because it asserts the
+version is non-empty, but the provider would have told a state the
+same thing about any brew failure. That is the third defect here, and
+it is not fixed in this change either.
+
+**Intel Macs are not supported**, decided 2026-10-01, so the
+`/usr/local/bin/brew` symlink layout is out of scope rather than a gap.
+SPEC 27.1's macOS row and the Makefile's `darwin/amd64` target do not
+yet say so.
+
+**Not verified:** a node started by launchd rather than sudo; `upgrade` and `list_upgrades` against an outdated
+formula; casks; and an owner in more than sixteen groups, which the
+credential switch caps (5.120) and the hosted runner's account is.
+
 
 ## 6. Everything else not started
 

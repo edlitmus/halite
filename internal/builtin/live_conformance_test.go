@@ -699,11 +699,14 @@ func packageCases() []liveCase {
 		return applyForSetup(r, root, "pkg.installed", value.MapOf("name", pkg))
 	}
 
-	// Linux and FreeBSD. Not macOS: the leg runs as root and Homebrew
-	// refuses outright -- "Running Homebrew as root is extremely dangerous
-	// and no longer supported" -- which is brew's decision, not this
-	// module's, and not one a case can work around. Not Windows: choco has
-	// no `tree`. Both learnt from the legs rather than assumed.
+	// Linux and FreeBSD. Not macOS, yet: this said Homebrew's refusal of
+	// root -- "Running Homebrew as root is extremely dangerous and no
+	// longer supported" -- was brew's decision and not one a case could
+	// work around. It was the provider's defect: a node runs as root too,
+	// so every `pkg` call on a Mac failed, and the module now runs brew as
+	// the account that owns it (DIVERGENCE 5.188). TestLiveMacBrewPkgAsRoot
+	// covers that on the macos leg; adding darwin here has not been run.
+	// Not Windows: choco has no `tree`, learnt from the leg.
 	pkgPlatforms := func(lc liveCase) liveCase {
 		lc.platforms = []string{"linux", "freebsd"}
 		return lc

@@ -129,7 +129,18 @@ var moduleEvidence = map[string]exec.Evidence{
 		"through the zypper provider, with all four `TestLiveZypper*` tests, in an openSUSE Leap 16.0 " +
 		"container -- whose image installs the oldest `libX11-data` the mirrors offer so that the `pkg.latest` " +
 		"upgrade and the `--oldpackage` pin have something to do. All passed on Fleet run 36778900509, against " +
-		"the distributions' real mirrors"},
+		"the distributions' real mirrors. **Homebrew had never been run the way a node runs it**, and did not " +
+		"work: Homebrew refuses root on every command, and the provider ran brew as whoever ran the node, so as " +
+		"root every `pkg` call on a Mac failed (DIVERGENCE 5.188). It now runs brew as the account that owns the " +
+		"brew binary. Driven as root through `halite-node call` on macOS 26.7.1 (arm64, Homebrew 7.0.7 under " +
+		"/opt/homebrew, owned by an ordinary account in 9 groups): `latest_version`, `install`, `hold`, " +
+		"`list_holds`, `unhold` and `remove` of `hello`, the keg and its link owned by brew's owner afterwards " +
+		"and nothing new under /opt/homebrew owned by root. Not covered: `list_pkgs`, which on that Mac fails " +
+		"for a second reason -- one half-removed cask makes `brew list --versions` exit 1 after printing every " +
+		"package; `upgrade` and `list_upgrades` against an outdated formula; casks; and a node started by launchd " +
+		"rather than sudo. Intel Macs are not supported (decided 2026-10-01), so their /usr/local layout " +
+		"is not a gap here. `TestLiveMacBrewPkgAsRoot` ran as root on the same Mac: everything passed but " +
+		"`list_pkgs`, for the cask reason above, and a build with the account switch removed failed it"},
 	// `cmd` had no row at all until the gate could see it. It was outside
 	// the selection because that read `strings.Contains(p, "root")` over
 	// the free-text Privileges field, and `cmd` says "whatever the command

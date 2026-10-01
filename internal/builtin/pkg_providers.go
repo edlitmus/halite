@@ -3,6 +3,7 @@ package builtin
 import (
 	"fmt"
 	"os"
+	"os/user"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -361,16 +362,105 @@ func (apkProvider) RefreshDB(c *exec.Context) error {
 // $HOME set ("Error: $HOME must be set to run brew"), which CleanEnv does
 // not carry — this was found by running the provider against a real
 // Homebrew, not read off documentation.
-func brewEnv() []string {
+//
+// The caller's HOME is passed only when brew runs as the caller. When it
+// runs as the account that owns it, the credential switch supplies that
+// account's HOME, and root's must not be there as well: a duplicate key
+// resolves to the last one, which happens to be the right one today, and
+// a Homebrew cache written under /var/root by a process that cannot read
+// it back is not a failure anybody should be one append away from.
+func brewEnv(asOwner bool) []string {
 	env := append(exec.CleanEnv(),
 		"HOMEBREW_NO_AUTO_UPDATE=1",
 		"HOMEBREW_NO_INSTALL_CLEANUP=1",
 		"HOMEBREW_NO_ENV_HINTS=1",
 	)
-	if home := os.Getenv("HOME"); home != "" {
+	if home := os.Getenv("HOME"); home != "" && !asOwner {
 		env = append(env, "HOME="+home)
 	}
 	return env
+}
+
+// brewEuid and brewOwner are what brewRun asks about the machine, as
+// variables so a test can say "this is root, and alice owns brew"
+// without being either.
+var (
+	brewEuid  = os.Geteuid
+	brewOwner = brewBinaryOwner
+)
+
+// brewRun runs one Homebrew command as the account Homebrew belongs to.
+//
+// **Homebrew refuses to run as root**, and the node runs as root. Every
+// command, reading ones included, ends at "Error: Running Homebrew as
+// root is extremely dangerous and no longer supported." -- measured with
+// `sudo halite-node call pkg.list_pkgs` on a Mac with Homebrew 7.0.7
+// under /opt/homebrew. Before this, the provider ran brew as whoever ran
+// the node, so on a real node every `pkg` function on macOS failed, and
+// nothing said so: `pkg`'s evidence was earned by apt, pkgng and
+// chocolatey, and the live suite leaves macOS out because its leg is
+// root and brew refuses root -- which is the same fact, read as a reason
+// not to test rather than as the defect.
+//
+// The account is the owner of the brew program, which is how Salt's
+// mac_brew_pkg chooses it and the only thing on the machine that says
+// who installed Homebrew. Not the console user: the person logged in is
+// not necessarily the person whose Homebrew it is, and a node with
+// nobody logged in still has one.
+//
+// Three cases where it does not switch:
+//
+//   - The node is not root. Then it already is somebody, a non-root
+//     process cannot become anybody else, and brew decides for itself
+//     whether that somebody may use it.
+//   - The context already names an account (a state's `runas`). That is
+//     an operator's explicit choice and is honoured as Context.Run
+//     honours it everywhere else; if it names root, brew's own refusal
+//     says why.
+//   - root owns brew. Homebrew's installer refuses to install as root,
+//     so this is a machine somebody built by hand, and running as the
+//     owner would be running as root. It is refused here by name rather
+//     than passed to brew to refuse less clearly.
+//
+// The working directory moves to the owner's home. A node's cwd is
+// wherever it was started, which under sudo is the caller's directory
+// and under launchd is /, and brew run as another account in a directory
+// that account cannot read fails in Ruby's startup rather than in
+// anything that names the directory.
+func brewRun(c *exec.Context, cmd exec.Command) (exec.Result, error) {
+	owner, err := brewRunAs(c)
+	if err != nil {
+		return exec.Result{}, err
+	}
+	cmd.Env = brewEnv(owner != nil)
+	if owner != nil {
+		cmd.RunAs = owner.Username
+		if cmd.Dir == "" {
+			cmd.Dir = owner.HomeDir
+		}
+	}
+	return c.Run(cmd)
+}
+
+// brewRunAs is the account brew must run as, or nil for "as whoever this
+// is". See brewRun for the three cases that are nil.
+func brewRunAs(c *exec.Context) (*user.User, error) {
+	if c.RunAs != "" || brewEuid() != 0 {
+		return nil, nil
+	}
+	path := c.Which("brew")
+	if path == "" {
+		return nil, fmt.Errorf("mac_brew_pkg: brew was not found on the path")
+	}
+	owner, err := brewOwner(path)
+	if err != nil {
+		return nil, fmt.Errorf("mac_brew_pkg: finding the account Homebrew belongs to: %w", err)
+	}
+	if owner.Uid == "0" {
+		return nil, fmt.Errorf("mac_brew_pkg: %s is owned by root, and Homebrew will not run as root; "+
+			"it has to belong to an ordinary account, which is the only way its own installer makes it", path)
+	}
+	return owner, nil
 }
 
 // brewProvider is macOS's Homebrew, named mac_brew_pkg to match the module
@@ -382,7 +472,7 @@ func (brewProvider) Name() string { return "mac_brew_pkg" }
 func (brewProvider) Available(c *exec.Context) bool { return c.Which("brew") != "" }
 
 func (brewProvider) ListPkgs(c *exec.Context) (*value.Map, error) {
-	res, err := c.Run(exec.Command{Argv: []string{"brew", "list", "--versions"}, Env: brewEnv()})
+	res, err := brewRun(c, exec.Command{Argv: []string{"brew", "list", "--versions"}})
 	if err != nil {
 		return nil, err
 	}
@@ -402,7 +492,7 @@ func (brewProvider) ListPkgs(c *exec.Context) (*value.Map, error) {
 
 func (brewProvider) Install(c *exec.Context, names []string, versions map[string]string, refresh bool) error {
 	if refresh {
-		if _, err := c.Run(exec.Command{Argv: []string{"brew", "update", "--quiet"}, Env: brewEnv()}); err != nil {
+		if _, err := brewRun(c, exec.Command{Argv: []string{"brew", "update", "--quiet"}}); err != nil {
 			return fmt.Errorf("brew update: %w", err)
 		}
 	}
@@ -410,7 +500,7 @@ func (brewProvider) Install(c *exec.Context, names []string, versions map[string
 	// version request is satisfied by installing by name and is enforced
 	// afterward with brew.hold, the way pkgng's lock does.
 	argv := append([]string{"brew", "install", "--quiet"}, names...)
-	_, err := c.Run(exec.Command{Argv: argv, Env: brewEnv()})
+	_, err := brewRun(c, exec.Command{Argv: argv})
 	return err
 }
 
@@ -424,14 +514,13 @@ func (brewProvider) Remove(c *exec.Context, names []string, purge bool) error {
 		argv = append(argv, "--force")
 	}
 	argv = append(argv, names...)
-	_, err := c.Run(exec.Command{Argv: argv, Env: brewEnv()})
+	_, err := brewRun(c, exec.Command{Argv: argv})
 	return err
 }
 
 func (brewProvider) LatestVersion(c *exec.Context, name string) (string, error) {
-	res, err := c.Run(exec.Command{
+	res, err := brewRun(c, exec.Command{
 		Argv:           []string{"brew", "info", "--json=v2", name},
-		Env:            brewEnv(),
 		IgnoreExitCode: true,
 	})
 	if err != nil {
@@ -453,7 +542,7 @@ func (brewProvider) LatestVersion(c *exec.Context, name string) (string, error) 
 }
 
 func (brewProvider) RefreshDB(c *exec.Context) error {
-	_, err := c.Run(exec.Command{Argv: []string{"brew", "update", "--quiet"}, Env: brewEnv()})
+	_, err := brewRun(c, exec.Command{Argv: []string{"brew", "update", "--quiet"}})
 	return err
 }
 
@@ -486,18 +575,18 @@ func firstBrewFormula(stdout string) (*value.Map, error) {
 // provider but pkgng. ----
 
 func (brewProvider) Hold(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"brew", "pin", name}, Env: brewEnv()})
+	_, err := brewRun(c, exec.Command{Argv: []string{"brew", "pin", name}})
 	return err
 }
 
 func (brewProvider) Unhold(c *exec.Context, name string) error {
-	_, err := c.Run(exec.Command{Argv: []string{"brew", "unpin", name}, Env: brewEnv()})
+	_, err := brewRun(c, exec.Command{Argv: []string{"brew", "unpin", name}})
 	return err
 }
 
 func (brewProvider) ListHolds(c *exec.Context) ([]string, error) {
-	res, err := c.Run(exec.Command{
-		Argv: []string{"brew", "list", "--pinned"}, Env: brewEnv(), IgnoreExitCode: true,
+	res, err := brewRun(c, exec.Command{
+		Argv: []string{"brew", "list", "--pinned"}, IgnoreExitCode: true,
 	})
 	if err != nil {
 		return nil, err
@@ -511,11 +600,11 @@ func (p brewProvider) Upgrade(c *exec.Context, refresh bool) (*value.Map, error)
 		return nil, err
 	}
 	if refresh {
-		if _, err := c.Run(exec.Command{Argv: []string{"brew", "update", "--quiet"}, Env: brewEnv()}); err != nil {
+		if _, err := brewRun(c, exec.Command{Argv: []string{"brew", "update", "--quiet"}}); err != nil {
 			return nil, fmt.Errorf("brew update: %w", err)
 		}
 	}
-	if _, err := c.Run(exec.Command{Argv: []string{"brew", "upgrade", "--quiet"}, Env: brewEnv()}); err != nil {
+	if _, err := brewRun(c, exec.Command{Argv: []string{"brew", "upgrade", "--quiet"}}); err != nil {
 		return nil, err
 	}
 	return pkgDelta(c, p, before)
@@ -523,12 +612,12 @@ func (p brewProvider) Upgrade(c *exec.Context, refresh bool) (*value.Map, error)
 
 func (brewProvider) ListUpgrades(c *exec.Context, refresh bool) (*value.Map, error) {
 	if refresh {
-		if _, err := c.Run(exec.Command{Argv: []string{"brew", "update", "--quiet"}, Env: brewEnv()}); err != nil {
+		if _, err := brewRun(c, exec.Command{Argv: []string{"brew", "update", "--quiet"}}); err != nil {
 			return nil, fmt.Errorf("brew update: %w", err)
 		}
 	}
-	res, err := c.Run(exec.Command{
-		Argv: []string{"brew", "outdated", "--json=v2"}, Env: brewEnv(), IgnoreExitCode: true,
+	res, err := brewRun(c, exec.Command{
+		Argv: []string{"brew", "outdated", "--json=v2"}, IgnoreExitCode: true,
 	})
 	if err != nil {
 		return nil, err
