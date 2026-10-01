@@ -101,8 +101,8 @@ func pkgRestCases() []liveCase {
 		return applyForSetup(r, root, "pkg.installed", value.MapOf("name", pkg))
 	}
 
-	// Linux and FreeBSD, for the reasons packageCases records: Homebrew
-	// refuses to run as root and choco has no `tree`.
+	// Linux and FreeBSD, for the reasons packageCases records: macOS is not
+	// yet run here (DIVERGENCE 5.188) and choco has no `tree`.
 	onPkgPlatforms := func(lc liveCase) liveCase {
 		lc.platforms = []string{"linux", "freebsd"}
 		return lc
