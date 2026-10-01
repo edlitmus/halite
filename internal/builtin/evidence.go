@@ -584,15 +584,36 @@ var moduleEvidence = map[string]exec.Evidence{
 		"replacement. The permission and flag column order was derived empirically, each of the " +
 		"14 permission letters and 7 flag columns set alone against a scratch file and the real " +
 		"output captured, which is what lets the dry run compare canonical forms instead of " +
-		"guessing. **This is NFSv4 only**: ZFS is what this fleet has, Linux's tool of the same " +
-		"name speaks a different grammar, and a POSIX.1e-shaped entry is refused by name rather " +
-		"than misread -- confirmed as root against a real UFS filesystem built on a memory disk " +
-		"and mounted with `-o acls`. **The NFSv4 round trip runs on every `freebsd` leg** now, " +
+		"guessing. **The NFSv4 round trip runs on every `freebsd` leg** now, " +
 		"rather than only where the temp directory happens to be ZFS: which family a path " +
 		"speaks is a property of the filesystem, so the test builds a UFS filesystem mounted " +
 		"`-o nfsv4acls` when it needs one, and before that the mutating half ran on one " +
-		"machine and in no CI leg (DIVERGENCE 5.123). Not covered: Linux, which needs its own " +
-		"captured fixtures and a host to take them from"},
+		"machine and in no CI leg (DIVERGENCE 5.123). " +
+		"**POSIX.1e, and Linux, since 2026-09-30** (DIVERGENCE 5.184): the module was NFSv4 only and " +
+		"refused a three-field entry by name for want of a capture. Both POSIX.1e grammars were captured " +
+		"as root on two throwaway Vultr lab instances -- FreeBSD 15.1-RELEASE-p3 on a UFS memory disk " +
+		"mounted `-o acls` (the host's root is UFS with neither ACL option, and no pool), and Debian 13 with " +
+		"acl 2.3.2, installed for the purpose, on tmpfs /tmp and ext4 /var/tmp -- and they differ: the " +
+		"effective-rights comment, where the default ACL is printed, FreeBSD refusing `setfacl -d -m` on a " +
+		"directory with no default ACL until the three required entries are given, the form `-x` takes, and " +
+		"Linux's `getfacl -h` being its help flag. The four `acl` states then ran there: " +
+		"`TestLiveACLStatesOnPOSIXOneACLs` on both hosts (test mode with the real getfacl unchanged, apply, " +
+		"converge, narrow, group, owner, a recursive default ACL on directories only, a recursive access " +
+		"entry skipping a symlink, absent, list_present/list_absent, refusals), " +
+		"`TestLiveACLStatesOnNFSv4ACLs` on FreeBSD on a UFS `-o nfsv4acls` memory disk **and on a ZFS pool " +
+		"made on a file** (the zfs module was already loaded; the test never loads it), and the conformance " +
+		"harness ran all four states on both hosts. Broken on purpose seven ways: never converging, test " +
+		"mode ignored (POSIX.1e and, separately, NFSv4) and default ACLs reaching files failed everywhere they " +
+		"run; the default-ACL seed and the three-field `-x` failed on FreeBSD alone, and parsing Linux's " +
+		"`default:` lines failed on Debian alone -- each where its platform reaches it. Hosts left as found. " +
+		"Not covered: a FreeBSD 14 host for the POSIX.1e half; ZFS on CI, whose VM does not load zfs; Linux " +
+		"filesystems other than tmpfs and ext4 (xfs, btrfs); an `acl_name` given as a numeric id, which never " +
+		"converges because getfacl prints the name; Salt's `force`, not built; a mask entry and a named entry " +
+		"managed by two states, never run -- setfacl recalculating the mask whenever it sets a named entry " +
+		"was measured on both hosts, so they would undo each other on every run. " +
+		"`acl.wipe` now sends `setfacl -b -n`: `-b` alone keeps a POSIX.1e mask on FreeBSD, so the wipe " +
+		"never finished there; `TestLiveACLWipeLeavesATrivialPOSIXOneACL` failed on freebsd15 before the " +
+		"change and passes on both hosts after it (DIVERGENCE 5.185)"},
 	"tmpfs": {Level: exec.Captured, Note: "read against the real `mount` and `df` on this " +
 		"fleet's FreeBSD 15.1 host, both against the tmpfs the host already had and against one " +
 		"the test mounted as root and then unmounted, with the reader shown to flip in both " +
@@ -626,11 +647,31 @@ var moduleEvidence = map[string]exec.Evidence{
 		"at all to begin with, so the empty reading is exercised too. Not covered: Linux, whose " +
 		"`mkswap`/`swapon -p` path is a platform-table row nothing has run; and persistence, " +
 		"which is deliberately `mount.mounted`'s job rather than this module's"},
-	// `sudo` reads and never writes, which is why `Captured` is its
-	// ceiling rather than a shortfall. There is no mutating path to
-	// demonstrate: a sudoers file is written by `file.managed`, and what
-	// this module adds is the check that runs *before* that write.
-	"sudo": {Level: exec.Captured, Note: "driven against the real sudo and visudo 1.9.17p2 on " +
+	// `sudo` was `Captured`, the ceiling for a module that only read. The
+	// `sudo.present`/`sudo.absent` states write a drop-in into the
+	// directory sudo reads as root, so it is a root-mutating module now,
+	// and `Hardware` on the two lab runs the note names (DIVERGENCE 5.184).
+	"sudo": {Level: exec.Hardware, Note: "the states `sudo.present` and `sudo.absent` were driven as root " +
+		"on 2026-09-30 on two throwaway Vultr lab instances -- FreeBSD 15.1-RELEASE-p3 with sudo 1.9.17p2 " +
+		"(drop-ins in /usr/local/etc/sudoers.d) and Debian 13 with sudo 1.9.16p2 (/etc/sudoers.d), each " +
+		"directory read from the `@includedir` line of the sudoers file `sudo -V` names. " +
+		"`TestLiveSudoStatesManageADropIn` predicted without writing, wrote a root-owned 0440 drop-in that " +
+		"`sudo -l -U nobody` then showed, converged on a second run, put a mode drifted to 0640 back, refused " +
+		"text `visudo -c -f -` rejects in test mode and for real with the file untouched, refused a dotted " +
+		"name by name, wrote into a directory sudo does not include and took it back out because `visudo -c` " +
+		"did not list it, and removed the drop-in; the conformance harness ran both states on both hosts. " +
+		"Measured there: `visudo -c -f -` reads standard input on both; both hosts' `visudo -c` calls a 0644 " +
+		"drop-in \"bad permissions, should be mode 0440\" and exits 1 while sudo itself reads it; a name with " +
+		"a `.` or ending in `~` is skipped by both. Broken on purpose four ways -- no dotted-name refusal, no " +
+		"listing check, mode 0644, no acceptance of an already-rejected policy -- and each failed on both hosts; the " +
+		"dotted-name break first passed, because the listing check caught it too, and the assertion now reads " +
+		"the refusal's words. Both sudoers.d directories were left as found and `visudo -c` passed after. Not " +
+		"covered: managing the main sudoers file, deliberately not built; a policy failing visudo -c for " +
+		"another file's *syntax* error (the bad-permissions case was made on purpose on both hosts, after the " +
+		"first fleet run found a GitHub runner whose /etc/sudoers.d/runner visudo rejects; a write now stands " +
+		"when visudo says the same of every other file as before, with a warning); sudo-rs, which has its own sudoers " +
+		"handling; macOS. " +
+		"Before the states: driven against the real sudo and visudo 1.9.17p2 on " +
 		"this fleet's FreeBSD 15.1 host. `sudo.validate` runs the real `visudo -c` over files a " +
 		"test writes -- one the grammar accepts, one it rejects, and one that is not there -- " +
 		"and each answer carries visudo's own words; this needs no privilege, which is the " +
@@ -638,10 +679,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"back to the platform's conventional location and says so, and as root it comes from " +
 		"`sudo -V` itself, so neither branch of the fallback is assumed. `sudo.list` was read as " +
 		"root against a real account, and a missing account refused. Every assertion was checked " +
-		"by breaking the code and watching it fail. **This module writes nothing by design** -- " +
+		"by breaking the code and watching it fail. The execution functions write nothing -- " +
 		"no sudoers parser is written here, because a second parser for that grammar would " +
-		"eventually disagree with the real one about who may become root. Not covered: Linux, " +
-		"where the conventional path differs and no CI leg reads it as root; and Salt's " +
+		"eventually disagree with the real one about who may become root. The same four ran as " +
+		"root on the Debian 13 lab host on 2026-09-30 and passed. Not covered: Salt's " +
 		"`sudo.salt_call`, deliberately not built, because `cmd.run` already takes a `runas` and " +
 		"applies it with setuid rather than through a second privilege system"},
 	// It was `Captured` on a claim it had not earned, and is `Hardware` on

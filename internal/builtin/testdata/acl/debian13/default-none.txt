@@ -1,0 +1,4 @@
+# file: dir2
+# owner: root
+# group: root
+

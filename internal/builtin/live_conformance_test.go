@@ -323,6 +323,8 @@ func liveConformanceCases() []liveCase {
 	cases = append(cases, conformanceIdentityCases()...)
 	cases = append(cases, conformancePkgSysCases()...)
 	cases = append(cases, conformanceConfineCases()...)
+	cases = append(cases, aclConformanceCases()...)
+	cases = append(cases, sudoConformanceCases()...)
 	return cases
 }
 

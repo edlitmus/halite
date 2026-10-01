@@ -1,0 +1,9 @@
+# file: f
+# owner: root
+# group: root
+user::rw-
+user:nobody:rwx
+group::r--
+mask::rwx
+other::r--
+

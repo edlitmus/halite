@@ -63,29 +63,36 @@ func TestParsingARealGetfaclAnswerReadsEveryEntry(t *testing.T) {
 	}
 }
 
-// TestAnNFSv4ACLIsNotReadAsAPosixOne is the flip side: a POSIX.1e entry
-// has three colon-fields and never ends in "allow" or "deny", and this
-// build says so by name rather than misreading it as a malformed NFSv4
-// entry or, worse, silently as one with an empty flags and type field.
-//
-// These three lines are not a captured run: this host mounts nothing
-// with POSIX.1e ACLs (every filesystem here is ZFS, which speaks NFSv4
-// only), and there was no root to make a UFS filesystem to capture one
-// from. They are the three-field grammar `tag:qualifier:perms` quoted
-// from setfacl(1)'s own "POSIX.1E ACL ENTRIES" section on this host
-// (FreeBSD 15.1-RELEASE-p3, `mandoc -Tascii /usr/share/man/man1/setfacl.1.gz`),
-// which is what the parser has to recognise the shape of, not what it
-// has to render correctly — recognising the shape is exactly what does
-// not need a live filesystem to prove.
-func TestAnNFSv4ACLIsNotReadAsAPosixOne(t *testing.T) {
-	for _, line := range []string{"user::rwx", "group::r-x", "other::r--", "mask::rwx", "user:games:rw-"} {
-		_, err := parseACLEntryLine(line)
-		if err == nil {
-			t.Errorf("parseACLEntryLine(%q) accepted a POSIX.1e entry as if it were NFSv4", line)
+// A POSIX.1e entry is read as one, with no flags and no type, rather
+// than as a malformed NFSv4 entry. This test used to assert the opposite
+// -- that the three-field shape was refused by name -- from lines quoted
+// out of setfacl(1), because there was then no POSIX.1e filesystem to
+// capture from. The lines below are from the captures in testdata/acl;
+// acl_posix_test.go reads those whole.
+func TestAPOSIXEntryIsReadWithNoFlagsAndNoType(t *testing.T) {
+	for line, want := range map[string]aclEntry{
+		"user::rw-":         {tag: "user", permissions: "rw-"},
+		"user:nobody:rwx":   {tag: "user", qualifier: "nobody", permissions: "rwx"},
+		"group:nogroup:r-x": {tag: "group", qualifier: "nogroup", permissions: "r-x"},
+		"mask::r--":         {tag: "mask", permissions: "r--"},
+		"other::r--":        {tag: "other", permissions: "r--"},
+	} {
+		got, err := parseACLEntryLine(line)
+		if err != nil {
+			t.Errorf("parseACLEntryLine(%q): %v", line, err)
 			continue
 		}
-		if !strings.Contains(err.Error(), "POSIX.1e") {
-			t.Errorf("parseACLEntryLine(%q) failed without naming POSIX.1e: %v", line, err)
+		if got != want || !got.posix() {
+			t.Errorf("parseACLEntryLine(%q) = %+v, want %+v", line, got, want)
+		}
+	}
+}
+
+// Three fields is not enough on its own to be a POSIX.1e entry.
+func TestAThreeFieldLineThatIsNotPOSIXIsAParseError(t *testing.T) {
+	for _, line := range []string{"owner@::rwx", "mask:nobody:rwx", "user:nobody:rwxp", "user:nobody:wrx", "user:nobody:7"} {
+		if _, err := parseACLEntryLine(line); err == nil {
+			t.Errorf("parseACLEntryLine(%q) accepted a line no getfacl prints", line)
 		}
 	}
 }
@@ -449,9 +456,9 @@ func TestWipeRunsSetfaclDashBOnAnExtendedACL(t *testing.T) {
 	// `is_extended` and originally missed this function. So the fixtures are
 	// the ones the mark reads: a real `ls -ld` capture with the `+`.
 	c := aclContext(map[string]exec.Result{
-		"realpath " + path:   {Code: 0, Stdout: path + "\n"},
-		"ls -ld " + path:     {Code: 0, Stdout: aclLsExtended},
-		"setfacl -b " + path: {Code: 0},
+		"realpath " + path:      {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:        {Code: 0, Stdout: aclLsExtended},
+		"setfacl -b -n " + path: {Code: 0},
 	})
 	out, err := aclWipeFn(c, aclArgs("name", path))
 	if err != nil {
@@ -461,17 +468,17 @@ func TestWipeRunsSetfaclDashBOnAnExtendedACL(t *testing.T) {
 	if changed != true {
 		t.Fatal("wiping an extended ACL reported no change")
 	}
-	if cmds := aclSetfaclCommands(c); len(cmds) != 1 || cmds[0] != "setfacl -b "+path {
-		t.Errorf("want exactly `setfacl -b %s`, got %v", path, cmds)
+	if cmds := aclSetfaclCommands(c); len(cmds) != 1 || cmds[0] != "setfacl -b -n "+path {
+		t.Errorf("want exactly `setfacl -b -n %s` -- -b alone leaves a POSIX.1e mask on FreeBSD (DIVERGENCE 5.185); got %v", path, cmds)
 	}
 }
 
 func TestWipeAddsDashRWhenRecursive(t *testing.T) {
 	path := "/home/ed/aclcapture/testfile"
 	c := aclContext(map[string]exec.Result{
-		"realpath " + path:      {Code: 0, Stdout: path + "\n"},
-		"ls -ld " + path:        {Code: 0, Stdout: aclLsExtended},
-		"setfacl -R -b " + path: {Code: 0},
+		"realpath " + path:         {Code: 0, Stdout: path + "\n"},
+		"ls -ld " + path:           {Code: 0, Stdout: aclLsExtended},
+		"setfacl -b -n -R " + path: {Code: 0},
 	})
 	if _, err := aclWipeFn(c, aclArgs("name", path, "recursive", true)); err != nil {
 		t.Fatalf("aclWipeFn: %v", err)
@@ -628,7 +635,7 @@ func TestAMissingGetfaclIsReportedByName(t *testing.T) {
 	}
 }
 
-func TestSignaturesAreScopedToFreeBSDAndCarrySection15Point2(t *testing.T) {
+func TestSignaturesAreScopedToFreeBSDAndLinuxAndCarrySection15Point2(t *testing.T) {
 	r := &Registries{Exec: exec.NewRegistry(), States: states.NewRegistry()}
 	registerACL(r)
 	for _, name := range []string{"acl.get", "acl.is_extended", "acl.set", "acl.remove", "acl.wipe"} {
@@ -639,8 +646,8 @@ func TestSignaturesAreScopedToFreeBSDAndCarrySection15Point2(t *testing.T) {
 		if sig.Section != "15.2" {
 			t.Errorf("%s.Section = %q, want 15.2", name, sig.Section)
 		}
-		if len(sig.Platforms) != 1 || sig.Platforms[0] != "freebsd" {
-			t.Errorf("%s.Platforms = %v, want [freebsd]", name, sig.Platforms)
+		if strings.Join(sig.Platforms, ",") != "freebsd,linux" {
+			t.Errorf("%s.Platforms = %v, want [freebsd linux]: the two platforms there are captures from", name, sig.Platforms)
 		}
 	}
 	for _, name := range []string{"acl.set", "acl.remove", "acl.wipe"} {

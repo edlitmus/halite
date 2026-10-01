@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **96 execution modules / 682 functions** and **51 state
-modules / 142 functions**.
+The build ships **96 execution modules / 682 functions** and **53 state
+modules / 148 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -494,7 +494,7 @@ different reason is given.
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-40 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
+42 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -515,7 +515,7 @@ different reason is given.
 | `test` | implemented | 6 | |
 | `user` | implemented | 2 | |
 | `zfs` | implemented | 2 | `filesystem_present`, `absent` |
-| `acl` | not implemented | 0 | see 2.1 |
+| `acl` | implemented | 4 | `present`, `absent`, `list_present`, `list_absent` with Salt's arguments, over acl.set and acl.remove: POSIX.1e on Linux and UFS `-o acls`, NFSv4 on ZFS and UFS `-o nfsv4acls`, the family read from getfacl for each path. `recurse` walks the tree itself, a default ACL on directories only; Salt's `force` is not built (5.184) |
 | `apparmor` | implemented | 1 | `mode`, taking enforce, complain or disable; `kill` and `unconfined` are set in the profile itself and are refused by name |
 | `at` | implemented | 2 | `present` and `absent`, keyed by an identifier carried as the first line of the job's own script, so a second run finds the job it already scheduled instead of queueing another (5.72) |
 | `beacon` | implemented | 2 | present and absent, both persisting to beacons.d so a declaration survives a restart 
@@ -540,7 +540,7 @@ different reason is given.
 | `schedule` | implemented | 2 | present and absent; absent now persists, which it did not before 
 | `selinux` | implemented | 7 | `mode`, `boolean`, `fcontext_policy_present`/`absent`/`applied`, `port_policy_present`/`absent`. `mode` sets the running mode only and refuses one /etc/selinux/config disagrees with, rather than report converged on a node that changes back at boot. The `absent` states remove local rules and refuse the policy's own, which semanage cannot delete. The `module*` states are not built (5.183) |
 | `ssh_known_hosts` | implemented | 2 | present and absent; a key is either declared outright or scanned and checked against a declared fingerprint, and trust on first use is refused by name rather than performed silently |
-| `sudo` | not implemented | 0 | |
+| `sudo` | implemented | 2 | `present` and `absent`, each managing one drop-in in the directory the node's sudoers includes. Salt has no such state; the text is checked by `visudo -c -f -` before it is written and the whole policy by `visudo -c` after, which must also list the file, or the previous text is put back (5.184) |
 | `timezone` | implemented | 1 | `system`; a zone the node does not have is refused in test mode, where the tool would never run to say so |
 | `win_dacl` | implemented | 4 | present, absent, inherit, owner; the exec side is win_dacl.* 
 | `win_task` | implemented | 2 | present and absent; the exec side is win_task.* 
@@ -17792,6 +17792,211 @@ all-files, `d` and `f` passed to `-f`, though all eight were parsed from the
 listing; `sel_range` on ports, `sel_level` on fcontext rules, and chcon's
 `-r` and `-l`; sctp and dccp ports, which are refused; the MLS policy; and
 any policycoreutils older than 2.9 or newer than 3.6.
+
+### 5.184 The `acl` and `sudo` states, and the POSIX.1e half `acl` was waiting for
+
+SPEC 15.5 names both states and §2.2 of plan.md listed both as missing,
+with the note that their execution halves already shipped (5.72). They
+ship now: `acl.present`, `acl.absent`, `acl.list_present` and
+`acl.list_absent` with Salt's arguments, and `sudo.present` and
+`sudo.absent`. Built and driven on 2026-09-30, as root, on two throwaway
+Vultr lab instances: **freebsd15**, FreeBSD 15.1-RELEASE-p3 with sudo
+1.9.17p2, and **debian13**, Debian 13 with sudo 1.9.16p2 and acl 2.3.2 --
+installed for the purpose, since the image carried no getfacl, and
+removed again afterwards.
+
+#### `acl`: the state needed a family the module refused
+
+Salt's `acl` state is linux_acl, and its arguments are POSIX.1e's:
+`acl_type` user, group, mask or other, a `d:` prefix for a default ACL,
+`perms` as rwx. The execution module was NFSv4 only and refused a
+three-field entry by name, for want of a capture. A state built on it
+would have run nowhere on Linux and nowhere on UFS. So the module learned
+POSIX.1e first, from captures (testdata/acl), and the states call
+`acl.set` and `acl.remove` per path and decide nothing else.
+
+**What the FreeBSD host actually was** matters here: its root is UFS
+mounted with neither `acls` nor `nfsv4acls`, where `getfacl` prints a
+trivial POSIX.1e ACL synthesised from the mode and `setfacl` answers
+"Operation not supported"; there was no pool, though the zfs module was
+loaded. POSIX.1e was captured on a 32 MiB swap-backed memory disk mounted
+`-o acls`; NFSv4 was driven on one mounted `-o nfsv4acls` **and on a ZFS
+pool made on a file**, which is the family and the filesystem this
+fleet's FreeBSD hosts run. On Debian, tmpfs /tmp and ext4 /var/tmp.
+
+The two POSIX.1e grammars are not one grammar, and each difference is a
+branch in acl.go with the capture beside it:
+
+| | Linux (acl 2.3.2) | FreeBSD 15.1 |
+|---|---|---|
+| a masked entry | `user:nobody:rwx<TAB>#effective:r--` | `user:nobody:rwx<TAB><TAB># effective: r--` |
+| a directory's default ACL | in the main listing, each line `default:`-prefixed | only under `getfacl -d`; both print it there, unprefixed |
+| `setfacl -d -m user:nobody:rx` on a directory with no default ACL | fills in `user::`, `group::`, `other::` from the access ACL | "acl_calc_mask() failed: Invalid argument", until those three are given |
+| `setfacl -x user:nobody` | accepted | "Invalid argument"; needs `user:nobody:` |
+| `-x` of an entry that is not there | exit 0 | exit 1, "cannot remove non-existent ACL entry" |
+| `-m u:nobody:7` and `X` | accepted | refused, with the same misleading acl_calc_mask error |
+| `setfacl -R -d` over a tree with files | files skipped silently | "default ACL may only be set on a directory", exit 2 |
+| `getfacl -h` | **the help flag**: prints the usage, exits 0 | don't follow the symlink |
+| `# file:` | leading `/` stripped, with a note on stderr | as given |
+
+So: comments after `#` are read by neither; the default ACL is always read
+with `getfacl -d`; set seeds the three required entries from the access
+ACL when a directory has none, which makes FreeBSD do what Linux does
+itself; remove sends `tag:name:` and only for an entry it has read is
+there; permissions are the letters `rwx-`; `follow_symlink=false` is
+refused on Linux by name. `recurse` in the states walks the tree in Go
+rather than using `-R`, because of the two `-R` rows above, and calls set
+or remove on each path -- which also makes "is it converged?" a question
+asked of every path rather than of the top one. Symlinks are skipped; a
+default ACL is a directory's only.
+
+On an NFSv4 path the same arguments are acl.set's: `acl_type` user, group,
+owner@, group@ or everyone@, `perms` in NFSv4's grammar, an `allow` entry.
+`perms: rwx` therefore means read_data, write_data and execute there,
+which is NFSv4's reading of the letters and not a translation of
+POSIX.1e's; nothing translates between the families. A `d:` type on
+NFSv4 is refused by name.
+
+#### `sudo`: the shape, since Salt has none
+
+SPEC 15.5 lists `sudo` and says nothing more; Salt has no core state of
+the name. The smallest shape that does what `file.managed` cannot is one
+**drop-in per state**, in the directory the node's sudoers includes --
+read from the `@includedir` line of the file `sudo -V` names, which was
+/usr/local/etc/sudoers.d and /etc/sudoers.d on the two hosts. The main
+sudoers file is never written. What was measured, and is now behaviour:
+
+- `visudo -c -f -` reads standard input on both, so the text is checked
+  **before anything is written, test mode included**, with nothing on
+  disk.
+- An alias used and not defined is a warning to that check, exit 0 -- so
+  after the write, `visudo -c` checks the whole policy, and must also
+  **list the file** among those it parsed, which is sudo's own proof that
+  it reads it. If either fails, the previous text goes back (or the file
+  goes) and the state fails, quoting visudo.
+- A drop-in named with a `.` or ending in `~` is skipped by sudo on both
+  hosts -- absent from visudo's listing and from `sudo -l` -- so such a
+  name is refused rather than written and ignored.
+- `visudo -c` calls a 0644 drop-in "bad permissions, should be mode 0440"
+  and exits 1, while sudo itself reads it. The drop-in is root's and
+  0440, which satisfies both.
+- The temporary file is renamed into place from a name starting with a
+  dot, which sudo skips, so it never reads a half-written rule.
+
+**The first live run found a defect in the design.** The state checked
+the policy *before* writing as well, and refused to add to a policy
+visudo already rejected. The live test then drifted the drop-in's mode to
+0640, and the pre-check refused the one write that would have fixed it:
+the policy was failing *because of this file*.
+
+**The first fleet run found the other half.** With the pre-check gone,
+the post-check demanded a clean policy, and the linux leg's GitHub
+ubuntu-24.04 runner does not have one: its `visudo -c` says
+
+```
+/etc/sudoers.d/runner: bad permissions, should be mode 0440
+```
+
+-- the same split measured on the lab hosts, where sudo reads a file
+visudo rejects -- so every `sudo.present` there wrote, failed and took
+the drop-in back out. Neither "refuse a failing policy" nor "demand a
+clean one" is right. visudo is now asked before the write as well, as a
+baseline, and the write stands when the drop-in is listed as parsed and
+visudo says the same about every *other* file as it did before: its
+output with the lines beginning with the drop-in's path left out,
+compared as text, nothing parsed. The result then carries a warning
+naming the files. `TestLiveSudoStatesManageADropIn` makes the runner's
+shape on purpose -- a comment-only 0644 file beside the drop-in -- and
+passed on both lab hosts; with the new branch disabled it failed on both.
+
+#### What ran, and what breaking it showed
+
+On both hosts: `TestLiveACLStatesOnPOSIXOneACLs` (test mode with the real
+getfacl byte-identical before and after, apply, converge, narrow, a group
+entry, the owner's entry, a recursive default ACL on two directories and
+no file, a recursive access entry skipping a symlink, absent,
+`list_present`/`list_absent`, two refusals with the ACL unchanged);
+`TestLiveSudoStatesManageADropIn` (above, plus `sudo -l -U nobody`
+showing the rule and then not); the conformance harness on all six
+states; the existing `TestLiveSudo*`, now also on Debian. On FreeBSD:
+`TestLiveACLStatesOnNFSv4ACLs` on UFS and ZFS, and
+`TestLiveACLReadsAPOSIXOneACLOnARealUFSFilesystem`, which was the test
+asserting the refusal and now asserts the read. The `internal/builtin`
+and `internal/states` unit suites passed on both hosts, as root, with the
+package source beside the binary so the test-mode audit could parse it.
+
+Broken on purpose, one at a time:
+
+| Break | freebsd15 | debian13 |
+|---|---|---|
+| POSIX.1e set never reports converged | fail | fail |
+| POSIX.1e set ignores test mode | fail | fail |
+| NFSv4 set ignores test mode | fail | (not reached) |
+| a recursive default ACL reaches files | fail | fail |
+| no default-ACL seed | **fail** | pass |
+| `-x user:nobody` without the colon | **fail** | pass |
+| Linux's `default:` lines parsed as entries | pass | **fail** |
+| sudo: no listing check after the write | fail | fail |
+| sudo: drop-in mode 0644 | fail | fail |
+| sudo: no dotted-name refusal | fail | fail |
+| sudo: a policy already rejected for another file blocks the write | fail | fail |
+
+The last one **passed at first on both hosts**: the dotted file was
+written, missing from visudo's listing, and taken back out, which is a
+failure too -- the listing check was doing the name check's job. The
+assertion now reads the refusal's own words. The others each fail where
+their platform reaches them and pass where it does not.
+
+**Left as found**: both sudoers.d directories listed identically before
+and after, and `visudo -c` passes; no memory disk, mount or pool left on
+FreeBSD; the scratch directories gone; `acl` purged from Debian.
+
+**Not verified:** FreeBSD 14 for the POSIX.1e half; ZFS on CI, whose
+FreeBSD VM does not load zfs, so that subtest will skip there; Linux
+filesystems other than tmpfs and ext4; an `acl_name` given as a numeric
+id, which never converges because getfacl prints the name; a mask entry
+and a named entry managed by two states, which would undo each other
+because setfacl recalculates the mask on every named entry it sets
+(measured on both, not run as states); Salt's `force`, not built; sudo-rs;
+macOS; and a drop-in whose old text visudo rejected, where the before
+and after outputs differ by that file's context lines and the write is
+taken back out (conservative, and not run). The fleet linux leg now
+installs `acl` and runs `TestLiveACL|TestLiveSudo`; its first run is
+what found the runner's sudoers.d, above.
+
+### 5.185 `acl.wipe` never finished on a FreeBSD POSIX.1e file
+
+Found while capturing for 5.184. On FreeBSD 15.1, on UFS mounted
+`-o acls`, `setfacl -b` on a file carrying a named entry leaves the mask
+behind:
+
+```
+user::rw-
+group::r--
+mask::r--
+other::r--
+```
+
+and `ls` still marks the file `+`. `acl.wipe` ran `-b` alone and decided
+"extended or not" from that mark, so on such a file it reported a change
+on every run and never left the trivial ACL it promised. Linux's `-b`
+(acl 2.3.2, Debian 13) removes the mask with the rest, so the defect was
+FreeBSD's alone -- and before 5.184 the module refused POSIX.1e for
+everything but `is_extended` and `wipe`, which is how it lived unseen.
+
+`setfacl -b -n` -- clear, and do not recalculate the mask -- left the
+trivial ACL on all four places it was tried: FreeBSD UFS `-o acls`, UFS
+`-o nfsv4acls`, a ZFS pool on a file, and Debian 13. `acl.wipe` sends
+that now. `TestLiveACLWipeLeavesATrivialPOSIXOneACL` wipes a file
+carrying `user:nobody:rwx`, reads the real getfacl for a mask, and wipes
+again expecting no change. Before the change it failed on freebsd15
+(`mask::r--` left, and the second wipe reported a change) and passed on
+debian13; after it, it passes on both, as does the NFSv4 round trip that
+also wipes.
+
+**Not verified:** FreeBSD 14's setfacl, and `-b -n` with `recursive` on
+a real tree; ZFS was tried by hand, not by the test, since the test makes
+its POSIX.1e file on UFS.
 
 
 

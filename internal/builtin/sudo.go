@@ -69,6 +69,14 @@ import (
 // lines and nothing else. So there is a fallback to the platform's
 // conventional location, and the answer says which route produced it,
 // because a silent fallback is a defect that hides twice.
+//
+// # The states write, and only through this module's checks
+//
+// The execution functions still write nothing. `sudo.present` and
+// `sudo.absent`, in sudo_state.go, manage one drop-in each, and the
+// write they make is fenced by `visudo -c -f -` over the text before it
+// and `visudo -c` over the whole policy after, both through
+// sudoRunVisudo here -- the same checks, not a second copy of them.
 func registerSudo(r *Registries) {
 	r.Exec.Add(
 		exec.Module{
@@ -128,6 +136,7 @@ func registerSudo(r *Registries) {
 			},
 		},
 	)
+	r.States.Add(sudoStateModules()...)
 }
 
 // sudoVersion reports the version, or "" on a node without sudo.
@@ -273,19 +282,48 @@ func sudoValidate(c *exec.Context, path string) (any, error) {
 	if path = strings.TrimSpace(path); path != "" {
 		argv = append(argv, "-f", path)
 	}
-	res, err := c.Run(exec.Command{Argv: argv, IgnoreExitCode: true})
+	valid, said, err := sudoRunVisudo(c, argv, "")
 	if err != nil {
-		return nil, fmt.Errorf("visudo could not be run on this node: %w", err)
+		return nil, err
 	}
-	said := strings.TrimSpace(res.Stdout + res.Stderr)
 	out := value.NewMap(4)
-	out.Set("valid", res.Code == 0)
+	out.Set("valid", valid)
 	out.Set("comment", said)
 	out.Set("checked", path)
 	if path == "" {
 		out.Set("checked", "this node's own sudoers")
 	}
 	return out, nil
+}
+
+// sudoValidateText checks sudoers text that is in no file at all, by
+// handing it to `visudo -c -f -` on standard input.
+//
+// That is what lets `sudo.present` judge a rule in test mode without
+// writing anything anywhere, and before the real run puts a byte in the
+// directory sudo reads. Measured on sudo 1.9.17p2 (FreeBSD 15.1) and
+// 1.9.16p2 (Debian 13): both read standard input for `-f -`, answer
+// "stdin: parsed OK" and exit 0, and exit 1 with the line and column of a
+// syntax error. An alias the text uses and does not define is a warning
+// there, not a failure -- it may be defined in another file -- which is
+// why the whole policy is checked again once a drop-in is in place.
+func sudoValidateText(c *exec.Context, text string) (bool, string, error) {
+	if c.Which("visudo") == "" {
+		return false, "", errors.New("this node has no `visudo`, which is what validates a sudoers rule")
+	}
+	return sudoRunVisudo(c, []string{"visudo", "-c", "-f", "-"}, text)
+}
+
+// sudoRunVisudo runs one visudo check and returns whether it passed and
+// everything it said, standard output and standard error together:
+// visudo puts "parsed OK" on one and its complaints on the other, and an
+// operator needs both.
+func sudoRunVisudo(c *exec.Context, argv []string, stdin string) (bool, string, error) {
+	res, err := c.Run(exec.Command{Argv: argv, Stdin: stdin, IgnoreExitCode: true})
+	if err != nil {
+		return false, "", fmt.Errorf("visudo could not be run on this node: %w", err)
+	}
+	return res.Code == 0, strings.TrimSpace(res.Stdout + res.Stderr), nil
 }
 
 // sudoList reports what sudo grants an account.

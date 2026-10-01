@@ -544,10 +544,13 @@ already reachable three ways. Registering a module for them would be a
 second, thinner copy of the pipeline the node actually runs. The row is
 struck rather than filled. `ps` shipped earlier (DIVERGENCE 5.61).
 
-**State, 6 of SPEC 15.5**: `acl`, `kernelpkg`, `logrotate`,
-`pro`, `sudo`, `win_wua`. `at`, `reboot`, `locale` and `selinux` have
-shipped since this row was written (`locale`, 5.181; `selinux`, 5.183). The execution halves of `acl` and `sudo` ship; it
-is their states that do not.
+**State, 4 of SPEC 15.5**: `kernelpkg`, `logrotate`, `pro`,
+`win_wua`. `at`, `reboot`, `locale` and `selinux` have
+shipped since this row was written (`locale`, 5.181; `selinux`, 5.183),
+and `acl` and `sudo` after them (5.184): `acl`'s four states with Salt's
+arguments over both ACL families, which meant teaching the execution
+module POSIX.1e first, and `sudo.present`/`sudo.absent`, a visudo-checked
+drop-in each, since Salt has no state of that name to follow.
 
 Re-measured against the registry on 2026-09-12: this row had said 14 and
 still listed `iptables`, `lvm`, `mac_defaults` and `nftables`, all four
@@ -589,7 +592,7 @@ to block. §7 has the consequences.
    16.2's beacons, `proc` and `ps`, which were pending "a later phase,
    with a portable reader for it" -- **and both now ship**, leaving
    fifteen of that inventory. DIVERGENCE 5.61 and 5.62.
-4. ~~**`selinux`**~~, `iptables`, `nftables`, `sudo`, `acl`. Platform-shaped
+4. ~~**`selinux`**~~, `iptables`, `nftables`, ~~`sudo`~~, ~~`acl`~~ (states, 5.184). Platform-shaped
    and mostly Linux; see 2.3. `apparmor` is struck: it ships, with seven
    execution functions and the `apparmor.mode` state, and it closed
    15.2, 15.5 and 15.3's Debian row together. **`selinux` is struck

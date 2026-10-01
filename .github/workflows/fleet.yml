@@ -72,7 +72,8 @@ on:
       # trigger the leg that drives it is a test nobody runs.
       - "internal/builtin/live_*_test.go"
       # The FreeBSD row's modules, which the freebsd leg now drives in
-      # full: `jail` and `acl` are FreeBSD-only, and the rest are
+      # full: `jail` is FreeBSD-only, `acl` speaks both FreeBSD families (and
+      # Linux's, on the linux leg), and the rest are
       # cross-platform modules whose BSD branch runs nowhere else.
       - "internal/builtin/jail*.go"
       - "internal/builtin/acl*.go"
@@ -265,7 +266,7 @@ jobs:
   # throwaway unit in /run/systemd/system that is attached to nothing
   # (DIVERGENCE 5.39).
   linux:
-    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm, modprobe, udev, snap, pro)
+    name: linux (real kernel, hostname, apparmor, netplan, service, pkg, quota, lvm, iptables, nftables, journald, mdadm, modprobe, udev, snap, pro, acl, sudo)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -358,6 +359,16 @@ jobs:
       # autoloaded by mdadm.
       - name: install mdadm
         run: sudo apt-get install -y --no-install-recommends mdadm
+
+      # getfacl and setfacl, for the acl module's POSIX.1e half and its
+      # states. Not every Ubuntu image carries the `acl` package -- the
+      # Debian 13 lab host it was built against did not -- and without it
+      # TestLiveACLStates skips, which on a green leg reads as coverage.
+      # The version is printed because the evidence note names one.
+      - name: install the ACL tools
+        run: |
+          sudo apt-get install -y --no-install-recommends acl
+          getfacl --version
 
       # iptables ships on the runner image; nftables usually does too,
       # but install it to be sure. The live tests do their work in a
@@ -506,7 +517,7 @@ jobs:
           # same as the freebsd leg.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveConformance' ./internal/builtin/ 2>&1;
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveConformance' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 
@@ -581,6 +592,17 @@ jobs:
             echo "the conformance suite left its AppArmor profile on disk"; exit 1; }
           test ! -e /run/systemd/system/halite-live-probe.service || {
             echo "the tests left the probe unit in /run/systemd/system"; exit 1; }
+          # A sudoers drop-in left behind is a rule in force on a machine,
+          # so this is asserted rather than printed. Through sudo: the
+          # directory is 0750 root, and this step runs as the runner
+          # account, so a plain `ls` printed nothing and the check below
+          # could never have fired -- which the first run showed.
+          drop_ins=$(sudo ls /etc/sudoers.d)
+          echo "sudoers drop-ins: $(echo "$drop_ins" | tr '\n' ' ')"
+          test -n "$drop_ins" || { echo "::error::/etc/sudoers.d could not be listed"; exit 1; }
+          if echo "$drop_ins" | grep -Eq '^(halite-live-|halitecf-sudo)'; then
+            echo '::error::the sudo tests left a drop-in in /etc/sudoers.d'; exit 1
+          fi
           # The reboot assertion, and the reason this step stopped being
           # merely tidy. Everything above leaves a mess that stays the same
           # size; a pending shutdown takes the machine down later. Both
@@ -715,6 +737,17 @@ jobs:
             echo '::error::the conformance suite left its jail running; `jail -r halitecf_jail` removes it'
             jls -N || true
             exit 1
+          fi
+          # A sudoers drop-in left behind is a rule in force; a memory disk
+          # or a pool left behind is the acl tests' scratch filesystem.
+          echo "sudoers drop-ins: $(ls /usr/local/etc/sudoers.d 2>/dev/null | tr '\n' ' ')"
+          echo "memory disks: $(mdconfig -l)"
+          echo "pools: $(zpool list -H -o name 2>/dev/null | tr '\n' ' ')"
+          if ls /usr/local/etc/sudoers.d 2>/dev/null | grep -Eq '^(halite-live-|halitecf-sudo)'; then
+            echo '::error::the sudo tests left a drop-in in /usr/local/etc/sudoers.d'; exit 1
+          fi
+          if zpool list -H -o name 2>/dev/null | grep -q '^halitelive'; then
+            echo '::error::the acl tests left their ZFS pool'; exit 1
           fi
 
   # The macOS row, as root, on a machine nobody minds breaking.
