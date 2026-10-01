@@ -1,0 +1,104 @@
+{
+  "formulae": [],
+  "casks": [
+    {
+      "token": "chatgpt",
+      "full_token": "chatgpt",
+      "old_tokens": [],
+      "tap": "homebrew/cask",
+      "name": [
+        "ChatGPT"
+      ],
+      "desc": "OpenAI's official ChatGPT desktop app",
+      "homepage": "https://chatgpt.com/",
+      "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.928.31416.zip",
+      "url_specs": {},
+      "version": "26.928.31416",
+      "autobump": true,
+      "no_autobump_message": null,
+      "skip_livecheck": false,
+      "installed": "26.623.141536",
+      "installed_time": 1783544832,
+      "bundle_version": "12553",
+      "bundle_short_version": "26.928.31416",
+      "pinned": false,
+      "pinned_version": null,
+      "outdated": false,
+      "sha256": "87bd4eb365f9ee1e66afdd91ed961f4e91b220d72a8b8c949769229b91926b22",
+      "artifacts": [
+        {
+          "uninstall": [
+            {
+              "quit": "com.openai.codex"
+            }
+          ]
+        },
+        {
+          "app": [
+            "ChatGPT.app"
+          ],
+          "target": "/Applications/ChatGPT.app"
+        },
+        {
+          "zap": [
+            {
+              "trash": [
+                "/Library/Application Support/CodexComputerUseAuthorizationPlugin",
+                "~/Library/Application Scripts/*.com.openai.sky.CUAService",
+                "~/Library/Application Support/Codex",
+                "~/Library/Application Support/com.apple.sharedfilelist/com.apple.LSSharedFileList.ApplicationRecentDocuments/com.openai.codex.sfl*",
+                "~/Library/Application Support/com.openai.codex",
+                "~/Library/Application Support/OpenAI/Codex",
+                "~/Library/Caches/Codex",
+                "~/Library/Caches/com.openai.codex",
+                "~/Library/Caches/com.openai.sky.CUAService",
+                "~/Library/Group Containers/*.com.openai.sky.CUAService",
+                "~/Library/HTTPStorages/com.openai.codex",
+                "~/Library/HTTPStorages/com.openai.codex.binarycookies",
+                "~/Library/HTTPStorages/com.openai.sky.CUAService",
+                "~/Library/HTTPStorages/com.openai.sky.CUAService.binarycookies",
+                "~/Library/Logs/com.openai.codex",
+                "~/Library/Preferences/com.openai.codex.plist",
+                "~/Library/Preferences/com.openai.sky.CUAService.cli.plist",
+                "~/Library/Preferences/com.openai.sky.CUAService.plist",
+                "~/Library/Saved Application State/com.openai.codex.savedState"
+              ],
+              "rmdir": "~/.codex"
+            }
+          ]
+        }
+      ],
+      "caveats": null,
+      "caveats_rosetta": null,
+      "depends_on": {
+        "macos": {
+          ">=": [
+            "13"
+          ]
+        }
+      },
+      "conflicts_with": null,
+      "container": null,
+      "rename": [],
+      "auto_updates": true,
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "deprecate_args": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "disable_args": null,
+      "tap_git_head": "7e47fe60e909037cddb2f4cb6b78454b7f68e3d3",
+      "languages": [],
+      "ruby_source_path": "Casks/c/chatgpt.rb",
+      "ruby_source_checksum": {
+        "sha256": "b7dd93df7b5f13f68832e894c16faa95a8787c3854d5d48c94c34a3fb8f3c05c"
+      }
+    }
+  ]
+}

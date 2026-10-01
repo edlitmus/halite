@@ -40,6 +40,11 @@ answering an empty version, and `pkg.latest` fails with brew's reason
 instead of reporting the package up to date. A name brew has nothing
 for is still an empty version.
 
+`pkg.latest_version` answers for a Homebrew cask, and `pkg.latest` sees
+a cask that is behind or not installed. Every cask used to be reported
+current. A name that is both a formula and a cask means whichever brew
+says it means.
+
 ### A `kernelpkg` module and its three states
 
 `kernelpkg.active`, `list_installed`, `latest_available`,

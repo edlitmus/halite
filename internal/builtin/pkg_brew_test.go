@@ -332,3 +332,55 @@ func TestBrewPkgLatestFailsWhenBrewCannotSayWhatIsLatest(t *testing.T) {
 		t.Errorf("comment = %q; want brew's reason in it", res.Comment)
 	}
 }
+
+// Casks, captured the same day: `brew info --json=v2` for 1password-cli
+// (installed and current), firefox (not installed), chatgpt (installed
+// 26.623.141536 by Homebrew's record, offered 26.928.31416), and
+// copilot-cli -- a name that is both AWS Copilot's formula (1.34.1, from
+// aws/tap) and GitHub's Copilot CLI cask (1.0.90), for which brew chose
+// the cask and said so on stderr. The answer is under `casks`, with
+// `formulae` empty, which the provider did not read (DIVERGENCE 5.191).
+
+func TestBrewLatestVersionReadsACask(t *testing.T) {
+	c := brewFixtureCtx(t, "info-1password-cli", "info-firefox", "info-chatgpt")
+	for name, want := range map[string]string{
+		"1password-cli": "2.39.0",
+		"firefox":       "157.0",
+		"chatgpt":       "26.928.31416", // what brew offers, not the 26.623.141536 installed
+	} {
+		got, err := (brewProvider{}).LatestVersion(c, name)
+		if err != nil || got != want {
+			t.Errorf("LatestVersion(%s) = %q, %v; want %q", name, got, err, want)
+		}
+	}
+}
+
+// brew decides which package an ambiguous name means; the provider
+// reports the version of the one brew answered for. The formula's 1.34.1
+// would mean the provider chose.
+func TestBrewLatestVersionTakesBrewsChoiceForANameThatIsBoth(t *testing.T) {
+	c := brewFixtureCtx(t, "info-copilot-cli")
+	got, err := (brewProvider{}).LatestVersion(c, "copilot-cli")
+	if err != nil || got != "1.0.90" {
+		t.Errorf("LatestVersion(copilot-cli) = %q, %v; want the cask's 1.0.90", got, err)
+	}
+}
+
+// What the defect cost: pkg.latest reported every cask current. chatgpt
+// is installed and older than brew offers; firefox is not installed.
+func TestBrewPkgLatestSeesACaskThatIsBehindOrAbsent(t *testing.T) {
+	for name, want := range map[string]string{
+		"chatgpt": "would be upgraded",
+		"firefox": "would be installed",
+	} {
+		c := brewFixtureCtx(t, "info-installed", "info-"+name)
+		c.Test = true
+		res, err := pkgLatest(c, value.MapOf("name", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Result != nil || !strings.Contains(res.Comment, want) {
+			t.Errorf("pkg.latest %s: result %v, %q; want a pending change that %s", name, res.Result, res.Comment, want)
+		}
+	}
+}

@@ -638,16 +638,36 @@ func (brewProvider) LatestVersion(c *exec.Context, name string) (string, error) 
 		msg := firstLine(strings.TrimSpace(res.Stderr + "\n" + res.Stdout))
 		return "", fmt.Errorf("brew info %s exited %d: %s", name, res.Code, msg)
 	}
-	f, err := firstBrewFormula(res.Stdout)
-	if err != nil || f == nil {
+	// brew answers for one package: a name that is both a formula and a
+	// cask comes back as whichever brew chose, with a warning on stderr
+	// saying which (`copilot-cli` as the cask and `goreleaser` as the
+	// formula, on the Mac this was captured on). So whichever half is
+	// non-empty is the answer, and brew, not this provider, has decided
+	// which package the name means.
+	f, err := firstBrewEntry(res.Stdout, "formulae")
+	if err != nil {
 		return "", err
 	}
-	versions, ok := mustMap(f, "versions")
-	if !ok {
-		return "", nil
+	if f != nil {
+		versions, ok := mustMap(f, "versions")
+		if !ok {
+			return "", nil
+		}
+		stable, _ := versions.Get("stable")
+		return value.KeyString(stable), nil
 	}
-	stable, _ := versions.Get("stable")
-	return value.KeyString(stable), nil
+	// A cask's `version` is the one brew offers; what is installed is
+	// `installed`, which is what ListPkgs reports -- so the two sides
+	// pkg.latest compares come from the same document in the same
+	// spelling. This used to read formulae alone and answer "" for every
+	// cask, which pkg.latest reads as "nothing newer": since ListPkgs
+	// lists casks (DIVERGENCE 5.189), every cask was reported current
+	// whatever brew offered. DIVERGENCE 5.191.
+	k, err := firstBrewEntry(res.Stdout, "casks")
+	if err != nil || k == nil {
+		return "", err
+	}
+	return brewString(k, "version"), nil
 }
 
 func (brewProvider) RefreshDB(c *exec.Context) error {
@@ -666,9 +686,10 @@ func brewSaysUnavailable(stderr string) bool {
 	return false
 }
 
-// firstBrewFormula decodes a `brew info --json=v2` response and returns
-// its first formula, or nil when the name matched none.
-func firstBrewFormula(stdout string) (*value.Map, error) {
+// firstBrewEntry decodes a `brew info --json=v2` response and returns the
+// first entry under key -- "formulae" or "casks" -- or nil when there is
+// none.
+func firstBrewEntry(stdout, key string) (*value.Map, error) {
 	v, err := value.DecodeJSON([]byte(stdout))
 	if err != nil {
 		return nil, err
@@ -677,16 +698,13 @@ func firstBrewFormula(stdout string) (*value.Map, error) {
 	if !ok {
 		return nil, nil
 	}
-	formulae, ok := m.Get("formulae")
-	if !ok {
+	entries, _ := m.Get(key)
+	list := asList(entries)
+	if len(list) == 0 {
 		return nil, nil
 	}
-	list, ok := formulae.([]any)
-	if !ok || len(list) == 0 {
-		return nil, nil
-	}
-	f, _ := list[0].(*value.Map)
-	return f, nil
+	e, _ := list[0].(*value.Map)
+	return e, nil
 }
 
 // ---- mac_brew_pkg: hold, upgrade, and the optional interfaces it can
