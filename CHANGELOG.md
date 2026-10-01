@@ -23,6 +23,40 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `locale`, and `locale.system` and `locale.present`
+
+`locale.system` and `locale.present` used to be states this build could not
+run. They ship, with Salt's five execution functions: `list_avail`,
+`get_locale`, `set_locale`, `avail` and `gen_locale`. Locales are compared the
+way glibc compares them, so `en_US.UTF-8` and `en_US.utf8` are one locale —
+`locale -a` prints the second, localectl stores whichever it is given, and a
+state that compared the text would have reported a change forever. What lands
+on the node is the operator's spelling. `set_locale` changes LANG alone and
+refuses a locale the node cannot load. `locale.present` compiles through
+/etc/locale.gen and `locale-gen` on Debian, and on EL 8 and 9 installs
+`glibc-langpack-<language>`, because EL ships no locale sources to compile.
+Linux only. Driven as root on Rocky 9.8, Alma 8.10 and Debian 13 in the lab;
+on Debian, where `locales-all` was installed, nothing ever needed compiling,
+so that path is not demonstrated. DIVERGENCE 5.181.
+
+### `shadow`, on Linux
+
+`shadow.info`, `set_password`, `lock_password` and the rest of Salt's Linux
+shadow module used to be "not a function". Twelve now ship under Salt's names:
+`info`, `list_users`, `set_password` (an already-hashed value, on chpasswd's
+standard input), `del_password`, `lock_password`, `unlock_password`, and the six
+`chage` setters `set_mindays`, `set_maxdays`, `set_warndays`, `set_inactdays`,
+`set_expire` and `set_date`, which take a day count or a `YYYY-MM-DD` date.
+Every function answers from /etc/shadow after acting, not from the tool's exit
+status, and an operator will see why: Debian's `usermod -U` refuses to unlock a
+password-less account and exits 0. `info` reads the file, so an LDAP or SSSD
+account is not in it. A hash with a colon or a line break, and an account name
+beginning with `-`, are refused. `user.present`'s ageing arguments now read
+through the same parser, with no change in what they do. Linux only: a FreeBSD
+node is told `shadow` runs on linux. Driven as root on Rocky 9.8, Alma 8.10 and
+Debian 13 in the lab, and added to fleet.yml's linux leg (Ubuntu), where it has not yet run. `gen_password` is not built.
+DIVERGENCE 5.180.
+
 ### `pkg` on the RedHat and SUSE families: what the lab found, fixed
 
 - **`pkg.owner` of a path several packages own** returned their names run

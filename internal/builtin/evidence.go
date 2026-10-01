@@ -947,6 +947,46 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`fleet.yml`'s `rpm` legs (DIVERGENCE 5.178) now re-run this on every change to the module, nightly, and on demand, each in a container of the real distribution on an ubuntu-24.04 runner -- rocky9 (dnf 4.14.0) and alma8 (dnf 4.7.0), reading and writing modules.d and " +
 		"installing redis from the distributions' real AppStream mirrors; all three tests passed on both on " +
 		"Fleet run 36778900509"},
+
+	// ---- Driven in the lab on EL and Debian instances, by hand, because no CI leg is one ----
+
+	"shadow": {Level: exec.Hardware, Note: "every function was run as root on 2026-09-30 on three throwaway " +
+		"Vultr lab instances: Rocky Linux 9.8 (shadow-utils 4.9-16.el9, passwd 0.80-12.el9), AlmaLinux 8.10 " +
+		"(shadow-utils 4.6-23.el8_10, passwd 0.80-4.el8) and Debian 13 (passwd 1:4.17.4-2). " +
+		"`TestLiveShadowDrivesAThrowawayAccount` made a `halite-shadow-` account of its own, drove each " +
+		"day-count setter to a value and back to unset (dates as `YYYY-MM-DD` and as day numbers), each " +
+		"twice, set a SHA-512 hash through chpasswd, locked, unlocked and deleted it, checked every step " +
+		"against `getent shadow` split independently of the module's parser, checked that unlocking a " +
+		"lock-only field is refused, and that test mode moved nothing; every other /etc/shadow line was " +
+		"compared before and after and never moved, and /etc/shadow, passwd, group and gshadow were " +
+		"byte-identical to a backup after each run. `TestAgeingIsWhatChageReportsBack` (user.present, " +
+		"which now reads through the same parser) passed on all three too. Broken on purpose five ways: " +
+		"the parser off by one column and the date conversion off by one day failed on all three hosts; " +
+		"test mode acting failed on all three; `!!` as the only lock prefix failed on Debian alone, whose " +
+		"lock is `!`; `usermod -U` with its exit status trusted failed on Debian alone, whose usermod exits " +
+		"0 while refusing (DIVERGENCE 5.180). Not covered: an account in LDAP or SSSD (read from the file, " +
+		"so not listed at all), a non-UTC node (dates are converted in UTC and handed to chage as day " +
+		"numbers, so chage's own time-zone handling is never reached), `passwd -l` on SUSE or Arch, and " +
+		"FreeBSD, which this module refuses by name; the test is now in fleet.yml's linux leg, an Ubuntu runner, and had not run there when this was written"},
+	"locale": {Level: exec.Hardware, Note: "every function and both states were run as root on 2026-09-30 on " +
+		"three throwaway Vultr lab instances: Rocky Linux 9.8 (systemd 252, glibc 2.34 with only " +
+		"glibc-langpack-en), AlmaLinux 8.10 (systemd 239, glibc 2.28, only glibc-langpack-en) and Debian 13 " +
+		"(systemd 257, glibc 2.41, locales and locales-all). `TestLiveLocaleSetsTheSystemLocaleInEitherSpelling` " +
+		"set the system LANG as `en_GB.utf8`, found `en_GB.UTF-8` already set without touching /etc/locale.conf, " +
+		"showed an LC_TIME beside LANG surviving a LANG-only set, refused an unloadable locale before localectl " +
+		"saw it, and drove `locale.system` through change, no change in either spelling, and test mode; " +
+		"`TestLiveLocaleGeneratesALocale` made de_DE.UTF-8 loadable -- on EL by installing glibc-langpack-de " +
+		"through the dnf provider, on Debian by enabling its SUPPORTED line in /etc/locale.gen and running " +
+		"`locale-gen --keep-existing` -- and the conformance harness ran `locale.system` on all three and " +
+		"`locale.present` on both EL hosts. Every host was put back: /etc/locale.conf, /etc/locale.gen and the " +
+		"langpack set byte- and package-identical to before. Broken on purpose four ways: no codeset " +
+		"normalisation and an exact-text state comparison failed on all three; /etc/locale.gen appended to " +
+		"rather than uncommented failed on Debian alone; test mode installing the langpack failed on both EL " +
+		"hosts alone (DIVERGENCE 5.181). Not covered: Debian's locale-gen actually compiling anything, because " +
+		"locales-all made every SUPPORTED locale loadable already and --keep-existing skipped it, so " +
+		"`locale.present` on Debian was never given work; a node without systemd-localed (containers), which " +
+		"this refuses; Ubuntu's /var/lib/locales/supported.d; SUSE; FreeBSD, refused by name. Only the conformance case for locale.system reaches a CI leg (fleet.yml's " +
+		"linux leg, Ubuntu), and it had not run there when this was written"},
 }
 
 // Trust renders this registry's evidence for `doctor`.
