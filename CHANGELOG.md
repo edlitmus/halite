@@ -35,6 +35,11 @@ and then failed the listing anyway, and the provider now asks brew the
 question that does not. The version reported for a formula is the
 linked one, which is the one on the PATH.
 
+`pkg.latest_version` on a Mac fails when brew fails, instead of
+answering an empty version, and `pkg.latest` fails with brew's reason
+instead of reporting the package up to date. A name brew has nothing
+for is still an empty version.
+
 ### A `kernelpkg` module and its three states
 
 `kernelpkg.active`, `list_installed`, `latest_available`,

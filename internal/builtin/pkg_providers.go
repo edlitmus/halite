@@ -606,6 +606,23 @@ func (brewProvider) Remove(c *exec.Context, names []string, purge bool) error {
 	return err
 }
 
+// LatestVersion is the stable version brew offers for name, "" when brew
+// has no package by that name, and an error when brew could not answer.
+//
+// The last two used to be one: any non-zero exit from `brew info` was
+// "", nil, which every caller reads as "nothing to install". Watched
+// happening (DIVERGENCE 5.190): with the switch to brew's owner removed,
+// Homebrew's refusal of root came back from here as a formula that does
+// not exist, and `pkg.latest_version hello` answered an empty version
+// for a formula brew offers. Nothing about the answer looked wrong.
+//
+// Both exit 1, so the exit code cannot separate them; brew's message
+// can. Every "no such package" Homebrew raises starts `No available
+// formula` -- `FormulaUnavailableError` ("... with the name") and
+// `FormulaOrCaskUnavailableError` ("... or cask with the name"),
+// exceptions.rb, the tap variant included -- and that, captured from a
+// real brew, is the only answer taken to mean absent. Anything else
+// non-zero is brew saying it could not look, and is returned as that.
 func (brewProvider) LatestVersion(c *exec.Context, name string) (string, error) {
 	res, err := brewRun(c, exec.Command{
 		Argv:           []string{"brew", "info", "--json=v2", name},
@@ -615,7 +632,11 @@ func (brewProvider) LatestVersion(c *exec.Context, name string) (string, error) 
 		return "", err
 	}
 	if res.Code != 0 {
-		return "", nil
+		if brewSaysUnavailable(res.Stderr) {
+			return "", nil
+		}
+		msg := firstLine(strings.TrimSpace(res.Stderr + "\n" + res.Stdout))
+		return "", fmt.Errorf("brew info %s exited %d: %s", name, res.Code, msg)
 	}
 	f, err := firstBrewFormula(res.Stdout)
 	if err != nil || f == nil {
@@ -632,6 +653,17 @@ func (brewProvider) LatestVersion(c *exec.Context, name string) (string, error) 
 func (brewProvider) RefreshDB(c *exec.Context) error {
 	_, err := brewRun(c, exec.Command{Argv: []string{"brew", "update", "--quiet"}})
 	return err
+}
+
+// brewSaysUnavailable reports whether brew's stderr is its "no package by
+// that name" error, and nothing else. See LatestVersion.
+func brewSaysUnavailable(stderr string) bool {
+	for _, line := range strings.Split(stderr, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "Error: No available formula") {
+			return true
+		}
+	}
+	return false
 }
 
 // firstBrewFormula decodes a `brew info --json=v2` response and returns

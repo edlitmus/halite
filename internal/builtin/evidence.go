@@ -139,8 +139,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"since a half-removed cask made `brew list --versions` exit 1 (DIVERGENCE 5.189); it returns 389 formulae " +
 		"and 13 casks on that Mac as an ordinary user and as root, where `TestLiveMacBrewPkgAsRoot` then passed " +
 		"in full, the linked version of each formula, and is checked against " +
-		"fixtures captured there. Not covered: a formula and a cask sharing a name, where the cask's version is " +
-		"reported; `upgrade` and `list_upgrades` against an outdated formula; installing or removing a cask; and a node started by launchd " +
+		"fixtures captured there. Not handled: a formula and a cask sharing a name, where the cask's version is " +
+		"reported. `latest_version` tells " +
+		"\"no such package\" (brew's `No available formula` error) from brew failing, which it used to read as the " +
+		"same thing; run on that Mac for a formula, a name brew lacks, and brew refusing to run (DIVERGENCE 5.190). " +
+		"For a cask it still answers no version. Not covered: `upgrade` and `list_upgrades` against an outdated formula; installing or removing a cask; and a node started by launchd " +
 		"rather than sudo. Intel Macs are not supported (decided 2026-10-01), so their /usr/local layout " +
 		"is not a gap here. `TestLiveMacBrewPkgAsRoot` ran as root on the same Mac: everything passed but " +
 		"`list_pkgs`, for the cask reason above, and a build with the account switch removed failed it"},
