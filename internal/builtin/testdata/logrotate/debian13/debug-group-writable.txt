@@ -1,0 +1,9 @@
+warning: logrotate in debug mode does nothing except printing debug messages!  Consider using verbose mode (-v) instead if this is not what you want.
+
+warning: Potentially dangerous mode on /tmp/halite-lr-capture/groupw.conf: 0664
+error: Ignoring /tmp/halite-lr-capture/groupw.conf because it is writable by group or others.
+Reading state from file: /tmp/halite-lr-capture/st/status
+state file /tmp/halite-lr-capture/st/status does not exist
+Allocating hash table for state file, size 64 entries
+
+Handling 0 logs

@@ -157,10 +157,8 @@ func TestARealStateGapStillBlocks(t *testing.T) {
 		"base/app.sls": `kernel_it:
   kernelpkg.latest_installed: []
 
-rotate_it:
-  logrotate.set:
-    - key: rotate
-    - value: 4
+update_it:
+  win_wua.uptodate: []
 `,
 	})
 	rep := auditSLSTree(t, root)
@@ -176,8 +174,10 @@ rotate_it:
 	// something is. `locale.system` was the fourth, replaced by
 	// `logrotate.set` when locale shipped (DIVERGENCE 5.181), and
 	// `selinux.mode` the fifth, replaced by `kernelpkg.latest_installed`
-	// when selinux shipped (DIVERGENCE 5.183).
-	for _, name := range []string{"kernelpkg.latest_installed", "logrotate.set"} {
+	// when selinux shipped (DIVERGENCE 5.183), and `logrotate.set` the
+	// sixth, replaced by `win_wua.uptodate` when logrotate shipped
+	// (DIVERGENCE 5.186).
+	for _, name := range []string{"kernelpkg.latest_installed", "win_wua.uptodate"} {
 		f, ok := findingFor(rep, name)
 		if !ok {
 			t.Fatalf("%s produced no finding", name)

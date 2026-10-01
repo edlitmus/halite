@@ -1,0 +1,7 @@
+/var/log/cloud-init.log /var/log/cloud-init-output.log {
+  rotate 5
+  size 1M
+  create 644 root adm
+  compress
+  missingok
+}

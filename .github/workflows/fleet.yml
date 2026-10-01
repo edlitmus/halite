@@ -90,6 +90,12 @@ on:
       # `shadow` shares its /etc/shadow reader with user.present, and its
       # live test drives chage, passwd and chpasswd as root on the linux leg.
       - "internal/builtin/shadow*.go"
+      # `logrotate`, whose live tests add a drop-in to the runner's
+      # /etc/logrotate.d and read every write back through logrotate -d,
+      # on the linux leg; the conformance cases ride TestLiveConformance.
+      - "internal/builtin/logrotate*.go"
+      - "internal/builtin/live_logrotate*.go"
+      - "internal/builtin/live_conformance_logrotate*.go"
       - "internal/builtin/sysrc*.go"
       # `firewall`, whose four states are driven against a real ufw on the
       # linux leg -- three of them without ever enabling it, since ufw edits
@@ -377,6 +383,14 @@ jobs:
       - name: install the packet-filter tools
         run: sudo apt-get install -y --no-install-recommends iptables nftables
 
+      # logrotate is on the runner image as a rule, but the live tests
+      # skip without it, which on a green leg reads as coverage. The
+      # version is printed because the evidence note names one.
+      - name: install logrotate
+        run: |
+          sudo apt-get install -y --no-install-recommends logrotate
+          logrotate --version
+
       # The quota *tools* are not the whole of it. Five runs of this leg
       # established that the runner's kernel cannot enable ext4 quotas by
       # either mechanism, and `modprobe` named the reason exactly:
@@ -517,7 +531,7 @@ jobs:
           # same as the freebsd leg.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
-              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveConformance' ./internal/builtin/ 2>&1;
+              go test -count=1 -v -run 'TestLiveHostname|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveConformance' ./internal/builtin/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 

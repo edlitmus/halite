@@ -1056,6 +1056,31 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`locale.present` on Debian was never given work; a node without systemd-localed (containers), which " +
 		"this refuses; Ubuntu's /var/lib/locales/supported.d; SUSE; FreeBSD, refused by name. Only the conformance case for locale.system reaches a CI leg (fleet.yml's " +
 		"linux leg, Ubuntu), and it had not run there when this was written"},
+	"logrotate": {Level: exec.Hardware, Note: "driven as root on 2026-09-30 on two throwaway Vultr lab " +
+		"instances: Debian 13 (logrotate 3.22.0-1, as the image ships it) and FreeBSD 15.1 (the sysutils/logrotate " +
+		"3.22.0 port, installed for the run and deleted after it with its one dependency, popt, leaving the package " +
+		"set identical). The grammar was measured first, by handing logrotate -d throwaway configurations, and the " +
+		"parser is held to Debian's own /etc/logrotate.conf and /etc/logrotate.d and the port's sample, copied byte " +
+		"for byte. `TestLiveLogrotateEditsADropInOfTheSystemsConfiguration` added a drop-in of its own to the " +
+		"system's include directory (/etc/logrotate.d, /usr/local/etc/logrotate.d) and drove `logrotate.set` " +
+		"against the system's configuration: test mode, a change, convergence in another spelling (`011` for 9), " +
+		"`daily` taking `weekly`'s line, and refusals of `rotate four` and `size 1m`, with the drop-in's 0640 mode " +
+		"and gid 4 kept; `TestLiveLogrotateDrivesAConfigurationOfItsOwn` drove globals, an included stanza, " +
+		"removal and a new stanza on a configuration of its own; each result was read back from what " +
+		"`logrotate -d` itself said it would do, not from this module's parser. The conformance harness ran both " +
+		"`logrotate.set` cases on both hosts. Every system file was compared before and after: Debian's " +
+		"configuration, drop-ins and /var/lib/logrotate/status by sha256, the port's configuration by sha256. " +
+		"Broken on purpose six ways, each failing on both hosts: numbers read in base 10, test mode acting, the " +
+		"owner not handed to the new file, a rival criterion not replaced (caught by the module's own read-back), " +
+		"the logrotate -d check before a write ignored (caught on the named file; on a drop-in the check after " +
+		"the write put the old text back, which is that check demonstrated), and both checks ignored. On FreeBSD " +
+		"without the port, `show_conf` names newsyslog. fleet.yml's linux leg (ubuntu-24.04, logrotate 3.21.0) " +
+		"then ran both live tests and both conformance cases green on Fleet run 36810985486, and its freebsd leg, " +
+		"with no port, the newsyslog check. Not covered: RHEL and SUSE's logrotate builds; " +
+		"`tabooext`/`taboopat` (refused, not modelled); the last-one-wins rule for on/off pairs other than " +
+		"compress (only measured to be accepted names); a duplicate log entry across two files reaching the " +
+		"after-write check on a real host; include order under a non-C collation; and logrotate's daily run " +
+		"itself (DIVERGENCE 5.186)"},
 }
 
 // Trust renders this registry's evidence for `doctor`.
