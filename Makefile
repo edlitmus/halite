@@ -43,6 +43,15 @@ COMMIT  ?= $(GIT_COMMIT)
 # identical digests.
 SOURCE_DATE_EPOCH ?= $(GIT_EPOCH)
 
+# The directory the Makefile runs in, under both makes. GNU make calls it
+# CURDIR and BSD make calls it .CURDIR, and the Docker targets below mount
+# "$(CURDIR)" as the source tree. Under BSD make CURDIR was simply
+# undefined, so `make fleetcheck` on beastie ran `docker run -v "":/src`
+# -- no error from make, just a container with no tree in it, which is the
+# quiet failure a GNU-ism always is here. `?=` leaves GNU make's own value
+# alone and gives BSD make its equivalent.
+CURDIR ?= ${.CURDIR}
+
 MODULE  = github.com/edlitmus/halite
 LDFLAGS = -s -w \
 	-X $(MODULE)/internal/version.Version=$(VERSION) \
