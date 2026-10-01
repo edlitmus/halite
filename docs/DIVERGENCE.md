@@ -416,8 +416,8 @@ change makes.
 
 ## 2. Module coverage
 
-The build ships **96 execution modules / 682 functions** and **53 state
-modules / 148 functions**.
+The build ships **97 execution modules / 685 functions** and **54 state
+modules / 149 functions**.
 
 Section 15's inventory is roughly 90 execution modules across all tiers and
 46 core state modules. The tables below are the full accounting. `functions`
@@ -429,7 +429,7 @@ different reason is given.
 
 ### 2.1 Core execution modules (SPEC 15.2)
 
-51 of 56 present, plus `defaults` and `kmod`, which the section does not list.
+52 of 56 present, plus `defaults` and `kmod`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -476,7 +476,7 @@ different reason is given.
 | `kernelpkg` | not implemented | 0 | |
 | `kmod` | implemented | 7 | Linux kernel modules: `available`, `check_available`, `lsmod`, `mod_list`, `is_loaded`, `load`, `remove`. SPEC names no such module and an estate's CIS controls need one (5.96). Linux only; FreeBSD's kldload is a different model and is refused by name |
 | `locale` | implemented | 5 | Linux only. Every comparison normalises the codeset as glibc does, because `locale -a` says `en_US.utf8` and localectl stores whatever it is given; `gen_locale` enables /etc/locale.gen and runs `locale-gen` on Debian and installs `glibc-langpack-<language>` on EL, which ships no locale sources (5.181) |
-| `logrotate` | not implemented | 0 | |
+| `logrotate` | implemented | 3 | `show_conf`, `get`, `set`, on Linux and FreeBSD (the port). Parsed by logrotate 3.22.0's grammar as measured, not Salt's heuristics: `010` is eight, a later `nocompress` or `size` overrides, `#` mid-line is not a comment. `set` edits one line in place and every write is checked with `logrotate -d` first; a stanza with several names is changed only when `key` names them all (5.186) |
 | `nfs` | not implemented | 0 | |
 | `pkgrepo` | implemented | 4 | list_repos, get_repo, mod_repo, del_repo; virtual, with providers for apt, dnf/yum and Chocolatey 
 | `ps` | implemented | 7 | reads through the system `ps`, and FreeBSD's own libxo JSON where there is one; `kvm` is C and `sysctl kern.proc` needs golang.org/x/sys, so neither was reachable under SPEC 4.2. `pkill` refuses a pattern matching nothing, because that is a misspelling far more often than a tidy machine |
@@ -494,7 +494,7 @@ different reason is given.
 
 ### 2.2 Core state modules (SPEC 15.5)
 
-42 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
+43 of 46 present, plus `sysrc`, `kmod` and `saltutil`, which the section does not list.
 
 | Module | Status | Functions | Note |
 |---|---|---|---|
@@ -527,7 +527,7 @@ different reason is given.
 | `kernelpkg` | not implemented | 0 | |
 | `kmod` | implemented | 2 | `present` and `absent`. `mods` is the real argument and `name` a placeholder when it is given, as the estate's own tree says in a comment beside the state. `persist` writes the modules configuration, because a module unloaded but left in it comes back at the next boot (5.96) |
 | `locale` | implemented | 2 | `system` and `present`, comparing locales by glibc's codeset normalisation so either spelling converges; `present` is a langpack install on EL (5.181) |
-| `logrotate` | not implemented | 0 | |
+| `logrotate` | implemented | 1 | `set`, with Salt's arguments, compared as logrotate reads values (`rotate 010` is `rotate 8`, `size 1k` is `size 1024`); a criterion such as `daily` takes the line of the one it overrides (5.186) |
 | `lvm` | implemented | 6 | Linux only; `pv_present`, `pv_absent`, `vg_present`, `vg_absent`, `lv_present`, `lv_absent`. `vg_present` extends a group with named devices but never removes one, and `lv_present` grows a volume but never shrinks it — a shrink that outruns the filesystem loses data, and `lvm.lvresize` with `force` is the deliberate path for it. Reports read LVM's `--reportformat json`, not the padded table |
 | `mac_defaults` | implemented | 2 | macOS only; `write` and `absent`, the exec side is `mac_defaults.*`. Convergence is decided from `defaults export`'s XML plist with the type kept distinct, so a key holding `1` is not taken for one holding `true` |
 | `mount` | implemented | 2 | `mounted` and `unmounted`, each managing the running mount and the table together |
@@ -17997,6 +17997,134 @@ also wipes.
 **Not verified:** FreeBSD 14's setfacl, and `-b -n` with `recursive` on
 a real tree; ZFS was tried by hand, not by the test, since the test makes
 its POSIX.1e file on UFS.
+
+### 5.186 `logrotate`: built from what `logrotate -d` says, not from Salt's parser
+
+SPEC 15.2 names a `logrotate` execution module and 15.5 its state, and
+plan.md 2.2 listed both missing. They ship under Salt's names and
+arguments -- `show_conf`, `get` and `set`, each with `conf_file`, and
+the state `logrotate.set` with `key`, `value` and `setting` -- and
+almost nothing else of Salt's, because Salt's module is a set of guesses
+about a grammar nobody had asked the tool about.
+
+**The grammar was measured first.** On Debian 13 (logrotate 3.22.0-1),
+throwaway configurations went to `logrotate -d -s <throwaway state>`,
+which -- also measured, with scripts that touch a file and `-f` forcing
+a rotation -- runs no script, renames no log and writes no state. What
+it said, and where Salt's module disagrees:
+
+- A line starting with a letter is a directive, one starting with `/`,
+  `~`, `"` or `'` names logs, and anything else is "lines must begin
+  with a keyword or a filename". Salt decides from glob characters, so
+  it would read `*.log {` as a stanza logrotate refuses.
+- `#` is a comment only at the start of a line: `rotate 2 # two` is
+  "bad rotation count '2 # two'". `=` separates like white space
+  (`rotate=3` is three rotations).
+- Numbers are C's base 0: `rotate 010` is eight rotations, `rotate
+  0x10` sixteen, `size 010k` 8192 bytes. Salt's `_convert_if_int`
+  reads `010` as ten, so its state would call `rotate 010` and
+  `rotate 10` the same setting and leave a node rotating eight. Sizes
+  take `k`, `K`, `M` and `G`; `1m`, `1g`, `1kb` and `1.5M` are errors.
+  `create 644`, `0644` and `00644` all create 0644.
+- The six rotation criteria (`hourly` to `yearly`, and `size`) override
+  one another, last one wins -- "note: 'size' overrides previously
+  specified 'weekly'", for every ordered pair -- and `nocompress` then
+  `compress` compresses. Salt keeps both keys, and prepends a new global
+  above the old rival, where it loses: read from Salt's source (and not
+  run against Salt), its `logrotate.set` of `daily` on Debian's file
+  would leave logrotate weekly and the state reporting success.
+- Global directives apply only to what follows them, and an error in one
+  abandons the whole file ("Handling 0 logs").
+- **The exit status says nothing about the configuration.** It is 1 when
+  a log in a stanza without `missingok` is absent, and 0 for
+  "unexpected text after }" and for a stanza left open at the end of
+  the file, which is accepted silently.
+- A directory `include` skips 22 name patterns (`*.dpkg-old`, `*~`,
+  `*.rpmsave`, `*.rhn-cfg-tmp-*` ...), empty files and non-files, and
+  reads dot files. Salt reads every entry. The list was the same on the
+  FreeBSD port.
+
+Debian's own files exercise most of the rest, and are the fixtures, byte
+for byte: unattended-upgrades names three logs on three lines (the first
+with a trailing space) before a `{` on a fourth, ufw puts its `{` on the
+line after the name, cloud-init puts two names on one line, chrony
+heads a stanza with a glob and carries a `postrotate` script.
+
+**`set` edits one line.** The directive that decides the key -- itself,
+or the rival that would override it -- is rewritten in place, keeping
+its indentation; a new stanza directive goes before the `}`, and a new
+global before the file's first directive, where Salt prepends. Salt
+rewrites the whole stanza from a dict, dropping its comments and order,
+and its pattern begins at the key, so -- again by its source, not by a
+run -- on cloud-init's stanza `/var/log/cloud-init.log` would be kept
+and `/var/log/cloud-init-output.log` silently dropped from rotation. Here a
+stanza with several names is changed only when `key` names all of
+them, and refused otherwise with the others named. `rotate 0` is
+written (Salt's `if setting:` deleted it); false or empty removes the
+directive, as Salt's does.
+
+**Every write is checked by logrotate.** The edited text goes to a
+private copy with the original's mode and owner, and both are put
+through `logrotate -d`; the write is refused if the copy draws an error
+or warning about the configuration that the original did not --
+compared as messages, since line numbers move -- and runtime complaints
+such as "stat of /var/log/x failed" are not counted. When the edited
+file is a drop-in, the named configuration is checked again after the
+write and the old text put back if anything new appeared, because a
+duplicate log entry across two files cannot be seen from either. The
+write itself goes through a temporary file renamed into place with the
+original's mode, owner and group. `get` and `show_conf` report what
+logrotate will do: a setting overridden later in its scope is absent.
+
+**FreeBSD.** SPEC 15.2's Core tier is cross-platform, and FreeBSD's
+base system rotates with newsyslog(8), which SPEC does not name -- so
+newsyslog is out of scope and `logrotate` is built for where logrotate
+is: the sysutils/logrotate port. It lists only
+/usr/local/etc/logrotate.conf.sample among its files, but, measured, it
+also leaves that copied to /usr/local/etc/logrotate.conf and creates an
+empty /usr/local/etc/logrotate.d, so that is the default `conf_file`
+there. It installs no periodic job. Without the port, `show_conf` says
+the file is missing and names newsyslog.
+
+**Measured** as root on two lab instances, Debian 13 and FreeBSD 15.1
+(the port installed for the run and deleted afterwards with popt, its
+only dependency; `pkg info` identical before and after).
+`TestLiveLogrotateEditsADropInOfTheSystemsConfiguration` adds a drop-in
+of its own to the system's include directory and drives the state
+against the system's configuration, reading every result back from
+logrotate's own "rotating pattern" line rather than this module's
+parser; `TestLiveLogrotateDrivesAConfigurationOfItsOwn` does globals, an
+included stanza, removal and a new stanza on a configuration of its
+own; both `logrotate.set` conformance cases ran; all passed on both
+hosts, and `TestLiveLogrotateNamesNewsyslogOnAFreeBSDWithoutThePort`
+passed once the port was gone. Debian's /etc/logrotate.conf, every
+drop-in and /var/lib/logrotate/status had the same sha256 after as
+before; the port's configuration likewise. The `internal/builtin` and
+`internal/states` unit suites passed on both, the --test audit among
+them -- which, for the record, cannot reach `logrotate.set`'s write: its
+synthesised `conf_file` does not exist.
+
+Six deliberate breaks, each failing on both hosts: numbers in base 10
+(the `011` convergence check), test mode acting (the conformance
+harness and the live test), the owner not handed to the new file (gid 4
+lost), a rival criterion not replaced (the module's own read-back
+refused it before the logrotate oracle was reached), the check before a
+write ignored, and both checks ignored. The fifth is worth its own
+line: on the drop-in it did *not* fail, because the after-write check
+found `bad rotation count 'four'` in the whole configuration and put the
+old text back -- which is the only demonstration that path has had on a
+real host. It failed on the named file, which has no after-write check
+since the before-write one already read everything it includes.
+
+**Not verified:** RHEL, SUSE and Ubuntu's logrotate builds (the fleet.yml
+linux leg is Ubuntu and had not run this when it was written);
+`tabooext` and `taboopat`, which are refused rather than modelled;
+last-one-wins for on/off pairs other than `compress`, which were only
+measured to be accepted names; a cross-file duplicate reaching the
+after-write check on its own rather than through a break; include order
+under a non-C collation, where logrotate sorts with strcoll;
+logrotate's scheduled run. Test mode does not run `logrotate -d`, so it
+cannot predict a refusal.
 
 
 

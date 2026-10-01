@@ -1,0 +1,7 @@
+/var/log/wtmp.db {
+    missingok
+    yearly
+    create
+    nocompress
+    rotate 4
+}

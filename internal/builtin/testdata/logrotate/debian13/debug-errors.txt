@@ -1,0 +1,26 @@
+warning: logrotate in debug mode does nothing except printing debug messages!  Consider using verbose mode (-v) instead if this is not what you want.
+
+reading config file /tmp/halite-lr-capture/broken.conf
+warning: /tmp/halite-lr-capture/broken.conf:5 unknown option 'yes' -- ignoring line
+error: /tmp/halite-lr-capture/broken.conf:10 duplicate log entry for /tmp/halite-lr-capture/logs/a.log
+error: /tmp/halite-lr-capture/broken.conf:12, unexpected text after }
+Reading state from file: /tmp/halite-lr-capture/st/status
+state file /tmp/halite-lr-capture/st/status does not exist
+Allocating hash table for state file, size 64 entries
+
+Handling 3 logs
+
+rotating pattern: /tmp/halite-lr-capture/logs/a.log weekly empty log files are rotated, (4 rotations), old logs are removed
+considering log /tmp/halite-lr-capture/logs/a.log
+Creating new state
+  Now: 2026-10-01 02:57
+  Last rotated at 2026-10-01 02:00
+  log does not need rotating (log has already been rotated)
+
+rotating pattern: /tmp/halite-lr-capture/logs/missing.log weekly empty log files are rotated, (2 rotations), old logs are removed
+considering log /tmp/halite-lr-capture/logs/missing.log
+error: stat of /tmp/halite-lr-capture/logs/missing.log failed: No such file or directory
+Creating new state
+
+rotating pattern: /tmp/halite-lr-capture/logs/a.log weekly empty log files are rotated, (3 rotations), old logs are removed
+No logs found. Rotation not needed.

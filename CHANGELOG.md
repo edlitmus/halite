@@ -23,6 +23,31 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A `logrotate` module and `logrotate.set`
+
+`logrotate.show_conf`, `logrotate.get`, `logrotate.set` and the state
+`logrotate.set` ship with Salt's arguments (`key`, `value`, `setting`,
+`conf_file`), on Linux and on FreeBSD where the sysutils/logrotate port is
+installed (default `/usr/local/etc/logrotate.conf` there; FreeBSD's own
+newsyslog is not managed). Where they differ from Salt's, they follow what
+logrotate itself does:
+
+- Values compare as logrotate reads them: `rotate 010` is eight rotations,
+  not ten; `size 1k` is `size 1024`; `create 644` is `create 0644`.
+- `set` changes one line of the file in place, keeping comments and order,
+  and a setting such as `daily` replaces the `weekly` it would override
+  rather than being added where it would lose.
+- A stanza naming several logs is changed only when `key` names all of
+  them, since a change to one is a change to all. Salt's rewrite, by its
+  source, drops the other names from the stanza.
+- Every write is checked with `logrotate -d` before it is made, and a write
+  logrotate would reject (`rotate four`, `size 1m`) is refused. A drop-in
+  is checked again within the whole configuration afterwards and put back
+  if that found something new.
+- `get` and `show_conf` leave out a setting that a later one overrides.
+
+Driven on Debian 13 and on FreeBSD 15.1 with the port. DIVERGENCE 5.186.
+
 ### `acl.wipe` finishes on a FreeBSD POSIX.1e file
 
 On FreeBSD, `setfacl -b` on a UFS file with POSIX.1e ACLs keeps the mask
