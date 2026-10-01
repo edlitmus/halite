@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -280,6 +281,10 @@ func sudoDropInDir(c *exec.Context, given string) (string, error) {
 // sudoIncludeDirs reads the `@includedir` and `#includedir` lines out of
 // sudoers text, and nothing else. A relative directory is relative to
 // the including file's own directory, which is how sudo 1.9 reads one.
+//
+// `path`, not `path/filepath`: these are sudo's paths, always slashed,
+// and a Windows build of the unit suite read them with backslashes and
+// failed -- the module never runs there, but its test does.
 func sudoIncludeDirs(text, base string) []string {
 	var out []string
 	for _, line := range strings.Split(text, "\n") {
@@ -298,8 +303,8 @@ func sudoIncludeDirs(text, base string) []string {
 		if dir == "" {
 			continue
 		}
-		if !filepath.IsAbs(dir) {
-			dir = filepath.Join(base, dir)
+		if !path.IsAbs(dir) {
+			dir = path.Join(base, dir)
 		}
 		out = append(out, dir)
 	}
