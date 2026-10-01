@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -430,7 +431,9 @@ func TestAWriteLogrotateRefusesIsNotMade(t *testing.T) {
 	if !strings.Contains(string(after), "\nrotate 5\n") || strings.Contains(string(after), "\nrotate 4\n") {
 		t.Errorf("not written:\n%s", after)
 	}
-	if fi, _ := os.Stat(conf); fi.Mode().Perm() != 0o640 {
+	// Windows has no 0640 to keep -- Go reports a writable file as 0666
+	// there -- and the module does not run on it; its tests do.
+	if fi, _ := os.Stat(conf); runtime.GOOS != "windows" && fi.Mode().Perm() != 0o640 {
 		t.Errorf("mode %o after the write, want 0640", fi.Mode().Perm())
 	}
 }
