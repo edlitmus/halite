@@ -318,6 +318,7 @@ func liveConformanceCases() []liveCase {
 	cases = append(cases, langCases()...)
 	cases = append(cases, firewallCases()...)
 	cases = append(cases, firewalldConformanceCases()...)
+	cases = append(cases, localeConformanceCases()...)
 	cases = append(cases, conformanceIdentityCases()...)
 	cases = append(cases, conformancePkgSysCases()...)
 	cases = append(cases, conformanceConfineCases()...)

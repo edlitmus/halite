@@ -61,7 +61,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 48 modules
+## `hardware` — 49 modules
 
 ### `acl`
 
@@ -126,6 +126,10 @@ the shape of `jls --libxo=json` is checked against the real jls on CI's FreeBSD 
 ### `journald`
 
 driven against real systemd 255 on Ubuntu 24.04. The reads go through `journalctl -o json` / `-N` / `-F` -- the `jls --libxo=json` precedent (5.32), a machine format rather than the aligned columns SPEC's sentence is about -- and `query`, `fields`, `field_values`, `list_boots` and `disk_usage` were parsed field by field against the host's own journal in the ordinary suite, cursor included. The control verbs `rotate`, `flush` and `sync` were run over journald's own varlink socket (`io.systemd.Journal.*`) as root, and the `journalctl --sync` fallback was shown to take over when the socket was pointed away (DIVERGENCE 5.52). Not covered: `vacuum`, which deletes archived journal files and no test has been willing to on a real machine; the varlink error path (a service that answers and refuses); and any systemd older than 255, whose varlink interface may be absent -- the fallback exists for exactly that and has only been forced by a bad path.
+
+### `locale`
+
+every function and both states were run as root on 2026-09-30 on three throwaway Vultr lab instances: Rocky Linux 9.8 (systemd 252, glibc 2.34 with only glibc-langpack-en), AlmaLinux 8.10 (systemd 239, glibc 2.28, only glibc-langpack-en) and Debian 13 (systemd 257, glibc 2.41, locales and locales-all). `TestLiveLocaleSetsTheSystemLocaleInEitherSpelling` set the system LANG as `en_GB.utf8`, found `en_GB.UTF-8` already set without touching /etc/locale.conf, showed an LC_TIME beside LANG surviving a LANG-only set, refused an unloadable locale before localectl saw it, and drove `locale.system` through change, no change in either spelling, and test mode; `TestLiveLocaleGeneratesALocale` made de_DE.UTF-8 loadable -- on EL by installing glibc-langpack-de through the dnf provider, on Debian by enabling its SUPPORTED line in /etc/locale.gen and running `locale-gen --keep-existing` -- and the conformance harness ran `locale.system` on all three and `locale.present` on both EL hosts. Every host was put back: /etc/locale.conf, /etc/locale.gen and the langpack set byte- and package-identical to before. Broken on purpose four ways: no codeset normalisation and an exact-text state comparison failed on all three; /etc/locale.gen appended to rather than uncommented failed on Debian alone; test mode installing the langpack failed on both EL hosts alone (DIVERGENCE 5.181). Not covered: Debian's locale-gen actually compiling anything, because locales-all made every SUPPORTED locale loadable already and --keep-existing skipped it, so `locale.present` on Debian was never given work; a node without systemd-localed (containers), which this refuses; Ubuntu's /var/lib/locales/supported.d; SUSE; FreeBSD, refused by name. Only the conformance case for locale.system reaches a CI leg (fleet.yml's linux leg, Ubuntu), and it had not run there when this was written.
 
 ### `lvm`
 

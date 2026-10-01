@@ -97,7 +97,7 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 | 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
 | 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD and macOS rows of SPEC 15.3 now ship entirely. **23 of SPEC 15.3's 65 platform modules, 7 of SPEC 15.2's core execution modules and 8 of SPEC 15.5's core state modules remain.** Re-measured against the registry on 2026-09-15; the row had said 32, 18 and 14, and §2.2 had said 9 and 10 at the same time -- two counts of the same thing, both wrong, in one document. |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD and macOS rows of SPEC 15.3 now ship entirely. **23 of SPEC 15.3's 65 platform modules, 6 of SPEC 15.2's core execution modules and 7 of SPEC 15.5's core state modules remain.** Re-measured against the registry on 2026-09-15; the row had said 32, 18 and 14, and §2.2 had said 9 and 10 at the same time -- two counts of the same thing, both wrong, in one document. |
 | 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Outstanding: the scale harness the other eleven performance rows need, no packaging, no node evidence, no detached signing; the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
 
 ### 0.1 What the previous revision listed and what has closed
@@ -525,11 +525,11 @@ for ninety seconds is cheap.
 Counted out of the ledger's own tables, which a test holds to the
 registries in both directions.
 
-**Execution, 7 of SPEC 15.2**: `blockdev`, `kernelpkg`, `locale`,
+**Execution, 6 of SPEC 15.2**: `blockdev`, `kernelpkg`,
 `logrotate`, `nfs`, `selinux`, and `state` -- which is struck
 rather than missing, for the reason below. `reboot` and `system` have
-shipped since this row was written (DIVERGENCE 5.73), and `shadow` since
-(5.180).
+shipped since this row was written (DIVERGENCE 5.73), and `shadow` and
+`locale` since (5.180, 5.181).
 
 Re-measured against the registry on 2026-09-12. This row said 17. Seven
 shipped together as the block this fleet's own FreeBSD host can
@@ -537,16 +537,16 @@ shipped together as the block this fleet's own FreeBSD host can
 `swap`, `tls` and `tmpfs`, each driven against its real tool as root and
 each assertion confirmed by breaking the code (DIVERGENCE 5.72).
 
-**And `state` was never missing**, which is the eighth. `state.apply` and
+**And `state` was never missing**, which is the last of them. `state.apply` and
 its seven neighbours are intercepted in `cmd/halite-node` before the
 execution registry is consulted and routed to the compiler, so they are
 already reachable three ways. Registering a module for them would be a
 second, thinner copy of the pipeline the node actually runs. The row is
 struck rather than filled. `ps` shipped earlier (DIVERGENCE 5.61).
 
-**State, 8 of SPEC 15.5**: `acl`, `kernelpkg`, `locale`, `logrotate`,
-`pro`, `selinux`, `sudo`, `win_wua`. `at` and `reboot` have shipped since
-this row was written. The execution halves of `acl` and `sudo` ship; it
+**State, 7 of SPEC 15.5**: `acl`, `kernelpkg`, `logrotate`,
+`pro`, `selinux`, `sudo`, `win_wua`. `at`, `reboot` and `locale` have
+shipped since this row was written (`locale`, 5.181). The execution halves of `acl` and `sudo` ship; it
 is their states that do not.
 
 Re-measured against the registry on 2026-09-12: this row had said 14 and
@@ -604,11 +604,11 @@ to block. §7 has the consequences.
    they replace a whole ruleset at once rather than adding rules one at
    a time, which is a different thing from what the interface currently
    asks a provider to do.
-7. The rest — `at`, `blockdev`, `data`, `kernelpkg`, `locale`,
+7. The rest — `at`, `blockdev`, `data`, `kernelpkg`, ~~`locale`~~,
    `logrotate`, `nfs`, `swap`, `tls`, `tmpfs`, `lvm` — each small, none
-   blocking. `locale` now also carries `internal/migrate`'s gap test,
-   which needs a state that does not exist and comes due whenever one is
-   built.
+   blocking. `locale` ships (5.181), and `internal/migrate`'s gap test,
+   which needs a state that does not exist, moved from `locale.system`
+   to `logrotate.set`; it comes due again whenever that is built.
 
 `state` is deliberately last. ~~`shadow`~~ was last beside it, on the
 grounds that it overlaps `user.present`'s ageing arguments and building it

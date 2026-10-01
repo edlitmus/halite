@@ -158,9 +158,10 @@ func TestARealStateGapStillBlocks(t *testing.T) {
   selinux.mode:
     - name: enforcing
 
-speak_it:
-  locale.system:
-    - name: en_GB.UTF-8
+rotate_it:
+  logrotate.set:
+    - key: rotate
+    - value: 4
 `,
 	})
 	rep := auditSLSTree(t, root)
@@ -173,8 +174,9 @@ speak_it:
 	//
 	// Three corrections in, the pattern is worth naming: this test is a
 	// checklist of what has not been built, and it comes due every time
-	// something is. Whoever fills `locale` next will land here.
-	for _, name := range []string{"selinux.mode", "locale.system"} {
+	// something is. `locale.system` was the fourth, replaced by
+	// `logrotate.set` when locale shipped (DIVERGENCE 5.181).
+	for _, name := range []string{"selinux.mode", "logrotate.set"} {
 		f, ok := findingFor(rep, name)
 		if !ok {
 			t.Fatalf("%s produced no finding", name)

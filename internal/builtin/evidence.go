@@ -968,6 +968,25 @@ var moduleEvidence = map[string]exec.Evidence{
 		"so not listed at all), a non-UTC node (dates are converted in UTC and handed to chage as day " +
 		"numbers, so chage's own time-zone handling is never reached), `passwd -l` on SUSE or Arch, and " +
 		"FreeBSD, which this module refuses by name; the test is now in fleet.yml's linux leg, an Ubuntu runner, and had not run there when this was written"},
+	"locale": {Level: exec.Hardware, Note: "every function and both states were run as root on 2026-09-30 on " +
+		"three throwaway Vultr lab instances: Rocky Linux 9.8 (systemd 252, glibc 2.34 with only " +
+		"glibc-langpack-en), AlmaLinux 8.10 (systemd 239, glibc 2.28, only glibc-langpack-en) and Debian 13 " +
+		"(systemd 257, glibc 2.41, locales and locales-all). `TestLiveLocaleSetsTheSystemLocaleInEitherSpelling` " +
+		"set the system LANG as `en_GB.utf8`, found `en_GB.UTF-8` already set without touching /etc/locale.conf, " +
+		"showed an LC_TIME beside LANG surviving a LANG-only set, refused an unloadable locale before localectl " +
+		"saw it, and drove `locale.system` through change, no change in either spelling, and test mode; " +
+		"`TestLiveLocaleGeneratesALocale` made de_DE.UTF-8 loadable -- on EL by installing glibc-langpack-de " +
+		"through the dnf provider, on Debian by enabling its SUPPORTED line in /etc/locale.gen and running " +
+		"`locale-gen --keep-existing` -- and the conformance harness ran `locale.system` on all three and " +
+		"`locale.present` on both EL hosts. Every host was put back: /etc/locale.conf, /etc/locale.gen and the " +
+		"langpack set byte- and package-identical to before. Broken on purpose four ways: no codeset " +
+		"normalisation and an exact-text state comparison failed on all three; /etc/locale.gen appended to " +
+		"rather than uncommented failed on Debian alone; test mode installing the langpack failed on both EL " +
+		"hosts alone (DIVERGENCE 5.181). Not covered: Debian's locale-gen actually compiling anything, because " +
+		"locales-all made every SUPPORTED locale loadable already and --keep-existing skipped it, so " +
+		"`locale.present` on Debian was never given work; a node without systemd-localed (containers), which " +
+		"this refuses; Ubuntu's /var/lib/locales/supported.d; SUSE; FreeBSD, refused by name. Only the conformance case for locale.system reaches a CI leg (fleet.yml's " +
+		"linux leg, Ubuntu), and it had not run there when this was written"},
 }
 
 // Trust renders this registry's evidence for `doctor`.
