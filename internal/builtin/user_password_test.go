@@ -77,3 +77,33 @@ func TestCurrentHashSaysWhenItCannotRead(t *testing.T) {
 		t.Errorf("the error should say what is needed: %v", err)
 	}
 }
+
+// chpasswd reads `name:hash` records, one per line, so a hash or a name
+// carrying a line break is a second record — for any account the text
+// names — and a colon is a field boundary inside the first. passwordCommand
+// is the one path `user.present` and `shadow.set_password` both reach, so
+// it is where that is refused: `shadow` had its own check and
+// `user.present` had none, and a `password:` written as
+// "<hash>\nroot:<hash>" set root's password from a state about another
+// account.
+func TestAPasswordRecordCannotCarryASecondRecord(t *testing.T) {
+	const hash = "$6$rounds=5000$abcdefgh$SeCrEtHaShVaLuE"
+	cases := map[string][2]string{
+		"a line break in the hash": {"alice", hash + "\nroot:" + hash},
+		"a carriage return":        {"alice", hash + "\rroot:" + hash},
+		"a colon in the hash":      {"alice", "$6$salt$x:0:99999"},
+		"a control character":      {"alice", hash + "\x00"},
+		"a line break in the name": {"alice\nroot", hash},
+		"a colon in the name":      {"root:alice", hash},
+	}
+	for _, platform := range []string{"linux", "freebsd"} {
+		for what, c := range cases {
+			if cmd, err := passwordCommand(platform, c[0], c[1]); err == nil {
+				t.Errorf("%s, %s: accepted, and would send %q", platform, what, cmd.Stdin)
+			}
+		}
+		if _, err := passwordCommand(platform, "alice", hash); err != nil {
+			t.Errorf("%s: an ordinary hash was refused: %v", platform, err)
+		}
+	}
+}

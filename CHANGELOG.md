@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `user.present` refuses a `password:` that would be a second record
+
+On Linux, `user.present` passed its `password:` to `chpasswd` unchecked, and
+`chpasswd` reads one `name:hash` record per line — so a hash containing a line
+break could set a different account's password, root's included, from a state
+about another. A password hash or account name containing a colon, a line
+break or a control character is now refused, on Linux and FreeBSD alike, before
+any command is built. A real crypt hash contains none of those, so a working
+state is unaffected. DIVERGENCE 5.182.
+
 ### `locale`, and `locale.system` and `locale.present`
 
 `locale.system` and `locale.present` used to be states this build could not
