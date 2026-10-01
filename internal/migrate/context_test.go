@@ -154,8 +154,9 @@ notify:
 // function this build lacks still blocks.
 func TestARealStateGapStillBlocks(t *testing.T) {
 	root := writeSLSTree(t, map[string]string{
-		"base/app.sls": `kernel_it:
-  kernelpkg.latest_installed: []
+		"base/app.sls": `install_it:
+  win_wua.installed:
+    - name: KB5034441
 
 update_it:
   win_wua.uptodate: []
@@ -176,8 +177,10 @@ update_it:
 	// `selinux.mode` the fifth, replaced by `kernelpkg.latest_installed`
 	// when selinux shipped (DIVERGENCE 5.183), and `logrotate.set` the
 	// sixth, replaced by `win_wua.uptodate` when logrotate shipped
-	// (DIVERGENCE 5.186).
-	for _, name := range []string{"kernelpkg.latest_installed", "win_wua.uptodate"} {
+	// (DIVERGENCE 5.186), and `kernelpkg.latest_installed` the seventh,
+	// replaced by `win_wua.installed` when kernelpkg shipped (DIVERGENCE
+	// 5.187).
+	for _, name := range []string{"win_wua.installed", "win_wua.uptodate"} {
 		f, ok := findingFor(rep, name)
 		if !ok {
 			t.Fatalf("%s produced no finding", name)

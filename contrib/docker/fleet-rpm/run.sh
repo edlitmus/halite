@@ -56,7 +56,7 @@ allowed_skips=''
 case "$ID" in
 rocky | almalinux)
 	[ "$ID" = almalinux ] && allowed_skips='TestLiveRpmVersionCmpAgreesWithRpm/evr'
-	modules='TestLiveRpm|TestLiveChattr|TestLiveAuthselect|TestLiveDnfModule'
+	modules='TestLiveRpm|TestLiveChattr|TestLiveAuthselect|TestLiveDnfModule|TestLiveKernelpkgReadsAgreeWithRPM|TestLiveKernelpkgRPM'
 	expect='
 		TestLiveRpmReadsTheRealDatabase
 		TestLiveRpmVersionCmpAgreesWithRpm
@@ -66,7 +66,9 @@ rocky | almalinux)
 		TestLiveAuthselectSelectAndFeatures
 		TestLiveDnfModuleReadersAgree
 		TestLiveDnfModuleEnableSwitchDisableReset
-		TestLiveDnfModuleInstallAndRemove'
+		TestLiveDnfModuleInstallAndRemove
+		TestLiveKernelpkgReadsAgreeWithRPM
+		TestLiveKernelpkgRPMInstallsAndRemovesKernels'
 	;;
 opensuse-leap)
 	modules='TestLiveZypper|TestLiveRpmReadsTheRealDatabase|TestLiveRpmVersionCmp|TestLiveChattr'
@@ -102,7 +104,10 @@ expect="$expect
 # by authselect, and 1.2.6 has no way back, so the test will not select a
 # profile over the image's own /etc/pam.d without being told the machine
 # is disposable. This one is thrown away when the run ends.
-export HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 HALITE_AUTHSELECT_TAKEOVER=1
+# HALITE_KERNELPKG_LIVE: kernelpkg installs two real kernels and removes one.
+# The container is thrown away, and its kernel is the runner's, so neither
+# is one anything boots.
+export HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 HALITE_AUTHSELECT_TAKEOVER=1 HALITE_KERNELPKG_LIVE=1
 
 out=/tmp/live.txt
 : >"$out"

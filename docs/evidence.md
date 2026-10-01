@@ -57,7 +57,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 52 modules
+## `hardware` — 53 modules
 
 ### `acl`
 
@@ -122,6 +122,10 @@ the shape of `jls --libxo=json` is checked against the real jls on CI's FreeBSD 
 ### `journald`
 
 driven against real systemd 255 on Ubuntu 24.04. The reads go through `journalctl -o json` / `-N` / `-F` -- the `jls --libxo=json` precedent (5.32), a machine format rather than the aligned columns SPEC's sentence is about -- and `query`, `fields`, `field_values`, `list_boots` and `disk_usage` were parsed field by field against the host's own journal in the ordinary suite, cursor included. The control verbs `rotate`, `flush` and `sync` were run over journald's own varlink socket (`io.systemd.Journal.*`) as root, and the `journalctl --sync` fallback was shown to take over when the socket was pointed away (DIVERGENCE 5.52). Not covered: `vacuum`, which deletes archived journal files and no test has been willing to on a real machine; the varlink error path (a service that answers and refuses); and any systemd older than 255, whose varlink interface may be absent -- the fallback exists for exactly that and has only been forced by a bad path.
+
+### `kernelpkg`
+
+driven as root on 2026-09-30 on three kinds of machine. The lab's Debian 13.7 (apt 3.0.3, dpkg 1.22.22), running 6.12.107+deb13-amd64 with 6.12.111+deb13-amd64 installed beside it by an unattended upgrade: the readers against /boot, /proc and `dpkg --compare-versions`; `remove` and `cleanup` on 6.12.94+deb13-amd64 installed with its headers for the purpose; the refusals of the running kernel and of 6.12.111, whose removal would take linux-image-amd64 and linux-headers-amd64 with it; `upgrade` and the `latest_installed` conformance case after taking 6.12.111 away; `latest_active` and `upgrade reboot=True` in test mode. fleet.yml's linux leg (ubuntu-24.04, apt 2.8.3, running 6.17.0-1022-azure) ran the same tests and case, installing 7.0.0-1014-azure and removing 6.17.0-1021-azure with its linux-modules. Its rpm legs drove `upgrade` and `remove` through dnf in Rocky 9.8 (dnf 4.14.0, rpm 4.16.1.3) and AlmaLinux 8.10 (dnf 4.7.0, rpm 4.14.3) containers, whose kernel is the runner's, so `needs_reboot` and `cleanup` were driven only to their refusal there. FreeBSD 15.1 refuses the module by name. Every machine's linux-image/headers/modules set, or kernel* set, was compared after with before; the Debian host's GRUB configuration had the same sha256 and its package marks were identical. Broken on purpose and failing: needs_reboot inverted, test mode acting in remove and in latest_installed, the order reversed, the unsigned twin not named (apt installed it in the image's place, which the module's read-back caught), the metapackage check disabled (both metapackages removed), the platform list emptied (on FreeBSD), and on both EL legs the removal target set to the empty `kernel` package. Not covered: an EL host running one of its own kernels (the lab's Rocky 9 could not be raised), so `needs_reboot`, `cleanup` and `active` on EL were never compared against a real running kernel; yum on EL7; Debian 12's and Ubuntu's other flavours and Ubuntu's linux-image-unsigned; `latest_active` and `upgrade reboot=True` scheduling a reboot, which they delegate to reboot.schedule and which no host here was allowed to have (DIVERGENCE 5.187).
 
 ### `locale`
 

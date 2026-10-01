@@ -1,0 +1,146 @@
+@@@ rpm	-q	kernel-core	--queryformat	%{NAME}\t%{EPOCH}:%{VERSION}-%{RELEASE}\t%{ARCH}\n
+@@@ exit 1
+@@@ stdout
+package kernel-core is not installed
+@@@ stderr
+@@@ end
+@@@ dnf	repoquery	--quiet	--latest-limit=1	--queryformat	%{NAME}\t%{EPOCH}:%{VERSION}-%{RELEASE}\t%{ARCH}\n	kernel-core
+@@@ exit 0
+@@@ stdout
+kernel-core	0:4.18.0-553.169.1.el8_10	x86_64
+
+@@@ stderr
+@@@ end
+@@@ dnf	--quiet	list	--showduplicates	kernel-core
+@@@ exit 0
+@@@ stdout
+Available Packages
+kernel-core.x86_64                4.18.0-553.el8_10                       baseos
+kernel-core.x86_64                4.18.0-553.5.1.el8_10                   baseos
+kernel-core.x86_64                4.18.0-553.8.1.el8_10                   baseos
+kernel-core.x86_64                4.18.0-553.16.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.22.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.27.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.30.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.32.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.33.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.34.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.36.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.37.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.40.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.42.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.44.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.45.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.46.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.47.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.50.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.51.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.52.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.53.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.54.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.56.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.58.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.60.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.62.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.63.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.64.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.66.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.69.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.70.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.71.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.72.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.74.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.75.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.76.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.77.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.78.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.79.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.80.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.81.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.82.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.83.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.84.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.85.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.87.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.89.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.92.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.94.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.97.1.el8_10                  baseos
+kernel-core.x86_64                4.18.0-553.100.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.104.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.105.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.107.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.109.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.111.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.115.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.117.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.120.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.121.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.123.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.123.2.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.124.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.124.4.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.125.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.126.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.126.2.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.129.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.132.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.134.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.136.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.137.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.139.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.140.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.141.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.141.2.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.143.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.144.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.146.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.147.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.148.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.150.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.151.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.153.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.154.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.155.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.156.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.157.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.158.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.159.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.160.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.162.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.163.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.164.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.166.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.167.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.168.1.el8_10                 baseos
+kernel-core.x86_64                4.18.0-553.169.1.el8_10                 baseos
+@@@ stderr
+@@@ end
+@@@ dnf	--quiet	list	--showduplicates	kernel-core-4.18.0-553.169.1.el8_10
+@@@ exit 0
+@@@ stdout
+Available Packages
+kernel-core.x86_64                4.18.0-553.169.1.el8_10                 baseos
+@@@ stderr
+@@@ end
+@@@ dnf	remove	--assumeno	kernel-core-4.18.0-553.168.1.el8_10.x86_64
+@@@ exit 1
+@@@ stdout
+Dependencies resolved.
+================================================================================
+ Package            Arch       Version                        Repository   Size
+================================================================================
+Removing:
+ kernel-core        x86_64     4.18.0-553.168.1.el8_10        @baseos      71 M
+Removing dependent packages:
+ kernel             x86_64     4.18.0-553.168.1.el8_10        @baseos       0  
+ kernel-modules     x86_64     4.18.0-553.168.1.el8_10        @baseos      25 M
+
+Transaction Summary
+================================================================================
+Remove  3 Packages
+
+Freed space: 96 M
+@@@ stderr
+Operation aborted.
+@@@ end
