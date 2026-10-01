@@ -58,15 +58,22 @@ import (
 //     only a warning to the stand-alone check. visudo lists every file
 //     it parsed, so this also proves sudo reads the drop-in at all. If
 //     either is not so, the previous text is put back (root, 0440) or the
-//     new file removed, and the state fails, saying what visudo said --
-//     and, by asking visudo once more, whether the policy passes again
-//     without it or was failing for some other file's reason all along.
+//     new file removed, and the state fails, saying what visudo said.
 //
-// The policy is not checked *before* the write as well, though that
-// looks safer, because the commonest thing for it to be complaining
-// about is this very drop-in: a mode drifted to 0640 makes `visudo -c`
-// fail on this file, and a pre-check refused the one write that would
-// have fixed it. Found on the first live run.
+// # "No worse than before", not "clean"
+//
+// A policy visudo already rejects is not refused outright, twice over,
+// both found by running it. A pre-check that refused a failing policy
+// refused the one write that fixes a drop-in whose mode had drifted to
+// 0640 -- the policy was failing *because of this file* (the first lab
+// run). And a GitHub ubuntu-24.04 runner ships /etc/sudoers.d/runner with
+// a mode visudo calls "bad permissions, should be mode 0440", which sudo
+// itself reads happily; a post-check that demanded a clean policy failed
+// every write there (the first fleet run). So visudo is asked before the
+// write too, and the write stands when the drop-in is listed as parsed
+// and visudo says exactly what it said before about every *other* file --
+// compared as visudo's own lines, not parsed. The result carries a
+// warning saying the policy was already rejected, and by which files.
 //
 // # The name, and the directory
 //
@@ -170,32 +177,56 @@ func sudoPresentState(c *exec.Context, args *value.Map) (states.Result, error) {
 		return states.WouldChange(fmt.Sprintf("The sudoers drop-in %s would be written; visudo accepts its text.", target), changes), nil
 	}
 
+	// What visudo says of the policy before the write, as the baseline
+	// the result is judged against -- never as a reason to refuse.
+	okBefore, saidBefore, err := sudoRunVisudo(c, []string{"visudo", "-c"}, "")
+	if err != nil {
+		return states.False(err.Error()), nil
+	}
 	if err := sudoWriteDropIn(target, []byte(contents)); err != nil {
 		return states.False(fmt.Sprintf("The sudoers drop-in %s could not be written: %v", target, err)), nil
 	}
 	ok, said, err = sudoRunVisudo(c, []string{"visudo", "-c"}, "")
-	if err == nil && ok && sudoListsFile(said, target) {
+	listed := err == nil && sudoListsFile(said, target)
+	switch {
+	case listed && ok:
 		return states.Changed(fmt.Sprintf("The sudoers drop-in %s was written, and visudo -c accepts the whole policy with it.", target), changes), nil
+	case listed && !okBefore && sudoOtherFiles(said, target) == sudoOtherFiles(saidBefore, target):
+		res := states.Changed(fmt.Sprintf("The sudoers drop-in %s was written and visudo -c parsed it; the policy fails "+
+			"visudo -c exactly as it did before, for other files: %s", target, sudoOtherFiles(said, target)), changes)
+		res.Warnings = append(res.Warnings, "visudo -c already rejected this node's sudoers policy before the drop-in "+
+			"was written, and still does, for the same files: "+sudoOtherFiles(said, target))
+		return res, nil
 	}
 
 	why := said
 	switch {
 	case err != nil:
 		why = err.Error()
-	case ok:
+	case !listed:
 		why = "visudo -c did not list it among the files it parsed, so sudo does not read it: " + said
 	}
 	if restoreErr := sudoRestoreDropIn(target, old, existed); restoreErr != nil {
 		return states.False(fmt.Sprintf("The sudoers drop-in %s was written and the policy then failed visudo -c (%s), "+
 			"and putting the previous file back failed too: %v. Run visudo -c now.", target, why, restoreErr)), nil
 	}
-	if okAfter, saidAfter, err := sudoRunVisudo(c, []string{"visudo", "-c"}, ""); err == nil && !okAfter {
-		return states.False(fmt.Sprintf("The sudoers drop-in %s was written and taken back out, because with it the policy "+
-			"failed visudo -c (%s) -- and the policy still fails without it, so another file is at fault: %s",
-			target, why, saidAfter)), nil
-	}
 	return states.False(fmt.Sprintf("The sudoers drop-in %s was written and taken back out, because with it the policy "+
 		"failed visudo -c: %s", target, why)), nil
+}
+
+// sudoOtherFiles is what visudo said about every file but one: its
+// output with the lines that begin with that file's path left out. Two
+// runs that agree on it agree about the rest of the policy, in visudo's
+// own words, without anything here reading the grammar of a complaint.
+func sudoOtherFiles(said, path string) string {
+	var kept []string
+	for _, line := range strings.Split(said, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), path+":") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 func sudoAbsentState(c *exec.Context, args *value.Map) (states.Result, error) {

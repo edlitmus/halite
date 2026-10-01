@@ -179,28 +179,75 @@ func TestPresentPutsThePreviousTextBackWhenThePolicyFails(t *testing.T) {
 	}
 	c := sudoContext(t, dir, "halite-unit", true)
 	rec := c.Runner.(*exec.RecordingRunner)
-	// The policy fails with the new text in place and passes once the old
-	// is back. A recorder answers by command line alone, so the two
+	// The policy passes before the write and fails, about another file,
+	// after it. A recorder answers by command line alone, so the two
 	// `visudo -c` calls are told apart by order here.
 	calls := 0
+	listing := filepath.Join(dir, "halite-unit") + ": parsed OK\n"
 	c.Runner = runnerFor(func(cmd exec.Command) (exec.Result, error) {
 		if cmd.String() == "visudo -c" {
 			calls++
-			if calls == 1 {
-				return exec.Result{Code: 1, Stderr: "/etc/sudoers.d/halite-unit:1:7: syntax error"}, nil
+			if calls == 2 {
+				return exec.Result{Code: 1, Stdout: listing, Stderr: "/etc/sudoers.d/other:1:7: syntax error"}, nil
 			}
 		}
 		return rec.Run(context.Background(), cmd)
 	})
 	res := sudoStateCall(t, c, "sudo.present", value.MapOf("name", "halite-unit", "contents", "Defaults:nobody !lecture\n", "dir", dir))
-	if !res.Failed() || !strings.Contains(res.Comment, "taken back out") || strings.Contains(res.Comment, "still fails") {
+	if !res.Failed() || !strings.Contains(res.Comment, "taken back out") {
 		t.Fatalf("result = %+v", res)
 	}
 	if calls != 2 {
-		t.Errorf("visudo -c ran %d times, want twice: after the write, and after putting the old text back", calls)
+		t.Errorf("visudo -c ran %d times, want twice: before the write and after it", calls)
 	}
 	if data, _, _, _ := sudoReadDropIn(path); string(data) != sudoRule {
 		t.Errorf("the previous text was not put back: %q", data)
+	}
+}
+
+// A policy visudo already rejects for another file's reason is not made
+// worse by a drop-in it parses, and the write stands, with a warning. The
+// other file's line is the one a GitHub ubuntu-24.04 runner's `visudo -c`
+// printed in the first fleet run: its /etc/sudoers.d/runner has a mode
+// visudo rejects and sudo reads.
+func TestPresentStandsWhenThePolicyFailsExactlyAsBeforeForAnotherFile(t *testing.T) {
+	sudoNeedsRoot(t)
+	dir := t.TempDir()
+	runner := "/etc/sudoers.d/runner: bad permissions, should be mode 0440"
+	before := "/etc/sudoers: parsed OK\n/etc/sudoers.d/README: parsed OK\n" + runner
+	after := "/etc/sudoers: parsed OK\n/etc/sudoers.d/README: parsed OK\n" +
+		filepath.Join(dir, "halite-unit") + ": parsed OK\n" + runner
+	worse := after + "\n/etc/sudoers.d/zz: bad permissions, should be mode 0440"
+	for label, tc := range map[string]struct {
+		afterSaid string
+		stands    bool
+	}{
+		"the same complaint, about the same file": {after, true},
+		"a new complaint as well":                 {worse, false},
+	} {
+		calls := 0
+		c := sudoContext(t, dir, "halite-unit", true)
+		rec := c.Runner.(*exec.RecordingRunner)
+		c.Runner = runnerFor(func(cmd exec.Command) (exec.Result, error) {
+			if cmd.String() == "visudo -c" {
+				calls++
+				if calls == 1 {
+					return exec.Result{Code: 1, Stdout: before}, nil
+				}
+				return exec.Result{Code: 1, Stdout: tc.afterSaid}, nil
+			}
+			return rec.Run(context.Background(), cmd)
+		})
+		res := sudoStateCall(t, c, "sudo.present", value.MapOf("name", "halite-unit", "contents", sudoRule, "dir", dir))
+		_, statErr := os.Stat(filepath.Join(dir, "halite-unit"))
+		if tc.stands {
+			if res.Failed() || !res.HasChanges() || len(res.Warnings) == 0 || statErr != nil {
+				t.Errorf("%s: %+v (file: %v), want the write to stand with a warning", label, res, statErr)
+			}
+		} else if !res.Failed() || statErr == nil {
+			t.Errorf("%s: %+v (file: %v), want it taken back out", label, res, statErr)
+		}
+		_ = os.Remove(filepath.Join(dir, "halite-unit"))
 	}
 }
 

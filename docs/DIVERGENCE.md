@@ -17887,10 +17887,27 @@ sudoers file is never written. What was measured, and is now behaviour:
 the policy *before* writing as well, and refused to add to a policy
 visudo already rejected. The live test then drifted the drop-in's mode to
 0640, and the pre-check refused the one write that would have fixed it:
-the policy was failing *because of this file*. The pre-check is gone;
-after a failed post-check the state asks visudo once more, with the old
-text back, and says whether the policy passes again or was failing for
-another file's reason.
+the policy was failing *because of this file*.
+
+**The first fleet run found the other half.** With the pre-check gone,
+the post-check demanded a clean policy, and the linux leg's GitHub
+ubuntu-24.04 runner does not have one: its `visudo -c` says
+
+```
+/etc/sudoers.d/runner: bad permissions, should be mode 0440
+```
+
+-- the same split measured on the lab hosts, where sudo reads a file
+visudo rejects -- so every `sudo.present` there wrote, failed and took
+the drop-in back out. Neither "refuse a failing policy" nor "demand a
+clean one" is right. visudo is now asked before the write as well, as a
+baseline, and the write stands when the drop-in is listed as parsed and
+visudo says the same about every *other* file as it did before: its
+output with the lines beginning with the drop-in's path left out,
+compared as text, nothing parsed. The result then carries a warning
+naming the files. `TestLiveSudoStatesManageADropIn` makes the runner's
+shape on purpose -- a comment-only 0644 file beside the drop-in -- and
+passed on both lab hosts; with the new branch disabled it failed on both.
 
 #### What ran, and what breaking it showed
 
@@ -17922,6 +17939,7 @@ Broken on purpose, one at a time:
 | sudo: no listing check after the write | fail | fail |
 | sudo: drop-in mode 0644 | fail | fail |
 | sudo: no dotted-name refusal | fail | fail |
+| sudo: a policy already rejected for another file blocks the write | fail | fail |
 
 The last one **passed at first on both hosts**: the dotted file was
 written, missing from visudo's listing, and taken back out, which is a
@@ -17940,10 +17958,11 @@ id, which never converges because getfacl prints the name; a mask entry
 and a named entry managed by two states, which would undo each other
 because setfacl recalculates the mask on every named entry it sets
 (measured on both, not run as states); Salt's `force`, not built; sudo-rs;
-macOS; and a policy failing for another file's reason, whose message is
-unit-tested only. The fleet linux leg now installs `acl` and runs
-`TestLiveACL|TestLiveSudo`; neither had run on a GitHub runner when this
-was written.
+macOS; and a drop-in whose old text visudo rejected, where the before
+and after outputs differ by that file's context lines and the write is
+taken back out (conservative, and not run). The fleet linux leg now
+installs `acl` and runs `TestLiveACL|TestLiveSudo`; its first run is
+what found the runner's sudoers.d, above.
 
 ### 5.185 `acl.wipe` never finished on a FreeBSD POSIX.1e file
 

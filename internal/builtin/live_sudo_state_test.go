@@ -113,6 +113,31 @@ func TestLiveSudoStatesManageADropIn(t *testing.T) {
 		t.Error("the drop-in sudo does not read was left behind")
 	}
 
+	// The GitHub runner's shape, made here on purpose: another drop-in
+	// whose mode visudo -c rejects and sudo reads. It holds only a
+	// comment, so it grants nothing. The state's own write must stand, with
+	// a warning, rather than fail on a file that is not its own.
+	foreign := path + "-perm"
+	if err := os.WriteFile(foreign, []byte("# halite live test: a mode visudo rejects\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(foreign) })
+	if ok, said, _ := sudoRunVisudo(c, []string{"visudo", "-c"}, ""); ok {
+		t.Fatalf("a 0644 drop-in did not make visudo -c fail, so this case tests nothing: %s", said)
+	}
+	changedRule := []any{"name", name, "contents", "nobody ALL=(root) NOPASSWD: /nonexistent/halite-live-test-2\n"}
+	res = liveApply(t, false, "sudo.present", changedRule...)
+	wantChanged(t, "sudo.present beside a drop-in visudo rejects", res)
+	if len(res.Warnings) == 0 {
+		t.Errorf("the write stood without a warning that the policy was already rejected: %+v", res)
+	}
+	if out := liveSudoList(t, c, "nobody"); !strings.Contains(out, "/nonexistent/halite-live-test-2") {
+		t.Errorf("sudo -l -U nobody does not show the changed rule:\n%s", out)
+	}
+	if err := os.Remove(foreign); err != nil {
+		t.Fatal(err)
+	}
+
 	absent := []any{"name", name}
 	wantPredicted(t, "test mode, absent", liveApply(t, true, "sudo.absent", absent...))
 	if _, err := os.Lstat(path); err != nil {

@@ -662,12 +662,14 @@ var moduleEvidence = map[string]exec.Evidence{
 		"did not list it, and removed the drop-in; the conformance harness ran both states on both hosts. " +
 		"Measured there: `visudo -c -f -` reads standard input on both; both hosts' `visudo -c` calls a 0644 " +
 		"drop-in \"bad permissions, should be mode 0440\" and exits 1 while sudo itself reads it; a name with " +
-		"a `.` or ending in `~` is skipped by both. Broken on purpose three ways -- no dotted-name refusal, no " +
-		"listing check, mode 0644 -- and each failed on both hosts; the " +
+		"a `.` or ending in `~` is skipped by both. Broken on purpose four ways -- no dotted-name refusal, no " +
+		"listing check, mode 0644, no acceptance of an already-rejected policy -- and each failed on both hosts; the " +
 		"dotted-name break first passed, because the listing check caught it too, and the assertion now reads " +
 		"the refusal's words. Both sudoers.d directories were left as found and `visudo -c` passed after. Not " +
 		"covered: managing the main sudoers file, deliberately not built; a policy failing visudo -c for " +
-		"another file's reason (the message for it is unit-tested only); sudo-rs, which has its own sudoers " +
+		"another file's *syntax* error (the bad-permissions case was made on purpose on both hosts, after the " +
+		"first fleet run found a GitHub runner whose /etc/sudoers.d/runner visudo rejects; a write now stands " +
+		"when visudo says the same of every other file as before, with a warning); sudo-rs, which has its own sudoers " +
 		"handling; macOS. " +
 		"Before the states: driven against the real sudo and visudo 1.9.17p2 on " +
 		"this fleet's FreeBSD 15.1 host. `sudo.validate` runs the real `visudo -c` over files a " +

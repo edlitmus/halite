@@ -54,7 +54,10 @@ directory the node's sudoers includes. The text is checked by
 `visudo -c -f -` before anything is written, test mode included, and the
 whole policy by `visudo -c` afterwards, which must also list the file; if
 either fails the previous text is put back and the state fails with
-visudo's words. A name containing `.` or ending in `~`, which sudo would
+visudo's words. A policy visudo already rejected for other files' reasons
+(as on a GitHub runner, whose /etc/sudoers.d/runner it calls "bad
+permissions") does not block the write when visudo says exactly the same
+about those files afterwards; the result carries a warning naming them. A name containing `.` or ending in `~`, which sudo would
 silently skip, is refused. The drop-in is root's, mode 0440. DIVERGENCE
 5.184.
 
