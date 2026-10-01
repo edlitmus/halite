@@ -142,8 +142,10 @@ var moduleEvidence = map[string]exec.Evidence{
 		"fixtures captured there. Not covered: a formula and a cask sharing a name, where the cask's version is " +
 		"reported; `upgrade` and `list_upgrades` against an outdated formula; installing or removing a cask; and a node started by launchd " +
 		"rather than sudo. Intel Macs are not supported (decided 2026-10-01), so their /usr/local layout " +
-		"is not a gap here. `TestLiveMacBrewPkgAsRoot` ran as root on the same Mac: everything passed but " +
-		"`list_pkgs`, for the cask reason above, and a build with the account switch removed failed it"},
+		"is not a gap here. Before the `list_pkgs` fix, `TestLiveMacBrewPkgAsRoot` ran as root on the same Mac and everything " +
+		"passed but `list_pkgs`, for the cask reason above, and a build with the account switch removed failed it. **On CI** the `macos` leg ran it as root on a " +
+		"hosted macOS 15.7.9 runner, brew owned by `runner` in 17 groups -- past the sixteen the credential " +
+		"switch caps (5.120) -- and it passed, install through removal (Fleet run 36911071275)"},
 	// `cmd` had no row at all until the gate could see it. It was outside
 	// the selection because that read `strings.Contains(p, "root")` over
 	// the free-text Privileges field, and `cmd` says "whatever the command
