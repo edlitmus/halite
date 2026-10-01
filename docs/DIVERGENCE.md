@@ -18351,9 +18351,18 @@ it is not fixed in this change either.
 SPEC 27.1's macOS row and the Makefile's `darwin/amd64` target do not
 yet say so.
 
+**And on CI**, on Fleet run 36911071275: the `macos` leg ran
+`TestLiveMacBrewPkgAsRoot` as root on a hosted macOS 15.7.9 runner,
+where brew belongs to `runner`, an account in **17** groups -- one past
+the sixteen the credential switch caps a macOS process at (5.120) --
+and it passed, install through removal. The run did not skip; its log
+names the brew it found and its owner. That was the one environment
+this entry first listed as unverified that the switch is most likely
+to break on, and it is the one that runs again whenever `pkg*.go`
+changes.
+
 **Not verified:** a node started by launchd rather than sudo; `upgrade` and `list_upgrades` against an outdated
-formula; casks; and an owner in more than sixteen groups, which the
-credential switch caps (5.120) and the hosted runner's account is.
+formula; and casks.
 
 
 ## 6. Everything else not started
