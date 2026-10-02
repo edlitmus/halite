@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The hub's systemd unit can write its cache
+
+The hub's unit now creates and makes writable `/var/cache/halite`, its
+default `cache_dir` on Linux, with `CacheDirectory=halite`. Under
+`ProtectSystem=strict` that directory was read-only, so a hub on default
+paths stopped at startup. A drop-in added to work around it can be
+removed. Checked by a test that reads the unit file, not yet by running
+it under systemd.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not
