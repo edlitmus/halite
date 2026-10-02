@@ -18806,6 +18806,54 @@ macOS.
 
 
 
+### 5.197 `orch resume` carried a dry run's predictions into a real run
+
+`orch resume <jid> --from <step>` presents the steps before `<step>` to
+the requisites as they finished in the earlier run, so they are not run
+again. It took whatever each step recorded. Resume a `--test` run for
+real and the predicted results were carried forward as done: a
+`deploy_web` that requires `drain` was dispatched for real against
+nodes that had never been drained, because `drain` -- only ever
+predicted -- satisfied the requirement. The run record did not say it
+had been a test, so nothing could tell. The documentation sweep's
+command-reference audit found it against a throwaway hub: `orch resume
+<jid of a --test run> --from second` carried the dry step forward and
+dispatched `second` for real.
+
+`TestAResumeOfADryRunIsRefusedForReal` reproduced it before the fix on
+a lab hub with an answering node: the real resume of a dry run was
+accepted.
+
+**The fix**, in two layers, each held by its own test:
+
+- The run record carries `test`. A real resume of a run recorded as a
+  test is refused, saying so and offering the two things that make
+  sense: run it for real, or resume it with `--test`.
+- A record written before `test` existed cannot say. Its steps can: a
+  real step succeeds or fails, and only a test run records a predicted
+  change. A real resume that would carry forward a step whose result is
+  neither is refused, naming the step. A dry run whose every step
+  predicted no change records only successes, and is caught only by the
+  record's `test` -- so an old record of that shape is not caught. It is
+  named here rather than left implied.
+
+A dry resume of a dry run, and a dry resume of a real one, claim nothing
+that did not happen and are still allowed
+(`TestADryResumeOfADryRunIsAllowed`). Each layer was removed on purpose
+and its test failed with exactly that symptom: with `test` ignored, the
+refusal came from the fallback instead and the test that asserts the
+record's wording failed; with the fallback removed, the old-record test
+resumed for real. The three existing resume tests pass unchanged.
+
+**Found on the way, not fixed here:** a resume compiles from the earlier
+run's SLS and environment, but not from the pillar override it was given
+-- `OrchRun` records none -- so an orchestration that took a version on
+its pillar is resumed without it. That is its own change.
+
+**Not covered:** the CLI path end to end (`--test` reaches the runner's
+`test` argument, read from the code, not run against a hub), and a
+FreeBSD or Linux hub.
+
 
 ## 6. Everything else not started
 

@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `orch resume` will not treat a dry run as done
+
+Resuming a `--test` orchestration for real used to carry its predicted
+steps forward as if they had run, and then dispatch the steps after them
+for real. It is now refused: resume it with `--test`, or run it for real.
+Runs record whether they were a test, and an older record is refused if
+any step it would carry forward recorded a predicted change.
+
 ### An external pillar failure no longer costs a node its pillar
 
 On a hub with metrics on, any external pillar source that failed
