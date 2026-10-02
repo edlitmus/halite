@@ -56,7 +56,7 @@ Flags for run and verify:
 func runExtensions(args *cli.Args) int {
 	if len(args.Positional) == 0 {
 		fmt.Fprint(os.Stderr, extensionsUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	sub := args.Positional[0]
 	if sub == "help" || sub == "--help" || sub == "-h" {
@@ -87,7 +87,7 @@ func runExtensions(args *cli.Args) int {
 		return extensionsSync(h, args.Flag("env", "base"))
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub extensions: unknown subcommand %q\n\n%s", sub, extensionsUsage)
-		return 2
+		return cli.ExitUsage
 	}
 }
 

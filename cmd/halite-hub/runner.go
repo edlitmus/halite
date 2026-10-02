@@ -23,7 +23,7 @@ import (
 func runRunner(args *cli.Args) int {
 	if len(args.Positional) == 0 {
 		fmt.Fprint(os.Stderr, runnerUsage)
-		return 2
+		return cli.ExitUsage
 	}
 
 	switch args.Positional[0] {

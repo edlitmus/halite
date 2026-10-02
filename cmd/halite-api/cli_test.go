@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/cli"
 )
 
 // See cmd/halite-node/cli_test.go for the re-execution pattern.
@@ -108,9 +110,36 @@ func TestAccountHashReadsThePasswordFromStdin(t *testing.T) {
 	}
 }
 
-func TestUnknownSubcommand(t *testing.T) {
-	_, errOut, code := run(t, "nosuchthing")
-	if code != 2 || !strings.Contains(errOut, "unknown subcommand") {
-		t.Errorf("got %q %d", errOut, code)
+// TestUnknownSubcommandIsUsageNotSuccess is cmd/halite-node's test of
+// the same name. This one used to want 2 for a typo, which is the
+// convention and also what a state run means by "converged" (DIVERGENCE
+// 5.198). `account` and `token` exited 1 through cli.Fatalf, with a
+// `return 2` after it that never ran; `token <typo>` also opened the
+// token store first, so on a host without a state directory it reported
+// the directory rather than the typo. All of them are cli.ExitUsage now,
+// and `token <typo>` is judged before anything is opened, which is why
+// it can be a row here with no configuration at all.
+func TestUnknownSubcommandIsUsageNotSuccess(t *testing.T) {
+	for _, argv := range [][]string{
+		{},
+		{"nosuchthing"},
+		{"account"},
+		{"account", "nosuchthing"},
+		{"token"},
+		{"token", "nosuchthing"},
+	} {
+		out, errOut, code := run(t, argv...)
+		if code != cli.ExitUsage {
+			t.Errorf("%q: exit = %d, want %d (stderr %q)", argv, code, cli.ExitUsage, errOut)
+		}
+		if errOut == "" || out != "" {
+			t.Errorf("%q: stdout %q stderr %q", argv, out, errOut)
+		}
+	}
+	if _, errOut, _ := run(t, "nosuchthing"); !strings.Contains(errOut, "unknown subcommand") {
+		t.Errorf("a typo does not say so: %q", errOut)
+	}
+	if out, _, code := run(t, "help"); code != 0 || !strings.Contains(out, "Usage:") {
+		t.Errorf("help = %q %d", out, code)
 	}
 }

@@ -59,7 +59,7 @@ commands exit 0 on success.
 | 0 | The run succeeded and something changed. |
 | 2 | The run succeeded and nothing needed changing. |
 | 1 | A state failed, or the command could not run. |
-| 64 | `halite-node` did not understand its command line — no subcommand, or one that does not exist. sysexits' `EX_USAGE`; it used to be 2, the same as a converged run. |
+| 64 | The program did not understand its command line — no subcommand, or one that does not exist. sysexits' `EX_USAGE`, from `halite-node`, `halite-hub` and `halite-api` alike; it used to be 2, the same as a converged run. |
 
 **Treat 2 as success.** A monitor that does not will alert on every
 machine that was already correct, which is nearly all of them nearly all
@@ -140,12 +140,17 @@ configuration needs no edit.
 A log file that cannot be opened is an error rather than a fall back to
 stderr: an operator who asked for a file is relying on it.
 
-**`halite-api` honours neither `log_format` nor `log_file` yet.** It
-reads `log_level`, and `--log-level` and `--log-fmt` on its command
-line, but it reads the format from `log_fmt` rather than `log_format`
-and opens no file, so with `log_format: console` and a `log_file` in
-`api.yaml` it still logs JSON to stderr and writes no file. The
-hub and the node honour all three. A fix is pending.
+All three services read these settings through one function, so
+`hub.yaml`, `node.yaml`, and `api.yaml` mean the same thing by them,
+and each record carries `component` as `hub`, `node`, or `api`. A level
+or format that is not one stops the service with the setting's name
+rather than falling back to a default. Until this was shared,
+`halite-api` read the format from `log_fmt`, which is not a setting,
+and opened no file, so `log_format` and `log_file` in `api.yaml` did
+nothing.
+
+`log_level_file` is accepted and not read: the file sink takes
+`log_level`, on all three.
 
 ### Choosing the output
 
@@ -283,15 +288,19 @@ the fingerprint. That directory has to be writable by the account the
 hub runs as; the systemd unit grants exactly it with `ReadWritePaths`
 and nothing else under `/etc`.
 
-**The hub's unit has no `CacheDirectory=`.** It runs with
-`ProtectSystem=strict`, which leaves writable only `/etc/halite/pki`
-and the `StateDirectory=` and `LogsDirectory=` it names, and the hub's
-default `cache_dir` on Linux is `/var/cache/halite`. `serve` refuses to
-start when it cannot write `<cache dir>/nodes`, so a Linux hub on
-default paths under that unit needs `/var/cache/halite` created and
-owned by the hub's account, and made writable to the unit — a drop-in
-with `CacheDirectory=halite` does both. That is from reading the unit;
-it has not been run under systemd. A fix to the unit is pending.
+The hub's unit runs with `ProtectSystem=strict`, so it can write only
+`/etc/halite/pki` (named in `ReadWritePaths=`) and the directories that
+`StateDirectory=halite`, `CacheDirectory=halite` and
+`LogsDirectory=halite` create: `/var/lib/halite`, `/var/cache/halite`
+and `/var/log/halite`. These are the hub's default `state_dir`,
+`cache_dir` and log directory on Linux, so `hub.yaml` does not need to
+name them. If you move one of them in `hub.yaml`, you must make the new
+path writable with a drop-in, because `serve` stops at startup when it
+cannot write `<state dir>` or `<cache dir>/nodes`. Earlier units did not
+have `CacheDirectory=`, so a hub on default paths stopped at startup. A
+test (`TestUnitsMakeWritableEveryDirectoryTheirBinaryWrites`) now
+compares each unit with the defaults of its program. That is a check
+of the unit file only; the unit has not been run under systemd.
 
 `halite-node connect` reconnects on its own with backoff, so an
 unreachable hub is not a unit failure. It exits 1 for the two things a
@@ -1073,10 +1082,17 @@ Create the account, then let the build do the rest:
 pw useradd halite -c "halite service account" -d /nonexistent -s /usr/sbin/nologin
 # Linux
 useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin halite
+# macOS: a UID below 500 that `dscl . -list /Users UniqueID` does not list
+sysadminctl -addUser halite -UID <uid> -shell /usr/bin/false -home /var/empty
 
 make build
 sudo make install
 ```
+
+The macOS line follows `sysadminctl`'s own usage text and has not been
+run here, because it needs root. On a Mac `make install` installs no
+service files at all — there is no launchd job yet — and prints how to
+run each program instead; see [Getting started](getting-started.md#installing).
 
 `make install` does not build, so the build never runs as root and
 leaves no root-owned binaries in `bin/`. It creates every directory
@@ -1095,14 +1111,16 @@ install -d -o halite -g halite -m 0700 /var/cache/halite
 install -d -o halite -g halite -m 0750 /var/log/halite
 ```
 
-On Linux the state directory is `/var/lib/halite`, and the systemd units
-create the state and log directories themselves with `StateDirectory=`
-and `LogsDirectory=`, and the right owner. They create no cache
-directory: no unit has `CacheDirectory=`, and the hub's runs with
-`ProtectSystem=strict`, so `/var/cache/halite` is read-only to it even
-once it exists — see [The daemons](#the-daemons). So `pki_dir` and the
-hub's cache need doing there; read from the unit, not yet run under
-systemd.
+On Linux the state directory is `/var/lib/halite`. The hub's systemd
+unit creates the state, cache and log directories itself, with the
+right owner, through `StateDirectory=`, `CacheDirectory=` and
+`LogsDirectory=`; the API's unit creates `/var/lib/halite-api` the same
+way. No unit creates `pki_dir`, so that one directory still needs doing
+by hand or by `make install`: the hub's unit names it in
+`ReadWritePaths=`, and systemd.exec(5) says such an entry must exist
+unless it has a `-` prefix. See [The daemons](#the-daemons).
+This is from the unit files and a test that reads them; the units have
+not been run under systemd.
 
 ### Checking it
 

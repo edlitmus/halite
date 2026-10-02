@@ -359,7 +359,7 @@ func TestATargetThatSkippedEveryNodeSaysSoRatherThanMatchingNothing(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.resolve(matcher)
+	_, err = s.resolve(matcher, "")
 	if err == nil {
 		t.Fatal("a target that could consider no node reported an empty match")
 	}

@@ -317,7 +317,9 @@ func runConnect(args *cli.Args) int {
 
 	// The hub's tree replaces the node's own, unless --local says
 	// otherwise. A node with a hub should be applying the tree the hub
-	// serves; SPEC section 13.
+	// serves; SPEC section 13. A root flag does not say otherwise here,
+	// as it does for a one-shot command: see warnRootsWithoutLocal.
+	n.warnRootsWithoutLocal(args)
 	n.attachToHub(args, client)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -563,12 +565,13 @@ func (n *node) useHubTree(client *transport.Client) {
 // useHubIfConfigured points a one-shot command at the hub, the way
 // `salt-call` uses its master unless told `--local`. // lexicon:allow
 //
-// A node with no hub, one told `--local`, or one that has not enrolled
-// works from its own roots exactly as before. A hub that cannot be
-// reached is a warning and a local compilation rather than a failure:
-// `pillar items` during an outage should still answer.
+// A node with no hub, one told `--local` or given a root flag (see
+// localRequested), or one that has not enrolled works from its own
+// roots exactly as before. A hub that cannot be reached is a warning
+// and a local compilation rather than a failure: `pillar items` during
+// an outage should still answer.
 func (n *node) useHubIfConfigured(args *cli.Args) {
-	if args.Bool("local", false) {
+	if localRequested(args) {
 		return
 	}
 	if args.Flag("hub", n.cfg.String("hub", "")) == "" {
@@ -583,6 +586,71 @@ func (n *node) useHubIfConfigured(args *cli.Args) {
 	n.useHubPillar(client)
 	n.useHubEvents(client)
 	n.useHubMine(client)
+}
+
+// localRequested is whether a one-shot command was told to work from
+// this node's own roots: `--local`, or a `--file-root` or
+// `--pillar-root`, which `--help` has always said imply it.
+//
+// They did not. Only `--local` was consulted, so on a node with a hub
+// configured and a certificate, `pillar items --pillar-root <dir>`
+// printed the hub's pillar and `state show_sls x --file-root <dir>` said
+// `x` was not found: the flag was read and built into a set of roots,
+// and then the hub's tree and pillar were put in front of them. A node
+// with no hub never showed it, because that node is local whatever the
+// flags say -- and that is the only kind of node the CLI tests ran.
+//
+// Either flag makes the whole invocation local, tree and pillar both,
+// rather than only the half it names. Half-local is a combination
+// nothing would tell the operator they had: a local tree rendered
+// against the hub's pillar is exactly the result that looks plausible
+// and is not what either place would produce. It is also what the help
+// text says, and `--local` is the existing word for it.
+//
+// The flags are read through repeatedFlag, as rootsFrom reads them, so
+// that the two cannot disagree about whether a flag was given: a value
+// that builds no roots does not imply local roots either.
+//
+// `connect` does not use this; see warnRootsWithoutLocal.
+func localRequested(args *cli.Args) bool {
+	return args.Bool("local", false) ||
+		len(repeatedFlag(args, "file-root")) > 0 ||
+		len(repeatedFlag(args, "pillar-root")) > 0
+}
+
+// warnRootsWithoutLocal is `connect` given a root flag and not
+// `--local`.
+//
+// The one-shot commands treat a root flag as `--local`. The agent does
+// not, and says so rather than doing either thing silently. On `connect`
+// a root flag has always meant what it still means: the tree and the
+// pillar this node falls back on while the hub serves none (useHubTree,
+// useHubPillar). A unit file that carries `--file-root` for that reason
+// is running an agent that applies the hub's tree today, and making the
+// flag imply `--local` here would turn that agent local on its next
+// restart -- a node that quietly stops applying what the hub serves,
+// with nothing failing anywhere. Refusing the combination would be
+// louder and worse: an agent that will not start is a node nobody is
+// managing. A warning at startup changes nothing about what runs and
+// tells the operator what the flag is doing, and `--local` is there for
+// the one who meant it.
+func (n *node) warnRootsWithoutLocal(args *cli.Args) {
+	if args.Bool("local", false) {
+		return
+	}
+	var given []string
+	for _, flag := range []string{"file-root", "pillar-root"} {
+		if len(repeatedFlag(args, flag)) > 0 {
+			given = append(given, "--"+flag)
+		}
+	}
+	if len(given) == 0 {
+		return
+	}
+	n.log.Warn("--file-root and --pillar-root do not make a connected agent local; "+
+		"they are the roots it falls back on while the hub serves none. "+
+		"Pass --local to work from them",
+		"given", strings.Join(given, ","))
 }
 
 // useHubEvents lets a module on this node put a record on the hub's

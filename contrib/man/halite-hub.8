@@ -160,11 +160,28 @@ elsewhere.
 Holds the job cache, the event bus and the key store.
 .El
 .Sh EXIT STATUS
-.Ex -std
+.Nm
+exits 0 on success and 1 when a command fails.
+.Pp
+A command line it does not understand, with no subcommand or an unknown
+one, exits 64
+.Pq Dv EX_USAGE ,
+as does a subcommand given none of the operands it needs, such as a bare
+.Cm keys
+or
+.Cm orch .
+It is not 2, which a
+.Xr halite-node 8
+state run exits when nothing needed changing.
 .Pp
 .Cm run
-exits non-zero when a node returned a failure, so a script does not have
-to read the output to know.
+exits 0 when every node succeeded, 1 when a node answered with a
+failure, and 3 when a node was sent the job and did not answer, so a
+script does not have to read the output to know.
+.Cm orch run
+exits 0 when every step succeeded and 1 when one failed.
+.Cm policy test
+exits 1 when the request would be denied.
 .Cm doctor
 exits non-zero only when a check fails, not when one warns.
 .Sh EXAMPLES

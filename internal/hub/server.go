@@ -146,6 +146,10 @@ type Server struct {
 	// metrics is the declared families, nil on a hub with no registry.
 	metrics   *hubMetrics
 	metricsMu sync.Mutex
+	// owed is, per job this process dispatched, who it has not yet
+	// heard from: what `halite_jobs_missing_returns` is the sum of.
+	// See owedReturns.
+	owed owedReturns
 }
 
 // goBackground runs work that outlives the request that started it,

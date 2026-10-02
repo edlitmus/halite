@@ -358,3 +358,52 @@ func TestGroupingStillWorksAfterTheParenChange(t *testing.T) {
 		t.Error("an unmatched close must be refused")
 	}
 }
+
+// LoadPillar is asked only by a pillar leaf that is evaluated: the hub's
+// loader is a full pillar compilation, and the short-circuit is what lets
+// `L@web1 and I@...` compile one node's pillar instead of the fleet's.
+func TestLoadPillarIsAskedOnlyWhenAPillarLeafIsReached(t *testing.T) {
+	calls := 0
+	n := web1()
+	n.Pillar = nil
+	n.LoadPillar = func() *value.Map {
+		calls++
+		return value.MapOf("role", "web")
+	}
+
+	m, err := Compile(Compound, "L@db1.prod and I@role:web", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Match(n) {
+		t.Error("matched a node the list term excludes")
+	}
+	if calls != 0 {
+		t.Errorf("the loader was asked %d time(s) for a node decided without pillar", calls)
+	}
+
+	m, err = Compile(Compound, "I@role:web and J@role:^w", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Match(n) {
+		t.Error("did not match on the loaded pillar")
+	}
+	// Memoising is the hub's loader's job, not the matcher's, so this
+	// loader is asked once per leaf reached.
+	if calls != 2 {
+		t.Errorf("the loader was asked %d time(s) for two pillar leaves", calls)
+	}
+
+	// A loader with nothing to give reads as an empty pillar -- which is
+	// a match under `not`, and why the hub records the failure itself
+	// rather than trusting this answer.
+	n.LoadPillar = func() *value.Map { return nil }
+	m, err = Compile(Compound, "not I@role:db", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Match(n) {
+		t.Error("an absent pillar did not read as empty")
+	}
+}
