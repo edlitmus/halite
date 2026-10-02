@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The job metrics count what they say
+
+`halite_jobs_missing_returns` falls when a job ends, not only when a node
+answers, so jobs that expire, are killed, or stop at
+`--batch-safe-limit` no longer hold `HaliteJobsUnanswered` up until the
+hub restarts, and a return for a job from before a restart no longer
+drives it negative. `halite_jobs_expired_total`, which always read 0,
+counts each job whose time to live passed with a node unanswered.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not

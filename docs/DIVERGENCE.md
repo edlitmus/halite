@@ -19033,6 +19033,45 @@ override's value -- the test node answers by function name and the
 assertion is on the digest and the dispatches; and a hub on FreeBSD or
 Linux.
 
+### 5.202 Two job metrics: one never counted, one never came down
+
+`halite_jobs_expired_total` was declared and never incremented: it read
+0 on every hub, whatever had expired, and `docs/metrics.md` had to say
+"do not alert on it". `halite_jobs_missing_returns` rose by the matched
+count on dispatch and fell only on a fresh return, so every job that
+ended without every answer left its count behind -- one that expired,
+one killed with `jobs kill`, one stopped at `--batch-safe-limit`, one
+sent to a node never connected. Measured in-process against the
+registry's exposition: 2 after an expired job with one silent and one
+absent node, 1 after a kill, 4 after a safe-limit stop of six nodes. The
+documented `HaliteJobsUnanswered` alert then fired until the hub
+restarted, and an alert that always fires is one nobody reads.
+
+It was wrong the other way too: a return for a job this process had
+never counted -- any job in flight across a restart -- was subtracted
+anyway, and the hub read **-1** unanswered nodes.
+
+The two paths that had to agree were "the job is owed" and "the job is
+over", and a bare number could not know how much of a job remained, or
+refuse to subtract what it had never added. **The gauge is now backed by
+a per-job set of the nodes still owed.** Each node is owed once and
+forgiven once; settlement, kill and the safe-limit stop close the job and
+subtract exactly what was left; a late return after a close moves
+nothing; resume owes the missing nodes again. An expiry is counted once
+per job at settlement, from the record's own answer that a node is still
+missing, and a sweep closes owed jobs the 500-record listing cannot
+reach. Dispatch now counts before the first send, so a node quick enough
+to answer first has a debt to answer against.
+
+Each piece was removed in turn and a test failed every time: the kill
+close, the abort close, the settle close, the expiry increment, the
+sweep, the return guard (back to -1), the resume re-owe. **Not
+demonstrated:** the count-before-send ordering -- the old order passed
+twenty runs, so it rests on reasoning; a real hub's once-a-minute settle
+loop and a real Prometheus. A matched node that is not connected under
+offline skip stays on the gauge for the job's whole TTL, which with the
+default fifteen minutes can briefly trip the alert's `for: 15m`.
+
 
 ## 6. Everything else not started
 
