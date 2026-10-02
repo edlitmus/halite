@@ -122,6 +122,26 @@ type Node struct {
 	ID     string
 	Grains *value.Map
 	Pillar *value.Map
+	// LoadPillar, when set, supplies the pillar the first time a pillar
+	// leaf asks for it, and Pillar is not read.
+	//
+	// It exists because the hub has no pillar for a node until it
+	// compiles one, and compiling is the expensive part of a target: a
+	// render of the node's whole pillar tree, external sources and GPG
+	// included. Filling Pillar in up front would compile it for every
+	// candidate of every target with a pillar term anywhere in it, even
+	// `L@web1 and I@role:web`, where only one node's answer can depend on
+	// pillar at all. A loader is asked only by a leaf that is actually
+	// evaluated, and `and`/`or` short-circuit, so a node decided by a
+	// cheaper term first is never compiled for.
+	//
+	// A loader that cannot produce a pillar returns nil, which reads as
+	// an empty one -- and an empty pillar is a wrong answer under `not`,
+	// so the caller that installed the loader has to remember the
+	// failure and refuse to use this node's result. The matcher cannot
+	// do that itself: Match answers a boolean, and "undecided" is not
+	// one.
+	LoadPillar func() *value.Map
 	// GrainsStale marks a node whose cached grains are older than
 	// grain_stale_after, so a caller can annotate the result rather than
 	// hide the hazard. SPEC section 8.3.
@@ -444,6 +464,12 @@ func pickGrains(n Node) any {
 }
 
 func pickPillar(n Node) any {
+	if n.LoadPillar != nil {
+		if m := n.LoadPillar(); m != nil {
+			return m
+		}
+		return value.NewMap(0)
+	}
 	if n.Pillar == nil {
 		return value.NewMap(0)
 	}
