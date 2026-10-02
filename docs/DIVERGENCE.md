@@ -18657,6 +18657,36 @@ CHANGELOG.md was left saying what was true when it was written.
 tag or a dispatch, and a dispatch writes a permanent Sigstore entry,
 which is not a thing to spend on a count. `make dist` is the same build
 the workflow runs, so the number is the one it will see.
+### 5.194 The root `.gitignore` unpinned the lab's tofu provider
+
+`contrib/tofu/.terraform.lock.hcl` pins the vultr provider -- version
+2.32.0 and its hashes -- to the build the lab was actually run against,
+for the reason `go.sum` is kept, and `contrib/tofu/.gitignore` and the
+lab README both say it is deliberately committed. Commit 19e6b7f added
+`.terraform*` to the root `.gitignore`, meant for the `.terraform/`
+provider cache, and removed the tracked lock file in the same commit.
+The pattern matches `.terraform.lock.hcl` too, so the file stopped
+being tracked and every new one was ignored: `git check-ignore -v`
+named `.gitignore:44:.terraform*`. A `tofu init` anywhere could then
+resolve a different provider within `~> 2.23`, and nothing would show
+it.
+
+Found by the documentation sweep, which read the lab README's
+"`.terraform.lock.hcl` is **not** ignored" against `git check-ignore`
+rather than against the other `.gitignore`.
+
+**The fix** names what the pattern was for: `.terraform/` and
+`.terraform.tfstate.lock.info`. The lock file is restored exactly as it
+was last tracked (19e6b7f's parent): 2.32.0, the same fifteen `zh:`
+hashes. Checked with `git check-ignore`: the lock file is not ignored,
+and a file under `.terraform/` and a state lock file still are.
+
+The copy a `tofu init` wrote on a Mac on 2026-10-01 pins the same
+version and the same `zh:` hashes and adds fourteen `h1:` package
+hashes for that machine; it was not committed. The first `tofu init` on
+another platform may add its own, which is tofu recording what it
+verified, not a change of provider.
+
 
 
 ## 6. Everything else not started
