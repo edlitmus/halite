@@ -18695,6 +18695,70 @@ version and the same `zh:` hashes and adds fourteen `h1:` package
 hashes for that machine; it was not committed. The first `tofu init` on
 another platform may add its own, which is tofu recording what it
 verified, not a change of provider.
+### 5.195 Nothing renewed a node's certificate
+
+SPEC 7.4: "A node renews at 50% of lifetime … renewal needs no operator
+action and no token." The setting's own documentation said "Renewal is
+automatic", and so did the operations guide. The only caller of the
+renewal was `halite-node renew`, and nothing ran it -- not `connect`,
+not a unit, not an rc.d script. So every node would have stopped
+authenticating 90 days after it enrolled, on a fleet that is all on
+halite. The documentation sweep found it (it is in that PR's
+operations text as "nothing renews a certificate for you"); `doctor`
+would have warned a fortnight before, and only to whoever ran it.
+
+**The fix** puts the renewal in `connect`. It checks at start and then
+every twentieth of the certificate's life, bounded to between ten
+seconds and an hour -- hourly for the 90-day default, and fast enough
+for a short `certificate_lifetime` without a setting of its own. Past
+halfway it renews; a failure is a warning and a retry at the next
+check, never the end of the agent. `renew` and `connect` share one
+function now, which returns rather than exits.
+
+**Two hazards the design had to close**, both found by reading the hub
+before writing the node:
+
+- The hub revokes the old serial the moment it issues the new one and
+  asks the stream to reconnect (`TestRenewalEndsTheStreamSoTheNodeReloads`),
+  and the connect loop re-reads the key and certificate on every
+  reconnect. A renewal writes the key first and the certificate second.
+  A reconnect that read between them would hold a pair that does not go
+  together; one that read before them would present the serial just
+  revoked. A lock on the node is held while the pair is read and for the
+  whole renewal, hub call included, so a reconnect waits for it. It is
+  a pointer because a job runs on a shallow copy of the node, and a
+  copied mutex is a second lock -- `go vet` said so on the first build.
+- `renew`'s `--key-algorithm` defaulted to P-256, so a node enrolled on
+  P-384 became a P-256 one the first time anybody renewed it. A renewal
+  now keeps the algorithm of the key the node holds (`pki.AlgorithmOf`),
+  and the flag still overrides.
+
+**Demonstrated** on macOS arm64 with a real hub and a real `connect` on
+127.0.0.1, the hub issuing two-minute certificates:
+
+- one node renewed **nine times in four and a half minutes** on its
+  own, each time told to reconnect by the hub and back on the new
+  certificate within a second, with no warning or error logged and the
+  agent connected throughout;
+- a build with only the line that starts the loop removed never
+  renewed, and once its certificate expired a new request from it got
+  `remote error: tls: expired certificate`. Its existing stream stayed
+  up, because an open TLS connection is not re-checked -- which is why
+  nothing about an expiring node looks wrong until something reconnects.
+
+The unit tests drive the loop's schedule with the hub call passed in:
+it renews a certificate past halfway at once, leaves one that is not
+due, and retries a failed renewal instead of stopping.
+
+**Not covered:** the lock under a real race -- the runs above never
+reconnected during a renewal's writes, so its value is argued, not
+watched; FreeBSD and Linux (only macOS ran this); a renewal against a
+hub that is down when it falls due, beyond the unit test's injected
+failure; and the hub side of a short lifetime, which also governs the
+hub's own serving certificate -- the run above reused a hub certificate
+issued at the default and changed the setting afterwards. The kept
+`node.key.<time>` files are not pruned, one per renewal.
+
 
 
 

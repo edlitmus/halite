@@ -126,6 +126,7 @@ func (n *node) hubClient(args *cli.Args) (*transport.Client, pki.Files) {
 		n.log.Info("the hub CA matches the pinned fingerprint", "fingerprint", got)
 	}
 
+	defer n.lockIdentity()()
 	if files.Exists(pki.NodeCertFile) && files.Exists(pki.NodeKeyFile) {
 		pair, err := files.KeyPair(pki.NodeCertFile, pki.NodeKeyFile)
 		if err != nil {
@@ -274,35 +275,15 @@ func runRenew(args *cli.Args) int {
 		return 0
 	}
 
-	// A new key at every renewal, so that a stolen one has the bounded
-	// life SPEC 7.4 promises rather than a bounded certificate over a
-	// permanent key.
-	alg, err := pki.ParseKeyAlgorithm(args.Flag("key-algorithm", string(pki.ECDSAP256)))
-	if err != nil {
-		cli.Fatalf("%v", err)
+	// --key-algorithm chooses; without it the new key is the kind the
+	// node already holds. See renewIdentity.
+	var alg pki.KeyAlgorithm
+	if v := args.Flag("key-algorithm", ""); v != "" {
+		if alg, err = pki.ParseKeyAlgorithm(v); err != nil {
+			cli.Fatalf("%v", err)
+		}
 	}
-	key, err := pki.GenerateKey(alg)
-	if err != nil {
-		cli.Fatalf("%v", err)
-	}
-	got, err := client.Renew(context.Background(), key, n.nodeID)
-	if err != nil {
-		cli.Fatalf("%v", err)
-	}
-	// The key is written only once the hub has issued against it: a
-	// node that replaced its key and then failed to get a certificate
-	// would have locked itself out.
-	aside := files.Path(pki.NodeKeyFile) + "." + time.Now().UTC().Format("20060102T150405")
-	if err := atomicfile.Rename(files.Path(pki.NodeKeyFile), aside); err != nil {
-		cli.Fatalf("%v", err)
-	}
-	if err := files.WriteKey(pki.NodeKeyFile, key); err != nil {
-		cli.Fatalf("%v", err)
-	}
-	if err := writeIdentity(files, got); err != nil {
-		cli.Fatalf("%v", err)
-	}
-	fresh, err := files.ReadCert(pki.NodeCertFile)
+	fresh, aside, err := n.renewIdentity(args, alg)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -408,6 +389,7 @@ func runConnect(args *cli.Args) int {
 	go exec.Run(ctx.Done())
 	go n.postReturns(ctx, args, returns)
 	go n.refreshGrains(ctx, args)
+	go n.keepRenewed(ctx, args)
 	n.startBeacons(ctx)
 	n.startSchedule(ctx)
 	n.startMine(ctx)
