@@ -199,6 +199,82 @@ func TestTestModeChangesNothing(t *testing.T) {
 	}
 }
 
+// `test=True` is how Salt spells a dry run -- `salt-call state.apply
+// test=True` -- and SPEC 32's phase 1 names `halite-node call
+// state.apply` as the node's form of it. The CLI parsed it, into Kwargs,
+// and neither `state <fn>` nor `call state.<fn>` read Kwargs: the states
+// were applied for real and nothing said the argument had gone. Found by
+// running `state sls ... test=True` on a Mac and watching it start a
+// `brew install` (DIVERGENCE 5.192). Every spelling of every route must
+// change nothing.
+func TestTestEqualsTrueChangesNothing(t *testing.T) {
+	for _, argv := range [][]string{
+		{"state", "apply", "test=True"},
+		{"state", "highstate", "test=True"},
+		{"state", "sls", "m", "test=True"},
+		{"state", "apply", "m", "test=true"},
+		{"call", "state.apply", "test=True"},
+		{"call", "state.apply", "m", "test=True"},
+		{"call", "state.sls", "m", "test=True"},
+		{"call", "state.highstate", "test=True"},
+	} {
+		t.Run(strings.Join(argv, " "), func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "should-not-exist")
+			flags := tree(t, map[string]string{
+				"top.sls": "base:\n  '*':\n    - m\n",
+				"m.sls":   target + ":\n  file.managed:\n    - contents: hello\n",
+			})
+			got := run(t, append(argv, flags...)...)
+			if _, err := os.Stat(target); !os.IsNotExist(err) {
+				t.Fatalf("%s wrote the file: %+v", strings.Join(argv, " "), got)
+			}
+			if got.code != 0 {
+				t.Errorf("a test run with pending work should exit 0: %+v", got)
+			}
+		})
+	}
+}
+
+// The rest of what applyStateKwargs decides, each checked by whether the
+// file was written: test=False cannot undo --test, a key nothing reads
+// is refused before anything runs, and test=False with test mode off is
+// simply a real run.
+func TestStateKwargsAreReadOrRefused(t *testing.T) {
+	for _, tc := range []struct {
+		argv      []string
+		wantFile  bool
+		wantError string
+	}{
+		{[]string{"state", "apply", "--test", "test=False"}, false, "cannot turn off test mode"},
+		{[]string{"state", "apply", "saltenv=dev"}, false, "do not take saltenv="},
+		{[]string{"call", "state.apply", "m", "exclude=m"}, false, "do not take exclude="},
+		{[]string{"state", "apply", "test=maybe"}, false, "want True or False"},
+		{[]string{"state", "apply", "test=False"}, true, ""},
+	} {
+		t.Run(strings.Join(tc.argv, " "), func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "target")
+			flags := tree(t, map[string]string{
+				"top.sls": "base:\n  '*':\n    - m\n",
+				"m.sls":   target + ":\n  file.managed:\n    - contents: hello\n",
+			})
+			got := run(t, append(tc.argv, flags...)...)
+			_, err := os.Stat(target)
+			if wrote := err == nil; wrote != tc.wantFile {
+				t.Fatalf("file written = %v, want %v: %+v", wrote, tc.wantFile, got)
+			}
+			if tc.wantError == "" {
+				if got.code != 0 {
+					t.Errorf("want a clean real run: %+v", got)
+				}
+				return
+			}
+			if got.code == 0 || !strings.Contains(got.stderr, tc.wantError) {
+				t.Errorf("want a refusal naming %q: %+v", tc.wantError, got)
+			}
+		})
+	}
+}
+
 func TestCompilationErrorsAreNotExitTwo(t *testing.T) {
 	flags := tree(t, map[string]string{
 		"top.sls": "base:\n  '*':\n    - m\n",

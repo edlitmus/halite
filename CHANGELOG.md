@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `test=True` on `halite-node` is a dry run
+
+`halite-node state apply test=True` and `halite-node call state.apply
+test=True` -- Salt's spelling of a dry run -- **applied the states for
+real**: the argument was parsed and then ignored. They are dry runs
+now. `test=True` can turn test mode on but never off, so `test=False`
+under `--test` or a node's `test: true` is refused; and any other
+`key=value` argument to a state function, which used to be ignored the
+same way, is refused by name.
+
 ### `pkg` works on a Mac node
 
 Every `pkg` function on macOS failed on a real node: the node runs as
