@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### A mistyped `halite-node` command no longer reads as converged
+
+`halite-node` with no arguments, or with a subcommand that does not
+exist, exited 2 -- the code a state run uses for "nothing to do", which
+monitors and the shipped units treat as success. It now exits 64
+(`EX_USAGE`). A script that checked for exactly 2 after a typo will now
+see a failure, which is the point.
+
 ### `orch resume` will not treat a dry run as done
 
 Resuming a `--test` orchestration for real used to carry its predicted

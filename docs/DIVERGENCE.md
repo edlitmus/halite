@@ -18854,6 +18854,44 @@ its pillar is resumed without it. That is its own change.
 `test` argument, read from the code, not run against a hub), and a
 FreeBSD or Linux hub.
 
+### 5.198 A mistyped `halite-node` command exited 2, which is "converged"
+
+SPEC 11.4 gives a state run three answers: 0 changed, 1 failed, 2
+nothing to do. The operations guide says to treat 2 as success, and the
+shipped units say `SuccessExitStatus=0 2`. `halite-node` also exited 2
+when it did not understand its command line -- no arguments, or a
+subcommand that does not exist -- so `halite-node stat apply` in a cron
+line reported "converged" every time it ran, and nothing about it
+looked wrong. Measured with the built binary: no arguments, 2; `stat
+apply`, 2.
+
+**The test held the defect in place and said why.**
+`TestUnknownSubcommandIsUsageNotSuccess` asserted exit 2, reasoning that
+usage failure is 2 by convention "and both go to stderr, which is what
+tells them apart". A script or a cron line reads the exit status, not
+stderr, so to every caller the two were the same answer. The sweep that
+found it (in `docs/getting-started.md`'s caution, since removed) read
+the exit table against the code rather than against the comment.
+
+**The fix** is `cli.ExitUsage`, 64 -- sysexits(3)'s `EX_USAGE`, the
+convention on FreeBSD -- for both paths. Not 1, which is a run with a
+failed state: a typo is not one, and an operator alerting on 1 should
+not be paged about it. Measured again: no arguments 64, `stat apply`
+64, `--help` and `version` 0. The test wants 64 now, with its reasoning
+corrected, and failed with `exit = 2, want 64` when one path was put
+back. The manual page's EXIT STATUS, which said only that a clean run
+exits 0, now gives the whole table: 0, 2, 1, 64, and `enroll`'s 2 while
+pending.
+
+**Not changed:** `halite-hub` and `halite-api` still exit 2 on a usage
+error. There are thirty-three `exit 2` sites between them, most of them
+usage errors; they were counted, not each read. Neither uses 2 for success --
+`halite-hub run` answers 0, 1 or 3 -- so the ambiguity this entry is
+about does not arise there; moving them to `cli.ExitUsage` too is a
+consistency change, not a fix, and is left for one. A mistyped
+`halite-node state` subcommand already exited 1, through `cli.Fatalf`,
+and still does.
+
 
 ## 6. Everything else not started
 

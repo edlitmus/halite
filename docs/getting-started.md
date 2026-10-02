@@ -252,11 +252,10 @@ exit code tells a script which happened without parsing the output:
 A cron job that treats 2 as success will not page you for a machine that
 had nothing to do.
 
-One caution about 2: today `halite-node` also exits 2 when it does not
-understand its command line — an unknown subcommand, or no arguments at
-all — so `halite-node stat apply` looks the same as a converged run. A
-job that treats 2 as success should also check that the output contains
-`Succeeded:`.
+A command line `halite-node` does not understand — an unknown
+subcommand, or no arguments at all — exits 64, sysexits' `EX_USAGE`, so a
+typo such as `halite-node stat apply` in a cron line is a failure rather
+than something that reads as converged. It used to exit 2.
 
 ## A configuration file
 

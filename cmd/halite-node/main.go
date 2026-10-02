@@ -106,7 +106,7 @@ State subcommands:
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		os.Exit(cli.ExitUsage)
 	}
 	sub := os.Args[1]
 	args, err := cli.Parse(os.Args[2:])
@@ -162,7 +162,7 @@ func main() {
 		exitWith(runVerifyEvidence(args))
 	default:
 		fmt.Fprintf(os.Stderr, "halite-node: unknown subcommand %q\n\n%s", sub, usage)
-		os.Exit(2)
+		os.Exit(cli.ExitUsage)
 	}
 }
 
