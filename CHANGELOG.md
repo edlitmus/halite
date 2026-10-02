@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### make install on macOS installs no systemd units
+
+`make install` on macOS no longer installs systemd units or suggests
+`systemctl` and `useradd`. It installs the binaries, manual pages and
+directories, says that no launchd job is shipped, prints how to run each
+program, and names `sysadminctl` for the account. FreeBSD and Linux are
+unchanged.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not
