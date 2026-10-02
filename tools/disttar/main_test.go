@@ -189,6 +189,13 @@ func TestItRefusesWhatWouldMakeAnArchiveWrong(t *testing.T) {
 			t.Errorf("epoch %q: %v", e, err)
 		}
 	}
+	// A tag's `v` in the version would name every archive differently
+	// from what the release notes and the README fetch.
+	o = fixture(t)
+	o.version = "v0.1.0"
+	if _, err := run(o); err == nil || !strings.Contains(err.Error(), "the tag's v") {
+		t.Errorf("a version with a tag's v: %v", err)
+	}
 	o = fixture(t)
 	o.license = filepath.Join(t.TempDir(), "LICENSE")
 	if _, err := run(o); err == nil || !strings.Contains(err.Error(), "licence") {

@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Release archives are named for the version, not the tag
+
+A tag `v0.1.0` would have produced `halite-v0.1.0-*.tar.gz` while the
+release notes and the README fetch `halite-0.1.0-*`. The build now drops
+the tag's `v`, so the archives, `halite-node version` and the
+`haliteversioninfo` grain all say `0.1.0` -- the grain used to start
+with the string `"v0"`.
+
 ### A mistyped `halite-node` command no longer reads as converged
 
 `halite-node` with no arguments, or with a subcommand that does not

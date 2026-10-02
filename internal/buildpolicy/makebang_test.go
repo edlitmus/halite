@@ -70,7 +70,9 @@ func TestTheVersionStampHasAFixedAbbreviation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := regexp.MustCompile(`(?m)^GIT_VERSION\s*!=\s*(git describe[^|]*)`).FindStringSubmatch(string(b))
+	// The describe may sit in a subshell, as it does since the tag's `v`
+	// is stripped from its output (DIVERGENCE 5.199).
+	m := regexp.MustCompile(`(?m)^GIT_VERSION\s*!=\s*\(?\s*(git describe[^|)]*)`).FindStringSubmatch(string(b))
 	if m == nil {
 		t.Fatal("GIT_VERSION is not set from git describe")
 	}

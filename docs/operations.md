@@ -711,7 +711,7 @@ Ask a binary what it is rather than trusting its filename:
 
 ```sh
 halite-node-fips version
-# halite-node v1.0.0+abc123def456 (fips v1.0.0)
+# halite-node 1.0.0+abc123def456 (fips v1.0.0)
 # fips mode on, module v1.0.0, self-tests passed
 ```
 
