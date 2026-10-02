@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/extension"
@@ -27,6 +26,8 @@ func main() {
 	exe := flag.String("exe", "", "the executable, relative to the directory")
 	declares := flag.String("declares", "", "what it needs, comma separated")
 	keyFile := flag.String("key", "", "the signing key; generated when absent")
+	platform := flag.String("platform", "",
+		"goos/goarch the executable is for; read from the executable when absent, and refused when it disagrees")
 	flag.Parse()
 
 	if *dir == "" || *name == "" || *exe == "" {
@@ -34,12 +35,17 @@ func main() {
 		os.Exit(2)
 	}
 
+	// Before the key: a bundle that is going to be refused should not
+	// leave a freshly generated signing key behind it.
+	target, err := executablePlatform(filepath.Join(*dir, *exe), *platform)
+	check(err)
+
 	private, public := loadOrCreateKey(*keyFile)
 
 	manifest, err := extension.Build(*dir, extension.Manifest{
 		Name: *name, Version: *version, Kind: *kind,
 		Executables: map[string]string{
-			extension.Platform(runtime.GOOS, runtime.GOARCH): *exe,
+			target: *exe,
 		},
 		Declares: splitDeclares(*declares),
 	})
