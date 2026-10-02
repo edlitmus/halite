@@ -43,13 +43,18 @@ Flags for run and verify:
   --node-id <id>     what the call context says, default dev
   --env <name>       what the call context says, default base
   --test             a run that must change nothing
-  --timeout <dur>    how long one call may take, default 60s
+  --timeout <dur>    how long one call may take, default 60s; for verify,
+                     one exchange with a running extension, default 10s
   --sandbox          apply the confinement a node would
   --declare <list>   what --sandbox grants: network, root
   --user <name>      the account --sandbox drops to
   --group <name>     its group
   --json             print only the result, or the rules as JSON
   --function <name>  the function verify calls; empty takes the first announced
+
+Flags for verify alone:
+  --start-timeout <dur>  the first answer of each session, whose wait includes
+                         starting the process, default 30s
 `
 
 // runExtensions is the hub's side of SPEC 24.5.

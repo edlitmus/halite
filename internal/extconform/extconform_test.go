@@ -43,6 +43,8 @@ const (
 	modeUnknownIsOK   = "unknown-is-ok"
 	modePrintsToStdou = "prints-to-stdout"
 	modeStrictFields  = "strict-fields"
+	modeSlowStart     = "slow-start"
+	modeBuffers       = "buffers"
 )
 
 var (
@@ -242,6 +244,78 @@ func TestItCatchesAPrintToStdout(t *testing.T) {
 // a reasonable instinct, and this is the one place it is wrong.
 func TestItCatchesAnExtensionThatRefusesAnUnknownField(t *testing.T) {
 	mustFail(t, check(t, modeStrictFields, nil), "protocol/ignores-an-unknown-field")
+}
+
+// A slow start is not a defect, and it is not buffering.
+//
+// The first frame of a session is the only one whose wait includes
+// starting the process: exec, the dynamic loader, a runtime or an
+// interpreter coming up, and on macOS the first-exec assessment of a
+// binary the test has just linked. Under a full `make check` that
+// took longer than the two seconds this suite gives one exchange, and
+// a conforming extension failed handshake/answers with the advice to
+// flush -- which it already did. The fixture sleeps for longer than an
+// exchange before reading anything, which is that load spike made
+// deterministic: it fails every time against a harness that times the
+// handshake by the exchange timeout, and passes against one that gives
+// the start its own allowance.
+func TestASlowStartIsNotAFailure(t *testing.T) {
+	byRule := check(t, modeSlowStart, nil)
+	for rule, got := range byRule {
+		if got.Status == Fail {
+			t.Errorf("%s failed on an extension that only started slowly: %s", rule, got.Detail)
+		}
+	}
+	// Not covered here: the refusal rules pass on silence, so the old
+	// harness also passed them for a slow extension that would have
+	// accepted the wrong version, had it been waited for. A conforming
+	// fixture refuses either way and cannot show that half.
+	if pass, _, _ := countOf(byRule); pass < 8 {
+		t.Errorf("only %d rules passed; the slow start was not waited out", pass)
+	}
+}
+
+// The other half of the same distinction: a start allowance that was
+// only a bigger number would make the harness wait longer and still
+// say "buffering" about a process that never got going, and it would
+// lose nothing for a buffering one. What establishes buffering is
+// closing stdin and watching the held frames arrive -- a runtime
+// flushes on exit -- so a buffering extension is named as one, with
+// evidence, and nothing else is.
+func TestItCatchesAnExtensionThatBuffersItsOutput(t *testing.T) {
+	// A short start allowance, because a buffering extension waits it
+	// out in full and the suite should not. The diagnosis does not
+	// depend on it: a start slower than this still ends in the held
+	// frames arriving when stdin closes.
+	byRule := check(t, modeBuffers, func(o *Options) { o.StartTimeout = 2 * time.Second })
+	mustFail(t, byRule, "handshake/answers", "only once its stdin was closed", "flush after every frame")
+	t.Logf("handshake/answers: %s", byRule["handshake/answers"].Detail)
+}
+
+// And the converse: a process that had not read the hello when the
+// allowance ran out is not called a buffering one. This is the slow
+// starter given an allowance shorter than its start, which is exactly
+// the case the old message got wrong. Closing stdin alone would not
+// tell it apart -- the hello is still in the pipe, so it would answer
+// after the close just as a buffering one does -- which is why the
+// probe looks at what is left in the pipe first.
+func TestAStartLongerThanTheAllowanceIsNotCalledBuffering(t *testing.T) {
+	byRule := check(t, modeSlowStart, func(o *Options) { o.StartTimeout = time.Second })
+	got := byRule["handshake/answers"]
+	if got.Status != Fail {
+		t.Fatalf("handshake/answers is %s, want fail (detail: %s)", got.Status, got.Detail)
+	}
+	t.Logf("handshake/answers: %s", got.Detail)
+	if strings.Contains(got.Detail, "buffer") {
+		t.Errorf("a process that had not finished starting was diagnosed as buffering: %q", got.Detail)
+	}
+	// Positively, not just "not buffering": a vaguer message that
+	// avoids the wrong word is still a guess, and the probe exists to
+	// replace guesses with what the pipe shows.
+	if !strings.Contains(got.Detail, "had not read the hello") ||
+		!strings.Contains(got.Detail, "still starting") {
+		t.Errorf("the detail does not say the hello was never read: %q", got.Detail)
+	}
 }
 
 // The kind rules cannot be checked without being told what the kind is,

@@ -76,25 +76,82 @@ type Options struct {
 	// Kwargs is what to call it with. A call that fails for want of an
 	// argument still tells us how the extension answers.
 	Kwargs any
-	// Timeout bounds one exchange. Zero takes DefaultTimeout.
+	// Timeout bounds one exchange with a process that is running. Zero
+	// takes DefaultTimeout.
 	Timeout time.Duration
+	// StartTimeout bounds the first answer of each session, which is
+	// the one wait that includes starting the process. Zero takes
+	// DefaultStartTimeout; it is never shorter than Timeout.
+	StartTimeout time.Duration
 	// Env is the child's environment. Nil takes a clean one.
 	Env []string
 }
 
 // DefaultTimeout bounds one exchange.
 //
-// Short. Every check here is one round trip against a process that has
-// already started, and a conformance run that takes a minute per rule
-// is one nobody runs. An extension doing real work on a call needs
-// longer and says so.
+// Short. Every exchange it bounds is one round trip against a process
+// that has already answered the handshake, and a conformance run that
+// takes a minute per rule is one nobody runs. An extension doing real
+// work on a call needs longer and says so.
 const DefaultTimeout = 10 * time.Second
+
+// DefaultStartTimeout bounds the first answer of a session.
+//
+// Separate from DefaultTimeout because the first answer is not one
+// round trip. Its wait begins before exec: the dynamic loader, a Go
+// runtime or a Python interpreter coming up and importing, and on macOS
+// the first-exec assessment of a binary that was linked a moment ago --
+// none of which the extension's author controls, and all of which
+// stretch without limit on a loaded machine. This harness once timed
+// that wait by the exchange timeout, and under a full `make check` a
+// conforming extension failed its handshake with the advice to flush,
+// which it already did. The first-exec cost is measured, not supposed:
+// on an idle Apple-silicon Mac (Darwin 25.6, 2026-10-02) the first run
+// of a just-linked `testdata/badext` took 665ms and the next two 12ms
+// and 8ms. The suite links the fixture once and its first test pays
+// that -- which is the test that failed. What the same exec costs under
+// a full `make check` was not measured.
+//
+// Thirty seconds, because the cost of being generous falls only on an
+// extension that never answers -- which fails either way, later -- and
+// the cost of being tight falls on a conforming one, which fails for
+// nothing. A shared CI runner contending for CPU is the case it is
+// sized for; nothing on a quiet machine comes near it.
+const DefaultStartTimeout = 30 * time.Second
 
 func (o Options) timeout() time.Duration {
 	if o.Timeout <= 0 {
 		return DefaultTimeout
 	}
 	return o.Timeout
+}
+
+// startTimeout is the allowance for a session's first answer.
+//
+// Never shorter than the exchange timeout: an operator who raised
+// --timeout for a slow extension has said something about the first
+// answer too, and starting is never faster than answering.
+func (o Options) startTimeout() time.Duration {
+	start := o.StartTimeout
+	if start <= 0 {
+		start = DefaultStartTimeout
+	}
+	if exchange := o.timeout(); start < exchange {
+		start = exchange
+	}
+	return start
+}
+
+// Budget is the longest a Run can take against an extension that
+// answers nothing, for a caller that bounds the whole run with a
+// context. Four sessions each wait out a start; at most eight
+// exchanges follow (three calls and a shutdown on the main session,
+// and the wait after closing stdin that a silent first answer gets in
+// each session); the minute is slack for the processes being reaped.
+// A context shorter than this kills the extension mid-run, and the
+// rule it kills it in is then reported as an exit it never made.
+func (o Options) Budget() time.Duration {
+	return 4*o.startTimeout() + 8*o.timeout() + time.Minute
 }
 
 // Run checks one extension and reports every rule.
