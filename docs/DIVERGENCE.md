@@ -18998,6 +18998,41 @@ key declared, which reaches the network and has not been run;
 case uses root's own; `zfs`'s states on OpenZFS on Linux and its
 delegated path; Windows, where none of these six has a provider.
 
+### 5.201 `orch resume` dropped the pillar override its run was started with
+
+`orch run … --pillar '<json>'` compiles an orchestration with an
+override, which is how a deployment passes a version to its steps. `orch
+resume` took no override, and the run record kept none, so a resume
+compiled the remaining steps **without** it: a deploy started with
+`version: 1.4.2` resumed with no version at all, against a different
+pillar from the one its carried-forward steps had seen, and nothing said
+so. Found while fixing 5.197, which reads the same record.
+
+**The fix** holds a resume to the override its run had. The record
+keeps a digest of it -- the SHA-256 of its canonical JSON, keys sorted,
+so the same override written in another order is the same one -- or
+`none` for a run without one. `orch resume` takes `--pillar` now, and a
+resume whose override is not the one the run had is refused, saying
+which way: the run had one and this passes none; the run had none and
+this passes one; or the two differ. A digest rather than the override,
+because an override can carry what pillar carries, and `orch show` reads
+this record -- which never prints the field, and a test holds it to
+that. A record written before the field has no digest and cannot say,
+so it resumes as it always did rather than refusing every older run.
+
+`TestAResumeIsHeldToThePillarOverrideItsRunHad` starts a run with an
+override whose second step fails, refuses the two wrong resumes without
+dispatching anything, and completes the resume with the same override in
+another key order. With the check removed, both wrong resumes were
+accepted and dispatched `pkg.install` twice -- the defect. The case of a
+run with no override and a resume with one, and of an old record, have
+tests of their own.
+
+**Not covered:** that the resumed step's own arguments carried the
+override's value -- the test node answers by function name and the
+assertion is on the digest and the dispatches; and a hub on FreeBSD or
+Linux.
+
 
 ## 6. Everything else not started
 

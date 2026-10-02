@@ -115,6 +115,7 @@ func registerStateRunner(r *Runners) {
 					"a long deployment orchestration usable after one step fails.", "19.1",
 				runnerArg("jid", signature.String, "The run to pick up."),
 				runnerArg("from", signature.String, "The step to start at."),
+				runnerOpt("pillar", signature.Map, nil, "The pillar override the run was started with; a resume is refused unless it is the same."),
 				runnerOpt("test", signature.Bool, false, "Report what each step would do without dispatching."),
 			),
 			Fn: func(c *RunnerContext) (any, error) {
@@ -126,14 +127,20 @@ func registerStateRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				run, err := c.Server.Orchestrate(c.Ctx, OrchRequest{
+				req := OrchRequest{
 					Principal:  c.Principal,
 					SLS:        previous.SLS,
 					Env:        previous.Env,
 					Test:       c.argBool("test"),
 					ResumeOf:   id,
 					ResumeFrom: c.arg("from"),
-				})
+				}
+				if raw, ok := c.Args.Get("pillar"); ok && raw != nil {
+					if m, ok := raw.(*value.Map); ok {
+						req.Pillar = m
+					}
+				}
+				run, err := c.Server.Orchestrate(c.Ctx, req)
 				if err != nil {
 					return nil, err
 				}

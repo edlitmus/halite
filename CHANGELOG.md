@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `orch resume` keeps the run's pillar override
+
+`orch resume` takes `--pillar` and refuses a resume whose override is not
+the one the run was started with. It used to take none, so a run started
+with an override was resumed without it, and the remaining steps compiled
+against a different pillar.
+
 ### The release gate sees state modules, and `ssh_auth` keys work for other accounts
 
 `make release-gate` now covers modules whose states change a machine

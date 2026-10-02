@@ -2,6 +2,8 @@ package hub
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,6 +99,8 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		Started:   s.now(),
 		State:     OrchRunning,
 		Test:      req.Test,
+		// What the run compiled with, for a resume to be held to.
+		PillarDigest: pillarDigest(req.Pillar),
 	}
 
 	orch := &orchRunner{server: s, principal: req.Principal, env: env, jid: jid}
@@ -260,6 +264,30 @@ func (s *Server) resumeSeed(req OrchRequest, compiled *state.Compiled, run *Orch
 	byID := map[string]*OrchStep{}
 	for _, step := range previous.Steps {
 		byID[step.ID] = step
+	}
+
+	// The override the steps were compiled with is part of what they
+	// were. A resume compiled without it -- `orch resume` took none, and
+	// the record kept none -- ran the remaining steps against a different
+	// pillar from the one the carried-forward steps saw: a deploy started
+	// with `version: 1.4.2` resumed with no version at all. So the
+	// resumed run must be given the same override, and is refused,
+	// saying which way it differs, when it is not. A record from before
+	// runs kept the digest cannot say, and is resumed as it always was.
+	if want := previous.PillarDigest; want != "" {
+		got := pillarDigest(req.Pillar)
+		switch {
+		case got == want:
+		case want == orchNoPillar:
+			return nil, fmt.Errorf("%s ran with no pillar override and this resume passes one; "+
+				"resume it without --pillar", req.ResumeOf)
+		case got == orchNoPillar:
+			return nil, fmt.Errorf("%s ran with a pillar override and this resume passes none; "+
+				"pass the same --pillar it was started with", req.ResumeOf)
+		default:
+			return nil, fmt.Errorf("%s ran with a different pillar override from the one this resume "+
+				"passes; pass the same --pillar it was started with", req.ResumeOf)
+		}
 	}
 
 	// A dry run's steps did not happen, so a real run cannot be told
@@ -499,3 +527,45 @@ func toleratesNode(patterns []string, id string) bool {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// orchNoPillar is PillarDigest for a run with no override, so that a
+// record which had none is told apart from one that predates the field.
+const orchNoPillar = "none"
+
+// pillarDigest identifies an override by its content, independent of
+// the order its keys were written in: the same override typed twice
+// with keys in a different order is the same override.
+func pillarDigest(p *value.Map) string {
+	if p == nil || p.Len() == 0 {
+		return orchNoPillar
+	}
+	encoded, err := json.Marshal(plainForDigest(p))
+	if err != nil {
+		// Unreachable for a mapping that came from JSON; and a value
+		// that cannot be encoded cannot be matched, so it is its own
+		// digest and no resume will match it by accident.
+		return "unencodable:" + err.Error()
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
+// plainForDigest turns the ordered model into Go maps, which
+// encoding/json writes with sorted keys.
+func plainForDigest(v any) any {
+	switch t := v.(type) {
+	case *value.Map:
+		out := make(map[string]any, t.Len())
+		for _, e := range t.Entries() {
+			out[value.KeyString(e.Key)] = plainForDigest(e.Val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, item := range t {
+			out[i] = plainForDigest(item)
+		}
+		return out
+	}
+	return v
+}
