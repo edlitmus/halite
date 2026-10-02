@@ -18892,6 +18892,44 @@ consistency change, not a fix, and is left for one. A mistyped
 `halite-node state` subcommand already exited 1, through `cli.Fatalf`,
 and still does.
 
+### 5.199 A release's archives would not have been where its links point
+
+`make dist` names each archive `halite-<version>-<os>-<arch>`, and the
+version is `git describe`'s -- which on a tag keeps the tag's `v`. The
+release notes take the version as `${TAG#v}` and the README's install
+steps set `v=X.Y.Z`, so both fetch `halite-0.1.0-linux-amd64.tar.gz`
+while the release would have published `halite-v0.1.0-...`: every
+download link of the first release broken. The sweep found it by
+reading `tools/disttar`'s name against the two that fetch it.
+
+The same `v` went further than the names. It is the stamp in the
+binaries, so `halite-node version` said `v0.1.0`, and the
+`haliteversioninfo` grain, which splits the version on dots for a tree
+to compare, became `["v0", 1, 0]` -- a string where a guard such as
+`{% if grains['haliteversioninfo'] >= [0, 1] %}` compares numbers.
+
+Measured in a scratch clone tagged `v9.9.9`, built through the real
+Makefile and `make dist` for two targets. On `main`: archives
+`halite-v9.9.9-darwin-arm64.tar.gz` and `-linux-amd64`, `halite-node
+v9.9.9+…`, `haliteversioninfo: [v9, 9, 9]`.
+
+**The fix** drops a leading `v` followed by a digit once, where the
+Makefile reads `git describe`, so the stamp, the grain, the archive
+names and `${TAG#v}` all say the same version; the tag itself is still
+`v0.1.0`, which is what the download URL's path uses. The same clone,
+rebuilt with it: `halite-9.9.9-*` archives, listed so in `SHA256SUMS`,
+`halite-node 9.9.9+…`, `haliteversioninfo: [9, 9, 9]`. An untagged
+describe -- a bare hash -- has no `v` and is left alone.
+`tools/disttar` now refuses a version that still carries the tag's `v`,
+rather than trimming it, because trimming there would make the archive
+disagree with the stamp in the binaries inside it; its test asserts the
+refusal. `release.yml` checks out with `fetch-depth: 0`, so a tag build
+sees the tag and gets the bare version.
+
+**Not run:** `release.yml` itself, on a real tag -- a tag is permanent
+and a dispatch writes a Sigstore entry. `make dist` is the build it
+runs, so the names above are the ones it will produce.
+
 
 ## 6. Everything else not started
 

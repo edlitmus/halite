@@ -32,7 +32,17 @@ MAKE_BANG_PROBE != echo supported
 # depended on the clone and not only on the commit (DIVERGENCE 5.155).
 # Twelve is a minimum git still lengthens if it is ambiguous, and at
 # twelve hex digits that does not happen in a repository this size.
-GIT_VERSION != git describe --tags --always --dirty --abbrev=12 2>/dev/null || echo 0.0.0-dev
+#
+# The tag's leading `v` is dropped here, once, so that everything built
+# from it says the same version: a tag is `v0.1.0` and the version is
+# `0.1.0`. `git describe` keeps the `v`, and it reached the binaries'
+# stamp, the `haliteversioninfo` grain -- which split it as `["v0", 1, 0]`,
+# a string where a tree compares numbers -- and every archive name, as
+# `halite-v0.1.0-linux-amd64.tar.gz`, while the release notes and the
+# README fetch `halite-0.1.0-...`. Only a `v` followed by a digit is
+# dropped, so a describe of an untagged commit, a bare hash, is left
+# alone. DIVERGENCE 5.199.
+GIT_VERSION != (git describe --tags --always --dirty --abbrev=12 2>/dev/null || echo 0.0.0-dev) | sed -E 's/^v([0-9])/\1/'
 GIT_COMMIT  != git rev-parse HEAD 2>/dev/null || echo unknown
 GIT_EPOCH   != git log -1 --format=%ct 2>/dev/null || echo 0
 

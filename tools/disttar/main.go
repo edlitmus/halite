@@ -91,6 +91,18 @@ func run(o options) ([]string, error) {
 	if o.version == "" {
 		return nil, errors.New("-version is empty")
 	}
+	// The version names every archive, and it is the version stamped
+	// into the binaries inside them, so it is the bare number: a tag
+	// is `v0.1.0`, the version is `0.1.0`. A `v` reaching here means
+	// the Makefile did not drop it, and the archives would be named
+	// `halite-v0.1.0-...` beside release notes and a README that fetch
+	// `halite-0.1.0-...`, which is every download link of the release
+	// broken. Refused rather than trimmed here: trimming would make the
+	// archive disagree with the stamp in the binaries it holds.
+	// DIVERGENCE 5.199.
+	if len(o.version) > 1 && o.version[0] == 'v' && o.version[1] >= '0' && o.version[1] <= '9' {
+		return nil, fmt.Errorf("-version %q carries the tag's v; the version is %q, and the Makefile drops it", o.version, o.version[1:])
+	}
 	epoch, err := strconv.ParseInt(strings.TrimSpace(o.epoch), 10, 64)
 	if err != nil || epoch <= 0 {
 		return nil, fmt.Errorf("-epoch %q is not a positive SOURCE_DATE_EPOCH; refusing to fall back to the clock", o.epoch)
