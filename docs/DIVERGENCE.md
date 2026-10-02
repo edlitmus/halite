@@ -19400,8 +19400,7 @@ platform's crontab(1) makes them.
 the test reads the crontab back; an unprivileged caller managing its own
 crontab, which only the recorded-runner test exercises; the EL and SUSE
 legs, which do not run it.
-
-### 5.205 The extension harness timed a slow start as a buffering writer
+### 5.212 The extension harness timed a slow start as a buffering writer
 
 `internal/extconform` bounded every read by the exchange timeout -- two
 seconds in its tests, ten for `extensions verify` -- including the first
@@ -19433,6 +19432,7 @@ not run); the first-exec cost under load; whether 30 s suffices on a
 contended runner. The refusal rules pass on silence, so the old harness
 could also pass them for a slow extension that would have accepted the
 wrong version; no test covers that.
+
 
 
 ## 6. Everything else not started
