@@ -1055,7 +1055,7 @@ func TestACLKeysAreReportedWithoutClaimingATranslation(t *testing.T) {
 	}
 	cfgPath := filepath.Join(root, "master") // lexicon:allow
 	body := "publisher_acl:\n  ops:\n    - test.ping\n" +
-		"publisher_acl_blacklist:\n  users:\n    - root\n" +
+		"publisher_acl_blacklist:\n  users:\n    - root\n" + // lexicon:allow — Salt's own key name
 		"external_auth:\n  pam:\n    alice:\n      - '.*'\n" +
 		"client_acl:\n  bob:\n    - grains.items\n" +
 		"peer:\n  '.*':\n    - grains.items\n" +
@@ -1073,7 +1073,7 @@ func TestACLKeysAreReportedWithoutClaimingATranslation(t *testing.T) {
 	}
 
 	want := map[string]bool{
-		"publisher_acl": false, "publisher_acl_blacklist": false, "external_auth": false,
+		"publisher_acl": false, "publisher_acl_blacklist": false, "external_auth": false, // lexicon:allow — Salt's own key name
 		"client_acl": false, "peer": false, "peer_run": false,
 	}
 	for _, f := range findingsFor(rep, CatACL) {

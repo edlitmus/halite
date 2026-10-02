@@ -19299,7 +19299,7 @@ leg, which has not been seen.
 ### 5.209 migrate said Salt ACLs were translated into RBAC rules, and nothing was
 
 `halite-hub migrate --salt-config` reported each Salt ACL key --
-`publisher_acl`, `publisher_acl_blacklist`, `external_auth`,
+`publisher_acl`, `publisher_acl_blacklist`, `external_auth`, <!-- lexicon:allow -->
 `client_acl`, `peer`, `peer_run` -- with the action "Translated into a
 draft RBAC rule; review it before it is applied." No draft existed:
 neither rendering of the report carried a policy, and `config.ApplyShim`
