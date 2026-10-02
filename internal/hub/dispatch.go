@@ -12,6 +12,7 @@ import (
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/tracing"
 	"github.com/edlitmus/halite/internal/transport"
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // Submission is what an operator asks for.
@@ -83,7 +84,7 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 		return nil, err
 	}
 
-	matched, err := s.resolve(matcher)
+	matched, err := s.resolve(matcher, sub.Env)
 	if err != nil {
 		return nil, err
 	}
@@ -257,13 +258,23 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 //
 // Only accepted nodes are considered: a pending or rejected request is
 // not part of the estate, and a revoked one is deliberately out of it.
-func (s *Server) resolve(matcher *target.Matcher) ([]string, error) {
+//
+// env is the environment the job names, which is also the pillar
+// environment a `-I` or `-J` term is evaluated in: a node adopts a job's
+// environment for its pillar as well as its files (adoptJobEnvironment
+// in halite-node), so that is the pillar it would hold while running
+// the job. Empty is `base`, as it is for `pillar.show_pillar`.
+func (s *Server) resolve(matcher *target.Matcher, env string) ([]string, error) {
 	ids, err := s.targetableNodes()
 	if err != nil {
 		return nil, err
 	}
-	var matched, skipped []string
-	var why error
+	loader, err := s.targetPillar(matcher, env)
+	if err != nil {
+		return nil, err
+	}
+	var matched, skipped, undecided []string
+	var why, undecidedWhy error
 	for _, id := range ids {
 		node, err := s.nodes().Matchable(id)
 		if err != nil {
@@ -276,9 +287,35 @@ func (s *Server) resolve(matcher *target.Matcher) ([]string, error) {
 			why = err
 			continue
 		}
-		if matcher.Match(node) {
+		var failed error
+		if loader != nil {
+			node.LoadPillar = loader(id, node, &failed)
+		}
+		hit := matcher.Match(node)
+		if failed != nil {
+			// The match was evaluated against an empty pillar standing
+			// in for one that would not compile, so `hit` answers a
+			// question nobody asked, in either direction. targetPillar
+			// says why this refuses the dispatch rather than skipping
+			// the node as the unreadable cache entry above is skipped.
+			s.warn("a pillar target cannot be decided for a node whose pillar will not compile",
+				"node_id", id, "error", failed.Error())
+			undecided = append(undecided, id)
+			undecidedWhy = failed
+			continue
+		}
+		if hit {
 			matched = append(matched, id)
 		}
+	}
+	if len(undecided) > 0 {
+		sort.Strings(undecided)
+		return nil, fmt.Errorf(
+			"target %q reads pillar, and the hub could not compile the pillar of %d "+
+				"candidate node(s) (%s), so whether it matches them is unknown; fix their "+
+				"pillar, or exclude them ahead of the pillar term (`not L@%s and ...`): %w",
+			matcher.Expr(), len(undecided), strings.Join(undecided, ", "),
+			strings.Join(undecided, ","), undecidedWhy)
 	}
 	if len(matched) == 0 && len(skipped) > 0 {
 		// Every candidate was skipped, so the honest answer is not "no
@@ -295,6 +332,112 @@ func (s *Server) resolve(matcher *target.Matcher) ([]string, error) {
 	}
 	sort.Strings(matched)
 	return matched, nil
+}
+
+// targetPillar prepares what a `-I` or `-J` term reads: each candidate's
+// pillar, compiled on the hub on first use. It returns nil for a target
+// with no pillar term, which is nearly every target and costs nothing.
+//
+// SPEC 8.1 says pillar targeting is against "compiled pillar, hub
+// side". Until this existed, Matchable handed the matcher an empty map
+// and nothing filled it in, so `-I role:web` matched no node at all and
+// `not I@role:db` matched every node -- the database hosts included.
+//
+// The pillar is compiled, not looked up, because the hub keeps no copy
+// of what it last sent a node: SPEC 12.8's cache is not built, and the
+// node side asks afresh for every run so that a changed value is used
+// by the next one. Compiling here gives the answer the node would get,
+// from the same tree and with the grains the node last reported -- so a
+// pillar target is as stale as a grain target on the same node (SPEC
+// 8.3), and no staler. The cost is one compilation per candidate whose
+// answer actually depends on pillar (see target.Node.LoadPillar), each
+// a full render including external pillar sources: a fleet-wide `-I` on
+// a tree that calls out to a secrets manager calls it once per node.
+// That is the price of the answer being right, and it is the price a
+// fleet-wide highstate already pays.
+//
+// The grains go through the compiler's `pillar_trusted_grains` filter
+// exactly as for the node's own request. That allowlist governs which
+// grains a *pillar top file* may target on (SPEC 12.4); it is not
+// consulted for the operator's expression, which may read any pillar
+// key, as Salt's `-I` does. The operator is not the party 12.4
+// distrusts, and the pillar being read was compiled under 12.4 already.
+//
+// A candidate whose pillar will not compile, or who has never connected
+// so that there are no grains to compile it from, cannot be decided,
+// and the whole dispatch is refused naming it. The two obvious
+// alternatives are both wrong:
+//
+//   - Treat it as an empty pillar, which is what the matcher does
+//     unaided. Then it falls inside every `not I@...`, and the job goes
+//     to exactly the host the target was written to keep it from.
+//   - Skip it with a warning, as resolve does for an unreadable cache
+//     entry. Then a node that belonged in the job is out of it, and the
+//     only record is a line in the hub's log that the operator at the
+//     terminal never sees. Pillar is how an estate usually says what a
+//     machine *is*, so that is a database host quietly missing its
+//     change, reported as a successful job.
+//
+// Refusing is loud and recoverable: the operator learns which node and
+// why, and can fix its pillar or exclude it ahead of the pillar term,
+// which short-circuit evaluation then never compiles for. Because the
+// loader is lazy, a node decided without reading pillar holds nothing
+// up.
+//
+// A hub with no `pillar_roots` has no pillar to target, and refuses the
+// expression rather than matching nothing: the empty match was the
+// defect.
+func (s *Server) targetPillar(matcher *target.Matcher, env string) (
+	func(id string, node target.Node, failed *error) func() *value.Map, error) {
+	reads := false
+	for _, term := range matcher.Terms() {
+		if term.Kind == target.Pillar || term.Kind == target.PillarRegex {
+			reads = true
+			break
+		}
+	}
+	if !reads {
+		return nil, nil
+	}
+	if s.Pillar == nil || s.Pillar.Roots == nil {
+		return nil, fmt.Errorf("target %q reads pillar, and this hub compiles no pillar "+
+			"to target against; set pillar_roots", matcher.Expr())
+	}
+	if env == "" {
+		env = "base"
+	}
+	return func(id string, node target.Node, failed *error) func() *value.Map {
+		var (
+			done   bool
+			loaded *value.Map
+		)
+		return func() *value.Map {
+			if done {
+				return loaded
+			}
+			done = true
+			// Matchable answers a node it holds nothing about with empty
+			// grains, which is right for an ID match and wrong for a
+			// compilation: a pillar compiled from no grains is not the
+			// pillar the node would receive.
+			if _, err := s.nodes().Get(id); err != nil {
+				if errors.Is(err, ErrUnknownNode) || errors.Is(err, errNoNodeCache) {
+					*failed = fmt.Errorf("%s has not connected, so the hub holds no grains "+
+						"to compile its pillar from", id)
+				} else {
+					*failed = err
+				}
+				return nil
+			}
+			compiled, err := s.compilePillar(id, env, node.Grains)
+			if err != nil {
+				*failed = fmt.Errorf("compiling the pillar of %s: %w", id, err)
+				return nil
+			}
+			loaded = compiled.Pillar
+			return loaded
+		}
+	}, nil
 }
 
 // messageFor is the wire form of a job. One function, so that a batch

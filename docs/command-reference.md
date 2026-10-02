@@ -1755,7 +1755,7 @@ ssh` and in a top file.
 | `-L 'web1,web2'` | same | works |
 | `-C 'G@os:FreeBSD and web*'` | same | works |
 | `-N group` (nodegroup) | same, for a group in the hub's `nodegroups` | works |
-| `-I 'role:web'` (pillar) on the command line | accepted, and matches no node: the hub targets against no pillar | a defect |
+| `-I 'role:web'` (pillar) on the command line | same, and `-J` and `I@`/`J@` in `-C`: the hub compiles each candidate's pillar from its cached grains in the job's environment, only for a node whose answer depends on it. A candidate whose pillar will not compile, or that has never connected, refuses the job naming it; a hub with no `pillar_roots` refuses the target | works |
 | `-I 'role:web'` (pillar) in a top file | same in a state top; refused in a pillar top | see below |
 | `- match: grain` in a top file | same | works |
 | `- ignore_missing: True` | same, and honoured in a pillar top as Salt honours it | works |
