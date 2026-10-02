@@ -175,10 +175,20 @@ Durable state on the BSDs;
 elsewhere.
 .El
 .Sh EXIT STATUS
-.Ex -std
+A state run
+.Pq Cm state apply , sls , highstate
+exits 0 when it changed something, or under
+.Fl -test
+when it would; 2 when nothing needed changing; and 1 when a state failed.
+Treat 2 as success.
 .Pp
-A state run that applied cleanly exits 0.
-A run with a failed state exits non-zero.
+A command line it does not understand, with no subcommand or an unknown
+one, exits 64
+.Pq Dv EX_USAGE ,
+so that a mistyped subcommand is never read as a converged run.
+.Pp
+.Cm enroll
+exits 2 while its request waits for an operator.
 .Cm doctor
 exits non-zero only when a check fails, not when one warns.
 .Sh EXAMPLES

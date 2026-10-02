@@ -341,6 +341,19 @@ func renderScalar(v any) string {
 // Nil scrubs nothing, which is what a program with no secrets wants.
 var Redact func(string) string
 
+// ExitUsage is the exit status for a command line that was not
+// understood: no subcommand, or one that does not exist. It is
+// sysexits(3)'s EX_USAGE, the convention on FreeBSD.
+//
+// Not 2, which is what a usage error conventionally exits and what
+// halite-node's did: a state run that changed nothing exits 2 (SPEC
+// 11.4), so a cron line with a typo in its subcommand reported
+// "converged" every night and nothing about it looked wrong. Not 1 either,
+// which is a run with a failed state -- a typo is not a failed state, and
+// an operator alerting on 1 should not be paged about one. DIVERGENCE
+// 5.198.
+const ExitUsage = 64
+
 // Fatalf prints an error and exits non-zero. The message goes to stderr so
 // that a caller piping the output gets only the data.
 func Fatalf(format string, args ...any) {

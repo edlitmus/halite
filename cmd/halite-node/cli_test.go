@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/edlitmus/halite/internal/cli"
 )
 
 // The CLI is tested by re-executing this test binary as halite-node.
@@ -85,19 +87,23 @@ func TestVersionAndHelp(t *testing.T) {
 }
 
 func TestUnknownSubcommandIsUsageNotSuccess(t *testing.T) {
-	// Exit 2 is "converged" for a state run, so a typo must not reach it
-	// by a path a script would read as success. Usage failure is also 2
-	// by convention, and both go to stderr, which is what tells them
-	// apart from a run that produced output.
+	// Exit 2 is "converged" for a state run, so a typo must not exit 2.
+	// This test used to want exactly that: usage failure is 2 by
+	// convention, it said, and stderr is what tells the two apart. A
+	// cron line or a script reads the exit status, not stderr, so to it
+	// a typo in the subcommand was a converged run, every time, with
+	// nothing to show it was wrong (DIVERGENCE 5.198). It is
+	// cli.ExitUsage, sysexits' 64, which is neither success nor a
+	// failed state.
 	got := run(t, "nosuchthing")
-	if got.code != 2 {
-		t.Errorf("exit = %d, want 2", got.code)
+	if got.code != cli.ExitUsage {
+		t.Errorf("exit = %d, want %d", got.code, cli.ExitUsage)
 	}
 	if !strings.Contains(got.stderr, "unknown subcommand") || got.stdout != "" {
 		t.Errorf("got %+v", got)
 	}
 
-	if got := run(t); got.code != 2 || !strings.Contains(got.stderr, "Usage:") {
+	if got := run(t); got.code != cli.ExitUsage || !strings.Contains(got.stderr, "Usage:") {
 		t.Errorf("no arguments = %+v", got)
 	}
 }

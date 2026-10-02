@@ -59,6 +59,7 @@ commands exit 0 on success.
 | 0 | The run succeeded and something changed. |
 | 2 | The run succeeded and nothing needed changing. |
 | 1 | A state failed, or the command could not run. |
+| 64 | `halite-node` did not understand its command line — no subcommand, or one that does not exist. sysexits' `EX_USAGE`; it used to be 2, the same as a converged run. |
 
 **Treat 2 as success.** A monitor that does not will alert on every
 machine that was already correct, which is nearly all of them nearly all
