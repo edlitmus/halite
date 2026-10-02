@@ -226,17 +226,22 @@ var moduleEvidence = map[string]exec.Evidence{
 		"`freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of `fleet.yml`, and passed on all " +
 		"three on Fleet run 37014660256. Root's own crontab only: writing another account's -- the " +
 		"`user:` argument, which is what needs root -- has not been run"},
-	"ssh_auth": {Level: exec.Assumed, Note: "the editing is held by SPEC 11.6's conformance " +
-		"harness on every CI leg, against an authorized_keys file the test names with `config` -- an " +
-		"existing file with another key in it, which is the case that can lose that key. What needs " +
-		"root, writing another account's ~/.ssh/authorized_keys and handing it to that account, " +
-		"has not been run: it is `TestLiveSSHFilesForAnotherAccount`, on the linux, freebsd and macos " +
-		"legs, and it was written with the fix for files that were left owned by root (DIVERGENCE 5.200)"},
-	"ssh_known_hosts": {Level: exec.Assumed, Note: "the editing is held by the conformance " +
-		"harness on every CI leg against a known_hosts file named with `config`, with a declared key " +
-		"rather than a scan, so no network. Writing another account's ~/.ssh/known_hosts as root, " +
-		"and handing it over, has not been run; `TestLiveSSHFilesForAnotherAccount` does it " +
-		"(DIVERGENCE 5.200). `ssh-keyscan`, for a host with no key declared, has not been run at all"},
+	"ssh_auth": {Level: exec.Hardware, Note: "`TestLiveSSHFilesForAnotherAccount` ran as root on " +
+		"the `linux` (Ubuntu 24.04), `freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of " +
+		"`fleet.yml` and passed on all three on Fleet run 37045269819: for a throwaway account, " +
+		"`present` put a key in that account's own ~/.ssh/authorized_keys and converged, the directory " +
+		"was 0700 and the file 0600, both owned by the account, and `absent` removed the key and " +
+		"converged. With the hand-over removed it failed on all three legs with the files owned by uid " +
+		"0 (Fleet run 37046115494), which is the defect it was written with the fix for: a root-owned " +
+		"key file sshd cannot read as the account (DIVERGENCE 5.200). The editing itself is also held " +
+		"by the conformance harness on every CI leg against a file named with `config`. Not covered: " +
+		"`options` beyond none, and a home directory that does not exist yet"},
+	"ssh_known_hosts": {Level: exec.Hardware, Note: "the same test, on the same three legs and " +
+		"the same Fleet run 37045269819, put a declared host key in a throwaway account's " +
+		"~/.ssh/known_hosts as root and removed it, each converging, the file 0644 and owned by the " +
+		"account; with the hand-over removed it was root's (Fleet run 37045269819 passing, 37046115494 " +
+		"failing; DIVERGENCE 5.200). Not covered: `ssh-keyscan`, for a host with no key declared, " +
+		"which reaches the network and has not been run at all"},
 	"zfs": {Level: exec.Hardware, Note: "`zfs.filesystem_present` and `zfs.absent` run through " +
 		"the conformance harness as root on the `freebsd` leg of `fleet.yml`, creating and destroying " +
 		"a real dataset in a pool made on a file image, on FreeBSD 15.1-RELEASE, and passed on Fleet " +

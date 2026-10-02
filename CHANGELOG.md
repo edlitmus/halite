@@ -23,6 +23,17 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### The release gate sees state modules, and `ssh_auth` keys work for other accounts
+
+`make release-gate` now covers modules whose states change a machine
+themselves -- `group`, `host`, `cron`, `ssh_auth`, `ssh_known_hosts` and
+`zfs` -- which it could not see before, and `doctor`'s module verification
+with it. All six are demonstrated on CI's live legs.
+
+`ssh_auth.present` and `ssh_known_hosts.present` with `user:` now hand
+the account its own `~/.ssh` and file. They were left owned by root, so
+a key added for an account could not be read by sshd for that account.
+
 ### Release archives are named for the version, not the tag
 
 A tag `v0.1.0` would have produced `halite-v0.1.0-*.tar.gz` while the

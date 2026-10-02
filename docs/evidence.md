@@ -21,20 +21,7 @@ well as what was.
 
 ## Mutates as root and has not been demonstrated
 
-`make release-gate` refuses a release while this list is not empty. It has 2 entries.
-
-- **`ssh_auth`** — the editing is held by SPEC 11.6's conformance harness on every CI leg, against an authorized_keys file the test names with `config` -- an existing file with another key in it, which is the case that can lose that key. What needs root, writing another account's ~/.ssh/authorized_keys and handing it to that account, has not been run: it is `TestLiveSSHFilesForAnotherAccount`, on the linux, freebsd and macos legs, and it was written with the fix for files that were left owned by root (DIVERGENCE 5.200).
-- **`ssh_known_hosts`** — the editing is held by the conformance harness on every CI leg against a known_hosts file named with `config`, with a declared key rather than a scan, so no network. Writing another account's ~/.ssh/known_hosts as root, and handing it over, has not been run; `TestLiveSSHFilesForAnotherAccount` does it (DIVERGENCE 5.200). `ssh-keyscan`, for a host with no key declared, has not been run at all.
-
-## `assumed` — 2 modules
-
-### `ssh_auth`
-
-the editing is held by SPEC 11.6's conformance harness on every CI leg, against an authorized_keys file the test names with `config` -- an existing file with another key in it, which is the case that can lose that key. What needs root, writing another account's ~/.ssh/authorized_keys and handing it to that account, has not been run: it is `TestLiveSSHFilesForAnotherAccount`, on the linux, freebsd and macos legs, and it was written with the fix for files that were left owned by root (DIVERGENCE 5.200).
-
-### `ssh_known_hosts`
-
-the editing is held by the conformance harness on every CI leg against a known_hosts file named with `config`, with a declared key rather than a scan, so no network. Writing another account's ~/.ssh/known_hosts as root, and handing it over, has not been run; `TestLiveSSHFilesForAnotherAccount` does it (DIVERGENCE 5.200). `ssh-keyscan`, for a host with no key declared, has not been run at all.
+**Nothing.** `make release-gate` passes: every module that changes a machine as root has been run against the tool it drives.
 
 ## `captured` — 8 modules
 
@@ -70,7 +57,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 57 modules
+## `hardware` — 59 modules
 
 ### `acl`
 
@@ -251,6 +238,14 @@ every function was run as root on 2026-09-30 on three throwaway Vultr lab instan
 ### `snap`
 
 read against the real snapd 2.76.3 on Ubuntu 22.04 and 26.04, which is what the fixtures had never been: they were written from the documented columns, and the documentation is wrong about two of them. A real `snap list` prints the publisher with **two** asterisks, and it **truncates a long channel with U+2026 -- which `--unicode=never` does not stop**, and for which `snap list` offers no option at all. `lxd` on 22.04 reported `5.0/stable/…` where its channel is `5.0/stable/ubuntu-22.04`, so `snap.installed` compared a declared channel against a prefix, never matched, and would have run a real refresh on every run while reporting a change every time -- a state that cannot converge. The channel is resolved through `snap info` now, and `live_snap_test.go` checks every row against what snapd itself says rather than against this build's own reader. **Install and remove are now watched too**: the `snap.installed` and `snap.removed` conformance cases drive them as root on the `linux` leg of `fleet.yml` against snapd 2.76.3 on Ubuntu 24.04.5 LTS (runner image 20260920.314.1), pulling `hello-world` 6.4 from the real store and removing it again, four applications of each state. Not covered: `refresh`, and therefore the channel-switch branch of `snap.installed` -- a channel switch needs a snap published in two channels, and `hello-world` is not one. Nor is `purge`, which discards a removed snap's data: the cases leave the default, because the removal path and the data-destruction path are different claims and only the first is made here. The reading is where the defect was (DIVERGENCE 5.28).
+
+### `ssh_auth`
+
+`TestLiveSSHFilesForAnotherAccount` ran as root on the `linux` (Ubuntu 24.04), `freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of `fleet.yml` and passed on all three on Fleet run 37045269819: for a throwaway account, `present` put a key in that account's own ~/.ssh/authorized_keys and converged, the directory was 0700 and the file 0600, both owned by the account, and `absent` removed the key and converged. With the hand-over removed it failed on all three legs with the files owned by uid 0 (Fleet run 37046115494), which is the defect it was written with the fix for: a root-owned key file sshd cannot read as the account (DIVERGENCE 5.200). The editing itself is also held by the conformance harness on every CI leg against a file named with `config`. Not covered: `options` beyond none, and a home directory that does not exist yet.
+
+### `ssh_known_hosts`
+
+the same test, on the same three legs and the same Fleet run 37045269819, put a declared host key in a throwaway account's ~/.ssh/known_hosts as root and removed it, each converging, the file 0644 and owned by the account; with the hand-over removed it was root's (Fleet run 37045269819 passing, 37046115494 failing; DIVERGENCE 5.200). Not covered: `ssh-keyscan`, for a host with no key declared, which reaches the network and has not been run at all.
 
 ### `sudo`
 
