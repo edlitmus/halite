@@ -83,8 +83,13 @@ FIPS_ENV     = $(RELEASE_ENV) GOFIPS140=$(FIPS_MODULE)
 # limits, and the specification had been claiming otherwise for as long
 # as it had said it. internal/buildpolicy now fails if this list and
 # that table drift apart again.
+#
+# macOS is darwin/arm64 alone: Intel Macs are not supported (decided
+# 2026-10-01, DIVERGENCE 5.193). Every Mac this project has run on is
+# Apple silicon, and a darwin/amd64 binary would be published for a
+# platform nothing here builds on, tests on, or has run.
 TIER12_TARGETS = linux/amd64 linux/arm64 freebsd/amd64 freebsd/arm64 \
-	darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+	darwin/arm64 windows/amd64 windows/arm64
 TIER3_TARGETS = openbsd/amd64 openbsd/arm64 netbsd/amd64 netbsd/arm64 \
 	illumos/amd64 solaris/amd64 \
 	linux/riscv64 linux/ppc64le linux/s390x
@@ -481,10 +486,10 @@ cross: make-supports-bang
 #
 # SPEC 4.3 requires two builders on two machines to produce identical
 # digests, and `release.yml` checked that by sha256-ing the three host
-# binaries `make release` leaves in `bin/`. That is three of the fifty-one
+# binaries `make release` leaves in `bin/`. That is three of the forty-eight
 # artifacts a tag actually produces, all for one platform -- so a
 # cross-compile that was not reproducible for windows/arm64, or for any
-# of the sixteen other targets, could not have been caught by the job
+# of the fifteen other targets, could not have been caught by the job
 # whose whole purpose is catching it.
 #
 # The manifest is also the thing every later artifact kind attaches to:
@@ -504,7 +509,7 @@ cross: make-supports-bang
 # dist is cross, then the per-platform release archives of SPEC 27.2
 # (tools/disttar: binaries, example configuration and manual pages, every
 # time, owner, mode and order pinned), then SHA256SUMS over all of it --
-# 51 binaries and 17 archives. Stale archives go first: SHA256SUMS sums
+# 48 binaries and 16 archives. Stale archives go first: SHA256SUMS sums
 # everything in dist/, and an archive left from another version would be
 # a line in this one's manifest.
 dist: cross

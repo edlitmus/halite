@@ -137,7 +137,7 @@ jobs:
       #
       # `dist` rather than `release`: `make release` builds the three
       # binaries for the *host*, and this job used to compare those three
-      # digests. A tag produces fifty-one artifacts across seventeen
+      # digests. A tag produces forty-eight artifacts across sixteen
       # targets, so that checked three of them, all for one platform --
       # and a cross-compile that was not reproducible for windows/arm64
       # could not have been caught by the job whose whole purpose is
@@ -183,7 +183,7 @@ jobs:
 
       # Compared by digest rather than by artifact, because the question
       # is whether the bytes match and a diff of two manifests says
-      # exactly which of the fifty-one did not.
+      # exactly which of the forty-eight did not.
       #
       # An empty or truncated manifest has to fail rather than compare
       # equal to another empty one: two builders that both produced
@@ -195,9 +195,12 @@ jobs:
           ls -l digests-*.txt
           a=digests-ubuntu-24.04.txt
           b=digests-ubuntu-22.04.txt
-          # Seventeen targets in SPEC 27.1's list, three binaries each,
-          # and one release archive per target (tools/disttar).
-          expected=68
+          # Sixteen targets in SPEC 27.1's list, three binaries each,
+          # and one release archive per target (tools/disttar). It was
+          # 68 until darwin/amd64 left the list (DIVERGENCE 5.193); left
+          # at 68, every correct release would fail here, since `-lt`
+          # is the check.
+          expected=64
           for f in "$a" "$b"; do
             test -s "$f" || { echo "$f is missing or empty"; exit 1; }
             n=$(wc -l < "$f")
@@ -307,7 +310,7 @@ jobs:
           set -e
           version="${TAG#v}"
           cat > notes.md <<NOTES
-          halite ${version}, for SPEC 27.1's seventeen platforms: one archive per
+          halite ${version}, for SPEC 27.1's sixteen platforms: one archive per
           platform (the BSD 2-Clause licence, binaries, example configuration,
           manual pages), and SHA256SUMS.
 
