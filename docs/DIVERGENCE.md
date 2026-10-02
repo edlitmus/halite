@@ -19033,6 +19033,51 @@ override's value -- the test node answers by function name and the
 assertion is on the digest and the dispatches; and a hub on FreeBSD or
 Linux.
 
+### 5.202 Pillar targeting matched an empty pillar: `-I` nothing, `not I@` everything
+
+On the hub, `-I`, `-J`, and `I@`/`J@` inside `-C` were accepted and
+evaluated against an empty pillar. SPEC 8.1 says these match against
+"compiled pillar, hub side"; `NodeCache.Matchable` built every candidate
+with `Pillar: value.NewMap(0)`, and nothing on the hub replaced it. So
+`-I role:web` matched no node whatever the pillar held -- and the worse
+half: `-C 'not I@role:db'` matched **every** node, the database hosts
+included. `docs/command-reference.md` recorded the first half as a defect
+after the documentation sweep; nothing recorded the second.
+
+Measured in the `internal/hub` lab with two nodes and a pillar tree keyed
+on ID and the trusted `os` grain: before the fix `-I role:web`, `-I
+platform:bsd`, `-J role:^we` and `-C 'I@platform:bsd and not I@role:web'`
+all matched `[]`, and `not I@role:db` was dispatched to both nodes, one
+of which has a pillar that does not compile.
+
+**The fix.** The hub compiles each candidate's pillar when, and only
+when, the compiled target has a pillar term -- read from `Matcher.Terms`,
+so a nodegroup expanding to `I@` is seen -- with `compilePillar`, the
+node's cached grains and the job's environment (`base` when none). It is
+lazy, through `target.Node.LoadPillar`, so short-circuit evaluation
+compiles only the nodes whose answer depends on pillar.
+`pillar_trusted_grains` still filters the grains the compiler sees, as
+for a node's own request; it does not restrict the operator's
+expression, which is a different control.
+
+A candidate whose pillar will not compile, or which has never connected,
+refuses the dispatch, naming the node: an empty stand-in would put it
+inside every `not I@…`, and skipping it would drop a node from a job with
+only a hub log line. A hub without `pillar_roots` refuses pillar targets
+rather than matching nothing.
+
+Four lab tests and one matcher test were each watched failing before the
+fix. Three deliberate breaks -- the loader not installed, the recorded
+failure ignored, the loader called eagerly -- each failed them again.
+
+**Not covered:** `mine.get` targeting, mine `allow_tgt`
+(`internal/hub/mine.go`) and the ssh roster still match `-I` against an
+empty pillar. A node with its own `pillarenv` running a job with no
+environment compiles a different pillar from the one the hub targeted
+with. The node's signed-target check treats a pillar that will not
+compile as "matches nothing", which is false under `not` -- its own
+change. Not run on a real hub.
+
 
 ## 6. Everything else not started
 

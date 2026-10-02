@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Pillar targeting on the command line works
+
+`halite-hub run -I`/`-J`, and `I@`/`J@` in compound targets, now match
+against each node's pillar compiled on the hub. They matched against an
+empty pillar: `-I role:web` matched nothing and `not I@role:db` matched
+every node. A pillar target is refused, naming the node, if a
+candidate's pillar will not compile or it has never connected, and on a
+hub with no `pillar_roots`.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not
