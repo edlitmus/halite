@@ -19400,39 +19400,6 @@ platform's crontab(1) makes them.
 the test reads the crontab back; an unprivileged caller managing its own
 crontab, which only the recorded-runner test exercises; the EL and SUSE
 legs, which do not run it.
-### 5.212 The extension harness timed a slow start as a buffering writer
-
-`internal/extconform` bounded every read by the exchange timeout -- two
-seconds in its tests, ten for `extensions verify` -- including the first
-of each session, which is the one wait that includes starting the
-process. Under a full `make check` on macOS a conforming fixture failed
-`handshake/answers`, the rules after it went unreported, and the report
-told its author to flush: "A writer that buffers until exit looks
-exactly like this." The same words came back for an extension that really
-did buffer; the message could not tell the two apart, and did not try.
-
-The start was measured rather than assumed: on an idle Apple-silicon Mac
-the first exec of a just-linked `badext` took 665 ms and the next two 12
-and 8. The suite links the fixture once and its first test pays that
-cost -- the test that failed. A `slow-start` fixture mode that sleeps
-three seconds reproduces it every time, without loading the machine.
-
-**The first answer has its own allowance** (`StartTimeout`, 30 s, never
-below the exchange timeout; `--start-timeout` on the CLI). A silent first
-answer is investigated: the harness holds the read end of the child's
-stdin, and on a timeout reads what is left in the pipe and closes it. The
-hello still unread means the process was still starting; read, with the
-answer arriving only after the close, means it buffers. A `buffers`
-fixture mode is caught with that evidence in the message, and the slow
-starter is not called buffering. With the allowance removed, or the pipe
-read skipped, the tests fail again.
-
-**Not verified:** the pipe probe on FreeBSD, Linux or Windows (vetted,
-not run); the first-exec cost under load; whether 30 s suffices on a
-contended runner. The refusal rules pass on silence, so the old harness
-could also pass them for a slow extension that would have accepted the
-wrong version; no test covers that.
-
 ### 5.212 Two reactor tests returned while the reactor was still writing
 
 `TestARestartedReactorResumesFromWhereItStopped` failed on the
@@ -19469,6 +19436,40 @@ iterations in one process to see it.
 **Not covered:** the original failure was not reproduced as CI saw it,
 only the late write that causes it; nor was the rest of `internal/hub`
 audited for other goroutines that outlive their test.
+### 5.213 The extension harness timed a slow start as a buffering writer
+
+`internal/extconform` bounded every read by the exchange timeout -- two
+seconds in its tests, ten for `extensions verify` -- including the first
+of each session, which is the one wait that includes starting the
+process. Under a full `make check` on macOS a conforming fixture failed
+`handshake/answers`, the rules after it went unreported, and the report
+told its author to flush: "A writer that buffers until exit looks
+exactly like this." The same words came back for an extension that really
+did buffer; the message could not tell the two apart, and did not try.
+
+The start was measured rather than assumed: on an idle Apple-silicon Mac
+the first exec of a just-linked `badext` took 665 ms and the next two 12
+and 8. The suite links the fixture once and its first test pays that
+cost -- the test that failed. A `slow-start` fixture mode that sleeps
+three seconds reproduces it every time, without loading the machine.
+
+**The first answer has its own allowance** (`StartTimeout`, 30 s, never
+below the exchange timeout; `--start-timeout` on the CLI). A silent first
+answer is investigated: the harness holds the read end of the child's
+stdin, and on a timeout reads what is left in the pipe and closes it. The
+hello still unread means the process was still starting; read, with the
+answer arriving only after the close, means it buffers. A `buffers`
+fixture mode is caught with that evidence in the message, and the slow
+starter is not called buffering. With the allowance removed, or the pipe
+read skipped, the tests fail again.
+
+**Not verified:** the pipe probe on FreeBSD, Linux or Windows (vetted,
+not run); the first-exec cost under load; whether 30 s suffices on a
+contended runner. The refusal rules pass on silence, so the old harness
+could also pass them for a slow extension that would have accepted the
+wrong version; no test covers that.
+
+
 
 ## 6. Everything else not started
 
