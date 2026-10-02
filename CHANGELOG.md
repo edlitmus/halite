@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### macOS means Apple silicon
+
+Intel Macs are not supported: SPEC 27.1's tier 2 now reads "macOS 14
+and later on Apple silicon", and no `darwin/amd64` binary or archive is
+built or published. A release is 48 binaries and 16 archives across 16
+platforms.
+
 ### `test=True` on `halite-node` is a dry run
 
 `halite-node state apply test=True` and `halite-node call state.apply

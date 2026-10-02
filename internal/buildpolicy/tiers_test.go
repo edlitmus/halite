@@ -57,11 +57,14 @@ var supportTiers = []tierRow{
 	},
 	{
 		tier:      "2",
-		platforms: "SUSE 15, Alpine 3.19 and later, macOS 14 and later",
+		platforms: "SUSE 15, Alpine 3.19 and later, macOS 14 and later on Apple silicon",
 		// SUSE and Alpine are linux, already covered by tier 1's row.
+		// macOS is darwin/arm64 alone: Intel Macs are not supported
+		// (DIVERGENCE 5.193), so naming darwin/amd64 here would put a
+		// platform in the build that the tier table no longer promises.
 		targets: []string{
 			"linux/amd64", "linux/arm64",
-			"darwin/amd64", "darwin/arm64",
+			"darwin/arm64",
 		},
 	},
 	{
