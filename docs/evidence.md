@@ -21,7 +21,20 @@ well as what was.
 
 ## Mutates as root and has not been demonstrated
 
-**Nothing.** `make release-gate` passes: every module that changes a machine as root has been run against the tool it drives.
+`make release-gate` refuses a release while this list is not empty. It has 2 entries.
+
+- **`ssh_auth`** — the editing is held by SPEC 11.6's conformance harness on every CI leg, against an authorized_keys file the test names with `config` -- an existing file with another key in it, which is the case that can lose that key. What needs root, writing another account's ~/.ssh/authorized_keys and handing it to that account, has not been run: it is `TestLiveSSHFilesForAnotherAccount`, on the linux, freebsd and macos legs, and it was written with the fix for files that were left owned by root (DIVERGENCE 5.200).
+- **`ssh_known_hosts`** — the editing is held by the conformance harness on every CI leg against a known_hosts file named with `config`, with a declared key rather than a scan, so no network. Writing another account's ~/.ssh/known_hosts as root, and handing it over, has not been run; `TestLiveSSHFilesForAnotherAccount` does it (DIVERGENCE 5.200). `ssh-keyscan`, for a host with no key declared, has not been run at all.
+
+## `assumed` — 2 modules
+
+### `ssh_auth`
+
+the editing is held by SPEC 11.6's conformance harness on every CI leg, against an authorized_keys file the test names with `config` -- an existing file with another key in it, which is the case that can lose that key. What needs root, writing another account's ~/.ssh/authorized_keys and handing it to that account, has not been run: it is `TestLiveSSHFilesForAnotherAccount`, on the linux, freebsd and macos legs, and it was written with the fix for files that were left owned by root (DIVERGENCE 5.200).
+
+### `ssh_known_hosts`
+
+the editing is held by the conformance harness on every CI leg against a known_hosts file named with `config`, with a declared key rather than a scan, so no network. Writing another account's ~/.ssh/known_hosts as root, and handing it over, has not been run; `TestLiveSSHFilesForAnotherAccount` does it (DIVERGENCE 5.200). `ssh-keyscan`, for a host with no key declared, has not been run at all.
 
 ## `captured` — 8 modules
 
@@ -57,7 +70,7 @@ read against the real `mount` and `df` on this fleet's FreeBSD 15.1 host, both a
 
 reads the real service control manager through its API on every Windows run and converges against what it finds, but nothing has watched this module start, stop or re-type a service.
 
-## `hardware` — 53 modules
+## `hardware` — 57 modules
 
 ### `acl`
 
@@ -83,6 +96,10 @@ driven as root on 2026-09-30 on two throwaway lab instances, both ext4: Rocky Li
 
 runs real binaries and real shells through `exec.OSRunner` throughout this package's tests -- `cmd.script` writing, running and removing a real script, `cmd.exec_code`, the background form returning a real pid, and the shell path saying so -- on every platform CI builds for, and the estate's own tree drives `cmd.run` at 54 call sites. `RunAs` is the part that needs root and it has been watched on the macOS leg, where it found an account in more than sixteen groups failing as fork/exec (5.120). Three limits: `umask` is exercised by unit tests rather than by watching a file's mode on a real run as root; the Windows shell path is built and its quoting is unverified against cmd.exe; and there is no single tool to capture here, because what this module drives is whatever the caller names.
 
+### `cron`
+
+`cron.present` and `cron.absent` run through the conformance harness as root against the real crontab on the `linux` (Ubuntu 24.04), `freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of `fleet.yml`, and passed on all three on Fleet run 37014660256. Root's own crontab only: writing another account's -- the `user:` argument, which is what needs root -- has not been run.
+
 ### `debconf`
 
 driven against the real debconf 1.5.82 on Debian 12 in `make fleetcheck`: an answer written through `debconf-set-selections` and read back by both `debconf-get-selections` and `debconf-show` (DIVERGENCE 5.35). A malformed line makes debconf warn and continue rather than fail, which this module turns into an error -- demonstrated by breaking the field order on purpose.
@@ -106,6 +123,14 @@ the pf provider was driven on a real FreeBSD host — status, enable, allow and 
 ### `firewalld`
 
 driven on 2026-09-30 against two real daemons on throwaway lab hosts, root, over SSH: Rocky Linux 9.8 with firewalld 1.3.4 and AlmaLinux 8.10 with firewalld 0.9.11. `TestLiveFirewalldDrivesAThrowawayZone` created a zone of its own (`halite-fw-` plus four random hex digits, no interface bound, only 192.0.2.0/24 as a source), added and removed a service, a port, a source and an unquoted rich rule in its permanent configuration -- each predicted in test mode first, each second add and remove a no-op -- added a runtime-only service and watched `reload_rules` discard it, refused to delete the default zone, and deleted its own zone with the reload that takes it out of the running firewall. `TestLiveFirewalldPresentConvergesAndPrunes` and the conformance case (`firewalld.present`) applied the state against a missing zone, twice more, and in test mode after, and pruned a `9000-9001/udp` range down to `9000/udp`. Every zone but the test's was snapshotted runtime and permanent before and compared after, and did not move, on either host. Broken on purpose four ways (rich-rule membership read from the listing; no reload after new_zone or present; pruning trusting `--query-port`, and exec test mode acting; the test's own guard weakened) and each failed on both hosts, then restored (DIVERGENCE 5.175). Not covered: any zone with an interface bound, the default zone, or `public` -- never changed, on purpose, which is also why `default: true` is checked and never set and why this is not a `firewall` provider; `get_interfaces` only ever read an empty list; firewalld with the nftables backend was what both hosts ran, so the iptables backend is unexercised; policies (1.x), masquerade, forwarding, ICMP blocks and ipsets are not built; `permanent: false` was driven for `add_service` and read for the listings, not for every member kind. No CI leg runs it: `fleet.yml`'s `rpm` legs are containers, with no init, no system bus and the runner's netfilter, so this evidence is still the two lab hosts and decays unless a person reruns it there (DIVERGENCE 5.178).
+
+### `group`
+
+`group.present` and `group.absent` run through the conformance harness as root, creating and removing a real group, on the `linux` leg (Ubuntu 24.04, `groupadd`/`groupdel`), the `freebsd` leg (FreeBSD 15.1-RELEASE, `pw`) and the `macos` leg (macOS 15, `dseditgroup`), and passed on all three on Fleet run 37014660256; `TestLiveGroupGid` and `TestLiveGroupMembers` drive gids and membership on the same legs. Not covered: Windows, where there is no provider.
+
+### `host`
+
+`host.present` and `host.absent` run through the conformance harness as root against the machine's real /etc/hosts on the `linux` (Ubuntu 24.04), `freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of `fleet.yml`, and passed on all three on Fleet run 37014660256. Not covered: Windows's hosts file.
 
 ### `hostname`
 
@@ -267,7 +292,11 @@ writes and reads real values in a real registry hive on every Windows run (DIVER
 
 registers a real scheduled task through `schtasks` and converges against it on every Windows run (DIVERGENCE 4.6).
 
+### `zfs`
+
+`zfs.filesystem_present` and `zfs.absent` run through the conformance harness as root on the `freebsd` leg of `fleet.yml`, creating and destroying a real dataset in a pool made on a file image, on FreeBSD 15.1-RELEASE, and passed on Fleet run 37014660256; the `linux` leg skips them, having no ZFS. Not covered: OpenZFS on Linux for these states (zpool's reading was checked there), dataset properties beyond creation, and the delegated, non-root path.
+
 ### `zpool`
 
-driven against real pools on Linux with OpenZFS 2.2.2, which found two defects in reading `zpool list` that the fixtures had agreed with (DIVERGENCE 4.7). FreeBSD, where this project's ZFS reading was first checked, is not covered, and `zpool.healthy` has only been run against pools that are healthy.
+driven against real pools on Linux with OpenZFS 2.2.2, which found two defects in reading `zpool list` that the fixtures had agreed with (DIVERGENCE 4.7). On FreeBSD, `zpool.present` and `zpool.absent` run through the conformance harness as root on the `freebsd` leg of `fleet.yml`, against a pool made on a file image on FreeBSD 15.1-RELEASE, and passed on Fleet run 37014660256 -- this note said FreeBSD was not covered after it was (DIVERGENCE 5.200). `zpool.healthy` has only been run against pools that are healthy.
 

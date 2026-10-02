@@ -87,7 +87,7 @@ func registerSSHKnownHosts(r *Registries) {
 				},
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
-				Privileges: []string{"the target account, or root"},
+				Privileges: []string{signature.PrivTargetAccount},
 				Section:    "15.5",
 			},
 			Fn: sshKnownHostsPresent,
@@ -104,7 +104,7 @@ func registerSSHKnownHosts(r *Registries) {
 				},
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
-				Privileges: []string{"the target account, or root"},
+				Privileges: []string{signature.PrivTargetAccount},
 				Section:    "15.5",
 			},
 			Fn: sshKnownHostsAbsent,
@@ -267,13 +267,13 @@ func sshKnownHostsPresent(c *exec.Context, args *value.Map) (states.Result, erro
 		// build cannot tell which — so the change set names both
 		// fingerprints and an operator can.
 		existing[i] = want
-		return writeKnownHosts(c, path, existing, value.MapOf(
+		return writeKnownHosts(c, args, path, existing, value.MapOf(
 			host, states.Change(sha256Fingerprint(e.Key), sha256Fingerprint(want.Key))),
 			fmt.Sprintf("The key for %s was replaced in %s; it had a different key already.", host, path))
 	}
 
 	existing = append(existing, want)
-	return writeKnownHosts(c, path, existing, value.MapOf(
+	return writeKnownHosts(c, args, path, existing, value.MapOf(
 		host, states.Change(nil, sha256Fingerprint(want.Key))),
 		fmt.Sprintf("%s was added to %s.", host, path))
 }
@@ -389,14 +389,14 @@ func sshKnownHostsAbsent(c *exec.Context, args *value.Map) (states.Result, error
 	if len(removed) == 0 {
 		return states.True(fmt.Sprintf("%s is already absent from %s.", host, path)), nil
 	}
-	return writeKnownHosts(c, path, kept, value.MapOf(
+	return writeKnownHosts(c, args, path, kept, value.MapOf(
 		host, states.Change(strings.Join(removed, ", "), nil)),
 		fmt.Sprintf("%s was removed from %s.", host, path))
 }
 
 // writeKnownHosts renders and writes the file, creating ~/.ssh with the
 // mode ssh insists on.
-func writeKnownHosts(c *exec.Context, path string, entries []knownHost, changes *value.Map, comment string) (states.Result, error) {
+func writeKnownHosts(c *exec.Context, args *value.Map, path string, entries []knownHost, changes *value.Map, comment string) (states.Result, error) {
 	var b strings.Builder
 	for _, e := range entries {
 		b.WriteString(e.String())
@@ -412,6 +412,12 @@ func writeKnownHosts(c *exec.Context, path string, entries []knownHost, changes 
 	// secret, and ssh does not refuse a readable one.
 	if err := writeAtomic(path, []byte(b.String()), 0o644); err != nil {
 		return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
+	}
+	// The same as authorized_keys: written as root for a named account,
+	// it was root's, in a ~/.ssh that account could not enter. See
+	// giveToAccount.
+	if err := giveToAccount(args, path); err != nil {
+		return states.False(err.Error()), nil
 	}
 	return states.Changed(comment, changes), nil
 }

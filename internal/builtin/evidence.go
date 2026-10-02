@@ -6,6 +6,7 @@ import (
 
 	"github.com/edlitmus/halite/internal/doctor"
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/signature"
 )
 
 // registerEvidence declares what has actually been demonstrated about
@@ -198,10 +199,50 @@ var moduleEvidence = map[string]exec.Evidence{
 		"No root is involved, which is the limit worth naming: signalling *another " +
 		"account's* process is the case that needs privilege and it has not been run"},
 	"zpool": {Level: exec.Hardware, Note: "driven against real pools on Linux with " +
-		"OpenZFS 2.2.2, which found two defects in reading `zpool list` that the " +
-		"fixtures had agreed with (DIVERGENCE 4.7). FreeBSD, where this project's ZFS " +
-		"reading was first checked, is not covered, and `zpool.healthy` has only been " +
-		"run against pools that are healthy"},
+		"OpenZFS 2.2.2, which found two defects in reading `zpool list` that the fixtures had agreed with " +
+		"(DIVERGENCE 4.7). On FreeBSD, `zpool.present` and `zpool.absent` run through the conformance " +
+		"harness as root on the `freebsd` leg of `fleet.yml`, against a pool made on a file image on " +
+		"FreeBSD 15.1-RELEASE, and passed on Fleet run 37014660256 -- this note said FreeBSD was not " +
+		"covered after it was (DIVERGENCE 5.200). `zpool.healthy` has only been run against pools that are healthy"},
+	// The four rows below arrived with the release gate's reading of state
+	// signatures (DIVERGENCE 5.200). Each is a state module that changes the
+	// machine itself, with no mutating execution function behind it, so the
+	// gate never saw it -- and each had already been run against the real
+	// thing on CI's live legs, through SPEC 11.6's conformance harness, which
+	// applies in test mode, applies, applies again and checks the second run
+	// changes nothing. The work had been done; nothing said so.
+	"group": {Level: exec.Hardware, Note: "`group.present` and `group.absent` run through the " +
+		"conformance harness as root, creating and removing a real group, on the `linux` leg " +
+		"(Ubuntu 24.04, `groupadd`/`groupdel`), the `freebsd` leg (FreeBSD 15.1-RELEASE, `pw`) and the " +
+		"`macos` leg (macOS 15, `dseditgroup`), and passed on all three on Fleet run 37014660256; " +
+		"`TestLiveGroupGid` and `TestLiveGroupMembers` drive gids and membership on the same legs. " +
+		"Not covered: Windows, where there is no provider"},
+	"host": {Level: exec.Hardware, Note: "`host.present` and `host.absent` run through the " +
+		"conformance harness as root against the machine's real /etc/hosts on the `linux` (Ubuntu " +
+		"24.04), `freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of `fleet.yml`, and " +
+		"passed on all three on Fleet run 37014660256. Not covered: Windows's hosts file"},
+	"cron": {Level: exec.Hardware, Note: "`cron.present` and `cron.absent` run through the " +
+		"conformance harness as root against the real crontab on the `linux` (Ubuntu 24.04), " +
+		"`freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of `fleet.yml`, and passed on all " +
+		"three on Fleet run 37014660256. Root's own crontab only: writing another account's -- the " +
+		"`user:` argument, which is what needs root -- has not been run"},
+	"ssh_auth": {Level: exec.Assumed, Note: "the editing is held by SPEC 11.6's conformance " +
+		"harness on every CI leg, against an authorized_keys file the test names with `config` -- an " +
+		"existing file with another key in it, which is the case that can lose that key. What needs " +
+		"root, writing another account's ~/.ssh/authorized_keys and handing it to that account, " +
+		"has not been run: it is `TestLiveSSHFilesForAnotherAccount`, on the linux, freebsd and macos " +
+		"legs, and it was written with the fix for files that were left owned by root (DIVERGENCE 5.200)"},
+	"ssh_known_hosts": {Level: exec.Assumed, Note: "the editing is held by the conformance " +
+		"harness on every CI leg against a known_hosts file named with `config`, with a declared key " +
+		"rather than a scan, so no network. Writing another account's ~/.ssh/known_hosts as root, " +
+		"and handing it over, has not been run; `TestLiveSSHFilesForAnotherAccount` does it " +
+		"(DIVERGENCE 5.200). `ssh-keyscan`, for a host with no key declared, has not been run at all"},
+	"zfs": {Level: exec.Hardware, Note: "`zfs.filesystem_present` and `zfs.absent` run through " +
+		"the conformance harness as root on the `freebsd` leg of `fleet.yml`, creating and destroying " +
+		"a real dataset in a pool made on a file image, on FreeBSD 15.1-RELEASE, and passed on Fleet " +
+		"run 37014660256; the `linux` leg skips them, having no ZFS. Not covered: OpenZFS on Linux " +
+		"for these states (zpool's reading was checked there), dataset properties beyond creation, and " +
+		"the delegated, non-root path"},
 	"win_registry": {Level: exec.Hardware, Note: "writes and reads real values in a real " +
 		"registry hive on every Windows run (DIVERGENCE 4.6)"},
 	"win_task": {Level: exec.Hardware, Note: "registers a real scheduled task through " +
@@ -1135,23 +1176,33 @@ var moduleEvidence = map[string]exec.Evidence{
 // counts as root-mutating" is a second copy that can drift, and this
 // one decides what an operator is warned about.
 func (r *Registries) Trust() []doctor.ModuleTrust {
-	sigs := r.Exec.Signatures()
 	mutating := map[string]bool{}
 	needsRoot := map[string]bool{}
-	for _, fn := range sigs.Names() {
-		sig, ok := sigs.Lookup(fn)
-		if !ok || !sig.Mutates {
-			continue
-		}
-		module, _, _ := strings.Cut(fn, ".")
-		mutating[module] = true
-		// One named predicate, not a substring over prose. `cmd`
-		// declares "whatever the command needs", which contains no
-		// "root" -- so the module that runs arbitrary code was outside
-		// the gate written to catch a module nobody had considered, and
-		// had no evidence row at all. DIVERGENCE 5.140.
-		if sig.NeedsPrivilege() {
-			needsRoot[module] = true
+	// Execution and state functions both. The gate read the execution
+	// registry alone, so a state that changes the machine itself, with
+	// no mutating execution function behind it, was outside it: `zfs`'s
+	// states run `zfs create` and `zfs destroy`, `host`'s rewrite
+	// /etc/hosts, `group`'s and `cron`'s and `ssh_auth`'s write as root,
+	// and none had an evidence row -- while the gate passed, saying every
+	// root-mutating module had been run. 22 mutating state functions were
+	// out of its sight. DIVERGENCE 5.200.
+	for _, sigs := range []*signature.Registry{r.Exec.Signatures(), r.States.Signatures()} {
+		for _, fn := range sigs.Names() {
+			sig, ok := sigs.Lookup(fn)
+			if !ok || !sig.Mutates {
+				continue
+			}
+			module, _, _ := strings.Cut(fn, ".")
+			mutating[module] = true
+			// One named predicate, not a substring over prose. `cmd`
+			// declares "whatever the command needs", which contains no
+			// "root" -- so the module that runs arbitrary code was
+			// outside the gate written to catch a module nobody had
+			// considered, and had no evidence row at all. DIVERGENCE
+			// 5.140.
+			if sig.NeedsPrivilege() {
+				needsRoot[module] = true
+			}
 		}
 	}
 	names := make([]string, 0, len(mutating))

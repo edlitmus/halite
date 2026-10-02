@@ -1104,19 +1104,29 @@ func TestEveryPrivilegeIsOneTheGateKnows(t *testing.T) {
 		signature.PrivRoot:          true,
 		signature.PrivRootForOthers: true,
 		signature.PrivCaller:        true,
+		signature.PrivTargetAccount: true,
+		signature.PrivZFSDelegation: true,
 	}
 	r := New()
 	seen := 0
-	for _, name := range r.Exec.Signatures().Names() {
-		sig, _ := r.Exec.Signatures().Lookup(name)
-		for _, p := range sig.Privileges {
-			seen++
-			if !known[p] {
-				t.Errorf("%s declares the privilege %q, which is not one of the vocabulary in "+
-					"internal/signature. The release gate reads this field to decide what it "+
-					"covers, so a phrase it does not know is a way past it: use PrivRoot, "+
-					"PrivRootForOthers or PrivCaller, or add a constant and teach "+
-					"NeedsPrivilege about it.", name, p)
+	// State signatures as well: the gate reads both, and a state that
+	// changes the machine itself declares its privilege here and nowhere
+	// else. `zfs`'s states said "root, or a delegated zfs permission",
+	// and `cron`'s and `ssh_auth`'s "the target account, or root", while
+	// this read the execution registry alone (DIVERGENCE 5.200).
+	sigs := []*signature.Registry{r.Exec.Signatures(), r.States.Signatures()}
+	for _, reg := range sigs {
+		for _, name := range reg.Names() {
+			sig, _ := reg.Lookup(name)
+			for _, p := range sig.Privileges {
+				seen++
+				if !known[p] {
+					t.Errorf("%s declares the privilege %q, which is not one of the vocabulary in "+
+						"internal/signature. The release gate reads this field to decide what it "+
+						"covers, so a phrase it does not know is a way past it: use PrivRoot, "+
+						"PrivRootForOthers or PrivCaller, or add a constant and teach "+
+						"NeedsPrivilege about it.", name, p)
+				}
 			}
 		}
 	}
@@ -1140,4 +1150,24 @@ func TestTheReleaseGateCoversArbitraryCode(t *testing.T) {
 		}
 	}
 	t.Fatal("`cmd` is not in the trust table at all")
+}
+
+// And the state modules that change a machine themselves. The gate read
+// only execution signatures, so these -- each with no mutating execution
+// function behind it -- sat outside it while it passed (DIVERGENCE
+// 5.200). They are named here because the failure this guards against is
+// silent: a gate that cannot see a module does not report it.
+func TestTheReleaseGateCoversStateModulesThatChangeTheMachine(t *testing.T) {
+	want := map[string]bool{"host": true, "zfs": true, "cron": true, "group": true, "ssh_auth": true, "ssh_known_hosts": true}
+	for _, m := range New().Trust() {
+		if want[m.Module] {
+			if !m.Root {
+				t.Errorf("`%s` is in the gate but not as a module that needs root", m.Module)
+			}
+			delete(want, m.Module)
+		}
+	}
+	for m := range want {
+		t.Errorf("`%s` changes a machine as root through its states and is outside the release gate", m)
+	}
 }

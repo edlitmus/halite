@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/edlitmus/halite/internal/exec"
@@ -67,7 +68,7 @@ func registerSSH(r *Registries) {
 				},
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
-				Privileges: []string{"the target account, or root"},
+				Privileges: []string{signature.PrivTargetAccount},
 				Section:    "15.5",
 			},
 			Fn: sshAuthPresent,
@@ -83,7 +84,7 @@ func registerSSH(r *Registries) {
 				},
 				Mutates:    true,
 				TestMode:   signature.TestReliable,
-				Privileges: []string{"the target account, or root"},
+				Privileges: []string{signature.PrivTargetAccount},
 				Section:    "15.5",
 			},
 			Fn: sshAuthAbsent,
@@ -243,13 +244,13 @@ func sshAuthPresent(c *exec.Context, args *value.Map) (states.Result, error) {
 			return states.True(fmt.Sprintf("The key is already present in %s.", path)), nil
 		}
 		existing[i] = want
-		return writeAuthKeys(c, path, existing, value.MapOf(
+		return writeAuthKeys(c, args, path, existing, value.MapOf(
 			shortKey(want.Key), states.Change(k.String(), want.String())),
 			fmt.Sprintf("The key's options were updated in %s.", path))
 	}
 
 	existing = append(existing, want)
-	return writeAuthKeys(c, path, existing, value.MapOf(
+	return writeAuthKeys(c, args, path, existing, value.MapOf(
 		shortKey(want.Key), states.Change(nil, "present")),
 		fmt.Sprintf("The key was added to %s.", path))
 }
@@ -286,14 +287,14 @@ func sshAuthAbsent(c *exec.Context, args *value.Map) (states.Result, error) {
 	if !found {
 		return states.True(fmt.Sprintf("The key is already absent from %s.", path)), nil
 	}
-	return writeAuthKeys(c, path, kept, value.MapOf(
+	return writeAuthKeys(c, args, path, kept, value.MapOf(
 		shortKey(want.Key), states.Change("present", nil)),
 		fmt.Sprintf("The key was removed from %s.", path))
 }
 
 // writeAuthKeys renders and writes the file, creating ~/.ssh with the mode
 // sshd insists on.
-func writeAuthKeys(c *exec.Context, path string, keys []authKey, changes *value.Map, comment string) (states.Result, error) {
+func writeAuthKeys(c *exec.Context, args *value.Map, path string, keys []authKey, changes *value.Map, comment string) (states.Result, error) {
 	var b strings.Builder
 	for _, k := range keys {
 		b.WriteString(k.String())
@@ -311,7 +312,46 @@ func writeAuthKeys(c *exec.Context, path string, keys []authKey, changes *value.
 	if err := writeAtomic(path, []byte(b.String()), 0o600); err != nil {
 		return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
 	}
+	if err := giveToAccount(args, path); err != nil {
+		return states.False(err.Error()), nil
+	}
 	return states.Changed(comment, changes), nil
+}
+
+// giveToAccount hands a file written for a named account -- and the
+// account's ~/.ssh, when the file is the default one inside it -- to
+// that account.
+//
+// Both modules wrote as whoever ran them, and a node runs as root, so
+// `ssh_auth.present` with `user: deploy` made ~deploy/.ssh and its
+// authorized_keys owned by root. sshd reads authorized_keys as the
+// account it is authenticating; a root-owned 0600 file in a root-owned
+// 0700 directory is one that account cannot read, so the key the state
+// reported adding did not work. Measured on CI's live legs by
+// TestLiveSSHFilesForAnotherAccount (DIVERGENCE 5.200).
+//
+// Nothing changes for a state that names no account: the file is the
+// caller's own and already its. A `config` path is a file the caller
+// chose, so only that file is handed over, not the directory it is in.
+// Windows keeps its owner model and is not touched here.
+func giveToAccount(args *value.Map, path string) error {
+	account := states.Str(args, "user", "")
+	if account == "" || runtime.GOOS == "windows" {
+		return nil
+	}
+	u, err := user.Lookup(account)
+	if err != nil {
+		return fmt.Errorf("the account %q could not be resolved to hand it %s: %v", account, path, err)
+	}
+	if states.Str(args, "config", "") == "" {
+		if err := applyOwnership(filepath.Dir(path), u.Uid, u.Gid); err != nil {
+			return fmt.Errorf("%s could not be given to %s: %v", filepath.Dir(path), account, err)
+		}
+	}
+	if err := applyOwnership(path, u.Uid, u.Gid); err != nil {
+		return fmt.Errorf("%s could not be given to %s: %v", path, account, err)
+	}
+	return nil
 }
 
 // shortKey renders a key blob for a change set without printing the whole
