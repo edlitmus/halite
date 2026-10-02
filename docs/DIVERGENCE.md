@@ -19401,7 +19401,42 @@ the test reads the crontab back; an unprivileged caller managing its own
 crontab, which only the recorded-runner test exercises; the EL and SUSE
 legs, which do not run it.
 
+### 5.212 Two reactor tests returned while the reactor was still writing
 
+`TestARestartedReactorResumesFromWhereItStopped` failed on the
+`test (ubuntu-24.04)` job of PR #209, a branch that touched neither the
+reactor nor its tests, with every assertion passed and one line of
+failure: `TempDir RemoveAll cleanup: unlinkat …/005: directory not
+empty`. Directory `005` is the one holding the reactor's offset file.
+
+The test started `Run` in a goroutine and stopped it with a deferred
+`cancel`, then returned. Cancelling asks the reactor to stop; it does not
+wait for it. `Run` records its position from its own loop, through an
+atomic write that creates a temporary file beside the offset and renames
+it, so a test that returned while that write was in flight had
+`TempDir`'s cleanup list the directory, the write add a file, and the
+removal fail. `TestChaosAReactorThatFellBehindResumesAtTheOldest` used the same
+pattern. Neither was a defect in the reactor, which stops at the next
+point it can; it was the tests claiming the reactor had stopped when they
+had only asked it to.
+
+Both now start it through `runReactor`, which registers a cleanup that
+cancels and then waits for `Run` to return. It is registered after the
+test's `TempDir`, and cleanups run last first, so the wait finishes
+before the directory is removed.
+
+The break-check was made deterministic rather than by loading a
+machine: a temporary second offset write, 300ms after the first, in
+`writeOffset`. With it, the old pattern failed on every run on macOS --
+`panic: Log in goroutine after TestARestartedReactorResumesFromWhereItStopped
+has completed`, a write into the already-removed `005` -- and
+`runReactor` passed. The single run without `-count` passed under both,
+because the test binary exited before the delayed write; it took four
+iterations in one process to see it.
+
+**Not covered:** the original failure was not reproduced as CI saw it,
+only the late write that causes it; nor was the rest of `internal/hub`
+audited for other goroutines that outlive their test.
 
 ## 6. Everything else not started
 

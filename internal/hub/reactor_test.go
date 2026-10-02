@@ -538,6 +538,32 @@ func busHas(t *testing.T, l *lab, tag string) bool {
 	return false
 }
 
+// runReactor runs r until the test ends, and does not let the test end
+// until Run has returned.
+//
+// Cancelling is not enough on its own. Run writes the offset file from
+// its own loop, so a test that returns while that loop is mid-write
+// leaves writeAtomic's temporary file in the directory TempDir is about
+// to remove, and the test fails on "directory not empty" after every
+// assertion in it has passed. CI caught it on ubuntu. Registered as a
+// cleanup, and after the caller's TempDir, because cleanups run last
+// first: this one finishes before that directory goes.
+func runReactor(t *testing.T, r *Reactor) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		if err := r.Run(ctx); err != nil {
+			t.Errorf("the reactor stopped: %v", err)
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-stopped
+	})
+}
+
 // A reactor restart is lossless, which is the claim SPEC 17.2 makes for
 // a durable bus. It is lossless because the reactor writes down where it
 // had read to and resumes there, rather than starting at the end and
@@ -568,8 +594,6 @@ reactor:
 
 	handled := make(chan struct{}, 8)
 	r.Handled = func(string, []ReactionResult) { handled <- struct{}{} }
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	// The first start has no offset file, so it begins at the end and
 	// sees nothing -- which is right: reacting to a month of history on
@@ -581,11 +605,7 @@ reactor:
 
 	// Now it has one, pointing at the beginning.
 	r.writeOffset(eventbus.Earliest)
-	go func() {
-		if err := r.Run(ctx); err != nil {
-			t.Errorf("the reactor stopped: %v", err)
-		}
-	}()
+	runReactor(t, r)
 
 	seen := 0
 	deadline := time.After(5 * time.Second)
