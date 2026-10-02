@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### halite-hub and halite-api exit 64 on a usage error
+
+`halite-hub` and `halite-api` exit 64 (`EX_USAGE`) for a command line
+they do not understand -- no subcommand, an unknown one, or a missing or
+malformed operand -- instead of 2, or 1 for `orch`, `account` and
+`token`. `halite-hub event help` and `policy help` exit 0.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not
