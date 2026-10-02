@@ -32,6 +32,49 @@ hub restarts, and a return for a job from before a restart no longer
 drives it negative. `halite_jobs_expired_total`, which always read 0,
 counts each job whose time to live passed with a node unanswered.
 
+### Root flags imply --local on an enrolled node
+
+`halite-node` treats `--file-root` and `--pillar-root` as implying
+`--local` on `state`, `pillar` and `call`, as `--help` always said. On a
+node with a hub, the flags were ignored and the hub's tree and pillar
+used. `halite-node connect` is unchanged: a root flag there still names
+the fallback roots, and the agent now warns about it at startup.
+
+### halite-api honours its log settings
+
+`halite-api` honours `log_format` and `log_file`; it read the format
+from `log_fmt`, which is not a setting, and opened no file. All three
+services now build their logger with the same code, the API's records
+carry `component: api`, and an invalid `log_format` or `log_level` stops
+the API at startup instead of being silently reinterpreted.
+
+### Pillar targeting on the command line works
+
+`halite-hub run -I`/`-J`, and `I@`/`J@` in compound targets, now match
+against each node's pillar compiled on the hub. They matched against an
+empty pillar: `-I role:web` matched nothing and `not I@role:db` matched
+every node. A pillar target is refused, naming the node, if a
+candidate's pillar will not compile or it has never connected, and on a
+hub with no `pillar_roots`.
+
+### `extbundle` files a binary under its own platform
+
+`extbundle` reads an executable's platform from the file instead of from
+the machine running it, so a binary cross-compiled for linux/amd64 on a
+Mac is filed under `linux/amd64` rather than `darwin/arm64`, which every
+Linux host refused. `-platform goos/goarch` names it explicitly, is
+refused when it disagrees with the file, and is required for scripts and
+non-Go Linux ELF binaries.
+
+### The hub's systemd unit can write its cache
+
+The hub's unit now creates and makes writable `/var/cache/halite`, its
+default `cache_dir` on Linux, with `CacheDirectory=halite`. Under
+`ProtectSystem=strict` that directory was read-only, so a hub on default
+paths stopped at startup. A drop-in added to work around it can be
+removed. Checked by a test that reads the unit file, not yet by running
+it under systemd.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not

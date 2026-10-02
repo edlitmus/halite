@@ -308,7 +308,7 @@ func registerNodegroupsRunner(r *Runners) {
 				if err != nil {
 					return nil, err
 				}
-				matched, err := c.Server.resolve(matcher)
+				matched, err := c.Server.resolve(matcher, "")
 				if err != nil {
 					return nil, err
 				}
