@@ -19296,8 +19296,7 @@ FreeBSD and Linux (the override was exercised, with the same `case`
 pattern `CONFDIR` already uses); GNU make 4 with the computed variable
 names. The test skips without a BSD make and should run on the FreeBSD
 leg, which has not been seen.
-
-### 5.203 migrate said Salt ACLs were translated into RBAC rules, and nothing was
+### 5.209 migrate said Salt ACLs were translated into RBAC rules, and nothing was
 
 `halite-hub migrate --salt-config` reported each Salt ACL key --
 `publisher_acl`, `publisher_acl_blacklist`, `external_auth`,
@@ -19329,6 +19328,7 @@ the new.
 "translated into RBAC rules" and "translated to a draft RBAC policy".
 SPEC is the authority, so whether it changes or this stays a recorded
 divergence is the owner's decision; until then it is this one.
+
 
 
 ## 6. Everything else not started
