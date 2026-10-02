@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### cron with user: no longer falls back to root
+
+`cron.present` and `cron.absent` with `user:` no longer fall back to
+root's crontab when the account's crontab cannot be read or written.
+Such a failure could copy root's entries into the account's crontab, or
+install the account's job in root's crontab, where it ran as root. The
+state now fails and names the account.
+
 ### halite-hub and halite-api exit 64 on a usage error
 
 `halite-hub` and `halite-api` exit 64 (`EX_USAGE`) for a command line

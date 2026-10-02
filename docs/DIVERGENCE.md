@@ -19361,6 +19361,45 @@ exit 1; their 64 path on a configured hub was not run. And `halite-hub
 run` with no target still exits 1 through `cli.Fatalf`, which is also its
 code for "a node failed" -- the 5.198 collision again, left for its own
 entry.
+### 5.211 cron for another account fell back to root's crontab
+
+`cron.present` and `cron.absent` were `Hardware` only for root's own
+crontab, the account the conformance case manages; the `user:` argument,
+which is what needs root, had never been run. Reading the code before
+writing a test for it found worse than 5.200 found in `ssh_auth`. When
+`crontab -u <account>` failed for any reason but "no crontab", both the
+read and the write retried with plain `crontab` -- the caller's crontab,
+which on a node is root's. So a `cron.present` for an account whose
+crontab could not be read (an unknown name, an account in `cron.deny`)
+read root's entries and added the job to them: if the write for the
+account then failed too, the result was installed as root's crontab and
+a job meant for another account ran as root; if it succeeded, the
+account got a copy of root's entries.
+
+The retry exists for an unprivileged caller managing its own crontab on
+a crontab(1) that refuses `-u` to anyone but root. It now runs only when
+the target is the account crontab(1) runs as -- the state's `runas`, else
+the process's own -- and any other failure is reported as that account's.
+`TestCronForAnotherAccountNeverFallsBackToTheCallers` holds it with a
+recorded runner; it failed on all three of its cases before the change.
+
+`TestLiveCronForAnotherAccount` then drove it as root on the `linux`
+(Ubuntu 24.04), `freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15)
+legs and passed on all three on Fleet run 37062195477: for a throwaway
+account `present` added the job and converged, the system's own
+`crontab -u <account> -l` showed it with its identifier, root's crontab
+was byte-for-byte unchanged, `absent` removed it and converged, and a
+`present` for an account that does not exist failed -- "crontab: user
+`halcrx…' unknown" -- without touching root's. The module writes only
+through crontab(1), never the spool, and the spool files it left were
+root's 0600 on FreeBSD (`/var/cron/tabs`) and macOS, and the account's
+0600, group `crontab`, on Linux (`/var/spool/cron/crontabs`), as each
+platform's crontab(1) makes them.
+
+**Not covered:** whether the daemon fires a job installed this way --
+the test reads the crontab back; an unprivileged caller managing its own
+crontab, which only the recorded-runner test exercises; the EL and SUSE
+legs, which do not run it.
 
 
 
