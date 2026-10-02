@@ -134,8 +134,15 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 	// Counted here rather than beside `pillarFailure`, because a source
 	// whose failure is ignored never reaches that path -- and a node
 	// quietly missing a secret is the case this counter exists for.
+	//
+	// `With` takes label *values*, one per declared label -- this family
+	// has one, `source`. It was called as `.With("source", name)`, two
+	// values, and the metrics package panics on a wrong count by design,
+	// so every external-pillar failure on a hub with metrics on panicked
+	// the request: the node got no pillar at all, even from a source
+	// configured to be ignored when it fails. DIVERGENCE 5.195.
 	for _, name := range out.ExtFailed {
-		s.m().pillarExtFail.With("source", name).Inc()
+		s.m().pillarExtFail.With(name).Inc()
 	}
 	if err := out.Err(); err != nil {
 		return nil, err

@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### An external pillar failure no longer costs a node its pillar
+
+On a hub with metrics on, any external pillar source that failed
+panicked the pillar request, so the node got no pillar -- even from a
+source set to `ext_pillar_fail: ignore`. It now counts the failure in
+`halite_pillar_ext_failures_total` as documented, an ignored failure
+serves the rest of the pillar, and a hard one is the hub's ordinary
+refusal.
+
 ### macOS means Apple silicon
 
 Intel Macs are not supported: SPEC 27.1's tier 2 now reads "macOS 14

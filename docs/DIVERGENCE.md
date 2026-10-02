@@ -18697,6 +18697,51 @@ another platform may add its own, which is tofu recording what it
 verified, not a change of provider.
 
 
+### 5.195 A failed external pillar source panicked the hub's pillar request
+
+The hub counts every external pillar source that fails, ignored
+failures included, in `halite_pillar_ext_failures_total{source}`. The
+call was `pillarExtFail.With("source", name)` -- two label values, on a
+family declared with one label, `source`. The metrics package panics on
+a wrong count by design, because a series whose values do not line up
+with its labels reads as data rather than as a bug. So on a hub with
+metrics on, every external-pillar failure panicked the pillar request:
+Go's HTTP server recovered it, logged `http2: panic serving …`, and the
+node got `stream error … INTERNAL_ERROR` and **no pillar at all** --
+even from a source configured `ext_pillar_fail: ignore`, whose whole
+purpose is that the rest of the pillar still arrives. The hub process
+survived; every node whose pillar touched a failing source did not get
+one. It was found by the documentation sweep, which read the call
+against the declaration; 5.78 had described the counter as working.
+
+`TestAFailedExternalPillarSourceIsCountedAndNotAPanic` reproduced it
+over the wire before the fix, on a lab hub with metrics and a source
+that always fails: the ignored case got `INTERNAL_ERROR` instead of
+its pillar, the hard case a dropped stream instead of the hub's
+refusal, and the counter read nothing. **The fix** is `.With(name)`.
+The test now passes both ways -- the ignored failure serves the rest
+of the pillar, the hard one is the hub's "could not compile" refusal
+(which keeps the reason in the hub's log, as it always has), and the
+counter reads `{source="vault"} 1` -- and fails again with the two
+values put back.
+
+**The count is now checked for every call, statically.** A wrong count
+compiles and panics only on the path that runs it, which is the path
+a test is least likely to take. `TestEveryWithNamesOneValuePerLabel`
+reads the tree's Go source, pairs each `.field.With(...)` with the
+family `field` was declared as -- `r.Counter(name, help, labels...)`,
+Histogram with its buckets first -- and fails on any mismatch. It
+matched 81 calls across the hub, the API, the relay and the node; this
+was the only wrong one. With the bug put back it named
+`internal/hub/pillar.go` and the line. It checks only calls it can pair
+with a declaration, and fails if fewer than 70 are, so a change in how
+families are declared cannot turn it into a test that passes on
+nothing.
+
+**Not covered:** a real external source (only an always-failing test
+double ran), and a hub on FreeBSD or Linux -- the lab hub ran on
+macOS.
+
 
 ## 6. Everything else not started
 
