@@ -49,7 +49,8 @@ const (
 	CatPillarGrain Category = "pillar_grain"
 	// CatConfig is a configuration key that needs translation or review.
 	CatConfig Category = "config"
-	// CatACL is a Salt authorization key that needs a drafted RBAC rule.
+	// CatACL is a Salt authorization key. Nothing translates it; the
+	// operator rewrites it as `policy` by hand.
 	CatACL Category = "acl"
 	// CatParse is a file that would not parse at all.
 	CatParse Category = "parse"
@@ -1016,8 +1017,28 @@ func auditConfig(rep *Report, path string) {
 		action := fmt.Sprintf("halite calls it %q. The compatibility shim is removed in %s.", r.Halite, config.ShimRemovalVersion)
 		cat := CatConfig
 		if r.Halite == "policy" {
+			// This line used to say the key was "Translated into a draft
+			// RBAC rule; review it before it is applied." Nothing drafts
+			// one, here or anywhere: the report carries no policy, and
+			// config.ApplyShim moves every key that maps to `policy` into
+			// `legacy_acl`, which config/inert.go records as never
+			// consulted. An operator told a draft exists goes looking for
+			// it, and one who does not look believes the authorization
+			// work is done on a hub whose empty policy grants nothing to
+			// anybody. So the action says what happens and what is left
+			// to do, and points at the guide's step that does it.
+			//
+			// Review rather than blocking, as before: the hub starts and
+			// runs with the key present, and it is the operator's own
+			// policy file, not this key, that decides what is allowed. A
+			// translator would be the larger fix and is not this one; a
+			// Salt ACL and a halite rule differ in shape enough (regex
+			// targets, `.*` grants that here would include `cmd.run`)
+			// that a mechanical one would be a claim of its own.
 			sev, cat = Review, CatACL
-			action = "Translated into a draft RBAC rule; review it before it is applied. SPEC section 23.5."
+			action = "Not translated: the compatibility shim keeps it under `legacy_acl`, which is " +
+				"never consulted, so it grants nothing. Write the equivalent rules in the `policy` " +
+				"file by hand; docs/from-salt.md, Step 2, and SPEC section 23.5."
 		}
 		rep.Findings = append(rep.Findings, Finding{
 			Category: cat, Severity: sev, File: path, Subject: r.Salt,

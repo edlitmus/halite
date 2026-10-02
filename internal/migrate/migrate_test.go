@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/signature"
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // writeTree lays out a small but realistic Salt tree: the constructs that
@@ -1026,5 +1027,93 @@ func TestAReplacedCustomModuleIsNotReportedAsAPort(t *testing.T) {
 	}
 	if other.Severity != Blocking || !strings.Contains(other.Action, "bridge-skeleton") {
 		t.Errorf("an unreplaced module in the same directory = %+v", other)
+	}
+}
+
+// TestACLKeysAreReportedWithoutClaimingATranslation holds the finding a
+// Salt ACL key produces to what the tool actually does with it.
+//
+// It used to say "Translated into a draft RBAC rule; review it before it
+// is applied." Nothing anywhere drafts one: the report carries no policy
+// in either rendering, and config.ApplyShim moves every key that maps to
+// `policy` into `legacy_acl`, which the hub never consults. An operator
+// who believed the line would go looking for a draft to review, find
+// none, and could reasonably conclude the work had been done for them,
+// on a hub whose empty policy grants nothing to anybody. So the test
+// holds both halves: the claim is gone from the finding and from both
+// renderings of the report, and the finding says what is true and what
+// the operator has to do instead.
+//
+// The six keys are every entry in config's rename table whose halite
+// name is `policy`; a seventh added there without a finding here fails
+// the "unexpected ACL finding" branch rather than passing unseen.
+func TestACLKeysAreReportedWithoutClaimingATranslation(t *testing.T) {
+	root := t.TempDir()
+	tree := filepath.Join(root, "salt")
+	if err := os.MkdirAll(tree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "master") // lexicon:allow
+	body := "publisher_acl:\n  ops:\n    - test.ping\n" +
+		"publisher_acl_blacklist:\n  users:\n    - root\n" +
+		"external_auth:\n  pam:\n    alice:\n      - '.*'\n" +
+		"client_acl:\n  bob:\n    - grains.items\n" +
+		"peer:\n  '.*':\n    - grains.items\n" +
+		"peer_run:\n  '.*':\n    - manage.up\n"
+	if err := os.WriteFile(cfgPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := Run(Options{
+		Root:        tree,
+		ConfigFiles: []string{cfgPath},
+		Registry:    signature.NewRegistry(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]bool{
+		"publisher_acl": false, "publisher_acl_blacklist": false, "external_auth": false,
+		"client_acl": false, "peer": false, "peer_run": false,
+	}
+	for _, f := range findingsFor(rep, CatACL) {
+		if _, ok := want[f.Subject]; !ok {
+			t.Errorf("unexpected ACL finding for %q", f.Subject)
+			continue
+		}
+		want[f.Subject] = true
+		if f.Severity != Review {
+			t.Errorf("%s: severity %s, want review", f.Subject, f.Severity)
+		}
+		text := strings.ToLower(f.Msg + " " + f.Action)
+		for _, lie := range []string{"translated into", "draft"} {
+			if strings.Contains(text, lie) {
+				t.Errorf("%s: the finding claims a translation that never happens: %q", f.Subject, f.Action)
+				break
+			}
+		}
+		for _, truth := range []string{"not translated", "legacy_acl", "never consulted", "`policy`", "docs/from-salt.md"} {
+			if !strings.Contains(strings.ToLower(f.Action), truth) {
+				t.Errorf("%s: the action should say %q: %q", f.Subject, truth, f.Action)
+			}
+		}
+	}
+	for key, seen := range want {
+		if !seen {
+			t.Errorf("no ACL finding for %q", key)
+		}
+	}
+
+	// Neither rendering may carry the claim either, since a rendering is
+	// what an operator actually reads.
+	js, err := value.EncodeJSON(rep.JSON(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range map[string]string{"json": string(js), "summary": rep.Summary()} {
+		low := strings.ToLower(text)
+		if strings.Contains(low, "draft") || strings.Contains(low, "translated into") {
+			t.Errorf("the %s report still claims a draft or translation:\n%s", name, text)
+		}
 	}
 }
