@@ -673,9 +673,7 @@ reactor:
 
 	// The reactor comes back holding it.
 	r.writeOffset(stale)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = r.Run(ctx) }()
+	runReactor(t, r)
 
 	// It resumes at the oldest surviving event rather than at the end.
 	waitFor(t, 10*time.Second, "the reactor to move off the pruned offset", func() bool {
