@@ -39,6 +39,12 @@ type Refusal struct {
 	Reason string
 }
 
+// aclNote is what a Salt ACL key gets instead of a rename. It grants
+// nothing, and saying otherwise is how an operator ends up with a hub
+// that refuses everybody and a log that says the work was done.
+const aclNote = "not translated: it is kept under legacy_acl, which is never consulted and grants nothing; " +
+	"write the rules in the policy file by hand (docs/from-salt.md, Step 2)"
+
 // renames is the mapping table. Both the shim and the generated
 // documentation read it, so they cannot drift apart.
 var renames = []Rename{
@@ -67,12 +73,19 @@ var renames = []Rename{
 	{Salt: "syndic_master", Halite: "relay_upstream"},
 	{Salt: "syndic_master_port", Halite: "relay_upstream_port"},
 	{Salt: "order_masters", Halite: "accept_relays"},
-	{Salt: "publisher_acl", Halite: "policy", Note: "translated into RBAC rules; review the result"},
-	{Salt: "publisher_acl_blacklist", Halite: "policy", Note: "translated into RBAC rules; review the result"},
-	{Salt: "external_auth", Halite: "policy", Note: "translated into RBAC rules; review the result"},
-	{Salt: "peer", Halite: "policy", Note: "peer access is expressed in RBAC and is deny by default"},
-	{Salt: "peer_run", Halite: "policy", Note: "peer access is expressed in RBAC and is deny by default"},
-	{Salt: "client_acl", Halite: "policy", Note: "translated into RBAC rules; review the result"},
+	// The six keys that map onto `policy` are not renamed at all: ApplyShim
+	// parks them under `legacy_acl`, which nothing reads (see InertKeys),
+	// and the operator writes the policy. Four of these notes used to say
+	// "translated into RBAC rules; review the result", printed at every
+	// process start and by doctor, about a translation that does not
+	// exist. A note here is the one line an operator sees about the key,
+	// so it says where the key went and what is left to do.
+	{Salt: "publisher_acl", Halite: "policy", Note: aclNote},
+	{Salt: "publisher_acl_blacklist", Halite: "policy", Note: aclNote},
+	{Salt: "external_auth", Halite: "policy", Note: aclNote},
+	{Salt: "peer", Halite: "policy", Note: aclNote + "; peer access is deny by default"},
+	{Salt: "peer_run", Halite: "policy", Note: aclNote + "; peer access is deny by default"},
+	{Salt: "client_acl", Halite: "policy", Note: aclNote},
 	{Salt: "master_job_cache", Halite: "job_cache"},
 	{Salt: "cachedir", Halite: "cache_dir"},
 	{Salt: "pki_dir", Halite: "pki_dir"},
@@ -207,8 +220,10 @@ func (s ShimResult) Err() error {
 //
 // A key that maps onto `policy` is not merged into the RBAC policy here:
 // that translation needs review, so the shim records the key under
-// `legacy_acl` and the migration tool of SPEC section 28.5 produces a
-// draft policy from it.
+// `legacy_acl`, where nothing reads it. This comment used to say the
+// migration tool of SPEC section 28.5 produces a draft policy from it;
+// it does not, and `halite-hub migrate` only reports each key. The
+// operator writes the policy.
 func ApplyShim(in *value.Map, known func(string) bool) (*value.Map, ShimResult) {
 	var res ShimResult
 	out := value.NewMap(in.Len())
