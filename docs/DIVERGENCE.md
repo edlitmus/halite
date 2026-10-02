@@ -19224,8 +19224,7 @@ that `connect` still makes its pillar probe. It failed before the fix,
 and fails again with either flag removed from the decision. **Not
 covered:** FreeBSD and Linux; a `connect` agent given `--pillar-root`
 against a hub that compiles no pillar.
-
-### 5.202 Two job metrics: one never counted, one never came down
+### 5.207 Two job metrics: one never counted, one never came down
 
 `halite_jobs_expired_total` was declared and never incremented: it read
 0 on every hub, whatever had expired, and `docs/metrics.md` had to say
@@ -19263,6 +19262,7 @@ twenty runs, so it rests on reasoning; a real hub's once-a-minute settle
 loop and a real Prometheus. A matched node that is not connected under
 offline skip stays on the gauge for the job's whole TTL, which with the
 default fifteen minutes can briefly trip the alert's `for: 15m`.
+
 
 
 ## 6. Everything else not started
