@@ -544,6 +544,32 @@ dist: cross
 # `.if` and GNU make spells them `ifeq`, and no file can carry both.
 INSTALL_OS != uname -s
 
+# INSTALL_KIND is which of three service layouts this platform gets:
+# rc.d scripts on a BSD, systemd units on Linux (and, as before, on any
+# platform nobody has named), and none at all on macOS.
+#
+# macOS used to fall into the `*)` arm with Linux, so `make install` on a
+# Mac said "installing for Darwin" and then installed systemd units,
+# told the operator to run `systemctl daemon-reload`, and suggested
+# `useradd` -- none of which exists there. contrib/ has no launchd job,
+# and one is not added here because a plist can only be shown to work by
+# loading it into launchd as root, which nobody has done. An untested
+# plist would be the claim this project refuses to make; installing none
+# and saying so is the honest version.
+#
+# # Why the branch is picked by make rather than by a shell `case`
+#
+# The recipes below expand $(INSTALL_SERVICE_$(INSTALL_KIND)) and its
+# siblings, so the platform's branch is chosen before the shell sees
+# anything. That is what lets `make -n install` show what a platform
+# would actually run -- with a `case` in the recipe, the dry run prints
+# every arm on every platform, and a test reading it could not tell a
+# Mac that installs systemd units from one that does not.
+# internal/buildpolicy's TestInstallOnDarwinInstallsNoSystemdUnits reads
+# exactly that dry run, for each kind, with INSTALL_OS set on the command
+# line, which is also how to see another platform's branch from this one.
+INSTALL_KIND != case "$(INSTALL_OS)" in FreeBSD|OpenBSD|NetBSD|DragonFly) echo rcd ;; Darwin) echo darwin ;; *) echo systemd ;; esac
+
 # BINDIR is /usr/local/bin on every platform, because that is the path
 # written into the rc.d scripts and the systemd units. Moving it means
 # editing those too.
@@ -564,6 +590,53 @@ LOGDIR    ?= /var/log/halite
 # The account the hub and the API run as. A node runs as root, and root
 # can write what this account owns, so one owner serves both.
 HALITE_USER ?= halite
+
+# The per-kind pieces of install and install-service. Each is one shell
+# command list, expanded into a recipe line; `$$` survives to the shell
+# as `$`.
+#
+# What the account hint names on macOS: there is no useradd, and no
+# /usr/sbin/nologin either, so the Linux line was wrong twice. A UID
+# below 500 keeps the account off the login window; `dscl . -list
+# /Users UniqueID` shows which are taken (a Mac uses many in 200-499 for
+# its own `_` accounts). The sysadminctl line follows its own usage
+# text on macOS 26; nobody has run it, which would need root.
+INSTALL_ACCOUNT_HINT_rcd = echo "      pw useradd $(HALITE_USER) -d /nonexistent -s /usr/sbin/nologin" >&2
+INSTALL_ACCOUNT_HINT_systemd = echo "      useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin $(HALITE_USER)" >&2
+INSTALL_ACCOUNT_HINT_darwin = echo "      sysadminctl -addUser $(HALITE_USER) -UID <an unused UID below 500> -shell /usr/bin/false -home /var/empty" >&2; \
+	echo "      (dscl . -list /Users UniqueID lists the UIDs already taken)" >&2
+
+# The service directory is checked for writability only where something
+# is going to be written to it. On a Mac SERVICEDIR still resolves to
+# /etc/systemd/system, whose parent does not exist, so checking it there
+# would refuse an install over a directory it never uses.
+INSTALL_SERVICEDIR_rcd = "$(SERVICEDIR)"
+INSTALL_SERVICEDIR_systemd = "$(SERVICEDIR)"
+INSTALL_SERVICEDIR_darwin =
+
+INSTALL_SERVICE_CHECK_rcd = p=`dirname "$(SERVICEDIR)"`; \
+	{ test -w "$(SERVICEDIR)" 2>/dev/null || test -w "$$p"; } || { \
+		echo "cannot write $(SERVICEDIR) — run as root, or set SERVICEDIR" >&2; exit 1; }
+INSTALL_SERVICE_CHECK_systemd = $(INSTALL_SERVICE_CHECK_rcd)
+INSTALL_SERVICE_CHECK_darwin = true
+
+INSTALL_SERVICE_rcd = for f in contrib/rc.d/*; do \
+		echo "  $(SERVICEDIR)/`basename $$f`"; \
+		install -m 0555 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
+	done
+INSTALL_SERVICE_systemd = for f in contrib/systemd/*.service contrib/systemd/*.timer; do \
+		echo "  $(SERVICEDIR)/`basename $$f`"; \
+		install -m 0644 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
+	done; \
+	echo "  run systemctl daemon-reload before enabling anything"
+INSTALL_SERVICE_darwin = echo "  no service files: macOS runs services under launchd, and halite ships no launchd job yet."; \
+	echo "  run the programs in the foreground, or under a job of your own, for example"; \
+	echo "      $(BINDIR)/halite-node connect --config $(CONFDIR)/node.yaml"; \
+	echo "      $(BINDIR)/halite-hub serve --config $(CONFDIR)/hub.yaml"
+
+INSTALL_SERVICE_SUMMARY_rcd = echo "  service files  $(SERVICEDIR)"
+INSTALL_SERVICE_SUMMARY_systemd = $(INSTALL_SERVICE_SUMMARY_rcd)
+INSTALL_SERVICE_SUMMARY_darwin = echo "  service files  none (no launchd job is shipped)"
 
 # install puts the binaries, the service files, and the directories in
 # place. It writes no configuration: a `make install` that overwrote
@@ -591,7 +664,7 @@ install: make-supports-bang
 	if [ -n "`find . -name '*.go' -newer $$ref -print 2>/dev/null | head -1`" ]; then \
 		echo "  ! bin/ is older than the source; 'make build' first if that is not deliberate" >&2; \
 	fi
-	@for d in "$(BINDIR)" "$(CONFDIR)" "$(SERVICEDIR)"; do \
+	@for d in "$(BINDIR)" "$(CONFDIR)" $(INSTALL_SERVICEDIR_$(INSTALL_KIND)); do \
 		p=`dirname "$$d"`; \
 		{ test -w "$$d" 2>/dev/null || test -w "$$p"; } || { \
 			echo "cannot write $$d — run make install as root, or point BINDIR," >&2; \
@@ -609,11 +682,7 @@ install: make-supports-bang
 		owner=""; \
 		echo "  ! the $(HALITE_USER) account does not exist; directories are left owned by root" >&2; \
 		echo "  ! the hub and the API cannot use them until it does. Create it, then run this again:" >&2; \
-		case "$(INSTALL_OS)" in \
-		FreeBSD|OpenBSD|NetBSD|DragonFly) \
-			echo "      pw useradd $(HALITE_USER) -d /nonexistent -s /usr/sbin/nologin" >&2 ;; \
-		*) echo "      useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin $(HALITE_USER)" >&2 ;; \
-		esac; \
+		$(INSTALL_ACCOUNT_HINT_$(INSTALL_KIND)); \
 	fi; \
 	for d in "$(CONFDIR) 0755" "$(CONFDIR)/pki 0700" "$(STATEDIR) 0700" "$(CACHEDIR) 0700" "$(LOGDIR) 0750"; do \
 		set -- $$d; \
@@ -630,7 +699,7 @@ install: make-supports-bang
 	@echo
 	@echo "installed. Nothing was started and no configuration was written."
 	@echo "  configuration  $(CONFDIR)/{hub,node,api}.yaml — contrib/examples has one of each"
-	@echo "  service files  $(SERVICEDIR)"
+	@$(INSTALL_SERVICE_SUMMARY_$(INSTALL_KIND))
 	@echo "  manual pages   $(MANDIR)"
 
 # install-man puts the manual pages in place.
@@ -659,23 +728,12 @@ install-man: make-supports-bang
 
 # install-service puts the platform's own service files in place. They
 # are overwritten: picking up a fix to them is the reason to run this.
+# The commands are the INSTALL_SERVICE_* variables above, one per
+# INSTALL_KIND; on macOS it installs nothing and says how to run the
+# programs instead.
 install-service: make-supports-bang
-	@p=`dirname "$(SERVICEDIR)"`; \
-	{ test -w "$(SERVICEDIR)" 2>/dev/null || test -w "$$p"; } || { \
-		echo "cannot write $(SERVICEDIR) — run as root, or set SERVICEDIR" >&2; exit 1; }
-	@case "$(INSTALL_OS)" in \
-	FreeBSD|OpenBSD|NetBSD|DragonFly) \
-		for f in contrib/rc.d/*; do \
-			echo "  $(SERVICEDIR)/`basename $$f`"; \
-			install -m 0555 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
-		done ;; \
-	*) \
-		for f in contrib/systemd/*.service contrib/systemd/*.timer; do \
-			echo "  $(SERVICEDIR)/`basename $$f`"; \
-			install -m 0644 $$f $(SERVICEDIR)/`basename $$f` || exit 1; \
-		done; \
-		echo "  run systemctl daemon-reload before enabling anything" ;; \
-	esac
+	@$(INSTALL_SERVICE_CHECK_$(INSTALL_KIND))
+	@$(INSTALL_SERVICE_$(INSTALL_KIND))
 
 # install-fips is the parallel artifact set of SPEC 27.4, for a host that
 # is deploying it. The drop-ins are not installed automatically: on

@@ -87,6 +87,13 @@ func (s *Server) runBatches(ctx context.Context, j *job.Job, msg transport.Messa
 			s.warn("batch aborted by its safe limit",
 				"jid", string(j.JID), "failed", failed, "limit", j.Batch.SafeLimit,
 				"undelivered", len(j.Remaining()))
+			// Closed before the state is written, so anything that sees
+			// `aborted` sees the gauge already settled. The nodes never
+			// delivered to will never answer, and the ones in the last
+			// slice have already outlasted the batch timeout; the job is
+			// over and owes nothing. Settle skips an aborted job, so
+			// without this its count stayed until the hub restarted.
+			s.countJobEnded(j.JID)
 			s.setState(j, job.Aborted)
 			return
 		}
@@ -191,10 +198,32 @@ func (s *Server) Settle() (int, error) {
 		}); err != nil {
 			return settled, err
 		}
+		// The books close on the gauge as well as on the record. An
+		// expiry is counted from the record's own answer -- a node is
+		// still missing -- rather than from what this process had on its
+		// books, so a job dispatched before a restart and settled after
+		// it is still counted once: Settle visits a job only while it is
+		// dispatched or batching, and has just moved it out of both.
+		s.countJobEnded(j.JID)
+		if len(missing) > 0 {
+			s.m().jobsExpired.Inc()
+		}
 		settled++
 		s.info("job settled",
 			"jid", string(j.JID), "state", string(j.State),
 			"returned", len(j.Nodes)-len(missing), "of", len(j.Nodes))
+	}
+	// And anything still owed whose window has passed but which the
+	// listing above did not reach: a job older than its five hundred, or
+	// one whose record is no longer there. The record of such a job is left
+	// as it is -- that is the listing's limit, not this one's -- but the
+	// gauge must not keep its nodes for ever because of it. Anything the
+	// loop above settled has already been closed, so nothing is counted
+	// twice.
+	for _, id := range s.owed.expired(now) {
+		if owed, _ := s.countJobEnded(id); owed > 0 {
+			s.m().jobsExpired.Inc()
+		}
 	}
 	return settled, nil
 }
@@ -236,6 +265,17 @@ func (s *Server) Resume(ctx context.Context, id job.ID) (*job.Job, error) {
 		return nil
 	}); err != nil {
 		return nil, err
+	}
+	// Back on the books: whoever it has not heard from is owed again.
+	// After a safe-limit abort the job was closed, and after a restart
+	// this process never had it, so without this the nodes the resumed
+	// batch reaches would answer against nothing and a node that stayed
+	// silent would never be counted. A node already owed is not owed
+	// twice.
+	if missing, err := s.Jobs.Missing(id); err == nil {
+		s.m().jobsOutstanding.Add(float64(s.owed.owe(id, j.Expires, missing)))
+	} else {
+		s.warn("could not count a resumed job's unanswered nodes", "jid", string(id), "error", err.Error())
 	}
 	// The goroutine gets its own copy, because it mutates Delivered
 	// while the caller is still reading what it returned. It is counted

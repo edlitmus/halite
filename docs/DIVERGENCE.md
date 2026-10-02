@@ -19033,6 +19033,302 @@ override's value -- the test node answers by function name and the
 assertion is on the digest and the dispatches; and a hub on FreeBSD or
 Linux.
 
+### 5.202 The hub's systemd unit could not write its own cache directory
+
+The hub's unit runs with `ProtectSystem=strict` and made writable
+`/etc/halite/pki`, its `StateDirectory=halite` and its
+`LogsDirectory=halite`. The hub's default `cache_dir` on Linux is
+`/var/cache/halite`, and `serve` creates `<cache dir>/nodes` and
+probe-writes it before it will start. So the stock unit on default paths
+described a hub that exits at startup -- even after `make install` had
+created the directory, because strict mounts `/var/cache` read-only
+whatever is there.
+
+It was found by the documentation sweep reading the unit beside
+`internal/config/paths.go`, and `docs/operations.md` had already recorded
+it, after the sweep, as a known gap with "a fix … pending". Writing a
+defect down is not fixing it. It is the usual pair: the defaults in
+`internal/config` say where each program writes, the sandbox in each
+unit says where it may, and nothing compared them.
+
+**The fix** is `CacheDirectory=halite` with `CacheDirectoryMode=0700`,
+the mode `make install` and `OpenNodeCache` already use.
+`TestUnitsMakeWritableEveryDirectoryTheirBinaryWrites` parses every unit
+and checks each layout directory its binary names against what
+`ProtectSystem=` leaves writable, with the paths taken from the key
+table resolved for Linux rather than a hand list. It failed on `main`
+naming `/var/cache/halite`, passed with the fix, and failed again with
+the line removed; it checks ten binary-and-path pairs across four units.
+
+It records two exceptions. The API only reads `pki_dir`. And the API's
+`state_dir` comes from `contrib/examples/api.yaml`, because on the
+built-in default `/var/lib/halite` the API cannot write its token store
+under its unit, which makes `StateDirectory=halite-api` -- an open gap,
+not a design choice, and left for its own change.
+
+**Not demonstrated:** none of this has been run under systemd. The test
+reads the unit against systemd.exec(5) as written; it does not check
+ownership, or that `/etc/halite/pki` exists when `ReadWritePaths=`
+requires it to. A hub and a node on one host share `/var/lib/halite` and
+`/var/cache/halite` by default, the node writing as root and the hub's
+unit handing those directories to `halite`; that was not looked into.
+### 5.203 `extbundle` filed every executable under the platform it was run on
+
+`tools/extbundle` wrote the manifest's `executables` key from
+`runtime.GOOS` and `runtime.GOARCH` -- the machine running extbundle, not
+the binary being bundled. The two agree only when the author bundles on
+the target platform, and not doing that is what cross-compiling is for.
+On darwin/arm64, a linux/amd64 build and a freebsd/arm64 build were both
+filed as `darwin/arm64`: a host of the real platform refuses the bundle
+("carries no executable for linux/amd64; it has darwin/arm64"), and a Mac
+that matches the label fails to start it with `exec format error`.
+`docs/extensions.md` recorded the workaround instead of the fix.
+
+**The platform comes from the file now.** The architecture from the
+ELF, Mach-O or PE header. The operating system from Go's build
+information (GOOS and GOARCH, still present under `-ldflags=-s -w`) and
+from the header where it can say -- Mach-O is darwin, PE is windows, ELF
+OSABI 9 is freebsd -- and when both answer they must agree.
+
+The ELF case needed measuring rather than assuming. go1.27.1 writes
+OSABI 9 for every freebsd build tried (amd64, arm64, riscv64) and 0 for
+linux (amd64, arm64, 386, arm, riscv64) -- and 0 for illumos/amd64 too.
+So 0 does not mean Linux, and nothing here says it does: a non-Go ELF
+without OSABI 9 is refused until the author names its platform. FreeBSD
+ABI notes are not read, for want of a binary to test a reader against.
+
+`-platform goos/goarch` names the platform and is checked against the
+file rather than believed; a disagreement is refused and nothing is
+written. A script has no header and needs the flag. The check runs
+before the signing key is generated, so a refused run leaves no new key
+and no manifest. A side effect: the manifest's check that a windows
+executable ends in `.exe`, which only ever ran for whoever bundled on
+Windows, now runs for every windows bundle.
+
+`TestBundlesUnderTheBinarysPlatform` builds the real extbundle and runs
+it on real cross-compiled binaries for six platforms; it failed on the
+linux and freebsd cases before the fix. Ignoring the build information,
+treating OSABI 0 as linux, and dropping OSABI 9 as freebsd each failed a
+test of its own.
+
+**Not run:** loading such a bundle on a real Linux or FreeBSD host. The
+"non-Go ELF" tests are Go binaries with their build-information marker
+overwritten, not C binaries; the universal Mach-O refusal and several
+PE and ELF machine mappings have no test.
+### 5.204 Pillar targeting matched an empty pillar: `-I` nothing, `not I@` everything
+
+On the hub, `-I`, `-J`, and `I@`/`J@` inside `-C` were accepted and
+evaluated against an empty pillar. SPEC 8.1 says these match against
+"compiled pillar, hub side"; `NodeCache.Matchable` built every candidate
+with `Pillar: value.NewMap(0)`, and nothing on the hub replaced it. So
+`-I role:web` matched no node whatever the pillar held -- and the worse
+half: `-C 'not I@role:db'` matched **every** node, the database hosts
+included. `docs/command-reference.md` recorded the first half as a defect
+after the documentation sweep; nothing recorded the second.
+
+Measured in the `internal/hub` lab with two nodes and a pillar tree keyed
+on ID and the trusted `os` grain: before the fix `-I role:web`, `-I
+platform:bsd`, `-J role:^we` and `-C 'I@platform:bsd and not I@role:web'`
+all matched `[]`, and `not I@role:db` was dispatched to both nodes, one
+of which has a pillar that does not compile.
+
+**The fix.** The hub compiles each candidate's pillar when, and only
+when, the compiled target has a pillar term -- read from `Matcher.Terms`,
+so a nodegroup expanding to `I@` is seen -- with `compilePillar`, the
+node's cached grains and the job's environment (`base` when none). It is
+lazy, through `target.Node.LoadPillar`, so short-circuit evaluation
+compiles only the nodes whose answer depends on pillar.
+`pillar_trusted_grains` still filters the grains the compiler sees, as
+for a node's own request; it does not restrict the operator's
+expression, which is a different control.
+
+A candidate whose pillar will not compile, or which has never connected,
+refuses the dispatch, naming the node: an empty stand-in would put it
+inside every `not I@…`, and skipping it would drop a node from a job with
+only a hub log line. A hub without `pillar_roots` refuses pillar targets
+rather than matching nothing.
+
+Four lab tests and one matcher test were each watched failing before the
+fix. Three deliberate breaks -- the loader not installed, the recorded
+failure ignored, the loader called eagerly -- each failed them again.
+
+**Not covered:** `mine.get` targeting, mine `allow_tgt`
+(`internal/hub/mine.go`) and the ssh roster still match `-I` against an
+empty pillar. A node with its own `pillarenv` running a job with no
+environment compiles a different pillar from the one the hub targeted
+with. The node's signed-target check treats a pillar that will not
+compile as "matches nothing", which is false under `not` -- its own
+change. Not run on a real hub.
+### 5.205 Each service read its own log settings, and the API read the wrong one
+
+`halite-api` read its log format from `log_fmt` and gave the logger no
+file. `log_fmt` is not a setting -- it was the hub's first attempt,
+fixed in the hub and kept in the API, because each of the three services
+had its own copy of the function that reads SPEC 26.1. So an `api.yaml`
+with `log_format: console` and a `log_file` logged JSON to stderr and
+created nothing. Reproduced with a binary built from `main` and a
+configuration that sets an inert key, so `setup` had something to log.
+
+Nothing reported it, for three separate reasons. The loader warns about a
+key in the file it does not recognise, not about a declared key the
+program never asks for. The declared-and-unread audit was satisfied
+because the hub and the node read `log_format` and `log_file`. And a
+JSON line on a terminal looks like a choice rather than a refusal. A
+quieter difference too: the API took any format other than exactly
+`json` to mean console, so `log_format: JSON` or a typo changed what an
+aggregator was parsing, where the hub and node refused it.
+
+**The fix** is one function, `internal/log.FromConfig`, holding the
+setting names and their parsing for all three services. Each binary
+still reads its own `--log-level` and `--log-fmt` and passes them in,
+because each binary's flag audit reads only its own source -- a first
+version that parsed them inside the helper made both audits report
+documented flags nothing parsed. The API's records now carry
+`component: api`. `log_level_file` is still read by none of the three,
+as `config.UnreadKeys` records.
+
+The tests run the real API binary and look at what it wrote; reverting
+the helper to `log_fmt`, or to no file, fails them. **Not covered:**
+`halite-api serve` itself, which needs a hub (it uses the same `setup` as
+`token`, which the test runs); FreeBSD and Linux. **Found, not fixed:**
+the API has no secret redactor, so an LDAP bind password or OIDC client
+secret would print if it ever reached a log field -- its own change.
+### 5.206 `--file-root` and `--pillar-root` did not imply `--local` on an enrolled node
+
+`halite-node --help` and the manual page said `--file-root` and
+`--pillar-root` imply `--local`. On a node with a hub configured and a
+certificate they did not: `useHubIfConfigured` looked at `--local` alone,
+so the local roots were built from the flags and the hub's tree and
+pillar were put in front of them before anything read them. Measured
+against a real hub on 127.0.0.1 with an enrolled node: `pillar items
+--pillar-root <dir>` printed the hub's pillar, and `state show_sls x
+--file-root <dir>` said `x` was not found. Nothing on screen said the
+flag had been ignored. Every CLI test runs a node with no hub, which is
+local whatever the flags say, so nothing compared the help text with the
+code.
+
+**The fix:** either flag makes a `state`, `pillar` or `call` invocation
+entirely local, tree and pillar both, and the hub is not contacted.
+Making only the named half local was rejected: a local tree rendered
+against the hub's pillar matches neither place, and nothing would say
+so. **`connect` is the exception, and says so.** On the agent a root flag
+has always named the roots to fall back on when the hub serves none;
+implying `--local` would make an agent whose unit file carries the flag
+local on its next restart without anything failing, and refusing would
+leave a node nobody manages. It warns at startup and stays on the hub.
+
+`TestRootFlagsImplyLocalOnAnEnrolledNode` runs the real binary against an
+in-process TLS hub built from the transport's own server configuration
+and records every request; it asserts the root-flag cases make none and
+that `connect` still makes its pillar probe. It failed before the fix,
+and fails again with either flag removed from the decision. **Not
+covered:** FreeBSD and Linux; a `connect` agent given `--pillar-root`
+against a hub that compiles no pillar.
+### 5.207 Two job metrics: one never counted, one never came down
+
+`halite_jobs_expired_total` was declared and never incremented: it read
+0 on every hub, whatever had expired, and `docs/metrics.md` had to say
+"do not alert on it". `halite_jobs_missing_returns` rose by the matched
+count on dispatch and fell only on a fresh return, so every job that
+ended without every answer left its count behind -- one that expired,
+one killed with `jobs kill`, one stopped at `--batch-safe-limit`, one
+sent to a node never connected. Measured in-process against the
+registry's exposition: 2 after an expired job with one silent and one
+absent node, 1 after a kill, 4 after a safe-limit stop of six nodes. The
+documented `HaliteJobsUnanswered` alert then fired until the hub
+restarted, and an alert that always fires is one nobody reads.
+
+It was wrong the other way too: a return for a job this process had
+never counted -- any job in flight across a restart -- was subtracted
+anyway, and the hub read **-1** unanswered nodes.
+
+The two paths that had to agree were "the job is owed" and "the job is
+over", and a bare number could not know how much of a job remained, or
+refuse to subtract what it had never added. **The gauge is now backed by
+a per-job set of the nodes still owed.** Each node is owed once and
+forgiven once; settlement, kill and the safe-limit stop close the job and
+subtract exactly what was left; a late return after a close moves
+nothing; resume owes the missing nodes again. An expiry is counted once
+per job at settlement, from the record's own answer that a node is still
+missing, and a sweep closes owed jobs the 500-record listing cannot
+reach. Dispatch now counts before the first send, so a node quick enough
+to answer first has a debt to answer against.
+
+Each piece was removed in turn and a test failed every time: the kill
+close, the abort close, the settle close, the expiry increment, the
+sweep, the return guard (back to -1), the resume re-owe. **Not
+demonstrated:** the count-before-send ordering -- the old order passed
+twenty runs, so it rests on reasoning; a real hub's once-a-minute settle
+loop and a real Prometheus. A matched node that is not connected under
+offline skip stays on the gauge for the job's whole TTL, which with the
+default fifteen minutes can briefly trip the alert's `for: 15m`.
+### 5.208 `make install` on macOS installed systemd units
+
+`make install` on macOS ran the Linux branch. The install recipes picked
+the platform with a shell `case` whose `*)` arm meant "systemd", and
+Darwin fell into it: a Mac install printed "installing for Darwin" and
+then installed systemd units into `/etc/systemd/system`, told the
+operator to run `systemctl daemon-reload`, offered `useradd --shell
+/usr/sbin/nologin`, and checked `/etc/systemd/system` for writability --
+on a system with no systemd, no `useradd`, no `/usr/sbin/nologin`, and no
+`/etc/systemd` for that directory to sit in.
+
+Nothing caught it because the dry run could not show it. With the
+branch chosen in the shell, `make -n install` prints every arm on every
+platform, so a Mac that installs systemd units and one that does not
+read the same. **The branch is now chosen by make** (`INSTALL_KIND`, with
+per-kind recipe variables), so the dry run prints only what a platform
+will run, and `TestInstallOnDarwinInstallsNoSystemdUnits` reads it for
+Darwin, FreeBSD and Linux; against the old Makefile it failed on all
+three, and it failed again with Darwin's branch removed or the BSDs sent
+to systemd.
+
+macOS now gets binaries, manual pages and directories, no service files,
+a message that no launchd job is shipped with the command lines to run
+each program, and a `sysadminctl` hint for the account. No plist was
+written: one can be shown to work only by loading it into launchd as
+root, and an unloaded plist would be an undemonstrated claim. The
+FreeBSD and Linux dry runs are textually the old arms.
+
+**Not run:** a real install on any platform -- everything is `-n`; the
+`sysadminctl` line itself; the branch chosen by `uname -s` on real
+FreeBSD and Linux (the override was exercised, with the same `case`
+pattern `CONFDIR` already uses); GNU make 4 with the computed variable
+names. The test skips without a BSD make and should run on the FreeBSD
+leg, which has not been seen.
+### 5.209 migrate said Salt ACLs were translated into RBAC rules, and nothing was
+
+`halite-hub migrate --salt-config` reported each Salt ACL key --
+`publisher_acl`, `publisher_acl_blacklist`, `external_auth`, <!-- lexicon:allow -->
+`client_acl`, `peer`, `peer_run` -- with the action "Translated into a
+draft RBAC rule; review it before it is applied." No draft existed:
+neither rendering of the report carried a policy, and `config.ApplyShim`
+moves every key that maps to `policy` into `legacy_acl`, which
+`InertKeys` records as never consulted. The same claim went out on a
+second path: the shim's rename note for four of the keys said
+"translated into RBAC rules; review the result", and that note is
+appended to the start-up warning and repeated by `doctor`.
+
+It is the exculpatory shape. An operator told a draft exists either goes
+looking for it or assumes the authorization work is done, on a hub whose
+empty policy grants nothing to anybody. The guides had already been
+corrected, after the documentation sweep, to say nothing is translated;
+the two strings that say it to the operator directly had not.
+
+Both now say what happens: not translated, kept under `legacy_acl`, never
+consulted, grants nothing, and `policy` is written by hand
+(docs/from-salt.md, Step 2). Severity stays review. No translator was
+built: a Salt ACL's regex targets and `.*` grants -- which here would
+include `cmd.run` -- differ enough that a mechanical translation would be
+a new claim. `TestACLKeysAreReportedWithoutClaimingATranslation` and
+`TestACLWarningsDoNotClaimATranslation` fail on the old text and pass on
+the new.
+
+**Left open:** SPEC 28.3 and 28.5 still describe these keys as
+"translated into RBAC rules" and "translated to a draft RBAC policy".
+SPEC is the authority, so whether it changes or this stays a recorded
+divergence is the owner's decision; until then it is this one.
+
 ### 5.203 `halite-hub` and `halite-api` exited 2 on a usage error, and three of their 2s never ran
 
 5.198 moved `halite-node` to `cli.ExitUsage` and left the 33 `exit 2`
