@@ -41,7 +41,15 @@ complex-tree.txt
 # committable.
 *.tfvars
 *.tfvars.json
-.terraform*
+
+# tofu's provider cache and its state lock, wherever `tofu init` is run.
+# Named exactly rather than as `.terraform*`, which is what this was: that
+# pattern also matches `.terraform.lock.hcl`, and ignoring the lock file
+# silently unpinned the lab's provider -- contrib/tofu/.gitignore and the
+# lab README both say it is kept, for the reason go.sum is kept, and the
+# root rule overrode them without either saying so.
+.terraform/
+.terraform.tfstate.lock.info
 
 # And `.env`, for the same reason and more so: it is the filename
 # `git add -A` sweeps up, and nothing in this repository reads one. The
