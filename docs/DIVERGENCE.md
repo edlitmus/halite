@@ -19159,8 +19159,7 @@ environment compiles a different pillar from the one the hub targeted
 with. The node's signed-target check treats a pillar that will not
 compile as "matches nothing", which is false under `not` -- its own
 change. Not run on a real hub.
-
-### 5.202 Each service read its own log settings, and the API read the wrong one
+### 5.205 Each service read its own log settings, and the API read the wrong one
 
 `halite-api` read its log format from `log_fmt` and gave the logger no
 file. `log_fmt` is not a setting -- it was the hub's first attempt,
@@ -19194,6 +19193,7 @@ the helper to `log_fmt`, or to no file, fails them. **Not covered:**
 `token`, which the test runs); FreeBSD and Linux. **Found, not fixed:**
 the API has no secret redactor, so an LDAP bind password or OIDC client
 secret would print if it ever reached a log field -- its own change.
+
 
 
 ## 6. Everything else not started
