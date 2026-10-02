@@ -140,12 +140,17 @@ configuration needs no edit.
 A log file that cannot be opened is an error rather than a fall back to
 stderr: an operator who asked for a file is relying on it.
 
-**`halite-api` honours neither `log_format` nor `log_file` yet.** It
-reads `log_level`, and `--log-level` and `--log-fmt` on its command
-line, but it reads the format from `log_fmt` rather than `log_format`
-and opens no file, so with `log_format: console` and a `log_file` in
-`api.yaml` it still logs JSON to stderr and writes no file. The
-hub and the node honour all three. A fix is pending.
+All three services read these settings through one function, so
+`hub.yaml`, `node.yaml`, and `api.yaml` mean the same thing by them,
+and each record carries `component` as `hub`, `node`, or `api`. A level
+or format that is not one stops the service with the setting's name
+rather than falling back to a default. Until this was shared,
+`halite-api` read the format from `log_fmt`, which is not a setting,
+and opened no file, so `log_format` and `log_file` in `api.yaml` did
+nothing.
+
+`log_level_file` is accepted and not read: the file sink takes
+`log_level`, on all three.
 
 ### Choosing the output
 
