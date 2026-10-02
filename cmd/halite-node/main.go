@@ -17,6 +17,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -167,6 +168,20 @@ func main() {
 
 // node holds everything one local invocation needs.
 type node struct {
+	// identityMu is held while the node's key and certificate are read
+	// as a pair, and for the whole of a renewal: the hub call, the new
+	// key and the new certificate. A renewal writes the key first and
+	// the certificate second, and the hub revokes the old serial the
+	// moment it issues the new one -- so a reconnect that read between
+	// the two writes would hold a key and a certificate that do not go
+	// together, and one that read before them would present a serial the
+	// hub has just denied. Under the lock a reader gets the old pair or
+	// the new one, and a reconnect during a renewal waits for it.
+	//
+	// A pointer, because a job runs on a shallow copy of the node
+	// (forJob) and a copied mutex is a second, unrelated lock.
+	identityMu *sync.Mutex
+
 	cfg      *config.Config
 	registry *builtin.Registries
 	grains   *value.Map
@@ -314,6 +329,7 @@ func setup(args *cli.Args) *node {
 	}
 
 	n := &node{
+		identityMu:    &sync.Mutex{},
 		statesRunning: new(atomic.Int64),
 		evidence:      &evidenceState{},
 		metrics:       newNodeMetrics(cfg),

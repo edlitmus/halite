@@ -587,8 +587,24 @@ The secret is printed once. The hub keeps only a SHA-256 digest of it.
 
 ### Renewal and revocation
 
-A certificate lasts 90 days and is renewed at half of that, with a new
-key, and no operator:
+A certificate lasts 90 days (the hub's `certificate_lifetime`) and is
+renewed at half of that, with a new key, and no operator: a running
+`halite-node connect` checks its certificate when it starts and then
+every twentieth of the certificate's life -- hourly for the default --
+and renews once it is past halfway. The hub revokes the old serial and
+asks the node to reconnect, and the node does so on the new certificate
+within a second. A renewal that fails is logged at warning level and
+tried again at the next check; the old certificate keeps working until
+it expires, and `halite-node doctor` warns a fortnight before that.
+
+The previous key is kept beside the new one as `node.key.<UTC time>`,
+one per renewal. Nothing prunes them.
+
+A node that is not running `connect` -- one that is stopped, or used
+only for `--local` runs -- is not renewed. `halite-node renew` does it by
+hand; before the halfway point it says so and changes nothing, and
+`--force` renews anyway. It keeps the node's key algorithm unless
+`--key-algorithm` says otherwise.
 
 ```sh
 halite-node renew
