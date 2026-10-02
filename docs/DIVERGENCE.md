@@ -19072,8 +19072,7 @@ ownership, or that `/etc/halite/pki` exists when `ReadWritePaths=`
 requires it to. A hub and a node on one host share `/var/lib/halite` and
 `/var/cache/halite` by default, the node writing as root and the hub's
 unit handing those directories to `halite`; that was not looked into.
-
-### 5.202 `extbundle` filed every executable under the platform it was run on
+### 5.203 `extbundle` filed every executable under the platform it was run on
 
 `tools/extbundle` wrote the manifest's `executables` key from
 `runtime.GOOS` and `runtime.GOARCH` -- the machine running extbundle, not
@@ -19116,6 +19115,7 @@ test of its own.
 "non-Go ELF" tests are Go binaries with their build-information marker
 overwritten, not C binaries; the universal Mach-O refusal and several
 PE and ELF machine mappings have no test.
+
 
 
 ## 6. Everything else not started
