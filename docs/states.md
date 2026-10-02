@@ -113,9 +113,12 @@ Every state function is held to a contract:
   run reports.
 - Its comment is a sentence, in the conditional.
 
-That contract is enforced by a shared harness every state module passes,
-which additionally checks that a second run changes nothing and that the
-system is untouched afterwards. Salt has no such harness, which is why
+That contract is enforced by a shared harness, SPEC 11.6, which
+additionally checks that a second run changes nothing and that the
+system is untouched afterwards. Every state function has a case except
+the two listed, with reasons, in `internal/builtin/conformance_gap_test.go`;
+the cases for functions that change the machine run in the live CI legs
+rather than in `go test`. Salt has no such harness, which is why
 `test=True` there is unreliable for a fair number of its modules.
 
 A function whose test mode genuinely cannot be reliable — `cmd.run`
@@ -126,7 +129,8 @@ the module reference marks it.
 
 An SLS file is rendered before it is parsed. The default is Jinja, and
 the engine is Jinja-compatible rather than Jinja-like: existing trees
-render unchanged.
+render the same, with one deliberate exception — an undefined name is an
+error rather than an empty string, described below.
 
 ```yaml
 {% for user in pillar.get('admins', []) %}
@@ -219,7 +223,7 @@ Say what you mean instead:
 
 ```yaml
 {{ pillar['maybe'] | default('fallback') }}
-{% if pillar.get('maybe') is defined %}...{% endif %}
+{% if pillar.maybe is defined %}...{% endif %}
 {{ pillar.get('a:b', 'fallback') }}
 ```
 
@@ -259,10 +263,14 @@ base:
 
 Two rules are worth knowing before you rely on them.
 
-**Pillar cannot be targeted on a machine's own grains** unless you list
-the grain in `pillar_trusted_grains`. Grains come from the machine, so a
-machine able to target pillar on its own grains could claim to be
-anything and ask for another machine's secrets.
+**Pillar can be targeted only on trusted grains**: those in
+`pillar_trusted_grains`, which by default are `id`, `os`, `os_family`,
+`osrelease`, `kernel`, `cpuarch`, `virtual` and `fips_mode` — which is why
+the `os_family` match above works with no configuration. Grains come from
+the machine, so a machine able to target pillar on any grain it liked
+could claim to be anything and ask for another machine's secrets. A
+custom grain is refused until you list it, and setting the key replaces
+the default list rather than adding to it.
 
 **Pillar cannot be targeted on pillar.** `I@` and `J@` in a pillar top
 file are refused, because the answer would depend on the thing being
@@ -294,9 +302,10 @@ becomes:
 
 A secret that is not JSON stays the string it is. An ARN carries its own
 region and partition; a secret given by name takes its region from the
-entry, from the machine's `region` grain, or from `aws_secrets_region`,
-in that order, and a secret with none of them is an error rather than a
-guess.
+entry's own `region`, from the machine's `region` grain, or from the
+block's `region`, in that order, and a secret with none of them is an
+error rather than a guess. So the block's `region` above is the last
+resort: a machine with a `region` grain overrides it.
 
 A machine's secrets need not all be listed on the hub. Set `pillar_list`
 in the block to a pillar key, and a list under that key in the tree
@@ -324,9 +333,11 @@ environment uses:
     - source_hash: sha256=e3b0c44298fc1c149afbf4c8996fb924...
 ```
 
-A `source_hash` is checked before anything is written. `md5` and `sha1`
-digests are refused by name: collisions in both are within reach, so
-comparing one verifies nothing.
+A `source_hash` is checked before anything is written. Use `sha256` or
+stronger. `md5` and `sha1` digests are accepted, as SPEC 13.5 allows,
+only for an upstream that publishes nothing better, and each use logs a
+warning: collisions in both are within reach, so a match proves little.
+(`file.check_hash`, the execution function, refuses them outright.)
 
 Every path is resolved and then checked to be inside its root, after
 symlinks are followed. That check is the control for CVE-2020-11652,
@@ -337,8 +348,10 @@ where Salt's file server could be walked out of its own roots.
 - Refer to an ID that does not exist. The compiler collects every such
   error and reports them together, rather than stopping at the first.
 - Declare the same ID twice.
-- Use a module function this build does not ship. The error names near
-  misses, so a typo is one line to fix rather than a search.
+- Use a module function this build does not ship. For a misspelt
+  function the error lists every function that module does provide, so a
+  typo is one line to fix rather than a search; a misspelt module name
+  gets a pointer to SPEC section 15's tier table instead.
 
 ## Further reading
 
