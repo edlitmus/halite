@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### halite-api honours its log settings
+
+`halite-api` honours `log_format` and `log_file`; it read the format
+from `log_fmt`, which is not a setting, and opened no file. All three
+services now build their logger with the same code, the API's records
+carry `component: api`, and an invalid `log_format` or `log_level` stops
+the API at startup instead of being silently reinterpreted.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not

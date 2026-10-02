@@ -19033,6 +19033,41 @@ override's value -- the test node answers by function name and the
 assertion is on the digest and the dispatches; and a hub on FreeBSD or
 Linux.
 
+### 5.202 Each service read its own log settings, and the API read the wrong one
+
+`halite-api` read its log format from `log_fmt` and gave the logger no
+file. `log_fmt` is not a setting -- it was the hub's first attempt,
+fixed in the hub and kept in the API, because each of the three services
+had its own copy of the function that reads SPEC 26.1. So an `api.yaml`
+with `log_format: console` and a `log_file` logged JSON to stderr and
+created nothing. Reproduced with a binary built from `main` and a
+configuration that sets an inert key, so `setup` had something to log.
+
+Nothing reported it, for three separate reasons. The loader warns about a
+key in the file it does not recognise, not about a declared key the
+program never asks for. The declared-and-unread audit was satisfied
+because the hub and the node read `log_format` and `log_file`. And a
+JSON line on a terminal looks like a choice rather than a refusal. A
+quieter difference too: the API took any format other than exactly
+`json` to mean console, so `log_format: JSON` or a typo changed what an
+aggregator was parsing, where the hub and node refused it.
+
+**The fix** is one function, `internal/log.FromConfig`, holding the
+setting names and their parsing for all three services. Each binary
+still reads its own `--log-level` and `--log-fmt` and passes them in,
+because each binary's flag audit reads only its own source -- a first
+version that parsed them inside the helper made both audits report
+documented flags nothing parsed. The API's records now carry
+`component: api`. `log_level_file` is still read by none of the three,
+as `config.UnreadKeys` records.
+
+The tests run the real API binary and look at what it wrote; reverting
+the helper to `log_fmt`, or to no file, fails them. **Not covered:**
+`halite-api serve` itself, which needs a hub (it uses the same `setup` as
+`token`, which the test runs); FreeBSD and Linux. **Found, not fixed:**
+the API has no secret redactor, so an LDAP bind password or OIDC client
+secret would print if it ever reached a log field -- its own change.
+
 
 ## 6. Everything else not started
 
