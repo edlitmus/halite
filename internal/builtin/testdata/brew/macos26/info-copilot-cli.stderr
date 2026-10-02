@@ -1,0 +1,1 @@
+Warning: Treating copilot-cli as a cask. For the formula, use aws/tap/copilot-cli or specify the `--formula` flag. To silence this message, use the `--cask` flag.

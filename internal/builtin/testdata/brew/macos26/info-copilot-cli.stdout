@@ -1,0 +1,98 @@
+{
+  "formulae": [],
+  "casks": [
+    {
+      "token": "copilot-cli",
+      "full_token": "copilot-cli",
+      "old_tokens": [],
+      "tap": "homebrew/cask",
+      "name": [
+        "GitHub Copilot CLI"
+      ],
+      "desc": "Brings the power of Copilot coding agent directly to your terminal",
+      "homepage": "https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli",
+      "url": "https://github.com/github/copilot-cli/releases/download/v1.0.90/copilot-darwin-arm64.tar.gz",
+      "url_specs": {},
+      "version": "1.0.90",
+      "autobump": true,
+      "no_autobump_message": null,
+      "skip_livecheck": false,
+      "installed": "1.0.90",
+      "installed_time": 1790887849,
+      "bundle_version": null,
+      "bundle_short_version": null,
+      "pinned": false,
+      "pinned_version": null,
+      "outdated": false,
+      "sha256": "d9baf683fcc830bbf95bfa7a45be4515b98613ccf86ea13ee194f1d49b33da18",
+      "artifacts": [
+        {
+          "binary": [
+            "copilot"
+          ],
+          "target": "/opt/homebrew/bin/copilot"
+        },
+        {
+          "generate_completions_from_executable": [
+            "copilot",
+            "completion",
+            {
+              "base_name": null,
+              "shell_parameter_format": null,
+              "shells": [
+                "bash",
+                "zsh",
+                "fish"
+              ]
+            }
+          ]
+        },
+        {
+          "zap": [
+            {
+              "trash": [
+                "~/.copilot",
+                "~/Library/Caches/copilot"
+              ]
+            }
+          ]
+        }
+      ],
+      "caveats": null,
+      "caveats_rosetta": null,
+      "depends_on": {
+        "macos": {
+          ">=": [
+            "13"
+          ]
+        }
+      },
+      "conflicts_with": {
+        "cask": [
+          "copilot-cli@prerelease"
+        ]
+      },
+      "container": null,
+      "rename": [],
+      "auto_updates": true,
+      "deprecated": false,
+      "deprecation_date": null,
+      "deprecation_reason": null,
+      "deprecation_replacement_formula": null,
+      "deprecation_replacement_cask": null,
+      "deprecate_args": null,
+      "disabled": false,
+      "disable_date": null,
+      "disable_reason": null,
+      "disable_replacement_formula": null,
+      "disable_replacement_cask": null,
+      "disable_args": null,
+      "tap_git_head": "7e47fe60e909037cddb2f4cb6b78454b7f68e3d3",
+      "languages": [],
+      "ruby_source_path": "Casks/c/copilot-cli.rb",
+      "ruby_source_checksum": {
+        "sha256": "65fa013573f12a51f81630f5430cfe5ba8bf79acb41b664883754d32c402f727"
+      }
+    }
+  ]
+}
