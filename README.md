@@ -9,8 +9,9 @@ interpreter, the several-hundred-package dependency tree, the bespoke
 encryption protocol, and the dynamic module loader that imports arbitrary
 code from the file server.
 
-One static binary per program. `go list -m all` returns only this module,
-and the build asserts that on every run.
+One static binary per program, with one vendored dependency,
+`golang.org/x/sys`. A test holds the build graph to SPEC 4.2's allowlist
+on every run.
 
 [SPEC.md](SPEC.md) is the specification, in 33 sections. This README says
 what is built; [docs/](docs/) says how to use it.
@@ -37,13 +38,13 @@ No release has been tagged yet. Until one is, build from source:
 make build        # on a Mac, gmake or bmake; see Building below
 sudo install -m 0755 bin/halite-node /usr/local/bin/
 
-mkdir -p /srv/halite/states
-cat > /srv/halite/states/top.sls <<'EOT'
+sudo mkdir -p /srv/halite/states
+sudo tee /srv/halite/states/top.sls >/dev/null <<'EOT'
 base:
   '*':
     - motd
 EOT
-cat > /srv/halite/states/motd.sls <<'EOT'
+sudo tee /srv/halite/states/motd.sls >/dev/null <<'EOT'
 /etc/motd:
   file.managed:
     - contents: |
@@ -57,6 +58,10 @@ sudo halite-node state apply --local --file-root /srv/halite/states
 
 Run it twice: the second run reports nothing to do and exits 2. That is
 convergence, and everything else rests on it.
+
+On a Mac the root filesystem is read-only, so there is no `/srv` to
+create: put the tree in a directory you own and pass that to
+`--file-root` instead.
 
 [Getting started](docs/getting-started.md) takes this further.
 
@@ -79,9 +84,10 @@ convergence, and everything else rests on it.
 
 The three generated pages come from `tools/gendocs` and are checked
 against the code by a test, so they cannot drift from the build. The
-command reference is prose, and a test runs every command it presents as
-working — and checks that every command it promises in a later phase is
-one the binary already knows the name of.
+command reference is prose, and a test dispatches every command it
+presents as working, checks that every flag it shows is one the binary
+takes, and checks that every command it promises in a later phase is one
+the binary already knows the name of.
 
 Example configuration files are in [`contrib/examples/`](contrib/examples/),
 one per program and per shape of deployment, plus a commented
@@ -104,15 +110,16 @@ Delivery follows the phases in SPEC section 32.
 | 2. Hub, transport, enrollment | `halite-hub serve`, mutual TLS, targeting over the wire, job cache, file server, RBAC, event bus | **Done**: every item the phase lists is built, and its exit criterion is met |
 | 3. The automation loop | Beacons, scheduler, reactors, orchestration, runners, mine | **Done**: runners, orchestration, reactors, beacons, the scheduler, and the mine, with the runtime management of all of them |
 | 4. API and integration | `halite-api`, OIDC, LDAP, webhooks, returners, the bridge protocol | **Done**: authentication, the execution and event endpoints, webhooks, OIDC, LDAP, returners, and the bridge protocol with its extension model |
-| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship. macOS has the package and service providers and seven `mac_*` modules, including `mac_user`/`mac_group`/`mac_shadow` so `user.present` works there. **All seven are `hardware`**, and a CI leg drives them as root on every change. An eighth, `mac_assistive`, was taken out of the build: its writes go to a database SIP keeps readonly to root, and the only way to demonstrate them is a manual grant re-given on every rebuild (DIVERGENCE 5.119). |
-| 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | **Started**: the chaos suite and SPEC 31's upgrade layer are built, CI runs every leg of `make check` on Linux, Windows, macOS and FreeBSD, metrics are nearly complete, and `doctor` ships. Tracing is built and wired, and detached job signing landed with node-side evidence. The scale harness, external review, packaging and the backtracking regex engine are not. |
+| 5. Breadth | gitfs with signature verification, s3fs, Windows and macOS parity, agentless mode, relays, FIPS artifacts | **Started**: gitfs, s3fs, agentless mode, relays, and the FIPS artifact set are built. Windows runs the suite natively and has been verified against a real host; four of its eighteen modules ship, and `win_pkg` resolves to `pkg` over Chocolatey. macOS has the package and service providers and seven `mac_*` modules, including `mac_user`/`mac_group`/`mac_shadow` so `user.present` works there. **All seven are `hardware`**, and a CI leg drives them as root nightly and on every change to them. An eighth, `mac_assistive`, was taken out of the build: its writes go to a database SIP keeps readonly to root, and the only way to demonstrate them is a manual grant re-given on every rebuild (DIVERGENCE 5.119). |
+| 6. Hardening to 1.0 | Scale harness, chaos suite, external review, detached job signing, backtracking regex engine | **Started**: the chaos suite and SPEC 31's upgrade layer are built, CI runs the suite on Linux, Windows, macOS and FreeBSD, metrics are nearly complete, and `doctor` ships. Tracing is built and wired, and detached job signing landed with node-side evidence. The scale harness, external review, packaging and the backtracking regex engine are not. |
 
 A node manages its own tree today — Salt's masterless mode — and that is
 worth shipping on its own, because it can be validated against Salt in
 place before any hub exists. It has been: an estate's real seventeen-file
 tree compiles here to the same low state Salt 3008.2 produces, chunk for
-chunk and argument for argument, and the differential that says so runs
-on demand against any tree.
+chunk and argument for argument (two chunks set aside, which agree when
+Salt runs as root; DIVERGENCE 5.9), and the differential that says so
+runs on demand against any tree.
 
 A fleet can now be enrolled and driven. A hub issues certificates, an
 operator accepts after comparing a fingerprint out of band, and a node
@@ -121,8 +128,9 @@ resolves the target, records the job, delivers it, and gathers the
 returns. A highstate has been driven from a hub across two nodes and run
 again to convergence.
 
-An operator edits the tree on the hub and the fleet converges to it,
-which is the exit criterion SPEC section 32 names for phase 2. Pillar
+A fleet has been enrolled and a highstate driven from the hub against
+it, which is the exit criterion SPEC section 32 names for phase 2. An
+operator edits the tree on the hub and the fleet converges to it. Pillar
 is compiled on the hub too, per node, so a node holds no other node's
 secrets and cannot ask for them, and every submission is authorized
 against a policy that denies by default. `--batch` is hub-side, so
@@ -295,13 +303,18 @@ password alone is never enough on an account that asked for two factors.
 What is not built is the rest of phase 5 and most of phase 6. Windows is
 most of the way there: the suite runs natively and passes, a real host
 has been driven, and `win_dacl`, `win_service`, `win_registry` and
-`win_task` ship — fourteen of SPEC 15.3's Windows modules do not, and
-there is no user or group provider. macOS compiles and runs the suite in
-CI and has been run on no estate. FreeBSD runs the suite on every change
-and `pf` has been driven on a real host.
+`win_task` ship, and `win_pkg` resolves to `pkg` over Chocolatey —
+thirteen of SPEC 15.3's Windows modules do not, and there is no user or
+group provider. macOS runs the suite in CI, and its seven `mac_*`
+modules are `hardware`, driven as root on the `macos` leg of
+`fleet.yml`; no production estate runs it yet. FreeBSD runs the suite on
+every code change, and its platform modules — `pf`, `jail`, `sysrc`, the
+rc service provider and others — are driven as root on the `freebsd`
+leg; see [Evidence](docs/evidence.md).
 [DIVERGENCE 6.1](docs/DIVERGENCE.md) is the accounting, and it names
-the two things inside phase 2 that are still absent — `halite-hub
-files`, and external pillar.
+what is still absent from phase 2: `halite-hub files`, and every
+external pillar source SPEC 12.7 names (one source,
+`aws_secrets_manager`, is built).
 DIVERGENCE [5.11](docs/DIVERGENCE.md) through 5.15 say what the lab runs
 established — the transport, the runners, the API, relays, and the FIPS
 build — what they did not, and the defects each found that the tests
@@ -313,11 +326,11 @@ this build ships 98 execution modules and 55 state modules against a
 specification naming roughly 90 and 46 — 694 execution functions across 98
 modules and 152 state functions across 55. FreeBSD is the development
 platform; Linux and Windows have each been verified against a real host;
-macOS drives its `mac_*` modules as root on a CI leg of its own, which is
-what raised six of them to `hardware` and found a `RunAs` that fails for an
+macOS drives its `mac_*` modules as root on a CI leg of its own, all seven
+are `hardware`, and that leg found a `RunAs` that fails for an
 account in more than sixteen groups; and Linux arm64 runs the suite, a hub
-and a node natively on one FIPS host. `make test-linux`
-runs the suite as Linux binaries under this host's compat layer, which
+and a node natively on one FIPS host. On a FreeBSD host, `make test-linux`
+runs the suite as Linux binaries under the Linux compat layer, which
 covers the platform-neutral code and the
 `/proc` grain collector but reaches no apt, dnf, or systemd. **[docs/DIVERGENCE.md](docs/DIVERGENCE.md)** is
 the full accounting — every module gap, every unexercised platform, every
@@ -340,15 +353,17 @@ count has drifted.
 
 ## What is different from Salt, on purpose
 
-These are the departures a tree will notice. Each has a switch, and each is
-described in the specification section named.
+These are the departures a tree will notice. Several have a switch
+(`undefined`, `random_seed`, `regex_engine`, `pillar_trusted_grains`,
+`legacy_arg_parse`, `cmd_default_shell`), and each is described where
+the last column says.
 
 | Behaviour | Salt | halite | Section |
 |---|---|---|---|
 | Undefined template names | Render as empty string | Error naming file, line, and identifier | 10.2.6 |
 | `cmd.run` | Shell by default | Shell by default too; `cmd_default_shell: false` takes an argument vector | 15.2 |
 | Command line arguments | YAML-parsed, so `1.0` becomes a float | Strings unless the signature says otherwise | 9.2 |
-| Duplicate YAML keys | Silent last-wins | Error naming both lines | 10.1.2 |
+| Duplicate YAML keys | Silent last-wins | Error naming the file and the line of the second key | 10.1.2 |
 | Compilation errors | First one, then stop | All of them, together | 11.2 |
 | Regular expressions | Python `re` | RE2, with unsupported constructs a hard error naming the construct | 10.4 |
 | `test=True` | Unreliable for many modules | A contract, enforced by a shared conformance harness | 11.6 |
@@ -356,16 +371,15 @@ described in the specification section named.
 | Pillar grain targeting | Any grain, including one a node made up | An allowlist; trusting a custom grain is a recorded decision | 12.4 |
 | A templated YAML error | Reports the rendered position, or nothing | Reports the line in the `.sls` you wrote, and the rendered line | 10.1.4 |
 | `x509` | Needs M2Crypto or `cryptography`, and re-issues every run | `crypto/x509`, and converges | 15.2 |
-| Pillar top targeting on a grain | Any grain, silently | Refused by name unless the grain is trusted | 12.4 |
-| Filesystem layout | FHS everywhere | `/usr/local/etc` and `/var/db` on a BSD | 27.3 |
-| `onfail` in test mode | Fires when the target did not succeed, so it predicts a run that will not happen | Fires when the target failed | 11.5 |
+| Filesystem layout | FHS everywhere | `/usr/local/etc` and `/var/db` on a BSD | 27.3; DIVERGENCE 1.5 |
+| `onfail` in test mode | Fires when the target did not succeed, so it predicts a run that will not happen | Fires when the target failed | DIVERGENCE 5.7 |
 
 ## Building
 
 ```sh
 make build      # bin/halite-node, halite-hub, halite-api
 make test
-make check      # fmt, vet, test, race, and the build policy
+make check      # fmt, vet, build-all, test, race, the build policy, fips-test
 make race       # the race detector; needs a C compiler, so cgo is on
 make test-linux # the suite as Linux binaries, under the compat layer
 make cover
@@ -385,8 +399,9 @@ under it and say why. Use `bmake`, or GNU make from Homebrew (`brew install
 make`, then `gmake`). `make check` and `make test` work with the stock
 `make`.
 
-`make race` is the race detector, and it is the one to use: FreeBSD and
-macOS have clang in base and Linux has gcc, so it runs natively on every
+`make race` is the race detector, and it is the one to use: FreeBSD has
+clang in base, macOS has it once the Xcode Command Line Tools are
+installed, and Linux has gcc, so it runs natively on every
 platform this is developed on, and `make check` already includes it.
 `racecheck` exists for Windows alone, which ships no compiler and
 therefore could not run `make check` at all — it answers the same
@@ -397,21 +412,24 @@ detector has found here are intermittent, one appearing in roughly one
 sweep in three, so a single green run says less than it looks like it
 does.
 
-Every one of those runs in CI on push and on each pull request —
-`.github/workflows/ci.yml`, split by target so a failure names the leg —
-on Linux and on Windows both. `release.yml` adds what a single machine
+CI runs them on each pull request and on every push to main —
+`.github/workflows/ci.yml`, split by target so a failure names the leg:
+`make test` on Linux, Windows, macOS and FreeBSD; `race` on Linux,
+Windows and macOS; `build-all`, the policy, `fips-test`, `saltdiff` and
+`repro` on Linux. `cover`, `vuln`, `fuzz`, `zfscheck`, `racecheck` and
+`test-linux` are run by hand. `release.yml` adds what a single machine
 cannot check: on a tag, two builders compile the same source and their
 digests are compared, which is the reproducibility property SPEC section
 4.3 asks for and `make repro` can only half prove. Once they agree, and
 only if the release gate passed, it signs SLSA build provenance for those
-digests through Sigstore, with no long-lived key. A binary from that run
-is checked with:
+digests through Sigstore, with no long-lived key. A release archive is
+checked with:
 
-    gh attestation verify halite-node-linux-amd64 --repo edlitmus/halite
+    gh attestation verify halite-$v-linux-amd64.tar.gz --repo edlitmus/halite
 
 On a `v*` tag, it then publishes the release: one archive per platform,
-holding the binaries, the example configuration and the manual pages,
-and SHA256SUMS. The archives are pinned the way the binaries are, so the
+holding the licence, the binaries, the example configuration, the
+manual pages and the evidence report, and SHA256SUMS. The archives are pinned the way the binaries are, so the
 two builders agree on them too.
 
 `make check` runs the specification's own build rules as tests: the

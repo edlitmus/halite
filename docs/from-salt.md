@@ -24,7 +24,7 @@ instead; it builds a tree from nothing.
 | `salt-minion` | `halite-node connect` | <!-- lexicon:allow -->
 | `/etc/salt/master` | `<config root>/hub.yaml` | <!-- lexicon:allow -->
 | `/etc/salt/minion` | `<config root>/node.yaml` | <!-- lexicon:allow -->
-| `salt-key -A` | `halite-hub keys accept` — and there is no `auto_accept` |
+| `salt-key -A` | `halite-hub keys accept --all` — and there is no `auto_accept` |
 | `salt '*' state.apply` | `halite-hub run '*' state.apply` |
 | `salt-call --local state.apply` | `halite-node state apply --local` |
 | `publisher_acl`, `external_auth`, `peer`, `peer_run`, `client_acl` | one `policy.yaml` |
@@ -45,50 +45,74 @@ The pillar tree is found automatically when it sits beside the states as
 `pillar/`; pass `--pillar-root /srv/pillar` when it does not. The report
 says which it read.
 
-A real estate's report looks like this:
+For a small tree — one `cmd.run`, one `user.present` with `groups:`, and
+a GPG pillar targeted on a grain — the report looks like this (captured
+from a real run; the long lines are wrapped here):
 
 ```
 Migration report for /srv/salt
-  17 state files, 8 pillar files
+  by halite-hub 0.0.0-dev+bb5a08dd8fe0
+  3 state files, 2 pillar files
   pillar read from /srv/salt/pillar
 
 Renderer inventory
-  jinja|yaml               20 file(s)
-  yaml|gpg                  5 file(s)
+  jinja|yaml               4 file(s)
+  yaml|gpg                 1 file(s)
+
+Module usage
+  cmd.run                          1 reference(s)
+  user.present                     1 reference(s)
 
 Findings
 
-  REVIEW (10)
-    [pillar_grain] top.sls:9
+  REVIEW (2)
+    [semantics] state/users.sls:3
+      `groups:` here means the groups this account must be in, and leaves
+      any other membership alone; Salt's `remove_groups` defaults to true,
+      so there it was the complete set and anything unlisted was removed
+      -> If this state relied on memberships being pruned, add
+         `remove_groups: true`. If it did not, nothing needs to change.
+         docs/from-salt.md item 5.
+    [pillar_grain] top.sls:2
       pillar targets on the grain "nodename", which a node controls and
       which is not trusted by default
       -> Add it to pillar_trusted_grains as a recorded decision, or move
-         the attribute to a hub-authoritative node attribute.
-    [state] state/plex.sls:10
-      cmd.run names a program with arguments in it: "bastille start plex".
-      this audit assumed `cmd_default_shell: false`, under which that is
-      one program name rather than a shell line
-      -> Put the program in `name` and the rest in `args`, or set
-         `shell: true` on this state.
+         the attribute to a hub-authoritative node attribute. SPEC
+         section 12.4.
 
 Effort estimate
-  pillar_grain     4
-  state            7
-  TOTAL           11
+  pillar_grain     1
+  semantics        1
+  TOTAL            2
   BLOCKING         0
+
+1 cmd state(s) name a program with arguments in it. They were not
+reported, because cmd.run runs through a shell by default: as it stands
+they work, and the day a node sets cmd_default_shell: false they stop.
+Converting them to `name` plus `args` is how the tree stops depending on
+the default, and is what lets an estate take the hardened setting.
+SPEC section 15.2.
+
+No blocking items. This tree can be applied once the review items are understood.
 ```
+
+`--no-cmd-default-shell` audits as though the nodes had taken the
+hardened setting, and then lists each of those shell lines as a review
+finding with its file and line.
 
 **BLOCKING** means it will not run. **REVIEW** means it will run and may
 not do what the tree meant. **NOTE** means nothing breaks.
 
 Fix the blocking items now and the review items before you trust the
-first real apply. The two above are the ones almost every Salt tree
-produces, and both are worth understanding rather than silencing:
+first real apply. Two of the above are the ones almost every Salt tree
+produces, and both are worth understanding rather than silencing (the
+third, `groups:`, is item 5 of the list at the end):
 
 - **`cmd.run` with arguments.** These run as they stand, because
   `cmd.run` goes through a shell by default as Salt's does — the audit
-  counts them rather than reporting each one. They matter the day you
-  take the hardened setting: under `cmd_default_shell: false`,
+  counts them in the paragraph after the estimate rather than reporting
+  each one. They matter the day you take the hardened setting: under
+  `cmd_default_shell: false`,
   `bastille start plex` is one program name with spaces in it. Splitting
   each into `name` and `args` is better anyway, and is what lets an
   estate turn the shell off; `shell: true` opts a single state back in.
@@ -158,10 +182,16 @@ pillar_trusted_grains:
 policy: /usr/local/etc/halite/policy.yaml
 ```
 
-Start it. It creates its own enrollment CA on first run:
+Start it as the service, so that it runs as that account. It creates
+its own enrollment CA on first run, and a CA created by a hub started
+by hand as root is the root-owned directory the paragraph above warns
+about:
 
 ```sh
-sudo halite-hub serve
+# FreeBSD
+sudo sysrc halite_hub_enable=YES && sudo service halite_hub start
+# Linux
+sudo systemctl enable --now halite-hub
 ```
 
 Take the CA fingerprint — a node checks it before trusting anything:
@@ -209,11 +239,12 @@ or `file.replace`. Those run arbitrary code and have to be named. If your
 tree applies states, you do not need them; if an operator runs ad-hoc
 commands, give that role a rule naming exactly the ones it needs.
 
-If you have a `publisher_acl` or an `external_auth` block, do not
-translate it by hand yet — `halite-hub migrate --salt-config
-/etc/salt/master` reports what was there, and the keys it could not <!-- lexicon:allow -->
-translate are preserved under `legacy_acl` for you to read rather than
-silently converted.
+If you have a `publisher_acl` or an `external_auth` block,
+`halite-hub migrate --salt-config /usr/local/etc/salt/master` <!-- lexicon:allow -->
+(`/etc/salt/master` on Linux) reports each ACL key it finds, at review <!-- lexicon:allow -->
+severity. None of them is translated: the configuration shim keeps them
+all under `legacy_acl`, which is never consulted, for you to read and
+rewrite as `policy` by hand.
 
 ### If your pillar is encrypted
 
@@ -368,8 +399,9 @@ A tree carrying `_grains/metadata.py` does not need it either. Set
 `cloud_grains: true` in `node.yaml` and the node collects the same
 `meta-data` and `dynamic` trees, so `grains.get('meta-data:local-ipv4')`
 and `meta-data:services:partition` keep working — plus the flat grains
-`region`, `instance_id`, `account_id` and the rest, which are the same
-names on every provider and are what a new state should read.
+`region`, `instance_id`, `account_id` and the rest, which are the names
+SPEC 14.1 fixes for any provider and are what a new state should read.
+EC2's metadata service is the only one this build collects from.
 
 `grains.items` above is how you check it arrived. Two differences from
 the Python module:
@@ -440,8 +472,9 @@ schedule:
     maxrunning: 1
 ```
 
-The keys are Salt's: `cron`, `when`, `every`, `seconds`/`minutes`/`hours`/
-`days`, `range`, `after`, `until`, `splay`, `maxrunning`, `catchup`.
+The keys are Salt's — `cron`, `when`, `seconds`/`minutes`/`hours`/`days`,
+`range`, `after`, `until`, `splay`, `maxrunning` — plus two of halite's
+own that SPEC 20.1 adds: `every`, a duration, and `catchup`.
 
 Two settings worth having:
 
@@ -454,10 +487,13 @@ Set `timezone:` explicitly if the fleet spans zones, or `17 3 * * *` means
 a different moment on every machine.
 
 If you would rather keep the schedule in the machine's own scheduler,
-that is a legitimate choice and `contrib/systemd/halite-highstate.timer`
-is ready to install. The built-in one is worth using when you want the
-schedule to travel with the configuration, to change without a restart,
-or to catch up after an outage.
+that is a legitimate choice: `contrib/systemd/halite-highstate.timer` on
+Linux, and `contrib/rc.d/halite_highstate` run from cron on FreeBSD.
+Both apply from local roots (`state apply --local`), which is the
+arrangement for a node with no hub, so for a node whose tree is on the
+hub change the command to drop `--local` first. The built-in one is worth using when
+you want the schedule to travel with the configuration, to change
+without a restart, or to catch up after an outage.
 
 ## Step 7: widen
 
@@ -483,6 +519,9 @@ Once every machine has converged twice under halite and a scheduled run
 has fired at least once:
 
 ```sh
+# FreeBSD
+sudo service salt_minion stop && sudo sysrc salt_minion_enable=NO   # lexicon:allow
+# Linux
 sudo systemctl disable --now salt-minion   # lexicon:allow
 ```
 
@@ -502,10 +541,10 @@ happen on one machine.
 
 ## What will be different
 
-Six things bite in practice. Four of them are in the Step 0 report; the
-other two are not, because one is a state default this build inverts and
-the other is about the estate rather than the tree, and the audit reads
-neither. [migrating-from-salt.md](migrating-from-salt.md) covers them in
+Six things bite in practice. Four of them — 1, 2, 4 and 5 — are in the
+Step 0 report; the other two are not, because item 3 is about the policy
+and item 6 is about the estate, and the audit reads only the tree.
+[migrating-from-salt.md](migrating-from-salt.md) covers them in
 full:
 
 1. **`cmd.run` uses a shell, as Salt's does.** Pipes, redirections and
@@ -553,9 +592,8 @@ full:
    touches — its PKI, its state, its cache, its GPG keyring — has to be
    readable by the account it runs as, and the symptoms of one that is
    not name neither the directory nor the account. The Step 0 audit
-   cannot see this one either, and for a different reason from item 5: it
-   is about the estate rather than the tree, and the audit reads only the
-   tree.
+   cannot see this one, for the same reason as item 3: it is about the
+   estate rather than the tree, and the audit reads only the tree.
 
 And two that are better rather than different:
 

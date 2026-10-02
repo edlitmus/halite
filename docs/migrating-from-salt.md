@@ -15,15 +15,20 @@ halite-hub migrate /srv/salt --pillar-root /srv/pillar
 
 ```
 Migration report for /srv/salt
+  by halite-hub 0.0.0-dev+bb5a08dd8fe0
   1 state files, 0 pillar files
+  pillar read from /srv/pillar
 
 Renderer inventory
   jinja|yaml               1 file(s)
 
+Module usage
+  file.managed                     1 reference(s)
+
 Findings
 
   REVIEW (1)
-    [yaml] bad.sls:3
+    [yaml] bad.sls:4
       "0644" has a leading zero and is read as octal 420 under YAML 1.1; quote it to keep the string
       -> Quote the value; an unquoted 0644 is read as the decimal 420. SPEC section 10.1.3.
 
@@ -57,16 +62,21 @@ and the answer is usually smaller than expected.
 
 ### Undefined names are an error
 
-Salt renders `{{ pillar['missing'] }}` as an empty string, and the state
-built from it silently does the wrong thing — a `file.managed` with no
-contents, a `user.present` with no name. halite makes it an error naming
-the file, the line, and the identifier.
+Salt's default is strict too: `salt/utils/templates.py` builds its Jinja
+environment with `StrictUndefined` unless `allow_undefined: True` is set,
+in 3006.0, 3007.0 and 3008.0 alike (read from the source, not run). So a
+tree that renders under Salt's default renders here. What differs is the
+error: halite's names the file, the line, and the identifier.
 
-Migrating: run with `undefined: permissive` first, which restores Salt's
-behaviour and logs every resolution at warning level with its position.
-Fix what the log names, then turn it off. This is the setting most worth
-the trouble: the warnings are, almost every time, real defects that were
-never visible.
+The tree to watch is one that set `allow_undefined: True`. There
+`{{ pillar['missing'] }}` renders as an empty string, and the state
+built from it silently does the wrong thing — a `file.managed` with no
+contents, a `user.present` with no name.
+
+Migrating such a tree: start with `undefined: permissive`, which is the
+same behaviour and logs every resolution at warning level with its
+position. Fix what the log names, then turn it off. The warnings are,
+almost every time, real defects that were never visible.
 
 ### `cmd.run` can take an argument vector instead of a shell line
 
@@ -178,21 +188,24 @@ Two details worth knowing before you set it:
   between.
 - The account's primary group is never removed, whatever the list says.
 
-This is the one difference in this section that the Step 0 audit does not
-report, because a `user.present` with `groups:` is valid either way: it
-works, and it works differently. Grep your tree for it.
+A `user.present` with `groups:` is valid either way — it works, and it
+works differently — so the audit reports it rather than refusing it: every
+one that has `groups:` and does not state `remove_groups` is a `semantics`
+finding at review severity, with its file and line. A declaration that
+already states `remove_groups`, either way, is not reported.
 
 ## Encrypted pillar
 
 A `#!yaml|gpg` pillar file works. halite drives the system `gpg` binary,
 as Salt does, and links no OpenPGP library; the ciphertext goes to it on
 standard input and never on a command line. Salt's `gpg_keydir` is read
-as `gpg_home` through the compatibility shim, so an existing
-configuration needs no edit.
+as `gpg_home` through the compatibility shim, so the setting's name needs
+no edit — its value usually does, for the reason at the end of this
+section.
 
 ```yaml
-# /usr/local/etc/halite/node.yaml on a BSD, /etc/halite/node.yaml on Linux
-gpg_home: /usr/local/etc/salt/gpgkeys
+# hub.yaml with a hub; node.yaml only for a node applying with --local
+gpg_home: /usr/local/etc/halite/gpgkeys
 gpg_binary: gpg          # the default
 gpg_timeout: 30s         # per value
 ```
@@ -234,7 +247,7 @@ configuration file; a tree needs the same edits:
 | minion | node | <!-- lexicon:allow -->
 | `salt://` | works unchanged, and `halite://` is the same thing |
 | `__grains__`, `__pillar__` | bound, for compatibility |
-| `saltenv` | works, and `env` is the same thing |
+| `saltenv` | works in templates, `salt://` URLs and configuration, and `env` is the same thing; on the command line it is `--env`, and `saltenv=` is refused |
 | `saltversion` | reports the Salt compatibility level this build targets |
 
 ## What is not there
@@ -263,12 +276,12 @@ The larger absences today:
   The file server serves; pushing a file to a node is not built.
 - **Windows and macOS modules.** Phase 5, and the only platform work
   left. macOS is past cross-compilation: a CI leg drives its `mac_*`
-  modules as root on every change, six of them are `hardware`, and the
-  launchd service provider has been driven. Windows runs the suite
-  natively and four of its eighteen modules ship, with `pkg`, `service`
-  and the event log exercised by the unit suite rather than against a real
-  machine. DIVERGENCE 4 is the platform matrix and `sys.evidence` is the
-  per-module answer.
+  modules as root on every change, all seven of them are `hardware`, and
+  the launchd service provider has been driven. Windows runs the suite
+  natively and four of its eighteen modules ship, three of them
+  `hardware`; `win_service` reads the real service control manager but
+  nothing has watched it start or stop a service. DIVERGENCE 4 is the
+  platform matrix and `sys.evidence` is the per-module answer.
 - **`_modules/` and friends.** A formula carrying custom Python is not
   portable without conversion. `migrate --bridge-skeleton <dir>`
   generates a Go bridge for each one, with the signatures filled in from
@@ -281,30 +294,35 @@ The larger absences today:
 - **`publisher_acl` and friends.** halite has one authorization file
   with one grammar (SPEC 23.5), not five overlapping mechanisms. The
   shape is different enough that an existing Salt ACL is rewritten
-  rather than translated, and the audit does not attempt it. The
+  rather than translated, and nothing translates it: the audit reports
+  each ACL key it finds, and the configuration shim keeps them under
+  `legacy_acl`, which is never consulted, for you to read. The
   difference worth knowing before you start: `functions: ['*']` does
   not grant `cmd.run` here, and everybody's Salt ACL grants `.*`.
-- **`file.accumulated`**, and the backup Salt's `backup:` option keeps. <!-- lexicon:allow -->
+- **`file.accumulated`**. Salt's `backup:` option is there: `backup: node`
+  keeps timestamped copies in the cache, and `file.list_backups` and
+  `file.restore_backup` read them.
 
 ## What is better, and worth using
 
-- **`--test` is a contract**, enforced by a harness every state module
-  passes. Salt's `test=True` is unreliable for a fair number of modules
+- **`--test` is a contract**, held by a shared harness: 150 of the 152
+  state functions have a conformance case, 97 of those run only on a live
+  machine in the fleet legs, and the two without one are excused by name
+  rather than forgotten. Salt's `test=True` is unreliable for a fair number of modules
   and there is no way to tell which from the outside.
 - **Errors carry a position in the file you wrote**, not in the rendered
   output. Diagnosing a templated highstate in Salt is a well-known
   misery; fixing it was a goal of the design rather than a nicety.
 - **The compiler reports every error at once** rather than stopping at
   the first.
-- **`x509` needs nothing installed.** Salt's needs M2Crypto or
-  `cryptography` compiled against OpenSSL headers, which is the single
-  most common reason a Salt install fails. And `certificate_managed` here
+- **`x509` needs nothing installed.** Salt's legacy `x509` (Salt's
+  default before 3008) needs M2Crypto; 3008's default, `x509_v2`, needs
+  `cryptography`. And `certificate_managed` here
   converges: it re-issues only when the certificate is missing, no longer
   matches its key, was not signed by the configured CA, or has entered
   the renewal window. A wrong owner or group is corrected where it
   stands, because re-issuing gives a new serial and a new expiry and so
-  reports a change on every run for ever. Salt's re-issues on every
-  highstate.
+  reports a change on every run for ever.
 - **Templates are deterministically seeded**, so `random` and `shuffle`
   give the same answer in a `--test` run and the real run that follows,
   and on the run after that. Salt's do not, which produces phantom
@@ -328,9 +346,10 @@ the same directory Salt reads. A sensible order is:
 
 Step 3 is the one worth not skipping. It is, at estate scale, the
 differential test SPEC section 31 calls the primary correctness gate.
-A small version of it runs in this project's own test suite: nine trees
-compiled by both halite and Salt, with the low state and the pillar
-compared, against Salt 3006.25 and 3008.2. It found four defects on its
+A small version of it runs in this project's own test suite: ten trees
+compiled by both halite and Salt, with the low state, the pillar and
+(opt-in) each state's test-mode prediction compared, against Salt
+3006.25, 3007.1 and 3008.2. It found four defects on its
 first run. What it does not do is compare what actually *changes* when a
 tree is applied, and it does not run against a real estate's trees —
 yours. See [DIVERGENCE.md](DIVERGENCE.md) section 5.7 for exactly where
