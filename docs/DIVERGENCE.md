@@ -19193,8 +19193,7 @@ the helper to `log_fmt`, or to no file, fails them. **Not covered:**
 `token`, which the test runs); FreeBSD and Linux. **Found, not fixed:**
 the API has no secret redactor, so an LDAP bind password or OIDC client
 secret would print if it ever reached a log field -- its own change.
-
-### 5.202 `--file-root` and `--pillar-root` did not imply `--local` on an enrolled node
+### 5.206 `--file-root` and `--pillar-root` did not imply `--local` on an enrolled node
 
 `halite-node --help` and the manual page said `--file-root` and
 `--pillar-root` imply `--local`. On a node with a hub configured and a
@@ -19225,6 +19224,7 @@ that `connect` still makes its pillar probe. It failed before the fix,
 and fails again with either flag removed from the decision. **Not
 covered:** FreeBSD and Linux; a `connect` agent given `--pillar-root`
 against a hub that compiles no pillar.
+
 
 
 ## 6. Everything else not started
