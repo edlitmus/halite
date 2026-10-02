@@ -13,10 +13,12 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 // mode selects the misbehaviour.
@@ -36,7 +38,19 @@ const (
 	modeUnknownIsOK   = "unknown-is-ok"     // succeeds at a function it lacks
 	modePrintsToStdou = "prints-to-stdout"  // a print() into the protocol
 	modeStrictFields  = "strict-fields"     // refuses a hello field it does not know
+	modeSlowStart     = "slow-start"        // conforms, after a start slower than one exchange
+	modeBuffers       = "buffers"           // holds every frame until it exits
 )
+
+// slowStart is how long modeSlowStart takes before it reads anything.
+//
+// Longer than the two seconds the tests give one exchange, so that a
+// harness timing the first answer against the exchange timeout fails
+// it every time; much shorter than the start allowance, so that one
+// timing it against the allowance passes it every time. A load spike
+// does the same thing to a conforming extension, but only sometimes,
+// which is how this was found and why it is reproduced like this.
+const slowStart = 3 * time.Second
 
 // helloFields are the fields a hello is defined to carry. Used only by
 // modeStrictFields, to be wrong in the way SPEC 24.7 forbids.
@@ -53,8 +67,12 @@ var modes = map[string]bool{
 	modeNumericType: true, modeUnnamedSig: true, modeNoResult: true,
 	modeTwoResults: true, modeWrongID: true, modeAnyProtocol: true,
 	modeAnyKind: true, modeIgnoreShutdwn: true, modeUnknownIsOK: true,
-	modePrintsToStdou: true, modeStrictFields: true,
+	modePrintsToStdou: true, modeStrictFields: true, modeSlowStart: true,
+	modeBuffers: true,
 }
+
+// out is where frames go. Unbuffered, except in modeBuffers.
+var out io.Writer = os.Stdout
 
 func main() {
 	mode := os.Getenv("BADEXT_MODE")
@@ -63,31 +81,58 @@ func main() {
 		os.Exit(2)
 	}
 
+	if mode == modeSlowStart {
+		// What a loaded machine, a cold interpreter or a first-exec
+		// signature check does to a process before main() has done
+		// anything at all. The harness cannot see the difference, and
+		// is not meant to: it is meant to not blame the extension.
+		time.Sleep(slowStart)
+	}
+	if mode == modeBuffers {
+		// The writer a language with buffered stdout gives you by
+		// default: everything is held, and released only when the
+		// process ends. Flushed on every way out of main, because
+		// that is what a runtime does at exit -- and why the frames
+		// arrive, too late, once the host gives up and closes stdin.
+		buffered := bufio.NewWriterSize(os.Stdout, 1<<16)
+		out = buffered
+		defer buffered.Flush()
+	}
+
 	if mode == modePrintsToStdou {
 		// The single most common way to break this, and it breaks the
 		// stream before a frame is ever read.
 		fmt.Println("starting up")
 	}
 
-	hello, err := readFrame()
-	if err != nil {
+	if err := serve(mode); err != nil {
 		fmt.Fprintln(os.Stderr, "badext:", err)
+		if flusher, ok := out.(*bufio.Writer); ok {
+			_ = flusher.Flush()
+		}
 		os.Exit(1)
 	}
+}
+
+// serve is the session, returning rather than exiting so that the
+// buffered mode's deferred flush runs on every path that a real
+// runtime's exit would flush.
+func serve(mode string) error {
+	hello, err := readFrame()
+	if err != nil {
+		return err
+	}
 	if kind, _ := hello["kind"].(string); kind != "hello" {
-		fmt.Fprintln(os.Stderr, "badext: the host opened with", kind)
-		os.Exit(1)
+		return fmt.Errorf("the host opened with %s", kind)
 	}
 	if mode != modeAnyProtocol {
 		if protocol, _ := hello["protocol"].(float64); int(protocol) != 1 {
-			fmt.Fprintln(os.Stderr, "badext: this speaks protocol 1")
-			os.Exit(1)
+			return fmt.Errorf("this speaks protocol 1")
 		}
 	}
 	if mode != modeAnyKind {
 		if wanted, _ := hello["extension_kind"].(string); wanted != "" && wanted != "module" {
-			fmt.Fprintln(os.Stderr, "badext: this is a module extension")
-			os.Exit(1)
+			return fmt.Errorf("this is a module extension")
 		}
 	}
 	if mode == modeStrictFields {
@@ -96,8 +141,7 @@ func main() {
 		// an unknown field the basis of every additive change.
 		for field := range hello {
 			if !helloFields[field] {
-				fmt.Fprintf(os.Stderr, "badext: %q is not a field of hello\n", field)
-				os.Exit(1)
+				return fmt.Errorf("%q is not a field of hello", field)
 			}
 		}
 	}
@@ -107,7 +151,7 @@ func main() {
 	for {
 		frame, err := readFrame()
 		if err != nil {
-			return
+			return nil
 		}
 		kind, _ := frame["kind"].(string)
 		switch kind {
@@ -115,11 +159,11 @@ func main() {
 			if mode == modeIgnoreShutdwn {
 				continue
 			}
-			return
+			return nil
 		case "call":
 			answer(mode, frame)
 		default:
-			return
+			return nil
 		}
 	}
 }
@@ -208,9 +252,10 @@ func writeFrame(frame map[string]any) {
 		byte(len(body) >> 24), byte(len(body) >> 16),
 		byte(len(body) >> 8), byte(len(body)),
 	}
-	_, _ = os.Stdout.Write(header[:])
-	_, _ = os.Stdout.Write(body)
-	// os.Stdout is unbuffered in Go, so there is nothing to flush here.
-	// An implementation in a language whose stdout buffers must flush,
-	// and one that does not looks to the host exactly like a hang.
+	_, _ = out.Write(header[:])
+	_, _ = out.Write(body)
+	// os.Stdout is unbuffered in Go, so there is nothing to flush here
+	// -- except in modeBuffers, which is the point of modeBuffers. An
+	// implementation in a language whose stdout buffers must flush, and
+	// one that does not looks to the host exactly like a hang.
 }

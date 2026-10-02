@@ -39,30 +39,39 @@ func verifyExtension(args *cli.Args) int {
 		return 2
 	}
 
-	// Not `run`'s default. Every exchange here is one round trip
-	// against a process that has already started, and there are a dozen
-	// of them: at 60s each a run against an extension that hangs takes
-	// a quarter of an hour, which is a harness nobody uses.
-	timeout := extconform.DefaultTimeout
-	if raw := args.Flag("timeout", ""); raw != "" {
-		parsed, parseErr := time.ParseDuration(raw)
-		if parseErr != nil || parsed <= 0 {
-			fmt.Fprintf(os.Stderr, "halite-hub extensions verify: --timeout %q is not a duration\n", raw)
-			return 2
-		}
-		timeout = parsed
+	// Not `run`'s default. Every exchange after the handshake is one
+	// round trip against a process that has already answered, and there
+	// are a dozen of them: at 60s each a run against an extension that
+	// hangs takes a quarter of an hour, which is a harness nobody uses.
+	//
+	// The handshake is the exception, and has its own allowance: its
+	// wait includes starting the process, which on a loaded machine is
+	// not the extension's doing. See extconform.DefaultStartTimeout.
+	timeout, ok := verifyDuration("timeout", args.Flag("timeout", ""), extconform.DefaultTimeout)
+	if !ok {
+		return 2
 	}
-	// The whole run is several sessions, each bounded by the timeout.
-	ctx, cancel := context.WithTimeout(context.Background(), timeout*8+time.Minute)
+	startTimeout, ok := verifyDuration("start-timeout", args.Flag("start-timeout", ""),
+		extconform.DefaultStartTimeout)
+	if !ok {
+		return 2
+	}
+	opts := extconform.Options{
+		Path:         path,
+		Kind:         args.Flag("kind", ""),
+		Function:     args.Flag("function", ""),
+		Kwargs:       kwargs,
+		Timeout:      timeout,
+		StartTimeout: startTimeout,
+	}
+	// The whole run is several sessions. A context shorter than the
+	// harness's own worst case kills the extension mid-rule, and that
+	// rule then reports an exit the extension never made -- so it is
+	// sized from the same arithmetic rather than a second guess at it.
+	ctx, cancel := context.WithTimeout(context.Background(), opts.Budget())
 	defer cancel()
 
-	results, err := extconform.Run(ctx, extconform.Options{
-		Path:     path,
-		Kind:     args.Flag("kind", ""),
-		Function: args.Flag("function", ""),
-		Kwargs:   kwargs,
-		Timeout:  timeout,
-	})
+	results, err := extconform.Run(ctx, opts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions verify: %v\n", err)
 		return 1
@@ -78,6 +87,23 @@ func verifyExtension(args *cli.Args) int {
 		return 1
 	}
 	return 0
+}
+
+// verifyDuration reads one positive duration flag, reporting a bad one.
+//
+// It takes the value rather than the flag's name so that each
+// args.Flag call stays spelt out at its call site, which is where
+// TestEveryFlagIsDocumentedAndParsed looks for it.
+func verifyDuration(name, raw string, fallback time.Duration) (time.Duration, bool) {
+	if raw == "" {
+		return fallback, true
+	}
+	parsed, err := time.ParseDuration(raw)
+	if err != nil || parsed <= 0 {
+		fmt.Fprintf(os.Stderr, "halite-hub extensions verify: --%s %q is not a duration\n", name, raw)
+		return 0, false
+	}
+	return parsed, true
 }
 
 // printConformance reports a run the way `doctor` reports one.

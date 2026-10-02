@@ -450,8 +450,9 @@ the rule is there.
         this, and the host refuses the whole signature: the extension then
         reports no functions at all, which is several steps from the cause.
   fail  call/answers-with-one-result         a call is answered with exactly one result
-        calling go(): nothing arrived within the timeout. A writer that
-        buffers until exit looks exactly like this: flush after every frame.
+        calling go(): nothing arrived within the 10s timeout. It answered
+        the handshake, so it was running: the handler never answered, or its
+        answer is held in a buffer -- flush after every frame.
   skip  call/the-result-carries-the-call-id  the result carries the id of the call
         no result arrived
 
@@ -474,6 +475,27 @@ your extension.
 **It checks the protocol and nothing else.** A conforming extension can
 still be entirely wrong about its own job. This is the part that can be
 checked without knowing what the extension is for.
+
+There are two timeouts, because there are two kinds of wait. `--timeout`
+(10s) bounds one exchange with a process that has already answered.
+`--start-timeout` (30s, never less than `--timeout`) bounds the first
+answer of each session, whose wait includes starting the process — the
+loader, a runtime or an interpreter coming up, and on macOS the first-exec
+check of a freshly built binary — none of which is the extension's
+doing, and all of which a loaded machine stretches. When that first
+answer does not come, `verify` closes the extension's stdin and looks at
+what is left in the pipe before it says why. If the hello is still
+there, the process never got as far as reading it: it was still
+starting. If the hello was read and the answer turns up only once stdin
+closes, the extension is holding its output until exit, and the report
+says to flush:
+
+```
+  fail  handshake/answers                              it answers hello with hello_ok
+        it read the hello but sent nothing within the 30s start allowance;
+        its answer arrived only once its stdin was closed, which is a writer
+        that buffers until exit: flush after every frame
+```
 
 The two pillar extensions in this repository pass all fourteen, and
 `internal/extconform` asserts it — an example that has quietly stopped
