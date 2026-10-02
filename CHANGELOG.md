@@ -32,6 +32,15 @@ source set to `ext_pillar_fail: ignore`. It now counts the failure in
 serves the rest of the pillar, and a hard one is the hub's ordinary
 refusal.
 
+### Node certificates renew themselves
+
+A running `halite-node connect` now renews its certificate at half its
+life, with a new key and no operator, as SPEC 7.4 has always said and
+the documentation claimed. Before this nothing renewed one: every node
+would have stopped authenticating 90 days after it enrolled unless
+somebody ran `halite-node renew`. `renew` still works by hand, and now
+keeps the node's key algorithm instead of defaulting to P-256.
+
 ### macOS means Apple silicon
 
 Intel Macs are not supported: SPEC 27.1's tier 2 now reads "macOS 14

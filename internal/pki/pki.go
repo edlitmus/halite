@@ -82,6 +82,22 @@ func ParseKeyAlgorithm(s string) (KeyAlgorithm, error) {
 		s, ECDSAP256, ECDSAP384)
 }
 
+// AlgorithmOf names the algorithm of a key this package generated, so
+// that a key can be replaced by one of the same kind. A renewal that
+// took the default instead would turn a node enrolled on P-384 into a
+// P-256 one the first time it renewed, which nobody asked for.
+func AlgorithmOf(key crypto.Signer) (KeyAlgorithm, error) {
+	if k, ok := key.Public().(*ecdsa.PublicKey); ok {
+		switch k.Curve {
+		case elliptic.P256():
+			return ECDSAP256, nil
+		case elliptic.P384():
+			return ECDSAP384, nil
+		}
+	}
+	return "", fmt.Errorf("a %T key is not one this build issues; try %s or %s", key.Public(), ECDSAP256, ECDSAP384)
+}
+
 // GenerateKey makes a private key of the named algorithm.
 func GenerateKey(alg KeyAlgorithm) (crypto.Signer, error) {
 	switch alg {
