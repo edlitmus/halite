@@ -1082,10 +1082,17 @@ Create the account, then let the build do the rest:
 pw useradd halite -c "halite service account" -d /nonexistent -s /usr/sbin/nologin
 # Linux
 useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin halite
+# macOS: a UID below 500 that `dscl . -list /Users UniqueID` does not list
+sysadminctl -addUser halite -UID <uid> -shell /usr/bin/false -home /var/empty
 
 make build
 sudo make install
 ```
+
+The macOS line follows `sysadminctl`'s own usage text and has not been
+run here, because it needs root. On a Mac `make install` installs no
+service files at all — there is no launchd job yet — and prints how to
+run each program instead; see [Getting started](getting-started.md#installing).
 
 `make install` does not build, so the build never runs as root and
 leaves no root-owned binaries in `bin/`. It creates every directory

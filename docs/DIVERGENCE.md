@@ -19262,6 +19262,40 @@ twenty runs, so it rests on reasoning; a real hub's once-a-minute settle
 loop and a real Prometheus. A matched node that is not connected under
 offline skip stays on the gauge for the job's whole TTL, which with the
 default fifteen minutes can briefly trip the alert's `for: 15m`.
+### 5.208 `make install` on macOS installed systemd units
+
+`make install` on macOS ran the Linux branch. The install recipes picked
+the platform with a shell `case` whose `*)` arm meant "systemd", and
+Darwin fell into it: a Mac install printed "installing for Darwin" and
+then installed systemd units into `/etc/systemd/system`, told the
+operator to run `systemctl daemon-reload`, offered `useradd --shell
+/usr/sbin/nologin`, and checked `/etc/systemd/system` for writability --
+on a system with no systemd, no `useradd`, no `/usr/sbin/nologin`, and no
+`/etc/systemd` for that directory to sit in.
+
+Nothing caught it because the dry run could not show it. With the
+branch chosen in the shell, `make -n install` prints every arm on every
+platform, so a Mac that installs systemd units and one that does not
+read the same. **The branch is now chosen by make** (`INSTALL_KIND`, with
+per-kind recipe variables), so the dry run prints only what a platform
+will run, and `TestInstallOnDarwinInstallsNoSystemdUnits` reads it for
+Darwin, FreeBSD and Linux; against the old Makefile it failed on all
+three, and it failed again with Darwin's branch removed or the BSDs sent
+to systemd.
+
+macOS now gets binaries, manual pages and directories, no service files,
+a message that no launchd job is shipped with the command lines to run
+each program, and a `sysadminctl` hint for the account. No plist was
+written: one can be shown to work only by loading it into launchd as
+root, and an unloaded plist would be an undemonstrated claim. The
+FreeBSD and Linux dry runs are textually the old arms.
+
+**Not run:** a real install on any platform -- everything is `-n`; the
+`sysadminctl` line itself; the branch chosen by `uname -s` on real
+FreeBSD and Linux (the override was exercised, with the same `case`
+pattern `CONFDIR` already uses); GNU make 4 with the computed variable
+names. The test skips without a BSD make and should run on the FreeBSD
+leg, which has not been seen.
 
 
 
