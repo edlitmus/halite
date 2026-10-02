@@ -19072,6 +19072,50 @@ ownership, or that `/etc/halite/pki` exists when `ReadWritePaths=`
 requires it to. A hub and a node on one host share `/var/lib/halite` and
 `/var/cache/halite` by default, the node writing as root and the hub's
 unit handing those directories to `halite`; that was not looked into.
+### 5.203 `extbundle` filed every executable under the platform it was run on
+
+`tools/extbundle` wrote the manifest's `executables` key from
+`runtime.GOOS` and `runtime.GOARCH` -- the machine running extbundle, not
+the binary being bundled. The two agree only when the author bundles on
+the target platform, and not doing that is what cross-compiling is for.
+On darwin/arm64, a linux/amd64 build and a freebsd/arm64 build were both
+filed as `darwin/arm64`: a host of the real platform refuses the bundle
+("carries no executable for linux/amd64; it has darwin/arm64"), and a Mac
+that matches the label fails to start it with `exec format error`.
+`docs/extensions.md` recorded the workaround instead of the fix.
+
+**The platform comes from the file now.** The architecture from the
+ELF, Mach-O or PE header. The operating system from Go's build
+information (GOOS and GOARCH, still present under `-ldflags=-s -w`) and
+from the header where it can say -- Mach-O is darwin, PE is windows, ELF
+OSABI 9 is freebsd -- and when both answer they must agree.
+
+The ELF case needed measuring rather than assuming. go1.27.1 writes
+OSABI 9 for every freebsd build tried (amd64, arm64, riscv64) and 0 for
+linux (amd64, arm64, 386, arm, riscv64) -- and 0 for illumos/amd64 too.
+So 0 does not mean Linux, and nothing here says it does: a non-Go ELF
+without OSABI 9 is refused until the author names its platform. FreeBSD
+ABI notes are not read, for want of a binary to test a reader against.
+
+`-platform goos/goarch` names the platform and is checked against the
+file rather than believed; a disagreement is refused and nothing is
+written. A script has no header and needs the flag. The check runs
+before the signing key is generated, so a refused run leaves no new key
+and no manifest. A side effect: the manifest's check that a windows
+executable ends in `.exe`, which only ever ran for whoever bundled on
+Windows, now runs for every windows bundle.
+
+`TestBundlesUnderTheBinarysPlatform` builds the real extbundle and runs
+it on real cross-compiled binaries for six platforms; it failed on the
+linux and freebsd cases before the fix. Ignoring the build information,
+treating OSABI 0 as linux, and dropping OSABI 9 as freebsd each failed a
+test of its own.
+
+**Not run:** loading such a bundle on a real Linux or FreeBSD host. The
+"non-Go ELF" tests are Go binaries with their build-information marker
+overwritten, not C binaries; the universal Mach-O refusal and several
+PE and ELF machine mappings have no test.
+
 
 
 ## 6. Everything else not started
