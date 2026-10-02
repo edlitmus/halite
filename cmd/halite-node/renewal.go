@@ -105,7 +105,7 @@ func renewalCheckEvery(cert *x509.Certificate) time.Duration {
 // own documentation all said renewal was automatic, and the only caller
 // of the renewal was `halite-node renew`, which nothing ran -- so every
 // node would have stopped authenticating 90 days after it enrolled
-// (DIVERGENCE 5.194).
+// (DIVERGENCE 5.195).
 //
 // It runs for as long as `connect` does. It checks at once, then on
 // renewalCheckEvery. A failure is logged and tried again at the next

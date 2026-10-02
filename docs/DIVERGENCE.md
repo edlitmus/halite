@@ -18686,9 +18686,7 @@ version and the same `zh:` hashes and adds fourteen `h1:` package
 hashes for that machine; it was not committed. The first `tofu init` on
 another platform may add its own, which is tofu recording what it
 verified, not a change of provider.
-
-
-### 5.194 Nothing renewed a node's certificate
+### 5.195 Nothing renewed a node's certificate
 
 SPEC 7.4: "A node renews at 50% of lifetime … renewal needs no operator
 action and no token." The setting's own documentation said "Renewal is
@@ -18751,6 +18749,8 @@ failure; and the hub side of a short lifetime, which also governs the
 hub's own serving certificate -- the run above reused a hub certificate
 issued at the default and changed the setting afterwards. The kept
 `node.key.<time>` files are not pruned, one per renewal.
+
+
 
 
 ## 6. Everything else not started
