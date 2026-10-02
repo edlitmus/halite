@@ -367,6 +367,14 @@ func (s *Server) kill(w http.ResponseWriter, r *http.Request, principal string) 
 		transport.WriteError(w, http.StatusInternalServerError, transport.CodeInternal, err)
 		return
 	}
+	// A killed job owes nothing, including from a node that was already
+	// running it and may yet answer: the operator has decided it is
+	// over, and an alert that kept firing for it would be telling them
+	// about a decision they made. Not an expiry either, although the
+	// record now carries a past one; Settle skips an aborted job, so
+	// this is the only place it is closed. A second kill finds it
+	// closed and moves nothing.
+	s.countJobEnded(id)
 	for _, node := range j.Delivered {
 		if s.fleet().Send(node, transport.Message{
 			T: transport.MsgKill, JID: string(id), Reason: "cancelled by " + principal,

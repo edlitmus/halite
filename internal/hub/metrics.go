@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/edlitmus/halite/internal/job"
@@ -95,12 +96,18 @@ func (s *Server) setupMetrics() {
 			"Time from dispatch to a node's return.", nil, "fun"),
 		jobReturns: r.Counter("halite_job_returns_total",
 			"Returns filed, by whether the node reported success.", "result"),
+		// Counted where Settle closes a job whose window passed with a
+		// node still unheard from -- never delivered, or delivered and
+		// silent -- once per job. Not a kill, which is an operator's
+		// decision rather than a window closing, and not a batch
+		// stopped at its safe limit.
 		jobsExpired: r.Counter("halite_jobs_expired_total",
-			"Jobs that reached their time to live before being delivered."),
-		// A gauge moved on dispatch and on return, rather than a scan
-		// of the job cache at scrape time: a metrics endpoint that
-		// reads every job record is a second load on a hub that is
-		// already the one under investigation.
+			"Jobs that reached their time to live with a node that had not answered."),
+		// A gauge moved on dispatch, on return and when a job ends,
+		// rather than a scan of the job cache at scrape time: a metrics
+		// endpoint that reads every job record is a second load on a
+		// hub that is already the one under investigation. What keeps
+		// the three moves honest is owedReturns.
 		jobsOutstanding: r.Gauge("halite_jobs_missing_returns",
 			"Nodes a dispatched job has not yet heard from."),
 
@@ -430,10 +437,143 @@ func (s *Server) countBeaconDrops(beacon string, data map[string]any) {
 // The outstanding gauge counts nodes rather than jobs, because the
 // question it answers is "how many machines have not answered", which
 // is the one an operator asks during a partial outage.
-func (s *Server) countDispatch(j *job.Job, matched int) {
+//
+// It must run before the first delivery, not after it. The gauge is now
+// lowered only for a node the job is recorded as owing, so a node quick
+// enough to answer between the send and this call would find nothing to
+// answer against, and its count would be added afterwards and stay
+// until the job expired. The old order got away with it only because an
+// unguarded decrement went briefly negative and was put right.
+func (s *Server) countDispatch(j *job.Job, nodes []string) {
 	m := s.m()
 	m.jobsDispatched.With(j.Fun).Inc()
-	m.jobsOutstanding.Add(float64(matched))
+	m.jobsOutstanding.Add(float64(s.owed.owe(j.JID, j.Expires, nodes)))
+}
+
+// countJobEnded takes a finished job's unanswered nodes off the gauge.
+//
+// Every way a job's life ends short of every return calls this: Settle
+// when its window passes, `jobs kill`, and a batch stopped at its safe
+// limit. Before it existed only a return lowered the gauge, so each of
+// those left its count behind until the hub restarted, and the
+// documented `HaliteJobsUnanswered` alert fired for ever after the first
+// one -- an alert that is always firing is one nobody reads.
+//
+// It reports how many were still owed and whether this process had the
+// job on its books at all, so Settle can count an expiry exactly once.
+// Calling it twice for one job is harmless: the second finds nothing.
+func (s *Server) countJobEnded(id job.ID) (int, bool) {
+	owed, tracked := s.owed.close(id)
+	if owed > 0 {
+		s.m().jobsOutstanding.Add(-float64(owed))
+	}
+	return owed, tracked
+}
+
+// owedReturns is, for each job this process dispatched and has not
+// closed, the nodes it is still waiting on.
+//
+// The gauge used to be a bare number: plus the matched count on
+// dispatch, minus one for every fresh return. A bare number cannot be
+// lowered correctly when a job ends, because "how many of this job's
+// nodes are still unanswered" is not something it remembers, and it
+// cannot refuse a decrement it never made the increment for. Three
+// wrong numbers followed from that, all measured:
+//
+//   - a job that expired, was killed or stopped at its safe limit kept
+//     its unanswered nodes on the gauge until the hub restarted;
+//   - a node that answered after its job had been closed would have
+//     been subtracted a second time, once any closing existed;
+//   - a return for a job dispatched before a restart was subtracted
+//     from a gauge that had never had it added, and the hub read -1.
+//
+// So each node is owed at most once and forgiven at most once, under
+// one lock, and the gauge moves by exactly what this set changes by. It
+// is in memory, like the gauge it backs: a hub that restarts owes
+// nothing for jobs it did not dispatch, which is what the gauge has
+// always said after a restart, and now its returns agree. A resumed
+// batch puts its unanswered nodes back -- see Resume.
+//
+// The memory is one entry per job in flight. Entries leave when the
+// last node answers or the job is closed, and Settle sweeps any whose
+// window has passed even when the job is too old for its listing.
+type owedReturns struct {
+	mu   sync.Mutex
+	jobs map[job.ID]*owedJob
+}
+
+type owedJob struct {
+	expires time.Time
+	nodes   map[string]bool
+}
+
+// owe records that a job is waiting on nodes, and reports how many of
+// them were not already owed, which is what the gauge rises by.
+func (o *owedReturns) owe(id job.ID, expires time.Time, nodes []string) int {
+	if len(nodes) == 0 {
+		return 0
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.jobs == nil {
+		o.jobs = map[job.ID]*owedJob{}
+	}
+	entry := o.jobs[id]
+	if entry == nil {
+		entry = &owedJob{expires: expires, nodes: map[string]bool{}}
+		o.jobs[id] = entry
+	}
+	added := 0
+	for _, node := range nodes {
+		if !entry.nodes[node] {
+			entry.nodes[node] = true
+			added++
+		}
+	}
+	return added
+}
+
+// answered forgives one node, and reports whether it was owed: a
+// second chunk, a retried return, a node the job never matched, or a
+// job already closed are all no.
+func (o *owedReturns) answered(id job.ID, node string) bool {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	entry := o.jobs[id]
+	if entry == nil || !entry.nodes[node] {
+		return false
+	}
+	delete(entry.nodes, node)
+	if len(entry.nodes) == 0 {
+		delete(o.jobs, id)
+	}
+	return true
+}
+
+// close forgets a job, reporting how many nodes it still owed and
+// whether it was here at all.
+func (o *owedReturns) close(id job.ID) (int, bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	entry := o.jobs[id]
+	if entry == nil {
+		return 0, false
+	}
+	delete(o.jobs, id)
+	return len(entry.nodes), true
+}
+
+// expired lists the jobs whose window has passed by now.
+func (o *owedReturns) expired(now time.Time) []job.ID {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	var out []job.ID
+	for id, entry := range o.jobs {
+		if !entry.expires.IsZero() && now.After(entry.expires) {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // countReturn records a return arriving, and the states inside it.
@@ -448,7 +588,13 @@ func (s *Server) countReturn(ret *job.Return) {
 		result = "succeeded"
 	}
 	m.jobReturns.With(result).Inc()
-	m.jobsOutstanding.Add(-1)
+	// Only for a node the job was still waiting on. A fresh return is
+	// fresh per file, not per node, and the job may be one this process
+	// never counted or has already closed; subtracting for any of those
+	// is how the gauge went below zero. See owedReturns.
+	if s.owed.answered(ret.JID, ret.NodeID) {
+		m.jobsOutstanding.Add(-1)
+	}
 	if ret.DurationMS > 0 {
 		took := time.Duration(ret.DurationMS) * time.Millisecond
 		observeSeconds(m.jobDuration.With(ret.Fun), took)

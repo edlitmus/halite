@@ -76,8 +76,10 @@ Common flags:
   --local              work from local roots rather than through a hub
   --config <path>      configuration file, default <root>/node.yaml
   --root <dir>         configuration root, default ` + config.DefaultRoot + `
-  --file-root <dir>    a state root, repeatable; implies --local
-  --pillar-root <dir>  a pillar root, repeatable; implies --local
+  --file-root <dir>    a state root, repeatable; implies --local, except
+                       on connect, where it is the fallback tree
+  --pillar-root <dir>  a pillar root, repeatable; implies --local, except
+                       on connect, where it is the fallback pillar
   --env <name>         environment, default base
   --pillarenv <name>   pillar environment, defaulting to --env
   --id <node-id>       override the node identity
@@ -852,28 +854,16 @@ func checkEnvPermitted(cfg *config.Config, env string) error {
 		env, strings.Join(allow, ", "))
 }
 
-// buildLogger reads SPEC section 26.1's settings. They were declared,
-// documented, and consulted by nothing, so every diagnostic went to
-// stderr at whatever level it happened to be and `log_level: error` on
-// an unattended node changed nothing.
+// buildLogger reads SPEC section 26.1's settings through hlog.FromConfig,
+// which all three services share. They were once declared, documented,
+// and consulted by nothing, so every diagnostic went to stderr at
+// whatever level it happened to be and `log_level: error` on an
+// unattended node changed nothing.
 func buildLogger(args *cli.Args, cfg *config.Config, secrets *redact.Set) (*hlog.Logger, error) {
-	levelName := args.Flag("log-level", cfg.String("log_level", "info"))
-	level, ok := hlog.ParseLevel(levelName)
-	if !ok {
-		return nil, fmt.Errorf("log_level %q is not a level; try error, warn, info, debug, or trace", levelName)
-	}
-	formatName := args.Flag("log-fmt", cfg.String("log_format", "json"))
-	format, ok := hlog.ParseFormat(formatName)
-	if !ok {
-		return nil, fmt.Errorf("log_format %q is not a format; try json or console", formatName)
-	}
-	return hlog.New(hlog.Options{
-		Level:   level,
-		Format:  format,
-		File:    cfg.String("log_file", ""),
-		Fields:  map[string]any{"component": "node"},
-		Secrets: secrets,
-	})
+	return hlog.FromConfig(cfg, hlog.Overrides{
+		Level:  args.Flag("log-level", ""),
+		Format: args.Flag("log-fmt", ""),
+	}, "node", secrets)
 }
 
 // seedConfiguredSecrets records the values of the settings whose names

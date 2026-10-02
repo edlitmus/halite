@@ -142,16 +142,15 @@ func setup(args *cli.Args) *service {
 		fmt.Fprintln(os.Stderr, w)
 	}
 
-	level, ok := hlog.ParseLevel(args.Flag("log-level", cfg.String("log_level", "info")))
-	if !ok {
-		cli.Fatalf("--log-level %q is not a level; try error, warn, info, debug, or trace",
-			args.Flag("log-level", ""))
-	}
-	format := hlog.Console
-	if args.Flag("log-fmt", cfg.String("log_fmt", "json")) == "json" {
-		format = hlog.JSON
-	}
-	logger, err := hlog.New(hlog.Options{Level: level, Format: format})
+	// The same function the hub and the node build theirs with. This
+	// one used to be its own copy, reading `log_fmt` -- not a setting --
+	// and opening no file, so `log_format` and `log_file` in api.yaml
+	// did nothing. No redactor is passed: this service has never had a
+	// value set to seed one from, and adding one is its own change.
+	logger, err := hlog.FromConfig(cfg, hlog.Overrides{
+		Level:  args.Flag("log-level", ""),
+		Format: args.Flag("log-fmt", ""),
+	}, "api", nil)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
