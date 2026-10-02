@@ -21,12 +21,21 @@ RestartSec=5s
 User=halite
 Group=halite
 DynamicUser=no
-# /var/lib/halite and /var/log/halite, which are what the hub uses by
-# default on Linux, so hub.yaml needs to name neither. No
-# RuntimeDirectory: `socket_dir` is read by nothing today, so it would
-# create a directory that stays empty.
+# /var/lib/halite, /var/cache/halite and /var/log/halite, which are what
+# the hub uses by default on Linux, so hub.yaml needs to name none of
+# them. No RuntimeDirectory: `socket_dir` is read by nothing today, so it
+# would create a directory that stays empty.
 StateDirectory=halite
 StateDirectoryMode=0700
+# `cache_dir`. `serve` creates <cache dir>/nodes and probe-writes it
+# before it will start, so without this the unit described a hub that
+# exited at startup: ProtectSystem=strict leaves /var/cache read-only
+# even when `make install` has already created the directory. 0700, as
+# `make install` and OpenNodeCache both make it. Systemd may empty a
+# cache directory (`systemctl clean --what=cache`); the hub rebuilds the
+# node data as nodes reconnect, and gitfs and s3fs fetch again.
+CacheDirectory=halite
+CacheDirectoryMode=0700
 LogsDirectory=halite
 ProtectSystem=strict
 # The enrollment CA and the hub's serving certificate live in the

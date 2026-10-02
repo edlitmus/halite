@@ -19033,6 +19033,89 @@ override's value -- the test node answers by function name and the
 assertion is on the digest and the dispatches; and a hub on FreeBSD or
 Linux.
 
+### 5.202 The hub's systemd unit could not write its own cache directory
+
+The hub's unit runs with `ProtectSystem=strict` and made writable
+`/etc/halite/pki`, its `StateDirectory=halite` and its
+`LogsDirectory=halite`. The hub's default `cache_dir` on Linux is
+`/var/cache/halite`, and `serve` creates `<cache dir>/nodes` and
+probe-writes it before it will start. So the stock unit on default paths
+described a hub that exits at startup -- even after `make install` had
+created the directory, because strict mounts `/var/cache` read-only
+whatever is there.
+
+It was found by the documentation sweep reading the unit beside
+`internal/config/paths.go`, and `docs/operations.md` had already recorded
+it, after the sweep, as a known gap with "a fix … pending". Writing a
+defect down is not fixing it. It is the usual pair: the defaults in
+`internal/config` say where each program writes, the sandbox in each
+unit says where it may, and nothing compared them.
+
+**The fix** is `CacheDirectory=halite` with `CacheDirectoryMode=0700`,
+the mode `make install` and `OpenNodeCache` already use.
+`TestUnitsMakeWritableEveryDirectoryTheirBinaryWrites` parses every unit
+and checks each layout directory its binary names against what
+`ProtectSystem=` leaves writable, with the paths taken from the key
+table resolved for Linux rather than a hand list. It failed on `main`
+naming `/var/cache/halite`, passed with the fix, and failed again with
+the line removed; it checks ten binary-and-path pairs across four units.
+
+It records two exceptions. The API only reads `pki_dir`. And the API's
+`state_dir` comes from `contrib/examples/api.yaml`, because on the
+built-in default `/var/lib/halite` the API cannot write its token store
+under its unit, which makes `StateDirectory=halite-api` -- an open gap,
+not a design choice, and left for its own change.
+
+**Not demonstrated:** none of this has been run under systemd. The test
+reads the unit against systemd.exec(5) as written; it does not check
+ownership, or that `/etc/halite/pki` exists when `ReadWritePaths=`
+requires it to. A hub and a node on one host share `/var/lib/halite` and
+`/var/cache/halite` by default, the node writing as root and the hub's
+unit handing those directories to `halite`; that was not looked into.
+### 5.203 `extbundle` filed every executable under the platform it was run on
+
+`tools/extbundle` wrote the manifest's `executables` key from
+`runtime.GOOS` and `runtime.GOARCH` -- the machine running extbundle, not
+the binary being bundled. The two agree only when the author bundles on
+the target platform, and not doing that is what cross-compiling is for.
+On darwin/arm64, a linux/amd64 build and a freebsd/arm64 build were both
+filed as `darwin/arm64`: a host of the real platform refuses the bundle
+("carries no executable for linux/amd64; it has darwin/arm64"), and a Mac
+that matches the label fails to start it with `exec format error`.
+`docs/extensions.md` recorded the workaround instead of the fix.
+
+**The platform comes from the file now.** The architecture from the
+ELF, Mach-O or PE header. The operating system from Go's build
+information (GOOS and GOARCH, still present under `-ldflags=-s -w`) and
+from the header where it can say -- Mach-O is darwin, PE is windows, ELF
+OSABI 9 is freebsd -- and when both answer they must agree.
+
+The ELF case needed measuring rather than assuming. go1.27.1 writes
+OSABI 9 for every freebsd build tried (amd64, arm64, riscv64) and 0 for
+linux (amd64, arm64, 386, arm, riscv64) -- and 0 for illumos/amd64 too.
+So 0 does not mean Linux, and nothing here says it does: a non-Go ELF
+without OSABI 9 is refused until the author names its platform. FreeBSD
+ABI notes are not read, for want of a binary to test a reader against.
+
+`-platform goos/goarch` names the platform and is checked against the
+file rather than believed; a disagreement is refused and nothing is
+written. A script has no header and needs the flag. The check runs
+before the signing key is generated, so a refused run leaves no new key
+and no manifest. A side effect: the manifest's check that a windows
+executable ends in `.exe`, which only ever ran for whoever bundled on
+Windows, now runs for every windows bundle.
+
+`TestBundlesUnderTheBinarysPlatform` builds the real extbundle and runs
+it on real cross-compiled binaries for six platforms; it failed on the
+linux and freebsd cases before the fix. Ignoring the build information,
+treating OSABI 0 as linux, and dropping OSABI 9 as freebsd each failed a
+test of its own.
+
+**Not run:** loading such a bundle on a real Linux or FreeBSD host. The
+"non-Go ELF" tests are Go binaries with their build-information marker
+overwritten, not C binaries; the universal Mach-O refusal and several
+PE and ELF machine mappings have no test.
+
 ### 5.202 Pillar targeting matched an empty pillar: `-I` nothing, `not I@` everything
 
 On the hub, `-I`, `-J`, and `I@`/`J@` inside `-C` were accepted and
