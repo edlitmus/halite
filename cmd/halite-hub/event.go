@@ -27,9 +27,17 @@ event flags:
 `
 
 func runEvent(args *cli.Args) int {
-	if len(args.Positional) == 0 || args.Positional[0] == "help" {
+	// Asked for, help is an answer and exits 0, as `keys help` and
+	// `jobs help` do. Bare, it is a command line with no command in it,
+	// which is a usage error: cli.ExitUsage, not the 2 this used to exit
+	// for both, which a state run means as "converged".
+	if len(args.Positional) == 0 {
+		fmt.Fprint(os.Stderr, eventUsage)
+		return cli.ExitUsage
+	}
+	if args.Positional[0] == "help" {
 		fmt.Print(eventUsage)
-		return 2
+		return 0
 	}
 	switch args.Positional[0] {
 	case "tags":
@@ -78,5 +86,5 @@ func runEvent(args *cli.Args) int {
 		return 0
 	}
 	fmt.Fprintf(os.Stderr, "halite-hub event: unknown subcommand %q\n\n%s", args.Positional[0], eventUsage)
-	return 2
+	return cli.ExitUsage
 }

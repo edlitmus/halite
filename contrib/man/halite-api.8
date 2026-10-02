@@ -91,7 +91,18 @@ Configuration elsewhere.
 The operator certificate and key this service presents to the hub.
 .El
 .Sh EXIT STATUS
-.Ex -std
+.Nm
+exits 0 on success and 1 when a command fails.
+A command line it does not understand, with no subcommand or an unknown
+one, exits 64
+.Pq Dv EX_USAGE ,
+and so do
+.Cm token
+and
+.Cm account
+given no subcommand or an unknown one.
+.Cm doctor
+exits non-zero only when a check fails, not when one warns.
 .Sh EXAMPLES
 Produce a password hash for the local account file:
 .Pp

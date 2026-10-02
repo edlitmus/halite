@@ -73,7 +73,7 @@ doctor flags:
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
-		os.Exit(2)
+		os.Exit(cli.ExitUsage)
 	}
 	args, err := cli.Parse(os.Args[2:])
 	if err != nil {
@@ -106,6 +106,6 @@ func main() {
 			"`halite-hub policy test` read the same file this service does.")
 	default:
 		fmt.Fprintf(os.Stderr, "halite-api: unknown subcommand %q\n\n%s", os.Args[1], usage)
-		os.Exit(2)
+		os.Exit(cli.ExitUsage)
 	}
 }

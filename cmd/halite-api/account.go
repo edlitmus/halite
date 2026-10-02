@@ -15,8 +15,14 @@ import (
 
 // runAccount is `halite-api account <hash|list>`.
 func runAccount(args *cli.Args) int {
+	// Usage errors print and return cli.ExitUsage rather than going
+	// through cli.Fatalf, which exits 1: the `return 2` that used to
+	// follow the Fatalf below never ran, so a typo here reported a
+	// failure while the code claimed 2. Neither is right for a command
+	// line that was not understood.
 	if len(args.Positional) == 0 {
-		cli.Fatalf("account needs a subcommand; there are hash and list")
+		fmt.Fprintln(os.Stderr, "halite-api account needs a subcommand; there are hash and list")
+		return cli.ExitUsage
 	}
 	switch args.Positional[0] {
 	case "hash":
@@ -24,8 +30,8 @@ func runAccount(args *cli.Args) int {
 	case "list":
 		return accountList(args)
 	}
-	cli.Fatalf("account has no subcommand %q; there are hash and list", args.Positional[0])
-	return 2
+	fmt.Fprintf(os.Stderr, "halite-api account has no subcommand %q; there are hash and list\n", args.Positional[0])
+	return cli.ExitUsage
 }
 
 // accountHash produces the verifier to paste into the account file.

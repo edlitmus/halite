@@ -32,12 +32,12 @@ func runExtensionDirectly(args *cli.Args) int {
 	// Positional: `run <path> [function]`.
 	if len(args.Positional) < 2 {
 		fmt.Fprint(os.Stderr, extensionsUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	path, err := resolveExtensionPath(args.Positional[1])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions run: %v\n", err)
-		return 2
+		return cli.ExitUsage
 	}
 	function := ""
 	if len(args.Positional) > 2 {
@@ -67,7 +67,7 @@ func runExtensionDirectly(args *cli.Args) int {
 		sandbox, err := bridge.From(granted, args.Flag("user", ""), args.Flag("group", ""))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "halite-hub extensions run: %v\n", err)
-			return 2
+			return cli.ExitUsage
 		}
 		opts.Sandbox = sandbox
 	}
@@ -106,12 +106,12 @@ func runExtensionDirectly(args *cli.Args) int {
 	kwargs, decodeErr := decodeRunJSON(args.Flag("kwargs", ""))
 	if decodeErr != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions run: --kwargs: %v\n", decodeErr)
-		return 2
+		return cli.ExitUsage
 	}
 	callArgs, decodeErr := decodeRunJSON(args.Flag("args", ""))
 	if decodeErr != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions run: --args: %v\n", decodeErr)
-		return 2
+		return cli.ExitUsage
 	}
 
 	if !quiet {

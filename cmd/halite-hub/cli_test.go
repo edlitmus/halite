@@ -61,7 +61,9 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 	if got := run(t, "version"); got.code != 0 || !strings.HasPrefix(got.stdout, "halite-hub ") {
 		t.Errorf("version = %+v", got)
 	}
-	if got := run(t, "nosuchthing"); got.code != 2 || !strings.Contains(got.stderr, "unknown subcommand") {
+	// The exit status of a typo is TestUnknownSubcommandIsUsageNotSuccess's
+	// business; this one holds the message.
+	if got := run(t, "nosuchthing"); got.code == 0 || !strings.Contains(got.stderr, "unknown subcommand") {
 		t.Errorf("unknown subcommand = %+v", got)
 	}
 	// The subcommands named in the usage but not built must say so,
@@ -82,13 +84,74 @@ func TestVersionAndUnknownSubcommand(t *testing.T) {
 	}
 
 	// `runner` and `orch` are built. Bare, each describes itself and
-	// exits non-zero, because a call with no function or subcommand is
-	// a mistake, not a request for nothing.
-	if got := run(t, "runner"); got.code != 2 || !strings.Contains(got.stderr, "module.function") {
+	// exits cli.ExitUsage, because a call with no function or subcommand
+	// is a mistake, not a request for nothing. This wanted 2, which is
+	// what a usage error conventionally exits and what a state run means
+	// by "converged" (DIVERGENCE 5.198).
+	if got := run(t, "runner"); got.code != cli.ExitUsage || !strings.Contains(got.stderr, "module.function") {
 		t.Errorf("runner = %+v", got)
 	}
-	if got := run(t, "orch"); got.code != 2 || !strings.Contains(got.stderr, "orch run") {
+	if got := run(t, "orch"); got.code != cli.ExitUsage || !strings.Contains(got.stderr, "orch run") {
 		t.Errorf("orch = %+v", got)
+	}
+}
+
+// TestUnknownSubcommandIsUsageNotSuccess is cmd/halite-node's test of
+// the same name, for this binary and for each of its dispatchers that a
+// test can reach. They all exited 2, which a state run means as
+// "converged"; halite-node moved to cli.ExitUsage in DIVERGENCE 5.198 and
+// this program kept 2 until its sites were read one by one.
+//
+// Every row is one that needs no configuration and no key material.
+// `keys <typo>`, `keys token <typo>` and `jobs <typo>` open the hub
+// before they look at the subcommand, so on a machine with no hub they
+// report the missing hub and exit 1, and they are not rows.
+func TestUnknownSubcommandIsUsageNotSuccess(t *testing.T) {
+	for _, argv := range [][]string{
+		{},
+		{"nosuchthing"},
+		{"event"},
+		{"event", "nosuchthing"},
+		{"extensions"},
+		{"extensions", "run"},
+		{"extensions", "verify"},
+		{"extensions", "run", "/nonexistent/extension"},
+		{"extensions", "verify", "/nonexistent/extension"},
+		{"extensions", "verify", "/bin/sh", "--timeout", "soon"},
+		{"keys"},
+		{"keys", "token"},
+		{"keys", "operator"},
+		{"keys", "signer"},
+		{"orch"},
+		{"orch", "nosuchthing"},
+		{"jobs"},
+		{"policy"},
+		{"ssh"},
+		{"ssh", "onlyatarget"},
+		{"runner"},
+	} {
+		got := run(t, argv...)
+		if got.code != cli.ExitUsage {
+			t.Errorf("%q: exit = %d, want %d (stderr %q)", argv, got.code, cli.ExitUsage, got.stderr)
+		}
+		if got.stderr == "" {
+			t.Errorf("%q: said nothing on stderr", argv)
+		}
+		if got.stdout != "" {
+			t.Errorf("%q: wrote %q to stdout, which a pipeline would take for data", argv, got.stdout)
+		}
+	}
+
+	// Asked for, help is an answer. `event help` and `policy help` exited
+	// 2 along with the bare command; they exit 0 now, as `keys help` and
+	// `jobs help` already did.
+	for _, argv := range [][]string{
+		{"help"}, {"event", "help"}, {"policy", "help"}, {"keys", "help"},
+		{"jobs", "help"}, {"extensions", "help"},
+	} {
+		if got := run(t, argv...); got.code != 0 || got.stdout == "" {
+			t.Errorf("%q = %+v", argv, got)
+		}
 	}
 }
 

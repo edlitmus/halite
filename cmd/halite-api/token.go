@@ -15,8 +15,22 @@ import (
 // runToken is `halite-api token <list|show|revoke|prune>`: what an
 // operator uses to see who holds authority and to take it away.
 func runToken(args *cli.Args) int {
+	// Judged before setup opens anything. The unknown-subcommand case
+	// used to be a cli.Fatalf at the end of the switch, after the token
+	// store had been opened: a typo exited 1, and on a host with no state
+	// directory it reported the state directory instead of the typo. The
+	// `return 2` after that Fatalf never ran. A command line that was not
+	// understood is cli.ExitUsage, whatever the host has on it.
 	if len(args.Positional) == 0 {
-		cli.Fatalf("token needs a subcommand; there are list, show, revoke, and prune")
+		fmt.Fprintln(os.Stderr, "halite-api token needs a subcommand; there are list, show, revoke, and prune")
+		return cli.ExitUsage
+	}
+	switch args.Positional[0] {
+	case "list", "show", "revoke", "prune":
+	default:
+		fmt.Fprintf(os.Stderr, "halite-api token has no subcommand %q; there are list, show, revoke, and prune\n",
+			args.Positional[0])
+		return cli.ExitUsage
 	}
 	s := setup(args)
 	tokens, err := apitoken.Open(
@@ -45,9 +59,11 @@ func runToken(args *cli.Args) int {
 		fmt.Printf("pruned %d expired token(s) older than %s\n", n, keep)
 		return 0
 	}
-	cli.Fatalf("token has no subcommand %q; there are list, show, revoke, and prune",
-		args.Positional[0])
-	return 2
+	// Unreachable: the subcommand was checked against this same list
+	// before setup. Reached only if a name is added to that list without
+	// a case here, which should fail loudly rather than exit 0.
+	fmt.Fprintf(os.Stderr, "halite-api token has no subcommand %q\n", args.Positional[0])
+	return cli.ExitUsage
 }
 
 func tokenList(args *cli.Args, tokens *apitoken.Store) int {
