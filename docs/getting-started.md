@@ -68,22 +68,28 @@ if what is in `bin/` is older than the source.
 It puts the binaries, the service files, and the directories in place
 for the platform it is run on:
 
-| | FreeBSD and the other BSDs | Linux |
-|---|---|---|
-| binaries | `/usr/local/bin` | `/usr/local/bin` |
-| configuration | `/usr/local/etc/halite` | `/etc/halite` |
-| durable state | `/var/db/halite` | `/var/lib/halite` |
-| service files | `/usr/local/etc/rc.d` | `/etc/systemd/system` |
+| | FreeBSD and the other BSDs | Linux | macOS |
+|---|---|---|---|
+| binaries | `/usr/local/bin` | `/usr/local/bin` | `/usr/local/bin` |
+| configuration | `/usr/local/etc/halite` | `/etc/halite` | `/etc/halite` |
+| durable state | `/var/db/halite` | `/var/lib/halite` | `/var/lib/halite` |
+| service files | `/usr/local/etc/rc.d` | `/etc/systemd/system` | none |
 
-The binaries go to the same place on both because that is the path
+The binaries go to the same place on all three because that is the path
 written into the rc.d scripts and the systemd units. The manual pages go
-to `/usr/local/share/man/man8` on both.
+to `/usr/local/share/man/man8` on all three.
 
-macOS has no column of its own: the target takes the Linux branch there,
-so it installs systemd units into `/etc/systemd/system`, which do nothing
-on a Mac, and suggests `useradd`, which macOS does not have. There are no
-launchd files yet. On a Mac, install the binaries by hand, or point
-`SERVICEDIR` somewhere harmless.
+On macOS the target installs the binaries, the manual pages and the
+directories, and **no service files**: macOS runs services under launchd,
+and halite ships no launchd job yet, because one can only be shown to
+work by loading it as root and nobody has. The target says so, and
+prints the command line to run each program in the foreground, or under
+a launchd job of your own. `SERVICEDIR` is ignored there. If the account
+is missing it names `sysadminctl -addUser` with a UID below 500 and
+`/usr/bin/false` as the shell, since macOS has neither `useradd` nor
+`/usr/sbin/nologin`; `dscl . -list /Users UniqueID` shows the UIDs
+already taken. That command has not been run by anyone here, as it needs
+root.
 
 It writes **no configuration** — a target that overwrote `hub.yaml`
 would be one nobody could run twice — and starts nothing. Copy an
@@ -116,7 +122,8 @@ make install BINDIR=/tmp/stage/bin CONFDIR=/tmp/stage/etc/halite \
 On a Mac, run that with `bmake` or `gmake`, not `make`.
 
 `make install-service` reinstalls only the rc.d scripts or the systemd
-units, which is what to run after pulling a fix to them.
+units, which is what to run after pulling a fix to them; on a Mac it
+installs nothing and says so.
 `make install-fips` adds the `-fips` artifacts of SPEC 27.4 beside the
 ordinary ones; it does not install the systemd drop-ins, because those
 change what a unit runs.
