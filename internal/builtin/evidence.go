@@ -229,7 +229,7 @@ var moduleEvidence = map[string]exec.Evidence{
 		"37062195477 it added a job for a throwaway account and converged, the system's own `crontab -u " +
 		"<account> -l` showed it, root's crontab was byte-for-byte unchanged, `absent` removed it, and a " +
 		"`present` for an account that does not exist failed without touching root's (DIVERGENCE " +
-		"5.204). The module writes only through crontab(1); the spool files it left were root's 0600 on " +
+		"5.211). The module writes only through crontab(1); the spool files it left were root's 0600 on " +
 		"FreeBSD and macOS and the account's 0600 on Linux, as each crontab(1) makes them. Not covered: " +
 		"whether the daemon fires a job installed this way"},
 	"ssh_auth": {Level: exec.Hardware, Note: "`TestLiveSSHFilesForAnotherAccount` ran as root on " +
