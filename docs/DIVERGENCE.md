@@ -18657,8 +18657,7 @@ CHANGELOG.md was left saying what was true when it was written.
 tag or a dispatch, and a dispatch writes a permanent Sigstore entry,
 which is not a thing to spend on a count. `make dist` is the same build
 the workflow runs, so the number is the one it will see.
-
-### 5.193 The root `.gitignore` unpinned the lab's tofu provider
+### 5.194 The root `.gitignore` unpinned the lab's tofu provider
 
 `contrib/tofu/.terraform.lock.hcl` pins the vultr provider -- version
 2.32.0 and its hashes -- to the build the lab was actually run against,
@@ -18687,6 +18686,7 @@ version and the same `zh:` hashes and adds fourteen `h1:` package
 hashes for that machine; it was not committed. The first `tofu init` on
 another platform may add its own, which is tofu recording what it
 verified, not a change of provider.
+
 
 
 ## 6. Everything else not started
