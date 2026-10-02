@@ -218,7 +218,7 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 				return nil, err
 			}
 		}
-		s.countDispatch(j, len(matched))
+		s.countDispatch(j, matched)
 		s.info("job dispatched in batches",
 			"jid", string(j.JID), "fun", j.Fun, "target", j.Target,
 			"matched", len(matched), "batch", j.Batch.Size, "submitter", j.Submitter)
@@ -240,8 +240,9 @@ func (s *Server) Dispatch(sub Submission) (*job.Job, error) {
 		}
 	}
 
+	// Counted before the sends, not after: see countDispatch.
+	s.countDispatch(j, matched)
 	delivered := s.deliver(j, msg, matched)
-	s.countDispatch(j, len(matched))
 	s.info("job dispatched",
 		"jid", string(j.JID), "fun", j.Fun, "target", j.Target,
 		"matched", len(matched), "delivered", delivered, "submitter", j.Submitter)

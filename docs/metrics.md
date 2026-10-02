@@ -583,8 +583,8 @@ themselves, under whatever you call that job.
 | `halite_jobs_dispatched_total` | counter | `fun` | Jobs sent, by function. |
 | `halite_job_returns_total` | counter | `result` | Returns filed, by outcome. |
 | `halite_job_duration_seconds` | histogram | `fun` | How long jobs take, dispatch to return. |
-| `halite_jobs_missing_returns` | gauge | — | Nodes a dispatched job has not heard from. It rises on dispatch and only a return lowers it: a job that expires, is killed, or stops at its batch safe limit leaves its count behind until the hub restarts. |
-| `halite_jobs_expired_total` | counter | — | Declared and never incremented in this build: it reads 0 on every hub, whatever has expired. Do not alert on it. |
+| `halite_jobs_missing_returns` | gauge | — | Nodes a dispatched job has not heard from, summed over the jobs still open. It rises on dispatch and falls when a node it was waiting on answers, and when the job ends without every answer: the hub's once-a-minute settling closes a job whose time to live has passed, and `jobs kill` and a batch stopped at its safe limit close theirs at once. A node that answers after its job was closed is recorded and moves nothing. A matched node that is not connected counts until the job expires. Held in memory: after a restart it counts only jobs this process dispatched or resumed, and returns for older jobs move nothing. |
+| `halite_jobs_expired_total` | counter | — | Jobs whose time to live passed with a node that had not answered, never delivered or delivered and silent. Counted once per job when the hub settles it, which is up to a minute after the expiry. A killed job and a batch stopped at its safe limit are not counted. |
 | `halite_state_states_total` | counter | `result` | Individual states applied, by outcome. |
 | `halite_state_changes_total` | counter | — | States that changed something rather than converging. |
 | `halite_state_run_duration_seconds` | histogram | — | Time a node spent on a state run end to end, out of its return. Compiling the tree is inside it. |
@@ -909,10 +909,13 @@ groups:
         annotations:
           summary: "The API cannot reach the hub's exposition"
 
-      # Jobs dispatched that nobody answered. Only a return lowers the
-      # gauge, so after one job expires or is killed unanswered this
-      # stays firing until the hub restarts; read `jobs active` and
-      # `jobs missing` before acting on it.
+      # Jobs dispatched that a node has not answered for fifteen
+      # minutes. A job leaves the gauge when it ends -- answered,
+      # expired, killed, or stopped at its safe limit -- so this clears
+      # by itself once the job is over. A job with a long --ttl, or a
+      # queued one waiting an hour for an absent node, holds it up for
+      # as long as it waits; read `jobs active` and `jobs missing`
+      # before acting on it.
       - alert: HaliteJobsUnanswered
         expr: halite_jobs_missing_returns > 0
         for: 15m
