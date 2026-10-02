@@ -288,15 +288,19 @@ the fingerprint. That directory has to be writable by the account the
 hub runs as; the systemd unit grants exactly it with `ReadWritePaths`
 and nothing else under `/etc`.
 
-**The hub's unit has no `CacheDirectory=`.** It runs with
-`ProtectSystem=strict`, which leaves writable only `/etc/halite/pki`
-and the `StateDirectory=` and `LogsDirectory=` it names, and the hub's
-default `cache_dir` on Linux is `/var/cache/halite`. `serve` refuses to
-start when it cannot write `<cache dir>/nodes`, so a Linux hub on
-default paths under that unit needs `/var/cache/halite` created and
-owned by the hub's account, and made writable to the unit — a drop-in
-with `CacheDirectory=halite` does both. That is from reading the unit;
-it has not been run under systemd. A fix to the unit is pending.
+The hub's unit runs with `ProtectSystem=strict`, so it can write only
+`/etc/halite/pki` (named in `ReadWritePaths=`) and the directories that
+`StateDirectory=halite`, `CacheDirectory=halite` and
+`LogsDirectory=halite` create: `/var/lib/halite`, `/var/cache/halite`
+and `/var/log/halite`. These are the hub's default `state_dir`,
+`cache_dir` and log directory on Linux, so `hub.yaml` does not need to
+name them. If you move one of them in `hub.yaml`, you must make the new
+path writable with a drop-in, because `serve` stops at startup when it
+cannot write `<state dir>` or `<cache dir>/nodes`. Earlier units did not
+have `CacheDirectory=`, so a hub on default paths stopped at startup. A
+test (`TestUnitsMakeWritableEveryDirectoryTheirBinaryWrites`) now
+compares each unit with the defaults of its program. That is a check
+of the unit file only; the unit has not been run under systemd.
 
 `halite-node connect` reconnects on its own with backoff, so an
 unreachable hub is not a unit failure. It exits 1 for the two things a
@@ -1100,14 +1104,16 @@ install -d -o halite -g halite -m 0700 /var/cache/halite
 install -d -o halite -g halite -m 0750 /var/log/halite
 ```
 
-On Linux the state directory is `/var/lib/halite`, and the systemd units
-create the state and log directories themselves with `StateDirectory=`
-and `LogsDirectory=`, and the right owner. They create no cache
-directory: no unit has `CacheDirectory=`, and the hub's runs with
-`ProtectSystem=strict`, so `/var/cache/halite` is read-only to it even
-once it exists — see [The daemons](#the-daemons). So `pki_dir` and the
-hub's cache need doing there; read from the unit, not yet run under
-systemd.
+On Linux the state directory is `/var/lib/halite`. The hub's systemd
+unit creates the state, cache and log directories itself, with the
+right owner, through `StateDirectory=`, `CacheDirectory=` and
+`LogsDirectory=`; the API's unit creates `/var/lib/halite-api` the same
+way. No unit creates `pki_dir`, so that one directory still needs doing
+by hand or by `make install`: the hub's unit names it in
+`ReadWritePaths=`, and systemd.exec(5) says such an entry must exist
+unless it has a `-` prefix. See [The daemons](#the-daemons).
+This is from the unit files and a test that reads them; the units have
+not been run under systemd.
 
 ### Checking it
 

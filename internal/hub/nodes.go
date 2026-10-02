@@ -165,6 +165,12 @@ func (c *NodeCache) Delete(nodeID string) error {
 // or a list target needs nothing else, and refusing to consider it
 // would mean a freshly enrolled node silently missing from every job
 // until it happened to connect.
+//
+// The Pillar it returns is always empty: the cache holds grains, and a
+// node's pillar exists only when the hub compiles it. A caller that has
+// to honour `-I` or `-J` installs a loader, as Server.resolve does
+// through targetPillar; one that does not gets a pillar target that
+// matches nothing and a `not I@...` that matches everything.
 func (c *NodeCache) Matchable(nodeID string) (target.Node, error) {
 	n := target.Node{ID: nodeID, Grains: value.NewMap(0), Pillar: value.NewMap(0)}
 	data, err := c.Get(nodeID)
