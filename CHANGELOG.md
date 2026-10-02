@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### migrate no longer claims to translate Salt ACLs
+
+`halite-hub migrate` and the configuration start-up warning no longer say
+Salt ACL keys are translated into RBAC rules. Nothing translates them:
+they are kept under `legacy_acl`, which is never consulted, and the
+messages now say so and tell you to write `policy` by hand.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not
