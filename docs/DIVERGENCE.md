@@ -19033,6 +19033,38 @@ override's value -- the test node answers by function name and the
 assertion is on the digest and the dispatches; and a hub on FreeBSD or
 Linux.
 
+### 5.202 `--file-root` and `--pillar-root` did not imply `--local` on an enrolled node
+
+`halite-node --help` and the manual page said `--file-root` and
+`--pillar-root` imply `--local`. On a node with a hub configured and a
+certificate they did not: `useHubIfConfigured` looked at `--local` alone,
+so the local roots were built from the flags and the hub's tree and
+pillar were put in front of them before anything read them. Measured
+against a real hub on 127.0.0.1 with an enrolled node: `pillar items
+--pillar-root <dir>` printed the hub's pillar, and `state show_sls x
+--file-root <dir>` said `x` was not found. Nothing on screen said the
+flag had been ignored. Every CLI test runs a node with no hub, which is
+local whatever the flags say, so nothing compared the help text with the
+code.
+
+**The fix:** either flag makes a `state`, `pillar` or `call` invocation
+entirely local, tree and pillar both, and the hub is not contacted.
+Making only the named half local was rejected: a local tree rendered
+against the hub's pillar matches neither place, and nothing would say
+so. **`connect` is the exception, and says so.** On the agent a root flag
+has always named the roots to fall back on when the hub serves none;
+implying `--local` would make an agent whose unit file carries the flag
+local on its next restart without anything failing, and refusing would
+leave a node nobody manages. It warns at startup and stays on the hub.
+
+`TestRootFlagsImplyLocalOnAnEnrolledNode` runs the real binary against an
+in-process TLS hub built from the transport's own server configuration
+and records every request; it asserts the root-flag cases make none and
+that `connect` still makes its pillar probe. It failed before the fix,
+and fails again with either flag removed from the decision. **Not
+covered:** FreeBSD and Linux; a `connect` agent given `--pillar-root`
+against a hub that compiles no pillar.
+
 
 ## 6. Everything else not started
 
