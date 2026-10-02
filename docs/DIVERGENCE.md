@@ -18616,6 +18616,48 @@ path is the same Go and nothing about it is platform-specific -- the
 `test (…)` legs run these tests there, which is the evidence, not this
 paragraph.
 
+### 5.193 Intel Macs are not supported, and `darwin/amd64` is out of the build
+
+Decided 2026-10-01. 5.188 recorded the decision and that SPEC 27.1's
+macOS row and the Makefile's `darwin/amd64` target did not yet say so;
+this is the change that makes them.
+
+**Why.** Every Mac this project has run on is Apple silicon: the
+development Mac (macOS 26.7.1, arm64), and the hosted `macos-15` runner
+behind `test (macos-15)`, `race (macos-15)` and the `macos` leg of
+`fleet.yml`. Nothing here has ever run a darwin/amd64 binary. Tier 2
+promises "built and unit-tested", and for Intel only the first half was
+ever kept: it was cross-compiled and published, and no test ran on it.
+Publishing it was publishing a claim, which the release gate's own
+reasoning says is worse than not publishing.
+
+**What changed, and the three places that must agree:**
+
+- **SPEC 27.1** tier 2 reads "macOS 14 and later on Apple silicon".
+- **`internal/buildpolicy`'s tier table** names `darwin/arm64` alone for
+  that row. It fails when the Makefile builds a platform SPEC puts in
+  no tier: with `darwin/amd64` put back in the Makefile and nowhere
+  else, `TestEveryPlatformTheSpecTiersIsBuilt` failed with "the Makefile
+  builds darwin/amd64 and SPEC 27.1 puts it in no tier".
+- **The Makefile's `TIER12_TARGETS`** drops `darwin/amd64`.
+
+**One of the counts was functional, not prose.** `release.yml` refuses
+a release whose manifest lists fewer than `expected` artifacts, by
+`-lt`, and `expected` was 68 -- seventeen targets times three binaries,
+plus one archive each. Left alone, the first release after this change
+would have failed on a correct build. It is 64 now, and that was
+measured rather than multiplied: `make dist` on this branch produced 48
+binaries and 16 archives, 64 lines in `dist/SHA256SUMS`, whose only
+darwin entries are arm64. The counts in its comments, the release notes
+text, the Makefile's `dist` and manifest comments, and plan.md's
+present-tense descriptions moved with it; dated history in plan.md and
+CHANGELOG.md was left saying what was true when it was written.
+
+**Not covered:** the `release.yml` change has not run -- it runs on a
+tag or a dispatch, and a dispatch writes a permanent Sigstore entry,
+which is not a thing to spend on a count. `make dist` is the same build
+the workflow runs, so the number is the one it will see.
+
 ### 5.193 The root `.gitignore` unpinned the lab's tofu provider
 
 `contrib/tofu/.terraform.lock.hcl` pins the vultr provider -- version
