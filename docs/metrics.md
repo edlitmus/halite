@@ -592,7 +592,7 @@ themselves, under whatever you call that job.
 | `halite_orch_runs_total` | counter | `result` | Orchestrations, by `complete`, `failed`, or `compile_failed`. |
 | `halite_pillar_compile_duration_seconds` | histogram | — | Time to compile one node's pillar. |
 | `halite_pillar_failures_total` | counter | — | Compilations that failed, so a node got no pillar. |
-| `halite_pillar_ext_failures_total` | counter | `source` | Meant to count external pillar sources that failed, ignored failures included. **In this build it never counts:** with metrics on, an external pillar failure panics the pillar request in the attempt, so the request fails and the node gets no pillar — even for a source whose failure was to be ignored. A fix is pending. |
+| `halite_pillar_ext_failures_total` | counter | `source` | External pillar sources that failed, by the name the configuration gave them, counted whether the failure stopped the compilation or was ignored: an ignored one is still a node whose pillar is missing what that source held. Before DIVERGENCE 5.196 a failure with metrics on panicked the pillar request instead of counting, and the node got no pillar at all. |
 | `halite_fileserver_requests_total` | counter | `backend` `code` | Tree fetches. |
 | `halite_fileserver_bytes_total` | counter | — | Bytes served. |
 | `halite_events_published_total` | counter | `tag_prefix` | Events reaching the bus. |
