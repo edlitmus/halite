@@ -33,7 +33,7 @@ func (f failingSource) Pillar(context.Context, pillar.ExtRequest) (*value.Map, e
 // the pillar request instead of counting it: the node got no pillar
 // even from a source configured `ext_pillar_fail: ignore`, whose whole
 // purpose is that it does. Nothing had exercised a failing source on a
-// hub with metrics (DIVERGENCE 5.195).
+// hub with metrics (DIVERGENCE 5.196).
 func TestAFailedExternalPillarSourceIsCountedAndNotAPanic(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

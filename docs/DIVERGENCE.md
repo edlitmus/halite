@@ -18758,10 +18758,7 @@ failure; and the hub side of a short lifetime, which also governs the
 hub's own serving certificate -- the run above reused a hub certificate
 issued at the default and changed the setting afterwards. The kept
 `node.key.<time>` files are not pruned, one per renewal.
-
-
-
-### 5.195 A failed external pillar source panicked the hub's pillar request
+### 5.196 A failed external pillar source panicked the hub's pillar request
 
 The hub counts every external pillar source that fails, ignored
 failures included, in `halite_pillar_ext_failures_total{source}`. The
@@ -18805,6 +18802,9 @@ nothing.
 **Not covered:** a real external source (only an always-failing test
 double ran), and a hub on FreeBSD or Linux -- the lab hub ran on
 macOS.
+
+
+
 
 
 ## 6. Everything else not started

@@ -21,7 +21,7 @@ import (
 // failed external pillar source was called `.With("source", name)` on a
 // one-label family for as long as it existed, and every external-pillar
 // failure on a hub with metrics on panicked the pillar request
-// (DIVERGENCE 5.195). Nothing failed until a source did.
+// (DIVERGENCE 5.196). Nothing failed until a source did.
 //
 // So the count is read here, statically, for every call in the tree: a
 // family declared as `field: r.Counter(name, help, labels...)` or

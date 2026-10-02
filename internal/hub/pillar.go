@@ -140,7 +140,7 @@ func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.C
 	// values, and the metrics package panics on a wrong count by design,
 	// so every external-pillar failure on a hub with metrics on panicked
 	// the request: the node got no pillar at all, even from a source
-	// configured to be ignored when it fails. DIVERGENCE 5.195.
+	// configured to be ignored when it fails. DIVERGENCE 5.196.
 	for _, name := range out.ExtFailed {
 		s.m().pillarExtFail.With(name).Inc()
 	}
