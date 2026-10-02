@@ -37,6 +37,14 @@ type OrchRun struct {
 	// carrying a predicted step forward into a real run tells the steps
 	// after it that something was done which was not. DIVERGENCE 5.197.
 	Test bool `json:"test,omitempty"`
+	// PillarDigest identifies the pillar override the run compiled
+	// with, so a resume can be held to the same one: "none" for a run
+	// with no override, the SHA-256 of its canonical JSON otherwise, and
+	// empty only in a record written before this field existed. A digest
+	// rather than the override, because an override can carry what pillar
+	// carries, and this record is what `orch show` reads -- which never
+	// prints this field. DIVERGENCE 5.201.
+	PillarDigest string `json:"pillar_digest,omitempty"`
 
 	Started    time.Time   `json:"started"`
 	DurationMS int64       `json:"duration_ms"`

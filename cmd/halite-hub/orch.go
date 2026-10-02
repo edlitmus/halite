@@ -95,6 +95,15 @@ func orchResume(args *cli.Args) int {
 	if args.Bool("test", false) {
 		kwargs["test"] = true
 	}
+	// The override the run was started with; the hub refuses a resume
+	// whose override differs from it (DIVERGENCE 5.201).
+	if raw := args.Flag("pillar", ""); raw != "" {
+		decoded, err := value.DecodeJSON([]byte(raw))
+		if err != nil {
+			cli.Fatalf("--pillar %q is not JSON: %v", raw, err)
+		}
+		kwargs["pillar"] = decoded
+	}
 	return orchCall(args, "state.orch_resume", args.Positional[1:2], kwargs)
 }
 
