@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/exec"
+	"github.com/edlitmus/halite/internal/signature"
 )
 
 // rootMutatingModules is every module in the registry with at least one
@@ -18,21 +19,21 @@ import (
 func rootMutatingModules(t *testing.T) []string {
 	t.Helper()
 	r := New()
-	sigs := r.Exec.Signatures()
 	found := map[string]bool{}
-	for _, name := range sigs.Names() {
-		sig, ok := sigs.Lookup(name)
-		if !ok || !sig.Mutates {
-			continue
-		}
-		for _, p := range sig.Privileges {
-			// "root", "the target account, or root", "root, or a
-			// delegated zfs permission" — all of them can be root.
-			if strings.Contains(p, "root") {
-				module, _, _ := strings.Cut(name, ".")
-				found[module] = true
-				break
+	// Execution and state signatures both, and the gate's own predicate
+	// rather than a substring search: this read the execution registry
+	// alone and looked for "root" in the prose, the two things the gate
+	// itself had to stop doing (DIVERGENCE 5.140, 5.200), so a state that
+	// changes the machine with no execution function behind it -- `host`,
+	// `ssh_auth` -- was outside the guard written to catch it.
+	for _, sigs := range []*signature.Registry{r.Exec.Signatures(), r.States.Signatures()} {
+		for _, name := range sigs.Names() {
+			sig, ok := sigs.Lookup(name)
+			if !ok || !sig.Mutates || !sig.NeedsPrivilege() {
+				continue
 			}
+			module, _, _ := strings.Cut(name, ".")
+			found[module] = true
 		}
 	}
 	out := make([]string, 0, len(found))
@@ -72,11 +73,13 @@ func TestEveryRootMutatingModuleDeclaresItsEvidence(t *testing.T) {
 // vouching for the old name while the new one is undeclared.
 func TestEveryDeclarationNamesAModuleThatExists(t *testing.T) {
 	r := New()
-	sigs := r.Exec.Signatures()
 	known := map[string]bool{}
-	for _, name := range sigs.Names() {
-		module, _, _ := strings.Cut(name, ".")
-		known[module] = true
+	// A state module is a module too: `host` has no execution functions.
+	for _, sigs := range []*signature.Registry{r.Exec.Signatures(), r.States.Signatures()} {
+		for _, name := range sigs.Names() {
+			module, _, _ := strings.Cut(name, ".")
+			known[module] = true
+		}
 	}
 	for module := range moduleEvidence {
 		if !known[module] {
@@ -148,10 +151,15 @@ func TestTheRegistryCarriesTheDeclarations(t *testing.T) {
 // naming the machine: the note is the part a person can go and check.
 func TestUndemonstratedListsExactlyWhatIsUndemonstrated(t *testing.T) {
 	r := New()
-	sigs := r.Exec.Signatures()
+	// What an operator is told is Trust(): `doctor`'s module verification
+	// and `sys.evidence` both read it. This compared against the
+	// execution registry's own list, which nothing outside this test
+	// calls and which cannot see a state module (DIVERGENCE 5.200).
 	got := map[string]bool{}
-	for _, m := range r.Exec.UndemonstratedModules() {
-		got[m] = true
+	for _, m := range r.Trust() {
+		if !m.Demonstrated {
+			got[m.Module] = true
+		}
 	}
 	for _, module := range rootMutatingModules(t) {
 		undemonstrated := !moduleEvidence[module].Demonstrated()
@@ -164,15 +172,17 @@ func TestUndemonstratedListsExactlyWhatIsUndemonstrated(t *testing.T) {
 	// A module that only reads has nothing to warn about, and warning
 	// about it is how the list stops being read.
 	mutates := map[string]bool{}
-	for _, name := range sigs.Names() {
-		if sig, ok := sigs.Lookup(name); ok && sig.Mutates {
-			module, _, _ := strings.Cut(name, ".")
-			mutates[module] = true
+	for _, sigs := range []*signature.Registry{r.Exec.Signatures(), r.States.Signatures()} {
+		for _, name := range sigs.Names() {
+			if sig, ok := sigs.Lookup(name); ok && sig.Mutates {
+				module, _, _ := strings.Cut(name, ".")
+				mutates[module] = true
+			}
 		}
 	}
 	for module := range got {
 		if !mutates[module] {
-			t.Errorf("UndemonstratedModules lists %q, which changes nothing", module)
+			t.Errorf("Trust lists %q as undemonstrated, and it changes nothing", module)
 		}
 	}
 }

@@ -95,6 +95,14 @@ const (
 	// privileged for the release gate, because a node runs as root and
 	// therefore so does whatever it is handed.
 	PrivCaller = "whatever the command needs"
+	// PrivTargetAccount is a function that writes into an account's own
+	// files -- its crontab, its authorized_keys, its known_hosts -- and
+	// so needs nothing for the caller's account and root for any other.
+	// A node runs as root, so in practice it is root.
+	PrivTargetAccount = "the target account, or root"
+	// PrivZFSDelegation is root, or the `zfs allow` delegation that lets
+	// an ordinary account create and destroy a dataset.
+	PrivZFSDelegation = "root, or a delegated zfs permission"
 )
 
 // NeedsPrivilege reports whether a function changes a machine with
@@ -107,7 +115,7 @@ const (
 func (s Signature) NeedsPrivilege() bool {
 	for _, p := range s.Privileges {
 		switch p {
-		case PrivRoot, PrivRootForOthers, PrivCaller:
+		case PrivRoot, PrivRootForOthers, PrivCaller, PrivTargetAccount, PrivZFSDelegation:
 			return true
 		}
 	}

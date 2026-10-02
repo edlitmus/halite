@@ -18930,6 +18930,74 @@ sees the tag and gets the bare version.
 and a dispatch writes a Sigstore entry. `make dist` is the build it
 runs, so the names above are the ones it will produce.
 
+### 5.200 The release gate could not see a state module, and `ssh_auth` wrote keys nobody could read
+
+`make release-gate` refuses a release while any module that changes a
+machine as root is `Assumed`, and it passed, saying so. It chose those
+modules from the **execution** registry alone. A state module that
+changes the machine itself, with no mutating execution function behind
+it, was outside it. Measured by listing every mutating state function
+the gate never reached: **22**, six of them root -- `group`, `host`,
+`cron`, `ssh_auth`, `ssh_known_hosts` and `zfs` -- none with an
+evidence row. With the gate reading state signatures as well, it
+reported all six: "no declaration at all; nobody has considered this
+module".
+
+**The same blind spot was in three of the guards around it**, and each
+had to be found separately: the test that holds every privilege to the
+vocabulary (which is how `zfs`'s "root, or a delegated zfs permission"
+and `cron`'s and `ssh_*`'s "the target account, or root" stayed free
+text); the test that requires an evidence row of every root-mutating
+module, which still searched the prose for "root" -- the check 5.140
+took out of the gate itself -- and also read only execution signatures;
+and the test of the undemonstrated list, which compared against an
+execution-registry function nothing outside it calls. `doctor` and
+`sys.evidence` read `Trust()`, the gate's own list, so what an operator
+is told was always the gate's answer -- and that answer was the narrow
+one. All four read both registries now, through `NeedsPrivilege`, and
+the two phrases are vocabulary (`PrivTargetAccount`,
+`PrivZFSDelegation`). `TestTheReleaseGateCoversStateModulesThatChangeTheMachine`
+names the six; with the gate put back to execution signatures it
+failed naming every one.
+
+**Four of the six had been demonstrated and nobody had written it
+down.** Fleet run 37014660256 on `main` had `group.present`/`absent`,
+`host.present`/`absent` and `cron.present`/`absent` passing the
+conformance harness as root on the `linux` (Ubuntu 24.04), `freebsd`
+(FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs, and
+`zfs.filesystem_present`/`absent` on `freebsd` -- a real dataset in a
+pool on a file image. Their rows say so. The `zpool` row said FreeBSD
+was not covered; that leg passes `zpool.present` and `absent`, and the
+row is corrected.
+
+**The other two had a defect a live run found at once.** `ssh_auth` and
+`ssh_known_hosts` wrote another account's files as whoever ran them, and
+a node runs as root, so `ssh_auth.present` with `user: deploy` left
+~deploy/.ssh and its authorized_keys owned by root. sshd reads
+authorized_keys as the account it is authenticating, so the key the
+state reported adding could not be read by the account it was for. Their
+unit conformance cases could not see it: they name a file with
+`config` and touch no account. `giveToAccount` now hands the file, and
+the account's own ~/.ssh when that is the directory, to the named
+account; a `config` path is the caller's choice, so only the file moves.
+Nothing changes for a state that names no account, or on Windows.
+
+`TestLiveSSHFilesForAnotherAccount` creates a throwaway account as root
+and drives both modules against its own files, asserting content,
+convergence, 0700/0600/0644, and ownership by the account. Pushed for
+CI: Fleet run 37045269819 passed it on all three legs. With
+`giveToAccount` removed in a temporary commit, Fleet run 37046115494
+failed it on all three, and on nothing else -- `.ssh`, `authorized_keys`
+and `known_hosts` "owned by uid 0" -- and the commit was reverted. Both
+modules are `Hardware`, and `make release-gate` passes with every root
+state module inside it.
+
+**Not covered:** `ssh_known_hosts`'s `ssh-keyscan`, for a host with no
+key declared, which reaches the network and has not been run;
+`cron` for another account's crontab, which is what needs root -- the
+case uses root's own; `zfs`'s states on OpenZFS on Linux and its
+delegated path; Windows, where none of these six has a provider.
+
 
 ## 6. Everything else not started
 
