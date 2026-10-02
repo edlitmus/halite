@@ -61,7 +61,7 @@ token create flags:
 func runKeys(args *cli.Args) int {
 	if len(args.Positional) == 0 {
 		fmt.Fprint(os.Stderr, keysUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	switch args.Positional[0] {
 	case "help", "--help", "-h":
@@ -97,7 +97,7 @@ func runKeys(args *cli.Args) int {
 		return keysExportCRL(h, args)
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub keys: unknown subcommand %q\n\n%s", args.Positional[0], keysUsage)
-		return 2
+		return cli.ExitUsage
 	}
 }
 
@@ -356,7 +356,7 @@ func keysExportCRL(h *hubContext, args *cli.Args) int {
 func runKeysToken(args *cli.Args) int {
 	if len(args.Positional) < 2 {
 		fmt.Fprint(os.Stderr, keysUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	h := openHub(args, false)
 	rest := args.Positional[2:]
@@ -475,7 +475,7 @@ func runKeysToken(args *cli.Args) int {
 
 	default:
 		fmt.Fprintf(os.Stderr, "halite-hub keys token: unknown subcommand %q\n\n%s", args.Positional[1], keysUsage)
-		return 2
+		return cli.ExitUsage
 	}
 }
 
@@ -488,7 +488,7 @@ func runKeysToken(args *cli.Args) int {
 func runKeysOperator(args *cli.Args) int {
 	if len(args.Positional) < 2 || args.Positional[1] != "create" {
 		fmt.Fprint(os.Stderr, keysUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	if len(args.Positional) < 3 {
 		cli.Fatalf("operator create needs a name; it becomes the RBAC principal cert:CN=<name>")
@@ -581,7 +581,7 @@ func writeOut(args *cli.Args, v any) int {
 func runKeysSigner(args *cli.Args) int {
 	if len(args.Positional) < 2 || args.Positional[1] != "create" {
 		fmt.Fprint(os.Stderr, keysUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	if len(args.Positional) < 3 {
 		cli.Fatalf("signer create needs a name; it is what a node records when a signature verifies")

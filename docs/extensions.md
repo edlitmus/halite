@@ -243,14 +243,30 @@ GOOS=linux GOARCH=amd64 go build -o build/aws-secrets ./cmd/halite-ext-aws-secre
 `make extensions` builds the ones in this tree for the host platform,
 into `bin/`, which is enough to try it on one machine.
 
-**Run steps 1 and 2 on the platform the extension will run on.**
-`extbundle` records the executable under its *own* platform — the
-`GOOS/GOARCH` of the machine running it — and has no flag to name
-another. A `linux/amd64` binary bundled on a Mac is written into the
-manifest as `darwin/arm64`. A Linux hub then refuses it as carrying no
-executable for `linux/amd64`, and a Mac fails to start it with
-`exec format error`. Until that is fixed, cross-compiling the binary is
-not enough: bundle it on a machine of the target platform.
+Cross-compiling is enough: steps 1 and 2 can run on any machine.
+`extbundle` reads the platform from the executable itself, not from the
+machine running it — the architecture from its ELF, Mach-O or PE
+header, and the operating system from the header where it says
+(Mach-O is `darwin`, PE is `windows`, an ELF marked FreeBSD is
+`freebsd`) and from the build information `go build` writes into every
+Go binary. A `linux/amd64` binary bundled on a Mac is filed under
+`linux/amd64`. (It used to be filed under the Mac's own platform, which
+every Linux host then refused.)
+
+`-platform goos/goarch` names the platform explicitly. It is checked,
+not believed: when it disagrees with what the file says, `extbundle`
+refuses and writes nothing. Two cases need it:
+
+- **A script.** It has no header to read, so `-platform` is the only
+  answer.
+- **An ELF executable not built by Go.** A Linux ELF header does not
+  name Linux — Linux and illumos both write 0 where FreeBSD writes 9 —
+  so a C or Rust binary for Linux is refused until `-platform` names
+  it, rather than guessed. Its architecture is still checked against
+  the header.
+
+A universal (fat) Mach-O file is refused: bundle each architecture's
+thin binary separately.
 
 **2. Bundle and sign.** `-key` names the signing key and generates one
 the first time, so the key and the signature come from one command.

@@ -127,11 +127,19 @@ Configuration root.
 .It Fl -file-root Ar dir
 A state root, repeatable.
 Implies
-.Fl -local .
+.Fl -local ,
+except on
+.Cm connect ,
+where it names the tree the agent falls back on while the hub serves
+none, and a warning says so.
 .It Fl -pillar-root Ar dir
 A pillar root, repeatable.
 Implies
-.Fl -local .
+.Fl -local ,
+except on
+.Cm connect ,
+where it names the pillar the agent falls back on while the hub
+compiles none, and a warning says so.
 .It Fl -env Ar name
 Environment, default
 .Sy base .

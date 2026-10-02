@@ -25,18 +25,18 @@ import (
 func verifyExtension(args *cli.Args) int {
 	if len(args.Positional) < 2 {
 		fmt.Fprint(os.Stderr, extensionsUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	path, err := resolveExtensionPath(args.Positional[1])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions verify: %v\n", err)
-		return 2
+		return cli.ExitUsage
 	}
 
 	kwargs, err := decodeRunJSON(args.Flag("kwargs", ""))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions verify: --kwargs: %v\n", err)
-		return 2
+		return cli.ExitUsage
 	}
 
 	// Not `run`'s default. Every exchange after the handshake is one
@@ -49,12 +49,12 @@ func verifyExtension(args *cli.Args) int {
 	// not the extension's doing. See extconform.DefaultStartTimeout.
 	timeout, ok := verifyDuration("timeout", args.Flag("timeout", ""), extconform.DefaultTimeout)
 	if !ok {
-		return 2
+		return cli.ExitUsage
 	}
 	startTimeout, ok := verifyDuration("start-timeout", args.Flag("start-timeout", ""),
 		extconform.DefaultStartTimeout)
 	if !ok {
-		return 2
+		return cli.ExitUsage
 	}
 	opts := extconform.Options{
 		Path:         path,

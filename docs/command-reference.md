@@ -7,11 +7,16 @@ covers.
 
 halite has no `--local` by default the way `salt-call` has none: a node
 with no hub configured still needs to be told it is working from local
-roots, and `--local` is that. `--file-root` and `--pillar-root` add
-local roots, but on a node with a hub configured and a certificate they
-do **not** imply `--local`, whatever `--help` says: the hub's tree and
-the hub's pillar are used and the local roots are ignored. Pass `--local`
-with them.
+roots, and `--local` is that. `--file-root` and `--pillar-root` imply
+`--local` on the one-shot commands that read a tree or pillar (`state`,
+`pillar`, `call`), so on a
+node with a hub configured and a certificate either one makes the whole
+run local — tree and pillar both — and the hub is not asked. Until the
+fix that made this true they did not: the hub's tree and pillar were used
+and the local roots ignored. `halite-node connect` is the exception: a
+root flag there names the tree and pillar the agent falls back on while
+the hub serves none, the agent stays on the hub, and a warning at startup
+says so. Pass `--local` to `connect` to make the agent work from them.
 
 ## Running states on one machine
 
@@ -1750,7 +1755,7 @@ ssh` and in a top file.
 | `-L 'web1,web2'` | same | works |
 | `-C 'G@os:FreeBSD and web*'` | same | works |
 | `-N group` (nodegroup) | same, for a group in the hub's `nodegroups` | works |
-| `-I 'role:web'` (pillar) on the command line | accepted, and matches no node: the hub targets against no pillar | a defect |
+| `-I 'role:web'` (pillar) on the command line | same, and `-J` and `I@`/`J@` in `-C`: the hub compiles each candidate's pillar from its cached grains in the job's environment, only for a node whose answer depends on it. A candidate whose pillar will not compile, or that has never connected, refuses the job naming it; a hub with no `pillar_roots` refuses the target | works |
 | `-I 'role:web'` (pillar) in a top file | same in a state top; refused in a pillar top | see below |
 | `- match: grain` in a top file | same | works |
 | `- ignore_missing: True` | same, and honoured in a pillar top as Salt honours it | works |
@@ -1791,7 +1796,7 @@ own, above, and `doctor` exits non-zero only on a `fail`.
 |---|---|
 | 0 | Something changed, or under `--test` something would. |
 | 2 | Nothing to do; the node was already as declared. |
-| 64 | The command line was not understood: no subcommand, or an unknown one (sysexits' `EX_USAGE`). |
+| 64 | The command line was not understood: no subcommand, or an unknown one (sysexits' `EX_USAGE`). `halite-hub` and `halite-api` exit 64 for the same thing. |
 | anything else | The run failed. |
 
 A monitor that treats 2 as failure will alert on every healthy run. See

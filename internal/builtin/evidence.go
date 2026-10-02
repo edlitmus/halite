@@ -224,8 +224,14 @@ var moduleEvidence = map[string]exec.Evidence{
 	"cron": {Level: exec.Hardware, Note: "`cron.present` and `cron.absent` run through the " +
 		"conformance harness as root against the real crontab on the `linux` (Ubuntu 24.04), " +
 		"`freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of `fleet.yml`, and passed on all " +
-		"three on Fleet run 37014660256. Root's own crontab only: writing another account's -- the " +
-		"`user:` argument, which is what needs root -- has not been run"},
+		"three on Fleet run 37014660256. Another account's crontab -- the `user:` argument, which is " +
+		"what needs root -- is `TestLiveCronForAnotherAccount`: on the same three legs on Fleet run " +
+		"37062195477 it added a job for a throwaway account and converged, the system's own `crontab -u " +
+		"<account> -l` showed it, root's crontab was byte-for-byte unchanged, `absent` removed it, and a " +
+		"`present` for an account that does not exist failed without touching root's (DIVERGENCE " +
+		"5.211). The module writes only through crontab(1); the spool files it left were root's 0600 on " +
+		"FreeBSD and macOS and the account's 0600 on Linux, as each crontab(1) makes them. Not covered: " +
+		"whether the daemon fires a job installed this way"},
 	"ssh_auth": {Level: exec.Hardware, Note: "`TestLiveSSHFilesForAnotherAccount` ran as root on " +
 		"the `linux` (Ubuntu 24.04), `freebsd` (FreeBSD 15.1-RELEASE) and `macos` (macOS 15) legs of " +
 		"`fleet.yml` and passed on all three on Fleet run 37045269819: for a throwaway account, " +

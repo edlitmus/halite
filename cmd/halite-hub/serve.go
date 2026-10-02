@@ -173,27 +173,15 @@ func keysDir(cfg *config.Config) string {
 	return filepath.Join(cfg.String("state_dir", config.DefaultStateDir), "keys")
 }
 
-// buildLogger reads SPEC 26.1's settings, by the names the settings
-// actually have: a first cut here read `log_fmt`, which is not one, and
-// the loader said so on every start.
+// buildLogger is hlog.FromConfig, which all three services share. A
+// first cut here read `log_fmt`, which is not a setting; the api kept
+// that cut after this one was corrected, which is why there is now one
+// copy rather than three.
 func buildLogger(args *cli.Args, cfg *config.Config, secrets *redact.Set) (*hlog.Logger, error) {
-	levelName := args.Flag("log-level", cfg.String("log_level", "info"))
-	level, ok := hlog.ParseLevel(levelName)
-	if !ok {
-		return nil, fmt.Errorf("log_level %q is not a level; try error, warn, info, debug, or trace", levelName)
-	}
-	formatName := args.Flag("log-fmt", cfg.String("log_format", "json"))
-	format, ok := hlog.ParseFormat(formatName)
-	if !ok {
-		return nil, fmt.Errorf("log_format %q is not a format; try json or console", formatName)
-	}
-	return hlog.New(hlog.Options{
-		Level:   level,
-		Format:  format,
-		File:    cfg.String("log_file", ""),
-		Fields:  map[string]any{"component": "hub"},
-		Secrets: secrets,
-	})
+	return hlog.FromConfig(cfg, hlog.Overrides{
+		Level:  args.Flag("log-level", ""),
+		Format: args.Flag("log-fmt", ""),
+	}, "hub", secrets)
 }
 
 // runServe is the control plane of SPEC section 6.

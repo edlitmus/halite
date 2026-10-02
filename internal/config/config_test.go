@@ -148,13 +148,59 @@ func TestACLKeysArePreservedForReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A mechanical translation into RBAC is not sound, so the keys are
-	// kept under legacy_acl for the migration tool to draft from.
+	// kept under legacy_acl for the operator to read. Nothing drafts a
+	// policy from them; the migration tool reports them and stops.
 	legacy := cfg.Map("legacy_acl")
 	if legacy == nil || !legacy.Has("publisher_acl") || !legacy.Has("peer") {
 		t.Fatalf("legacy_acl = %v", legacy)
 	}
 	if cfg.Values.Has("policy") {
 		t.Error("the shim must not fabricate a policy")
+	}
+}
+
+// TestACLWarningsDoNotClaimATranslation holds the start-up line a Salt
+// ACL key produces to what the shim does with it.
+//
+// The rename table's note for publisher_acl, publisher_acl_blacklist,
+// external_auth and client_acl said "translated into RBAC rules; review
+// the result", and Warnings appends the note to the line every process
+// prints at start and `doctor` repeats. There is no result to review:
+// the key goes to legacy_acl, the policy is untouched (the test above
+// holds that), and the hub never reads legacy_acl. So the line must not
+// say translated, and must say where the key went and what to write.
+func TestACLWarningsDoNotClaimATranslation(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "master") // lexicon:allow
+	write(t, path, "publisher_acl:\n  ops:\n    - test.ping\n"+
+		"publisher_acl_blacklist:\n  users:\n    - root\n"+
+		"external_auth:\n  pam:\n    alice:\n      - '.*'\n"+
+		"client_acl:\n  bob:\n    - grains.items\n"+
+		"peer:\n  '.*':\n    - grains.items\n"+
+		"peer_run:\n  '.*':\n    - manage.up\n")
+
+	cfg, err := Load(Hub, LoadOptions{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := 0
+	for _, w := range cfg.Warnings {
+		if !strings.Contains(w, `halite calls it "policy"`) {
+			continue
+		}
+		seen++
+		low := strings.ToLower(w)
+		if strings.Contains(low, "translated into") || strings.Contains(low, "review the result") {
+			t.Errorf("the warning claims a translation that never happens: %s", w)
+		}
+		for _, truth := range []string{"not translated", "legacy_acl", "never consulted"} {
+			if !strings.Contains(low, truth) {
+				t.Errorf("the warning should say %q: %s", truth, w)
+			}
+		}
+	}
+	if seen != 6 {
+		t.Errorf("saw %d ACL warnings, want 6: %v", seen, cfg.Warnings)
 	}
 }
 
