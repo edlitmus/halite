@@ -19115,8 +19115,7 @@ test of its own.
 "non-Go ELF" tests are Go binaries with their build-information marker
 overwritten, not C binaries; the universal Mach-O refusal and several
 PE and ELF machine mappings have no test.
-
-### 5.202 Pillar targeting matched an empty pillar: `-I` nothing, `not I@` everything
+### 5.204 Pillar targeting matched an empty pillar: `-I` nothing, `not I@` everything
 
 On the hub, `-I`, `-J`, and `I@`/`J@` inside `-C` were accepted and
 evaluated against an empty pillar. SPEC 8.1 says these match against
@@ -19160,6 +19159,7 @@ environment compiles a different pillar from the one the hub targeted
 with. The node's signed-target check treats a pillar that will not
 compile as "matches nothing", which is false under `not` -- its own
 change. Not run on a real hub.
+
 
 
 ## 6. Everything else not started
