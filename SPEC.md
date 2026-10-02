@@ -2448,7 +2448,7 @@ checks, and making them a single command is worth more than it appears.
 | Tier | Platforms | Meaning |
 |---|---|---|
 | 1 | Ubuntu 22.04, 24.04, 26.04; Debian 12, 13; RHEL, Rocky, Alma 8 and 9; Amazon Linux 2023; FreeBSD 14 and 15; Windows Server 2019, 2022, 2025; all on amd64 and arm64 | Full CI, functional tests, and packages |
-| 2 | SUSE 15, Alpine 3.19 and later, macOS 14 and later | Built and unit-tested; functional tests on a subset |
+| 2 | SUSE 15, Alpine 3.19 and later, macOS 14 and later on Apple silicon | Built and unit-tested; functional tests on a subset |
 | 3 | OpenBSD, NetBSD, Solaris and illumos, Linux on riscv64, ppc64le, s390x | Compiles and is published as binaries only, with no packages; community-supported |
 
 The hub and the API are supported on tier 1 Linux and FreeBSD. Nodes are supported on everything.

@@ -396,9 +396,10 @@ What changed:
   so `sys.list_extensions` cannot report a limit as enforced that is
   skipped, or the reverse. Before, it said all four limits were enforced
   on every unix, which was a sentence rather than a consequence.
-- `TARGETS` carries all seventeen platforms, so `build-all` compiles and
-  vets each and `cross` publishes it — which is what tier 3 says. 98s
-  for the seventeen.
+- `TARGETS` carries every platform -- sixteen since darwin/amd64 left
+  (DIVERGENCE 5.193), seventeen when this was written -- so `build-all`
+  compiles and vets each and `cross` publishes it, which is what tier 3
+  says. 98s for the seventeen.
 - `internal/buildpolicy` reads SPEC 27.1's tier table and the Makefile's
   target list and fails if they disagree in **either** direction. Each
   tier's platform cell is matched in full, so any edit to that table
@@ -940,7 +941,7 @@ other bullets stand as they were last verified.
   dependency policy "has teeth: CI enforces it", and until now nothing
   did. `ci.yml` runs every leg of `make check` on push and on every pull
   request — `fmt-check`, `vet` and `policy` as one fast gate, then
-  `build-all` across all seventeen targets of SPEC 27.1, tier 3
+  `build-all` across all sixteen targets of SPEC 27.1, tier 3
   included, the suite and the race detector on Linux, Windows, macOS and
   FreeBSD, `fips-test`, and the Salt differential that
   SPEC 31 calls the primary correctness gate and that had been green by
@@ -1082,8 +1083,9 @@ first. The first of the four is answered, in the same sitting: the
 Makefile stays the producer.
 
 **What is emitted today, precisely.** `make cross` already
-cross-compiles all three binaries for all seventeen targets into `dist/`
-— fifty-one artifacts — with the release environment and build flags.
+cross-compiles all three binaries for all sixteen targets into `dist/`
+— forty-eight artifacts, fifty-one before darwin/amd64 left (DIVERGENCE
+5.193) — with the release environment and build flags.
 `make build-all` is a different thing: it runs `go build ./...` with no
 `-o` to prove the targets compile, and discards. `make release` builds
 the three binaries for the *host* into `bin/`.
