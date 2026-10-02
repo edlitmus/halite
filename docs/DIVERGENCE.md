@@ -19033,6 +19033,46 @@ override's value -- the test node answers by function name and the
 assertion is on the digest and the dispatches; and a hub on FreeBSD or
 Linux.
 
+### 5.202 The hub's systemd unit could not write its own cache directory
+
+The hub's unit runs with `ProtectSystem=strict` and made writable
+`/etc/halite/pki`, its `StateDirectory=halite` and its
+`LogsDirectory=halite`. The hub's default `cache_dir` on Linux is
+`/var/cache/halite`, and `serve` creates `<cache dir>/nodes` and
+probe-writes it before it will start. So the stock unit on default paths
+described a hub that exits at startup -- even after `make install` had
+created the directory, because strict mounts `/var/cache` read-only
+whatever is there.
+
+It was found by the documentation sweep reading the unit beside
+`internal/config/paths.go`, and `docs/operations.md` had already recorded
+it, after the sweep, as a known gap with "a fix … pending". Writing a
+defect down is not fixing it. It is the usual pair: the defaults in
+`internal/config` say where each program writes, the sandbox in each
+unit says where it may, and nothing compared them.
+
+**The fix** is `CacheDirectory=halite` with `CacheDirectoryMode=0700`,
+the mode `make install` and `OpenNodeCache` already use.
+`TestUnitsMakeWritableEveryDirectoryTheirBinaryWrites` parses every unit
+and checks each layout directory its binary names against what
+`ProtectSystem=` leaves writable, with the paths taken from the key
+table resolved for Linux rather than a hand list. It failed on `main`
+naming `/var/cache/halite`, passed with the fix, and failed again with
+the line removed; it checks ten binary-and-path pairs across four units.
+
+It records two exceptions. The API only reads `pki_dir`. And the API's
+`state_dir` comes from `contrib/examples/api.yaml`, because on the
+built-in default `/var/lib/halite` the API cannot write its token store
+under its unit, which makes `StateDirectory=halite-api` -- an open gap,
+not a design choice, and left for its own change.
+
+**Not demonstrated:** none of this has been run under systemd. The test
+reads the unit against systemd.exec(5) as written; it does not check
+ownership, or that `/etc/halite/pki` exists when `ReadWritePaths=`
+requires it to. A hub and a node on one host share `/var/lib/halite` and
+`/var/cache/halite` by default, the node writing as root and the hub's
+unit handing those directories to `halite`; that was not looked into.
+
 ### 5.202 `extbundle` filed every executable under the platform it was run on
 
 `tools/extbundle` wrote the manifest's `executables` key from
