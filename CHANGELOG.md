@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Root flags imply --local on an enrolled node
+
+`halite-node` treats `--file-root` and `--pillar-root` as implying
+`--local` on `state`, `pillar` and `call`, as `--help` always said. On a
+node with a hub, the flags were ignored and the hub's tree and pillar
+used. `halite-node connect` is unchanged: a root flag there still names
+the fallback roots, and the agent now warns about it at startup.
+
 ### halite-api honours its log settings
 
 `halite-api` honours `log_format` and `log_file`; it read the format

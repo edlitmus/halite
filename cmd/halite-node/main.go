@@ -76,8 +76,10 @@ Common flags:
   --local              work from local roots rather than through a hub
   --config <path>      configuration file, default <root>/node.yaml
   --root <dir>         configuration root, default ` + config.DefaultRoot + `
-  --file-root <dir>    a state root, repeatable; implies --local
-  --pillar-root <dir>  a pillar root, repeatable; implies --local
+  --file-root <dir>    a state root, repeatable; implies --local, except
+                       on connect, where it is the fallback tree
+  --pillar-root <dir>  a pillar root, repeatable; implies --local, except
+                       on connect, where it is the fallback pillar
   --env <name>         environment, default base
   --pillarenv <name>   pillar environment, defaulting to --env
   --id <node-id>       override the node identity

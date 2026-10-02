@@ -7,11 +7,16 @@ covers.
 
 halite has no `--local` by default the way `salt-call` has none: a node
 with no hub configured still needs to be told it is working from local
-roots, and `--local` is that. `--file-root` and `--pillar-root` add
-local roots, but on a node with a hub configured and a certificate they
-do **not** imply `--local`, whatever `--help` says: the hub's tree and
-the hub's pillar are used and the local roots are ignored. Pass `--local`
-with them.
+roots, and `--local` is that. `--file-root` and `--pillar-root` imply
+`--local` on the one-shot commands that read a tree or pillar (`state`,
+`pillar`, `call`), so on a
+node with a hub configured and a certificate either one makes the whole
+run local — tree and pillar both — and the hub is not asked. Until the
+fix that made this true they did not: the hub's tree and pillar were used
+and the local roots ignored. `halite-node connect` is the exception: a
+root flag there names the tree and pillar the agent falls back on while
+the hub serves none, the agent stays on the hub, and a warning at startup
+says so. Pass `--local` to `connect` to make the agent work from them.
 
 ## Running states on one machine
 
