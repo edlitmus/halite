@@ -35,9 +35,15 @@ sudo install -m 0755 bin/halite-node /usr/local/bin/
 halite-node version
 ```
 
-There is nothing else to install. No Python, no interpreter, no library:
-`go list -m all` returns only this module, and the build asserts that on
-every run.
+There is nothing else to install. No Python, no interpreter, no cgo. The
+one dependency is `golang.org/x/sys`, vendored into the tree, and
+`make policy` fails if anything outside the allowlist of SPEC 4.2 enters
+the build.
+
+On a Mac, use `bmake` or GNU make 4.0 or later (`gmake`) for every
+target here. `/usr/bin/make` there is GNU make 3.81, which cannot
+evaluate the Makefile's `!=` assignments, so the build and install
+targets refuse to run under it.
 
 ### Installing
 
@@ -70,7 +76,14 @@ for the platform it is run on:
 | service files | `/usr/local/etc/rc.d` | `/etc/systemd/system` |
 
 The binaries go to the same place on both because that is the path
-written into the rc.d scripts and the systemd units.
+written into the rc.d scripts and the systemd units. The manual pages go
+to `/usr/local/share/man/man8` on both.
+
+macOS has no column of its own: the target takes the Linux branch there,
+so it installs systemd units into `/etc/systemd/system`, which do nothing
+on a Mac, and suggests `useradd`, which macOS does not have. There are no
+launchd files yet. On a Mac, install the binaries by hand, or point
+`SERVICEDIR` somewhere harmless.
 
 It writes **no configuration** — a target that overwrote `hub.yaml`
 would be one nobody could run twice — and starts nothing. Copy an
@@ -85,13 +98,22 @@ rather than leaving root-owned directories behind quietly. If a `chown`
 fails it stops, because `install` reports that on standard error and
 still exits zero.
 
-Every path is overridable, which is what makes it testable without root:
+Every path is overridable, which is what makes it testable without root.
+The target creates the configuration, state, cache and log directories,
+but not `BINDIR`, `SERVICEDIR` or the parent of `CONFDIR`, so create
+those first. Set every directory, `MANDIR` included: one left out falls
+back to its system default, and if that default is writable — as
+`/usr/local` often is on a Mac — files land there, outside the stage.
 
 ```sh
+mkdir -p /tmp/stage/bin /tmp/stage/etc /tmp/stage/rc.d
 make install BINDIR=/tmp/stage/bin CONFDIR=/tmp/stage/etc/halite \
     STATEDIR=/tmp/stage/db CACHEDIR=/tmp/stage/cache \
-    LOGDIR=/tmp/stage/log SERVICEDIR=/tmp/stage/rc.d
+    LOGDIR=/tmp/stage/log SERVICEDIR=/tmp/stage/rc.d \
+    MANDIR=/tmp/stage/man8
 ```
+
+On a Mac, run that with `bmake` or `gmake`, not `make`.
 
 `make install-service` reinstalls only the rc.d scripts or the systemd
 units, which is what to run after pulling a fix to them.
@@ -124,14 +146,15 @@ so `/etc` is the honest default rather than a guess at one.
 
 Read [DIVERGENCE 4](DIVERGENCE.md) before trusting a run on Windows or
 macOS. Both run the suite natively in CI now, and macOS has a leg that
-drives its `mac_*` modules as root on every change — so all seven of them,
+drives its `mac_*` modules as root on a schedule and whenever the paths
+it covers change — so all seven of them,
 `mac_user`, `mac_group`, `mac_shadow`, `mac_defaults`, `mac_power`,
 `mac_keychain` and `mac_softwareupdate`, are `hardware` rather than assumed, and the launchd service provider has
 been driven. What is still thin there is Windows: four of its eighteen
 modules ship, and the `pkg` and `service` providers are exercised by the
 unit suite rather than against a real machine. `sys.evidence` on the node
-in front of you is the authority, not this page. Linux and FreeBSD are the
-platforms this build has been run on.
+in front of you is the authority, not this page. FreeBSD, tier 1 in SPEC
+27.1, and Linux carry the fleet and have the widest coverage.
 
 ## The first tree
 
@@ -192,9 +215,12 @@ sudo halite-node state apply --local \
                 +This machine is managed by halite.
 ```
 
-That `would change` is a promise, not a guess. Every state module is held
-to it by a shared conformance harness: in test mode it must make no
-change, return no result, and say what it would have done. Salt has no
+That `would change` is a promise, not a guess. State modules are held to
+it by a shared conformance harness, SPEC 11.6: in test mode a state must
+make no change, return no result, and say what it would have done. Every
+state function has a case except the two listed, with reasons, in
+`internal/builtin/conformance_gap_test.go`. The cases for functions that
+change the machine run in the live CI legs rather than in `go test`. Salt has no
 such harness, which is why `test=True` there is unreliable for a fair
 number of its modules.
 
@@ -225,6 +251,12 @@ exit code tells a script which happened without parsing the output:
 
 A cron job that treats 2 as success will not page you for a machine that
 had nothing to do.
+
+One caution about 2: today `halite-node` also exits 2 when it does not
+understand its command line — an unknown subcommand, or no arguments at
+all — so `halite-node stat apply` looks the same as a converged run. A
+job that treats 2 as success should also check that the output contains
+`Succeeded:`.
 
 ## A configuration file
 
@@ -289,10 +321,13 @@ motd_owner: the platform team
 ```
 
 Pillar is compiled per machine and can be targeted the same way states
-are, so `web*` gets different values from `db*`. What it may **not** be
-targeted on is a machine's own grains, unless you allow specific ones:
-grains come from the machine, so a machine that could target pillar on
-its own grains could ask for another machine's secrets. See
+are, so `web*` gets different values from `db*`. Grains are the
+exception. Pillar may be targeted only on the grains in
+`pillar_trusted_grains`, which by default are `id`, `os`, `os_family`,
+`osrelease`, `kernel`, `cpuarch`, `virtual` and `fips_mode`. Grains come
+from the machine, so a machine that could target pillar on any grain it
+liked — a custom `role`, say — could ask for another machine's secrets.
+Setting the key replaces the default list rather than adding to it. See
 `pillar_trusted_grains` in the configuration reference.
 
 ## Ordering

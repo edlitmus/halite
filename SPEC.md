@@ -71,10 +71,17 @@ executor into `halite-node` holds the count at three without losing a command. E
 dispatches on its first argument:
 
 ```
-halite-hub   serve | run | runner | orch | keys | files | ssh | event | jobs | lint | migrate | version
-halite-node  serve | call | grains | pillar | state | event | lint | version
-halite-api   serve | token | policy | version
+halite-hub   serve | run | runner | orch | keys | jobs | policy | event | metrics | files | ssh | doctor | extensions | migrate | lint | version
+halite-node  connect | serve | enroll | renew | call | state | grains | pillar | event | lint | doctor | verify-evidence | version
+halite-api   serve | token | account | doctor | version
 ```
+
+These are the words each binary's dispatch switch accepts. `halite-node serve` is another name
+for `connect`. `halite-hub files` is dispatched and refuses by name until it is built. Two words
+are dispatched and deliberately left out above, because no person runs them: `halite-node oneshot`,
+which `halite-hub ssh` invokes on a target (section 21.1), and the render sandbox's entry point
+(section 25.4). `halite-api policy` only refuses and points at `halite-hub policy`, because the
+policy is the hub's.
 
 `halite-hub run '<target>' <function>` is the old `salt` command. `halite-node call state.apply` is
 the old `salt-call`. The operator muscle memory transfers; the process count does not.
@@ -218,6 +225,8 @@ third-party code never shares an address space with the agent.
 | Toolchain provenance | The Go toolchain is fetched by digest from an internal mirror, not by version tag. |
 | SBOM | CycloneDX generated from `go version -m` output on the shipped binary, not from the source tree. What linked, not what was declared. |
 | Signing | Detached signature per artifact plus an in-toto/SLSA provenance attestation naming the source commit, the toolchain digest, and the builder identity. |
+| Binary hygiene | No embedded network fetches at build time, no code generation from a remote source, no `go:generate` step that reaches the network. |
+| FIPS | A parallel build with `GOFIPS140=v1.0.0`, using the Go Cryptographic Module. Runtime enforcement with `GODEBUG=fips140=on`. Section 27.4. |
 
 **Signing, as it stands (decided 2026-09-25).** The provenance half ships first. It is keyless:
 the release workflow signs an SLSA build provenance attestation through Sigstore with its own
@@ -227,8 +236,6 @@ does **not** yet name the toolchain digest. The detached signature per artifact 
 waits on a decision about where a signing key lives, and a long-lived key does not belong on a
 hosted runner. Keyless verification needs Sigstore's public trust root, which is fetched online or
 carried into an air-gapped site.
-| Binary hygiene | No embedded network fetches at build time, no code generation from a remote source, no `go:generate` step that reaches the network. |
-| FIPS | A parallel build with `GOFIPS140=v1.0.0`, using the Go Cryptographic Module. Runtime enforcement with `GODEBUG=fips140=on`. Section 27.4. |
 
 ### 4.4 What the policy costs
 
@@ -710,7 +717,7 @@ An SLS file passes through a renderer pipeline named by a shebang-style first li
 | `crypt` | New, section 12.5 | Native encrypted pillar |
 | `text` | Full | Passthrough, no parsing |
 | `stateconf` | Not supported | Rare; use `include` and `extend`. |
-| `exec` | New, section 24.4 | Delegates rendering to a bridged process, which is the escape hatch for anything above |
+| `exec` | New, section 10.3 | Delegates rendering to a bridged process, which is the escape hatch for anything above |
 
 ### 10.1 The YAML subset
 
@@ -876,13 +883,15 @@ behaviour.
 
 #### 10.2.6 Undefined behaviour
 
-The undefined type matters more than it appears. Salt uses Jinja's default `Undefined`, so
-`{{ pillar_value_that_does_not_exist }}` renders as an empty string and produces a state that
-silently does the wrong thing.
+The undefined type matters more than it appears. Salt builds its Jinja environment with
+`jinja2.StrictUndefined` unless `allow_undefined: True` is set, in which case it uses Jinja's
+default `Undefined`, and `{{ pillar_value_that_does_not_exist }}` renders as an empty string and
+produces a state that silently does the wrong thing. (`salt/utils/templates.py`, read at
+v3006.0, v3007.0 and v3008.0; not run.)
 
 The default here is **strict**: referencing an undefined name is an error that names the file, the
-line, and the identifier. `undefined: permissive` restores Salt's behaviour per file or per tree,
-and every permissive resolution is logged at warning level with its position. Migration guidance is
+line, and the identifier. `undefined: permissive` gives Salt's `allow_undefined: True` behaviour
+per file or per tree, and every permissive resolution is logged at warning level with its position. Migration guidance is
 to run permissive with warnings, fix them, then switch to strict.
 
 `{{ x | default('y') }}`, `{% if x is defined %}`, and `pillar.get('a:b', 'fallback')` are the
@@ -931,7 +940,7 @@ which Salt uses, has all of them.
 |---|---|---|
 | Targeting (`-E`, `-P`, `-J`) | RE2 only, permanently | A ReDoS-safe targeting engine is a security property worth keeping. Target expressions in practice do not use these constructs. |
 | `file.replace`, `file.line`, `file.blockreplace`, `file.search` | RE2 by default | A pattern using an unsupported construct is a hard error at compile time naming the construct, not a silent non-match. |
-| `file.*` with `regex_engine: backtrack` | An in-house backtracking engine covering backreferences and lookaround, with a step budget | Phase 3, section 32. Until it exists, migration is required. |
+| `file.*` with `regex_engine: backtrack` | An in-house backtracking engine covering backreferences and lookaround, with a step budget | Phase 6, section 32. Until it exists, migration is required. |
 
 `halite-hub lint` and `halite-node lint` scan an existing tree for regex literals containing `(?=`,
 `(?!`, `(?<=`, `(?<!`, `\1`, `(?>`, and named-group backreferences, and report each with its
@@ -1393,8 +1402,8 @@ arguments, which SLS trees use heavily for per-platform maps.
 ## 15. Modules
 
 Feature parity across Salt's roughly 400 execution modules is neither achievable nor desirable. The
-set that ships is chosen by what an Ubuntu, Debian, RHEL, Amazon Linux, Windows, and macOS estate
-actually applies, and everything else has a defined path.
+set that ships is chosen by what a FreeBSD, Ubuntu, Debian, RHEL, Amazon Linux, Windows, and macOS
+estate actually applies, and everything else has a defined path.
 
 ### 15.1 Tiers
 
@@ -1645,7 +1654,8 @@ The hub's bus is a durable append-only log rather than Salt's in-memory ZeroMQ I
 
 ### 17.3 Node bus
 
-The node has a local bus on a unix domain socket at `/var/run/halite/node.sock`, with mode `0600`
+The node has a local bus on a unix domain socket, `node.sock` in the socket directory of section
+27.3 (`/run/halite/` on Linux, `/var/run/halite/` on a BSD), with mode `0600`
 and owner root, or a named pipe with an equivalent ACL on Windows. It carries local events and is
 the path for `event.send`.
 
@@ -1716,7 +1726,7 @@ is explicit about it.
 | Rate limit | Per tag glob, a token bucket, so one noisy source cannot starve the rest |
 | Timeout | Per reaction, default 60 s for rendering and dispatch; the dispatched job has its own timeout |
 | Failure | A reaction that fails to render or dispatch emits `halite/reactor/error` with the tag, the file, and the position. It never fails silently, which Salt does. |
-| Dry run | `halite-hub run reactor.test --tag <tag> --data <json>` renders a reaction and prints what it would dispatch without dispatching it |
+| Dry run | `halite-hub runner reactor.test tag=<tag> data=<json>` renders a reaction and prints what it would dispatch without dispatching it |
 
 ### 18.3 Authorization
 
@@ -2012,7 +2022,7 @@ audit record for the estate.
 
 | Principal type | Authenticated by |
 |---|---|
-| Operator | An external authentication method, section 23.2 to 23.5 |
+| Operator | An external authentication method, section 23.2 to 23.4 |
 | Node | Its enrollment certificate, section 7 |
 | Service or automation | mutual TLS with a client certificate, or a scoped long-lived token |
 | Reactor | A named principal in the reactor configuration, section 18.3 |
@@ -2314,7 +2324,7 @@ Every cryptographic primitive used, so that a FIPS assessment has one table to r
 | Key derivation | HKDF-SHA-256 |
 | Encrypted pillar | ECDH P-256 or RSA-OAEP for key establishment, HKDF-SHA-256, AES-256-GCM with bound AAD |
 | Signatures on artifacts, extensions, and jobs | ECDSA P-256 or P-384 over SHA-256 or SHA-384 |
-| TOTP | HMAC-SHA-1 per RFC 6238, the only use of SHA-1, and only where the RFC requires it |
+| TOTP | HMAC-SHA-1 per RFC 6238, the only use of SHA-1 apart from the `source_hash` verification below, and only where the RFC requires it |
 | Random | `crypto/rand` exclusively. `math/rand` appears nowhere outside the deterministic template seed of section 10.2.4, and CI enforces this by import check. |
 
 MD5 and SHA-1 exist only to verify a `source_hash` published by an upstream that offers nothing
@@ -2443,18 +2453,24 @@ checks, and making them a single command is worth more than it appears.
 
 The hub and the API are supported on tier 1 Linux and FreeBSD. Nodes are supported on everything.
 
-FreeBSD is tier 1 because it is where this project is developed, and the promise the tier makes is
-already kept there: it has both CI legs, and the functional coverage is the broadest of any platform
-— `jail`, `pf`, `zfs`, UFS quotas, `sysrc` and the rc.d scripts are exercised against the real tools
-on a real machine, several of them on no other platform at all. The tier is a statement about what is
-tested, not about how many people run it.
+FreeBSD is tier 1 because it is where this project is developed: it has both CI legs, the unit
+suite and the live suite, and `jail`, `pf`, UFS quotas, `sysrc` and the rc.d scripts are exercised
+against the real tools on a real machine, several of them on no other platform at all. Both legs run
+FreeBSD 15.1 only; FreeBSD 14 has been run in the lab and has no CI. ZFS is not in that list: its
+reading was checked on FreeBSD, and its writing has been run only on Linux. The tier is a statement
+about what is tested, not about how many people run it.
 
-Two honest qualifications. **The architecture clause is a goal, not a description**: tier 1 CI runs
-on amd64 for every platform in it, and the only arm64 machine this project has is a single Ubuntu
-host. **Packages are unbuilt for every tier 1 platform**, FreeBSD included; section 27.2 describes
-what a release will carry. The release workflow verifies reproducibility and attests provenance for
-the binaries its two builders agreed on, keeps those binaries briefly as a workflow artifact, and
-publishes no release.
+Three honest qualifications. **CI covers part of tier 1, not all of it.** It runs on Ubuntu 24.04,
+on Windows Server 2022, on FreeBSD 15.1 in an emulated virtual machine, and on Debian 12, Rocky 9 and
+Alma 8 in containers, which run on the Ubuntu runner's kernel. Ubuntu 22.04 and 26.04, Debian 13,
+RHEL, Rocky 8, Alma 9, Amazon Linux 2023, FreeBSD 14, and Windows Server 2019 and 2025 have no CI.
+**The architecture clause is a goal, not a description**: every tier 1 CI leg runs on amd64, and the
+only arm64 machine this project has for a tier 1 platform is a single Ubuntu host. **Packages are
+unbuilt for every tier 1 platform**, FreeBSD included; section 27.2 describes what a release will
+carry. The release workflow verifies reproducibility and attests provenance for the binaries its two
+builders agreed on, and keeps them and the per-platform archives briefly as a workflow artifact. On a
+`v*` tag it publishes a GitHub release of the archives and their checksum manifest; a manual run
+publishes nothing, and no tag has been cut.
 
 ### 27.2 Artifacts
 
@@ -2464,7 +2480,7 @@ publishes no release.
 | `.msi` | Windows service registration, an event log source, and configuration under `%PROGRAMDATA%\Halite` |
 | `.pkg` | macOS with a launchd plist and the manual page |
 | FreeBSD package | rc.d script and the manual page |
-| Tarball | Static binaries plus example configuration and the manual pages, for air-gapped and container use. One per platform in section 27.1, tier 3 included: `halite-<version>-<os>-<arch>.tar.gz`, or `.zip` for Windows, holding `LICENSE`, `bin/`, `examples/` and `man/man8/` under a directory of the same name. Every entry's time is `SOURCE_DATE_EPOCH`, owner and group are 0 with no names, modes are 0755 for binaries and directories and 0644 otherwise, and entries are sorted, so two builders produce the same bytes |
+| Tarball | Static binaries plus example configuration and the manual pages, for air-gapped and container use. One per platform in section 27.1, tier 3 included: `halite-<version>-<os>-<arch>.tar.gz`, or `.zip` for Windows, holding `LICENSE`, `EVIDENCE.md` (the evidence report), `bin/`, `examples/` and `man/man8/` under a directory of the same name. Every entry's time is `SOURCE_DATE_EPOCH`, owner and group are 0 with no names, modes are 0755 for binaries and directories and 0644 otherwise, and entries are sorted, so two builders produce the same bytes |
 | Container image | `FROM scratch` with the static binary, CA bundle, and time zone data. No shell, no package manager. Separate images per binary. |
 | SBOM and provenance | Per artifact, section 4.3 |
 | Manual pages | `halite-node(8)`, `halite-hub(8)` and `halite-api(8)`, in mdoc. Section 8 because each command administers a machine and most need root. They are a deliverable in their own right and not only a package's contents: a machine built from source and installed with `make install` gets them and does not get `docs/`. Every subcommand appears in the page for its binary, held there by a test. |
@@ -2492,8 +2508,8 @@ is used, and are the part that is not negotiable.
 | `/etc/halite/pki/` | Keys, certificates, CA, trusted signer keys |
 | `/etc/halite/grains`, `grains.d/` | Static and executable grains |
 | `/etc/halite/policy.yaml` | RBAC policy |
-| `/var/lib/halite/` | Job cache, events, gitfs mirrors, extension cache, node evidence |
-| `/var/cache/halite/` | File server cache on the node, discardable |
+| `/var/lib/halite/` | Job cache, events, extension cache, node evidence |
+| `/var/cache/halite/` | File server cache on the node, and gitfs mirrors on the hub (section 13.3); discardable |
 | `/var/log/halite/` | Logs when not using the journal |
 | `/run/halite/` | Sockets and PID files |
 | `/srv/halite/states/`, `/srv/halite/pillar/` | Default state and pillar roots, with `/srv/salt` and `/srv/pillar` also read by default so an existing tree needs no move |
@@ -2556,7 +2572,7 @@ migration does not require rewriting configuration management for the configurat
 | YAML dialect | Subset | Section 10.1.2 lists rejections. Duplicate keys and Python tags become errors. |
 | Jinja templating | Subset | Section 10.2. Undefined is strict by default. Python-importing constructs are unavailable. |
 | Salt Jinja filters | Subset | Section 10.2.4 names what ships and what does not |
-| `py`, `pydsl`, `pyobjects`, `mako`, `stateconf`, `yamlex` renderers | Dropped | `exec` renderer bridge available |
+| `py`, `pydsl`, `pyobjects`, `mako`, `stateconf`, `yamlex` renderers | Dropped | The `exec` renderer bridge of section 10.3 is the migration path; it is not built, so there is no migration path in this build |
 | Targeting: glob, list, regex, grain, pillar, subnet, nodegroup, compound | Full | RE2 semantics for regex |
 | Targeting: SECO range | Dropped | |
 | Remote execution, batching, async, job cache | Full | Batching moves hub-side, which is an improvement |
@@ -2564,7 +2580,7 @@ migration does not require rewriting configuration management for the configurat
 | `cmd.run` shell by default | Full | Section 15.2; `cmd_default_shell: false` is the hardened opt-out |
 | Grains, core set | Full | Section 14.1 |
 | Custom grains from Python `_grains/` | Bridged | Executable grains directory covers most cases |
-| Execution modules | Subset | Section 15. Roughly 90 modules against Salt's roughly 400, covering the mainstream estate. |
+| Execution modules | Subset | Section 15. About 130 modules named across sections 15.2 to 15.4, plus the Extended set, against Salt's roughly 400, covering the mainstream estate. |
 | State modules | Subset | Section 15.5 |
 | `_modules/`, `_states/` in the file server | Changed | Section 24. Signed, pinned, out of process. |
 | Beacons | Subset | Section 16.2 names the inventory and the drops |
@@ -2653,7 +2669,7 @@ A node may run `salt-minion` and `halite-node` at the same time, against the sam
 `halite-node` in a read-only posture: `state.apply test=True` only, enforced by a node-level
 configuration switch. This is the recommended migration pattern. Divergence between the Salt result
 and the Halite result for the same tree on the same host is the acceptance signal, and
-`halite-hub run survey.diff` over a fleet turns that comparison into a number.
+`halite-hub runner survey.diff jid=<jid>` over a fleet's job turns that comparison into a number.
 
 ## 29. Non-goals
 
@@ -2757,7 +2773,8 @@ Recorded rather than resolved, because each needs a decision from someone other 
    bridged PAM helper as the exception.
 6. **Detached job signing.** Section 25.6 is optional. Is it required for production, and if so for
    which function classes?
-7. **`golang.org/x/sys`.** Section 4.2 admits one module. Confirm the exception, or accept
+7. **`golang.org/x/sys`.** Section 4.2 admits two modules, `golang.org/x/sys` and
+   `golang.org/x/term`. Confirm the `x/sys` exception, or accept
    hand-written syscall bindings per platform and the maintenance that implies.
 8. **The regex gap.** Section 10.4 defers the backtracking engine to phase 6. If the migration report
    shows a large count, it moves earlier, and that is a scheduling decision informed by data the

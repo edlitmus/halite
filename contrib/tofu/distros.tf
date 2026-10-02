@@ -9,18 +9,21 @@
 # on**, ordered by what it unlocks in the code rather than by how easy it
 # is to boot:
 #
-#   - The RHEL family is the largest single gap in the build. The
-#     dnf/yum provider is written and has never been driven -- evidence.go
-#     says so in those words -- and `selinux` and `firewalld` cannot be
-#     implemented at all without a machine that has them. SPEC 27.1 puts
-#     RHEL, Rocky and Alma 8 and 9 in tier 1, which is the tier that
-#     promises functional tests.
+#   - The RHEL family was the largest single gap in the build. The
+#     dnf/yum provider was written and had never been driven, and
+#     `selinux` and `firewalld` could not be implemented at all without a
+#     machine that had them. All three have since been done on these rows
+#     (DIVERGENCE 5.157, 5.183, 5.175). SPEC 27.1 puts RHEL, Rocky and
+#     Alma 8 and 9 in tier 1, which is the tier that promises functional
+#     tests.
 #   - Alpine is the only row here that is neither glibc nor systemd. The
-#     `apk` provider has never been driven either, and the service layer's
-#     non-systemd path has no other machine to prove it on.
-#   - openSUSE is the one row that is not about verifying written code:
-#     there is no zypper provider yet, and `pkg` cannot claim SUSE until
-#     somebody writes one against a real zypper.
+#     `apk` provider had never been driven either (it has, here: 5.124),
+#     and the service layer's non-systemd path has no other machine to
+#     prove it on.
+#   - openSUSE was the one row that was not about verifying written code:
+#     there was no zypper provider, and `pkg` could not claim SUSE until
+#     somebody wrote one against a real zypper. That was done on this row
+#     (5.176).
 #   - Debian 13 and the two other Ubuntu LTS releases are the cheapest
 #     rows and the lowest yield, because apt is the best-verified
 #     provider in the build. They are here for version drift, which a
@@ -60,8 +63,8 @@ locals {
     rocky9 = {
       os_name = "Rocky Linux 9 x64"
       family  = "rhel"
-      # dnf, plus the SELinux userland that `selinux` will need to exist
-      # before it can be written.
+      # dnf, plus the SELinux userland `selinux` was written against
+      # (DIVERGENCE 5.183). The `closes` text below is as first written.
       packages = "at quota lvm2 mdadm nftables iptables-nft policycoreutils policycoreutils-python-utils selinux-policy-targeted firewalld rsync tar git curl e2fsprogs util-linux"
       closes   = "dnf provider (never driven), selinux, firewalld; SPEC 27.1 tier 1"
     }
@@ -95,8 +98,8 @@ locals {
       os_name = "openSUSE Leap 16 x64"
       family  = "suse"
       # SPEC 27.1 names SUSE 15; Vultr carries Leap 16, which is the
-      # current one. The zypper provider does not exist yet, so this row
-      # is here to be written against rather than to verify anything.
+      # current one. The zypper provider was written against this row
+      # (DIVERGENCE 5.176); the `closes` text below is as first written.
       packages = "at quota lvm2 mdadm iptables nftables apparmor-utils rsync tar git curl e2fsprogs util-linux"
       closes   = "zypper (not yet implemented); SPEC 27.1 tier 2"
     }

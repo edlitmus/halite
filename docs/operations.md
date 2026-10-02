@@ -8,6 +8,7 @@ exit codes mean, and where the output goes.
 ```
 halite-node doctor
 halite-hub doctor
+halite-api doctor
 ```
 
 There is a manual page for each binary too — `man 8 halite-node`,
@@ -15,23 +16,27 @@ There is a manual page for each binary too — `man 8 halite-node`,
 `/usr/local/share/man/man8`. On a machine built from source that is the
 documentation it has; `docs/` does not travel with the binary.
 
-Eleven checks with a remediation line on anything that is not a pass —
+Each check carries a remediation line on anything that is not a pass,
+and which checks run depends on the role. A node runs eleven:
 configuration validity, certificate expiry, connectivity, clock skew
-against the hub, the file server, pillar compilation, disk space, the
-reactor's queue, extension signatures, module verification, and whether
-the host kernel's FIPS mode agrees with this binary's. SPEC section
-26.4, and [the command reference](command-reference.md) has the output
-and what each role runs.
+against the hub, the file server, pillar compilation, disk space,
+extension signatures, module verification, its evidence chain, and
+whether the host kernel's FIPS mode agrees with this binary's. A hub
+runs eight: configuration validity, certificate expiry, the file
+server, pillar compilation, disk space, the reactor's queue, module
+verification, and FIPS mode. SPEC section 26.4, and [the command
+reference](command-reference.md) has the output.
 
-Ten of those are about the machine. **Module verification is about
-halite**: it names the modules that change this machine as root and have
-never been run against the tool they drive, because a unit test cannot
-establish that half — it supplies the program's output, so it checks
-that the parser reads what the test author believed. That belief has
-been wrong on a firewall. It warns and never fails; what it means is
-that if one of those modules does the wrong thing, halite is not ruled
-out as the cause. `sys.evidence` gives the same answer per module with
-the assumption named.
+**Module verification is about halite** rather than the machine: it
+names the modules that change this machine as root and have never been
+run against the tool they drive, because a unit test cannot establish
+that half — it supplies the program's output, so it checks that the
+parser reads what the test author believed. That belief has been wrong
+on a firewall. Today it passes, because every root-mutating module in
+this build has been run against its tool; when one has not, it warns
+and never fails, and what that means is that if the module does the
+wrong thing, halite is not ruled out as the cause. `sys.evidence` gives
+the same answer per module with the assumption named.
 
 It changes nothing, so it is safe on a machine that is already
 misbehaving, and it exits non-zero only on a failure — a warning is a
@@ -43,8 +48,11 @@ Reaching for it first is usually faster than reading a log.
 
 ## Exit codes
 
-Every command follows the same convention, so a script never has to parse
-output to know what happened.
+A state run, `halite-node state apply`, follows this convention, so a script never has to parse output to know what
+happened. Other commands have their own: `halite-hub run` is under
+[Driving the fleet](#driving-the-fleet), `enroll` exits 2 while a
+request is pending, and `call`, `pillar` and the `state show_*`
+commands exit 0 on success.
 
 | Exit | Meaning |
 |---|---|
@@ -109,7 +117,13 @@ time as the estate.
 ## Logging
 
 Structured JSON to stderr, one object per line, carrying `ts`, `level`,
-`msg`, `component`, and `node_id`. SPEC section 26.1.
+and `msg`, and `component` and `node_id` where the record has them.
+SPEC section 26.1. A command's own output — a state return, a listing —
+goes to standard output, so the two can be separated.
+
+Under systemd stderr is the journal; the units set `SyslogIdentifier`,
+so `journalctl -t halite-node` finds it. Under the rc.d scripts it goes
+to `/var/log/halite/`.
 
 ```yaml
 log_level: info      # error, warn, info, debug, trace
@@ -125,6 +139,27 @@ configuration needs no edit.
 A log file that cannot be opened is an error rather than a fall back to
 stderr: an operator who asked for a file is relying on it.
 
+**`halite-api` honours neither `log_format` nor `log_file` yet.** It
+reads `log_level`, and `--log-level` and `--log-fmt` on its command
+line, but it reads the format from `log_fmt` rather than `log_format`
+and opens no file, so with `log_format: console` and a `log_file` in
+`api.yaml` it still logs JSON to stderr and writes no file. The
+hub and the node honour all three. A fix is pending.
+
+### Choosing the output
+
+`--out` chooses how a command's result is rendered. For `halite-node`,
+`nested` is the human one and the default; `halite-hub`'s default is
+`summary`. `json` is the frozen, versioned schema for anything
+downstream:
+
+```sh
+halite-node state apply --local --out json | jq '.[] | select(.result == false)'
+```
+
+The JSON shape is SPEC section 11.8 and does not change without a
+version bump, so a dashboard built on it keeps working.
+
 ### Secrets in the log
 
 Every value the `gpg` renderer decrypts, and every setting whose name
@@ -133,9 +168,10 @@ before they are written. Redaction happens at the sink, so a diagnostic
 added later cannot forget about it, and it covers every field of a
 record rather than the message alone.
 
-The line is between a diagnostic and requested data. `pillar items` is
-not scrubbed: it was asked for the pillar, and answering with asterisks
-would be a different program.
+Requested data is a separate matter. `halite-node pillar items` masks
+values by default, as Salt's does — `db_password: **********` — and
+`--reveal` prints them. That masking is a choice made for the command's
+output, not the log redaction described here.
 
 A value shorter than six characters is not scrubbed. It cannot be
 removed from text without removing everything that resembles it — a
@@ -219,8 +255,12 @@ For a periodic run, cron is the honest answer on FreeBSD:
 
 ```
 # /etc/cron.d/halite  — spread the fleet with a random delay
-*/30 * * * * root sleep $((RANDOM \% 600)); /usr/local/bin/halite-node state apply --local >> /var/log/halite/highstate.log 2>&1
+*/30 * * * * root sleep `jot -r 1 0 600`; /usr/local/bin/halite-node state apply --local >> /var/log/halite/highstate.log 2>&1
 ```
+
+`jot`, not `$RANDOM`: cron runs the line with `/bin/sh`, which on
+FreeBSD has no `$RANDOM`, and `$((RANDOM % 600))` there is an unset name
+in arithmetic — zero — so every machine would sleep for no time at all.
 
 ### The daemons
 
@@ -242,11 +282,23 @@ the fingerprint. That directory has to be writable by the account the
 hub runs as; the systemd unit grants exactly it with `ReadWritePaths`
 and nothing else under `/etc`.
 
+**The hub's unit has no `CacheDirectory=`.** It runs with
+`ProtectSystem=strict`, which leaves writable only `/etc/halite/pki`
+and the `StateDirectory=` and `LogsDirectory=` it names, and the hub's
+default `cache_dir` on Linux is `/var/cache/halite`. `serve` refuses to
+start when it cannot write `<cache dir>/nodes`, so a Linux hub on
+default paths under that unit needs `/var/cache/halite` created and
+owned by the hub's account, and made writable to the unit — a drop-in
+with `CacheDirectory=halite` does both. That is from reading the unit;
+it has not been run under systemd. A fix to the unit is pending.
+
 `halite-node connect` reconnects on its own with backoff, so an
 unreachable hub is not a unit failure. It exits 1 for the two things a
 restart cannot fix — this node's enrollment was revoked, or `hub_tries`
-was reached — and the units carry `RestartPreventExitStatus=1` so that
-stops the unit and leaves the reason in the journal.
+was reached — and the node's unit carries `RestartPreventExitStatus=1`
+so that stops the unit and leaves the reason in the journal. The API's
+unit carries it too, for the certificate and configuration errors
+`serve` exits 1 on; the hub's does not.
 
 The agent runs the jobs that arrive on that stream, and compiles them
 against the tree and the pillar the hub serves.
@@ -540,7 +592,7 @@ hub         https://hub.example:4510
 the request is waiting for an operator to accept it.
 on the hub: halite-hub keys accept web1.example
 run this again, or pass --wait, once it has been accepted.
-halite_node is not enrolled yet; accept it on the hub and start again
+/usr/local/etc/rc.d/halite_node: WARNING: halite_node is not enrolled yet; accept it on the hub and start again
 ```
 
 Accept it on the hub, run `service halite_node start` again, and it
@@ -574,8 +626,12 @@ CIDR, and a record of what it admitted — none of which Salt's
 
 ```sh
 halite-hub keys token create --ttl 1h --nodes 'web*.example' --cidr 10.0.0.0/8
-halite-node enroll --token '<secret>' --ca-file ca.crt
+halite-node enroll --token '<secret>' --hub-fingerprint 'ab:cd:...'
 ```
+
+The token does not replace the fingerprint. A node enrolling for the
+first time is refused without `hub_fingerprint`, whichever way it is
+admitted.
 
 Prefer `keys token revoke <id>` to `keys token delete <id>`: a revoked
 token admits nothing and keeps the record of what it already admitted,
@@ -609,6 +665,26 @@ hand; before the halfway point it says so and changes nothing, and
 ```sh
 halite-node renew
 ```
+
+**A node on a build before DIVERGENCE 5.195 does not renew itself.**
+Nothing in those builds runs `renew`, so such a node stops
+authenticating when its certificate runs out, 90 days after it was
+issued. Until it is upgraded and its `connect` restarted, run `renew`
+daily. Before the halfway point it prints when the certificate is good
+until, changes nothing, and exits 0, so a daily run is safe -- and it
+stays harmless after the upgrade, when `connect` will usually have
+renewed first:
+
+```
+# /etc/cron.d/halite-renew — the same line on FreeBSD and on Linux
+17 3 * * * root /usr/local/bin/halite-node renew >> /var/log/halite/renew.log 2>&1
+```
+
+Run it as the account that owns the node's key material — root, under
+the shipped units and the default `halite_node_user`. The line has not
+been run on a FreeBSD host: if that host's cron does not read
+`/etc/cron.d`, put the same entry, without the `root` field, in root's
+crontab with `crontab -e`.
 
 Revocation takes effect at the next handshake and on every request over
 a connection that is already open, so it does not wait for a CRL to
@@ -698,20 +774,33 @@ that order:
 # On the upstream hub: accept relays, and grant this one the right.
 accept_relays: true          # in the hub configuration
 
-# In the policy, for the relay's node certificate:
-#   - principals: ['node:relay1.example']
-#     runners: ['relay.proxy']
-
 # On the relay: enrol with the upstream, then run as a relay.
 halite-node enroll --config /usr/local/etc/halite/relay-upstream.yaml \
-    --ca-file /var/db/halite/upstream-ca.crt
+    --hub-fingerprint 'ab:cd:...'
 halite-hub keys accept relay1.example    # on the upstream
 ```
+
+And in the upstream's policy, a role holding `relay.proxy` and a binding
+for the relay's node certificate:
+
+```yaml
+roles:
+  relay:
+    - runners: ['relay.proxy']
+bindings:
+  - principal: 'node:relay1.example'
+    roles: ['relay']
+```
+
+`halite-hub policy test 'node:relay1.example' '*' relay.proxy --runner`
+on the upstream should answer `allowed by role "relay" rule 0`. A rule
+that names its principal inside the role — `principals:` beside
+`runners:` — loads without complaint and grants nothing; the principal
+belongs in `bindings`.
 
 The relay's own hub configuration then names the upstream:
 
 ```yaml
-node_id: relay1.example
 relay: true
 relay_upstream: hub.example
 relay_pki_dir: /var/db/halite/relay-pki      # what it enrolled with
@@ -719,6 +808,9 @@ relay_spool_dir: /var/db/halite/relay-spool  # returns during an outage
 relay_event_tags:
     - halite/job/**                          # empty forwards nothing
 ```
+
+There is no `node_id` here: a hub does not read one, and its identity
+upstream is the certificate in `relay_pki_dir`.
 
 Nodes behind the relay enrol with the relay, not with the upstream, and
 their keys are accepted there. The upstream never holds a key for them —
@@ -738,69 +830,12 @@ and spools returns to `relay_spool_dir`, draining them oldest-first when
 the link comes back. Watch it with:
 
 ```sh
-halite-hub metrics | grep relay      # on the relay
+halite-hub metrics --filter relay    # on the relay
 ```
 
 A spool that is not shrinking after the upstream returns means the
 returns are being refused rather than lost; the relay's log says which
 jid and why.
-
-## The event bus
-
-Everything the hub does lands on a durable log — `halite/job/<jid>/new`,
-`halite/job/<jid>/ret/<node>`, `halite/node/<node>/start`,
-`halite/key/<node>/<action>`, and the rest. `halite-hub event tags`
-prints the namespace.
-
-```sh
-halite-hub event listen                                  # follow everything
-halite-hub event listen --tag 'halite/job/**'            # one class
-halite-hub event listen --from earliest --once           # replay the log
-halite-hub event listen --from '00000003:81920'          # resume from an offset
-```
-
-The offset is on every record, so a consumer stores it and resumes
-exactly where it stopped. Salt's bus is in-memory and lossy by
-construction; the events an estate wants during an incident are the ones
-it dropped.
-
-A node puts its own events on the bus:
-
-```sh
-halite-node event send deploy/finished version=1.2
-halite-node event send deploy/finished '{"version":"1.2","host":"web1"}'
-```
-
-What lands is `halite/node/<that node>/deploy/finished` — a node writes
-under its own prefix and nowhere else, whatever tag it asks for. Salt's
-reactor runs with the control plane's full privilege, so a node that can
-fire the right event can cause fleet-wide execution.
-
-Retention is `event_retention` and `event_max_size`, whichever binds
-first, enforced by the hub. Security-relevant tags — `halite/auth*` and
-`halite/key/*` — are written durably before the append returns; the rest
-are synced on an interval.
-
-`event_tag_compat: true` additionally emits each event under its
-`salt/...` spelling, for a consumer that cannot be changed at the same
-time as the estate.
-
-## Logging
-
-halite writes to standard output and standard error. Under systemd that
-is the journal; the units set `SyslogIdentifier` so `journalctl -t
-halite-node` finds it. Under the rc.d scripts it goes to
-`/var/log/halite/`.
-
-`--out` chooses the rendering. `nested` is the human one and the default;
-`json` is the frozen, versioned schema for anything downstream:
-
-```sh
-halite-node state apply --local --out json | jq '.[] | select(.result == false)'
-```
-
-The JSON shape is SPEC section 11.8 and does not change without a
-version bump, so a dashboard built on it keeps working.
 
 ## The API's serving certificate
 
@@ -985,8 +1020,9 @@ starts and fails later, somewhere that does not name the directory.
 ### What each program needs
 
 `<config root>` is `/usr/local/etc/halite` on a BSD, `/etc/halite` on
-Linux, `%PROGRAMDATA%\Halite` on Windows. `<state dir>` is
-`/var/db/halite` on a BSD and `/var/lib/halite` elsewhere.
+Linux and macOS, `%PROGRAMDATA%\Halite` on Windows. `<state dir>` is
+`/var/db/halite` on a BSD, `%PROGRAMDATA%\Halite\lib` on Windows, and
+`/var/lib/halite` elsewhere.
 
 **`halite-hub`**, as `halite`:
 
@@ -1059,9 +1095,13 @@ install -d -o halite -g halite -m 0750 /var/log/halite
 ```
 
 On Linux the state directory is `/var/lib/halite`, and the systemd units
-create the state, cache, and log directories themselves with
-`StateDirectory=`, `LogsDirectory=`, and the right owner — so only
-`pki_dir` needs doing by hand there.
+create the state and log directories themselves with `StateDirectory=`
+and `LogsDirectory=`, and the right owner. They create no cache
+directory: no unit has `CacheDirectory=`, and the hub's runs with
+`ProtectSystem=strict`, so `/var/cache/halite` is read-only to it even
+once it exists — see [The daemons](#the-daemons). So `pki_dir` and the
+hub's cache need doing there; read from the unit, not yet run under
+systemd.
 
 ### Checking it
 
@@ -1078,7 +1118,7 @@ because the files inside it are root's too.
 
 ### What it looks like when it is wrong
 
-Two failures worth recognising, because neither names the directory:
+Three failures worth recognising, because none names the directory:
 
 | Symptom | Cause |
 |---|---|
@@ -1296,7 +1336,10 @@ nowhere durable to write; the hub's own record is the only one.
 
 ## Backups
 
-There are none yet. Salt's `backup:` option, which keeps a copy of a file
-before overwriting it, has no equivalent here: `file.managed` overwrites
-without keeping one. If a tree relies on that, say so before migrating
-it. It is recorded in [DIVERGENCE.md](DIVERGENCE.md).
+`file.managed` takes `backup:`. `backup: node`, with Salt's own value
+accepted beside it, keeps a timestamped copy of the previous contents
+under `<cache_dir>/file_backup/<the file's absolute path>/` before
+writing, and `file.list_backups` and `file.restore_backup` read that
+cache. Any other value is a suffix: the copy is written beside the file
+as `<path><suffix>`. A node with no `cache_dir` keeps no backups and
+says so. [DIVERGENCE 5.63](DIVERGENCE.md) records the cache.

@@ -78,7 +78,10 @@ that is where pillar compiles; `module` and `returner` run on nodes.
 network by default — and the declaration is signed, so an extension
 cannot ask for more at handshake than its manifest says. Declare the
 minimum: this one reads a secret over HTTPS and needs no privilege at
-all, so it asks for the network and drops to an unprivileged account.
+all, so it asks for the network and not for `root`. An extension that
+does not declare `root` runs as the account `extension_user` names;
+with that unset, it runs as the host's own identity, and
+`sys.list_extensions` says so.
 
 **`Functions`** is what it provides, in the shape of SPEC 15.6, which
 the host reads at handshake and `sys.list_extensions` reports. A pillar
@@ -178,7 +181,7 @@ are credentials, so it assumes all of them are.
 
 ## Running it while you write it
 
-Packaging is six steps, and a one-line change does not deserve six
+Packaging is four steps, and a one-line change does not deserve four
 steps. `run` starts the file where it lies:
 
 ```sh
@@ -209,7 +212,7 @@ sandbox of SPEC 24.3, and an extension that has only ever been run
 without one is an extension nobody has tested:
 
 ```
-$ halite-hub extensions run ./my-source --sandbox
+$ halite-hub extensions run ./my-source --kind pillar --sandbox
 my_source 1.0.0 (pillar)
   declares: network
   sandbox: process boundary; network not granted; cpu 60s; open files 256; …
@@ -218,7 +221,14 @@ my_source 1.0.0 (pillar)
 
 `--declare network` grants it, the way a signed manifest would. Running
 with less than the extension declares is the useful test: it is what
-happens when somebody signs a bundle whose manifest is out of date.
+happens when somebody signs a bundle whose manifest is out of date. An
+extension that checks `ext.NetworkDenied()` at startup, as the AWS one
+does, exits during the handshake instead, and `run` reports what it wrote
+to stderr rather than the hint above.
+
+The kind in the header comes from `--kind`, because the handshake answer
+does not carry one: without the flag, `run` prints `(kind not declared)`
+whatever the extension is.
 
 ## Building and installing it
 
@@ -233,8 +243,17 @@ GOOS=linux GOARCH=amd64 go build -o build/aws-secrets ./cmd/halite-ext-aws-secre
 `make extensions` builds the ones in this tree for the host platform,
 into `bin/`, which is enough to try it on one machine.
 
+**Run steps 1 and 2 on the platform the extension will run on.**
+`extbundle` records the executable under its *own* platform — the
+`GOOS/GOARCH` of the machine running it — and has no flag to name
+another. A `linux/amd64` binary bundled on a Mac is written into the
+manifest as `darwin/arm64`. A Linux hub then refuses it as carrying no
+executable for `linux/amd64`, and a Mac fails to start it with
+`exec format error`. Until that is fixed, cross-compiling the binary is
+not enough: bundle it on a machine of the target platform.
+
 **2. Bundle and sign.** `-key` names the signing key and generates one
-the first time, so step two and step three are one command.
+the first time, so the key and the signature come from one command.
 
 ```sh
 go run ./tools/extbundle \
@@ -250,7 +269,16 @@ go run ./tools/extbundle \
 That writes `manifest.json` — the digest of every file — and
 `manifest.sig`, an Ed25519 signature over the Merkle root of the
 manifest. It prints the trust key to put in `hub.yaml` and the root to
-pin. Keep `ext-signing.key` off the hub: a machine holding both the
+pin:
+
+```
+trust_key: lab rK7XI/MZuaShviflQHZDgrzWtKPQDLACL8gILM4+6u4=
+root: 6f471a1645d8691962c05a6a62786b7786fb55d583c909267e99df63396ad000
+```
+
+The key is a raw 32-byte Ed25519 public key in base64, not an OpenSSH
+`ssh-ed25519` line, and `lab` is only the name `extbundle` always
+prints; the name in `hub.yaml` is yours to choose. Keep `ext-signing.key` off the hub: a machine holding both the
 signing key and the extensions it verifies is verifying its own
 signature.
 
@@ -259,8 +287,11 @@ is built from and an undeclared permission is one the extension will not
 have:
 
 ```sh
-grep declares ./build/manifest.json
+grep -A3 '"declares"' ./build/manifest.json
 ```
+
+The manifest is indented JSON, so a bare `grep declares` prints only the
+line that opens the list.
 
 **4. Publish it into the tree** under `_ext/<name>/<version>/`, where the
 file server already serves everything else:
@@ -277,7 +308,7 @@ Then tell the hub which key to trust and pin what may run:
 ```yaml
 # hub.yaml
 extension_trust_keys:
-  - 'release AAAAC3NzaC1lZDI1NTE5AAAAI...'
+  - 'release rK7XI/MZuaShviflQHZDgrzWtKPQDLACL8gILM4+6u4='   # from extbundle's trust_key line
 extension_require_signature: true
 extension_pins:
   aws_secrets_manager:
@@ -329,7 +360,8 @@ The protocol is JSON over stdio and nothing about it is Go's. An
 extension in any language that can read a pipe and parse JSON works the
 same way, and
 [`contrib/extensions/python/example_pillar.py`](../contrib/extensions/python/example_pillar.py)
-is one, in about a hundred and fifty lines with no dependencies. The
+is one, in under three hundred lines with no dependencies, much of it
+comment. The
 test suite starts it with the real host and asks it for pillar, so it
 cannot quietly stop being correct.
 
@@ -443,9 +475,18 @@ your extension.
 still be entirely wrong about its own job. This is the part that can be
 checked without knowing what the extension is for.
 
-Both extensions in this repository pass all fourteen, and a test asserts
-it — an example that has quietly stopped conforming teaches the wrong
-thing to everyone who copies it.
+The two pillar extensions in this repository pass all fourteen, and
+`internal/extconform` asserts it — an example that has quietly stopped
+conforming teaches the wrong thing to everyone who copies it. The Python
+one is skipped on a machine without `python3`. The signer passes them
+too, but only when `HALITE_EXT_SIGNER_KEY_FILE` names a key — without
+one it exits before the handshake — and no test runs it through
+`verify` yet:
+
+```sh
+HALITE_EXT_SIGNER_KEY_FILE=./signer.key \
+  halite-hub extensions verify ./halite-ext-signer-local --kind signer
+```
 
 ## What you can rely on, and what will break you
 

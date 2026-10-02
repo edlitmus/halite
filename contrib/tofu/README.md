@@ -1,27 +1,31 @@
 # The Vultr lab
 
-Nine machines that SPEC 27.1 names as supported and that nothing in this
-project runs, raised on demand and destroyed afterwards: seven Linux
-distributions nothing here has ever booted, and two FreeBSD releases
-that are covered only by machines too close to home to trust.
+Ten machines that SPEC 27.1 names as supported and that nothing else in
+this project runs, raised on demand and destroyed afterwards: eight Linux
+rows (seven distributions, plus `debian13sysv`, a Debian converted to
+sysvinit), which nothing here had booted before this lab, and two FreeBSD
+releases that are covered otherwise only by machines too close to home to
+trust.
 
 ## Why it exists
 
 Between GitHub's runners, beastie and ref-salt1 this estate already
 covers Ubuntu 24.04, Windows, macOS, FreeBSD and one arm64 Linux.
 Everything else in SPEC 27.1's tier table is a claim with no machine
-behind it. Two of them are worse than untested: `internal/builtin`'s
-evidence table says in so many words that the **dnf/yum** and **apk**
-package providers "have not been driven at all", and `selinux` is absent
-from the build entirely because there has been no host to write it
-against.
+behind it. When this lab was built, two of them were worse than
+untested: `internal/builtin`'s evidence table said in so many words that
+the **dnf/yum** and **apk** package providers "have not been driven at
+all", and `selinux` was absent from the build because there had been no
+host to write it against. This lab's rows closed both: dnf (DIVERGENCE
+5.157), apk (5.124) and `selinux` (5.183), and `zypperpkg` (5.176) with
+them.
 
 | Row | What it unlocks | Tier |
 |---|---|---|
 | `rocky9` | the dnf provider, `selinux`, `firewalld` | 1 |
 | `alma8` | the older RHEL line and its yum-era tooling | 1 |
 | `alpine` | the apk provider; the only musl and OpenRC machine here | 2 |
-| `opensuse16` | zypper, which is not implemented yet | 2 |
+| `opensuse16` | the zypper provider and `zypperpkg`, written here (5.176) | 2 |
 | `debian13` | Debian 13 | 1 |
 | `debian13sysv` | the sysvinit service provider, on a Debian converted to it | 1 |
 | `ubuntu2204` | the oldest tier 1 Ubuntu | 1 |
@@ -49,11 +53,11 @@ ref-salt1. This is a gap in the lab, not one it closes.
 **Amazon Linux 2023.** A tier 1 platform, not offered off AWS, and
 therefore still untested anywhere in this estate.
 
-**macOS.** Nothing in this estate runs the eight `mac_*` modules the
-release gate names, and no cloud offers a Mac the way Vultr offers a
-Linux box. EC2 Mac is the only rentable one and its dedicated hosts have
-a minimum allocation of 24 hours. That gap is closed by a real Mac, not
-by this lab.
+**macOS.** Covered elsewhere: the seven `mac_*` modules are `hardware`,
+from a real Mac and from fleet.yml's `macos` leg, which re-runs them as
+root (DIVERGENCE 5.114-5.121). No cloud offers a Mac the way Vultr offers
+a Linux box -- EC2 Mac is the only rentable one, and its dedicated hosts
+have a minimum allocation of 24 hours -- so this lab has no row for one.
 
 ## What the first run established
 
@@ -102,11 +106,13 @@ see DIVERGENCE 5.74, 5.76 and 5.77 -- most of them one platform's
 spelling assumed universal. **This is what the lab is for**, and the
 figure to watch is not that they now pass but that they did not.
 
-**What it has still not established**: the dnf and apk providers have
-still never been driven. The only live `pkg` tests are dpkg-specific and
-skip on RHEL and Alpine, so those rows prove the tree builds and behaves
-there, not that their package providers work. `evidence.go` says so, and
-it remains true.
+**What it had still not established**, when this was written: the dnf
+and apk providers had still never been driven, because the only live
+`pkg` tests were dpkg-specific and skipped on RHEL and Alpine. That is no
+longer true. apk was driven on the Alpine row (DIVERGENCE 5.124), dnf
+through the conformance harness on the RHEL rows (5.157) and then in CI
+(5.178), and zypper on `opensuse16` (5.176). Of the package providers,
+`evidence.go` now names only pacman, and yum on EL7, as never driven.
 
 ## Running it
 
@@ -115,7 +121,7 @@ in this repository:
 
 ```sh
 export VULTR_API_KEY=...      # same token vultr-cli uses
-make lab-up                   # raise all seven
+make lab-up                   # raise all ten
 make lab-wait                 # block until each has provisioned
 make lab-test                 # build, unit suite and live suite on each
 make lab-down                 # destroy them
@@ -153,14 +159,18 @@ make lab-facts                                    # what each machine says it is
 make lab-ssh  DISTRO=rocky9                       # a shell on one
 make lab-distros                                  # the row names
 make lab-plan                                     # a plan, changing nothing
+make lab-hosts                                    # the instances in the state, and whether each is ready
+make lab-cidr                                     # the address SSH will be opened to
 ```
 
-`make lab-down` takes the same `LAB_DISTROS` as the `lab-up` that
-created them.
+`make lab-down` takes `LAB_DISTROS` too, but a subset destroy is not
+supported: `tofu destroy` destroys everything in the state, whichever rows
+the variable names, so it takes the whole lab down. That is tofu's destroy
+semantics, not something this lab has run to check.
 
 ## Cost
 
-Nine `vc2-1c-2gb` instances. Vultr bills hourly against a monthly cap,
+Ten `vc2-1c-2gb` instances. Vultr bills hourly against a monthly cap,
 so a sweep that raises them, runs the suite and destroys them costs a
 few cents; leaving them all running costs the sum of their monthly caps.
 `vultr-cli plans list` has the current numbers, and
@@ -313,7 +323,8 @@ If an instance really is broken, `make lab-down` and start again.
 ## What `make lab-test` runs
 
 Per host, in order: `go build ./...`, then `go test ./...`, then the live
-suite as root with `HALITE_SYSTEM_LIVE=1`. It keeps going after a host
+suite as root -- `go test -run TestLive ./internal/builtin/` with
+`HALITE_SYSTEM_LIVE=1` and `HALITE_CONFORMANCE_LIVE=1`. It keeps going after a host
 fails and names which ones did.
 
 `HALITE_REBOOT_LIVE` is deliberately **not** set. That gate schedules a

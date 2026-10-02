@@ -253,8 +253,9 @@ DIVERGENCE 5.180.
   `allow_updates` never matched an installed `1.0-1` and still does not;
   that is recorded, not fixed.
 
-Not run on a lab host since the change; each is held by a unit test built on
-bytes a lab host printed. DIVERGENCE 5.177.
+The version comparison has since been run against rpm 4.16.1.3 on Rocky 9.8 and
+in CI's `rpm` legs (DIVERGENCE 5.178); the owner and installed-set fixes are held
+by unit tests built on bytes a lab host printed. DIVERGENCE 5.177.
 
 ### `pkg` on SUSE, and `zypperpkg`
 
@@ -270,7 +271,8 @@ and `refresh_db` there fails naming the repository; a pinned version below the
 installed one is installed, where zypper on its own would do nothing and exit
 0; and `pkgrepo` still has no zypper provider and refuses on SUSE. On a SUSE
 node with dnf also installed, `pkg` now picks zypper. `pkg.upgrade` was not
-driven, and SLES was not run. No CI leg runs it. DIVERGENCE 5.176.
+driven, and SLES was not run. fleet.yml's `rpm` leg for Leap 16.0 runs it, in a
+container (DIVERGENCE 5.178). DIVERGENCE 5.176.
 
 ### `rpm` and `chattr`: the first two RHEL-row modules
 
@@ -283,8 +285,8 @@ kernels, several `gpg-pubkey` keys), plus `file_list`, `file_dict`, `owner`,
 `verify` and `version_cmp`. `chattr` reads attributes with `get` and changes them
 with `add` and `remove`, reads every change back from lsattr because chattr's exit
 status does not say what the filesystem did, and refuses `e`, since clearing it
-really does convert an ext4 file back to block maps. Neither is run by any CI leg;
-there is no RHEL leg. DIVERGENCE 5.172.
+really does convert an ext4 file back to block maps. Both run in fleet.yml's `rpm`
+legs, in Rocky 9, Alma 8 and Leap 16 containers (DIVERGENCE 5.178). DIVERGENCE 5.172.
 
 ### An `authselect` module, built on real RHEL-family hosts
 
@@ -322,7 +324,8 @@ and return `{changes, stderr}` — the per-module state before and after, measur
 from modules.d. A module that has been reset reads as never touched, as it does to
 dnf, although dnf leaves its file behind. Every function was run as root on Rocky
 Linux 9.8 (dnf 4.14.0) and AlmaLinux 8.10 (dnf 4.7.0) lab instances; there is no
-state, since SPEC 15.5 names none, and no CI leg runs it. DIVERGENCE 5.174.
+state, since SPEC 15.5 names none. fleet.yml's Rocky 9 and Alma 8 `rpm` legs run it
+(DIVERGENCE 5.178). DIVERGENCE 5.174.
 
 ### A `firewalld` module and `firewalld.present`
 
@@ -373,6 +376,7 @@ real `pro` client and were run against this project's own Ubuntu Pro-attached
 development host; `pro.attach`, `pro.detach`, `pro.enable` and `pro.disable`
 are built to the client's documented argument grammar but not yet run against
 one, because each changes what a real host is entitled to install and patch.
+(`enable` and `disable` have been since; see the entry above.)
 
 ### `module.run` dropped its own positional arguments, and refused a bare kwarg Salt allows
 

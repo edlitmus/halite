@@ -94,11 +94,11 @@ sideways, as part of phase 5's observability rather than as phase 6 work.
 |---|---|
 | 0. Foundations | Done. |
 | 1. Local state and pillar | Done, within a module inventory that is about half of what SPEC 15 names. |
-| 2. Hub, transport, enrollment | Done. Outstanding: external pillar, `halite-hub files`, return chunking, the event-bus indexes. |
+| 2. Hub, transport, enrollment | Done. Outstanding: `halite-hub files`, return chunking, the event-bus indexes. External pillar ships (DIVERGENCE 5.78, 5.79). |
 | 3. The automation loop | Done. Outstanding: `salt.parallel`, the queue runner, live pause/resume, beacons and schedules through pillar, the node-side bus. |
-| 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: no reference bridge extension ships. |
-| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD and macOS rows of SPEC 15.3 now ship entirely. **23 of SPEC 15.3's 65 platform modules, 6 of SPEC 15.2's core execution modules and 7 of SPEC 15.5's core state modules remain.** Re-measured against the registry on 2026-09-15; the row had said 32, 18 and 14, and §2.2 had said 9 and 10 at the same time -- two counts of the same thing, both wrong, in one document. |
-| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Outstanding: the scale harness the other eleven performance rows need, no packaging, no node evidence, no detached signing; the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
+| 4. API and integration | Done, including the bridge protocol and sandbox. Outstanding: SPEC 20.3's reference returners, `postgres` and `sqs`, are not built. `halite-ext-aws-secrets` (a pillar source) and `halite-ext-signer-local` (a signer) ship as worked examples of the extension model. |
+| 5. Breadth | gitfs, s3fs, agentless mode, relays and the FIPS artifact set are built. Windows parity is largely done and verified on a real host; the FreeBSD, Common Linux and SUSE rows of SPEC 15.3 ship entirely, and macOS lacks only `mac_assistive`, which is out of the build on purpose. **17 of SPEC 15.3's 65 platform modules, 3 of SPEC 15.2's core execution modules (one of them `state`, struck rather than missing) and 2 of SPEC 15.5's core state modules (`pro` and `win_wua`) remain.** Re-measured on 2026-10-02 from `TestPendingPlatformModulesMatchTheSpec` ("65 modules, 17 pending") and the ledger's audited 2.1 and 2.2 preambles (53 of 56, 44 of 46). The row had said 23, 6 and 7 from 2026-09-15, and 32, 18 and 14 before that, while §2.2 said 9 and 10 -- the same drift, twice. |
+| 6. Hardening to 1.0 | Started. Metrics are nearly complete, tracing and `doctor` ship (§3.2); CI runs every leg of `make check` on four platforms; the chaos suite and upgrade testing are built (§3.4); the two SPEC 30 rows that a benchmark can measure are measured and met (§3.1). Node evidence and detached job signing are built (§7 item 9). Outstanding: the scale harness the other eleven performance rows need; native packages and an SBOM, where the tarballs, manual pages and provenance are built (§3.6); an off-node anchor for the evidence head, and a hardware or KMS signer; the render sandbox ships (§3.3) and the seccomp allowlist on the parent does not. |
 
 ### 0.1 What the previous revision listed and what has closed
 
@@ -111,7 +111,7 @@ Its section 3.2 is nearly closed, and was the largest single correction
 this revision had to make. It said eleven of thirty-two metric families
 were unregistered, that all three extension counters were among them,
 and that "the node exposes no metrics at all". Two of those three
-statements are now false: **thirty of thirty-two are registered**, the
+statements are now false: **thirty of thirty-two were registered** at that revision, and thirty-one are now (§3.2), the
 three extension counters among them, and a node serves `/v1/metrics` on
 `metrics_listen` when an operator asks for it.
 
@@ -463,15 +463,17 @@ This is the largest block of work left, and it is the one that decides
 whether the estate can migrate. The registries answer:
 
 ```
-halite-node call sys.list_modules        # 88
-halite-node call sys.list_state_modules  # 47
+halite-node call sys.list_modules        # 98
+halite-node call sys.list_state_modules  # 55
 ```
 
 against SPEC 15.2's 56 core execution modules, 15.5's 46 core state
 modules, and 15.3's 65 platform modules.
 
-Re-measured on 2026-09-15, on Linux. The numbers here had been 50 and 32
-and the state denominator 47, all three wrong. The platform rows differ
+Re-measured on 2026-10-02 on darwin/arm64, with `halite-node call --local`;
+the ledger's totals, which `TestLedgerTotalsMatchTheBuild` holds to the build,
+say the same. On 2026-09-15, on Linux, they had been 88 and 47, and before
+that 50 and 32 with a state denominator of 47, all three wrong. The platform rows differ
 per target, so a Windows build registers a different total; the core rows
 do not. `internal/specaudit` holds the ledger's tables to the registry in
 both directions, so §2.2's lists are the ones to trust when this prose
@@ -676,14 +678,15 @@ Three things that shape the work:
 only remove is half a module, and `absent` needs the list of loaded
 modules anyway.
 
-### 2.3 Platform modules: 40 of 65
+### 2.3 Platform modules: 48 of 65
 
 Every one is registered as refused-with-a-reason, so a tree naming one
 gets "this build does not ship it yet" rather than "unknown module". That
 is the difference between a gap and a typo, and it is already done.
-Twenty-two ship: `zfs`, `zpool`, the four Windows ones, `dpkg`,
-`debconf`, `netplan`, `apparmor`, `snap`, `jail`, and **ten aliases**.
-**SPEC 15.3's FreeBSD row ships entirely**, which is the first row to.
+Forty-eight ship, measured 2026-10-02 (`TestPendingPlatformModulesMatchTheSpec`
+logs 17 pending): thirty-five modules and **thirteen aliases**, row by row
+in the table below. **SPEC 15.3's FreeBSD row ships entirely**, and was the
+first row to; Common Linux and SUSE have since.
 
 **The aliases answered the open question this section used to end with.**
 SPEC names both halves and both are true: 15.2's `pkg`, `service` and
@@ -714,10 +717,10 @@ what an operator is looking for.
 
 | Family | Missing | Why it ranks where it does |
 |---|---|---|
-| Debian and Ubuntu | 3 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor` and `snap` ship; `aptpkg` and `ufw` are aliases. `pro` and `debbuild` remain. `apt_key` is declined rather than pending: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
+| Debian and Ubuntu | 2 | **One host of five.** `dpkg`, `debconf`, `netplan`, `apparmor`, `snap` and `pro` ship (`pro`, DIVERGENCE 5.168 and 5.171); `aptpkg` and `ufw` are aliases. `debbuild` remains. `apt_key` is the second, declined rather than pending, and counted because the registry refuses it: apt-key was removed in Debian 12 and Ubuntu 24.04, and `pkgrepo` writes the keyrings that replaced it. |
 | Common Linux | 0 | `systemd_service` is an alias. **`pam`, `quota`, `openssl_cert`, `lvm`, `iptables`, `nftables`, `journald`, `mdadm`, `modprobe` and `udev` ship** (DIVERGENCE 5.47-5.54), and **`authselect`** (5.173) -- the row is complete. `iptables`/`nftables` are deliberately **not** `firewall` providers. `journald` reads through `journalctl -o json` and does rotate/flush/sync over journald's own varlink socket via a new `internal/varlink`. `mdadm`/`modprobe`/`udev` are exec-only (no state -- SPEC 15.5 names none for any of them). `authselect` was deliberately left pending until a RHEL-family host existed to write it against; the lab's Rocky 9 and Alma 8 were that host. |
 | Windows | 13 | Four ship, `win_pkg` is an alias. No user or group provider. |
-| macOS | 0 | `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate` and `mac_keychain` are modules (DIVERGENCE 5.41-5.46). **All seven are `hardware`** (5.114-5.118, 5.121), and `fleet.yml`'s `macos` leg drives them as root on every change to them, so the evidence stops being a run that happened once. `mac_assistive` was the eighth and is out of the build — SIP keeps its writes unreachable without a grant re-given on every rebuild (5.119). |
+| macOS | 1 | `mac_brew_pkg` and `mac_service` are aliases; `mac_defaults`, `mac_power`, `mac_user`, `mac_group`, `mac_shadow`, `mac_softwareupdate` and `mac_keychain` are modules (DIVERGENCE 5.41-5.46). **All seven are `hardware`** (5.114-5.118, 5.121), and `fleet.yml`'s `macos` leg drives them as root on every change to them, so the evidence stops being a run that happened once. `mac_assistive` was the eighth and is out of the build — SIP keeps its writes unreachable without a grant re-given on every rebuild (5.119). |
 | RHEL | 1 | `yumpkg` and `dnfpkg` are aliases. **`rpm` and `chattr` ship** (DIVERGENCE 5.172), written against the real tools on Rocky Linux 9.8 and AlmaLinux 8.10 in the lab; **`dnf_module` ships** (DIVERGENCE 5.174), built and driven on the same two rows; and **`firewalld` ships** (DIVERGENCE 5.175), driven against a throwaway zone on both (firewalld 1.3.4 and 0.9.11), and deliberately **not** a `firewall` provider, for the same reason `iptables` is not plus one of its own -- a provider would act on the default zone, which is the one zone the lab could not safely change. `subscription_manager` remains: Rocky and Alma have no RHEL subscription to drive it against. |
 | FreeBSD | 0 | **Four hosts of five, and the first row to ship entirely.** `freebsdpkg`, `freebsd_service`, `freebsd_sysctl` and `pf` are aliases; `pf` was the `firewall` module's second provider and the first to reshape that interface, refusing a default policy because pf has none (DIVERGENCE 5.31). `jail` reads `jls --libxo=json` and has its envelope checked against a real `jls` on CI's FreeBSD runner (5.32); its field names are no longer assumed either, and auditing them against the list `jls -h` publishes found one the module had invented (5.66). The FreeBSD half of the **Common Linux** row's `quota` was audited at the same time and had two defects, both from being read rather than run (5.65). |
 | SUSE | 0 | **`zypperpkg` ships** as an alias of `pkg`'s new zypper provider (DIVERGENCE 5.176), written and driven as root on openSUSE Leap 16.0 in the lab: all four `pkg` states through the conformance harness, hold, a real upgrade and a pinned downgrade, and an install past an unreachable repository. The row is complete. Not covered: `pkg.upgrade` and SLES. |
@@ -794,24 +797,26 @@ being measured.
 
 This section has moved further than any other since the last revision.
 
-- **30 of SPEC 26.2's 32 metric families are registered**, held in both
-  directions by `TestLedgerMetricGapMatchesTheBuild`. The two that are
-  not are `halite_pillar_cache_hits_total`, which waits on a pillar cache
-  that does not exist, and `halite_pillar_ext_failures_total`, which
-  waits on external pillar. **Both wait on a feature, not on a
-  counter**, so no metrics work remains that is only metrics work.
+- **31 of SPEC 26.2's 32 metric families are registered**, held in both
+  directions by `TestLedgerMetricGapMatchesTheBuild`. The one that is
+  not is `halite_pillar_cache_hits_total`, which waits on a pillar cache
+  that does not exist; `halite_pillar_ext_failures_total` is registered
+  now that external pillar exists (DIVERGENCE 5.23, 5.78). **It waits on
+  a feature, not on a counter**, so no metrics work remains that is only
+  metrics work.
 - **The node serves its own metrics.** `metrics_listen` opens
   `/v1/metrics` and nothing else, off unless the address is set, TLS
   only. Eighteen families come from the node, including the three
   extension counters and the beacon queue's drop paths. It is DIVERGENCE
   1.11 — a listener on a machine SPEC 6.1 says has none — and it is the
   right trade, but it is a divergence and should stay named as one.
-- **One trap survives and is worth repeating.**
-  `halite_pillar_failures_total` **is** registered and is a *different*
-  metric from the spec's `halite_pillar_ext_failures_total{source}`. An
-  alert written from SPEC 26.2's table against the latter matches
-  nothing, silently, and silence is what it would do if the estate were
-  healthy.
+- ~~**One trap survives and is worth repeating.**~~ **Closed with
+  external pillar.** `halite_pillar_failures_total` is still a
+  *different* metric from the spec's `halite_pillar_ext_failures_total{source}`,
+  but both are registered now (`internal/hub/metrics.go`), so an alert
+  written from SPEC 26.2's table against the latter matches something.
+  It used to match nothing, silently, which is what it would also have
+  done if the estate were healthy.
 - ~~**Tracing (26.3) and `doctor` (26.4) still do not exist.**~~
   **`doctor` ships**, with all eleven of SPEC 26.4's checks, a remediation
   line on every finding that a guard makes mandatory, and the check set
@@ -829,7 +834,9 @@ This section has moved further than any other since the last revision.
 
 ### 3.3 The security model's unbuilt half (SPEC 25)
 
-Unchanged since the last revision, and verified again here.
+Amended 2026-10-02: node-side evidence and detached job signing were
+built after this section was written (DIVERGENCE 5.127, 5.128). The
+other bullets stand as they were last verified.
 
 - ~~**The render sandbox (25.4) does not exist.**~~ **Built**, in
   `internal/rendersandbox`, behind `render_sandbox: true` and off by
@@ -849,13 +856,16 @@ Unchanged since the last revision, and verified again here.
   both need a node running as root to be demonstrated. Do not mistake
   the bridge sandbox for either: `internal/bridge` confines
   *extensions*, and it is built.
-- **Node-side evidence (25.7) does not exist.** No hash-chained
-  append-only record of accepted jobs, no `halite-node verify-evidence`.
-  SPEC 27.3 allocates it a directory. It is the control that gives an
-  investigator a record a compromised hub cannot rewrite.
-- **Detached job signing (25.6) does not exist.** `require_job_signature`
-  and `job_signer_keys` are declared and unread; the job wire type has no
-  signature field.
+- ~~**Node-side evidence (25.7) does not exist.**~~ **Built** (DIVERGENCE
+  5.127): `internal/nodeevidence` keeps the hash-chained record and
+  `halite-node verify-evidence` checks it. It is the control that gives an
+  investigator a record a compromised hub cannot rewrite; what is left is
+  anchoring its head hash off the node (§7 item 9).
+- ~~**Detached job signing (25.6) does not exist.**~~ **Built** (DIVERGENCE
+  5.128): `internal/jobsign`, `halite-hub run --sign-key`, and
+  `require_job_signature` by function class, with a bridged `signer`
+  extension since (5.170). Nothing has signed through a hardware token or
+  a KMS, and orchestration steps are not signed (§7 item 9).
 - **Signed state trees** are named in the 25.1 threat model and in phase
   6's contents. Do not mistake gitfs ref verification for it: that
   verifies a ref tip, not a tree manifest.
@@ -918,14 +928,15 @@ Unchanged since the last revision, and verified again here.
 
 ### 3.5 Packaging, release and CI (SPEC 4.3, 27.2)
 
-- **No artifact in SPEC 27.2 is built.** No packaging configuration of
-  any kind, no `.msi`, no `.pkg`, no container image for the product
-  itself, and no SBOM. ~~No provenance attestation~~: keyless SLSA
+- **No native package in SPEC 27.2 is built**: no `.deb`, `.rpm`,
+  `.msi`, `.pkg` or FreeBSD package, no container image for the product
+  itself, and no SBOM. The tarballs (`tools/disttar`) and the manual pages
+  (`contrib/man`) are built; §3.6 says how. ~~No provenance attestation~~: keyless SLSA
   provenance is signed in `release.yml` since 2026-09-25, for the digests
   its two builders agreed on. `make release` builds bare binaries into `bin/`
   and has never been run. `contrib/` has systemd units, FreeBSD rc.d
-  scripts and example configuration, and that is the whole packaging
-  story.
+  scripts and example configuration, and with the tarballs that is the
+  whole packaging story.
 - **CI exists**, in `.github/workflows/`. SPEC 4.2 opens by saying the
   dependency policy "has teeth: CI enforces it", and until now nothing
   did. `ci.yml` runs every leg of `make check` on push and on every pull
@@ -1283,20 +1294,23 @@ framing §0 already gives it.
 
 ## 4. Settings that are accepted and do nothing
 
-Twelve keys are **inert**: they warn at startup naming what the operator
+Ten keys are **inert**: they warn at startup naming what the operator
 gets instead, which is the honest half, and they still do nothing.
 `job_cache`, `quiesce`, `quiesce_allowlist`, `startup_states`,
 `parallel_jobs`, `socket_dir`, `node_data_cache`, `hub_type`,
-`legacy_acl`, `pillar_cache_disk`, `ext_pillar_fail`, `tracing`.
+`legacy_acl`, `pillar_cache_disk`. Counted 2026-10-02 from `InertKeys` in
+`internal/config/inert.go`; `ext_pillar_fail` and `tracing` left it when
+external pillar and tracing were built.
 
 `pillar_cache_disk` deserves separate mention: it is documented as
 caching pillar "encrypted at rest" (SPEC 12.8), and no encryption
 primitives exist in the tree at all (§3.3). Implementing it means writing
 the SPEC 25.3 encrypted-pillar stack, not wiring a flag.
 
-Five more are unread with a reason: `job_signer_keys` and
-`require_job_signature` wait on phase 6; `log_level_file`, `regex_engine`
-and `node_id_source` are settings with one value.
+Three more are unread with a reason (`UnreadKeys`): `log_level_file`,
+`regex_engine` and `node_id_source` are settings with one value.
+`job_signer_keys` and `require_job_signature` are read since detached
+signing was built (DIVERGENCE 5.128).
 
 ---
 
@@ -1431,12 +1445,14 @@ unchanged.
    produced a signature this build accepted.
 5. **State functions that reject arguments Salt accepts.** Re-measured
    2026-09-15, because this row named several that have since been
-   closed. What remains: `user.present` (`mindays`, `maxdays`,
-   `inactdays`, `unique`, `optional_groups`, `enforce_password`),
-   `group.present` (`system`, `members`), `file.managed` (`skip_verify`,
-   `keep_source`), `file.replace`, and `pkg.installed`. The
-   `user.present` row is one coherent feature — shadow ageing policy —
-   not six oversights.
+   closed, and checked against the signatures again on 2026-10-02. What
+   remains: `user.present`'s `optional_groups`, and `file.replace` and
+   `pkg.installed`, which this row names without saying which arguments,
+   so the 2026-10-02 check could not reach them. `user.present`'s
+   `mindays`, `maxdays`, `inactdays`, `unique` and `enforce_password`,
+   `group.present`'s `system` and `members`, and `file.managed`'s
+   `skip_verify` and `keep_source` are all declared now
+   (`internal/builtin/user.go`, `internal/builtin/file.go`).
 
    ~~`archive.extracted` (5)~~ and ~~`git.latest`~~ are closed:
    `archive.extracted` took `user`, `group` and `keep_source` (5.92) and
@@ -2295,9 +2311,9 @@ unbuilt item here is number 7.
    again, later) with a spare contract token — a fresh free personal
    subscription costs nothing to generate at
    `ubuntu.com/pro/dashboard` and does not touch the token already
-   attached here. `pro` has no state of its own (SPEC 15.5 names none,
-   the `mdadm`/`modprobe`/`udev` shape), so the state layer's own path
-   to it is `module.run`, the same bridge DIVERGENCE 5.167 fixed the
+   attached here. `pro` has no state yet -- SPEC 15.5 names one, and it
+   is one of §2.2's two missing states -- so for now the state layer's
+   path to it is `module.run`, the same bridge DIVERGENCE 5.167 fixed the
    argument pass-through on this session:
 
    ```yaml
@@ -2336,7 +2352,8 @@ unbuilt item here is number 7.
        - tgt: /home/builder/hello-2.10
    ```
 12. **The Common Linux row** (§2.3) — was eleven modules and is now
-    one, deliberately unbuilt. ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
+    none: `authselect`, the last, was built once the lab had RHEL-family
+    hosts (5.173). ~~`pam`, `quota` and `openssl_cert`~~ are **done**, taken
     first for the reason this item gave: they are the three that mean
     something on FreeBSD, which is four hosts of five. DIVERGENCE
     5.47-5.49. ~~`lvm`~~, ~~`iptables`~~ and ~~`nftables`~~ are **done**
@@ -2416,9 +2433,11 @@ unbuilt item here is number 7.
 13. Deepening the Salt differential to compare applied results (§3.4).
     See above: it guards a translation that has already happened.
 
-**Blocked on platform access** — nothing here is unbuilt because it was
-skipped; each is written and waiting on a machine this project has
-never had. The pattern items 1-13 set holds: don't ship a fixture for a
+**Blocked on platform access**, as these were written — nothing here
+was unbuilt because it was skipped; each was waiting on a machine this
+project had never had. Most have since had one, and items 15-19 are
+done; what is left of item 14 is `subscription_manager`, which waits on a
+RHEL subscription rather than a machine. The pattern items 1-13 set holds: don't ship a fixture for a
 tool nobody has run against it (DIVERGENCE 5.31).
 
 **The next four used to say "get a host". The hosts exist.**
@@ -2436,11 +2455,13 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     `subscription_manager`, `dnf_module`, `chattr` (§2.3, all seven
     unbuilt, not merely unverified, when this item was written; `rpm`,
     `chattr`, `dnf_module` and `firewalld` since built, below) — and lets the `pkg` module's
-    dnf/yum provider be run for the first time: all four optional
-    capabilities (`pkg.hold` through the `versionlock` plugin,
-    upgrading, file ownership, repository listing) are implemented to
-    the same shape apt's were and have never been exercised against a
-    real dnf (DIVERGENCE §2.3/§2.5, evidence.go's `pkg` note).
+    dnf/yum provider be run for the first time. **It has been since**:
+    the four `pkg` states through the conformance harness in the lab,
+    where `pkg.installed` did not work until that run (DIVERGENCE 5.157),
+    and again in CI's `rpm` legs on Rocky 9.8 and AlmaLinux 8.10 (5.178);
+    file ownership was fixed from what the lab printed (5.177). Not
+    evidenced anywhere: `pkg.hold` through the `versionlock` plugin and
+    repository listing on dnf, and `upgrade` (evidence.go's `pkg` note).
 
     ~~`rpm`~~ and ~~`chattr`~~ are **done** (DIVERGENCE 5.172), both
     written against what the real tools printed on a Rocky Linux 9.8 and
@@ -2676,8 +2697,10 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     - **A vendor's FIPS channel is two claims and the grain reports
       one.** A certified frozen kernel and a patched one from an
       updates channel both write 1 to that file, and for an assessment
-      they are different answers. The natural place to say which is a
-      `pro` module, which is not built (§2.3, item 11 above).
+      they are different answers. The natural place to say which is the
+      `pro` module, built since (item 11): `pro.status` carries the
+      client's own `fips` and `fips-updates` service entries. Whether that tells
+      the two apart on a FIPS host has not been checked.
     - ~~**Every Linux evidence note was captured on one release.**~~
       **Re-run one LTS older**: systemd 249 rather than 255, netplan
       0.107.1 rather than 1.1.2, apparmor-utils 3.0.4 rather than 4.0.1.
@@ -2735,8 +2758,9 @@ arm64: Vultr sells none, so that half of tier 1 stays with `ref-salt1`.
     **What is left on this item** is the half a single machine cannot
     give. A vendor's FIPS channel is still two claims where the grain
     reports one — a certified frozen kernel and a patched one from an
-    updates channel both write 1 to that file, and saying which needs
-    the `pro` module, which is not built (item 11). And this was one
+    updates channel both write 1 to that file, and saying which is what
+    the `pro` module's `fips`/`fips-updates` entries are for (item 11),
+    which no FIPS host has been asked yet. And this was one
     CIS-hardened host rather than a benchmark run: the partition layout
     is the control that bit, and the rest of Level 2 is untested.
 
@@ -2850,7 +2874,9 @@ somebody would otherwise rediscover.
 
     Still uncovered automatically, and named rather than implied: `pf`
     (it manages a real firewall, which is why it is not in an unattended
-    suite), `zfs` (its own `make zfscheck`), and `pkg`'s pkgng provider.
+    suite) and `zfs` (its own `make zfscheck`). ~~`pkg`'s pkgng
+    provider~~ is driven on the same leg now: all four `pkg` states
+    through the conformance harness, as root (evidence.go's `pkg` note).
 
 19d. **`extconform` keeps only a head.** The bridge now keeps both ends
     of an extension's stderr; `internal/extconform` keeps the first

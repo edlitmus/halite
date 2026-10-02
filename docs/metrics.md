@@ -165,9 +165,9 @@ overnight with nothing to say why. Set it in `api.yaml` before minting:
 token_lifetime: 8760h
 ```
 
-`token_idle` is 4h and cannot be turned off: zero means the default
-rather than "no idle expiry", and only a negative value disables it.
-That is harmless for a scraper, which uses the token every scrape
+`token_idle` is 4h. Zero means the default rather than "no idle
+expiry"; a negative value such as `-1s` is what disables it. The default
+is harmless for a scraper, which uses the token every scrape
 interval and never goes idle, but it does mean a token parked for an
 afternoon stops working.
 
@@ -226,7 +226,10 @@ halite's own directories:
 /usr/local/etc/halite/pki   drwxr--r--   halite:wheel
 ```
 
-That directory has no execute bit for anyone but `halite`, so nothing
+That is how it was found on a host set up before `make install` created
+the directory; `make install` now makes it `drwx------`, which is the
+same answer for anyone else. Either way the directory has no execute
+bit for anyone but `halite`, so nothing
 else can open a file inside it however permissive the file itself looks.
 A `ca_file` under `pki/` fails for the scraper even though `root` and
 the operator can both read it perfectly well. Give Prometheus its own
@@ -548,9 +551,10 @@ anything watching `up`, for the reason given under
   name too, and it is the whole job rather than the apply — see
   [What is exposed](#what-is-exposed).
 
-A node with no hub — `--local`, or a masterless estate — records the
-same families, minus the ones about a hub it does not have. It still
-needs `metrics_listen` and a certificate to serve them.
+A node with no hub serves no metrics. Only `halite-node connect`
+serves them, and `connect` will not start without a certificate from a
+hub, so a masterless node — `state apply --local` from cron or
+the highstate rc.d script — has no process for a scraper to reach.
 
 ## What is exposed
 
@@ -579,8 +583,8 @@ themselves, under whatever you call that job.
 | `halite_jobs_dispatched_total` | counter | `fun` | Jobs sent, by function. |
 | `halite_job_returns_total` | counter | `result` | Returns filed, by outcome. |
 | `halite_job_duration_seconds` | histogram | `fun` | How long jobs take, dispatch to return. |
-| `halite_jobs_missing_returns` | gauge | — | Nodes a dispatched job has not heard from. |
-| `halite_jobs_expired_total` | counter | — | Jobs whose TTL passed before every node answered. |
+| `halite_jobs_missing_returns` | gauge | — | Nodes a dispatched job has not heard from. It rises on dispatch and only a return lowers it: a job that expires, is killed, or stops at its batch safe limit leaves its count behind until the hub restarts. |
+| `halite_jobs_expired_total` | counter | — | Declared and never incremented in this build: it reads 0 on every hub, whatever has expired. Do not alert on it. |
 | `halite_state_states_total` | counter | `result` | Individual states applied, by outcome. |
 | `halite_state_changes_total` | counter | — | States that changed something rather than converging. |
 | `halite_state_run_duration_seconds` | histogram | — | Time a node spent on a state run end to end, out of its return. Compiling the tree is inside it. |
@@ -588,7 +592,7 @@ themselves, under whatever you call that job.
 | `halite_orch_runs_total` | counter | `result` | Orchestrations, by `complete`, `failed`, or `compile_failed`. |
 | `halite_pillar_compile_duration_seconds` | histogram | — | Time to compile one node's pillar. |
 | `halite_pillar_failures_total` | counter | — | Compilations that failed, so a node got no pillar. |
-| `halite_pillar_ext_failures_total` | counter | `source` | External pillar sources that failed. An ignored failure is counted too: it never reaches the line above, and the node is still missing what that source holds. |
+| `halite_pillar_ext_failures_total` | counter | `source` | Meant to count external pillar sources that failed, ignored failures included. **In this build it never counts:** with metrics on, an external pillar failure panics the pillar request in the attempt, so the request fails and the node gets no pillar — even for a source whose failure was to be ignored. A fix is pending. |
 | `halite_fileserver_requests_total` | counter | `backend` `code` | Tree fetches. |
 | `halite_fileserver_bytes_total` | counter | — | Bytes served. |
 | `halite_events_published_total` | counter | `tag_prefix` | Events reaching the bus. |
@@ -633,7 +637,7 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 | `halite_node_hub_request_duration_seconds` | histogram | `route` | How long the hub took to answer one. |
 | `halite_node_jobs_total` | counter | `fun` `result` | Jobs this node ran. |
 | `halite_node_job_duration_seconds` | histogram | `fun` | How long it spent on one. |
-| `halite_node_jobs_refused_total` | counter | `reason` | Jobs it would not run: `replayed`, `expired`, `malformed`, `other`. |
+| `halite_node_jobs_refused_total` | counter | `reason` | Jobs it would not run: `replayed`, `expired`, `malformed`, `other`. `other` is a full job queue, or a job without the signature `require_job_signature` asks for. |
 | `halite_node_job_queue_depth` | gauge | — | Jobs waiting for the executor. |
 | `halite_node_return_queue_depth` | gauge | — | Returns waiting to be posted. |
 | `halite_node_returns_dropped_total` | counter | — | Returns discarded because that queue was full. |
@@ -654,9 +658,13 @@ In the scrape of the nodes, not in the scrape of `halite-api`.
 `halite_beacon_events_total`, `halite_beacon_dropped_total`,
 `halite_state_run_duration_seconds` and
 `halite_state_compile_duration_seconds` are recorded on both sides. That
-is deliberate, and they are not the same number. The hub's are the
+is deliberate, and they are not the same number. For the beacon
+families and `halite_state_run_duration_seconds`, the hub's are the
 estate totalled from what nodes reported; the node's are that one
 machine, and a node nobody scrapes still contributes to the hub's.
+`halite_state_compile_duration_seconds` shares its name and nothing
+else: on the hub it is compiling an orchestration on the hub, and no
+node's compile time reaches it.
 
 `halite_state_run_duration_seconds` differs in a second way, and it is
 worth knowing before the two are put on one graph. A return carries one
@@ -693,15 +701,17 @@ queue that does not exist would read zero for ever:
 |---|---|
 | `halite_reactor_queue_depth` | `reactor:` has entries and the reactor is running |
 | `halite_beacon_queue_depth`, `halite_node_job_queue_depth`, `halite_node_return_queue_depth` | the node is the running agent, and for the first, has beacons |
-| `halite_gitfs_fetch_duration_seconds`, `halite_gitfs_signature_failures_total`, `halite_gitfs_refusals_total` | `fileserver_backend` names `git` |
 | `halite_relay_subordinates`, `halite_relay_upstream_connected`, `halite_relay_spool_entries`, `halite_relay_spool_dropped_total`, `halite_relay_returns_forwarded_total`, `halite_relay_events_forwarded_total` | `relay: true` |
 
 An alert against one of these on a hub that is not a relay never fires,
 and not because nothing is wrong.
 
-The gitfs three are declared with the rest of the hub's families, so
-they are in the exposition of any hub with metrics on; they simply
-never move on one that serves no git remote.
+The gitfs three — `halite_gitfs_fetch_duration_seconds`,
+`halite_gitfs_signature_failures_total` and
+`halite_gitfs_refusals_total` — are not among them. They are declared
+with the rest of the hub's families, so they are in the exposition of
+any hub with metrics on; they simply never move on one whose
+`fileserver_backend` names no `git`.
 
 ### What SPEC 26.2 names and this build does not have
 
@@ -783,7 +793,8 @@ every estate — which is checked by a test.
 The rows: fleet health, certificates and enrollment, jobs, states and
 orchestration, pillar, events and reactions, the file server,
 authentication and policy, the hub's own service metrics, the API's,
-and two collapsed rows for the node agents and for relays. Every panel
+two collapsed rows for the node agents and for relays, and the build
+row. Every panel
 carries a description saying what a reading means — hover the title.
 
 Four panels are worth knowing about before you need them:
@@ -898,14 +909,21 @@ groups:
         annotations:
           summary: "The API cannot reach the hub's exposition"
 
-      # Jobs dispatched that nobody answered.
+      # Jobs dispatched that nobody answered. Only a return lowers the
+      # gauge, so after one job expires or is killed unanswered this
+      # stays firing until the hub restarts; read `jobs active` and
+      # `jobs missing` before acting on it.
       - alert: HaliteJobsUnanswered
         expr: halite_jobs_missing_returns > 0
         for: 15m
         labels: {severity: warning}
 
       # A label taking unbounded values. The totals stay right; the
-      # breakdown stops being useful.
+      # breakdown stops being useful. Past the cap every label of the
+      # family reads __overflow__, but PromQL has to name a label to
+      # match it, so this watches `fun` — the likeliest — and an
+      # overflow in `route`, `tag_prefix`, `beacon`, `name` or `source`
+      # needs its own line.
       - alert: HaliteSeriesOverflow
         expr: count({__name__=~"halite_.*", fun="__overflow__"}) > 0
         labels: {severity: info}
@@ -969,11 +987,11 @@ groups:
         labels: {severity: warning}
 ```
 
-Two of these read a family that only appears on a hub with the feature
+One of these reads a family that only moves on a hub with the feature
 running — `halite_gitfs_signature_failures_total` needs
-`fileserver_backend` to name `git`. The families are declared either
-way, so the rule is quiet rather than absent, and quiet is correct on a
-hub with no git remote.
+`fileserver_backend` to name `git`. The family is declared either way,
+so the rule is quiet rather than absent, and quiet is correct on a hub
+with no git remote.
 
 On a relay, add its spool — an outage that is not draining is the thing
 you want to know about before the cap is reached:
