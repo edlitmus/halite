@@ -19328,8 +19328,7 @@ the new.
 "translated into RBAC rules" and "translated to a draft RBAC policy".
 SPEC is the authority, so whether it changes or this stays a recorded
 divergence is the owner's decision; until then it is this one.
-
-### 5.203 `halite-hub` and `halite-api` exited 2 on a usage error, and three of their 2s never ran
+### 5.210 `halite-hub` and `halite-api` exited 2 on a usage error, and three of their 2s never ran
 
 5.198 moved `halite-node` to `cli.ExitUsage` and left the 33 `exit 2`
 sites in `halite-hub` and `halite-api` counted but not read. All 33 have
@@ -19362,6 +19361,7 @@ exit 1; their 64 path on a configured hub was not run. And `halite-hub
 run` with no target still exits 1 through `cli.Fatalf`, which is also its
 code for "a node failed" -- the 5.198 collision again, left for its own
 entry.
+
 
 
 ## 6. Everything else not started
