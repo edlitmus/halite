@@ -96,6 +96,7 @@ func (s *Server) Orchestrate(ctx context.Context, req OrchRequest) (*OrchRun, er
 		Principal: req.Principal,
 		Started:   s.now(),
 		State:     OrchRunning,
+		Test:      req.Test,
 	}
 
 	orch := &orchRunner{server: s, principal: req.Principal, env: env, jid: jid}
@@ -259,6 +260,36 @@ func (s *Server) resumeSeed(req OrchRequest, compiled *state.Compiled, run *Orch
 	byID := map[string]*OrchStep{}
 	for _, step := range previous.Steps {
 		byID[step.ID] = step
+	}
+
+	// A dry run's steps did not happen, so a real run cannot be told
+	// they did. Carrying them forward was exactly that: the predicted
+	// results satisfied the requisites of the steps after the resume
+	// point, and those were dispatched for real against machines the
+	// earlier steps had never touched -- a deploy after a drain that
+	// was only ever predicted. A dry resume of a dry run, and a dry
+	// resume of a real one, claim nothing that did not happen and are
+	// allowed.
+	if !req.Test {
+		if previous.Test {
+			return nil, fmt.Errorf("%s was a test run, so none of its steps happened and there is nothing to "+
+				"carry forward; run it for real, or resume it with --test", req.ResumeOf)
+		}
+		// A record written before runs recorded `test` cannot say. A
+		// predicted change is the one result a real run never records
+		// -- a real step succeeded or failed -- so a carried step whose
+		// result is neither marks the run as a dry one. A dry run whose
+		// every step predicted no change records only successes and is
+		// not caught here; only the `test` field catches that.
+		for _, ch := range compiled.Low {
+			if ch.ID == req.ResumeFrom {
+				break
+			}
+			if step, ran := byID[ch.ID]; ran && step.Result == nil && !step.Skipped {
+				return nil, fmt.Errorf("%s recorded step %q as a predicted change, which only a test run records, "+
+					"so its steps did not happen; run it for real, or resume it with --test", req.ResumeOf, ch.ID)
+			}
+		}
 	}
 
 	seed := map[string]states.Result{}

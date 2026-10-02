@@ -32,6 +32,11 @@ type OrchRun struct {
 	// run it picked up from.
 	ResumedFrom string `json:"resumed_from,omitempty"`
 	ResumedOf   job.ID `json:"resumed_of,omitempty"`
+	// Test is a run under --test: every step's result is a prediction,
+	// and nothing it records happened. A resume reads it, because
+	// carrying a predicted step forward into a real run tells the steps
+	// after it that something was done which was not. DIVERGENCE 5.197.
+	Test bool `json:"test,omitempty"`
 
 	Started    time.Time   `json:"started"`
 	DurationMS int64       `json:"duration_ms"`

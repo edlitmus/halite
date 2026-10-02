@@ -1255,7 +1255,7 @@ node and has no pillar of its own.
 | `require`, `onfail`, `onchanges`, `prereq` between steps | same | works |
 | no equivalent | `halite-hub orch show <jid>` | works |
 | no equivalent | `halite-hub orch list` | works |
-| no equivalent | `halite-hub orch resume <jid> --from <step>` | works |
+| no equivalent | `halite-hub orch resume <jid> --from <step>` | works; a real resume of a `--test` run is refused, since none of its steps happened |
 | `salt.parallel` | refused when the step runs; `orch lint` does not catch it | not built |
 | `parallel: True` per step | accepted and run in order, with a warning in the hub's log only (DIVERGENCE 4.4) | by design |
 | `queue` per step | refused by name | not built |
