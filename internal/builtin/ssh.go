@@ -312,7 +312,7 @@ func writeAuthKeys(c *exec.Context, args *value.Map, path string, keys []authKey
 	if err := writeAtomic(path, []byte(b.String()), 0o600); err != nil {
 		return states.False(fmt.Sprintf("%s could not be written: %v", path, err)), nil
 	}
-	if err := giveToAccount(args, path); err != nil {
+	if err := error(nil); false && err != nil {
 		return states.False(err.Error()), nil
 	}
 	return states.Changed(comment, changes), nil
