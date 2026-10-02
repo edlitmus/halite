@@ -23,6 +23,15 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### `extbundle` files a binary under its own platform
+
+`extbundle` reads an executable's platform from the file instead of from
+the machine running it, so a binary cross-compiled for linux/amd64 on a
+Mac is filed under `linux/amd64` rather than `darwin/arm64`, which every
+Linux host refused. `-platform goos/goarch` names it explicitly, is
+refused when it disagrees with the file, and is required for scripts and
+non-Go Linux ELF binaries.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not
