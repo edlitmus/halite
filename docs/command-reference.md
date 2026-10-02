@@ -7,8 +7,11 @@ covers.
 
 halite has no `--local` by default the way `salt-call` has none: a node
 with no hub configured still needs to be told it is working from local
-roots, and `--local` is that. Passing `--file-root` or `--pillar-root`
-implies it.
+roots, and `--local` is that. `--file-root` and `--pillar-root` add
+local roots, but on a node with a hub configured and a certificate they
+do **not** imply `--local`, whatever `--help` says: the hub's tree and
+the hub's pillar are used and the local roots are ignored. Pass `--local`
+with them.
 
 ## Running states on one machine
 
@@ -44,7 +47,7 @@ is the spelling muscle memory produces.
 | `salt-call --local pkg.list_pkgs` | `halite-node call pkg.list_pkgs --local` | works |
 | `salt-call --local service.get_all` | `halite-node call service.get_all --local` | works |
 | `salt-call --local sys.list_modules` | `halite-node call sys.list_modules --local` | works |
-| `salt-call --local sys.doc file.managed` | `halite-node call sys.doc file.managed --local` | works |
+| `salt-call --local sys.state_doc file.managed` | `halite-node call sys.state_doc file.managed --local` | works |
 
 `grains.get` takes one key and answers with the value; `grains.item`
 takes any number and answers with a mapping. Salt's do the same, and
@@ -57,36 +60,29 @@ section 26.4 and print a pass, warning, failure or skip for each, with a
 line saying what to do about anything that is not a pass.
 
 ```
-$ halite-node doctor
+$ halite-node doctor --root . --config node.yaml
 halite-node doctor — web1.example
 
-  pass  configuration validity           /etc/halite/node.yaml loads, and matches what this process is running
-  pass  certificate validity and expiry  this node's certificate: 71 days left; the hub's CA: 2 years left
-  pass  connectivity                     hub.example:4506 answered in 12ms: halite-hub 1.0.0 ok
-  pass  clock skew against the hub       within 1m of the hub (0s ahead of)
+  pass  configuration validity           node.yaml loads, and matches what this process is running
+  pass  certificate validity and expiry  the hub's CA: 3649 days left; this node's certificate: 89 days left
+  pass  connectivity                     127.0.0.1:45510 answered in 1ms: halite-hub 0.0.0-dev+bb5a08dd8fe0 ok
+  pass  clock skew against the hub       within 1m of the hub (236ms ahead of)
   pass  file server reachability         the hub's file server: 1 root(s)
-  pass  pillar compilation               compiles, 6 top-level key(s)
-  warn  disk space                       /var/lib/halite: 512.0 MiB free
-                                         Check `retention` and `max_bytes` for the job cache and the
-                                         event bus; both prune by age and size and both default generously.
+  pass  pillar compilation               compiles, 1 top-level key(s)
+  pass  disk space                       cache: 125.8 GiB free; state: 125.8 GiB free
   skip  extension signatures             no extensions are installed
                                          Extensions live under the extension directory; there are none to check.
-  warn  module verification              9 of the 38 modules that change this machine as root have not been
-                                         run against the tool they drive: mac_assistive, mac_defaults,
-                                         mac_group, mac_keychain, mac_power, mac_shadow,
-                                         mac_softwareupdate, mac_user, snap
-                                         This is a statement about what has been demonstrated, not a fault on
-                                         this node: these modules may be entirely correct.
-                                         What it means is that if one of them does the wrong thing, halite is
-                                         not ruled out as the cause.
-                                         `sys.evidence` says what is assumed for each, and docs/DIVERGENCE.md
-                                         records why.
-  pass  evidence chain                   1284 records in 1 segment(s) in /var/lib/halite/evidence; the
-                                         last is job.result at 2026-09-23T07:31:04.118201Z
-  pass  FIPS mode consistency            neither the kernel nor this build is in FIPS mode
+  pass  module verification              every module that changes this machine as root has been run against its tool; 19 unprivileged ones have not
+  pass  evidence chain                   3 records in 1 segment(s) in state/evidence; the last is node.stop at 2026-10-02T14:53:22.143367Z
+  skip  FIPS mode consistency            darwin has no kernel FIPS mode, and this is not a FIPS build
+                                         Nothing here claims FIPS, so there is nothing to be consistent about.
 
-  8 pass, 2 warn, 1 skip
+  9 pass, 2 skip
 ```
+
+That is a capture, from a throwaway node on macOS (arm64) enrolled to a
+hub on the same machine, with relative paths in its configuration so
+they stay short. A real node shows its real paths.
 
 Salt has no equivalent. Most of what these checks look at is why a
 `salt-call` fails with something unhelpful, and finding out means
@@ -128,6 +124,7 @@ says "not applicable here" is one nobody reads to the end.
 | queue depths | | ✓ | |
 | extension signatures | ✓ | | |
 | module verification | ✓ | ✓ | |
+| evidence chain | ✓ | | |
 | FIPS mode consistency | ✓ | ✓ | ✓ |
 
 `halite-api` runs four. It serves no tree and holds no queue, so most of
@@ -166,28 +163,24 @@ have never been pointed at the tool they drive. It warns and never
 fails, because nothing is wrong with the node — what it means is that if
 one of those modules does the wrong thing, halite is not ruled out as
 the cause. `sys.evidence` gives the same answer per module, with the
-note saying what is assumed:
+note saying what is and is not established. On this build no
+root-mutating module is undemonstrated, so `undemonstrated_only=true`
+lists none of them; asking for one by name shows the note:
 
 ```
-$ halite-node call sys.evidence undemonstrated_only=true --out yaml
+$ halite-node call sys.evidence name=mac_defaults --local --id web1.example --root . --config node.yaml --out yaml
 web1.example:
   mac_defaults:
-    level: assumed
-    demonstrated: false
+    level: hardware
+    demonstrated: true
     root: true
-    note: the plist reader and writer were built against `defaults export` and
-      `defaults write` output captured by hand on macOS 26, and
-      `live_mac_defaults_test.go` drives the real `defaults` against a private
-      throwaway domain -- but only behind HALITE_SYSTEM_LIVE=1, and no CI leg
-      runs on a Mac that writes preferences, so nothing has watched this module
-      converge unattended. The `user` path, which becomes another account to
-      reach its domain, has not been run at all
+    note: 'driven end to end against the real `defaults` on macOS 27.0 (build 26A5425a), including the two paths that made every mutating function here declare root and that nothing had ever run: a write as another account, which is setuid/setgid through the command''s `RunAs`, checked to have landed in *that* account''s preference store and not in root''s; and a machine-wide domain under `/Library/Preferences`, written, read back, and emptied. Running it found two defects a unit test could not (DIVERGENCE 5.114). What is still unwatched is `user` naming an account other than the invoking one -- it was driven as the account behind `sudo`, which exercises the same setuid path but not a second real login'
 ```
 
 A note that says what *is* established as well as what is not is the
 point of the level being per module rather than per project: `mac_defaults`
-reads correctly and cannot be watched writing unattended, and an
-operator planning a change needs both halves of that sentence.
+has been driven end to end and still has a path nobody has watched, and
+an operator planning a change needs both halves of that sentence.
 
 The same table is a release gate: `make release-gate` refuses a build in
 which any root-mutating module is still an assumption. It runs behind a
@@ -195,18 +188,66 @@ build tag so that ordinary development is not blocked by it, and it is
 the first job of the release workflow.
 
 `--out json` and `--out yaml` render the whole report, including every
-remedy, so a state can read it:
+remedy, so a state can read it. The same node, with `--out yaml`:
 
 ```yaml
 role: node
-worst: warn
-counts: {pass: 7, warn: 1, skip: 1}
+worst: pass
+counts:
+  pass: 9
+  skip: 2
 checks:
+  configuration validity:
+    status: pass
+    detail: node.yaml loads, and matches what this process is running
+    remedy: ''
+  certificate validity and expiry:
+    status: pass
+    detail: 'the hub''s CA: 3649 days left; this node''s certificate: 89 days left'
+    remedy: ''
+  connectivity:
+    status: pass
+    detail: '127.0.0.1:45510 answered in 1ms: halite-hub 0.0.0-dev+bb5a08dd8fe0 ok'
+    remedy: ''
+  clock skew against the hub:
+    status: pass
+    detail: within 1m of the hub (808ms ahead of)
+    remedy: ''
+  file server reachability:
+    status: pass
+    detail: 'the hub''s file server: 1 root(s)'
+    remedy: ''
+  pillar compilation:
+    status: pass
+    detail: compiles, 1 top-level key(s)
+    remedy: ''
   disk space:
-    status: warn
-    detail: "/var/lib/halite: 512.0 MiB free"
-    remedy: "Check `retention` and `max_bytes` for the job cache and the event bus..."
+    status: pass
+    detail: 'cache: 125.8 GiB free; state: 125.8 GiB free'
+    remedy: ''
+  extension signatures:
+    status: skip
+    detail: no extensions are installed
+    remedy: Extensions live under the extension directory; there are none to check.
+  module verification:
+    status: pass
+    detail: every module that changes this machine as root has been run against its tool; 19 unprivileged ones have not
+    remedy: ''
+  evidence chain:
+    status: pass
+    detail: 3 records in 1 segment(s) in state/evidence; the last is node.stop at 2026-10-02T14:53:22.143367Z
+    remedy: ''
+  FIPS mode consistency:
+    status: skip
+    detail: darwin has no kernel FIPS mode, and this is not a FIPS build
+    remedy: Nothing here claims FIPS, so there is nothing to be consistent about.
 ```
+
+When `disk space` warns, its remedy says to check `retention` and
+`max_bytes`. Neither is a setting: the ones it means are
+`job_cache_retention` and `job_cache_max_size` for the job cache, and
+`event_retention` and `event_max_size` for the event bus, all on the
+hub.
 
 Nothing `doctor` does changes anything. It is meant to be run on a
 machine that is already misbehaving, and a diagnostic with a side effect
@@ -223,18 +264,22 @@ the middle — breaks every entry after it. SPEC section 25.7.
 `halite-node verify-evidence` checks it:
 
 ```
-$ halite-node verify-evidence
+$ halite-node verify-evidence --root . --config node.yaml
 halite-node verify-evidence — web1.example
 
-directory: /var/lib/halite/evidence
+directory: state/evidence
 segments:  1
-records:   1284
-from:      record 1 at 2026-09-21T09:14:02.881204Z
-to:        record 1284 at 2026-09-23T07:31:04.118201Z
-head:      sha256:0161cef460efe1a765f99c598d0d3aa3bcef8533884308c3d313168ba25738ab
+records:   3
+from:      record 1 at 2026-10-02T14:53:16.231793Z
+to:        record 3 at 2026-10-02T14:53:22.143367Z
+head:      sha256:bdec04c9342c9e04d9884b4b7f4f543079fb1b32557ff9f149669693cd2c0622
 
 The chain holds: every record's contents match its hash and every record
 follows the one before it.
+
+What that does not establish: anything with root on this node can rewrite
+the whole chain. Keeping the head hash above somewhere this node cannot
+reach is what makes that detectable.
 ```
 
 | Salt | halite | Status |
@@ -255,7 +300,7 @@ A disagreement between the two records is the finding.
 chain, or recompute it from the first record and produce a consistent
 forgery. It is evidence about a compromised hub, not about a compromised
 node. What closes that gap is keeping the head hash somewhere the node
-cannot reach — the last line of the output above — and comparing it
+cannot reach — the `head:` line of the output above — and comparing it
 later; halite does not yet ship anything that does that for you.
 
 Nothing deletes a segment. The current file is sealed at
@@ -270,8 +315,9 @@ to require a signature will run nothing that key did not authorise. SPEC
 section 25.6.
 
 ```sh
-# once, anywhere but the hub
-halite-hub keys signer create ops
+# once, anywhere but the hub; without --out it needs a hub's pki_dir
+# and writes the private key there, onto the hub
+halite-hub keys signer create ops --out ~/.halite/signer-ops
 
 # on each node, in node.yaml
 require_job_signature: [arbitrary_code, state]
@@ -284,7 +330,7 @@ halite-hub run '*' state.apply --sign-key ~/.halite/signer-ops.key
 
 | Salt | halite | Status |
 |---|---|---|
-| no equivalent | `halite-hub keys signer create <name>` | works |
+| no equivalent | `halite-hub keys signer create <name> --out <path>` | works |
 | no equivalent | `halite-hub run ... --sign-key <path>` | works |
 | no equivalent | `halite-hub run ... --sign-extension <path>` | works |
 | no equivalent | `require_job_signature: true` | works |
@@ -338,8 +384,8 @@ and without needing a node. See [Migrating from Salt](migrating-from-salt.md).
 | `--out=json` | `--out json` | works |
 | `--out=yaml` | `--out yaml` | works |
 | `--out=quiet` | `--out quiet` | works |
-| `--out=txt` | `--out txt` | works |
-| default nested output | `--out nested`, the default | works |
+| `--out=txt` | `--out txt` | scalars only: a mapping or a list prints Go's internal form (`&{[{os MacOS …`), a defect |
+| default nested output | `--out nested`, the default on `halite-node` and `halite-api`; `halite-hub` defaults to `summary` | works |
 | `--out-indent=2` | `--indent 2` | works |
 
 ## The file server
@@ -376,11 +422,13 @@ nothing and an incident can be reconstructed afterwards.
 | no equivalent | `halite-hub event listen --from earliest` (replay) | works |
 | no equivalent | `halite-hub event tags` | works |
 | no equivalent | `halite-hub metrics` (the hub's own exposition) | works |
-| `salt-api` event stream | SSE and WebSocket at `/v1/events` | works |
+| `salt-api` event stream | SSE at `/v1/events`, WebSocket at `/v1/ws/events` | works |
 | no equivalent | Prometheus metrics at `/v1/metrics` | works |
 
 A node's events are namespaced under `halite/node/<node_id>/`
-regardless of the tag it asks for. Salt's reactor runs with the control
+regardless of the tag it asks for, except that a tag starting `beacon/`
+goes under `halite/beacon/<node_id>/` instead — still the node's own ID,
+from its certificate. Salt's reactor runs with the control
 plane's full privilege, so a node that can fire the right event can
 cause fleet-wide execution; here it cannot write another node's tag or
 the hub's.
@@ -402,8 +450,11 @@ Set `pillar_roots` on the hub.
 
 An enrolled node's `pillar items`, `call`, and `state apply` go through
 the hub unless `--local` says otherwise, which is what `salt-call` does. <!-- lexicon:allow -->
-A hub that cannot be reached is a warning and a local compilation, not
-a failure.
+A hub that cannot be reached is a warning for the state tree, which
+falls back to the node's own roots. Pillar does not fall back: a
+command that needs it fails and says the hub could not be reached,
+because a state rendered against an empty local pillar would report a
+convergence that never happened.
 
 Targeting a pillar top file on a grain still needs the grain in
 `pillar_trusted_grains`, and moving the compilation to the hub does not
@@ -467,6 +518,26 @@ startup rather than treating the absence as permission.
 | `salt-run jobs.list_jobs` | `halite-hub jobs list` | works |
 | `salt-run jobs.lookup_jid <jid>` | `halite-hub jobs lookup <jid>` | works |
 | `salt-run jobs.print_job <jid>` | `halite-hub jobs show <jid>` | works |
+| no equivalent | `halite-hub jobs missing <jid>` | works |
+| no equivalent | `halite-hub jobs prune` | works |
+| no equivalent | `halite-hub keys operator create <name>` | works |
+| `publisher_acl`, `external_auth`, `client_acl` | one `policy.yaml`, SPEC 23.5 | works |
+| no equivalent | `halite-hub policy show` | works |
+| no equivalent | `halite-hub policy test <principal> <target> <fun>` | works |
+| `salt --batch=25% '*' state.apply` | `halite-hub run --batch 25% '*' state.apply` | works |
+| `salt --batch-wait=30 …` | `halite-hub run --batch-wait 30s …` | works |
+| no equivalent | `halite-hub run --batch-safe-limit 3 …` | works |
+| `salt --subset=5 '*' test.ping` | `halite-hub run --subset 5 '*' test.ping` | works |
+| `salt --progress …` | `halite-hub run --progress …` | works |
+| no equivalent | `halite-hub jobs resume <jid>` | works |
+| `salt-run jobs.active` | `halite-hub jobs active` | works |
+| `salt-cp '*' file /tmp/file` | `halite-hub files push` | not built |
+| `salt-run jobs.kill <jid>` | `halite-hub jobs kill <jid>` | works |
+| no equivalent | `halite-hub jobs export <jid>` | works |
+| `salt '*' --queue state.apply` | `halite-hub run '*' state.apply --offline queue` | works |
+| `salt '*' saltutil.sync_grains` | pushed automatically on `grains_refresh_interval` | works |
+| `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | works |
+| `salt-api` | `halite-api serve` | works |
 
 `cmd.run` across the fleet needs the policy to name it. `functions: ['*']`
 does not include it, or `cmd.script`, `cmd.shell`, `module.run`,
@@ -494,30 +565,6 @@ the program and `args` its arguments instead, which is the hardened
 setting: an argument vector cannot be reinterpreted by a shell. Move to
 it once the call sites are quoted or converted; `shell=true` opts a
 single state back in.
-| no equivalent | `halite-hub jobs missing <jid>` | works |
-| no equivalent | `halite-hub jobs prune` | works |
-| no equivalent | `halite-hub keys operator create <name>` | works |
-| `publisher_acl`, `external_auth`, `client_acl` | one `policy.yaml`, SPEC 23.5 | works |
-| no equivalent | `halite-hub policy show` | works |
-| no equivalent | `halite-hub policy test <principal> <target> <fun>` | works |
-| `salt --batch=25% '*' state.apply` | `halite-hub run --batch 25% '*' state.apply` | works |
-| `salt --batch-wait=30 …` | `halite-hub run --batch-wait 30s …` | works |
-| no equivalent | `halite-hub run --batch-safe-limit 3 …` | works |
-| `salt --subset=5 '*' test.ping` | `halite-hub run --subset 5 '*' test.ping` | works |
-| `salt --progress …` | `halite-hub run --progress …` | works |
-| no equivalent | `halite-hub jobs active` | works |
-| no equivalent | `halite-hub jobs resume <jid>` | works |
-| `salt-run jobs.active` | `halite-hub jobs active` | works |
-| `salt-run manage.up` | `halite-hub runner manage.up` | works |
-| `salt-cp '*' file /tmp/file` | `halite-hub files push` | not built |
-| `salt-run jobs.kill <jid>` | `halite-hub jobs kill <jid>` | works |
-| no equivalent | `halite-hub jobs export <jid>` | works |
-| `salt '*' --queue state.apply` | `halite-hub run '*' state.apply --offline queue` | works |
-| `salt '*' saltutil.sync_grains` | pushed automatically on `grains_refresh_interval` | works |
-| `salt-ssh '*' test.ping` | `halite-hub ssh '*' test.ping` | works |
-
-| `salt-run state.orchestrate` | `halite-hub orch run <sls>` | works |
-| `salt-api` | `halite-api serve` | works |
 
 `run` exits 0 when every node succeeded, 1 when one failed, and 3 when a
 node was sent the job and did not answer — because "it said no" and "it
@@ -574,7 +621,7 @@ answer from the binary, so they work when the hub does not.
 | `salt-run survey.hash <jid>` | `halite-hub runner survey.hash <jid>` | works |
 | `salt-run saltutil.refresh_pillar` | `halite-hub runner saltutil.refresh_pillar` | works |
 | `salt-run state.orchestrate <sls>` | `halite-hub orch run <sls>` | works |
-| `salt-run mine.get` | `halite-hub runner mine.get` | works |
+| `salt-run mine.get` | `halite-hub runner mine.get '<tgt>' <fun>` | works |
 | `salt-run queue.process_queue` | `halite-hub runner queue.process_queue` | not built |
 | `salt-run net.find` | `halite-hub runner net.find` | not built |
 | `salt-run fileserver.update` | `halite-hub runner fileserver.update` | works |
@@ -621,7 +668,7 @@ nodes connect outward only.
 | `allow_tgt` | same, decided by the publisher | works |
 | `salt-run mine.get` | `halite-hub runner mine.get '<tgt>' <fun>` | works |
 | `salt-run mine.update` | `halite-hub runner mine.update` | works |
-| `salt-run mine.flush`, `mine.delete`, `mine.valid` | same | works |
+| `salt-run mine.flush`, `mine.delete`, `mine.valid` | same; `mine.flush` takes the node, and `mine.delete` the node and the function | works |
 | `salt-run cache.mine` | `halite-hub runner cache.mine <node>` | works |
 | `peer`, `peer_run` in the master config | the RBAC policy, deny by default | works | <!-- lexicon:allow -->
 | a node publishing on another node's behalf | refused; the certificate decides | by design |
@@ -689,7 +736,7 @@ schedule:
 | `timezone: <IANA name>` | same, from Go's embedded database | works |
 | `salt-call schedule.list` | `halite-node call schedule.list` | works |
 | no equivalent | `halite-node call schedule.show_next_fire_time name=…` | works |
-| `schedule.add`, `modify`, `delete` | same | works |
+| `schedule.add`, `modify`, `delete` | same, on a node that already runs at least one scheduled job; with none every one is refused | works |
 | `schedule.enable`, `disable` | same, holding the whole schedule | works |
 | `schedule.enable_job`, `disable_job` | same, holding one | works |
 | `schedule.run_job` | same, out of turn and without splay | works |
@@ -1018,11 +1065,11 @@ beacons:
     - onchangeonly: True
 ```
 
-A beacon fires under `halite/node/<node_id>/<beacon>/<what>`, so a
+A beacon fires under `halite/beacon/<node_id>/<beacon>/<what>`, so a
 reactor can watch one filesystem rather than all of them. A path becomes
 the tag's tail with its leading slash removed; the root filesystem is
 `root`, because a tag that ends at the beacon's own name cannot be
-reached by `diskusage/**`.
+reached by `halite/beacon/*/diskusage/**`.
 
 | Salt | halite | Status |
 |---|---|---|
@@ -1039,16 +1086,23 @@ reached by `diskusage/**`.
 | no equivalent | `rate_limit`, `coalesce_window`, `queue_depth` per beacon | works |
 | `salt-call beacons.list` | `halite-node call beacons.list` | works |
 | no equivalent | `halite-node call beacons.list available=True` | works |
-| `beacons.add`, `modify`, `delete` | same | works |
+| `beacons.add`, `modify`, `delete` | same, on a node that already runs at least one beacon; with none configured every one is refused | works |
 | `beacons.enable`, `disable` | same, holding every beacon | works |
 | `beacons.enable_beacon`, `disable_beacon` | same, holding one | works |
 | `beacons.save`, `reset` | same | works |
 | `/etc/halite/beacons.d/` | same | works |
 | beacons through pillar | same | not built |
-| `inotify`, `fanotify` | `filechanges` polls instead | needs `golang.org/x/sys` |
+| `inotify`, `fanotify` | `filechanges` polls instead | not built |
 | `watchdirs`, `eventlog` | same | phase 5, Windows |
 | `fsevents` | same | phase 5, macOS |
-| `swapusage`, `cpuusage`, `network_info`, `proc`, `ps`, `log`, `wtmp`, `btmp` | same | not built |
+| `swapusage`, `cpuusage`, `network_info`, `network_settings`, `log`, `sh`, `wtmp`, `btmp` | same | not built |
+| `journald`, `pkg` | same | phase 5, Linux |
+| `proc`, `ps` | same | works |
+
+`beacons.list available=True` says why each one that is not built is
+waiting. For `inotify` and `fanotify` it says `golang.org/x/sys` has
+not been admitted, which is out of date: that is the one vendored
+dependency now, and what is missing is the beacon.
 
 A beacon that this build does not have, or that is declared and not
 built, stops the node rather than being skipped: a watcher that is
@@ -1063,6 +1117,11 @@ halite-hub run '*' beacons.add name=load beacon_data='{"1m": [">", 2.0], "interv
 ```
 
 Simple keys can be typed inline: `beacons.add name=diskusage interval=60`.
+
+Both are refused on a node whose configuration starts no beacon at all,
+`beacons: {}` included: there is no running set to add to, and the
+answer is "this node is not running beacons". Configure one beacon in
+`beacons:` or `beacons.d/` first. `schedule.add` is the same.
 
 The controls exist because beacon events are the classic self-inflicted
 denial of service — a file that changes in a loop fires a beacon that
@@ -1185,7 +1244,7 @@ node and has no pillar of its own.
 |---|---|---|
 | `salt-run state.orchestrate <sls>` | `halite-hub orch run <sls>` | works |
 | `salt-run state.orch <sls>` | `halite-hub orch run <sls>` | works |
-| `salt-run state.orchestrate_show_sls <sls>` | `halite-hub orch lint <sls>` | works |
+| `salt-run state.orchestrate_show_sls <sls>` | `halite-hub orch lint <sls> --out yaml` | works; without `--out` a clean file prints nothing |
 | `salt.state`, `salt.sls`, `salt.highstate` | same | works |
 | `salt.function` | same | works |
 | `salt.runner`, `salt.wheel` | same, against one hub-function namespace | works |
@@ -1197,7 +1256,8 @@ node and has no pillar of its own.
 | no equivalent | `halite-hub orch show <jid>` | works |
 | no equivalent | `halite-hub orch list` | works |
 | no equivalent | `halite-hub orch resume <jid> --from <step>` | works |
-| `salt.parallel`, `parallel` per step | refused by name | not built |
+| `salt.parallel` | refused when the step runs; `orch lint` does not catch it | not built |
+| `parallel: True` per step | accepted and run in order, with a warning in the hub's log only (DIVERGENCE 4.4) | by design |
 | `queue` per step | refused by name | not built |
 | `salt-run state.pause` / `state.resume` | hold a running orchestration | not built |
 
@@ -1680,17 +1740,18 @@ collides with a built-in is refused rather than overriding it.
 
 ## Targeting
 
-The compound grammar is the same. On the command line it belongs to the
-hub, so it arrives with the transport; in a top file it works today.
+The compound grammar is the same, on `halite-hub run` and `halite-hub
+ssh` and in a top file.
 
 | Salt | halite | Status |
 |---|---|---|
-| `-G 'os:FreeBSD'` | same | in a top file |
-| `-E 'web.*'` | same | in a top file |
-| `-L 'web1,web2'` | same | in a top file |
-| `-C 'G@os:FreeBSD and web*'` | same | in a top file |
-| `-N group` (nodegroup) | same | in a top file |
-| `-I 'role:web'` (pillar) | same in a state top; refused in a pillar top | see below |
+| `-G 'os:FreeBSD'` | same | works |
+| `-E 'web.*'` | same | works |
+| `-L 'web1,web2'` | same | works |
+| `-C 'G@os:FreeBSD and web*'` | same | works |
+| `-N group` (nodegroup) | same, for a group in the hub's `nodegroups` | works |
+| `-I 'role:web'` (pillar) on the command line | accepted, and matches no node: the hub targets against no pillar | a defect |
+| `-I 'role:web'` (pillar) in a top file | same in a state top; refused in a pillar top | see below |
 | `- match: grain` in a top file | same | works |
 | `- ignore_missing: True` | same, and honoured in a pillar top as Salt honours it | works |
 
@@ -1711,8 +1772,9 @@ grain is named in `pillar_trusted_grains`. SPEC section 12.4.
 | `cachedir:` | `cache_dir:` |
 | `pki_dir:` | same |
 
-`<config root>` is `/usr/local/etc/halite` on a BSD and `/etc/halite` on
-Linux; [the configuration reference](configuration.md) has the table.
+`<config root>` is `/usr/local/etc/halite` on a BSD, `/etc/halite` on
+Linux and macOS, and `%PROGRAMDATA%\Halite` on Windows;
+[the configuration reference](configuration.md) has the table.
 Salt's own spellings are accepted with a warning naming the halite one,
 so an existing file works while it is converted. Example files are in
 [`contrib/examples/`](../contrib/examples/).
@@ -1721,11 +1783,13 @@ so an existing file works while it is converted. Example files are in
 
 Salt's `salt-call` returns 0 whether or not anything changed, and
 `--retcode-passthrough` changes that inconsistently. halite's are fixed
-and mean one thing each. SPEC section 11.8.
+and mean one thing each. SPEC section 11.8. These are a state run's —
+`halite-node state apply`, `sls` and `highstate`; `halite-hub run` has its
+own, above, and `doctor` exits non-zero only on a `fail`.
 
 | Code | Meaning |
 |---|---|
-| 0 | Something changed. |
+| 0 | Something changed, or under `--test` something would. |
 | 2 | Nothing to do; the node was already as declared. |
 | anything else | The run failed. |
 
