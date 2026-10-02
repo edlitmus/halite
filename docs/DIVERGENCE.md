@@ -19296,6 +19296,38 @@ FreeBSD and Linux (the override was exercised, with the same `case`
 pattern `CONFDIR` already uses); GNU make 4 with the computed variable
 names. The test skips without a BSD make and should run on the FreeBSD
 leg, which has not been seen.
+### 5.209 migrate said Salt ACLs were translated into RBAC rules, and nothing was
+
+`halite-hub migrate --salt-config` reported each Salt ACL key --
+`publisher_acl`, `publisher_acl_blacklist`, `external_auth`, <!-- lexicon:allow -->
+`client_acl`, `peer`, `peer_run` -- with the action "Translated into a
+draft RBAC rule; review it before it is applied." No draft existed:
+neither rendering of the report carried a policy, and `config.ApplyShim`
+moves every key that maps to `policy` into `legacy_acl`, which
+`InertKeys` records as never consulted. The same claim went out on a
+second path: the shim's rename note for four of the keys said
+"translated into RBAC rules; review the result", and that note is
+appended to the start-up warning and repeated by `doctor`.
+
+It is the exculpatory shape. An operator told a draft exists either goes
+looking for it or assumes the authorization work is done, on a hub whose
+empty policy grants nothing to anybody. The guides had already been
+corrected, after the documentation sweep, to say nothing is translated;
+the two strings that say it to the operator directly had not.
+
+Both now say what happens: not translated, kept under `legacy_acl`, never
+consulted, grants nothing, and `policy` is written by hand
+(docs/from-salt.md, Step 2). Severity stays review. No translator was
+built: a Salt ACL's regex targets and `.*` grants -- which here would
+include `cmd.run` -- differ enough that a mechanical translation would be
+a new claim. `TestACLKeysAreReportedWithoutClaimingATranslation` and
+`TestACLWarningsDoNotClaimATranslation` fail on the old text and pass on
+the new.
+
+**Left open:** SPEC 28.3 and 28.5 still describe these keys as
+"translated into RBAC rules" and "translated to a draft RBAC policy".
+SPEC is the authority, so whether it changes or this stays a recorded
+divergence is the owner's decision; until then it is this one.
 
 
 
