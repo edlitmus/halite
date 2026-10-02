@@ -11,14 +11,20 @@ filled. A stale entry below is a test failure, not a documentation problem.
 
 **Status as of this writing:** SPEC section 32 phases 0 through 4 are
 complete and phase 5 is part built — gitfs, s3fs, the agentless path,
-relays and the FIPS artifact set are in; Windows and macOS parity is not
-started. Phase 6 has not started.
+relays and the FIPS artifact set are in; Windows parity is in part
+(four of SPEC 15.3's eighteen Windows modules, 6.1b) and macOS ships
+every module of its row but `mac_assistive` (5.119). Phase 6 is part
+built: tracing (5.34), the render sandbox (5.58), node evidence (5.127) and
+detached job signing (5.128, 5.170) are in; native packages, an
+off-node evidence anchor and a hardware or KMS signer are not.
 
 The development host is FreeBSD 15.1 on amd64, and most of what follows
 was verified there. It is no longer the only platform anything has run
 on: a real Ubuntu node enrolled with this estate's hub and applied a
-highstate through it (4.5), and the tree builds natively on macOS
-without having been run there (4.4a). Section 4 is the authority on
+highstate through it (4.5); the suite runs on Linux, Windows, macOS and
+FreeBSD in CI, and the `mac_*` modules are `hardware`, driven as root on
+the `macos` leg of `fleet.yml` (5.120, 5.121). FreeBSD 15.1 is the
+`freebsd` leg's machine as well as the development host (5.123). Section 4 is the authority on
 which claim rests on what.
 
 ---
@@ -464,7 +470,7 @@ different reason is given.
 | `timezone` | implemented | 4 | `set_zone` writes through `timedatectl` where it runs and the zone files where it does not; the zone is named as the platform names it, and `list_zones` says which names those are |
 | `user` | implemented | 3 | reads through `os/user`; writes through `pw` or `useradd`, and through `dscl` on macOS (5.43) |
 | `at` | implemented | 4 | `at`, `atq`, `atc`, `atrm` over the real binaries; the queue parser reads the job number as the last field, which is what `atq`'s own printf format says and what a real queue confirmed (5.72) |
-| `acl` | implemented | 5 | NFSv4 only, through the real `getfacl`/`setfacl`: `get`, `set`, `remove`, `wipe`, `is_extended`. A POSIX.1e-shaped entry is refused by name rather than misread, and Linux's grammar waits for a host to capture it from (5.72). The cgo objection this row used to raise is answered by shelling to the binary, which is what the rest of this build does |
+| `acl` | implemented | 5 | Both ACL families, through the real `getfacl`/`setfacl`: `get`, `set`, `remove`, `wipe`, `is_extended`. NFSv4 since 5.72; POSIX.1e on Linux and on UFS mounted `-o acls` since 5.184, from both grammars captured on real hosts. The cgo objection this row used to raise is answered by shelling to the binary, which is what the rest of this build does |
 | `apparmor` | implemented | 7 | reads securityfs directly rather than shelling to `aa-status`, so a node with no `apparmor-utils` can still be asked what it enforces; the mode changes need that package and name it |
 | `beacons` | implemented | 10 | `list` answers from the registry and the configuration; the nine that change a running node's watchers name the phase they arrive in |
 | `blockdev` | not implemented | 0 | |
@@ -560,10 +566,13 @@ second run leaves the bytes alone, which the tests assert.
 
 ### 2.3 Platform modules (SPEC 15.3)
 
-44 of 65 present — the rows below total 21 absent.
+48 of 65 present — the rows below total 17 absent. Measured 2026-10-02:
+`TestPendingPlatformModulesMatchTheSpec` logs "SPEC 15.3 names 65 modules,
+17 pending".
 
-Thirteen of the forty-four are **aliases** (the count here said "ten of the
-thirty" long after both had moved; corrected with 5.176). SPEC names both
+Thirteen of the forty-eight are **aliases** (the count here said "ten of the
+thirty" long after both had moved; corrected with 5.176, and "44 of 65"
+after that until 2026-10-02). SPEC names both
 halves of this and both are true: 15.2 has `pkg`, `service` and `sysctl`
 as virtual modules that pick a provider for the node they are on, and
 15.3 names `aptpkg`, `freebsdpkg`, `systemd_service` and the rest as
@@ -2259,7 +2268,7 @@ Not compared:
   `changes` needs a container to apply it in, which is the integration
   layer, which is phase 2.
 - **a real estate's trees.** SPEC 31 says "a corpus of real SLS and
-  pillar trees from this estate". These nine are written for the gate.
+  pillar trees from this estate". These ten are written for the gate.
   They cover the constructs, not the volume, and volume is where the
   surprises are.
 - **the renderers other than jinja|yaml**, and `#!py`, which is not
@@ -18642,7 +18651,8 @@ highstate has been driven from a hub against two nodes, applied, and
 run again to convergence.
 
 The file server followed, and with it the exit criterion SPEC section
-32 names for this phase: an operator edits the tree on the hub, and the
+32 names for this phase: "a fleet is enrolled and a highstate is driven
+from the hub against it". An operator edits the tree on the hub, and the
 fleet converges to it. A node compiles against the hub's tree, caches
 what it fetched, and asks conditionally afterwards, so a redeployed tree
 with identical contents costs a round trip and no transfer.
@@ -18735,9 +18745,8 @@ What is **not** built, in phase 2:
   globs are matched while reading rather than looked up, so a narrow
   glob over a long log reads the whole log. It is correct and it is
   linear.
-- **Tokens** (SPEC 23.6). An operator authenticates with a certificate;
-  there is no token issuance, which is what `halite-api` needs and
-  which is phase 4.
+- ~~**Tokens** (SPEC 23.6).~~ Built with `halite-api` in phase 4; 6.1a
+  says how they are issued, stored and revoked.
 - **The RBAC principals that are not certificates.** OIDC is phase 4
   and is now built. The `node:` principal is produced and enforced on
   the read half of SPEC 19.5's peer interface: a node asking the mine
@@ -19220,9 +19229,10 @@ What is **not** built in the API:
 
 Phase 5 is part built — gitfs, s3fs, the agentless path, relays and the
 FIPS artifact set are in, and 6.1b says what each covers. What is
-absent from 5 and 6: Windows and macOS parity, detached job signing,
-signed state trees, node-side evidence, and the backtracking regex
-engine. The render sandbox is built: see 5.58.
+absent from 5 and 6: most of Windows parity (6.1b), signed state
+trees, and the backtracking regex engine. The render sandbox is built
+(5.58), and so are node-side evidence (5.127) and detached job signing
+(5.128, with the bridged `signer` extension in 5.170).
 
 The runners have been run against a hub and a node as separate
 processes; 5.12 says what that established and what it did not.
@@ -19342,26 +19352,25 @@ What is **not** built in phase 5:
 - **The `scan`, `cloud`, and `terraform` rosters** of SPEC 21.2, each
   refused by name.
 - **macOS parity, in evidence rather than in inventory.** The package
-  and service providers ship, and all eight of SPEC 15.3's macOS
+  and service providers ship, and seven of SPEC 15.3's eight macOS
   modules — `mac_defaults` (also a core state under SPEC 15.5),
   `mac_power`, the `dscl`-driven `mac_user`, `mac_group` and
   `mac_shadow` (with which `user.present` and `group.present` work on a
-  Mac), `mac_softwareupdate`, `mac_keychain` and `mac_assistive`. What
-  is missing is a Mac in CI: two of the eight are `assumed`, for two
-  different reasons — `mac_softwareupdate`, whose mutating surface is
-  now `--download` alone and so can be closed but has not been, and
-  `mac_assistive`, deferred deliberately (5.117). `make release-gate`
-  is red on those two, knowingly. The other six are `hardware` —
+  Mac), `mac_softwareupdate` and `mac_keychain`. All seven are
+  `hardware`: six driven by hand under `sudo` on macOS 27.0 —
   `mac_defaults` (5.114), the `mac_user`/`mac_group`/`mac_shadow`
-  account arc (5.115), `mac_power` (5.116) and `mac_keychain` (5.118),
-  all driven by hand under `sudo` on macOS 27.0, which is the only
-  route this row has.
+  account arc (5.115), `mac_power` (5.116) and `mac_keychain` (5.118) —
+  and `mac_softwareupdate`, whose mutating surface is `--download`
+  alone, on CI (5.121). `fleet.yml`'s `macos` leg re-runs them as root.
+  The eighth, `mac_assistive`, is out of the build, because nothing can
+  demonstrate its writes (5.119).
 - **Windows parity, in part.** The suite now runs natively there and
   passes: see 4.6. What is built is the platform-neutral half — grains,
   the file states, `cmd`, the Chocolatey provider, the extension
   sandbox — and four of SPEC 15.3's eighteen Windows modules:
-  `win_dacl`, `win_service`, `win_registry` and `win_task`. What is not
-  is the other fourteen, listed in 2.3. There is still no user or group
+  `win_dacl`, `win_service`, `win_registry` and `win_task`, with
+  `win_pkg` resolving to `pkg` over Chocolatey. What is not is the
+  other thirteen, listed in 2.3. There is still no user or group
   provider for the platform, so `user.present` has nothing to reach.
 - **`minionfs`/`nodefs`**, which SPEC 13.2 marks a subset and disables
   by default.
@@ -19421,11 +19430,11 @@ excavation.
 | 2 | Compatibility horizon | no date set | the config shim has no removal path |
 | 3 | `cmd.run` default | **follow Salt, decided 2026-09-14**; `cmd_default_shell: false` is the hardened opt-out | the estate had already set the old setting fleet-wide on 2026-09-12 to carry the 54 call sites the migration report flagged, which is a default being overridden by every estate that meets it. The security argument is unchanged and now attaches to the opt-out: a command run through a shell is re-interpreted by it, so converting call sites to `name` plus `args` is what lets an estate take `false`. 5.81 |
 | 4 | Strict undefined | strict, per 10.2.6 | `--permissive` exists as the transition |
-| 5 | PAM | dropped | no local account authentication; phase 4 concern |
-| 6 | Detached job signing | not implemented | phase 6 |
-| 7 | `golang.org/x/sys` | allowed but unused | the allowlist permits it and `golang.org/x/term`; `go list -m all` returns only this module, so the zero-dependency property currently holds outright |
+| 5 | PAM | dropped | `halite-api` authenticates its own local accounts instead — PBKDF2-HMAC-SHA-512 hashes from `halite-api account hash`, optional TOTP (6.1a) — beside OIDC and LDAP; no PAM stack is consulted |
+| 6 | Detached job signing | implemented (5.128) | `halite-hub run --sign-key`, `require_job_signature` per function class, and a bridged `signer` extension (5.170). Orchestration steps are not signed, and no hardware token or KMS signer exists (5.169) |
+| 7 | `golang.org/x/sys` | allowed, and used | vendored at v0.47.0 and the only `require` in go.mod; the allowlist also permits `golang.org/x/term`, which is not required. `internal/buildpolicy` holds the allowlist |
 | 8 | The regex gap | deferred to phase 6, per 10.4 | `internal/regexcompat` refuses unsupported constructs by name; the migration report counts them, so the scheduling decision has its data |
-| 9 | Windows scope | assumed as written | 18 Windows modules, none started |
+| 9 | Windows scope | assumed as written | 18 Windows modules: four ship (`win_dacl`, `win_service`, `win_registry`, `win_task`), `win_pkg` is an alias, thirteen are pending (2.3) |
 
 ---
 
