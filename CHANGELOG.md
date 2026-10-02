@@ -23,6 +23,14 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### extensions verify tells a slow start from a buffering writer
+
+`halite-hub extensions verify` no longer fails a conforming extension
+that is slow to start, or calls one a buffering writer. The first answer
+of each session has its own allowance, `--start-timeout` (default 30 s),
+and when it is missed the report says whether the extension never read
+the hello or read it and held its answer.
+
 ### `orch resume` keeps the run's pillar override
 
 `orch resume` takes `--pillar` and refuses a resume whose override is not
