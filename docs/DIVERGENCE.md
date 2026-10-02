@@ -18492,6 +18492,62 @@ returns an empty version though brew answers one. `brew info --json=v2
 are in `list_pkgs`, so `pkg.latest` on a cask now reports it current
 whatever brew offers. Separate change.
 
+### 5.191 `pkg.latest` reported every Homebrew cask current
+
+Found while fixing 5.190 and left for its own change. `latest_version`
+read only the `formulae` half of `brew info --json=v2 <name>`, and for
+a cask brew answers under `casks` with `formulae` empty -- so every cask
+answered an empty version, which `pkg.latest` reads as "nothing newer".
+Before 5.189 that was hidden behind `list_pkgs` failing; once casks
+were listed, every cask was reported current whatever brew offered,
+including one that was not installed.
+
+Measured on macOS 26.7.1, Homebrew 7.0.7, with `pkg.latest` in test
+mode on the same three casks:
+
+| Cask | Homebrew's record | brew offers | `main` | this change |
+|---|---|---|---|---|
+| `chatgpt` | 26.623.141536 | 26.928.31416 | "at their newest version" | would be upgraded |
+| `firefox` | not installed | 157.0 | "at their newest version" | would be installed |
+| `1password-cli` | 2.39.0 | 2.39.0 | current | current |
+
+**The fix** reads whichever half brew filled. A name that is both a
+formula and a cask comes back as one of them, chosen by brew and named
+in a warning on stderr: `copilot-cli` as the cask, `goreleaser` as the
+formula, on that Mac. So brew, not this provider, decides which
+package a name means, and the version reported is the one brew
+answered for. A cask's offered version is `version`; what is installed
+is `installed`, which `list_pkgs` reports -- both sides of the
+comparison come from the same document in the same spelling.
+
+The fixtures are whole captures from that Mac. One was dropped before
+it was used: `goreleaser`'s formula and cask are both 2.18.2, so a test
+over it would pass whichever half the provider read. `copilot-cli`'s
+two halves differ (1.34.1 against 1.0.90) and the test asserts the
+cask's. The tests were broken twice on purpose -- the cask branch
+removed, and `installed` read in place of `version` -- and failed both
+times.
+
+**Not run: the upgrade itself.** `pkg.latest` upgrades by calling
+`brew install`, and Homebrew 7.0.7's own source (`cmd/install.rb`)
+upgrades an outdated installed cask on `install` unless
+`HOMEBREW_NO_INSTALL_UPGRADE` is set. That is read, not watched: the
+only outdated cask on that Mac is somebody's ChatGPT. And that cask is
+`auto_updates`: the app had already updated itself to 26.928.31416 at
+11:22 that morning while Homebrew's record still said 26.623.141536.
+For such a cask "behind" means Homebrew's record is behind, not
+necessarily the app, and what `brew install` then does to an app
+already at the offered version has not been seen.
+
+**Not verified either:** casks whose `version` is `latest` or carries
+a comma-separated build, both common in Homebrew and neither present
+among the casks on that Mac or the two public ones checked.
+
+**Found on the way, separately:** this entry's first attempt at the
+test-mode run above passed Salt's `test=True` to `halite-node state
+sls`, which ignored it and applied the states for real. That is its
+own defect and its own change.
+
 ### 5.192 `halite-node state ... test=True` applied the states for real
 
 **The precaution an operator types was thrown away.** `test=True` is

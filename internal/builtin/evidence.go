@@ -143,7 +143,11 @@ var moduleEvidence = map[string]exec.Evidence{
 		"reported. `latest_version` tells " +
 		"\"no such package\" (brew's `No available formula` error) from brew failing, which it used to read as the " +
 		"same thing; run on that Mac for a formula, a name brew lacks, and brew refusing to run (DIVERGENCE 5.190). " +
-		"For a cask it still answers no version. Not covered: `upgrade` and `list_upgrades` against an outdated formula; installing or removing a cask; and a node started by launchd " +
+		"For a cask it reads the `casks` half brew answers under, " +
+		"which it used to ignore, so `pkg.latest` reported every cask current; `pkg.latest` in test mode on that " +
+		"Mac now plans an outdated cask's upgrade and an absent cask's install (DIVERGENCE 5.191). Not covered: " +
+		"the cask upgrade itself, which is `brew install` and upgrades by Homebrew's source rather than by " +
+		"anything watched; casks versioned `latest` or with a comma-separated build; `upgrade` and `list_upgrades` against an outdated formula; installing or removing a cask; and a node started by launchd " +
 		"rather than sudo. Intel Macs are not supported (decided 2026-10-01), so their /usr/local layout " +
 		"is not a gap here. Before the `list_pkgs` fix, `TestLiveMacBrewPkgAsRoot` ran as root on the same Mac and everything " +
 		"passed but `list_pkgs`, for the cask reason above, and a build with the account switch removed failed it. **On CI** the `macos` leg ran it as root on a " +
