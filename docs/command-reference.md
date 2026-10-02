@@ -1796,7 +1796,7 @@ own, above, and `doctor` exits non-zero only on a `fail`.
 |---|---|
 | 0 | Something changed, or under `--test` something would. |
 | 2 | Nothing to do; the node was already as declared. |
-| 64 | The command line was not understood: no subcommand, or an unknown one (sysexits' `EX_USAGE`). |
+| 64 | The command line was not understood: no subcommand, or an unknown one (sysexits' `EX_USAGE`). `halite-hub` and `halite-api` exit 64 for the same thing. |
 | anything else | The run failed. |
 
 A monitor that treats 2 as failure will alert on every healthy run. See

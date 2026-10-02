@@ -58,7 +58,7 @@ func openJobs(args *cli.Args) *job.Cache {
 func runJobs(args *cli.Args) int {
 	if len(args.Positional) == 0 {
 		fmt.Fprint(os.Stderr, jobsUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	if args.Positional[0] == "help" {
 		fmt.Print(jobsUsage)
@@ -260,5 +260,5 @@ func runJobs(args *cli.Args) int {
 		return 0
 	}
 	fmt.Fprintf(os.Stderr, "halite-hub jobs: unknown subcommand %q\n\n%s", args.Positional[0], jobsUsage)
-	return 2
+	return cli.ExitUsage
 }

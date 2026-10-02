@@ -37,7 +37,7 @@ func runSSH(args *cli.Args) int {
 	kind, expression, fun, rest, err := resolveTarget(args)
 	if err != nil {
 		fmt.Fprint(os.Stderr, sshUsage)
-		return 2
+		return cli.ExitUsage
 	}
 
 	h := openHub(args, false)

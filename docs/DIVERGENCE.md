@@ -19328,6 +19328,39 @@ the new.
 "translated into RBAC rules" and "translated to a draft RBAC policy".
 SPEC is the authority, so whether it changes or this stays a recorded
 divergence is the owner's decision; until then it is this one.
+### 5.210 `halite-hub` and `halite-api` exited 2 on a usage error, and three of their 2s never ran
+
+5.198 moved `halite-node` to `cli.ExitUsage` and left the 33 `exit 2`
+sites in `halite-hub` and `halite-api` counted but not read. All 33 have
+now been read, and every one is a usage error -- no subcommand or an
+unknown one, a missing operand, a malformed `--kwargs`, `--timeout`,
+`--declare` or extension path. None is a result code: `run`'s 0/1/3 and
+the verify, doctor and policy-test answers come from other returns.
+
+**Three of them never ran.** `orch <typo>`, `halite-api account
+[<typo>]` and `halite-api token [<typo>]` called `cli.Fatalf`, which
+exits 1, before a `return 2` that could not be reached -- so the code said
+2, the binary exited 1, and 1 is what `run` and `orch run` mean by "a
+failure". `token <typo>` also opened the token store first, so on a host
+with no state directory it reported the directory instead of the typo.
+`event help` and `policy help` exited 2 along with the bare command, which
+wrote its usage to stdout.
+
+**The fix** is `cli.ExitUsage` at all 33. The three dead sites print and
+return it, `token` checks its subcommand before opening anything, and
+asked-for help exits 0 as `keys help` already did. Measured with the
+built binaries over 38 command lines: every usage case went from 2 (or
+1) to 64 and the help cases to 0. `TestUnknownSubcommandIsUsageNotSuccess`
+in each package failed against the old code and again with one site in
+each binary put back. Both manual pages' EXIT STATUS was `.Ex -std` and
+now gives the real table.
+
+**Not changed:** `keys <typo>`, `keys token <typo>` and `jobs <typo>`
+open the hub before reading the subcommand, so with no hub they still
+exit 1; their 64 path on a configured hub was not run. And `halite-hub
+run` with no target still exits 1 through `cli.Fatalf`, which is also its
+code for "a node failed" -- the 5.198 collision again, left for its own
+entry.
 
 
 

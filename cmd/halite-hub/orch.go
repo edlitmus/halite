@@ -23,7 +23,7 @@ import (
 func runOrch(args *cli.Args) int {
 	if len(args.Positional) == 0 {
 		fmt.Fprint(os.Stderr, orchUsage)
-		return 2
+		return cli.ExitUsage
 	}
 
 	switch args.Positional[0] {
@@ -38,8 +38,13 @@ func runOrch(args *cli.Args) int {
 	case "resume":
 		return orchResume(args)
 	}
-	cli.Fatalf("orch has no subcommand %q; there are run, show, list, resume, and lint", args.Positional[0])
-	return 2
+	// Not cli.Fatalf, which this was: that exits 1, so the `return 2`
+	// that followed it never ran and a mistyped subcommand reported a
+	// failed run. A typo is a usage error, as it is for every other
+	// dispatcher in this program.
+	fmt.Fprintf(os.Stderr, "halite-hub orch has no subcommand %q; there are run, show, list, resume, and lint\n",
+		args.Positional[0])
+	return cli.ExitUsage
 }
 
 func orchRun(args *cli.Args, lintOnly bool) int {

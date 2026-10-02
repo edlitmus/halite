@@ -51,9 +51,15 @@ func loadPolicyFile(cfg *config.Config) (*policy.Policy, string) {
 }
 
 func runPolicy(args *cli.Args) int {
-	if len(args.Positional) == 0 || args.Positional[0] == "help" {
+	// The same split as `event`: help asked for exits 0, a bare
+	// `policy` is a usage error.
+	if len(args.Positional) == 0 {
+		fmt.Fprint(os.Stderr, policyUsage)
+		return cli.ExitUsage
+	}
+	if args.Positional[0] == "help" {
 		fmt.Print(policyUsage)
-		return 2
+		return 0
 	}
 	cfg, err := config.Load(config.Hub, config.LoadOptions{
 		Path:         args.Flag("config", ""),
@@ -123,7 +129,7 @@ func runPolicy(args *cli.Args) int {
 		return 1
 	}
 	fmt.Fprintf(os.Stderr, "halite-hub policy: unknown subcommand %q\n\n%s", args.Positional[0], policyUsage)
-	return 2
+	return cli.ExitUsage
 }
 
 func sorted(in []string) []string {

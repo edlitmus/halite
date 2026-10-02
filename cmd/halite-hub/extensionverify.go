@@ -25,18 +25,18 @@ import (
 func verifyExtension(args *cli.Args) int {
 	if len(args.Positional) < 2 {
 		fmt.Fprint(os.Stderr, extensionsUsage)
-		return 2
+		return cli.ExitUsage
 	}
 	path, err := resolveExtensionPath(args.Positional[1])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions verify: %v\n", err)
-		return 2
+		return cli.ExitUsage
 	}
 
 	kwargs, err := decodeRunJSON(args.Flag("kwargs", ""))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "halite-hub extensions verify: --kwargs: %v\n", err)
-		return 2
+		return cli.ExitUsage
 	}
 
 	// Not `run`'s default. Every exchange here is one round trip
@@ -48,7 +48,7 @@ func verifyExtension(args *cli.Args) int {
 		parsed, parseErr := time.ParseDuration(raw)
 		if parseErr != nil || parsed <= 0 {
 			fmt.Fprintf(os.Stderr, "halite-hub extensions verify: --timeout %q is not a duration\n", raw)
-			return 2
+			return cli.ExitUsage
 		}
 		timeout = parsed
 	}
