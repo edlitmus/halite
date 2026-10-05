@@ -543,11 +543,20 @@ jobs:
           # readable before the job's timeout, and the status carried
           # through a file rather than $PIPESTATUS so that this reads the
           # same as the freebsd leg.
+          #
+          # `&& status=0 || status=$?` rather than `; echo $?`: the group
+          # inherits `set -e`, so a failing suite used to stop it before
+          # the status was written, and the step then died on `exit ""`
+          # with "numeric argument required" instead of the suite's own
+          # status (Fleet run 37342637678). A command in an && / || list
+          # is exempt from -e. internal/buildpolicy runs this step to hold
+          # it, as it does the freebsd leg's.
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
               HALITE_KERNELPKG_LIVE=1 \
-              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit' ./internal/builtin/ ./cmd/halite-api/ 2>&1;
-            echo $? > /tmp/live.status; } | tee /tmp/live.txt
+              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit' ./internal/builtin/ ./cmd/halite-api/ 2>&1 && status=0 || status=$?
+            echo "$status" > /tmp/live.status; } | tee /tmp/live.txt
+          test -s /tmp/live.status || { echo "the suite recorded no status"; exit 1; }
           exit "$(cat /tmp/live.status)"
 
       # A test that skips is not a test that ran, and this leg had no way
@@ -727,9 +736,14 @@ jobs:
           # always succeeds. The output is teed rather than redirected
           # so that a suite which hangs is still readable before the
           # job's timeout kills it.
+          #
+          # `&& status=0 || status=$?` for the reason the linux leg gives:
+          # under `set -e` a failing suite stopped the group before the
+          # status was written.
           { sudo -E env "PATH=$PATH" "HOME=$HOME" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
-              go test -count=1 -v -timeout 20m -run TestLive ./internal/builtin/ 2>&1;
-            echo $? > /tmp/live.status; } | tee /tmp/live.txt
+              go test -count=1 -v -timeout 20m -run TestLive ./internal/builtin/ 2>&1 && status=0 || status=$?
+            echo "$status" > /tmp/live.status; } | tee /tmp/live.txt
+          test -s /tmp/live.status || { echo "the suite recorded no status"; exit 1; }
           exit "$(cat /tmp/live.status)"
 
       # A test that skips is not a test that ran, and this leg exists to
