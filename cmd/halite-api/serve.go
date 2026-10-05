@@ -23,6 +23,7 @@ import (
 	"github.com/edlitmus/halite/internal/metrics"
 	"github.com/edlitmus/halite/internal/pki"
 	"github.com/edlitmus/halite/internal/policy"
+	"github.com/edlitmus/halite/internal/redact"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/version"
 )
@@ -32,6 +33,9 @@ type service struct {
 	cfg  *config.Config
 	log  *hlog.Logger
 	root string
+	// secrets is the redactor every record this service writes passes
+	// through. See setup.
+	secrets *redact.Set
 }
 
 // runServe starts the HTTP API of SPEC section 22.
@@ -51,18 +55,7 @@ func runServe(args *cli.Args) int {
 		cli.Fatalf("%v", err)
 	}
 
-	// Named literally rather than through a helper, so the
-	// declared-and-unread audit can see that something reads it: a key
-	// nothing reads is a promise the configuration file makes and the
-	// program does not keep.
-	rawHooks, _ := s.cfg.Get("hooks")
-	hooks, err := api.ParseHooks(rawHooks)
-	if err != nil {
-		// A hook configuration that will not parse stops the service
-		// rather than starting one that serves some of the hooks and
-		// 404s the rest.
-		cli.Fatalf("%v", err)
-	}
+	hooks := loadHooks(s)
 
 	server := &api.Server{
 		Accounts:      accounts,
@@ -142,15 +135,29 @@ func setup(args *cli.Args) *service {
 		fmt.Fprintln(os.Stderr, w)
 	}
 
+	// SPEC 26.1's redactor, which this service went without: its logger
+	// was built with none and its fatal messages were not scrubbed, so
+	// the guarantee the hub and the node give -- a log line added later
+	// cannot print a configured secret, because the sink removes it --
+	// did not hold for the service that holds the directory's bind
+	// password, the identity provider's client secret and every
+	// webhook's shared secret. Seeded here with the settings whose names
+	// say they are secret; the `_file` forms and the hooks' secrets are
+	// added where they are read, since only the reader knows the value.
+	secrets := redact.New()
+	cli.Redact = secrets.Scrub
+	for _, v := range cfg.SecretValues() {
+		secrets.AddTree(v)
+	}
+
 	// The same function the hub and the node build theirs with. This
 	// one used to be its own copy, reading `log_fmt` -- not a setting --
 	// and opening no file, so `log_format` and `log_file` in api.yaml
-	// did nothing. No redactor is passed: this service has never had a
-	// value set to seed one from, and adding one is its own change.
+	// did nothing.
 	logger, err := hlog.FromConfig(cfg, hlog.Overrides{
 		Level:  args.Flag("log-level", ""),
 		Format: args.Flag("log-fmt", ""),
-	}, "api", nil)
+	}, "api", secrets)
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
@@ -163,7 +170,28 @@ func setup(args *cli.Args) *service {
 			"setting", w.Setting, "effect", w.Effect, "section", w.Section)
 	}
 
-	return &service{cfg: cfg, log: logger, root: root}
+	return &service{cfg: cfg, log: logger, root: root, secrets: secrets}
+}
+
+// loadHooks reads the webhook ingress of SPEC 22.2.
+func loadHooks(s *service) []*api.Hook {
+	// Named literally rather than through a helper, so the
+	// declared-and-unread audit can see that something reads it: a key
+	// nothing reads is a promise the configuration file makes and the
+	// program does not keep.
+	rawHooks, _ := s.cfg.Get("hooks")
+	hooks, err := api.ParseHooks(rawHooks)
+	if err != nil {
+		// A hook configuration that will not parse stops the service
+		// rather than starting one that serves some of the hooks and
+		// 404s the rest.
+		cli.Fatalf("%v", err)
+	}
+	// A hook's secret may come from a file, so it is known only now.
+	for _, h := range hooks {
+		s.secrets.Add(h.Secret)
+	}
+	return hooks
 }
 
 // loadAccounts reads the local account file of SPEC 23.2.

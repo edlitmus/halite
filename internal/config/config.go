@@ -448,6 +448,28 @@ func redact(m *value.Map) *value.Map {
 // it must never print.
 func IsSecretKey(key string) bool { return isSecretKey(key) }
 
+// SecretValues is the value of every setting this configuration sets
+// whose name says it holds a secret, for seeding the redactor of SPEC
+// 26.1.
+//
+// One function rather than a loop in each service: the node had one and
+// the API had none, so a password in api.yaml was printable by any log
+// line that happened to carry it. A setting in the `_file` form is not
+// here -- its value is a path -- and the service that reads the file
+// adds what it read.
+func (c *Config) SecretValues() []any {
+	var out []any
+	for _, k := range Keys {
+		if !isSecretKey(k.Name) {
+			continue
+		}
+		if v, ok := c.Get(k.Name); ok {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 func isSecretKey(key string) bool {
 	// A key that names a location holds a path, and the path is not the
 	// secret — the file's contents are. Redacting it turns "the secret

@@ -19519,6 +19519,52 @@ pillar, which is right only if "no pillar" really is the answer.
 `mine.get`, mine `allow_tgt` and the ssh roster still match `-I`
 against an empty pillar (5.204).
 
+### 5.215 `halite-api` had no secret redactor
+
+SPEC 26.1 puts a value-based redactor at the sink, seeded with every
+configured secret, so that a log line added later cannot print one by
+forgetting to scrub it. The hub and the node have one. `halite-api` built
+its logger with none -- the comment at the call said so, and 5.205
+recorded it as found and not fixed -- and left `cli.Redact` unset, so
+its fatal messages were not scrubbed either. Only URL credentials were
+removed, because that half of the redactor runs even without a set.
+
+That is the service holding the directory's bind password, the identity
+provider's client secret and every webhook's shared secret. No call site
+that prints one was found: the API's log lines name principals, token
+identifiers and remote addresses, an issued token's secret goes only into
+the login response, and the LDAP, OIDC and token-store errors were read
+for echoed values and have none. So this was not a leak anybody could
+show, and is not written down as one. It is the absence of the thing
+that makes the next call site's care unnecessary.
+
+`setup` now builds a set, sets `cli.Redact`, seeds it from the settings
+whose names say they are secret, and hands it to the logger. The values
+only a reader knows are added where they are read: `ldap_bind_password_file`
+and `oidc_client_secret_file` in the functions that read them, and each
+webhook's `secret` or `secret_file` once the hooks parse (`loadHooks`,
+taken out of `runServe` so a test can reach it). The rule for which
+settings are secret was a loop in the node; it is now
+`config.Config.SecretValues`, used by both, so the two services cannot
+come to disagree about it.
+
+`TestEverySecretTheAPIHoldsIsScrubbedFromItsLog` writes one record
+carrying four secrets, each delivered by a different route, through the
+logger `setup` builds with a real `log_file`, and checks the file and
+`cli.Redact`. `TestTheLDAPBindPasswordFileIsScrubbed` covers the fifth
+route, which cannot share a configuration with the inline form. Each
+route was broken on its own -- the logger given no set, the configured
+values not seeded, the OIDC file's value not added, the hooks' not added,
+`cli.Redact` unset, the LDAP file's value not added -- and each failed,
+naming the secret it let through.
+
+**Not covered:** `halite-api serve` end to end, which needs a hub; the
+tests run `setup` and the readers it uses. The bearer tokens the API
+issues are not seeded, as SPEC 26.1's "every token" asks: none of its
+records carries one, and a set that grows by one per login never
+shrinks. `halite-api doctor` prints its report without a redactor.
+Linux and FreeBSD were not run; nothing here is platform-specific.
+
 
 ## 6. Everything else not started
 
