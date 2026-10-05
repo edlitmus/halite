@@ -163,8 +163,8 @@ Holds the job cache, the event bus and the key store.
 .Nm
 exits 0 on success and 1 when a command fails.
 .Pp
-A command line it does not understand, with no subcommand or an unknown
-one, exits 64
+A command line it does not understand, with no subcommand, an unknown
+one, or a flag the subcommand does not take, exits 64
 .Pq Dv EX_USAGE ,
 as does a subcommand given none of the operands it needs, such as a bare
 .Cm keys
@@ -178,6 +178,15 @@ state run exits when nothing needed changing.
 exits 0 when every node succeeded, 1 when a node answered with a
 failure, and 3 when a node was sent the job and did not answer, so a
 script does not have to read the output to know.
+A
+.Cm run
+command line it cannot read \(em no target or function, a duration
+that does not parse, or a
+.Fl -subset
+or
+.Fl -batch-safe-limit
+that is not a whole number above zero \(em exits 64 before anything is
+sent.
 .Cm orch run
 exits 0 when every step succeeded and 1 when one failed.
 .Cm policy test

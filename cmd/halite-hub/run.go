@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,10 +114,17 @@ func portOf(listen string) string {
 
 // runRun is `halite-hub run '<target>' <function> [args...]`, the old
 // `salt` command.
+//
+// Everything on the command line is read before the hub is reached, and
+// anything malformed is a usage error, cli.ExitUsage. `run` itself exits 1
+// for a node that failed, so a typo that exited 1 read as a failed
+// deploy; and the two numbers read with fmt.Sscanf, whose error nothing
+// checked, turned `--subset 2x` into no subset at all -- the job went to
+// every node the target matched. DIVERGENCE 5.219.
 func runRun(args *cli.Args) int {
 	kind, target, fun, rest, err := resolveTarget(args)
 	if err != nil {
-		cli.Fatalf("%v", err)
+		cli.Usagef("%v", err)
 	}
 
 	kwargs := map[string]any{}
@@ -126,19 +134,18 @@ func runRun(args *cli.Args) int {
 		}
 	}
 
-	ttl := 0
-	if v := args.Flag("ttl", ""); v != "" {
-		d, err := time.ParseDuration(v)
-		if err != nil {
-			cli.Fatalf("--ttl %q: %v", v, err)
-		}
-		ttl = int(d.Seconds())
+	ttl := seconds(args.Flag("ttl", ""), "ttl")
+	subset := positiveCount(args.Flag("subset", ""), "subset")
+	safeLimit := positiveCount(args.Flag("batch-safe-limit", ""), "batch-safe-limit")
+	batchWait := seconds(args.Flag("batch-wait", ""), "batch-wait")
+	batchTimeout := seconds(args.Flag("batch-timeout", ""), "batch-timeout")
+	timeout, err := time.ParseDuration(args.Flag("timeout", "5m"))
+	if err != nil {
+		cli.Usagef("--timeout %q: %v", args.Flag("timeout", ""), err)
 	}
-
-	subset := 0
-	fmt.Sscanf(args.Flag("subset", "0"), "%d", &subset)
-	safeLimit := 0
-	fmt.Sscanf(args.Flag("batch-safe-limit", "0"), "%d", &safeLimit)
+	if args.Flag("sign-key", "") != "" && args.Flag("sign-extension", "") != "" {
+		cli.Usagef("--sign-key and --sign-extension name two different signers; use one")
+	}
 
 	client := operatorClient(args)
 	ctx := context.Background()
@@ -153,14 +160,12 @@ func runRun(args *cli.Args) int {
 		Offline:          args.Flag("offline", ""),
 		TTLSeconds:       ttl,
 		Batch:            args.Flag("batch", ""),
-		BatchWaitSeconds: seconds(args.Flag("batch-wait", ""), "batch-wait"),
+		BatchWaitSeconds: batchWait,
 		BatchSafeLimit:   safeLimit,
-		BatchTimeoutSecs: seconds(args.Flag("batch-timeout", ""), "batch-timeout"),
+		BatchTimeoutSecs: batchTimeout,
 		Subset:           subset,
 	}
 	switch {
-	case args.Flag("sign-key", "") != "" && args.Flag("sign-extension", "") != "":
-		cli.Fatalf("--sign-key and --sign-extension name two different signers; use one")
 	case args.Flag("sign-key", "") != "":
 		signJob(&req, args.Flag("sign-key", ""), ttl)
 	case args.Flag("sign-extension", "") != "":
@@ -189,10 +194,6 @@ func runRun(args *cli.Args) int {
 		return 0
 	}
 
-	timeout, err := time.ParseDuration(args.Flag("timeout", "5m"))
-	if err != nil {
-		cli.Fatalf("--timeout %q: %v", args.Flag("timeout", ""), err)
-	}
 	return gather(client, res, timeout, args)
 }
 
@@ -216,9 +217,24 @@ func seconds(v, name string) int {
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil {
-		cli.Fatalf("--%s %q: %v", name, v, err)
+		cli.Usagef("--%s %q: %v", name, v, err)
 	}
 	return int(d.Seconds())
+}
+
+// positiveCount reads a flag that counts nodes, where absent is 0 and
+// means "no limit". Anything given has to be a whole number above zero:
+// a value that does not parse, or 0, or a negative one, would otherwise
+// read as absent and lift the limit the operator was setting.
+func positiveCount(v, name string) int {
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		cli.Usagef("--%s %q is not a number of nodes; give a whole number above zero", name, v)
+	}
+	return n
 }
 
 func gather(client *transport.Client, sub *transport.SubmitResponse, timeout time.Duration, args *cli.Args) int {

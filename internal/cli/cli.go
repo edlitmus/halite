@@ -354,6 +354,22 @@ var Redact func(string) string
 // 5.198.
 const ExitUsage = 64
 
+// Usagef prints an error about the command line and exits ExitUsage.
+//
+// Fatalf's twin for the one case it must not be used for: a command line
+// that was not understood. Fatalf exits 1, which halite-hub run and
+// halite-node use to mean a node or a state failed, so a typo there read
+// as a failed deploy -- and a malformed number that went unread instead
+// ran the deploy on the wrong nodes. DIVERGENCE 5.219.
+func Usagef(format string, args ...any) {
+	msg := fmt.Sprintf(format, args...)
+	if Redact != nil {
+		msg = Redact(msg)
+	}
+	fmt.Fprintln(os.Stderr, "halite: "+msg)
+	os.Exit(ExitUsage)
+}
+
 // Fatalf prints an error and exits non-zero. The message goes to stderr so
 // that a caller piping the output gets only the data.
 func Fatalf(format string, args ...any) {
