@@ -77,7 +77,9 @@ func main() {
 	}
 	args, err := cli.Parse(os.Args[2:])
 	if err != nil {
-		cli.Fatalf("%v", err)
+		// A command line that will not parse is a usage error, as an
+		// unknown flag is. DIVERGENCE 5.219.
+		cli.Usagef("%v", err)
 	}
 	// `--help` after any subcommand describes the program rather than
 	// running it. A command that opens a listener needs a way to be

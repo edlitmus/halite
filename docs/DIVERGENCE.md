@@ -19744,6 +19744,58 @@ ran under macOS's `/bin/sh`, which is bash in POSIX mode, and under
 dash: the same rules, a different binary. Neither leg has been run with
 a failing suite since the change.
 
+### 5.219 A malformed `run` command line exited 1, and a malformed `--subset` meant no subset
+
+5.210 moved `halite-hub`'s and `halite-api`'s usage errors to
+`cli.ExitUsage`, 64, and recorded `run` with no target as still exiting
+1. That turned out to be one case of three. All of them went through
+`cli.Fatalf`, which exits 1: the exit `run` uses for a node that failed,
+and `halite-node` for a state that failed. So a typo read as a failed
+deploy, and an operator alerting on 1 was paged about one.
+
+- **`run`'s own arguments:** no target or function; a `--ttl`,
+  `--timeout`, `--batch-wait` or `--batch-timeout` that is not a
+  duration; two signers named at once. Several of these were only read
+  after the operator certificate was loaded, so in a root with none the
+  certificate error came first.
+- **`cli.RejectUnknownFlags`:** shared by all three programs, so a flag a
+  subcommand does not take exited 1 everywhere.
+- **`cli.Parse` errors:** a `key=value` argument whose value looks like
+  JSON and does not parse.
+
+The second defect was worse. `run` read `--subset` and
+`--batch-safe-limit` with `fmt.Sscanf`, and nothing checked its error.
+`--subset 2x` and `--subset=-1` left the subset at 0, which means none:
+a job meant for two nodes of a target went to every node it matched.
+The same was true of the safe limit.
+
+`cli.Usagef` is `Fatalf`'s twin, redacted the same way, exiting 64. The
+three paths above now use it. `run` reads every flag before it reaches
+for the hub. `--subset` and `--batch-safe-limit` go through
+`positiveCount`: absent still means no limit, and anything given must be
+a whole number above zero.
+
+`TestRunRefusesAMalformedCommandLineAsAUsageError` covers twelve
+malformed `run` command lines. Its control is a well-formed one in an
+empty root, which exits 1 at the operator certificate, so a 64 is
+the argument check. It failed on the old code:
+- every case exited 1;
+- the bad `--subset`, `--batch-safe-limit`, `--timeout`, `--batch-wait`
+  and two-signer cases fell through to the certificate error.
+
+`TestAnUnknownFlagIsAUsageError` covers the node and the API. Three
+breaks each failed the tests again:
+- `positiveCount` returning 0 for what it cannot read;
+- `Usagef` exiting 1;
+- `RejectUnknownFlags` back on `Fatalf`, and separately the node's
+  `Parse` error back on `Fatalf`.
+
+**Not covered:**
+- Other subcommands' value parsing: only `run`'s flags were audited.
+- Errors from the hub itself still exit 1, as before.
+- Not run on FreeBSD or Linux; nothing here is platform-specific.
+
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

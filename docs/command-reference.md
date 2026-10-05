@@ -575,7 +575,10 @@ single state back in.
 
 `run` exits 0 when every node succeeded, 1 when one failed, and 3 when a
 node was sent the job and did not answer — because "it said no" and "it
-said nothing" call for different things.
+said nothing" call for different things. A command line it cannot read
+exits 64 before anything is sent: no target or function, a flag it does
+not take, a duration that does not parse, or a `--subset` or
+`--batch-safe-limit` that is not a whole number above zero.
 
 ## Runners
 
@@ -1809,7 +1812,7 @@ own, above, and `doctor` exits non-zero only on a `fail`.
 |---|---|
 | 0 | Something changed, or under `--test` something would. |
 | 2 | Nothing to do; the node was already as declared. |
-| 64 | The command line was not understood: no subcommand, or an unknown one (sysexits' `EX_USAGE`). `halite-hub` and `halite-api` exit 64 for the same thing. |
+| 64 | The command line was not understood: no subcommand, an unknown one, or a flag the subcommand does not take (sysexits' `EX_USAGE`). `halite-hub` and `halite-api` exit 64 for the same thing. |
 | anything else | The run failed. |
 
 A monitor that treats 2 as failure will alert on every healthy run. See

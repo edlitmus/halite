@@ -23,6 +23,21 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Usage errors exit 64, and run refuses a malformed --subset
+
+`halite-hub run` now exits 64, sysexits' `EX_USAGE`, for a command line
+it cannot read, before anything is sent. It used to exit 1, the code it
+uses for a node that failed.
+
+**`--subset` and `--batch-safe-limit`** must now be whole numbers above
+zero. A value that did not parse, such as `--subset 2x`, or a
+non-positive one, such as `--subset=-1`, used to be ignored, and the job
+went to every node the target matched.
+
+**A flag a subcommand does not take** now exits 64 in `halite-node`,
+`halite-hub` and `halite-api`. So does a `key=value` argument that looks
+like JSON and doesn't parse. Both used to exit 1.
+
 ### halite-api starts under systemd without a state_dir
 
 `halite-api` now starts under its systemd unit with no `state_dir` set.
