@@ -19633,6 +19633,61 @@ Eight deliberate breaks each failed their test again:
 - A `mine.get` with a pillar target compiles every publisher's pillar,
   each a full render, on every call.
 
+### 5.217 halite-api's unit could not write the token store on the default `state_dir`
+
+The API's token store is `<state_dir>/tokens`, and its built-in
+`state_dir` is the platform's, `/var/lib/halite` on Linux. Its systemd
+unit ran with `ProtectSystem=strict` and made only `/var/lib/halite-api`
+writable. So a service left on the default could not create its token
+store: `serve` exited 1, and the unit's `RestartPreventExitStatus=1`
+left it stopped. The unit's comment, the example `api.yaml`, the
+operations guide and an excuse in the unit-paths test (5.202) all said
+the same thing: set `state_dir: /var/lib/halite-api`. That made every
+install depend on a line in a config file. It was also wrong on FreeBSD,
+which has no `/var/lib`, for anyone who copied the example there.
+
+The unit now has `StateDirectory=halite/tokens halite-api`:
+- **`halite/tokens`** makes only the token store writable. The token
+  store sits inside the hub's state directory, as SPEC 27.3 lays it out,
+  and `ProtectSystem=strict` still leaves the hub's job cache, events and
+  evidence read-only to the API.
+- **`halite-api`** stays for installs that followed the old example.
+
+The example no longer sets `state_dir`, and the operations guide now
+describes the sandbox rather than a setting to add.
+
+The excuse in `TestUnitsMakeWritableEveryDirectoryTheirBinaryWrites`
+became a claim that the test checks against the code: the API uses
+`state_dir` for `tokens` and nothing else. Every non-test line in
+`cmd/halite-api` that names the setting must also name the
+subdirectory. Two breaks each failed it: the unit back to
+`StateDirectory=halite-api`, and a second use of `state_dir` added to
+`serve.go`.
+
+`TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir` is the half
+that test says it cannot do: have systemd start the unit. It runs on the
+`linux` leg. It installs the shipped unit with only these changes:
+- `ExecStart` runs `token list` from the re-executed test binary;
+- a oneshot type, with restarts off;
+- a throwaway account.
+
+It requires the old `StateDirectory` to fail with a read-only file
+system, and the shipped one to succeed. It checks the store's owner and
+mode, and the owner and mode of the parent systemd had to create. The
+fleet-filter audit only read live tests in `internal/builtin`, so it
+reported this one's pattern as selecting nothing; it now reads `cmd/*`
+too.
+
+**Not yet run:** the live test, which needs the linux leg's systemd.
+
+**Not covered:**
+- A host where the hub and the API share `/var/lib/halite` and the
+  hub's unit owns it. The live test refuses a machine that already has
+  that directory.
+- `halite-api serve` itself, which needs a hub. `token list` opens the
+  store the same way.
+- FreeBSD and its rc script, which do not sandbox the API.
+
 
 ## 6. Everything else not started
 

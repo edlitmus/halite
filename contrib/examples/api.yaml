@@ -38,11 +38,11 @@
 # endpoint. This service is the estate's scrape target: it answers with
 # the hub's metrics merged into its own, because the hub speaks its own
 # protocol over mutual TLS and no scraper can reach it. SPEC 26.2.
-# Where the token store lives. Named explicitly because the systemd unit
-# runs with StateDirectory=halite-api and ProtectSystem=strict, which
-# makes everything outside it read-only: a service left on the built-in
-# default of <state dir> could not write a token at all.
-state_dir: /var/lib/halite-api
+# The token store is <state_dir>/tokens. The built-in state_dir is the
+# platform's (/var/lib/halite on Linux, /var/db/halite on a BSD), and the
+# systemd unit makes <that>/tokens writable, so nothing needs setting
+# here. This file used to set /var/lib/halite-api, which does not exist
+# on a BSD.
 
 metrics: true
 

@@ -23,6 +23,17 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### halite-api starts under systemd without a state_dir
+
+`halite-api` now starts under its systemd unit with no `state_dir` set.
+The unit made only `/var/lib/halite-api` writable, so on the built-in
+default (`/var/lib/halite/tokens`) the API could not create its token
+store and exited at startup. The unit now makes
+`/var/lib/halite/tokens` writable, and nothing else in the hub's state
+directory, and keeps `/var/lib/halite-api` working for configurations
+that name it. `contrib/examples/api.yaml` no longer sets
+`state_dir: /var/lib/halite-api`, a path FreeBSD does not have.
+
 ### Pillar targeting works in the mine and in agentless mode
 
 Pillar targeting now reads compiled pillar in the mine and in agentless

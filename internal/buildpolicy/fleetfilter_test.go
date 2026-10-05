@@ -132,30 +132,48 @@ func linuxLegFilter(t *testing.T, root string) []string {
 	return out
 }
 
-// liveTestNames is every TestLive* function in internal/builtin.
+// liveTestNames is every TestLive* function in internal/builtin and in
+// the command packages.
+//
+// The commands are included since the API's systemd unit test
+// (cmd/halite-api, DIVERGENCE 5.217) runs on the linux leg: before it every
+// live test was a module's, and this read internal/builtin alone, so a
+// filter pattern naming a command's live test read as one that selects
+// nothing.
 func liveTestNames(t *testing.T, root string) map[string]bool {
 	t.Helper()
-	dir := filepath.Join(root, "internal", "builtin")
-	entries, err := os.ReadDir(dir)
+	dirs := []string{filepath.Join(root, "internal", "builtin")}
+	commands, err := os.ReadDir(filepath.Join(root, "cmd"))
 	if err != nil {
-		t.Fatalf("%s: %v", dir, err)
+		t.Fatal(err)
+	}
+	for _, c := range commands {
+		if c.IsDir() {
+			dirs = append(dirs, filepath.Join(root, "cmd", c.Name()))
+		}
 	}
 	decl := regexp.MustCompile(`(?m)^func (TestLive[A-Za-z0-9_]*)\(`)
 	out := map[string]bool{}
-	for _, e := range entries {
-		if !strings.HasSuffix(e.Name(), "_test.go") {
-			continue
-		}
-		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("%s: %v", dir, err)
 		}
-		for _, m := range decl.FindAllSubmatch(body, -1) {
-			out[string(m[1])] = true
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Name(), "_test.go") {
+				continue
+			}
+			body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, m := range decl.FindAllSubmatch(body, -1) {
+				out[string(m[1])] = true
+			}
 		}
 	}
 	if len(out) == 0 {
-		t.Fatalf("no TestLive function was found under %s", dir)
+		t.Fatalf("no TestLive function was found under %v", dirs)
 	}
 	return out
 }

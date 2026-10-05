@@ -1063,15 +1063,19 @@ Linux and macOS, `%PROGRAMDATA%\Halite` on Windows. `<state dir>` is
 
 | Setting | Path | Needs |
 |---|---|---|
-| `state_dir` | its own, **not** the hub's | **read/write**, 0700 — the token store |
+| `state_dir` | the platform's, as the hub's | **read/write** `<state_dir>/tokens` only, 0700 — the token store |
 | `pki_dir` | `<config root>/pki` | read — its own operator certificate and the CA |
 | `accounts`, `policy` | `<config root>/` | read |
 | `tls_cert`, `tls_key` | wherever they are | read |
 
-Give the API a `state_dir` of its own. The systemd unit runs it with
-`StateDirectory=halite-api` and `ProtectSystem=strict`, which makes
-everything else read-only, so a service left on the built-in default
-could not write a token at all.
+The API writes nothing under `state_dir` but its token store,
+`<state_dir>/tokens`. On the built-in default that is inside the hub's
+state directory, and the systemd unit makes that one subdirectory
+writable — `StateDirectory=halite/tokens`, with `ProtectSystem=strict`
+leaving the hub's job cache, events and evidence read-only to the API.
+Nothing needs setting in `api.yaml`. The unit also keeps
+`/var/lib/halite-api` writable, for an `api.yaml` that names it, as the
+example used to.
 
 ### Setting it up
 
@@ -1120,8 +1124,8 @@ install -d -o halite -g halite -m 0750 /var/log/halite
 On Linux the state directory is `/var/lib/halite`. The hub's systemd
 unit creates the state, cache and log directories itself, with the
 right owner, through `StateDirectory=`, `CacheDirectory=` and
-`LogsDirectory=`; the API's unit creates `/var/lib/halite-api` the same
-way. No unit creates `pki_dir`, so that one directory still needs doing
+`LogsDirectory=`; the API's unit creates `/var/lib/halite/tokens` the
+same way. No unit creates `pki_dir`, so that one directory still needs doing
 by hand or by `make install`: the hub's unit names it in
 `ReadWritePaths=`, and systemd.exec(5) says such an entry must exist
 unless it has a `-` prefix. See [The daemons](#the-daemons).
