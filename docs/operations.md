@@ -174,6 +174,12 @@ before they are written. Redaction happens at the sink, so a diagnostic
 added later cannot forget about it, and it covers every field of a
 record rather than the message alone.
 
+`halite-api` also scrubs the secrets it reads from a file —
+`ldap_bind_password_file` and `oidc_client_secret_file` — and every
+webhook's `secret` or `secret_file`. The bearer tokens it issues are
+not added: no record carries one, and a set that grew by one entry per
+login would never shrink.
+
 Requested data is a separate matter. `halite-node pillar items` masks
 values by default, as Salt's does — `db_password: **********` — and
 `--reveal` prints them. That masking is a choice made for the command's

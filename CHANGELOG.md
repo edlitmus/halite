@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### halite-api scrubs its secrets from its log
+
+`halite-api` now scrubs its secrets from its log and from its fatal
+error messages, as the hub and the node already did: the LDAP bind
+password, the OIDC client secret (the inline and `_file` forms of both),
+and every webhook's `secret` or `secret_file`. Before, it built its
+logger with no redactor and removed only credentials embedded in URLs.
+No log line that printed one of these was found, so this closes a gap in
+the guarantee rather than a leak anybody saw.
+
 ### Signed pillar targets are refused when the node's pillar is broken
 
 A node now refuses a signed job targeted by pillar when its own pillar

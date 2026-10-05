@@ -49,6 +49,8 @@ func oidcSecret(s *service) string {
 		if err != nil {
 			cli.Fatalf("oidc: %v", err)
 		}
+		// Not a configured value, so setup could not seed it.
+		s.secrets.Add(secret)
 		return secret
 	}
 	return s.cfg.String("oidc_client_secret", "")

@@ -54,6 +54,8 @@ func ldapBindPassword(s *service) string {
 		if err != nil {
 			cli.Fatalf("ldap: %v", err)
 		}
+		// Not a configured value, so setup could not seed it.
+		s.secrets.Add(secret)
 		return secret
 	}
 	return s.cfg.String("ldap_bind_password", "")

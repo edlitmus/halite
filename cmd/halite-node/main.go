@@ -870,13 +870,8 @@ func buildLogger(args *cli.Args, cfg *config.Config, secrets *redact.Set) (*hlog
 // say they hold one. The key-name rule already exists for what a
 // template sees as `opts`; this makes the same values unprintable.
 func seedConfiguredSecrets(secrets *redact.Set, cfg *config.Config) {
-	for _, k := range config.Keys {
-		if !config.IsSecretKey(k.Name) {
-			continue
-		}
-		if v, ok := cfg.Get(k.Name); ok {
-			secrets.AddTree(v)
-		}
+	for _, v := range cfg.SecretValues() {
+		secrets.AddTree(v)
 	}
 }
 
