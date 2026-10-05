@@ -56,17 +56,26 @@ func TestUnitsMakeWritableEveryDirectoryTheirBinaryWrites(t *testing.T) {
 		},
 	}
 
-	// Settings a unit expects its configuration file to override,
-	// because the unit's sandbox deliberately does not cover the
-	// built-in default. The value is the worked example that has to set
-	// it; the path checked is what that example sets.
+	// Settings a binary writes only one subdirectory of, which is all its
+	// unit makes writable. Each is a claim about the code, and checked
+	// against it below: every non-test line of cmd/<binary> naming the
+	// setting must also name the subdirectory, so a second use of the
+	// setting -- something else written beside the token store -- fails
+	// here instead of at startup under systemd.
 	//
-	// The API's is the one entry, and it is a real gap rather than a
-	// design: halite-api serve on built-in defaults wants
-	// /var/lib/halite/tokens, which ProtectSystem=strict leaves
-	// read-only, and nothing but api.yaml moves it.
-	fromConfig := map[string]map[string]string{
-		"halite-api.service": {"state_dir": "api.yaml"},
+	// The API's token store is the one entry. It sits inside the hub's
+	// state directory on the built-in default, and its unit opens that
+	// one subdirectory rather than the whole of it. It used to open only
+	// /var/lib/halite-api, so a service on the default could not write a
+	// token, and this check carried an excuse saying api.yaml would move
+	// state_dir.
+	subdirOnly := map[string]map[string]string{
+		"halite-api": {"state_dir": "tokens"},
+	}
+	for binary, keys := range subdirOnly {
+		for key, sub := range keys {
+			checkWritesOnlySubdir(t, binary, key, sub)
+		}
 	}
 
 	units := map[string]string{}
@@ -120,17 +129,8 @@ func TestUnitsMakeWritableEveryDirectoryTheirBinaryWrites(t *testing.T) {
 				continue
 			}
 			want := def
-			if example, ok := fromConfig[unitName][k.Name]; ok {
-				cfg, err := Load(role, LoadOptions{Path: filepath.Join("..", "..", "contrib", "examples", example)})
-				if err != nil {
-					t.Fatalf("loading the example %s that %s relies on: %v", example, unitName, err)
-				}
-				want = cfg.String(k.Name, "")
-				if want == "" || want == def {
-					t.Errorf("%s relies on contrib/examples/%s to move %s off its default, and it does not",
-						unitName, example, k.Name)
-					continue
-				}
+			if sub, ok := subdirOnly[binary][k.Name]; ok {
+				want = posixJoin(def, sub)
 			}
 			checked++
 			t.Logf("%s: %s %s=%s, ProtectSystem=%q", unitName, binary, k.Name, want, last(svc["ProtectSystem"]))
@@ -273,6 +273,42 @@ func namedDirectoryKeys(t *testing.T, binary string) map[string]bool {
 		t.Fatalf("cmd/%s names no setting at all; this check is reading the wrong place", binary)
 	}
 	return out
+}
+
+// checkWritesOnlySubdir holds the claim that cmd/<binary> uses a
+// directory setting only to reach one subdirectory of it: every
+// non-test line naming the setting names the subdirectory too.
+func checkWritesOnlySubdir(t *testing.T, binary, key, sub string) {
+	t.Helper()
+	dir := filepath.Join("..", "..", "cmd", binary)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uses := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") || strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			if !strings.Contains(line, `"`+key+`"`) {
+				continue
+			}
+			uses++
+			if !strings.Contains(line, `"`+sub+`"`) {
+				t.Errorf("cmd/%s/%s:%d uses %s for something other than %s/, and its unit "+
+					"makes only that subdirectory writable: %s",
+					binary, e.Name(), i+1, key, sub, strings.TrimSpace(line))
+			}
+		}
+	}
+	if uses == 0 {
+		t.Errorf("cmd/%s no longer names %s; drop it from subdirOnly", binary, key)
+	}
 }
 
 func sortedKeys(m map[string]bool) []string {

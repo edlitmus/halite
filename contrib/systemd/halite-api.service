@@ -28,11 +28,23 @@ RestartPreventExitStatus=1
 # so it takes the same sandbox as the hub.
 User=halite
 Group=halite
-# /var/lib/halite-api, which api.yaml has to name as `state_dir` — the
-# token store goes there. ProtectSystem=strict makes everything else
-# read-only, so a service using the built-in default of /var/lib/halite
-# could not write its tokens at all. contrib/examples/api.yaml sets it.
-StateDirectory=halite-api
+# The token store, <state_dir>/tokens, and the only thing the API writes
+# under its state directory. On the built-in default that is
+# /var/lib/halite/tokens: inside the hub's state directory, as SPEC 27.3
+# lays it out, and the one part of it this service may write --
+# ProtectSystem=strict leaves the hub's job cache, events and evidence
+# read-only to it. This used to be StateDirectory=halite-api alone, which
+# made a service on the built-in default unable to write a token and so
+# exit at startup; api.yaml had to move state_dir to make the unit work.
+#
+# halite-api stays for the installs that did that, by following the old
+# example: /var/lib/halite-api is still made writable, so their
+# `state_dir: /var/lib/halite-api` keeps working.
+#
+# systemd creates the innermost directory owned by the unit's account at
+# this mode; a /var/lib/halite it has to create as well is root's, 0755,
+# and the hub's unit or `make install` gives it to halite.
+StateDirectory=halite/tokens halite-api
 StateDirectoryMode=0700
 LogsDirectory=halite
 ProtectSystem=strict

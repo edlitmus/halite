@@ -54,6 +54,10 @@ on:
       - "internal/builtin/snap*.go"
       - "internal/builtin/pro*.go"
       - "internal/builtin/selinux*.go"
+      # The API's unit, started by the linux leg's real systemd
+      # (TestLiveAPIUnit, cmd/halite-api/live_unit_test.go).
+      - "contrib/systemd/halite-api.service"
+      - "cmd/halite-api/live_unit_test.go"
       # `iptables` and `nftables` run in a private network namespace, so
       # their live tests are in the ordinary `test` job and need no root
       # -- but a GitHub runner may forbid an unprivileged namespace, and
@@ -542,7 +546,7 @@ jobs:
           { sudo -E env "PATH=$PATH" HALITE_SYSTEM_LIVE=1 HALITE_CONFORMANCE_LIVE=1 \
               HALITE_REBOOT_LIVE=1 \
               HALITE_KERNELPKG_LIVE=1 \
-              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance' ./internal/builtin/ 2>&1;
+              go test -count=1 -v -timeout 25m -run 'TestLiveHostname|TestLiveSSHFiles|TestLiveCronForAnotherAccount|TestLiveSysctl|TestLiveAppArmor|TestLiveNetplan|TestLiveService|TestLivePkg|TestLiveQuota|TestLiveLVM|TestLiveIPTables|TestLiveNFTables|TestLiveJournald|TestLiveMdadm|TestLiveModprobe|TestLiveUdev|TestLiveSnap|TestLiveProReadsTheRealClient|TestLiveSelinux|TestLiveUserGroups|TestLiveGroupGid|TestLiveGroupMembers|TestLiveShadow|TestLiveReboot|TestLiveACL|TestLiveSudo|TestLiveLogrotate|TestLiveKernelpkg|TestLiveConformance|TestLiveAPIUnit' ./internal/builtin/ ./cmd/halite-api/ 2>&1;
             echo $? > /tmp/live.status; } | tee /tmp/live.txt
           exit "$(cat /tmp/live.status)"
 
@@ -617,6 +621,12 @@ jobs:
             echo "the conformance suite left its AppArmor profile on disk"; exit 1; }
           test ! -e /run/systemd/system/halite-live-probe.service || {
             echo "the tests left the probe unit in /run/systemd/system"; exit 1; }
+          test ! -e /run/systemd/system/halite-live-apiunit.service || {
+            echo "the API unit test left its unit in /run/systemd/system"; exit 1; }
+          test ! -e /var/lib/halite || {
+            echo "the API unit test left /var/lib/halite behind"; exit 1; }
+          ! getent passwd halitelive-api >/dev/null || {
+            echo "the API unit test left its account behind"; exit 1; }
           # A sudoers drop-in left behind is a rule in force on a machine,
           # so this is asserted rather than printed. Through sudo: the
           # directory is 0750 root, and this step runs as the runner
