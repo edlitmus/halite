@@ -19678,7 +19678,22 @@ fleet-filter audit only read live tests in `internal/builtin`, so it
 reported this one's pattern as selecting nothing; it now reads `cmd/*`
 too.
 
-**Not yet run:** the live test, which needs the linux leg's systemd.
+It ran on Fleet run 37338139260, on the `linux` leg: Ubuntu 24.04,
+systemd 255 (255.4-1ubuntu8.17).
+- **The old unit** failed with `creating the token store: mkdir
+  /var/lib/halite: read-only file system`, exit 1, which is the defect.
+- **The shipped unit** ran `token list` to "no tokens have been
+  issued".
+- **What systemd created:** `/var/lib/halite/tokens` was the throwaway
+  account's, 0700. The `/var/lib/halite` it had to create was root's,
+  0755, as the unit's comment says.
+- **Cleanup:** the leg's cleanup check found no unit, directory or
+  account left behind.
+
+That run's excerpt for the shipped unit began with the old unit's lines,
+because it took the unit's last twenty journal lines. The verdict came
+from `systemctl start`'s exit status and was right. The excerpt is now
+scoped to the start's own invocation ID.
 
 **Not covered:**
 - A host where the hub and the API share `/var/lib/halite` and the

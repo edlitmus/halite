@@ -136,7 +136,15 @@ func TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir(t *testing.T) {
 		}
 		_, _ = sh("systemctl", "reset-failed", unit)
 		_, startErr := sh("systemctl", "start", unit)
-		journal, _ := sh("journalctl", "-u", unit, "--no-pager", "-o", "cat", "-n", "20")
+		// This start's own lines, by its invocation ID. `-u` with `-n`
+		// took the unit's last lines, so the shipped unit's excerpt began
+		// with the old unit's failure and read as though it had failed
+		// first -- the first Fleet run, 37338139260, showed it.
+		id, err := sh("systemctl", "show", "-p", "InvocationID", "--value", unit)
+		if err != nil || id == "" {
+			t.Fatalf("no invocation ID for %s: %v %q", unit, err, id)
+		}
+		journal, _ := sh("journalctl", "_SYSTEMD_INVOCATION_ID="+id, "--no-pager", "-o", "cat")
 		return journal, startErr
 	}
 
