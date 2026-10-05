@@ -19706,6 +19706,43 @@ before each start, and a journal it cannot read is logged, not failed.
   store the same way.
 - FreeBSD and its rc script, which do not sandbox the API.
 
+### 5.218 Fleet's live legs lost the suite's status when it failed
+
+The `linux` and `freebsd` legs run the live suite as
+`{ go test ...; echo $? > /tmp/live.status; } | tee /tmp/live.txt` and
+then `exit "$(cat /tmp/live.status)"`. The status goes through a file
+because a pipeline's status is `tee`'s, and FreeBSD's `/bin/sh` has no
+`PIPESTATUS`. Both steps begin with `set -e`, and the brace group
+inherits it. So when the suite failed, the group stopped at `go test`
+and never wrote the file.
+
+GitHub runs a Linux step as `bash -e` without `pipefail`, so the
+pipeline still succeeded. `cat` then found no file, and the step died on
+`exit ""` -- "numeric argument required", status 2 -- rather than with
+the suite's status. Fleet run 37342637678 showed it, when 5.217's live
+test failed there. The leg still failed, which is why it had gone
+unnoticed. The freebsd leg has the same lines and had never had a
+failing suite to expose them.
+
+Both now write `go test ... && status=0 || status=$?`. A command in an
+`&&`/`||` list is exempt from `-e`, and the form is POSIX. Both also
+refuse to go on, saying so, if no status was recorded.
+
+`TestFleetLiveStepsExitWithTheSuitesStatus` (internal/buildpolicy)
+extracts every step in `fleet.yml` that writes `/tmp/live.status` and
+runs it as written, with `sudo` replaced by a stub suite exiting 0 or 3:
+- the linux step under `bash -e`, as GitHub invokes it;
+- the freebsd step under every POSIX `sh` the host has.
+
+It requires the step to exit with the suite's status and to have kept
+its output. On the old workflow it failed on both legs with the CI
+message: exit 255 under macOS's bash 3.2, and "Illegal number" under
+dash. Reverting only the freebsd leg failed it on that leg alone.
+
+**Not covered:** the freebsd step under FreeBSD's own `/bin/sh`. Here it
+ran under macOS's `/bin/sh`, which is bash in POSIX mode, and under
+dash: the same rules, a different binary. Neither leg has been run with
+a failing suite since the change.
 
 ## 6. Everything else not started
 
