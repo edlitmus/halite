@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/edlitmus/halite/internal/cli"
+	"github.com/edlitmus/halite/internal/fileperm/permtest"
 )
 
 // Every secret this service holds is removed from every record it logs
@@ -35,6 +36,11 @@ func TestEverySecretTheAPIHoldsIsScrubbedFromItsLog(t *testing.T) {
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		// ReadSecretFile refuses a file anyone else can read, and on
+		// Windows a 0600 passed to WriteFile is not that: the file
+		// inherits the temporary directory's ACL. The refusal is a
+		// cli.Fatalf, which takes the test binary with it.
+		permtest.MakePrivate(t, path)
 		return path
 	}
 	secrets := map[string]string{
@@ -105,6 +111,7 @@ func TestTheLDAPBindPasswordFileIsScrubbed(t *testing.T) {
 	if err := os.WriteFile(pwFile, []byte(secret+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	permtest.MakePrivate(t, pwFile)
 	conf := "state_dir: " + filepath.Join(root, "state") + "\n" +
 		"ldap_bind_password_file: " + pwFile + "\n"
 	if err := os.WriteFile(filepath.Join(root, "api.yaml"), []byte(conf), 0o600); err != nil {
