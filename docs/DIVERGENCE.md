@@ -19470,6 +19470,55 @@ could also pass them for a slow extension that would have accepted the
 wrong version; no test covers that.
 
 
+### 5.214 A signed `not I@` target ran on a node whose pillar did not compile
+
+A node checks that a signed job's target selects it, against its own ID,
+grains and pillar, because a signature that says what may be run and not
+where can be re-aimed by a hub that has been taken over. For a target
+that reads pillar, the node compiled its pillar first, and on a compile
+error it used no pillar at all. The comment explained why that was safe:
+"a nil pillar matches nothing", so a broken pillar refuses the job.
+
+That holds only for a positive term. Under `not`, the empty pillar is a
+match: `not I@role:db` is true of a node with no `role`. So a database
+host whose pillar would not render -- a template error, an external
+source that is down -- accepted a job signed for every machine *except*
+the database hosts, in the one check whose purpose is to refuse what the
+hub cannot prove. The hub resolver's copy of the same decision was fixed
+in 5.204, which recorded this one as found and not fixed; the node kept
+the old answer, and the node's copy is the one that does not trust the
+hub.
+
+The matcher can only answer true or false, and target.Node.LoadPillar
+already said that a caller whose loader fails has to remember the
+failure and refuse. The node now does that. It hands the matcher a lazy
+loader, records a compile error, and refuses the job with that error
+whenever one was recorded, whichever way the match came out. A positive
+pillar target on a broken pillar is refused for the real reason rather
+than as "does not match", which sent an operator to fix a target that
+was right.
+
+The lazy loader also replaces a scan of the expression for `I@` and
+`J@`, which decided beforehand whether to compile. The matcher now
+decides as it evaluates, so `G@os:FreeBSD or I@role:db` on a FreeBSD
+node never compiles pillar, and a broken pillar holds up nothing it
+cannot affect. `TestCheckingASignedTargetCompilesPillarOnlyWhenItIsRead`,
+which counts compilations by target kind, passes unchanged.
+
+`TestASignedPillarTargetIsRefusedWhenThisNodesPillarWillNotCompile`
+failed against the old code: it accepted `not I@role:db`,
+`G@os:FreeBSD and not I@role:db` and `not J@role:^db`, refused the two
+positive targets as mismatches, and compiled pillar for a target its
+grain term had already decided. With the new refusal disabled
+(`pillarErr != nil && false`), it failed again on the three `not` cases.
+
+**Not covered:** run only through the node's own test harness, with a
+stubbed hub pillar; not on a real node against a real hub. A hub pillar
+fetch that returns no pillar and no error is still read as an empty
+pillar, which is right only if "no pillar" really is the answer.
+`mine.get`, mine `allow_tgt` and the ssh roster still match `-I`
+against an empty pillar (5.204).
+
 
 ## 6. Everything else not started
 

@@ -359,7 +359,9 @@ ID, grains and pillar. Without that, a signature authorising a job for
 consequence is that a signed job must be targeted by something a node can
 evaluate about itself: a nodegroup is defined in the hub's configuration,
 so a node cannot know whether it is in one, and a signed job targeted
-that way is refused by name.
+that way is refused by name. Likewise a signed job whose target reads pillar
+is refused on a node whose pillar does not compile, naming the error,
+rather than matched against an empty pillar.
 
 The signature is ECDSA over SHA-256, ASN.1 DER, base64 on the wire — the
 format `openssl dgst -sign` produces, so a signer backed by a KMS or a

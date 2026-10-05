@@ -259,7 +259,19 @@ func (n *node) matchesSignedTarget(j *job.Job) error {
 				"sign jobs with a target a node can evaluate about itself",
 			j.Target, j.TargetKind, err)
 	}
-	if !matcher.Match(target.Node{ID: n.nodeID, Grains: n.grains, Pillar: n.signedTargetPillar(kind, j.Target)}) {
+	// Pillar is loaded only if a pillar term is actually evaluated, and
+	// a failure to load it is remembered rather than handed to the
+	// matcher. See signedTargetPillar.
+	var pillarErr error
+	hit := matcher.Match(target.Node{ID: n.nodeID, Grains: n.grains,
+		LoadPillar: n.signedTargetPillar(&pillarErr)})
+	if pillarErr != nil {
+		return fmt.Errorf(
+			"this node cannot check that a signed job targeted at %q (%s) was meant for it: "+
+				"the target reads pillar and this node's pillar did not compile: %w",
+			j.Target, j.TargetKind, pillarErr)
+	}
+	if !hit {
 		return fmt.Errorf(
 			"this job is signed for %q (%s) and this node is %s, which does not match it",
 			j.Target, j.TargetKind, n.nodeID)
@@ -267,46 +279,47 @@ func (n *node) matchesSignedTarget(j *job.Job) error {
 	return nil
 }
 
-// signedTargetPillar is the pillar a pillar-matching target is checked
-// against, or nil.
+// signedTargetPillar is the loader a signed target reads this node's
+// pillar through, recording in failed why it could not.
 //
-// Compiled only for the kinds that read it. Pillar compilation on this
-// node is a round trip to the hub, or a full local render, so doing it
-// unconditionally would put one of those in front of every signed job --
-// including the overwhelming majority, which are targeted by name, glob
-// or grain and never look at pillar. SPEC 30's latency targets are the
-// reason to notice; a needless hub request per job is the reason to care.
+// Lazy, because pillar compilation on this node is a round trip to the
+// hub, or a full local render, and doing it in front of every signed job
+// would put one of those before nearly all of them -- which are targeted
+// by name, glob or grain and never look at pillar. SPEC 30's latency
+// targets are the reason to notice. The matcher asks the loader only
+// when a pillar term is evaluated, and `and`/`or` short-circuit, so
+// `G@os:FreeBSD or I@role:db` on a FreeBSD node never compiles at all.
+// This used to be decided beforehand by scanning the expression for
+// `I@` and `J@`; the matcher deciding as it evaluates is the same
+// question answered by the thing that parsed it.
 //
-// Nil rather than an error where it does not compile: a pillar target on
-// a node whose pillar is broken should refuse the job, and it does -- a
-// nil pillar matches nothing -- rather than failing the whole check with
-// a message about compilation that hides what was being decided.
-func (n *node) signedTargetPillar(kind target.Kind, expr string) *value.Map {
-	if !targetReadsPillar(kind, expr) {
-		return nil
+// A failure is not an empty pillar. That was the old answer -- "a nil
+// pillar matches nothing", so a broken pillar refuses the job -- and it
+// held only for a positive term. Under `not` the empty pillar is a
+// *match*: `not I@role:db` is true of a node with no `role`, so a
+// database host whose pillar would not render accepted a job signed for
+// everything except the database hosts. The matcher cannot report
+// "undecided" from a boolean (target.Node.LoadPillar says so), so the
+// caller has to: matchesSignedTarget refuses whenever failed is set,
+// whichever way the match came out. The hub's resolver makes the same
+// refusal for the same reason, DIVERGENCE 5.204; this is the node's copy
+// of that decision, and it is the copy that matters, because it is the
+// one that does not trust the hub.
+func (n *node) signedTargetPillar(failed *error) func() *value.Map {
+	var compiled *value.Map
+	loaded := false
+	return func() *value.Map {
+		if !loaded {
+			loaded = true
+			p, err := n.compilePillarOrErr()
+			if err != nil {
+				*failed = err
+			} else {
+				compiled = p
+			}
+		}
+		return compiled
 	}
-	p, err := n.compilePillarOrErr()
-	if err != nil {
-		return nil
-	}
-	return p
-}
-
-// targetReadsPillar reports whether an expression can consult pillar.
-//
-// A compound expression is asked by looking for the two sigils that mean
-// pillar, `I@` and `J@`, which is what target.compileLeaf dispatches on.
-// Erring towards compiling is the safe direction: a target that reads
-// pillar and is handed none matches nothing, which would refuse a job
-// that should have run.
-func targetReadsPillar(kind target.Kind, expr string) bool {
-	switch kind {
-	case target.Pillar, target.PillarRegex:
-		return true
-	case target.Compound:
-		return strings.Contains(expr, "I@") || strings.Contains(expr, "J@")
-	}
-	return false
 }
 
 // signatureSummary is what the agent logs at startup, so that an estate

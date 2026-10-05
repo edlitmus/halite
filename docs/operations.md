@@ -1261,6 +1261,10 @@ signature says where as well as what. Sign by node ID, glob, grain,
 pillar, list, regex or CIDR — anything a node can evaluate about itself.
 A nodegroup is resolved from the hub's configuration, so a node cannot
 check it and refuses a signed job targeted that way.
+A pillar target (`-I`, `-J`, or `I@`/`J@` in a compound) is checked
+against the node's own pillar, and if that pillar does not compile the
+job is refused with the compiler's error, whichever way the target would
+have gone: an empty pillar is what `not I@role:db` matches.
 
 ### What is signed
 
