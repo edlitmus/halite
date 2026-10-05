@@ -14,6 +14,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/target"
 	"github.com/edlitmus/halite/internal/transport"
+	"github.com/edlitmus/halite/internal/value"
 )
 
 // MineEntry is one function's published data for one node.
@@ -308,12 +309,31 @@ func (s *Server) MineGet(reader, tgt, kind, function string) (map[string]json.Ra
 	if err != nil {
 		return nil, err
 	}
+	// A pillar term reads each publisher's compiled pillar, by the same
+	// loader dispatch uses and with the same refusal: a publisher whose
+	// pillar will not compile has no answer, and an empty pillar
+	// standing in for it puts it inside every `not I@...` -- the mine of
+	// the one host the expression was written to leave out. Skipping it
+	// is the other wrong answer: a load balancer's backend list quietly
+	// short of a backend. See targetPillar, and DIVERGENCE 5.204 for the
+	// dispatch half of this.
+	loader, err := s.targetPillar(matcher, "")
+	if err != nil {
+		return nil, err
+	}
 	nodes, err := s.mine().Nodes()
 	if err != nil {
 		return nil, err
 	}
 
 	out := map[string]json.RawMessage{}
+	// The reader's pillar, compiled at most once for this read however
+	// many entries' allow_tgt ask about it: a reader is one node, and a
+	// read across a hundred publishers that each restrict by pillar would
+	// otherwise render its pillar tree a hundred times.
+	readerPillar := &pillarOnce{}
+	var undecided []string
+	var undecidedWhy error
 	for _, id := range nodes {
 		node, err := s.nodes().Matchable(id)
 		if err != nil {
@@ -321,7 +341,19 @@ func (s *Server) MineGet(reader, tgt, kind, function string) (map[string]json.Ra
 				"node_id", id, "error", err.Error())
 			continue
 		}
-		if !matcher.Match(node) {
+		var failed error
+		if loader != nil {
+			node.LoadPillar = loader(id, node, &failed)
+		}
+		hit := matcher.Match(node)
+		if failed != nil {
+			s.warn("a pillar target cannot be decided for a node whose pillar will not compile",
+				"node_id", id, "error", failed.Error())
+			undecided = append(undecided, id)
+			undecidedWhy = failed
+			continue
+		}
+		if !hit {
 			continue
 		}
 		data, err := s.mine().Get(id)
@@ -332,9 +364,9 @@ func (s *Server) MineGet(reader, tgt, kind, function string) (map[string]json.Ra
 		if !ok {
 			continue
 		}
-		allowed, err := s.mineAllows(entry, reader)
+		allowed, err := s.mineAllows(entry, reader, readerPillar)
 		if err != nil {
-			s.warn("a mine entry's allow_tgt will not compile",
+			s.warn("a mine entry's allow_tgt could not be decided for this reader, so it is withheld",
 				"node_id", id, "function", function, "error", err.Error())
 			continue
 		}
@@ -342,6 +374,13 @@ func (s *Server) MineGet(reader, tgt, kind, function string) (map[string]json.Ra
 			continue
 		}
 		out[id] = entry.Data
+	}
+	if len(undecided) > 0 {
+		sort.Strings(undecided)
+		return nil, fmt.Errorf(
+			"target %q reads pillar, and the hub could not compile the pillar of %d "+
+				"publishing node(s) (%s), so whether it matches them is unknown: %w",
+			matcher.Expr(), len(undecided), strings.Join(undecided, ", "), undecidedWhy)
 	}
 	return out, nil
 }
@@ -351,7 +390,13 @@ func (s *Server) MineGet(reader, tgt, kind, function string) (map[string]json.Ra
 // An empty reader is the hub asking on an operator's behalf, which
 // `allow_tgt` does not restrict: it names which *nodes* may read, and
 // an operator is already through the policy.
-func (s *Server) mineAllows(entry *MineEntry, reader string) (bool, error) {
+//
+// A pillar term reads the reader's compiled pillar. It used to read an
+// empty one, which failed open under `not`: an entry published with
+// `not I@role:web` was readable by every web host. A reader whose pillar
+// will not compile gets an error, which the caller treats as a refusal:
+// the restriction exists to withhold, so "unknown" withholds.
+func (s *Server) mineAllows(entry *MineEntry, reader string, readerPillar *pillarOnce) (bool, error) {
 	if entry.AllowTgt == "" || reader == "" {
 		return true, nil
 	}
@@ -359,11 +404,39 @@ func (s *Server) mineAllows(entry *MineEntry, reader string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	loader, err := s.targetPillar(matcher, "")
+	if err != nil {
+		return false, err
+	}
 	node, err := s.nodes().Matchable(reader)
 	if err != nil {
 		return false, err
 	}
-	return matcher.Match(node), nil
+	var failed error
+	if loader != nil {
+		load := loader(reader, node, &readerPillar.err)
+		node.LoadPillar = func() *value.Map {
+			if !readerPillar.done {
+				readerPillar.done = true
+				readerPillar.pillar = load()
+			}
+			failed = readerPillar.err
+			return readerPillar.pillar
+		}
+	}
+	hit := matcher.Match(node)
+	if failed != nil {
+		return false, failed
+	}
+	return hit, nil
+}
+
+// pillarOnce is one node's pillar, compiled the first time it is asked
+// for and remembered, failure included, for the rest of one request.
+type pillarOnce struct {
+	done   bool
+	pillar *value.Map
+	err    error
 }
 
 // kindOrGlob reads a target kind flag, defaulting to a glob.

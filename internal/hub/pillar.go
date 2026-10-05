@@ -122,6 +122,7 @@ func (s *Server) pillarFor(w http.ResponseWriter, r *http.Request, nodeID string
 
 // compilePillar assembles one node's pillar from the hub's roots.
 func (s *Server) compilePillar(nodeID, env string, grains *value.Map) (*pillar.Compiled, error) {
+	s.pillarCompiles.Add(1)
 	opts := s.Pillar
 	c := &pillar.Compiler{
 		Loader: opts.Roots,

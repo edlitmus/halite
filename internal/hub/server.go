@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/edlitmus/halite/internal/eventbus"
@@ -31,6 +32,11 @@ import (
 
 // Server holds what the endpoints need.
 type Server struct {
+	// pillarCompiles counts compilePillar calls, for the tests that hold
+	// a targeting path to compiling a node's pillar once rather than
+	// once per question asked about it.
+	pillarCompiles atomic.Int64
+
 	Authority *keystore.Authority
 	Log       *log.Logger
 	// Now is the clock, for the tests.
