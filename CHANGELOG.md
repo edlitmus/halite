@@ -23,6 +23,17 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Signed pillar targets are refused when the node's pillar is broken
+
+A node now refuses a signed job targeted by pillar when its own pillar
+does not compile, and the refusal names the compiler's error. Before, it
+matched the target against an empty pillar, so a job signed for
+`not I@role:db` ran on a database host whose pillar was broken. A
+positive pillar target in the same situation used to be refused as "does
+not match"; it is now refused for the actual reason. Targets decided
+without reading pillar, such as `G@os:FreeBSD or I@role:db` on a FreeBSD
+node, no longer compile pillar at all.
+
 ### extensions verify tells a slow start from a buffering writer
 
 `halite-hub extensions verify` no longer fails a conforming extension

@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -395,5 +396,74 @@ func TestCheckingASignedTargetCompilesPillarOnlyWhenItIsRead(t *testing.T) {
 			t.Errorf("a %s target %q compiled pillar %d time(s), expected %d",
 				c.kind, c.target, calls, c.want)
 		}
+	}
+}
+
+// A signed pillar target on a node whose pillar will not compile is
+// refused, whichever way the expression would have gone.
+//
+// The matcher reads a pillar it cannot have as an empty one, and an empty
+// pillar is not a refusal under `not`: `not I@role:db` is true of a node
+// with no `role` at all. So a node that is a database host, holding a job
+// signed for everything except the database hosts, used to run it -- in
+// the one check whose purpose is to refuse what the hub cannot prove.
+// The hub's own resolver refuses the same case (DIVERGENCE 5.204); this
+// is the node's copy of the decision, which had kept the old answer.
+func TestASignedPillarTargetIsRefusedWhenThisNodesPillarWillNotCompile(t *testing.T) {
+	n, key := signedNode(t, "true")
+	n.grains.Set("os", "FreeBSD")
+	calls := 0
+	n.hubPillar = func(string) (*value.Map, error) {
+		calls++
+		return nil, errors.New("rendering top.sls: unexpected end of template")
+	}
+
+	cases := []struct {
+		target, kind string
+	}{
+		// The case that ran: true of an empty pillar.
+		{"not I@role:db", "compound"},
+		{"G@os:FreeBSD and not I@role:db", "compound"},
+		{"not J@role:^db", "compound"},
+		// False of an empty pillar, so these were refused already, but
+		// with "does not match", which sends an operator to the target
+		// rather than to the pillar that is actually wrong.
+		{"role:db", "pillar"},
+		{"role:^db", "pillar_pcre"},
+	}
+	for i, c := range cases {
+		calls = 0
+		before := n.executor.Depth()
+		n.acceptJob(signedMessage(t, key, fmt.Sprintf("20260923T08000000009%d", i),
+			"test.ping", c.target, c.kind, nil))
+		if n.executor.Depth() != before {
+			t.Errorf("%s %q: accepted on a node whose pillar does not compile", c.kind, c.target)
+			continue
+		}
+		refusal := lastRefusal(t, n)
+		if !strings.Contains(refusal, "unexpected end of template") {
+			t.Errorf("%s %q: the refusal does not say why pillar was unavailable: %s",
+				c.kind, c.target, refusal)
+		}
+		if strings.Contains(refusal, "does not match") {
+			t.Errorf("%s %q: refused as a mismatch, which it was not known to be: %s",
+				c.kind, c.target, refusal)
+		}
+		if calls != 1 {
+			t.Errorf("%s %q: pillar was compiled %d times", c.kind, c.target, calls)
+		}
+	}
+
+	// A term decided before the pillar is read never asks for it, so a
+	// broken pillar holds up nothing it cannot affect.
+	before := n.executor.Depth()
+	calls = 0
+	n.acceptJob(signedMessage(t, key, "20260923T080000000099", "test.ping",
+		"G@os:FreeBSD or I@role:db", "compound", nil))
+	if n.executor.Depth() != before+1 {
+		t.Errorf("a target decided by its grain term was refused for its pillar: %s", lastRefusal(t, n))
+	}
+	if calls != 0 {
+		t.Errorf("a target decided by its grain term compiled pillar %d time(s)", calls)
 	}
 }
