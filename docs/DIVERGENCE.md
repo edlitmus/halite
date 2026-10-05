@@ -19565,6 +19565,74 @@ records carries one, and a set that grows by one per login never
 shrinks. `halite-api doctor` prints its report without a redactor.
 Linux and FreeBSD were not run; nothing here is platform-specific.
 
+### 5.216 Pillar targets in the mine and the ssh roster matched an empty pillar
+
+5.204 made dispatch match `-I`, `-J` and `I@`/`J@` against each
+candidate's compiled pillar, and refuse when a candidate's pillar will
+not compile. It recorded three more matchers as found and not fixed:
+`mine.get`'s target, mine `allow_tgt`, and the ssh roster. All three
+still matched against an empty pillar, so a positive pillar term matched
+nothing and a negated one matched everything.
+
+- **`mine.get`**: `not I@role:web` returned the web hosts' entries with
+  everyone else's, so a template asking the mine for everything but the
+  web tier got the web tier too.
+- **`allow_tgt`**: this one failed open. It is the publisher's own
+  restriction on which nodes may read an entry (SPEC 19.5), the gate a
+  node uses for its database credentials. An entry published with
+  `not I@role:web` was readable by every web host. And `-I platform:bsd`
+  let no reader in at all.
+- **The ssh roster**: `sshMatcher` returned a predicate closed over the
+  roster's grains, so there was no way to give it a pillar.
+  `not I@role:web` ran an agentless job on the web hosts it was written
+  to exclude.
+
+`MineGet` and `mineAllows` now use `targetPillar`, the loader dispatch
+uses, with its refusals:
+- A hub with no `pillar_roots` refuses the expression.
+- A publisher whose pillar will not compile refuses the `mine.get`,
+  naming it.
+- A reader whose pillar will not compile is withheld the entry. The
+  restriction exists to withhold, so "unknown" withholds.
+
+The reader's pillar is compiled at most once per `mine.get`, however
+many entries ask about it. Without that, a read across a hundred
+publishers that each restrict by pillar would render the reader's
+pillar tree a hundred times.
+
+`sshMatcher` now returns the compiled matcher. `sshTargets` gives each
+roster target a lazy loader over `compileRosterPillar`. That function was
+split out of `inlinePillar`, so the pillar a target is matched against
+and the pillar it is sent are one compilation, not two that could drift
+apart. `sshTargets` refuses the same way dispatch does.
+
+`TestMineGetMatchesPillarTargetsAgainstCompiledPillar`,
+`TestMineAllowTgtReadsTheReadersCompiledPillar` and
+`TestAnAgentlessPillarTargetReadsEachTargetsCompiledPillar` failed on
+the old code: every positive pillar term selected nothing, every
+negation selected the excluded hosts, and a broken pillar was never
+refused. `TestAnAgentlessPillarTargetOnAHubWithNoPillarIsRefused` failed
+by selecting a target. `TestMineAllowTgtCompilesTheReadersPillarOnce`
+counts `compilePillar` calls, through a new unexported counter on
+`Server`.
+
+Eight deliberate breaks each failed their test again:
+- the loader not installed, at each of the three sites;
+- the recorded failure ignored, at each;
+- the ssh `pillar_roots` check removed;
+- the reader memo removed, which compiled twice for two entries.
+
+**Not covered:**
+- No mine read or agentless run was made on a real hub. The tests drive
+  `MineGet` with entries written to the store, and `sshTargets` against
+  a flat roster file; neither connects anything.
+- `mine.get` and `allow_tgt` compile pillar in the `base` environment,
+  as dispatch does when a job names none. A node with its own
+  `pillarenv` can be matched against a pillar it does not receive
+  (5.204 records the same for dispatch; not checked here).
+- A `mine.get` with a pillar target compiles every publisher's pillar,
+  each a full render, on every call.
+
 
 ## 6. Everything else not started
 

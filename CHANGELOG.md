@@ -23,6 +23,25 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Pillar targeting works in the mine and in agentless mode
+
+Pillar targeting now reads compiled pillar in the mine and in agentless
+mode, as it already did for dispatched jobs. Before, all three matched
+against an empty pillar.
+
+- **`mine.get`**: a pillar term in its target (`-I`, `-J`, `I@`/`J@`)
+  used to match nothing, or under `not` everything. It now reads each
+  publisher's compiled pillar, and a publisher whose pillar won't
+  compile refuses the read, naming it.
+- **`allow_tgt`**: this one failed open. An entry published with
+  `not I@role:web` was readable by the web hosts. A pillar term now
+  reads the reader's compiled pillar, and a reader whose pillar won't
+  compile is withheld the entry.
+- **`halite-hub ssh`**: a pillar target selected nothing, or under
+  `not` every roster target. It is now matched against the pillar each
+  target is sent. A target whose pillar won't compile refuses the run,
+  naming it, and a hub with no `pillar_roots` refuses the expression.
+
 ### halite-api scrubs its secrets from its log
 
 `halite-api` now scrubs its secrets from its log and from its fatal

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -139,13 +140,75 @@ func sshTargets(h *hubContext, args *cli.Args, kind, expression string) ([]roste
 	if err != nil {
 		return nil, err
 	}
+	// A pillar term reads the pillar each target would be sent, compiled
+	// here from the grains its roster entry attached. It read none, so
+	// `-I` selected nothing and `not I@...` selected everything,
+	// including the targets the expression was written to leave out. A
+	// target whose pillar will not compile cannot be decided and the run
+	// is refused naming it, for the reasons the enrolled fleet's
+	// dispatch gives (internal/hub targetPillar, DIVERGENCE 5.204).
+	readsPillar := false
+	for _, term := range matcher.Terms() {
+		if term.Kind == target.Pillar || term.Kind == target.PillarRegex {
+			readsPillar = true
+		}
+	}
+	if readsPillar && len(h.cfg.Roots("pillar_roots")) == 0 {
+		return nil, fmt.Errorf("target %q reads pillar, and this hub compiles no pillar "+
+			"to target against; set pillar_roots", matcher.Expr())
+	}
+	env := args.Flag("env", h.cfg.String("env", "base"))
 	var out []roster.Target
+	var undecided []string
+	var undecidedWhy error
 	for _, t := range loaded.Targets {
-		if matcher(t) {
+		node := target.Node{ID: t.ID, Grains: t.Grains}
+		var failed error
+		if readsPillar {
+			node.LoadPillar = rosterPillarLoader(h, t, env, &failed)
+		}
+		hit := matcher.Match(node)
+		if failed != nil {
+			undecided = append(undecided, t.ID)
+			undecidedWhy = failed
+			continue
+		}
+		if hit {
 			out = append(out, t)
 		}
 	}
+	if len(undecided) > 0 {
+		sort.Strings(undecided)
+		return nil, fmt.Errorf(
+			"target %q reads pillar, and the pillar of %d roster target(s) (%s) will not "+
+				"compile, so whether it matches them is unknown; fix their pillar, or exclude "+
+				"them ahead of the pillar term (`not L@%s and ...`): %w",
+			matcher.Expr(), len(undecided), strings.Join(undecided, ", "),
+			strings.Join(undecided, ","), undecidedWhy)
+	}
 	return out, nil
+}
+
+// rosterPillarLoader compiles one roster target's pillar the first time a
+// pillar term asks for it, recording in failed why it could not.
+func rosterPillarLoader(h *hubContext, t roster.Target, env string, failed *error) func() *value.Map {
+	var (
+		done   bool
+		loaded *value.Map
+	)
+	return func() *value.Map {
+		if done {
+			return loaded
+		}
+		done = true
+		compiled, err := compileRosterPillar(h, t, env)
+		if err != nil {
+			*failed = err
+			return nil
+		}
+		loaded = compiled
+		return loaded
+	}
 }
 
 // sshMatcher builds the target matcher for the roster.
@@ -154,7 +217,13 @@ func sshTargets(h *hubContext, args *cli.Args, kind, expression string) ([]roste
 // and the grains it attached — so `-G 'os:FreeBSD'` works on an
 // agentless estate exactly as it does on an enrolled one, without a
 // second implementation of matching.
-func sshMatcher(flag, expression string) (func(roster.Target) bool, error) {
+//
+// It returns the compiled matcher rather than a predicate, because the
+// caller has to know whether the expression reads pillar and has to
+// supply the pillar it reads; a predicate closed over the roster's
+// grains alone had no way to, and matched every pillar term against
+// nothing.
+func sshMatcher(flag, expression string) (*target.Matcher, error) {
 	kind := target.Glob
 	if flag != "" {
 		parsed, ok := target.KindFromFlag(flag)
@@ -163,13 +232,7 @@ func sshMatcher(flag, expression string) (func(roster.Target) bool, error) {
 		}
 		kind = parsed
 	}
-	matcher, err := target.Compile(kind, expression, nil)
-	if err != nil {
-		return nil, err
-	}
-	return func(t roster.Target) bool {
-		return matcher.Match(target.Node{ID: t.ID, Grains: t.Grains})
-	}, nil
+	return target.Compile(kind, expression, nil)
 }
 
 // sshTimeout is how long one target may take.
@@ -288,11 +351,25 @@ func inlineTree(h *hubContext, args *cli.Args) (map[string]string, error) {
 // get different pillar exactly as two enrolled nodes do — and neither
 // receives the other's.
 func inlinePillar(h *hubContext, t roster.Target, args *cli.Args) (json.RawMessage, error) {
-	roots := h.cfg.Roots("pillar_roots")
-	if len(roots) == 0 {
+	if len(h.cfg.Roots("pillar_roots")) == 0 {
 		return nil, nil
 	}
-	env := args.Flag("env", h.cfg.String("env", "base"))
+	compiled, err := compileRosterPillar(h, t, args.Flag("env", h.cfg.String("env", "base")))
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := value.EncodeJSON(compiled, 0)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(encoded), nil
+}
+
+// compileRosterPillar is one roster target's pillar, compiled on the
+// hub. One function for what the target is sent and what it is targeted
+// by, so the two cannot come to disagree about which pillar it has.
+func compileRosterPillar(h *hubContext, t roster.Target, env string) (*value.Map, error) {
+	roots := h.cfg.Roots("pillar_roots")
 	grains := t.Grains
 	if grains == nil {
 		grains = value.NewMap(0)
@@ -315,11 +392,7 @@ func inlinePillar(h *hubContext, t roster.Target, args *cli.Args) (json.RawMessa
 	if err := compiled.Err(); err != nil {
 		return nil, fmt.Errorf("compiling pillar for %s: %w", t.ID, err)
 	}
-	encoded, err := value.EncodeJSON(compiled.Pillar, 0)
-	if err != nil {
-		return nil, err
-	}
-	return json.RawMessage(encoded), nil
+	return compiled.Pillar, nil
 }
 
 // runAcross runs against every target, bounded.

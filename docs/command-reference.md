@@ -702,6 +702,12 @@ than the only one: a node publishing something sensitive decides who may
 see it without trusting every reader's policy to be right. An operator
 is not restricted by it, having already been through the policy.
 
+A pillar term, in `allow_tgt` or in the target of a `mine.get`, reads
+the compiled pillar of the node it is asking about: the reader for
+`allow_tgt`, each publisher for the target. A reader whose pillar will
+not compile is withheld the entry; a publisher whose pillar will not
+compile refuses the `mine.get`, naming it.
+
 A full publication replaces, so a function taken out of
 `mine_functions` stops being served rather than lingering.
 
@@ -899,6 +905,11 @@ Pillar and the state tree are compiled on the hub and sent with the job,
 so a target holds no tree, no pillar, and no other target's secrets. The
 target uses what the hub sent and only that — never a local tree that a
 previous configuration system left behind.
+
+A pillar target (`-I`, `-J`, `I@`/`J@` in `-C`) is matched against that
+same pillar, compiled from the grains the roster entry attaches. A
+target whose pillar will not compile refuses the run, naming it, and a
+hub with no `pillar_roots` refuses the expression.
 
 Values that reach the target's command line are validated rather than
 escaped: ssh hands its command to the *login* shell, which is not always
