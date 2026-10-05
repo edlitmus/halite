@@ -135,16 +135,27 @@ func TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir(t *testing.T) {
 			t.Fatalf("daemon-reload: %v: %s", err, out)
 		}
 		_, _ = sh("systemctl", "reset-failed", unit)
+		// This start's own lines: everything after a cursor taken just
+		// before it. `-u` with `-n` took the unit's last lines, so the
+		// shipped unit's excerpt began with the old unit's failure (Fleet
+		// run 37338139260). The invocation ID is no substitute: systemd
+		// clears it when a oneshot finishes cleanly, which on run
+		// 37342637678 left the successful start with nothing to read.
+		//
+		// Diagnostic only. The verdict is systemctl's exit status, so a
+		// journal that cannot be read is logged rather than failed on.
+		cursor := journalCursor()
 		_, startErr := sh("systemctl", "start", unit)
-		// This start's own lines, by its invocation ID. `-u` with `-n`
-		// took the unit's last lines, so the shipped unit's excerpt began
-		// with the old unit's failure and read as though it had failed
-		// first -- the first Fleet run, 37338139260, showed it.
-		id, err := sh("systemctl", "show", "-p", "InvocationID", "--value", unit)
-		if err != nil || id == "" {
-			t.Fatalf("no invocation ID for %s: %v %q", unit, err, id)
+		args := []string{"-u", unit, "--no-pager", "-o", "cat"}
+		if cursor != "" {
+			args = append(args, "--after-cursor="+cursor)
+		} else {
+			t.Log("no journal cursor before this start, so the excerpt is the unit's whole journal")
 		}
-		journal, _ := sh("journalctl", "_SYSTEMD_INVOCATION_ID="+id, "--no-pager", "-o", "cat")
+		journal, err := sh("journalctl", args...)
+		if err != nil {
+			t.Logf("reading the journal: %v", err)
+		}
 		return journal, startErr
 	}
 
@@ -194,6 +205,20 @@ func TestLiveAPIUnitCanWriteItsTokenStoreOnTheDefaultStateDir(t *testing.T) {
 		t.Errorf("the unit's comment says systemd creates a missing /var/lib/halite as root's "+
 			"0755; it is %v, uid %d", parent.Mode(), st.Uid)
 	}
+}
+
+// journalCursor is the cursor of the journal's newest entry, or empty.
+func journalCursor() string {
+	out, err := exec.Command("journalctl", "-n", "1", "--show-cursor", "--no-pager", "-o", "cat").Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		if c, ok := strings.CutPrefix(strings.TrimSpace(line), "-- cursor: "); ok {
+			return c
+		}
+	}
+	return ""
 }
 
 func copyExecutable(t *testing.T, from, to string) {

@@ -19692,8 +19692,11 @@ systemd 255 (255.4-1ubuntu8.17).
 
 That run's excerpt for the shipped unit began with the old unit's lines,
 because it took the unit's last twenty journal lines. The verdict came
-from `systemctl start`'s exit status and was right. The excerpt is now
-scoped to the start's own invocation ID.
+from `systemctl start`'s exit status and was right. Scoping the excerpt
+to the start's invocation ID broke the next run, 37342637678: systemd
+clears the ID when a oneshot finishes cleanly, and the test failed on a
+diagnostic. The excerpt now reads the journal after a cursor taken just
+before each start, and a journal it cannot read is logged, not failed.
 
 **Not covered:**
 - A host where the hub and the API share `/var/lib/halite` and the
