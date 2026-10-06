@@ -20,7 +20,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"runtime"
-	"sort"
 	"strings"
 	"time"
 )
@@ -208,21 +207,6 @@ func matches(pattern, env string) bool {
 		return strings.HasPrefix(env, prefix)
 	}
 	return pattern == env
-}
-
-// sortedEnvs is every environment a set of refs maps to, in order.
-func sortedEnvs(refs []Ref) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, ref := range refs {
-		if seen[ref.Env] {
-			continue
-		}
-		seen[ref.Env] = true
-		out = append(out, ref.Env)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // checkURL refuses a transport that would let the network decide what

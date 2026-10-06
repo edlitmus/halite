@@ -4,7 +4,6 @@ package exec
 
 import (
 	"os"
-	"strings"
 )
 
 // defaultPath is the search path a spawned process gets when nothing else
@@ -31,9 +30,6 @@ func shellCommand(script, shell string) []string {
 	return []string{shell, "-c", script}
 }
 
-// shellName is what to call the interpreter in a message.
-func shellName() string { return "/bin/sh" }
-
 // cleanEnv is the environment a spawned process receives unless a module
 // says otherwise: no hub credentials, no pillar values, and an explicit
 // PATH. SPEC section 25.4.
@@ -48,11 +44,6 @@ func cleanEnv() []string {
 		"LANG=C",
 		"HALITE=1",
 	}
-}
-
-// quoteScriptArg wraps a string so a shell reads it as one argument.
-func quoteScriptArg(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // shellSeparator ends one command in a Shell string so another can

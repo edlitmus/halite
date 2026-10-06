@@ -70,9 +70,6 @@ func OpenMineStore(dir string) (*MineStore, error) {
 	return &MineStore{dir: dir}, nil
 }
 
-// Dir is where the mine lives.
-func (m *MineStore) Dir() string { return m.dir }
-
 func (m *MineStore) now() time.Time {
 	if m != nil && m.Now != nil {
 		return m.Now()

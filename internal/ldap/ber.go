@@ -115,11 +115,6 @@ func boolean(b bool) []byte {
 	return out
 }
 
-// null is a NULL, which is the whole body of an UnbindRequest.
-func null() []byte {
-	return []byte{tagNull, 0x00}
-}
-
 func concat(parts ...[]byte) []byte {
 	total := 0
 	for _, p := range parts {

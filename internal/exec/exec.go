@@ -969,10 +969,6 @@ func (c *Context) PillarOrErr() (*value.Map, error) {
 // file passes those through by name.
 func CleanEnv() []string { return cleanEnv() }
 
-// FallbackPath is the search path a spawned process gets when nothing
-// else says what it should be, in this platform's own form.
-func FallbackPath() string { return defaultPath() }
-
 // waitDelay bounds how long Wait may block after the child has been
 // killed, for a pipe a descendant left open.
 const waitDelay = 2 * time.Second

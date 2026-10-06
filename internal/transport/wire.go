@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/http"
 	"time"
-
-	"github.com/edlitmus/halite/internal/pki"
 )
 
 // The limits of SPEC 6.5. Each is enforced before allocation, which is
@@ -498,17 +496,6 @@ func ReadJSON(w http.ResponseWriter, r *http.Request, limit int64, v any) error 
 		return fmt.Errorf("the request body carries more than one JSON value")
 	}
 	return nil
-}
-
-// PeerNodeID is the identity the connection authenticated as.
-//
-// It reads the certificate the TLS layer verified, never a field in the
-// body: a node says who it is by holding a key, not by claiming a name.
-func PeerNodeID(r *http.Request) (string, error) {
-	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-		return "", fmt.Errorf("the request carries no client certificate")
-	}
-	return pki.NodeIDFromCert(r.TLS.PeerCertificates[0])
 }
 
 // PeerCert is the verified client certificate, for the renewal path

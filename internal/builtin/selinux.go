@@ -567,14 +567,6 @@ func selinuxContextParts(ctx string) (user, role, typ, level string, ok bool) {
 	return parts[0], parts[1], parts[2], parts[3], true
 }
 
-func selinuxContextMap(ctx string) *value.Map {
-	user, role, typ, level, ok := selinuxContextParts(ctx)
-	if !ok {
-		return value.MapOf("context", ctx)
-	}
-	return value.MapOf("sel_user", user, "sel_role", role, "sel_type", typ, "sel_level", level)
-}
-
 // parseSemanageFcontexts reads `semanage fcontext -l` or `-l -C`:
 //
 //	SELinux fcontext                                   type               Context
