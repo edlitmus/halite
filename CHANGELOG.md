@@ -33,6 +33,14 @@ refused with 429, nothing is written, and it's counted as
 logs it only at debug, since its next report covers the same head.
 This bounds how fast a compromised node can grow its anchor file.
 
+### OIDC logins in flight are bounded
+
+`halite-api` now holds at most 1,024 OIDC logins in progress at once. A
+new `POST /v1/login/oidc` past that is refused with 503 and a warning in
+the log. That endpoint needs no credentials, and before this a flood of
+login starts grew memory without limit and made each start slower than
+the last.
+
 ### Evidence chains are anchored at the hub
 
 A node's evidence record is now anchored at the hub, so a compromised
