@@ -19795,6 +19795,28 @@ breaks each failed the tests again:
 - Errors from the hub itself still exit 1, as before.
 - Not run on FreeBSD or Linux; nothing here is platform-specific.
 
+#### 5.219, corrected: what `Sscanf` made of `2x`
+
+This section said `--subset 2x` left the subset at 0. It did not. Go's
+`fmt.Sscanf` with `%d` reads the leading digits, stops, and reports
+success, so `2x` was 2 and `1.5` was 1. Measured with Go 1.26 after the
+merge:
+
+| Input | Read as | Error |
+|---|---|---|
+| `2x` | 2 | none |
+| `1.5` | 1 | none |
+| `-1` | -1 | none |
+| `abc` | 0 | `expected integer`, which nothing checked |
+
+So the defect stands, and for these: `abc` was 0 and `-1` was -1, both
+"no subset", and the job went to every matched node. `2x` was the wrong
+example. The test's `2x` case still passes, because the fix refuses all
+four, but the claim was written from what an unchecked error ought to
+do, not from what this one did. The CHANGELOG entry and the two code
+comments that repeated it are corrected. 5.221 extends the strict read
+to the remaining numeric flags.
+
 ### 5.220 `keys`, `keys token` and `jobs` opened the hub before reading their subcommand
 
 `halite-hub keys`, `keys token` and `jobs` each opened what they act on

@@ -42,9 +42,10 @@ it cannot read, before anything is sent. It used to exit 1, the code it
 uses for a node that failed.
 
 **`--subset` and `--batch-safe-limit`** must now be whole numbers above
-zero. A value that did not parse, such as `--subset 2x`, or a
-non-positive one, such as `--subset=-1`, used to be ignored, and the job
-went to every node the target matched.
+zero. A value that was not a number, such as `--subset abc`, or a
+non-positive one, such as `--subset=-1`, used to mean no subset, and the
+job went to every node the target matched. A number with something after
+it, such as `--subset 2x`, was read as far as its digits went.
 
 **A flag a subcommand does not take** now exits 64 in `halite-node`,
 `halite-hub` and `halite-api`. So does a `key=value` argument that looks

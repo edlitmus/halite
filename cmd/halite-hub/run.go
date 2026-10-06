@@ -119,8 +119,8 @@ func portOf(listen string) string {
 // anything malformed is a usage error, cli.ExitUsage. `run` itself exits 1
 // for a node that failed, so a typo that exited 1 read as a failed
 // deploy; and the two numbers read with fmt.Sscanf, whose error nothing
-// checked, turned `--subset 2x` into no subset at all -- the job went to
-// every node the target matched. DIVERGENCE 5.219.
+// checked, turned `--subset abc` or `--subset=-1` into no subset at all --
+// the job went to every node the target matched. DIVERGENCE 5.219.
 func runRun(args *cli.Args) int {
 	kind, target, fun, rest, err := resolveTarget(args)
 	if err != nil {
