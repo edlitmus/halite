@@ -20441,6 +20441,23 @@ limit would make it harder, but behind a proxy every source is the
 proxy. `/v1/login`, the local-account login, was not examined for the
 same shape. Only run on macOS.
 
+#### 5.230, corrected: the test read two clocks
+
+`TestOIDCLoginsInFlightAreBounded` failed on the `windows-2022` runner,
+in the CI of an unrelated pull request (#236): "442 logins pending after
+the expired ones were swept, want 1". It froze the server's clock and
+then moved it past `AuthStateTTL` from that frozen start. But a pending
+login's `Created` is the OIDC provider's `p.now()`, the real clock, not
+the server's. Filling the 1,024 slots took 1.8 seconds there, so every
+login created more than a second in was still inside the window. On
+this Mac the same loop takes under a second, which hid it. The code is
+right: in production both clocks are the real one.
+
+The test now moves the clock from `time.Now()` after the logins are
+made. Reproduced deterministically, with a 1.2-second sleep before the
+logins are created: the old line left all 1,024 pending and refused the
+next login with 503, and the new line passes.
+
 ### 5.231 A node's evidence-head reports had no rate
 
 The evidence anchor (5.229) recorded among its gaps that a compromised
