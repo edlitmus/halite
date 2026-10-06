@@ -21007,9 +21007,25 @@ default now fails a test instead of making SPEC wrong again.
 
 The same row lists two TLS 1.3 cipher suites. Outside FIPS mode Go
 also offers `TLS_CHACHA20_POLY1305_SHA256` (1.10 records the FIPS
-half). That was not part of this decision and is left as it stands.
+half). That was not part of this decision and is left as it stands;
+see the next subsection.
 `internal/transport/tls.go` cited "SPEC 26.1" for the suites; 26.1 is
 logging, and the citation now says 25.3.
+#### 6.4, the cipher suites: SPEC now lists ChaCha20 outside FIPS mode
+
+The owner then chose the same for the cipher suite. SPEC 25.3's
+transport row now lists `TLS_CHACHA20_POLY1305_SHA256` beside the two
+AES-GCM suites, outside FIPS mode, as the suite Go chooses when a side
+lacks AES hardware. No behaviour changed.
+
+`TestTheNegotiatedCipherSuiteIsOneSPECLists` checks a real handshake's
+suite against the row: the AES-GCM pair always, and ChaCha20 only
+outside FIPS mode. Here it negotiated `TLS_AES_128_GCM_SHA256`, with and
+without `GODEBUG=fips140=on`. With that suite taken out of the allowed
+set, it failed, naming it. Go picks ChaCha20 only without AES hardware,
+and nothing can force it, so on every machine this has run on the
+ChaCha20 entry is allowed but not exercised.
+
 ---
 
 ## 7. SPEC 33 open questions

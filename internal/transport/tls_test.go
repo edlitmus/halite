@@ -255,3 +255,41 @@ func TestTheNegotiatedKeyExchangeIsOneSPECLists(t *testing.T) {
 			"as the group a default build negotiates", group)
 	}
 }
+
+// The TLS 1.3 cipher suite a hub and a node agree on is one SPEC 25.3
+// lists: the two AES-GCM suites, and outside FIPS mode ChaCha20-Poly1305,
+// which Go offers there and SPEC now names rather than leaving out
+// (DIVERGENCE 6.4). Go selects TLS 1.3 suites itself and ignores
+// tls.Config.CipherSuites, so this measures a real handshake rather than
+// reading a configuration.
+//
+// Go chooses ChaCha20 only when a side has no AES hardware, and nothing
+// can force it, so on a machine with AES hardware -- every one this has
+// run on -- the handshake takes an AES suite and the ChaCha20 entry is
+// allowed but not exercised.
+func TestTheNegotiatedCipherSuiteIsOneSPECLists(t *testing.T) {
+	f := newFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, tls.CipherSuiteName(r.TLS.CipherSuite))
+	}))
+	client, _ := f.enrolledClient(t, "web1.example")
+	res, err := client.Get(f.url + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	got, _ := io.ReadAll(res.Body)
+	suite := string(got)
+
+	allowed := map[string]bool{
+		"TLS_AES_128_GCM_SHA256": true,
+		"TLS_AES_256_GCM_SHA384": true,
+	}
+	if !fips.Restricted() {
+		allowed["TLS_CHACHA20_POLY1305_SHA256"] = true
+	}
+	if !allowed[suite] {
+		t.Errorf("the handshake used %s, which SPEC 25.3 does not list (FIPS mode: %v)",
+			suite, fips.Restricted())
+	}
+	t.Logf("negotiated %s", suite)
+}
