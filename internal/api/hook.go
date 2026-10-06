@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/config"
+	"github.com/edlitmus/halite/internal/ratelimit"
 	"github.com/edlitmus/halite/internal/transport"
 	"github.com/edlitmus/halite/internal/value"
 )
@@ -68,18 +69,16 @@ type Hooks struct {
 	// seen is the nonce cache: a signature already accepted inside the
 	// replay window is a replay, not a delivery.
 	seen map[string]time.Time
-	// tokens and filled are the per-path buckets.
-	tokens map[string]float64
-	filled map[string]time.Time
+	// buckets are the per-path rate limits.
+	buckets map[string]*ratelimit.Bucket
 }
 
 // NewHooks prepares a set.
 func NewHooks(hooks []*Hook) *Hooks {
 	h := &Hooks{
-		byPath: map[string]*Hook{},
-		seen:   map[string]time.Time{},
-		tokens: map[string]float64{},
-		filled: map[string]time.Time{},
+		byPath:  map[string]*Hook{},
+		seen:    map[string]time.Time{},
+		buckets: map[string]*ratelimit.Bucket{},
 	}
 	for _, hook := range hooks {
 		h.byPath[hook.Path] = hook
@@ -418,19 +417,10 @@ func (h *Hooks) allow(cfg *Hook, now time.Time) bool {
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	burst := float64(cfg.RateBurst)
-	filled, seen := h.filled[cfg.Path]
-	if !seen {
-		h.tokens[cfg.Path], filled = burst, now
+	b, ok := h.buckets[cfg.Path]
+	if !ok {
+		b = &ratelimit.Bucket{}
+		h.buckets[cfg.Path] = b
 	}
-	h.tokens[cfg.Path] += now.Sub(filled).Seconds() * cfg.RateLimit
-	if h.tokens[cfg.Path] > burst {
-		h.tokens[cfg.Path] = burst
-	}
-	h.filled[cfg.Path] = now
-	if h.tokens[cfg.Path] < 1 {
-		return false
-	}
-	h.tokens[cfg.Path]--
-	return true
+	return b.Take(now, cfg.RateLimit, cfg.RateBurst)
 }

@@ -20584,6 +20584,51 @@ true, as do the command reference and the metric's values.
 - Only run on macOS.
 
 
+### 5.233 Three copies of one token bucket, and one never tested
+
+The hub and the API each had a token bucket, written three times and
+identical to the line:
+- the reactor's per-entry `rate_limit` (`internal/hub/reactor.go`);
+- the webhook receiver's per-path limit (`internal/api/hook.go`);
+- the hub's per-node limit on evidence-head reports, from 5.231
+  (`internal/hub/anchors.go`).
+
+Three copies of a rule are three places for it to drift. A bucket that
+drifts fails quietly: it lets a flood through, or turns an honest caller
+away, and nothing says which. They are now one type,
+`internal/ratelimit.Bucket`, with one method:
+`Take(now, rate, burst)`. It holds no lock, because each caller already
+keeps its bucket beside other per-key state under a lock of its own.
+
+Breaking the shared bucket, so that `Take` never spends a token, showed
+what had been tested:
+- the hook test and the anchor test failed;
+- **no reactor test did.** The reactor's tests covered how `rate_limit`
+  is parsed, not whether it is enforced. A reactor bucket that never ran
+  dry would have passed every one.
+
+`TestAReactorOverItsRateLimitIsThrottled` now offers five events against
+`2/m`. It requires two reactions, no third, and a
+`halite/reactor/throttled` event on the bus. It passed three runs in a
+row, and failed under the same break.
+
+One difference from the old reactor code, which configuration cannot
+reach. That code filled an entry's bucket when it created it, with the
+entry's burst as given. A hand-built entry with a burst of 0 therefore
+refused its first event. `Take` takes a burst below one as one, as the
+reactor's own refill already did. `rate_limit` always gives a burst of
+at least one, and the hooks and the anchors floor theirs.
+
+The shared bucket keeps the copies' behaviour when the clock steps
+backwards: the negative interval is subtracted. A probe stepped a
+bucket of five back ten seconds after one take, which left it at −6
+and refused. Five seconds past the original time it was full again,
+because the next interval runs from the stepped-back time and repays
+the step. So a step back of *d* refuses for about *d*, then the bucket
+recovers. Nothing here changes that.
+
+**Not covered:** only run on macOS.
+
 ## 6. Everything else not started
 
 ### 6.1 Delivery phases

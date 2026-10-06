@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/edlitmus/halite/internal/eventbus"
+	"github.com/edlitmus/halite/internal/ratelimit"
 	"github.com/edlitmus/halite/internal/value"
 )
 
@@ -107,10 +108,8 @@ type chainCount struct {
 // reactorLimit holds the per-glob controls: the token bucket, the
 // deduplication window, and the debounce timer.
 type reactorLimit struct {
-	mu sync.Mutex
-	// tokens and filled implement the bucket.
-	tokens float64
-	filled time.Time
+	mu     sync.Mutex
+	bucket ratelimit.Bucket
 	// seen is the deduplication window, keyed by the dedupe key.
 	seen map[string]time.Time
 	// pending is the debounce state, keyed by the dedupe key.
@@ -329,8 +328,6 @@ func (r *Reactor) limitFor(entry ReactorEntry) *reactorLimit {
 			seen:    map[string]time.Time{},
 			pending: map[string]*eventbus.Event{},
 			timers:  map[string]*time.Timer{},
-			tokens:  float64(entry.RateBurst),
-			filled:  r.now(),
 		}
 		r.limits[entry.Tag] = l
 	}
@@ -341,23 +338,7 @@ func (r *Reactor) limitFor(entry ReactorEntry) *reactorLimit {
 func (l *reactorLimit) allow(entry ReactorEntry, now time.Time) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	burst := float64(entry.RateBurst)
-	if burst < 1 {
-		burst = 1
-	}
-	if l.filled.IsZero() {
-		l.filled, l.tokens = now, burst
-	}
-	l.tokens += now.Sub(l.filled).Seconds() * entry.RateLimit
-	if l.tokens > burst {
-		l.tokens = burst
-	}
-	l.filled = now
-	if l.tokens < 1 {
-		return false
-	}
-	l.tokens--
-	return true
+	return l.bucket.Take(now, entry.RateLimit, entry.RateBurst)
 }
 
 // duplicate reports whether this key was seen inside the window.

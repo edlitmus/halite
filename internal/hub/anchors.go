@@ -14,6 +14,7 @@ import (
 	"github.com/edlitmus/halite/internal/fileperm"
 	"github.com/edlitmus/halite/internal/nodeevidence"
 	"github.com/edlitmus/halite/internal/pki"
+	"github.com/edlitmus/halite/internal/ratelimit"
 	"github.com/edlitmus/halite/internal/transport"
 )
 
@@ -84,8 +85,7 @@ type nodeAnchors struct {
 	// The node's token bucket, under its own lock so that a refused
 	// report never waits behind another report's fsync.
 	rateMu sync.Mutex
-	tokens float64
-	filled time.Time
+	bucket ratelimit.Bucket
 }
 
 // DefaultAnchorRate and DefaultAnchorBurst are the bucket a node gets
@@ -114,7 +114,7 @@ const (
 // next report carries a later head, which covers this one, so a busy
 // honest node is anchored a little later rather than not at all.
 func (a *AnchorStore) Allow(nodeID string, now time.Time) bool {
-	rate, burst := a.Rate, float64(a.Burst)
+	rate, burst := a.Rate, a.Burst
 	if rate <= 0 {
 		rate = DefaultAnchorRate
 	}
@@ -124,19 +124,7 @@ func (a *AnchorStore) Allow(nodeID string, now time.Time) bool {
 	n := a.node(nodeID)
 	n.rateMu.Lock()
 	defer n.rateMu.Unlock()
-	if n.filled.IsZero() {
-		n.tokens, n.filled = burst, now
-	}
-	n.tokens += now.Sub(n.filled).Seconds() * rate
-	if n.tokens > burst {
-		n.tokens = burst
-	}
-	n.filled = now
-	if n.tokens < 1 {
-		return false
-	}
-	n.tokens--
-	return true
+	return n.bucket.Take(now, rate, burst)
 }
 
 // OpenAnchorStore prepares the store's directory.
