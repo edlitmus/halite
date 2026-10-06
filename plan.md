@@ -2990,9 +2990,18 @@ somebody would otherwise rediscover.
     item 12 records the reasoning.
 21. ~~The `cmd.run` default~~ (answered: follow Salt, DIVERGENCE 5.81),
     the unplanned modules, a `win_registry` state, and job signing (§6).
-22. Whether a follower that falls behind the event bus should stop or
-    resume. `subscriber_lag` refuses the read now; what a *reactor*
-    should do with the refusal is the open half (DIVERGENCE 4.12).
+22. ~~Whether a follower that falls behind the event bus should stop or
+    resume.~~ — **answered in DIVERGENCE 4.12, the day the refusal was
+    built**, and this item was not struck when it was. A reactor whose
+    offset was pruned resumes at the oldest event the bus still holds,
+    because that is the nearest surviving point to where it was; one
+    whose offset file is unreadable jumps to the end, because a corrupt
+    file says nothing about where it was. The loss is recorded three
+    ways: a warning, a `halite/reactor/lag` event and
+    `halite_events_dropped_total{reason="subscriber_lag"}`. An operator's
+    stream gets a 410 instead. `TestChaosAReactorThatFellBehindResumesAtTheOldest`
+    holds the reactor half. Stopping instead would be a change to that
+    decision, not the answer to an open question.
 
 **Last**
 
