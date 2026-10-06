@@ -20490,6 +20490,82 @@ real node's job rate. The limiter is a third copy of a token bucket,
 after the reactor's and the API's webhooks'; folding them together is
 its own change. Only run on macOS.
 
+### 5.232 Login guessing and password-check CPU were both unbounded
+
+Checking `/v1/login` for 5.230's shape, unbounded state from an
+unauthenticated endpoint, found none: a failed local login is logged and
+counted and nothing is kept. It found something else. Every failed local
+login runs PBKDF2-HMAC-SHA-512 at the enforced minimum of 210,000
+iterations, measured at 50 ms of CPU on this Mac. It runs for an
+unknown name too, deliberately, so the two take the same time. Nothing
+bounded either. So `halite-api`, which takes no credential before the
+password, allowed:
+- guessing at any account at about twenty attempts a second per core;
+- enough callers at once to fill every core with hashing and starve the
+  rest of the service.
+
+SPEC 23.2 said nothing about it. SPEC 25.1's "unauthenticated network
+attacker" row covered only the hub's port, where mutual TLS stops one
+before any application code runs.
+
+The owner chose two limits, in `internal/api/loginlimit.go`:
+- **A bound on password checks in flight**, half the CPUs. A login past
+  it gets 503 before anything is hashed, counted as `busy`. It is
+  refused rather than queued, because a queue is the flood held in
+  memory instead of on the CPU.
+- **A per-name backoff.** After a failure the name is refused with 429
+  and `Retry-After` for a window that doubles: one second, two, four, up
+  to fifteen minutes. A success clears it, and a name quiet for a full
+  maximum window starts again at one second.
+  - A refusal inside the window costs no hash and does not lengthen the
+    window. It is counted as `throttled`.
+  - **Every name** is held to it, whether an account exists or not.
+    Holding only real names would make the 429 an oracle for which names
+    exist, and the single failure message exists to deny that.
+  - It is a backoff, not a lockout. A lockout lets anybody who knows the
+    break-glass account's name keep its owner out.
+  - LDAP logins get the same backoff. There the directory does the
+    comparing, so there is no hash to bound.
+- **The table of names is bounded at 4,096**, because names come from
+  the caller. When it is full, the entry whose window ends soonest goes.
+  A flood of new names, each one second into its window, is therefore
+  evicted before a name somebody has been guessing at for fifteen
+  minutes, so it cannot clear that name's backoff.
+
+Four tests cover it:
+- the doubling, `Retry-After`, a refusal not lengthening the window, and
+  a success clearing it, run for a real account and for a name with no
+  account, with identical answers;
+- the 503 and its counter;
+- a flood of 4,596 names failing to evict the targeted one;
+- the LDAP backoff.
+
+Four breaks each failed them:
+- a backoff that never refuses;
+- a refusal that lengthens the window;
+- a bound that is ignored;
+- eviction that takes the longest window instead of the shortest.
+
+The bound's first test looped until a slot was refused, which hung
+rather than failed when the bound was broken, so it was rewritten to
+fill exactly the slots there are.
+
+Three existing tests made several failed logins at one name to test
+something else: the second factor, LDAP's single message, and the
+refusal counter. They now move the server's clock past the backoff
+between attempts and test what they always did.
+
+SPEC 23.2 and a new SPEC 25.1 row for the API port say what is now
+true, as do the command reference and the metric's values.
+
+**Not covered:**
+- The bound of half the CPUs is a judgement.
+- Guessing spread across many names is held only by the bound on
+  checks, not by the backoff.
+- A proxy in front of the API changes nothing here, since nothing is
+  keyed by address.
+- Only run on macOS.
+
 
 ## 6. Everything else not started
 

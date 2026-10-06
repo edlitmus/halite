@@ -20,8 +20,15 @@ import (
 // but success is a login that failed — this code never compares a
 // password itself.
 func (s *Server) ldapLogin(w http.ResponseWriter, r *http.Request, req LoginRequest) {
+	// The same backoff as a local login, for the same guessing; there
+	// is no hash here to cap, the directory does the comparing.
+	key := "ldap:" + req.Username
+	if s.loginThrottled(w, r, "ldap", key) {
+		return
+	}
 	identity, err := s.LDAP.Authenticate(req.Username, req.Password)
 	if err != nil {
+		s.logins().failed(key, s.now())
 		s.m().authAttempts.With("ldap", "refused").Inc()
 		// One message for every failure, as the local path gives. Which
 		// of them it was goes to the log: the difference between "no
@@ -35,6 +42,8 @@ func (s *Server) ldapLogin(w http.ResponseWriter, r *http.Request, req LoginRequ
 		writeError(w, http.StatusUnauthorized, "those credentials were not accepted")
 		return
 	}
+	// The password was right, whatever the directory maps it to.
+	s.logins().succeeded(key)
 
 	if len(identity.Roles) == 0 {
 		s.m().authAttempts.With("ldap", "unmapped").Inc()

@@ -79,6 +79,14 @@ type Server struct {
 
 	pendingAuths *pendingAuth
 	pendingOnce  sync.Once
+
+	loginLimiter *loginLimit
+	loginOnce    sync.Once
+}
+
+func (s *Server) logins() *loginLimit {
+	s.loginOnce.Do(func() { s.loginLimiter = newLoginLimit() })
+	return s.loginLimiter
 }
 
 func (s *Server) now() time.Time {

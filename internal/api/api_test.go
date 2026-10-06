@@ -189,6 +189,14 @@ func TestADisabledAccountCannotLogIn(t *testing.T) {
 	}
 }
 
+// passTheLoginBackoff moves the server's clock past any login backoff
+// window, for a test making several failed logins at one name about
+// something other than the backoff. See loginLimit.
+func (l *lab) passTheLoginBackoff() {
+	base := l.server.now().Add(loginBackoffMax + time.Second)
+	l.server.Now = func() time.Time { return base }
+}
+
 // An account with a second factor needs one.
 func TestASecondFactorIsRequiredWhenConfigured(t *testing.T) {
 	l := newLab(t)
@@ -204,6 +212,7 @@ func TestASecondFactorIsRequiredWhenConfigured(t *testing.T) {
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Errorf("a login with no code answered %d", res.StatusCode)
 	}
+	l.passTheLoginBackoff()
 	res, _ = l.post(t, PathLogin, `{"username":"mfa","password":"hunter2","code":"000000"}`, "")
 	if res.StatusCode != http.StatusUnauthorized {
 		t.Errorf("a login with a wrong code answered %d", res.StatusCode)

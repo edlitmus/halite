@@ -611,7 +611,7 @@ themselves, under whatever you call that job.
 
 | Family | Type | Labels | What it says |
 |---|---|---|---|
-| `halite_auth_attempts_total` | counter | `method` `result` | Logins, by backend. |
+| `halite_auth_attempts_total` | counter | `method` `result` | Logins, by backend: `accepted`, `refused`, `throttled` (the name was inside its backoff window, so nothing was checked), `busy` (every password-check slot was taken), and for LDAP `unmapped`. A sustained `throttled` is somebody guessing at a name. |
 | `halite_api_requests_total` | counter | `route` `code` | API requests. |
 | `halite_api_request_duration_seconds` | histogram | `route` | How long they take. |
 | `halite_api_requests_in_flight` | gauge | `route` | Requests being answered right now. |

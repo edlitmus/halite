@@ -185,6 +185,7 @@ func TestARequestIsCountedByRouteNotByPath(t *testing.T) {
 func TestAFailedLoginIsCounted(t *testing.T) {
 	l, _ := executeLab(t, metricsPolicy)
 	l.post(t, PathLogin, `{"username":"ed","password":"wrong"}`, "")
+	l.passTheLoginBackoff()
 	token := l.login(t, "ed", "hunter2").Token
 
 	_, body := l.get(t, PathMetrics, token)
