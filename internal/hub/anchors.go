@@ -58,6 +58,12 @@ import (
 type AnchorStore struct {
 	dir string
 
+	// Rate and Burst bound how often one node may report, as a token
+	// bucket: Rate reports a second sustained, Burst at once. Zero takes
+	// the defaults. See Allow.
+	Rate  float64
+	Burst int
+
 	mu    sync.Mutex
 	nodes map[string]*nodeAnchors
 }
@@ -74,6 +80,63 @@ type nodeAnchors struct {
 	mu     sync.Mutex
 	loaded bool
 	top    *nodeevidence.Anchor
+
+	// The node's token bucket, under its own lock so that a refused
+	// report never waits behind another report's fsync.
+	rateMu sync.Mutex
+	tokens float64
+	filled time.Time
+}
+
+// DefaultAnchorRate and DefaultAnchorBurst are the bucket a node gets
+// unless `evidence_anchor_rate` and `evidence_anchor_burst` say
+// otherwise.
+//
+// A node reports when its stream opens and after each job, one report
+// in flight at a time, so its honest rate is its job rate. A burst of 60
+// covers a highstate's worth of jobs finishing together, or a
+// reconnecting node; one a second sustained is more than an estate runs
+// jobs on one machine. What it bounds is a compromised node, which could
+// otherwise report an ever-larger number as fast as the hub would fsync
+// it: about 86,000 lines a day at the default, where before there was no
+// limit at all. DIVERGENCE 5.231.
+const (
+	DefaultAnchorRate  = 1.0
+	DefaultAnchorBurst = 60
+)
+
+// Allow takes one report from the node's bucket, and says whether there
+// was one to take.
+//
+// It is checked before anything else the report costs -- reading the
+// node's file, signing, the fsync -- because those are what a flood is
+// trying to spend. A refused report is not written anywhere: the node's
+// next report carries a later head, which covers this one, so a busy
+// honest node is anchored a little later rather than not at all.
+func (a *AnchorStore) Allow(nodeID string, now time.Time) bool {
+	rate, burst := a.Rate, float64(a.Burst)
+	if rate <= 0 {
+		rate = DefaultAnchorRate
+	}
+	if burst < 1 {
+		burst = DefaultAnchorBurst
+	}
+	n := a.node(nodeID)
+	n.rateMu.Lock()
+	defer n.rateMu.Unlock()
+	if n.filled.IsZero() {
+		n.tokens, n.filled = burst, now
+	}
+	n.tokens += now.Sub(n.filled).Seconds() * rate
+	if n.tokens > burst {
+		n.tokens = burst
+	}
+	n.filled = now
+	if n.tokens < 1 {
+		return false
+	}
+	n.tokens--
+	return true
 }
 
 // OpenAnchorStore prepares the store's directory.
@@ -285,6 +348,16 @@ func (s *Server) evidenceAnchor(w http.ResponseWriter, r *http.Request, nodeID s
 	if s.Authority == nil || s.Authority.CA == nil {
 		transport.WriteError(w, http.StatusServiceUnavailable, transport.CodeInternal,
 			errors.New("this hub holds no enrollment CA to sign a receipt with"))
+		return
+	}
+	if !s.Anchors.Allow(nodeID, s.now()) {
+		// Counted rather than logged: a node over its rate is reporting
+		// many times a second, and a line for each would be the flood
+		// moved into the hub's log.
+		s.m().evidenceAnchors.With("rate_limited").Inc()
+		transport.WriteError(w, http.StatusTooManyRequests, transport.CodeRateLimited,
+			errors.New("this node is reporting its evidence head faster than the hub records it; "+
+				"its next report will carry a later head"))
 		return
 	}
 

@@ -241,6 +241,8 @@ var Keys = []Key{
 	{"evidence", nodeOnly, "true", "Keep the append-only, hash-chained local record of what this node accepted.", "25.7"},
 	{"evidence_dir", nodeOnly, "", "Where that record lives; empty is <state_dir>/evidence.", "25.7"},
 	{"evidence_max_bytes", nodeOnly, "67108864", "Seal the current chain segment once it reaches this size.", "25.7"},
+	{"evidence_anchor_rate", hubOnly, "1", "Evidence-head reports one node may make per second, sustained; over it a report is refused with 429.", "25.7"},
+	{"evidence_anchor_burst", hubOnly, "60", "Evidence-head reports one node may make at once before evidence_anchor_rate applies.", "25.7"},
 	{"extension_trust_keys", nodeHub, "", "Keys whose signed extension bundles this node accepts, as `<name> <base64>`.", "24.4"},
 	{"extension_require_signature", nodeHub, "true", "Refuse an unsigned extension. False is for development and warns on every load.", "24.4"},
 	{"exec_path", nodeHub, "", "PATH for this program and every process it spawns. Empty inherits the environment's.", "25.4"},

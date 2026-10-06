@@ -20441,6 +20441,55 @@ limit would make it harder, but behind a proxy every source is the
 proxy. `/v1/login`, the local-account login, was not examined for the
 same shape. Only run on macOS.
 
+### 5.231 A node's evidence-head reports had no rate
+
+The evidence anchor (5.229) recorded among its gaps that a compromised
+node could grow its own anchor file without bound. It could report an
+ever-larger record number as fast as the hub would fsync it, and the
+hub would write a line and sign a receipt for each. The owner asked
+for a rate limit.
+
+Each node now has a token bucket at the hub. The rate is
+`evidence_anchor_rate` reports a second, default 1, and the burst is
+`evidence_anchor_burst`, default 60.
+- **Checked first.** `AnchorStore.Allow` runs before anything a report
+  costs: reading the node's file, signing, the fsync.
+- **What a refused report gets:** 429 with the new code `rate_limited`,
+  no line written and nothing signed, counted as
+  `halite_hub_evidence_anchors_total{result="rate_limited"}`. It is not
+  logged per request, because that would move the flood into the hub's
+  log.
+- **The node treats it as routine.** A debug line and nothing filed. A
+  node reports on connect and after each job, one report at a time, so
+  its next report carries a later head that covers the refused one. A
+  node finishing jobs faster than the rate is anchored a little later,
+  not left unanchored.
+
+At the default, a compromised node can add about 86,000 lines a day,
+where before there was no limit. The bucket lives in the per-node state
+the store already kept, under its own lock, so a refused report never
+waits behind another report's fsync. 429 reaches the node as the
+client's retryable `StatusError`, not its final `RefusedError`, with the
+code intact. `AnchorEvidence` itself makes one request and never
+retries.
+
+- `TestANodeOverItsAnchorRateIsRefusedAndNothingIsWritten` checks the
+  burst, the 429 and its code, that no line is written for a refused
+  report, that another node is unaffected, the refill, and the counter.
+- `TestARateLimitedReportIsQuietAndTheNextIsFiled` checks that no
+  receipt is filed, nothing is logged above debug, and the report after
+  a refill is filed.
+- An `Allow` that always admits failed the first test. Removing the
+  node's rate-limited case failed the second, because the refusal was
+  logged as a warning.
+- SPEC 25.7, the operations guide, the metrics reference and both
+  settings' configuration entries say what the limit is and does.
+
+**Not covered:** the defaults are a judgement, not a measurement of any
+real node's job rate. The limiter is a third copy of a token bucket,
+after the reactor's and the API's webhooks'; folding them together is
+its own change. Only run on macOS.
+
 
 ## 6. Everything else not started
 

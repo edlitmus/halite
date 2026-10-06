@@ -174,6 +174,12 @@ func (n *node) anchorFailed(err error, seq uint64, hash string) {
 			"the hub does not keep evidence anchors, so this node's evidence record is anchored nowhere; "+
 				"upgrade the hub. Said once; later reports are debug lines",
 			"error", err.Error())
+	case transport.CodeOf(err) == transport.CodeRateLimited:
+		// Over the hub's rate for this node: routine for a node finishing
+		// jobs faster than the hub's limit, and the next report carries a
+		// later head that covers this one. A debug line, never a warning.
+		n.log.Debug("the hub is rate-limiting this node's evidence reports; the next one covers this head",
+			"component", "evidence", "seq", seq)
 	case transport.CodeOf(err) == transport.CodeEvidenceConflict:
 		// The hub holds a head this chain contradicts. The hub has
 		// already logged it, raised an event and counted it; this side

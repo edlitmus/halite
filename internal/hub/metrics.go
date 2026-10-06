@@ -175,7 +175,8 @@ func (s *Server) setupMetrics() {
 			"Enrollment requests, by what the hub did with one.", "result"),
 		evidenceAnchors: r.Counter("halite_hub_evidence_anchors_total",
 			"Evidence heads reported by nodes, by whether the hub accepted one, found it "+
-				"contradicted an earlier one, or failed to record it.", "result"),
+				"contradicted an earlier one, refused it as over the node's rate, or failed "+
+				"to record it.", "result"),
 
 		subscriberLag: r.Histogram("halite_event_subscriber_lag_seconds",
 			"How old an event was when a subscriber was handed it.",

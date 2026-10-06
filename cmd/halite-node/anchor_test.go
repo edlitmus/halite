@@ -443,3 +443,38 @@ func testLogger(t *testing.T, w *bytes.Buffer) *hlog.Logger {
 	}
 	return l
 }
+
+// A report the hub rate-limits is routine for a node finishing jobs
+// faster than the hub's limit: nothing is filed, nothing above debug is
+// said, and the next report the hub takes is filed as usual. A warning
+// per refused report would make a busy node's log the flood. DIVERGENCE
+// 5.231.
+func TestARateLimitedReportIsQuietAndTheNextIsFiled(t *testing.T) {
+	lab := newAnchorLab(t, "web1.example")
+	now := time.Now()
+	lab.server.Now = func() time.Time { return now }
+	lab.server.Anchors.Rate, lab.server.Anchors.Burst = 0.5, 1
+
+	n := nodeForEvidence(t, "")
+	var logged bytes.Buffer
+	n.log = testLogger(t, &logged)
+	client := lab.client(t)
+
+	n.recordEvidence(nodeevidence.KindStart, map[string]string{"version": "test"})
+	n.reportHead(context.Background(), client)
+	n.recordEvidence(nodeevidence.KindStop, map[string]string{"reason": "test"})
+	n.reportHead(context.Background(), client) // over the rate
+
+	if got := receiptsIn(records(t, n)); len(got) != 1 {
+		t.Fatalf("%d receipts filed; the rate-limited report must file none", len(got))
+	}
+	if strings.Contains(logged.String(), `"level":"warn"`) || strings.Contains(logged.String(), `"level":"error"`) {
+		t.Errorf("a rate-limited report was said above debug:\n%s", logged.String())
+	}
+
+	now = now.Add(3 * time.Second)
+	n.reportHead(context.Background(), client)
+	if got := receiptsIn(records(t, n)); len(got) != 2 {
+		t.Errorf("after the bucket refilled, %d receipts; the report should have been filed", len(got))
+	}
+}

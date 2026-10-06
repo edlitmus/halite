@@ -1355,6 +1355,17 @@ enrollment CA's key, which the node checks against the CA it pinned and
 files in its own chain as an `anchor.receipt` record. A report never holds
 up a job: a hub that is down or slow costs a log line.
 
+Each node is held to a rate, a token bucket of `evidence_anchor_rate`
+reports a second (default 1) with a burst of `evidence_anchor_burst`
+(default 60). A report over it is refused with 429 before the hub reads,
+signs or writes anything, and counted as
+`halite_hub_evidence_anchors_total{result="rate_limited"}`. The node says
+so only at debug: its next report carries a later head, which covers the
+one refused, so a node finishing jobs faster than the rate is anchored a
+little later rather than not at all. What the rate bounds is a
+compromised node reporting an ever-larger head as fast as the hub would
+write it.
+
 `verify-evidence --anchors <file>`, given what `halite-hub evidence
 anchors` prints for the node, checks that every head the hub accepted is
 still the record at that number. A chain rewritten from its first record

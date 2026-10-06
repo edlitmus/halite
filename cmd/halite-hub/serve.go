@@ -237,6 +237,8 @@ func runServe(args *cli.Args) int {
 	if err != nil {
 		cli.Fatalf("%v", err)
 	}
+	anchors.Rate = h.cfg.Float("evidence_anchor_rate", hub.DefaultAnchorRate)
+	anchors.Burst = int(h.cfg.Int("evidence_anchor_burst", hub.DefaultAnchorBurst))
 
 	groups, err := nodegroupsFrom(h.cfg)
 	if err != nil {

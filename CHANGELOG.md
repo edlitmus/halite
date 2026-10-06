@@ -23,6 +23,16 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### Evidence-head reports are rate-limited per node
+
+The hub now rate-limits each node's evidence-head reports:
+`evidence_anchor_rate` reports a second (default 1), with a burst of
+`evidence_anchor_burst` (default 60). A report over the limit is
+refused with 429, nothing is written, and it's counted as
+`halite_hub_evidence_anchors_total{result="rate_limited"}`. The node
+logs it only at debug, since its next report covers the same head.
+This bounds how fast a compromised node can grow its anchor file.
+
 ### OIDC logins in flight are bounded
 
 `halite-api` now holds at most 1,024 OIDC logins in progress at once. A
@@ -4612,7 +4622,7 @@ command and what to type instead — plus a module reference and a
 configuration reference generated from the code and checked against it
 by a test.
 
-The configuration reference explains each of the 225 settings in the
+The configuration reference explains each of the 227 settings in the
 topic it belongs to, saying which of the three programs reads it, when
 to change it, and what it interacts with. A test requires every setting
 to carry that explanation, so one cannot be added without it.
