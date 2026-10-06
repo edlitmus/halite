@@ -20086,7 +20086,7 @@ was 1. It passes on the new.
 
 **Not covered:** only run on macOS.
 
-### 5.222 `run --out` accepted any format and printed nested
+### 5.225 `run --out` accepted any format and printed nested
 
 `halite-hub run` read `--out` only after the job had run, and only to
 pick a printer. `nested` and `summary` take the per-node path, which
