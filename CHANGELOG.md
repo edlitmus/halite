@@ -23,6 +23,13 @@ which reached 0.12.0 before it was deleted. `v0.*` is a pre-release in
 
 The state of the rebuild, by what it means rather than by commit.
 
+### halite-api doctor scrubs its report
+
+`halite-api doctor` now scrubs the API's configured secrets from its
+report, as text and as `--out json`/`yaml`, as the hub's and the node's
+doctors already did. No check was found that prints one, so this closes
+a gap rather than a leak anyone saw.
+
 ### A node keeps one renewed-away key, not all of them
 
 A node no longer keeps a private key for every certificate renewal. A
