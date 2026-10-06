@@ -368,7 +368,7 @@ func TestASecretFilesContentsAreRefusedWhenReadable(t *testing.T) {
 // The node and hub loaded a `--config /etc/salt/minion` without
 // `minion.d/`, so an estate that keeps `id:` there -- Salt's common
 // layout -- ran a node named after its host, while migrate's report had
-// said the key would be translated. DIVERGENCE 5.227.
+// said the key would be translated. DIVERGENCE 5.228.
 func TestASaltConfigFileReadsItsDropInsAndAHaliteOneKeepsTheRoots(t *testing.T) {
 	dir := t.TempDir()
 	write := func(path, body string) {

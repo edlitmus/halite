@@ -20261,7 +20261,7 @@ shaped name. A `-test` run was not made for Windows, so the six
 Windows-only functions counted as test-only were classified from
 reading, not measured.
 
-### 5.227 A Salt configuration file ran without its drop-in directory
+### 5.228 A Salt configuration file ran without its drop-in directory
 
 SPEC 27.5 promises that `halite-node serve --config /etc/salt/minion`
 "reads a Salt minion configuration file, applies the key mapping … and

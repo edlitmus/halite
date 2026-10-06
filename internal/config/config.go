@@ -107,7 +107,7 @@ func Load(role Role, opts LoadOptions) (*Config, error) {
 		// always read the directory and reported its keys as translated.
 		// The running node and hub did not, so a node configured that way
 		// started as its hostname rather than as the id in its drop-in,
-		// with nothing said. DIVERGENCE 5.227.
+		// with nothing said. DIVERGENCE 5.228.
 		dropIn = opts.Path + ".d"
 	}
 	if dropIn == "" {
