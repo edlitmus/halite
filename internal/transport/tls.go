@@ -119,7 +119,7 @@ func ServerConfig(cert tls.Certificate, ca *x509.Certificate, denied *Denylist) 
 }
 
 // approvedCurves restricts key exchange to P-256 and P-384 in FIPS mode,
-// per SPEC 26.1 and 27.4.
+// per SPEC 25.3 and 27.4.
 //
 // Applied here rather than left to the module. GODEBUG=fips140=on, which
 // SPEC 27.4 has the service unit set, routes approved algorithms through
@@ -128,7 +128,7 @@ func ServerConfig(cert tls.Certificate, ca *x509.Certificate, denied *Denylist) 
 // of this build rather than of a setting somebody can leave off.
 //
 // TLS 1.3 cipher suites are not part of this: Go selects them itself and
-// ignores tls.Config.CipherSuites for 1.3. The two SPEC 26.1 names are
+// ignores tls.Config.CipherSuites for 1.3. The two SPEC 25.3 names are
 // two of the three Go offers, and the module drops the third in FIPS
 // mode. DIVERGENCE 1.10 records that this half is the module's to
 // enforce and not this build's.
